@@ -14,160 +14,240 @@ import re
 # Dockerfile
 TESTS_DIR = os.path.join("/opt", "kafka-streams-examples")
 
+# Below is shared among most of the kafka-streams-examples.
+# It is used to execute the programs.
+BASE_CMD = f"java -cp {TESTS_DIR}/target/kafka-streams-examples-6.2.0-standalone.jar io.confluent.examples.streams."
 
-class KafkaStreams:
-    def __init__(self, redpanda, is_driver, jar_args):
+
+class WikipediaExample:
+    def __init__(self, redpanda):
         self._redpanda = redpanda
 
-        self._jar_arg = jar_args[0] if is_driver else jar_args[1]
-
-        self._is_driver = is_driver
-
-    # Calls the internal condition and
-    # automatically stores the result
     def condition(self, line):
-        if self._is_driver:
-            return self.driver_cond(line)
-        else:
-            return "Example started." in line
+        return "Example started." in line
 
-    # Return the command to call in the shell
     def cmd(self, host):
-        cmd = f"java -cp {TESTS_DIR}/target/kafka-streams-examples-6.2.0-standalone.jar io.confluent.examples.streams."
-        cmd = cmd + self._jar_arg
-        return cmd
+        return BASE_CMD + f"WikipediaFeedAvroLambdaExample {self._redpanda.brokers()} {self._redpanda.schema_reg()}"
 
-    # Return the process name to kill
     def process_to_kill(self):
         return "java"
 
-    def driver_cond(self, line):
-        raise NotImplementedError("driver condition undefined")
 
-
-class KafkaStreamsWikipedia(KafkaStreams):
-    def __init__(self, redpanda, is_driver):
-        schema_reg = redpanda.schema_reg()
-        jar_args = (
-            f"WikipediaFeedAvroExampleDriver {redpanda.brokers()} {schema_reg}",
-            f"WikipediaFeedAvroLambdaExample {redpanda.brokers()} {schema_reg}"
-        )
-
-        super(KafkaStreamsWikipedia, self).__init__(redpanda, is_driver,
-                                                    jar_args)
-
-        self.users_re = re.compile(
+class WikipediaDriver:
+    def __init__(self, redpanda):
+        self._redpanda = redpanda
+        self._users_re = re.compile(
             "(erica|bob|joe|damian|tania|phil|sam|lauren|joseph)")
 
-    def driver_cond(self, line):
-        return self.users_re.search(line) is not None
+    def condition(self, line):
+        return self._users_re.search(line) is not None
+
+    def cmd(self, host):
+        return BASE_CMD + f"WikipediaFeedAvroExampleDriver {self._redpanda.brokers()} {self._redpanda.schema_reg()}"
+
+    def process_to_kill(self):
+        return "java"
 
 
-class KafkaStreamsTopArticles(KafkaStreams):
-    def __init__(self, redpanda, is_driver):
-        schema_reg = redpanda.schema_reg()
-        jar_args = (
-            f"TopArticlesExampleDriver {redpanda.brokers()} {schema_reg}",
-            f"TopArticlesLambdaExample {redpanda.brokers()} {schema_reg}")
+class TopArticlesExample:
+    def __init__(self, redpanda):
+        self._redpanda = redpanda
 
-        super(KafkaStreamsTopArticles, self).__init__(redpanda, is_driver,
-                                                      jar_args)
+    def condition(self, line):
+        return "Example started." in line
 
-    def driver_cond(self, line):
-        return "engineering" in line or "telco" in line or "finance" in line or "health" in line or "science" in line
+    def cmd(self, host):
+        return BASE_CMD + f"TopArticlesLambdaExample {self._redpanda.brokers()} {self._redpanda.schema_reg()}"
 
-
-class KafkaStreamsSessionWindow(KafkaStreams):
-    def __init__(self, redpanda, is_driver):
-        schema_reg = redpanda.schema_reg()
-        jar_args = (
-            f"SessionWindowsExampleDriver {redpanda.brokers()} {schema_reg}",
-            f"SessionWindowsExample {redpanda.brokers()} {schema_reg}")
-
-        super(KafkaStreamsSessionWindow,
-              self).__init__(redpanda, is_driver, jar_args)
-
-    def driver_cond(self, line):
-        return "sarah" in line or "bill" in line or "jo" in line
+    def process_to_kill(self):
+        return "java"
 
 
-class KafkaStreamsJsonToAvro(KafkaStreams):
-    def __init__(self, redpanda, is_driver):
-        schema_reg = redpanda.schema_reg()
-        jar_args = (
-            f"JsonToAvroExampleDriver {redpanda.brokers()} {schema_reg}",
-            f"JsonToAvroExample {redpanda.brokers()} {schema_reg}")
+class TopArticlesDriver:
+    def __init__(self, redpanda):
+        self._redpanda = redpanda
+        self._articles_re = re.compile(
+            "(engineering|telco|finance|health|science)")
 
-        super(KafkaStreamsJsonToAvro, self).__init__(redpanda, is_driver,
-                                                     jar_args)
+    def condition(self, line):
+        return self._articles_re.search(line) is not None
 
+    def cmd(self, host):
+        return BASE_CMD + f"TopArticlesExampleDriver {self._redpanda.brokers()} {self._redpanda.schema_reg()}"
+
+    def process_to_kill(self):
+        return "java"
+
+
+class SessionWindowExample:
+    def __init__(self, redpanda):
+        self._redpanda = redpanda
+
+    def condition(self, line):
+        return "Example started." in line
+
+    def cmd(self, host):
+        return BASE_CMD + f"SessionWindowsExample {self._redpanda.brokers()} {self._redpanda.schema_reg()}"
+
+    def process_to_kill(self):
+        return "java"
+
+
+class SessionWindowDriver:
+    def __init__(self, redpanda):
+        self._redpanda = redpanda
+        self._users_re = re.compile("(sarah|bill|jo)")
+
+    def condition(self, line):
+        return self._users_re.search(line) is not None
+
+    def cmd(self, host):
+        return BASE_CMD + f"SessionWindowsExampleDriver {self._redpanda.brokers()} {self._redpanda.schema_reg()}"
+
+    def process_to_kill(self):
+        return "java"
+
+
+class JsonToAvroExample:
+    def __init__(self, redpanda):
+        self._redpanda = redpanda
+
+    def condition(self, line):
+        return "Example started." in line
+
+    def cmd(self, host):
+        return BASE_CMD + f"JsonToAvroExample {self._redpanda.brokers()} {self._redpanda.schema_reg()}"
+
+    def process_to_kill(self):
+        return "java"
+
+
+class JsonToAvroDriver:
+    def __init__(self, redpanda):
+        self._redpanda = redpanda
         # The driver prints out 3 avro records
         self._count = 3
 
-    def driver_cond(self, line):
+    def condition(self, line):
         # sub 1 when Converted Avro Record is in the line, otherwise sub 0
         self._count -= "Converted Avro Record" in line
         return self._count <= 0
 
+    def cmd(self, host):
+        return BASE_CMD + f"JsonToAvroExampleDriver {self._redpanda.brokers()} {self._redpanda.schema_reg()}"
 
-class KafkaStreamsPageView(KafkaStreams):
-    def __init__(self, redpanda, is_driver):
-        schema_reg = redpanda.schema_reg()
-        jar_args = (
-            f"PageViewRegionExampleDriver {redpanda.brokers()} {schema_reg}",
-            f"PageViewRegionLambdaExample {redpanda.brokers()} {schema_reg}")
-
-        super(KafkaStreamsPageView, self).__init__(redpanda, is_driver,
-                                                   jar_args)
-
-    def driver_cond(self, line):
-        return "europe@" in line or "usa@" in line or "asia@" in line or "africa@" in line
+    def process_to_kill(self):
+        return "java"
 
 
-class KafkaStreamsSumLambda(KafkaStreams):
-    def __init__(self, redpanda, is_driver):
-        jar_args = (f"SumLambdaExampleDriver {redpanda.brokers()}",
-                    f"SumLambdaExample {redpanda.brokers()}")
+class PageViewExample:
+    def __init__(self, redpanda):
+        self._redpanda = redpanda
 
-        super(KafkaStreamsSumLambda, self).__init__(redpanda, is_driver,
-                                                    jar_args)
+    def condition(self, line):
+        return "Example started." in line
 
-    def driver_cond(self, line):
+    def cmd(self, host):
+        return BASE_CMD + f"PageViewRegionLambdaExample {self._redpanda.brokers()} {self._redpanda.schema_reg()}"
+
+    def process_to_kill(self):
+        return "java"
+
+
+class PageViewDriver:
+    def __init__(self, redpanda):
+        self._redpanda = redpanda
+        self._regions_re = re.compile("(europe@|usa@|asia@|africa@)")
+
+    def condition(self, line):
+        return self._regions_re.search(line) is not None
+
+    def cmd(self, host):
+        return BASE_CMD + f"PageViewRegionExampleDriver {self._redpanda.brokers()} {self._redpanda.schema_reg()}"
+
+    def process_to_kill(self):
+        return "java"
+
+
+class SumLambdaExample:
+    def __init__(self, redpanda):
+        self._redpanda = redpanda
+
+    def condition(self, line):
+        return "Example started." in line
+
+    def cmd(self, host):
+        return BASE_CMD + f"SumLambdaExample {self._redpanda.brokers()}"
+
+    def process_to_kill(self):
+        return "java"
+
+
+class SumLambdaDriver:
+    def __init__(self, redpanda):
+        self._redpanda = redpanda
+
+    def condition(self, line):
         return "Current sum of odd numbers is:" in line
 
+    def cmd(self, host):
+        return BASE_CMD + f"SumLambdaExampleDriver {self._redpanda.brokers()}"
 
-class KafkaStreamsAnomalyDetection(KafkaStreams):
-    def __init__(self, redpanda, is_driver):
-        # 1st arg is None since this example does not have a driver
-        jar_args = (None,
-                    f"AnomalyDetectionLambdaExample {redpanda.brokers()}")
-
-        super(KafkaStreamsAnomalyDetection,
-              self).__init__(redpanda, is_driver, jar_args)
+    def process_to_kill(self):
+        return "java"
 
 
-class KafkaStreamsUserRegion(KafkaStreams):
-    def __init__(self, redpanda, is_driver):
-        # 1st arg is None since this example does not have a driver
-        jar_args = (None, f"UserRegionLambdaExample {redpanda.brokers()}")
+class AnomalyDetectionExample:
+    def __init__(self, redpanda):
+        self._redpanda = redpanda
 
-        super(KafkaStreamsUserRegion, self).__init__(redpanda, is_driver,
-                                                     jar_args)
+    def condition(self, line):
+        return "Example started." in line
 
+    def cmd(self, host):
+        return BASE_CMD + f"AnomalyDetectionLambdaExample {self._redpanda.brokers()}"
 
-class KafkaStreamsWordCount(KafkaStreams):
-    def __init__(self, redpanda, is_driver):
-        # 1st arg is None since this example does not have a driver
-        jar_args = (None, f"WordCountLambdaExample {redpanda.brokers()}")
-
-        super(KafkaStreamsWordCount, self).__init__(redpanda, is_driver,
-                                                    jar_args)
+    def process_to_kill(self):
+        return "java"
 
 
-class KafkaStreamsMapFunc(KafkaStreams):
-    def __init__(self, redpanda, is_driver):
-        # 1st arg is None since this example does not have a driver
-        jar_args = (None, f"MapFunctionLambdaExample {redpanda.brokers()}")
+class UserRegionExample:
+    def __init__(self, redpanda):
+        self._redpanda = redpanda
 
-        super(KafkaStreamsMapFunc, self).__init__(redpanda, is_driver,
-                                                  jar_args)
+    def condition(self, line):
+        return "Example started." in line
+
+    def cmd(self, host):
+        return BASE_CMD + f"UserRegionLambdaExample {self._redpanda.brokers()}"
+
+    def process_to_kill(self):
+        return "java"
+
+
+class WordCountExample:
+    def __init__(self, redpanda):
+        self._redpanda = redpanda
+
+    def condition(self, line):
+        return "Example started." in line
+
+    def cmd(self, host):
+        return BASE_CMD + f"WordCountLambdaExample {self._redpanda.brokers()}"
+
+    def process_to_kill(self):
+        return "java"
+
+
+class MapFuncExample:
+    def __init__(self, redpanda):
+        self._redpanda = redpanda
+
+    def condition(self, line):
+        return "Example started." in line
+
+    def cmd(self, host):
+        return BASE_CMD + f"MapFunctionLambdaExample {self._redpanda.brokers()}"
+
+    def process_to_kill(self):
+        return "java"

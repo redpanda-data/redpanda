@@ -7,7 +7,8 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.services.cluster import cluster
+from ducktape.mark import matrix
+from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 
 from rptest.services.compatibility.example_runner import ExampleRunner
@@ -16,64 +17,37 @@ from rptest.services.kaf_producer import KafProducer
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
+import time
+import requests
+
+# 600s timeout because sometimes the examples
+# take ~10min to produce data
+TIMEOUT = 600
 
 
-class KafkaStreamsTest(RedpandaTest):
+class KafkaStreamsWikipedia(RedpandaTest):
     """
-    Base class for KafkaStreams tests that contains all
-    shared objects between tests
+    Test KafkaStreams wikipedia example which computes the number of new
+    users to a wikipedia page
     """
+    topics = (
+        TopicSpec(name="WikipediaFeed"),
+        TopicSpec(name="WikipediaStats"),
+    )
 
-    # The example is the java program that uses Kafka Streams.
-    # The java program is represented by a wrapper in KafkaStreamExamples.
-    Example = None
-
-    def __init__(self, test_context, enable_pp, enable_sr):
-        super(KafkaStreamsTest, self).__init__(test_context=test_context,
-                                               enable_pp=enable_pp,
-                                               enable_sr=enable_sr)
-
+    def __init__(self, test_context):
+        super(KafkaStreamsWikipedia, self).__init__(test_context=test_context,
+                                                    enable_pp=True,
+                                                    enable_sr=True)
         self._ctx = test_context
 
-        # 300s timeout because sometimes the examples
-        # take 4min+ to produce correct output
-        self._timeout = 300
-
-    def create_example(self):
-        # This will raise TypeError if Example is undefined
-        example_helper = self.Example(self.redpanda, False)
-        example = ExampleRunner(self._ctx,
-                                example_helper,
-                                timeout_sec=self._timeout)
-
-        return example
-
-
-class KafkaStreamsDriverBase(KafkaStreamsTest):
-    """
-    Base class for KafkaStreams tests that explicitly use a
-    driver program to generate data.
-    """
-
-    # The driver is also a java program that uses Kafka Streams.
-    # The java program is also represented by the example's corresponding
-    # wrapper in KafkaStreamExamples.
-    Driver = None
-
-    def __init__(self, test_context, enable_pp, enable_sr):
-        super(KafkaStreamsDriverBase, self).__init__(test_context=test_context,
-                                                     enable_pp=enable_pp,
-                                                     enable_sr=enable_sr)
-
     @cluster(num_nodes=5)
-    def test_kafka_streams(self):
-        example = self.create_example()
+    def test_kafka_streams_wikipedia(self):
+        example_jar = KafkaStreamExamples.WikipediaExample(self.redpanda)
+        example = ExampleRunner(self._ctx, example_jar, timeout_sec=TIMEOUT)
 
-        # This will raise TypeError if DriverHeler is undefined
-        driver_helper = self.Driver(self.redpanda, True)
-        driver = ExampleRunner(self._ctx,
-                               driver_helper,
-                               timeout_sec=self._timeout)
+        driver_jar = KafkaStreamExamples.WikipediaDriver(self.redpanda)
+        driver = ExampleRunner(self._ctx, driver_jar, timeout_sec=TIMEOUT)
 
         # Start the example
         example.start()
@@ -87,62 +61,7 @@ class KafkaStreamsDriverBase(KafkaStreamsTest):
         example.stop()
 
 
-class KafkaStreamsProdConsBase(KafkaStreamsTest):
-    """
-    Base class for KafkaStreams tests that use a producer
-    and consumer
-    """
-
-    # The producer should be an extension to KafProducer
-    PRODUCER = None
-
-    def __init__(self, test_context, enable_pp, enable_sr):
-        super(KafkaStreamsProdConsBase,
-              self).__init__(test_context=test_context,
-                             enable_pp=enable_pp,
-                             enable_sr=enable_sr)
-
-    def is_valid_msg(self, msg):
-        raise NotImplementedError("is_valid_msg() undefined.")
-
-    @cluster(num_nodes=6)
-    def test_kafka_streams(self):
-        example = self.create_example()
-
-        # This will raise TypeError if PRODUCER is undefined
-        producer = self.PRODUCER(self._ctx, self.redpanda, self.topics[0].name)
-        consumer = RpkConsumer(self._ctx, self.redpanda, self.topics[1].name)
-
-        # Start the example
-        example.start()
-
-        # Produce some data
-        producer.start()
-        producer.wait()
-
-        # Consume the data
-        consumer.start()
-
-        def try_cons():
-            i = 0
-            msgs = consumer.messages
-            while i < len(msgs) and not self.is_valid_msg(msgs[i]):
-                i += 1
-
-            return i < len(msgs)
-
-        wait_until(
-            try_cons,
-            timeout_sec=self._timeout,
-            backoff_sec=5,
-            err_msg=f"kafka-streams {self._ctx.cls_name} consumer failed")
-
-        consumer.stop()
-        producer.stop()
-        example.stop()
-
-
-class KafkaStreamsTopArticles(KafkaStreamsDriverBase):
+class KafkaStreamsTopArticles(RedpandaTest):
     """
     Test KafkaStreams TopArticles which counts the top N articles
     from a stream of page views
@@ -152,17 +71,34 @@ class KafkaStreamsTopArticles(KafkaStreamsDriverBase):
         TopicSpec(name="TopNewsPerIndustry"),
     )
 
-    Example = KafkaStreamExamples.KafkaStreamsTopArticles
-    Driver = KafkaStreamExamples.KafkaStreamsTopArticles
-
     def __init__(self, test_context):
         super(KafkaStreamsTopArticles,
               self).__init__(test_context=test_context,
                              enable_pp=True,
                              enable_sr=True)
+        self._ctx = test_context
+
+    @cluster(num_nodes=5)
+    def test_kafka_streams_top_articles(self):
+        example_jar = KafkaStreamExamples.TopArticlesExample(self.redpanda)
+        example = ExampleRunner(self._ctx, example_jar, timeout_sec=TIMEOUT)
+
+        driver_jar = KafkaStreamExamples.TopArticlesDriver(self.redpanda)
+        driver = ExampleRunner(self._ctx, driver_jar, timeout_sec=TIMEOUT)
+
+        # Start the example
+        example.start()
+        example.wait()
+
+        # Start the driver
+        driver.start()
+        driver.wait()
+
+        driver.stop()
+        example.stop()
 
 
-class KafkaStreamsSessionWindow(KafkaStreamsDriverBase):
+class KafkaStreamsSessionWindow(RedpandaTest):
     """
     Test KafkaStreams SessionWindow counts user activity within
     a specific interval of time
@@ -172,17 +108,34 @@ class KafkaStreamsSessionWindow(KafkaStreamsDriverBase):
         TopicSpec(name="play-events-per-session"),
     )
 
-    Example = KafkaStreamExamples.KafkaStreamsSessionWindow
-    Driver = KafkaStreamExamples.KafkaStreamsSessionWindow
-
     def __init__(self, test_context):
         super(KafkaStreamsSessionWindow,
               self).__init__(test_context=test_context,
                              enable_pp=True,
                              enable_sr=True)
+        self._ctx = test_context
+
+    @cluster(num_nodes=5)
+    def test_kafka_streams_session_window(self):
+        example_jar = KafkaStreamExamples.SessionWindowExample(self.redpanda)
+        example = ExampleRunner(self._ctx, example_jar, timeout_sec=TIMEOUT)
+
+        driver_jar = KafkaStreamExamples.SessionWindowDriver(self.redpanda)
+        driver = ExampleRunner(self._ctx, driver_jar, timeout_sec=TIMEOUT)
+
+        # Start the example
+        example.start()
+        example.wait()
+
+        # Start the driver
+        driver.start()
+        driver.wait()
+
+        driver.stop()
+        example.stop()
 
 
-class KafkaStreamsJsonToAvro(KafkaStreamsDriverBase):
+class KafkaStreamsJsonToAvro(RedpandaTest):
     """
     Test KafkaStreams JsontoAvro example which converts records from JSON to AVRO
     using the schema registry.
@@ -192,16 +145,33 @@ class KafkaStreamsJsonToAvro(KafkaStreamsDriverBase):
         TopicSpec(name="avro-sink"),
     )
 
-    Example = KafkaStreamExamples.KafkaStreamsJsonToAvro
-    Driver = KafkaStreamExamples.KafkaStreamsJsonToAvro
-
     def __init__(self, test_context):
         super(KafkaStreamsJsonToAvro, self).__init__(test_context=test_context,
                                                      enable_pp=True,
                                                      enable_sr=True)
+        self._ctx = test_context
+
+    @cluster(num_nodes=5)
+    def test_kafka_streams_json_to_avro(self):
+        example_jar = KafkaStreamExamples.JsonToAvroExample(self.redpanda)
+        example = ExampleRunner(self._ctx, example_jar, timeout_sec=TIMEOUT)
+
+        driver_jar = KafkaStreamExamples.JsonToAvroDriver(self.redpanda)
+        driver = ExampleRunner(self._ctx, driver_jar, timeout_sec=TIMEOUT)
+
+        # Start the example
+        example.start()
+        example.wait()
+
+        # Start the driver
+        driver.start()
+        driver.wait()
+
+        driver.stop()
+        example.stop()
 
 
-class KafkaStreamsPageView(KafkaStreamsDriverBase):
+class KafkaStreamsPageView(RedpandaTest):
     """
     Test KafkaStreams PageView example which performs a join between a 
     KStream and a KTable
@@ -212,16 +182,33 @@ class KafkaStreamsPageView(KafkaStreamsDriverBase):
         TopicSpec(name="PageViewsByRegion"),
     )
 
-    Example = KafkaStreamExamples.KafkaStreamsPageView
-    Driver = KafkaStreamExamples.KafkaStreamsPageView
-
     def __init__(self, test_context):
         super(KafkaStreamsPageView, self).__init__(test_context=test_context,
                                                    enable_pp=True,
                                                    enable_sr=True)
+        self._ctx = test_context
+
+    @cluster(num_nodes=5)
+    def test_kafka_streams_page_view(self):
+        example_jar = KafkaStreamExamples.PageViewExample(self.redpanda)
+        example = ExampleRunner(self._ctx, example_jar, timeout_sec=TIMEOUT)
+
+        driver_jar = KafkaStreamExamples.PageViewDriver(self.redpanda)
+        driver = ExampleRunner(self._ctx, driver_jar, timeout_sec=TIMEOUT)
+
+        # Start the example
+        example.start()
+        example.wait()
+
+        # Start the driver
+        driver.start()
+        driver.wait()
+
+        driver.stop()
+        example.stop()
 
 
-class KafkaStreamsSumLambda(KafkaStreamsDriverBase):
+class KafkaStreamsSumLambda(RedpandaTest):
     """
     Test KafkaStreams SumLambda example that sums odd numbers
     using reduce
@@ -231,27 +218,80 @@ class KafkaStreamsSumLambda(KafkaStreamsDriverBase):
         TopicSpec(name="sum-of-odd-numbers-topic"),
     )
 
-    Example = KafkaStreamExamples.KafkaStreamsSumLambda
-    Driver = KafkaStreamExamples.KafkaStreamsSumLambda
-
     def __init__(self, test_context):
-        super(KafkaStreamsSumLambda, self).__init__(test_context=test_context,
-                                                    enable_pp=True,
-                                                    enable_sr=True)
+        super(KafkaStreamsSumLambda, self).__init__(test_context=test_context)
+        self._ctx = test_context
+
+    @cluster(num_nodes=5)
+    def test_kafka_streams_page_view(self):
+        example_jar = KafkaStreamExamples.SumLambdaExample(self.redpanda)
+        example = ExampleRunner(self._ctx, example_jar, timeout_sec=TIMEOUT)
+
+        driver_jar = KafkaStreamExamples.SumLambdaDriver(self.redpanda)
+        driver = ExampleRunner(self._ctx, driver_jar, timeout_sec=TIMEOUT)
+
+        # Start the example
+        example.start()
+        example.wait()
+
+        # Start the driver
+        driver.start()
+        driver.wait()
+
+        driver.stop()
+        example.stop()
+
+
+def consume(ctx, consumer, is_valid_msg, num_msgs):
+    def try_cons():
+        # The messages are read into memory as json
+        # by RpkConsumer. Exit if there is no data to analyze.
+        if len(consumer.messages) < 1:
+            return False
+
+        consumer.logger.debug(f'msg len: {len(consumer.messages)}')
+
+        # Get the last N fetched messages
+        msgs = []
+        try:
+            msgs = consumer.messages[-num_msgs:]
+        except Exception as ex:
+            consumer.logger.debug(ex)
+            return False
+
+        # Validate each message
+        for msg in msgs:
+            consumer.logger.debug(f'msg: {msg}')
+
+            if not is_valid_msg(msg):
+                return False
+
+        return True
+
+    wait_until(try_cons,
+               timeout_sec=TIMEOUT,
+               backoff_sec=5,
+               err_msg=f"kafka-streams {ctx.cls_name} consumer failed")
 
 
 class AnomalyProducer(KafProducer):
-    def __init__(self, context, redpanda, topic):
+    def __init__(self, context, redpanda, topic, num_produces):
         super(AnomalyProducer, self).__init__(context,
                                               redpanda,
                                               topic,
-                                              num_records=10)
+                                              num_records=num_produces)
+
+        # Change this number if the number of
+        # unique users represented in value_gen changes.
+        self.num_unique_users = 3
 
     def value_gen(self):
-        return "record-$((1 + $RANDOM % 3))"
+        # The below string is used num_produces times
+        # The user name is read as: "user-X clicked"
+        return '"user-1\\nuser-2\\nuser-3\\nuser-1"'
 
 
-class KafkaStreamsAnomalyDetection(KafkaStreamsProdConsBase):
+class KafkaStreamsAnomalyDetection(RedpandaTest):
     """
     Test KafkaStreams SessionWindow example that counts the user clicks
     within a 1min window
@@ -261,32 +301,95 @@ class KafkaStreamsAnomalyDetection(KafkaStreamsProdConsBase):
         TopicSpec(name="AnomalousUsers"),
     )
 
-    Example = KafkaStreamExamples.KafkaStreamsAnomalyDetection
-    PRODUCER = AnomalyProducer
-
     def __init__(self, test_context):
         super(KafkaStreamsAnomalyDetection,
-              self).__init__(test_context=test_context,
-                             enable_pp=True,
-                             enable_sr=True)
+              self).__init__(test_context=test_context)
+        self._ctx = test_context
+        self._num_produces = 10 if self.scale.local else 1000
 
     def is_valid_msg(self, msg):
-        key = msg["key"]
-        return "record-1" in key or "record-2" in key or "record-3" in key
+        username = msg["key"]
+        count = int(msg["value"])
+
+        if "user-1" in username:
+            return count == (self._num_produces * 2)
+        else:
+            return count == self._num_produces
+
+    @cluster(num_nodes=6)
+    def test_kafka_streams_anomaly_detection(self):
+        example_jar = KafkaStreamExamples.AnomalyDetectionExample(
+            self.redpanda)
+        example = ExampleRunner(self._ctx, example_jar, timeout_sec=TIMEOUT)
+
+        producer = AnomalyProducer(self._ctx, self.redpanda,
+                                   self.topics[0].name, self._num_produces)
+
+        form = '\'%{"key":"%k", "value":"%v{unpack[>Q]}"%}\\n\''
+        consumer = RpkConsumer(self._ctx,
+                               self.redpanda,
+                               self.topics[1].name,
+                               formatter=form)
+
+        # Start the example
+        example.start()
+        example.wait()
+
+        # Produce some data
+        producer.start()
+        producer.wait()
+
+        # Consume the data
+        consumer.start()
+
+        # This example counts the number of user clicks (i.e., user names)
+        # in 1 minute and publishes that count to the second topic, AnomalousUsers.
+        # So, on the consumer side, there is one record per unique user name.
+
+        # is_valid_msg is called on every message the consumer reads
+        consume(self._ctx,
+                consumer,
+                self.is_valid_msg,
+                num_msgs=producer.num_unique_users)
+
+        producer.stop()
+        consumer.stop()
+
+        # Resend after 1min
+        time.sleep(60)
+        producer.start()
+        producer.wait()
+
+        consumer.start()
+
+        consume(self._ctx,
+                consumer,
+                self.is_valid_msg,
+                num_msgs=producer.num_unique_users)
+
+        producer.stop()
+        consumer.stop()
+        example.stop()
 
 
 class RegionProducer(KafProducer):
-    def __init__(self, context, redpanda, topic):
+    def __init__(self, context, redpanda, topic, num_produces):
         super(RegionProducer, self).__init__(context,
                                              redpanda,
                                              topic,
-                                             num_records=10)
+                                             num_records=num_produces)
+
+        # Change this number if the number of
+        # unique regions represented in value_gen changes.
+        self.num_unique_regions = 3
 
     def value_gen(self):
+        # The below string is used num_produces times
+        # Sending a region name is read as: "someone goes to region-X"
         return "region-$((1 + $RANDOM % 3))"
 
 
-class KafkaStreamsUserRegion(KafkaStreamsProdConsBase):
+class KafkaStreamsUserRegion(RedpandaTest):
     """
     Test KafkaStreams UserRegion example the demonstrates group-by ops and
     aggregations on a KTable
@@ -296,31 +399,79 @@ class KafkaStreamsUserRegion(KafkaStreamsProdConsBase):
         TopicSpec(name="LargeRegions"),
     )
 
-    Example = KafkaStreamExamples.KafkaStreamsUserRegion
-    PRODUCER = RegionProducer
-
     def __init__(self, test_context):
-        super(KafkaStreamsUserRegion, self).__init__(test_context=test_context,
-                                                     enable_pp=True,
-                                                     enable_sr=True)
+        super(KafkaStreamsUserRegion, self).__init__(test_context=test_context)
+        self._ctx = test_context
+        self._num_produces = 10 if self.scale.local else 1000
 
+    # is_valid_msg is called on every message the consumer reads
     def is_valid_msg(self, msg):
-        key = msg["key"]
-        return "region-1" in key or "region-2" in key or "region-3" in key
+        region = msg["key"]
+        population_size = int(msg["value"])
+
+        if region != "region-1" and region != "region-2" and region != "region-3":
+            return False
+
+        if population_size < 0 or population_size > self._num_produces:
+            return False
+
+        return True
+
+    @cluster(num_nodes=6)
+    def test_kafka_streams_user_region(self):
+        example_jar = KafkaStreamExamples.UserRegionExample(self.redpanda)
+        example = ExampleRunner(self._ctx, example_jar, timeout_sec=TIMEOUT)
+
+        producer = RegionProducer(self._ctx, self.redpanda,
+                                  self.topics[0].name, self._num_produces)
+
+        form = '\'%{"key":"%k", "value":"%v{unpack[>Q]}"%}\\n\''
+        consumer = RpkConsumer(self._ctx,
+                               self.redpanda,
+                               self.topics[1].name,
+                               formatter=form)
+
+        # Start the example
+        example.start()
+        example.wait()
+
+        # Produce some data
+        producer.start()
+        producer.wait()
+
+        # Consume the data
+        consumer.start()
+        # is_valid_msg is called on every message the consumer reads
+        consume(self._ctx,
+                consumer,
+                self.is_valid_msg,
+                num_msgs=producer.num_unique_regions)
+
+        consumer.stop()
+        producer.stop()
+        example.stop()
 
 
-class WordProducer(KafProducer):
-    def __init__(self, context, redpanda, topic):
-        super(WordProducer, self).__init__(context,
-                                           redpanda,
-                                           topic,
-                                           num_records=10)
+class PhraseProducer(KafProducer):
+    def __init__(self, context, redpanda, topic, num_produces):
+        super(PhraseProducer, self).__init__(context,
+                                             redpanda,
+                                             topic,
+                                             num_records=num_produces)
+
+        # Change this number if the number of
+        # total words represented in value_gen changes.
+        self.total_words = 6
 
     def value_gen(self):
-        return "\"redpanda is fast\""
+        # The below string is used num_produces times.
+        # Send "redpanda" 3 x num_produces times
+        # Send "is" 2 x num_produces times
+        # send "fast" num_produces times
+        return '"redpanda is fast\\nredpanda is\\nredpanda"'
 
 
-class KafkaStreamsWordCount(KafkaStreamsProdConsBase):
+class KafkaStreamsWordCount(RedpandaTest):
     """
     Test KafkaStreams WordCount example which does simple prod-cons with
     KStreams and computes a historgram for word occurence
@@ -331,20 +482,79 @@ class KafkaStreamsWordCount(KafkaStreamsProdConsBase):
         TopicSpec(name="streams-wordcount-output"),
     )
 
-    Example = KafkaStreamExamples.KafkaStreamsWordCount
-    PRODUCER = WordProducer
-
     def __init__(self, test_context):
-        super(KafkaStreamsWordCount, self).__init__(test_context=test_context,
-                                                    enable_pp=True,
-                                                    enable_sr=True)
+        super(KafkaStreamsWordCount, self).__init__(test_context=test_context)
+        self._ctx = test_context
+        self._num_produces = 10 if self.scale.local else 1000
 
+    # is_valid_msg is called on every message the consumer reads
     def is_valid_msg(self, msg):
-        key = msg["key"]
-        return "redpanda" in key
+        word = msg["key"]
+        count = int(msg["value"])
+
+        if word == "redpanda":
+            return 0 < count and count <= (self._num_produces * 3)
+        elif word == "is":
+            return 0 < count and count <= (self._num_produces * 2)
+        elif word == "fast":
+            return 0 < count and count <= self._num_produces
+        else:
+            return False
+
+    @cluster(num_nodes=6)
+    def test_kafka_streams_wordcount(self):
+        example_jar = KafkaStreamExamples.WordCountExample(self.redpanda)
+        example = ExampleRunner(self._ctx, example_jar, timeout_sec=TIMEOUT)
+
+        producer = PhraseProducer(self._ctx, self.redpanda,
+                                  self.topics[0].name, self._num_produces)
+
+        form = '\'%{"key":"%k", "value":"%v{unpack[>Q]}"%}\\n\''
+        consumer = RpkConsumer(self._ctx,
+                               self.redpanda,
+                               self.topics[1].name,
+                               formatter=form)
+
+        # Start the example
+        example.start()
+        example.wait()
+
+        # Produce some data
+        producer.start()
+        producer.wait()
+
+        # Consume the data
+        consumer.start()
+        # is_valid_msg is called on every message the consumer reads
+        consume(self._ctx,
+                consumer,
+                self.is_valid_msg,
+                num_msgs=(producer.total_words * self._num_produces))
+
+        consumer.stop()
+        producer.stop()
+        example.stop()
 
 
-class KafkaStreamsMapFunction(KafkaStreamsProdConsBase):
+class TextProducer(KafProducer):
+    def __init__(self, context, redpanda, topic, num_produces):
+        super(TextProducer, self).__init__(context,
+                                           redpanda,
+                                           topic,
+                                           num_records=num_produces)
+
+        self.choices = [
+            "redpanda is fast", "the fastest queue in the west",
+            "bring streams to redpanda"
+        ]
+
+    def value_gen(self):
+        # The below string is used num_produces times
+        choices_str = '\\n'.join(self.choices)
+        return f'"{choices_str}"'
+
+
+class KafkaStreamsMapFunction(RedpandaTest):
     """
     Test KafkaStreams MapFunction example which does .upper() as a state-less
     transform on records
@@ -356,15 +566,43 @@ class KafkaStreamsMapFunction(KafkaStreamsProdConsBase):
         TopicSpec(name="OriginalAndUppercasedTopic"),
     )
 
-    Example = KafkaStreamExamples.KafkaStreamsMapFunc
-    PRODUCER = WordProducer
-
     def __init__(self, test_context):
         super(KafkaStreamsMapFunction,
-              self).__init__(test_context=test_context,
-                             enable_pp=True,
-                             enable_sr=True)
+              self).__init__(test_context=test_context)
+        self._ctx = test_context
+        self._num_produces = 10 if self.scale.local else 1000
+        self._producer = TextProducer(self._ctx, self.redpanda,
+                                      self.topics[0].name, self._num_produces)
 
+    # is_valid_msg is called on every message the consumer reads
     def is_valid_msg(self, msg):
-        value = msg["value"]
-        return "REDPANDA IS FAST" in value
+        original = msg["key"]
+        upper = msg["value"]
+
+        return original in self._producer.choices and original == upper.lower()
+
+    @cluster(num_nodes=6)
+    def test_kafka_streams_map_function(self):
+        example_jar = KafkaStreamExamples.MapFuncExample(self.redpanda)
+        example = ExampleRunner(self._ctx, example_jar, timeout_sec=TIMEOUT)
+
+        consumer = RpkConsumer(self._ctx, self.redpanda, self.topics[2].name)
+
+        # Start the example
+        example.start()
+
+        # Produce some data
+        self._producer.start()
+        self._producer.wait()
+
+        # Consume the data
+        consumer.start()
+        # is_valid_msg is called on every message the consumer reads
+        consume(self._ctx,
+                consumer,
+                self.is_valid_msg,
+                num_msgs=(len(self._producer.choices) * self._num_produces))
+
+        consumer.stop()
+        self._producer.stop()
+        example.stop()
