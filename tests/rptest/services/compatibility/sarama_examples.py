@@ -23,15 +23,10 @@ class SaramaInterceptors:
         # The kafka topic
         self._topic = topic
 
-        self._condition_met = False
-
     # The internal condition to determine if the
     # example is successful. Returns boolean.
-   def condition(self, line):
-        self._condition_met = 'SpanContext' in line
-
-    def condition_met(self):
-        return self._condition_met
+    def condition(self, line):
+        return 'SpanContext' in line
 
     # Return the command to call in the shell
     def cmd(self, host):
@@ -49,16 +44,10 @@ class SaramaHttpServer:
     The helper class for Sarama's http server example
     """
     def __init__(self, redpanda):
-     self._redpanda = redpanda
-
-        # The result of the internal condiiton.
-        self._condition_met = False
+        self._redpanda = redpanda
 
     def condition(self, line):
-        self._condition_met = 'Listening for requests' in line
-
-    def condition_met(self):
-        return self._condition_met
+        return 'Listening for requests' in line
 
     # Return the command to call in the shell
     def cmd(self, host):
@@ -79,18 +68,12 @@ class SaramaConsumerGroup:
         self._redpanda = redpanda
 
         self._topic = topic
-        
-        self._count = count
 
-        # The result of the internal condiiton.
-        self._condition_met = False
+        self._count = count
 
     def condition(self, line):
         self._count -= 'Message claimed:' in line
-        self._condition_met = self._count <= 0
-
-    def condition_met(self):
-        return self._condition_met
+        return self._count <= 0
 
     # Return the command to call in the shell
     def cmd(self, host):

@@ -31,20 +31,13 @@ class FranzGoBench:
 
         self._enable_sasl = enable_sasl
 
-        # The internal condition is defined in the children.
-        self._condition_met = False
-
     # Calls the internal condition and
     # automatically stores the result
     def condition(self, line):
         # Multiply by 1k because the number of recs
         # is formated as XXX.XXk records/s
         self._recs += float(line.split()[2][:-1]) * 1000
-        self._condition_met = self._recs >= self._max_records
-
-    # Was the internal condition met?
-    def condition_met(self):
-        return self._condition_met
+        return self._recs >= self._max_records
 
     # Return the process name to kill
     def process_to_kill(self):

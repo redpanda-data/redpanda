@@ -27,6 +27,8 @@ class ExampleRunner(BackgroundThreadService):
 
         self._node = None
 
+        self._condition_met = False
+
     def _worker(self, idx, node):
         self._node = node
 
@@ -35,8 +37,8 @@ class ExampleRunner(BackgroundThreadService):
         # Run the example until the condition is met or timeout occurs
         cmd = "echo $$ ; " + self._example.cmd(node.name)
         output_iter = node.account.ssh_capture(cmd)
-        while not self._example.condition_met(
-        ) and time.time() < start_time + self._timeout:
+        while not self._condition_met and time.time(
+        ) < start_time + self._timeout:
             line = next(output_iter)
             line = line.strip()
             self.logger.debug(line)
@@ -47,7 +49,7 @@ class ExampleRunner(BackgroundThreadService):
             else:
                 # Call to example.condition will automatically
                 # store result in a boolean variable
-                self._example.condition(line)
+                self._condition_met = self._example.condition(line)
 
     @property
     def node(self):
