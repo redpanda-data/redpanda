@@ -88,12 +88,10 @@ func NewHostClient(
 }
 
 func NewAdminAPI(urls []string, tlsConfig *tls.Config) (*AdminAPI, error) {
-	return newAdminAPI(urls, tlsConfig, true)
+	return newAdminAPI(urls, tlsConfig)
 }
 
-func newAdminAPI(
-	urls []string, tlsConfig *tls.Config, tryToMapBrokerIDstoHosts bool,
-) (*AdminAPI, error) {
+func newAdminAPI(urls []string, tlsConfig *tls.Config) (*AdminAPI, error) {
 	if len(urls) == 0 {
 		return nil, errors.New("at least one url is required for the admin api")
 	}
@@ -153,15 +151,11 @@ func newAdminAPI(
 		a.urls[i] = fmt.Sprintf("%s://%s", scheme, host)
 	}
 
-	if tryToMapBrokerIDstoHosts {
-		a.mapBrokerIDsToURLs()
-	}
-
 	return a, nil
 }
 
 func (a *AdminAPI) newAdminForSingleHost(host string) (*AdminAPI, error) {
-	return newAdminAPI([]string{host}, a.tlsConfig, false)
+	return newAdminAPI([]string{host}, a.tlsConfig)
 }
 
 func (a *AdminAPI) urlsWithPath(path string) []string {
