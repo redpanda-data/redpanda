@@ -25,7 +25,7 @@ type Config map[string]interface{}
 // multiple URLs are configured.
 func (a *AdminAPI) Config() (Config, error) {
 	var rawResp []byte
-	err := a.sendOne(http.MethodGet, "/v1/config", nil, &rawResp, false)
+	err := a.sendAny(http.MethodGet, "/v1/config", nil, &rawResp)
 	if err != nil {
 		return nil, err
 	}
