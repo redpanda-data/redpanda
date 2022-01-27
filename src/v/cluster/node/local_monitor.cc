@@ -40,7 +40,7 @@ ss::future<> local_monitor::update_state() {
     co_return;
 }
 
-const local_state& local_monitor::get_state_cached() { return _state; }
+const local_state& local_monitor::get_state_cached() const { return _state; }
 
 ss::future<std::vector<disk>> local_monitor::get_disks() {
     auto svfs = co_await ss::engine().statvfs(

@@ -25,7 +25,7 @@ public:
     local_monitor& operator=(local_monitor&&) = default;
 
     ss::future<> update_state();
-    const local_state& get_state_cached();
+    const local_state& get_state_cached() const;
 
 private:
     static ss::future<std::vector<disk>> get_disks();
