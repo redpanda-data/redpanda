@@ -385,7 +385,7 @@ health_monitor_backend::get_current_cluster_health_snapshot(
 void health_monitor_backend::tick() {
     ssx::spawn_with_gate(_gate, [this]() -> ss::future<> {
         co_await _local_monitor.update_state();
-        co_return co_await tick_cluster_health();
+        co_await tick_cluster_health();
     });
 }
 
