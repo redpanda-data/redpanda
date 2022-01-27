@@ -126,13 +126,23 @@ configuration::configuration()
       "topic_memory_per_partition",
       "Required memory per partition when creating topics",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      1_MiB)
+      1_MiB,
+      {
+        .min = 1,      // Must be nonzero, it's a divisor
+        .max = 100_MiB // Rough 'sanity' limit: a machine with 1GB RAM must be
+                       // able to create at least 10 partitions})
+      })
   , topic_fds_per_partition(
       *this,
       "topic_fds_per_partition",
       "Required file handles per partition when creating topics",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      10)
+      10,
+      {
+        .min = 1,   // At least one FD per partition, required for appender.
+        .max = 1000 // A system with 1M ulimit should be allowed to create at
+                    // least 1000 partitions
+      })
   , seed_server_meta_topic_partitions(
       *this, "seed_server_meta_topic_partitions")
   , raft_heartbeat_interval_ms(

@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "config/bounded_property.h"
 #include "config/broker_endpoint.h"
 #include "config/config_store.h"
 #include "config/convert.h"
@@ -56,8 +57,8 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> coproc_offset_flush_interval_ms;
 
     // Controller
-    property<std::optional<std::size_t>> topic_memory_per_partition;
-    property<std::optional<int32_t>> topic_fds_per_partition;
+    bounded_property<std::optional<std::size_t>> topic_memory_per_partition;
+    bounded_property<std::optional<int32_t>> topic_fds_per_partition;
 
     // Raft
     deprecated_property seed_server_meta_topic_partitions;
