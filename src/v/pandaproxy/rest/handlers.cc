@@ -215,18 +215,15 @@ post_topics_name(server::request_t rq, server::reply_t rp) {
     co_return rp;
 }
 
-static ss::sstring make_consumer_uri(
-  const server::request_t& request,
-  const kafka::member_id& m_id,
-  const kafka::group_id& group_id) {
+static ss::sstring make_consumer_uri_base(
+  const server::request_t& request, const kafka::group_id& group_id) {
     auto& addr = request.ctx.advertised_listeners[request.req->listener_idx];
     return ssx::sformat(
-      "{}://{}:{}/consumers/{}/instances/{}",
+      "{}://{}:{}/consumers/{}/instances/",
       request.req->get_protocol_name(),
       addr.host(),
       addr.port(),
-      group_id(),
-      m_id());
+      group_id());
 }
 
 ss::future<server::reply_t>
@@ -256,18 +253,19 @@ create_consumer(server::request_t rq, server::reply_t rp) {
           parse::error_code::invalid_param, "auto.commit must be false");
     }
 
+    auto base_uri = make_consumer_uri_base(rq, group_id);
     auto group_shard{consumer_shard(group_id)};
     auto handler =
       [_group_id{std::move(group_id)},
+       _base_uri{std::move(base_uri)},
        _res_fmt{res_fmt},
        _req_data{std::move(req_data)},
-       _rq{std::move(rq)},
        _rp{std::move(rp)}](
         kafka::client::client& client) mutable -> ss::future<server::reply_t> {
         auto group_id{std::move(_group_id)};
+        auto base_uri{std::move(_base_uri)};
         auto res_fmt{_res_fmt};
         auto req_data{std::move(_req_data)};
-        auto rq{std::move(_rq)};
         auto rp{std::move(_rp)};
 
         vlog(
@@ -292,8 +290,7 @@ create_consumer(server::request_t rq, server::reply_t rp) {
         }
         auto name = co_await client.create_consumer(group_id, req_data.name);
         json::create_consumer_response res{
-          .instance_id = name,
-          .base_uri = make_consumer_uri(rq, name, group_id)};
+          .instance_id = name, .base_uri = base_uri + name};
         auto json_rslt = ppj::rjson_serialize(res);
         rp.rep->write_body("json", json_rslt);
         rp.mime_type = res_fmt;
@@ -363,14 +360,12 @@ subscribe_consumer(server::request_t rq, server::reply_t rp) {
        _member_id{std::move(member_id)},
        _res_fmt{res_fmt},
        _req_data{std::move(req_data)},
-       _rq{std::move(rq)},
        _rp{std::move(rp)}](
         kafka::client::client& client) mutable -> ss::future<server::reply_t> {
         auto group_id{std::move(_group_id)};
         auto member_id{std::move(_member_id)};
         auto res_fmt{_res_fmt};
         auto req_data{std::move(_req_data)};
-        auto rq{std::move(_rq)};
         auto rp{std::move(_rp)};
         vlog(
           plog.debug,
@@ -414,7 +409,6 @@ consumer_fetch(server::request_t rq, server::reply_t rp) {
        _timeout{timeout},
        _max_bytes{max_bytes},
        _res_fmt{res_fmt},
-       _rq{std::move(rq)},
        _rp{std::move(rp)}](
         kafka::client::client& client) mutable -> ss::future<server::reply_t> {
         auto group_id{std::move(_group_id)};
@@ -422,7 +416,6 @@ consumer_fetch(server::request_t rq, server::reply_t rp) {
         auto timeout{_timeout};
         auto max_bytes{_max_bytes};
         auto res_fmt{_res_fmt};
-        auto rq{std::move(_rq)};
         auto rp{std::move(_rp)};
         vlog(
           plog.debug,
@@ -469,14 +462,12 @@ get_consumer_offsets(server::request_t rq, server::reply_t rp) {
        _member_id{std::move(member_id)},
        _res_fmt{res_fmt},
        _req_data{std::move(req_data)},
-       _rq{std::move(rq)},
        _rp{std::move(rp)}](
         kafka::client::client& client) mutable -> ss::future<server::reply_t> {
         auto group_id{std::move(_group_id)};
         auto member_id{std::move(_member_id)};
         auto res_fmt{_res_fmt};
         auto req_data{std::move(_req_data)};
-        auto rq{std::move(_rq)};
         auto rp{std::move(_rp)};
         vlog(
           plog.debug,
@@ -523,13 +514,11 @@ post_consumer_offsets(server::request_t rq, server::reply_t rp) {
       [_group_id{std::move(group_id)},
        _member_id{std::move(member_id)},
        _req_data{std::move(req_data)},
-       _rq{std::move(rq)},
        _rp{std::move(rp)}](
         kafka::client::client& client) mutable -> ss::future<server::reply_t> {
         auto group_id{std::move(_group_id)};
         auto member_id{std::move(_member_id)};
         auto req_data{std::move(_req_data)};
-        auto rq{std::move(_rq)};
         auto rp{std::move(_rp)};
         vlog(
           plog.debug,
