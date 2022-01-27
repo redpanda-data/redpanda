@@ -454,6 +454,25 @@ apply_local(cluster_config_delta_cmd_data const& data, bool silent) {
               u.first,
               property.format_raw(val_yaml));
 
+            auto validation_err = property.validate(val);
+            if (validation_err.has_value()) {
+                if (!silent) {
+                    vlog(
+                      clusterlog.warn,
+                      "Invalid property value {}: {} ({})",
+                      u.first,
+                      val_yaml,
+                      validation_err.value().error_message());
+                }
+                result.invalid.push_back(u.first);
+
+                // We still proceed to set_value after failing validation.
+                // The property class is responsible for clamping or rejecting
+                // invalid values as needed, thereby handling invalid values
+                // that might have been set forcefully or be stored on disk from
+                // earlier redpanda versions with weaker validation.
+            }
+
             bool changed = property.set_value(val);
             result.restart |= (property.needs_restart() && changed);
         } catch (YAML::ParserException) {
