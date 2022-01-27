@@ -135,6 +135,18 @@ public:
         return update_value(std::move(n.as<T>()));
     }
 
+    std::optional<validation_error> validate(T const& v) const {
+        if (auto err = _validator(v); err) {
+            return std::make_optional<validation_error>(name().data(), *err);
+        }
+        return std::nullopt;
+    }
+
+    std::optional<validation_error> validate(YAML::Node n) const override {
+        auto v = std::move(n.as<T>());
+        return validate(v);
+    }
+
     void reset() override { _value = default_value(); }
 
     property<T>& operator()(T v) {
@@ -435,6 +447,22 @@ public:
     using property<std::vector<T>>::property;
 
     bool set_value(YAML::Node n) override {
+        auto value = decode_yaml(std::move(n));
+        return property<std::vector<T>>::update_value(std::move(value));
+    }
+
+    std::optional<validation_error>
+    validate([[maybe_unused]] YAML::Node n) const override {
+        std::vector<T> value = decode_yaml(std::move(n));
+        return property<std::vector<T>>::validate(value);
+    }
+
+private:
+    /**
+     * Given either a single value or a list of values, return
+     * a list of decoded values.
+     */
+    std::vector<T> decode_yaml(const YAML::Node& n) const {
         std::vector<T> value;
         if (n.IsSequence()) {
             for (auto elem : n) {
@@ -443,7 +471,7 @@ public:
         } else {
             value.push_back(std::move(n.as<T>()));
         }
-        return property<std::vector<T>>::update_value(std::move(value));
+        return value;
     }
 };
 

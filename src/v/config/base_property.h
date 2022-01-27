@@ -107,6 +107,12 @@ public:
     std::optional<std::string_view> example() const { return _meta.example; }
 
     virtual std::optional<validation_error> validate() const = 0;
+
+    /**
+     * Validation of a proposed new value before it has been assigned
+     * to this property.
+     */
+    virtual std::optional<validation_error> validate(YAML::Node) const = 0;
     virtual base_property& operator=(const base_property&) = 0;
     virtual ~base_property() noexcept = default;
 
