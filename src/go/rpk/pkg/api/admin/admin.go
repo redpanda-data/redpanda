@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-multierror"
+	"github.com/sethgrid/pester"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
@@ -40,7 +41,7 @@ type AdminAPI struct {
 	urls                []string
 	brokerIdToUrlsMutex sync.Mutex
 	brokerIdToUrls      map[int]string
-	client              *http.Client
+	client              *pester.Client
 	tlsConfig           *tls.Config
 }
 
@@ -97,9 +98,36 @@ func newAdminAPI(
 		return nil, errors.New("at least one url is required for the admin api")
 	}
 
+	// In situations where a request can't be executed immediately (e.g. no
+	// controller leader) the admin API does not block, it returns 503.
+	// Use a retrying HTTP client to handle that gracefully.
+	client := pester.New()
+
+	// Backoff is the default redpanda raft election timeout: this enables us
+	// to cleanly retry on 503s due to leadership changes in progress.
+	client.Backoff = func(retry int) time.Duration {
+		maxJitter := 100
+		delay := time.Duration(2500 + rng(maxJitter))
+		return delay * time.Millisecond
+	}
+
+	// This happens to be the same as the pester default, but make it explicit:
+	// a raft election on a 3 node group might take 3x longer if it has
+	// to repeat until the lowest-priority voter wins.
+	client.MaxRetries = 3
+
+	client.LogHook = func(e pester.ErrEntry) {
+		// Only log from here when retrying: a final error propagates to caller
+		if e.Retry <= client.MaxRetries {
+			log.Infof("Retrying %s for error: %s", e.Verb, e.Err)
+		}
+	}
+
+	client.Timeout = 10 * time.Second
+
 	a := &AdminAPI{
 		urls:           make([]string, len(urls)),
-		client:         &http.Client{Timeout: 10 * time.Second},
+		client:         client,
 		tlsConfig:      tlsConfig,
 		brokerIdToUrls: make(map[int]string),
 	}
