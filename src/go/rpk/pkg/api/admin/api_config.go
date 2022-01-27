@@ -25,7 +25,7 @@ type Config map[string]interface{}
 // multiple URLs are configured.
 func (a *AdminAPI) Config() (Config, error) {
 	var rawResp []byte
-	err := a.sendOne(http.MethodGet, "/v1/config", nil, &rawResp)
+	err := a.sendOne(http.MethodGet, "/v1/config", nil, &rawResp, false)
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +57,7 @@ func (a *AdminAPI) SetLogLevel(name, level string, expirySeconds int) error {
 	}
 
 	path := fmt.Sprintf("/v1/config/log_level/%s?level=%s&expires=%d", url.PathEscape(name), level, expirySeconds)
-	return a.sendOne(http.MethodPut, path, nil, nil)
+	return a.sendOne(http.MethodPut, path, nil, nil, false)
 }
 
 type ConfigPropertyItems struct {

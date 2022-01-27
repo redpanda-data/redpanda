@@ -41,7 +41,8 @@ type AdminAPI struct {
 	urls                []string
 	brokerIdToUrlsMutex sync.Mutex
 	brokerIdToUrls      map[int]string
-	client              *pester.Client
+	retryClient         *pester.Client
+	oneshotClient       *http.Client
 	tlsConfig           *tls.Config
 }
 
@@ -125,12 +126,14 @@ func newAdminAPI(urls []string, tlsConfig *tls.Config) (*AdminAPI, error) {
 
 	a := &AdminAPI{
 		urls:           make([]string, len(urls)),
-		client:         client,
+		retryClient:    client,
+		oneshotClient:  &http.Client{Timeout: 10 * time.Second},
 		tlsConfig:      tlsConfig,
 		brokerIdToUrls: make(map[int]string),
 	}
 	if tlsConfig != nil {
-		a.client.Transport = &http.Transport{TLSClientConfig: tlsConfig}
+		a.retryClient.Transport = &http.Transport{TLSClientConfig: tlsConfig}
+		a.oneshotClient.Transport = &http.Transport{TLSClientConfig: tlsConfig}
 	}
 
 	for i, u := range urls {
@@ -210,7 +213,7 @@ func (a *AdminAPI) GetLeaderID() (*int, error) {
 func (a *AdminAPI) sendAny(method, path string, body, into interface{}) error {
 	pick := rng(len(a.urls))
 	url := a.urls[pick] + path
-	res, err := a.sendAndReceive(context.Background(), method, url, body)
+	res, err := a.sendAndReceive(context.Background(), method, url, body, true)
 	if err != nil {
 		return err
 	}
@@ -224,7 +227,7 @@ func (a *AdminAPI) sendToLeader(
 ) error {
 	// If there's only one broker, let's just send the request to it
 	if len(a.urls) == 1 {
-		return a.sendOne(method, path, body, into)
+		return a.sendOne(method, path, body, into, true)
 	}
 	leaderID, err := a.GetLeaderID()
 	if err != nil {
@@ -239,7 +242,7 @@ func (a *AdminAPI) sendToLeader(
 	if err != nil {
 		return err
 	}
-	return aLeader.sendOne(method, path, body, into)
+	return aLeader.sendOne(method, path, body, into, true)
 }
 
 func (a *AdminAPI) brokerIDToURL(brokerID int) (string, error) {
@@ -263,13 +266,19 @@ func (a *AdminAPI) getURLFromBrokerID(brokerID int) (string, bool) {
 }
 
 // sendOne sends a request with sendAndReceive and unmarshals the body into
-// into, which is expected to be a pointer to a struct.
-func (a *AdminAPI) sendOne(method, path string, body, into interface{}) error {
+// into, which is expected to be a pointer to a struct
+//
+// Set `retryable` to true if the API endpoint might have transient errors, such
+// as temporarily having no leader for a raft group.  Set it to false if the endpoint
+// should always work while the node is up, e.g. GETs of node-local state.
+func (a *AdminAPI) sendOne(
+	method, path string, body, into interface{}, retryable bool,
+) error {
 	if len(a.urls) != 1 {
 		return fmt.Errorf("unable to issue a single-admin-endpoint request to %d admin endpoints", len(a.urls))
 	}
 	url := a.urls[0] + path
-	res, err := a.sendAndReceive(context.Background(), method, url, body)
+	res, err := a.sendAndReceive(context.Background(), method, url, body, retryable)
 	if err != nil {
 		return err
 	}
@@ -316,7 +325,7 @@ func (a *AdminAPI) sendAll(method, path string, body, into interface{}) error {
 		except := i
 		cancels = append(cancels, cancel)
 		grp.Go(func() error {
-			myRes, err := a.sendAndReceive(ctx, method, myURL, body)
+			myRes, err := a.sendAndReceive(ctx, method, myURL, body, false)
 			if err != nil {
 				return err
 			}
@@ -385,7 +394,7 @@ func maybeUnmarshalRespInto(
 // sendAndReceive sends a request and returns the response. If body is
 // non-nil, this json encodes the body and sends it with the request.
 func (a *AdminAPI) sendAndReceive(
-	ctx context.Context, method, url string, body interface{},
+	ctx context.Context, method, url string, body interface{}, retryable bool,
 ) (*http.Response, error) {
 	var r io.Reader
 	if body != nil {
@@ -405,7 +414,14 @@ func (a *AdminAPI) sendAndReceive(
 	req.Header.Set("Content-Type", applicationJson)
 	req.Header.Set("Accept", applicationJson)
 
-	res, err := a.client.Do(req)
+	// Issue request to the appropriate client, depending on retry behaviour
+	var res *http.Response
+	if retryable {
+		res, err = a.retryClient.Do(req)
+	} else {
+		res, err = a.oneshotClient.Do(req)
+	}
+
 	if err != nil {
 		// When the server expects a TLS connection, but the TLS config isn't
 		// set/ passed, The client returns an error like
