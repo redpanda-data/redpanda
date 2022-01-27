@@ -20,6 +20,7 @@ ENV TZ="UTC" \
 # Install dependencies of Java client builds.
 RUN apt update && \
     apt install -y \
+      curl \
       build-essential \
       default-jdk \
       git \
@@ -29,8 +30,10 @@ RUN apt update && \
 # Install kafka streams examples.  This is a very slow step (tens of minutes), doing
 # many maven dependency downloads without any parallelism.  To avoid re-running it
 # on unrelated changes in other steps, this step is as early on the Dockerfile as possible.
-RUN git -C /opt clone --branch ducktape2 https://github.com/redpanda-data/kafka-streams-examples.git && \
-    cd /opt/kafka-streams-examples && mvn -DskipTests=true clean package
+RUN git -C /opt clone --branch ducktape2 https://github.com/vectorizedio/kafka-streams-examples.git && \
+    cd /opt/kafka-streams-examples && mvn -DskipTests=true clean package && \
+    curl -SL https://packages.confluent.io/archive/6.2/confluent-community-6.2.1.tar.gz -o /opt/confluent-6.2.1.tar.gz && \
+    cd /opt && tar xf confluent-6.2.1.tar.gz
 
 # Install our in-tree Java test clientst
 RUN mkdir -p /opt/redpanda-tests
@@ -48,7 +51,6 @@ RUN apt update && \
       bind9-utils \
       bind9-dnsutils \
       bsdmainutils \
-      curl \
       dmidecode \
       cmake \
       iproute2 \
