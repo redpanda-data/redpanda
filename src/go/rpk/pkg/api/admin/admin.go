@@ -210,14 +210,39 @@ func (a *AdminAPI) GetLeaderID() (*int, error) {
 
 // sendAny sends a single request to one of the client's urls and unmarshals
 // the body into into, which is expected to be a pointer to a struct.
+//
+// On errors, this function will keep trying all the nodes we know about until
+// one of them succeeds, or we run out of nodes.  In the latter case, we will return
+// the error from the last node we tried.
 func (a *AdminAPI) sendAny(method, path string, body, into interface{}) error {
-	pick := rng(len(a.urls))
-	url := a.urls[pick] + path
-	res, err := a.sendAndReceive(context.Background(), method, url, body, true)
-	if err != nil {
-		return err
+	// Shuffle the list of URLs
+	shuffled := make([]string, len(a.urls))
+	copy(shuffled, a.urls)
+	rand.Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
+
+	var err error
+	for i := range shuffled {
+		url := shuffled[i] + path
+
+		// If err is set, we are retrying after a failure on the previous node
+		if err != nil {
+			log.Infof("Request error, trying another node: %s", err.Error())
+		}
+
+		// Where there are multiple nodes, disable the HTTP request retry in favour of our
+		// own retry across the available nodes
+		retryable := len(shuffled) == 1
+
+		var res *http.Response
+		res, err = a.sendAndReceive(context.Background(), method, url, body, retryable)
+		if err == nil {
+			// Success, return the result from this node.
+			return maybeUnmarshalRespInto(method, url, res, into)
+		}
 	}
-	return maybeUnmarshalRespInto(method, url, res, into)
+
+	// Fall through: all nodes failed.
+	return err
 }
 
 // sendToLeader sends a single request to the leader of the Admin API for Redpanda >= 21.11.1
