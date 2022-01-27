@@ -961,3 +961,31 @@ FIXTURE_TEST(
     }
     BOOST_REQUIRE_EQUAL(headers_read.size(), num_data_batches);
 }
+
+SEASTAR_THREAD_TEST_CASE(test_btree_iterator_range_scan) {
+    using map_t = absl::btree_map<int, int>;
+    using iter_t = cloud_storage::details::btree_map_stable_iterator<int, int>;
+    static constexpr int N = 1000;
+    static constexpr int M = 500;
+    map_t map;
+    for (int i = 0; i < N; i++) {
+        map[i] = i * 2;
+    }
+    iter_t begin(map, 0);
+    iter_t end(map);
+    int cnt = 0;
+    for (auto i = begin; i != end; i++) {
+        BOOST_REQUIRE_EQUAL(i->first, cnt);
+        BOOST_REQUIRE_EQUAL(i->second, 2 * cnt);
+        cnt++;
+    }
+
+    cnt = M;
+    for (auto i = iter_t(map, M); i != end; i++) {
+        BOOST_REQUIRE_EQUAL(i->first, cnt);
+        BOOST_REQUIRE_EQUAL(i->second, 2 * cnt);
+        cnt++;
+    }
+
+    auto it = iter_t(map);
+}

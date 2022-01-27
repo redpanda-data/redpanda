@@ -28,9 +28,106 @@
 #include <seastar/core/weak_ptr.hh>
 #include <seastar/util/noncopyable_function.hh>
 
+#include <boost/iterator/iterator_categories.hpp>
+#include <boost/iterator/iterator_facade.hpp>
+
+#include <chrono>
+#include <functional>
+
 namespace cloud_storage {
 
 class partition_record_batch_reader_impl;
+
+namespace details {
+
+/// Iterator adapter for absl::btree_map that privides
+/// iterator stability guarantee by caching the key and
+/// doing a lookup on every increment.
+/// This turns iterator increment into O(logN) operation
+/// but this is OK since the underlying btree_map has high
+/// fan-out ratio so the logarithm base is relatively large.
+template<class TKey, class TVal>
+class btree_map_stable_iterator
+  : public boost::iterator_facade<
+      btree_map_stable_iterator<TKey, TVal>,
+      typename absl::btree_map<TKey, TVal>::value_type,
+      boost::bidirectional_traversal_tag> {
+    using map_t = absl::btree_map<TKey, TVal>;
+    using self_t = btree_map_stable_iterator<TKey, TVal>;
+    using value_t = typename map_t::value_type;
+
+public:
+    /// Creates an iterator that points to the end of the sequence
+    explicit btree_map_stable_iterator(map_t& map)
+      : _key(std::nullopt)
+      , _map(std::ref(map)) {}
+
+    /// Create an iterator that points to the arbitrary element
+    explicit btree_map_stable_iterator(map_t& map, TKey o)
+      : _key(std::nullopt)
+      , _map(std::ref(map)) {
+        // Invariant: the iterator is pointing to end (_map is null) or
+        // _key is initialized using correct value.
+        if (map.empty()) {
+            set_end();
+        }
+        if (auto it = _map.get().find(o); it != _map.get().end()) {
+            _key = it->first;
+        } else {
+            // Same behaviour as map::find, if key can't be found setup
+            // iterator to point to end of key sequence.
+            set_end();
+        }
+    }
+
+private:
+    friend class boost::iterator_core_access;
+
+    // Increment iterator if possible.
+    // The _key will be set to next element key or nullopt.
+    void increment() {
+        vassert(
+          _key.has_value(), "btree_map_stable_iterator can't be incremented");
+        auto it = _map.get().find(*_key);
+        ++it;
+        if (it == _map.get().end()) {
+            set_end();
+        } else {
+            _key = it->first;
+        }
+    }
+
+    // Decrement iterator if possible.
+    // The _key will be set to prev element key.
+    void decrement() {
+        auto it = _key ? _map.get().find(*_key) : _map.get().end();
+        vassert(
+          it != _map.get().begin(),
+          "btree_map_stable_iterator can't be decremented");
+        --it;
+        _key = it->first;
+    }
+
+    bool equal(const self_t& other) const { return _key == other._key; }
+
+    value_t& dereference() const {
+        vassert(
+          _key.has_value(),
+          "btree_map_stable_iterator doesn't point to an element and can't be "
+          "dereferenced");
+        auto it = _map.get().find(*_key);
+        return *it;
+    }
+
+    void set_end() { _key = std::nullopt; }
+
+    /// Key of the current element, nullopt is iter == end
+    std::optional<TKey> _key;
+    /// Reference to the container
+    std::reference_wrapper<map_t> _map;
+};
+
+} // namespace details
 
 /// Remote partition manintains list of remote segments
 /// and list of active readers. Only one reader can be
@@ -155,6 +252,9 @@ private:
       sizeof(segment_state) == sizeof(std::variant<size_t>),
       "segment_state has unexpected size");
 
+    using iterator
+      = details::btree_map_stable_iterator<model::offset, segment_state>;
+
     /// Materialize segment if needed and create a reader
     ///
     /// \param config is a reader config
@@ -180,7 +280,12 @@ private:
         _cvar.signal();
     }
 
-    using segment_map_t = std::map<model::offset, segment_state>;
+    /// Iterators used by the partition_record_batch_reader_impl class
+    iterator begin();
+    iterator end();
+    iterator upper_bound(model::offset);
+
+    using segment_map_t = absl::btree_map<model::offset, segment_state>;
 
     using evicted_resource_t = std::variant<
       std::unique_ptr<remote_segment_batch_reader>,
