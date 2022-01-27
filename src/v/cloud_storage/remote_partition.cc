@@ -59,8 +59,8 @@ public:
       : _ctxlog(cst_log, _rtc, part->get_ntp().path())
       , _partition(std::move(part))
       , _ot_state(std::move(ot_state))
-      , _it(_partition->_segments.begin())
-      , _end(_partition->_segments.end()) {
+      , _it(_partition->begin())
+      , _end(_partition->end()) {
         if (config.abort_source) {
             vlog(_ctxlog.debug, "abort_source is set");
             auto sub = config.abort_source->get().subscribe([this]() noexcept {
@@ -205,7 +205,7 @@ private:
 
     struct cache_reader_lookup_result {
         std::unique_ptr<remote_segment_batch_reader> reader;
-        remote_partition::segment_map_t::iterator iter;
+        remote_partition::iterator iter;
     };
 
     std::optional<cache_reader_lookup_result>
@@ -213,8 +213,8 @@ private:
         if (!_partition || _partition->_segments.empty()) {
             return std::nullopt;
         }
-        auto it = _partition->_segments.upper_bound(config.start_offset);
-        if (it != _partition->_segments.begin()) {
+        auto it = _partition->upper_bound(config.start_offset);
+        if (it != _partition->begin()) {
             it = std::prev(it);
         }
         auto reader = _partition->borrow_reader(config, it->first, it->second);
@@ -299,7 +299,7 @@ private:
     /// the 'remote_partition'
     ss::future<> set_end_of_stream() {
         co_await _reader->stop();
-        _it = _partition->_segments.end();
+        _it = _partition->end();
         _reader = {};
     }
 
@@ -309,8 +309,8 @@ private:
     ss::lw_shared_ptr<remote_partition> _partition;
     ss::lw_shared_ptr<storage::offset_translator_state> _ot_state;
     /// Currently accessed segment
-    remote_partition::segment_map_t::iterator _it;
-    remote_partition::segment_map_t::iterator _end;
+    remote_partition::iterator _it;
+    remote_partition::iterator _end;
     /// Reader state that was borrowed from the materialized_segment_state
     std::unique_ptr<remote_segment_batch_reader> _reader;
     /// Cancelation subscription
@@ -570,7 +570,7 @@ ss::future<storage::translating_reader> remote_partition::make_reader(
       "remote partition make_reader invoked, config: {}, num segments {}",
       config,
       _segments.size());
-    if (_segments.size() < _manifest.size()) {
+    if (_segments.size() < static_cast<ssize_t>(_manifest.size())) {
         update_segments_incrementally();
     }
     auto ot_state = ss::make_lw_shared<storage::offset_translator_state>(
@@ -657,6 +657,26 @@ remote_partition::materialized_segment_state::offload(
     }
     partition->evict_segment(std::move(segment));
     return offloaded_segment_state(base_rp_offset);
+}
+
+remote_partition::iterator remote_partition::begin() {
+    if (_segments.empty()) {
+        return end();
+    }
+    auto it = _segments.begin();
+    return iterator(_segments, it->first);
+}
+
+remote_partition::iterator remote_partition::end() {
+    return iterator(_segments);
+}
+
+remote_partition::iterator remote_partition::upper_bound(model::offset o) {
+    auto it = _segments.upper_bound(o);
+    if (it != _segments.end()) {
+        return iterator(_segments, it->first);
+    }
+    return end();
 }
 
 } // namespace cloud_storage
