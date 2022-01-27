@@ -971,6 +971,25 @@ parse_scram_credential(const rapidjson::Document& doc) {
     return credential;
 }
 
+static bool match_scram_credential(
+  const rapidjson::Document& doc, const security::scram_credential& creds) {
+    // Document is pre-validated via earlier parse_scram_credential call
+    const auto password = ss::sstring(doc["password"].GetString());
+    const auto algorithm = std::string_view(
+      doc["algorithm"].GetString(), doc["algorithm"].GetStringLength());
+
+    if (algorithm == security::scram_sha256_authenticator::name) {
+        return security::scram_sha256::validate_password(
+          password, creds.stored_key(), creds.salt(), creds.iterations());
+    } else if (algorithm == security::scram_sha512_authenticator::name) {
+        return security::scram_sha512::validate_password(
+          password, creds.stored_key(), creds.salt(), creds.iterations());
+    } else {
+        throw ss::httpd::bad_request_exception(
+          fmt::format("Unknown scram algorithm: {}", algorithm));
+    }
+}
+
 void admin_server::register_security_routes() {
     ss::httpd::security_json::create_user.set(
       _server._routes,
@@ -991,7 +1010,27 @@ void admin_server::register_security_routes() {
           auto err
             = co_await _controller->get_security_frontend().local().create_user(
               username, credential, model::timeout_clock::now() + 5s);
-          vlog(logger.debug, "Creating user {}:{}", err, err.message());
+          vlog(
+            logger.debug,
+            "Creating user '{}' {}:{}",
+            username,
+            err,
+            err.message());
+
+          if (err == cluster::errc::user_exists) {
+              // Idempotency: if user is same as one that already exists,
+              // suppress the user_exists error and return success.
+              const auto& credentials_store
+                = _controller->get_credential_store().local();
+              std::optional<security::scram_credential> creds
+                = credentials_store.get<security::scram_credential>(username);
+              if (
+                creds.has_value()
+                && match_scram_credential(doc, creds.value())) {
+                  co_return ss::json::json_return_type(ss::json::json_void());
+              }
+          }
+
           co_await throw_on_error(*req, err, model::controller_ntp);
           co_return ss::json::json_return_type(ss::json::json_void());
       });
@@ -1005,7 +1044,12 @@ void admin_server::register_security_routes() {
           auto err
             = co_await _controller->get_security_frontend().local().delete_user(
               user, model::timeout_clock::now() + 5s);
-          vlog(logger.debug, "Deleting user {}:{}", err, err.message());
+          vlog(
+            logger.debug, "Deleting user '{}' {}:{}", user, err, err.message());
+          if (err == cluster::errc::user_does_not_exist) {
+              // Idempotency: removing a non-existent user is successful.
+              co_return ss::json::json_return_type(ss::json::json_void());
+          }
           co_await throw_on_error(*req, err, model::controller_ntp);
           co_return ss::json::json_return_type(ss::json::json_void());
       });

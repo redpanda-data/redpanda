@@ -50,7 +50,7 @@ public:
     }
 
     template<typename T>
-    auto get(const credential_user& name) -> std::optional<T> const {
+    auto get(const credential_user& name) const -> std::optional<T> const {
         if (auto it = _credentials.find(name); it != _credentials.end()) {
             return std::get<T>(it->second);
         }
