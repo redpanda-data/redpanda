@@ -141,6 +141,10 @@ public:
      */
     const ntp_table_container& partitions() const { return _ntp_table; }
 
+    ss::sharded<cluster::tx_gateway_frontend>& get_tx_frontend() {
+        return _tx_gateway_frontend;
+    }
+
 private:
     /// Download log if partition_recovery_manager is initialized.
     ///
