@@ -204,6 +204,13 @@ class Admin:
         path = f"partitions/{namespace}/{topic}/{partition}/transactions"
         return self._request('get', path, node=node).json()
 
+    def get_all_transactions(self, node=None):
+        """
+        Get all transactions
+        """
+        path = f"transactions"
+        return self._request('get', path, node=node).json()
+
     def mark_transaction_expired(self,
                                  topic,
                                  partition,
