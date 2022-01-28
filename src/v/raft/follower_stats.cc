@@ -35,9 +35,16 @@ void follower_stats::update_with_configuration(const group_configuration& cfg) {
         it->second.is_learner = false;
     });
 
-    absl::erase_if(_followers, [&cfg](const container_t::value_type& p) {
-        return !cfg.contains(p.first);
-    });
+    for (auto it = _followers.begin(); it != _followers.end();) {
+        // if follower is not present in configuration brake condition variable
+        // and remove
+        if (!cfg.contains(it->first)) {
+            it->second.follower_state_change.broken();
+            _followers.erase(it++);
+            continue;
+        }
+        ++it;
+    }
 }
 
 ss::future<ss::semaphore_units<>>

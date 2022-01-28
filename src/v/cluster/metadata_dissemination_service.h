@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster/fwd.h"
+#include "cluster/health_monitor_types.h"
 #include "cluster/metadata_dissemination_types.h"
 #include "config/tls_config.h"
 #include "model/fundamental.h"
@@ -77,7 +78,8 @@ public:
       ss::sharded<partition_leaders_table>&,
       ss::sharded<members_table>&,
       ss::sharded<topic_table>&,
-      ss::sharded<rpc::connection_cache>&);
+      ss::sharded<rpc::connection_cache>&,
+      ss::sharded<health_monitor_frontend>&);
 
     void disseminate_leadership(
       model::ntp, model::term_id, std::optional<model::node_id>);
@@ -126,12 +128,15 @@ private:
 
     ss::future<> update_metadata_with_retries(std::vector<unresolved_address>);
 
+    ss::future<> update_leaders_with_health_report(cluster_health_report);
+
     ss::sharded<raft::group_manager>& _raft_manager;
     ss::sharded<cluster::partition_manager>& _partition_manager;
     ss::sharded<partition_leaders_table>& _leaders;
     ss::sharded<members_table>& _members_table;
     ss::sharded<topic_table>& _topics;
     ss::sharded<rpc::connection_cache>& _clients;
+    ss::sharded<health_monitor_frontend>& _health_monitor;
     model::broker _self;
     std::chrono::milliseconds _dissemination_interval;
     config::tls_config _rpc_tls_config;

@@ -1733,7 +1733,7 @@ group::store_txn_offsets(txn_offset_commit_request r) {
 }
 
 kafka::error_code map_store_offset_error_code(std::error_code ec) {
-    if (ec.category() == raft::errc_category()) {
+    if (ec.category() == raft::error_category()) {
         switch (raft::errc(ec.value())) {
         case raft::errc::success:
             return error_code::none;
@@ -1816,6 +1816,10 @@ group::offset_commit_stages group::store_offsets(offset_commit_request&& r) {
         result<raft::replicate_result> r) mutable {
           auto error = error_code::none;
           if (!r) {
+              vlog(
+                _ctxlog.info,
+                "Storing committed offset failed - {}",
+                r.error().message());
               error = map_store_offset_error_code(r.error());
           }
           if (in_state(group_state::dead)) {

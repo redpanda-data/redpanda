@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "kafka/server/errors.h"
+#include "kafka/server/group.h"
 
 #include <boost/test/unit_test.hpp>
 
@@ -42,5 +43,23 @@ BOOST_AUTO_TEST_CASE(mapping_unknow_error) {
       kafka::error_code::unknown_server_error);
     BOOST_REQUIRE_EQUAL(
       kafka::map_topic_error_code(static_cast<cluster::errc>(-33)),
+      kafka::error_code::unknown_server_error);
+};
+
+BOOST_AUTO_TEST_CASE(mapping_offset_commit_error) {
+    BOOST_REQUIRE_EQUAL(
+      kafka::map_store_offset_error_code(raft::errc::success),
+      kafka::error_code::none);
+    BOOST_REQUIRE_EQUAL(
+      kafka::map_store_offset_error_code(raft::errc::shutting_down),
+      kafka::error_code::request_timed_out);
+    BOOST_REQUIRE_EQUAL(
+      kafka::map_store_offset_error_code(raft::errc::timeout),
+      kafka::error_code::request_timed_out);
+    BOOST_REQUIRE_EQUAL(
+      kafka::map_store_offset_error_code(raft::errc::not_leader),
+      kafka::error_code::not_coordinator);
+    BOOST_REQUIRE_EQUAL(
+      kafka::map_store_offset_error_code(raft::errc::leader_append_failed),
       kafka::error_code::unknown_server_error);
 };

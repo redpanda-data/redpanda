@@ -10,6 +10,8 @@
 #include "cluster/metadata_dissemination_service.h"
 
 #include "cluster/cluster_utils.h"
+#include "cluster/health_monitor_frontend.h"
+#include "cluster/health_monitor_types.h"
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "cluster/metadata_cache.h"
@@ -50,13 +52,15 @@ metadata_dissemination_service::metadata_dissemination_service(
   ss::sharded<partition_leaders_table>& leaders,
   ss::sharded<members_table>& members,
   ss::sharded<topic_table>& topics,
-  ss::sharded<rpc::connection_cache>& clients)
+  ss::sharded<rpc::connection_cache>& clients,
+  ss::sharded<health_monitor_frontend>& health_monitor)
   : _raft_manager(raft_manager)
   , _partition_manager(partition_manager)
   , _leaders(leaders)
   , _members_table(members)
   , _topics(topics)
   , _clients(clients)
+  , _health_monitor(health_monitor)
   , _self(make_self_broker(config::node()))
   , _dissemination_interval(
       config::shard_local_cfg().metadata_dissemination_interval_ms)
@@ -65,7 +69,6 @@ metadata_dissemination_service::metadata_dissemination_service(
         (void)ss::with_gate(
           _bg, [this] { return dispatch_disseminate_leadership(); });
     });
-    _dispatch_timer.arm(_dissemination_interval);
 
     for (auto& seed : config::node().seed_servers()) {
         _seed_servers.push_back(seed.addr);
@@ -136,6 +139,7 @@ ss::future<> metadata_dissemination_service::start() {
           return update_metadata_with_retries(std::move(addresses));
       });
 
+    _dispatch_timer.arm(_dissemination_interval);
     return ss::make_ready_future<>();
 }
 
@@ -286,6 +290,11 @@ void metadata_dissemination_service::collect_pending_updates() {
             if (!_pending_updates.contains(id)) {
                 _pending_updates.emplace(id, update_retry_meta{ntp_leaders{}});
             }
+            vlog(
+              clusterlog.trace,
+              "new metadata update {} for {}",
+              ntp_leader,
+              id);
             _pending_updates[id].updates.push_back(ntp_leader);
         }
     }
@@ -303,20 +312,58 @@ void metadata_dissemination_service::cleanup_finished_updates() {
         }
     }
     for (auto id : _to_remove) {
+        vlog(clusterlog.trace, "node {} update finished", id);
         _pending_updates.erase(id);
     }
 }
 
 ss::future<> metadata_dissemination_service::dispatch_disseminate_leadership() {
-    collect_pending_updates();
-    return ss::parallel_for_each(
-             _pending_updates.begin(),
-             _pending_updates.end(),
-             [this](broker_updates_t::value_type& br_update) {
-                 return dispatch_one_update(br_update.first, br_update.second);
-             })
+    /**
+     * Use currently available health report snapshot to update leadership
+     * information. If snapshot would contain stale data they will be ignored by
+     * term check in partition leaders table
+     */
+    return _health_monitor.local()
+      .get_current_cluster_health_snapshot(cluster_report_filter{})
+      .then([this](cluster_health_report report) {
+          return update_leaders_with_health_report(std::move(report));
+      })
+      .then([this] {
+          collect_pending_updates();
+          return ss::parallel_for_each(
+            _pending_updates.begin(),
+            _pending_updates.end(),
+            [this](broker_updates_t::value_type& br_update) {
+                return dispatch_one_update(br_update.first, br_update.second);
+            });
+      })
       .then([this] { cleanup_finished_updates(); })
       .finally([this] { _dispatch_timer.arm(_dissemination_interval); });
+}
+
+ss::future<> metadata_dissemination_service::update_leaders_with_health_report(
+  cluster_health_report report) {
+    for (auto& node_report : report.node_reports) {
+        co_await _leaders.invoke_on_all(
+          [node_report](partition_leaders_table& leaders) {
+              for (auto& tp : node_report.topics) {
+                  for (auto& p : tp.partitions) {
+                      // Nodes may report a null leader if they're out of
+                      // touch, even if the leader is actually still up.  Only
+                      // trust leadership updates from health reports if
+                      // they're non-null (non-null updates are safe to apply
+                      // in any order because update_partition leader will
+                      // ignore old terms)
+                      if (p.leader_id.has_value()) {
+                          leaders.update_partition_leader(
+                            model::ntp(tp.tp_ns.ns, tp.tp_ns.tp, p.id),
+                            p.term,
+                            p.leader_id);
+                      }
+                  }
+              }
+          });
+    }
 }
 
 ss::future<> metadata_dissemination_service::dispatch_one_update(
@@ -327,16 +374,16 @@ ss::future<> metadata_dissemination_service::dispatch_one_update(
         ss::this_shard_id(),
         target_id,
         _dissemination_interval,
-        [this, &meta, target_id](
+        [this, updates = meta.updates, target_id](
           metadata_dissemination_rpc_client_protocol proto) mutable {
             vlog(
               clusterlog.trace,
               "Sending {} metadata updates to {}",
-              meta.updates.size(),
+              updates,
               target_id);
             return proto
               .update_leadership(
-                update_leadership_request{meta.updates},
+                update_leadership_request{std::move(updates)},
                 rpc::client_opts(
                   _dissemination_interval + rpc::clock_type::now()))
               .then(&rpc::get_ctx_data<update_leadership_reply>);

@@ -103,6 +103,7 @@ cluster::begin_group_tx_reply make_begin_tx_reply(cluster::tx_errc);
 cluster::prepare_group_tx_reply make_prepare_tx_reply(cluster::tx_errc);
 cluster::commit_group_tx_reply make_commit_tx_reply(cluster::tx_errc);
 cluster::abort_group_tx_reply make_abort_tx_reply(cluster::tx_errc);
+kafka::error_code map_store_offset_error_code(std::error_code);
 
 /// \brief A Kafka group.
 ///
