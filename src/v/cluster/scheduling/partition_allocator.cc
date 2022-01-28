@@ -191,7 +191,9 @@ std::error_code partition_allocator::check_cluster_limits(
     // Refuse to create partitions that would violate the configured
     // memory per partition.
     auto memory_per_partition_replica = _memory_per_partition();
-    if (memory_per_partition_replica.has_value()) {
+    if (
+      memory_per_partition_replica.has_value()
+      && memory_per_partition_replica.value() > 0) {
         const uint64_t memory_limit = effective_cluster_memory
                                       / memory_per_partition_replica.value();
 
@@ -207,7 +209,9 @@ std::error_code partition_allocator::check_cluster_limits(
 
     // Refuse to create partitions that would exhaust our nfiles ulimit
     auto fds_per_partition_replica = _fds_per_partition();
-    if (fds_per_partition_replica.has_value()) {
+    if (
+      fds_per_partition_replica.has_value()
+      && fds_per_partition_replica.value() > 0) {
         struct rlimit nofile = {0, 0};
         if (getrlimit(RLIMIT_NOFILE, &nofile) == 0) {
             if (nofile.rlim_cur != RLIM_INFINITY) {
@@ -231,14 +235,16 @@ std::error_code partition_allocator::check_cluster_limits(
 
     // Refuse to create partitions if there isn't enough space to at least
     // falloc the first part of a segment for each partition
-    uint64_t disk_limit = effective_cluster_disk / _fallocation_step();
-    if (disk_limit > 0 && (proposed_total_partitions > disk_limit)) {
-        vlog(
-          clusterlog.warn,
-          "Refusing to create {} partitions, exceeds disk limit {}",
-          create_count,
-          disk_limit);
-        return errc::topic_invalid_partitions;
+    if (_fallocation_step() > 0) {
+        uint64_t disk_limit = effective_cluster_disk / _fallocation_step();
+        if (disk_limit > 0 && (proposed_total_partitions > disk_limit)) {
+            vlog(
+              clusterlog.warn,
+              "Refusing to create {} partitions, exceeds disk limit {}",
+              create_count,
+              disk_limit);
+            return errc::topic_invalid_partitions;
+        }
     }
 
     return errc::success;
