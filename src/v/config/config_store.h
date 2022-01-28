@@ -63,16 +63,6 @@ public:
         }
     }
 
-    const std::vector<validation_error> validate() {
-        std::vector<validation_error> errors;
-        for_each([&errors](const base_property& p) {
-            if (auto err = p.validate()) {
-                errors.push_back(std::move(*err));
-            }
-        });
-        return errors;
-    }
-
     void to_json(rapidjson::Writer<rapidjson::StringBuffer>& w) const {
         w.StartObject();
 

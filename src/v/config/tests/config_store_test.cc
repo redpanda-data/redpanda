@@ -205,15 +205,11 @@ SEASTAR_THREAD_TEST_CASE(update_property_value) {
 SEASTAR_THREAD_TEST_CASE(validate_valid_configuration) {
     auto cfg = test_config();
     cfg.read_yaml(valid_configuration());
-    auto errors = cfg.validate();
-    BOOST_TEST(errors.size() == 0);
 }
 
 SEASTAR_THREAD_TEST_CASE(validate_invalid_configuration) {
     auto cfg = test_config();
     cfg.read_yaml(valid_configuration());
-    auto errors = cfg.validate();
-    BOOST_TEST(errors.size() == 0);
 }
 
 SEASTAR_THREAD_TEST_CASE(config_json_serialization) {
@@ -292,8 +288,6 @@ SEASTAR_THREAD_TEST_CASE(deserialize_explicit_null) {
 
     auto cfg = test_config();
     cfg.read_yaml(with_null);
-    auto errors = cfg.validate();
-    BOOST_TEST(errors.size() == 0);
     BOOST_TEST(cfg.nullable_int() == std::nullopt);
 }
 

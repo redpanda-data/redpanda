@@ -106,8 +106,6 @@ public:
     virtual bool is_array() const = 0;
     std::optional<std::string_view> example() const { return _meta.example; }
 
-    virtual std::optional<validation_error> validate() const = 0;
-
     /**
      * Validation of a proposed new value before it has been assigned
      * to this property.

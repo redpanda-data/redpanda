@@ -121,13 +121,6 @@ public:
         json::rjson_serialize(w, _value);
     }
 
-    std::optional<validation_error> validate() const override {
-        if (auto err = _validator(_value); err) {
-            return std::make_optional<validation_error>(name().data(), *err);
-        }
-        return std::nullopt;
-    }
-
     void set_value(std::any v) override {
         update_value(std::any_cast<T>(std::move(v)));
     }
