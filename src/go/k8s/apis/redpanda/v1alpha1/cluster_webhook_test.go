@@ -10,6 +10,8 @@
 package v1alpha1_test
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	cmmeta "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
@@ -549,6 +551,67 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		err := c.ValidateUpdate(redpandaCluster)
 		assert.Error(t, err)
 	})
+
+	decreaseCases := []struct {
+		initial    string
+		target     string
+		error      bool
+		lowerBound string
+	}{
+		{
+			initial: "2",
+			target:  "2500m",
+			error:   false,
+		},
+		{
+			initial: "2",
+			target:  "1001m",
+			error:   false,
+		},
+		{
+			initial:    "2000m",
+			target:     "999m",
+			error:      true,
+			lowerBound: "1001m",
+		},
+		{
+			initial:    "1.1",
+			target:     "1",
+			error:      true,
+			lowerBound: "1001m",
+		},
+	}
+	for _, tc := range decreaseCases {
+		t.Run(fmt.Sprintf("CPU request change from %s to %s", tc.initial, tc.target), func(t *testing.T) {
+			oldCluster := redpandaCluster.DeepCopy()
+			oldCluster.Spec.Resources.Requests = corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("20Gi"),
+				corev1.ResourceCPU:    resource.MustParse(tc.initial),
+			}
+			oldCluster.Spec.Resources.Limits = corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("20Gi"),
+				corev1.ResourceCPU:    resource.MustParse(tc.initial),
+			}
+
+			newCluster := redpandaCluster.DeepCopy()
+			newCluster.Spec.Resources.Requests = corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("20Gi"),
+				corev1.ResourceCPU:    resource.MustParse(tc.target),
+			}
+
+			err := newCluster.ValidateUpdate(oldCluster)
+			if tc.error {
+				assert.Error(t, err)
+				if err != nil && tc.lowerBound != "" {
+					parts := strings.Split(err.Error(), " ")
+					computedBound := parts[len(parts)-1]
+					assert.Equal(t, tc.lowerBound, computedBound)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }
 
 //nolint:funlen // this is ok for a test
