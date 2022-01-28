@@ -65,3 +65,7 @@ class DefaultClient:
         assert len(td) == 1, f"Received {len(td)} topics expected 1: {td}"
         assert td[0].name == topic, f"Received topic {td[0].name} expected {topic}: {td}"
         return td[0]
+
+    def alter_topic_partition_count(self, topic: str, count: int):
+        client = KafkaCliTools(self._redpanda)
+        client.create_topic_partitions(topic, count)
