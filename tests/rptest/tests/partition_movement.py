@@ -16,8 +16,8 @@ class PartitionMovementMixin():
     @staticmethod
     def _random_partition(metadata):
         topic = random.choice(metadata)
-        partition = random.choice(topic["partitions"])
-        return topic["topic"], partition["partition"]
+        partition = random.choice(topic.partitions)
+        return topic.name, partition.id
 
     @staticmethod
     def _choose_replacement(admin, assignments):
