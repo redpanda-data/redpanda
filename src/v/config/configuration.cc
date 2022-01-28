@@ -57,14 +57,16 @@ configuration::configuration()
       "log_segment_size",
       "How large in bytes should each log segment be (default 1G)",
       {.example = "2147483648", .visibility = visibility::tunable},
-      1_GiB)
+      1_GiB,
+      {.min = 1_MiB})
   , compacted_log_segment_size(
       *this,
       "compacted_log_segment_size",
       "How large in bytes should each compacted log segment be (default "
       "256MiB)",
       {.example = "268435456", .visibility = visibility::tunable},
-      256_MiB)
+      256_MiB,
+      {.min = 1_MiB})
   , readers_cache_eviction_timeout_ms(
       *this,
       "readers_cache_eviction_timeout_ms",
@@ -76,7 +78,8 @@ configuration::configuration()
       "rpc_server_listen_backlog",
       "TCP connection queue length for Kafka server and internal RPC server",
       {.visibility = visibility::user},
-      std::nullopt)
+      std::nullopt,
+      {.min = 1})
   , rpc_server_tcp_recv_buf(
       *this,
       "rpc_server_tcp_recv_buf",
@@ -150,13 +153,15 @@ configuration::configuration()
       "raft_heartbeat_interval_ms",
       "Milliseconds for raft leader heartbeats",
       {.visibility = visibility::tunable},
-      std::chrono::milliseconds(150))
+      std::chrono::milliseconds(150),
+      {.min = std::chrono::milliseconds(1)})
   , raft_heartbeat_timeout_ms(
       *this,
       "raft_heartbeat_timeout_ms",
       "raft heartbeat RPC timeout",
       {.visibility = visibility::tunable},
-      3s)
+      3s,
+      {.min = std::chrono::milliseconds(1)})
   , raft_heartbeat_disconnect_failures(
       *this,
       "raft_heartbeat_disconnect_failures",
@@ -180,13 +185,15 @@ configuration::configuration()
       "default_num_windows",
       "Default number of quota tracking windows",
       {.visibility = visibility::tunable},
-      10)
+      10,
+      {.min = 1})
   , default_window_sec(
       *this,
       "default_window_sec",
       "Default quota tracking window size in milliseconds",
       {.visibility = visibility::tunable},
-      std::chrono::milliseconds(1000))
+      std::chrono::milliseconds(1000),
+      {.min = std::chrono::milliseconds(1)})
   , quota_manager_gc_sec(
       *this,
       "quota_manager_gc_sec",
@@ -198,7 +205,8 @@ configuration::configuration()
       "target_quota_byte_rate",
       "Target quota byte rate (bytes per second) - 2GB default",
       {.example = "1073741824", .visibility = visibility::tunable},
-      2_GiB)
+      2_GiB,
+      {.min = 1_MiB})
   , cluster_id(
       *this,
       "cluster_id",
