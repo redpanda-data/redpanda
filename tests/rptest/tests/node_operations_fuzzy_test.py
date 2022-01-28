@@ -108,7 +108,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
         return topics
 
     """
-    Adding nodes to the cluster should result in partition reallocations to new 
+    Adding nodes to the cluster should result in partition reallocations to new
     nodes
     """
 
