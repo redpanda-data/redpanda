@@ -522,20 +522,35 @@ members_manager::handle_join_request(model::broker broker) {
       });
 }
 
+/**
+ * Validate that:
+ * - node_id never changes
+ * - core count only increases, never decreases.
+ *
+ * Core count decreases are forbidden because our partition placement
+ * code does not know how to re-assign partitions away from non-existent
+ * cores if some cores are removed.  This may be improved in future, at
+ * which time we may remove this restriction on core count decreases.
+ *
+ * These checks are applied early during startup based on a locally
+ * stored record from previous startup, to prevent a misconfigured node
+ * from startup up far enough to disrupt the rest of the cluster.
+ * @return
+ */
 ss::future<> members_manager::validate_configuration_invariants() {
     static const bytes invariants_key("configuration_invariants");
     auto invariants_buf = _storage.local().kvs().get(
       storage::kvstore::key_space::controller, invariants_key);
+
+    auto current = configuration_invariants(_self.id(), ss::smp::count);
 
     if (!invariants_buf) {
         // store configuration invariants
         return _storage.local().kvs().put(
           storage::kvstore::key_space::controller,
           invariants_key,
-          reflection::to_iobuf(
-            configuration_invariants(_self.id(), ss::smp::count)));
+          reflection::to_iobuf(std::move(current)));
     }
-    auto current = configuration_invariants(_self.id(), ss::smp::count);
     auto invariants = reflection::from_iobuf<configuration_invariants>(
       std::move(*invariants_buf));
     // node id changed
@@ -561,6 +576,14 @@ ss::future<> members_manager::validate_configuration_invariants() {
           ss::smp::count);
         return ss::make_exception_future(
           configuration_invariants_changed(invariants, current));
+    } else if (invariants.core_count != current.core_count) {
+        // Update the persistent invariants to reflect increased core
+        // count -- this tracks the high water mark of core count, to
+        // reject subsequent decreases.
+        return _storage.local().kvs().put(
+          storage::kvstore::key_space::controller,
+          invariants_key,
+          reflection::to_iobuf(std::move(current)));
     }
     return ss::now();
 }
