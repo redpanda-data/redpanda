@@ -1060,14 +1060,14 @@ configuration::configuration()
        .visibility = visibility::deprecated},
       "https://m.rp.vectorized.io/v2") {}
 
-void configuration::load(const YAML::Node& root_node) {
+configuration::error_map_t configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {
-        throw std::invalid_argument("'redpanda'root is required");
+        throw std::invalid_argument("'redpanda' root is required");
     }
 
     const auto& ignore = node().property_names();
 
-    config_store::read_yaml(root_node["redpanda"], ignore);
+    return config_store::read_yaml(root_node["redpanda"], ignore);
 }
 
 configuration& shard_local_cfg() {

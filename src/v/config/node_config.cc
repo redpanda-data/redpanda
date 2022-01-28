@@ -116,14 +116,14 @@ node_config::node_config() noexcept
       required::no,
       {}) {}
 
-void node_config::load(const YAML::Node& root_node) {
+node_config::error_map_t node_config::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {
-        throw std::invalid_argument("'redpanda'root is required");
+        throw std::invalid_argument("'redpanda' root is required");
     }
 
     const auto& ignore = shard_local_cfg().property_names();
 
-    config_store::read_yaml(root_node["redpanda"], ignore);
+    return config_store::read_yaml(root_node["redpanda"], ignore);
 }
 
 /// Get a shard local copy of the node_config.

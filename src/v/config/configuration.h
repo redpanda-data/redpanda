@@ -241,7 +241,7 @@ struct configuration final : public config_store {
 
     configuration();
 
-    void load(const YAML::Node& root_node);
+    error_map_t load(const YAML::Node& root_node);
 };
 
 configuration& shard_local_cfg();
