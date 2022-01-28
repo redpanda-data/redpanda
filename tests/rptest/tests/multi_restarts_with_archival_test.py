@@ -7,22 +7,15 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import random
-from time import sleep
 import uuid
-import sys
 
 from ducktape.mark.resource import cluster
-from ducktape.mark import matrix
 from rptest.archival.s3_client import S3Client
 from ducktape.utils.util import wait_until
 from rptest.clients.types import TopicSpec
 from rptest.clients.default import DefaultClient
 from rptest.clients.rpk import RpkTool
 from rptest.tests.end_to_end import EndToEndTest
-
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.rpk_producer import RpkProducer
 
 
 class MultiRestartTest(EndToEndTest):
