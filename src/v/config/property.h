@@ -479,46 +479,6 @@ private:
 };
 
 /**
- * A numeric property that is clamped to a range.
- */
-template<typename T>
-class clamped_property : public property<T> {
-public:
-    using property<T>::property;
-
-    clamped_property(
-      config_store& conf,
-      std::string_view name,
-      std::string_view desc,
-      base_property::metadata meta,
-      T def = T{},
-      std::optional<T> min = std::nullopt,
-      std::optional<T> max = std::nullopt)
-      : property<T>(conf, name, desc, meta, def)
-      , _min(min)
-      , _max(max) {}
-
-    bool set_value(YAML::Node n) override {
-        auto val = std::move(n.as<T>());
-
-        if (val.has_value()) {
-            if (_min.has_value()) {
-                val = std::max(val, _min.value());
-            }
-            if (_max.has_value()) {
-                val = std::min(val, _max.value());
-            }
-        }
-
-        return property<T>::update_value(std::move(val));
-    };
-
-private:
-    std::optional<T> _min;
-    std::optional<T> _max;
-};
-
-/**
  * A deprecated property only exposes metadata and does not expose a usable
  * value.
  */

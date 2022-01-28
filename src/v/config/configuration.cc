@@ -83,14 +83,14 @@ configuration::configuration()
       "TCP receive buffer size in bytes.",
       {.example = "65536"},
       std::nullopt,
-      32_KiB)
+      {.min = 32_KiB, .align = 4_KiB})
   , rpc_server_tcp_send_buf(
       *this,
       "rpc_server_tcp_send_buf",
       "TCP transmit buffer size in bytes.",
       {.example = "65536"},
       std::nullopt,
-      32_KiB)
+      {.min = 32_KiB, .align = 4_KiB})
   , enable_coproc(
       *this,
       "enable_coproc",
