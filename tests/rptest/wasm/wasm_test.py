@@ -6,7 +6,7 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-
+from typing import Optional, Sequence
 from kafka import TopicPartition
 
 from rptest.wasm.topic import get_source_topic
@@ -31,6 +31,10 @@ def flat_map(fn, ll):
 
 
 class WasmTest(RedpandaTest):
+    _input_consumer: Optional[NativeKafkaConsumer]
+    _output_consumer: Optional[NativeKafkaConsumer]
+    _producers: Optional[Sequence[CliKafkaProducer]]
+
     def __init__(self, test_context, extra_rp_conf=dict(), num_brokers=3):
         def enable_wasm_options():
             return dict(
@@ -151,7 +155,14 @@ class WasmTest(RedpandaTest):
         self._output_consumer.start()
 
     def wait_on_results(self):
+        assert self._input_consumer
+        assert self._output_consumer
+        assert self._producers
+
         def all_done():
+            assert self._input_consumer
+            assert self._output_consumer
+
             # Uncomment to periodically see the amt of data read
             self.logger.info("Input: %d" %
                              self._input_consumer.results.num_records())
