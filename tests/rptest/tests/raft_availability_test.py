@@ -268,59 +268,27 @@ class RaftAvailabilityTest(RedpandaTest):
 
         self._expect_available()
 
-        # Metric checks are relaxed to tolerate a particular bug where redpanda sometimes
-        # goes through multiple elections to select a new leader, even though it should
-        # be able to do it in 1.
-        # Ref: https://github.com/vectorizedio/redpanda/issues/2444
-        if False:
-            observer_metrics.expect([
-                # 'leadership changes' increments by 1 when observer sees an append_entries
-                # from the new leader
-                ("vectorized_raft_leadership_changes_total",
-                 lambda a, b: b == a + 1),
-                ("vectorized_raft_leader_for", lambda a, b: int(b) == 0),
-                ("vectorized_raft_received_vote_requests_total",
-                 lambda a, b: b == a + 2),
-            ])
+        # Check that metrics have progressed in the expected direction.  Not doing exact
+        # value checks (for e.g. how many elections happened) because a sufficiently
+        # noisy test environment can violate even quite long timeouts (e.g. the 1500ms
+        # election timeout).
+        #
+        # It would be good to impose stricter checks, to detect bugs that manifest as
+        # elections taking more iterations than expected, once we have a less contended
+        # test environment to execute in.
+        observer_metrics.expect([
+            ("vectorized_raft_leadership_changes_total", lambda a, b: b > a),
+            ("vectorized_raft_leader_for", lambda a, b: int(b) == 0),
+            ("vectorized_raft_received_vote_requests_total",
+             lambda a, b: b > a),
+        ])
 
-            new_leader_metrics.expect([
-                # 'leadership changes' includes going to candidate, then going to leader, so
-                # increments by 2 (vote_stm::vote calls trigger_leadership_notification when
-                # we start an election, before the leadership has really changed)
-                ("vectorized_raft_leadership_changes_total",
-                 lambda a, b: b == a + 2),
-                ("vectorized_raft_leader_for", lambda a, b: int(b) == 1),
-
-                # The new leader should see heartbeat errors sending to the now-offline
-                # original leader
-                ("vectorized_raft_heartbeat_requests_errors_total",
-                 lambda a, b: b > a),
-
-                # This node initiated the vote, so it should not have received any votes
-                ("vectorized_raft_received_vote_requests_total",
-                 lambda a, b: b == a),
-            ])
-        else:
-            # Relaxed checks that don't care how many elections happened, just that
-            # >1 happened.  Tolerant of the cluster going through spurious elections even
-            # though it should elect a new leader in a single pass.
-            observer_metrics.expect([
-                ("vectorized_raft_leadership_changes_total",
-                 lambda a, b: b > a),
-                ("vectorized_raft_leader_for", lambda a, b: int(b) == 0),
-                ("vectorized_raft_received_vote_requests_total",
-                 lambda a, b: b > a),
-            ])
-
-            new_leader_metrics.expect([
-                ("vectorized_raft_leadership_changes_total",
-                 lambda a, b: b > a),
-                ("vectorized_raft_leader_for", lambda a, b: int(b) == 1),
-                ("vectorized_raft_heartbeat_requests_errors_total",
-                 lambda a, b: b > a),
-                ("vectorized_raft_received_vote_requests_total",
-                 lambda a, b: b == a),
-            ])
+        new_leader_metrics.expect([
+            ("vectorized_raft_leadership_changes_total", lambda a, b: b > a),
+            ("vectorized_raft_leader_for", lambda a, b: int(b) == 1),
+            ("vectorized_raft_received_vote_requests_total",
+             lambda a, b: b == a),
+        ])
 
     @cluster(num_nodes=3)
     def test_two_nodes_down(self):
