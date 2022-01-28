@@ -22,6 +22,7 @@
 #include "cluster/security_frontend.h"
 #include "cluster/shard_table.h"
 #include "cluster/topics_frontend.h"
+#include "cluster/tx_gateway_frontend.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/endpoint_tls_config.h"
@@ -39,6 +40,7 @@
 #include "redpanda/admin/api-doc/raft.json.h"
 #include "redpanda/admin/api-doc/security.json.h"
 #include "redpanda/admin/api-doc/status.json.h"
+#include "redpanda/admin/api-doc/transaction.json.h"
 #include "security/scram_algorithm.h"
 #include "security/scram_authenticator.h"
 #include "vlog.h"
@@ -128,6 +130,8 @@ void admin_server::configure_admin_routes() {
     rb->register_api_file(_server._routes, "hbadger");
     rb->register_function(_server._routes, insert_comma);
     rb->register_api_file(_server._routes, "broker");
+    rb->register_function(_server._routes, insert_comma);
+    rb->register_api_file(_server._routes, "transaction");
 
     register_config_routes();
     register_cluster_config_routes();
@@ -138,6 +142,7 @@ void admin_server::configure_admin_routes() {
     register_broker_routes();
     register_partition_routes();
     register_hbadger_routes();
+    register_transaction_routes();
 }
 
 struct json_validator {
@@ -1746,5 +1751,75 @@ void admin_server::register_hbadger_routes() {
                    [m, p] { finjector::shard_local_badger().unset(m, p); })
             .then(
               [] { return ss::json::json_return_type(ss::json::json_void()); });
+      });
+}
+
+void admin_server::register_transaction_routes() {
+    if (!config::shard_local_cfg().enable_transactions) {
+        vlog(logger.info, "Transactions are disabled");
+        return;
+    }
+
+    ss::httpd::transaction_json::get_all_transactions.set(
+      _server._routes,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          if (need_redirect_to_leader(model::tx_manager_ntp, _metadata_cache)) {
+              throw co_await redirect_to_leader(*req, model::tx_manager_ntp);
+          }
+
+          auto& tx_frontend = _partition_manager.local().get_tx_frontend();
+          if (!tx_frontend.local_is_initialized()) {
+              throw ss::httpd::bad_request_exception(
+                fmt::format("Transaction are disabled"));
+          }
+
+          auto res = co_await tx_frontend.local().get_all_transactions();
+          if (!res.has_value()) {
+              co_await throw_on_error(*req, res.error(), model::tx_manager_ntp);
+          }
+
+          using tx_info = ss::httpd::transaction_json::transaction_summary;
+          std::vector<tx_info> ans;
+          ans.reserve(res.value().size());
+
+          for (auto& [_, tx] : res.value()) {
+              tx_info new_tx;
+
+              new_tx.transactional_id = tx.id;
+
+              ss::httpd::transaction_json::producer_identity pid;
+              pid.id = tx.pid.id;
+              pid.epoch = tx.pid.epoch;
+              new_tx.pid = pid;
+
+              new_tx.tx_seq = tx.tx_seq;
+              new_tx.etag = tx.etag;
+              new_tx.status = tx.get_status();
+              new_tx.timeout_ms = tx.get_timeout().count();
+              new_tx.staleness_ms = tx.get_staleness().count();
+
+              for (auto& partition : tx.partitions) {
+                  ss::httpd::transaction_json::partition partition_info;
+                  partition_info.ns = partition.ntp.ns;
+                  partition_info.topic = partition.ntp.tp.topic;
+                  partition_info.partition_id = partition.ntp.tp.partition;
+                  partition_info.etag = partition.etag;
+
+                  new_tx.partitions.push(partition_info);
+              }
+
+              for (auto& group : tx.groups) {
+                  ss::httpd::transaction_json::group group_info;
+                  group_info.group_id = group.group_id;
+                  group_info.etag = group.etag;
+
+                  new_tx.groups.push(group_info);
+              }
+
+              ans.push_back(std::move(new_tx));
+          }
+
+          co_return ss::json::json_return_type(ans);
       });
 }
