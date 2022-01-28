@@ -325,3 +325,29 @@ QUERIES_HIST["one"] = 1
 QUERIES_HIST["jolly"] = 1
 QUERIES_HIST["sailor"] = 1
 QUERIES_HIST["king"] = 1
+
+
+class AppResetExample:
+    def __init__(self, redpanda):
+        self._redpanda = redpanda
+
+    def condition(self, line):
+        return "Example started." in line
+
+    def cmd(self, host):
+        return BASE_CMD + f"ApplicationResetExample {self._redpanda.brokers()} --reset"
+
+    def process_to_kill(self):
+        return "java"
+
+
+def reset_app_cmd(redpanda, app_id, input_topic, intermediate_topic):
+    CONFLUENT_BIN = "/opt/confluent-6.2.1/bin"
+    cmd = f"{CONFLUENT_BIN}/kafka-streams-application-reset"
+    cmd += f" --bootstrap-servers {redpanda.brokers()}"
+    cmd += f" --application-id {app_id}"
+    cmd += f" --input-topics {input_topic}"
+    cmd += f" --intermediate-topics {intermediate_topic}"
+    cmd += " --force"
+
+    return cmd

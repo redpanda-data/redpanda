@@ -796,3 +796,114 @@ class KafkaStreamsInteractiveQueries(RedpandaTest):
         driver.stop()
         example2.stop()
         example1.stop()
+
+
+class TokenProducer(KafProducer):
+    def __init__(self, context, redpanda, topic, num_produces):
+        super(TokenProducer, self).__init__(context,
+                                            redpanda,
+                                            topic,
+                                            num_records=num_produces)
+
+        # Change this number if the number of
+        # unique tokens represented in value_gen changes.
+        self.num_unique_tokens = 3
+
+    def value_gen(self):
+        # The below string is used num_produces times
+        return "token-$((1 + $RANDOM % 3))"
+
+
+class KafkaStreamsAppReset(RedpandaTest):
+    """
+    Test KafkaStreams ApplicationReset example that uses confluent's cleanUp API
+    which resets offsets for all topics and deletes all internal/auto-created topics.
+    The actual application, such as word-count, is irrelevant to the example and the
+    test.
+
+    The RP features and systems that the cleanUp API uses are:
+    - topic deletion
+    - resets consumer offsets
+
+    More details on the cleanUp API are at
+    https://kafka.apache.org/20/javadoc/org/apache/kafka/streams/KafkaStreams.html#cleanUp
+    """
+    topics = (
+        TopicSpec(name="my-input-topic"),
+        TopicSpec(name="my-output-topic"),
+        TopicSpec(name="rekeyed-topic"),
+    )
+
+    def __init__(self, test_context):
+        super(KafkaStreamsAppReset, self).__init__(test_context=test_context)
+        self._ctx = test_context
+        self._num_produces = 10 if self.scale.local else 1000
+
+    def is_valid_msg(self, msg):
+        token = msg["key"]
+        count = int(msg["value"])
+
+        if token != "token-1" and token != "token-2" and token != "token-3":
+            return False
+
+        if count < 0 or count > self._num_produces:
+            return False
+
+        return True
+
+    @cluster(num_nodes=6)
+    def test_kafka_streams_app_reset(self):
+        example_jar = KafkaStreamExamples.AppResetExample(self.redpanda)
+        example = ExampleRunner(self._ctx, example_jar, timeout_sec=TIMEOUT)
+        producer = TokenProducer(self._ctx, self.redpanda, self.topics[0].name,
+                                 self._num_produces)
+
+        form = '\'%{"key":"%k", "value":"%v{unpack[>Q]}"%}\\n\''
+        consumer = RpkConsumer(self._ctx,
+                               self.redpanda,
+                               self.topics[1].name,
+                               formatter=form)
+
+        example.start()
+        example.wait()
+
+        producer.start()
+        producer.wait()
+        producer.stop()
+
+        consumer.start()
+        # is_valid_msg is called on the last N messages where N = NUM_UNIQUE_USERS
+        # because older messages do not contain the final values
+        validate_last_N(self._ctx,
+                        consumer,
+                        self.is_valid_msg,
+                        num_msgs=producer.num_unique_tokens)
+
+        consumer.stop()
+        consumer.clean()
+        example.stop()
+        example.clean()
+
+        # Reset the app on the node where the example is running
+        cmd = KafkaStreamExamples.reset_app_cmd(self.redpanda,
+                                                "application-reset-demo",
+                                                self.topics[0].name,
+                                                self.topics[2].name)
+
+        # Ducktape raises an error if the cmd has non-zero exist status
+        example.node.account.ssh(cmd)
+
+        # Restart example and consumer.
+        # No need to produce new data because the app will
+        # re-run on the old data
+        example.start()
+        example.wait()
+
+        consumer.start()
+        validate_last_N(self._ctx,
+                        consumer,
+                        self.is_valid_msg,
+                        num_msgs=producer.num_unique_tokens)
+
+        consumer.stop()
+        example.stop()
