@@ -11,8 +11,10 @@
 
 #include "pandaproxy/schema_registry/protobuf.h"
 
+#include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
+#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 
@@ -132,6 +134,7 @@ public:
         schema_def_input_stream is{schema.def()};
         io_error_collector error_collector;
         pb::io::Tokenizer t{&is, &error_collector};
+        _parser.RecordErrorsTo(&error_collector);
 
         if (!_parser.Parse(&t, &_fdp)) {
             throw as_exception(error_collector.error());
@@ -186,6 +189,7 @@ ss::future<const pb::FileDescriptor*> import_schema(
     try {
         co_return co_await build_file_with_refs(dp, store, std::move(schema));
     } catch (const exception& e) {
+        vlog(plog.warn, "Failed to decode schema: {}", e.what());
         throw as_exception(invalid_schema(schema));
     }
 }
