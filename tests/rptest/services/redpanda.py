@@ -445,7 +445,7 @@ class RedpandaService(Service):
                 f"Scanning node {node.account.hostname} log for errors...")
 
             for line in node.account.ssh_capture(
-                    f"grep -e ERROR -e Segmentation\ fault -e [Aa]ssert {RedpandaService.STDOUT_STDERR_CAPTURE}"
+                    f"grep -e ERROR -e Segmentation\\ fault -e [Aa]ssert {RedpandaService.STDOUT_STDERR_CAPTURE}"
             ):
                 line = line.strip()
 
@@ -539,7 +539,7 @@ class RedpandaService(Service):
     def pids(self, node):
         """Return process ids associated with running processes on the given node."""
         try:
-            cmd = "ps ax | grep -i 'redpanda\|node' | grep -v grep | awk '{print $1}'"
+            cmd = r"ps ax | grep -i 'redpanda\|node' | grep -v grep | awk '{print $1}'"
             pid_arr = [
                 pid for pid in node.account.ssh_capture(
                     cmd, allow_fail=True, callback=int)
@@ -738,7 +738,7 @@ class RedpandaService(Service):
         """Run command that computes MD5 hash of every file in redpanda data 
         directory. The results of the command are turned into a map from path
         to hash-size tuples."""
-        cmd = f"find {RedpandaService.DATA_DIR} -type f -exec md5sum -z '{{}}' \; -exec stat -c ' %s' '{{}}' \;"
+        cmd = f"find {RedpandaService.DATA_DIR} -type f -exec md5sum -z '{{}}' \\; -exec stat -c ' %s' '{{}}' \\;"
         lines = node.account.ssh_output(cmd)
         lines = lines.decode().split("\n")
 

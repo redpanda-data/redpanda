@@ -34,13 +34,13 @@ class KafConsumer(BackgroundThreadService):
 
                 self.logger.debug(line.rstrip())
 
-                m = re.match("Partition:\s+(?P<partition>\d+)", line)
+                m = re.match(r"Partition:\s+(?P<partition>\d+)", line)
                 if m:
                     assert partition is None
                     partition = int(m.group("partition"))
                     continue
 
-                m = re.match("Offset:\s+(?P<offset>\d+)", line)
+                m = re.match(r"Offset:\s+(?P<offset>\d+)", line)
                 if m:
                     assert partition is not None
                     offset = int(m.group("offset"))

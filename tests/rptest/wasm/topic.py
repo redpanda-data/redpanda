@@ -10,7 +10,7 @@
 import re
 
 # Regex for materialized topics
-mt_rgx = re.compile("(.*)\\.\_(.*)\_")
+mt_rgx = re.compile(r"(.*)\\.\_(.*)\_")
 
 # Regex for normal kafka topics
 topic_rgx = re.compile("^([a-zA-Z0-9\\.\\_\\-])*$")
