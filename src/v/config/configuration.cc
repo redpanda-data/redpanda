@@ -184,14 +184,14 @@ configuration::configuration()
       *this,
       "default_num_windows",
       "Default number of quota tracking windows",
-      {.visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       10,
       {.min = 1})
   , default_window_sec(
       *this,
       "default_window_sec",
       "Default quota tracking window size in milliseconds",
-      {.visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       std::chrono::milliseconds(1000),
       {.min = std::chrono::milliseconds(1)})
   , quota_manager_gc_sec(
@@ -204,7 +204,9 @@ configuration::configuration()
       *this,
       "target_quota_byte_rate",
       "Target quota byte rate (bytes per second) - 2GB default",
-      {.example = "1073741824", .visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no,
+       .example = "1073741824",
+       .visibility = visibility::user},
       2_GiB,
       {.min = 1_MiB})
   , cluster_id(
@@ -576,7 +578,7 @@ configuration::configuration()
       *this,
       "max_kafka_throttle_delay_ms",
       "Fail-safe maximum throttle delay on kafka requests",
-      {.visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       60'000ms)
   , kafka_max_bytes_per_fetch(
       *this,
