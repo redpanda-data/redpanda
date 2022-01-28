@@ -16,12 +16,8 @@ from rptest.tests.redpanda_test import RedpandaTest
 
 
 class TxAdminTest(RedpandaTest):
-    topics = (TopicSpec(name="tx_test1",
-                        partition_count=3,
-                        replication_factor=3),
-              TopicSpec(name="tx_test2",
-                        partition_count=3,
-                        replication_factor=3))
+    topics = (TopicSpec(partition_count=3, replication_factor=3),
+              TopicSpec(partition_count=3, replication_factor=3))
 
     def __init__(self, test_context):
         super(TxAdminTest,
@@ -209,3 +205,41 @@ class TxAdminTest(RedpandaTest):
                     assert (self.extract_pid(tx) in expected_pids)
                     assert (tx['status'] == 'ongoing')
                     assert (tx['timeout_ms'] == 60000)
+
+    @cluster(num_nodes=3)
+    def test_all_transactions(self):
+        tx_id = "0"
+        producer = ck.Producer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'transactional.id': tx_id,
+        })
+        producer.init_transactions()
+        producer.begin_transaction()
+
+        for topic in self.topics:
+            for partition in range(topic.partition_count):
+                producer.produce(topic.name, '0', '0', partition)
+
+        producer.flush()
+
+        txs_info = self.admin.get_all_transactions()
+        assert len(txs_info) == 1
+
+        expected_partitions = dict()
+        tx = txs_info[0]
+
+        assert tx["transactional_id"] == tx_id
+        assert tx["timeout_ms"] == 60000
+
+        for partition in tx["partitions"]:
+            assert partition["ns"] == "kafka"
+            if partition["topic"] not in expected_partitions:
+                expected_partitions[partition["topic"]] = set()
+            expected_partitions[partition["topic"]].add(
+                partition["partition_id"])
+
+        for topic in self.topics:
+            assert len(
+                expected_partitions[topic.name]) == topic.partition_count
+            for partition in range(topic.partition_count):
+                assert partition in expected_partitions[topic.name]
