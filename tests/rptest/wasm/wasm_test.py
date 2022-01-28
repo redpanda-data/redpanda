@@ -12,7 +12,6 @@ from kafka import TopicPartition
 from rptest.wasm.topic import get_source_topic
 from rptest.wasm.native_kafka_consumer import NativeKafkaConsumer
 from rptest.wasm.cli_kafka_producer import CliKafkaProducer
-from rptest.wasm.wasm_script import WasmScript
 
 from rptest.wasm.topic import construct_materialized_topic
 from rptest.wasm.wasm_build_tool import WasmBuildTool
