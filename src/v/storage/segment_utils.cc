@@ -597,10 +597,18 @@ ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
               "Aborting compaction of closed segment: {}", *segment));
         }
     }
+
     auto compacted_idx_path = compacted_index_path(path);
+    if (co_await ss::file_exists(compacted_idx_path.string())) {
+        co_await ss::remove_file(compacted_idx_path.string());
+    }
     co_await write_concatenated_compacted_index(
       compacted_idx_path, segments, cfg);
+
     // concatenation process
+    if (co_await ss::file_exists(path.string())) {
+        co_await ss::remove_file(path.string());
+    }
     auto writer = co_await make_writer_handle(path, cfg.sanitize);
     auto output = co_await ss::make_file_output_stream(std::move(writer));
     for (auto& segment : segments) {
@@ -631,6 +639,9 @@ ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
     // build an empty index for the segment
     auto index_name = path;
     index_name.replace_extension("base_index");
+    if (co_await ss::file_exists(index_name.string())) {
+        co_await ss::remove_file(index_name.string());
+    }
     auto index_fd = co_await make_handle(
       index_name.string(),
       ss::open_flags::create | ss::open_flags::rw,
