@@ -165,7 +165,8 @@ struct convert<custom_aggregate> {
 
 SEASTAR_THREAD_TEST_CASE(read_minimal_valid_configuration) {
     auto cfg = test_config();
-    cfg.read_yaml(minimal_valid_configuration());
+    auto errors = cfg.read_yaml(minimal_valid_configuration());
+    BOOST_TEST(errors.size() == 0);
 
     BOOST_TEST(cfg.optional_int() == 100);
     BOOST_TEST(cfg.required_string() == "test_value_1");
@@ -180,7 +181,8 @@ SEASTAR_THREAD_TEST_CASE(read_minimal_valid_configuration) {
 
 SEASTAR_THREAD_TEST_CASE(read_valid_configuration) {
     auto cfg = test_config();
-    cfg.read_yaml(valid_configuration());
+    auto errors = cfg.read_yaml(valid_configuration());
+    BOOST_TEST(errors.size() == 0);
 
     BOOST_TEST(cfg.optional_int() == 3);
     BOOST_TEST(cfg.required_string() == "test_value_2");
@@ -195,7 +197,8 @@ SEASTAR_THREAD_TEST_CASE(read_valid_configuration) {
 
 SEASTAR_THREAD_TEST_CASE(update_property_value) {
     auto cfg = test_config();
-    cfg.read_yaml(minimal_valid_configuration());
+    auto errors = cfg.read_yaml(minimal_valid_configuration());
+    BOOST_TEST(errors.size() == 0);
 
     BOOST_TEST(cfg.required_string() == "test_value_1");
     cfg.get("required_string").set_value(ss::sstring("new_string_value"));
@@ -204,17 +207,20 @@ SEASTAR_THREAD_TEST_CASE(update_property_value) {
 
 SEASTAR_THREAD_TEST_CASE(validate_valid_configuration) {
     auto cfg = test_config();
-    cfg.read_yaml(valid_configuration());
+    auto errors = cfg.read_yaml(valid_configuration());
+    BOOST_TEST(errors.size() == 0);
 }
 
 SEASTAR_THREAD_TEST_CASE(validate_invalid_configuration) {
     auto cfg = test_config();
-    cfg.read_yaml(valid_configuration());
+    auto errors = cfg.read_yaml(valid_configuration());
+    BOOST_TEST(errors.size() == 0);
 }
 
 SEASTAR_THREAD_TEST_CASE(config_json_serialization) {
     auto cfg = test_config();
-    cfg.read_yaml(valid_configuration());
+    auto errors = cfg.read_yaml(valid_configuration());
+    BOOST_TEST(errors.size() == 0);
     lg.info("Config: {}", cfg);
     // json data
     const char* expected_result = "{"
@@ -287,7 +293,8 @@ SEASTAR_THREAD_TEST_CASE(deserialize_explicit_null) {
                                 "nullable_int: ~\n");
 
     auto cfg = test_config();
-    cfg.read_yaml(with_null);
+    auto errors = cfg.read_yaml(with_null);
+    BOOST_TEST(errors.size() == 0);
     BOOST_TEST(cfg.nullable_int() == std::nullopt);
 }
 
