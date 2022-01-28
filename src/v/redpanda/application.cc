@@ -333,16 +333,41 @@ void application::hydrate_config(const po::variables_map& cfg) {
             config::node().load(config);
         }).get0();
 
+        auto node_config_errors = config::node().load(config);
+        for (const auto& i : node_config_errors) {
+            vlog(
+              _log.warn,
+              "Node property '{}' validation error: {}",
+              i.first,
+              i.second);
+        }
+        if (node_config_errors.size() > 0) {
+            throw std::invalid_argument("Validation errors in node config");
+        }
+
         if (config::node().enable_central_config) {
             _config_preload = cluster::config_manager::preload().get0();
         }
 
         if (_config_preload.version == cluster::config_version_unset) {
-            // This node has never seen a cluster configuration message.
-            // Bootstrap configuration from local yaml file.
             ss::smp::invoke_on_all([&config] {
                 config::shard_local_cfg().load(config);
             }).get0();
+
+            // This node has never seen a cluster configuration message.
+            // Bootstrap configuration from local yaml file.
+            auto errors = config::shard_local_cfg().load(config);
+
+            // Report any invalid properties.  Do not refuse to start redpanda,
+            // as the properties will have been either ignored or clamped
+            // to safe values.
+            for (const auto& i : errors) {
+                vlog(
+                  _log.warn,
+                  "Cluster property '{}' validation error: {}",
+                  i.first,
+                  i.second);
+            }
         }
 
         vlog(_log.info, "Cluster configuration properties:");
