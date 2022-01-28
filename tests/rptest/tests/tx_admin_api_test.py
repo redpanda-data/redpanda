@@ -16,9 +16,12 @@ from rptest.tests.redpanda_test import RedpandaTest
 
 
 class TxAdminTest(RedpandaTest):
-    topics = (TopicSpec(name="tx_test",
+    topics = (TopicSpec(name="tx_test1",
                         partition_count=3,
-                        replication_factor=3), )
+                        replication_factor=3),
+              TopicSpec(name="tx_test2",
+                        partition_count=3,
+                        replication_factor=3))
 
     def __init__(self, test_context):
         super(TxAdminTest,
@@ -118,17 +121,16 @@ class TxAdminTest(RedpandaTest):
         for topic in self.topics:
             for partition in range(topic.partition_count):
                 old_leader = self.admin.get_partition_leader(
-                    namespace="kafka", topic=self.topic, partition=partition)
+                    namespace="kafka", topic=topic, partition=partition)
 
                 self.admin.transfer_leadership_to(namespace="kafka",
-                                                  topic=self.topic,
+                                                  topic=topic,
                                                   partition=partition,
                                                   target=None)
 
                 def leader_is_changed():
                     return self.admin.get_partition_leader(
-                        namespace="kafka",
-                        topic=self.topic,
+                        namespace="kafka", topic=topic,
                         partition=partition) != old_leader
 
                 wait_until(leader_is_changed,
