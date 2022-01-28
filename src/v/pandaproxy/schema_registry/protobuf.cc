@@ -14,6 +14,7 @@
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
+#include "utils/base64.h"
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
@@ -21,6 +22,7 @@
 #include <fmt/ostream.h>
 #include <google/protobuf/compiler/parser.h>
 #include <google/protobuf/descriptor.h>
+#include <google/protobuf/descriptor.pb.h>
 #include <google/protobuf/io/tokenizer.h>
 #include <google/protobuf/io/zero_copy_stream.h>
 
@@ -136,10 +138,19 @@ public:
         pb::io::Tokenizer t{&is, &error_collector};
         _parser.RecordErrorsTo(&error_collector);
 
+        // Attempt parse a .proto file
         if (!_parser.Parse(&t, &_fdp)) {
-            throw as_exception(error_collector.error());
-        }
+            // base64 decode the schema
+            std::string_view b64_def{
+              schema.def().raw()().data(), schema.def().raw()().size()};
+            auto bytes_def = base64_to_bytes(b64_def);
 
+            // Attempt parse as an encoded FileDescriptorProto.pb
+            if (!_fdp.ParseFromArray(
+                  bytes_def.data(), static_cast<int>(bytes_def.size()))) {
+                throw as_exception(error_collector.error());
+            }
+        }
         _fdp.set_name(schema.sub()());
         return _fdp;
     }
