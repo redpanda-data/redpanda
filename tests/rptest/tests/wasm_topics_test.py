@@ -66,7 +66,7 @@ class WasmDeleteTopicsTest(WasmIdentityTest):
             if topic in topics:
                 raise Exception(
                     'Failed to delete materialized topic %s - topics: %s' %
-                    (topic, itopics))
+                    (topic, topics))
 
         if itopic in topics:
             raise Exception('Failed to delete source topic: %s - topics: %s' %
