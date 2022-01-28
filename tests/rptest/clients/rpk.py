@@ -157,7 +157,7 @@ class RpkTool:
         cmd = ['describe', topic, '-p']
         output = self._run_topic(cmd)
         if "not found" in output:
-            return None
+            raise Exception(f"Topic not found {topic}")
         lines = output.splitlines()
 
         def partition_line(line):
