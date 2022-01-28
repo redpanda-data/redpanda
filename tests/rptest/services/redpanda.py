@@ -276,7 +276,7 @@ class RedpandaService(Service):
                 else:
                     self.logger.debug("%s: skip cleaning node" %
                                       self.who_am_i(node))
-            except Exception as e:
+            except Exception:
                 self.logger.exception(
                     f"Error cleaning data files on {node.account.hostname}:")
                 raise
