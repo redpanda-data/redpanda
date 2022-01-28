@@ -19,6 +19,8 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
 import time
 import requests
+import json
+import re
 
 # 600s timeout because sometimes the examples
 # take ~10min to produce data
@@ -606,3 +608,196 @@ class KafkaStreamsMapFunction(RedpandaTest):
         consumer.stop()
         self._producer.stop()
         example.stop()
+
+
+class KafkaStreamsInteractiveQueries(RedpandaTest):
+    """
+    Test KafkaStreams InteractiveQueries app which locates and
+    queries kafka streams state stores. The state stores used in this app are
+    a KeyValue store and a Windowed Store.
+
+    Outside of KStreams, the app does simple prod-cons so the used RP features and systems are:
+    - topic creation
+    - produce/consume on topic
+    - src/v/kafka
+    - src/v/raft
+    - src/v/storage
+    """
+
+    topics = (TopicSpec(name="TextLinesTopic"), )
+
+    def __init__(self, test_context):
+        super(KafkaStreamsInteractiveQueries,
+              self).__init__(test_context=test_context)
+        self._ctx = test_context
+        self._ports = [7070, 7071]
+        self._store_names = ["windowed-word-count", "word-count"]
+
+    def check_all_running_instances(self, res):
+        # Example response looks like
+        # [{'host': 'docker_n_4', 'port': 7070, 'storeNames': ['windowed-word-count']},
+        # {'host': 'docker_n_5', 'port': 7071, 'storeNames': ['word-count']}]
+
+        if len(res) < 2:
+            return False
+
+        for instance in res:
+            if not re.match("^docker_n_\d+$", instance["host"]):
+                return False
+            if instance["port"] not in self._ports:
+                return False
+            if len(instance["storeNames"]) != 1:
+                return False
+            if instance["storeNames"][0] not in self._store_names:
+                return False
+        return True
+
+    def check_instances_by_store_name(self, res):
+        # Example response looks like
+        # [{'host': 'docker_n_5', 'port': 7071, 'storeNames': ['word-count']}]
+
+        if len(res) < 1:
+            return False
+
+        for instance in res:
+            if not re.match("^docker_n_\d+$", instance["host"]):
+                return False
+            if instance["port"] not in self._ports:
+                return False
+            if len(instance["storeNames"]) != 1:
+                return False
+            if instance["storeNames"][0] not in self._store_names:
+                return False
+
+        return True
+
+    def check_instance_for_word_in_store(self, res):
+        # Example response looks like
+        # {'host': 'docker_n_4', 'port': 7070, 'storeNames': ['word-count']}
+
+        if not re.match("^docker_n_\d+$", res["host"]):
+            return False
+
+        if res["port"] not in self._ports:
+            return False
+
+        if len(res["storeNames"]) != 1:
+            return False
+
+        if res["storeNames"][0] not in self._store_names:
+            return False
+
+        return True
+
+    def check_latest_value_for_word_in_store(self, res):
+        # Example response looks like
+        # {"key":"hello","value":3}
+
+        if res["key"] not in KafkaStreamExamples.QUERIES_HIST:
+            return False
+
+        return res["value"] == KafkaStreamExamples.QUERIES_HIST[res["key"]]
+
+    def check_all_records_from_word_count(self, res):
+        # Example response looks like
+        # [{"key":"hello","value":3}, {"key":"world","value":2}, ... ]
+
+        if len(res) < 1:
+            return False
+
+        for kv in res:
+            # The response for each key-value pair is equal
+            # to the response for the latest value of that key
+            if not self.check_latest_value_for_word_in_store(kv):
+                return False
+
+        return True
+
+    def _http_get(self, host, route, cond):
+        def try_get():
+            res = requests.get(f"http://{host}:7070{route}")
+
+            if not res.ok:
+                return False
+
+            self.logger.debug(f"Route: {route}")
+            self.logger.debug(f"Text: {res.text}")
+
+            # The data is a JSON object
+            text_json = json.loads(res.text)
+
+            return cond(text_json)
+
+        wait_until(try_get,
+                   timeout_sec=TIMEOUT,
+                   backoff_sec=5,
+                   err_msg=f"GET {route} failed")
+
+    @cluster(num_nodes=6)
+    def test_kafka_streams_interactive_queries(self):
+        # Different routes will respond with the same content in
+        # use cases with a single app instance. For example,
+        # /state/instances and /state/instances/<store name>
+
+        # Therefore, create two instances of the app on different ports
+        example_jar1 = KafkaStreamExamples.InteractiveQueriesExample(
+            self.redpanda, self._ports[0])
+        example_jar2 = KafkaStreamExamples.InteractiveQueriesExample(
+            self.redpanda, self._ports[1])
+        example1 = ExampleRunner(self._ctx, example_jar1, timeout_sec=TIMEOUT)
+        example2 = ExampleRunner(self._ctx, example_jar2, timeout_sec=TIMEOUT)
+
+        driver_jar = KafkaStreamExamples.InteractiveQueriesDriver(
+            self.redpanda)
+        driver = ExampleRunner(self._ctx, driver_jar, timeout_sec=TIMEOUT)
+
+        # Start the examples and wait for them to load
+        example1.start()
+        example2.start()
+        example1.wait()
+        example2.wait()
+
+        # Start the driver and wait for it to load
+        driver.start()
+        driver.wait()
+
+        host = example1.node.name
+
+        # Do HTTP GET on the possible routes
+
+        # /state/instances lists all running instances of this application
+        self._http_get(host, "/state/instances",
+                       self.check_all_running_instances)
+
+        # /state/instances/<store name> lists instances that currently manage
+        # the state store
+        self._http_get(host, "/state/instances/word-count",
+                       self.check_instances_by_store_name)
+        self._http_get(host, "/state/instances/windowed-word-count",
+                       self.check_instances_by_store_name)
+
+        # /state/instance/<store name>/<word> finds the app instance that
+        # contains the word (if it exists) for the state store
+        for word in KafkaStreamExamples.QUERIES_HIST:
+            self._http_get(host, f"/state/instance/word-count/{word}",
+                           self.check_instance_for_word_in_store)
+        for word in KafkaStreamExamples.QUERIES_HIST:
+            self._http_get(host, f"/state/instance/windowed-word-count/{word}",
+                           self.check_instance_for_word_in_store)
+
+        # /state/keyvalue/word-count/<word> gets the latest value for the word
+        # in the state store
+        # The store windowed-word-count is not intended to work with this route
+        for word in KafkaStreamExamples.QUERIES_HIST:
+            self._http_get(host, f"/state/keyvalue/word-count/{word}",
+                           self.check_latest_value_for_word_in_store)
+
+        # /state/keyvalues/word-count/all gets all key-value records from the
+        # word-count state store
+        # The store windowed-word-count is not intended to work with this route
+        # Don't test this route for now because there are problems in CI where the
+        # response from the HTTP server is 500 error
+
+        driver.stop()
+        example2.stop()
+        example1.stop()
