@@ -12,6 +12,7 @@
 #pragma once
 #include "config/base_property.h"
 #include "config/rjson_serialization.h"
+#include "oncore.h"
 #include "reflection/type_traits.h"
 #include "utils/intrusive_list_helpers.h"
 #include "utils/to_string.h"
@@ -224,6 +225,7 @@ private:
     std::optional<std::function<void()>> _on_change;
 
     void update(const T& v) {
+        oncore_debug_verify(_verify_shard);
         auto changed = _value != v;
         _value = v;
         if (changed && _on_change.has_value()) {
@@ -231,6 +233,8 @@ private:
         }
     }
     void detach() { _parent = nullptr; }
+
+    expression_in_debug_mode(oncore _verify_shard);
 
 protected:
     intrusive_list_hook _hook;
@@ -291,9 +295,15 @@ public:
      * the simplest way to  accomplish this is to make both the callback
      * and the binding attributes of the same object
      */
-    void watch(std::function<void()>&& f) { _on_change = std::move(f); }
+    void watch(std::function<void()>&& f) {
+        oncore_debug_verify(_verify_shard);
+        _on_change = std::move(f);
+    }
 
-    const T& operator()() const { return _value; }
+    const T& operator()() const {
+        oncore_debug_verify(_verify_shard);
+        return _value;
+    }
 
     friend class property<T>;
     template<typename U>
