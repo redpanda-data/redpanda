@@ -174,13 +174,32 @@ ss::future<> update_broker_client(
 model::broker make_self_broker(const config::node_config& node_cfg) {
     auto kafka_addr = node_cfg.advertised_kafka_api();
     auto rpc_addr = node_cfg.advertised_rpc_api();
+
+    // Calculate memory size
+    const auto shard_mem = ss::memory::stats();
+    uint64_t total_mem = shard_mem.total_memory() * ss::smp::count;
+    // If memory is <1GB, we'll return zero.  That case is already
+    // handled when reading this field (e.g. in
+    // `partition_allocator::check_cluster_limits`) because earlier redpanda
+    // versions always returned zero here.
+    uint32_t total_mem_gb = total_mem >> 30;
+
+    // Calculate disk size
+    auto space_info = std::filesystem::space(
+      config::node().data_directory().path);
+    // As for memory, if disk_gb is zero this is handled like a legacy broker.
+    uint32_t disk_gb = space_info.capacity >> 30;
+
     return model::broker(
       model::node_id(node_cfg.node_id),
       kafka_addr,
       rpc_addr,
       node_cfg.rack,
-      // FIXME: Fill broker properties with all the information
-      model::broker_properties{.cores = ss::smp::count});
+      model::broker_properties{
+        // TODO: populate or remote etc_props, mount_paths
+        .cores = ss::smp::count,
+        .available_memory_gb = total_mem_gb,
+        .available_disk_gb = disk_gb});
 }
 
 void log_certificate_reload_event(

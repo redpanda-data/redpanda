@@ -71,8 +71,8 @@ net::unresolved_address adl<net::unresolved_address>::from(iobuf_parser& in) {
 void adl<model::broker_properties>::to(
   iobuf& out, const model::broker_properties& prop) {
     adl<uint32_t>{}.to(out, prop.cores);
-    adl<uint32_t>{}.to(out, prop.available_memory);
-    adl<uint32_t>{}.to(out, prop.available_disk);
+    adl<uint32_t>{}.to(out, prop.available_memory_gb);
+    adl<uint32_t>{}.to(out, prop.available_disk_gb);
     adl<std::vector<ss::sstring>>{}.to(out, prop.mount_paths);
     type vec;
     vec.reserve(prop.etc_props.size());

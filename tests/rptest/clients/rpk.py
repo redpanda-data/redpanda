@@ -59,7 +59,21 @@ class RpkTool:
             cfg = [f"{k}:{v}" for k, v in config.items()]
             for it in cfg:
                 cmd += ["--topic-config", it]
-        return self._run_topic(cmd)
+        output = self._run_topic(cmd)
+        self._check_stdout_success(output)
+        return output
+
+    def _check_stdout_success(self, output):
+        """
+        Helper for topic operations where rpk does not surface errors
+        in return codes
+        (https://github.com/vectorizedio/redpanda/issues/3397)
+        """
+
+        lines = output.strip().split("\n")
+        status_line = lines[1]
+        if not status_line.endswith("OK"):
+            raise RpkException(f"Bad status: '{status_line}'")
 
     def sasl_allow_principal(self, principal, operations, resource,
                              resource_name, username, password, mechanism):
@@ -185,6 +199,12 @@ class RpkTool:
     def delete_topic_config(self, topic, key):
         cmd = ['alter-config', topic, "--delete", key]
         self._run_topic(cmd)
+
+    def add_topic_partitions(self, topic, additional):
+        cmd = ['add-partitions', topic, '--num', str(additional)]
+        output = self._run_topic(cmd)
+        self._check_stdout_success(output)
+        return output
 
     def consume(self,
                 topic,

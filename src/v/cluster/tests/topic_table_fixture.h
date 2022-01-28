@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cluster/members_table.h"
 #include "cluster/scheduling/allocation_node.h"
 #include "cluster/scheduling/partition_allocator.h"
 #include "cluster/tests/utils.h"
@@ -43,7 +44,14 @@ static void validate_delta(
 struct topic_table_fixture {
     topic_table_fixture() {
         table.start().get0();
-        allocator.start_single().get0();
+        members.start_single().get0();
+        allocator
+          .start_single(
+            std::ref(members),
+            config::mock_binding<std::optional<size_t>>(std::nullopt),
+            config::mock_binding<std::optional<int32_t>>(std::nullopt),
+            config::mock_binding<size_t>(32_MiB))
+          .get0();
         allocator.local().register_node(
           create_allocation_node(model::node_id(1), 8));
         allocator.local().register_node(
@@ -55,6 +63,7 @@ struct topic_table_fixture {
     ~topic_table_fixture() {
         table.stop().get0();
         allocator.stop().get0();
+        members.stop().get0();
         as.request_abort();
     }
 
@@ -124,6 +133,7 @@ struct topic_table_fixture {
         return total;
     }
 
+    ss::sharded<cluster::members_table> members;
     ss::sharded<cluster::partition_allocator> allocator;
     ss::sharded<cluster::topic_table> table;
     ss::sharded<cluster::partition_leaders_table> leaders;

@@ -28,7 +28,7 @@ class RedpandaTest(Test):
                  extra_rp_conf=dict(),
                  enable_pp=False,
                  enable_sr=False,
-                 num_cores=3):
+                 resource_settings=None):
         super(RedpandaTest, self).__init__(test_context)
         self.scale = Scale(test_context)
         self.redpanda = RedpandaService(test_context,
@@ -36,7 +36,7 @@ class RedpandaTest(Test):
                                         extra_rp_conf=extra_rp_conf,
                                         enable_pp=enable_pp,
                                         enable_sr=enable_sr,
-                                        num_cores=num_cores)
+                                        resource_settings=resource_settings)
         self._client = DefaultClient(self.redpanda)
 
     @property

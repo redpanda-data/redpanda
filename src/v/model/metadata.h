@@ -46,16 +46,16 @@ using initial_revision_id
 
 struct broker_properties {
     uint32_t cores;
-    uint32_t available_memory;
-    uint32_t available_disk;
+    uint32_t available_memory_gb;
+    uint32_t available_disk_gb;
     std::vector<ss::sstring> mount_paths;
     // key=value properties in /etc/redpanda/machine_properties.yaml
     std::unordered_map<ss::sstring, ss::sstring> etc_props;
 
     bool operator==(const broker_properties& other) const {
         return cores == other.cores
-               && available_memory == other.available_memory
-               && available_disk == other.available_disk
+               && available_memory_gb == other.available_memory_gb
+               && available_disk_gb == other.available_disk_gb
                && mount_paths == other.mount_paths
                && etc_props == other.etc_props;
     }
@@ -370,8 +370,8 @@ struct hash<model::broker_properties> {
     size_t operator()(const model::broker_properties& b) const {
         size_t h = 0;
         boost::hash_combine(h, std::hash<uint32_t>()(b.cores));
-        boost::hash_combine(h, std::hash<uint32_t>()(b.available_memory));
-        boost::hash_combine(h, std::hash<uint32_t>()(b.available_disk));
+        boost::hash_combine(h, std::hash<uint32_t>()(b.available_memory_gb));
+        boost::hash_combine(h, std::hash<uint32_t>()(b.available_disk_gb));
         for (const auto& path : b.mount_paths) {
             boost::hash_combine(h, std::hash<ss::sstring>()(path));
         }

@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cluster/members_table.h"
 #include "cluster/scheduling/allocation_node.h"
 #include "cluster/scheduling/allocation_strategy.h"
 #include "cluster/scheduling/partition_allocator.h"
@@ -18,15 +19,24 @@
 #include "model/fundamental.h"
 #include "random/fast_prng.h"
 #include "random/generators.h"
+#include "units.h"
 
 struct partition_allocator_fixture {
-    partition_allocator_fixture() {
+    partition_allocator_fixture()
+      : allocator(
+        std::ref(members),
+        config::mock_binding<std::optional<size_t>>(std::nullopt),
+        config::mock_binding<std::optional<int32_t>>(std::nullopt),
+        config::mock_binding<size_t>(32_MiB)) {
+        members.start().get0();
         ss::smp::invoke_on_all([] {
             config::shard_local_cfg()
               .get("enable_auto_rebalance_on_node_add")
               .set_value(true);
         }).get0();
     }
+
+    ~partition_allocator_fixture() { members.stop().get0(); }
 
     void register_node(int id, int core_count) {
         allocator.register_node(std::make_unique<cluster::allocation_node>(
@@ -83,6 +93,7 @@ struct partition_allocator_fixture {
         return req;
     }
 
+    ss::sharded<cluster::members_table> members;
     cluster::partition_allocator allocator;
 
     fast_prng prng;

@@ -66,7 +66,13 @@ controller::controller(
 ss::future<> controller::wire_up() {
     return _as.start()
       .then([this] { return _members_table.start(); })
-      .then([this] { return _partition_allocator.start_single(); })
+      .then([this] {
+          return _partition_allocator.start_single(
+            std::ref(_members_table),
+            config::shard_local_cfg().topic_memory_per_partition.bind(),
+            config::shard_local_cfg().topic_fds_per_partition.bind(),
+            config::shard_local_cfg().segment_fallocation_step.bind());
+      })
       .then([this] { return _credentials.start(); })
       .then([this] { return _authorizer.start(); })
       .then([this] { return _tp_state.start(); });
