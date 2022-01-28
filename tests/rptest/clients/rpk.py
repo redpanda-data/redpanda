@@ -313,7 +313,6 @@ class RpkTool:
         ])
 
     def cluster_config_export(self, file, all):
-        node = self._redpanda.nodes[0]
         cmd = [
             self._rpk_binary(), '--api-urls',
             self._admin_host(), "cluster", "config", "export", "--filename",
