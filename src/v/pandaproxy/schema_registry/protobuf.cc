@@ -187,7 +187,7 @@ ss::future<const pb::FileDescriptor*> build_file_with_refs(
 ss::future<const pb::FileDescriptor*> import_schema(
   pb::DescriptorPool& dp, sharded_store& store, canonical_schema schema) {
     try {
-        co_return co_await build_file_with_refs(dp, store, std::move(schema));
+        co_return co_await build_file_with_refs(dp, store, schema);
     } catch (const exception& e) {
         vlog(plog.warn, "Failed to decode schema: {}", e.what());
         throw as_exception(invalid_schema(schema));
