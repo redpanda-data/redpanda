@@ -18,9 +18,8 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 
 class CreatePartitionsTest(RedpandaTest):
     def _partition_count(self, topic):
-        client = KafkaCliTools(self.redpanda)
-        meta = client.describe_topic(topic)
-        return meta.partition_count
+        meta = self.client().describe_topic(topic)
+        return len(meta.partitions)
 
     def _create_topic_partitions(self, topic, count):
         client = KafkaCliTools(self.redpanda)

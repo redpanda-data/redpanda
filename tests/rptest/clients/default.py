@@ -59,3 +59,9 @@ class DefaultClient:
             **self._redpanda.security_config())
         res = client.describe_topics(topics)
         return [make_topic_desc(d) for d in res]
+
+    def describe_topic(self, topic: str):
+        td = self.describe_topics([topic])
+        assert len(td) == 1, f"Received {len(td)} topics expected 1: {td}"
+        assert td[0].name == topic, f"Received topic {td[0].name} expected {topic}: {td}"
+        return td[0]
