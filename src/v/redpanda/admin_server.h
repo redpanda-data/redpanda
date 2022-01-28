@@ -83,6 +83,7 @@ private:
     void register_broker_routes();
     void register_partition_routes();
     void register_hbadger_routes();
+    void register_transaction_routes();
 
     ss::future<> throw_on_error(
       ss::httpd::request& req,
