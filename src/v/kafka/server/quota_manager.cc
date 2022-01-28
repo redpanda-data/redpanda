@@ -54,7 +54,8 @@ throttle_delay quota_manager::record_tp_and_throttle(
       quota{
         now,
         clock::duration(0),
-        {_default_num_windows, _default_window_width}});
+        {static_cast<size_t>(_default_num_windows()),
+         _default_window_width()}});
 
     // bump to prevent gc
     if (!inserted) {
@@ -64,15 +65,15 @@ throttle_delay quota_manager::record_tp_and_throttle(
     auto rate = it->second.tp_rate.record_and_measure(bytes, now);
 
     std::chrono::milliseconds delay_ms(0);
-    if (rate > _target_tp_rate) {
-        auto diff = rate - _target_tp_rate;
-        double delay = (diff / _target_tp_rate)
+    if (rate > _target_tp_rate()) {
+        auto diff = rate - _target_tp_rate();
+        double delay = (diff / _target_tp_rate())
                        * (double)std::chrono::milliseconds(
                            it->second.tp_rate.window_size())
                            .count();
         delay_ms = std::chrono::milliseconds(static_cast<uint64_t>(delay));
     }
-    std::chrono::milliseconds max_delay_ms(_max_delay);
+    std::chrono::milliseconds max_delay_ms(_max_delay());
     if (delay_ms > max_delay_ms) {
         vlog(
           klog.info,
