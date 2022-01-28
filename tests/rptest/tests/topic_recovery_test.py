@@ -5,7 +5,6 @@
 # the License. You may obtain a copy of the License at
 #
 # https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
-
 from rptest.services.cluster import cluster
 from ducktape.mark import ignore
 from rptest.tests.redpanda_test import RedpandaTest
@@ -317,7 +316,7 @@ class BaseCase:
     topics and topics that created to align revision ids. By default it's equal
     to topics.
     """
-    topics = None
+    topics: tuple[TopicSpec, ...] = ()
 
     def __init__(self, s3_client: S3Client, kafka_tools: KafkaCliTools,
                  rpk_client: RpkTool, s3_bucket, logger):
@@ -523,7 +522,7 @@ class MissingTopicManifest(BaseCase):
     topic manifest is missing it will bring the data back.
     """
 
-    topics = []
+    topics = ()
 
     def __init__(self, s3_client, kafka_tools, rpk_client, s3_bucket, logger):
         super(MissingTopicManifest,
