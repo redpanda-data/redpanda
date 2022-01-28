@@ -40,7 +40,31 @@ def print_kafka(store, topic):
             log = KafkaLog(ntp)
             logger.info(f'topic: {ntp.topic}, partition: {ntp.partition}')
             for header in log.batch_headers():
-                print(json.dumps(header, indent=2))
+                logger.info(json.dumps(header, indent=2))
+
+
+def print_kafka_records(store, topic):
+    for ntp in store.ntps:
+        if ntp.nspace == "kafka":
+            if topic and ntp.topic != topic:
+                continue
+
+            log = KafkaLog(ntp)
+            logger.info(f'topic: {ntp.topic}, partition: {ntp.partition}')
+            for batch in log.batches():
+                logger.info(json.dumps(batch.header._asdict(), indent=2))
+                for record in batch:
+                    logger.info(
+                        json.dumps(
+                            {
+                                "key":
+                                None
+                                if record.key == None else record.key.hex(),
+                                "value":
+                                None if record.value == None else
+                                record.value.hex(),
+                            },
+                            indent=2))
 
 
 def print_groups(store):
@@ -49,7 +73,7 @@ def print_groups(store):
             l = GroupsLog(ntp)
             l.decode()
             logger.info(json.dumps(l.records, indent=2))
-    print()
+    logger.info("")
 
 
 def main():
@@ -60,12 +84,14 @@ def main():
         parser.add_argument('--path',
                             type=str,
                             help='Path to the log desired to be analyzed')
-        parser.add_argument(
-            '--type',
-            type=str,
-            choices=['controller', 'kvstore', 'kafka', 'group'],
-            required=True,
-            help='opertion to execute')
+        parser.add_argument('--type',
+                            type=str,
+                            choices=[
+                                'controller', 'kvstore', 'kafka', 'group',
+                                'kafka_records'
+                            ],
+                            required=True,
+                            help='opertion to execute')
         parser.add_argument(
             '--topic',
             type=str,
@@ -92,6 +118,8 @@ def main():
         print_controller(store)
     elif options.type == "kafka":
         print_kafka(store, options.topic)
+    elif options.type == "kafka_records":
+        print_kafka_records(store, options.topic)
     elif options.type == "group":
         print_groups(store)
 
