@@ -24,7 +24,6 @@ class TopicDescription(typing.NamedTuple):
 
 
 class DefaultClient:
-
     def __init__(self, redpanda):
         self._redpanda = redpanda
 
@@ -44,11 +43,10 @@ class DefaultClient:
         Describe topics. Pass topics=None to describe all topics, or a pass a
         list of topic names to restrict the call to a set of specific topics.
         """
-
         def make_partition_desc(d):
             return PartitionDescription(id=d['partition'],
-                                 leader=d['leader'],
-                                 replicas=d['replicas'])
+                                        leader=d['leader'],
+                                        replicas=d['replicas'])
 
         def make_topic_desc(d):
             partitions = [make_partition_desc(d) for d in d['partitions']]
@@ -63,7 +61,8 @@ class DefaultClient:
     def describe_topic(self, topic: str):
         td = self.describe_topics([topic])
         assert len(td) == 1, f"Received {len(td)} topics expected 1: {td}"
-        assert td[0].name == topic, f"Received topic {td[0].name} expected {topic}: {td}"
+        assert td[
+            0].name == topic, f"Received topic {td[0].name} expected {topic}: {td}"
         return td[0]
 
     def alter_topic_partition_count(self, topic: str, count: int):
