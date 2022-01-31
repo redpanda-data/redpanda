@@ -26,6 +26,7 @@
 #include "raft/types.h"
 #include "raft/vote_stm.h"
 #include "reflection/adl.h"
+#include "ssx/future-util.h"
 #include "storage/api.h"
 #include "vlog.h"
 
@@ -2040,23 +2041,31 @@ ss::future<result<replicate_result>> consensus::dispatch_replicate(
     auto stm = ss::make_lw_shared<replicate_entries_stm>(
       this, std::move(req), std::move(seqs));
 
-    return stm->apply(std::move(u)).finally([this, stm] {
-        auto f = stm->wait().finally([stm] {});
-        // if gate is closed wait for all futures
-        if (_bg.is_closed()) {
-            _ctxlog.info("gate-closed, waiting to finish background requests");
-            return f;
-        }
-        // background
-        ssx::spawn_with_gate(_bg, [this, stm, f = std::move(f)]() mutable {
-            return std::move(f).handle_exception(
-              [this](const std::exception_ptr& e) {
-                  _ctxlog.error(
+    return stm->apply(std::move(u))
+      .then([stm](result<replicate_result> res) {
+          if (!res) {
+              return ss::make_ready_future<result<replicate_result>>(res);
+          }
+          return stm->wait_for_majority();
+      })
+      .finally([this, stm] {
+          auto f = stm->wait_for_shutdown().finally([stm] {});
+          // if gate is closed wait for all futures
+          if (_bg.is_closed()) {
+              _ctxlog.info(
+                "gate-closed, waiting to finish background requests");
+              return f;
+          }
+          // background
+          ssx::background
+            = ssx::spawn_with_gate_then(_bg, [f = std::move(f)]() mutable {
+                  return std::move(f);
+              }).handle_exception([this, stm](const std::exception_ptr& e) {
+                  _ctxlog.debug(
                     "Error waiting for background acks to finish - {}", e);
               });
-        });
-        return ss::now();
-    });
+          return ss::now();
+      });
 }
 
 append_entries_reply consensus::make_append_entries_reply(

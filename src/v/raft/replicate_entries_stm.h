@@ -93,8 +93,17 @@ public:
     ss::future<result<replicate_result>>
       apply(std::vector<ss::semaphore_units<>>);
 
-    /// waits for the remaining background futures
-    ss::future<> wait();
+    /**
+     * Waits for majority of replicas to successfully execute dispatched
+     * append_entries_request
+     */
+    ss::future<result<replicate_result>> wait_for_majority();
+
+    /**
+     * Waits for all related background future to finish - required to be called
+     * before destorying the stm
+     */
+    ss::future<> wait_for_shutdown();
 
 private:
     ss::future<append_entries_request> share_request();
@@ -110,6 +119,9 @@ private:
     clock_type::time_point append_entries_timeout();
     /// This append will happen under the lock
     ss::future<result<storage::append_result>> append_to_self();
+
+    result<replicate_result> build_replicate_result() const;
+
     consensus* _ptr;
     /// we keep a copy around until we finish the retries
     std::unique_ptr<append_entries_request> _req;
@@ -121,6 +133,8 @@ private:
     model::offset _dirty_offset;
     model::offset _initial_committed_offset;
     ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>> _units;
+    std::optional<result<storage::append_result>> _append_result;
+    uint16_t _requests_count = 0;
 };
 
 } // namespace raft
