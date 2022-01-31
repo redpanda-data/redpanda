@@ -187,7 +187,9 @@ void consensus::shutdown_input() {
 ss::future<> consensus::stop() {
     vlog(_ctxlog.info, "Stopping");
     shutdown_input();
-
+    for (auto& idx : _fstats) {
+        idx.second.follower_state_change.broken();
+    }
     return _event_manager.stop()
       .then([this] { return _append_requests_buffer.stop(); })
       .then([this] { return _batcher.stop(); })
@@ -297,6 +299,8 @@ consensus::success_reply consensus::update_follower_index(
      * accepting request with seq 98, which should be rejected
      */
     idx.last_received_seq = std::max(seq, idx.last_received_seq);
+    auto broadcast_state_change = ss::defer(
+      [&idx] { idx.follower_state_change.broadcast(); });
 
     // check preconditions for processing the reply
     if (!is_leader()) {
@@ -328,6 +332,8 @@ consensus::success_reply consensus::update_follower_index(
     if (reply.result == append_entries_reply::status::success) {
         successfull_append_entries_reply(idx, std::move(reply));
         return success_reply::yes;
+    } else {
+        idx.last_sent_offset = idx.last_dirty_log_index;
     }
 
     if (idx.is_recovering) {
@@ -339,7 +345,7 @@ consensus::success_reply consensus::update_follower_index(
             idx.last_dirty_log_index = reply.last_dirty_log_index;
             idx.last_flushed_log_index = reply.last_flushed_log_index;
             idx.next_index = details::next_offset(idx.last_dirty_log_index);
-            idx.follower_state_change.broadcast();
+            idx.last_sent_offset = model::offset{};
         }
         return success_reply::no;
     }
@@ -462,6 +468,7 @@ void consensus::dispatch_recovery(follower_index_metadata& idx) {
           idx.next_index,
           log_max_offset);
         idx.next_index = log_max_offset;
+        idx.last_sent_offset = model::offset{};
     }
     idx.is_recovering = true;
     // background

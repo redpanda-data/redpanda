@@ -230,9 +230,25 @@ inline bool replicate_entries_stm::should_skip_follower_request(vnode id) {
     if (auto it = _ptr->_fstats.find(id); it != _ptr->_fstats.end()) {
         const auto timeout = clock_type::now()
                              - _ptr->_replicate_append_timeout;
-
-        return it->second.last_received_append_entries_reply_timestamp < timeout
-               || it->second.is_recovering;
+        if (it->second.last_received_append_entries_reply_timestamp < timeout) {
+            vlog(
+              _ctxlog.trace,
+              "Skipping sending append request to {} - didn'r  receive "
+              "follower heartbeat",
+              id);
+            return true;
+        }
+        if (it->second.last_sent_offset != _req->meta.prev_log_index) {
+            vlog(
+              _ctxlog.trace,
+              "Skipping sending append request to {} - last sent offset: {}, "
+              "expected follower last offset: {}",
+              id,
+              it->second.last_sent_offset,
+              _req->meta.prev_log_index);
+            return true;
+        }
+        return false;
     }
 
     return false;
@@ -265,6 +281,13 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply(units_t u) {
             _ptr->update_suppress_heartbeats(
               rni, _followers_seq[rni], heartbeats_suppressed::no);
             return;
+        }
+        if (rni != _ptr->self()) {
+            auto it = _ptr->_fstats.find(rni);
+            if (it == _ptr->_fstats.end()) {
+                return;
+            }
+            it->second.last_sent_offset = _dirty_offset;
         }
         ++_requests_count;
         (void)dispatch_one(rni); // background
