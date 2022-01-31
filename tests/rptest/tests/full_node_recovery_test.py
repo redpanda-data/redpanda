@@ -16,6 +16,7 @@ from rptest.clients.types import TopicSpec
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.kafka_cat import KafkaCat
+from rptest.clients.default import DefaultClient
 
 
 class FullNodeRecoveryTest(EndToEndTest):
@@ -30,7 +31,6 @@ class FullNodeRecoveryTest(EndToEndTest):
         super(FullNodeRecoveryTest, self).__init__(test_context=test_context,
                                                    extra_rp_conf=extra_rp_conf)
 
-    @ignore  # https://github.com/vectorizedio/redpanda/issues/3476
     @cluster(num_nodes=6)
     def test_node_recovery(self):
         self.start_redpanda(num_nodes=3)
@@ -41,7 +41,7 @@ class FullNodeRecoveryTest(EndToEndTest):
         for _ in range(0, 6):
             topics.append(TopicSpec(partition_count=random.randint(1, 10)))
         # chose one topic to run the main workload
-        self.redpanda.create_topic(topics)
+        DefaultClient(self.redpanda).create_topic(topics)
         self.topic = random.choice(topics).name
 
         self.start_producer(1)
