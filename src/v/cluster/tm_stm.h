@@ -79,6 +79,32 @@ struct tm_transaction {
     std::vector<tx_group> groups;
 
     friend std::ostream& operator<<(std::ostream&, const tm_transaction&);
+
+    ss::sstring get_status() const {
+        switch (status) {
+        case tx_status::ongoing:
+            return "ongoing";
+        case tx_status::preparing:
+            return "preparing";
+        case tx_status::prepared:
+            return "prepared";
+        case tx_status::aborting:
+            return "aborting";
+        case tx_status::killed:
+            return "killed";
+        case tx_status::ready:
+            return "ready";
+        case tx_status::tombstone:
+            return "tombstone";
+        }
+    }
+
+    ss::lowres_system_clock::duration get_staleness() const {
+        auto now = ss::lowres_system_clock::now();
+        return now - last_update_ts;
+    }
+
+    std::chrono::milliseconds get_timeout() const { return timeout_ms; }
 };
 
 struct tm_snapshot {
