@@ -655,77 +655,20 @@ replicate_stages consensus::do_replicate(
         return replicate_stages(errc::not_leader);
     }
 
-    if (opts.consistency == consistency_level::quorum_ack) {
-        _probe.replicate_requests_ack_all();
-
-        return wrap_stages_with_gate(
-          _bg,
-          _batcher.replicate(
-            expected_term, std::move(rdr), consistency_level::quorum_ack));
-    }
-
-    if (opts.consistency == consistency_level::leader_ack) {
-        _probe.replicate_requests_ack_leader();
-    } else {
+    switch (opts.consistency) {
+    case consistency_level::no_ack:
         _probe.replicate_requests_ack_none();
+        break;
+    case consistency_level::leader_ack:
+        _probe.replicate_requests_ack_leader();
+        break;
+    case consistency_level::quorum_ack:
+        _probe.replicate_requests_ack_all();
+        break;
     }
-    // For relaxed consistency, append data to leader disk without flush
-    // asynchronous replication is provided by Raft protocol recovery mechanism.
-
-    ss::promise<> enqueued;
-    auto enqueued_f = enqueued.get_future();
-    using ret_t = result<replicate_result>;
-
-    auto replicated = _op_lock.get_units().then_wrapped(
-      [this,
-       expected_term,
-       enqueued = std::move(enqueued),
-       lvl = opts.consistency,
-       rdr = std::move(rdr)](ss::future<ss::semaphore_units<>> f) mutable {
-          if (!f.failed()) {
-              enqueued.set_value();
-              return do_append_replicate_relaxed(
-                expected_term, std::move(rdr), lvl, f.get());
-          }
-          enqueued.set_exception(f.get_exception());
-          return ss::make_ready_future<ret_t>(errc::leader_append_failed);
-      });
 
     return wrap_stages_with_gate(
-      _bg, replicate_stages(std::move(enqueued_f), std::move(replicated)));
-}
-
-ss::future<result<replicate_result>> consensus::do_append_replicate_relaxed(
-  std::optional<model::term_id> expected_term,
-  model::record_batch_reader rdr,
-  consistency_level lvl,
-  ss::semaphore_units<> u) {
-    using ret_t = result<replicate_result>;
-    if (!is_leader()) {
-        return seastar::make_ready_future<ret_t>(errc::not_leader);
-    }
-
-    if (expected_term.has_value() && expected_term.value() != _term) {
-        return seastar::make_ready_future<ret_t>(errc::not_leader);
-    }
-    _last_write_consistency_level = lvl;
-    return disk_append(
-             model::make_record_batch_reader<details::term_assigning_reader>(
-               std::move(rdr), model::term_id(_term)),
-             update_last_quorum_index::no)
-      .then([this](storage::append_result res) {
-          // only update visibility upper bound if all quorum
-          // replicated entries are committed already
-          if (_commit_index >= _last_quorum_replicated_index) {
-              // for relaxed consistency mode update visibility
-              // upper bound with last offset appended to the log
-              _visibility_upper_bound_index = std::max(
-                _visibility_upper_bound_index, res.last_offset);
-              maybe_update_majority_replicated_index();
-          }
-          return ret_t(replicate_result{.last_offset = res.last_offset});
-      })
-      .finally([this, u = std::move(u)] { _probe.replicate_done(); });
+      _bg, _batcher.replicate(expected_term, std::move(rdr), opts.consistency));
 }
 
 ss::future<model::record_batch_reader>

@@ -368,11 +368,6 @@ private:
       std::optional<model::term_id>,
       model::record_batch_reader&&,
       replicate_options);
-    ss::future<result<replicate_result>> do_append_replicate_relaxed(
-      std::optional<model::term_id>,
-      model::record_batch_reader,
-      consistency_level,
-      ss::semaphore_units<>);
 
     ss::future<storage::append_result>
     disk_append(model::record_batch_reader&&, update_last_quorum_index);

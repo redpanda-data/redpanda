@@ -184,12 +184,25 @@ replicate_entries_stm::append_to_self() {
     return share_request()
       .then([this](append_entries_request req) mutable {
           vlog(_ctxlog.trace, "Self append entries - {}", req.meta);
-          _ptr->_last_write_consistency_level = consistency_level::quorum_ack;
+          _ptr->_last_write_consistency_level
+            = _req->flush ? consistency_level::quorum_ack
+                          : consistency_level::leader_ack;
           return _ptr->disk_append(
-            std::move(req.batches), consensus::update_last_quorum_index::yes);
+            std::move(req.batches),
+            _req->flush ? consensus::update_last_quorum_index::yes
+                        : consensus::update_last_quorum_index::no);
       })
       .then([this](storage::append_result res) {
           vlog(_ctxlog.trace, "Leader append result: {}", res);
+          // only update visibility upper bound if all quorum
+          // replicated entries are committed already
+          if (_ptr->_commit_index >= _ptr->_last_quorum_replicated_index) {
+              // for relaxed consistency mode update visibility
+              // upper bound with last offset appended to the log
+              _ptr->_visibility_upper_bound_index = std::max(
+                _ptr->_visibility_upper_bound_index, res.last_offset);
+              _ptr->maybe_update_majority_replicated_index();
+          }
           return result<storage::append_result>(std::move(res));
       })
       .handle_exception([this](const std::exception_ptr& e) {
