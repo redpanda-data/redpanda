@@ -532,6 +532,35 @@ ss::future<tm_stm::get_txs_result> tm_stm::get_all_transactions() {
     co_return ans;
 }
 
+ss::future<checked<tm_transaction, tm_stm::op_status>>
+tm_stm::delete_partition_from_tx(
+  model::term_id term,
+  kafka::transactional_id tid,
+  tm_transaction::tx_partition ntp) {
+    if (!_c->is_leader()) {
+        co_return tm_stm::op_status::not_leader;
+    }
+
+    auto optional_tx = get_tx(tid);
+    if (!optional_tx.has_value()) {
+        co_return tm_stm::op_status::not_found;
+    }
+
+    auto tx = optional_tx.value();
+
+    auto res = tx.delete_partition(ntp);
+    if (!res) {
+        co_return tm_stm::op_status::partition_not_found;
+    }
+
+    if (tx.status == tm_transaction::tx_status::ongoing) {
+        _mem_txes.insert_or_assign(tid, tx);
+        co_return tx;
+    } else {
+        co_return co_await update_tx(std::move(tx), term);
+    }
+}
+
 ss::future<> tm_stm::expire_tx(kafka::transactional_id tx_id) {
     auto tx_opt = get_tx(tx_id);
     if (!tx_opt.has_value()) {
