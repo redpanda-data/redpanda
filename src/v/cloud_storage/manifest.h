@@ -48,6 +48,8 @@ get_manifest_path_components(const std::filesystem::path& path);
 struct segment_name_components {
     model::offset base_offset;
     model::term_id term;
+
+    auto operator<=>(const segment_name_components&) const = default;
 };
 
 std::optional<segment_name_components>
@@ -59,6 +61,9 @@ remote_segment_path generate_remote_segment_path(
   model::initial_revision_id,
   const segment_name&,
   model::term_id archiver_term);
+
+/// Generate correct S3 segment name based on term and base offset
+segment_name generate_segment_name(model::offset o, model::term_id t);
 
 struct serialized_json_stream {
     ss::input_stream<char> stream;
@@ -134,9 +139,10 @@ public:
         auto operator<=>(const segment_meta&) const = default;
     };
 
-    using key = segment_name;
+    /// Segment key in the maifest
+    using key = segment_name_components;
     using value = segment_meta;
-    using segment_map = std::map<key, value>;
+    using segment_map = absl::btree_map<key, value>;
     using const_iterator = segment_map::const_iterator;
     using const_reverse_iterator = segment_map::const_reverse_iterator;
 
@@ -159,7 +165,7 @@ public:
     model::initial_revision_id get_revision_id() const;
 
     remote_segment_path
-    generate_segment_path(const segment_name&, const segment_meta&) const;
+    generate_segment_path(const key&, const segment_meta&) const;
 
     /// Return iterator to the begining(end) of the segments list
     const_iterator begin() const;
@@ -169,13 +175,18 @@ public:
     size_t size() const;
 
     /// Check if the manifest contains particular segment
+    bool contains(const key& key) const;
     bool contains(const segment_name& name) const;
 
     /// Add new segment to the manifest
+    bool add(const key& key, const segment_meta& meta);
     bool add(const segment_name& name, const segment_meta& meta);
 
     /// Get segment if available or nullopt
+    const segment_meta* get(const key& key) const;
     const segment_meta* get(const segment_name& name) const;
+    /// Find element of the manifest by offset
+    const_iterator find(model::offset o) const;
 
     /// Get insert iterator for segments set
     std::insert_iterator<segment_map> get_insert_iterator();
@@ -207,7 +218,7 @@ public:
     ///
     /// \param name is a segment name
     /// \return true on success, false on failure (no such segment)
-    bool delete_permanently(const segment_name& name);
+    bool delete_permanently(const key& name);
 
     manifest_type get_manifest_type() const override {
         return manifest_type::partition;
@@ -223,6 +234,8 @@ private:
     segment_map _segments;
     model::offset _last_offset;
 };
+
+std::ostream& operator<<(std::ostream& o, const manifest::key& k);
 
 class topic_manifest final : public base_manifest {
 public:

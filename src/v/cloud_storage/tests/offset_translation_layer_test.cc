@@ -8,6 +8,7 @@
  * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "cloud_storage/manifest.h"
 #include "cloud_storage/offset_translation_layer.h"
 #include "cloud_storage/types.h"
 #include "seastarx.h"
@@ -89,10 +90,10 @@ SEASTAR_THREAD_TEST_CASE(test_name_translation) {
 
     for (const auto& [orig, expected] : orig2expected) {
         segment_name orig_name{orig};
+        segment_name_components key = parse_segment_name(orig_name).value();
         auto meta = m.get(orig_name);
         BOOST_REQUIRE(meta);
         offset_translator otl(meta->delta_offset);
-        BOOST_REQUIRE_EQUAL(
-          otl.get_adjusted_segment_name(orig_name, fib), expected);
+        BOOST_REQUIRE_EQUAL(otl.get_adjusted_segment_name(key, fib), expected);
     }
 }
