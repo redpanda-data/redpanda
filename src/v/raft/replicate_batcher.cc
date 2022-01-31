@@ -155,97 +155,87 @@ replicate_batcher::do_cache_with_backpressure(
       });
 }
 
-ss::future<>
-replicate_batcher::flush(ss::semaphore_units<> u, bool const transfer_flush) {
-    return ss::try_with_gate(
-      _bg, [this, batcher_units = std::move(u), transfer_flush]() mutable {
-          auto item_cache = std::exchange(_item_cache, {});
-          if (item_cache.empty()) {
-              return ss::now();
-          }
+ss::future<> replicate_batcher::flush(
+  ss::semaphore_units<> batcher_units, bool const transfer_flush) {
+    auto holder = _bg.hold();
 
-          return _ptr->_op_lock.get_units().then_wrapped(
-            [this,
-             item_cache = std::move(item_cache),
-             batcher_units = std::move(batcher_units),
-             transfer_flush](ss::future<ss::semaphore_units<>> f) mutable {
-                // if we failed to acquire units, propagate exception to cached
-                // promises
-                if (f.failed()) {
-                    for (auto& i : item_cache) {
-                        i->_promise.set_exception(f.get_exception());
-                    }
-                    return ss::now();
+    auto item_cache = std::exchange(_item_cache, {});
+    if (item_cache.empty()) {
+        co_return;
+    }
+    try {
+        auto u = co_await _ptr->_op_lock.get_units();
+
+        if (!transfer_flush && _ptr->_transferring_leadership) {
+            vlog(_ptr->_ctxlog.warn, "Dropping flush, leadership transferring");
+            for (auto& n : item_cache) {
+                n->_promise.set_value(errc::not_leader);
+            }
+            co_return;
+        }
+
+        // release batcher replicate batcher lock
+        batcher_units.return_all();
+        // we have to check if we are the leader
+        // it is critical as term could have been updated already by
+        // vote request and entries from current node could be accepted
+        // by the followers while it is no longer a leader
+        // this problem caused truncation failure.
+
+        if (!_ptr->is_leader()) {
+            for (auto& n : item_cache) {
+                n->_promise.set_value(errc::not_leader);
+            }
+            co_return;
+        }
+
+        auto meta = _ptr->meta();
+        auto const term = model::term_id(meta.term);
+        ss::circular_buffer<model::record_batch> data;
+        std::vector<item_ptr> notifications;
+        ss::semaphore_units<> item_memory_units(_max_batch_size_sem, 0);
+        for (auto& n : item_cache) {
+            if (
+              !n->expected_term.has_value()
+              || n->expected_term.value() == term) {
+                item_memory_units.adopt(std::move(n->units));
+                for (auto& b : n->data) {
+                    b.set_term(term);
+                    data.push_back(std::move(b));
                 }
-                auto u = f.get();
+                notifications.push_back(std::move(n));
+            } else {
+                n->_promise.set_value(errc::not_leader);
+            }
+        }
 
-                if (!transfer_flush && _ptr->_transferring_leadership) {
-                    vlog(
-                      _ptr->_ctxlog.warn,
-                      "Dropping flush, leadership transferring");
-                    for (auto& n : item_cache) {
-                        n->_promise.set_value(errc::not_leader);
-                    }
-                    return ss::now();
-                }
+        if (notifications.empty()) {
+            co_return;
+        }
 
-                // release batcher replicate batcher lock
-                batcher_units.return_all();
-                // we have to check if we are the leader
-                // it is critical as term could have been updated already by
-                // vote request and entries from current node could be accepted
-                // by the followers while it is no longer a leader
-                // this problem caused truncation failure.
+        auto seqs = _ptr->next_followers_request_seq();
+        append_entries_request req(
+          _ptr->_self,
+          meta,
+          model::make_memory_record_batch_reader(std::move(data)));
 
-                if (!_ptr->is_leader()) {
-                    for (auto& n : item_cache) {
-                        n->_promise.set_value(errc::not_leader);
-                    }
-                    return ss::make_ready_future<>();
-                }
-
-                auto meta = _ptr->meta();
-                auto const term = model::term_id(meta.term);
-                ss::circular_buffer<model::record_batch> data;
-                std::vector<item_ptr> notifications;
-                ss::semaphore_units<> item_memory_units(_max_batch_size_sem, 0);
-                for (auto& n : item_cache) {
-                    item_memory_units.adopt(std::move(n->units));
-                    if (
-                      !n->expected_term.has_value()
-                      || n->expected_term.value() == term) {
-                        for (auto& b : n->data) {
-                            b.set_term(term);
-                            data.push_back(std::move(b));
-                        }
-                        notifications.push_back(std::move(n));
-                    } else {
-                        n->_promise.set_value(errc::not_leader);
-                    }
-                }
-
-                if (notifications.empty()) {
-                    return ss::now();
-                }
-
-                auto seqs = _ptr->next_followers_request_seq();
-                append_entries_request req(
-                  _ptr->_self,
-                  std::move(meta),
-                  model::make_memory_record_batch_reader(std::move(data)));
-                std::vector<ss::semaphore_units<>> units;
-                units.reserve(2);
-                units.push_back(std::move(u));
-                // we will release memory semaphore as soon as append entry
-                // requests will be dispatched
-                units.push_back(std::move(item_memory_units));
-                return do_flush(
-                  std::move(notifications),
-                  std::move(req),
-                  std::move(units),
-                  std::move(seqs));
-            });
-      });
+        std::vector<ss::semaphore_units<>> units;
+        units.reserve(2);
+        units.push_back(std::move(u));
+        // we will release memory semaphore as soon as append entry
+        // requests will be dispatched
+        units.push_back(std::move(item_memory_units));
+        co_await do_flush(
+          std::move(notifications),
+          std::move(req),
+          std::move(units),
+          std::move(seqs));
+    } catch (...) {
+        for (auto& i : item_cache) {
+            i->_promise.set_exception(std::current_exception());
+        }
+        co_return;
+    }
 }
 
 static void propagate_result(
