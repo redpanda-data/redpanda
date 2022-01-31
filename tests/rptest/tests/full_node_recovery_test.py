@@ -17,6 +17,7 @@ from rptest.tests.end_to_end import EndToEndTest
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.default import DefaultClient
+from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST
 
 
 class FullNodeRecoveryTest(EndToEndTest):
@@ -31,7 +32,7 @@ class FullNodeRecoveryTest(EndToEndTest):
         super(FullNodeRecoveryTest, self).__init__(test_context=test_context,
                                                    extra_rp_conf=extra_rp_conf)
 
-    @cluster(num_nodes=6)
+    @cluster(num_nodes=6, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_node_recovery(self):
         self.start_redpanda(num_nodes=3)
         kafka_tools = KafkaCliTools(self.redpanda)
