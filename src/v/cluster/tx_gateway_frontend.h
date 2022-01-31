@@ -65,6 +65,9 @@ public:
     using return_all_txs_res = result<std::vector<tm_transaction>, tx_errc>;
     ss::future<return_all_txs_res> get_all_transactions();
 
+    ss::future<tx_errc> delete_partition_from_tx(
+      kafka::transactional_id, tm_transaction::tx_partition);
+
     ss::future<> stop();
 
 private:
@@ -184,6 +187,11 @@ private:
       ss::shared_ptr<tm_stm>,
       add_offsets_tx_request,
       model::timeout_clock::duration);
+
+    ss::future<tx_errc> do_delete_partition_from_tx(
+      ss::shared_ptr<tm_stm>,
+      kafka::transactional_id,
+      tm_transaction::tx_partition);
 
     void expire_old_txs();
     ss::future<> do_expire_old_txs();

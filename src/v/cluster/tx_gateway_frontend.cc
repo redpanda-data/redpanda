@@ -25,7 +25,6 @@
 #include "config/configuration.h"
 #include "errc.h"
 #include "types.h"
-#include "utils/gate_guard.h"
 
 #include <seastar/core/coroutine.hh>
 
@@ -1237,6 +1236,91 @@ tx_gateway_frontend::get_all_transactions() {
 
           co_return res.value();
       });
+}
+
+ss::future<tx_errc> tx_gateway_frontend::delete_partition_from_tx(
+  kafka::transactional_id tid, tm_transaction::tx_partition ntp) {
+    auto shard = _shard_table.local().shard_for(model::tx_manager_ntp);
+
+    if (shard == std::nullopt) {
+        vlog(txlog.warn, "can't find a shard for {}", model::tx_manager_ntp);
+        co_return tx_errc::shard_not_found;
+    }
+
+    co_return co_await container().invoke_on(
+      *shard,
+      _ssg,
+      [tid, ntp](tx_gateway_frontend& self) -> ss::future<tx_errc> {
+          auto partition = self._partition_manager.local().get(
+            model::tx_manager_ntp);
+          if (!partition) {
+              vlog(
+                txlog.warn,
+                "can't get partition by {} ntp",
+                model::tx_manager_ntp);
+              co_return tx_errc::invalid_txn_state;
+          }
+
+          auto stm = partition->tm_stm();
+
+          if (!stm) {
+              vlog(
+                txlog.warn,
+                "can't get tm stm of the {}' partition",
+                model::tx_manager_ntp);
+              co_return tx_errc::invalid_txn_state;
+          }
+
+          co_return co_await stm->read_lock().then(
+            [&self, stm, tid, ntp](ss::basic_rwlock<>::holder unit) {
+                return with(
+                         stm,
+                         tid,
+                         "delete_partition_from_tx",
+                         [&self, stm, tid, ntp]() {
+                             return self.do_delete_partition_from_tx(
+                               stm, tid, ntp);
+                         })
+                  .finally([u = std::move(unit)] {});
+            });
+      });
+}
+
+ss::future<tx_errc> tx_gateway_frontend::do_delete_partition_from_tx(
+  ss::shared_ptr<tm_stm> stm,
+  kafka::transactional_id tid,
+  tm_transaction::tx_partition ntp) {
+    checked<model::term_id, tm_stm::op_status> term_opt
+      = tm_stm::op_status::unknown;
+    try {
+        term_opt = co_await stm->sync();
+    } catch (...) {
+        co_return tx_errc::invalid_txn_state;
+    }
+    if (!term_opt.has_value()) {
+        if (term_opt.error() == tm_stm::op_status::not_leader) {
+            co_return tx_errc::not_coordinator;
+        }
+        co_return tx_errc::invalid_txn_state;
+    }
+    auto term = term_opt.value();
+
+    auto res = co_await stm->delete_partition_from_tx(term, tid, ntp);
+
+    if (res.has_error()) {
+        switch (res.error()) {
+        case tm_stm::op_status::not_leader:
+            co_return tx_errc::leader_not_found;
+        case tm_stm::op_status::partition_not_found:
+            co_return tx_errc::partition_not_found;
+        case tm_stm::op_status::conflict:
+            co_return tx_errc::conflict;
+        default:
+            co_return tx_errc::unknown_server_error;
+        }
+    }
+
+    co_return tx_errc::none;
 }
 
 ss::future<checked<cluster::tm_transaction, tx_errc>>
