@@ -1235,6 +1235,7 @@ void application::start_kafka(::stop_signal& app_signal) {
             metadata_cache,
             controller->get_topics_frontend(),
             controller->get_config_frontend(),
+            controller->get_feature_table(),
             quota_mgr,
             group_router,
             shard_table,
