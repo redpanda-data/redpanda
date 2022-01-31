@@ -69,9 +69,6 @@ ss::shard_id consumer_shard(const kafka::group_id& g_id) {
 
 ss::future<server::reply_t>
 get_brokers(server::request_t rq, server::reply_t rp) {
-    parse::content_type_header(
-      *rq.req,
-      {json::serialization_format::v2, json::serialization_format::none});
     auto res_fmt = parse::accept_header(
       *rq.req,
       {json::serialization_format::v2, json::serialization_format::none});
@@ -108,9 +105,6 @@ get_brokers(server::request_t rq, server::reply_t rp) {
 
 ss::future<server::reply_t>
 get_topics_names(server::request_t rq, server::reply_t rp) {
-    parse::content_type_header(
-      *rq.req,
-      {json::serialization_format::v2, json::serialization_format::none});
     auto res_fmt = parse::accept_header(
       *rq.req,
       {json::serialization_format::v2, json::serialization_format::none});
@@ -146,9 +140,6 @@ get_topics_names(server::request_t rq, server::reply_t rp) {
 
 ss::future<server::reply_t>
 get_topics_records(server::request_t rq, server::reply_t rp) {
-    parse::content_type_header(
-      *rq.req,
-      {json::serialization_format::v2, json::serialization_format::none});
     auto res_fmt = parse::accept_header(
       *rq.req,
       {json::serialization_format::binary_v2,
@@ -387,9 +378,6 @@ subscribe_consumer(server::request_t rq, server::reply_t rp) {
 
 ss::future<server::reply_t>
 consumer_fetch(server::request_t rq, server::reply_t rp) {
-    parse::content_type_header(
-      *rq.req,
-      {json::serialization_format::v2, json::serialization_format::none});
     auto res_fmt = parse::accept_header(
       *rq.req,
       {json::serialization_format::binary_v2,
