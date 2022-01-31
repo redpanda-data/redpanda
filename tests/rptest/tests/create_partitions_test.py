@@ -13,22 +13,12 @@ from ducktape.utils.util import wait_until
 from rptest.tests.redpanda_test import RedpandaTest
 
 from rptest.clients.types import TopicSpec
-from rptest.clients.kafka_cli_tools import KafkaCliTools
 
 
 class CreatePartitionsTest(RedpandaTest):
     def _partition_count(self, topic):
-        client = KafkaCliTools(self.redpanda)
-        meta = client.describe_topic(topic)
-        return meta.partition_count
-
-    def _create_topic_partitions(self, topic, count):
-        client = KafkaCliTools(self.redpanda)
-        client.create_topic_partitions(topic, count)
-
-    def _delete_topic(self, topic_name):
-        client = KafkaCliTools(self.redpanda)
-        client.delete_topic(topic_name)
+        meta = self.client().describe_topic(topic)
+        return len(meta.partitions)
 
     def _create_add_verify(self, topic, new_parts):
         self.logger.info(
@@ -45,7 +35,7 @@ class CreatePartitionsTest(RedpandaTest):
             f"Initial topic doesn't have expected {topic.partition_count} partitions, found {self._partition_count(topic.name)}"
         )
 
-        self._create_topic_partitions(topic.name, new_parts)
+        self.client().alter_topic_partition_count(topic.name, new_parts)
 
         expected_parts = new_parts
         wait_until(
@@ -67,6 +57,6 @@ class CreatePartitionsTest(RedpandaTest):
             topic = TopicSpec(partition_count=partition_count,
                               replication_factor=random.choice((1, 3)))
             self._create_add_verify(topic, new_partition_count)
-            self._delete_topic(topic.name)
+            self.client().delete_topic(topic.name)
 
             # todo delete the topic to avoid running out of file handles

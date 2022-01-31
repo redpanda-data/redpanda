@@ -7,15 +7,12 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import time
 import random
-from functools import partial
 
 from rptest.services.admin import Admin
 from rptest.services.verifiable_consumer import VerifiableConsumer
 
 from ducktape.mark.resource import cluster
-from ducktape.mark import ignore
 from ducktape.utils.util import wait_until
 
 from rptest.tests.end_to_end import EndToEndTest
@@ -86,10 +83,10 @@ class WasmPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
 
     def _grab_input(self, topic):
         metadata = self.client().describe_topics()
-        selected = [x for x in metadata if x['topic'] == topic]
+        selected = [x for x in metadata if x.name == topic]
         assert len(selected) == 1
-        partition = random.choice(selected[0]["partitions"])
-        return selected[0]["topic"], partition["partition"]
+        partition = random.choice(selected[0].partitions)
+        return selected[0].name, partition.id
 
     def _on_data_consumed(self, record, node):
         self.result_data.append(record["value"])
@@ -131,7 +128,7 @@ class WasmPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         def topic_created():
             metadata = self.client().describe_topics()
             self.logger.info(f"metadata: {metadata}")
-            return any([x['topic'] == materialized_topic for x in metadata])
+            return any([x.name == materialized_topic for x in metadata])
 
         wait_until(topic_created, timeout_sec=30, backoff_sec=2)
 

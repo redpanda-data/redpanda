@@ -22,7 +22,7 @@ class KafConsumer(BackgroundThreadService):
         self.done = False
         self.offset = dict()
 
-    def _worker(self, idx, node):
+    def _worker(self, _, node):
         self._stopping.clear()
         try:
             partition = None

@@ -276,7 +276,7 @@ class RedpandaService(Service):
                 else:
                     self.logger.debug("%s: skip cleaning node" %
                                       self.who_am_i(node))
-            except Exception as e:
+            except Exception:
                 self.logger.exception(
                     f"Error cleaning data files on {node.account.hostname}:")
                 raise
@@ -735,7 +735,7 @@ class RedpandaService(Service):
                 shutil.move(os.path.join(data_dir, fn), dest)
 
     def data_checksum(self, node):
-        """Run command that computes MD5 hash of every file in redpanda data 
+        """Run command that computes MD5 hash of every file in redpanda data
         directory. The results of the command are turned into a map from path
         to hash-size tuples."""
         cmd = f"find {RedpandaService.DATA_DIR} -type f -exec md5sum -z '{{}}' \; -exec stat -c ' %s' '{{}}' \;"
