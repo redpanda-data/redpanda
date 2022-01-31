@@ -1149,6 +1149,7 @@ void application::start_redpanda() {
             std::ref(controller->get_api()),
             std::ref(controller->get_members_frontend()),
             std::ref(controller->get_config_frontend()),
+            std::ref(controller->get_feature_table()),
             std::ref(controller->get_health_monitor()));
 
           proto->register_service<cluster::metadata_dissemination_handler>(

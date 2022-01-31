@@ -14,6 +14,7 @@
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
 #include "cluster/health_monitor_frontend.h"
+#include "cluster/logger.h"
 #include "cluster/members_frontend.h"
 #include "cluster/members_manager.h"
 #include "cluster/metadata_cache.h"
@@ -23,6 +24,7 @@
 #include "config/configuration.h"
 #include "model/timeout_clock.h"
 #include "rpc/errc.h"
+#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
@@ -39,6 +41,7 @@ service::service(
   ss::sharded<controller_api>& api,
   ss::sharded<members_frontend>& members_frontend,
   ss::sharded<config_frontend>& config_frontend,
+  ss::sharded<feature_table>& feature_table,
   ss::sharded<health_monitor_frontend>& hm_frontend)
   : controller_service(sg, ssg)
   , _topics_frontend(tf)
@@ -48,6 +51,7 @@ service::service(
   , _api(api)
   , _members_frontend(members_frontend)
   , _config_frontend(config_frontend)
+  , _feature_table(feature_table)
   , _hm_frontend(hm_frontend) {}
 
 ss::future<join_reply>
@@ -63,9 +67,21 @@ service::join_node(join_node_request&& req, rpc::streaming_context&) {
     // For now, the new-style join_node_request only differs from join_request
     // in that it has a logical version to validate, so do the validation and
     // then pass it through to the code that handles old-style join requests.
-    if (req.logical_version < latest_version) {
-        // TODO: validate based on official cluster version
-        // rather than this node's local version
+    cluster_version expect_version
+      = _feature_table.local().get_active_version();
+    if (expect_version == invalid_version) {
+        // Feature table isn't initialized, fall back to requiring that
+        // joining node is as recent as this node.
+        expect_version = latest_version;
+    }
+
+    if (req.logical_version < expect_version) {
+        vlog(
+          clusterlog.warn,
+          "Rejecting join request from node {}, logical version {} < {}",
+          req.node,
+          req.logical_version,
+          expect_version);
         return ss::make_ready_future<join_node_reply>(
           join_node_reply{false, model::node_id{-1}});
     }
