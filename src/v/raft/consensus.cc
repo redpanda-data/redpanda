@@ -11,6 +11,7 @@
 
 #include "config/configuration.h"
 #include "likely.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "prometheus/prometheus_sanitize.h"
@@ -34,6 +35,7 @@
 #include <seastar/core/fstream.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/util/defer.hh>
 
 #include <fmt/ostream.h>
 
@@ -179,7 +181,6 @@ void consensus::shutdown_input() {
         _vote_timeout.cancel();
         _as.request_abort();
         _commit_index_updated.broken();
-        _disk_append.broken();
         _follower_reply.broken();
     }
 }
@@ -1130,10 +1131,7 @@ ss::future<> consensus::do_start() {
                     _ctxlog.trace, "Recovered commit_index: {}", _commit_index);
               }
           })
-          .then([this] {
-              start_dispatching_disk_append_events();
-              return _event_manager.start();
-          })
+          .then([this] { return _event_manager.start(); })
           .then([this] { _append_requests_buffer.start(); })
           .then([this] {
               vlog(
@@ -1142,29 +1140,6 @@ ss::future<> consensus::do_start() {
                 _log.offsets(),
                 _term,
                 _configuration_manager.get_latest());
-          });
-    });
-}
-
-void consensus::start_dispatching_disk_append_events() {
-    // forward disk appends to follower state changed condition
-    // variables
-    ssx::spawn_with_gate(_bg, [this] {
-        return ss::do_until(
-          [this] { return _as.abort_requested(); },
-          [this] {
-              return _disk_append.wait()
-                .then([this] {
-                    for (auto& idx : _fstats) {
-                        idx.second.follower_state_change.broadcast();
-                    }
-                })
-                .handle_exception_type(
-                  [this](const ss::broken_condition_variable&) {
-                      for (auto& idx : _fstats) {
-                          idx.second.follower_state_change.broken();
-                      }
-                  });
           });
     });
 }
@@ -2109,7 +2084,6 @@ ss::future<storage::append_result> consensus::disk_append(
                */
               _last_quorum_replicated_index = ret.last_offset;
           }
-          _disk_append.broadcast();
           _has_pending_flushes = true;
           // TODO
           // if we rolled a log segment. write current configuration

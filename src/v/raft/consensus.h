@@ -447,8 +447,6 @@ private:
     void maybe_update_last_visible_index(model::offset);
     void maybe_update_majority_replicated_index();
 
-    void start_dispatching_disk_append_events();
-
     voter_priority next_target_priority();
     voter_priority get_node_priority(vnode) const;
 
@@ -582,7 +580,6 @@ private:
     model::offset _last_quorum_replicated_index;
     consistency_level _last_write_consistency_level;
     offset_monitor _consumable_offset_monitor;
-    ss::condition_variable _disk_append;
     ss::condition_variable _follower_reply;
     append_entries_buffer _append_requests_buffer;
     friend std::ostream& operator<<(std::ostream&, const consensus&);
