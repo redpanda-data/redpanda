@@ -24,6 +24,52 @@
                     "parameters": []
                 }
             ]
+        },
+        {
+            "path": "/v1/transaction/{transactional_id}/delete_partition",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Delete partition from transaction",
+                    "type": "void",
+                    "nickname": "delete_partition",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "transactional_id",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "namespace",
+                            "in": "query",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "topic",
+                            "in": "query",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "partition_id",
+                            "in": "query",
+                            "required": true,
+                            "type": "integer"
+                        },
+                        {
+                            "name": "etag",
+                            "in": "query",
+                            "required": true,
+                            "type": "integer"
+                        }
+                    ]
+                }
+            ]
         }
     ],
     "models": {
