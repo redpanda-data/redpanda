@@ -225,7 +225,6 @@ class PandaProxyTest(RedpandaTest):
         """
         Acceptable headers:
         * Accept: "", "*.*", "application/vnd.kafka.v2+json"
-        * Content-Type: "", "*.*", "application/vnd.kafka.v2+json"
 
         """
         self.logger.debug(f"List topics with no accept header")
@@ -259,11 +258,6 @@ class PandaProxyTest(RedpandaTest):
         self.logger.debug(f"List topics with invalid accept header")
         result_raw = self._get_topics({"Accept": "application/json"})
         assert result_raw.status_code == requests.codes.not_acceptable
-        assert result_raw.headers["Content-Type"] == "application/json"
-
-        self.logger.debug(f"List topics with invalid content-type header")
-        result_raw = self._get_topics({"Content-Type": "application/json"})
-        assert result_raw.status_code == requests.codes.unsupported_media_type
         assert result_raw.headers["Content-Type"] == "application/json"
 
     @cluster(num_nodes=3)
