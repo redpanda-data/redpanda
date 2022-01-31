@@ -15,7 +15,9 @@
 #include "raft/consensus.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
+#include "raft/replicate_entries_stm.h"
 #include "raft/types.h"
+#include "ssx/future-util.h"
 #include "utils/gate_guard.h"
 
 #include <seastar/core/circular_buffer.hh>
@@ -253,22 +255,26 @@ ss::future<> replicate_batcher::flush(
     }
 }
 
+template<typename Predicate>
 static void propagate_result(
   result<replicate_result> r,
-  std::vector<replicate_batcher::item_ptr>& notifications) {
-    if (r.has_value()) {
-        // iterate backward to calculate last offsets
-        auto last_offset = r.value().last_offset;
-        for (auto it = notifications.rbegin(); it != notifications.rend();
-             ++it) {
-            (*it)->_promise.set_value(replicate_result{last_offset});
-            last_offset = last_offset - model::offset((*it)->record_count);
+  std::vector<replicate_batcher::item_ptr>& notifications,
+  const Predicate& pred) {
+    if (r.has_error()) {
+        // propagate an error
+        for (auto& n : notifications) {
+            n->_promise.set_value(r.error());
         }
         return;
     }
-    // propagate an error
-    for (auto& n : notifications) {
-        n->_promise.set_value(r.error());
+
+    // iterate backward to calculate last offsets
+    auto last_offset = r.value().last_offset;
+    for (auto it = notifications.rbegin(); it != notifications.rend(); ++it) {
+        if (pred(*it)) {
+            (*it)->_promise.set_value(replicate_result{last_offset});
+        }
+        last_offset = last_offset - model::offset((*it)->record_count);
     }
 }
 
@@ -286,14 +292,61 @@ ss::future<> replicate_batcher::do_flush(
   append_entries_request req,
   std::vector<ss::semaphore_units<>> u,
   absl::flat_hash_map<vnode, follower_req_seq> seqs) {
+    auto needs_flush = req.flush;
     _ptr->_probe.replicate_batch_flushed();
+    auto stm = ss::make_lw_shared<replicate_entries_stm>(
+      _ptr, std::move(req), std::move(seqs));
     try {
-        auto result = co_await _ptr->dispatch_replicate(
-          std::move(req), std::move(u), std::move(seqs));
+        auto holder = _bg.hold();
+        auto leader_result = co_await stm->apply(std::move(u));
 
-        propagate_result(result, notifications);
+        /**
+         * First phase, if leader result has error just propagate error
+         * otherwise propagate result to relaxed consistency requests
+         */
+        propagate_result(
+          leader_result, notifications, [](const item_ptr& item) {
+              return item->consistency_lvl == consistency_level::leader_ack
+                     || item->consistency_lvl == consistency_level::no_ack;
+          });
+        /**
+         * Second phase, wait for majority to replicate if leader result has
+         * error just propagate error otherwise propagate results to relaxed
+         * consistency requests.
+         *
+         * NOTE: this happens in background since we do not want to block
+         * replicate batcher
+         */
+        if (leader_result && needs_flush) {
+            (void)stm->wait_for_majority()
+              .then([holder = std::move(holder),
+                     notifications = std::move(notifications)](
+                      result<replicate_result> quorum_result) mutable {
+                  propagate_result(
+                    quorum_result, notifications, [](const item_ptr& item) {
+                        return item->consistency_lvl
+                               == consistency_level::quorum_ack;
+                    });
+              })
+              .finally([stm] {});
+        }
     } catch (...) {
         propagate_current_exception(notifications);
     }
+
+    auto f = stm->wait_for_shutdown().finally([stm] {});
+    if (_bg.is_closed()) {
+        _ptr->_ctxlog.info(
+          "gate-closed, waiting to finish background requests");
+        co_return co_await std::move(f);
+    }
+    ssx::spawn_with_gate(_bg, [this, stm, f = std::move(f)]() mutable {
+        return std::move(f).handle_exception(
+          [this](const std::exception_ptr& e) {
+              _ptr->_ctxlog.debug(
+                "Error waiting for background acks to finish - {}", e);
+          });
+    });
 }
+
 } // namespace raft
