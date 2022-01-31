@@ -31,6 +31,9 @@ public:
         size_t record_count;
         std::vector<model::record_batch> data;
         std::optional<model::term_id> expected_term;
+        // consistency level is stored to distinguish when an item promise
+        // should be signaled with replication result
+        consistency_level consistency_lvl;
         /**
          * Item keeps semaphore units until replicate batcher is done with
          * processing the request.
@@ -46,8 +49,10 @@ public:
     replicate_batcher& operator=(const replicate_batcher&) = delete;
     ~replicate_batcher() noexcept = default;
 
-    replicate_stages
-    replicate(std::optional<model::term_id>, model::record_batch_reader&&);
+    replicate_stages replicate(
+      std::optional<model::term_id>,
+      model::record_batch_reader&&,
+      consistency_level);
 
     ss::future<> flush(ss::semaphore_units<> u, bool const transfer_flush);
 
@@ -60,12 +65,15 @@ private:
       std::vector<ss::semaphore_units<>>,
       absl::flat_hash_map<vnode, follower_req_seq>);
 
-    ss::future<item_ptr>
-    do_cache(std::optional<model::term_id>, model::record_batch_reader&&);
+    ss::future<item_ptr> do_cache(
+      std::optional<model::term_id>,
+      model::record_batch_reader&&,
+      consistency_level);
     ss::future<replicate_batcher::item_ptr> do_cache_with_backpressure(
       std::optional<model::term_id>,
       ss::circular_buffer<model::record_batch>,
-      size_t);
+      size_t,
+      consistency_level);
 
     consensus* _ptr;
     ss::semaphore _max_batch_size_sem;

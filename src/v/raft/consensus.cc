@@ -658,7 +658,9 @@ replicate_stages consensus::do_replicate(
         _probe.replicate_requests_ack_all();
 
         return wrap_stages_with_gate(
-          _bg, _batcher.replicate(expected_term, std::move(rdr)));
+          _bg,
+          _batcher.replicate(
+            expected_term, std::move(rdr), consistency_level::quorum_ack));
     }
 
     if (opts.consistency == consistency_level::leader_ack) {

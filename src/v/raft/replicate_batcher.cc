@@ -38,13 +38,15 @@ replicate_batcher::replicate_batcher(consensus* ptr, size_t cache_size)
   , _max_batch_size(cache_size) {}
 
 replicate_stages replicate_batcher::replicate(
-  std::optional<model::term_id> expected_term, model::record_batch_reader&& r) {
+  std::optional<model::term_id> expected_term,
+  model::record_batch_reader&& r,
+  consistency_level consistency_lvl) {
     ss::promise<> enqueued;
     auto enqueued_f = enqueued.get_future();
     try {
         gate_guard guard(_bg);
         auto f
-          = do_cache(expected_term, std::move(r))
+          = do_cache(expected_term, std::move(r), consistency_lvl)
               .then_wrapped(
                 [this,
                  enqueued = std::move(enqueued),
@@ -99,10 +101,12 @@ ss::future<> replicate_batcher::stop() {
 }
 
 ss::future<replicate_batcher::item_ptr> replicate_batcher::do_cache(
-  std::optional<model::term_id> expected_term, model::record_batch_reader&& r) {
+  std::optional<model::term_id> expected_term,
+  model::record_batch_reader&& r,
+  consistency_level consistency_lvl) {
     return model::consume_reader_to_memory(std::move(r), model::no_timeout)
-      .then([this,
-             expected_term](ss::circular_buffer<model::record_batch> batches) {
+      .then([this, expected_term, consistency_lvl](
+              ss::circular_buffer<model::record_batch> batches) {
           ss::circular_buffer<model::record_batch> data;
           size_t bytes = std::accumulate(
             batches.cbegin(),
@@ -112,7 +116,7 @@ ss::future<replicate_batcher::item_ptr> replicate_batcher::do_cache(
                 return sum + b.size_bytes();
             });
           return do_cache_with_backpressure(
-            expected_term, std::move(batches), bytes);
+            expected_term, std::move(batches), bytes, consistency_lvl);
       });
 }
 
@@ -120,7 +124,8 @@ ss::future<replicate_batcher::item_ptr>
 replicate_batcher::do_cache_with_backpressure(
   std::optional<model::term_id> expected_term,
   ss::circular_buffer<model::record_batch> batches,
-  size_t bytes) {
+  size_t bytes,
+  consistency_level consistency_lvl) {
     /**
      * Produce a message larger than the internal raft batch accumulator
      * (default 1Mb) the semaphore can't be acquired. Closing
@@ -135,24 +140,27 @@ replicate_batcher::do_cache_with_backpressure(
      */
 
     return ss::get_units(_max_batch_size_sem, std::min(bytes, _max_batch_size))
-      .then([this, expected_term, batches = std::move(batches)](
-              ss::semaphore_units<> u) mutable {
-          size_t record_count = 0;
-          auto i = ss::make_lw_shared<item>();
-          for (auto& b : batches) {
-              record_count += b.record_count();
-              if (b.header().ctx.owner_shard == ss::this_shard_id()) {
-                  i->data.push_back(std::move(b));
-              } else {
-                  i->data.push_back(b.copy());
-              }
-          }
-          i->expected_term = expected_term;
-          i->record_count = record_count;
-          i->units = std::move(u);
-          _item_cache.emplace_back(i);
-          return i;
-      });
+      .then(
+        [this, expected_term, batches = std::move(batches), consistency_lvl](
+          ss::semaphore_units<> u) mutable {
+            size_t record_count = 0;
+            auto i = ss::make_lw_shared<item>();
+            for (auto& b : batches) {
+                record_count += b.record_count();
+                if (b.header().ctx.owner_shard == ss::this_shard_id()) {
+                    i->data.push_back(std::move(b));
+                } else {
+                    i->data.push_back(b.copy());
+                }
+            }
+            i->expected_term = expected_term;
+            i->record_count = record_count;
+            i->units = std::move(u);
+            i->consistency_lvl = consistency_lvl;
+
+            _item_cache.emplace_back(i);
+            return i;
+        });
 }
 
 ss::future<> replicate_batcher::flush(
@@ -194,11 +202,17 @@ ss::future<> replicate_batcher::flush(
         ss::circular_buffer<model::record_batch> data;
         std::vector<item_ptr> notifications;
         ss::semaphore_units<> item_memory_units(_max_batch_size_sem, 0);
+        auto needs_flush = append_entries_request::flush_after_append::no;
+
         for (auto& n : item_cache) {
             if (
               !n->expected_term.has_value()
               || n->expected_term.value() == term) {
                 item_memory_units.adopt(std::move(n->units));
+                if (n->consistency_lvl == consistency_level::quorum_ack) {
+                    needs_flush
+                      = append_entries_request::flush_after_append::yes;
+                }
                 for (auto& b : n->data) {
                     b.set_term(term);
                     data.push_back(std::move(b));
@@ -217,7 +231,8 @@ ss::future<> replicate_batcher::flush(
         append_entries_request req(
           _ptr->_self,
           meta,
-          model::make_memory_record_batch_reader(std::move(data)));
+          model::make_memory_record_batch_reader(std::move(data)),
+          needs_flush);
 
         std::vector<ss::semaphore_units<>> units;
         units.reserve(2);
