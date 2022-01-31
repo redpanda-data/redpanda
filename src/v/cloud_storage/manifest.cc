@@ -71,7 +71,7 @@ static bool parse_partition_and_revision(
     if (e.ec != std::errc()) {
         return false;
     }
-    comp._rev = model::revision_id(res);
+    comp._rev = model::initial_revision_id(res);
     return true;
 }
 
@@ -133,11 +133,11 @@ parse_segment_name(const segment_name& name) {
 
 remote_segment_path generate_remote_segment_path(
   const model::ntp& ntp,
-  model::revision_id rev_id,
+  model::initial_revision_id rev_id,
   const segment_name& name,
   model::term_id archiver_term) {
     vassert(
-      rev_id != model::revision_id(),
+      rev_id != model::initial_revision_id(),
       "ntp {}: ntp revision must be known for segment {}",
       ntp,
       name);
@@ -157,7 +157,7 @@ manifest::manifest()
   , _rev()
   , _last_offset(0) {}
 
-manifest::manifest(model::ntp ntp, model::revision_id rev)
+manifest::manifest(model::ntp ntp, model::initial_revision_id rev)
   : _ntp(std::move(ntp))
   , _rev(rev)
   , _last_offset(0) {}
@@ -173,7 +173,7 @@ manifest::manifest(model::ntp ntp, model::revision_id rev)
 // backend and other S3 API implementations might benefit from that.
 
 static remote_manifest_path generate_partition_manifest_path(
-  const model::ntp& ntp, model::revision_id rev) {
+  const model::ntp& ntp, model::initial_revision_id rev) {
     // NOTE: the idea here is to split all possible hash values into
     // 16 bins. Every bin should have lowest 28-bits set to 0.
     // As result, for segment names all prefixes are possible, but
@@ -195,7 +195,7 @@ const model::ntp& manifest::get_ntp() const { return _ntp; }
 
 const model::offset manifest::get_last_offset() const { return _last_offset; }
 
-model::revision_id manifest::get_revision_id() const { return _rev; }
+model::initial_revision_id manifest::get_revision_id() const { return _rev; }
 
 remote_segment_path manifest::generate_segment_path(
   const segment_name& name, const segment_meta& meta) const {
@@ -223,7 +223,7 @@ bool manifest::contains(const segment_name& name) const {
 
 bool manifest::add(const segment_name& name, const segment_meta& meta) {
     auto [it, ok] = _segments.insert(std::make_pair(name, meta));
-    if (ok && it->second.ntp_revision == model::revision_id{}) {
+    if (ok && it->second.ntp_revision == model::initial_revision_id{}) {
         it->second.ntp_revision = _rev;
     }
     _last_offset = std::max(meta.committed_offset, _last_offset);
@@ -283,7 +283,7 @@ void manifest::update(const rapidjson::Document& m) {
     auto ns = model::ns(m["namespace"].GetString());
     auto tp = model::topic(m["topic"].GetString());
     auto pt = model::partition_id(m["partition"].GetInt());
-    _rev = model::revision_id(m["revision"].GetInt());
+    _rev = model::initial_revision_id(m["revision"].GetInt());
     _ntp = model::ntp(ns, tp, pt);
     _last_offset = model::offset(m["last_offset"].GetInt64());
     segment_map tmp;
@@ -309,9 +309,9 @@ void manifest::update(const rapidjson::Document& m) {
                 delta_offset = model::offset(
                   it->value["delta_offset"].GetInt64());
             }
-            model::revision_id ntp_revision = _rev;
+            model::initial_revision_id ntp_revision = _rev;
             if (it->value.HasMember("ntp_revision")) {
-                ntp_revision = model::revision_id(
+                ntp_revision = model::initial_revision_id(
                   it->value["ntp_revision"].GetInt64());
             }
             model::term_id archiver_term;
@@ -392,7 +392,7 @@ void manifest::serialize(std::ostream& out) const {
             }
             if (meta.ntp_revision != _rev) {
                 vassert(
-                  meta.ntp_revision != model::revision_id(),
+                  meta.ntp_revision != model::initial_revision_id(),
                   "ntp {}: missing ntp_revision for segment {} in the manifest",
                   _ntp,
                   sn);
@@ -420,7 +420,7 @@ bool manifest::delete_permanently(const segment_name& name) {
 }
 
 topic_manifest::topic_manifest(
-  const cluster::topic_configuration& cfg, model::revision_id rev)
+  const cluster::topic_configuration& cfg, model::initial_revision_id rev)
   : _topic_config(cfg)
   , _rev(rev) {}
 
@@ -496,7 +496,7 @@ void topic_manifest::update(const rapidjson::Document& m) {
         }
     }
     _topic_config = conf;
-    _rev = model::revision_id(rev);
+    _rev = model::initial_revision_id(rev);
 }
 
 serialized_json_stream topic_manifest::serialize() const {

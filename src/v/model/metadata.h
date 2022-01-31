@@ -35,6 +35,15 @@ using node_id = named_type<int32_t, struct node_id_model_type>;
  * first created and then removed, raft configuration
  */
 using revision_id = named_type<int64_t, struct revision_id_model_type>;
+
+/**
+ * Revision id that the partition had when the topic was just created.
+ * The revision_id of the partition might change when the partition is moved
+ * between the nodes.
+ */
+using initial_revision_id
+  = named_type<int64_t, struct initial_revision_id_model_type>;
+
 struct broker_properties {
     uint32_t cores;
     uint32_t available_memory;

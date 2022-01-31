@@ -37,7 +37,7 @@ struct manifest_path_components {
     model::ns _ns;
     model::topic _topic;
     model::partition_id _part;
-    model::revision_id _rev;
+    model::initial_revision_id _rev;
 };
 
 std::ostream& operator<<(std::ostream& s, const manifest_path_components& c);
@@ -57,7 +57,7 @@ parse_segment_name(const segment_name& name);
 /// Segment file name in S3
 remote_segment_path generate_remote_segment_path(
   const model::ntp&,
-  model::revision_id,
+  model::initial_revision_id,
   const segment_name&,
   model::term_id archiver_term);
 
@@ -129,7 +129,7 @@ public:
         model::timestamp max_timestamp;
         model::offset delta_offset;
 
-        model::revision_id ntp_revision;
+        model::initial_revision_id ntp_revision;
         model::term_id archiver_term;
 
         auto operator<=>(const segment_meta&) const = default;
@@ -145,7 +145,7 @@ public:
     manifest();
 
     /// Create manifest for specific ntp
-    explicit manifest(model::ntp ntp, model::revision_id rev);
+    explicit manifest(model::ntp ntp, model::initial_revision_id rev);
 
     /// Manifest object name in S3
     remote_manifest_path get_manifest_path() const override;
@@ -157,7 +157,7 @@ public:
     const model::offset get_last_offset() const;
 
     /// Get revision
-    model::revision_id get_revision_id() const;
+    model::initial_revision_id get_revision_id() const;
 
     remote_segment_path
     generate_segment_path(const segment_name&, const segment_meta&) const;
@@ -220,7 +220,7 @@ private:
     void update(const rapidjson::Document& m);
 
     model::ntp _ntp;
-    model::revision_id _rev;
+    model::initial_revision_id _rev;
     segment_map _segments;
     model::offset _last_offset;
 };
@@ -229,7 +229,7 @@ class topic_manifest final : public base_manifest {
 public:
     /// Create manifest for specific ntp
     explicit topic_manifest(
-      const cluster::topic_configuration& cfg, model::revision_id rev);
+      const cluster::topic_configuration& cfg, model::initial_revision_id rev);
 
     /// Create empty manifest that supposed to be updated later
     topic_manifest();
@@ -260,10 +260,10 @@ public:
         return manifest_type::partition;
     };
 
-    model::revision_id get_revision() const noexcept { return _rev; }
+    model::initial_revision_id get_revision() const noexcept { return _rev; }
 
     /// Change topic-manifest revision
-    void set_revision(model::revision_id id) noexcept { _rev = id; }
+    void set_revision(model::initial_revision_id id) noexcept { _rev = id; }
 
 private:
     /// Update manifest content from json document that supposed to be generated
@@ -271,7 +271,7 @@ private:
     void update(const rapidjson::Document& m);
 
     std::optional<cluster::topic_configuration> _topic_config;
-    model::revision_id _rev;
+    model::initial_revision_id _rev;
 };
 
 } // namespace cloud_storage

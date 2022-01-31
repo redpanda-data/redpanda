@@ -235,7 +235,7 @@ ss::lw_shared_ptr<ntp_archiver> scheduler_service_impl::get_upload_candidate() {
 }
 
 ss::future<> scheduler_service_impl::upload_topic_manifest(
-  model::topic_namespace topic_ns, model::revision_id rev) {
+  model::topic_namespace topic_ns, model::initial_revision_id rev) {
     gate_guard gg(_gate);
     auto cfg = _topic_table.local().get_topic_cfg(topic_ns);
     if (!cfg) {
