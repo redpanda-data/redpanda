@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster/types.h"
+#include "seastar/core/weak_ptr.hh"
 
 #include <string_view>
 
@@ -53,15 +54,29 @@ public:
         return (uint64_t(f) & _active_features_mask) != 0;
     }
 
+    ss::future<> await_feature(feature f, ss::abort_source& as);
+
 private:
     // Only for use by our friends feature backend & manager
     void set_active_version(cluster_version);
+
+    struct wait_item : ss::weakly_referencable<wait_item> {
+        wait_item(feature f_)
+          : f(f_) {}
+
+        feature f;
+        ss::promise<> p;
+        ss::abort_source::subscription abort_sub;
+    };
 
     cluster_version _active_version{invalid_version};
 
     // Bitmask only used at runtime: if we run out of bits for features
     // just use a bigger one.  Do not serialize this as a bitmask anywhere.
     uint64_t _active_features_mask{0};
+
+    // Waiting for a particular feature to be available
+    std::vector<std::unique_ptr<wait_item>> _waiters;
 
     // feature_manager is a friend so that they can initialize
     // the active version on single-node first start.
