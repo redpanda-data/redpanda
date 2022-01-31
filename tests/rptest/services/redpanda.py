@@ -9,6 +9,7 @@
 
 import time
 import os
+import socket
 import signal
 import tempfile
 import shutil
@@ -121,10 +122,9 @@ class MetricSamples:
 def one_or_many(value):
     """
     Helper for reading `one_or_many_property` configs when
-    they are expected to hold a single value.
+    we only care about getting one value out
     """
     if isinstance(value, list):
-        assert len(value) == 1
         return value[0]
     else:
         return value
@@ -195,6 +195,11 @@ class RedpandaService(Service):
 
     # Where we put a compressed binary if saving it after failure
     EXECUTABLE_SAVE_PATH = "/tmp/redpanda.tar.gz"
+
+    # When configuring multiple listeners for testing, a secondary port to use
+    # instead of the default.
+    KAFKA_ALTERNATE_PORT = 9093
+    ADMIN_ALTERNATE_PORT = 9647
 
     logs = {
         "redpanda_start_stdout_stderr": {
@@ -554,12 +559,19 @@ class RedpandaService(Service):
     def write_conf_file(self, node, override_cfg_params):
         node_info = {self.idx(n): n for n in self.nodes}
 
+        # Grab the IP to use it as an alternative listener address, to
+        # exercise code paths that deal with multiple listeners
+        node_ip = socket.gethostbyname(node.account.hostname)
+
         conf = self.render("redpanda.yaml",
                            node=node,
                            data_dir=RedpandaService.DATA_DIR,
                            cluster=RedpandaService.CLUSTER_NAME,
                            nodes=node_info,
                            node_id=self.idx(node),
+                           node_ip=node_ip,
+                           kafka_alternate_port=self.KAFKA_ALTERNATE_PORT,
+                           admin_alternate_port=self.ADMIN_ALTERNATE_PORT,
                            enable_rp=self._enable_rp,
                            enable_pp=self._enable_pp,
                            enable_sr=self._enable_sr,

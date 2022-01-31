@@ -7,11 +7,14 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 import random
+import socket
 import string
 import requests
 import time
-from rptest.services.cluster import cluster
 
+from ducktape.mark import parametrize
+
+from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
 from rptest.clients.python_librdkafka import PythonLibrdkafka
@@ -88,7 +91,15 @@ class ScramTest(RedpandaTest):
                                 algorithm=algorithm)
 
     @cluster(num_nodes=3)
-    def test_redirects(self):
+    @parametrize(alternate_listener=False)
+    @parametrize(alternate_listener=True)
+    def test_redirects(self, alternate_listener):
+        """
+        This test is for Admin API redirection functionality in general, but is in this
+        test class because managing SCRAM/SASL users is one of the key areas that relies
+        on redirection working, so it's a natural fit.
+        """
+
         controller_id = None
         t1 = time.time()
         while controller_id is None:
@@ -109,14 +120,28 @@ class ScramTest(RedpandaTest):
             if time.time() - t1 > 10:
                 raise RuntimeError("Timed out waiting for a leader")
 
-        leader = self.redpanda.get_node(controller_id).account.hostname
+        leader_node = self.redpanda.get_node(controller_id)
 
         # Request to all nodes, with redirect-following disabled.  Expect success
         # from the leader, and redirect responses from followers.
         for i, node in enumerate(self.redpanda.nodes):
+            # Redpanda config in ducktape has two listeners, one by IP and one by DNS (this simulates
+            # nodes that have internal and external addresses).  The admin API redirects should
+            # redirect us to the leader's IP for requests sent by IP, by DNS for requests sent by DNS.
+            if alternate_listener:
+                hostname = socket.gethostbyname(node.account.hostname)
+                port = self.redpanda.ADMIN_ALTERNATE_PORT
+                leader_name = socket.gethostbyname(
+                    leader_node.account.hostname)
+
+            else:
+                hostname = node.account.hostname
+                port = 9644
+                leader_name = leader_node.account.hostname
+
             resp = requests.request(
                 "post",
-                f"http://{node.account.hostname}:9644/v1/security/users",
+                f"http://{hostname}:{port}/v1/security/users",
                 json={
                     'username': f'user_a_{i}',
                     'password': 'password',
@@ -126,15 +151,23 @@ class ScramTest(RedpandaTest):
             self.logger.info(
                 f"Response: {resp.status_code} {resp.headers} {resp.text}")
 
-            if node.account.hostname == leader:
+            if node == leader_node:
                 assert resp.status_code == 200
             else:
+                # Check we were redirected to the proper listener of the leader node
+                self.logger.info(
+                    f"Response (redirect): {resp.status_code} {resp.headers.get('location', None)} {resp.text} {resp.history}"
+                )
                 assert resp.status_code == 307
+
+                location = resp.headers.get('location', None)
+                assert location is not None
+                assert location.startswith(f"http://{leader_name}:{port}/")
 
                 # Again, this time let requests follow the redirect
                 resp = requests.request(
                     "post",
-                    f"http://{node.account.hostname}:9644/v1/security/users",
+                    f"http://{hostname}:{port}/v1/security/users",
                     json={
                         'username': f'user_a_{i}',
                         'password': 'password',
@@ -143,7 +176,7 @@ class ScramTest(RedpandaTest):
                     allow_redirects=True)
 
                 self.logger.info(
-                    f"Response (via redirect): {resp.status_code} {resp.headers.get('location', None)} {resp.text} {resp.history}"
+                    f"Response (follow redirect): {resp.status_code} {resp.text} {resp.history}"
                 )
                 assert resp.status_code == 200
 
