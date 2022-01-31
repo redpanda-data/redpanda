@@ -1420,6 +1420,15 @@ group::commit_tx(cluster::commit_group_tx_request r) {
         co_return make_commit_tx_reply(cluster::tx_errc::unknown_server_error);
     }
 
+    prepare_it = _prepared_txs.find(r.pid);
+    if (prepare_it == _prepared_txs.end()) {
+        vlog(
+          _ctx_txlog.error,
+          "can't find already observed prepared tx pid:{}",
+          r.pid);
+        co_return make_commit_tx_reply(cluster::tx_errc::unknown_server_error);
+    }
+
     for (const auto& [tp, md] : prepare_it->second.offsets) {
         try_upsert_offset(tp, md);
     }
@@ -1461,6 +1470,17 @@ group::begin_tx(cluster::begin_group_tx_request r) {
 
     auto fence_it = _fence_pid_epoch.find(r.pid.get_id());
     if (
+      fence_it != _fence_pid_epoch.end()
+      && r.pid.get_epoch() < fence_it->second) {
+        vlog(
+          _ctx_txlog.error,
+          "pid {} fenced out by epoch {}",
+          r.pid,
+          fence_it->second);
+        co_return make_begin_tx_reply(cluster::tx_errc::fenced);
+    }
+
+    if (
       fence_it == _fence_pid_epoch.end()
       || r.pid.get_epoch() > fence_it->second) {
         group_log_fencing fence{.group_id = id()};
@@ -1488,19 +1508,16 @@ group::begin_tx(cluster::begin_group_tx_request r) {
             co_return make_begin_tx_reply(
               cluster::tx_errc::unknown_server_error);
         }
-    }
 
-    if (fence_it == _fence_pid_epoch.end()) {
-        _fence_pid_epoch.emplace(r.pid.get_id(), r.pid.get_epoch());
-    } else if (r.pid.get_epoch() >= fence_it->second) {
-        fence_it->second = r.pid.get_epoch();
-    } else {
-        vlog(
-          _ctx_txlog.error,
-          "pid {} fenced out by epoch {}",
-          r.pid,
-          fence_it->second);
-        co_return make_begin_tx_reply(cluster::tx_errc::fenced);
+        // _fence_pid_epoch may change while the method waits for the
+        //  replicate coroutine to finish so the fence_it may become
+        //  invalidated and we need to grab it again
+        fence_it = _fence_pid_epoch.find(r.pid.get_id());
+        if (fence_it == _fence_pid_epoch.end()) {
+            _fence_pid_epoch.emplace(r.pid.get_id(), r.pid.get_epoch());
+        } else {
+            fence_it->second = r.pid.get_epoch();
+        }
     }
 
     // TODO: https://app.clubhouse.io/vectorized/story/2194
