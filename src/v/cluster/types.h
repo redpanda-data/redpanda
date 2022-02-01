@@ -39,10 +39,6 @@ using broker_ptr = ss::lw_shared_ptr<model::broker>;
 using cluster_version = named_type<int64_t, struct cluster_version_tag>;
 constexpr cluster_version invalid_version = cluster_version{-1};
 
-// The version that this redpanda node will report: increment this
-// on protocol changes to raft0 structures, like adding new services.
-constexpr cluster_version latest_version = cluster_version{1};
-
 struct allocate_id_request {
     model::timeout_clock::duration timeout;
 };

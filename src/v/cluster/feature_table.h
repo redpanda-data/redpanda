@@ -56,6 +56,8 @@ public:
 
     ss::future<> await_feature(feature f, ss::abort_source& as);
 
+    static cluster_version get_latest_logical_version();
+
 private:
     // Only for use by our friends feature backend & manager
     void set_active_version(cluster_version);

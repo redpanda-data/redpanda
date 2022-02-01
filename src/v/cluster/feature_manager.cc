@@ -67,7 +67,7 @@ ss::future<> feature_manager::start() {
             // version based on its own version alone.
             if (
               _feature_table.local().get_active_version()
-                != latest_version
+                != feature_table::get_latest_logical_version()
               && _am_controller_leader) {
                 // When I become leader for first time (i.e. when active
                 // version is not known yet, proactively persist it)
@@ -75,8 +75,10 @@ ss::future<> feature_manager::start() {
                   clusterlog.debug,
                   "generating version update for controller leader {} ({})",
                   leader_id.value(),
-                  latest_version);
-                update_node_version(config::node().node_id, latest_version);
+                  feature_table::get_latest_logical_version());
+                update_node_version(
+                  config::node().node_id,
+                  feature_table::get_latest_logical_version());
             }
         });
 

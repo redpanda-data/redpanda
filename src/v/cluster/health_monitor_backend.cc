@@ -12,6 +12,7 @@
 
 #include "cluster/controller_service.h"
 #include "cluster/errc.h"
+#include "cluster/feature_table.h"
 #include "cluster/fwd.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/logger.h"
@@ -199,7 +200,8 @@ std::optional<node_health_report> health_monitor_backend::build_node_report(
     report.id = id;
 
     report.local_state = it->second.local_state;
-    report.local_state.logical_version = latest_version;
+    report.local_state.logical_version
+      = feature_table::get_latest_logical_version();
 
     if (f.include_partitions) {
         report.topics = filter_topic_status(it->second.topics, f.ntp_filters);
@@ -569,7 +571,8 @@ health_monitor_backend::collect_current_node_health(node_report_filter filter) {
 
     co_await _local_monitor.update_state();
     ret.local_state = _local_monitor.get_state_cached();
-    ret.local_state.logical_version = latest_version;
+    ret.local_state.logical_version
+      = feature_table::get_latest_logical_version();
 
     if (filter.include_partitions) {
         ret.topics = co_await collect_topic_status(

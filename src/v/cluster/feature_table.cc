@@ -24,6 +24,38 @@ std::string_view to_string_view(feature f) {
     __builtin_unreachable();
 }
 
+// The version that this redpanda node will report: increment this
+// on protocol changes to raft0 structures, like adding new services.
+static constexpr cluster_version latest_version = cluster_version{1};
+
+/**
+ * The latest version is hardcoded in normal operation.  This getter
+ * exists to enable injection of synthetic versions in integration tests.
+ */
+cluster_version feature_table::get_latest_logical_version() {
+    // Avoid getenv on every call by keeping a shard-local cache
+    // of the version after applying any environment override.
+    static thread_local cluster_version latest_version_cache{invalid_version};
+
+    if (latest_version_cache == invalid_version) {
+        latest_version_cache = latest_version;
+
+        auto override = std::getenv("__REDPANDA_LOGICAL_VERSION");
+        if (override != nullptr) {
+            try {
+                latest_version_cache = cluster_version{std::stoi(override)};
+            } catch (...) {
+                vlog(
+                  clusterlog.error,
+                  "Invalid logical version override '{}'",
+                  override);
+            }
+        }
+    }
+
+    return latest_version_cache;
+}
+
 feature_list feature_table::get_active_features() const {
     if (_active_version == invalid_version) {
         // The active version will be invalid_version when

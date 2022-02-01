@@ -72,7 +72,7 @@ service::join_node(join_node_request&& req, rpc::streaming_context&) {
     if (expect_version == invalid_version) {
         // Feature table isn't initialized, fall back to requiring that
         // joining node is as recent as this node.
-        expect_version = latest_version;
+        expect_version = feature_table::get_latest_logical_version();
     }
 
     if (req.logical_version < expect_version) {

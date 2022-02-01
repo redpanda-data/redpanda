@@ -364,7 +364,9 @@ void members_manager::join_raft0() {
         return ss::repeat([this] {
                    return dispatch_join_to_seed_server(
                             std::cbegin(_seed_servers),
-                            std::move(join_node_request{latest_version, _self}))
+                            std::move(join_node_request{
+                              feature_table::get_latest_logical_version(),
+                              _self}))
                      .then([this](result<join_node_reply> r) {
                          bool success = r && r.value().success;
                          // stop on success or closed gate
