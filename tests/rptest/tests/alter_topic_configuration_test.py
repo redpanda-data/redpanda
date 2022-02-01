@@ -13,7 +13,6 @@ import string
 from rptest.services.cluster import cluster
 from ducktape.mark import parametrize
 from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.clients.rpk import RpkTool
 
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
@@ -171,7 +170,6 @@ class ShadowIndexingGlobalConfig(RedpandaTest):
     @cluster(num_nodes=3)
     def test_overrides_remove(self):
         topic = self.topics[0].name
-        rpk = RpkTool(self.redpanda)
         original_output = self.client().describe_topic_configs(topic)
         self.logger.info(f"original_output={original_output}")
         assert original_output["redpanda.remote.read"][0] == "true"
@@ -186,8 +184,8 @@ class ShadowIndexingGlobalConfig(RedpandaTest):
         assert altered_output["redpanda.remote.write"][0] == "false"
 
         # delete topic configs (value from configuration should be used)
-        rpk.delete_topic_config(topic, "redpanda.remote.read")
-        rpk.delete_topic_config(topic, "redpanda.remote.write")
+        self.client().delete_topic_config(topic, "redpanda.remote.read")
+        self.client().delete_topic_config(topic, "redpanda.remote.write")
         altered_output = self.client().describe_topic_configs(topic)
         self.logger.info(f"altered_output={altered_output}")
         assert altered_output["redpanda.remote.read"][0] == "true"

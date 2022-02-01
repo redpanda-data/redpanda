@@ -89,3 +89,7 @@ class DefaultClient:
     def describe_topic_configs(self, topic: str):
         rpk = RpkTool(self._redpanda)
         return rpk.describe_topic_configs(topic)
+
+    def delete_topic_config(self, topic: str, key: str):
+        rpk = RpkTool(self._redpanda)
+        rpk.delete_topic_config(topic, key)
