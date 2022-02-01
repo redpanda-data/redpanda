@@ -1377,8 +1377,7 @@ tx_gateway_frontend::do_commit_tm_tx(
     }
     outcome->set_value(tx_errc::none);
 
-    auto changed_tx = co_await stm->try_change_status(
-      tx.id, cluster::tm_transaction::tx_status::prepared);
+    auto changed_tx = co_await stm->mark_tx_prepared(tx.id);
     if (!changed_tx.has_value()) {
         if (changed_tx.error() == tm_stm::op_status::not_leader) {
             co_return tx_errc::not_coordinator;

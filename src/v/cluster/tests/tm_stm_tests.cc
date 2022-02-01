@@ -86,8 +86,7 @@ FIXTURE_TEST(test_tm_stm_new_tx, mux_state_machine_fixture) {
     BOOST_REQUIRE_EQUAL(tx3.status, tx_status::preparing);
     BOOST_REQUIRE_EQUAL(tx3.tx_seq, tx2.tx_seq);
     BOOST_REQUIRE_EQUAL(tx3.partitions.size(), 2);
-    auto tx4 = expect_tx(
-      stm.try_change_status(tx_id, tx_status::prepared).get());
+    auto tx4 = expect_tx(stm.mark_tx_prepared(tx_id).get());
     BOOST_REQUIRE_EQUAL(tx4.id, tx_id);
     BOOST_REQUIRE_EQUAL(tx4.pid, pid);
     BOOST_REQUIRE_EQUAL(tx4.status, tx_status::prepared);
@@ -129,9 +128,7 @@ FIXTURE_TEST(test_tm_stm_seq_tx, mux_state_machine_fixture) {
     BOOST_REQUIRE(stm.add_partitions(tx_id, partitions));
     auto tx3 = expect_tx(stm.get_tx(tx_id));
     auto tx4 = expect_tx(stm.mark_tx_preparing(tx_id).get());
-    auto tx5 = expect_tx(
-      stm.try_change_status(tx_id, tx_status::prepared).get());
-
+    auto tx5 = expect_tx(stm.mark_tx_prepared(tx_id).get());
     auto tx6 = expect_tx(stm.mark_tx_ongoing(tx_id));
     BOOST_REQUIRE_EQUAL(tx6.id, tx_id);
     BOOST_REQUIRE_EQUAL(tx6.pid, pid);
@@ -168,8 +165,7 @@ FIXTURE_TEST(test_tm_stm_re_tx, mux_state_machine_fixture) {
     BOOST_REQUIRE(stm.add_partitions(tx_id, partitions));
     auto tx3 = expect_tx(stm.get_tx(tx_id));
     auto tx4 = expect_tx(stm.mark_tx_preparing(tx_id).get());
-    auto tx5 = expect_tx(
-      stm.try_change_status(tx_id, tx_status::prepared).get());
+    auto tx5 = expect_tx(stm.mark_tx_prepared(tx_id).get());
     auto tx6 = expect_tx(stm.mark_tx_ongoing(tx_id));
 
     auto pid2 = model::producer_identity{.id = 1, .epoch = 1};
