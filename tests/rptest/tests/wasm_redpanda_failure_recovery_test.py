@@ -60,11 +60,10 @@ class WasmRedpandaFailureRecoveryTest(WasmTest):
 
 
 class WasmRPBasicFailureRecoveryTest(WasmRedpandaFailureRecoveryTest):
-    def __init__(self, test_context, num_records=10000, record_size=1024):
-        super(WasmRPBasicFailureRecoveryTest,
-              self).__init__(test_context,
-                             num_records=num_records,
-                             record_size=record_size)
+    def __init__(self, test_context):
+        super(WasmRPBasicFailureRecoveryTest, self).__init__(test_context,
+                                                             num_records=10000,
+                                                             record_size=1024)
 
     def wasm_test_plan(self):
         return [
@@ -75,11 +74,9 @@ class WasmRPBasicFailureRecoveryTest(WasmRedpandaFailureRecoveryTest):
 
 
 class WasmRPMultiScriptFailureRecoveryTest(WasmRedpandaFailureRecoveryTest):
-    def __init__(self, test_context, num_records=10000, record_size=1024):
+    def __init__(self, test_context):
         super(WasmRPMultiScriptFailureRecoveryTest,
-              self).__init__(test_context,
-                             num_records=num_records,
-                             record_size=record_size)
+              self).__init__(test_context, num_records=10000, record_size=1024)
 
     def wasm_test_plan(self):
         return [
@@ -109,11 +106,9 @@ class WasmRPMultiInputTopicFailureRecoveryTest(WasmRedpandaFailureRecoveryTest
                   cleanup_policy=TopicSpec.CLEANUP_DELETE),
     )
 
-    def __init__(self, test_context, num_records=10000, record_size=1024):
+    def __init__(self, test_context):
         super(WasmRPMultiInputTopicFailureRecoveryTest,
-              self).__init__(test_context,
-                             num_records=num_records,
-                             record_size=record_size)
+              self).__init__(test_context, num_records=10000, record_size=1024)
 
     def wasm_test_plan(self):
         return [
@@ -136,11 +131,10 @@ class WasmRPMeshFailureRecoveryTest(WasmRedpandaFailureRecoveryTest):
                   cleanup_policy=TopicSpec.CLEANUP_DELETE),
     )
 
-    def __init__(self, test_context, num_records=10000, record_size=1024):
-        super(WasmRPMeshFailureRecoveryTest,
-              self).__init__(test_context,
-                             num_records=num_records,
-                             record_size=record_size)
+    def __init__(self, test_context):
+        super(WasmRPMeshFailureRecoveryTest, self).__init__(test_context,
+                                                            num_records=10000,
+                                                            record_size=1024)
 
     def wasm_test_plan(self):
         return [
