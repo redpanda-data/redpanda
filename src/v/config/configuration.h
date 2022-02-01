@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "config/bounded_property.h"
 #include "config/broker_endpoint.h"
 #include "config/config_store.h"
 #include "config/convert.h"
@@ -41,13 +42,13 @@ namespace config {
 struct configuration final : public config_store {
     // WAL
     property<bool> developer_mode;
-    property<uint64_t> log_segment_size;
-    property<uint64_t> compacted_log_segment_size;
+    bounded_property<uint64_t> log_segment_size;
+    bounded_property<uint64_t> compacted_log_segment_size;
     property<std::chrono::milliseconds> readers_cache_eviction_timeout_ms;
     // Network
-    property<std::optional<int>> rpc_server_listen_backlog;
-    clamped_property<std::optional<int>> rpc_server_tcp_recv_buf;
-    clamped_property<std::optional<int>> rpc_server_tcp_send_buf;
+    bounded_property<std::optional<int>> rpc_server_listen_backlog;
+    bounded_property<std::optional<int>> rpc_server_tcp_recv_buf;
+    bounded_property<std::optional<int>> rpc_server_tcp_send_buf;
     // Coproc
     property<bool> enable_coproc;
     property<std::size_t> coproc_max_inflight_bytes;
@@ -56,23 +57,23 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> coproc_offset_flush_interval_ms;
 
     // Controller
-    property<std::optional<std::size_t>> topic_memory_per_partition;
-    property<std::optional<int32_t>> topic_fds_per_partition;
+    bounded_property<std::optional<std::size_t>> topic_memory_per_partition;
+    bounded_property<std::optional<int32_t>> topic_fds_per_partition;
 
     // Raft
     deprecated_property seed_server_meta_topic_partitions;
-    property<std::chrono::milliseconds> raft_heartbeat_interval_ms;
-    property<std::chrono::milliseconds> raft_heartbeat_timeout_ms;
+    bounded_property<std::chrono::milliseconds> raft_heartbeat_interval_ms;
+    bounded_property<std::chrono::milliseconds> raft_heartbeat_timeout_ms;
     property<size_t> raft_heartbeat_disconnect_failures;
     deprecated_property min_version;
     deprecated_property max_version;
     // Kafka
     deprecated_property use_scheduling_groups;
     property<bool> enable_admin_api;
-    property<int16_t> default_num_windows;
-    property<std::chrono::milliseconds> default_window_sec;
+    bounded_property<int16_t> default_num_windows;
+    bounded_property<std::chrono::milliseconds> default_window_sec;
     property<std::chrono::milliseconds> quota_manager_gc_sec;
-    property<uint32_t> target_quota_byte_rate;
+    bounded_property<uint32_t> target_quota_byte_rate;
     property<std::optional<ss::sstring>> cluster_id;
     property<bool> disable_metrics;
     property<std::chrono::milliseconds> group_min_session_timeout_ms;
@@ -240,7 +241,7 @@ struct configuration final : public config_store {
 
     configuration();
 
-    void load(const YAML::Node& root_node);
+    error_map_t load(const YAML::Node& root_node);
 };
 
 configuration& shard_local_cfg();

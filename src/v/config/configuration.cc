@@ -57,14 +57,16 @@ configuration::configuration()
       "log_segment_size",
       "How large in bytes should each log segment be (default 1G)",
       {.example = "2147483648", .visibility = visibility::tunable},
-      1_GiB)
+      1_GiB,
+      {.min = 1_MiB})
   , compacted_log_segment_size(
       *this,
       "compacted_log_segment_size",
       "How large in bytes should each compacted log segment be (default "
       "256MiB)",
       {.example = "268435456", .visibility = visibility::tunable},
-      256_MiB)
+      256_MiB,
+      {.min = 1_MiB})
   , readers_cache_eviction_timeout_ms(
       *this,
       "readers_cache_eviction_timeout_ms",
@@ -76,21 +78,22 @@ configuration::configuration()
       "rpc_server_listen_backlog",
       "TCP connection queue length for Kafka server and internal RPC server",
       {.visibility = visibility::user},
-      std::nullopt)
+      std::nullopt,
+      {.min = 1})
   , rpc_server_tcp_recv_buf(
       *this,
       "rpc_server_tcp_recv_buf",
       "TCP receive buffer size in bytes.",
       {.example = "65536"},
       std::nullopt,
-      32_KiB)
+      {.min = 32_KiB, .align = 4_KiB})
   , rpc_server_tcp_send_buf(
       *this,
       "rpc_server_tcp_send_buf",
       "TCP transmit buffer size in bytes.",
       {.example = "65536"},
       std::nullopt,
-      32_KiB)
+      {.min = 32_KiB, .align = 4_KiB})
   , enable_coproc(
       *this,
       "enable_coproc",
@@ -126,13 +129,23 @@ configuration::configuration()
       "topic_memory_per_partition",
       "Required memory per partition when creating topics",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      1_MiB)
+      1_MiB,
+      {
+        .min = 1,      // Must be nonzero, it's a divisor
+        .max = 100_MiB // Rough 'sanity' limit: a machine with 1GB RAM must be
+                       // able to create at least 10 partitions})
+      })
   , topic_fds_per_partition(
       *this,
       "topic_fds_per_partition",
       "Required file handles per partition when creating topics",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      10)
+      10,
+      {
+        .min = 1,   // At least one FD per partition, required for appender.
+        .max = 1000 // A system with 1M ulimit should be allowed to create at
+                    // least 1000 partitions
+      })
   , seed_server_meta_topic_partitions(
       *this, "seed_server_meta_topic_partitions")
   , raft_heartbeat_interval_ms(
@@ -140,13 +153,15 @@ configuration::configuration()
       "raft_heartbeat_interval_ms",
       "Milliseconds for raft leader heartbeats",
       {.visibility = visibility::tunable},
-      std::chrono::milliseconds(150))
+      std::chrono::milliseconds(150),
+      {.min = std::chrono::milliseconds(1)})
   , raft_heartbeat_timeout_ms(
       *this,
       "raft_heartbeat_timeout_ms",
       "raft heartbeat RPC timeout",
       {.visibility = visibility::tunable},
-      3s)
+      3s,
+      {.min = std::chrono::milliseconds(1)})
   , raft_heartbeat_disconnect_failures(
       *this,
       "raft_heartbeat_disconnect_failures",
@@ -169,14 +184,16 @@ configuration::configuration()
       *this,
       "default_num_windows",
       "Default number of quota tracking windows",
-      {.visibility = visibility::tunable},
-      10)
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      10,
+      {.min = 1})
   , default_window_sec(
       *this,
       "default_window_sec",
       "Default quota tracking window size in milliseconds",
-      {.visibility = visibility::tunable},
-      std::chrono::milliseconds(1000))
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      std::chrono::milliseconds(1000),
+      {.min = std::chrono::milliseconds(1)})
   , quota_manager_gc_sec(
       *this,
       "quota_manager_gc_sec",
@@ -187,8 +204,11 @@ configuration::configuration()
       *this,
       "target_quota_byte_rate",
       "Target quota byte rate (bytes per second) - 2GB default",
-      {.example = "1073741824", .visibility = visibility::tunable},
-      2_GiB)
+      {.needs_restart = needs_restart::no,
+       .example = "1073741824",
+       .visibility = visibility::user},
+      2_GiB,
+      {.min = 1_MiB})
   , cluster_id(
       *this,
       "cluster_id",
@@ -558,7 +578,7 @@ configuration::configuration()
       *this,
       "max_kafka_throttle_delay_ms",
       "Fail-safe maximum throttle delay on kafka requests",
-      {.visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       60'000ms)
   , kafka_max_bytes_per_fetch(
       *this,
@@ -1040,14 +1060,14 @@ configuration::configuration()
        .visibility = visibility::deprecated},
       "https://m.rp.vectorized.io/v2") {}
 
-void configuration::load(const YAML::Node& root_node) {
+configuration::error_map_t configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {
-        throw std::invalid_argument("'redpanda'root is required");
+        throw std::invalid_argument("'redpanda' root is required");
     }
 
     const auto& ignore = node().property_names();
 
-    config_store::read_yaml(root_node["redpanda"], ignore);
+    return config_store::read_yaml(root_node["redpanda"], ignore);
 }
 
 configuration& shard_local_cfg() {

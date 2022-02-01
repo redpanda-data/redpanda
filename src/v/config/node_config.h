@@ -72,7 +72,7 @@ public:
     }
 
     node_config() noexcept;
-    void load(const YAML::Node& root_node);
+    error_map_t load(const YAML::Node& root_node);
 
 private:
     property<std::optional<net::unresolved_address>> _advertised_rpc_api;

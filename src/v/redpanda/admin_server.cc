@@ -806,13 +806,35 @@ void admin_server::register_cluster_config_routes() {
                       continue;
                   }
                   auto& property = cfg.get(i.first);
+
                   try {
-                      property.set_value(val);
+                      auto validation_err = property.validate(val);
+                      if (validation_err.has_value()) {
+                          errors[i.first]
+                            = validation_err.value().error_message();
+                          vlog(
+                            logger.warn,
+                            "Invalid {}: '{}' ({})",
+                            i.first,
+                            yaml_value,
+                            validation_err.value().error_message());
+                      } else {
+                          // In case any property subclass might throw
+                          // from it's value setter even after a non-throwing
+                          // call to validate (if this happens validate() was
+                          // implemented wrongly, but let's be safe)
+                          property.set_value(val);
+                      }
                   } catch (...) {
-                      errors[i.first] = fmt::format(
+                      auto message = fmt::format(
                         "{}", std::current_exception());
+                      errors[i.first] = message;
                       vlog(
-                        logger.warn, "Invalid {}: '{}'", i.first, yaml_value);
+                        logger.warn,
+                        "Invalid {}: '{}' ({})",
+                        i.first,
+                        yaml_value,
+                        message);
                   }
               }
 

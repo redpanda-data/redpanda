@@ -28,9 +28,27 @@ public:
         return *_properties.at(name);
     }
 
-    virtual void read_yaml(
+    using error_map_t = std::map<ss::sstring, ss::sstring>;
+
+    /**
+     * Missing or invalid properties whose metadata specifies `required=true`
+     * are fatal errors, raised as std::invalid_argument.
+     *
+     * Other validation errors on property values are returned in a map
+     * of property name to error message.  This includes malformed YAML,
+     * bad YAML type, or an error flagged by the property's validator hook.
+     *
+     * @param root_node
+     * @param ignore_missing Tolerate extra values in the config if they are
+     *        contained in this set -- this is for reading old configs that
+     *        mix node & cluster config properties.
+     * @return map of property name to error.  Empty on clean load.
+     */
+    virtual error_map_t read_yaml(
       const YAML::Node& root_node,
       const std::set<std::string_view> ignore_missing = {}) {
+        error_map_t errors;
+
         for (auto const& [name, property] : _properties) {
             if (property->is_required() == required::no) {
                 continue;
@@ -51,9 +69,36 @@ public:
                       fmt::format("Unknown property {}", name));
                 }
             } else {
-                found->second->set_value(node.second);
+                bool ok = false;
+                try {
+                    auto validation_err = found->second->validate(node.second);
+                    if (validation_err.has_value()) {
+                        errors[name] = fmt::format(
+                          "Validation error: {}",
+                          validation_err.value().error_message());
+                    }
+
+                    found->second->set_value(node.second);
+                    ok = true;
+                } catch (YAML::InvalidNode const& e) {
+                    errors[name] = fmt::format("Invalid syntax: {}", e);
+                } catch (YAML::ParserException const& e) {
+                    errors[name] = fmt::format("Invalid syntax: {}", e);
+                } catch (YAML::BadConversion const& e) {
+                    errors[name] = fmt::format("Invalid value: {}", e);
+                }
+
+                // A validation error is fatal if the property was required,
+                // e.g. if someone entered a non-integer node_id, or an invalid
+                // internal RPC address.
+                if (!ok && found->second->is_required()) {
+                    throw std::invalid_argument(fmt::format(
+                      "Property {} is required and has invalid value", name));
+                }
             }
         }
+
+        return errors;
     }
 
     template<typename Func>
@@ -61,16 +106,6 @@ public:
         for (auto const& [_, property] : _properties) {
             f(*property);
         }
-    }
-
-    const std::vector<validation_error> validate() {
-        std::vector<validation_error> errors;
-        for_each([&errors](const base_property& p) {
-            if (auto err = p.validate()) {
-                errors.push_back(std::move(*err));
-            }
-        });
-        return errors;
     }
 
     void to_json(rapidjson::Writer<rapidjson::StringBuffer>& w) const {

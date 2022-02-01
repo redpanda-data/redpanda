@@ -12,6 +12,7 @@
 #pragma once
 #include "config/base_property.h"
 #include "config/rjson_serialization.h"
+#include "oncore.h"
 #include "reflection/type_traits.h"
 #include "utils/intrusive_list_helpers.h"
 #include "utils/to_string.h"
@@ -120,19 +121,24 @@ public:
         json::rjson_serialize(w, _value);
     }
 
-    std::optional<validation_error> validate() const override {
-        if (auto err = _validator(_value); err) {
-            return std::make_optional<validation_error>(name().data(), *err);
-        }
-        return std::nullopt;
-    }
-
     void set_value(std::any v) override {
         update_value(std::any_cast<T>(std::move(v)));
     }
 
     bool set_value(YAML::Node n) override {
         return update_value(std::move(n.as<T>()));
+    }
+
+    std::optional<validation_error> validate(T const& v) const {
+        if (auto err = _validator(v); err) {
+            return std::make_optional<validation_error>(name().data(), *err);
+        }
+        return std::nullopt;
+    }
+
+    std::optional<validation_error> validate(YAML::Node n) const override {
+        auto v = std::move(n.as<T>());
+        return validate(v);
     }
 
     void reset() override { _value = default_value(); }
@@ -212,6 +218,7 @@ private:
     std::optional<std::function<void()>> _on_change;
 
     void update(const T& v) {
+        oncore_debug_verify(_verify_shard);
         auto changed = _value != v;
         _value = v;
         if (changed && _on_change.has_value()) {
@@ -219,6 +226,8 @@ private:
         }
     }
     void detach() { _parent = nullptr; }
+
+    expression_in_debug_mode(oncore _verify_shard);
 
 protected:
     intrusive_list_hook _hook;
@@ -279,9 +288,15 @@ public:
      * the simplest way to  accomplish this is to make both the callback
      * and the binding attributes of the same object
      */
-    void watch(std::function<void()>&& f) { _on_change = std::move(f); }
+    void watch(std::function<void()>&& f) {
+        oncore_debug_verify(_verify_shard);
+        _on_change = std::move(f);
+    }
 
-    const T& operator()() const { return _value; }
+    const T& operator()() const {
+        oncore_debug_verify(_verify_shard);
+        return _value;
+    }
 
     friend class property<T>;
     template<typename U>
@@ -435,6 +450,22 @@ public:
     using property<std::vector<T>>::property;
 
     bool set_value(YAML::Node n) override {
+        auto value = decode_yaml(std::move(n));
+        return property<std::vector<T>>::update_value(std::move(value));
+    }
+
+    std::optional<validation_error>
+    validate([[maybe_unused]] YAML::Node n) const override {
+        std::vector<T> value = decode_yaml(std::move(n));
+        return property<std::vector<T>>::validate(value);
+    }
+
+private:
+    /**
+     * Given either a single value or a list of values, return
+     * a list of decoded values.
+     */
+    std::vector<T> decode_yaml(const YAML::Node& n) const {
         std::vector<T> value;
         if (n.IsSequence()) {
             for (auto elem : n) {
@@ -443,48 +474,8 @@ public:
         } else {
             value.push_back(std::move(n.as<T>()));
         }
-        return property<std::vector<T>>::update_value(std::move(value));
+        return value;
     }
-};
-
-/**
- * A numeric property that is clamped to a range.
- */
-template<typename T>
-class clamped_property : public property<T> {
-public:
-    using property<T>::property;
-
-    clamped_property(
-      config_store& conf,
-      std::string_view name,
-      std::string_view desc,
-      base_property::metadata meta,
-      T def = T{},
-      std::optional<T> min = std::nullopt,
-      std::optional<T> max = std::nullopt)
-      : property<T>(conf, name, desc, meta, def)
-      , _min(min)
-      , _max(max) {}
-
-    bool set_value(YAML::Node n) override {
-        auto val = std::move(n.as<T>());
-
-        if (val.has_value()) {
-            if (_min.has_value()) {
-                val = std::max(val, _min.value());
-            }
-            if (_max.has_value()) {
-                val = std::min(val, _max.value());
-            }
-        }
-
-        return property<T>::update_value(std::move(val));
-    };
-
-private:
-    std::optional<T> _min;
-    std::optional<T> _max;
 };
 
 /**
