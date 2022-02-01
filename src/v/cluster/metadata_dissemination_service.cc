@@ -108,6 +108,7 @@ ss::future<> metadata_dissemination_service::start() {
     if (ss::this_shard_id() != 0) {
         return ss::make_ready_future<>();
     }
+    _dispatch_timer.arm(_dissemination_interval);
     // poll either seed servers or configuration
     auto all_brokers = _members_table.local().all_brokers();
     // use hash set to deduplicate ids
@@ -140,7 +141,6 @@ ss::future<> metadata_dissemination_service::start() {
           return update_metadata_with_retries(std::move(addresses));
       });
 
-    _dispatch_timer.arm(_dissemination_interval);
     return ss::make_ready_future<>();
 }
 
