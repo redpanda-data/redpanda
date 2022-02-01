@@ -26,4 +26,7 @@ class CliKafkaProducer(BackgroundTask):
 
     def _run(self):
         producer = KafkaCliTools(self._redpanda)
-        producer.produce(self._topic, self._num_records, self._records_size)
+        producer.produce(self._topic,
+                         self._num_records,
+                         self._records_size,
+                         acks=1)
