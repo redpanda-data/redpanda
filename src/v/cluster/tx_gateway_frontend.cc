@@ -1250,7 +1250,7 @@ tx_gateway_frontend::do_abort_tm_tx(
 
         // writing ready status to overwrite an ongoing transaction if
         // it exists on an older leader
-        auto ready_tx = co_await stm->mark_tx_ready(tx.id);
+        auto ready_tx = co_await stm->reset_tx_ready(tx.id);
         if (!ready_tx.has_value()) {
             co_return tx_errc::invalid_txn_state;
         }
@@ -1559,7 +1559,7 @@ tx_gateway_frontend::get_ongoing_tx(
             // So marking it as ready. We use previous term because aborting a
             // tx in current ready state with current term means we abort a tx
             // which wasn't started and it leads to an error.
-            std::ignore = co_await stm->mark_tx_ready(tx.id, tx.etag);
+            std::ignore = co_await stm->reset_tx_ready(tx.id, tx.etag);
             co_return tx_errc::invalid_txn_state;
         }
     }
