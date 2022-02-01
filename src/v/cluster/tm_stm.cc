@@ -138,6 +138,21 @@ tm_stm::try_change_status(
 }
 
 ss::future<checked<tm_transaction, tm_stm::op_status>>
+tm_stm::mark_tx_preparing(kafka::transactional_id tx_id) {
+    auto ptx = _tx_table.find(tx_id);
+    if (ptx == _tx_table.end()) {
+        co_return tm_stm::op_status::not_found;
+    }
+    auto tx = ptx->second;
+    if (tx.status != tm_transaction::tx_status::ongoing) {
+        co_return tm_stm::op_status::conflict;
+    }
+    tx.status = cluster::tm_transaction::tx_status::preparing;
+    tx.last_update_ts = clock_type::now();
+    co_return co_await update_tx(tx, tx.etag);
+}
+
+ss::future<checked<tm_transaction, tm_stm::op_status>>
 tm_stm::get_actual_tx(kafka::transactional_id tx_id) {
     if (!_c->is_leader()) {
         co_return tm_stm::op_status::not_leader;

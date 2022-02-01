@@ -141,6 +141,8 @@ public:
     ss::future<checked<tm_transaction, tm_stm::op_status>>
       reset_tx_ready(kafka::transactional_id, model::term_id);
     ss::future<checked<tm_transaction, tm_stm::op_status>>
+      mark_tx_preparing(kafka::transactional_id);
+    ss::future<checked<tm_transaction, tm_stm::op_status>>
       try_change_status(kafka::transactional_id, tm_transaction::tx_status);
     ss::future<tm_stm::op_status> re_register_producer(
       kafka::transactional_id,
