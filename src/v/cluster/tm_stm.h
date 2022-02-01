@@ -179,12 +179,14 @@ protected:
 private:
     ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) override;
     ss::future<stm_snapshot> take_snapshot() override;
+    ss::future<bool> sync(model::timeout_clock::duration);
 
     ss::basic_rwlock<> _state_lock;
     std::chrono::milliseconds _sync_timeout;
     std::chrono::milliseconds _transactional_id_expiration;
     model::violation_recovery_policy _recovery_policy;
-    absl::flat_hash_map<kafka::transactional_id, tm_transaction> _tx_table;
+    absl::flat_hash_map<kafka::transactional_id, tm_transaction> _log_txes;
+    absl::flat_hash_map<kafka::transactional_id, tm_transaction> _mem_txes;
     absl::flat_hash_map<model::producer_identity, kafka::transactional_id>
       _pid_tx_id;
     absl::flat_hash_map<kafka::transactional_id, ss::lw_shared_ptr<mutex>>
