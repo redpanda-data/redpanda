@@ -42,8 +42,8 @@ class AlterTopicConfiguration(RedpandaTest):
                  value="LogAppendTime")
     def test_altering_topic_configuration(self, property, value):
         topic = self.topics[0].name
+        self.client().alter_topic_configs(topic, {property: value})
         kafka_tools = KafkaCliTools(self.redpanda)
-        kafka_tools.alter_topic_config(topic, {property: value})
         spec = kafka_tools.describe_topic(topic)
 
         # e.g. retention.ms is TopicSpec.retention_ms
@@ -54,7 +54,7 @@ class AlterTopicConfiguration(RedpandaTest):
     def test_altering_multiple_topic_configurations(self):
         topic = self.topics[0].name
         kafka_tools = KafkaCliTools(self.redpanda)
-        kafka_tools.alter_topic_config(
+        self.client().alter_topic_configs(
             topic, {
                 TopicSpec.PROPERTY_SEGMENT_SIZE: 1024,
                 TopicSpec.PROPERTY_RETENTION_TIME: 360000,
@@ -79,7 +79,7 @@ class AlterTopicConfiguration(RedpandaTest):
         for _ in range(0, 5):
             key = self.random_string(5)
             try:
-                kafka_tools.alter_topic_config(topic, {key: "123"})
+                self.client().alter_topic_configs(topic, {key: "123"})
             except Exception as inst:
                 self.logger.info(
                     "alter failed as expected: expected exception %s", inst)

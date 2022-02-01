@@ -68,3 +68,11 @@ class DefaultClient:
     def alter_topic_partition_count(self, topic: str, count: int):
         client = KafkaCliTools(self._redpanda)
         client.create_topic_partitions(topic, count)
+
+    def alter_topic_configs(self, topic: str,
+                            props: dict[str, typing.Union[str, int]]):
+        """
+        Alter multiple topic configuration properties.
+        """
+        kafka_tools = KafkaCliTools(self._redpanda)
+        kafka_tools.alter_topic_config(topic, props)
