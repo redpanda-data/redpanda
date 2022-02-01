@@ -464,12 +464,12 @@ bool tm_stm::is_expired(const tm_transaction& tx) {
     return _transactional_id_expiration < now_ts - tx.last_update_ts;
 }
 
-std::vector<kafka::transactional_id> tm_stm::get_expired_txs() {
+absl::btree_set<kafka::transactional_id> tm_stm::get_expired_txs() {
     auto now_ts = clock_type::now();
-    std::vector<kafka::transactional_id> ids;
+    absl::btree_set<kafka::transactional_id> ids;
     for (auto& [id, tx] : _tx_table) {
         if (_transactional_id_expiration < now_ts - tx.last_update_ts) {
-            ids.push_back(id);
+            ids.insert(id);
         }
     }
     return ids;
