@@ -14,6 +14,7 @@
 #include "bytes/iobuf_ostreambuf.h"
 #include "cloud_storage/types.h"
 #include "hashing/xx.h"
+#include "json/writer.h"
 #include "model/timestamp.h"
 #include "ssx/sformat.h"
 #include "storage/fs_utils.h"
@@ -30,7 +31,6 @@
 #include <rapidjson/istreamwrapper.h>
 #include <rapidjson/ostreamwrapper.h>
 #include <rapidjson/rapidjson.h>
-#include <rapidjson/writer.h>
 
 #include <algorithm>
 #include <array>
@@ -394,7 +394,7 @@ serialized_json_stream manifest::serialize() const {
 
 void manifest::serialize(std::ostream& out) const {
     rapidjson::OStreamWrapper wrapper(out);
-    rapidjson::Writer<rapidjson::OStreamWrapper> w(wrapper);
+    json::Writer<rapidjson::OStreamWrapper> w(wrapper);
     w.StartObject();
     w.Key("version");
     w.Int(static_cast<int>(manifest_version::v1));
@@ -560,7 +560,7 @@ serialized_json_stream topic_manifest::serialize() const {
 
 void topic_manifest::serialize(std::ostream& out) const {
     rapidjson::OStreamWrapper wrapper(out);
-    rapidjson::Writer<rapidjson::OStreamWrapper> w(wrapper);
+    json::Writer<rapidjson::OStreamWrapper> w(wrapper);
     w.StartObject();
     w.Key("version");
     w.Int(static_cast<int>(manifest_version::v1));
