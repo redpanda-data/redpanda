@@ -115,29 +115,6 @@ tm_stm::update_tx(tm_transaction tx, model::term_id term) {
 }
 
 ss::future<checked<tm_transaction, tm_stm::op_status>>
-tm_stm::try_change_status(
-  kafka::transactional_id tx_id, tm_transaction::tx_status status) {
-    if (!_c->is_leader()) {
-        co_return tm_stm::op_status::not_leader;
-    }
-
-    auto is_ready = co_await sync(_sync_timeout);
-    if (!is_ready) {
-        co_return tm_stm::op_status::unknown;
-    }
-
-    auto ptx = _tx_table.find(tx_id);
-    if (ptx == _tx_table.end()) {
-        co_return tm_stm::op_status::not_found;
-    }
-    tm_transaction tx = ptx->second;
-    tx.etag = _insync_term;
-    tx.status = status;
-    tx.last_update_ts = clock_type::now();
-    co_return co_await update_tx(tx, tx.etag);
-}
-
-ss::future<checked<tm_transaction, tm_stm::op_status>>
 tm_stm::mark_tx_preparing(kafka::transactional_id tx_id) {
     auto ptx = _tx_table.find(tx_id);
     if (ptx == _tx_table.end()) {
@@ -178,6 +155,23 @@ tm_stm::mark_tx_prepared(kafka::transactional_id tx_id) {
         co_return tm_stm::op_status::conflict;
     }
     tx.status = cluster::tm_transaction::tx_status::prepared;
+    tx.last_update_ts = clock_type::now();
+    co_return co_await update_tx(tx, tx.etag);
+}
+
+ss::future<checked<tm_transaction, tm_stm::op_status>>
+tm_stm::mark_tx_killed(kafka::transactional_id tx_id) {
+    auto tx_opt = get_tx(tx_id);
+    if (!tx_opt.has_value()) {
+        co_return tm_stm::op_status::not_found;
+    }
+    auto tx = tx_opt.value();
+    if (
+      tx.status != tm_transaction::tx_status::ongoing
+      && tx.status != tm_transaction::tx_status::preparing) {
+        co_return tm_stm::op_status::conflict;
+    }
+    tx.status = cluster::tm_transaction::tx_status::killed;
     tx.last_update_ts = clock_type::now();
     co_return co_await update_tx(tx, tx.etag);
 }

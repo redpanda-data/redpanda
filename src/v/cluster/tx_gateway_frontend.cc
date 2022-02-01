@@ -435,8 +435,7 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
         });
         co_return try_abort_reply{.ec = tx_errc::none};
     } else if (tx.status == tm_transaction::tx_status::ongoing) {
-        auto killed_tx = co_await stm->try_change_status(
-          tx.id, cluster::tm_transaction::tx_status::killed);
+        auto killed_tx = co_await stm->mark_tx_killed(tx.id);
         if (!killed_tx.has_value()) {
             if (killed_tx.error() == tm_stm::op_status::not_leader) {
                 co_return try_abort_reply{.ec = tx_errc::not_coordinator};
@@ -1346,8 +1345,7 @@ tx_gateway_frontend::do_commit_tm_tx(
             rejected = rejected || (r.ec == tx_errc::request_rejected);
         }
         if (rejected) {
-            auto aborting_tx = co_await stm->try_change_status(
-              tx.id, cluster::tm_transaction::tx_status::killed);
+            auto aborting_tx = co_await stm->mark_tx_killed(tx.id);
             if (!aborting_tx.has_value()) {
                 if (aborting_tx.error() == tm_stm::op_status::not_leader) {
                     outcome->set_value(tx_errc::not_coordinator);
