@@ -94,51 +94,51 @@ class AlterTopicConfiguration(RedpandaTest):
         topic = self.topics[0].name
         original_output = self.client().describe_topic_configs(topic)
         self.logger.info(f"original_output={original_output}")
-        assert original_output["redpanda.remote.read"][0] == "false"
-        assert original_output["redpanda.remote.write"][0] == "false"
+        assert original_output["redpanda.remote.read"] == "false"
+        assert original_output["redpanda.remote.write"] == "false"
 
         self.client().alter_topic_config(topic, "redpanda.remote.read", "true")
         altered_output = self.client().describe_topic_configs(topic)
         self.logger.info(f"altered_output={altered_output}")
-        assert altered_output["redpanda.remote.read"][0] == "true"
-        assert altered_output["redpanda.remote.write"][0] == "false"
+        assert altered_output["redpanda.remote.read"] == "true"
+        assert altered_output["redpanda.remote.write"] == "false"
 
         self.client().alter_topic_config(topic, "redpanda.remote.read", "false")
         altered_output = self.client().describe_topic_configs(topic)
         self.logger.info(f"altered_output={altered_output}")
-        assert altered_output["redpanda.remote.read"][0] == "false"
-        assert altered_output["redpanda.remote.write"][0] == "false"
+        assert altered_output["redpanda.remote.read"] == "false"
+        assert altered_output["redpanda.remote.write"] == "false"
 
         self.client().alter_topic_config(topic, "redpanda.remote.read", "true")
         self.client().alter_topic_config(topic, "redpanda.remote.write", "true")
         altered_output = self.client().describe_topic_configs(topic)
         self.logger.info(f"altered_output={altered_output}")
-        assert altered_output["redpanda.remote.read"][0] == "true"
-        assert altered_output["redpanda.remote.write"][0] == "true"
+        assert altered_output["redpanda.remote.read"] == "true"
+        assert altered_output["redpanda.remote.write"] == "true"
 
         self.client().alter_topic_config(topic, "redpanda.remote.read", "false")
         altered_output = self.client().describe_topic_configs(topic)
         self.logger.info(f"altered_output={altered_output}")
-        assert altered_output["redpanda.remote.read"][0] == "false"
-        assert altered_output["redpanda.remote.write"][0] == "true"
+        assert altered_output["redpanda.remote.read"] == "false"
+        assert altered_output["redpanda.remote.write"] == "true"
 
         self.client().alter_topic_config(topic, "redpanda.remote.read", "true")
         altered_output = self.client().describe_topic_configs(topic)
         self.logger.info(f"altered_output={altered_output}")
-        assert altered_output["redpanda.remote.read"][0] == "true"
-        assert altered_output["redpanda.remote.write"][0] == "true"
+        assert altered_output["redpanda.remote.read"] == "true"
+        assert altered_output["redpanda.remote.write"] == "true"
 
         self.client().alter_topic_config(topic, "redpanda.remote.write", "false")
         altered_output = self.client().describe_topic_configs(topic)
         self.logger.info(f"altered_output={altered_output}")
-        assert altered_output["redpanda.remote.read"][0] == "true"
-        assert altered_output["redpanda.remote.write"][0] == "false"
+        assert altered_output["redpanda.remote.read"] == "true"
+        assert altered_output["redpanda.remote.write"] == "false"
 
         self.client().alter_topic_config(topic, "redpanda.remote.read", "false")
         altered_output = self.client().describe_topic_configs(topic)
         self.logger.info(f"altered_output={altered_output}")
-        assert altered_output["redpanda.remote.read"][0] == "false"
-        assert altered_output["redpanda.remote.write"][0] == "false"
+        assert altered_output["redpanda.remote.read"] == "false"
+        assert altered_output["redpanda.remote.write"] == "false"
 
 
 class ShadowIndexingGlobalConfig(RedpandaTest):
@@ -157,36 +157,36 @@ class ShadowIndexingGlobalConfig(RedpandaTest):
         topic = self.topics[0].name
         original_output = self.client().describe_topic_configs(topic)
         self.logger.info(f"original_output={original_output}")
-        assert original_output["redpanda.remote.read"][0] == "true"
-        assert original_output["redpanda.remote.write"][0] == "true"
+        assert original_output["redpanda.remote.read"] == "true"
+        assert original_output["redpanda.remote.write"] == "true"
 
         self.client().alter_topic_config(topic, "redpanda.remote.read", "false")
         self.client().alter_topic_config(topic, "redpanda.remote.read", "false")
         altered_output = self.client().describe_topic_configs(topic)
         self.logger.info(f"altered_output={altered_output}")
-        assert altered_output["redpanda.remote.read"][0] == "false"
-        assert altered_output["redpanda.remote.write"][0] == "false"
+        assert altered_output["redpanda.remote.read"] == "false"
+        assert altered_output["redpanda.remote.write"] == "false"
 
     @cluster(num_nodes=3)
     def test_overrides_remove(self):
         topic = self.topics[0].name
         original_output = self.client().describe_topic_configs(topic)
         self.logger.info(f"original_output={original_output}")
-        assert original_output["redpanda.remote.read"][0] == "true"
-        assert original_output["redpanda.remote.write"][0] == "true"
+        assert original_output["redpanda.remote.read"] == "true"
+        assert original_output["redpanda.remote.write"] == "true"
 
         # disable shadow indexing for topic
         self.client().alter_topic_config(topic, "redpanda.remote.read", "false")
         self.client().alter_topic_config(topic, "redpanda.remote.write", "false")
         altered_output = self.client().describe_topic_configs(topic)
         self.logger.info(f"altered_output={altered_output}")
-        assert altered_output["redpanda.remote.read"][0] == "false"
-        assert altered_output["redpanda.remote.write"][0] == "false"
+        assert altered_output["redpanda.remote.read"] == "false"
+        assert altered_output["redpanda.remote.write"] == "false"
 
         # delete topic configs (value from configuration should be used)
         self.client().delete_topic_config(topic, "redpanda.remote.read")
         self.client().delete_topic_config(topic, "redpanda.remote.write")
         altered_output = self.client().describe_topic_configs(topic)
         self.logger.info(f"altered_output={altered_output}")
-        assert altered_output["redpanda.remote.read"][0] == "true"
-        assert altered_output["redpanda.remote.write"][0] == "true"
+        assert altered_output["redpanda.remote.read"] == "true"
+        assert altered_output["redpanda.remote.write"] == "true"

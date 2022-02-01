@@ -24,6 +24,17 @@ class TopicDescription(typing.NamedTuple):
     partitions: typing.List[PartitionDescription]
 
 
+class TopicConfigValue(typing.NamedTuple):
+    value: typing.Union[str, int]
+    source: str
+
+    def __eq__(self, other):
+        if isinstance(other, TopicConfigValue):
+            return self.value == other.value and self.source == other.source
+        assert isinstance(other, str) or isinstance(other, int)
+        return self.value == other
+
+
 class DefaultClient:
     def __init__(self, redpanda):
         self._redpanda = redpanda
@@ -88,7 +99,11 @@ class DefaultClient:
 
     def describe_topic_configs(self, topic: str):
         rpk = RpkTool(self._redpanda)
-        return rpk.describe_topic_configs(topic)
+        configs = rpk.describe_topic_configs(topic)
+        return {
+            key: TopicConfigValue(value=value[0], source=value[1])
+            for key, value in configs.items()
+        }
 
     def delete_topic_config(self, topic: str, key: str):
         rpk = RpkTool(self._redpanda)
