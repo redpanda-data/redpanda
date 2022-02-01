@@ -9,6 +9,7 @@
 
 #include "cluster/archival_metadata_stm.h"
 
+#include "cloud_storage/manifest.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -63,11 +64,12 @@ archival_metadata_stm::segments_from_manifest(
   const cloud_storage::manifest& manifest) {
     std::vector<segment> segments;
     segments.reserve(manifest.size());
-    for (auto [name, meta] : manifest) {
+    for (auto [key, meta] : manifest) {
         if (meta.ntp_revision == model::initial_revision_id{}) {
             meta.ntp_revision = manifest.get_revision_id();
         }
-
+        auto name = cloud_storage::generate_segment_name(
+          key.base_offset, key.term);
         segments.push_back(segment{
           .ntp_revision_deprecated = meta.ntp_revision,
           .name = std::move(name),

@@ -58,6 +58,14 @@ public:
       const manifest::key& name,
       retry_chain_node& parent);
 
+    remote_segment(
+      remote& r,
+      cache& cache,
+      s3::bucket_name bucket,
+      const manifest& m,
+      model::offset base_offset,
+      retry_chain_node& parent);
+
     remote_segment(const remote_segment&) = delete;
     remote_segment(remote_segment&&) = delete;
     remote_segment& operator=(const remote_segment&) = delete;
