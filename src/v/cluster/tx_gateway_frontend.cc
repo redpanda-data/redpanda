@@ -1254,8 +1254,7 @@ tx_gateway_frontend::do_abort_tm_tx(
     }
 
     if (tx.status == tm_transaction::tx_status::ongoing) {
-        auto changed_tx = co_await stm->try_change_status(
-          tx.id, cluster::tm_transaction::tx_status::aborting);
+        auto changed_tx = co_await stm->mark_tx_aborting(tx.id);
         if (!changed_tx.has_value()) {
             if (changed_tx.error() == tm_stm::op_status::not_leader) {
                 co_return tx_errc::not_coordinator;
