@@ -157,12 +157,12 @@ tm_stm::get_actual_tx(kafka::transactional_id tx_id) {
 }
 
 ss::future<checked<tm_transaction, tm_stm::op_status>>
-tm_stm::mark_tx_ready(kafka::transactional_id tx_id) {
-    return mark_tx_ready(tx_id, _insync_term);
+tm_stm::reset_tx_ready(kafka::transactional_id tx_id) {
+    return reset_tx_ready(tx_id, _insync_term);
 }
 
 ss::future<checked<tm_transaction, tm_stm::op_status>>
-tm_stm::mark_tx_ready(kafka::transactional_id tx_id, model::term_id term) {
+tm_stm::reset_tx_ready(kafka::transactional_id tx_id, model::term_id term) {
     auto ptx = _tx_table.find(tx_id);
     if (ptx == _tx_table.end()) {
         co_return tm_stm::op_status::not_found;
