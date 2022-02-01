@@ -265,10 +265,7 @@ class ScramTest(RedpandaTest):
 
 class ScramLiveUpdateTest(RedpandaTest):
     def __init__(self, test_context):
-        super(ScramLiveUpdateTest,
-              self).__init__(test_context,
-                             num_brokers=1,
-                             extra_rp_conf={'enable_central_config': True})
+        super(ScramLiveUpdateTest, self).__init__(test_context, num_brokers=1)
 
     @cluster(num_nodes=1)
     def test_enable_sasl_live(self):

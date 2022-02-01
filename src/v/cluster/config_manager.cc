@@ -112,19 +112,9 @@ void config_manager::start_bootstrap() {
                               co_await _feature_table.local().await_feature(
                                 feature::central_config, _as.local());
                           }
-                          if (config::node().enable_central_config()) {
-                              co_await do_bootstrap();
-                              vlog(
-                                clusterlog.info,
-                                "Completed bootstrap as leader");
-                          } else {
-                              // This is a node property, so fixed for
-                              // process lifetime.  Block until the abort
-                              // source is signalled.
-                              vlog(clusterlog.trace, "Central config disabled");
-                              co_await ss::sleep_abortable(
-                                bootstrap_retry, _as.local());
-                          }
+                          co_await do_bootstrap();
+                          vlog(
+                            clusterlog.info, "Completed bootstrap as leader");
                       } else {
                           // Someone else got leadership.  Maybe they
                           // successfully bootstrap config, maybe they don't.

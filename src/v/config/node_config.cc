@@ -102,12 +102,7 @@ node_config::node_config() noexcept
       "`cloud_storage_enabled` is present",
       {.visibility = visibility::user},
       std::nullopt)
-  , enable_central_config(
-      *this,
-      "enable_central_config",
-      "Enable central storage + sync of cluster configuration",
-      {.visibility = visibility::user},
-      false)
+  , enable_central_config(*this, "enable_central_config")
   , _advertised_rpc_api(
       *this,
       "advertised_rpc_api",

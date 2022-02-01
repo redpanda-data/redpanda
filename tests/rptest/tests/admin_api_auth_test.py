@@ -73,9 +73,7 @@ class AdminApiAuthTest(RedpandaTest):
     enabled.
     """
     def __init__(self, *args, **kwargs):
-        super().__init__(*args,
-                         extra_rp_conf={'enable_central_config': True},
-                         **kwargs)
+        super().__init__(*args, **kwargs)
 
         self.rpk = RpkTool(self.redpanda)
 
@@ -153,9 +151,7 @@ class AdminApiAuthEnablementTest(RedpandaTest):
     Test redpanda's rules for when admin API auth may be switched on
     """
     def __init__(self, *args, **kwargs):
-        super().__init__(*args,
-                         extra_rp_conf={'enable_central_config': True},
-                         **kwargs)
+        super().__init__(*args, **kwargs)
 
     @cluster(num_nodes=3)
     def test_no_superusers(self):

@@ -371,11 +371,7 @@ void application::hydrate_config(const po::variables_map& cfg) {
         }
 
         vlog(_log.info, "Cluster configuration properties:");
-        if (config::node().enable_central_config) {
-            vlog(_log.info, "(use `rpk cluster config edit` to change)");
-        } else {
-            vlog(_log.info, "(use `rpk config set <cfg> <value>` to change)");
-        }
+        vlog(_log.info, "(use `rpk cluster config edit` to change)");
         config::shard_local_cfg().for_each(config_printer("redpanda"));
 
         vlog(_log.info, "Node configuration properties:");
