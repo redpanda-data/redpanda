@@ -11,20 +11,21 @@ import json
 import random
 
 from rptest.services.cluster import cluster
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from ducktape.utils.util import wait_until
 
-from rptest.clients.default import DefaultClient
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.http_server import HttpServer
 
 
 class MetricsReporterTest(RedpandaTest):
-    def __init__(self, test_ctx):
+    def __init__(self, test_ctx, num_brokers):
         self._ctx = test_ctx
         self.http = HttpServer(self._ctx)
         super(MetricsReporterTest, self).__init__(
             test_context=test_ctx,
+            num_brokers=num_brokers,
             extra_rp_conf={
                 "health_monitor_tick_interval": 1000,
                 # report every two seconds
@@ -39,8 +40,7 @@ class MetricsReporterTest(RedpandaTest):
         self.http.start()
         self.redpanda.start()
 
-    @cluster(num_nodes=4)
-    def test_redpanda_metrics_reporting(self):
+    def _test_redpanda_metrics_reporting(self):
         """
         Test that redpanda nodes send well formed messages to the metrics endpoint
         """
@@ -49,8 +49,10 @@ class MetricsReporterTest(RedpandaTest):
         for _ in range(0, total_topics):
             partitions = random.randint(1, 8)
             total_partitions += partitions
-            self.client().create_topic(
-                [TopicSpec(partition_count=partitions, replication_factor=3)])
+            self.client().create_topic([
+                TopicSpec(partition_count=partitions,
+                          replication_factor=len(self.redpanda.nodes))
+            ])
 
         # create topics
         self.redpanda.logger.info(
@@ -60,7 +62,10 @@ class MetricsReporterTest(RedpandaTest):
         def _state_up_to_date():
             if self.http.requests:
                 r = json.loads(self.http.requests[-1]['body'])
+                self.logger.info(f"Latest request: {r}")
                 return r['topic_count'] == total_topics
+            else:
+                self.logger.info("No requests yet")
             return False
 
         wait_until(_state_up_to_date, 20, backoff_sec=1)
@@ -81,7 +86,7 @@ class MetricsReporterTest(RedpandaTest):
         assert last['partition_count'] == total_partitions
         nodes_meta = last['nodes']
 
-        assert len(last['nodes']) == 3
+        assert len(last['nodes']) == len(self.redpanda.nodes)
 
         assert all('node_id' in n for n in nodes_meta)
         assert all('cpu_count' in n for n in nodes_meta)
@@ -105,3 +110,29 @@ class MetricsReporterTest(RedpandaTest):
                    backoff_sec=1)
         assert_fields_are_the_same(metadata, 'cluster_uuid')
         assert_fields_are_the_same(metadata, 'cluster_created_ts')
+
+
+class MultiNodeMetricsReporterTest(MetricsReporterTest):
+    """
+    Metrics reporting on a typical 3 node cluster
+    """
+    def __init__(self, test_ctx):
+        super().__init__(test_ctx, 3)
+
+    @cluster(num_nodes=4, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_redpanda_metrics_reporting(self):
+        self._test_redpanda_metrics_reporting()
+
+
+class SingleNodeMetricsReporterTest(MetricsReporterTest):
+    """
+    Metrics reporting on a single node cluster: verify that our cluster_uuid
+    generation works properly with fewer raft_configuration batches in the
+    controller log than a multi-node system has.
+    """
+    def __init__(self, test_ctx):
+        super().__init__(test_ctx, 1)
+
+    @cluster(num_nodes=2, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_redpanda_metrics_reporting(self):
+        self._test_redpanda_metrics_reporting()
