@@ -10,6 +10,7 @@
 import operator
 from kafka import TopicPartition
 
+from rptest.wasm.topics_result_set import CmpErr, cmp_err_to_str
 from rptest.wasm.topic import get_source_topic, get_dest_topic, is_materialized_topic, construct_materialized_topic
 from rptest.wasm.native_kafka_consumer import NativeKafkaConsumer
 from rptest.wasm.cli_kafka_producer import CliKafkaProducer
@@ -277,7 +278,9 @@ class WasmTest(RedpandaTest):
                     for src in self.wasm_test_input()
                 ])
                 tresults = output_results.filter(lambda x: x.topic in outputs)
-                if not verifier(input_results, tresults):
+                err = verifier(input_results, tresults)
+                if err != CmpErr.Success:
+                    err_str = cmp_err_to_str(err)
                     raise Exception(
-                        f"Set {dest} results weren't as expected: {type(self).__name__}"
+                        f"Set {dest} results weren't as expected: {type(self).__name__} reason: {err_str}"
                     )
