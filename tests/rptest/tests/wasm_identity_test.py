@@ -10,12 +10,12 @@
 from rptest.services.cluster import cluster
 from ducktape.mark import ignore
 from rptest.clients.types import TopicSpec
-from rptest.wasm.topic import construct_materialized_topic, get_source_topic
+from rptest.wasm.topic import get_source_topic
 from rptest.wasm.topics_result_set import materialized_result_set_compare
-from rptest.wasm.wasm_build_tool import WasmTemplateRepository
 from rptest.wasm.wasm_test import WasmTest
 from rptest.wasm.wasm_script import WasmScript
 from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST
+from rptest.wasm.wasm_build_tool import WasmTemplateRepository
 
 
 class WasmIdentityTest(WasmTest):
@@ -30,66 +30,29 @@ class WasmIdentityTest(WasmTest):
                  record_size=1024):
         super(WasmIdentityTest, self).__init__(test_context,
                                                extra_rp_conf=extra_rp_conf
-                                               or {})
+                                               or {},
+                                               record_size=record_size)
         self._num_records = num_records
-        self._record_size = record_size
-        assert len(self.topics) >= 1
 
-    def input_topics(self):
+    def wasm_inputs_throughput(self):
         """
-        Default behavior is for all scripts to have all topics as input topics
+        Producer parameters across all input topics
         """
-        return [x.name for x in self.topics]
+        return {topic: self._num_records for topic in self.wasm_test_input()}
 
-    def wasm_test_outputs(self):
-        raise Exception('Unimplemented method')
+    def wasm_outputs_throughput(self):
+        """
+        Consumer parameters across all output topics
+        """
+        return {topic: self._num_records for topic in self.wasm_test_output()}
 
-    def wasm_test_input(self):
-        """
-        Topics that will be produced onto, number of records and record_size
-        """
-        return [(x, self._num_records, self._record_size) for x in self.topics]
-
-    def wasm_test_plan(self):
-        """
-        List of scripts to deploy, built from the results of wasm_test_outputs().
-        By default inputs to all scripts will be self.input_topics()
-        """
-        itopics = self.input_topics()
-        return [
-            WasmScript(inputs=itopics,
-                       outputs=opts,
-                       script=WasmTemplateRepository.IDENTITY_TRANSFORM)
-            for opts in self.wasm_test_outputs()
-        ]
-
-    def verify_results(self):
-        """ How to interpret PASS/FAIL between two sets of returned results"""
+    def verifier(self):
         return materialized_result_set_compare
 
     @ignore  # https://github.com/vectorizedio/redpanda/issues/2514
     @cluster(num_nodes=3, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def verify_materialized_topics_test(self):
-        """
-        Entry point for all tests, asynchronously we perform the following:
-        1. Scripts are built & deployed
-        2. Consumers are set-up listening for expected records on output topics
-        3. Producers set-up and begin producing onto input topics
-        4. When finished, perform assertions in this method
-        """
-        self.start(self.wasm_test_input(), self.wasm_test_plan())
-        input_results, output_results = self.wait_on_results()
-        for script in self.wasm_test_outputs():
-            for dest in script:
-                outputs = set([
-                    construct_materialized_topic(src.name, dest)
-                    for src, _, _ in self.wasm_test_input()
-                ])
-                tresults = output_results.filter(lambda x: x.topic in outputs)
-                if not self.verify_results()(input_results, tresults):
-                    raise Exception(
-                        f"Set {dest} results weren't as expected: {type(self).__name__}"
-                    )
+        self.verify_results(self.verifier())
 
 
 class WasmBasicIdentityTest(WasmIdentityTest):
@@ -98,7 +61,7 @@ class WasmBasicIdentityTest(WasmIdentityTest):
                                                     num_records=num_records,
                                                     record_size=record_size)
 
-    def wasm_test_outputs(self):
+    def wasm_test_plan(self):
         """
         The materialized log:
         [
@@ -106,7 +69,11 @@ class WasmBasicIdentityTest(WasmIdentityTest):
         ]
         Should exist by tests end and be identical to its respective input log
         """
-        return [["script_a_output"]]
+        return [
+            WasmScript(inputs=self.wasm_test_input(),
+                       outputs=["script_a_output"],
+                       script=WasmTemplateRepository.IDENTITY_TRANSFORM)
+        ]
 
 
 class WasmMultiScriptIdentityTest(WasmIdentityTest):
@@ -125,7 +92,7 @@ class WasmMultiScriptIdentityTest(WasmIdentityTest):
                              num_records=num_records,
                              record_size=record_size)
 
-    def wasm_test_outputs(self):
+    def wasm_test_plan(self):
         """
         The materialized logs:
         [
@@ -133,17 +100,19 @@ class WasmMultiScriptIdentityTest(WasmIdentityTest):
           itopic._script_b_output_,
           itopic._script_c_output_,
         ]
-        Should exist by tests end and be identical to their respective input logs
-
         """
-        return [["sou_a"], ["sou_b"], ["sou_c"]]
+        return [
+            WasmScript(inputs=self.wasm_test_input(),
+                       outputs=["sou_a", "sou_b", "sou_c"],
+                       script=WasmTemplateRepository.IDENTITY_TRANSFORM)
+        ]
 
 
 class WasmMultiInputTopicIdentityTest(WasmIdentityTest):
     """
     In this test spec there are three input topics and three coprocessors.
     Each coprocessor consumes from the same input topic and produces
-    to one output topic, making three materialized topic per script.
+    to one output topic, making three materialized topics per script.
     """
     topics = (
         TopicSpec(partition_count=3,
@@ -163,7 +132,7 @@ class WasmMultiInputTopicIdentityTest(WasmIdentityTest):
                              num_records=num_records,
                              record_size=record_size)
 
-    def wasm_test_outputs(self):
+    def wasm_test_plan(self):
         """
         The materialized logs:
         [
@@ -179,7 +148,17 @@ class WasmMultiInputTopicIdentityTest(WasmIdentityTest):
         ]
         Should exist by tests end and be identical to their respective input logs
         """
-        return [["script_a_output"], ["script_b_output"], ["script_c_output"]]
+        return [
+            WasmScript(inputs=self.wasm_test_input(),
+                       outputs=['script_a_output'],
+                       script=WasmTemplateRepository.IDENTITY_TRANSFORM),
+            WasmScript(inputs=self.wasm_test_input(),
+                       outputs=['script_b_output'],
+                       script=WasmTemplateRepository.IDENTITY_TRANSFORM),
+            WasmScript(inputs=self.wasm_test_input(),
+                       outputs=['script_c_output'],
+                       script=WasmTemplateRepository.IDENTITY_TRANSFORM)
+        ]
 
 
 class WasmAllInputsToAllOutputsIdentityTest(WasmIdentityTest):
@@ -206,7 +185,7 @@ class WasmAllInputsToAllOutputsIdentityTest(WasmIdentityTest):
                              num_records=num_records,
                              record_size=record_size)
 
-    def wasm_test_outputs(self):
+    def wasm_test_plan(self):
         """
         The materialized logs:
         [
@@ -226,17 +205,24 @@ class WasmAllInputsToAllOutputsIdentityTest(WasmIdentityTest):
         output topics. Therefore this tests the output topic mutex within the
         script context.
         """
-        otopic_a = "output_topic_a"
-        otopic_b = "output_topic_b"
-        otopic_c = "output_topic_c"
-        return [[otopic_a, otopic_b, otopic_c], [otopic_a, otopic_b, otopic_c],
-                [otopic_a, otopic_b, otopic_c]]
+        opts = ["output_topic_a", "output_topic_b", "output_topic_c"]
+        return [
+            WasmScript(inputs=self.wasm_test_input(),
+                       outputs=opts,
+                       script=WasmTemplateRepository.IDENTITY_TRANSFORM),
+            WasmScript(inputs=self.wasm_test_input(),
+                       outputs=opts,
+                       script=WasmTemplateRepository.IDENTITY_TRANSFORM),
+            WasmScript(inputs=self.wasm_test_input(),
+                       outputs=opts,
+                       script=WasmTemplateRepository.IDENTITY_TRANSFORM)
+        ]
 
     @ignore  # https://github.com/vectorizedio/redpanda/issues/2514
     @cluster(num_nodes=3)
     def verify_materialized_topics_test(self):
         # Cannot compare topics to topics, can only verify # of records
-        self.start(self.wasm_test_input(), self.wasm_test_plan())
+        self.start_wasm()
         input_results, output_results = self.wait_on_results()
 
         def compare(topic):
