@@ -85,3 +85,7 @@ class DefaultClient:
         """
         kafka_tools = KafkaCliTools(self._redpanda)
         kafka_tools.alter_topic_config(topic, props)
+
+    def describe_topic_configs(self, topic: str):
+        rpk = RpkTool(self._redpanda)
+        return rpk.describe_topic_configs(topic)
