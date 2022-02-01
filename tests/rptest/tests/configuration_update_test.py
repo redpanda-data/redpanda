@@ -142,6 +142,16 @@ class ConfigurationUpdateTest(RedpandaTest):
             client = PythonLibrdkafka(self.redpanda)
             brokers = client.brokers()
             self.logger.debug(f"brokers metadata: {brokers}")
-            return brokers[2].port == 10091
+
+            try:
+                # Look up by hostname, as broker order in vector is not deterministic
+                modified_broker = [
+                    b for b in brokers.values()
+                    if b.host == node.account.hostname
+                ][0]
+                return modified_broker.port == 10091
+            except IndexError:
+                # Our node may be missing if not yet up & healthy
+                return False
 
         wait_until(broker_configuration_updated, timeout_sec=60, backoff_sec=2)
