@@ -110,6 +110,10 @@ public:
     std::optional<tm_transaction> get_tx(kafka::transactional_id);
     checked<tm_transaction, tm_stm::op_status>
       mark_tx_ongoing(kafka::transactional_id);
+    // mark_xxx: updates a transaction if the term matches etag
+    // reset_xxx: updates a transaction and an etag
+    checked<tm_transaction, tm_stm::op_status>
+      reset_tx_ongoing(kafka::transactional_id);
     bool add_partitions(
       kafka::transactional_id, std::vector<tm_transaction::tx_partition>);
     bool add_group(kafka::transactional_id, kafka::group_id, model::term_id);
