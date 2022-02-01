@@ -506,7 +506,7 @@ class ClusterConfigTest(RedpandaTest):
         text = self._export(all)
 
         # Validate that RPK gives us valid yaml
-        _ = yaml.load(text)
+        _ = yaml.full_load(text)
 
         self.logger.debug(f"Exported config before modification: {text}")
 

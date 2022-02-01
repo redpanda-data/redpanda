@@ -73,8 +73,8 @@ rpk:
 schema_registry: {}
 '''
 
-                expected_config = yaml.load(expected_out)
-                actual_config = yaml.load(f.read())
+                expected_config = yaml.full_load(expected_out)
+                actual_config = yaml.full_load(f.read())
 
                 assert actual_config['node_uuid'] is not None
 
@@ -105,7 +105,7 @@ schema_registry: {}
             node.account.copy_from(RedpandaService.CONFIG_FILE, d)
 
             with open(os.path.join(d, config_file)) as f:
-                actual_config = yaml.load(f.read())
+                actual_config = yaml.full_load(f.read())
                 assert f"{actual_config['redpanda']['admin']['port']}" == value
 
     @cluster(num_nodes=3)
@@ -135,8 +135,8 @@ schema_registry: {}
             node.account.copy_from(RedpandaService.CONFIG_FILE, d)
 
             with open(os.path.join(d, 'redpanda.yaml')) as f:
-                expected_config = yaml.load(value)
-                actual_config = yaml.load(f.read())
+                expected_config = yaml.full_load(value)
+                actual_config = yaml.full_load(f.read())
                 assert actual_config['redpanda'][
                     'seed_servers'] == expected_config
 
@@ -150,7 +150,7 @@ schema_registry: {}
 
         rpk.config_set(key, value, format='json')
 
-        expected_config = yaml.load('''
+        expected_config = yaml.full_load('''
 coredump_dir: /var/lib/redpanda/coredump
 enable_memory_locking: false
 enable_usage_stats: false
@@ -170,7 +170,7 @@ tune_swappiness: false
             node.account.copy_from(RedpandaService.CONFIG_FILE, d)
 
             with open(os.path.join(d, 'redpanda.yaml')) as f:
-                actual_config = yaml.load(f.read())
+                actual_config = yaml.full_load(f.read())
 
                 assert actual_config['rpk'] == expected_config
 
