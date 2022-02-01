@@ -9,6 +9,7 @@
 import typing
 from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.rpk import RpkTool
 from kafka import KafkaAdminClient
 
 
@@ -21,6 +22,17 @@ class PartitionDescription(typing.NamedTuple):
 class TopicDescription(typing.NamedTuple):
     name: str
     partitions: typing.List[PartitionDescription]
+
+
+class TopicConfigValue(typing.NamedTuple):
+    value: typing.Union[str, int]
+    source: str
+
+    def __eq__(self, other):
+        if isinstance(other, TopicConfigValue):
+            return self.value == other.value and self.source == other.source
+        assert isinstance(other, str) or isinstance(other, int)
+        return self.value == other
 
 
 class DefaultClient:
@@ -68,3 +80,31 @@ class DefaultClient:
     def alter_topic_partition_count(self, topic: str, count: int):
         client = KafkaCliTools(self._redpanda)
         client.create_topic_partitions(topic, count)
+
+    def alter_topic_config(self, topic: str, key: str,
+                           value: typing.Union[str, int]):
+        """
+        Alter a topic configuration property.
+        """
+        rpk = RpkTool(self._redpanda)
+        rpk.alter_topic_config(topic, key, value)
+
+    def alter_topic_configs(self, topic: str,
+                            props: dict[str, typing.Union[str, int]]):
+        """
+        Alter multiple topic configuration properties.
+        """
+        kafka_tools = KafkaCliTools(self._redpanda)
+        kafka_tools.alter_topic_config(topic, props)
+
+    def describe_topic_configs(self, topic: str):
+        rpk = RpkTool(self._redpanda)
+        configs = rpk.describe_topic_configs(topic)
+        return {
+            key: TopicConfigValue(value=value[0], source=value[1])
+            for key, value in configs.items()
+        }
+
+    def delete_topic_config(self, topic: str, key: str):
+        rpk = RpkTool(self._redpanda)
+        rpk.delete_topic_config(topic, key)

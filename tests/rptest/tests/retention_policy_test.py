@@ -46,8 +46,6 @@ class RetentionPolicyTest(RedpandaTest):
         appear, then it changes retention topic property and waits for
         segments to be removed
         """
-        kafka_tools = KafkaCliTools(self.redpanda)
-
         # produce until segments have been compacted
         produce_until_segments(
             self.redpanda,
@@ -57,7 +55,7 @@ class RetentionPolicyTest(RedpandaTest):
             acks=acks,
         )
         # change retention time
-        kafka_tools.alter_topic_config(self.topic, {
+        self.client().alter_topic_configs(self.topic, {
             property: 10000,
         })
         wait_for_segments_removal(self.redpanda,
@@ -92,7 +90,7 @@ class RetentionPolicyTest(RedpandaTest):
         kafka_tools.describe_topic(self.topic)
 
         # change retention bytes to preserve 15 segments
-        kafka_tools.alter_topic_config(
+        self.client().alter_topic_configs(
             self.topic, {
                 TopicSpec.PROPERTY_RETENTION_BYTES: 15 * segment_size,
             })
@@ -102,7 +100,7 @@ class RetentionPolicyTest(RedpandaTest):
                                   count=16)
 
         # change retention bytes again to preserve 10 segments
-        kafka_tools.alter_topic_config(
+        self.client().alter_topic_configs(
             self.topic, {
                 TopicSpec.PROPERTY_RETENTION_BYTES: 10 * segment_size,
             })
@@ -112,7 +110,7 @@ class RetentionPolicyTest(RedpandaTest):
                                   count=11)
 
         # change retention bytes again to preserve 5 segments
-        kafka_tools.alter_topic_config(
+        self.client().alter_topic_configs(
             self.topic, {
                 TopicSpec.PROPERTY_RETENTION_BYTES: 4 * segment_size,
             })
@@ -146,7 +144,7 @@ class RetentionPolicyTest(RedpandaTest):
         kafka_tools.describe_topic(self.topic)
 
         # change retention bytes to preserve 15 segments
-        kafka_tools.alter_topic_config(
+        self.client().alter_topic_configs(
             self.topic, {
                 TopicSpec.PROPERTY_RETENTION_BYTES: 2 * segment_size,
             })
