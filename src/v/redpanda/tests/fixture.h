@@ -331,6 +331,23 @@ public:
           });
     }
 
+    /**
+     * Predict the revision ID of the next partition to be created.  Useful
+     * if you want to pre-populate data directory.
+     */
+    ss::future<model::revision_id> get_next_partition_revision_id() {
+        auto ntp = model::controller_ntp;
+        auto shard = app.shard_table.local().shard_for(ntp);
+        assert(shard);
+        return app.partition_manager.invoke_on(
+          *shard, [ntp](cluster::partition_manager& mgr) -> model::revision_id {
+              auto partition = mgr.get(ntp);
+              assert(partition);
+              return model::revision_id{partition->last_stable_offset()}
+                     + model::revision_id{1};
+          });
+    }
+
     model::ntp make_data(model::revision_id rev) {
         auto topic_name = ssx::sformat("my_topic_{}", 0);
         model::ntp ntp(

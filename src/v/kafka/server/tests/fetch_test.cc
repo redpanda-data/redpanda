@@ -181,7 +181,7 @@ FIXTURE_TEST(read_from_ntp_max_bytes, redpanda_thread_fixture) {
           .get0();
     };
     wait_for_controller_leadership().get0();
-    auto ntp = make_data(model::revision_id(2));
+    auto ntp = make_data(get_next_partition_revision_id().get());
 
     auto shard = app.shard_table.local().shard_for(ntp);
     tests::cooperative_spin_wait_with_timeout(10s, [this, shard, ntp = ntp] {
@@ -215,7 +215,10 @@ FIXTURE_TEST(fetch_one, redpanda_thread_fixture) {
         using namespace storage;
         storage::disk_log_builder builder(log_config);
         storage::ntp_config ntp_cfg(
-          ntp, log_config.base_dir, nullptr, model::revision_id(2));
+          ntp,
+          log_config.base_dir,
+          nullptr,
+          get_next_partition_revision_id().get());
         builder | start(std::move(ntp_cfg)) | add_segment(model::offset(0))
           | add_random_batch(model::offset(0), 10, maybe_compress_batches::yes)
           | stop();

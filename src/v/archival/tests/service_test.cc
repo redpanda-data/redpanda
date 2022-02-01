@@ -139,15 +139,24 @@ FIXTURE_TEST(test_segment_upload, archiver_fixture) {
     auto topic = model::topic("topic_3");
     auto ntp = model::ntp(test_ns, topic, model::partition_id(0));
 
-    const char* manifest_url
-      = "/c0000000/meta/test-namespace/topic_3/0_2/manifest.json";
+    model::revision_id partition_rev{get_next_partition_revision_id().get()};
+
+    std::string manifest_ntp_path = fmt::format(
+      "test-namespace/topic_3/0_{}", partition_rev);
+    uint32_t hash = xxhash_32(
+                      manifest_ntp_path.data(), manifest_ntp_path.size())
+                    & 0xf0000000;
+    std::string manifest_path = fmt::format(
+      "/{:08x}/meta/{}/manifest.json", hash, manifest_ntp_path);
+
     const char* topic_url
       = "/00000000/meta/test-namespace/topic_3/topic_manifest.json";
     archival::segment_name seg000{"0-0-v1.log"};
     archival::segment_name seg100{"100-0-v1.log"};
     set_expectations_and_listen({});
 
-    auto builder = get_started_log_builder(ntp, model::revision_id(2));
+    auto builder = get_started_log_builder(
+      ntp, model::revision_id(partition_rev));
     using namespace storage; // NOLINT
     (*builder) | add_segment(model::offset(0))
       | add_random_batch(model::offset(0), 100, maybe_compress_batches::no)
@@ -188,8 +197,9 @@ FIXTURE_TEST(test_segment_upload, archiver_fixture) {
     BOOST_REQUIRE(get_requests().size() == num_requests_expected);
 
     cloud_storage::partition_manifest manifest;
-    auto manifest_req = get_targets().equal_range(manifest_url);
+    auto manifest_req = get_targets().equal_range(manifest_path);
     BOOST_REQUIRE(manifest_req.first != manifest_req.second);
+    std::exception_ptr ex;
     for (auto it = manifest_req.first; it != manifest_req.second; it++) {
         if (it->second._method == "PUT") {
             BOOST_REQUIRE(it->second._method == "PUT");

@@ -58,7 +58,7 @@ FIXTURE_TEST(fetch, kafka_client_fixture) {
     }
 
     info("Adding known topic");
-    auto tp_ns = make_data(model::revision_id(2), 1);
+    auto tp_ns = make_data(get_next_partition_revision_id().get(), 1);
     auto ntp = model::ntp(tp_ns.ns, tp_ns.tp, model::partition_id{0});
 
     info("Waiting for topic data");
