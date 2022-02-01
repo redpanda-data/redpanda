@@ -44,8 +44,7 @@ class TopicAutocreateTest(RedpandaTest):
             assert False, "Producing to a nonexistent topic should fail"
 
         # Enable autocreation
-        self.redpanda.restart_nodes(self.redpanda.nodes,
-                                    {'auto_create_topics_enabled': True})
+        self.redpanda.set_cluster_config({'auto_create_topics_enabled': True})
 
         # Auto create topic
         assert auto_topic not in self.kafka_tools.list_topics()
