@@ -237,7 +237,6 @@ ss::future<> metrics_reporter::try_initialize_cluster_info() {
 
     storage::log_reader_config reader_cfg(
       model::offset(0), model::offset(2), ss::default_priority_class());
-    reader_cfg.type_filter = model::record_batch_type::raft_configuration;
     auto reader = co_await _raft0->make_reader(reader_cfg);
 
     auto batches = co_await model::consume_reader_to_memory(
