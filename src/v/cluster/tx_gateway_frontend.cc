@@ -1564,7 +1564,7 @@ tx_gateway_frontend::get_ongoing_tx(
         }
     }
 
-    auto ongoing_tx = stm->mark_tx_ongoing(tx.id);
+    auto ongoing_tx = stm->reset_tx_ongoing(tx.id);
     if (!ongoing_tx.has_value()) {
         co_return tx_errc::invalid_txn_state;
     }

@@ -187,8 +187,24 @@ tm_stm::mark_tx_ongoing(kafka::transactional_id tx_id) {
     ptx->second.partitions.clear();
     ptx->second.groups.clear();
     ptx->second.last_update_ts = clock_type::now();
-    ptx->second.etag = _insync_term;
     return ptx->second;
+}
+
+checked<tm_transaction, tm_stm::op_status>
+tm_stm::reset_tx_ongoing(kafka::transactional_id tx_id) {
+    auto tx_opt = get_tx(tx_id);
+    if (!tx_opt.has_value()) {
+        return tm_stm::op_status::not_found;
+    }
+    tm_transaction tx = tx_opt.value();
+    tx.status = tm_transaction::tx_status::ongoing;
+    tx.tx_seq += 1;
+    tx.partitions.clear();
+    tx.groups.clear();
+    tx.last_update_ts = clock_type::now();
+    tx.etag = _insync_term;
+    _tx_table[tx_id] = tx;
+    return tx;
 }
 
 ss::future<tm_stm::op_status> tm_stm::re_register_producer(
