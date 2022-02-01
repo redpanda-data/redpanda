@@ -1330,8 +1330,7 @@ tx_gateway_frontend::do_commit_tm_tx(
         }
 
         if (tx.status == tm_transaction::tx_status::ongoing) {
-            auto preparing_tx = co_await stm->try_change_status(
-              tx.id, cluster::tm_transaction::tx_status::preparing);
+            auto preparing_tx = co_await stm->mark_tx_preparing(tx.id);
             if (!preparing_tx.has_value()) {
                 if (preparing_tx.error() == tm_stm::op_status::not_leader) {
                     outcome->set_value(tx_errc::not_coordinator);

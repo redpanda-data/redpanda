@@ -80,8 +80,7 @@ FIXTURE_TEST(test_tm_stm_new_tx, mux_state_machine_fixture) {
     BOOST_REQUIRE_EQUAL(tx2.status, tx_status::ongoing);
     BOOST_REQUIRE_GT(tx2.tx_seq, tx1.tx_seq);
     BOOST_REQUIRE_EQUAL(tx2.partitions.size(), 2);
-    auto tx3 = expect_tx(
-      stm.try_change_status(tx_id, tx_status::preparing).get());
+    auto tx3 = expect_tx(stm.mark_tx_preparing(tx_id).get());
     BOOST_REQUIRE_EQUAL(tx3.id, tx_id);
     BOOST_REQUIRE_EQUAL(tx3.pid, pid);
     BOOST_REQUIRE_EQUAL(tx3.status, tx_status::preparing);
@@ -121,16 +120,16 @@ FIXTURE_TEST(test_tm_stm_seq_tx, mux_state_machine_fixture) {
           .get0();
     BOOST_REQUIRE_EQUAL(op_code, op_status::success);
     auto tx1 = expect_tx(stm.get_tx(tx_id));
+    auto tx2 = stm.reset_tx_ongoing(tx_id);
     std::vector<tm_transaction::tx_partition> partitions = {
       tm_transaction::tx_partition{
         .ntp = model::ntp("kafka", "topic", 0), .etag = model::term_id(0)},
       tm_transaction::tx_partition{
         .ntp = model::ntp("kafka", "topic", 1), .etag = model::term_id(0)}};
     BOOST_REQUIRE(stm.add_partitions(tx_id, partitions));
-    auto tx2 = expect_tx(stm.get_tx(tx_id));
-    auto tx3 = expect_tx(
-      stm.try_change_status(tx_id, tx_status::preparing).get());
-    auto tx4 = expect_tx(
+    auto tx3 = expect_tx(stm.get_tx(tx_id));
+    auto tx4 = expect_tx(stm.mark_tx_preparing(tx_id).get());
+    auto tx5 = expect_tx(
       stm.try_change_status(tx_id, tx_status::prepared).get());
 
     auto tx6 = expect_tx(stm.mark_tx_ongoing(tx_id));
@@ -165,22 +164,22 @@ FIXTURE_TEST(test_tm_stm_re_tx, mux_state_machine_fixture) {
         .ntp = model::ntp("kafka", "topic", 0), .etag = model::term_id(0)},
       tm_transaction::tx_partition{
         .ntp = model::ntp("kafka", "topic", 1), .etag = model::term_id(0)}};
+    auto tx2 = stm.reset_tx_ongoing(tx_id);
     BOOST_REQUIRE(stm.add_partitions(tx_id, partitions));
-    auto tx2 = expect_tx(stm.get_tx(tx_id));
-    auto tx3 = expect_tx(
-      stm.try_change_status(tx_id, tx_status::preparing).get());
-    auto tx4 = expect_tx(
+    auto tx3 = expect_tx(stm.get_tx(tx_id));
+    auto tx4 = expect_tx(stm.mark_tx_preparing(tx_id).get());
+    auto tx5 = expect_tx(
       stm.try_change_status(tx_id, tx_status::prepared).get());
-    auto tx5 = expect_tx(stm.mark_tx_ongoing(tx_id));
+    auto tx6 = expect_tx(stm.mark_tx_ongoing(tx_id));
 
     auto pid2 = model::producer_identity{.id = 1, .epoch = 1};
     op_code = stm
                 .re_register_producer(tx_id, std::chrono::milliseconds(0), pid2)
                 .get0();
     BOOST_REQUIRE_EQUAL(op_code, op_status::success);
-    auto tx6 = expect_tx(stm.get_tx(tx_id));
-    BOOST_REQUIRE_EQUAL(tx6.id, tx_id);
-    BOOST_REQUIRE_EQUAL(tx6.pid, pid2);
-    BOOST_REQUIRE_EQUAL(tx6.status, tx_status::ready);
-    BOOST_REQUIRE_EQUAL(tx6.partitions.size(), 0);
+    auto tx7 = expect_tx(stm.get_tx(tx_id));
+    BOOST_REQUIRE_EQUAL(tx7.id, tx_id);
+    BOOST_REQUIRE_EQUAL(tx7.pid, pid2);
+    BOOST_REQUIRE_EQUAL(tx7.status, tx_status::ready);
+    BOOST_REQUIRE_EQUAL(tx7.partitions.size(), 0);
 }
