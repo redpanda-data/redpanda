@@ -356,7 +356,7 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
                     }
                     auto tx_id = tx_id_opt.value();
 
-                    auto tx_opt = stm->get_tx_by_id(tx_id);
+                    auto tx_opt = stm->get_tx(tx_id);
                     if (!tx_opt) {
                         return ss::make_ready_future<try_abort_reply>(
                           try_abort_reply{
