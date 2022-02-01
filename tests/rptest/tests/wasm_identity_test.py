@@ -14,7 +14,6 @@ from rptest.wasm.topic import get_source_topic
 from rptest.wasm.topics_result_set import materialized_result_set_compare
 from rptest.wasm.wasm_test import WasmTest
 from rptest.wasm.wasm_script import WasmScript
-from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST
 from rptest.wasm.wasm_build_tool import WasmTemplateRepository
 
 
@@ -46,13 +45,10 @@ class WasmIdentityTest(WasmTest):
         """
         return {topic: self._num_records for topic in self.wasm_test_output()}
 
-    def verifier(self):
-        return materialized_result_set_compare
-
     @ignore  # https://github.com/vectorizedio/redpanda/issues/2514
-    @cluster(num_nodes=3, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    @cluster(num_nodes=3)
     def verify_materialized_topics_test(self):
-        self.verify_results(self.verifier())
+        self.verify_results(materialized_result_set_compare)
 
 
 class WasmBasicIdentityTest(WasmIdentityTest):

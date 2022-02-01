@@ -8,15 +8,17 @@
 # by the Apache License, Version 2.0
 
 import random
+from ducktape.mark import ignore
 from rptest.clients.types import TopicSpec
-from rptest.tests.wasm_identity_test import WasmIdentityTest
+from rptest.wasm.wasm_test import WasmTest
 from rptest.wasm.topics_result_set import materialized_at_least_once_compare
 from rptest.services.cluster import cluster
 from rptest.wasm.wasm_script import WasmScript
 from rptest.wasm.wasm_build_tool import WasmTemplateRepository
+from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST
 
 
-class WasmRedpandaFailureRecoveryTest(WasmIdentityTest):
+class WasmRedpandaFailureRecoveryTest(WasmTest):
     topics = (TopicSpec(partition_count=3,
                         replication_factor=3,
                         cleanup_policy=TopicSpec.CLEANUP_DELETE), )
@@ -39,8 +41,22 @@ class WasmRedpandaFailureRecoveryTest(WasmIdentityTest):
             self.restart_redpanda(random.sample(self.redpanda.nodes, 1)[0])
             self._one_traunch_observed = True
 
-    def verifier(self):
-        return materialized_at_least_once_compare
+    def wasm_inputs_throughput(self):
+        """
+        Producer parameters across all input topics
+        """
+        return {topic: self._num_records for topic in self.wasm_test_input()}
+
+    def wasm_outputs_throughput(self):
+        """
+        Consumer parameters across all output topics
+        """
+        return {topic: self._num_records for topic in self.wasm_test_output()}
+
+    @ignore  # https://github.com/vectorizedio/redpanda/issues/2514
+    @cluster(num_nodes=3, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    def verify_materialized_topics_test(self):
+        self.verify_results(materialized_at_least_once_compare)
 
 
 class WasmRPBasicFailureRecoveryTest(WasmRedpandaFailureRecoveryTest):
