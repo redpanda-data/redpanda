@@ -476,11 +476,11 @@ std::vector<kafka::transactional_id> tm_stm::get_expired_txs() {
 }
 
 ss::future<> tm_stm::expire_tx(kafka::transactional_id tx_id) {
-    auto ptx = _tx_table.find(tx_id);
-    if (ptx == _tx_table.end()) {
+    auto tx_opt = get_tx(tx_id);
+    if (!tx_opt.has_value()) {
         co_return;
     }
-    tm_transaction tx = ptx->second;
+    tm_transaction tx = tx_opt.value();
     tx.etag = _insync_term;
     tx.status = tm_transaction::tx_status::tombstone;
     tx.partitions.clear();
