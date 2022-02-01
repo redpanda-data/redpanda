@@ -110,10 +110,14 @@ class DefaultClient:
         rpk = RpkTool(self._redpanda)
         rpk.delete_topic_config(topic, key)
 
-    def alter_broker_config(self, values, incremental, broker=None):
+    def alter_broker_config(self,
+                            values: dict[str, typing.Any],
+                            incremental: bool,
+                            *,
+                            broker: typing.Optional[int] = None):
         kcl = KCL(self._redpanda)
         return kcl.alter_broker_config(values, incremental, broker)
 
-    def delete_broker_config(self, keys, incremental):
+    def delete_broker_config(self, keys: list[str], incremental: bool):
         kcl = KCL(self._redpanda)
         return kcl.delete_broker_config(keys, incremental)

@@ -881,7 +881,7 @@ class ClusterConfigTest(RedpandaTest):
         out = self.client().alter_broker_config(
             {"log_message_timestamp_type": "CreateTime"},
             incremental,
-            broker="1")
+            broker=1)
         assert 'INVALID_CONFIG' in out
         assert "Setting broker properties on named brokers is unsupported" in out
 

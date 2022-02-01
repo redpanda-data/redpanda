@@ -115,7 +115,8 @@ class KCL:
             cmd.extend(["-k", f"s:{k}={v}" if incremental else f"{k}={v}"])
 
         if broker:
-            cmd.append(broker)
+            # cmd needs to be string, so handle things like broker=1
+            cmd.append(str(broker))
 
         return self._cmd(cmd, attempts=1)
 
