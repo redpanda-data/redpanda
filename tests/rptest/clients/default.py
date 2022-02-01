@@ -9,6 +9,7 @@
 import typing
 from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.rpk import RpkTool
 from kafka import KafkaAdminClient
 
 
@@ -68,6 +69,14 @@ class DefaultClient:
     def alter_topic_partition_count(self, topic: str, count: int):
         client = KafkaCliTools(self._redpanda)
         client.create_topic_partitions(topic, count)
+
+    def alter_topic_config(self, topic: str, key: str,
+                           value: typing.Union[str, int]):
+        """
+        Alter a topic configuration property.
+        """
+        rpk = RpkTool(self._redpanda)
+        rpk.alter_topic_config(topic, key, value)
 
     def alter_topic_configs(self, topic: str,
                             props: dict[str, typing.Union[str, int]]):
