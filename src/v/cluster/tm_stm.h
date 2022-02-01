@@ -27,6 +27,7 @@
 #include "utils/expiring_promise.h"
 #include "utils/mutex.h"
 
+#include <absl/container/btree_set.h>
 #include <absl/container/flat_hash_map.h>
 
 #include <compare>
@@ -170,7 +171,7 @@ public:
         return lock_it->second;
     }
 
-    std::vector<kafka::transactional_id> get_expired_txs();
+    absl::btree_set<kafka::transactional_id> get_expired_txs();
 
 protected:
     ss::future<> handle_eviction() override;
