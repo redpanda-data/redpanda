@@ -15,6 +15,7 @@
 #include "cluster/topic_table.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "config/node_config.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -96,6 +97,19 @@ std::optional<broker_ptr> metadata_cache::get_broker(model::node_id nid) const {
 
 std::vector<broker_ptr> metadata_cache::all_brokers() const {
     return _members_table.local().all_brokers();
+}
+
+/**
+ * A node may be in an unready state if it has just joined the cluster and
+ * does not yet have proper knowledge of the cluster (e.g. empty
+ * members_table), or if it was decommissioned and has seen itself
+ * removed from members_table.
+ *
+ * Checking this is important to avoid sending bogus metadata to clients
+ * (https://github.com/vectorizedio/redpanda/issues/3030)
+ */
+bool metadata_cache::am_member() const {
+    return _members_table.local().contains(config::node().node_id);
 }
 
 ss::future<std::vector<broker_ptr>> metadata_cache::all_alive_brokers() const {

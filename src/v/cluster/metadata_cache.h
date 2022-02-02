@@ -91,6 +91,9 @@ public:
     /// Returns all brokers, returns copy as the content of broker can change
     std::vector<broker_ptr> all_brokers() const;
 
+    /// Indicates whether local node is member of cluster
+    bool am_member() const;
+
     /// Returns all brokers, returns copy as the content of broker can change
     ss::future<std::vector<broker_ptr>> all_alive_brokers() const;
 
