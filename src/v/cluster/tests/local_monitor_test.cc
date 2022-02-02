@@ -45,6 +45,9 @@ local_monitor_fixture::local_monitor_fixture() {
     }
     _local_monitor.set_path_for_test(_test_path.string());
     BOOST_ASSERT(ss::engine_is_ready());
+
+    set_config_alert_thresholds(
+      default_percent_threshold, default_bytes_threshold);
 }
 
 local_monitor_fixture::~local_monitor_fixture() {
@@ -70,6 +73,18 @@ struct statvfs local_monitor_fixture::make_statvfs(
     return s;
 }
 
+void local_monitor_fixture::set_config_alert_thresholds(
+  unsigned percent, size_t bytes) {
+    (void)ss::smp::invoke_on_all([percent, bytes]() {
+        config::shard_local_cfg()
+          .get("storage_space_alert_free_threshold_bytes")
+          .set_value(std::any_cast<size_t>(bytes));
+        config::shard_local_cfg()
+          .get("storage_space_alert_free_threshold_percent")
+          .set_value(std::any_cast<unsigned>(percent));
+    });
+}
+
 FIXTURE_TEST(local_state_has_single_disk, local_monitor_fixture) {
     auto ls = update_state();
     BOOST_TEST_REQUIRE(ls.disks.size() == 1);
@@ -91,8 +106,7 @@ FIXTURE_TEST(local_monitor_alert_on_space_percent, local_monitor_fixture) {
     // Minimum by %: 200 * 4k block = 800KiB total * 0.05 -> 40 KiB
     // Minimum by bytes:                                      1 GiB
     static constexpr auto total = 200UL, free = 0UL, block_size = 4096UL;
-    size_t min_free_percent_blocks
-      = total * node::local_monitor::alert_min_free_space_percent;
+    size_t min_free_percent_blocks = total * (default_percent_threshold / 100.0);
     struct statvfs stats = make_statvfs(free, total, block_size);
     auto lamb = [&](const ss::sstring&) { return stats; };
     _local_monitor.set_statvfs_for_test(lamb);
@@ -113,8 +127,8 @@ FIXTURE_TEST(local_monitor_alert_on_space_bytes, local_monitor_fixture) {
     // Minimum by bytes:                    1   GiB
     static constexpr auto total = 30 * 1024 * 1024 * 1024UL,
                           block_size = 1024UL;
-    static constexpr auto min_bytes_in_blocks
-      = node::local_monitor::alert_min_free_space_bytes / block_size;
+    static constexpr auto min_bytes_in_blocks = default_bytes_threshold
+                                                / block_size;
     clusterlog.debug(
       "{}: bytes free threshold -> {} blocks", __func__, min_bytes_in_blocks);
 

@@ -24,10 +24,14 @@ struct local_monitor_fixture {
     local_monitor_fixture& operator=(local_monitor_fixture&&) = default;
     ~local_monitor_fixture();
 
+    static constexpr unsigned default_percent_threshold = 5;
+    static constexpr size_t default_bytes_threshold = 1_GiB;
+
     std::filesystem::path _test_path;
     cluster::node::local_monitor _local_monitor;
 
     cluster::node::local_state update_state();
     static struct statvfs make_statvfs(
       unsigned long blk_free, unsigned long blk_total, unsigned long blk_size);
+    void set_config_alert_thresholds(unsigned percent, size_t bytes);
 };

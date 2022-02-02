@@ -32,20 +32,29 @@ public:
     ss::future<> update_state();
     const local_state& get_state_cached() const;
 
-    // Visible for test...
-    static constexpr double alert_min_free_space_percent = 0.05;
-    static constexpr double alert_min_free_space_bytes = 1_GiB;
+    // Visible for test
+    static constexpr int max_percent_free_threshold = 50;
+    static constexpr size_t max_bytes_free_threshold = 1_TiB;
 
     void set_path_for_test(const ss::sstring& path);
     void
       set_statvfs_for_test(std::function<struct statvfs(const ss::sstring&)>);
+    std::tuple<size_t, size_t>
+    minimum_free_by_bytes_and_percent(size_t bytes_available);
 
 private:
     ss::future<std::vector<disk>> get_disks();
     ss::future<struct statvfs> get_statvfs(const ss::sstring&);
     void update_alert_state();
 
+    // configuration
+    void refresh_configuration();
+    std::size_t get_config_alert_threshold_bytes();
+    unsigned get_config_alert_threshold_percent();
+
     local_state _state;
+    unsigned last_free_space_percent_threshold = 0;
+    size_t last_free_space_bytes_threshold = 0;
 
     // Injection points for unit tests
     ss::sstring _path_for_test;

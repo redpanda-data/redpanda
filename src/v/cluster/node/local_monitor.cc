@@ -13,6 +13,7 @@
 
 #include "cluster/logger.h"
 #include "cluster/node/types.h"
+#include "config/configuration.h"
 #include "config/node_config.h"
 #include "version.h"
 
@@ -30,6 +31,9 @@
 namespace cluster::node {
 
 ss::future<> local_monitor::update_state() {
+    refresh_configuration();
+
+    // grab new snapshot of local state
     auto disks = co_await get_disks();
     auto vers = application_version(ss::sstring(redpanda_version()));
     auto uptime = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -53,6 +57,13 @@ void local_monitor::set_path_for_test(const ss::sstring& path) {
 void local_monitor::set_statvfs_for_test(
   std::function<struct statvfs(const ss::sstring&)> func) {
     _statvfs_for_test = std::move(func);
+}
+
+std::tuple<size_t, size_t>
+local_monitor::minimum_free_by_bytes_and_percent(size_t bytes_available) {
+    long double percent_factor = last_free_space_percent_threshold / 100.0;
+    return std::make_tuple(
+      last_free_space_bytes_threshold, percent_factor * bytes_available);
 }
 
 ss::future<std::vector<disk>> local_monitor::get_disks() {
@@ -82,20 +93,68 @@ void local_monitor::update_alert_state() {
     _state.storage_space_alert = disk_space_alert::ok;
     for (const auto& d : _state.disks) {
         vassert(d.total != 0.0, "Total disk space cannot be zero.");
-        double min_space = double(d.total) * alert_min_free_space_percent;
-        min_space = std::min(min_space, alert_min_free_space_bytes);
+        auto [min_by_bytes, min_by_percent] = minimum_free_by_bytes_and_percent(
+          d.total);
+        auto min_space = std::min(min_by_percent, min_by_bytes);
         clusterlog.debug(
-          "{}: min by % {}, min bytes {}, disk.free {} -> alert {}",
-          __func__,
-          double(d.total) * alert_min_free_space_percent,
-          alert_min_free_space_bytes,
+          "min by % {}, min bytes {}, disk.free {} -> alert {}",
+          min_by_percent,
+          min_by_bytes,
           d.free,
-          double(d.free) <= min_space);
+          d.free <= min_space);
 
-        if (double(d.free) <= min_space) {
+        if (d.free <= min_space) {
             _state.storage_space_alert = disk_space_alert::low_space;
         }
     }
+}
+
+void local_monitor::refresh_configuration() {
+    auto percent_threshold = get_config_alert_threshold_percent();
+    auto bytes_threshold = get_config_alert_threshold_bytes();
+    // TODO replace with bounded config feature
+    if (percent_threshold > max_percent_free_threshold) {
+        clusterlog.warn(
+          "Configuration value {} for "
+          "storage_space_alert_free_threshold_percent exceeds "
+          "maximum, using {}.",
+          percent_threshold,
+          max_percent_free_threshold);
+        percent_threshold = max_percent_free_threshold;
+    }
+    if (bytes_threshold > max_bytes_free_threshold) {
+        clusterlog.warn(
+          "Configuration value {} for "
+          "storage_space_alert_free_threshold_bytes exceeds "
+          "maximum, using {}.",
+          bytes_threshold,
+          max_bytes_free_threshold);
+        bytes_threshold = max_bytes_free_threshold;
+    }
+    if (last_free_space_percent_threshold != percent_threshold) {
+        clusterlog.info(
+          "Updated free space percent alert threshold {} -> {}",
+          last_free_space_percent_threshold,
+          percent_threshold);
+        last_free_space_percent_threshold = percent_threshold;
+    }
+
+    if (last_free_space_bytes_threshold != bytes_threshold) {
+        clusterlog.info(
+          "Updated free space bytes alert threshold {} -> {}",
+          last_free_space_bytes_threshold,
+          bytes_threshold);
+        last_free_space_bytes_threshold = bytes_threshold;
+    }
+}
+
+std::size_t local_monitor::get_config_alert_threshold_bytes() {
+    return config::shard_local_cfg().storage_space_alert_free_threshold_bytes();
+}
+
+unsigned local_monitor::get_config_alert_threshold_percent() {
+    return config::shard_local_cfg()
+      .storage_space_alert_free_threshold_percent();
 }
 
 } // namespace cluster::node
