@@ -205,6 +205,8 @@ FIXTURE_TEST(read_from_ntp_max_bytes, redpanda_thread_fixture) {
 }
 
 FIXTURE_TEST(fetch_one, redpanda_thread_fixture) {
+    wait_for_controller_leadership().get0();
+
     // create a topic partition with some data
     model::topic topic("foo");
     model::partition_id pid(0);
@@ -223,7 +225,6 @@ FIXTURE_TEST(fetch_one, redpanda_thread_fixture) {
           | add_random_batch(model::offset(0), 10, maybe_compress_batches::yes)
           | stop();
     }
-    wait_for_controller_leadership().get0();
 
     add_topic(model::topic_namespace_view(ntp)).get();
     auto shard = app.shard_table.local().shard_for(ntp);
