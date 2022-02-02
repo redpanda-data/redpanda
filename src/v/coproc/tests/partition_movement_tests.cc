@@ -112,10 +112,13 @@ bool partition_exists_on_node(
 
 FIXTURE_TEST(test_move_topic_across_nodes, coproc_cluster_fixture) {
     const auto n = 3;
+    info("Creating applications");
     for (auto i = 0; i < n; ++i) {
         create_node_application(model::node_id(i));
     }
+    info("Waiting for members");
     wait_for_all_members(5s).get();
+    info("Waiting for controller leadership");
     for (auto i = 0; i < n; ++i) {
         wait_for_controller_leadership(model::node_id(i)).get();
     }
@@ -184,7 +187,7 @@ FIXTURE_TEST(test_move_topic_across_nodes, coproc_cluster_fixture) {
       .node_id = *topic_leader_id, .shard = *origin_shard};
     model::broker_shard new_bs{
       .node_id = model::node_id((*topic_leader_id + 1) % n),
-      .shard = ss::shard_id((*origin_shard + 1) % n)};
+      .shard = (*origin_shard + 1) % ss::smp::count};
 
     info("Old broker_shard {} moving to new broker_shard {}", old_bs, new_bs);
     auto& topics_fe = leader->controller->get_topics_frontend();
