@@ -1034,6 +1034,20 @@ configuration::configuration()
       "Max age of metadata cached in the health monitor of non controller node",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       10s)
+  , storage_space_alert_free_threshold_percent(
+      *this,
+      "storage_space_alert_free_threshold_percent",
+      "Threshold of minimim percent free space before setting storage space "
+      "alert",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      5)
+  , storage_space_alert_free_threshold_bytes(
+      *this,
+      "storage_space_alert_free_threshold_bytes",
+      "Threshold of minimim bytes free space before setting storage space "
+      "alert",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1_GiB)
   , enable_metrics_reporter(
       *this,
       "enable_metrics_reporter",
