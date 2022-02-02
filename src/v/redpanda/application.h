@@ -24,6 +24,7 @@
 #include "pandaproxy/rest/fwd.h"
 #include "pandaproxy/schema_registry/configuration.h"
 #include "pandaproxy/schema_registry/fwd.h"
+#include "platform/stop_signal.h"
 #include "raft/fwd.h"
 #include "redpanda/admin_server.h"
 #include "resource_mgmt/cpu_scheduling.h"
@@ -55,8 +56,9 @@ public:
     void configure_admin_server();
     void wire_up_services();
     void wire_up_redpanda_services();
-    void start();
+    void start(::stop_signal&);
     void start_redpanda();
+    void start_kafka(::stop_signal&);
 
     explicit application(ss::sstring = "redpanda::main");
     ~application();

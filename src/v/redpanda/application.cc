@@ -193,7 +193,7 @@ int application::run(int ac, char** av) {
                 setup_metrics();
                 wire_up_services();
                 configure_admin_server();
-                start();
+                start(app_signal);
                 app_signal.wait().get();
                 vlog(_log.info, "Stopping...");
             } catch (...) {
@@ -1050,7 +1050,7 @@ application::set_proxy_client_config(ss::sstring name, std::any val) {
       });
 }
 
-void application::start() {
+void application::start(::stop_signal& app_signal) {
     if (_redpanda_enabled) {
         start_redpanda();
     }
@@ -1069,6 +1069,10 @@ void application::start() {
           _log.info,
           "Started Schema Registry listening at {}",
           _schema_reg_config->schema_registry_api());
+    }
+
+    if (_redpanda_enabled) {
+        start_kafka(app_signal);
     }
 
     _admin.invoke_on_all([](admin_server& admin) { admin.set_ready(); }).get();
@@ -1176,6 +1180,29 @@ void application::start_redpanda() {
 
     quota_mgr.invoke_on_all(&kafka::quota_manager::start).get();
 
+    if (config::shard_local_cfg().enable_admin_api()) {
+        _admin.invoke_on_all(&admin_server::start).get0();
+    }
+
+    _compaction_controller.invoke_on_all(&storage::compaction_controller::start)
+      .get();
+    _archival_upload_controller
+      .invoke_on_all(&archival::upload_controller::start)
+      .get();
+}
+
+/**
+ * The Kafka protocol listener startup is separate to the rest of Redpanda,
+ * because it includes a wait for this node to be a full member of a redpanda
+ * cluster -- this is expected to be run last, after everything else is
+ * started.
+ */
+void application::start_kafka(::stop_signal& app_signal) {
+    // Kafka API
+    // The Kafka listener is intentionally the last thing we start: during
+    // this phase we will wait for the node to be a cluster member before
+    // proceeding, because it is not helpful to clients for us to serve
+    // kafka requests before we have up to date knowledge of the system.
     std::optional<kafka::qdc_monitor::config> qdc_config;
     if (config::shard_local_cfg().kafka_qdc_enable()) {
         qdc_config = kafka::qdc_monitor::config{
@@ -1192,7 +1219,6 @@ void application::start_redpanda() {
         };
     }
 
-    // Kafka API
     _kafka_server
       .invoke_on_all([this, qdc_config](net::server& s) {
           auto proto = std::make_unique<kafka::protocol>(
@@ -1218,6 +1244,11 @@ void application::start_redpanda() {
           s.set_protocol(std::move(proto));
       })
       .get();
+    vlog(_log.info, "Waiting for cluster membership");
+    controller->get_members_table()
+      .local()
+      .await_membership(config::node().node_id(), app_signal.abort_source())
+      .get();
     _kafka_server.invoke_on_all(&net::server::start).get();
     // shutdown Kafka server input
     _deferred.emplace_back([this] {
@@ -1227,14 +1258,4 @@ void application::start_redpanda() {
       _log.info,
       "Started Kafka API server listening at {}",
       config::node().kafka_api());
-
-    if (config::shard_local_cfg().enable_admin_api()) {
-        _admin.invoke_on_all(&admin_server::start).get0();
-    }
-
-    _compaction_controller.invoke_on_all(&storage::compaction_controller::start)
-      .get();
-    _archival_upload_controller
-      .invoke_on_all(&archival::upload_controller::start)
-      .get();
 }
