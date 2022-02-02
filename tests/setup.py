@@ -16,7 +16,7 @@ setup(
         'ducktape@git+https://github.com/vectorizedio/ducktape.git@6e2af9173a79feb8661c4c7a5776080721710a43',
         'prometheus-client==0.9.0', 'pyyaml==5.3.1', 'kafka-python==2.0.2',
         'crc32c==2.2', 'confluent-kafka==1.7.0', 'zstandard==0.15.2',
-        'xxhash==2.0.2'
+        'xxhash==2.0.2', 'protobuf==3.19.3', 'fastavro==1.4.9'
     ],
     scripts=[],
 )
