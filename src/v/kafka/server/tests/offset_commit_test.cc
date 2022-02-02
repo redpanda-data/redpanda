@@ -19,6 +19,8 @@
 
 FIXTURE_TEST(
   offset_commit_static_membership_not_supported, redpanda_thread_fixture) {
+    wait_for_controller_leadership().get();
+
     auto client = make_kafka_client().get0();
     client.connect().get();
 

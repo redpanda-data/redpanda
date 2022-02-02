@@ -44,6 +44,7 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
                   return pm.get(ntp)->is_leader();
               });
         }).get0();
+        wait_for_controller_leadership().get0();
     }
 
     std::vector<kafka::produce_request::partition> small_batches(size_t count) {

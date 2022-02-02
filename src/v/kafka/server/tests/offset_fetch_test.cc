@@ -18,6 +18,8 @@
 #include <limits>
 
 FIXTURE_TEST(offset_fetch, redpanda_thread_fixture) {
+    wait_for_controller_leadership().get0();
+
     auto client = make_kafka_client().get0();
     client.connect().get();
 

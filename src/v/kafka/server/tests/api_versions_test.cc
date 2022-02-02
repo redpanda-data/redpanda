@@ -37,6 +37,7 @@ FIXTURE_TEST(validate_latest_version, redpanda_thread_fixture) {
 #endif
 
 FIXTURE_TEST(validate_v0, redpanda_thread_fixture) {
+    wait_for_controller_leadership().get0();
     auto client = make_kafka_client().get0();
     client.connect().get();
 
@@ -65,6 +66,7 @@ FIXTURE_TEST(validate_v3, redpanda_thread_fixture) {
 #endif
 
 FIXTURE_TEST(unsupported_version, redpanda_thread_fixture) {
+    wait_for_controller_leadership().get0();
     auto client = make_kafka_client().get0();
     client.connect().get();
 

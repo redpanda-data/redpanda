@@ -18,6 +18,7 @@
 #include <limits>
 
 FIXTURE_TEST(find_coordinator_unsupported_key, redpanda_thread_fixture) {
+    wait_for_controller_leadership().get();
     auto client = make_kafka_client().get0();
     client.connect().get();
 
