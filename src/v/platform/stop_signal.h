@@ -13,6 +13,7 @@
 
 #include "seastarx.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/reactor.hh>
@@ -33,12 +34,16 @@ public:
 
     bool stopping() const { return _caught; }
 
+    ss::abort_source& abort_source() { return _as; };
+
 private:
     void signaled() {
         _caught = true;
+        _as.request_abort();
         _cond.broadcast();
     }
 
     bool _caught = false;
     ss::condition_variable _cond;
+    ss::abort_source _as;
 };
