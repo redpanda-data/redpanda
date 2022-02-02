@@ -9,6 +9,7 @@
 
 #include "protocol.h"
 
+#include "cluster/metadata_cache.h"
 #include "cluster/topics_frontend.h"
 #include "config/configuration.h"
 #include "kafka/server/connection_context.h"
@@ -83,6 +84,14 @@ protocol::protocol(
 }
 
 ss::future<> protocol::apply(net::server::resources rs) {
+    // Refuse to serve any kafka traffic if we are not yet
+    // joined to the redpanda cluster, or if we are decommed.
+    if (!metadata_cache().am_member()) {
+        vlog(klog.info, "Rejecting Kafka connection, node is not ready");
+        rs.conn->shutdown_input();
+        return ss::now();
+    }
+
     /*
      * if sasl authentication is not enabled then initialize the sasl state to
      * complete. this will cause auth to be skipped during request processing.
