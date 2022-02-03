@@ -11,8 +11,8 @@
 #include "cluster/health_monitor_types.h"
 
 #include "cluster/errc.h"
+#include "cluster/node/types.h"
 #include "model/adl_serde.h"
-#include "utils/human.h"
 #include "utils/to_string.h"
 
 #include <fmt/ostream.h>
@@ -60,13 +60,13 @@ std::ostream& operator<<(std::ostream& o, const node_state& s) {
 std::ostream& operator<<(std::ostream& o, const node_health_report& r) {
     fmt::print(
       o,
-      "{{id: {}, disk_space: {}, topics: {}, redpanda_version: {}, uptime: "
+      "{{id: {}, disks: {}, topics: {}, redpanda_version: {}, uptime: "
       "{}}}",
       r.id,
-      r.disk_space,
+      r.local_state.disks,
       r.topics,
-      r.redpanda_version,
-      r.uptime);
+      r.local_state.redpanda_version,
+      r.local_state.uptime);
     return o;
 }
 
@@ -77,16 +77,6 @@ std::ostream& operator<<(std::ostream& o, const cluster_health_report& r) {
       r.raft0_leader,
       r.node_states,
       r.node_reports);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const node_disk_space& s) {
-    fmt::print(
-      o,
-      "{{path: {}, free: {}, total: {}}}",
-      s.path,
-      human::bytes(s.free),
-      human::bytes(s.total));
     return o;
 }
 
@@ -151,26 +141,6 @@ void read_and_assert_version(std::string_view type, iobuf_parser& parser) {
       type,
       version,
       T::current_version);
-}
-
-void adl<cluster::node_disk_space>::to(
-  iobuf& out, cluster::node_disk_space&& s) {
-    serialize(out, s.current_version, s.path, s.free, s.total);
-}
-
-cluster::node_disk_space adl<cluster::node_disk_space>::from(iobuf_parser& p) {
-    read_and_assert_version<cluster::node_disk_space>(
-      "cluster::node_disk_space", p);
-
-    auto path = adl<ss::sstring>{}.from(p);
-    auto free = adl<uint64_t>{}.from(p);
-    auto total = adl<uint64_t>{}.from(p);
-
-    return cluster::node_disk_space{
-      .path = path,
-      .free = free,
-      .total = total,
-    };
 }
 
 void adl<cluster::node_state>::to(iobuf& out, cluster::node_state&& s) {
@@ -240,9 +210,9 @@ void adl<cluster::node_health_report>::to(
       out,
       r.current_version,
       r.id,
-      std::move(r.redpanda_version),
-      r.uptime,
-      std::move(r.disk_space),
+      std::move(r.local_state.redpanda_version),
+      r.local_state.uptime,
+      std::move(r.local_state.disks),
       std::move(r.topics));
 }
 
@@ -252,16 +222,16 @@ adl<cluster::node_health_report>::from(iobuf_parser& p) {
       "cluster::node_health_report", p);
 
     auto id = adl<model::node_id>{}.from(p);
-    auto redpanda_version = adl<cluster::application_version>{}.from(p);
+    auto redpanda_version = adl<cluster::node::application_version>{}.from(p);
     auto uptime = adl<std::chrono::milliseconds>{}.from(p);
-    auto disk_space = adl<std::vector<cluster::node_disk_space>>{}.from(p);
+    auto disks = adl<std::vector<cluster::node::disk>>{}.from(p);
     auto topics = adl<std::vector<cluster::topic_status>>{}.from(p);
 
     return cluster::node_health_report{
       .id = id,
-      .redpanda_version = std::move(redpanda_version),
+      .local_state = { .redpanda_version = std::move(redpanda_version),
       .uptime = uptime,
-      .disk_space = std::move(disk_space),
+      .disks = std::move(disks),},
       .topics = std::move(topics),
     };
 }
