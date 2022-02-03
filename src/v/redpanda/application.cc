@@ -1170,6 +1170,14 @@ void application::start_redpanda() {
       "Started RPC server listening at {}",
       config::node().rpc_server());
 
+    // After we have started internal RPC listener, we may join
+    // the cluster (if we aren't already a member)
+    controller->get_members_manager()
+      .invoke_on(
+        cluster::members_manager::shard,
+        &cluster::members_manager::join_cluster)
+      .get();
+
     if (archival_storage_enabled()) {
         syschecks::systemd_message("Starting archival storage").get();
         archival_scheduler

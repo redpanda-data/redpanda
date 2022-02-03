@@ -83,6 +83,8 @@ public:
      */
     ss::future<std::vector<node_update>> get_node_updates();
 
+    ss::future<> join_cluster();
+
 private:
     using seed_iterator = std::vector<config::seed_server>::const_iterator;
     // Cluster join
