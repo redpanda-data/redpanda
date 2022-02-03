@@ -181,6 +181,8 @@ func (r *Cluster) ValidateUpdate(old runtime.Object) error {
 
 	allErrs = append(allErrs, r.validateRedpandaMemory()...)
 
+	allErrs = append(allErrs, r.validateRedpandaCoreChanges(oldCluster)...)
+
 	for _, rf := range allResourceFields(r) {
 		allErrs = append(allErrs, r.validateResources(rf)...)
 	}
@@ -459,6 +461,38 @@ func (r *Cluster) validateRedpandaMemory() field.ErrorList {
 				field.NewPath("spec").Child("resources").Child("requests").Child("memory"),
 				r.Spec.Resources.Requests.Memory(),
 				"need 2GB of memory per core; need to decrease the requested CPU or increase the memory request"))
+	}
+
+	return allErrs
+}
+
+// validateRedpandaCoreChanges verifies that the number of cores assigned to each Redpanda node
+// are not reduced during cluster updates
+func (r *Cluster) validateRedpandaCoreChanges(old *Cluster) field.ErrorList {
+	if r.Spec.Configuration.DeveloperMode {
+		// for developer mode we don't enforce this rule
+		return nil
+	}
+	var allErrs field.ErrorList
+
+	oldRequests := old.Spec.Resources.Requests.DeepCopy()
+	oldCPURequest := oldRequests.Cpu()
+	newRequests := r.Spec.Resources.Requests.DeepCopy()
+	newCPURequest := newRequests.Cpu()
+	if oldCPURequest != nil && newCPURequest != nil {
+		oldCPURequest.RoundUp(0)
+		oldCores := oldCPURequest.Value()
+		newCPURequest.RoundUp(0)
+		newCores := newCPURequest.Value()
+
+		if newCores < oldCores {
+			minAllowedCPU := fmt.Sprintf("%dm", (oldCores-1)*1000+1)
+			allErrs = append(allErrs,
+				field.Invalid(
+					field.NewPath("spec").Child("resources").Child("requests").Child("cpu"),
+					r.Spec.Resources.Requests.Cpu(),
+					fmt.Sprintf("CPU request may decrease the number of cores used in the existing cluster; increase the CPU request to at least %s", minAllowedCPU)))
+		}
 	}
 
 	return allErrs
