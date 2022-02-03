@@ -164,7 +164,7 @@ ExternalProject_Add(cryptopp
 
 ExternalProject_Add(seastar
   GIT_REPOSITORY https://github.com/vectorizedio/seastar.git
-  GIT_TAG 710d960b19529e2b60a2b3df2d51003f9ea91f2b
+  GIT_TAG f8ec733c36f0829d56a17103c916154a946128be
   INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
