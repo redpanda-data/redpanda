@@ -1739,10 +1739,6 @@ ss::future<> consensus::hydrate_snapshot() {
 }
 
 ss::future<> consensus::truncate_to_latest_snapshot() {
-    auto lstats = _log.offsets();
-    if (lstats.start_offset > _last_snapshot_index) {
-        return ss::now();
-    }
     // we have to prefix truncate config manage at exactly last offset included
     // in snapshot as this is the offset of configuration included in snapshot
     // metadata.
