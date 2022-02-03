@@ -25,6 +25,7 @@
 #include "model/namespace.h"
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
+#include "net/tls.h"
 #include "net/unresolved_address.h"
 #include "reflection/adl.h"
 #include "rpc/types.h"
@@ -307,8 +308,8 @@ ss::future<http::client> metrics_reporter::make_http_client() {
 
         client_configuration.credentials
           = co_await builder.build_reloadable_certificate_credentials();
+        client_configuration.tls_sni_hostname = _address.host;
     }
-
     co_return http::client(client_configuration, _as.local());
 }
 
