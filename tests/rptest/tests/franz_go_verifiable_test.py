@@ -11,6 +11,8 @@ from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 from ducktape.cluster.cluster_spec import ClusterSpec
 
+import os
+
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
@@ -50,6 +52,12 @@ class FranzGoVerifiableTest(RedpandaTest):
 
     @cluster(num_nodes=4)
     def test_with_all_type_of_loads(self):
+        self.logger.info(f"Environment: {os.environ}")
+        if os.environ.get('BUILD_TYPE', None) == 'debug':
+            self.logger.info(
+                "Skipping test in debug mode (requires release build)")
+            return
+
         # Need create json file for consumer at first
         self._create_json_file()
 
@@ -117,6 +125,11 @@ class FranzGoVerifiableWithSiTest(RedpandaTest):
 
     @cluster(num_nodes=4)
     def test_with_all_type_of_loads_and_si(self):
+        self.logger.info(f"Environment: {os.environ}")
+        if os.environ.get('BUILD_TYPE', None) == 'debug':
+            self.logger.info(
+                "Skipping test in debug mode (requires release build)")
+            return
 
         rpk = RpkTool(self.redpanda)
         rpk.alter_topic_config(self.topic, 'redpanda.remote.write', 'true')
