@@ -1,7 +1,14 @@
 #!/bin/bash
-actual=$(kubectl exec additional-configuration-0 -- cat /etc/redpanda/redpanda.yaml)
-expected=$(
-  cat <<EOF
+retries=20
+until [ "$retries" -lt 0 ]; do
+  PANDAPROXY_RETRIES=$1
+  if [[ -z $PANDAPROXY_RETRIES ]]; then
+    echo "requires one argument, pandaproxy retries count"
+    exit 1
+  fi
+  actual=$(kubectl exec additional-configuration-0 -- cat /etc/redpanda/redpanda.yaml)
+  expected=$(
+    cat <<EOF
 config_file: /etc/redpanda/redpanda.yaml
 pandaproxy:
   advertised_pandaproxy_api:
@@ -16,7 +23,7 @@ pandaproxy_client:
   brokers:
   - address: additional-configuration-0.additional-configuration.default.svc.cluster.local.
     port: 9092
-  retries: 10
+  retries: ${PANDAPROXY_RETRIES}
 redpanda:
   admin:
   - address: 0.0.0.0
@@ -70,6 +77,10 @@ schema_registry:
     name: external
     port: 8081
 EOF
-)
-echo "$actual"
-diff <(echo "$actual") <(echo "$expected")
+  )
+  echo "$actual"
+  diff <(echo "$actual") <(echo "$expected") && break
+  echo "Retrying... ({$retries} left)"
+  sleep 5
+  ((retries = retries - 1))
+done
