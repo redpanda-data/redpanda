@@ -13,6 +13,7 @@
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_istreambuf.h"
 #include "hashing/secure.h"
+#include "net/tls.h"
 #include "net/types.h"
 #include "s3/error.h"
 #include "s3/logger.h"
@@ -67,38 +68,6 @@ struct aws_header_values {
 
 // configuration //
 
-/// Find CA trust file using the predefined set of locations
-///
-/// Historically, different linux distributions use different locations to
-/// store certificates for their private key infrastructure. This is just a
-/// convention and can't be queried by the application code. The application
-/// is required to 'know' where to find the certs. In case of GnuTLS the
-/// location is configured during build time. It depend on distribution on
-/// which GnuTLS is built. This approach doesn't work for Redpanda because
-/// single Redpanda binary can be executed on any linux distro. So the default
-/// option only work on some distributions. The rest require the location to
-/// be explicitly specified. This function does different thing. It probes
-/// the set of default locations for different distributions untill it finds
-/// the one that exists. This path is then passed to GnuTLS.
-static ss::future<std::optional<ss::sstring>> find_ca_file() {
-    // list of all possible ca-cert file locations on different linux distros
-    static constexpr std::array<std::string_view, 6> ca_cert_locations = {{
-      "/etc/ssl/certs/ca-certificates.crt",
-      "/etc/pki/tls/certs/ca-bundle.crt",
-      "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
-      "/etc/ssl/cert.pem",
-      "/etc/ssl/ca-bundle.pem",
-      "/etc/pki/tls/cacert.pem",
-    }};
-
-    for (auto ca_loc : ca_cert_locations) {
-        if (co_await ss::file_exists(ca_loc)) {
-            co_return ca_loc;
-        }
-    }
-    co_return std::nullopt;
-}
-
 static ss::sstring make_endpoint_url(
   const aws_region_name& region,
   const std::optional<endpoint_url>& url_override) {
@@ -136,7 +105,7 @@ ss::future<configuration> configuration::make_configuration(
               file().string(), ss::tls::x509_crt_format::PEM);
         } else {
             // Use GnuTLS defaults, might not work on all systems
-            auto ca_file = co_await find_ca_file();
+            auto ca_file = co_await net::find_ca_file();
             if (ca_file) {
                 vlog(
                   s3_log.info,
