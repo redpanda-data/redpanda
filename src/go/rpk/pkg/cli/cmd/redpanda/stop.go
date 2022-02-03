@@ -38,7 +38,6 @@ func NewStopCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 first sends SIGINT, and waits for the specified timeout. Then, if redpanda
 hasn't stopped, it sends SIGTERM. Lastly, it sends SIGKILL if it's still
 running.`,
-		SilenceUsage: true,
 		RunE: func(ccmd *cobra.Command, args []string) error {
 			return executeStop(fs, mgr, configFile, timeout)
 		},
