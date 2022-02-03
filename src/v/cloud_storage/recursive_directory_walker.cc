@@ -50,8 +50,9 @@ recursive_directory_walker::walk(ss::sstring start_dir) {
         try {
             ss::file target_dir = co_await open_directory(target);
             auto sub = target_dir.list_directory(
-              [&files, &current_cache_size, &dirlist, target](
+              [&files, &current_cache_size, &dirlist, _target{target}](
                 ss::directory_entry entry) -> ss::future<> {
+                  auto target{_target};
                   vlog(cst_log.debug, "Looking at directory {}", target);
 
                   auto entry_path = std::filesystem::path(target)

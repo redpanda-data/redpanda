@@ -142,6 +142,27 @@ SEASTAR_THREAD_TEST_CASE(test_protobuf_referenced) {
       = pps::make_protobuf_schema_definition(store.store, schema3).get();
 }
 
+SEASTAR_THREAD_TEST_CASE(test_protobuf_well_known) {
+    simple_sharded_store store;
+
+    auto schema1 = pps::canonical_schema{
+      pps::subject{"empty.proto"},
+      pps::canonical_schema_definition{
+        R"(syntax =  "proto3";)", pps::schema_type::protobuf}};
+    auto schema2 = pps::canonical_schema{
+      pps::subject{"google/protobuf/timestamp.proto"},
+      pps::canonical_schema_definition{
+        R"(syntax =  "proto3"; package google.protobuf; message Timestamp { int64 seconds = 1;  int32 nanos = 2; })",
+        pps::schema_type::protobuf}};
+    auto sch1 = store.insert(schema1, pps::schema_version{1});
+    auto sch2 = store.insert(schema2, pps::schema_version{1});
+
+    auto valid_empty
+      = pps::make_protobuf_schema_definition(store.store, schema1).get();
+    auto valid_timestamp
+      = pps::make_protobuf_schema_definition(store.store, schema2).get();
+}
+
 SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_empty) {
     BOOST_REQUIRE(check_compatible(
       pps::compatibility_level::full,

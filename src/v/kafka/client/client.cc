@@ -102,8 +102,13 @@ ss::future<> client::stop() noexcept {
     co_await _gate.close();
     co_await catch_and_log([this]() { return _producer.stop(); });
     for (auto& [id, group] : _consumers) {
-        for (auto& consumer : group) {
-            co_await catch_and_log([consumer]() { return consumer->leave(); });
+        while (!group.empty()) {
+            auto c = *group.begin();
+            co_await catch_and_log([c]() {
+                // The consumer is constructed with an on_stopped which erases
+                // istelf from the map after leave() completes.
+                return c->leave();
+            });
         }
     }
     co_await catch_and_log([this]() { return _brokers.stop(); });
@@ -116,13 +121,16 @@ ss::future<> client::update_metadata(wait_or_start::tag) {
           .then([this](shared_broker_t broker) {
               return broker->dispatch(metadata_request{.list_all_topics = true})
                 .then([this](metadata_response res) {
-                    // Create new seeds from the returned set of brokers
-                    std::vector<unresolved_address> seeds;
-                    seeds.reserve(res.data.brokers.size());
-                    for (const auto& b : res.data.brokers) {
-                        seeds.emplace_back(b.host, b.port);
+                    // Create new seeds from the returned set of brokers if
+                    // they're not empty
+                    if (!res.data.brokers.empty()) {
+                        std::vector<unresolved_address> seeds;
+                        seeds.reserve(res.data.brokers.size());
+                        for (const auto& b : res.data.brokers) {
+                            seeds.emplace_back(b.host, b.port);
+                        }
+                        std::swap(_seeds, seeds);
                     }
-                    std::swap(_seeds, seeds);
 
                     return apply(std::move(res));
                 })
@@ -171,8 +179,16 @@ ss::future<> client::mitigate_error(std::exception_ptr ex) {
             return _wait_or_start_update_metadata();
         }
         default:
-            // TODO(Ben): Maybe vassert
-            vlog(kclog.warn, "partition_error: ", ex);
+            vlog(kclog.warn, "partition_error: {}", ex);
+            return ss::make_exception_future(ex);
+        }
+    } catch (const topic_error& ex) {
+        switch (ex.error) {
+        case error_code::unknown_topic_or_partition:
+            vlog(kclog.debug, "topic_error: {}", ex);
+            return _wait_or_start_update_metadata();
+        default:
+            vlog(kclog.warn, "topic_error: {}", ex);
             return ss::make_exception_future(ex);
         }
     } catch (const ss::gate_closed_exception&) {
@@ -308,7 +324,6 @@ ss::future<fetch_response> client::fetch_partition(
       std::move(build_request),
       std::move(tp),
       [this](auto& build_request, model::topic_partition& tp) {
-          vlog(kclog.debug, "fetching: {}", tp);
           return gated_retry_with_mitigation([this, &tp, &build_request]() {
                      return _topic_cache.leader(tp)
                        .then([this](model::node_id leader) {
@@ -352,13 +367,17 @@ client::create_consumer(const group_id& group_id, member_id name) {
             _config);
       })
       .then([this, group_id, name](shared_broker_t coordinator) mutable {
+          auto on_stopped = [this, group_id](const member_id& name) {
+              _consumers[group_id].erase(name);
+          };
           return make_consumer(
             _config,
             _topic_cache,
             _brokers,
             std::move(coordinator),
             std::move(group_id),
-            std::move(name));
+            std::move(name),
+            std::move(on_stopped));
       })
       .then([this, group_id](shared_consumer_t c) {
           auto name = c->name();
@@ -450,6 +469,7 @@ ss::future<kafka::fetch_response> client::consumer_fetch(
     const auto end = model::timeout_clock::now()
                      + std::min(config_timout, timeout.value_or(config_timout));
     return gated_retry_with_mitigation([this, g_id, name, end, max_bytes]() {
+        vlog(kclog.debug, "consumer_fetch: group_id: {}, name: {}", g_id, name);
         return get_consumer(g_id, name)
           .then([end, max_bytes](shared_consumer_t c) {
               auto timeout = std::max(

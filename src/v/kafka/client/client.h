@@ -121,6 +121,9 @@ public:
     ss::future<member_id>
     create_consumer(const group_id& g_id, member_id name = kafka::no_member);
 
+    ss::future<shared_consumer_t>
+    get_consumer(const group_id& g_id, const member_id& m_id);
+
     ss::future<> remove_consumer(const group_id& g_id, const member_id& m_id);
 
     ss::future<> subscribe_consumer(
@@ -173,9 +176,6 @@ private:
     /// \brief Handle errors by performing an action that may fix the cause of
     /// the error
     ss::future<> mitigate_error(std::exception_ptr ex);
-
-    ss::future<shared_consumer_t>
-    get_consumer(const group_id& g_id, const member_id& m_id);
 
     /// \brief Apply metadata update
     ss::future<> apply(metadata_response res);

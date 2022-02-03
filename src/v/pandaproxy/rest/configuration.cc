@@ -9,10 +9,13 @@
 
 #include "configuration.h"
 
+#include "config/base_property.h"
 #include "config/configuration.h"
 #include "config/endpoint_tls_config.h"
 #include "model/metadata.h"
 #include "units.h"
+
+#include <chrono>
 
 namespace pandaproxy::rest {
 using namespace std::chrono_literals;
@@ -47,6 +50,12 @@ configuration::configuration()
       "api_doc_dir",
       "API doc directory",
       config::required::no,
-      "/usr/share/redpanda/proxy-api-doc") {}
+      "/usr/share/redpanda/proxy-api-doc")
+  , consumer_instance_timeout(
+      *this,
+      "consumer_instance_timeout_ms",
+      "How long to wait for an idle consumer before removing it",
+      config::required::no,
+      std::chrono::minutes{5}) {}
 
 } // namespace pandaproxy::rest

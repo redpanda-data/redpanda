@@ -134,9 +134,10 @@ void seq_writer::advance_offset_inner(model::offset offset) {
 
 ss::future<schema_id>
 seq_writer::write_subject_version(canonical_schema schema) {
-    auto do_write = [schema{std::move(schema)}](
+    auto do_write = [_schema{std::move(schema)}](
                       model::offset write_at,
                       seq_writer& seq) -> ss::future<std::optional<schema_id>> {
+        auto schema{_schema};
         // Check if store already contains this data: if
         // so, we do no I/O and return the schema ID.
         auto projected = co_await seq._store.project_ids(schema);
@@ -187,9 +188,11 @@ seq_writer::write_subject_version(canonical_schema schema) {
 
 ss::future<bool> seq_writer::write_config(
   std::optional<subject> sub, compatibility_level compat) {
-    auto do_write = [sub, compat](
+    auto do_write = [_sub{std::move(sub)}, _compat{compat}](
                       model::offset write_at,
                       seq_writer& seq) -> ss::future<std::optional<bool>> {
+        auto sub{_sub};
+        auto compat{_compat};
         vlog(
           plog.debug,
           "write_config sub={} compat={} offset={}",
@@ -236,9 +239,11 @@ ss::future<bool> seq_writer::write_config(
 /// Impermanent delete: update a version with is_deleted=true
 ss::future<bool>
 seq_writer::delete_subject_version(subject sub, schema_version version) {
-    auto do_write = [sub, version](
+    auto do_write = [_sub{std::move(sub)}, _version{version}](
                       model::offset write_at,
                       seq_writer& seq) -> ss::future<std::optional<bool>> {
+        auto sub{_sub};
+        auto version{_version};
         if (co_await seq._store.is_referenced(sub, version)) {
             throw as_exception(has_references(sub, version));
         }
@@ -277,8 +282,10 @@ seq_writer::delete_subject_version(subject sub, schema_version version) {
 ss::future<std::vector<schema_version>>
 seq_writer::delete_subject_impermanent(subject sub) {
     vlog(plog.debug, "delete_subject_impermanent sub={}", sub);
-    auto do_write = [sub](model::offset write_at, seq_writer& seq)
+    auto do_write = [_sub{std::move(sub)}](
+                      model::offset write_at, seq_writer& seq)
       -> ss::future<std::optional<std::vector<schema_version>>> {
+        auto sub{_sub};
         // Grab the versions before they're gone.
         auto versions = co_await seq._store.get_versions(
           sub, include_deleted::no);

@@ -2,6 +2,7 @@
         "get": {
           "summary": "Get a list of brokers.",
           "operationId": "get_brokers",
+          "produces": ["application/vnd.kafka.v2+json"],
           "responses": {
             "200": {
               "description": "Array of topic names",
@@ -265,7 +266,6 @@
         "get": {
           "summary": "Fetch data for the consumer assignments",
           "operationId": "consumer_fetch",
-          "consumes": ["application/vnd.kafka.v2+json"],
           "parameters": [
             {
               "name": "group_name",
@@ -366,6 +366,7 @@
             }
           }
         ],
+        "produces": ["application/vnd.kafka.v2+json"],
         "responses": {
           "204": {
             "description": ""
@@ -383,6 +384,7 @@
       "get": {
         "summary": "Get a list of Kafka topics.",
         "operationId": "get_topics_names",
+        "produces": ["application/vnd.kafka.v2+json"],
         "responses": {
           "200": {
             "description": "Array of topic names",
@@ -469,7 +471,6 @@
       "get": {
         "summary": "Get records from a topic.",
         "operationId": "get_topics_records",
-        "consumes": ["application/vnd.kafka.v2+json"],
         "parameters": [
           {
             "name": "topic_name",

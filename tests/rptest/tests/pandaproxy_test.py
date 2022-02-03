@@ -191,6 +191,22 @@ class PandaProxyTest(RedpandaTest):
                             headers=headers)
         return res
 
+    def _create_named_consumer(self,
+                               group_id,
+                               name,
+                               headers=HTTP_CREATE_CONSUMER_HEADERS):
+        res = requests.post(f"{self._base_uri()}/consumers/{group_id}",
+                            json.dumps({
+                                "format": "binary",
+                                "name": name,
+                                "auto.offset.reset": "earliest",
+                                "auto.commit.enable": "false",
+                                "fetch.min.bytes": "1",
+                                "consumer.request.timeout.ms": "10000"
+                            }),
+                            headers=headers)
+        return res
+
     @cluster(num_nodes=3)
     def test_get_brokers(self):
         """
@@ -209,7 +225,6 @@ class PandaProxyTest(RedpandaTest):
         """
         Acceptable headers:
         * Accept: "", "*.*", "application/vnd.kafka.v2+json"
-        * Content-Type: "", "*.*", "application/vnd.kafka.v2+json"
 
         """
         self.logger.debug(f"List topics with no accept header")
@@ -243,11 +258,6 @@ class PandaProxyTest(RedpandaTest):
         self.logger.debug(f"List topics with invalid accept header")
         result_raw = self._get_topics({"Accept": "application/json"})
         assert result_raw.status_code == requests.codes.not_acceptable
-        assert result_raw.headers["Content-Type"] == "application/json"
-
-        self.logger.debug(f"List topics with invalid content-type header")
-        result_raw = self._get_topics({"Content-Type": "application/json"})
-        assert result_raw.status_code == requests.codes.unsupported_media_type
         assert result_raw.headers["Content-Type"] == "application/json"
 
     @cluster(num_nodes=3)
@@ -531,6 +541,15 @@ class PandaProxyTest(RedpandaTest):
         # It's not possible to return an error body in this case due to the way
         # ss::httpd::path_description and routing works - path can't be matched
         assert cc_res.status_code == requests.codes.not_found
+
+        self.logger.info("Create a named consumer")
+        cc_res = self._create_named_consumer(group_id, "my_consumer")
+        assert cc_res.status_code == requests.codes.ok
+
+        self.logger.info("Create a consumer with duplicate name")
+        cc_res = self._create_named_consumer(group_id, "my_consumer")
+        assert cc_res.status_code == requests.codes.conflict
+        assert cc_res.json()["error_code"] == 40902
 
     @cluster(num_nodes=3)
     def test_subscribe_consumer_validation(self):

@@ -21,6 +21,7 @@ from ducktape.services.background_thread import BackgroundThreadService
 
 from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.python_librdkafka_serde_client import SerdeClient, SchemaType
 from rptest.tests.redpanda_test import RedpandaTest
 
 
@@ -469,6 +470,24 @@ class SchemaRegistryTest(RedpandaTest):
         assert result_raw.status_code == requests.codes.ok
         result = result_raw.json()
         # assert result["schema"] == json.dumps(schema_def)
+
+    @cluster(num_nodes=3)
+    def test_post_subjects_subject_versions_version_many(self):
+        """
+        Verify posting a schema many times
+        """
+
+        topic = create_topic_names(1)[0]
+        subject = f"{topic}-key"
+        schema_1_data = json.dumps({"schema": schema1_def})
+
+        # Post the same schema many times.
+        for _ in range(20):
+            result_raw = self._post_subjects_subject_versions(
+                subject=subject, data=schema_1_data)
+            self.logger.debug(result_raw)
+            assert result_raw.status_code == requests.codes.ok
+            assert result_raw.json()["id"] == 1
 
     @cluster(num_nodes=3)
     def test_post_subjects_subject(self):
@@ -1013,3 +1032,30 @@ class SchemaRegistryTest(RedpandaTest):
         self.logger.info(result_raw)
         assert result_raw.status_code == requests.codes.ok
         assert result_raw.json() == [2]
+
+    @cluster(num_nodes=3)
+    def test_serde_client(self):
+        """
+        Verify basic serialization client
+        """
+        protocols = [SchemaType.AVRO, SchemaType.PROTOBUF]
+        topics = [f"serde-topic-{x.name}" for x in protocols]
+        self._create_topics(topics)
+        schema_reg = self.redpanda.schema_reg().split(',', 1)[0]
+        for i in range(len(protocols)):
+            self.logger.info(
+                f"Connecting to redpanda: {self.redpanda.brokers()} schema_reg: {schema_reg}"
+            )
+            client = SerdeClient(self.redpanda.brokers(),
+                                 schema_reg,
+                                 protocols[i],
+                                 topic=topics[i],
+                                 logger=self.logger)
+            client.run(2)
+            schema = self._get_subjects_subject_versions_version(
+                f"{topics[i]}-value", "latest")
+            self.logger.info(schema.json())
+            if protocols[i] == SchemaType.AVRO:
+                assert schema.json().get("schemaType") is None
+            else:
+                assert schema.json()["schemaType"] == protocols[i].name
