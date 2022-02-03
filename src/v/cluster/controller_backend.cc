@@ -240,7 +240,7 @@ std::vector<topic_table::delta> calculate_bootstrap_deltas(
         // partition with correct offset
         if (auto next = std::next(it); next != deltas.rend()) {
             if (
-              next->type == op_t::update_finished
+              (next->type == op_t::update_finished || next->type == op_t::add)
               && !has_local_replicas(self, next->new_assignment.replicas)) {
                 break;
             }
