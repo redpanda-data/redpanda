@@ -106,7 +106,8 @@ FIXTURE_TEST(local_monitor_alert_on_space_percent, local_monitor_fixture) {
     // Minimum by %: 200 * 4k block = 800KiB total * 0.05 -> 40 KiB
     // Minimum by bytes:                                      1 GiB
     static constexpr auto total = 200UL, free = 0UL, block_size = 4096UL;
-    size_t min_free_percent_blocks = total * (default_percent_threshold / 100.0);
+    size_t min_free_percent_blocks = total
+                                     * (default_percent_threshold / 100.0);
     struct statvfs stats = make_statvfs(free, total, block_size);
     auto lamb = [&](const ss::sstring&) { return stats; };
     _local_monitor.set_statvfs_for_test(lamb);
