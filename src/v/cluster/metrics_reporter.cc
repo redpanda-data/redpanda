@@ -290,9 +290,23 @@ ss::future<http::client> metrics_reporter::make_http_client() {
     client_configuration.disable_metrics = rpc::metrics_disabled::yes;
 
     if (_address.protocol == "https") {
+        ss::tls::credentials_builder builder;
+        builder.set_client_auth(ss::tls::client_auth::NONE);
+        auto ca_file = co_await net::find_ca_file();
+        if (ca_file) {
+            vlog(
+              _logger.trace, "using {} as metrics reporter CA store", ca_file);
+            co_await builder.set_x509_trust_file(
+              ca_file.value(), ss::tls::x509_crt_format::PEM);
+        } else {
+            vlog(
+              _logger.trace,
+              "ca file not found, defaulting to system trust store");
+            co_await builder.set_system_trust();
+        }
+
         client_configuration.credentials
-          = ss::make_shared<ss::tls::certificate_credentials>();
-        co_await client_configuration.credentials->set_system_trust();
+          = co_await builder.build_reloadable_certificate_credentials();
     }
 
     co_return http::client(client_configuration, _as.local());
