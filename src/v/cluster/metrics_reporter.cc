@@ -26,6 +26,7 @@
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
 #include "reflection/adl.h"
+#include "rpc/tls.h"
 #include "rpc/types.h"
 #include "ssx/sformat.h"
 #include "utils/unresolved_address.h"
@@ -292,7 +293,7 @@ ss::future<http::client> metrics_reporter::make_http_client() {
     if (_address.protocol == "https") {
         ss::tls::credentials_builder builder;
         builder.set_client_auth(ss::tls::client_auth::NONE);
-        auto ca_file = co_await net::find_ca_file();
+        auto ca_file = co_await rpc::find_ca_file();
         if (ca_file) {
             vlog(
               _logger.trace, "using {} as metrics reporter CA store", ca_file);
@@ -307,8 +308,8 @@ ss::future<http::client> metrics_reporter::make_http_client() {
 
         client_configuration.credentials
           = co_await builder.build_reloadable_certificate_credentials();
+        client_configuration.tls_sni_hostname = _address.host;
     }
-
     co_return http::client(client_configuration, _as.local());
 }
 
