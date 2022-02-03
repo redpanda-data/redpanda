@@ -36,6 +36,14 @@ class RpkPartition:
             self.id, self.leader, self.replicas, self.high_watermark,
             self.start_offset)
 
+    def __eq__(self, other):
+        if other is None:
+            return False
+        return self.id == other.id and self.leader == other.leader \
+            and self.replicas == other.replicas \
+            and self.high_watermark == other.high_watermark \
+            and self.start_offset == other.start_offset
+
 
 class RpkClusterInfoNode:
     def __init__(self, id, address):

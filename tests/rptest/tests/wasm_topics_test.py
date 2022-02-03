@@ -9,6 +9,8 @@
 
 from rptest.services.cluster import cluster
 from rptest.tests.wasm_identity_test import WasmIdentityTest
+from rptest.wasm.wasm_script import WasmScript
+from rptest.wasm.wasm_build_tool import WasmTemplateRepository
 
 
 class WasmCreateTopicsTest(WasmIdentityTest):
@@ -18,28 +20,34 @@ class WasmCreateTopicsTest(WasmIdentityTest):
                                                    num_records=num_records,
                                                    record_size=record_size)
 
-    def wasm_test_outputs(self):
-        return [["output_1", "output_2", "output_3"]]
+    def wasm_test_plan(self):
+        return [
+            WasmScript(inputs=self.wasm_test_input(),
+                       outputs=["output_1", "output_2", "output_3"],
+                       script=WasmTemplateRepository.IDENTITY_TRANSFORM)
+        ]
 
     @cluster(num_nodes=3)
     def verify_materialized_topics_test(self):
+        super().verify_materialized_topics_test()
+
         def rpk_partition_sort(p):
             return p.id
 
         # Verify sound input, and grab the input topics config
-        test_cfg = self._rpk_tool.describe_topic(self.topics[0].name)
+        test_cfg = self._rpk_tool.describe_topic(self.topic)
         if test_cfg == None:
-            raise Exception("Input topic missing {}" % topic)
+            raise Exception("Input topic missing {}" % self.topic)
         test_cfg = sorted(test_cfg, key=rpk_partition_sort)
 
         # Ensure all materialized topics created and configs match inputs
-        for topic in self.wasm_test_outputs()[0]:
+        for topic in self.wasm_test_output():
             output = self._rpk_tool.describe_topic(topic)
             if output == None:
                 raise Exception("Materialized topic missing {}" % topic)
             output = sorted(output, key=rpk_partition_sort)
             if output != test_cfg:
-                raise Exception("Bad config, expected: %s eobserved: %s" %
+                raise Exception("Bad config, expected: %s observed: %s" %
                                 (test_cfg, output))
 
 
@@ -50,24 +58,29 @@ class WasmDeleteTopicsTest(WasmIdentityTest):
                                                    num_records=num_records,
                                                    record_size=record_size)
 
-    def wasm_test_outputs(self):
-        return [["output_1", "output_2", "output_3"]]
+    def wasm_test_plan(self):
+        return [
+            WasmScript(inputs=self.wasm_test_input(),
+                       outputs=["output_1", "output_2", "output_3"],
+                       script=WasmTemplateRepository.IDENTITY_TRANSFORM)
+        ]
 
     @cluster(num_nodes=3)
     def verify_materialized_topics_test(self):
-        itopic = self.topics[0].name
-        for topic in self.wasm_test_outputs()[0]:
+        super().verify_materialized_topics_test()
+
+        for topic in self.wasm_test_output():
             self._rpk_tool.delete_topic(topic)
-        self._rpk_tool.delete_topic(itopic)
+        self._rpk_tool.delete_topic(self.topic)
 
         topics = self._rpk_tool.list_topics()
 
-        for topic in self.wasm_test_outputs()[0]:
+        for topic in self.wasm_test_output():
             if topic in topics:
                 raise Exception(
                     'Failed to delete materialized topic %s - topics: %s' %
                     (topic, topics))
 
-        if itopic in topics:
+        if self.topic in topics:
             raise Exception('Failed to delete source topic: %s - topics: %s' %
-                            (itopic, topics))
+                            (self.topic, topics))

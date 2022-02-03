@@ -12,6 +12,7 @@ from rptest.wasm.topic import get_source_topic, is_materialized_topic
 from functools import reduce
 
 from kafka import TopicPartition
+from enum import Enum
 
 
 class BasicKafkaRecord:
@@ -70,17 +71,32 @@ class TopicsResultSet:
                 rs += records
 
 
+CmpErr = Enum('CmpErr', 'Success NonEqKeys NonEqRecords CmpFailed DataInvalid')
+
+
+def cmp_err_to_str(cmp_err):
+    if cmp_err == CmpErr.NonEqKeys:
+        return 'Mismatch in number of keys'
+    elif cmp_err == CmpErr.NonEqRecords:
+        return 'Mistmatch in number of records'
+    elif cmp_err == CmpErr.CmpFailed:
+        return 'Mismatch in expected topic data'
+    elif cmp_err == CmpErr.DataInvalid:
+        return 'Unexpected non-materialized record in output set'
+    else:
+        raise Exception('Unimplemented enum case')
+
+
 def _materialized_topic_set_compare(a, b, comparator):
     for tp, records in b.rset.items():
         if not is_materialized_topic(tp.topic):
-            raise Exception(
-                "'materialized_set' must contain only materialized topics")
+            return CmpErr.DataInvalid
         input_data = a.rset.get(
             TopicPartition(topic=get_source_topic(tp.topic),
                            partition=tp.partition))
         if input_data is None or not comparator(input_data, records):
-            return False
-    return True
+            return CmpErr.CmpFailed
+    return CmpErr.Success
 
 
 def materialized_result_set_compare(oset, materialized_set):
@@ -90,9 +106,9 @@ def materialized_result_set_compare(oset, materialized_set):
     materialized_topics
     """
     if len(oset.rset.keys()) != len(materialized_set.rset.keys()):
-        return False
+        return CmpErr.NonEqKeys
     if oset.num_records() != materialized_set.num_records():
-        return False
+        return CmpErr.NonEqRecords
 
     def strip_topic(bkr):
         bkr.topic = None

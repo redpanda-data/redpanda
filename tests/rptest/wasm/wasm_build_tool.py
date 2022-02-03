@@ -56,11 +56,10 @@ class WasmBuildTool():
         inputs = ",".join([
             f'["{topic}", PolicyInjection.Stored]' for topic in script.inputs
         ])
-        outputs = [topic for topic in script.outputs]
-        if any(x is None for x in outputs):
+        if any(x is None for x in script.outputs):
             raise Exception('Error rendering template, outputs invalid')
         t = jinja2.Template(template)
-        return t.render(input_topics=inputs, output_topics=outputs)
+        return t.render(input_topics=inputs, output_topics=script.outputs)
 
     def _build_source(self, artifact_dir):
         with DirectoryContext(artifact_dir) as _:
