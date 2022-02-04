@@ -158,6 +158,20 @@ public:
         return {*this};
     }
 
+    std::optional<std::string_view> example() const override {
+        if (_meta.example.has_value()) {
+            return _meta.example;
+        } else {
+            if constexpr (std::is_same_v<T, bool>) {
+                // Provide an example that is the opposite of the default
+                // (i.e. an example of how to _change_ the setting)
+                return _default ? "false" : "true";
+            } else {
+                return std::nullopt;
+            }
+        }
+    }
+
 protected:
     bool update_value(T&& new_value) {
         if (new_value != _value) {
