@@ -82,7 +82,6 @@ private:
     void register_config_routes();
     void register_cluster_config_routes();
     void register_raft_routes();
-    void register_kafka_routes();
     void register_security_routes();
     void register_status_routes();
     void register_broker_routes();

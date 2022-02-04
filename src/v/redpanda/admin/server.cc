@@ -33,7 +33,6 @@
 #include "redpanda/admin/api-doc/broker.json.h"
 #include "redpanda/admin/api-doc/cluster_config.json.h"
 #include "redpanda/admin/api-doc/config.json.h"
-#include "redpanda/admin/api-doc/partition.json.h"
 #include "redpanda/admin/api-doc/raft.json.h"
 #include "redpanda/admin/api-doc/security.json.h"
 #include "redpanda/admin/api-doc/status.json.h"
@@ -130,7 +129,6 @@ void admin_server::configure_admin_routes() {
     register_config_routes();
     register_cluster_config_routes();
     register_raft_routes();
-    register_kafka_routes();
     register_security_routes();
     register_status_routes();
     register_broker_routes();
@@ -991,81 +989,6 @@ void admin_server::register_security_routes() {
           }
           return ss::make_ready_future<ss::json::json_return_type>(
             std::move(users));
-      });
-}
-
-void admin_server::register_kafka_routes() {
-    ss::httpd::partition_json::kafka_transfer_leadership.set(
-      _server._routes,
-      [this](std::unique_ptr<ss::httpd::request> req)
-        -> ss::future<ss::json::json_return_type> {
-          auto ns = model::ns(req->param["namespace"]);
-
-          auto topic = model::topic(req->param["topic"]);
-
-          model::partition_id partition;
-          try {
-              partition = model::partition_id(
-                std::stoll(req->param["partition"]));
-          } catch (...) {
-              throw ss::httpd::bad_param_exception(fmt::format(
-                "Partition id must be an integer: {}",
-                req->param["partition"]));
-          }
-
-          if (partition() < 0) {
-              throw ss::httpd::bad_param_exception(
-                fmt::format("Invalid partition id {}", partition));
-          }
-
-          std::optional<model::node_id> target;
-          if (auto node = req->get_query_param("target"); !node.empty()) {
-              try {
-                  target = model::node_id(std::stoi(node));
-              } catch (...) {
-                  throw ss::httpd::bad_param_exception(
-                    fmt::format("Target node id must be an integer: {}", node));
-              }
-              if (*target < 0) {
-                  throw ss::httpd::bad_param_exception(
-                    fmt::format("Invalid target node id {}", *target));
-              }
-          }
-
-          vlog(
-            logger.info,
-            "Leadership transfer request for leader of topic-partition "
-            "{}:{}:{} "
-            "to node {}",
-            ns,
-            topic,
-            partition,
-            target);
-
-          model::ntp ntp(ns, topic, partition);
-
-          auto shard = _shard_table.local().shard_for(ntp);
-          if (!shard) {
-              // This node is not a member of the raft group, redirect.
-              throw co_await redirect_to_leader(*req, ntp);
-          }
-
-          co_return co_await _partition_manager.invoke_on(
-            *shard,
-            [ntp = std::move(ntp), target, this, req = std::move(req)](
-              cluster::partition_manager& pm) mutable {
-                auto partition = pm.get(ntp);
-                if (!partition) {
-                    throw ss::httpd::not_found_exception();
-                }
-                return partition->transfer_leadership(target).then(
-                  [this, req = std::move(req), ntp](std::error_code err)
-                    -> ss::future<ss::json::json_return_type> {
-                      co_await throw_on_error(*req, err, ntp);
-                      co_return ss::json::json_return_type(
-                        ss::json::json_void());
-                  });
-            });
       });
 }
 
