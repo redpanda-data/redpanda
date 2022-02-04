@@ -12,7 +12,8 @@
 #pragma once
 #include "cluster/fwd.h"
 #include "config/endpoint_tls_config.h"
-#include "coproc/partition_manager.h"
+#include "coproc/fwd.h"
+#include "json/json.h"
 #include "model/metadata.h"
 #include "seastarx.h"
 
@@ -109,14 +110,7 @@ struct json_validator {
       , validator(schema) {}
 
     static rapidjson::SchemaDocument
-    make_schema_document(const std::string& schema) {
-        rapidjson::Document doc;
-        if (doc.Parse(schema).HasParseError()) {
-            throw std::runtime_error(
-              fmt::format("Invalid schema document: {}", schema));
-        }
-        return rapidjson::SchemaDocument(doc);
-    }
+    make_schema_document(const std::string& schema);
 
     const rapidjson::SchemaDocument schema;
     rapidjson::SchemaValidator validator;

@@ -24,6 +24,7 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/endpoint_tls_config.h"
+#include "coproc/partition_manager.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/record.h"
@@ -477,6 +478,16 @@ ss::future<> admin_server::throw_on_error(
         throw ss::httpd::server_error_exception(
           fmt::format("Unexpected error: {}", ec.message()));
     }
+}
+
+rapidjson::SchemaDocument
+json_validator::make_schema_document(const std::string& schema) {
+    rapidjson::Document doc;
+    if (doc.Parse(schema).HasParseError()) {
+        throw std::runtime_error(
+          fmt::format("Invalid schema document: {}", schema));
+    }
+    return rapidjson::SchemaDocument(doc);
 }
 
 } // namespace admin
