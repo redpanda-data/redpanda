@@ -428,8 +428,7 @@ admin_server_cfg_from_global_cfg(scheduling_groups& sgs) {
       .endpoints_tls = config::node().admin_api_tls(),
       .dashboard_dir = config::node().dashboard_dir(),
       .admin_api_docs_dir = config::node().admin_api_doc_dir(),
-      .sg = sgs.admin_sg(),
-    };
+      .sg = sgs.admin_sg()};
 }
 
 void application::configure_admin_server() {

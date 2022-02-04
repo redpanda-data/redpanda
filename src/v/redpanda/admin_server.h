@@ -14,6 +14,7 @@
 #include "config/endpoint_tls_config.h"
 #include "coproc/partition_manager.h"
 #include "model/metadata.h"
+#include "request_auth.h"
 #include "seastarx.h"
 
 #include <seastar/core/scheduling.hh>
@@ -117,5 +118,8 @@ private:
     cluster::controller* _controller;
     ss::sharded<cluster::shard_table>& _shard_table;
     ss::sharded<cluster::metadata_cache>& _metadata_cache;
+
+    request_authenticator _auth;
+
     bool _ready{false};
 };

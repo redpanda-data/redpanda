@@ -44,6 +44,7 @@
 #include "redpanda/admin/api-doc/security.json.h"
 #include "redpanda/admin/api-doc/status.json.h"
 #include "redpanda/admin/api-doc/transaction.json.h"
+#include "redpanda/request_auth.h"
 #include "security/scram_algorithm.h"
 #include "security/scram_authenticator.h"
 #include "vlog.h"
@@ -90,7 +91,9 @@ admin_server::admin_server(
   , _cp_partition_manager(cpm)
   , _controller(controller)
   , _shard_table(st)
-  , _metadata_cache(metadata_cache) {}
+  , _metadata_cache(metadata_cache)
+  , _auth(
+      config::shard_local_cfg().admin_api_require_auth.bind(), _controller) {}
 
 ss::future<> admin_server::start() {
     configure_metrics_route();
