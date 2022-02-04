@@ -23,6 +23,7 @@ v_cc_library(
   NAME admin_server
   SRCS
     server.cc
+    hbadger.cc
     ${swag_files}
  DEPS
     Seastar::seastar
