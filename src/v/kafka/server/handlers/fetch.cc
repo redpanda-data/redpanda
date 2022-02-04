@@ -322,7 +322,7 @@ static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
         total_size += r.data_size_bytes();
     }
     vlog(
-      klog.debug,
+      klog.trace,
       "fetch_ntps_in_parallel: for {} partitions returning {} total bytes",
       results.size(),
       total_size);
