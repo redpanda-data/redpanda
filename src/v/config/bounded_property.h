@@ -90,14 +90,12 @@ struct numeric_bounds {
 
     std::optional<ss::sstring> validate(T& value) {
         if (min.has_value() && value < min.value()) {
-            return fmt::format(
-              "Value out of bounds, must be at least {}", min.value());
+            return fmt::format("too small, must be at least {}", min.value());
         } else if (max.has_value() && value > max.value()) {
-            return fmt::format(
-              "Value out of bounds, must be at most {}", max.value());
+            return fmt::format("too large, must be at most {}", max.value());
         } else if (align.has_value() && value % align.value() != T{0}) {
             return fmt::format(
-              "Value not aligned, alignment interval {}", align.value());
+              "not aligned, must be aligned to nearest {}", align.value());
         }
         return std::nullopt;
     }
