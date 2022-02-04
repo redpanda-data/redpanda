@@ -1,9 +1,9 @@
 # Redpanda
 [![Documentation](https://img.shields.io/badge/documentation-black)](https://vectorized.io/documentation)
 [![Slack](https://img.shields.io/badge/slack-purple)](https://vectorized.io/slack)
-[![Twitter](https://img.shields.io/twitter/follow/vectorizedio.svg?style=social&label=Follow)](https://twitter.com/intent/follow?screen_name=vectorizedio)
-![Go](https://github.com/vectorizedio/redpanda/workflows/Go/badge.svg)
-![C++](https://github.com/vectorizedio/redpanda/workflows/build-test/badge.svg)
+[![Twitter](https://img.shields.io/twitter/follow/redpandadata.svg?style=social&label=Follow)](https://twitter.com/intent/follow?screen_name=redpandadata)
+![Go](https://github.com/redpanda-data/redpanda/workflows/Go/badge.svg)
+![C++](https://github.com/redpanda-data/redpanda/workflows/build-test/badge.svg)
 
 [<p align="center"><img src="docs/PANDA_sitting.jpg" alt="redpanda sitting" width="400"/></p>](https://vectorized.io/redpanda)
 <img src="https://static.scarf.sh/a.png?x-pxid=3c187215-e862-4b67-8057-45aa9a779055" />
@@ -19,9 +19,9 @@ Redpanda 是一个用于关键任务型工作负载的流计算平台。兼容 K
 
 [Slack](https://vectorized.io/slack) 是社区实时互动的主要方式 :)
 
-[Github 讨论](https://github.com/vectorizedio/redpanda/discussions) 是更长时间、异步、深思熟虑的讨论的首选
+[Github 讨论](https://github.com/redpanda-data/redpanda/discussions) 是更长时间、异步、深思熟虑的讨论的首选
 
-[GitHub 问题](https://github.com/vectorizedio/redpanda/issues) 仅用于实际 issues。请使用邮件列表进行讨论。
+[GitHub 问题](https://github.com/redpanda-data/redpanda/issues) 仅用于实际 issues。请使用邮件列表进行讨论。
 
 [行为准则](./CODE_OF_CONDUCT.md) 社区行为准则
 
@@ -35,10 +35,10 @@ Redpanda 是一个用于关键任务型工作负载的流计算平台。兼容 K
 
 ### MacOS
 
-下载我们的 `rpk` [二进制文件](https://github.com/vectorizedio/redpanda/releases)。我们需要在 MacOS 上使用 Docker
+下载我们的 `rpk` [二进制文件](https://github.com/redpanda-data/redpanda/releases)。我们需要在 MacOS 上使用 Docker
 
 ```shell
-brew install vectorizedio/tap/redpanda && rpk container start
+brew install redpanda-data/tap/redpanda && rpk container start
 ```
 
 ### Debian/Ubuntu
