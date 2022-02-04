@@ -27,6 +27,7 @@ v_cc_library(
     partition.cc
     broker.cc
     security.cc
+    raft.cc
     ${swag_files}
  DEPS
     Seastar::seastar
