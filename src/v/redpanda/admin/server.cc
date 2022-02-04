@@ -180,6 +180,26 @@ bool get_boolean_query_param(
            || str_param == "1";
 }
 
+/**
+ * Prepend a / to the path component. This handles the case where path is an
+ * empty string (e.g. url/) or when the path omits the root file path
+ * directory (e.g. url/index.html vs url//index.html). The directory handler
+ * in seastar is opininated and not very forgiving here so we help it a bit.
+ */
+class dashboard_handler final : public ss::httpd::directory_handler {
+public:
+    explicit dashboard_handler(const ss::sstring& dashboard_dir)
+      : directory_handler(dashboard_dir) {}
+
+    ss::future<std::unique_ptr<ss::httpd::reply>> handle(
+      const ss::sstring& path,
+      std::unique_ptr<ss::httpd::request> req,
+      std::unique_ptr<ss::httpd::reply> rep) override {
+        req->param.set("path", "/" + req->param.at("path"));
+        return directory_handler::handle(path, std::move(req), std::move(rep));
+    }
+};
+
 void admin_server::configure_dashboard() {
     if (_cfg.dashboard_dir) {
         auto handler = std::make_unique<dashboard_handler>(*_cfg.dashboard_dir);
