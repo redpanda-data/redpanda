@@ -12,4 +12,4 @@ currently being supported with security updates.
 
 ## Reporting a Vulnerability
 
-Please send email to security@vectorized.io
+Please send email to security@redpanda.com

@@ -7,15 +7,15 @@ make this a welcoming community for all, and we're excited that you are here!
 
 The basics:
 
-* Use the [Issue Tracker](https://github.com/vectorizedio/redpanda/issues/) to
+* Use the [Issue Tracker](https://github.com/redpanda-data/redpanda/issues/) to
   report bugs, crashes, performance issues, etc... Please include as much detail
   as possible.
   
-* [Discussions](https://github.com/vectorizedio/redpanda/discussions) is a great
+* [Discussions](https://github.com/redpanda-data/redpanda/discussions) is a great
   venue to ask questions, start a design discussion, or post an RFC.
   
 * We ask that developers sign our [contributor license
-  agreement](https://github.com/vectorizedio/redpanda/tree/dev/licenses). The
+  agreement](https://github.com/redpanda-data/redpanda/tree/dev/licenses). The
   process of signing the CLA is automated, and you'll be prompted instructions
   the first time you submit a pull request to the project.
 
@@ -45,7 +45,7 @@ feedback.
 
 Located in the root of the Redpanda project are style property files for various
 languages used in the project (e.g.
-[clang-format](https://github.com/vectorizedio/redpanda/blob/dev/.clang-format)
+[clang-format](https://github.com/redpanda-data/redpanda/blob/dev/.clang-format)
 for C/C++).  Our continuous integration checks enforce these styles by verifying
 changes made in each pull request.  All mainstream editors and IDEs should
 provide support (either natively or through a plugin) for integrating with code

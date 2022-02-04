@@ -1,12 +1,12 @@
 
 # Redpanda
-[![Documentation](https://img.shields.io/badge/documentation-black)](https://vectorized.io/documentation)
-[![Slack](https://img.shields.io/badge/slack-purple)](https://vectorized.io/slack)
-[![Twitter](https://img.shields.io/twitter/follow/vectorizedio.svg?style=social&label=Follow)](https://twitter.com/intent/follow?screen_name=vectorizedio)
-![Go](https://github.com/vectorizedio/redpanda/workflows/Go/badge.svg)
-![C++](https://github.com/vectorizedio/redpanda/workflows/build-test/badge.svg)
+[![Documentation](https://img.shields.io/badge/documentation-black)](https://redpanda.com/documentation)
+[![Slack](https://img.shields.io/badge/slack-purple)](https://redpanda.com/slack)
+[![Twitter](https://img.shields.io/twitter/follow/redpandadata.svg?style=social&label=Follow)](https://twitter.com/intent/follow?screen_name=redpandadata)
+![Go](https://github.com/redpanda-data/redpanda/workflows/Go/badge.svg)
+![C++](https://github.com/redpanda-data/redpanda/workflows/build-test/badge.svg)
 
-[<p align="center"><img src="docs/PANDA_sitting.jpg" alt="redpanda sitting" width="400"/></p>](https://vectorized.io/redpanda)
+[<p align="center"><img src="docs/PANDA_sitting.jpg" alt="redpanda sitting" width="400"/></p>](https://redpanda.com/redpanda)
 <img src="https://static.scarf.sh/a.png?x-pxid=3c187215-e862-4b67-8057-45aa9a779055" />
 
 Redpanda is a streaming platform for mission critical workloads. Kafka® compatible, 
@@ -20,11 +20,11 @@ you from the smallest projects to petabytes of data distributed across the globe
 
 # Community
 
-[Slack](https://vectorized.io/slack) is the main way the community interacts with one another in real time :) 
+[Slack](https://redpanda.com/slack) is the main way the community interacts with one another in real time :) 
 
-[Github Discussion](https://github.com/vectorizedio/redpanda/discussions) is preferred for longer, async, thoughtful discussions
+[Github Discussion](https://github.com/redpanda-data/redpanda/discussions) is preferred for longer, async, thoughtful discussions
 
-[GitHub Issues](https://github.com/vectorizedio/redpanda/issues) is reserved only for actual issues. Please use the mailing list for discussions.
+[GitHub Issues](https://github.com/redpanda-data/redpanda/issues) is reserved only for actual issues. Please use the mailing list for discussions.
 
 [Code of conduct](./CODE_OF_CONDUCT.md) code of conduct for the community
 
@@ -38,10 +38,10 @@ We recommend using our free & prebuilt stable releases below.
 
 ### On MacOS
 
-Simply download our `rpk` [binary here](https://github.com/vectorizedio/redpanda/releases). We require Docker on MacOS
+Simply download our `rpk` [binary here](https://github.com/redpanda-data/redpanda/releases). We require Docker on MacOS
 
 ```
-brew install vectorizedio/tap/redpanda && rpk container start
+brew install redpanda-data/tap/redpanda && rpk container start
 ```
 
 ### On Debian/Ubuntu
