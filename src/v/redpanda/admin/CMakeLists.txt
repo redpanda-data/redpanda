@@ -26,6 +26,7 @@ v_cc_library(
     hbadger.cc
     partition.cc
     broker.cc
+    security.cc
     ${swag_files}
  DEPS
     Seastar::seastar
