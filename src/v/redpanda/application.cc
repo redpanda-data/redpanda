@@ -49,7 +49,7 @@
 #include "raft/group_manager.h"
 #include "raft/recovery_throttle.h"
 #include "raft/service.h"
-#include "redpanda/admin_server.h"
+#include "redpanda/admin/server.h"
 #include "resource_mgmt/io_priority.h"
 #include "rpc/simple_protocol.h"
 #include "storage/backlog_controller.h"

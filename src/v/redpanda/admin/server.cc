@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-#include "redpanda/admin_server.h"
+#include "redpanda/admin/server.h"
 
 #include "cluster/cluster_utils.h"
 #include "cluster/controller.h"

@@ -25,7 +25,7 @@
 #include "pandaproxy/schema_registry/configuration.h"
 #include "pandaproxy/schema_registry/fwd.h"
 #include "raft/fwd.h"
-#include "redpanda/admin_server.h"
+#include "redpanda/admin/server.h"
 #include "resource_mgmt/cpu_scheduling.h"
 #include "resource_mgmt/memory_groups.h"
 #include "resource_mgmt/smp_groups.h"
