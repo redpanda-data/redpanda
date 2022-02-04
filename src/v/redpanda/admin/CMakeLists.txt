@@ -24,6 +24,7 @@ v_cc_library(
   SRCS
     server.cc
     hbadger.cc
+    partition.cc
     ${swag_files}
  DEPS
     Seastar::seastar
