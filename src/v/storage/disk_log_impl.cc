@@ -973,9 +973,7 @@ ss::future<> disk_log_impl::do_truncate_prefix(truncate_prefix_config cfg) {
     /*
      * Persist the desired starting offset
      */
-    if (!co_await update_start_offset(cfg.start_offset)) {
-        co_return;
-    }
+    co_await update_start_offset(cfg.start_offset);
 
     /*
      * Then delete all segments (potentially including the active segment)
