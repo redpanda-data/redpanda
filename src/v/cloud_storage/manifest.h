@@ -65,6 +65,9 @@ remote_segment_path generate_remote_segment_path(
 /// Generate correct S3 segment name based on term and base offset
 segment_name generate_segment_name(model::offset o, model::term_id t);
 
+remote_manifest_path
+generate_partition_manifest_path(const model::ntp&, model::initial_revision_id);
+
 struct serialized_json_stream {
     ss::input_stream<char> stream;
     size_t size_bytes;
@@ -236,54 +239,4 @@ private:
 };
 
 std::ostream& operator<<(std::ostream& o, const manifest::key& k);
-
-class topic_manifest final : public base_manifest {
-public:
-    /// Create manifest for specific ntp
-    explicit topic_manifest(
-      const cluster::topic_configuration& cfg, model::initial_revision_id rev);
-
-    /// Create empty manifest that supposed to be updated later
-    topic_manifest();
-
-    /// Update manifest file from input_stream (remote set)
-    ss::future<> update(ss::input_stream<char> is) override;
-
-    /// Serialize manifest object
-    ///
-    /// \return asynchronous input_stream with the serialized json
-    serialized_json_stream serialize() const override;
-
-    /// Manifest object name in S3
-    remote_manifest_path get_manifest_path() const override;
-
-    static remote_manifest_path
-    get_topic_manifest_path(model::ns ns, model::topic topic);
-
-    /// Serialize manifest object
-    ///
-    /// \param out output stream that should be used to output the json
-    void serialize(std::ostream& out) const;
-
-    /// Return all possible manifest locations
-    std::vector<remote_manifest_path> get_partition_manifests() const;
-
-    manifest_type get_manifest_type() const override {
-        return manifest_type::partition;
-    };
-
-    model::initial_revision_id get_revision() const noexcept { return _rev; }
-
-    /// Change topic-manifest revision
-    void set_revision(model::initial_revision_id id) noexcept { _rev = id; }
-
-private:
-    /// Update manifest content from json document that supposed to be generated
-    /// from manifest.json file
-    void update(const json::Document& m);
-
-    std::optional<cluster::topic_configuration> _topic_config;
-    model::initial_revision_id _rev;
-};
-
 } // namespace cloud_storage
