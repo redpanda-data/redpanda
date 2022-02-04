@@ -4,6 +4,7 @@ v_cc_library(
   NAME application
   SRCS 
     application.cc
+    $<TARGET_OBJECTS:v::admin_server>
   DEPS
     Seastar::seastar
     v::cluster
@@ -13,7 +14,6 @@ v_cc_library(
     v::pandaproxy_rest
     v::pandaproxy_schema_registry
     v::archival
-    v::admin_server
   )
 
 add_executable(redpanda

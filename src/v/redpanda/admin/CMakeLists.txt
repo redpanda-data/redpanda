@@ -35,4 +35,5 @@ v_cc_library(
  DEPS
     Seastar::seastar
     v::cluster
+ OBJECT
 )
