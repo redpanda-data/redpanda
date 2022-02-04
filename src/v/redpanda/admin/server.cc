@@ -12,24 +12,8 @@
 #include "redpanda/admin/server.h"
 
 #include "cluster/cluster_utils.h"
-#include "cluster/controller.h"
-#include "cluster/controller_api.h"
-#include "cluster/errc.h"
-#include "cluster/fwd.h"
-#include "cluster/members_frontend.h"
 #include "cluster/metadata_cache.h"
-#include "cluster/partition_manager.h"
-#include "cluster/shard_table.h"
-#include "cluster/topics_frontend.h"
-#include "cluster/types.h"
-#include "config/configuration.h"
-#include "config/endpoint_tls_config.h"
-#include "coproc/partition_manager.h"
-#include "model/metadata.h"
-#include "model/namespace.h"
-#include "model/record.h"
 #include "net/dns.h"
-#include "raft/types.h"
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
@@ -39,22 +23,12 @@
 #include <seastar/core/with_scheduling_group.hh>
 #include <seastar/http/api_docs.hh>
 #include <seastar/http/httpd.hh>
-#include <seastar/http/json_path.hh>
 
-#include <boost/algorithm/string/classification.hpp>
-#include <boost/algorithm/string/split.hpp>
-#include <boost/lexical_cast.hpp>
-#include <boost/lexical_cast/bad_lexical_cast.hpp>
 #include <fmt/core.h>
 #include <rapidjson/document.h>
 #include <rapidjson/schema.h>
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
 
-#include <limits>
 #include <stdexcept>
-#include <system_error>
-#include <unordered_map>
 
 using namespace std::chrono_literals;
 
