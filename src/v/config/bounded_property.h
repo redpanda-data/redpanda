@@ -134,7 +134,8 @@ public:
                 return _bounds.validate(new_value);
             }
         })
-      , _bounds(bounds) {}
+      , _bounds(bounds)
+      , _example(generate_example()) {}
 
     bool set_value(YAML::Node n) override {
         auto val = std::move(n.as<T>());
@@ -161,8 +162,56 @@ public:
         }
     };
 
+    std::optional<std::string_view> example() const override {
+        if (!_example.empty()) {
+            return _example;
+        } else {
+            return property<T>::example();
+        }
+    }
+
 private:
+    /*
+     * Pre-generate an example for docs/api, if the explicit property
+     * metadata does not provide one.
+     */
+    ss::sstring generate_example() {
+        auto parent = property<T>::example();
+        if (parent.has_value()) {
+            // Don't bother, our metadata already provides an example
+            return "";
+        }
+        I guess;
+
+        if (_bounds.min.has_value() && _bounds.max.has_value()) {
+            // Take midpoint of min/max and align it.
+            guess = _bounds.min.value()
+                    + (_bounds.max.value() - _bounds.min.value()) / 2;
+            if (_bounds.align.has_value()) {
+                guess -= guess % _bounds.align.value();
+            }
+        } else {
+            if constexpr (reflection::is_std_optional_v<T>) {
+                if (property<T>::_default.has_value()) {
+                    guess = property<T>::_default.value();
+                } else {
+                    // No non-nil default, do not try to give an example
+                    return "";
+                }
+
+            } else {
+                guess = property<T>::_default;
+            }
+        }
+        return fmt::format("{}", guess);
+    }
+
     numeric_bounds<I> _bounds;
+
+    // The example value is stored rather than generated on the fly, to
+    // satisfy the example() interface that wants a string_view: it
+    // needs a lifetime as long as our own.
+    ss::sstring _example;
 };
 
 } // namespace config
