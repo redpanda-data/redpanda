@@ -825,6 +825,43 @@ void admin_server::register_cluster_config_routes() {
                           // implemented wrongly, but let's be safe)
                           property.set_value(val);
                       }
+                  } catch (YAML::BadConversion const& e) {
+                      // Be helpful, and give the user an example of what
+                      // the setting should look like, if we have one.
+                      ss::sstring example;
+                      auto example_opt = property.example();
+                      if (example_opt.has_value()) {
+                          example = fmt::format(
+                            ", for example '{}'", example_opt.value());
+                      }
+
+                      auto message = fmt::format(
+                        "expected type {}{}", property.type_name(), example);
+
+                      // Special case: we get BadConversion for out-of-range
+                      // values on smaller integer sizes (e.g. too
+                      // large value to an int16_t property).
+                      // ("integer" is a magic string but it's a stable part
+                      //  of our outward interface)
+                      if (property.type_name() == "integer") {
+                          int64_t n{0};
+                          try {
+                              n = val.as<int64_t>();
+                              // It's a valid integer:
+                              message = fmt::format("out of range");
+                          } catch (...) {
+                              // This was not an out-of-bounds case, use
+                              // the type error message
+                          }
+                      }
+
+                      errors[i.first] = message;
+                      vlog(
+                        logger.warn,
+                        "Invalid {}: '{}' ({})",
+                        i.first,
+                        yaml_value,
+                        std::current_exception());
                   } catch (...) {
                       auto message = fmt::format(
                         "{}", std::current_exception());
