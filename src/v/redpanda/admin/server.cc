@@ -29,7 +29,6 @@
 #include "model/record.h"
 #include "net/dns.h"
 #include "raft/types.h"
-#include "redpanda/admin/api-doc/status.json.h"
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
@@ -458,15 +457,6 @@ ss::future<> admin_server::throw_on_error(
         throw ss::httpd::server_error_exception(
           fmt::format("Unexpected error: {}", ec.message()));
     }
-}
-
-void admin_server::register_status_routes() {
-    ss::httpd::status_json::ready.set(
-      _server._routes, [this](std::unique_ptr<ss::httpd::request>) {
-          std::unordered_map<ss::sstring, ss::sstring> status_map{
-            {"status", _ready ? "ready" : "booting"}};
-          return ss::make_ready_future<ss::json::json_return_type>(status_map);
-      });
 }
 
 } // namespace admin

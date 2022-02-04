@@ -30,6 +30,7 @@ v_cc_library(
     raft.cc
     cluster_config.cc
     config.cc
+    status.cc
     ${swag_files}
  DEPS
     Seastar::seastar
