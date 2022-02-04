@@ -24,6 +24,7 @@
 #include <seastar/util/log.hh>
 
 #include <absl/container/flat_hash_map.h>
+#include <rapidjson/schema.h>
 
 namespace admin {
 
@@ -122,5 +123,29 @@ private:
     ss::sharded<cluster::metadata_cache>& _metadata_cache;
     bool _ready{false};
 };
+
+struct json_validator {
+    explicit json_validator(const std::string& schema_text)
+      : schema(make_schema_document(schema_text))
+      , validator(schema) {}
+
+    static rapidjson::SchemaDocument
+    make_schema_document(const std::string& schema) {
+        rapidjson::Document doc;
+        if (doc.Parse(schema).HasParseError()) {
+            throw std::runtime_error(
+              fmt::format("Invalid schema document: {}", schema));
+        }
+        return rapidjson::SchemaDocument(doc);
+    }
+
+    const rapidjson::SchemaDocument schema;
+    rapidjson::SchemaValidator validator;
+};
+
+rapidjson::Document parse_json_body(ss::httpd::request const& req);
+void apply_validator(json_validator& validator, rapidjson::Document const& doc);
+bool get_boolean_query_param(
+  const ss::httpd::request& req, std::string_view name);
 
 } // namespace admin

@@ -138,25 +138,6 @@ void admin_server::configure_admin_routes() {
     register_hbadger_routes();
 }
 
-struct json_validator {
-    explicit json_validator(const std::string& schema_text)
-      : schema(make_schema_document(schema_text))
-      , validator(schema) {}
-
-    static rapidjson::SchemaDocument
-    make_schema_document(const std::string& schema) {
-        rapidjson::Document doc;
-        if (doc.Parse(schema).HasParseError()) {
-            throw std::runtime_error(
-              fmt::format("Invalid schema document: {}", schema));
-        }
-        return rapidjson::SchemaDocument(doc);
-    }
-
-    const rapidjson::SchemaDocument schema;
-    rapidjson::SchemaValidator validator;
-};
-
 static json_validator make_set_replicas_validator() {
     const std::string schema = R"(
 {
@@ -188,7 +169,7 @@ static json_validator make_set_replicas_validator() {
  * as an empty request body causes a redpanda crash via a rapidjson
  * assertion when trying to GetObject on the resulting document.
  */
-static rapidjson::Document parse_json_body(ss::httpd::request const& req) {
+rapidjson::Document parse_json_body(ss::httpd::request const& req) {
     rapidjson::Document doc;
     doc.Parse(req.content.data());
     if (doc.Parse(req.content.data()).HasParseError()) {
@@ -204,8 +185,8 @@ static rapidjson::Document parse_json_body(ss::httpd::request const& req) {
  * string-ize any schema errors in the 400 response to help
  * caller see what went wrong.
  */
-static void
-apply_validator(json_validator& validator, rapidjson::Document const& doc) {
+void apply_validator(
+  json_validator& validator, rapidjson::Document const& doc) {
     validator.validator.Reset();
     validator.validator.ResetError();
 
@@ -223,8 +204,8 @@ apply_validator(json_validator& validator, rapidjson::Document const& doc) {
  * Helper for requests with boolean URL query parameters that should
  * be treated as false if absent, or true if "true" (case insensitive) or "1"
  */
-static bool
-get_boolean_query_param(const ss::httpd::request& req, std::string_view name) {
+bool get_boolean_query_param(
+  const ss::httpd::request& req, std::string_view name) {
     auto key = ss::sstring(name);
     if (!req.query_parameters.contains(key)) {
         return false;
