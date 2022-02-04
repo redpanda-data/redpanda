@@ -95,7 +95,9 @@ licenses           @senior7515 @dswang
 #
 # testing
 #
-/tests                              @dotnwat        @ivotron        @nyalialui
+/tests                              @dotnwat        @nyalialui
+/tests/docker                       @ivotron
+/tests/run.sh                       @ivotron
 /src/consistency-testing            @rystsov
 /tests/java/tx-verifier             @rystsov
 /tests/rptest/tests/compatibility   @nyalialui
