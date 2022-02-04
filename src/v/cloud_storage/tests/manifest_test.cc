@@ -15,20 +15,11 @@
 #include "model/metadata.h"
 #include "seastarx.h"
 
-#include <seastar/core/future.hh>
-#include <seastar/core/iostream.hh>
-#include <seastar/core/temporary_buffer.hh>
-#include <seastar/core/thread.hh>
 #include <seastar/testing/test_case.hh>
 #include <seastar/testing/thread_test_case.hh>
-#include <seastar/util/defer.hh>
 
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
-
-#include <chrono>
-#include <exception>
-#include <variant>
 
 using namespace cloud_storage;
 

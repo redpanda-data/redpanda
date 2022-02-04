@@ -18,25 +18,15 @@
 #include "model/timestamp.h"
 #include "ssx/sformat.h"
 #include "storage/fs_utils.h"
-#include "storage/ntp_config.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 
-#include <boost/algorithm/string.hpp>
-#include <boost/lexical_cast.hpp>
-#include <ctll/fixed_string.hpp>
-#include <ctre/functions.hpp>
 #include <fmt/ostream.h>
 #include <rapidjson/istreamwrapper.h>
 #include <rapidjson/ostreamwrapper.h>
 #include <rapidjson/rapidjson.h>
 
-#include <algorithm>
-#include <array>
 #include <charconv>
-#include <chrono>
-#include <variant>
 
 namespace cloud_storage {
 

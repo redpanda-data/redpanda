@@ -10,23 +10,16 @@
 
 #pragma once
 
-#include "bytes/iobuf.h"
 #include "cloud_storage/types.h"
 #include "cluster/types.h"
 #include "json/document.h"
-#include "json/json.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "s3/client.h"
 #include "seastarx.h"
 #include "serde/serde.h"
-#include "tristate.h"
-
-#include <seastar/util/bool_class.hh>
 
 #include <compare>
-#include <iterator>
-#include <map>
 
 namespace cloud_storage {
 
