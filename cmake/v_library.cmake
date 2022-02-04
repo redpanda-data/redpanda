@@ -18,6 +18,7 @@ set(V_COMMON_INCLUDE_DIRS
 # DEFINES: List of public defines
 # LINKOPTS: List of link options
 # PUBLIC: Add this so that this library will be exported under v::
+# OBJECT: Build a cmake object library
 #
 # Note:
 # By default, v_cc_library will always create a library named v_${NAME},
@@ -53,7 +54,7 @@ set(V_COMMON_INCLUDE_DIRS
 # TODO: Implement "ALWAYSLINK"
 function(v_cc_library)
   cmake_parse_arguments(V_CC_LIB
-    "DISABLE_INSTALL;PUBLIC"
+    "DISABLE_INSTALL;PUBLIC;OBJECT"
     "NAME"
     "HDRS;SRCS;COPTS;DEFINES;LINKOPTS;DEPS"
     ${ARGN}
@@ -82,10 +83,18 @@ function(v_cc_library)
     if ("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
       # TODO(agallego) - enable once we fix seastar scalability exception hack
       # add_library(${_NAME} SHARED "")
-      add_library(${_NAME} "")
+      if (${V_CC_LIB_OBJECT})
+        add_library(${_NAME} OBJECT "")
+      else()
+        add_library(${_NAME} "")
+      endif()
     else()
       # allow override on the command line for -DBUILD_SHARED_LIBS=ON
-      add_library(${_NAME} "")
+      if (${V_CC_LIB_OBJECT})
+        add_library(${_NAME} OBJECT "")
+      else()
+        add_library(${_NAME} "")
+      endif()
     endif()
     target_sources(${_NAME} PRIVATE ${V_CC_LIB_SRCS} ${V_CC_LIB_HDRS})
     target_include_directories(${_NAME}
@@ -115,6 +124,9 @@ function(v_cc_library)
       OUTPUT_NAME "v_${_NAME}"
       )
   else()
+    if (${V_CC_LIB_OBJECT})
+      message(FATAL_ERROR "Header-only library cannot be an object library")
+    endif()
     # Generating header-only library
     add_library(${_NAME} INTERFACE)
     target_include_directories(${_NAME}
