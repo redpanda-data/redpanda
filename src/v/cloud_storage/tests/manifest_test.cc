@@ -80,7 +80,7 @@ inline ss::input_stream<char> make_manifest_stream(std::string_view json) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_manifest_path) {
-    manifest m(manifest_ntp, model::initial_revision_id(0));
+    partition_manifest m(manifest_ntp, model::initial_revision_id(0));
     auto path = m.get_manifest_path();
     BOOST_REQUIRE_EQUAL(
       path, "20000000/meta/test-ns/test-topic/42_0/manifest.json");
@@ -98,7 +98,7 @@ SEASTAR_THREAD_TEST_CASE(test_segment_path) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_empty_manifest_update) {
-    manifest m;
+    partition_manifest m;
     m.update(make_manifest_stream(empty_manifest_json)).get0();
     auto path = m.get_manifest_path();
     BOOST_REQUIRE_EQUAL(
@@ -106,18 +106,18 @@ SEASTAR_THREAD_TEST_CASE(test_empty_manifest_update) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_complete_manifest_update) {
-    manifest m;
+    partition_manifest m;
     m.update(make_manifest_stream(complete_manifest_json)).get0();
     auto path = m.get_manifest_path();
     BOOST_REQUIRE_EQUAL(
       path, "60000000/meta/test-ns/test-topic/42_1/manifest.json");
     BOOST_REQUIRE_EQUAL(m.size(), 3);
-    std::map<ss::sstring, manifest::segment_meta> expected = {
+    std::map<ss::sstring, partition_manifest::segment_meta> expected = {
       {"10-1-v1.log",
-       manifest::segment_meta{
+       partition_manifest::segment_meta{
          false, 1024, model::offset(10), model::offset(19)}},
       {"20-1-v1.log",
-       manifest::segment_meta{
+       partition_manifest::segment_meta{
          false,
          2048,
          model::offset(20),
@@ -125,7 +125,7 @@ SEASTAR_THREAD_TEST_CASE(test_complete_manifest_update) {
          model::timestamp(1234567890),
          model::timestamp(1234567890)}},
       {"30-1-v1.log",
-       manifest::segment_meta{
+       partition_manifest::segment_meta{
          false,
          4096,
          model::offset(30),
@@ -150,7 +150,7 @@ SEASTAR_THREAD_TEST_CASE(test_complete_manifest_update) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_manifest_serialization) {
-    manifest m(manifest_ntp, model::initial_revision_id(0));
+    partition_manifest m(manifest_ntp, model::initial_revision_id(0));
     m.add(
       segment_name("10-1-v1.log"),
       {
@@ -177,25 +177,25 @@ SEASTAR_THREAD_TEST_CASE(test_manifest_serialization) {
     ss::copy(is, os).get();
 
     auto rstr = make_iobuf_input_stream(std::move(buf));
-    manifest restored;
+    partition_manifest restored;
     restored.update(std::move(rstr)).get0();
 
     BOOST_REQUIRE(m == restored);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_manifest_difference) {
-    manifest a(manifest_ntp, model::initial_revision_id(0));
+    partition_manifest a(manifest_ntp, model::initial_revision_id(0));
     a.add(segment_name("1-1-v1.log"), {});
     a.add(segment_name("2-2-v1.log"), {});
     a.add(segment_name("3-3-v1.log"), {});
-    manifest b(manifest_ntp, model::initial_revision_id(0));
+    partition_manifest b(manifest_ntp, model::initial_revision_id(0));
     b.add(segment_name("1-1-v1.log"), {});
     b.add(segment_name("2-2-v1.log"), {});
     {
         auto c = a.difference(b);
         BOOST_REQUIRE(c.size() == 1);
         auto res = *c.begin();
-        auto expected = manifest::key{
+        auto expected = partition_manifest::key{
           .base_offset = model::offset(3), .term = model::term_id(3)};
         BOOST_REQUIRE(res.first == expected);
     }
@@ -274,7 +274,7 @@ struct metadata_stm_segment
       serde::version<0>,
       serde::compat_version<0>> {
     cloud_storage::segment_name name;
-    cloud_storage::manifest::segment_meta meta;
+    cloud_storage::partition_manifest::segment_meta meta;
 
     bool operator==(const metadata_stm_segment&) const = default;
 };
@@ -312,7 +312,7 @@ struct metadata_stm_segment
 SEASTAR_THREAD_TEST_CASE(test_segment_meta_serde_compat) {
     auto timestamp = model::timestamp::now();
 
-    cloud_storage::manifest::segment_meta meta_new{
+    cloud_storage::partition_manifest::segment_meta meta_new{
       .is_compacted = false,
       .size_bytes = 1234,
       .base_offset = model::offset{12},
@@ -324,7 +324,8 @@ SEASTAR_THREAD_TEST_CASE(test_segment_meta_serde_compat) {
       .archiver_term = model::term_id{123},
     };
 
-    cloud_storage::manifest::segment_meta meta_wo_new_fields = meta_new;
+    cloud_storage::partition_manifest::segment_meta meta_wo_new_fields
+      = meta_new;
     meta_wo_new_fields.ntp_revision = model::initial_revision_id{};
     meta_wo_new_fields.archiver_term = model::term_id{};
 
@@ -339,7 +340,7 @@ SEASTAR_THREAD_TEST_CASE(test_segment_meta_serde_compat) {
     };
 
     BOOST_CHECK(
-      serde::from_iobuf<cloud_storage::manifest::segment_meta>(
+      serde::from_iobuf<cloud_storage::partition_manifest::segment_meta>(
         serde::to_iobuf(meta_old))
       == meta_wo_new_fields);
 

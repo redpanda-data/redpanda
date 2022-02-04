@@ -121,7 +121,7 @@ public:
 };
 
 /// Manifest file stored in S3
-class manifest final : public base_manifest {
+class partition_manifest final : public base_manifest {
 public:
     struct segment_meta {
         using value_t = segment_meta;
@@ -150,10 +150,10 @@ public:
     using const_reverse_iterator = segment_map::const_reverse_iterator;
 
     /// Create empty manifest that supposed to be updated later
-    manifest();
+    partition_manifest();
 
     /// Create manifest for specific ntp
-    explicit manifest(model::ntp ntp, model::initial_revision_id rev);
+    explicit partition_manifest(model::ntp ntp, model::initial_revision_id rev);
 
     /// Manifest object name in S3
     remote_manifest_path get_manifest_path() const override;
@@ -199,7 +199,7 @@ public:
     ///
     /// \param remote_set the manifest to compare to
     /// \return manifest with segments that doesn't present in 'remote_set'
-    manifest difference(const manifest& remote_set) const;
+    partition_manifest difference(const partition_manifest& remote_set) const;
 
     /// Update manifest file from input_stream (remote set)
     ss::future<> update(ss::input_stream<char> is) override;
@@ -215,7 +215,7 @@ public:
     void serialize(std::ostream& out) const;
 
     /// Compare two manifests for equality
-    bool operator==(const manifest& other) const = default;
+    bool operator==(const partition_manifest& other) const = default;
 
     /// Remove segment record from manifest
     ///
@@ -238,5 +238,5 @@ private:
     model::offset _last_offset;
 };
 
-std::ostream& operator<<(std::ostream& o, const manifest::key& k);
+std::ostream& operator<<(std::ostream& o, const partition_manifest::key& k);
 } // namespace cloud_storage

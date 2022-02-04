@@ -61,8 +61,8 @@ FIXTURE_TEST(
     auto conf = get_configuration();
     auto bucket = s3::bucket_name("bucket");
     remote remote(s3_connection_limit(10), conf);
-    manifest m(manifest_ntp, manifest_revision);
-    auto key = manifest::key{
+    partition_manifest m(manifest_ntp, manifest_revision);
+    auto key = partition_manifest::key{
       .base_offset = model::offset(1), .term = model::term_id(2)};
     model::initial_revision_id segment_ntp_revision{777};
     iobuf segment_bytes = generate_segment(model::offset(1), 20);
@@ -73,7 +73,7 @@ FIXTURE_TEST(
         return make_iobuf_input_stream(std::move(out));
     };
     retry_chain_node fib(1000ms, 200ms);
-    manifest::segment_meta meta{
+    partition_manifest::segment_meta meta{
       .is_compacted = false,
       .size_bytes = segment_bytes.size_bytes(),
       .base_offset = model::offset(1),
@@ -106,12 +106,12 @@ FIXTURE_TEST(test_remote_segment_timeout, cloud_storage_fixture) { // NOLINT
     auto conf = get_configuration();
     auto bucket = s3::bucket_name("bucket");
     remote remote(s3_connection_limit(10), conf);
-    manifest m(manifest_ntp, manifest_revision);
+    partition_manifest m(manifest_ntp, manifest_revision);
     auto name = segment_name("7-8-v1.log");
-    manifest::key key = parse_segment_name(name).value();
+    partition_manifest::key key = parse_segment_name(name).value();
     m.add(
       name,
-      manifest::segment_meta{
+      partition_manifest::segment_meta{
         .is_compacted = false,
         .size_bytes = 123,
         .base_offset = model::offset(7),
@@ -136,11 +136,11 @@ FIXTURE_TEST(
     auto conf = get_configuration();
     auto bucket = s3::bucket_name("bucket");
     remote remote(s3_connection_limit(10), conf);
-    manifest m(manifest_ntp, manifest_revision);
-    auto key = manifest::key{
+    partition_manifest m(manifest_ntp, manifest_revision);
+    auto key = partition_manifest::key{
       .base_offset = model::offset(1), .term = model::term_id(2)};
     iobuf segment_bytes = generate_segment(model::offset(1), 100);
-    manifest::segment_meta meta{
+    partition_manifest::segment_meta meta{
       .is_compacted = false,
       .size_bytes = segment_bytes.size_bytes(),
       .base_offset = model::offset(1),
@@ -224,11 +224,11 @@ void test_remote_segment_batch_reader(
     remote remote(s3_connection_limit(10), conf);
     auto action = ss::defer([&remote] { remote.stop().get(); });
 
-    manifest m(manifest_ntp, manifest_revision);
-    auto key = manifest::key{
+    partition_manifest m(manifest_ntp, manifest_revision);
+    auto key = partition_manifest::key{
       .base_offset = model::offset(1), .term = model::term_id(2)};
     uint64_t clen = segment_bytes.size_bytes();
-    manifest::segment_meta meta{
+    partition_manifest::segment_meta meta{
       .is_compacted = false,
       .size_bytes = segment_bytes.size_bytes(),
       .base_offset = headers.front().base_offset,
@@ -336,11 +336,11 @@ FIXTURE_TEST(
     remote remote(s3_connection_limit(10), conf);
     auto action = ss::defer([&remote] { remote.stop().get(); });
 
-    manifest m(manifest_ntp, manifest_revision);
-    auto key = manifest::key{
+    partition_manifest m(manifest_ntp, manifest_revision);
+    auto key = partition_manifest::key{
       .base_offset = model::offset(1), .term = model::term_id(2)};
     uint64_t clen = segment_bytes.size_bytes();
-    manifest::segment_meta meta{
+    partition_manifest::segment_meta meta{
       .is_compacted = false,
       .size_bytes = segment_bytes.size_bytes(),
       .base_offset = headers.front().base_offset,

@@ -152,7 +152,10 @@ public:
     /// The manifest's lifetime should be bound to the lifetime of the owner
     /// of the remote_partition.
     remote_partition(
-      const manifest& m, remote& api, cache& c, s3::bucket_name bucket);
+      const partition_manifest& m,
+      remote& api,
+      cache& c,
+      s3::bucket_name bucket);
 
     /// Start remote partition
     ss::future<> start();
@@ -301,7 +304,7 @@ private:
     ss::abort_source _as;
     remote& _api;
     cache& _cache;
-    const manifest& _manifest;
+    const partition_manifest& _manifest;
     std::optional<model::offset> _first_uploaded_offset;
     s3::bucket_name _bucket;
     segment_map_t _segments;

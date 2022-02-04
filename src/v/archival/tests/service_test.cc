@@ -187,7 +187,7 @@ FIXTURE_TEST(test_segment_upload, archiver_fixture) {
     }).get();
     BOOST_REQUIRE(get_requests().size() == num_requests_expected);
 
-    cloud_storage::manifest manifest;
+    cloud_storage::partition_manifest manifest;
     auto manifest_req = get_targets().equal_range(manifest_url);
     BOOST_REQUIRE(manifest_req.first != manifest_req.second);
     for (auto it = manifest_req.first; it != manifest_req.second; it++) {

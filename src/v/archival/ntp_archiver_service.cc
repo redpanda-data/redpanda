@@ -91,7 +91,8 @@ const ss::lowres_clock::time_point ntp_archiver::get_last_upload_time() const {
     return _last_upload_time;
 }
 
-const cloud_storage::manifest& ntp_archiver::get_remote_manifest() const {
+const cloud_storage::partition_manifest&
+ntp_archiver::get_remote_manifest() const {
     return _manifest;
 }
 
@@ -255,7 +256,7 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
     co_return scheduled_upload{
       .result = upload_segment(upload, parent),
       .inclusive_last_offset = offset,
-      .meta = cloud_storage::manifest::segment_meta{
+      .meta = cloud_storage::partition_manifest::segment_meta{
         .is_compacted = upload.source->is_compacted_segment(),
         .size_bytes = upload.content_length,
         .base_offset = upload.starting_offset,

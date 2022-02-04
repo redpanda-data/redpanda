@@ -152,12 +152,13 @@ segment_name generate_segment_name(model::offset o, model::term_id t) {
     return segment_name(ssx::sformat("{}-{}-v1.log", o(), t()));
 }
 
-manifest::manifest()
+partition_manifest::partition_manifest()
   : _ntp()
   , _rev()
   , _last_offset(0) {}
 
-manifest::manifest(model::ntp ntp, model::initial_revision_id rev)
+partition_manifest::partition_manifest(
+  model::ntp ntp, model::initial_revision_id rev)
   : _ntp(std::move(ntp))
   , _rev(rev)
   , _last_offset(0) {}
@@ -187,42 +188,50 @@ remote_manifest_path generate_partition_manifest_path(
       fmt::format("{:08x}/meta/{}_{}/manifest.json", hash, ntp.path(), rev()));
 }
 
-remote_manifest_path manifest::get_manifest_path() const {
+remote_manifest_path partition_manifest::get_manifest_path() const {
     return generate_partition_manifest_path(_ntp, _rev);
 }
 
-const model::ntp& manifest::get_ntp() const { return _ntp; }
+const model::ntp& partition_manifest::get_ntp() const { return _ntp; }
 
-const model::offset manifest::get_last_offset() const { return _last_offset; }
+const model::offset partition_manifest::get_last_offset() const {
+    return _last_offset;
+}
 
-model::initial_revision_id manifest::get_revision_id() const { return _rev; }
+model::initial_revision_id partition_manifest::get_revision_id() const {
+    return _rev;
+}
 
-remote_segment_path manifest::generate_segment_path(
-  const manifest::key& key, const segment_meta& meta) const {
+remote_segment_path partition_manifest::generate_segment_path(
+  const partition_manifest::key& key, const segment_meta& meta) const {
     auto name = generate_segment_name(key.base_offset, key.term);
     return generate_remote_segment_path(
       _ntp, meta.ntp_revision, name, meta.archiver_term);
 }
 
-manifest::const_iterator manifest::begin() const { return _segments.begin(); }
+partition_manifest::const_iterator partition_manifest::begin() const {
+    return _segments.begin();
+}
 
-manifest::const_iterator manifest::end() const { return _segments.end(); }
+partition_manifest::const_iterator partition_manifest::end() const {
+    return _segments.end();
+}
 
-manifest::const_reverse_iterator manifest::rbegin() const {
+partition_manifest::const_reverse_iterator partition_manifest::rbegin() const {
     return _segments.rbegin();
 }
 
-manifest::const_reverse_iterator manifest::rend() const {
+partition_manifest::const_reverse_iterator partition_manifest::rend() const {
     return _segments.rend();
 }
 
-size_t manifest::size() const { return _segments.size(); }
+size_t partition_manifest::size() const { return _segments.size(); }
 
-bool manifest::contains(const manifest::key& key) const {
+bool partition_manifest::contains(const partition_manifest::key& key) const {
     return _segments.contains(key);
 }
 
-bool manifest::contains(const segment_name& name) const {
+bool partition_manifest::contains(const segment_name& name) const {
     auto maybe_key = parse_segment_name(name);
     if (!maybe_key) {
         throw std::runtime_error(
@@ -232,7 +241,8 @@ bool manifest::contains(const segment_name& name) const {
     return _segments.contains(key);
 }
 
-bool manifest::add(const manifest::key& key, const segment_meta& meta) {
+bool partition_manifest::add(
+  const partition_manifest::key& key, const segment_meta& meta) {
     auto [it, ok] = _segments.insert(std::make_pair(key, meta));
     if (ok && it->second.ntp_revision == model::initial_revision_id{}) {
         it->second.ntp_revision = _rev;
@@ -241,7 +251,8 @@ bool manifest::add(const manifest::key& key, const segment_meta& meta) {
     return ok;
 }
 
-bool manifest::add(const segment_name& name, const segment_meta& meta) {
+bool partition_manifest::add(
+  const segment_name& name, const segment_meta& meta) {
     auto maybe_key = parse_segment_name(name);
     if (!maybe_key) {
         throw std::runtime_error(
@@ -251,7 +262,8 @@ bool manifest::add(const segment_name& name, const segment_meta& meta) {
     return add(key, meta);
 }
 
-const manifest::segment_meta* manifest::get(const manifest::key& key) const {
+const partition_manifest::segment_meta*
+partition_manifest::get(const partition_manifest::key& key) const {
     auto it = _segments.find(key);
     if (it == _segments.end()) {
         return nullptr;
@@ -259,7 +271,8 @@ const manifest::segment_meta* manifest::get(const manifest::key& key) const {
     return &it->second;
 }
 
-const manifest::segment_meta* manifest::get(const segment_name& name) const {
+const partition_manifest::segment_meta*
+partition_manifest::get(const segment_name& name) const {
     auto maybe_key = parse_segment_name(name);
     if (!maybe_key) {
         throw std::runtime_error(
@@ -269,7 +282,8 @@ const manifest::segment_meta* manifest::get(const segment_name& name) const {
     return get(key);
 }
 
-manifest::const_iterator manifest::find(model::offset o) const {
+partition_manifest::const_iterator
+partition_manifest::find(model::offset o) const {
     auto it = _segments.lower_bound(
       {.base_offset = o, .term = model::term_id(0)});
     if (it == _segments.end() || it->first.base_offset != o) {
@@ -278,11 +292,13 @@ manifest::const_iterator manifest::find(model::offset o) const {
     return it;
 }
 
-std::insert_iterator<manifest::segment_map> manifest::get_insert_iterator() {
+std::insert_iterator<partition_manifest::segment_map>
+partition_manifest::get_insert_iterator() {
     return std::inserter(_segments, _segments.begin());
 }
 
-manifest manifest::difference(const manifest& remote_set) const {
+partition_manifest
+partition_manifest::difference(const partition_manifest& remote_set) const {
     vassert(
       _ntp == remote_set._ntp && _rev == remote_set._rev,
       "Local manifest {}-{} and remote {}-{} doesn't match",
@@ -290,7 +306,7 @@ manifest manifest::difference(const manifest& remote_set) const {
       _rev,
       remote_set._ntp,
       remote_set._rev);
-    manifest result(_ntp, _rev);
+    partition_manifest result(_ntp, _rev);
     std::set_difference(
       begin(),
       end(),
@@ -300,7 +316,7 @@ manifest manifest::difference(const manifest& remote_set) const {
     return result;
 }
 
-ss::future<> manifest::update(ss::input_stream<char> is) {
+ss::future<> partition_manifest::update(ss::input_stream<char> is) {
     iobuf result;
     auto os = make_iobuf_ref_output_stream(result);
     co_await ss::copy(is, os);
@@ -313,7 +329,7 @@ ss::future<> manifest::update(ss::input_stream<char> is) {
     co_return;
 }
 
-void manifest::update(const json::Document& m) {
+void partition_manifest::update(const json::Document& m) {
     auto ver = model::partition_id(m["version"].GetInt());
     if (ver != static_cast<int>(manifest_version::v1)) {
         throw std::runtime_error("manifest version not supported");
@@ -381,7 +397,7 @@ void manifest::update(const json::Document& m) {
     std::swap(tmp, _segments);
 }
 
-serialized_json_stream manifest::serialize() const {
+serialized_json_stream partition_manifest::serialize() const {
     iobuf serialized;
     iobuf_ostreambuf obuf(serialized);
     std::ostream os(&obuf);
@@ -392,7 +408,7 @@ serialized_json_stream manifest::serialize() const {
       .size_bytes = size_bytes};
 }
 
-void manifest::serialize(std::ostream& out) const {
+void partition_manifest::serialize(std::ostream& out) const {
     rapidjson::OStreamWrapper wrapper(out);
     json::Writer<rapidjson::OStreamWrapper> w(wrapper);
     w.StartObject();
@@ -455,7 +471,8 @@ void manifest::serialize(std::ostream& out) const {
     w.EndObject();
 }
 
-bool manifest::delete_permanently(const manifest::key& key) {
+bool partition_manifest::delete_permanently(
+  const partition_manifest::key& key) {
     auto it = _segments.find(key);
     if (it != _segments.end()) {
         _segments.erase(it);
@@ -464,7 +481,7 @@ bool manifest::delete_permanently(const manifest::key& key) {
     return false;
 }
 
-std::ostream& operator<<(std::ostream& o, const manifest::key& k) {
+std::ostream& operator<<(std::ostream& o, const partition_manifest::key& k) {
     o << generate_segment_name(k.base_offset, k.term);
     return o;
 }

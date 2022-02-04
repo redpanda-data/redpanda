@@ -78,7 +78,7 @@ inline ss::input_stream<char> make_manifest_stream(std::string_view json) {
 
 SEASTAR_THREAD_TEST_CASE(test_name_translation) {
     retry_chain_node fib;
-    manifest m;
+    partition_manifest m;
     m.update(make_manifest_stream(serialized_manifest)).get0();
     BOOST_REQUIRE_EQUAL(m.size(), 3);
 
