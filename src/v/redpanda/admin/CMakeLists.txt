@@ -28,6 +28,7 @@ v_cc_library(
     broker.cc
     security.cc
     raft.cc
+    cluster_config.cc
     ${swag_files}
  DEPS
     Seastar::seastar
