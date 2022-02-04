@@ -13,6 +13,7 @@ v_cc_library(
     connection_cache.cc
     simple_protocol.cc
     dns.cc
+    tls.cc
   DEPS
     Seastar::seastar
     v::bytes

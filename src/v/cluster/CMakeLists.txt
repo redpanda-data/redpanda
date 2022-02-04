@@ -84,6 +84,7 @@ v_cc_library(
     health_monitor_types.cc
     health_monitor_backend.cc
     health_monitor_frontend.cc
+    metrics_reporter.cc
   DEPS
     Seastar::seastar
     controller_rpc

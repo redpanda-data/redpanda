@@ -226,6 +226,12 @@ struct configuration final : public config_store {
     // health monitor
     property<std::chrono::milliseconds> health_monitor_tick_interval;
     property<std::chrono::milliseconds> health_monitor_max_metadata_age;
+    // metrics reporter
+    property<bool> enable_metrics_reporter;
+    property<std::chrono::milliseconds> metrics_reporter_tick_interval;
+    property<std::chrono::milliseconds> metrics_reporter_report_interval;
+    property<ss::sstring> metrics_reporter_url;
+
     configuration();
 
     void load(const YAML::Node& root_node);
