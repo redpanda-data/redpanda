@@ -141,7 +141,7 @@ private:
     ss::sharded<rpc::connection_cache> _connection_cache;
     ss::sharded<kafka::group_manager> _group_manager;
     ss::sharded<net::server> _rpc;
-    ss::sharded<admin_server> _admin;
+    ss::sharded<admin::admin_server> _admin;
     ss::sharded<net::server> _kafka_server;
     ss::sharded<kafka::client::client> _proxy_client;
     ss::sharded<pandaproxy::rest::proxy> _proxy;

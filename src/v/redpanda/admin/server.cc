@@ -69,7 +69,7 @@
 
 using namespace std::chrono_literals;
 
-static ss::logger logger{"admin_api_server"};
+namespace admin {
 
 admin_server::admin_server(
   admin_server_cfg cfg,
@@ -1840,3 +1840,5 @@ void admin_server::register_hbadger_routes() {
               [] { return ss::json::json_return_type(ss::json::json_void()); });
       });
 }
+
+} // namespace admin

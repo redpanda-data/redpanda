@@ -421,9 +421,9 @@ void application::check_environment() {
     }
 }
 
-static admin_server_cfg
+static admin::admin_server_cfg
 admin_server_cfg_from_global_cfg(scheduling_groups& sgs) {
-    return admin_server_cfg{
+    return admin::admin_server_cfg{
       .endpoints = config::node().admin(),
       .endpoints_tls = config::node().admin_api_tls(),
       .dashboard_dir = config::node().dashboard_dir(),
@@ -1071,7 +1071,8 @@ void application::start() {
           _schema_reg_config->schema_registry_api());
     }
 
-    _admin.invoke_on_all([](admin_server& admin) { admin.set_ready(); }).get();
+    _admin.invoke_on_all([](admin::admin_server& admin) { admin.set_ready(); })
+      .get();
 
     vlog(_log.info, "Successfully started Redpanda!");
     syschecks::systemd_notify_ready().get();
@@ -1229,7 +1230,7 @@ void application::start_redpanda() {
       config::node().kafka_api());
 
     if (config::shard_local_cfg().enable_admin_api()) {
-        _admin.invoke_on_all(&admin_server::start).get0();
+        _admin.invoke_on_all(&admin::admin_server::start).get0();
     }
 
     _compaction_controller.invoke_on_all(&storage::compaction_controller::start)

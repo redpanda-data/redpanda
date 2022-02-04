@@ -25,6 +25,10 @@
 
 #include <absl/container/flat_hash_map.h>
 
+namespace admin {
+
+inline ss::logger logger{"admin_api_server"};
+
 struct admin_server_cfg {
     std::vector<model::broker_endpoint> endpoints;
     std::vector<config::endpoint_tls_config> endpoints_tls;
@@ -118,3 +122,5 @@ private:
     ss::sharded<cluster::metadata_cache>& _metadata_cache;
     bool _ready{false};
 };
+
+} // namespace admin
