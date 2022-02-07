@@ -95,188 +95,73 @@ def _parse_checksum_entry(path, value, ignore_rev):
                            size=segment_size)
 
 
-def _find_offset_matches(baseline_per_host, restored_per_host, expected_topics,
-                         logger):
+def _verify_file_layout(baseline_per_host,
+                        restored_per_host,
+                        expected_topics,
+                        logger,
+                        size_overrides={}):
     """This function checks the restored segments over the expected ones.
     It takes into account the fact that the md5 checksum as well as the
     file name of the restored segment might be different from the original
     segment. This is because we're deleting raft configuration batches
     from the segments.
-    Because raft configuration batch is usually the first in a log all
-    base offsets of all record batches have to be updated, as well as their
-    respecitve checksums. This invalidates md5 hashes stored in S3 but also
-    this leads to different filenames since base offset of the whole segment
-    might change.
+    The function checks the size of the parition over the size of the original.
+    The assertion is triggered only if the difference can't be explained by the
+    upload lag and removal of configuration/archival-metadata batches.
     """
-    restored_ntps = {}
-    for _, fdata in restored_per_host.items():
-        ntp_meta = defaultdict(list)
-        for path, entry in fdata.items():
-            it = _parse_checksum_entry(path, entry, ignore_rev=True)
-            if it.ntp.topic in expected_topics:
-                if it.size > 4096:
-                    # filter out empty segments created at the end of the log
-                    # which are created after recovery
-                    ntp_meta[it.ntp].append((it.base_offset, it.size))
+    def get_ntp_sizes(fdata_per_host, hosts_can_vary=True):
+        """Pre-process file layout data from the cluster. Input is a dictionary
+        that maps host to dict of ntps where each ntp is mapped to the list of
+        segments. The result is a map from ntp to the partition size on disk.
+        """
+        ntps = defaultdict(int)
+        for _, fdata in fdata_per_host.items():
+            ntp_size = defaultdict(int)
+            for path, entry in fdata.items():
+                it = _parse_checksum_entry(path, entry, ignore_rev=True)
+                if it.ntp.topic in expected_topics:
+                    if it.size > 4096:
+                        # filter out empty segments created at the end of the log
+                        # which are created after recovery
+                        ntp_size[it.ntp] += it.size
 
-        for ntp, offsets_sizes in ntp_meta.items():
-            if ntp in restored_ntps:
-                # the alignment of segments should be the
-                # same on every replica in the restored
-                # cluster
-                logger.info(
-                    f"checking alignment of the segments for {ntp}, alignments: {offsets_sizes} vs {restored_ntps[ntp]}"
-                )
-                assert sorted(offsets_sizes) == restored_ntps[ntp]
-            else:
-                restored_ntps[ntp] = sorted(offsets_sizes)
+            for ntp, total_size in ntp_size.items():
+                if ntp in ntps and not hosts_can_vary:
+                    # the size of the partition should be the
+                    # same on every replica in the restored
+                    # cluster
+                    logger.info(
+                        f"checking size of the partition for {ntp}, new {total_size} vs already accounted {ntps[ntp]}"
+                    )
+                    assert total_size == ntps[ntp]
+                else:
+                    ntps[ntp] = max(total_size, ntps[ntp])
+        return ntps
 
-    logger.info(
-        f"restored state before source segment removal {restored_ntps}")
-
-    # check that we restored something
-    for ntp, offsets in restored_ntps.items():
-        if ntp.topic not in expected_topics:
-            continue
-        assert len(offsets) != 0
-        if len(offsets) == 1:
-            assert offsets[0] != 0
-
-    # Assume that if we have a log segment with base offset 0 then
-    # we removed raft configuration batch out of it. This means that
-    # in the restored data every log segment base offset will be equal
-    # to the corresponding original base offset - 1.
+    restored_ntps = get_ntp_sizes(restored_per_host, hosts_can_vary=False)
+    baseline_ntps = get_ntp_sizes(baseline_per_host, hosts_can_vary=True)
 
     logger.info(
-        f"before matching restored ntps: {restored_ntps}, expected topics: {expected_topics}"
+        f"before matching\nrestored ntps: {restored_ntps}baseline ntps: {baseline_ntps}\nexpected topics: {expected_topics}"
     )
-    for orig_host, fdata in baseline_per_host.items():
-        logger.info(f"going through baseline items from {orig_host} : {fdata}")
-        for path, entry in fdata.items():
-            it = _parse_checksum_entry(path, entry, ignore_rev=True)
-            if it.ntp.topic not in expected_topics:
-                continue
-            logger.info(f"\nmatching {it} over {restored_ntps[it.ntp]}\n")
-            if it.base_offset != 0:
-                expected = (it.base_offset - 1, it.size)
-                if expected in restored_ntps[it.ntp]:
-                    # segment in the middle of the log can be matched
-                    # this way
-                    restored_ntps[it.ntp].remove(expected)
-                    logger.info(f"fully matched {expected}")
-                else:
-                    # segment at the end will have different size but expected offset
-                    for elem in [(off, sz) for off, sz in restored_ntps[it.ntp]
-                                 if off == it.base_offset - 1]:
-                        restored_ntps[it.ntp].remove(elem)
-                        logger.info(f"partially matched {expected}")
-                        break
-                    else:
-                        logger.info(f"can't match segment {it}")
-            else:
-                # first segment has slightly smaller size than the original since one batch
-                # is removed
-                for first_elem in [(off, sz)
-                                   for off, sz in restored_ntps[it.ntp]
-                                   if off == 0]:
-                    if first_elem[1] < it.size:
-                        restored_ntps[it.ntp].remove(first_elem)
-                        logger.info(f"partially matched {first_elem}")
-                        break
-                else:
-                    logger.info(f"can't match segment {it}")
 
-    logger.info(f"after matching restored ntps: {restored_ntps}")
-
-    # we should find a source for all items, the last segment in original
-    # cluster is not uploaded (since it's not sealed) but the matching segment
-    # will be created in restored partition
-    logger.info(f"restored state after source segment removal {restored_ntps}")
-    for ntp, items in restored_ntps.items():
-        assert len(
-            items
-        ) == 0, f"can't match restored state, offsets {items} are mismatched"
-
-
-def _find_checksum_matches(baseline_per_host, restored_per_host,
-                           expected_topics, logger):
-    """ Pre-process restored data per host
-    restored_per_host and baseline_per_host dicts have the following schema:
-    - key: host name
-    - value: dictionary with the following format:
-      - key: normalized segment path
-      - value: tuple (md5-hash-string, file-size-bytes)
-    restored_per_host has the following property:
-    - every host has a different set of partitions
-    - a partition has the same layout on every node
-
-    This is because the segments are downloaded from the same source.
-    This is used to verify the data in baselilne_per_host. The data
-    is the same but different replicas of the same partition on
-    different nodes has different layout (base offsets of segments
-    are different).
-
-    Since only leader uploads the segments we can expect that every
-    restored segment can be matched with one of the replicas in
-    baseline. To verify we can just eliminate all segments in
-    restored set by finding their source segments in baseline.
-
-    Also, both baseline and restored sets shuld have mismatching tail
-    elements. These elements has the largest base offset on every
-    partition. They're not uploaded before the shutdown and on
-    restore Redpanda creates new tail segments to write new data.
-
-    This method can only be used to validate logs that was trimmed
-    from the begining. Otherwise, if the 0-1-v1.log is restored
-    the raft configuration batch will be deleted from the begining
-    of the log and all checksums and segment names will be different.
-    """
-    restored_ntps = {}
-    for _, fdata in restored_per_host.items():
-        rpntp = defaultdict(list)
-        for path, entry in fdata.items():
-            it = _parse_checksum_entry(path, entry, ignore_rev=True)
-            rpntp[it.ntp].append(it)
-
-        for ntp, items in rpntp.items():
-            if ntp in restored_ntps:
-                # the alignment of segments should be the
-                # same on every replica in the restored
-                # cluster
-                assert items == restored_ntps[ntp]
-            else:
-                restored_ntps[ntp] = items
-
-    logger.info(
-        f"restored state before source segment removal {restored_ntps}")
-    # check that we restored anything at all
-    for ntp, items in restored_ntps.items():
-        if ntp.topic not in expected_topics:
-            continue
-        assert len(items) != 0
-        if len(items) == 1:
-            assert items[0].base_offset != 0
-    # go through every host in baseline dataset
-    # try to find a leader node(s) which was a source
-    # of the segment alignment in the restored cluster
-    # note that every term could be a different node
-    for _, fdata in baseline_per_host.items():
-        for path, entry in fdata.items():
-            it = _parse_checksum_entry(path, entry, ignore_rev=True)
-            if it.ntp.topic not in expected_topics:
-                continue
-            logger.info(f"\nmatching {it} over {restored_ntps[it.ntp]}\n")
-            if it in restored_ntps[it.ntp]:
-                restored_ntps[it.ntp].remove(it)
-            else:
-                logger.info(f"can't match segment {it}")
-    # we should find a source for all items but the most
-    # latest ones with term = 2
-    logger.info(f"restored state after source segment removal {restored_ntps}")
-    for ntp, items in restored_ntps.items():
-        assert len(items) == 1
-        assert items[0].term == 2 or (items[0].term == 1
-                                      and items[0].base_offset == 0)
+    for ntp, orig_ntp_size in baseline_ntps.items():
+        # Restored ntp should be equal or less than original
+        # but not by much. It can be off by one segment size.
+        # Also, each segment may lose a configuration batch or two.
+        if ntp in size_overrides:
+            logger.info(
+                f"NTP {ntp} uses size override {orig_ntp_size} - {size_overrides[ntp]}"
+            )
+            orig_ntp_size -= size_overrides[ntp]
+        assert ntp in restored_ntps, f"NTP {ntp} is missing in the restored data"
+        rest_ntp_size = restored_ntps[ntp]
+        assert rest_ntp_size <= orig_ntp_size, f"NTP {ntp} the restored partition is larger {rest_ntp_size} than the original one {orig_ntp_size}."
+        delta = orig_ntp_size - rest_ntp_size
+        # NOTE: 1.5x is because the segments can be larger than default_log_segment_size
+        assert delta <= int(
+            1.5 * default_log_segment_size
+        ), f"NTP {ntp} the restored partition is too small {rest_ntp_size}. The original is {orig_ntp_size} bytes which {delta} bytes larger."
 
 
 def _gen_manifest_path(ntp, rev):
@@ -332,14 +217,13 @@ class BaseCase:
     def create_initial_topics(self):
         """Create initial set of topics based on class/instance topics variable."""
         for topic in self.topics or []:
-            self._rpk.create_topic(
-                topic.name,
-                topic.partition_count,
-                topic.replication_factor,
-                config={
-                    'redpanda.remote.write': 'true',
-                    #'redpanda.remote.read': 'true'
-                })
+            self._rpk.create_topic(topic.name,
+                                   topic.partition_count,
+                                   topic.replication_factor,
+                                   config={
+                                       'redpanda.remote.write': 'true',
+                                       'redpanda.remote.read': 'true'
+                                   })
 
     def generate_baseline(self):
         """Generate initial set of data. The method should be implemented in
@@ -408,7 +292,7 @@ class BaseCase:
                 self.logger.info(
                     f"validating partition: {ntp}, rev: {rev}, last offset: {last_offset}, hw: {hw}"
                 )
-                assert last_offset == hw, \
+                assert abs(last_offset - hw) < 10, \
                     f"High watermark has unexpected value {hw}, last offset: {last_offset}"
 
     def _produce_and_verify(self, topic_spec):
@@ -660,6 +544,7 @@ class MissingSegment(BaseCase):
 
     def __init__(self, s3_client, kafka_tools, rpk_client, s3_bucket, logger):
         self._part1_offset = 0
+        self._smaller_ntp = None
         super(MissingSegment, self).__init__(s3_client, kafka_tools,
                                              rpk_client, s3_bucket, logger)
 
@@ -675,10 +560,11 @@ class MissingSegment(BaseCase):
     def _find_and_remove_segment(self):
         """Find and remove single segment with base offset 0."""
         for key in self._list_objects():
-            if key.endswith(".log"):
+            if key.endswith(".log.1"):
                 attr = _parse_s3_segment_path(key)
                 if attr.name.startswith('0'):
                     self._delete(key)
+                    self._smaller_ntp = attr.ntp
                     break
         else:
             assert False, "No segments found in the bucket"
@@ -699,7 +585,12 @@ class MissingSegment(BaseCase):
         expected_topics = [
             topic.name for topic in self.expected_recovered_topics
         ]
-        _find_offset_matches(baseline, restored, expected_topics, self.logger)
+        _verify_file_layout(
+            baseline,
+            restored,
+            expected_topics,
+            self.logger,
+            size_overrides={self._smaller_ntp: default_log_segment_size})
         for topic in self.topics:
             self._produce_and_verify(topic)
 
@@ -737,7 +628,7 @@ class FastCheck(BaseCase):
         expected_topics = [
             topic.name for topic in self.expected_recovered_topics
         ]
-        _find_offset_matches(baseline, restored, expected_topics, self.logger)
+        _verify_file_layout(baseline, restored, expected_topics, self.logger)
         for topic in self.topics:
             self._produce_and_verify(topic)
 
@@ -751,87 +642,6 @@ class FastCheck(BaseCase):
         self.logger.info("after restart validation")
         for topic in self.topics:
             self._produce_and_verify(topic)
-
-
-class RevShiftCheck(FastCheck):
-    """Check case when restored topic has different revision related to old one.
-    It's same as fast check only it created additionall dummy topic before running
-    topic recovery or before creating initial topic.
-    It can test three different cases:
-    - new initial topic revision is equal to old topic revision (paths in the bucket
-      are the same in old and new clusters).
-    - new initial revision is greater than the old one
-    - new initial revision is less than the old one
-    """
-    def __init__(self, s3_client, kafka_tools, rpk_client, s3_bucket, logger,
-                 topics, rev_shift):
-        """Init test case.
-        'rev_shift' is an inteded revision shift, 0 - revision should be the same
-                    positive value - revision in new cluster should be greater than
-                    revision in original one, negative value - revision should be
-                    smaller.
-        """
-        assert len(topics) == 1, "Only one topic supported by this test suite"
-        self._shift = rev_shift
-        super(RevShiftCheck, self).__init__(s3_client, kafka_tools, rpk_client,
-                                            s3_bucket, logger, topics)
-
-    def create_initial_topics(self):
-        if self._shift < 0:
-            self._create_dummy_topics(1)
-        return super(RevShiftCheck, self).create_initial_topics()
-
-    def initial_cleanup_needed(self):
-        return True
-
-    def _get_remote_topic_revision(self):
-        manifests = []
-        for obj in self._s3.list_objects(self._bucket):
-            if obj.Key.endswith("topic_manifest.json"):
-                manifests.append(obj.Key)
-        assert len(manifests) != 0
-        max_revision = 0
-        min_revision = 999999
-        for key in manifests:
-            data = self._s3.get_object_data(self._bucket, key)
-            manifest = json.loads(data)
-            rev = manifest['revision_id']
-            max_revision = max(rev, max_revision)
-            min_revision = min(rev, min_revision)
-        return min_revision, max_revision
-
-    def _extract_max_term(self, controller_checksums):
-        max_term = 0
-        self.logger.info(f"controller checksums: {controller_checksums}")
-        for _, segments in controller_checksums.items():
-            for path, segm in segments.items():
-                meta = _parse_checksum_entry(path, segm, ignore_rev=False)
-                max_term = max(max_term, meta.term)
-        return max_term
-
-    def _create_dummy_topics(self, num_topics_to_create):
-        self.logger.info(f"{num_topics_to_create} topics will be created")
-        for ix in range(0, num_topics_to_create, 2):
-            self._rpk.create_topic(f'dummy-topic-{ix}')
-
-    def restore_redpanda(self, baseline, controller_checksums):
-        min_revision, max_revision = self._get_remote_topic_revision()
-        self.logger.info(
-            f"Old cluster min_revision: {min_revision}, max_revision: {max_revision}"
-        )
-        max_term = self._extract_max_term(controller_checksums)
-        self.logger.info(
-            f"New cluster initial controller log term: {max_term}")
-        # Old cluster had revisions in range [min_revision, max_revision]
-        # the next created topic in the new cluster will have a revision
-        # number set to max_term.
-        required_rev = min_revision + self._shift
-        assert required_rev > max_term, \
-            f"Required revision id {required_rev} is smaller than controller log term {max_term}"
-        if self._shift > 0:
-            self._create_dummy_topics(1)
-        super(RevShiftCheck, self).restore_redpanda(baseline,
-                                                    controller_checksums)
 
 
 def get_on_disk_size_per_ntp(chk):
@@ -924,7 +734,6 @@ class SizeBasedRetention(BaseCase):
         expected_topics = [
             topic.name for topic in self.expected_recovered_topics
         ]
-        _find_offset_matches(baseline, restored, expected_topics, self.logger)
 
         size_bytes_per_ntp = get_on_disk_size_per_ntp(restored)
 
@@ -1058,7 +867,6 @@ class TimeBasedRetention(BaseCase):
         expected_topics = [
             topic.name for topic in self.expected_recovered_topics
         ]
-        _find_offset_matches(baseline, restored, expected_topics, self.logger)
 
         size_bytes_per_ntp = get_on_disk_size_per_ntp(restored)
 
@@ -1083,224 +891,16 @@ class TimeBasedRetention(BaseCase):
             self._produce_and_verify(topic)
 
 
-class MovedPartitionRestore(BaseCase):
-    """Check situation when the partition is moved
-    from one node to the other. In this case it will be asigned new revision id.
-    This revision id will be larger than the topic revision id.
-    This test checks this by copying or movng partition manifest and all
-    segments to the location that corresponds to new revision id.
-    If data is not moved the recovery algorithm have to eliminate duplicates.
-    Recovery algorithm considers the manifest with the initial revision id (the
-    same as the topic has) and all revisions which are larger are also candidates.
+MISSING_DATA_ERRORS = [
+    "No segments found. Empty partition manifest generated",
+    "Error during log recovery: cloud_storage::missing_partition_exception",
+    "Failed segment download",
+]
 
-    If data is moved the recovery algorithm should be able to find the parition
-    manifest anyway.
-    """
-    def __init__(self, s3_client, kafka_tools, rpk_client, s3_bucket, logger,
-                 topics, move_data):
-        self.topics = topics
-        self.total_bytes = 1024 * 1024 * 10
-        self.rev_increment = 10
-        self.move_data = move_data
-        super(MovedPartitionRestore,
-              self).__init__(s3_client, kafka_tools, rpk_client, s3_bucket,
-                             logger)
-
-    def generate_baseline(self):
-        """Produce enough data to trigger uploads to S3/minio"""
-        for topic in self.topics:
-            message_size = 1024
-            num_messages = int(topic.partition_count * self.total_bytes /
-                               message_size)
-            self._kafka_tools.produce(topic.name, num_messages, message_size)
-
-    def _transfer(self, src, dst):
-        """Copy or move the object in the bucket"""
-        if self.move_data:
-            self.logger.info(f"moving {src} to {dst}")
-            self._s3.move_object(self._bucket, src, dst, True)
-        else:
-            self.logger.info(f"copying {src} to {dst}")
-            self._s3.copy_object(self._bucket, src, dst, True)
-
-    def _copy_or_move(self):
-        """Move all segments in S3 to another paths with another revision.
-        Patch manifests. Don't touch topic manifests."""
-        manifests = []
-        segments = []
-        for entry in self._list_objects():
-            self.logger.info(f"list object entry: {entry}")
-            if entry.endswith("manifest.json"
-                              ) and not entry.endswith("topic_manifest.json"):
-                manifests.append(entry)
-            elif not entry.endswith("topic_manifest.json"):
-                segments.append(entry)
-        self.logger.info(f"manifests to patch {manifests}")
-        self.logger.info(f"segments to copy/move {segments}")
-        assert len(manifests) != 0, "No manifests found in S3"
-        assert len(segments) != 0, "No segment files found in S3"
-
-        for old_path in segments:
-            self.logger.info(f"parsing segment path {old_path}")
-            attr = _parse_s3_segment_path(old_path)
-            self.logger.info(f"segment path attributes {attr}")
-            new_path = _gen_segment_path(attr.ntp,
-                                         attr.revision + self.rev_increment,
-                                         attr.name)
-            self._transfer(old_path, new_path)
-
-        for old_path in manifests:
-            data = self._s3.get_object_data(self._bucket, old_path)
-            self.logger.info(f"patching manifest {old_path}, content: {data}")
-            obj = json.loads(data)
-            old_rev = obj['revision']
-            obj['revision'] = old_rev + self.rev_increment
-            attr = _parse_s3_manifest_path(old_path)
-            assert attr.revision == old_rev, f"Manifest revision {old_rev} doesn't match path {old_path}"
-            new_path = _gen_manifest_path(attr.ntp,
-                                          attr.revision + self.rev_increment)
-            data = json.dumps(obj)
-            self._transfer(old_path, new_path)
-            self.logger.info(
-                f"upload updated manifest to {new_path}, content {data}")
-            self._s3.put_object(self._bucket, new_path, data)
-
-    def validate_cluster(self, baseline, restored):
-        """Check that the topic is writeable"""
-        self.logger.info(
-            f"MovedPartitionRestore.validate_cluster - baseline - {baseline}")
-        self.logger.info(
-            f"MovedPartitionRestore.validate_cluster - restored - {restored}")
-        self._validate_partition_last_offset()
-        expected_topics = [
-            topic.name for topic in self.expected_recovered_topics
-        ]
-        _find_offset_matches(baseline, restored, expected_topics, self.logger)
-        for topic in self.topics:
-            self._produce_and_verify(topic)
-
-    def restore_redpanda(self, baseline, controller_checksums):
-        self._copy_or_move()
-        super(MovedPartitionRestore,
-              self).restore_redpanda(baseline, controller_checksums)
-
-    @property
-    def second_restart_needed(self):
-        """Return True if the restart is needed afer first validation steps"""
-        return True
-
-    def after_restart_validation(self):
-        self.logger.info("after restart validation")
-        for topic in self.topics:
-            self._produce_and_verify(topic)
-
-
-class CascadingRestore(BaseCase):
-    """This test checks the situation when the topic got recovered more than
-    once.
-    Before the recovery every partition manifests will contain only segment
-    names (e.g. 10282-9-v1.log).
-    Because the partition could be moved the real segment path in the bucket
-    might be different for different segments. Also, there could be more than
-    one partition manifest that belong to the same topic in the bucket.
-    To mitigate this recovery algorithm creates an aggregate partition manifest
-    that contains segment paths instead of names (e.g.
-    b525cddd/kafka/panda-topic/0_9/4109-1-v1.log). When the new manifest is
-    created the recovery uses it instead of the original manifests. When
-    the topic is recovered this manifests is used by archival subsystem. It
-    adds new entrires to the manifest that contains the segment names.
-    So when we need to run recovery for the second time the manifest might be
-    different from the regullar one. It will contain both paths and names.
-    This test simply patches the existing partition manifest by replacing the
-    names with paths and runs the recovery process.
-    """
-    def __init__(self, s3_client, kafka_tools, rpk_client, s3_bucket, logger,
-                 topics):
-        self.topics = topics
-        self.total_bytes = 1024 * 1024 * 10
-        super(CascadingRestore, self).__init__(s3_client, kafka_tools,
-                                               rpk_client, s3_bucket, logger)
-
-    def generate_baseline(self):
-        """Produce enough data to trigger uploads to S3/minio"""
-        for topic in self.topics:
-            message_size = 1024
-            num_messages = int(topic.partition_count * self.total_bytes /
-                               message_size)
-            self._kafka_tools.produce(topic.name, num_messages, message_size)
-
-    def _move(self, src, dst):
-        self.logger.info(f"moving {src} to {dst}")
-        self._s3.move_object(self._bucket, src, dst, True)
-
-    def _relocate_oldest_segment(self):
-        manifests = []
-        for entry in self._list_objects():
-            if entry.endswith("manifest.json"
-                              ) and not entry.endswith("topic_manifest.json"):
-                manifests.append(entry)
-        self.logger.info(f"manifests to patch {manifests}")
-        assert len(manifests) != 0, "No manifests found"
-        for id in manifests:
-            data = self._s3.get_object_data(self._bucket, id)
-            self.logger.info(f"patching manifest {id}, content: {data}")
-            obj = json.loads(data)
-            segments = obj['segments']
-            segment_attr = []
-            for name_or_path, attrs in segments.items():
-                segment_attr.append((name_or_path, attrs))
-            assert len(
-                segment_attr) != 0, "Manifest is not expected to be empty"
-            segment_attr = sorted(segment_attr)
-            target_name, target_attr = segment_attr[0]
-            del segments[target_name]
-            # create an entry that simulates previously
-            # restored entry
-            ns = obj['namespace']
-            topic = obj['topic']
-            partition = obj['partition']
-            revision = obj['revision']
-            new_revision = int(revision * 2)
-            ntp = NTP(ns=ns, topic=topic, partition=partition)
-            new_name = _gen_segment_path(ntp, new_revision, target_name)
-            old_name = _gen_segment_path(ntp, revision, target_name)
-            self.logger.info(
-                f"replacing entry {target_name} with {new_name} in the manifest"
-            )
-            segments[new_name] = target_attr
-            data = json.dumps(obj)
-            self.logger.info(f"updated manifest {id}, content {data}")
-            self._s3.put_object(self._bucket, id, data)
-            self._move(old_name, new_name)
-
-    def validate_cluster(self, baseline, restored):
-        """Check that the topic is writeable"""
-        self.logger.info(
-            f"CascadingRestore.validate_cluster - baseline - {baseline}")
-        self.logger.info(
-            f"CascadingRestore.validate_cluster - restored - {restored}")
-        self._validate_partition_last_offset()
-        expected_topics = [
-            topic.name for topic in self.expected_recovered_topics
-        ]
-        _find_offset_matches(baseline, restored, expected_topics, self.logger)
-        for topic in self.topics:
-            self._produce_and_verify(topic)
-
-    def restore_redpanda(self, baseline, controller_checksums):
-        self._relocate_oldest_segment()
-        super(CascadingRestore, self).restore_redpanda(baseline,
-                                                       controller_checksums)
-
-    @property
-    def second_restart_needed(self):
-        """Return True if the restart is needed afer first validation steps"""
-        return True
-
-    def after_restart_validation(self):
-        self.logger.info("after restart validation")
-        for topic in self.topics:
-            self._produce_and_verify(topic)
+TRANSIENT_ERRORS = [
+    "raft::offset_monitor::wait_aborted",
+    "Upload loop error: seastar::timed_out_error"
+]
 
 
 class TopicRecoveryTest(RedpandaTest):
@@ -1326,12 +926,13 @@ class TopicRecoveryTest(RedpandaTest):
         self.real_thing = self.s3_bucket and self.s3_region and self.s3_access_key and self.s3_secret_key
         if self.real_thing:
             extra_rp_conf = dict(
+                cloud_storage_enable_remote_write=True,
                 cloud_storage_enabled=True,
                 cloud_storage_access_key=self.s3_access_key,
                 cloud_storage_secret_key=self.s3_secret_key,
                 cloud_storage_region=self.s3_region,
                 cloud_storage_bucket=self.s3_bucket,
-                cloud_storage_reconciliation_interval_ms=10000,
+                cloud_storage_reconciliation_interval_ms=500,
                 cloud_storage_max_connections=10,
                 cloud_storage_trust_file="/etc/ssl/certs/ca-certificates.crt",
                 log_segment_size=default_log_segment_size)
@@ -1349,7 +950,7 @@ class TopicRecoveryTest(RedpandaTest):
                 cloud_storage_disable_tls=True,
                 cloud_storage_api_endpoint=TopicRecoveryTest.MINIO_HOST_NAME,
                 cloud_storage_api_endpoint_port=9000,
-                cloud_storage_reconciliation_interval_ms=10000,
+                cloud_storage_reconciliation_interval_ms=500,
                 cloud_storage_max_connections=5,
                 log_segment_size=default_log_segment_size)
             self.s3_endpoint = f'http://{TopicRecoveryTest.MINIO_HOST_NAME}:9000'
@@ -1552,7 +1153,8 @@ class TopicRecoveryTest(RedpandaTest):
             time.sleep(20)
             test_case.after_restart_validation()
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3,
+             log_allow_list=MISSING_DATA_ERRORS + TRANSIENT_ERRORS)
     def test_no_data(self):
         """If we're trying to recovery a topic which didn't have any data
         in old cluster the empty topic should be created. We should be able
@@ -1561,7 +1163,8 @@ class TopicRecoveryTest(RedpandaTest):
                                self.s3_bucket, self.logger)
         self.do_run(test_case)
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3,
+             log_allow_list=MISSING_DATA_ERRORS + TRANSIENT_ERRORS)
     def test_missing_topic_manifest(self):
         """If we're trying to recovery a topic which didn't have any data
         in old cluster the empty topic should be created. We should be able
@@ -1570,7 +1173,8 @@ class TopicRecoveryTest(RedpandaTest):
                                          self.rpk, self.s3_bucket, self.logger)
         self.do_run(test_case)
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3,
+             log_allow_list=MISSING_DATA_ERRORS + TRANSIENT_ERRORS)
     def test_missing_partition(self):
         """Test situation when one of the partition manifests are missing.
         The partition manifest is missing if it doesn't exist in the bucket
@@ -1582,7 +1186,8 @@ class TopicRecoveryTest(RedpandaTest):
                                      self.rpk, self.s3_bucket, self.logger)
         self.do_run(test_case)
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3,
+             log_allow_list=MISSING_DATA_ERRORS + TRANSIENT_ERRORS)
     def test_missing_segment(self):
         """Test the handling of the missing segment. The segment is
         missing if it's present in the manifest but deleted from the
@@ -1591,7 +1196,7 @@ class TopicRecoveryTest(RedpandaTest):
                                    self.s3_bucket, self.logger)
         self.do_run(test_case)
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3, log_allow_list=TRANSIENT_ERRORS)
     def test_fast1(self):
         """Basic recovery test. This test stresses successful recovery
         of the topic with different set of data."""
@@ -1604,7 +1209,7 @@ class TopicRecoveryTest(RedpandaTest):
                               self.s3_bucket, self.logger, topics)
         self.do_run(test_case)
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3, log_allow_list=TRANSIENT_ERRORS)
     def test_fast2(self):
         """Basic recovery test. This test stresses successful recovery
         of the topic with different set of data."""
@@ -1620,8 +1225,7 @@ class TopicRecoveryTest(RedpandaTest):
                               self.s3_bucket, self.logger, topics)
         self.do_run(test_case)
 
-    @ignore  # https://github.com/redpanda-data/redpanda/issues/2569
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3, log_allow_list=TRANSIENT_ERRORS)
     def test_fast3(self):
         """Basic recovery test. This test stresses successful recovery
         of the topic with different set of data."""
@@ -1640,46 +1244,7 @@ class TopicRecoveryTest(RedpandaTest):
                               self.s3_bucket, self.logger, topics)
         self.do_run(test_case)
 
-    @cluster(num_nodes=3)
-    def test_revision_shift1(self):
-        """Test handling of situations when the revision of the recovered
-        topic is equal to the revision of the original."""
-        topics = [
-            TopicSpec(name='panda-topic',
-                      partition_count=1,
-                      replication_factor=3)
-        ]
-        test_case = RevShiftCheck(self.s3_client, self.kafka_tools, self.rpk,
-                                  self.s3_bucket, self.logger, topics, 0)
-        self.do_run(test_case)
-
-    @cluster(num_nodes=3)
-    def test_revision_shift2(self):
-        """Test handling of situations when the revision of the recovered
-        topic is less then the revision of the original."""
-        topics = [
-            TopicSpec(name='panda-topic',
-                      partition_count=1,
-                      replication_factor=3)
-        ]
-        test_case = RevShiftCheck(self.s3_client, self.kafka_tools, self.rpk,
-                                  self.s3_bucket, self.logger, topics, -1)
-        self.do_run(test_case)
-
-    @cluster(num_nodes=3)
-    def test_revision_shift3(self):
-        """Test handling of situations when the revision of the recovered
-        topic is greater then the revision of the original."""
-        topics = [
-            TopicSpec(name='panda-topic',
-                      partition_count=1,
-                      replication_factor=3)
-        ]
-        test_case = RevShiftCheck(self.s3_client, self.kafka_tools, self.rpk,
-                                  self.s3_bucket, self.logger, topics, 1)
-        self.do_run(test_case)
-
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3, log_allow_list=TRANSIENT_ERRORS)
     def test_size_based_retention(self):
         """Test topic recovery with size based retention policy.
         It's tests handling of the situation when only subset of the data needs to
@@ -1694,7 +1259,7 @@ class TopicRecoveryTest(RedpandaTest):
                                        topics)
         self.do_run(test_case)
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3, log_allow_list=TRANSIENT_ERRORS)
     def test_time_based_retention(self):
         """Test topic recovery with time based retention policy.
         It's tests handling of the situation when only subset of the data needs to
@@ -1710,7 +1275,7 @@ class TopicRecoveryTest(RedpandaTest):
                                        topics, False)
         self.do_run(test_case)
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3, log_allow_list=TRANSIENT_ERRORS)
     def test_time_based_retention_with_legacy_manifest(self):
         """Test topic recovery with time based retention policy.
         It's tests handling of the situation when only subset of the data needs to
@@ -1724,44 +1289,4 @@ class TopicRecoveryTest(RedpandaTest):
         test_case = TimeBasedRetention(self.s3_client, self.kafka_tools,
                                        self.rpk, self.s3_bucket, self.logger,
                                        topics, True)
-        self.do_run(test_case)
-
-    @cluster(num_nodes=3)
-    def test_restore_moved_partition1(self):
-        """Test handling of the moved partition (it will have different revision id)."""
-        topics = [
-            TopicSpec(name='panda-topic',
-                      partition_count=1,
-                      replication_factor=3)
-        ]
-        test_case = MovedPartitionRestore(self.s3_client, self.kafka_tools,
-                                          self.rpk, self.s3_bucket,
-                                          self.logger, topics, False)
-        self.do_run(test_case)
-
-    @cluster(num_nodes=3)
-    def test_restore_moved_partition2(self):
-        """Test handling of the moved partition (it will have different revision id)."""
-        topics = [
-            TopicSpec(name='panda-topic',
-                      partition_count=1,
-                      replication_factor=3)
-        ]
-        test_case = MovedPartitionRestore(self.s3_client, self.kafka_tools,
-                                          self.rpk, self.s3_bucket,
-                                          self.logger, topics, True)
-        self.do_run(test_case)
-
-    @ignore  # https://github.com/redpanda-data/redpanda/issues/2569
-    @cluster(num_nodes=3)
-    def test_cascading_restore(self):
-        """Test handling of the situation when the topic is recovered several times in a row."""
-        topics = [
-            TopicSpec(name='panda-topic',
-                      partition_count=1,
-                      replication_factor=3)
-        ]
-        test_case = CascadingRestore(self.s3_client, self.kafka_tools,
-                                     self.rpk, self.s3_bucket, self.logger,
-                                     topics)
         self.do_run(test_case)
