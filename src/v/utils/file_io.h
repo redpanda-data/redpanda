@@ -26,5 +26,8 @@ read_fully_tmpbuf(const std::filesystem::path&);
 /// \brief Read an entire file into an iobuf
 ss::future<iobuf> read_fully(const std::filesystem::path&);
 
+/// \brief Read an entire file into a ss:sstring
+ss::future<ss::sstring> read_fully_to_string(const std::filesystem::path&);
+
 /// \brief Write an entire buffer into the file at location 'path'
 ss::future<> write_fully(const std::filesystem::path&, iobuf buf);
