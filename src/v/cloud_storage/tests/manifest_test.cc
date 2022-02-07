@@ -11,6 +11,7 @@
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "cloud_storage/manifest.h"
+#include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/types.h"
 #include "model/metadata.h"
 #include "seastarx.h"

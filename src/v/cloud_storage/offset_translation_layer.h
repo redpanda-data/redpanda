@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "cloud_storage/manifest.h"
+#include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/types.h"
 #include "utils/retry_chain_node.h"
 

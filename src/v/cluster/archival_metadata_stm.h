@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "cloud_storage/manifest.h"
+#include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
 #include "cluster/persisted_stm.h"
 #include "model/metadata.h"

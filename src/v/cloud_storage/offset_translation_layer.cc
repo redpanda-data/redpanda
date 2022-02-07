@@ -11,7 +11,6 @@
 #include "cloud_storage/offset_translation_layer.h"
 
 #include "cloud_storage/logger.h"
-#include "cloud_storage/manifest.h"
 #include "cloud_storage/types.h"
 #include "ssx/sformat.h"
 #include "storage/parser.h"
