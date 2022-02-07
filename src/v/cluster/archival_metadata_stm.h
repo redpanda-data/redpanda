@@ -36,19 +36,21 @@ public:
     /// Add the difference between manifests to the raft log, replicate it and
     /// wait until it is applied to the STM.
     ss::future<std::error_code>
-    add_segments(const cloud_storage::manifest&, retry_chain_node&);
+    add_segments(const cloud_storage::partition_manifest&, retry_chain_node&);
 
     /// A set of archived segments. NOTE: manifest can be out-of-date if this
     /// node is not leader; or if the STM hasn't yet performed sync; or if the
     /// node has lost leadership. But it will contain segments successfully
     /// added with `add_segments`.
-    const cloud_storage::manifest& manifest() const { return _manifest; }
+    const cloud_storage::partition_manifest& manifest() const {
+        return _manifest;
+    }
 
     ss::future<> stop() override;
 
 private:
-    ss::future<std::error_code>
-    do_add_segments(const cloud_storage::manifest&, retry_chain_node&);
+    ss::future<std::error_code> do_add_segments(
+      const cloud_storage::partition_manifest&, retry_chain_node&);
 
     ss::future<> apply(model::record_batch batch) override;
     ss::future<> handle_eviction() override;
@@ -62,7 +64,7 @@ private:
     struct snapshot;
 
     static std::vector<segment>
-    segments_from_manifest(const cloud_storage::manifest& manifest);
+    segments_from_manifest(const cloud_storage::partition_manifest& manifest);
 
     void apply_add_segment(const segment& segment);
 
@@ -71,7 +73,7 @@ private:
 
     mutex _lock;
 
-    cloud_storage::manifest _manifest;
+    cloud_storage::partition_manifest _manifest;
     model::offset _start_offset;
     model::offset _last_offset;
 

@@ -39,7 +39,8 @@ using data_t = model::record_batch_reader::data_t;
 using storage_t = model::record_batch_reader::storage_t;
 
 /// This function returns segment base offset as kafka offset
-static model::offset get_kafka_base_offset(const manifest::segment_meta& m) {
+static model::offset
+get_kafka_base_offset(const partition_manifest::segment_meta& m) {
     // Manifests created with the old version of redpanda won't have the
     // delta_offset field. In this case the value will be initialized to
     // model::offset::min(). In this case offset translation couldn't be
@@ -318,7 +319,7 @@ private:
 };
 
 remote_partition::remote_partition(
-  const manifest& m, remote& api, cache& c, s3::bucket_name bucket)
+  const partition_manifest& m, remote& api, cache& c, s3::bucket_name bucket)
   : _rtc()
   , _ctxlog(cst_log, _rtc, m.get_ntp().path())
   , _api(api)

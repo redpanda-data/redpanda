@@ -144,7 +144,7 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
     }
     BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
 
-    cloud_storage::manifest manifest;
+    cloud_storage::partition_manifest manifest;
     {
         BOOST_REQUIRE(get_targets().count(manifest_url)); // NOLINT
         auto it = get_targets().find(manifest_url);
@@ -350,8 +350,9 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     auto segment2 = get_segment(manifest_ntp, s2name);
     BOOST_REQUIRE(static_cast<bool>(segment2));
 
-    cloud_storage::manifest old_manifest(manifest_ntp, manifest_revision);
-    cloud_storage::manifest::segment_meta old_meta{
+    cloud_storage::partition_manifest old_manifest(
+      manifest_ntp, manifest_revision);
+    cloud_storage::partition_manifest::segment_meta old_meta{
       .is_compacted = false,
       .size_bytes = 100,
       .base_offset = model::offset(2),
@@ -391,7 +392,7 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     }
     BOOST_REQUIRE_EQUAL(get_requests().size(), 4);
 
-    cloud_storage::manifest manifest;
+    cloud_storage::partition_manifest manifest;
     {
         auto [begin, end] = get_targets().equal_range(manifest_url);
         size_t len = std::distance(begin, end);
@@ -521,7 +522,7 @@ static void test_partial_upload_impl(
     BOOST_REQUIRE(static_cast<bool>(segment1));
 
     // Generate new manifest
-    cloud_storage::manifest manifest(manifest_ntp, manifest_revision);
+    cloud_storage::partition_manifest manifest(manifest_ntp, manifest_revision);
     const auto& layout = test.get_layouts(manifest_ntp);
     vlog(test_log.debug, "Layout size", layout.size());
     for (const auto& s : layout) {
@@ -553,7 +554,7 @@ static void test_partial_upload_impl(
       base_upl2,
       last_upl2);
 
-    cloud_storage::manifest::segment_meta segment_meta{
+    cloud_storage::partition_manifest::segment_meta segment_meta{
       .is_compacted = false,
       .size_bytes = 1, // doesn't matter
       .base_offset = model::offset(0),

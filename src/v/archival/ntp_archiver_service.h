@@ -95,7 +95,7 @@ public:
     ss::future<cloud_storage::upload_result>
     upload_manifest(retry_chain_node& parent);
 
-    const cloud_storage::manifest& get_remote_manifest() const;
+    const cloud_storage::partition_manifest& get_remote_manifest() const;
 
     struct batch_result {
         size_t num_succeded;
@@ -127,7 +127,7 @@ private:
         /// Last offset of the uploaded segment or part
         model::offset inclusive_last_offset;
         /// Segment metadata
-        std::optional<cloud_storage::manifest::segment_meta> meta;
+        std::optional<cloud_storage::partition_manifest::segment_meta> meta;
         /// Name of the uploaded segment
         std::optional<ss::sstring> name;
         /// Offset range convered by the upload
@@ -177,7 +177,7 @@ private:
     s3::bucket_name _bucket;
     /// Remote manifest contains representation of the data stored in S3 (it
     /// gets uploaded to the remote location)
-    cloud_storage::manifest _manifest;
+    cloud_storage::partition_manifest _manifest;
     ss::gate _gate;
     ss::abort_source _as;
     ss::semaphore _mutex{1};

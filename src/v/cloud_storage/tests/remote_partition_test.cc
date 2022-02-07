@@ -187,7 +187,7 @@ static void print_segments(const std::vector<in_memory_segment>& segments) {
 
 static std::vector<cloud_storage_fixture::expectation>
 make_imposter_expectations(
-  cloud_storage::manifest& m,
+  cloud_storage::partition_manifest& m,
   const std::vector<in_memory_segment>& segments,
   bool truncate_segments = false) {
     std::vector<cloud_storage_fixture::expectation> results;
@@ -198,7 +198,7 @@ make_imposter_expectations(
             body = s.bytes.substr(0, s.bytes.size() / 2);
         }
 
-        cloud_storage::manifest::segment_meta meta{
+        cloud_storage::partition_manifest::segment_meta meta{
           .is_compacted = false,
           .size_bytes = s.bytes.size(),
           .base_offset = s.base_offset,
@@ -284,7 +284,7 @@ static auto setup_s3_imposter(
   bool truncate_segments = false) {
     // Create test data
     auto segments = make_segments(num_segments, num_batches_per_segment);
-    cloud_storage::manifest manifest(manifest_ntp, manifest_revision);
+    cloud_storage::partition_manifest manifest(manifest_ntp, manifest_revision);
     auto expectations = make_imposter_expectations(
       manifest, segments, truncate_segments);
     fixture.set_expectations_and_listen(expectations);
@@ -295,14 +295,15 @@ static auto setup_s3_imposter(
   cloud_storage_fixture& fixture, std::vector<std::vector<batch_t>> batches) {
     // Create test data
     auto segments = make_segments(batches);
-    cloud_storage::manifest manifest(manifest_ntp, manifest_revision);
+    cloud_storage::partition_manifest manifest(manifest_ntp, manifest_revision);
     auto expectations = make_imposter_expectations(manifest, segments);
     fixture.set_expectations_and_listen(expectations);
     return segments;
 }
 
-static manifest hydrate_manifest(remote& api, const s3::bucket_name& bucket) {
-    manifest m(manifest_ntp, manifest_revision);
+static partition_manifest
+hydrate_manifest(remote& api, const s3::bucket_name& bucket) {
+    partition_manifest m(manifest_ntp, manifest_revision);
     retry_chain_node rtc(1s, 200ms);
     auto key = m.get_manifest_path();
     auto res = api.download_manifest(bucket, key, m, rtc).get();
@@ -317,7 +318,7 @@ static model::record_batch_header read_single_batch_from_remote_partition(
     static auto bucket = s3::bucket_name("bucket");
     remote api(s3_connection_limit(10), conf);
     auto action = ss::defer([&api] { api.stop().get(); });
-    auto m = ss::make_lw_shared<cloud_storage::manifest>(
+    auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
       manifest_ntp, manifest_revision);
     storage::log_reader_config reader_config(
       target, target, ss::default_priority_class());
@@ -347,7 +348,7 @@ static std::vector<model::record_batch_header> scan_remote_partition(
     static auto bucket = s3::bucket_name("bucket");
     remote api(s3_connection_limit(10), conf);
     auto action = ss::defer([&api] { api.stop().get(); });
-    auto m = ss::make_lw_shared<cloud_storage::manifest>(
+    auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
       manifest_ntp, manifest_revision);
     storage::log_reader_config reader_config(
       base, max, ss::default_priority_class());
@@ -910,7 +911,7 @@ scan_remote_partition_incrementally(
     static auto bucket = s3::bucket_name("bucket");
     remote api(s3_connection_limit(10), conf);
     auto action = ss::defer([&api] { api.stop().get(); });
-    auto m = ss::make_lw_shared<cloud_storage::manifest>(
+    auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
       manifest_ntp, manifest_revision);
 
     auto manifest = hydrate_manifest(api, bucket);

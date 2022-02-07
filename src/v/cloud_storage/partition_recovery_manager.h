@@ -1,8 +1,8 @@
 #pragma once
 
-#include "cloud_storage/manifest.h"
 #include "cloud_storage/offset_translation_layer.h"
 #include "cloud_storage/remote.h"
+#include "cloud_storage/topic_manifest.h"
 #include "cloud_storage/types.h"
 #include "model/record.h"
 #include "s3/client.h"
@@ -86,10 +86,11 @@ private:
     /// Download full log based on manifest data
     ss::future<> download_log(const remote_manifest_path& key);
 
-    ss::future<>
-    download_log(const manifest& manifest, const std::filesystem::path& prefix);
+    ss::future<> download_log(
+      const partition_manifest& manifest, const std::filesystem::path& prefix);
 
-    ss::future<manifest> download_manifest(const remote_manifest_path& path);
+    ss::future<partition_manifest>
+    download_manifest(const remote_manifest_path& path);
 
     struct recovery_material {
         std::vector<remote_manifest_path> paths;
@@ -114,8 +115,8 @@ private:
     };
 
     struct segment {
-        manifest::key manifest_key;
-        manifest::segment_meta meta;
+        partition_manifest::key manifest_key;
+        partition_manifest::segment_meta meta;
     };
 
     /// Download segment file to the target location
@@ -132,13 +133,13 @@ private:
 
     ss::future<download_part> download_log_with_capped_size(
       const offset_map_t& offset_map,
-      const manifest& manifest,
+      const partition_manifest& manifest,
       const std::filesystem::path& prefix,
       size_t max_size);
 
     ss::future<download_part> download_log_with_capped_time(
       const offset_map_t& offset_map,
-      const manifest& manifest,
+      const partition_manifest& manifest,
       const std::filesystem::path& prefix,
       model::timestamp_clock::duration retention_time);
 

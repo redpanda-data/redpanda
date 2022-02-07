@@ -78,8 +78,8 @@ remote_segment::remote_segment(
   remote& r,
   cache& c,
   s3::bucket_name bucket,
-  const manifest& m,
-  const manifest::key& name,
+  const partition_manifest& m,
+  const partition_manifest::key& name,
   retry_chain_node& parent)
   : _api(r)
   , _cache(c)
@@ -110,7 +110,7 @@ remote_segment::remote_segment(
 // Find manifest key in the manifest using base offset of the segment.
 // Invariant: 'o' is a valid base offset inside the manifest.
 static inline segment_name_components
-find_manifest_key(const manifest& m, model::offset o) {
+find_manifest_key(const partition_manifest& m, model::offset o) {
     auto it = m.find(o);
     vassert(
       it != m.end(),
@@ -124,7 +124,7 @@ remote_segment::remote_segment(
   remote& r,
   cache& c,
   s3::bucket_name bucket,
-  const manifest& m,
+  const partition_manifest& m,
   model::offset base_offset,
   retry_chain_node& parent)
   : remote_segment(

@@ -61,7 +61,7 @@ ss::future<uint64_t> offset_translator::copy_stream(
 }
 
 segment_name offset_translator::get_adjusted_segment_name(
-  const manifest::key& key, retry_chain_node& fib) const {
+  const partition_manifest::key& key, retry_chain_node& fib) const {
     retry_chain_logger ctxlog(cst_log, fib);
     auto base_offset = key.base_offset;
     auto term_id = key.term;

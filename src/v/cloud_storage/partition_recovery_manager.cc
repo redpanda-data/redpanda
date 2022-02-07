@@ -249,7 +249,7 @@ partition_downloader::download_log(const remote_manifest_path& manifest_key) {
       retention);
     auto mat = co_await find_recovery_material(manifest_key);
     auto offset_map = co_await build_offset_map(mat);
-    manifest target(_ntpc.ntp(), _ntpc.get_initial_revision());
+    partition_manifest target(_ntpc.ntp(), _ntpc.get_initial_revision());
     for (const auto& kv : offset_map) {
         target.add(kv.second.manifest_key, kv.second.meta);
     }
@@ -333,7 +333,7 @@ partition_downloader::download_log(const remote_manifest_path& manifest_key) {
 ss::future<partition_downloader::download_part>
 partition_downloader::download_log_with_capped_size(
   const offset_map_t& offset_map,
-  const manifest& manifest,
+  const partition_manifest& manifest,
   const std::filesystem::path& prefix,
   size_t max_size) {
     vlog(_ctxlog.info, "Starting log download with size limit at {}", max_size);
@@ -379,7 +379,7 @@ partition_downloader::download_log_with_capped_size(
 ss::future<partition_downloader::download_part>
 partition_downloader::download_log_with_capped_time(
   const offset_map_t& offset_map,
-  const manifest& manifest,
+  const partition_manifest& manifest,
   const std::filesystem::path& prefix,
   model::timestamp_clock::duration retention_time) {
     vlog(
@@ -432,10 +432,10 @@ partition_downloader::download_log_with_capped_time(
     co_return dlpart;
 }
 
-ss::future<manifest>
+ss::future<partition_manifest>
 partition_downloader::download_manifest(const remote_manifest_path& key) {
     vlog(_ctxlog.info, "Downloading manifest {}", key);
-    manifest manifest(_ntpc.ntp(), _ntpc.get_initial_revision());
+    partition_manifest manifest(_ntpc.ntp(), _ntpc.get_initial_revision());
     auto result = co_await _remote->download_manifest(
       _bucket, key, manifest, _rtcnode);
     if (result != download_result::success) {

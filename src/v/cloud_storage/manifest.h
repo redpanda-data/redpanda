@@ -10,23 +10,16 @@
 
 #pragma once
 
-#include "bytes/iobuf.h"
 #include "cloud_storage/types.h"
 #include "cluster/types.h"
 #include "json/document.h"
-#include "json/json.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "s3/client.h"
 #include "seastarx.h"
 #include "serde/serde.h"
-#include "tristate.h"
-
-#include <seastar/util/bool_class.hh>
 
 #include <compare>
-#include <iterator>
-#include <map>
 
 namespace cloud_storage {
 
@@ -64,6 +57,9 @@ remote_segment_path generate_remote_segment_path(
 
 /// Generate correct S3 segment name based on term and base offset
 segment_name generate_segment_name(model::offset o, model::term_id t);
+
+remote_manifest_path
+generate_partition_manifest_path(const model::ntp&, model::initial_revision_id);
 
 struct serialized_json_stream {
     ss::input_stream<char> stream;
@@ -118,7 +114,7 @@ public:
 };
 
 /// Manifest file stored in S3
-class manifest final : public base_manifest {
+class partition_manifest final : public base_manifest {
 public:
     struct segment_meta {
         using value_t = segment_meta;
@@ -147,10 +143,10 @@ public:
     using const_reverse_iterator = segment_map::const_reverse_iterator;
 
     /// Create empty manifest that supposed to be updated later
-    manifest();
+    partition_manifest();
 
     /// Create manifest for specific ntp
-    explicit manifest(model::ntp ntp, model::initial_revision_id rev);
+    explicit partition_manifest(model::ntp ntp, model::initial_revision_id rev);
 
     /// Manifest object name in S3
     remote_manifest_path get_manifest_path() const override;
@@ -196,7 +192,7 @@ public:
     ///
     /// \param remote_set the manifest to compare to
     /// \return manifest with segments that doesn't present in 'remote_set'
-    manifest difference(const manifest& remote_set) const;
+    partition_manifest difference(const partition_manifest& remote_set) const;
 
     /// Update manifest file from input_stream (remote set)
     ss::future<> update(ss::input_stream<char> is) override;
@@ -212,7 +208,7 @@ public:
     void serialize(std::ostream& out) const;
 
     /// Compare two manifests for equality
-    bool operator==(const manifest& other) const = default;
+    bool operator==(const partition_manifest& other) const = default;
 
     /// Remove segment record from manifest
     ///
@@ -235,55 +231,5 @@ private:
     model::offset _last_offset;
 };
 
-std::ostream& operator<<(std::ostream& o, const manifest::key& k);
-
-class topic_manifest final : public base_manifest {
-public:
-    /// Create manifest for specific ntp
-    explicit topic_manifest(
-      const cluster::topic_configuration& cfg, model::initial_revision_id rev);
-
-    /// Create empty manifest that supposed to be updated later
-    topic_manifest();
-
-    /// Update manifest file from input_stream (remote set)
-    ss::future<> update(ss::input_stream<char> is) override;
-
-    /// Serialize manifest object
-    ///
-    /// \return asynchronous input_stream with the serialized json
-    serialized_json_stream serialize() const override;
-
-    /// Manifest object name in S3
-    remote_manifest_path get_manifest_path() const override;
-
-    static remote_manifest_path
-    get_topic_manifest_path(model::ns ns, model::topic topic);
-
-    /// Serialize manifest object
-    ///
-    /// \param out output stream that should be used to output the json
-    void serialize(std::ostream& out) const;
-
-    /// Return all possible manifest locations
-    std::vector<remote_manifest_path> get_partition_manifests() const;
-
-    manifest_type get_manifest_type() const override {
-        return manifest_type::partition;
-    };
-
-    model::initial_revision_id get_revision() const noexcept { return _rev; }
-
-    /// Change topic-manifest revision
-    void set_revision(model::initial_revision_id id) noexcept { _rev = id; }
-
-private:
-    /// Update manifest content from json document that supposed to be generated
-    /// from manifest.json file
-    void update(const json::Document& m);
-
-    std::optional<cluster::topic_configuration> _topic_config;
-    model::initial_revision_id _rev;
-};
-
+std::ostream& operator<<(std::ostream& o, const partition_manifest::key& k);
 } // namespace cloud_storage

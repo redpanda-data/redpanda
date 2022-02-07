@@ -60,8 +60,8 @@ static constexpr std::string_view manifest_payload = R"json({
     }
 })json";
 
-static manifest load_manifest_from_str(std::string_view v) {
-    manifest m;
+static partition_manifest load_manifest_from_str(std::string_view v) {
+    partition_manifest m;
     iobuf i;
     i.append(v.data(), v.size());
     auto s = make_iobuf_input_stream(std::move(i));
@@ -74,7 +74,7 @@ FIXTURE_TEST(test_download_manifest, s3_imposter_fixture) { // NOLINT
       .url = "/" + manifest_url, .body = ss::sstring(manifest_payload)}});
     auto conf = get_configuration();
     remote remote(s3_connection_limit(10), conf);
-    manifest actual(manifest_ntp, manifest_revision);
+    partition_manifest actual(manifest_ntp, manifest_revision);
     auto action = ss::defer([&remote] { remote.stop().get(); });
     retry_chain_node fib(100ms, 20ms);
     auto res = remote
@@ -92,7 +92,7 @@ FIXTURE_TEST(test_download_manifest, s3_imposter_fixture) { // NOLINT
 FIXTURE_TEST(test_download_manifest_timeout, s3_imposter_fixture) { // NOLINT
     auto conf = get_configuration();
     remote remote(s3_connection_limit(10), conf);
-    manifest actual(manifest_ntp, manifest_revision);
+    partition_manifest actual(manifest_ntp, manifest_revision);
     auto action = ss::defer([&remote] { remote.stop().get(); });
     retry_chain_node fib(100ms, 20ms);
     auto res = remote

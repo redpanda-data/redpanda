@@ -44,7 +44,7 @@ struct archival_metadata_stm::segment
     // segment_meta.
     model::initial_revision_id ntp_revision_deprecated;
     cloud_storage::segment_name name;
-    cloud_storage::manifest::segment_meta meta;
+    cloud_storage::partition_manifest::segment_meta meta;
 };
 
 struct archival_metadata_stm::add_segment_cmd {
@@ -61,7 +61,7 @@ struct archival_metadata_stm::snapshot
 
 std::vector<archival_metadata_stm::segment>
 archival_metadata_stm::segments_from_manifest(
-  const cloud_storage::manifest& manifest) {
+  const cloud_storage::partition_manifest& manifest) {
     std::vector<segment> segments;
     segments.reserve(manifest.size());
     for (auto [key, meta] : manifest) {
@@ -93,7 +93,8 @@ archival_metadata_stm::archival_metadata_stm(
 
 // todo: return result
 ss::future<std::error_code> archival_metadata_stm::add_segments(
-  const cloud_storage::manifest& manifest, retry_chain_node& rc_node) {
+  const cloud_storage::partition_manifest& manifest,
+  retry_chain_node& rc_node) {
     return _lock.with(rc_node.get_timeout(), [this, &manifest, &rc_node] {
         return do_add_segments(manifest, rc_node);
     });
@@ -101,7 +102,8 @@ ss::future<std::error_code> archival_metadata_stm::add_segments(
 
 // todo: return result
 ss::future<std::error_code> archival_metadata_stm::do_add_segments(
-  const cloud_storage::manifest& new_manifest, retry_chain_node& rc_node) {
+  const cloud_storage::partition_manifest& new_manifest,
+  retry_chain_node& rc_node) {
     if (!co_await sync(rc_node.get_timeout())) {
         co_return errc::timeout;
     }
@@ -176,7 +178,7 @@ ss::future<> archival_metadata_stm::apply(model::record_batch b) {
 }
 
 ss::future<> archival_metadata_stm::handle_eviction() {
-    cloud_storage::manifest manifest;
+    cloud_storage::partition_manifest manifest;
 
     auto bucket = config::shard_local_cfg().cloud_storage_bucket.value();
     vassert(bucket, "configuration property cloud_storage_bucket must be set");
@@ -237,7 +239,7 @@ ss::future<> archival_metadata_stm::apply_snapshot(
   stm_snapshot_header header, iobuf&& data) {
     auto snap = serde::from_iobuf<snapshot>(std::move(data));
 
-    _manifest = cloud_storage::manifest(
+    _manifest = cloud_storage::partition_manifest(
       _raft->ntp(), _raft->log_config().get_initial_revision());
     for (const auto& segment : snap.segments) {
         apply_add_segment(segment);
