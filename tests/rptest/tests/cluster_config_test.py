@@ -390,6 +390,9 @@ class ClusterConfigTest(RedpandaTest):
         # using the cluster
         exclude_settings = {'enable_sasl'}
 
+        # Don't enable coproc: it generates log errors if its companion service isn't running
+        exclude_settings.add('enable_coproc')
+
         initial_config = self.admin.get_cluster_config()
 
         for name, p in schema_properties.items():
