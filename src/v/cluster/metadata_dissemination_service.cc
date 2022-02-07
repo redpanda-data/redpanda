@@ -322,14 +322,25 @@ void metadata_dissemination_service::cleanup_finished_updates() {
 
 ss::future<> metadata_dissemination_service::dispatch_disseminate_leadership() {
     /**
-     * Use currently available health report snapshot to update leadership
-     * information. If snapshot would contain stale data they will be ignored by
+     * Use currently available health report to update leadership
+     * information. If report would contain stale data they will be ignored by
      * term check in partition leaders table
      */
     return _health_monitor.local()
-      .get_current_cluster_health_snapshot(cluster_report_filter{})
-      .then([this](cluster_health_report report) {
-          return update_leaders_with_health_report(std::move(report));
+      .get_cluster_health(
+        cluster_report_filter{},
+        force_refresh::no,
+        _dissemination_interval + model::timeout_clock::now())
+      .then([this](result<cluster_health_report> report) {
+          if (report.has_error()) {
+              vlog(
+                clusterlog.info,
+                "unable to retrieve cluster health report - {}",
+                report.error().message());
+              return ss::now();
+          }
+
+          return update_leaders_with_health_report(std::move(report.value()));
       })
       .then([this] {
           collect_pending_updates();
