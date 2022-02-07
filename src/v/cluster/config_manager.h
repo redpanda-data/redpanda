@@ -18,6 +18,10 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
 
+namespace YAML {
+class Node;
+}
+
 namespace cluster {
 
 /// This state machine receives updates to the global cluster config,
@@ -48,7 +52,7 @@ public:
       ss::sharded<feature_table>&,
       ss::sharded<ss::abort_source>&);
 
-    static ss::future<preload_result> preload();
+    static ss::future<preload_result> preload(YAML::Node const&);
     ss::future<> start();
     ss::future<> stop();
 
@@ -83,8 +87,13 @@ private:
     void start_bootstrap();
     ss::future<> do_bootstrap();
 
+    static ss::future<preload_result> load_cache();
+    static ss::future<bool> load_bootstrap();
+    static ss::future<> load_legacy(YAML::Node const&);
+
     ss::future<std::error_code> apply_status(cluster_config_status_cmd&& cmd);
 
+    static std::filesystem::path bootstrap_path();
     static std::filesystem::path cache_path();
 
     config_status my_latest_status;

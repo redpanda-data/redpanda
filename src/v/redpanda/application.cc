@@ -340,30 +340,9 @@ void application::hydrate_config(const po::variables_map& cfg) {
             throw std::invalid_argument("Validation errors in node config");
         }
 
-        // This initial load is independent of whether the central
-        // config feature is active, since its fallback is just
-        // to read redpanda.yaml anyway
-        _config_preload = cluster::config_manager::preload().get0();
-        if (_config_preload.version == cluster::config_version_unset) {
-            ss::smp::invoke_on_all([&config] {
-                config::shard_local_cfg().load(config);
-            }).get0();
-
-            // This node has never seen a cluster configuration message.
-            // Bootstrap configuration from local yaml file.
-            auto errors = config::shard_local_cfg().load(config);
-
-            // Report any invalid properties.  Do not refuse to start redpanda,
-            // as the properties will have been either ignored or clamped
-            // to safe values.
-            for (const auto& i : errors) {
-                vlog(
-                  _log.warn,
-                  "Cluster property '{}' validation error: {}",
-                  i.first,
-                  i.second);
-            }
-        }
+        // This includes loading from local bootstrap file or legacy
+        // config file on first-start or upgrade cases.
+        _config_preload = cluster::config_manager::preload(config).get0();
 
         vlog(_log.info, "Cluster configuration properties:");
         vlog(_log.info, "(use `rpk cluster config edit` to change)");

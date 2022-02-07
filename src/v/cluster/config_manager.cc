@@ -44,6 +44,9 @@ static constexpr std::string_view version_key = "_version";
 // The filename within the data directory to use for config cache
 static constexpr std::string_view cache_file = "config_cache.yaml";
 
+// The filename within the data directory to use for first-start bootstrap
+static constexpr std::string_view bootstrap_file = ".bootstrap.yaml";
+
 config_manager::config_manager(
   config_manager::preload_result preload,
   ss::sharded<config_frontend>& cf,
@@ -237,6 +240,18 @@ bool config_manager::should_send_status() {
         return my_latest_status.version > config_version_unset;
     }
 }
+/**
+ * Local filesystem location where installers may write initial cluster
+ * configuration before first redpanda startup for one-time load.
+ *
+ * This is defined relative to node configuration file, so that users
+ * have some control over the location, without having to define
+ * a whole separate node configuration property for where to find the bootstrap
+ * file.
+ */
+std::filesystem::path config_manager::bootstrap_path() {
+    return config::node().get_cfg_file_path().parent_path() / bootstrap_file;
+}
 
 /**
  * Local filesystem location where we write out the most recently
@@ -291,30 +306,96 @@ static void preload_local(
     }
 }
 
+ss::future<config_manager::preload_result>
+config_manager::preload(YAML::Node const& legacy_config) {
+    auto result = co_await load_cache();
+
+    if (result.version == cluster::config_version_unset) {
+        // No config cache, first start?  Try reading bootstrap file.
+        auto bootstrap_success = co_await load_bootstrap();
+
+        if (!bootstrap_success) {
+            // No cache and no bootstrap file: fall back to legacy
+            // config read (this is an upgrade or a cluster configured
+            // in the old fashioned way)
+            co_await load_legacy(legacy_config);
+        }
+    }
+
+    co_return result;
+}
+
+/**
+ * Load the bootstrap config -- call this on first start.
+ *
+ * @return true if we found a bootstrap file (even if not everything in it was
+ * valid)
+ */
+ss::future<bool> config_manager::load_bootstrap() {
+    YAML::Node config;
+    try {
+        auto config_str = co_await read_fully_to_string(bootstrap_path());
+        config = YAML::Load(config_str);
+    } catch (std::filesystem::filesystem_error const& e) {
+        // This is normal on upgrade from pre-config_manager version or
+        // on newly added node.  Also permitted later if user
+        // chooses to e.g. blow away config cache during disaster recovery.
+        vlog(clusterlog.info, "Can't load config bootstrap file: {}", e);
+        co_return false;
+    }
+
+    // This node has never seen a cluster configuration message.
+    // Bootstrap configuration from local yaml file.
+    auto errors = config::shard_local_cfg().read_yaml(config, {});
+    for (const auto& i : errors) {
+        vlog(
+          clusterlog.warn,
+          "Invalid bootstrap property '{}' validation error: {}",
+          i.first,
+          i.second);
+    }
+
+    co_await ss::smp::invoke_on_all(
+      [&config] { config::shard_local_cfg().read_yaml(config, {}); });
+
+    co_return true;
+}
+
+ss::future<> config_manager::load_legacy(YAML::Node const& legacy_config) {
+    co_await ss::smp::invoke_on_all(
+      [&legacy_config] { config::shard_local_cfg().load(legacy_config); });
+
+    // This node has never seen a cluster configuration message.
+    // Bootstrap configuration from local yaml file.
+    auto errors = config::shard_local_cfg().load(legacy_config);
+
+    // Report any invalid properties.  Do not refuse to start redpanda,
+    // as the properties will have been either ignored or clamped
+    // to safe values.
+    for (const auto& i : errors) {
+        vlog(
+          clusterlog.warn,
+          "Cluster property '{}' validation error: {}",
+          i.first,
+          i.second);
+    }
+}
+
 /**
  * Before other redpanda subsystems are initialized, read the config
  * cache and use it to bring the global cluster configuration somewhat
  * up to date before the raft0 log is replayed.
  */
-ss::future<config_manager::preload_result> config_manager::preload() {
-    // TODO: refactor yaml load workaround for lack of string view,
-    // it's also used in node_config load.
-
-    // TODO: legacy path: if cache isn't present, load from redpanda-cfg
-    // (currently we rely on application.cc to do this)
-
-    // TODO: assert that node_config was already loaded (we rely on
-    // data_directory)
-
+ss::future<config_manager::preload_result> config_manager::load_cache() {
     preload_result result;
+
+    // Cluster config load requires node config load to already be complete
+    assert(!config::node().data_directory().path.empty());
 
     YAML::Node config;
     try {
-        auto buf = co_await read_fully(cache_path());
-        auto workaround = ss::uninitialized_string(buf.size_bytes());
-        auto in = iobuf::iterator_consumer(buf.cbegin(), buf.cend());
-        in.consume_to(buf.size_bytes(), workaround.begin());
-        config = YAML::Load(workaround);
+        auto config_str = co_await read_fully_to_string(cache_path());
+        config = YAML::Load(config_str);
     } catch (std::filesystem::filesystem_error const& e) {
         // This is normal on upgrade from pre-config_manager version or
         // on newly added node.  Also permitted later if user
@@ -404,8 +485,7 @@ ss::future<> config_manager::reconcile_status() {
                     vlog(
                       clusterlog.info,
                       "reconcile_status: failed sending status update to "
-                      "leader: "
-                      "{}",
+                      "leader: {}",
                       r.error().message());
                     failed = true;
                 }
