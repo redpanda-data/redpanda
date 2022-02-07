@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "cloud_storage/manifest.h"
+#include "cloud_storage/base_manifest.h"
 #include "json/document.h"
 
 namespace cloud_storage {

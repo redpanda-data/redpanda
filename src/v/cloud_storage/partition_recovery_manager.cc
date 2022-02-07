@@ -2,7 +2,6 @@
 
 #include "bytes/iobuf_istreambuf.h"
 #include "cloud_storage/logger.h"
-#include "cloud_storage/manifest.h"
 #include "cloud_storage/types.h"
 #include "config/configuration.h"
 #include "hashing/xx.h"

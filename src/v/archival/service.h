@@ -10,7 +10,6 @@
 
 #pragma once
 #include "archival/ntp_archiver_service.h"
-#include "cloud_storage/manifest.h"
 #include "cluster/partition_manager.h"
 #include "model/fundamental.h"
 #include "s3/client.h"

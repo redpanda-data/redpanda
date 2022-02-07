@@ -13,7 +13,6 @@
 #include "archival/types.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
-#include "cloud_storage/manifest.h"
 #include "cluster/members_table.h"
 #include "random/generators.h"
 #include "s3/client.h"

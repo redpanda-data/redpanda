@@ -8,7 +8,7 @@
  * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "cloud_storage/manifest.h"
+#include "cloud_storage/base_manifest.h"
 
 #include "hashing/xx.h"
 #include "ssx/sformat.h"

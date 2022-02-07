@@ -11,7 +11,6 @@
 #pragma once
 
 #include "archival/ntp_archiver_service.h"
-#include "cloud_storage/manifest.h"
 #include "cloud_storage/types.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/types.h"

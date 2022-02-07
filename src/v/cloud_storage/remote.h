@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "cloud_storage/manifest.h"
+#include "cloud_storage/base_manifest.h"
 #include "cloud_storage/probe.h"
 #include "cloud_storage/types.h"
 #include "random/simple_time_jitter.h"

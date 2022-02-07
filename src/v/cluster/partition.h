@@ -11,7 +11,6 @@
 
 #pragma once
 
-#include "cloud_storage/manifest.h"
 #include "cloud_storage/remote_partition.h"
 #include "cluster/archival_metadata_stm.h"
 #include "cluster/id_allocator_stm.h"
