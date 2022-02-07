@@ -69,7 +69,9 @@ class CompactionRecoveryTest(RedpandaTest):
                              compaction_ctrl_max_shares=1000)
 
         for p in partitions:
-            self.redpanda.start_node(p.node, extra_rp_conf)
+            self.redpanda.start_node(p.node)
+
+        self.redpanda.set_cluster_config(extra_rp_conf, True)
 
         wait_until(lambda: all(map(lambda p: p.recovered(), partitions)),
                    timeout_sec=90,
