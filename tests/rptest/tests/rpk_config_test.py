@@ -99,10 +99,10 @@ schema_registry: {}
         key = 'redpanda.admin.port'
         value = '9641'  # The default is 9644, so we will change it
 
-        rpk.config_set(key, value, path=RedpandaService.CONFIG_FILE)
+        rpk.config_set(key, value, path=RedpandaService.NODE_CONFIG_FILE)
 
         with tempfile.TemporaryDirectory() as d:
-            node.account.copy_from(RedpandaService.CONFIG_FILE, d)
+            node.account.copy_from(RedpandaService.NODE_CONFIG_FILE, d)
 
             with open(os.path.join(d, config_file)) as f:
                 actual_config = yaml.full_load(f.read())
@@ -132,7 +132,7 @@ schema_registry: {}
         rpk.config_set(key, value, format='yaml')
 
         with tempfile.TemporaryDirectory() as d:
-            node.account.copy_from(RedpandaService.CONFIG_FILE, d)
+            node.account.copy_from(RedpandaService.NODE_CONFIG_FILE, d)
 
             with open(os.path.join(d, 'redpanda.yaml')) as f:
                 expected_config = yaml.full_load(value)
@@ -167,7 +167,7 @@ tune_swappiness: false
 ''')
 
         with tempfile.TemporaryDirectory() as d:
-            node.account.copy_from(RedpandaService.CONFIG_FILE, d)
+            node.account.copy_from(RedpandaService.NODE_CONFIG_FILE, d)
 
             with open(os.path.join(d, 'redpanda.yaml')) as f:
                 actual_config = yaml.full_load(f.read())

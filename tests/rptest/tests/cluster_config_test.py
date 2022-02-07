@@ -109,6 +109,8 @@ class ClusterConfigTest(RedpandaTest):
         set_again = {'enable_idempotence': False}
         assert BOOTSTRAP_CONFIG['enable_idempotence'] != set_again[
             'enable_idempotence']
+        self.redpanda.set_extra_rp_conf(set_again)
+        self.redpanda.write_bootstrap_cluster_config()
 
         self.redpanda.restart_nodes(self.redpanda.nodes, set_again)
 

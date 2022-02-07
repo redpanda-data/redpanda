@@ -8,14 +8,12 @@
 # by the Apache License, Version 2.0
 
 organization: "vectorized"
-cluster_id: "{{cluster}}"
 
 {% if enable_rp %}
 redpanda:
   developer_mode: true
   data_directory: "{{data_dir}}"
   node_id: {{node_id}}
-  join_retry_timeout_ms: 200
   rpc_server:
     address: "{{node.account.hostname}}"
     port: 33145
@@ -35,16 +33,6 @@ redpanda:
       address: "{{node_ip}}"
       port: {{admin_alternate_port}}
 
-  # for librdkafka
-  auto_create_topics_enabled: true
-  default_topic_partitions: 4
-  # disable metrics reporter
-  enable_metrics_reporter: false
-
-  superusers:
-    - {{superuser[0]}}
-
-  enable_auto_rebalance_on_node_add: true
 
 {% if node_id > 1 %}
   seed_servers:

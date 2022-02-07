@@ -23,13 +23,12 @@ from rptest.services.admin import Admin
 
 class ScramTest(RedpandaTest):
     def __init__(self, test_context):
-        extra_rp_conf = dict(
-            developer_mode=True,
-            enable_sasl=True,
-        )
-        super(ScramTest, self).__init__(test_context,
-                                        num_brokers=3,
-                                        extra_rp_conf=extra_rp_conf)
+        extra_rp_conf = dict(enable_sasl=True, )
+        super(ScramTest,
+              self).__init__(test_context,
+                             num_brokers=3,
+                             extra_rp_conf=extra_rp_conf,
+                             extra_node_conf={'developer_mode': True})
 
     def update_user(self, username):
         def gen(length):

@@ -6,6 +6,7 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+import copy
 
 import time
 import os
@@ -245,7 +246,8 @@ class SISettings:
 class RedpandaService(Service):
     PERSISTENT_ROOT = "/var/lib/redpanda"
     DATA_DIR = os.path.join(PERSISTENT_ROOT, "data")
-    CONFIG_FILE = "/etc/redpanda/redpanda.yaml"
+    NODE_CONFIG_FILE = "/etc/redpanda/redpanda.yaml"
+    CLUSTER_BOOTSTRAP_CONFIG_FILE = "/etc/redpanda/.bootstrap.yaml"
     STDOUT_STDERR_CAPTURE = os.path.join(PERSISTENT_ROOT, "redpanda.log")
     WASM_STDOUT_STDERR_CAPTURE = os.path.join(PERSISTENT_ROOT,
                                               "wasm_engine.log")
@@ -272,6 +274,18 @@ class RedpandaService(Service):
     KAFKA_ALTERNATE_PORT = 9093
     ADMIN_ALTERNATE_PORT = 9647
 
+    CLUSTER_CONFIG_DEFAULTS = {
+        'join_retry_timeout_ms': 200,
+
+        # For librdkafka
+        'auto_create_topics_enabled': True,
+        'default_topic_partitions': 4,
+        'enable_metrics_reporter': False,
+        'superusers': [SUPERUSER_CREDENTIALS[0]],
+        'enable_auto_rebalance_on_node_add': True,
+        'cluster_id': CLUSTER_NAME
+    }
+
     logs = {
         "redpanda_start_stdout_stderr": {
             "path": STDOUT_STDERR_CAPTURE,
@@ -297,6 +311,7 @@ class RedpandaService(Service):
                  *,
                  enable_rp=True,
                  extra_rp_conf=None,
+                 extra_node_conf=None,
                  enable_pp=False,
                  enable_sr=False,
                  resource_settings=None,
@@ -307,6 +322,7 @@ class RedpandaService(Service):
         self._context = context
         self._enable_rp = enable_rp
         self._extra_rp_conf = extra_rp_conf or dict()
+        self._extra_node_conf = extra_node_conf or dict()
         self._enable_pp = enable_pp
         self._enable_sr = enable_sr
 
@@ -357,8 +373,9 @@ class RedpandaService(Service):
         to_start = nodes if nodes is not None else self.nodes
         assert all((node in self.nodes for node in to_start))
         self.logger.info("%s: starting service" % self.who_am_i())
-        if self._start_time < 0:
-            # Set self._start_time only the first time self.start is invoked
+
+        first_start = self._start_time < 0
+        if first_start:
             self._start_time = time.time()
 
         self.logger.debug(
@@ -380,6 +397,9 @@ class RedpandaService(Service):
                 self.logger.exception(
                     f"Error cleaning node {node.account.hostname}:")
                 raise
+
+        if first_start:
+            self.write_bootstrap_cluster_config()
 
         for node in to_start:
             self.logger.debug("%s: starting node" % self.who_am_i(node))
@@ -433,13 +453,13 @@ class RedpandaService(Service):
 
         cmd = (
             f"{preamble} {env_preamble} nohup {self.find_binary('redpanda')}"
-            f" --redpanda-cfg {RedpandaService.CONFIG_FILE}"
+            f" --redpanda-cfg {RedpandaService.NODE_CONFIG_FILE}"
             f" --default-log-level {self._log_level}"
             f" --logger-log-level=exception=debug:archival=debug:io=debug:cloud_storage=debug "
             f" {res_args} "
             f" >> {RedpandaService.STDOUT_STDERR_CAPTURE} 2>&1 &")
 
-        # set llvm_profile var for code coverage
+        # set llvm_profile var for code coverae
         # each node will create its own copy of the .profraw file
         # since each node creates a redpanda broker.
         if self.cov_enabled():
@@ -525,10 +545,10 @@ class RedpandaService(Service):
         function also acts as an implicit test that redpanda starts quickly.
         """
         node.account.mkdirs(RedpandaService.DATA_DIR)
-        node.account.mkdirs(os.path.dirname(RedpandaService.CONFIG_FILE))
+        node.account.mkdirs(os.path.dirname(RedpandaService.NODE_CONFIG_FILE))
 
         if write_config:
-            self.write_conf_file(node, override_cfg_params)
+            self.write_node_conf_file(node, override_cfg_params)
 
         if self.coproc_enabled():
             self.start_wasm_engine(node)
@@ -568,13 +588,13 @@ class RedpandaService(Service):
 
     def coproc_enabled(self):
         coproc = self._extra_rp_conf.get('enable_coproc')
-        dev_mode = self._extra_rp_conf.get('developer_mode')
+        dev_mode = self._extra_node_conf.get('developer_mode', True)
         return coproc is True and dev_mode is True
 
     def start_wasm_engine(self, node):
         wcmd = (f"nohup {self.find_binary('node')}"
                 f" {self.find_wasm_root()}/main.js"
-                f" {RedpandaService.CONFIG_FILE} "
+                f" {RedpandaService.NODE_CONFIG_FILE} "
                 f" >> {RedpandaService.WASM_STDOUT_STDERR_CAPTURE} 2>&1 &")
 
         self.logger.info(
@@ -582,7 +602,7 @@ class RedpandaService(Service):
 
         # wait until the wasm engine has finished booting up
         wasm_port = 43189
-        conf_value = self._extra_rp_conf.get('coproc_supervisor_server')
+        conf_value = self._extra_node_conf.get('coproc_supervisor_server')
         if conf_value is not None:
             wasm_port = conf_value['port']
 
@@ -777,8 +797,11 @@ class RedpandaService(Service):
                 else:
                     node.account.remove(
                         f"{RedpandaService.PERSISTENT_ROOT}/data/*")
-        if node.account.exists(RedpandaService.CONFIG_FILE):
-            node.account.remove(f"{RedpandaService.CONFIG_FILE}")
+        if node.account.exists(RedpandaService.NODE_CONFIG_FILE):
+            node.account.remove(f"{RedpandaService.NODE_CONFIG_FILE}")
+        if node.account.exists(RedpandaService.CLUSTER_BOOTSTRAP_CONFIG_FILE):
+            node.account.remove(
+                f"{RedpandaService.CLUSTER_BOOTSTRAP_CONFIG_FILE}")
         if not preserve_logs and node.account.exists(
                 self.EXECUTABLE_SAVE_PATH):
             node.account.remove(self.EXECUTABLE_SAVE_PATH)
@@ -814,7 +837,12 @@ class RedpandaService(Service):
     def started_nodes(self):
         return self._started
 
-    def write_conf_file(self, node, override_cfg_params):
+    def write_node_conf_file(self, node, override_cfg_params=None):
+        """
+        Write the node config file for a redpanda node: this is the YAML representation
+        of Redpanda's `node_config` class.  Distinct from Redpanda's _cluster_ configuration
+        which is written separately.
+        """
         node_info = {self.idx(n): n for n in self.nodes}
 
         # Grab the IP to use it as an alternative listener address, to
@@ -824,7 +852,6 @@ class RedpandaService(Service):
         conf = self.render("redpanda.yaml",
                            node=node,
                            data_dir=RedpandaService.DATA_DIR,
-                           cluster=RedpandaService.CLUSTER_NAME,
                            nodes=node_info,
                            node_id=self.idx(node),
                            node_ip=node_ip,
@@ -836,26 +863,39 @@ class RedpandaService(Service):
                            superuser=self.SUPERUSER_CREDENTIALS,
                            sasl_enabled=self.sasl_enabled())
 
-        if self._extra_rp_conf:
+        if override_cfg_params or self._extra_node_conf:
             doc = yaml.full_load(conf)
-            self.logger.debug(
-                "Setting custom Redpanda configuration options: {}".format(
-                    self._extra_rp_conf))
-            doc["redpanda"].update(self._extra_rp_conf)
+            doc["redpanda"].update(self._extra_node_conf)
+            self.logger.debug(f"extra_node_conf: {self._extra_node_conf}")
+            if override_cfg_params:
+                self.logger.debug(
+                    "Setting custom node configuration options: {}".format(
+                        override_cfg_params))
+                doc["redpanda"].update(override_cfg_params)
             conf = yaml.dump(doc)
 
-        if override_cfg_params:
-            doc = yaml.full_load(conf)
-            self.logger.debug(
-                "Setting custom Redpanda node configuration options: {}".
-                format(override_cfg_params))
-            doc["redpanda"].update(override_cfg_params)
-            conf = yaml.dump(doc)
-
-        self.logger.info("Writing Redpanda config file: {}".format(
-            RedpandaService.CONFIG_FILE))
+        self.logger.info("Writing Redpanda node config file: {}".format(
+            RedpandaService.NODE_CONFIG_FILE))
         self.logger.debug(conf)
-        node.account.create_file(RedpandaService.CONFIG_FILE, conf)
+        node.account.create_file(RedpandaService.NODE_CONFIG_FILE, conf)
+
+    def write_bootstrap_cluster_config(self):
+        conf = copy.deepcopy(self.CLUSTER_CONFIG_DEFAULTS)
+        if self._extra_rp_conf:
+            self.logger.debug(
+                "Setting custom cluster configuration options: {}".format(
+                    self._extra_rp_conf))
+            conf.update(self._extra_rp_conf)
+
+        conf_yaml = yaml.dump(conf)
+        for node in self.nodes:
+            self.logger.info(
+                "Writing bootstrap cluster config file {}:{}".format(
+                    node.name, RedpandaService.CLUSTER_BOOTSTRAP_CONFIG_FILE))
+            node.account.mkdirs(
+                os.path.dirname(RedpandaService.CLUSTER_BOOTSTRAP_CONFIG_FILE))
+            node.account.create_file(
+                RedpandaService.CLUSTER_BOOTSTRAP_CONFIG_FILE, conf_yaml)
 
     def restart_nodes(self,
                       nodes,
@@ -1122,7 +1162,7 @@ class RedpandaService(Service):
     def read_configuration(self, node):
         assert node in self._started
         with self.config_file_lock:
-            with node.account.open(RedpandaService.CONFIG_FILE) as f:
+            with node.account.open(RedpandaService.NODE_CONFIG_FILE) as f:
                 return yaml.full_load(f.read())
 
     def shards(self):
