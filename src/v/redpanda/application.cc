@@ -314,12 +314,7 @@ ss::app_template::config application::setup_app_config() {
 
 void application::hydrate_config(const po::variables_map& cfg) {
     std::filesystem::path cfg_path(cfg["redpanda-cfg"].as<std::string>());
-    auto buf = read_fully(cfg_path).get0();
-    // see https://github.com/jbeder/yaml-cpp/issues/765
-    auto workaround = ss::uninitialized_string(buf.size_bytes());
-    auto in = iobuf::iterator_consumer(buf.cbegin(), buf.cend());
-    in.consume_to(buf.size_bytes(), workaround.begin());
-    const YAML::Node config = YAML::Load(workaround);
+    const YAML::Node config = YAML::Load(read_fully_to_string(cfg_path).get0());
     auto config_printer = [this](std::string_view service) {
         return [this, service](const config::base_property& item) {
             std::stringstream val;
