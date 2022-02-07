@@ -68,7 +68,7 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
             conf.base_dir,
             storage::debug_sanitize_files::yes);
       },
-      conf);
+      [conf]() { return conf; });
     store.start().get();
     auto stop_kvstore = ss::defer([&store] { store.stop().get(); });
     auto& m = store.log_mgr();

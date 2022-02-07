@@ -45,7 +45,10 @@ struct mux_state_machine_fixture {
           _data_dir,
           storage::debug_sanitize_files::yes);
 
-        _storage.start([kv_conf]() { return kv_conf; }, default_log_cfg())
+        _storage
+          .start(
+            [kv_conf]() { return kv_conf; },
+            [this]() { return default_log_cfg(); })
           .get0();
         _storage.invoke_on_all(&storage::api::start).get0();
         _connections.start().get0();

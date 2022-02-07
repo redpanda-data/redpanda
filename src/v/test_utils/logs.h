@@ -38,11 +38,13 @@ static inline ss::future<> persist_log_file(
                 base_dir,
                 storage::debug_sanitize_files::yes);
           },
-          storage::log_config(
-            storage::log_config::storage_type::disk,
-            base_dir,
-            1_GiB,
-            storage::debug_sanitize_files::yes));
+          [base_dir]() {
+              return storage::log_config(
+                storage::log_config::storage_type::disk,
+                base_dir,
+                1_GiB,
+                storage::debug_sanitize_files::yes);
+          });
         storage.start().get();
         auto& mgr = storage.log_mgr();
         try {
@@ -97,11 +99,13 @@ read_log_file(ss::sstring base_dir, model::ntp file_ntp) {
                 base_dir,
                 storage::debug_sanitize_files::yes);
           },
-          storage::log_config(
-            storage::log_config::storage_type::disk,
-            base_dir,
-            1_GiB,
-            storage::debug_sanitize_files::yes));
+          [base_dir]() {
+              return storage::log_config(
+                storage::log_config::storage_type::disk,
+                base_dir,
+                1_GiB,
+                storage::debug_sanitize_files::yes);
+          });
         storage.start().get();
         auto& mgr = storage.log_mgr();
         try {

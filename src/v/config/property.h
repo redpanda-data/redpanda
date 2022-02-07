@@ -268,6 +268,16 @@ public:
         }
     }
 
+    binding& operator=(const binding& rhs) {
+        _value = rhs._value;
+        _parent = rhs._parent;
+        _on_change = rhs._on_change;
+        if (_parent && this != &rhs) {
+            _parent->_bindings.push_back(*this);
+        }
+        return *this;
+    }
+
     /**
      * This needs to be noexcept for objects with bindings to
      * be usable in seastar futures.  This is not strictly

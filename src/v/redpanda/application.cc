@@ -473,14 +473,14 @@ manager_config_from_global_config(scheduling_groups& sgs) {
     return storage::log_config(
       storage::log_config::storage_type::disk,
       config::node().data_directory().as_sstring(),
-      config::shard_local_cfg().log_segment_size(),
-      config::shard_local_cfg().compacted_log_segment_size(),
-      config::shard_local_cfg().max_compacted_log_segment_size(),
+      config::shard_local_cfg().log_segment_size.bind(),
+      config::shard_local_cfg().compacted_log_segment_size.bind(),
+      config::shard_local_cfg().max_compacted_log_segment_size.bind(),
       storage::debug_sanitize_files::no,
       priority_manager::local().compaction_priority(),
-      config::shard_local_cfg().retention_bytes(),
-      config::shard_local_cfg().log_compaction_interval_ms(),
-      config::shard_local_cfg().delete_retention_ms(),
+      config::shard_local_cfg().retention_bytes.bind(),
+      config::shard_local_cfg().log_compaction_interval_ms.bind(),
+      config::shard_local_cfg().delete_retention_ms.bind(),
       storage::with_cache(!config::shard_local_cfg().disable_batch_cache()),
       storage::batch_cache::reclaim_options{
         .growth_window = config::shard_local_cfg().reclaim_growth_window(),
@@ -615,12 +615,15 @@ void application::wire_up_redpanda_services() {
     construct_service(shard_table).get();
 
     syschecks::systemd_message("Intializing storage services").get();
-    auto log_cfg = manager_config_from_global_config(_scheduling_groups);
-    log_cfg.reclaim_opts.background_reclaimer_sg
-      = _scheduling_groups.cache_background_reclaim_sg();
-
     construct_service(
-      storage, []() { return kvstore_config_from_global_config(); }, log_cfg)
+      storage,
+      []() { return kvstore_config_from_global_config(); },
+      [this]() {
+          auto log_cfg = manager_config_from_global_config(_scheduling_groups);
+          log_cfg.reclaim_opts.background_reclaimer_sg
+            = _scheduling_groups.cache_background_reclaim_sg();
+          return log_cfg;
+      })
       .get();
 
     syschecks::systemd_message("Intializing raft recovery throttle").get();

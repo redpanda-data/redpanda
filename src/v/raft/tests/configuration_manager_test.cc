@@ -43,11 +43,13 @@ struct config_manager_fixture {
               base_dir,
               storage::debug_sanitize_files::yes);
         }),
-        std::move(storage::log_config(
-          storage::log_config::storage_type::disk,
-          base_dir,
-          100_MiB,
-          storage::debug_sanitize_files::yes))))
+        [this]() {
+            return storage::log_config(
+              storage::log_config::storage_type::disk,
+              base_dir,
+              100_MiB,
+              storage::debug_sanitize_files::yes);
+        }))
       , _logger(
           raft::group_id(1),
           model::ntp(model::ns("t"), model::topic("t"), model::partition_id(0)))

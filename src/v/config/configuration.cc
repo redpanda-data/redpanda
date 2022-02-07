@@ -57,7 +57,9 @@ configuration::configuration()
       *this,
       "log_segment_size",
       "How large in bytes should each log segment be (default 1G)",
-      {.example = "2147483648", .visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no,
+       .example = "2147483648",
+       .visibility = visibility::tunable},
       1_GiB,
       {.min = 1_MiB})
   , compacted_log_segment_size(
@@ -65,7 +67,9 @@ configuration::configuration()
       "compacted_log_segment_size",
       "How large in bytes should each compacted log segment be (default "
       "256MiB)",
-      {.example = "268435456", .visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no,
+       .example = "268435456",
+       .visibility = visibility::tunable},
       256_MiB,
       {.min = 1_MiB})
   , readers_cache_eviction_timeout_ms(
@@ -382,19 +386,19 @@ configuration::configuration()
       *this,
       "delete_retention_ms",
       "delete segments older than this - default 1 week",
-      {.visibility = visibility::user},
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
       10080min)
   , log_compaction_interval_ms(
       *this,
       "log_compaction_interval_ms",
       "How often do we trigger background compaction",
-      {.visibility = visibility::user},
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
       10s)
   , retention_bytes(
       *this,
       "retention_bytes",
       "Default max bytes per partition on disk before triggering a compaction",
-      {.visibility = visibility::user},
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
       std::nullopt)
   , group_topic_partitions(
       *this,
@@ -665,7 +669,9 @@ configuration::configuration()
       *this,
       "max_compacted_log_segment_size",
       "Max compacted segment size after consolidation",
-      {.example = "10737418240", .visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no,
+       .example = "10737418240",
+       .visibility = visibility::tunable},
       5_GiB)
   , id_allocator_log_capacity(
       *this,

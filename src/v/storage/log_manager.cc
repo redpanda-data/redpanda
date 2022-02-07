@@ -55,10 +55,15 @@ using logs_type = absl::flat_hash_map<model::ntp, log_housekeeping_meta>;
 log_manager::log_manager(log_config config, kvstore& kvstore) noexcept
   : _config(std::move(config))
   , _kvstore(kvstore)
-  , _jitter(_config.compaction_interval)
+  , _jitter(_config.compaction_interval())
   , _batch_cache(config.reclaim_opts) {
     _compaction_timer.set_callback([this] { trigger_housekeeping(); });
     _compaction_timer.rearm(_jitter());
+
+    _config.compaction_interval.watch([this]() {
+        _jitter = simple_time_jitter<ss::lowres_clock>{
+          _config.compaction_interval()};
+    });
 }
 void log_manager::trigger_housekeeping() {
     ssx::background = ssx::spawn_with_gate_then(_open_gate, [this] {
@@ -99,7 +104,7 @@ static inline logs_type::iterator find_next_non_compacted_log(logs_type& logs) {
 
 ss::future<> log_manager::housekeeping() {
     auto collection_threshold = model::timestamp(
-      model::timestamp::now().value() - _config.delete_retention.count());
+      model::timestamp::now().value() - _config.delete_retention().count());
     /**
      * Note that this loop does a double find - which is not fast. This solution
      * is the tradeoff to *not* lock the segment during log_manager::remove(ntp)
@@ -135,7 +140,7 @@ ss::future<> log_manager::housekeeping() {
                        it->second.last_compaction = ss::lowres_clock::now();
                        return it->second.handle.compact(compaction_config(
                          collection_threshold,
-                         _config.retention_bytes,
+                         _config.retention_bytes(),
                          _config.compaction_priority,
                          _abort_source));
                    });
@@ -333,16 +338,16 @@ std::ostream& operator<<(std::ostream& o, log_config::storage_type t) {
 
 std::ostream& operator<<(std::ostream& o, const log_config& c) {
     o << "{type:" << c.stype << ", base_dir:" << c.base_dir
-      << ", max_segment.size:" << c.max_segment_size
+      << ", max_segment.size:" << c.max_segment_size()
       << ", debug_sanitize_fileops:" << c.sanitize_fileops
       << ", retention_bytes:";
-    if (c.retention_bytes) {
-        o << *c.retention_bytes;
+    if (c.retention_bytes()) {
+        o << *(c.retention_bytes());
     } else {
         o << "nullopt";
     }
-    return o << ", compaction_interval_ms:" << c.compaction_interval.count()
-             << ", delete_reteion_ms:" << c.delete_retention.count()
+    return o << ", compaction_interval_ms:" << c.compaction_interval().count()
+             << ", delete_reteion_ms:" << c.delete_retention().count()
              << ", with_cache:" << c.cache
              << ", relcaim_opts:" << c.reclaim_opts << "}";
 }

@@ -41,13 +41,15 @@ struct bootstrap_fixture : raft::simple_record_fixture {
               "test.dir",
               storage::debug_sanitize_files::yes);
         },
-        storage::log_config(
-          storage::log_config::storage_type::disk,
-          "test.dir",
-          1_GiB,
-          storage::debug_sanitize_files::yes,
-          ss::default_priority_class(),
-          storage::with_cache::no)) {
+        []() {
+            return storage::log_config(
+              storage::log_config::storage_type::disk,
+              "test.dir",
+              1_GiB,
+              storage::debug_sanitize_files::yes,
+              ss::default_priority_class(),
+              storage::with_cache::no);
+        }) {
         _storage.start().get();
         // ignore the get_log()
         (void)_storage.log_mgr()
