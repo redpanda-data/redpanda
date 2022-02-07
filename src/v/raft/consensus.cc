@@ -2253,12 +2253,14 @@ consensus::next_followers_request_seq() {
 
 ss::future<> consensus::refresh_commit_index() {
     return _op_lock.get_units().then([this](ss::semaphore_units<> u) mutable {
-        if (!is_leader()) {
-            return ss::now();
-        }
         auto f = ss::now();
+
         if (_has_pending_flushes) {
             f = flush_log();
+        }
+
+        if (!is_leader()) {
+            return f;
         }
         return f.then([this, u = std::move(u)]() mutable {
             return do_maybe_update_leader_commit_idx(std::move(u));
