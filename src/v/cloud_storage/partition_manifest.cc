@@ -19,13 +19,10 @@
 
 #include <seastar/core/coroutine.hh>
 
-#include <boost/lexical_cast.hpp>
 #include <fmt/ostream.h>
 #include <rapidjson/istreamwrapper.h>
 #include <rapidjson/ostreamwrapper.h>
 #include <rapidjson/rapidjson.h>
-
-#include <chrono>
 
 namespace cloud_storage {
 

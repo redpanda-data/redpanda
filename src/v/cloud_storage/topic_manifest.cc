@@ -23,7 +23,6 @@
 #include <fmt/ostream.h>
 #include <rapidjson/istreamwrapper.h>
 #include <rapidjson/ostreamwrapper.h>
-#include <rapidjson/rapidjson.h>
 
 #include <chrono>
 

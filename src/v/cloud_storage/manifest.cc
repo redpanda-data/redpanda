@@ -10,21 +10,13 @@
 
 #include "cloud_storage/manifest.h"
 
-#include "bytes/iobuf_istreambuf.h"
-#include "bytes/iobuf_ostreambuf.h"
-#include "cloud_storage/types.h"
 #include "hashing/xx.h"
-#include "json/writer.h"
-#include "model/timestamp.h"
 #include "ssx/sformat.h"
 #include "storage/fs_utils.h"
 
 #include <seastar/core/coroutine.hh>
 
 #include <fmt/ostream.h>
-#include <rapidjson/istreamwrapper.h>
-#include <rapidjson/ostreamwrapper.h>
-#include <rapidjson/rapidjson.h>
 
 #include <charconv>
 

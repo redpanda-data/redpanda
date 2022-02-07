@@ -12,12 +12,9 @@
 
 #include "cloud_storage/types.h"
 #include "cluster/types.h"
-#include "json/document.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "s3/client.h"
 #include "seastarx.h"
-#include "serde/serde.h"
 
 #include <compare>
 
