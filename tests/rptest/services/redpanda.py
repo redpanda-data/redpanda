@@ -18,10 +18,12 @@ import random
 import threading
 import collections
 import re
+import uuid
 from typing import Optional
 
 import yaml
 from ducktape.services.service import Service
+from rptest.archival.s3_client import S3Client
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.utils.util import wait_until
 from ducktape.cluster.cluster import ClusterNode
@@ -176,6 +178,45 @@ class ResourceSettings:
         return preamble, args
 
 
+class SISettings:
+    """
+    Settings for shadow indexing stuff
+    """
+    def __init__(self,
+                 *,
+                 log_segment_size=16 * 1000000,
+                 cloud_storage_access_key="panda-user",
+                 cloud_storage_secret_key="panda-secret",
+                 cloud_storage_region="panda-region",
+                 cloud_storage_bucket=f"panda-bucket-{uuid.uuid1()}",
+                 cloud_storage_api_endpoint="minio-s3",
+                 cloud_storage_api_endpoint_port=9000,
+                 cloud_storage_cache_size=160 * 1000000):
+        self.log_segment_size = log_segment_size
+        self.cloud_storage_access_key = cloud_storage_access_key
+        self.cloud_storage_secret_key = cloud_storage_secret_key
+        self.cloud_storage_region = cloud_storage_region
+        self.cloud_storage_bucket = cloud_storage_bucket
+        self.cloud_storage_api_endpoint = cloud_storage_api_endpoint
+        self.cloud_storage_api_endpoint_port = cloud_storage_api_endpoint_port
+        self.cloud_storage_cache_size = cloud_storage_cache_size
+
+    def update_rp_conf(self, conf):
+        conf["log_segment_size"] = self.log_segment_size
+        conf["cloud_storage_access_key"] = self.cloud_storage_access_key
+        conf["cloud_storage_secret_key"] = self.cloud_storage_secret_key
+        conf["cloud_storage_region"] = self.cloud_storage_region
+        conf["cloud_storage_bucket"] = self.cloud_storage_bucket
+        conf["cloud_storage_api_endpoint"] = self.cloud_storage_api_endpoint
+        conf[
+            "cloud_storage_api_endpoint_port"] = self.cloud_storage_api_endpoint_port
+        conf["cloud_storage_cache_size"] = self.cloud_storage_cache_size
+        conf["cloud_storage_enabled"] = True
+        conf['cloud_storage_disable_tls'] = True
+
+        return conf
+
+
 class RedpandaService(Service):
     PERSISTENT_ROOT = "/var/lib/redpanda"
     DATA_DIR = os.path.join(PERSISTENT_ROOT, "data")
@@ -232,7 +273,8 @@ class RedpandaService(Service):
                  extra_rp_conf=None,
                  enable_pp=False,
                  enable_sr=False,
-                 resource_settings=None):
+                 resource_settings=None,
+                 si_settings=None):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
         self._context = context
         self._enable_rp = enable_rp
@@ -248,6 +290,12 @@ class RedpandaService(Service):
         if resource_settings is None:
             resource_settings = ResourceSettings()
         self._resource_settings = resource_settings
+
+        if si_settings is not None:
+            self._extra_rp_conf = si_settings.update_rp_conf(
+                self._extra_rp_conf)
+        self._si_settings = si_settings
+        self._s3client = None
 
         self.config_file_lock = threading.Lock()
 
@@ -327,6 +375,9 @@ class RedpandaService(Service):
                                          request_timeout_ms=30000,
                                          api_version_auto_timeout_ms=3000)
 
+        if self._si_settings is not None:
+            self.start_si()
+
     def security_config(self):
         return self._security_config
 
@@ -365,7 +416,7 @@ class RedpandaService(Service):
 
         node.account.signal(pid, signal, allow_fail=False)
 
-    def start_node(self, node, override_cfg_params=None):
+    def start_node(self, node, override_cfg_params=None, timeout=None):
         """
         Start a single instance of redpanda. This function will not return until
         redpanda appears to have started successfully. If redpanda does not
@@ -382,9 +433,12 @@ class RedpandaService(Service):
 
         self.start_redpanda(node)
 
+        if timeout is None:
+            timeout = self.READY_TIMEOUT_SEC
+
         wait_until(
             lambda: Admin.ready(node).get("status") == "ready",
-            timeout_sec=RedpandaService.READY_TIMEOUT_SEC,
+            timeout_sec=timeout,
             err_msg=f"Redpanda service {node.account.hostname} failed to start",
             retry_on_exc=True)
         self._started.append(node)
@@ -419,6 +473,31 @@ class RedpandaService(Service):
                 err_msg=
                 f"Wasm engine didn't finish startup in {RedpandaService.READY_TIMEOUT_SEC} seconds",
             )
+
+    def start_si(self):
+        self._s3client = S3Client(
+            region=self._si_settings.cloud_storage_region,
+            access_key=self._si_settings.cloud_storage_access_key,
+            secret_key=self._si_settings.cloud_storage_secret_key,
+            endpoint=
+            f"http://{self._si_settings.cloud_storage_api_endpoint}:{self._si_settings.cloud_storage_api_endpoint_port}",
+            logger=self.logger,
+        )
+
+        self._s3client.create_bucket(self._si_settings.cloud_storage_bucket)
+
+    def delete_bucket_from_si(self):
+        if self._s3client:
+            failed_deletions = self._s3client.empty_bucket(
+                self._si_settings.cloud_storage_bucket)
+            assert len(failed_deletions) == 0
+            self._s3client.delete_bucket(
+                self._si_settings.cloud_storage_bucket)
+
+    def get_objects_from_si(self):
+        if self._s3client:
+            return self._s3client.list_objects(
+                self._si_settings.cloud_storage_bucket)
 
     def monitor_log(self, node):
         assert node in self._started
@@ -499,19 +578,25 @@ class RedpandaService(Service):
             "rp_install_path_root", None)
         return f"{rp_install_path_root}/libexec/{name}"
 
-    def stop_node(self, node):
+    def stop_node(self, node, timeout=None):
         pids = self.pids(node)
 
         for pid in pids:
             node.account.signal(pid, signal.SIGTERM, allow_fail=False)
 
-        timeout_sec = 30
-        wait_until(lambda: len(self.pids(node)) == 0,
-                   timeout_sec=timeout_sec,
-                   err_msg="Redpanda node failed to stop in %d seconds" %
-                   timeout_sec)
+        if timeout is None:
+            timeout = 30
+
+        wait_until(
+            lambda: len(self.pids(node)) == 0,
+            timeout_sec=timeout,
+            err_msg=f"Redpanda node failed to stop in {timeout} seconds")
         if node in self._started:
             self._started.remove(node)
+
+    def clean(self, **kwargs):
+        super().clean(**kwargs)
+        self.delete_bucket_from_si()
 
     def clean_node(self, node, preserve_logs=False):
         node.account.kill_process("redpanda", clean_shutdown=False)
@@ -603,12 +688,16 @@ class RedpandaService(Service):
         self.logger.debug(conf)
         node.account.create_file(RedpandaService.CONFIG_FILE, conf)
 
-    def restart_nodes(self, nodes, override_cfg_params=None):
+    def restart_nodes(self,
+                      nodes,
+                      override_cfg_params=None,
+                      start_timeout=None,
+                      stop_timeout=None):
         nodes = [nodes] if isinstance(nodes, ClusterNode) else nodes
         for node in nodes:
-            self.stop_node(node)
+            self.stop_node(node, timeout=stop_timeout)
         for node in nodes:
-            self.start_node(node, override_cfg_params)
+            self.start_node(node, override_cfg_params, timeout=start_timeout)
 
     def registered(self, node):
         """

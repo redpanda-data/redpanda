@@ -111,6 +111,10 @@ RUN git -C /opt clone https://github.com/twmb/franz-go.git && cd /opt/franz-go &
 RUN go install github.com/twmb/kcl@latest && \
     mv /root/go/bin/kcl /usr/local/bin/
 
+# Should fork to redpanda repo
+RUN git -C /opt clone https://github.com/jcsp/si-verifier.git && \
+    cd /opt/si-verifier && go mod tidy && go build
+
 # Expose port 8080 for any http examples within clients
 EXPOSE 8080
 

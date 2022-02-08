@@ -68,6 +68,15 @@ class S3Client:
             if err.response['Error']['Code'] != 'BucketAlreadyOwnedByYou':
                 raise err
 
+    def delete_bucket(self, name):
+        try:
+            self._cli.delete_bucket(Bucket=name)
+        except Exception:
+            self.logger.warn("Error deleting bucket, contents:")
+            for o in self.list_objects(name):
+                self.logger.warn(f"  {o.Key}")
+            raise
+
     def empty_bucket(self, name):
         """Empty bucket, return list of keys that wasn't deleted due
         to error"""
