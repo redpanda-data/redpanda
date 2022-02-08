@@ -138,16 +138,7 @@ public:
     ss::future<result<model::offset>> linearizable_barrier();
 
     vnode self() const { return _self; }
-    protocol_metadata meta() const {
-        auto lstats = _log.offsets();
-        return protocol_metadata{
-          .group = _group,
-          .commit_index = _commit_index,
-          .term = _term,
-          .prev_log_index = lstats.dirty_offset,
-          .prev_log_term = lstats.dirty_offset_term,
-          .last_visible_index = last_visible_index()};
-    }
+    protocol_metadata meta() const;
     raft::group_id group() const { return _group; }
     model::term_id term() const { return _term; }
     group_configuration config() const;
