@@ -74,7 +74,10 @@ ss::future<> controller::wire_up() {
             config::shard_local_cfg().segment_fallocation_step.bind());
       })
       .then([this] { return _credentials.start(); })
-      .then([this] { return _authorizer.start(); })
+      .then([this] {
+          return _authorizer.start(
+            []() { return config::shard_local_cfg().superusers.bind(); });
+      })
       .then([this] { return _tp_state.start(); });
 }
 
@@ -182,14 +185,6 @@ ss::future<> controller::start() {
             std::ref(_tp_frontend),
             std::ref(_storage),
             std::ref(_as));
-      })
-      .then([this] {
-          return _authorizer.invoke_on_all([](security::authorizer& auth) {
-              for (auto username : config::shard_local_cfg().superusers()) {
-                  auth.add_superuser(security::acl_principal(
-                    security::principal_type::user, std::move(username)));
-              }
-          });
       })
       .then([this] {
           return _members_manager.invoke_on(

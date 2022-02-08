@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "config/property.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "seastarx.h"
@@ -41,11 +42,18 @@ public:
     // allow operation when no ACL match is found
     using allow_empty_matches = ss::bool_class<struct allow_empty_matches_type>;
 
-    authorizer()
-      : authorizer(allow_empty_matches::no) {}
+    explicit authorizer(
+      std::function<config::binding<std::vector<ss::sstring>>()> superusers_cb)
+      : authorizer(allow_empty_matches::no, superusers_cb) {}
 
-    explicit authorizer(allow_empty_matches allow)
-      : _allow_empty_matches(allow) {}
+    authorizer(
+      allow_empty_matches allow,
+      std::function<config::binding<std::vector<ss::sstring>>()> superusers_cb)
+      : _superusers_conf(superusers_cb())
+      , _allow_empty_matches(allow) {
+        update_superusers();
+        _superusers_conf.watch([this]() { update_superusers(); });
+    }
 
     /*
      * Add ACL bindings to the authorizer.
@@ -113,16 +121,26 @@ public:
           });
     }
 
-    void add_superuser(acl_principal principal) {
-        if (unlikely(seclog.is_shard_zero())) {
-            vlog(seclog.debug, "Adding superuser: {}", principal);
-        }
-        _superusers.emplace(std::move(principal));
-    }
-
 private:
     acl_store _store;
+
+    // The list of superusers is stored twice: once as a vector in the
+    // configuration subsystem, then again has a set here for fast lookups.
+    // The set is updated on changes via the config::binding.
     absl::flat_hash_set<acl_principal> _superusers;
+    config::binding<std::vector<ss::sstring>> _superusers_conf;
+    void update_superusers() {
+        // Rebuild the whole set, because an incremental change would
+        // in any case involve constructing a set to do a comparison
+        // between old and new.
+        _superusers.clear();
+        for (const auto& username : _superusers_conf()) {
+            auto principal = acl_principal(principal_type::user, username);
+            vlog(seclog.info, "Registered superuser account: {}", principal);
+            _superusers.emplace(std::move(principal));
+        }
+    }
+
     allow_empty_matches _allow_empty_matches;
 };
 
