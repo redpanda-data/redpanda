@@ -2191,12 +2191,33 @@ model::term_id consensus::get_term(model::offset o) {
     if (unlikely(o < model::offset(0))) {
         return model::term_id{};
     }
+    auto lstat = _log.offsets();
+
+    // if log is empty, return term from snapshot
+    if (o == lstat.dirty_offset && lstat.start_offset > lstat.dirty_offset) {
+        return _last_snapshot_term;
+    }
+
     return _log.get_term(o).value_or(model::term_id{});
 }
 
 clock_type::time_point
 consensus::last_sent_append_entries_req_timesptamp(vnode id) {
     return _fstats.get(id).last_sent_append_entries_req_timesptamp;
+}
+
+protocol_metadata consensus::meta() const {
+    auto lstats = _log.offsets();
+    const auto prev_log_term = lstats.dirty_offset >= lstats.start_offset
+                                 ? lstats.dirty_offset_term
+                                 : _last_snapshot_term;
+    return protocol_metadata{
+      .group = _group,
+      .commit_index = _commit_index,
+      .term = _term,
+      .prev_log_index = lstats.dirty_offset,
+      .prev_log_term = prev_log_term,
+      .last_visible_index = last_visible_index()};
 }
 
 void consensus::update_node_append_timestamp(vnode id) {
@@ -2363,9 +2384,7 @@ consensus::do_maybe_update_leader_commit_idx(ss::semaphore_units<> u) {
      */
     majority_match = std::min(majority_match, _flushed_offset);
 
-    if (
-      majority_match > _commit_index
-      && _log.get_term(majority_match) == _term) {
+    if (majority_match > _commit_index && get_term(majority_match) == _term) {
         vlog(_ctxlog.trace, "Leader commit index updated {}", majority_match);
         auto old_commit_idx = _commit_index;
         _commit_index = majority_match;
