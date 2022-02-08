@@ -366,7 +366,7 @@ ss::future<> group_manager::recover_partition(
             auto group = get_group(group_id);
             if (!group) {
                 group = ss::make_lw_shared<kafka::group>(
-                  group_id, group_state::empty, _conf, p->partition);
+                  group_id, group_stm.get_metadata(), _conf, p->partition);
                 group->reset_tx_state(term);
                 _groups.emplace(group_id, group);
                 group->reschedule_all_member_heartbeats();
