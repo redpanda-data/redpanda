@@ -16,6 +16,12 @@ from rptest.clients.types import TopicSpec
 
 
 class CreatePartitionsTest(RedpandaTest):
+    def __init__(self, test_context):
+        super().__init__(test_context=test_context,
+                         extra_rp_conf={
+                             "enable_leader_balancer": False,
+                         })
+
     def _partition_count(self, topic):
         meta = self.client().describe_topic(topic)
         return len(meta.partitions)
@@ -58,5 +64,3 @@ class CreatePartitionsTest(RedpandaTest):
                               replication_factor=random.choice((1, 3)))
             self._create_add_verify(topic, new_partition_count)
             self.client().delete_topic(topic.name)
-
-            # todo delete the topic to avoid running out of file handles
