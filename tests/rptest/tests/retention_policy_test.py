@@ -28,6 +28,8 @@ class RetentionPolicyTest(RedpandaTest):
         extra_rp_conf = dict(
             log_compaction_interval_ms=5000,
             log_segment_size=1048576,
+            enable_transactions=True,
+            enable_idempotence=True,
         )
 
         super(RetentionPolicyTest, self).__init__(test_context=test_context,
