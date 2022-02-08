@@ -441,7 +441,12 @@ bool group::leader_rejoined() {
 
 ss::future<join_group_response>
 group::handle_join_group(join_group_request&& r, bool is_new_group) {
-    vlog(_ctxlog.trace, "Handling join request {}", r);
+    vlog(
+      _ctxlog.trace,
+      "Handling join request {} for {} group {}",
+      r,
+      (is_new_group ? "new" : "existing"),
+      *this);
 
     auto ret = ss::make_ready_future<join_group_response>(
       join_group_response(error_code::none));
@@ -2254,22 +2259,49 @@ group::remove_topic_partitions(const std::vector<model::topic_partition>& tps) {
 }
 
 std::ostream& operator<<(std::ostream& o, const group& g) {
+    const auto ntp = [&g] {
+        if (g._partition) {
+            return fmt::format("{}", g._partition->ntp());
+        } else {
+            return std::string("<none>");
+        }
+    }();
+
+    auto timer_expires =
+      [](const auto& timer) -> std::optional<group::duration_type> {
+        if (timer.armed()) {
+            return timer.get_timeout() - group::clock_type::now();
+        }
+        return std::nullopt;
+    };
+
     fmt::print(
       o,
       "id={} state={} gen={} proto_type={} proto={} leader={} "
-      "empty={} ntp=",
+      "empty={} ntp={} num_members_joining={} new_member_added={} "
+      "join_timer={}",
       g.id(),
       g.state(),
       g.generation(),
       g.protocol_type(),
       g.protocol(),
       g.leader(),
-      !g.has_members());
-    if (g._partition) {
-        o << g._partition->ntp();
-    } else {
-        o << "<none>";
+      !g.has_members(),
+      ntp,
+      g._num_members_joining,
+      g._new_member_added,
+      timer_expires(g._join_timer));
+
+    fmt::print(o, " pending members [");
+    for (const auto& m : g._pending_members) {
+        fmt::print(o, "{} expires={} ", m.first, timer_expires(m.second));
     }
+    fmt::print(o, "] full members [");
+    for (const auto& m : g._members) {
+        fmt::print(o, "{} ", m.second);
+    }
+    fmt::print(o, "]");
+
     return o;
 }
 
