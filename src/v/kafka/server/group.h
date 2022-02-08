@@ -221,9 +221,7 @@ public:
     }
 
     /// Add a member to the group in a pending state.
-    void add_pending_member(const kafka::member_id& member_id) {
-        _pending_members.emplace(member_id);
-    }
+    void add_pending_member(const kafka::member_id&, duration_type);
 
     /// Check if the group contains a pending member.
     bool contains_pending_member(const kafka::member_id& member) const {
@@ -237,7 +235,7 @@ public:
         }
     }
 
-    void remove_pending_member(const kafka::member_id& member_id);
+    void remove_pending_member(kafka::member_id member_id);
 
     /// Check if a member id refers to the group leader.
     bool is_leader(const kafka::member_id& member_id) const {
@@ -599,7 +597,8 @@ private:
     protocol_support _supported_protocols;
     member_map _members;
     int _num_members_joining;
-    absl::node_hash_set<kafka::member_id> _pending_members;
+    absl::node_hash_map<kafka::member_id, ss::timer<clock_type>>
+      _pending_members;
     std::optional<kafka::protocol_type> _protocol_type;
     std::optional<kafka::protocol_name> _protocol;
     std::optional<kafka::member_id> _leader;
