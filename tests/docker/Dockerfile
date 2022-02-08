@@ -113,7 +113,8 @@ RUN go install github.com/twmb/kcl@latest && \
 
 # Should fork to redpanda repo
 RUN git -C /opt clone https://github.com/jcsp/si-verifier.git && \
-    cd /opt/si-verifier && go mod tidy && go build
+    cd /opt/si-verifier && git reset --hard bcf4996d063e96497f8ff8be35d82fa1cec53180 && \
+    go mod tidy && go build
 
 # Expose port 8080 for any http examples within clients
 EXPOSE 8080
