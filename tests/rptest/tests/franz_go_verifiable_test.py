@@ -61,11 +61,15 @@ class FranzGoVerifiableTest(RedpandaTest):
         # Need create json file for consumer at first
         self._create_json_file()
 
-        self._producer.start()
-        self._seq_consumer.start()
-        self._rand_consumer.start()
+        self._producer.start(clean=False)
+        self._seq_consumer.start(clean=False)
+        self._rand_consumer.start(clean=False)
 
         self._producer.wait()
+        self._seq_consumer.shutdown()
+        self._rand_consumer.shutdown()
+        self._seq_consumer.wait()
+        self._rand_consumer.wait()
 
 
 class FranzGoVerifiableWithSiTest(RedpandaTest):
@@ -147,6 +151,12 @@ class FranzGoVerifiableWithSiTest(RedpandaTest):
         for o in objects:
             self.logger.info(f"S3 object: {o.Key}, {o.ContentLength}")
 
-        self._producer.start()
-        self._seq_consumer.start()
-        self._rand_consumer.start()
+        self._producer.start(clean=False)
+        self._seq_consumer.start(clean=False)
+        self._rand_consumer.start(clean=False)
+
+        self._producer.wait()
+        self._seq_consumer.shutdown()
+        self._rand_consumer.shutdown()
+        self._seq_consumer.wait()
+        self._rand_consumer.wait()
