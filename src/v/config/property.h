@@ -28,6 +28,9 @@ namespace config {
 template<class T>
 class binding;
 
+template<typename T>
+class mock_property;
+
 template<class T>
 class property : public base_property {
 public:
@@ -212,6 +215,7 @@ private:
     };
 
     friend class binding<T>;
+    friend class mock_property<T>;
     intrusive_list<binding<T>, &binding<T>::_hook> _bindings;
 };
 
@@ -323,6 +327,7 @@ public:
     }
 
     friend class property<T>;
+    friend class mock_property<T>;
     template<typename U>
     friend inline binding<U> mock_binding(U&&);
 };
