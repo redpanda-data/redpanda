@@ -1,0 +1,2 @@
+jump-consistent-hash==3.2.0
+xxhash==2.0.2
