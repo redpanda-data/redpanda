@@ -28,7 +28,7 @@ namespace cloud_storage {
 /// download completion status and the offset of the
 /// last record batch being downloaded.
 struct log_recovery_result {
-    bool completed;
+    bool completed{false};
     model::offset min_kafka_offset;
     model::offset max_kafka_offset;
     cloud_storage::partition_manifest manifest;
@@ -58,7 +58,7 @@ public:
     /// The 'ntp_config' should have corresponding override. If override
     /// is not set nothing will happen and the returned future will be
     /// ready (not in failed state).
-    /// \return download result struct that contains 'log_downloaded=true'
+    /// \return download result struct that contains 'completed=true'
     ///         if actual download happened. The 'last_offset' field will
     ///         be set to max offset of the downloaded log.
     ss::future<log_recovery_result>
@@ -111,17 +111,13 @@ private:
     download_manifest(const remote_manifest_path& path);
 
     struct recovery_material {
-        std::vector<remote_manifest_path> paths;
         topic_manifest topic_manifest;
+        partition_manifest partition_manifest;
     };
 
     /// Locate all data needed to recover single partition
     ss::future<recovery_material>
     find_recovery_material(const remote_manifest_path& key);
-
-    /// Find all candidate partition manifests
-    ss::future<std::vector<remote_manifest_path>>
-    find_matching_partition_manifests(topic_manifest& manifest);
 
     struct offset_range {
         model::offset min_offset;

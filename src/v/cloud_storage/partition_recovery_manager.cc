@@ -155,12 +155,6 @@ ss::future<log_recovery_result> partition_downloader::download_log() {
     co_return log_recovery_result{};
 }
 
-static bool
-same_ntp(const partition_manifest_path_components& c, const model::ntp& ntp) {
-    return c._ns == ntp.ns && c._topic == ntp.tp.topic
-           && c._part == ntp.tp.partition;
-}
-
 // Parameters used to exclude data based on total size.
 struct size_bound_deletion_parameters {
     size_t retention_bytes;
@@ -212,20 +206,18 @@ partition_downloader::build_offset_map(const recovery_material& mat) {
     // may overlap so we need to deduplicate. Also, to take retention into
     // account.
     offset_map_t offset_map;
-    for (const auto& p : mat.paths) {
-        auto manifest = co_await download_manifest(p);
-        for (const auto& segm : manifest) {
-            if (offset_map.contains(segm.second.base_offset)) {
-                auto committed = offset_map.at(segm.second.base_offset)
-                                   .meta.committed_offset;
-                if (committed > segm.second.committed_offset) {
-                    continue;
-                }
+    const auto& manifest = mat.partition_manifest;
+    for (const auto& segm : manifest) {
+        if (offset_map.contains(segm.second.base_offset)) {
+            auto committed
+              = offset_map.at(segm.second.base_offset).meta.committed_offset;
+            if (committed > segm.second.committed_offset) {
+                continue;
             }
-            offset_map.insert_or_assign(
-              segm.second.base_offset,
-              segment{.manifest_key = segm.first, .meta = segm.second});
         }
+        offset_map.insert_or_assign(
+          segm.second.base_offset,
+          segment{.manifest_key = segm.first, .meta = segm.second});
     }
     co_return std::move(offset_map);
 }
@@ -512,39 +504,15 @@ partition_downloader::find_recovery_material(const remote_manifest_path& key) {
     if (result != download_result::success) {
         throw missing_partition_exception(key);
     }
-    recovery_mat.paths = co_await find_matching_partition_manifests(
-      recovery_mat.topic_manifest);
-    co_return recovery_mat;
-}
-
-ss::future<std::vector<remote_manifest_path>>
-partition_downloader::find_matching_partition_manifests(
-  topic_manifest& manifest) {
-    // TODO: use only selected prefixes
-    auto topic_rev = manifest.get_revision();
-    std::vector<remote_manifest_path> all_manifests;
-    auto obj_iter = [this, &all_manifests, topic_rev](
-                      const ss::sstring& key,
-                      std::chrono::system_clock::time_point,
-                      size_t,
-                      const ss::sstring&) {
-        std::filesystem::path path(key);
-        auto res = get_partition_manifest_path_components(path);
-        if (
-          res.has_value() && same_ntp(*res, _ntpc.ntp())
-          && res->_rev >= topic_rev) {
-            vlog(_ctxlog.debug, "Found matching manifest path: {}", *res);
-            all_manifests.emplace_back(remote_manifest_path(std::move(path)));
-        }
-        return ss::stop_iteration::no;
-    };
-    auto res = co_await _remote->list_objects(
-      obj_iter, _bucket, std::nullopt, std::nullopt, _rtcnode);
-    if (res == download_result::success) {
-        co_return all_manifests;
+    auto orig_rev = recovery_mat.topic_manifest.get_revision();
+    partition_manifest tmp(_ntpc.ntp(), orig_rev);
+    auto res = co_await _remote->download_manifest(
+      _bucket, tmp.get_manifest_path(), tmp, _rtcnode);
+    if (res != download_result::success) {
+        throw missing_partition_exception(tmp.get_manifest_path());
     }
-    auto key = manifest.get_manifest_path();
-    throw missing_partition_exception(key);
+    recovery_mat.partition_manifest = std::move(tmp);
+    co_return recovery_mat;
 }
 
 static ss::future<ss::output_stream<char>>
