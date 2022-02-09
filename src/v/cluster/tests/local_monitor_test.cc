@@ -126,8 +126,7 @@ FIXTURE_TEST(local_monitor_alert_on_space_percent, local_monitor_fixture) {
 FIXTURE_TEST(local_monitor_alert_on_space_bytes, local_monitor_fixture) {
     // Minimum by %: 30 GiB total * 0.05 => 1.5 GiB
     // Minimum by bytes:                    1   GiB
-    static constexpr auto total = 30 * 1024 * 1024 * 1024UL,
-                          block_size = 1024UL;
+    static constexpr auto total = 30 * 1024 * 1024UL, block_size = 1024UL;
     static constexpr auto min_bytes_in_blocks = default_bytes_threshold
                                                 / block_size;
     clusterlog.debug(
