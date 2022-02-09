@@ -187,7 +187,7 @@ class RedpandaService(Service):
                                             "redpanda.profraw")
 
     CLUSTER_NAME = "my_cluster"
-    READY_TIMEOUT_SEC = 10
+    READY_TIMEOUT_SEC = 15
 
     LOG_LEVEL_KEY = "redpanda_log_level"
     DEFAULT_LOG_LEVEL = "info"
