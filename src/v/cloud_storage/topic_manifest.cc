@@ -12,6 +12,7 @@
 
 #include "bytes/iobuf_istreambuf.h"
 #include "bytes/iobuf_ostreambuf.h"
+#include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/types.h"
 #include "hashing/xx.h"
 #include "json/writer.h"

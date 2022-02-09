@@ -16,6 +16,45 @@
 
 namespace cloud_storage {
 
+/// Information contained inside the partition manifest path
+struct partition_manifest_path_components {
+    std::filesystem::path _origin;
+    model::ns _ns;
+    model::topic _topic;
+    model::partition_id _part;
+    model::initial_revision_id _rev;
+};
+
+std::ostream&
+operator<<(std::ostream& s, const partition_manifest_path_components& c);
+
+/// Parse partition manifest path and return components
+std::optional<partition_manifest_path_components>
+get_partition_manifest_path_components(const std::filesystem::path& path);
+
+struct segment_name_components {
+    model::offset base_offset;
+    model::term_id term;
+
+    auto operator<=>(const segment_name_components&) const = default;
+};
+
+std::optional<segment_name_components>
+parse_segment_name(const segment_name& name);
+
+/// Segment file name in S3
+remote_segment_path generate_remote_segment_path(
+  const model::ntp&,
+  model::initial_revision_id,
+  const segment_name&,
+  model::term_id archiver_term);
+
+/// Generate correct S3 segment name based on term and base offset
+segment_name generate_segment_name(model::offset o, model::term_id t);
+
+remote_manifest_path
+generate_partition_manifest_path(const model::ntp&, model::initial_revision_id);
+
 /// Manifest file stored in S3
 class partition_manifest final : public base_manifest {
 public:
