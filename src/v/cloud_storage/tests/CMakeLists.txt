@@ -3,6 +3,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME test_cloud_storage
   SOURCES 
+    directory_walker_test.cc
     manifest_test.cc 
     s3_imposter.cc 
     remote_test.cc 
