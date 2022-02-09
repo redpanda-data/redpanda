@@ -100,7 +100,7 @@ class FranzGoVerifiableService(BackgroundThreadService):
     def clean_node(self, node):
         self._redpanda.logger.info(f"{self.__class__.__name__}.clean_node")
         node.account.kill_process("si-verifier", clean_shutdown=False)
-        node.account.remove("valid_offsets*json")
+        node.account.remove("valid_offsets*json", True)
 
     def start_node(self, node, clean=None):
         # Ignore `clean`, it is processed by Service.start.  We just need to ignore
@@ -123,7 +123,7 @@ class FranzGoVerifiableService(BackgroundThreadService):
         else:
             return super(FranzGoVerifiableService, self).allocate_nodes()
 
-    def free_all(self):
+    def free(self):
         if self.use_custom_node:
             return
         else:

@@ -105,6 +105,8 @@ class FranzGoVerifiableWithSiTest(RedpandaTest):
 
         self._node_for_franz_go = ctx.cluster.alloc(
             ClusterSpec.simple_linux(1))
+        self.logger.debug(
+            f"Allocated verifier node {self._node_for_franz_go[0].name}")
 
         self._producer = FranzGoVerifiableProducer(
             ctx, self.redpanda, self.topic,
@@ -117,6 +119,17 @@ class FranzGoVerifiableWithSiTest(RedpandaTest):
             ctx, self.redpanda, self.topic,
             FranzGoVerifiableWithSiTest.MSG_SIZE, 1000, 20,
             self._node_for_franz_go)
+
+    def free_nodes(self):
+        # Free the normally allocated nodes (e.g. RedpandaService)
+        super().free_nodes()
+
+        # Free the hand-allocated node that we share between the various
+        # verifier services
+        assert len(self._node_for_franz_go) == 1
+        self.logger.debug(
+            f"Freeing verifier node {self._node_for_franz_go[0].name}")
+        self.test_context.cluster.free_single(self._node_for_franz_go[0])
 
     # In the future producer will signal about json creation
     def _create_json_file(self):
