@@ -15,6 +15,7 @@
 #include "cluster/node/types.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
+#include "utils/human.h"
 #include "version.h"
 
 #include <seastar/core/coroutine.hh>
@@ -22,6 +23,8 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/core/sstring.hh>
+
+#include <fmt/core.h>
 
 #include <algorithm>
 #include <cassert>
@@ -89,6 +92,30 @@ ss::future<struct statvfs> local_monitor::get_statvfs(const ss::sstring& path) {
     }
 }
 
+float percent_free(const disk& disk) {
+    long double free = disk.free, total = disk.total;
+    return float((free / total) * 100.0);
+}
+
+void local_monitor::maybe_log_space_error(const disk& disk) {
+    auto [min_by_bytes, min_by_percent] = minimum_free_by_bytes_and_percent(
+      disk.total);
+    auto min_space = std::min(min_by_percent, min_by_bytes);
+    clusterlog.log(
+      ss::log_level::error,
+      despam_interval,
+      "{}: free space at {:.3f}% on {}: {} total, {} free, "
+      "min. free {}. Please adjust retention policies as needed to "
+      "avoid running out of space.",
+      stable_alert_string,
+      percent_free(disk),
+      disk.path,
+      // TODO: generalize human::bytes for unsigned long
+      human::bytes(disk.total), // NOLINT narrowing conv.
+      human::bytes(disk.free),  // NOLINT  "  "
+      human::bytes(min_space)); // NOLINT  "  "
+}
+
 void local_monitor::update_alert_state() {
     _state.storage_space_alert = disk_space_alert::ok;
     for (const auto& d : _state.disks) {
@@ -103,8 +130,9 @@ void local_monitor::update_alert_state() {
           d.free,
           d.free <= min_space);
 
-        if (d.free <= min_space) {
+        if (unlikely(d.free <= min_space)) {
             _state.storage_space_alert = disk_space_alert::low_space;
+            maybe_log_space_error(d);
         }
     }
 }
