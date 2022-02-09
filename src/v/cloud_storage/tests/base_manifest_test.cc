@@ -38,7 +38,7 @@ SEASTAR_THREAD_TEST_CASE(test_segment_path) {
 SEASTAR_THREAD_TEST_CASE(test_manifest_name_parsing) {
     std::filesystem::path path
       = "b0000000/meta/kafka/redpanda-test/4_2/manifest.json";
-    auto res = cloud_storage::get_manifest_path_components(path);
+    auto res = cloud_storage::get_partition_manifest_path_components(path);
     BOOST_REQUIRE_EQUAL(res->_origin, path);
     BOOST_REQUIRE_EQUAL(res->_ns(), "kafka");
     BOOST_REQUIRE_EQUAL(res->_topic(), "redpanda-test");
@@ -49,28 +49,28 @@ SEASTAR_THREAD_TEST_CASE(test_manifest_name_parsing) {
 SEASTAR_THREAD_TEST_CASE(test_manifest_name_parsing_failure_1) {
     std::filesystem::path path
       = "b0000000/meta/kafka/redpanda-test/a_b/manifest.json";
-    auto res = cloud_storage::get_manifest_path_components(path);
+    auto res = cloud_storage::get_partition_manifest_path_components(path);
     BOOST_REQUIRE(res.has_value() == false);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_manifest_name_parsing_failure_2) {
     std::filesystem::path path
       = "b0000000/kafka/redpanda-test/4_2/manifest.json";
-    auto res = cloud_storage::get_manifest_path_components(path);
+    auto res = cloud_storage::get_partition_manifest_path_components(path);
     BOOST_REQUIRE(res.has_value() == false);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_manifest_name_parsing_failure_3) {
     std::filesystem::path path
       = "b0000000/meta/kafka/redpanda-test//manifest.json";
-    auto res = cloud_storage::get_manifest_path_components(path);
+    auto res = cloud_storage::get_partition_manifest_path_components(path);
     BOOST_REQUIRE(res.has_value() == false);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_manifest_name_parsing_failure_4) {
     std::filesystem::path path
       = "b0000000/meta/kafka/redpanda-test/4_2/foo.bar";
-    auto res = cloud_storage::get_manifest_path_components(path);
+    auto res = cloud_storage::get_partition_manifest_path_components(path);
     BOOST_REQUIRE(res.has_value() == false);
 }
 
