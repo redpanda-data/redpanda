@@ -43,11 +43,11 @@ public:
     void set_path_for_test(const ss::sstring& path);
     void
       set_statvfs_for_test(std::function<struct statvfs(const ss::sstring&)>);
-    std::tuple<size_t, size_t>
-    minimum_free_by_bytes_and_percent(size_t bytes_available);
 
 private:
     // helpers
+    std::tuple<size_t, size_t>
+    minimum_free_by_bytes_and_percent(size_t bytes_available) const;
     ss::future<std::vector<disk>> get_disks();
     ss::future<struct statvfs> get_statvfs(const ss::sstring&);
     void update_alert_state();

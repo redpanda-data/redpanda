@@ -63,7 +63,7 @@ void local_monitor::set_statvfs_for_test(
 }
 
 std::tuple<size_t, size_t>
-local_monitor::minimum_free_by_bytes_and_percent(size_t bytes_available) {
+local_monitor::minimum_free_by_bytes_and_percent(size_t bytes_available) const {
     long double percent_factor = last_free_space_percent_threshold / 100.0;
     return std::make_tuple(
       last_free_space_bytes_threshold, percent_factor * bytes_available);
