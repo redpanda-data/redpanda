@@ -16,7 +16,7 @@ import tempfile
 
 from rptest.services.admin import Admin
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk import RpkTool, RpkException
 from rptest.clients.kcl import KCL
 from rptest.services.cluster import cluster
 from ducktape.mark import parametrize
@@ -242,6 +242,9 @@ class ClusterConfigTest(RedpandaTest):
         except requests.exceptions.HTTPError as e:
             if e.response.status_code != 400:
                 raise
+
+            errors = e.response.json()
+            assert set(errors.keys()) == {key}
         else:
             raise RuntimeError(
                 f"Expected 400 but got {patch_result} for {key}={value})")
@@ -380,6 +383,10 @@ class ClusterConfigTest(RedpandaTest):
             else:
                 raise NotImplementedError(p['type'])
 
+            if name == 'enable_coproc':
+                # Don't try enabling coproc, it has external dependencies
+                continue
+
             updates[name] = valid_value
 
         patch_result = self.admin.patch_cluster_config(upsert=updates,
@@ -399,10 +406,15 @@ class ClusterConfigTest(RedpandaTest):
             read_back = self.admin.get_cluster_config()
             mismatch = []
             for k, expect in updates.items():
-                actual = read_back.get(k, None)
                 # String-ized comparison, because the example values are strings,
                 # whereas by the time we read them back they're properly typed.
-                if str(actual) != str(expect):
+                actual = read_back.get(k, None)
+                if isinstance(actual, bool):
+                    # Lowercase because yaml and python capitalize bools differently.
+                    actual = str(actual).lower()
+                else:
+                    actual = str(actual)
+                if actual != str(expect):
                     self.logger.error(
                         f"Config set failed ({k}) {actual}!={expect}")
                     mismatch.append((k, actual, expect))
@@ -445,18 +457,23 @@ class ClusterConfigTest(RedpandaTest):
         version = int(m.group(1))
         return version
 
-    def _export_import_modify(self, before, after, all=False):
+    def _export_import_modify_one(self, before: str, after: str, all=False):
+        return self._export_import_modify([(before, after)], all)
+
+    def _export_import_modify(self, changes: list[tuple[str, str]], all=False):
         text = self._export(all)
 
         # Validate that RPK gives us valid yaml
         _ = yaml.load(text)
 
-        self.logger.debug(f"Replacing \"{before}\" with \"{after}\"")
         self.logger.debug(f"Exported config before modification: {text}")
 
-        # Intentionally not passing this through a YAML deserialize/serialize
-        # step during edit, to more realistically emulate someone hand editing
-        text = text.replace(before, after)
+        for before, after in changes:
+            self.logger.debug(f"Replacing \"{before}\" with \"{after}\"")
+
+            # Intentionally not passing this through a YAML deserialize/serialize
+            # step during edit, to more realistically emulate someone hand editing
+            text = text.replace(before, after)
 
         self.logger.debug(f"Exported config after modification: {text}")
 
@@ -476,8 +493,8 @@ class ClusterConfigTest(RedpandaTest):
         tunable_property = 'kafka_qdc_depth_alpha'
 
         # RPK should give us a valid yaml document
-        version_a, text = self._export_import_modify("kafka_qdc_enable: false",
-                                                     "kafka_qdc_enable: true")
+        version_a, text = self._export_import_modify_one(
+            "kafka_qdc_enable: false", "kafka_qdc_enable: true")
         assert version_a is not None
         self._wait_for_version_sync(version_a)
 
@@ -488,8 +505,8 @@ class ClusterConfigTest(RedpandaTest):
         self._check_value_everywhere("kafka_qdc_enable", True)
 
         # Clear a setting, it should revert to its default
-        version_b, text = self._export_import_modify("kafka_qdc_enable: true",
-                                                     "")
+        version_b, text = self._export_import_modify_one(
+            "kafka_qdc_enable: true", "")
         assert version_b is not None
 
         assert version_b > version_a
@@ -501,7 +518,7 @@ class ClusterConfigTest(RedpandaTest):
         assert tunable_property in text_all
 
         # Check that editing a tunable with --all works
-        version_c, text = self._export_import_modify(
+        version_c, text = self._export_import_modify_one(
             "kafka_qdc_depth_alpha: 0.8",
             "kafka_qdc_depth_alpha: 1.5",
             all=True)
@@ -512,7 +529,7 @@ class ClusterConfigTest(RedpandaTest):
         self._check_value_everywhere("kafka_qdc_depth_alpha", 1.5)
 
         # Check that clearing a tunable with --all works
-        version_d, text = self._export_import_modify(
+        version_d, text = self._export_import_modify_one(
             "kafka_qdc_depth_alpha: 1.5", "", all=True)
         assert version_d is not None
 
@@ -526,18 +543,40 @@ class ClusterConfigTest(RedpandaTest):
         assert noop_version is None
 
     @cluster(num_nodes=3)
+    def test_rpk_import_validation(self):
+        """
+        Verify that RPK handles 400 responses on import nicely
+        """
+
+        # RPK should return an error with explanatory text
+        try:
+            _, out = self._export_import_modify(
+                [("kafka_qdc_enable: false", "kafka_qdc_enable: rhubarb"),
+                 ("topic_fds_per_partition: 10",
+                  "topic_fds_per_partition: 9999"),
+                 ("default_num_windows: 10", "default_num_windows: 32768")],
+                all=True)
+        except RpkException as e:
+            assert 'kafka_qdc_enable: expected type boolean' in e.stderr
+            assert 'topic_fds_per_partition: too large' in e.stderr
+            assert 'default_num_windows: out of range' in e.stderr
+        else:
+            raise RuntimeError(
+                f"RPK command should have failed, but ran with output: {out}")
+
+    @cluster(num_nodes=3)
     def test_rpk_edit_string(self):
         """
         Test import/export of string fields, make sure they don't end
         up with extraneous quotes
         """
-        version_a, _ = self._export_import_modify(
+        version_a, _ = self._export_import_modify_one(
             "cloud_storage_access_key:\n",
             "cloud_storage_access_key: foobar\n")
         self._wait_for_version_sync(version_a)
         self._check_value_everywhere("cloud_storage_access_key", "foobar")
 
-        version_b, _ = self._export_import_modify(
+        version_b, _ = self._export_import_modify_one(
             "cloud_storage_access_key: foobar\n",
             "cloud_storage_access_key: \"foobaz\"")
         self._wait_for_version_sync(version_b)

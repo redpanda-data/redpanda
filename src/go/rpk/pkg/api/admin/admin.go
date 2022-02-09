@@ -36,6 +36,13 @@ import (
 // ErrNoAdminAPILeader happen when there's no leader for the Admin API
 var ErrNoAdminAPILeader = errors.New("no Admin API leader found")
 
+type HttpError struct {
+	Method   string
+	Url      string
+	Response *http.Response
+	Body     []byte
+}
+
 // AdminAPI is a client to interact with Redpanda's admin server.
 type AdminAPI struct {
 	urls                []string
@@ -513,8 +520,13 @@ func (a *AdminAPI) sendAndReceive(
 		if err != nil {
 			return nil, fmt.Errorf("request %s %s failed: %s, unable to read body: %w", method, url, status, err)
 		}
-		return nil, fmt.Errorf("request %s %s failed: %s, body: %q", method, url, status, resBody)
+		return nil, &HttpError{Response: res, Body: resBody}
 	}
 
 	return res, nil
+}
+
+func (he HttpError) Error() string {
+	return fmt.Sprintf("request %s %s failed: %s, body: %q",
+		he.Method, he.Url, http.StatusText(he.Response.StatusCode), he.Body)
 }

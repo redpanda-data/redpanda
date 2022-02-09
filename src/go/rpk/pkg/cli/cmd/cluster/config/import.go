@@ -10,9 +10,12 @@
 package config
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"reflect"
+	"sort"
 
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
@@ -128,7 +131,36 @@ func importConfig(
 
 	// PUT to admin API
 	result, err := client.PatchClusterConfig(upsert, remove)
+	if he := (*admin.HttpError)(nil); errors.As(err, &he) {
+		// Normal case: user input is a yaml array
+		if he.Response.StatusCode == 400 {
+			// Output structured validation errors from server
+			var validationErrs map[string]string
+			bodyErr := json.Unmarshal(he.Body, &validationErrs)
+			// If no proper JSON body, fall back to generic HTTP error report
+			if bodyErr != nil {
+				out.MaybeDie(err, "error setting config: %v", err)
+			}
+
+			type kv struct{ k, v string }
+			var sortedErrs []kv
+			for k, v := range validationErrs {
+				sortedErrs = append(sortedErrs, kv{k, v})
+			}
+			sort.Slice(sortedErrs, func(i, j int) bool { return sortedErrs[i].k < sortedErrs[j].k })
+
+			fmt.Fprintf(os.Stderr, "Validation errors:\n")
+			for _, kv := range sortedErrs {
+				fmt.Fprintf(os.Stderr, " * %s: %s\n", kv.k, kv.v)
+			}
+			fmt.Fprintf(os.Stderr, "\n")
+			out.Die("No changes were made.")
+		}
+	}
+
+	// If we didn't handle a structured 400 error, check for other errors.
 	out.MaybeDie(err, "error setting config: %v", err)
+
 	fmt.Printf("Successfully updated config, new config version %d.\n", result.ConfigVersion)
 
 	return nil

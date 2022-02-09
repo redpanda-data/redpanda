@@ -16,11 +16,16 @@ DEFAULT_PRODUCE_TIMEOUT = 5
 
 
 class RpkException(Exception):
-    def __init__(self, msg):
+    def __init__(self, msg, stderr=""):
         self.msg = msg
+        self.stderr = stderr
 
     def __str__(self):
-        return f"RpkException<{self.msg}>"
+        if self.stderr:
+            err = f" error: {self.stderr}"
+        else:
+            err = ""
+        return f"RpkException<{self.msg}{err}>"
 
 
 class RpkPartition:
@@ -369,9 +374,10 @@ class RpkTool:
         self._redpanda.logger.debug(output)
 
         if p.returncode:
+            self._redpanda.logger.error(error)
             raise RpkException(
-                'command %s returned %d, output: %s, error: %s' %
-                (' '.join(cmd), p.returncode, output, error))
+                'command %s returned %d, output: %s' %
+                (' '.join(cmd), p.returncode, output), error)
 
         return output
 
