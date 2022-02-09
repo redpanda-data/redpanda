@@ -43,6 +43,7 @@ require (
 	github.com/prometheus/client_model v0.2.0
 	github.com/prometheus/common v0.9.1
 	github.com/safchain/ethtool v0.0.0-20190326074333-42ed695e3de8
+	github.com/sethgrid/pester v1.1.0
 	github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/afero v1.6.0
 	github.com/spf13/cobra v1.1.3

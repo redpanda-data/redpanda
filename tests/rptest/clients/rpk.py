@@ -310,8 +310,10 @@ class RpkTool:
 
     def _admin_host(self, node=None):
         if node is None:
-            node = self._redpanda.nodes[0]
-        return f"{node.account.hostname}:9644"
+            return ",".join(
+                [f"{n.account.hostname}:9644" for n in self._redpanda.nodes])
+        else:
+            return f"{node.account.hostname}:9644"
 
     def admin_config_print(self, node):
         return self._execute([

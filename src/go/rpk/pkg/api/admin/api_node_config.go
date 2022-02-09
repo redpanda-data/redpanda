@@ -21,5 +21,6 @@ type NodeConfig struct {
 // otherwise the method will return an error.
 func (a *AdminAPI) GetNodeConfig() (NodeConfig, error) {
 	var nodeconfig NodeConfig
-	return nodeconfig, a.sendOne(http.MethodGet, "/v1/node_config", nil, &nodeconfig)
+
+	return nodeconfig, a.sendOne(http.MethodGet, "/v1/node_config", nil, &nodeconfig, false)
 }

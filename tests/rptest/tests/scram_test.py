@@ -210,7 +210,7 @@ class ScramTest(RedpandaTest):
         print(topics)
         assert topic.name in topics
 
-        username = self.redpanda.SUPERUSER_CREDENTIALS[0]
+        username = self.redpanda.SUPERUSER_CREDENTIALS.username
         self.delete_user(username)
 
         try:
@@ -228,7 +228,7 @@ class ScramTest(RedpandaTest):
             pass
 
         # recreate user
-        algorithm = self.redpanda.SUPERUSER_CREDENTIALS[2]
+        algorithm = self.redpanda.SUPERUSER_CREDENTIALS.algorithm
         password = self.create_user(username, algorithm)
 
         # works ok again

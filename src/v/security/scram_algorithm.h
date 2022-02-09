@@ -293,6 +293,21 @@ public:
         return bytes(result.begin(), result.end());
     }
 
+    /**
+     * For doing non-SCRAM authentication, such as HTTP basic auth over TLS,
+     * using stored SCRAM credentials.
+     */
+    static bool validate_password(
+      const ss::sstring& password,
+      bytes_view reference_stored_key,
+      bytes_view salt,
+      int iterations) {
+        auto salted_password = salt_password(password, salt, iterations);
+        auto clientkey = client_key(salted_password);
+        auto storedkey = stored_key(clientkey);
+        return storedkey == reference_stored_key;
+    }
+
 private:
     static bytes salt_password(
       const ss::sstring& password, bytes_view salt, int iterations) {

@@ -46,9 +46,8 @@ func TestAdminAPI(t *testing.T) {
 			nNodes:   1,
 			leaderID: 0,
 			action:   func(t *testing.T, a *AdminAPI) error { return a.DeleteUser("Milo") },
-			all:      []string{"/v1/node_config"},
 			leader:   []string{"/v1/security/users/Milo"},
-			none:     []string{"/v1/partitions/redpanda/controller/0"},
+			none:     []string{"/v1/partitions/redpanda/controller/0", "/v1/node_config"},
 		},
 		{
 			name:     "delete user in 3 node cluster",
@@ -84,7 +83,6 @@ func TestAdminAPI(t *testing.T) {
 				require.Len(t, users, 4)
 				return nil
 			},
-			all:  []string{"/v1/node_config"},
 			any:  []string{"/v1/security/users"},
 			none: []string{"/v1/partitions/redpanda/controller/0"},
 		},

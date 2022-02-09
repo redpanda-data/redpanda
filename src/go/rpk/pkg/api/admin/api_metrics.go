@@ -13,6 +13,6 @@ import "net/http"
 
 func (a *AdminAPI) PrometheusMetrics() ([]byte, error) {
 	var res []byte
-	err := a.sendOne(http.MethodGet, "/metrics", nil, &res)
+	err := a.sendOne(http.MethodGet, "/metrics", nil, &res, false)
 	return res, err
 }

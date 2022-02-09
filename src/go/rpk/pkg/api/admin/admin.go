@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-multierror"
+	"github.com/sethgrid/pester"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
@@ -40,7 +41,8 @@ type AdminAPI struct {
 	urls                []string
 	brokerIdToUrlsMutex sync.Mutex
 	brokerIdToUrls      map[int]string
-	client              *http.Client
+	retryClient         *pester.Client
+	oneshotClient       *http.Client
 	tlsConfig           *tls.Config
 }
 
@@ -87,24 +89,54 @@ func NewHostClient(
 }
 
 func NewAdminAPI(urls []string, tlsConfig *tls.Config) (*AdminAPI, error) {
-	return newAdminAPI(urls, tlsConfig, true)
+	return newAdminAPI(urls, tlsConfig)
 }
 
-func newAdminAPI(
-	urls []string, tlsConfig *tls.Config, tryToMapBrokerIDstoHosts bool,
-) (*AdminAPI, error) {
+func newAdminAPI(urls []string, tlsConfig *tls.Config) (*AdminAPI, error) {
+	// General purpose backoff, includes 503s and other errors
+	const retryBackoffMs = 1500
+
 	if len(urls) == 0 {
 		return nil, errors.New("at least one url is required for the admin api")
 	}
 
+	// In situations where a request can't be executed immediately (e.g. no
+	// controller leader) the admin API does not block, it returns 503.
+	// Use a retrying HTTP client to handle that gracefully.
+	client := pester.New()
+
+	// Backoff is the default redpanda raft election timeout: this enables us
+	// to cleanly retry on 503s due to leadership changes in progress.
+	client.Backoff = func(retry int) time.Duration {
+		maxJitter := 100
+		delayMs := retryBackoffMs + rng(maxJitter)
+		return time.Duration(delayMs) * time.Millisecond
+	}
+
+	// This happens to be the same as the pester default, but make it explicit:
+	// a raft election on a 3 node group might take 3x longer if it has
+	// to repeat until the lowest-priority voter wins.
+	client.MaxRetries = 3
+
+	client.LogHook = func(e pester.ErrEntry) {
+		// Only log from here when retrying: a final error propagates to caller
+		if e.Err != nil && e.Retry <= client.MaxRetries {
+			log.Infof("Retrying %s for error: %s", e.Verb, e.Err.Error())
+		}
+	}
+
+	client.Timeout = 10 * time.Second
+
 	a := &AdminAPI{
 		urls:           make([]string, len(urls)),
-		client:         &http.Client{Timeout: 10 * time.Second},
+		retryClient:    client,
+		oneshotClient:  &http.Client{Timeout: 10 * time.Second},
 		tlsConfig:      tlsConfig,
 		brokerIdToUrls: make(map[int]string),
 	}
 	if tlsConfig != nil {
-		a.client.Transport = &http.Transport{TLSClientConfig: tlsConfig}
+		a.retryClient.Transport = &http.Transport{TLSClientConfig: tlsConfig}
+		a.oneshotClient.Transport = &http.Transport{TLSClientConfig: tlsConfig}
 	}
 
 	for i, u := range urls {
@@ -125,15 +157,11 @@ func newAdminAPI(
 		a.urls[i] = fmt.Sprintf("%s://%s", scheme, host)
 	}
 
-	if tryToMapBrokerIDstoHosts {
-		a.mapBrokerIDsToURLs()
-	}
-
 	return a, nil
 }
 
 func (a *AdminAPI) newAdminForSingleHost(host string) (*AdminAPI, error) {
-	return newAdminAPI([]string{host}, a.tlsConfig, false)
+	return newAdminAPI([]string{host}, a.tlsConfig)
 }
 
 func (a *AdminAPI) urlsWithPath(path string) []string {
@@ -185,14 +213,40 @@ func (a *AdminAPI) GetLeaderID() (*int, error) {
 
 // sendAny sends a single request to one of the client's urls and unmarshals
 // the body into into, which is expected to be a pointer to a struct.
+//
+// On errors, this function will keep trying all the nodes we know about until
+// one of them succeeds, or we run out of nodes.  In the latter case, we will return
+// the error from the last node we tried.
 func (a *AdminAPI) sendAny(method, path string, body, into interface{}) error {
-	pick := rng(len(a.urls))
-	url := a.urls[pick] + path
-	res, err := a.sendAndReceive(context.Background(), method, url, body)
-	if err != nil {
-		return err
+	// Shuffle the list of URLs
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	shuffled := make([]string, len(a.urls))
+	copy(shuffled, a.urls)
+	rng.Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
+
+	var err error
+	for i := range shuffled {
+		url := shuffled[i] + path
+
+		// If err is set, we are retrying after a failure on the previous node
+		if err != nil {
+			log.Infof("Request error, trying another node: %s", err.Error())
+		}
+
+		// Where there are multiple nodes, disable the HTTP request retry in favour of our
+		// own retry across the available nodes
+		retryable := len(shuffled) == 1
+
+		var res *http.Response
+		res, err = a.sendAndReceive(context.Background(), method, url, body, retryable)
+		if err == nil {
+			// Success, return the result from this node.
+			return maybeUnmarshalRespInto(method, url, res, into)
+		}
 	}
-	return maybeUnmarshalRespInto(method, url, res, into)
+
+	// Fall through: all nodes failed.
+	return err
 }
 
 // sendToLeader sends a single request to the leader of the Admin API for Redpanda >= 21.11.1
@@ -200,24 +254,69 @@ func (a *AdminAPI) sendAny(method, path string, body, into interface{}) error {
 func (a *AdminAPI) sendToLeader(
 	method, path string, body, into interface{},
 ) error {
+	const (
+		// When there is no leader, we wait long enough for an election to complete
+		noLeaderBackoff = 1500 * time.Millisecond
+
+		// When there is a stale leader, we might have to wait long enough for
+		// an election to start *and* for the resulting election to complete
+		staleLeaderBackoff = 9000 * time.Millisecond
+	)
 	// If there's only one broker, let's just send the request to it
 	if len(a.urls) == 1 {
-		return a.sendOne(method, path, body, into)
+		return a.sendOne(method, path, body, into, true)
 	}
-	leaderID, err := a.GetLeaderID()
+
+	retries := 3
+	var leaderID *int
+	var leaderURL string
+	for leaderID == nil || leaderURL == "" {
+		var err error
+		leaderID, err = a.GetLeaderID()
+		if errors.Is(err, ErrNoAdminAPILeader) {
+			// No leader?  We might have contacted a recently-started node
+			// who doesn't know yet, or there might be an election pending,
+			// or there might be no quorum.  In any case, retry in the hopes
+			// the cluster will get out of this state.
+			retries--
+			if retries == 0 {
+				return err
+			}
+			time.Sleep(noLeaderBackoff)
+		} else if err != nil {
+			// Unexpected error, do not retry promptly.
+			return err
+		} else {
+			// Got a leader ID, check if it's resolvable
+			leaderURL, err = a.brokerIDToURL(*leaderID)
+			if err != nil && len(a.brokerIdToUrls) == 0 {
+				// Could not map any IDs: probably this is an old redpanda
+				// with no node_config endpoint.  Fall back to broadcast.
+				return a.sendAll(method, path, body, into)
+			} else if err != nil {
+				// Have ID mapping for some nodes but not the one that is
+				// allegedly the leader.  This leader ID is probably stale,
+				// e.g. if it just died a moment ago.  Try again.  This is
+				// a long timeout, because it's the sum of the time for nodes
+				// to start an election, followed by the worst cast number of
+				// election rounds
+				retries -= 1
+				if retries == 0 {
+					return err
+				}
+				time.Sleep(staleLeaderBackoff)
+			} else {
+				// Success: break out of retry loop
+				break
+			}
+		}
+	}
+
+	aLeader, err := a.newAdminForSingleHost(leaderURL)
 	if err != nil {
 		return err
 	}
-	url, err := a.brokerIDToURL(*leaderID)
-	// if it's not possible to map the leaderID to a broker URL -> broadcast
-	if err != nil {
-		return a.sendAll(method, path, body, into)
-	}
-	aLeader, err := a.newAdminForSingleHost(url)
-	if err != nil {
-		return err
-	}
-	return aLeader.sendOne(method, path, body, into)
+	return aLeader.sendOne(method, path, body, into, true)
 }
 
 func (a *AdminAPI) brokerIDToURL(brokerID int) (string, error) {
@@ -241,13 +340,19 @@ func (a *AdminAPI) getURLFromBrokerID(brokerID int) (string, bool) {
 }
 
 // sendOne sends a request with sendAndReceive and unmarshals the body into
-// into, which is expected to be a pointer to a struct.
-func (a *AdminAPI) sendOne(method, path string, body, into interface{}) error {
+// into, which is expected to be a pointer to a struct
+//
+// Set `retryable` to true if the API endpoint might have transient errors, such
+// as temporarily having no leader for a raft group.  Set it to false if the endpoint
+// should always work while the node is up, e.g. GETs of node-local state.
+func (a *AdminAPI) sendOne(
+	method, path string, body, into interface{}, retryable bool,
+) error {
 	if len(a.urls) != 1 {
 		return fmt.Errorf("unable to issue a single-admin-endpoint request to %d admin endpoints", len(a.urls))
 	}
 	url := a.urls[0] + path
-	res, err := a.sendAndReceive(context.Background(), method, url, body)
+	res, err := a.sendAndReceive(context.Background(), method, url, body, retryable)
 	if err != nil {
 		return err
 	}
@@ -294,7 +399,7 @@ func (a *AdminAPI) sendAll(method, path string, body, into interface{}) error {
 		except := i
 		cancels = append(cancels, cancel)
 		grp.Go(func() error {
-			myRes, err := a.sendAndReceive(ctx, method, myURL, body)
+			myRes, err := a.sendAndReceive(ctx, method, myURL, body, false)
 			if err != nil {
 				return err
 			}
@@ -363,7 +468,7 @@ func maybeUnmarshalRespInto(
 // sendAndReceive sends a request and returns the response. If body is
 // non-nil, this json encodes the body and sends it with the request.
 func (a *AdminAPI) sendAndReceive(
-	ctx context.Context, method, url string, body interface{},
+	ctx context.Context, method, url string, body interface{}, retryable bool,
 ) (*http.Response, error) {
 	var r io.Reader
 	if body != nil {
@@ -383,7 +488,14 @@ func (a *AdminAPI) sendAndReceive(
 	req.Header.Set("Content-Type", applicationJson)
 	req.Header.Set("Accept", applicationJson)
 
-	res, err := a.client.Do(req)
+	// Issue request to the appropriate client, depending on retry behaviour
+	var res *http.Response
+	if retryable {
+		res, err = a.retryClient.Do(req)
+	} else {
+		res, err = a.oneshotClient.Do(req)
+	}
+
 	if err != nil {
 		// When the server expects a TLS connection, but the TLS config isn't
 		// set/ passed, The client returns an error like

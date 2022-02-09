@@ -40,6 +40,9 @@ Partition = collections.namedtuple('Partition',
 MetricSample = collections.namedtuple(
     'MetricSample', ['family', 'sample', 'node', 'value', 'labels'])
 
+SaslCredentials = collections.namedtuple("SaslCredentials",
+                                         ["username", "password", "algorithm"])
+
 DEFAULT_LOG_ALLOW_LIST = [
     # Tests currently don't run on XFS, although in future they should.
     # https://github.com/vectorizedio/redpanda/issues/2376
@@ -233,7 +236,8 @@ class RedpandaService(Service):
     LOG_LEVEL_KEY = "redpanda_log_level"
     DEFAULT_LOG_LEVEL = "info"
 
-    SUPERUSER_CREDENTIALS = ("admin", "admin", "SCRAM-SHA-256")
+    SUPERUSER_CREDENTIALS: SaslCredentials = SaslCredentials(
+        "admin", "admin", "SCRAM-SHA-256")
 
     COV_KEY = "enable_cov"
     DEFAULT_COV_OPT = False
