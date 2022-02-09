@@ -65,6 +65,9 @@ RESTART_LOG_ALLOW_LIST = [
     re.compile("members_backend.*abort_requested_exception"),
     re.compile(
         "raft - .*recovery append entries error.*client_request_timeout"),
+    # cluster - rm_stm.cc:550 - Error "raft::errc:19" on replicating pid:{producer_identity: id=1, epoch=0} commit batch
+    # raft::errc:19 is the shutdown error code, the transaction subsystem encounters this and logs at error level
+    re.compile("Error \"raft::errc:19\" on replicating"),
 ]
 
 # Log errors that are expected in chaos-style tests that e.g.
