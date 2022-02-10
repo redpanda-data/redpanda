@@ -20,6 +20,7 @@ import subprocess
 import threading
 import re
 from string import Template
+from typing import List, Optional
 
 sys.path.append(os.path.dirname(__file__))
 logger = logging.getLogger('rp')
@@ -291,6 +292,56 @@ class TestRunner():
         return p.wait()
 
 
+# main() helpers
+def _find_paths(binary: str, start_dir: str) -> List[str]:
+    """ Return all paths to a file named 'binary', contained within 'start_dir'
+    """
+    paths: List[str] = []
+    for dirpath, dirname, files in os.walk(start_dir):
+        if binary in files:
+            paths.append(os.path.join(dirpath, binary))
+    return paths
+
+
+def _find_with_hint(binary: str, path_hint: Optional[str]) -> List[str]:
+    """ search for binary in current directory, looking in path_hint directory
+    first, if provided. Return all paths found. """
+    paths: List[str] = []
+
+    # saves a second or so depending on your FS
+    if path_hint and os.path.isdir(path_hint):
+        paths = _find_paths(binary, path_hint)
+
+    if not paths:
+        paths = _find_paths(binary, os.getcwd())
+    return paths
+
+
+def _get_abs_path(binary: str) -> str:
+    """ Given a bare binary name, a relative path, or an absolute path,
+    return an absolute path or raise an exception if it could not be
+    located. """
+    # absolute path?
+    if binary[0] == '/':
+        return binary
+
+    # relative path?
+    full_path = os.path.abspath(binary)
+    if os.path.isfile(full_path):
+        return full_path
+
+    logger.info(f'Searching for "{binary}" in curent dir (not valid path)..')
+    paths = _find_with_hint(binary, "vbuild")
+
+    # Prefer debug builds. TODO: add support for BUILD_TYPE env. var.?
+    paths = sorted(paths, key=lambda p: 0 if "debug" in p else 1)
+    if len(paths) == 0:
+        raise FileNotFoundError(f"Unable to locate binary {binary}")
+    else:
+        logger.info(f"Found binary at {paths[0]}.")
+        return paths[0]
+
+
 def main():
     def generate_options():
         parser = argparse.ArgumentParser(description='test helper for cmake')
@@ -332,6 +383,7 @@ def main():
     logger.setLevel(getattr(logging, options.log.upper()))
     logger.info("%s *args=%s" % (options, program_options))
 
+    options.binary = _get_abs_path(options.binary)
     runner = TestRunner(options.pre, options.post, options.binary,
                         options.repeat, options.copy_file, *program_options)
     runner.run()
