@@ -319,6 +319,8 @@ public:
 
     ss::future<> refresh_commit_index();
 
+    model::term_id get_term(model::offset) const;
+
 private:
     friend replicate_entries_stm;
     friend vote_stm;
@@ -389,7 +391,6 @@ private:
     void maybe_update_leader_commit_idx();
     ss::future<> do_maybe_update_leader_commit_idx(ss::semaphore_units<>);
 
-    model::term_id get_term(model::offset);
     clock_type::time_point majority_heartbeat() const;
     /*
      * Start an election. When leadership transfer is requested, the election is
