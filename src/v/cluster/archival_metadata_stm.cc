@@ -9,7 +9,6 @@
 
 #include "cluster/archival_metadata_stm.h"
 
-#include "cloud_storage/manifest.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"

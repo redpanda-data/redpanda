@@ -12,7 +12,6 @@
 
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/logger.h"
-#include "cloud_storage/manifest.h"
 #include "cloud_storage/types.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"

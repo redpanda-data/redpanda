@@ -10,10 +10,7 @@
 
 #pragma once
 
-#include "cloud_storage/manifest.h"
-#include "model/fundamental.h"
-#include "model/metadata.h"
-#include "model/namespace.h"
+#include "cloud_storage/base_manifest.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>

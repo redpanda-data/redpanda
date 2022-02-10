@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Vectorized, Inc.
+ * Copyright 2022 Vectorized, Inc.
  *
  * Licensed as a Redpanda Enterprise file under the Redpanda Community
  * License (the "License"); you may not use this file except in compliance with
@@ -8,7 +8,7 @@
  * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "cloud_storage/manifest.h"
+#include "cloud_storage/partition_manifest.h"
 
 #include "bytes/iobuf_istreambuf.h"
 #include "bytes/iobuf_ostreambuf.h"
@@ -29,15 +29,15 @@
 #include <charconv>
 
 namespace cloud_storage {
-
-std::ostream& operator<<(std::ostream& s, const manifest_path_components& c) {
+std::ostream&
+operator<<(std::ostream& s, const partition_manifest_path_components& c) {
     fmt::print(
       s, "{{{}: {}-{}-{}-{}}}", c._origin, c._ns, c._topic, c._part, c._rev);
     return s;
 }
 
 static bool parse_partition_and_revision(
-  std::string_view s, manifest_path_components& comp) {
+  std::string_view s, partition_manifest_path_components& comp) {
     auto pos = s.find('_');
     if (pos == std::string_view::npos) {
         // Invalid segment file name
@@ -61,8 +61,8 @@ static bool parse_partition_and_revision(
     return true;
 }
 
-std::optional<manifest_path_components>
-get_manifest_path_components(const std::filesystem::path& path) {
+std::optional<partition_manifest_path_components>
+get_partition_manifest_path_components(const std::filesystem::path& path) {
     // example: b0000000/meta/kafka/redpanda-test/4_2/manifest.json
     enum {
         ix_prefix,
@@ -73,7 +73,7 @@ get_manifest_path_components(const std::filesystem::path& path) {
         ix_file_name,
         total_components
     };
-    manifest_path_components res;
+    partition_manifest_path_components res;
     res._origin = path;
     int ix = 0;
     for (const auto& c : path) {

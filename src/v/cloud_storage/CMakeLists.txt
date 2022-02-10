@@ -3,8 +3,8 @@ v_cc_library(
   NAME cloud_storage
   SRCS
     cache_service.cc
-    manifest.cc
     topic_manifest.cc
+    partition_manifest.cc
     recursive_directory_walker.cc
     remote.cc
     offset_translation_layer.cc

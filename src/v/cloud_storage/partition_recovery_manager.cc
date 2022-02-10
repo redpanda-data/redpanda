@@ -2,7 +2,6 @@
 
 #include "bytes/iobuf_istreambuf.h"
 #include "cloud_storage/logger.h"
-#include "cloud_storage/manifest.h"
 #include "cloud_storage/types.h"
 #include "config/configuration.h"
 #include "hashing/xx.h"
@@ -162,7 +161,8 @@ ss::future<bool> partition_downloader::download_log() {
     co_return false;
 }
 
-static bool same_ntp(const manifest_path_components& c, const model::ntp& ntp) {
+static bool
+same_ntp(const partition_manifest_path_components& c, const model::ntp& ntp) {
     return c._ns == ntp.ns && c._topic == ntp.tp.topic
            && c._part == ntp.tp.partition;
 }
@@ -470,7 +470,7 @@ partition_downloader::find_matching_partition_manifests(
                       size_t,
                       const ss::sstring&) {
         std::filesystem::path path(key);
-        auto res = get_manifest_path_components(path);
+        auto res = get_partition_manifest_path_components(path);
         if (
           res.has_value() && same_ntp(*res, _ntpc.ntp())
           && res->_rev >= topic_rev) {
