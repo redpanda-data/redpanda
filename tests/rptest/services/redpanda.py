@@ -342,7 +342,7 @@ class RedpandaService(Service):
                                       self.who_am_i(node))
             except Exception:
                 self.logger.exception(
-                    f"Error cleaning data files on {node.account.hostname}:")
+                    f"Error cleaning node {node.account.hostname}:")
                 raise
 
         for node in to_start:
@@ -423,6 +423,36 @@ class RedpandaService(Service):
 
         node.account.signal(pid, signal, allow_fail=False)
 
+    def sockets_clear(self, node):
+        """
+        Check that high-numbered redpanda ports (in practice, just the internal
+        RPC port) are clear on the node, to avoid TIME_WAIT sockets from previous
+        tests interfering with redpanda startup.
+
+        In principle, redpanda should not have a problem with TIME_WAIT sockets
+        on its port (redpanda binds with SO_REUSEADDR), but in practice we have
+        seen "Address in use" errors:
+        https://github.com/redpanda-data/redpanda/pull/3754
+        """
+        for line in node.account.ssh_capture("netstat -ant"):
+            self.logger.debug(f"node={node.name} {line.strip()}")
+
+            # Parse output line
+            tokens = line.strip().split()
+            if len(tokens) != 6:
+                # Header, skip
+                continue
+            _, _, _, src, dst, state = tokens
+
+            if src.endswith(":33145"):
+                self.logger.info(
+                    f"Port collision on node {node.name}: {src}->{dst} {state}"
+                )
+                return False
+
+        # Fall through: no problematic lines found
+        return True
+
     def start_node(self, node, override_cfg_params=None, timeout=None):
         """
         Start a single instance of redpanda. This function will not return until
@@ -442,9 +472,9 @@ class RedpandaService(Service):
         # properly: let's peek at what's going on on the node before starting it.
         self.logger.debug(f"Node status prior to redpanda startup:")
         for line in node.account.ssh_capture("ps aux"):
-            self.logger.debug(line)
+            self.logger.debug(line.strip())
         for line in node.account.ssh_capture("netstat -ant"):
-            self.logger.debug(line)
+            self.logger.debug(line.strip())
 
         self.start_redpanda(node)
 
@@ -465,9 +495,9 @@ class RedpandaService(Service):
                 f"Failed to start on {node.name}, gathering node ps and netstat..."
             )
             for line in node.account.ssh_capture("ps aux"):
-                self.logger.warn(line)
+                self.logger.warn(line.strip())
             for line in node.account.ssh_capture("netstat -ant"):
-                self.logger.warn(line)
+                self.logger.warn(line.strip())
             raise
         self._started.append(node)
 

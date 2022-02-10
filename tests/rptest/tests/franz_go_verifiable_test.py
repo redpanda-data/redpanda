@@ -124,9 +124,17 @@ class FranzGoVerifiableWithSiTest(RedpandaTest):
         # Free the normally allocated nodes (e.g. RedpandaService)
         super().free_nodes()
 
+        assert len(self._node_for_franz_go) == 1
+
+        # The verifier opens huge numbers of connections, which can interfere
+        # with subsequent tests' use of the node.  Clear them down first.
+        wait_until(
+            lambda: self.redpanda.sockets_clear(self._node_for_franz_go[1]),
+            timeout_sec=120,
+            backoff_sec=10)
+
         # Free the hand-allocated node that we share between the various
         # verifier services
-        assert len(self._node_for_franz_go) == 1
         self.logger.debug(
             f"Freeing verifier node {self._node_for_franz_go[0].name}")
         self.test_context.cluster.free_single(self._node_for_franz_go[0])
