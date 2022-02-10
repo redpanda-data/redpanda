@@ -1042,7 +1042,8 @@ configuration::configuration()
       "alert",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       5,
-      {.min = 0, .max = cluster::node::max_percent_free_threshold})
+      {.min = cluster::node::min_percent_free_threshold,
+       .max = cluster::node::max_percent_free_threshold})
   , storage_space_alert_free_threshold_bytes(
       *this,
       "storage_space_alert_free_threshold_bytes",
