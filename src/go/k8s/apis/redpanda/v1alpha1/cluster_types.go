@@ -19,6 +19,42 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
+// RedpandaResourceRequirements extends corev1.ResourceRequirements
+// to allow specification of resources directly passed to Redpanda that
+// are different to Requests or Limits.
+type RedpandaResourceRequirements struct {
+	corev1.ResourceRequirements `json:""`
+	// Redpanda describes the amount of compute resources passed to redpanda.
+	// More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+	// +optional
+	Redpanda corev1.ResourceList `json:"redpanda,omitempty"`
+}
+
+// RedpandaCPU returns a copy of the rounded value for Redpanda CPU
+//
+// If it's not explicitly set, the Request.Cpu is used.
+func (r *RedpandaResourceRequirements) RedpandaCPU() *resource.Quantity {
+	q := r.Redpanda.Cpu()
+	if q == nil || q.IsZero() {
+		q = r.Requests.Cpu()
+	}
+	qd := q.DeepCopy()
+	qd.RoundUp(0)
+	return &qd
+}
+
+// RedpandaMemory returns a copy of the value for Redpanda Memory
+//
+// If it's not explicitly set, the Request.Memory is used.
+func (r *RedpandaResourceRequirements) RedpandaMemory() *resource.Quantity {
+	q := r.Redpanda.Memory()
+	if q == nil || q.IsZero() {
+		q = r.Requests.Memory()
+	}
+	qd := q.DeepCopy()
+	return &qd
+}
+
 // ClusterSpec defines the desired state of Cluster
 type ClusterSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
@@ -43,7 +79,7 @@ type ClusterSpec struct {
 	// containers have separate resources settings and the amount of resources
 	// assigned to these containers will be required on the cluster on top of
 	// the resources defined here
-	Resources corev1.ResourceRequirements `json:"resources"`
+	Resources RedpandaResourceRequirements `json:"resources"`
 	// Sidecars is list of sidecars run alongside redpanda container
 	Sidecars Sidecars `json:"sidecars,omitempty"`
 	// Configuration represent redpanda specific configuration
