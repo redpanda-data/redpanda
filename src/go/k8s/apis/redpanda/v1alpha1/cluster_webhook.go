@@ -47,6 +47,11 @@ type resourceField struct {
 	path      *field.Path
 }
 
+type redpandaResourceField struct {
+	resources *RedpandaResourceRequirements
+	path      *field.Path
+}
+
 // log is for logging in this package.
 var log = logf.Log.WithName("cluster-resource")
 
@@ -61,10 +66,12 @@ func (r *Cluster) SetupWebhookWithManager(mgr ctrl.Manager) error {
 
 var _ webhook.Defaulter = &Cluster{}
 
-func allResourceFields(c *Cluster) []resourceField {
-	resources := []resourceField{
-		{&c.Spec.Resources, field.NewPath("spec").Child("resources")},
-	}
+func redpandaResourceFields(c *Cluster) redpandaResourceField {
+	return redpandaResourceField{&c.Spec.Resources, field.NewPath("spec").Child("resources")}
+}
+
+func sidecarResourceFields(c *Cluster) []resourceField {
+	var resources []resourceField
 
 	if c.Spec.Sidecars.RpkStatus != nil && c.Spec.Sidecars.RpkStatus.Enabled {
 		resources = append(resources, resourceField{c.Spec.Sidecars.RpkStatus.Resources, field.NewPath("spec").Child("resourcesRpkStatus")})
@@ -140,7 +147,9 @@ func (r *Cluster) ValidateCreate() error {
 
 	allErrs = append(allErrs, r.validateRedpandaMemory()...)
 
-	for _, rf := range allResourceFields(r) {
+	allErrs = append(allErrs, r.validateRedpandaResources(redpandaResourceFields(r))...)
+
+	for _, rf := range sidecarResourceFields(r) {
 		allErrs = append(allErrs, r.validateResources(rf)...)
 	}
 
@@ -183,7 +192,9 @@ func (r *Cluster) ValidateUpdate(old runtime.Object) error {
 
 	allErrs = append(allErrs, r.validateRedpandaCoreChanges(oldCluster)...)
 
-	for _, rf := range allResourceFields(r) {
+	allErrs = append(allErrs, r.validateRedpandaResources(redpandaResourceFields(r))...)
+
+	for _, rf := range sidecarResourceFields(r) {
 		allErrs = append(allErrs, r.validateResources(rf)...)
 	}
 
@@ -442,6 +453,32 @@ func (r *Cluster) validateResources(rf resourceField) field.ErrorList {
 	return allErrs
 }
 
+func (r *Cluster) validateRedpandaResources(
+	rf redpandaResourceField,
+) field.ErrorList {
+	allErrs := r.validateResources(resourceField{&rf.resources.ResourceRequirements, rf.path})
+
+	// Memory redpanda (if set) must be less than or equal to limit (if set)
+	if !rf.resources.Limits.Memory().IsZero() && !rf.resources.RedpandaMemory().IsZero() && rf.resources.Limits.Memory().Cmp(*rf.resources.RedpandaMemory()) == -1 {
+		allErrs = append(allErrs,
+			field.Invalid(
+				rf.path.Child("redpanda").Child("memory"),
+				rf.resources.Requests.Memory(),
+				"Memory limit cannot be lower than the redanda memory, either increase the limit, decrease redpanda, or remove either"))
+	}
+
+	// Memory redpanda (if set) must be less than or equal to request (if set)
+	if !rf.resources.Requests.Memory().IsZero() && !rf.resources.RedpandaMemory().IsZero() && rf.resources.Requests.Memory().Cmp(*rf.resources.RedpandaMemory()) == -1 {
+		allErrs = append(allErrs,
+			field.Invalid(
+				rf.path.Child("redpanda").Child("memory"),
+				rf.resources.Requests.Memory(),
+				"Memory request cannot be lower than the redanda memory, either increase the request, decrease redpanda, or remove either"))
+	}
+
+	return allErrs
+}
+
 // validateRedpandaMemory verifies that memory limits are aligned with the minimal requirement of redpanda
 // which is defined in `MinimumMemoryPerCore` constant
 func (r *Cluster) validateRedpandaMemory() field.ErrorList {
@@ -463,6 +500,15 @@ func (r *Cluster) validateRedpandaMemory() field.ErrorList {
 				"need 2GB of memory per core; need to decrease the requested CPU or increase the memory request"))
 	}
 
+	redpandaCores := r.Spec.Resources.RedpandaCPU().Value()
+	if !r.Spec.Resources.RedpandaMemory().IsZero() && r.Spec.Resources.RedpandaMemory().Value() < redpandaCores*MinimumMemoryPerCore {
+		allErrs = append(allErrs,
+			field.Invalid(
+				field.NewPath("spec").Child("resources").Child("redpanda").Child("memory"),
+				r.Spec.Resources.Requests.Memory(),
+				"need 2GB of memory per core; need to decrease the redpanda CPU or increase the redpanda memory"))
+	}
+
 	return allErrs
 }
 
@@ -475,14 +521,10 @@ func (r *Cluster) validateRedpandaCoreChanges(old *Cluster) field.ErrorList {
 	}
 	var allErrs field.ErrorList
 
-	oldRequests := old.Spec.Resources.Requests.DeepCopy()
-	oldCPURequest := oldRequests.Cpu()
-	newRequests := r.Spec.Resources.Requests.DeepCopy()
-	newCPURequest := newRequests.Cpu()
+	oldCPURequest := old.Spec.Resources.RedpandaCPU()
+	newCPURequest := r.Spec.Resources.RedpandaCPU()
 	if oldCPURequest != nil && newCPURequest != nil {
-		oldCPURequest.RoundUp(0)
 		oldCores := oldCPURequest.Value()
-		newCPURequest.RoundUp(0)
 		newCores := newCPURequest.Value()
 
 		if newCores < oldCores {
