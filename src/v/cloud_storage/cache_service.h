@@ -22,6 +22,7 @@
 
 #include <filesystem>
 #include <set>
+#include <string_view>
 
 namespace cloud_storage {
 
@@ -94,6 +95,12 @@ private:
     /// Triggers directory walker, creates a list of files to delete and deletes
     /// only tmp files that are left from previous Red Panda run
     ss::future<> clean_up_at_start();
+
+    /// Deletes a file and then recursively goes up and deletes a directory
+    /// until it meet a non-empty directory.
+    ///
+    /// \param key if a path to a file what should be deleted
+    ss::future<> recursive_delete_empty_directory(const std::string_view& key);
 
     std::filesystem::path _cache_dir;
     size_t _max_cache_size;
