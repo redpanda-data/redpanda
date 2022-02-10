@@ -38,6 +38,10 @@ class RpkRemoteTool:
             ["cd", working_dir, ";",
              self._rpk_binary(), "debug", "bundle"])
 
+    def cluster_config_reset(self, property_name):
+        return self._execute(
+            [self._rpk_binary(), 'cluster', 'config', 'reset', property_name])
+
     def _run_config(self, cmd, path=None, timeout=30):
         cmd = [self._rpk_binary(), 'redpanda', 'config'] + cmd
 

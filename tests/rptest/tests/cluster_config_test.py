@@ -17,6 +17,7 @@ import tempfile
 from rptest.services.admin import Admin
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.rpk import RpkTool, RpkException
+from rptest.clients.rpk_remote import RpkRemoteTool
 from rptest.clients.kcl import KCL
 from rptest.services.cluster import cluster
 from ducktape.mark import parametrize
@@ -610,6 +611,34 @@ class ClusterConfigTest(RedpandaTest):
 
             node = self.redpanda.nodes[i]
             assert int(node_id) == self.redpanda.idx(node)
+
+    @cluster(num_nodes=3)
+    def test_rpk_reset(self):
+        """
+        Verify that RPK's `reset` command for disaster recovery works as
+        expected: redpanda should start up and behave as if the property
+        is its default value.
+        """
+        # Set some non-default config value
+        pr = self.admin.patch_cluster_config(upsert={
+            'kafka_qdc_enable': True,
+            'append_chunk_size': 65536
+        })
+        self._wait_for_version_sync(pr['config_version'])
+        self._check_value_everywhere("kafka_qdc_enable", True)
+
+        # Reset the property on all nodes
+        for node in self.redpanda.nodes:
+            rpk_remote = RpkRemoteTool(self.redpanda, node)
+            self.redpanda.stop_node(node)
+            rpk_remote.cluster_config_reset("kafka_qdc_enable")
+            self.redpanda.start_node(node)
+
+        # Check that the reset property has reverted to its default
+        self._check_value_everywhere("kafka_qdc_enable", False)
+
+        # Check that the bystander config property was not reset
+        self._check_value_everywhere("append_chunk_size", 65536)
 
     @cluster(num_nodes=3)
     def test_secret_redaction(self):
