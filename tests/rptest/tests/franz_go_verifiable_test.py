@@ -61,11 +61,15 @@ class FranzGoVerifiableTest(RedpandaTest):
         # Need create json file for consumer at first
         self._create_json_file()
 
-        self._producer.start()
-        self._seq_consumer.start()
-        self._rand_consumer.start()
+        self._producer.start(clean=False)
+        self._seq_consumer.start(clean=False)
+        self._rand_consumer.start(clean=False)
 
         self._producer.wait()
+        self._seq_consumer.shutdown()
+        self._rand_consumer.shutdown()
+        self._seq_consumer.wait()
+        self._rand_consumer.wait()
 
 
 class FranzGoVerifiableWithSiTest(RedpandaTest):
@@ -101,6 +105,8 @@ class FranzGoVerifiableWithSiTest(RedpandaTest):
 
         self._node_for_franz_go = ctx.cluster.alloc(
             ClusterSpec.simple_linux(1))
+        self.logger.debug(
+            f"Allocated verifier node {self._node_for_franz_go[0].name}")
 
         self._producer = FranzGoVerifiableProducer(
             ctx, self.redpanda, self.topic,
@@ -113,6 +119,25 @@ class FranzGoVerifiableWithSiTest(RedpandaTest):
             ctx, self.redpanda, self.topic,
             FranzGoVerifiableWithSiTest.MSG_SIZE, 1000, 20,
             self._node_for_franz_go)
+
+    def free_nodes(self):
+        # Free the normally allocated nodes (e.g. RedpandaService)
+        super().free_nodes()
+
+        assert len(self._node_for_franz_go) == 1
+
+        # The verifier opens huge numbers of connections, which can interfere
+        # with subsequent tests' use of the node.  Clear them down first.
+        wait_until(
+            lambda: self.redpanda.sockets_clear(self._node_for_franz_go[1]),
+            timeout_sec=120,
+            backoff_sec=10)
+
+        # Free the hand-allocated node that we share between the various
+        # verifier services
+        self.logger.debug(
+            f"Freeing verifier node {self._node_for_franz_go[0].name}")
+        self.test_context.cluster.free_single(self._node_for_franz_go[0])
 
     # In the future producer will signal about json creation
     def _create_json_file(self):
@@ -147,6 +172,12 @@ class FranzGoVerifiableWithSiTest(RedpandaTest):
         for o in objects:
             self.logger.info(f"S3 object: {o.Key}, {o.ContentLength}")
 
-        self._producer.start()
-        self._seq_consumer.start()
-        self._rand_consumer.start()
+        self._producer.start(clean=False)
+        self._seq_consumer.start(clean=False)
+        self._rand_consumer.start(clean=False)
+
+        self._producer.wait()
+        self._seq_consumer.shutdown()
+        self._rand_consumer.shutdown()
+        self._seq_consumer.wait()
+        self._rand_consumer.wait()

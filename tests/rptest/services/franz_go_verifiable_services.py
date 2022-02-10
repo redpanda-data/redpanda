@@ -51,12 +51,13 @@ class FranzGoVerifiableService(BackgroundThreadService):
         self._topic = topic
         self._msg_size = msg_size
         self._stopping = threading.Event()
+        self._shutting_down = threading.Event()
         self._exception = None
         self.status = ServiceStatus.SETUP
         self._pid = None
 
     def _worker(self, idx, node):
-        pass
+        raise NotImplementedError()
 
     def execute_cmd(self, cmd, node):
         for line in node.account.ssh_capture(cmd):
@@ -71,10 +72,13 @@ class FranzGoVerifiableService(BackgroundThreadService):
         if self._stopping.is_set():
             pass
         else:
+            self._redpanda.logger.exception(
+                f"Error from {self.__class__.__name__}:")
             self._exception = ex
             raise ex
 
     def stop_node(self, node):
+        self._redpanda.logger.info(f"{self.__class__.__name__}.stop")
         self._stopping.set()
 
         if self.status is ServiceStatus.RUNNING:
@@ -93,13 +97,33 @@ class FranzGoVerifiableService(BackgroundThreadService):
         if self._exception is not None:
             raise self._exception
 
+    def clean_node(self, node):
+        self._redpanda.logger.info(f"{self.__class__.__name__}.clean_node")
+        node.account.kill_process("si-verifier", clean_shutdown=False)
+        node.account.remove("valid_offsets*json", True)
+
+    def start_node(self, node, clean=None):
+        # Ignore `clean`, it is processed by Service.start.  We just need to ignore
+        # it here because the default BackgroundThreadService start_node doesn't
+        # handle it.
+        super().start_node(node)
+
+    def shutdown(self):
+        """
+        Unlike `stop`, which stops immediately, this will let the consumer run until the
+        end of its current scan, and does not suppress exceptions from the consumer.
+        Follow this with a call to wait().
+        """
+        self._redpanda.logger.info(f"{self.__class__.__name__}.shutdown")
+        self._shutting_down.set()
+
     def allocate_nodes(self):
         if self.use_custom_node:
             return
         else:
             return super(FranzGoVerifiableService, self).allocate_nodes()
 
-    def free_all(self):
+    def free(self):
         if self.use_custom_node:
             return
         else:
@@ -111,11 +135,14 @@ class FranzGoVerifiableSeqConsumer(FranzGoVerifiableService):
         super(FranzGoVerifiableSeqConsumer,
               self).__init__(context, redpanda, topic, msg_size, nodes)
 
+        self._shutting_down = threading.Event()
+
     def _worker(self, idx, node):
         self.status = ServiceStatus.RUNNING
         self._stopping.clear()
         try:
-            while not self._stopping.is_set():
+            while not self._stopping.is_set(
+            ) and not self._shutting_down.is_set():
                 cmd = 'echo $$ ; %s --brokers %s --topic %s --msg_size %s --produce_msgs 0 --rand_read_msgs 0 --seq_read=1' % (
                     f"{TESTS_DIR}/si-verifier", self._redpanda.brokers(),
                     self._topic, self._msg_size)
@@ -144,7 +171,8 @@ class FranzGoVerifiableRandomConsumer(FranzGoVerifiableService):
         self.status = ServiceStatus.RUNNING
         self._stopping.clear()
         try:
-            while not self._stopping.is_set():
+            while not self._stopping.is_set(
+            ) and not self._shutting_down.is_set():
                 cmd = 'echo $$ ; %s --brokers %s --topic %s --msg_size %s --produce_msgs 0 --rand_read_msgs %s --parallel %s --seq_read=0' % (
                     f"{TESTS_DIR}/si-verifier", self._redpanda.brokers(),
                     self._topic, self._msg_size, self._rand_read_msgs,

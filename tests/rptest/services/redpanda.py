@@ -65,6 +65,9 @@ RESTART_LOG_ALLOW_LIST = [
     re.compile("members_backend.*abort_requested_exception"),
     re.compile(
         "raft - .*recovery append entries error.*client_request_timeout"),
+    # cluster - rm_stm.cc:550 - Error "raft::errc:19" on replicating pid:{producer_identity: id=1, epoch=0} commit batch
+    # raft::errc:19 is the shutdown error code, the transaction subsystem encounters this and logs at error level
+    re.compile("Error \"raft::errc:19\" on replicating"),
 ]
 
 # Log errors that are expected in chaos-style tests that e.g.
@@ -339,7 +342,7 @@ class RedpandaService(Service):
                                       self.who_am_i(node))
             except Exception:
                 self.logger.exception(
-                    f"Error cleaning data files on {node.account.hostname}:")
+                    f"Error cleaning node {node.account.hostname}:")
                 raise
 
         for node in to_start:
@@ -420,6 +423,36 @@ class RedpandaService(Service):
 
         node.account.signal(pid, signal, allow_fail=False)
 
+    def sockets_clear(self, node):
+        """
+        Check that high-numbered redpanda ports (in practice, just the internal
+        RPC port) are clear on the node, to avoid TIME_WAIT sockets from previous
+        tests interfering with redpanda startup.
+
+        In principle, redpanda should not have a problem with TIME_WAIT sockets
+        on its port (redpanda binds with SO_REUSEADDR), but in practice we have
+        seen "Address in use" errors:
+        https://github.com/redpanda-data/redpanda/pull/3754
+        """
+        for line in node.account.ssh_capture("netstat -ant"):
+            self.logger.debug(f"node={node.name} {line.strip()}")
+
+            # Parse output line
+            tokens = line.strip().split()
+            if len(tokens) != 6:
+                # Header, skip
+                continue
+            _, _, _, src, dst, state = tokens
+
+            if src.endswith(":33145"):
+                self.logger.info(
+                    f"Port collision on node {node.name}: {src}->{dst} {state}"
+                )
+                return False
+
+        # Fall through: no problematic lines found
+        return True
+
     def start_node(self, node, override_cfg_params=None, timeout=None):
         """
         Start a single instance of redpanda. This function will not return until
@@ -435,16 +468,37 @@ class RedpandaService(Service):
         if self.coproc_enabled():
             self.start_wasm_engine(node)
 
+        # Maybe redpanda collides with something that wasn't cleaned up
+        # properly: let's peek at what's going on on the node before starting it.
+        self.logger.debug(f"Node status prior to redpanda startup:")
+        for line in node.account.ssh_capture("ps aux"):
+            self.logger.debug(line.strip())
+        for line in node.account.ssh_capture("netstat -ant"):
+            self.logger.debug(line.strip())
+
         self.start_redpanda(node)
 
         if timeout is None:
             timeout = self.READY_TIMEOUT_SEC
 
-        wait_until(
-            lambda: Admin.ready(node).get("status") == "ready",
-            timeout_sec=timeout,
-            err_msg=f"Redpanda service {node.account.hostname} failed to start",
-            retry_on_exc=True)
+        try:
+            wait_until(
+                lambda: Admin.ready(node).get("status") == "ready",
+                timeout_sec=timeout,
+                err_msg=
+                f"Redpanda service {node.account.hostname} failed to start",
+                retry_on_exc=True)
+        except:
+            # In case our failure to start is something like an "address in use", we
+            # would like to know what else is going on on this node.
+            self.logger.warn(
+                f"Failed to start on {node.name}, gathering node ps and netstat..."
+            )
+            for line in node.account.ssh_capture("ps aux"):
+                self.logger.warn(line.strip())
+            for line in node.account.ssh_capture("netstat -ant"):
+                self.logger.warn(line.strip())
+            raise
         self._started.append(node)
 
     def coproc_enabled(self):
