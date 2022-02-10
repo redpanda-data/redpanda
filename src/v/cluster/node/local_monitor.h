@@ -34,9 +34,6 @@ public:
     ss::future<> update_state();
     const local_state& get_state_cached() const;
 
-    // Visible for test
-    static constexpr int max_percent_free_threshold = 50;
-    static constexpr size_t max_bytes_free_threshold = 1_TiB;
     static constexpr std::string_view stable_alert_string
       = "storage space alert"; // for those who grep the logs..
 

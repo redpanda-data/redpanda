@@ -140,25 +140,6 @@ void local_monitor::update_alert_state() {
 void local_monitor::refresh_configuration() {
     auto percent_threshold = get_config_alert_threshold_percent();
     auto bytes_threshold = get_config_alert_threshold_bytes();
-    // TODO replace with bounded config feature
-    if (percent_threshold > max_percent_free_threshold) {
-        clusterlog.warn(
-          "Configuration value {} for "
-          "storage_space_alert_free_threshold_percent exceeds "
-          "maximum, using {}.",
-          percent_threshold,
-          max_percent_free_threshold);
-        percent_threshold = max_percent_free_threshold;
-    }
-    if (bytes_threshold > max_bytes_free_threshold) {
-        clusterlog.warn(
-          "Configuration value {} for "
-          "storage_space_alert_free_threshold_bytes exceeds "
-          "maximum, using {}.",
-          bytes_threshold,
-          max_bytes_free_threshold);
-        bytes_threshold = max_bytes_free_threshold;
-    }
     if (last_free_space_percent_threshold != percent_threshold) {
         clusterlog.info(
           "Updated free space percent alert threshold {} -> {}",

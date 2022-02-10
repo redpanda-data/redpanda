@@ -9,6 +9,7 @@
 
 #include "config/configuration.h"
 
+#include "cluster/node/constants.h"
 #include "config/base_property.h"
 #include "config/node_config.h"
 #include "model/metadata.h"
@@ -1041,7 +1042,7 @@ configuration::configuration()
       "alert",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       5,
-      {.min = 0, .max = 50})
+      {.min = 0, .max = cluster::node::max_percent_free_threshold})
   , storage_space_alert_free_threshold_bytes(
       *this,
       "storage_space_alert_free_threshold_bytes",
@@ -1049,7 +1050,7 @@ configuration::configuration()
       "alert",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       1_GiB,
-      {.min = 1_MiB})
+      {.min = cluster::node::min_bytes_free_threshold})
   , enable_metrics_reporter(
       *this,
       "enable_metrics_reporter",
