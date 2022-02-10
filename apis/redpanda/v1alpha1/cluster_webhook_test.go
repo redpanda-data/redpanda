@@ -90,10 +90,12 @@ func TestDefault(t *testing.T) {
 			Spec: v1alpha1.ClusterSpec{
 				Replicas:      pointer.Int32Ptr(1),
 				Configuration: v1alpha1.RedpandaConfig{},
-				Resources: corev1.ResourceRequirements{
-					Requests: corev1.ResourceList{
-						corev1.ResourceMemory: resource.MustParse("1Gi"),
-					},
+				Resources: v1alpha1.RedpandaResourceRequirements{
+					ResourceRequirements: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceMemory: resource.MustParse("1Gi"),
+						}},
+					Redpanda: nil,
 				},
 			},
 		}
@@ -112,10 +114,12 @@ func TestDefault(t *testing.T) {
 				Configuration: v1alpha1.RedpandaConfig{
 					SchemaRegistry: &v1alpha1.SchemaRegistryAPI{},
 				},
-				Resources: corev1.ResourceRequirements{
-					Requests: corev1.ResourceList{
-						corev1.ResourceMemory: resource.MustParse("1Gi"),
-					},
+				Resources: v1alpha1.RedpandaResourceRequirements{
+					ResourceRequirements: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceMemory: resource.MustParse("1Gi"),
+						}},
+					Redpanda: nil,
 				},
 			},
 		}
@@ -136,10 +140,12 @@ func TestDefault(t *testing.T) {
 						Port: 999,
 					},
 				},
-				Resources: corev1.ResourceRequirements{
-					Requests: corev1.ResourceList{
-						corev1.ResourceMemory: resource.MustParse("1Gi"),
-					},
+				Resources: v1alpha1.RedpandaResourceRequirements{
+					ResourceRequirements: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceMemory: resource.MustParse("1Gi"),
+						}},
+					Redpanda: nil,
 				},
 			},
 		}
@@ -160,10 +166,12 @@ func TestDefault(t *testing.T) {
 						External: &v1alpha1.ExternalConnectivityConfig{Enabled: true},
 					},
 				},
-				Resources: corev1.ResourceRequirements{
-					Requests: corev1.ResourceList{
-						corev1.ResourceMemory: resource.MustParse("1Gi"),
-					},
+				Resources: v1alpha1.RedpandaResourceRequirements{
+					ResourceRequirements: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceMemory: resource.MustParse("1Gi"),
+						}},
+					Redpanda: nil,
 				},
 			},
 		}
@@ -199,11 +207,13 @@ func TestValidateUpdate(t *testing.T) {
 		Spec: v1alpha1.ClusterSpec{
 			Replicas:      pointer.Int32Ptr(replicas2),
 			Configuration: v1alpha1.RedpandaConfig{},
-			Resources: corev1.ResourceRequirements{
-				Requests: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("1"),
-					corev1.ResourceMemory: resource.MustParse("0.9Gi"),
-				},
+			Resources: v1alpha1.RedpandaResourceRequirements{
+				ResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("1"),
+						corev1.ResourceMemory: resource.MustParse("0.9Gi"),
+					}},
+				Redpanda: nil,
 			},
 		},
 	}
@@ -274,11 +284,13 @@ func TestValidateUpdate_NoError(t *testing.T) {
 				SchemaRegistry: &v1alpha1.SchemaRegistryAPI{Port: 127},
 				PandaproxyAPI:  []v1alpha1.PandaproxyAPI{{Port: 128}},
 			},
-			Resources: corev1.ResourceRequirements{
-				Requests: corev1.ResourceList{
-					corev1.ResourceMemory: resource.MustParse("2Gi"),
-					corev1.ResourceCPU:    resource.MustParse("1"),
-				},
+			Resources: v1alpha1.RedpandaResourceRequirements{
+				ResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceMemory: resource.MustParse("2Gi"),
+						corev1.ResourceCPU:    resource.MustParse("1"),
+					}},
+				Redpanda: nil,
 			},
 		},
 	}
@@ -701,11 +713,13 @@ func TestCreation(t *testing.T) {
 
 	t.Run("incorrect memory (need 2GB per core)", func(t *testing.T) {
 		memory := redpandaCluster.DeepCopy()
-		memory.Spec.Resources = corev1.ResourceRequirements{
-			Requests: corev1.ResourceList{
-				corev1.ResourceMemory: resource.MustParse("1Gi"),
-				corev1.ResourceCPU:    resource.MustParse("2"),
-			},
+		memory.Spec.Resources = v1alpha1.RedpandaResourceRequirements{
+			ResourceRequirements: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("1Gi"),
+					corev1.ResourceCPU:    resource.MustParse("2"),
+				}},
+			Redpanda: nil,
 		}
 
 		err := memory.ValidateCreate()
@@ -714,13 +728,102 @@ func TestCreation(t *testing.T) {
 
 	t.Run("no 2GB per core required when in developer mode", func(t *testing.T) {
 		memory := redpandaCluster.DeepCopy()
-		memory.Spec.Resources = corev1.ResourceRequirements{
-			Requests: corev1.ResourceList{
-				corev1.ResourceMemory: resource.MustParse("1Gi"),
-				corev1.ResourceCPU:    resource.MustParse("2"),
-			},
+		memory.Spec.Resources = v1alpha1.RedpandaResourceRequirements{
+			ResourceRequirements: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("1Gi"),
+					corev1.ResourceCPU:    resource.MustParse("2"),
+				}},
+			Redpanda: nil,
 		}
 		memory.Spec.Configuration.DeveloperMode = true
+
+		err := memory.ValidateCreate()
+		assert.NoError(t, err)
+	})
+
+	t.Run("incorrect redpanda memory (need <= request)", func(t *testing.T) {
+		memory := redpandaCluster.DeepCopy()
+		memory.Spec.Resources = v1alpha1.RedpandaResourceRequirements{
+			ResourceRequirements: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("2Gi"),
+					corev1.ResourceCPU:    resource.MustParse("1"),
+				}},
+			Redpanda: corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("4Gi"),
+				corev1.ResourceCPU:    resource.MustParse("1"),
+			},
+		}
+
+		err := memory.ValidateCreate()
+		assert.Error(t, err)
+	})
+
+	// nolint:dupl // the values are different
+	t.Run("incorrect redpanda memory (need <= limit)", func(t *testing.T) {
+		memory := redpandaCluster.DeepCopy()
+		memory.Spec.Resources = v1alpha1.RedpandaResourceRequirements{
+			ResourceRequirements: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("2Gi"),
+					corev1.ResourceCPU:    resource.MustParse("1"),
+				},
+				Limits: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("3Gi"),
+					corev1.ResourceCPU:    resource.MustParse("1"),
+				}},
+			Redpanda: corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("4Gi"),
+				corev1.ResourceCPU:    resource.MustParse("1"),
+			},
+		}
+
+		err := memory.ValidateCreate()
+		assert.Error(t, err)
+	})
+
+	// nolint:dupl // the values are different
+	t.Run("correct redpanda memory", func(t *testing.T) {
+		memory := redpandaCluster.DeepCopy()
+		memory.Spec.Resources = v1alpha1.RedpandaResourceRequirements{
+			ResourceRequirements: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("2.223Gi"),
+					corev1.ResourceCPU:    resource.MustParse("1"),
+				},
+				Limits: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("2.223Gi"),
+					corev1.ResourceCPU:    resource.MustParse("1"),
+				}},
+			Redpanda: corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("2Gi"),
+				corev1.ResourceCPU:    resource.MustParse("1"),
+			},
+		}
+
+		err := memory.ValidateCreate()
+		assert.NoError(t, err)
+	})
+
+	// nolint:dupl // the values are different
+	t.Run("correct redpanda memory (boundary check)", func(t *testing.T) {
+		memory := redpandaCluster.DeepCopy()
+		memory.Spec.Resources = v1alpha1.RedpandaResourceRequirements{
+			ResourceRequirements: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("2Gi"),
+					corev1.ResourceCPU:    resource.MustParse("1"),
+				},
+				Limits: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("2Gi"),
+					corev1.ResourceCPU:    resource.MustParse("1"),
+				}},
+			Redpanda: corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("2Gi"),
+				corev1.ResourceCPU:    resource.MustParse("1"),
+			},
+		}
 
 		err := memory.ValidateCreate()
 		assert.NoError(t, err)
@@ -935,11 +1038,13 @@ func validRedpandaCluster() *v1alpha1.Cluster {
 				SchemaRegistry: &v1alpha1.SchemaRegistryAPI{Port: 130},
 				PandaproxyAPI:  []v1alpha1.PandaproxyAPI{{Port: 132}},
 			},
-			Resources: corev1.ResourceRequirements{
-				Requests: corev1.ResourceList{
-					corev1.ResourceMemory: resource.MustParse("2Gi"),
-					corev1.ResourceCPU:    resource.MustParse("1"),
-				},
+			Resources: v1alpha1.RedpandaResourceRequirements{
+				ResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceMemory: resource.MustParse("2Gi"),
+						corev1.ResourceCPU:    resource.MustParse("1"),
+					}},
+				Redpanda: nil,
 			},
 		},
 	}

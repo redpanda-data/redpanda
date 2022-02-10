@@ -381,7 +381,7 @@ func (r *StatefulSetResource) obj(
 								r.portsConfiguration(),
 							}, prepareAdditionalArguments(
 								r.pandaCluster.Spec.Configuration.DeveloperMode,
-								r.pandaCluster.Spec.Resources.Requests)...),
+								r.pandaCluster.Spec.Resources)...),
 							Env: []corev1.EnvVar{
 								{
 									Name:  "REDPANDA_ENVIRONMENT",
@@ -561,13 +561,13 @@ func (r *StatefulSetResource) rpkStatusContainer() *corev1.Container {
 }
 
 func prepareAdditionalArguments(
-	developerMode bool, originalRequests corev1.ResourceList,
+	developerMode bool,
+	originalRequests redpandav1alpha1.RedpandaResourceRequirements,
 ) []string {
 	requests := originalRequests.DeepCopy()
 
-	requests.Cpu().RoundUp(0)
-	requestedCores := requests.Cpu().Value()
-	requestedMemory := requests.Memory().Value()
+	requestedCores := requests.RedpandaCPU().Value()
+	requestedMemory := requests.RedpandaMemory().Value()
 
 	if developerMode {
 		args := []string{

@@ -50,6 +50,13 @@ func TestEnsure(t *testing.T) {
 	resourcesUpdatedSts.Spec.Template.Spec.InitContainers[0].Resources.Requests = newResources
 	resourcesUpdatedSts.Spec.Template.Spec.Containers[0].Resources.Requests = newResources
 
+	// Check that Redpanda resources don't affect Resource Requests
+	resourcesUpdatedRedpandaCluster := resourcesUpdatedCluster.DeepCopy()
+	resourcesUpdatedRedpandaCluster.Spec.Resources.Redpanda = corev1.ResourceList{
+		corev1.ResourceCPU:    resource.MustParse("1111"),
+		corev1.ResourceMemory: resource.MustParse("2000Gi"),
+	}
+
 	noSidecarCluster := cluster.DeepCopy()
 	noSidecarCluster.Spec.Sidecars.RpkStatus = &redpandav1alpha1.Sidecar{
 		Enabled: false,
@@ -71,6 +78,7 @@ func TestEnsure(t *testing.T) {
 		{"none existing", nil, cluster, stsResource},
 		{"update replicas", stsResource, replicasUpdatedCluster, replicasUpdatedSts},
 		{"update resources", stsResource, resourcesUpdatedCluster, resourcesUpdatedSts},
+		{"update redpanda resources", stsResource, resourcesUpdatedRedpandaCluster, resourcesUpdatedSts},
 		{"disabled sidecar", nil, noSidecarCluster, noSidecarSts},
 		{"cluster without shadow index cache dir", stsResource, withoutShadowIndexCacheDirectory, stsWithoutSecondPersistentVolume},
 	}
@@ -270,9 +278,12 @@ func pandaCluster() *redpandav1alpha1.Cluster {
 				AdminAPI: []redpandav1alpha1.AdminAPI{{Port: 345}},
 				KafkaAPI: []redpandav1alpha1.KafkaAPI{{Port: 123}},
 			},
-			Resources: corev1.ResourceRequirements{
-				Limits:   resources,
-				Requests: resources,
+			Resources: redpandav1alpha1.RedpandaResourceRequirements{
+				ResourceRequirements: corev1.ResourceRequirements{
+					Limits:   resources,
+					Requests: resources,
+				},
+				Redpanda: nil,
 			},
 			Sidecars: redpandav1alpha1.Sidecars{
 				RpkStatus: &redpandav1alpha1.Sidecar{
