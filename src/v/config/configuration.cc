@@ -1040,14 +1040,16 @@ configuration::configuration()
       "Threshold of minimim percent free space before setting storage space "
       "alert",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      5)
+      5,
+      {.min = 0, .max = 50})
   , storage_space_alert_free_threshold_bytes(
       *this,
       "storage_space_alert_free_threshold_bytes",
       "Threshold of minimim bytes free space before setting storage space "
       "alert",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      1_GiB)
+      1_GiB,
+      {.min = 1_MiB})
   , enable_metrics_reporter(
       *this,
       "enable_metrics_reporter",
