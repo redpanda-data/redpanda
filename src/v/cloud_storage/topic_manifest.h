@@ -47,7 +47,7 @@ public:
     std::vector<remote_manifest_path> get_partition_manifests() const;
 
     manifest_type get_manifest_type() const override {
-        return manifest_type::partition;
+        return manifest_type::topic;
     };
 
     model::initial_revision_id get_revision() const noexcept { return _rev; }

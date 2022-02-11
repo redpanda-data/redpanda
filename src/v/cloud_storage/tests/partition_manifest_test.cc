@@ -70,6 +70,11 @@ inline ss::input_stream<char> make_manifest_stream(std::string_view json) {
     return make_iobuf_input_stream(std::move(i));
 }
 
+SEASTAR_THREAD_TEST_CASE(test_manifest_type) {
+    partition_manifest m;
+    BOOST_REQUIRE(m.get_manifest_type() == manifest_type::partition);
+}
+
 SEASTAR_THREAD_TEST_CASE(test_segment_path) {
     auto path = generate_remote_segment_path(
       manifest_ntp,

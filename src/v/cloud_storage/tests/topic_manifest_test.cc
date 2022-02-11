@@ -68,6 +68,11 @@ inline ss::input_stream<char> make_manifest_stream(std::string_view json) {
     return make_iobuf_input_stream(std::move(i));
 }
 
+SEASTAR_THREAD_TEST_CASE(manifest_type_topic) {
+    topic_manifest m;
+    BOOST_REQUIRE(m.get_manifest_type() == manifest_type::topic);
+}
+
 SEASTAR_THREAD_TEST_CASE(create_topic_manifest_correct_path) {
     topic_manifest m(cfg, model::initial_revision_id(0));
     auto path = m.get_manifest_path();
