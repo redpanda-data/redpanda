@@ -20,35 +20,73 @@ from rptest.services.redpanda import SISettings
 from rptest.services.franz_go_verifiable_services import FranzGoVerifiableProducer, FranzGoVerifiableSeqConsumer, FranzGoVerifiableRandomConsumer
 
 
-class FranzGoVerifiableTest(RedpandaTest):
-    MSG_SIZE = 120000
+class FranzGoVerifiableBase(RedpandaTest):
+    """
+    Base class for the common logic that allocates a shared
+    node for several services and instantiates them.
+    """
 
-    topics = (TopicSpec(partition_count=100, replication_factor=3), )
+    MSG_SIZE = None
+    PRODUCE_COUNT = None
+    RANDOM_READ_COUNT = None
+    RANDOM_READ_PARALLEL = None
 
-    def __init__(self, ctx):
-        super(FranzGoVerifiableTest, self).__init__(test_context=ctx,
-                                                    num_brokers=3)
+    def __init__(self, test_context, *args, **kwargs):
+        super().__init__(test_context, *args, **kwargs)
 
-        self._node_for_franz_go = ctx.cluster.alloc(
+        self._node_for_franz_go = test_context.cluster.alloc(
             ClusterSpec.simple_linux(1))
+        self.logger.debug(
+            f"Allocated verifier node {self._node_for_franz_go[0].name}")
 
-        self._producer = FranzGoVerifiableProducer(
-            ctx, self.redpanda, self.topic, FranzGoVerifiableTest.MSG_SIZE,
-            100000, self._node_for_franz_go)
+        self._producer = FranzGoVerifiableProducer(test_context, self.redpanda,
+                                                   self.topic, self.MSG_SIZE,
+                                                   self.PRODUCE_COUNT,
+                                                   self._node_for_franz_go)
         self._seq_consumer = FranzGoVerifiableSeqConsumer(
-            ctx, self.redpanda, self.topic, FranzGoVerifiableTest.MSG_SIZE,
+            test_context, self.redpanda, self.topic, self.MSG_SIZE,
             self._node_for_franz_go)
         self._rand_consumer = FranzGoVerifiableRandomConsumer(
-            ctx, self.redpanda, self.topic, FranzGoVerifiableTest.MSG_SIZE,
-            1000, 20, self._node_for_franz_go)
+            test_context, self.redpanda, self.topic, self.MSG_SIZE,
+            self.RANDOM_READ_COUNT, self.RANDOM_READ_PARALLEL,
+            self._node_for_franz_go)
 
     # In the future producer will signal about json creation
-    def _create_json_file(self):
-        small_producer = FranzGoVerifiableProducer(
-            self.test_context, self.redpanda, self.topic,
-            FranzGoVerifiableTest.MSG_SIZE, 1000, self._node_for_franz_go)
+    def _create_json_file(self, msg_count):
+        small_producer = FranzGoVerifiableProducer(self.test_context,
+                                                   self.redpanda, self.topic,
+                                                   self.MSG_SIZE, msg_count,
+                                                   self._node_for_franz_go)
         small_producer.start()
         small_producer.wait()
+
+    def free_nodes(self):
+        # Free the normally allocated nodes (e.g. RedpandaService)
+        super().free_nodes()
+
+        assert len(self._node_for_franz_go) == 1
+
+        # The verifier opens huge numbers of connections, which can interfere
+        # with subsequent tests' use of the node.  Clear them down first.
+        wait_until(
+            lambda: self.redpanda.sockets_clear(self._node_for_franz_go[0]),
+            timeout_sec=120,
+            backoff_sec=10)
+
+        # Free the hand-allocated node that we share between the various
+        # verifier services
+        self.logger.debug(
+            f"Freeing verifier node {self._node_for_franz_go[0].name}")
+        self.test_context.cluster.free_single(self._node_for_franz_go[0])
+
+
+class FranzGoVerifiableTest(FranzGoVerifiableBase):
+    MSG_SIZE = 120000
+    PRODUCE_COUNT = 100000
+    RANDOM_READ_COUNT = 1000
+    RANDOM_READ_PARALLEL = 20
+
+    topics = (TopicSpec(partition_count=100, replication_factor=3), )
 
     @cluster(num_nodes=4)
     def test_with_all_type_of_loads(self):
@@ -59,7 +97,7 @@ class FranzGoVerifiableTest(RedpandaTest):
             return
 
         # Need create json file for consumer at first
-        self._create_json_file()
+        self._create_json_file(1000)
 
         self._producer.start(clean=False)
         self._seq_consumer.start(clean=False)
@@ -72,8 +110,12 @@ class FranzGoVerifiableTest(RedpandaTest):
         self._rand_consumer.wait()
 
 
-class FranzGoVerifiableWithSiTest(RedpandaTest):
+class FranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
     MSG_SIZE = 1000000
+    PRODUCE_COUNT = 20000
+    RANDOM_READ_COUNT = 1000
+    RANDOM_READ_PARALLEL = 20
+
     segment_size = 5 * 1000000
 
     topics = (TopicSpec(partition_count=100, replication_factor=3), )
@@ -103,51 +145,6 @@ class FranzGoVerifiableWithSiTest(RedpandaTest):
             },
             si_settings=si_settings)
 
-        self._node_for_franz_go = ctx.cluster.alloc(
-            ClusterSpec.simple_linux(1))
-        self.logger.debug(
-            f"Allocated verifier node {self._node_for_franz_go[0].name}")
-
-        self._producer = FranzGoVerifiableProducer(
-            ctx, self.redpanda, self.topic,
-            FranzGoVerifiableWithSiTest.MSG_SIZE, 20000,
-            self._node_for_franz_go)
-        self._seq_consumer = FranzGoVerifiableSeqConsumer(
-            ctx, self.redpanda, self.topic,
-            FranzGoVerifiableWithSiTest.MSG_SIZE, self._node_for_franz_go)
-        self._rand_consumer = FranzGoVerifiableRandomConsumer(
-            ctx, self.redpanda, self.topic,
-            FranzGoVerifiableWithSiTest.MSG_SIZE, 1000, 20,
-            self._node_for_franz_go)
-
-    def free_nodes(self):
-        # Free the normally allocated nodes (e.g. RedpandaService)
-        super().free_nodes()
-
-        assert len(self._node_for_franz_go) == 1
-
-        # The verifier opens huge numbers of connections, which can interfere
-        # with subsequent tests' use of the node.  Clear them down first.
-        wait_until(
-            lambda: self.redpanda.sockets_clear(self._node_for_franz_go[0]),
-            timeout_sec=120,
-            backoff_sec=10)
-
-        # Free the hand-allocated node that we share between the various
-        # verifier services
-        self.logger.debug(
-            f"Freeing verifier node {self._node_for_franz_go[0].name}")
-        self.test_context.cluster.free_single(self._node_for_franz_go[0])
-
-    # In the future producer will signal about json creation
-    def _create_json_file(self):
-        small_producer = FranzGoVerifiableProducer(
-            self.test_context, self.redpanda, self.topic,
-            FranzGoVerifiableWithSiTest.MSG_SIZE, 10000,
-            self._node_for_franz_go)
-        small_producer.start()
-        small_producer.wait()
-
     @cluster(num_nodes=4)
     def test_with_all_type_of_loads_and_si(self):
         self.logger.info(f"Environment: {os.environ}")
@@ -163,7 +160,7 @@ class FranzGoVerifiableWithSiTest(RedpandaTest):
                                str(self.segment_size))
 
         # Need create json file for consumer at first
-        self._create_json_file()
+        self._create_json_file(10000)
 
         # Verify that we really enabled shadow indexing correctly, such
         # that some objects were written
