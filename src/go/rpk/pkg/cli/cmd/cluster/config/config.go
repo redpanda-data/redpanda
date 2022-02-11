@@ -77,6 +77,7 @@ different redpanda version that does not recognize certain properties.`,
 		newEditCommand(fs, &all),
 		newStatusCommand(fs),
 		newResetCommand(fs),
+		newLintCommand(fs),
 	)
 
 	return command
