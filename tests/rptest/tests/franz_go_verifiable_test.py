@@ -129,7 +129,7 @@ class FranzGoVerifiableWithSiTest(RedpandaTest):
         # The verifier opens huge numbers of connections, which can interfere
         # with subsequent tests' use of the node.  Clear them down first.
         wait_until(
-            lambda: self.redpanda.sockets_clear(self._node_for_franz_go[1]),
+            lambda: self.redpanda.sockets_clear(self._node_for_franz_go[0]),
             timeout_sec=120,
             backoff_sec=10)
 
