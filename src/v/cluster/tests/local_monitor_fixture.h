@@ -19,11 +19,7 @@
 struct local_monitor_fixture {
     local_monitor_fixture();
     local_monitor_fixture(const local_monitor_fixture&) = delete;
-    local_monitor_fixture(local_monitor_fixture&&) = default;
-    local_monitor_fixture& operator=(const local_monitor_fixture&) = delete;
-    local_monitor_fixture& operator=(local_monitor_fixture&&) = default;
     ~local_monitor_fixture();
-
     static constexpr unsigned default_percent_threshold = 5;
     static constexpr size_t default_bytes_threshold = 1_GiB;
 

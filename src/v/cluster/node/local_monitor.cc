@@ -33,6 +33,11 @@
 
 namespace cluster::node {
 
+local_monitor::local_monitor(
+  config::binding<size_t> min_bytes, config::binding<unsigned> min_percent)
+  : _free_bytes_alert_threshold(min_bytes)
+  , _free_percent_alert_threshold(min_percent) {}
+
 ss::future<> local_monitor::update_state() {
     refresh_configuration();
 

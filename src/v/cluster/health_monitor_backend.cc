@@ -19,6 +19,7 @@
 #include "cluster/node/local_monitor.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
+#include "config/property.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/fwd.h"
@@ -43,13 +44,18 @@ health_monitor_backend::health_monitor_backend(
   ss::sharded<rpc::connection_cache>& connections,
   ss::sharded<partition_manager>& partition_manager,
   ss::sharded<raft::group_manager>& raft_manager,
-  ss::sharded<ss::abort_source>& as)
+  ss::sharded<ss::abort_source>& as,
+  config::binding<size_t> storage_min_bytes_threshold,
+  config::binding<unsigned> storage_min_percent_threshold)
   : _raft0(std::move(raft0))
   , _members(mt)
   , _connections(connections)
   , _partition_manager(partition_manager)
   , _raft_manager(raft_manager)
-  , _as(as) {
+  , _as(as)
+  , _local_monitor(
+      std::move(storage_min_bytes_threshold),
+      std::move(storage_min_percent_threshold)) {
     _tick_timer.set_callback([this] { tick(); });
     _tick_timer.arm(tick_interval());
     _leadership_notification_handle

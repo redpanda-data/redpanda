@@ -10,6 +10,7 @@
  */
 #pragma once
 #include "cluster/node/types.h"
+#include "config/property.h"
 #include "units.h"
 
 #include <seastar/core/sstring.hh>
@@ -24,12 +25,13 @@ namespace cluster::node {
 
 class local_monitor {
 public:
-    local_monitor() = default;
-    local_monitor(local_monitor&) = delete;
+    local_monitor(
+      config::binding<size_t> min_bytes, config::binding<unsigned> min_percent);
+    local_monitor(local_monitor&) = default;
     local_monitor(local_monitor&&) = default;
     ~local_monitor() = default;
     local_monitor& operator=(local_monitor const&) = delete;
-    local_monitor& operator=(local_monitor&&) = default;
+    local_monitor& operator=(local_monitor&&) = delete;
 
     ss::future<> update_state();
     const local_state& get_state_cached() const;
@@ -61,6 +63,8 @@ private:
     size_t last_free_space_bytes_threshold = 0;
     ss::logger::rate_limit despam_interval = ss::logger::rate_limit(
       std::chrono::hours(1));
+    config::binding<size_t> _free_bytes_alert_threshold;
+    config::binding<unsigned> _free_percent_alert_threshold;
 
     // Injection points for unit tests
     ss::sstring _path_for_test;

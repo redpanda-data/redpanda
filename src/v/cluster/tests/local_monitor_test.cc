@@ -10,6 +10,7 @@
  */
 
 #include "cluster/logger.h"
+#include "config/configuration.h"
 #include "local_monitor_fixture.h"
 #include "redpanda/tests/fixture.h"
 #include "seastarx.h"
@@ -28,7 +29,11 @@
 
 using namespace cluster;
 
-local_monitor_fixture::local_monitor_fixture() {
+local_monitor_fixture::local_monitor_fixture()
+  : _local_monitor(
+    config::shard_local_cfg().storage_space_alert_free_threshold_bytes.bind(),
+    config::shard_local_cfg()
+      .storage_space_alert_free_threshold_percent.bind()) {
     clusterlog.info("{}: create", __func__);
     auto test_dir = "local_monitor_test."
                     + random_generators::gen_alphanum_string(4);
