@@ -155,10 +155,9 @@ sharded_store::project_ids(canonical_schema schema) {
         vlog(plog.debug, "project_ids: existing ID {}", s_id.value());
     }
 
+    auto sub_shard{shard_for(schema.sub())};
     auto v_id = co_await _store.invoke_on(
-      shard_for(schema.sub()),
-      _smp_opts,
-      [sub{schema.sub()}, id{s_id.value()}](store& s) {
+      sub_shard, _smp_opts, [sub{schema.sub()}, id{s_id.value()}](store& s) {
           return s.project_version(sub, id);
       });
 
@@ -237,8 +236,9 @@ sharded_store::get_schema_subject_versions(schema_id id) {
 
 ss::future<subject_schema> sharded_store::get_subject_schema(
   subject sub, std::optional<schema_version> version, include_deleted inc_del) {
+    auto sub_shard{shard_for(sub)};
     auto v_id = co_await _store.invoke_on(
-      shard_for(sub), _smp_opts, [sub, version, inc_del](store& s) {
+      sub_shard, _smp_opts, [sub, version, inc_del](store& s) {
           return s.get_subject_version_id(sub, version, inc_del).value();
       });
 
@@ -269,8 +269,9 @@ sharded_store::get_subjects(include_deleted inc_del) {
 
 ss::future<std::vector<schema_version>>
 sharded_store::get_versions(subject sub, include_deleted inc_del) {
+    auto sub_shard{shard_for(sub)};
     co_return co_await _store.invoke_on(
-      shard_for(sub), _smp_opts, [sub{std::move(sub)}, inc_del](store& s) {
+      sub_shard, _smp_opts, [sub{std::move(sub)}, inc_del](store& s) {
           return s.get_versions(sub, inc_del).value();
       });
 }
@@ -309,49 +310,53 @@ ss::future<std::vector<schema_id>> sharded_store::referenced_by(
 
 ss::future<std::vector<schema_version>> sharded_store::delete_subject(
   seq_marker marker, subject sub, permanent_delete permanent) {
+    auto sub_shard{shard_for(sub)};
     co_return co_await _store.invoke_on(
-      shard_for(sub),
-      _smp_opts,
-      [marker, sub{std::move(sub)}, permanent](store& s) {
+      sub_shard, _smp_opts, [marker, sub{std::move(sub)}, permanent](store& s) {
           return s.delete_subject(marker, sub, permanent).value();
       });
 }
 
 ss::future<is_deleted> sharded_store::is_subject_deleted(subject sub) {
+    auto sub_shard{shard_for(sub)};
     co_return co_await _store.invoke_on(
-      shard_for(sub), _smp_opts, [sub{std::move(sub)}](store& s) {
+      sub_shard, _smp_opts, [sub{std::move(sub)}](store& s) {
           return s.is_subject_deleted(sub).value();
       });
 }
 
 ss::future<is_deleted>
 sharded_store::is_subject_version_deleted(subject sub, schema_version ver) {
+    auto sub_shard{shard_for(sub)};
     co_return co_await _store.invoke_on(
-      shard_for(sub), _smp_opts, [sub{std::move(sub)}, ver](store& s) {
+      sub_shard, _smp_opts, [sub{std::move(sub)}, ver](store& s) {
           return s.is_subject_version_deleted(sub, ver).value();
       });
 }
 
 ss::future<std::vector<seq_marker>>
 sharded_store::get_subject_written_at(subject sub) {
+    auto sub_shard{shard_for(sub)};
     co_return co_await _store.invoke_on(
-      shard_for(sub), _smp_opts, [sub{std::move(sub)}](store& s) {
+      sub_shard, _smp_opts, [sub{std::move(sub)}](store& s) {
           return s.store::get_subject_written_at(sub).value();
       });
 }
 
 ss::future<std::vector<seq_marker>>
 sharded_store::get_subject_version_written_at(subject sub, schema_version ver) {
+    auto sub_shard{shard_for(sub)};
     co_return co_await _store.invoke_on(
-      shard_for(sub), _smp_opts, [sub{std::move(sub)}, ver](store& s) {
+      sub_shard, _smp_opts, [sub{std::move(sub)}, ver](store& s) {
           return s.get_subject_version_written_at(sub, ver).value();
       });
 }
 
 ss::future<bool>
 sharded_store::delete_subject_version(subject sub, schema_version ver) {
+    auto sub_shard{shard_for(sub)};
     co_return co_await _store.invoke_on(
-      shard_for(sub), _smp_opts, [sub{std::move(sub)}, ver](store& s) {
+      sub_shard, _smp_opts, [sub{std::move(sub)}, ver](store& s) {
           return s.delete_subject_version(sub, ver).value();
       });
 }
@@ -362,8 +367,9 @@ ss::future<compatibility_level> sharded_store::get_compatibility() {
 
 ss::future<compatibility_level>
 sharded_store::get_compatibility(subject sub, default_to_global fallback) {
+    auto sub_shard{shard_for(sub)};
     co_return co_await _store.invoke_on(
-      shard_for(sub), [sub{std::move(sub)}, fallback](store& s) {
+      sub_shard, [sub{std::move(sub)}, fallback](store& s) {
           return s.get_compatibility(sub, fallback).value();
       });
 }
@@ -379,8 +385,9 @@ sharded_store::set_compatibility(compatibility_level compatibility) {
 
 ss::future<bool> sharded_store::set_compatibility(
   seq_marker marker, subject sub, compatibility_level compatibility) {
+    auto sub_shard{shard_for(sub)};
     co_return co_await _store.invoke_on(
-      shard_for(sub),
+      sub_shard,
       _smp_opts,
       [marker, sub{std::move(sub)}, compatibility](store& s) {
           return s.set_compatibility(marker, sub, compatibility).value();
@@ -388,8 +395,9 @@ ss::future<bool> sharded_store::set_compatibility(
 }
 
 ss::future<bool> sharded_store::clear_compatibility(subject sub) {
+    auto sub_shard{shard_for(sub)};
     co_return co_await _store.invoke_on(
-      shard_for(sub), _smp_opts, [sub{std::move(sub)}](store& s) {
+      sub_shard, _smp_opts, [sub{std::move(sub)}](store& s) {
           return s.clear_compatibility(sub).value();
       });
 }
@@ -405,8 +413,9 @@ sharded_store::upsert_schema(schema_id id, canonical_schema_definition def) {
 
 ss::future<sharded_store::insert_subject_result> sharded_store::insert_subject(
   subject sub, canonical_schema::references refs, schema_id id) {
+    auto sub_shard{shard_for(sub)};
     auto [version, inserted] = co_await _store.invoke_on(
-      shard_for(sub),
+      sub_shard,
       _smp_opts,
       [sub{std::move(sub)}, refs{std::move(refs)}, id](store& s) mutable {
           return s.insert_subject(sub, std::move(refs), id);
@@ -421,8 +430,9 @@ ss::future<bool> sharded_store::upsert_subject(
   schema_version version,
   schema_id id,
   is_deleted deleted) {
+    auto sub_shard{shard_for(sub)};
     co_return co_await _store.invoke_on(
-      shard_for(sub),
+      sub_shard,
       _smp_opts,
       [marker,
        sub{std::move(sub)},
