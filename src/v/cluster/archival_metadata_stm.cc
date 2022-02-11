@@ -106,6 +106,8 @@ ss::future<std::error_code> archival_metadata_stm::do_add_segments(
         co_return errc::timeout;
     }
 
+    rc_node.check_abort();
+
     auto segments = segments_from_manifest(new_manifest.difference(_manifest));
     if (segments.empty()) {
         co_return errc::success;
@@ -121,10 +123,13 @@ ss::future<std::error_code> archival_metadata_stm::do_add_segments(
     }
 
     auto batch = std::move(b).build();
-    auto result = co_await _raft->replicate(
+    auto fut = _raft->replicate(
       _insync_term,
       model::make_memory_record_batch_reader(std::move(batch)),
       raft::replicate_options{raft::consistency_level::quorum_ack});
+
+    auto result = co_await ss::with_timeout(
+      rc_node.get_deadline(), std::move(fut));
 
     if (!result) {
         vlog(

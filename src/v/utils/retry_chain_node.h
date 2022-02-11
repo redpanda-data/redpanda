@@ -288,13 +288,16 @@ public:
     void check_abort() const;
 
     /// Return backoff duration that should be used before the next retry
-    ss::lowres_clock::duration get_backoff();
+    ss::lowres_clock::duration get_backoff() const;
 
     /// Return polling interval
-    ss::lowres_clock::duration get_poll_interval();
+    ss::lowres_clock::duration get_poll_interval() const;
 
     /// Return timeout value (time interval before the deadline)
-    ss::lowres_clock::duration get_timeout();
+    ss::lowres_clock::duration get_timeout() const;
+
+    /// Return deadline time
+    ss::lowres_clock::time_point get_deadline() const;
 
 private:
     void format(fmt::memory_buffer& str) const;

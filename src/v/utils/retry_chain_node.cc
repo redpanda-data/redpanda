@@ -199,22 +199,26 @@ retry_permit retry_chain_node::retry(retry_strategy st) {
       .delay = required_delay};
 }
 
-ss::lowres_clock::duration retry_chain_node::get_backoff() {
+ss::lowres_clock::duration retry_chain_node::get_backoff() const {
     auto backoff = ss::lowres_clock::duration(_backoff * (1UL << _retry));
     auto jitter = ss::lowres_clock::duration(
       fast_prng_source() % backoff.count());
     return backoff + jitter;
 }
 
-ss::lowres_clock::duration retry_chain_node::get_poll_interval() {
+ss::lowres_clock::duration retry_chain_node::get_poll_interval() const {
     auto jitter = fast_prng_source() % _backoff;
     return ss::lowres_clock::duration(
       static_cast<ss::lowres_clock::duration::rep>(_backoff) + jitter);
 }
 
-ss::lowres_clock::duration retry_chain_node::get_timeout() {
+ss::lowres_clock::duration retry_chain_node::get_timeout() const {
     auto now = ss::lowres_clock::now();
     return now < _deadline ? _deadline - now : 0ms;
+}
+
+ss::lowres_clock::time_point retry_chain_node::get_deadline() const {
+    return _deadline;
 }
 
 uint16_t retry_chain_node::get_len() const {
