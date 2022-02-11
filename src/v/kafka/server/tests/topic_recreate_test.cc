@@ -131,7 +131,8 @@ public:
         app.check_environment();
         app.configure_admin_server();
         app.wire_up_services();
-        app.start();
+        ::stop_signal app_signal;
+        app.start(app_signal);
     }
 };
 

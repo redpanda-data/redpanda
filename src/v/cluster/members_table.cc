@@ -73,6 +73,8 @@ void members_table::update_brokers(
         } else {
             _brokers.emplace(br.id(), ss::make_lw_shared<model::broker>(br));
         }
+
+        _waiters.notify(br.id());
     }
 
     for (auto& [id, br] : _brokers) {
