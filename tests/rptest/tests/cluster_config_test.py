@@ -640,6 +640,40 @@ class ClusterConfigTest(RedpandaTest):
         # Check that the bystander config property was not reset
         self._check_value_everywhere("append_chunk_size", 65536)
 
+    @cluster(num_nodes=1)
+    def test_rpk_lint(self):
+        """
+        Verify that if a redpanda config contains a cluster config
+        property, then running `lint` cleans out that value, as it
+        is no longer used.
+        """
+        node = self.redpanda.nodes[0]
+
+        # Put an old-style property in the config
+        self.logger.info("Restarting with legacy property")
+        self.redpanda.restart_nodes([node],
+                                    override_cfg_params={
+                                        "kafka_qdc_enable": True,
+                                    })
+        old_conf = node.account.ssh_output(
+            "cat /etc/redpanda/redpanda.yaml").decode('utf-8')
+        assert 'kafka_qdc_enable' in old_conf
+
+        # Run lint
+        self.logger.info("Linting config")
+        rpk_remote = RpkRemoteTool(self.redpanda, node)
+        rpk_remote.cluster_config_lint()
+
+        # Check that the old style config property was removed
+        new_conf = node.account.ssh_output(
+            "cat /etc/redpanda/redpanda.yaml").decode('utf-8')
+        assert 'kafka_qdc_enable' not in new_conf
+
+        # Check that the linted config file is not corrupt (redpanda loads with it)
+        self.logger.info("Restarting with linted config")
+        self.redpanda.stop_node(node)
+        self.redpanda.start_node(node, write_config=False)
+
     @cluster(num_nodes=3)
     def test_secret_redaction(self):
         def search_log(pattern):
