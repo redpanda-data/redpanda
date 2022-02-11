@@ -270,7 +270,7 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 	return c, nil
 }
 
-func (p *Params) readConfig(fs afero.Fs, c *Config) error {
+func (p *Params) LocateConfig(fs afero.Fs) (string, error) {
 	paths := []string{p.ConfigPath}
 	if p.ConfigPath == "" {
 		paths = nil
@@ -287,19 +287,34 @@ func (p *Params) readConfig(fs afero.Fs, c *Config) error {
 	}
 
 	for _, path := range paths {
-		file, err := afero.ReadFile(fs, path)
-		if err != nil {
-			continue
+		// Ignore error: we only care whether it exists, other
+		// stat() errors are not interesting.
+		exists, _ := afero.Exists(fs, path)
+		if exists {
+			return path, nil
 		}
-
-		if err := yaml.Unmarshal(file, c); err != nil {
-			return fmt.Errorf("unable to yaml decode %s: %v", path, err)
-		}
-		yaml.Unmarshal(file, &c.file) // cannot error since previous did not
-		return nil
 	}
 
-	return fmt.Errorf("%w: unable to find config in searched paths %v", afero.ErrFileNotFound, paths)
+	return "", fmt.Errorf("%w: unable to find config in searched paths %v", afero.ErrFileNotFound, paths)
+}
+
+func (p *Params) readConfig(fs afero.Fs, c *Config) error {
+	path, err := p.LocateConfig(fs)
+	if err != nil {
+		return err
+	}
+
+	file, err := afero.ReadFile(fs, path)
+	if err != nil {
+		return err
+	}
+
+	if err := yaml.Unmarshal(file, c); err != nil {
+		return fmt.Errorf("unable to yaml decode %s: %v", path, err)
+	}
+	yaml.Unmarshal(file, &c.file) // cannot error since previous did not
+
+	return nil
 }
 
 // Before we process overrides, we process any backwards compatibility from the
