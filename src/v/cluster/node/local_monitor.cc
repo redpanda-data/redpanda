@@ -39,8 +39,6 @@ local_monitor::local_monitor(
   , _free_percent_alert_threshold(min_percent) {}
 
 ss::future<> local_monitor::update_state() {
-    refresh_configuration();
-
     // grab new snapshot of local state
     auto disks = co_await get_disks();
     auto vers = application_version(ss::sstring(redpanda_version()));
@@ -69,9 +67,9 @@ void local_monitor::set_statvfs_for_test(
 
 std::tuple<size_t, size_t>
 local_monitor::minimum_free_by_bytes_and_percent(size_t bytes_available) const {
-    long double percent_factor = last_free_space_percent_threshold / 100.0;
+    long double percent_factor = _free_percent_alert_threshold() / 100.0;
     return std::make_tuple(
-      last_free_space_bytes_threshold, percent_factor * bytes_available);
+      _free_bytes_alert_threshold(), percent_factor * bytes_available);
 }
 
 ss::future<std::vector<disk>> local_monitor::get_disks() {
@@ -140,35 +138,6 @@ void local_monitor::update_alert_state() {
             maybe_log_space_error(d);
         }
     }
-}
-
-void local_monitor::refresh_configuration() {
-    auto percent_threshold = get_config_alert_threshold_percent();
-    auto bytes_threshold = get_config_alert_threshold_bytes();
-    if (last_free_space_percent_threshold != percent_threshold) {
-        clusterlog.info(
-          "Updated free space percent alert threshold {} -> {}",
-          last_free_space_percent_threshold,
-          percent_threshold);
-        last_free_space_percent_threshold = percent_threshold;
-    }
-
-    if (last_free_space_bytes_threshold != bytes_threshold) {
-        clusterlog.info(
-          "Updated free space bytes alert threshold {} -> {}",
-          last_free_space_bytes_threshold,
-          bytes_threshold);
-        last_free_space_bytes_threshold = bytes_threshold;
-    }
-}
-
-std::size_t local_monitor::get_config_alert_threshold_bytes() {
-    return config::shard_local_cfg().storage_space_alert_free_threshold_bytes();
-}
-
-unsigned local_monitor::get_config_alert_threshold_percent() {
-    return config::shard_local_cfg()
-      .storage_space_alert_free_threshold_percent();
 }
 
 } // namespace cluster::node

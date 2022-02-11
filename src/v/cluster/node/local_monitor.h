@@ -59,8 +59,6 @@ private:
 
     // state
     local_state _state;
-    unsigned last_free_space_percent_threshold = 0;
-    size_t last_free_space_bytes_threshold = 0;
     ss::logger::rate_limit despam_interval = ss::logger::rate_limit(
       std::chrono::hours(1));
     config::binding<size_t> _free_bytes_alert_threshold;
