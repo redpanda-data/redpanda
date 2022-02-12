@@ -31,6 +31,10 @@ namespace storage {
 using log_clock = ss::lowres_clock;
 using debug_sanitize_files = ss::bool_class<struct debug_sanitize_files_tag>;
 
+enum class disk_space_alert : uint32_t { ok = 0, low_space = 1, degraded = 2 };
+
+std::ostream& operator<<(std::ostream& o, const storage::disk_space_alert d);
+
 class snapshotable_stm {
 public:
     // create a snapshot at given offset unless a snapshot with given or newer

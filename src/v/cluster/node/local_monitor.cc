@@ -120,7 +120,7 @@ void local_monitor::maybe_log_space_error(const disk& disk) {
 }
 
 void local_monitor::update_alert_state() {
-    _state.storage_space_alert = disk_space_alert::ok;
+    _state.storage_space_alert = storage::disk_space_alert::ok;
     for (const auto& d : _state.disks) {
         vassert(d.total != 0.0, "Total disk space cannot be zero.");
         auto [min_by_bytes, min_by_percent] = minimum_free_by_bytes_and_percent(
@@ -134,7 +134,7 @@ void local_monitor::update_alert_state() {
           d.free <= min_space);
 
         if (unlikely(d.free <= min_space)) {
-            _state.storage_space_alert = disk_space_alert::low_space;
+            _state.storage_space_alert = storage::disk_space_alert::low_space;
             maybe_log_space_error(d);
         }
     }
