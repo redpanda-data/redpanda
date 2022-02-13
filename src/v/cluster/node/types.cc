@@ -20,16 +20,6 @@
 
 namespace cluster::node {
 
-std::ostream& operator<<(std::ostream& o, const disk& d) {
-    fmt::print(
-      o,
-      "{{path: {}, free: {}, total: {}}}",
-      d.path,
-      human::bytes(d.free),
-      human::bytes(d.total));
-    return o;
-}
-
 std::ostream& operator<<(std::ostream& o, const local_state& s) {
     fmt::print(
       o,
@@ -54,18 +44,18 @@ void read_and_assert_version(std::string_view type, iobuf_parser& parser) {
       T::current_version);
 }
 
-void adl<cluster::node::disk>::to(iobuf& out, cluster::node::disk&& s) {
+void adl<storage::disk>::to(iobuf& out, storage::disk&& s) {
     serialize(out, s.current_version, s.path, s.free, s.total);
 }
 
-cluster::node::disk adl<cluster::node::disk>::from(iobuf_parser& p) {
-    read_and_assert_version<cluster::node::disk>("cluster::node::disk", p);
+storage::disk adl<storage::disk>::from(iobuf_parser& p) {
+    read_and_assert_version<storage::disk>("storage::disk", p);
 
     auto path = adl<ss::sstring>{}.from(p);
     auto free = adl<uint64_t>{}.from(p);
     auto total = adl<uint64_t>{}.from(p);
 
-    return cluster::node::disk{
+    return storage::disk{
       .path = path,
       .free = free,
       .total = total,

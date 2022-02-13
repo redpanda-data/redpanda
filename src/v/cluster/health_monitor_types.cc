@@ -247,7 +247,7 @@ adl<cluster::node_health_report>::from(iobuf_parser& p) {
     auto id = adl<model::node_id>{}.from(p);
     auto redpanda_version = adl<cluster::node::application_version>{}.from(p);
     auto uptime = adl<std::chrono::milliseconds>{}.from(p);
-    auto disks = adl<std::vector<cluster::node::disk>>{}.from(p);
+    auto disks = adl<std::vector<storage::disk>>{}.from(p);
     auto topics = adl<std::vector<cluster::topic_status>>{}.from(p);
     cluster::cluster_version logical_version{cluster::invalid_version};
     if (version >= 1) {

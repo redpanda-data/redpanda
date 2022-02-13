@@ -32,18 +32,6 @@ namespace cluster::node {
 
 using application_version = named_type<ss::sstring, struct version_number_tag>;
 
-// TODO move to ::storage namespace
-struct disk {
-    static constexpr int8_t current_version = 0;
-
-    ss::sstring path;
-    uint64_t free;
-    uint64_t total;
-
-    friend std::ostream& operator<<(std::ostream&, const disk&);
-    friend bool operator==(const disk&, const disk&) = default;
-};
-
 /**
  * A snapshot of node-local state: i.e. things that don't depend on consensus.
  */
@@ -52,21 +40,20 @@ struct local_state {
     cluster_version logical_version{invalid_version};
     std::chrono::milliseconds uptime;
     // Eventually support multiple volumes.
-    std::vector<disk> disks;
+    std::vector<storage::disk> disks;
 
     storage::disk_space_alert storage_space_alert;
 
     friend std::ostream& operator<<(std::ostream&, const local_state&);
 };
 
-std::ostream& operator<<(std::ostream& o, const disk& d);
 std::ostream& operator<<(std::ostream& o, const local_state& s);
 } // namespace cluster::node
 
 namespace reflection {
 template<>
-struct adl<cluster::node::disk> {
-    void to(iobuf&, cluster::node::disk&&);
-    cluster::node::disk from(iobuf_parser&);
+struct adl<storage::disk> {
+    void to(iobuf&, storage::disk&&);
+    storage::disk from(iobuf_parser&);
 };
 } // namespace reflection

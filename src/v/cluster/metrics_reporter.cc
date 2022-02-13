@@ -200,7 +200,7 @@ metrics_reporter::build_metrics_snapshot() {
           report.local_state.disks.begin(),
           report.local_state.disks.end(),
           std::back_inserter(metrics.disks),
-          [](const cluster::node::disk& nds) {
+          [](const storage::disk& nds) {
               return node_disk_space{.free = nds.free, .total = nds.total};
           });
 

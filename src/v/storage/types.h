@@ -32,6 +32,16 @@ using log_clock = ss::lowres_clock;
 using debug_sanitize_files = ss::bool_class<struct debug_sanitize_files_tag>;
 
 enum class disk_space_alert : uint32_t { ok = 0, low_space = 1, degraded = 2 };
+struct disk {
+    static constexpr int8_t current_version = 0;
+
+    ss::sstring path;
+    uint64_t free;
+    uint64_t total;
+
+    friend std::ostream& operator<<(std::ostream&, const disk&);
+    friend bool operator==(const disk&, const disk&) = default;
+};
 
 std::ostream& operator<<(std::ostream& o, const storage::disk_space_alert d);
 

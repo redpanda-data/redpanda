@@ -32,6 +32,17 @@ std::ostream& operator<<(std::ostream& o, const disk_space_alert d) {
     }
     return o;
 }
+
+std::ostream& operator<<(std::ostream& o, const disk& d) {
+    fmt::print(
+      o,
+      "{{path: {}, free: {}, total: {}}}",
+      d.path,
+      human::bytes(d.free),
+      human::bytes(d.total));
+    return o;
+}
+
 std::ostream& operator<<(std::ostream& o, const log_reader_config& cfg) {
     o << "{start_offset:" << cfg.start_offset
       << ", max_offset:" << cfg.max_offset << ", min_bytes:" << cfg.min_bytes

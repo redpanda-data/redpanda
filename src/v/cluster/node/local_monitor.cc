@@ -72,14 +72,14 @@ local_monitor::minimum_free_by_bytes_and_percent(size_t bytes_available) const {
       _free_bytes_alert_threshold(), percent_factor * bytes_available);
 }
 
-ss::future<std::vector<disk>> local_monitor::get_disks() {
+ss::future<std::vector<storage::disk>> local_monitor::get_disks() {
     auto path = _path_for_test.empty()
                   ? config::node().data_directory().as_sstring()
                   : _path_for_test;
 
     auto svfs = co_await get_statvfs(path);
 
-    co_return std::vector<disk>{disk{
+    co_return std::vector<storage::disk>{storage::disk{
       .path = config::node().data_directory().as_sstring(),
       // f_bsize is a historical linux-ism, use f_frsize
       .free = svfs.f_bfree * svfs.f_frsize,
@@ -95,12 +95,12 @@ ss::future<struct statvfs> local_monitor::get_statvfs(const ss::sstring& path) {
     }
 }
 
-float percent_free(const disk& disk) {
+float percent_free(const storage::disk& disk) {
     long double free = disk.free, total = disk.total;
     return float((free / total) * 100.0);
 }
 
-void local_monitor::maybe_log_space_error(const disk& disk) {
+void local_monitor::maybe_log_space_error(const storage::disk& disk) {
     auto [min_by_bytes, min_by_percent] = minimum_free_by_bytes_and_percent(
       disk.total);
     auto min_space = std::min(min_by_percent, min_by_bytes);
