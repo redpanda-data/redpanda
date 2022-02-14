@@ -52,6 +52,7 @@ namespace cluster {
 /// +---------+   +----------+    +------------+
 class metadata_cache {
 public:
+    using with_leaders = ss::bool_class<struct with_leaders_tag>;
     metadata_cache(
       ss::sharded<topic_table>&,
       ss::sharded<members_table>&,
@@ -70,8 +71,8 @@ public:
     ///\brief Returns metadata of single topic.
     ///
     /// If topic does not exists it returns an empty optional
-    std::optional<model::topic_metadata>
-      get_topic_metadata(model::topic_namespace_view) const;
+    std::optional<model::topic_metadata> get_topic_metadata(
+      model::topic_namespace_view, with_leaders = with_leaders::yes) const;
 
     ///\brief Returns configuration of single topic.
     ///
@@ -86,7 +87,8 @@ public:
       get_topic_timestamp_type(model::topic_namespace_view) const;
 
     /// Returns metadata of all topics.
-    std::vector<model::topic_metadata> all_topics_metadata() const;
+    std::vector<model::topic_metadata>
+      all_topics_metadata(with_leaders = with_leaders::yes) const;
 
     /// Returns all brokers, returns copy as the content of broker can change
     std::vector<broker_ptr> all_brokers() const;
