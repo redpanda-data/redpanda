@@ -112,7 +112,10 @@ public:
     std::optional<model::node_id> get_leader_id(const model::ntp&) const;
 
     std::optional<model::node_id>
-    get_previous_leader_id(const model::ntp&) const;
+      get_leader_id(model::topic_namespace_view, model::partition_id) const;
+
+    std::optional<model::node_id> get_previous_leader_id(
+      model::topic_namespace_view, model::partition_id) const;
     /// Returns metadata of all topics in cache internal format
     // const cache_t& all_metadata() const { return _cache; }
 
