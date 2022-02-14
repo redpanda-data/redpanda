@@ -13,6 +13,7 @@
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
 #include "kafka/protocol/errors.h"
+#include "kafka/server/handlers/details/leader_epoch.h"
 #include "kafka/server/materialized_partition.h"
 #include "kafka/server/partition_proxy.h"
 #include "kafka/server/replicated_partition.h"
@@ -64,6 +65,7 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
   model::timestamp timestamp,
   model::ntp ntp,
   model::isolation_level isolation_lvl,
+  kafka::leader_epoch current_leader_epoch,
   cluster::partition_manager& mgr) {
     auto kafka_partition = make_partition_proxy(
       ntp, octx.rctx.metadata_cache(), mgr);
@@ -81,6 +83,15 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
           ntp.tp.partition, error_code::not_leader_for_partition);
     }
 
+    /**
+     * validate leader epoch. for more details see KIP-320
+     */
+    auto leader_epoch_err = details::check_leader_epoch(
+      current_leader_epoch, *kafka_partition);
+    if (leader_epoch_err != error_code::none) {
+        co_return list_offsets_response::make_partition(
+          ntp.tp.partition, leader_epoch_err);
+    }
     /*
      * the responses for earliest/latest timestamp queries do not require
      * that the actual timestamp be returned. only the offset is required.
@@ -144,10 +155,16 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
        &octx,
        ntp = std::move(ntp),
        isolation_lvl = model::isolation_level(
-         octx.request.data.isolation_level)](
+         octx.request.data.isolation_level),
+       current_leader_epoch = part.current_leader_epoch](
         cluster::partition_manager& mgr) mutable {
           return list_offsets_partition(
-            octx, timestamp, std::move(ntp), isolation_lvl, mgr);
+            octx,
+            timestamp,
+            std::move(ntp),
+            isolation_lvl,
+            current_leader_epoch,
+            mgr);
       });
 }
 
