@@ -89,7 +89,8 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
         co_return list_offsets_response::make_partition(
           ntp.tp.partition,
           model::timestamp(-1),
-          kafka_partition->start_offset());
+          kafka_partition->start_offset(),
+          kafka_partition->leader_epoch());
 
     } else if (timestamp == list_offsets_request::latest_timestamp) {
         const auto offset = isolation_lvl
@@ -98,7 +99,10 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
                               : kafka_partition->high_watermark();
 
         co_return list_offsets_response::make_partition(
-          ntp.tp.partition, model::timestamp(-1), offset);
+          ntp.tp.partition,
+          model::timestamp(-1),
+          offset,
+          kafka_partition->leader_epoch());
     }
     const auto offset_limit = isolation_lvl
                                   == model::isolation_level::read_committed
@@ -110,10 +114,13 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
     auto id = ntp.tp.partition;
     if (res) {
         co_return list_offsets_response::make_partition(
-          id, res->time, res->offset);
+          id, res->time, res->offset, kafka_partition->leader_epoch());
     }
     co_return list_offsets_response::make_partition(
-      id, model::timestamp(-1), kafka_partition->last_stable_offset());
+      id,
+      model::timestamp(-1),
+      kafka_partition->last_stable_offset(),
+      kafka_partition->leader_epoch());
 }
 
 static ss::future<list_offset_partition_response> list_offsets_partition(
