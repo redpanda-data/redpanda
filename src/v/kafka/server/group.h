@@ -137,8 +137,7 @@ public:
         model::offset log_offset;
         model::offset offset;
         ss::sstring metadata;
-        // BUG: support leader_epoch (KIP-320)
-        // https://github.com/vectorizedio/redpanda/issues/1181
+        kafka::leader_epoch committed_leader_epoch;
     };
 
     struct offset_metadata_with_probe {
@@ -623,7 +622,7 @@ private:
 
     struct volatile_offset {
         model::offset offset;
-        int32_t leader_epoch;
+        kafka::leader_epoch leader_epoch;
         std::optional<ss::sstring> metadata;
     };
 
