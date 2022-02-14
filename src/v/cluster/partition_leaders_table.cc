@@ -77,6 +77,19 @@ partition_leaders_table::get_leader(const model::ntp& ntp) const {
     return get_leader(model::topic_namespace_view(ntp), ntp.tp.partition);
 }
 
+std::optional<leader_term>
+partition_leaders_table::get_leader_term(const model::ntp& ntp) const {
+    return get_leader_term(model::topic_namespace_view(ntp), ntp.tp.partition);
+}
+
+std::optional<leader_term> partition_leaders_table::get_leader_term(
+  model::topic_namespace_view tp_ns, model::partition_id pid) const {
+    const auto meta = find_leader_meta(tp_ns, pid);
+    return meta ? std::make_optional<leader_term>(
+             meta->current_leader, meta->last_stable_leader_term)
+                : std::nullopt;
+}
+
 void partition_leaders_table::update_partition_leader(
   const model::ntp& ntp,
   model::term_id term,
@@ -147,6 +160,8 @@ void partition_leaders_table::update_partition_leader(
     if (!leader_id) {
         return;
     }
+    // update stable leader term
+    it->second.last_stable_leader_term = term;
 
     if (auto it = _leader_promises.find(ntp); it != _leader_promises.end()) {
         for (auto& promise : it->second) {
