@@ -12,7 +12,7 @@
 #pragma once
 
 #include "cluster/types.h"
-#include "seastar/core/weak_ptr.hh"
+#include "utils/waiter_queue.h"
 
 #include <string_view>
 
@@ -62,15 +62,6 @@ private:
     // Only for use by our friends feature backend & manager
     void set_active_version(cluster_version);
 
-    struct wait_item : ss::weakly_referencable<wait_item> {
-        wait_item(feature f_)
-          : f(f_) {}
-
-        feature f;
-        ss::promise<> p;
-        ss::abort_source::subscription abort_sub;
-    };
-
     cluster_version _active_version{invalid_version};
 
     // Bitmask only used at runtime: if we run out of bits for features
@@ -78,7 +69,7 @@ private:
     uint64_t _active_features_mask{0};
 
     // Waiting for a particular feature to be available
-    std::vector<std::unique_ptr<wait_item>> _waiters;
+    waiter_queue<feature> _waiters;
 
     // feature_manager is a friend so that they can initialize
     // the active version on single-node first start.
