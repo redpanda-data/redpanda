@@ -250,6 +250,13 @@ type ExternalConnectivityConfig struct {
 	// If TLS is enabled then this subdomain will be requested
 	// as a subject alternative name.
 	Subdomain string `json:"subdomain,omitempty"`
+	// The preferred address type to be assigned to the external
+	// advertised addresses. The valid types are ExternalDNS,
+	// ExternalIP, InternalDNS, InternalIP, and Hostname.
+	// When the address of the preferred type is not found the advertised
+	// addresses remains empty. The default preferred address type is
+	// ExternalIP. This option only applies when Subdomain is empty.
+	PreferredAddressType string `json:"preferredAddressType,omitempty"`
 }
 
 // ClusterStatus defines the observed state of Cluster
