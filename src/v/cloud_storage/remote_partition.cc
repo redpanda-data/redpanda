@@ -49,6 +49,17 @@ get_kafka_base_offset(const partition_manifest::segment_meta& m) {
                                                         : m.delta_offset;
     return m.base_offset - delta;
 }
+/// This function returns segment max offset as kafka offset
+static model::offset
+get_kafka_max_offset(const partition_manifest::segment_meta& m) {
+    // Manifests created with the old version of redpanda won't have the
+    // delta_offset field. In this case the value will be initialized to
+    // model::offset::min(). In this case offset translation couldn't be
+    // performed.
+    auto delta = m.delta_offset == model::offset::min() ? model::offset(0)
+                                                        : m.delta_offset;
+    return m.committed_offset - delta;
+}
 
 class partition_record_batch_reader_impl final
   : public model::record_batch_reader::impl {
@@ -456,6 +467,29 @@ const model::ntp& remote_partition::get_ntp() const {
 
 bool remote_partition::is_data_available() const {
     return _manifest.size() > 0;
+}
+
+// returns term last kafka offset
+std::optional<model::offset>
+remote_partition::get_term_last_offset(model::term_id term) const {
+    vassert(
+      _manifest.size() > 0,
+      "The manifest for {} is not expected to be empty",
+      _manifest.get_ntp());
+
+    // look for first segment in next term, segments are sorted by base_offset
+    // and term
+    for (auto const& p : _manifest) {
+        if (p.first.term > term) {
+            return get_kafka_base_offset(p.second) - model::offset(1);
+        }
+    }
+    // if last segment term is equal to the one we look for return it
+    if (_manifest.rbegin()->first.term == term) {
+        return get_kafka_max_offset(_manifest.rend()->second);
+    }
+
+    return std::nullopt;
 }
 
 ss::future<> remote_partition::stop() {
