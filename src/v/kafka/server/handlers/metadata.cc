@@ -15,8 +15,10 @@
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "kafka/server/errors.h"
+#include "kafka/server/handlers/details/leader_epoch.h"
 #include "kafka/server/handlers/details/security.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
+#include "kafka/types.h"
 #include "likely.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
@@ -26,6 +28,7 @@
 #include <seastar/core/future-util.hh>
 #include <seastar/core/thread.hh>
 
+#include <boost/numeric/conversion/cast.hpp>
 #include <fmt/ostream.h>
 
 namespace kafka {
@@ -63,23 +66,26 @@ static constexpr model::node_id no_leader(-1);
  * With those heuristics we will always force the client to communicate with the
  * nodes that may not be partitioned.
  */
-model::node_id get_leader(
+std::optional<cluster::leader_term> get_leader_term(
   model::topic_namespace_view tp_ns,
   model::partition_id p_id,
   const cluster::metadata_cache& md_cache,
   const std::vector<model::node_id>& replicas) {
-    const auto current = md_cache.get_leader_id(tp_ns, p_id);
-    if (current) {
-        return *current;
+    auto leader_term = md_cache.get_leader_term(tp_ns, p_id);
+    if (!leader_term) {
+        return std::nullopt;
+    }
+    if (!leader_term->leader.has_value()) {
+        const auto previous = md_cache.get_previous_leader_id(tp_ns, p_id);
+        leader_term->leader = previous;
+
+        if (previous == config::node().node_id()) {
+            auto idx = fast_prng_source() % replicas.size();
+            leader_term->leader = replicas[idx];
+        }
     }
 
-    const auto previous = md_cache.get_previous_leader_id(tp_ns, p_id);
-    if (previous == config::node().node_id()) {
-        auto idx = fast_prng_source() % replicas.size();
-        return replicas[idx];
-    }
-
-    return previous.value_or(no_leader);
+    return leader_term;
 }
 
 metadata_response::topic make_topic_response_from_topic_metadata(
@@ -104,7 +110,12 @@ metadata_response::topic make_topic_response_from_topic_metadata(
           metadata_response::partition p;
           p.error_code = error_code::none;
           p.partition_index = p_md.id;
-          p.leader_id = get_leader(tp_ns, p_md.id, md_cache, replicas);
+          p.leader_id = no_leader;
+          auto lt = get_leader_term(tp_ns, p_md.id, md_cache, replicas);
+          if (lt) {
+              p.leader_id = lt->leader.value_or(no_leader);
+              p.leader_epoch = leader_epoch_from_term(lt->term);
+          }
           p.replica_nodes = std::move(replicas);
           p.isr_nodes = p.replica_nodes;
           p.offline_replicas = {};
@@ -191,7 +202,8 @@ get_topic_metadata(request_context& ctx, metadata_request& request) {
 
     // request can be served from whatever happens to be in the cache
     if (request.list_all_topics) {
-        auto topics = ctx.metadata_cache().all_topics_metadata();
+        auto topics = ctx.metadata_cache().all_topics_metadata(
+          cluster::metadata_cache::with_leaders::no);
         // only serve topics from the kafka namespace
         std::erase_if(topics, [](model::topic_metadata& t_md) {
             return t_md.tp_ns.ns != model::kafka_namespace;
@@ -228,7 +240,8 @@ get_topic_metadata(request_context& ctx, metadata_request& request) {
             continue;
         }
         if (auto md = ctx.metadata_cache().get_topic_metadata(
-              model::topic_namespace_view(model::kafka_namespace, topic.name));
+              model::topic_namespace_view(model::kafka_namespace, topic.name),
+              cluster::metadata_cache::with_leaders::no);
             md) {
             auto src_topic_response = make_topic_response(
               ctx, request, std::move(*md));
