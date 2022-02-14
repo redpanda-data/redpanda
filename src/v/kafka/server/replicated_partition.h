@@ -13,12 +13,15 @@
 #include "cluster/partition.h"
 #include "cluster/partition_probe.h"
 #include "kafka/server/partition_proxy.h"
+#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "raft/errc.h"
 #include "raft/types.h"
 
 #include <seastar/core/coroutine.hh>
+
+#include <boost/numeric/conversion/cast.hpp>
 
 #include <memory>
 #include <system_error>
@@ -85,6 +88,13 @@ public:
       ss::lw_shared_ptr<const storage::offset_translator_state>) final;
 
     cluster::partition_probe& probe() final { return _partition->probe(); }
+
+    std::optional<model::offset>
+      get_leader_epoch_last_offset(kafka::leader_epoch) const final;
+
+    kafka::leader_epoch leader_epoch() const final {
+        return boost::numeric_cast<kafka::leader_epoch>(_partition->term());
+    }
 
 private:
     ss::lw_shared_ptr<cluster::partition> _partition;

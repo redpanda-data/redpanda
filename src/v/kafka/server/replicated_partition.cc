@@ -11,6 +11,7 @@
 #include "kafka/server/replicated_partition.h"
 
 #include "kafka/protocol/errors.h"
+#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "raft/types.h"
 #include "storage/types.h"
@@ -184,5 +185,28 @@ raft::replicate_stages replicated_partition::replicate(
             _translator->from_log_offset(r.value().last_offset)});
       });
     return res;
+}
+
+std::optional<model::offset> replicated_partition::get_leader_epoch_last_offset(
+  kafka::leader_epoch epoch) const {
+    const model::term_id term(epoch);
+    const auto first_local_term = _partition->get_term(
+      _partition->start_offset());
+    // found in local state
+    if (term >= first_local_term) {
+        auto last_offset = _partition->get_term_last_offset(term);
+        if (last_offset) {
+            return _translator->from_log_offset(*last_offset);
+        }
+    }
+    auto local_kafka_start_offset = _translator->from_log_offset(
+      _partition->start_offset());
+    if (
+      _partition->is_remote_fetch_enabled()
+      && _partition->cloud_data_available()
+      && (_partition->start_cloud_offset() < local_kafka_start_offset)) {
+        return _partition->get_cloud_term_last_offset(term);
+    }
+    return std::nullopt;
 }
 } // namespace kafka
