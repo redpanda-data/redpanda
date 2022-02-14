@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster/fwd.h"
+#include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "utils/concepts-enabled.h"
@@ -41,6 +42,11 @@ public:
 
     std::optional<model::node_id>
       get_leader(model::topic_namespace_view, model::partition_id) const;
+
+    std::optional<leader_term> get_leader_term(const model::ntp&) const;
+
+    std::optional<leader_term>
+      get_leader_term(model::topic_namespace_view, model::partition_id) const;
 
     /**
      * Returns previous reader of partition if available. This is required by
@@ -154,6 +160,12 @@ private:
         // previous leader id, this is empty if and only if there were no leader
         // elected for the topic before
         std::optional<model::node_id> previous_leader;
+        /**
+         * We keep a term id of last stable leader, term may be increasing even
+         * if leader election was unsuccessful, here we store a term of last
+         * successfully elected leader
+         */
+        model::term_id last_stable_leader_term;
         model::term_id update_term;
         model::revision_id partition_revision;
     };
