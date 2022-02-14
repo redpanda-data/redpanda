@@ -11,6 +11,7 @@
 #pragma once
 #include "kafka/protocol/fetch.h"
 #include "kafka/server/handlers/handler.h"
+#include "kafka/types.h"
 
 namespace kafka {
 
@@ -146,16 +147,18 @@ struct fetch_config {
     model::timeout_clock::time_point timeout;
     bool strict_max_bytes{false};
     bool skip_read{false};
+    kafka::leader_epoch current_leader_epoch;
 
     friend std::ostream& operator<<(std::ostream& o, const fetch_config& cfg) {
         fmt::print(
           o,
-          R"({{"start_offset": {}, "max_offset": {}, "isolation_lvl": {}, "max_bytes": {}, "strict_max_bytes": {}}})",
+          R"({{"start_offset": {}, "max_offset": {}, "isolation_lvl": {}, "max_bytes": {}, "strict_max_bytes": {}, "current_leader_epoch:" {}}})",
           cfg.start_offset,
           cfg.max_offset,
           cfg.isolation_level,
           cfg.max_bytes,
-          cfg.strict_max_bytes);
+          cfg.strict_max_bytes,
+          cfg.current_leader_epoch);
         return o;
     }
 };
