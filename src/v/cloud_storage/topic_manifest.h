@@ -15,6 +15,7 @@
 
 namespace cloud_storage {
 
+struct topic_manifest_handler;
 class topic_manifest final : public base_manifest {
 public:
     /// Create manifest for specific ntp
@@ -55,7 +56,7 @@ public:
 private:
     /// Update manifest content from json document that supposed to be generated
     /// from manifest.json file
-    void update(const json::Document& m);
+    void update(const topic_manifest_handler& handler);
 
     std::optional<cluster::topic_configuration> _topic_config;
     model::initial_revision_id _rev;

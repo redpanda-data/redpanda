@@ -12,21 +12,157 @@
 
 #include "bytes/iobuf_istreambuf.h"
 #include "bytes/iobuf_ostreambuf.h"
+#include "cloud_storage/logger.h"
 #include "cloud_storage/types.h"
+#include "cluster/types.h"
 #include "hashing/xx.h"
 #include "json/writer.h"
+#include "model/compression.h"
+#include "model/fundamental.h"
 #include "model/timestamp.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/sstring.hh>
 
 #include <boost/lexical_cast.hpp>
 #include <fmt/ostream.h>
+#include <rapidjson/encodings.h>
+#include <rapidjson/error/en.h>
 #include <rapidjson/istreamwrapper.h>
 #include <rapidjson/ostreamwrapper.h>
+#include <rapidjson/reader.h>
 
 #include <chrono>
+#include <optional>
+#include <stdexcept>
+#include <string_view>
 
 namespace cloud_storage {
+
+struct topic_manifest_handler
+  : public rapidjson::
+      BaseReaderHandler<rapidjson::UTF8<>, topic_manifest_handler> {
+    using key_string = ss::basic_sstring<char, uint32_t, 31>;
+    bool StartObject() {
+        switch (_state) {
+        case state::expect_manifest_start:
+            _state = state::expect_key;
+            return true;
+        case state::expect_key:
+        case state::expect_value:
+            return false;
+        }
+    }
+
+    bool Key(const char* str, rapidjson::SizeType length, bool /*copy*/) {
+        switch (_state) {
+        case state::expect_key:
+            _key = key_string(str, length);
+            _state = state::expect_value;
+            return true;
+        case state::expect_manifest_start:
+        case state::expect_value:
+            return false;
+        }
+    }
+
+    bool String(const char* str, rapidjson::SizeType length, bool /*copy*/) {
+        std::string_view sv(str, length);
+        switch (_state) {
+        case state::expect_value:
+            if ("namespace" == _key) {
+                _namespace = model::ns(ss::sstring(sv));
+            } else if ("topic" == _key) {
+                _topic = model::topic(ss::sstring(sv));
+            } else if ("compression" == _key) {
+                compression_sv = ss::sstring(sv);
+            } else if ("cleanup_policy_bitflags" == _key) {
+                cleanup_policy_bitflags_sv = ss::sstring(sv);
+            } else if ("compaction_strategy" == _key) {
+                compaction_strategy_sv = ss::sstring(sv);
+            } else if ("timestamp_type" == _key) {
+                timestamp_type_sv = ss::sstring(sv);
+            } else {
+                return false;
+            }
+            _state = state::expect_key;
+            return true;
+        case state::expect_manifest_start:
+        case state::expect_key:
+            return false;
+        }
+    }
+
+    bool Uint(unsigned u) { return Uint64(u); }
+
+    bool Uint64(uint64_t u) {
+        switch (_state) {
+        case state::expect_value:
+            if ("version" == _key) {
+                _version = u;
+            } else if ("partition_count" == _key) {
+                _partition_count = u;
+            } else if ("replication_factor" == _key) {
+                _replication_factor = u;
+            } else if ("revision_id" == _key) {
+                _revision_id = model::initial_revision_id(u);
+            } else if ("segment_size" == _key) {
+                _properties.segment_size = u;
+            } else if ("retention_bytes" == _key) {
+                _properties.retention_bytes = tristate<size_t>(u);
+            } else if ("retention_duration" == _key) {
+                _properties.retention_duration
+                  = tristate<std::chrono::milliseconds>(
+                    std::chrono::milliseconds(u));
+            } else {
+                return false;
+            }
+            _state = state::expect_key;
+            return true;
+        case state::expect_manifest_start:
+        case state::expect_key:
+            return false;
+        }
+    }
+
+    bool EndObject(rapidjson::SizeType /*size*/) {
+        return _state == state::expect_key;
+    }
+
+    bool Null() {
+        if (_state == state::expect_value) {
+            _state = state::expect_key;
+            return true;
+        }
+        return false;
+    }
+
+    bool Default() { return false; }
+
+    enum class state {
+        expect_manifest_start,
+        expect_key,
+        expect_value,
+    } _state{state::expect_manifest_start};
+
+    key_string _key;
+
+    // required fields
+    std::optional<int32_t> _version;
+    std::optional<model::ns> _namespace{};
+    std::optional<model::topic> _topic;
+    std::optional<int32_t> _partition_count;
+    std::optional<int16_t> _replication_factor;
+    std::optional<model::initial_revision_id> _revision_id{};
+
+    // optional fields
+    cluster::topic_properties _properties;
+    std::optional<ss::sstring> compaction_strategy_sv;
+    std::optional<ss::sstring> timestamp_type_sv;
+    std::optional<ss::sstring> compression_sv;
+    std::optional<ss::sstring> cleanup_policy_bitflags_sv;
+};
+
 topic_manifest::topic_manifest(
   const cluster::topic_configuration& cfg, model::initial_revision_id rev)
   : _topic_config(cfg)
@@ -35,74 +171,140 @@ topic_manifest::topic_manifest(
 topic_manifest::topic_manifest()
   : _topic_config(std::nullopt) {}
 
+void topic_manifest::update(const topic_manifest_handler& handler) {
+    if (handler._version != topic_manifest_version) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "topic manifest version {} is not supported",
+          handler._version));
+    }
+    _rev = handler._revision_id.value();
+
+    if (!handler._version) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format, "Missing _version value in parsed topic manifest"));
+    }
+    if (!handler._namespace) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format, "Missing _namespace value in parsed topic manifest"));
+    }
+    if (!handler._topic) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format, "Missing _topic value in parsed topic manifest"));
+    }
+    if (!handler._partition_count) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "Missing _partition_count value in parsed topic manifest"));
+    }
+    if (!handler._replication_factor) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "Missing _replication_factor value in parsed topic manifest"));
+    }
+    if (!handler._revision_id) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format, "Missing _revision_id value in parsed topic manifest"));
+    }
+
+    _topic_config = cluster::topic_configuration(
+      handler._namespace.value(),
+      handler._topic.value(),
+      handler._partition_count.value(),
+      handler._replication_factor.value());
+    _topic_config->properties = handler._properties;
+
+    if (handler.compaction_strategy_sv) {
+        try {
+            _topic_config->properties.compaction_strategy
+              = boost::lexical_cast<model::compaction_strategy>(
+                handler.compaction_strategy_sv.value());
+        } catch (const std::runtime_error& e) {
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format,
+              "Failed to parse topic manifest {}: Invalid compaction_strategy: "
+              "{}",
+              get_manifest_path(),
+              handler.compaction_strategy_sv.value()));
+        }
+    }
+    if (handler.timestamp_type_sv) {
+        try {
+            _topic_config->properties.timestamp_type
+              = boost::lexical_cast<model::timestamp_type>(
+                handler.timestamp_type_sv.value());
+        } catch (const std::runtime_error& e) {
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format,
+              "Failed to parse topic manifest {}: Invalid timestamp_type "
+              "value: {}",
+              get_manifest_path(),
+              handler.timestamp_type_sv.value()));
+        }
+    }
+    if (handler.compression_sv) {
+        try {
+            _topic_config->properties.compression
+              = boost::lexical_cast<model::compression>(
+                handler.compression_sv.value());
+        } catch (const std::runtime_error& e) {
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format,
+              "Failed to parse topic manifest {}: Invalid compression value: "
+              "{}",
+              get_manifest_path(),
+              handler.compression_sv.value()));
+        }
+    }
+    if (handler.cleanup_policy_bitflags_sv) {
+        try {
+            _topic_config->properties.cleanup_policy_bitflags
+              = boost::lexical_cast<model::cleanup_policy_bitflags>(
+                handler.cleanup_policy_bitflags_sv.value());
+        } catch (const std::runtime_error& e) {
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format,
+              "Failed to parse topic manifest {}: Invalid "
+              "cleanup_policy_bitflags value: {}",
+              get_manifest_path(),
+              handler.cleanup_policy_bitflags_sv.value()));
+        }
+    }
+}
+
 ss::future<> topic_manifest::update(ss::input_stream<char> is) {
     iobuf result;
     auto os = make_iobuf_ref_output_stream(result);
     co_await ss::copy(is, os);
     iobuf_istreambuf ibuf(result);
     std::istream stream(&ibuf);
-    json::Document m;
-    rapidjson::IStreamWrapper wrapper(stream);
-    m.ParseStream(wrapper);
-    update(m);
-    co_return;
-}
 
-void topic_manifest::update(const json::Document& m) {
-    auto ver = m["version"].GetInt();
-    if (ver != static_cast<int>(topic_manifest_version::v1)) {
-        throw std::runtime_error("topic manifest version not supported");
-    }
-    auto ns = model::ns(m["namespace"].GetString());
-    auto tp = model::topic(m["topic"].GetString());
-    int32_t partitions = m["partition_count"].GetInt();
-    int16_t rf = m["replication_factor"].GetInt();
-    int32_t rev = m["revision_id"].GetInt();
-    cluster::topic_configuration conf(ns, tp, partitions, rf);
-    // optional
-    if (!m["compression"].IsNull()) {
-        conf.properties.compression = boost::lexical_cast<model::compression>(
-          m["compression"].GetString());
-    }
-    if (!m["cleanup_policy_bitflags"].IsNull()) {
-        conf.properties.cleanup_policy_bitflags
-          = boost::lexical_cast<model::cleanup_policy_bitflags>(
-            m["cleanup_policy_bitflags"].GetString());
-    }
-    if (!m["compaction_strategy"].IsNull()) {
-        conf.properties.compaction_strategy
-          = boost::lexical_cast<model::compaction_strategy>(
-            m["compaction_strategy"].GetString());
-    }
-    if (!m["timestamp_type"].IsNull()) {
-        conf.properties.timestamp_type
-          = boost::lexical_cast<model::timestamp_type>(
-            m["timestamp_type"].GetString());
-    }
-    if (!m["segment_size"].IsNull()) {
-        conf.properties.segment_size = m["segment_size"].GetInt64();
-    }
-    // tristate
-    if (m.HasMember("retention_bytes")) {
-        if (!m["retention_bytes"].IsNull()) {
-            conf.properties.retention_bytes = tristate<size_t>(
-              m["retention_bytes"].GetInt64());
+    rapidjson::IStreamWrapper wrapper(stream);
+    rapidjson::Reader reader;
+    topic_manifest_handler handler;
+    if (reader.Parse(wrapper, handler)) {
+        vlog(cst_log.debug, "Parsed successfully!");
+        topic_manifest::update(handler);
+    } else {
+        rapidjson::ParseErrorCode e = reader.GetParseErrorCode();
+        size_t o = reader.GetErrorOffset();
+
+        if (_topic_config) {
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format,
+              "Failed to parse topic manifest {}: {} at offset {}",
+              get_manifest_path(),
+              rapidjson::GetParseError_En(e),
+              o));
         } else {
-            conf.properties.retention_bytes = tristate<size_t>(std::nullopt);
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format,
+              "Failed to parse topic manifest: {} at offset {}",
+              rapidjson::GetParseError_En(e),
+              o));
         }
     }
-    if (m.HasMember("retention_duration")) {
-        if (!m["retention_duration"].IsNull()) {
-            conf.properties.retention_duration
-              = tristate<std::chrono::milliseconds>(
-                std::chrono::milliseconds(m["retention_duration"].GetInt64()));
-        } else {
-            conf.properties.retention_duration
-              = tristate<std::chrono::milliseconds>(std::nullopt);
-        }
-    }
-    _topic_config = conf;
-    _rev = model::initial_revision_id(rev);
+    co_return;
 }
 
 serialized_json_stream topic_manifest::serialize() const {
