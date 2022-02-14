@@ -60,6 +60,8 @@ public:
 
     void broken() noexcept { _sem.broken(); }
 
+    bool ready() { return _sem.waiters() == 0 && _sem.available_units() == 1; }
+
 private:
     ss::semaphore _sem;
 };
