@@ -326,6 +326,27 @@ ss::future<> partition::update_configuration(topic_properties properties) {
       properties.get_ntp_cfg_overrides());
 }
 
+std::optional<model::offset>
+partition::get_term_last_offset(model::term_id term) const {
+    auto o = _raft->log().get_term_last_offset(term);
+    if (!o) {
+        return std::nullopt;
+    }
+    // Kafka defines leader epoch last offset as a first offset of next leader
+    // epoch
+    return raft::details::next_offset(*o);
+}
+
+std::optional<model::offset>
+partition::get_cloud_term_last_offset(model::term_id term) const {
+    auto o = _cloud_storage_partition->get_term_last_offset(term);
+    if (!o) {
+        return std::nullopt;
+    }
+    // Kafka defines leader epoch last offset as a first offset of next leader
+    // epoch
+    return raft::details::next_offset(*o);
+}
 std::ostream& operator<<(std::ostream& o, const partition& x) {
     return o << x._raft;
 }
