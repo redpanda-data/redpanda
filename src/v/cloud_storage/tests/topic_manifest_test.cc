@@ -13,6 +13,8 @@
 #include "cloud_storage/topic_manifest.h"
 #include "cloud_storage/types.h"
 #include "cluster/types.h"
+#include "model/compression.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "seastarx.h"
 
@@ -21,6 +23,11 @@
 
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
+
+#include <chrono>
+#include <string>
+#include <string_view>
+#include <system_error>
 
 using namespace cloud_storage;
 
@@ -59,7 +66,49 @@ static constexpr std::string_view full_topic_manifest_json = R"json({
     "timestamp_type": "LogAppendTime",
     "segment_size": 1234,
     "retention_bytes": 42342,
-    "retention_duration": 360000000
+    "retention_duration": 36000000000
+})json";
+
+static constexpr std::string_view missing_partition_count = R"json({
+    "version": 1,
+    "namespace": "test-namespace",
+    "namespace": "test-namespace1",
+    "namespace": "test-namespace2",
+    "topic": "test-topic",
+    "replication_factor": 3,
+    "revision_id": 0
+})json";
+
+static constexpr std::string_view wrong_version = R"json({
+    "version": 2,
+    "namespace": "full-test-namespace",
+    "topic": "full-test-topic",
+    "partition_count": 64,
+    "replication_factor": 6,
+    "revision_id": 1,
+    "compression": "snappy",
+    "cleanup_policy_bitflags": "compact,delete",
+    "compaction_strategy": "offset",
+    "timestamp_type": "LogAppendTime",
+    "segment_size": 1234,
+    "retention_bytes": 42342,
+    "retention_duration": 36000000000
+})json";
+
+static constexpr std::string_view wrong_compaction_strategy = R"json({
+    "version": 1,
+    "namespace": "full-test-namespace",
+    "topic": "full-test-topic",
+    "partition_count": 64,
+    "replication_factor": 6,
+    "revision_id": 1,
+    "compression": "snappy",
+    "cleanup_policy_bitflags": "compact,delete",
+    "compaction_strategy": "wrong_value",
+    "timestamp_type": "LogAppendTime",
+    "segment_size": 1234,
+    "retention_bytes": 42342,
+    "retention_duration": 36000000000
 })json";
 
 inline ss::input_stream<char> make_manifest_stream(std::string_view json) {
@@ -116,6 +165,102 @@ SEASTAR_THREAD_TEST_CASE(update_serialize_update_same_object) {
     restored.update(std::move(rstr)).get();
 
     BOOST_REQUIRE(m == restored);
+}
+
+SEASTAR_THREAD_TEST_CASE(min_config_update_all_fields_correct) {
+    topic_manifest m;
+    m.update(make_manifest_stream(min_topic_manifest_json)).get();
+
+    auto topic_config = m.get_topic_config().value();
+    BOOST_REQUIRE_EQUAL(m.get_revision(), model::initial_revision_id(0));
+    BOOST_REQUIRE_EQUAL(
+      topic_config.tp_ns,
+      model::topic_namespace(
+        model::ns("test-namespace"), model::topic("test-topic")));
+    BOOST_REQUIRE_EQUAL(topic_config.partition_count, 32);
+    BOOST_REQUIRE_EQUAL(topic_config.replication_factor, 3);
+    BOOST_REQUIRE(!topic_config.properties.compression);
+    BOOST_REQUIRE(!topic_config.properties.cleanup_policy_bitflags);
+    BOOST_REQUIRE(!topic_config.properties.compaction_strategy);
+    BOOST_REQUIRE(!topic_config.properties.timestamp_type);
+    BOOST_REQUIRE(!topic_config.properties.segment_size);
+    BOOST_REQUIRE(
+      !topic_config.properties.retention_bytes.is_disabled()
+      && !topic_config.properties.retention_bytes.has_value());
+    BOOST_REQUIRE(
+      !topic_config.properties.retention_duration.is_disabled()
+      && !topic_config.properties.retention_duration.has_value());
+}
+
+SEASTAR_THREAD_TEST_CASE(full_config_update_all_fields_correct) {
+    topic_manifest m;
+    m.update(make_manifest_stream(full_topic_manifest_json)).get();
+
+    auto topic_config = m.get_topic_config().value();
+    BOOST_REQUIRE_EQUAL(m.get_revision(), model::initial_revision_id(1));
+    BOOST_REQUIRE_EQUAL(
+      topic_config.tp_ns,
+      model::topic_namespace(
+        model::ns("full-test-namespace"), model::topic("full-test-topic")));
+    BOOST_REQUIRE_EQUAL(topic_config.partition_count, 64);
+    BOOST_REQUIRE_EQUAL(topic_config.replication_factor, 6);
+    BOOST_REQUIRE_EQUAL(
+      topic_config.properties.compression.value(), model::compression::snappy);
+    BOOST_REQUIRE_EQUAL(
+      topic_config.properties.cleanup_policy_bitflags.value(),
+      model::cleanup_policy_bitflags::deletion
+        | model::cleanup_policy_bitflags::compaction);
+    BOOST_REQUIRE_EQUAL(
+      topic_config.properties.compaction_strategy.value(),
+      model::compaction_strategy::offset);
+    BOOST_REQUIRE_EQUAL(
+      topic_config.properties.timestamp_type.value(),
+      model::timestamp_type::append_time);
+    BOOST_REQUIRE_EQUAL(topic_config.properties.segment_size.value(), 1234);
+    BOOST_REQUIRE_EQUAL(topic_config.properties.retention_bytes.value(), 42342);
+    BOOST_REQUIRE_EQUAL(
+      topic_config.properties.retention_duration.value(),
+      std::chrono::milliseconds(36000000000));
+}
+
+SEASTAR_THREAD_TEST_CASE(missing_required_fields_throws) {
+    topic_manifest m;
+    BOOST_REQUIRE_EXCEPTION(
+      m.update(make_manifest_stream(missing_partition_count)).get(),
+      std::runtime_error,
+      [](std::runtime_error ex) {
+          return std::string(ex.what()).find(
+                   "Missing _partition_count value in "
+                   "parsed topic manifest")
+                 != std::string::npos;
+      });
+}
+
+SEASTAR_THREAD_TEST_CASE(wrong_version_throws) {
+    topic_manifest m;
+    BOOST_REQUIRE_EXCEPTION(
+      m.update(make_manifest_stream(wrong_version)).get(),
+      std::runtime_error,
+      [](std::runtime_error ex) {
+          return std::string(ex.what()).find(
+                   "topic manifest version {2} is not supported")
+                 != std::string::npos;
+      });
+}
+
+SEASTAR_THREAD_TEST_CASE(wrong_compaction_strategy_throws) {
+    topic_manifest m;
+    BOOST_REQUIRE_EXCEPTION(
+      m.update(make_manifest_stream(wrong_compaction_strategy)).get(),
+      std::runtime_error,
+      [](std::runtime_error ex) {
+          return std::string(ex.what()).find(
+                   "Failed to parse topic manifest "
+                   "{\"30000000/meta/full-test-namespace/full-test-topic/"
+                   "topic_manifest.json\"}: Invalid compaction_strategy: "
+                   "wrong_value")
+                 != std::string::npos;
+      });
 }
 
 SEASTAR_THREAD_TEST_CASE(full_update_serialize_update_same_object) {

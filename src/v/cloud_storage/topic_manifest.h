@@ -11,7 +11,10 @@
 #pragma once
 
 #include "cloud_storage/base_manifest.h"
+#include "cluster/types.h"
 #include "json/document.h"
+
+#include <optional>
 
 namespace cloud_storage {
 
@@ -52,6 +55,11 @@ public:
 
     /// Change topic-manifest revision
     void set_revision(model::initial_revision_id id) noexcept { _rev = id; }
+
+    std::optional<cluster::topic_configuration> const&
+    get_topic_config() const noexcept {
+        return _topic_config;
+    }
 
 private:
     /// Update manifest content from json document that supposed to be generated
