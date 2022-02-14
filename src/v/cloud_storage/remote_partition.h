@@ -14,6 +14,7 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_segment.h"
 #include "cloud_storage/types.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "s3/client.h"
 #include "storage/ntp_config.h"
@@ -183,6 +184,9 @@ public:
 
     /// Returns true if at least one segment is uploaded to the bucket
     bool is_data_available() const;
+
+    // returns term last kafka offset
+    std::optional<model::offset> get_term_last_offset(model::term_id) const;
 
 private:
     /// Create new remote_segment instances for all new
