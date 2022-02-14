@@ -17,6 +17,7 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/server/fetch_session.h"
+#include "kafka/server/handlers/details/leader_epoch.h"
 #include "kafka/server/handlers/fetch/fetch_plan_executor.h"
 #include "kafka/server/handlers/fetch/fetch_planner.h"
 #include "kafka/server/materialized_partition.h"
@@ -33,6 +34,7 @@
 #include "utils/to_string.h"
 
 #include <seastar/core/do_with.hh>
+#include <seastar/core/future.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/util/log.hh>
@@ -150,6 +152,15 @@ static ss::future<read_result> do_read_from_ntp(
     if (unlikely(!kafka_partition->is_leader())) {
         return ss::make_ready_future<read_result>(
           error_code::not_leader_for_partition);
+    }
+
+    /**
+     * validate leader epoch. for more details see KIP-320
+     */
+    auto leader_epoch_err = details::check_leader_epoch(
+      ntp_config.cfg.current_leader_epoch, *kafka_partition);
+    if (leader_epoch_err != error_code::none) {
+        return ss::make_ready_future<read_result>(leader_epoch_err);
     }
 
     if (config::shard_local_cfg().enable_transactions.value()) {
@@ -474,6 +485,7 @@ class simple_fetch_planner final : public fetch_planner::impl {
                 .timeout = octx.deadline.value_or(model::no_timeout),
                 .strict_max_bytes = octx.response_size > 0,
                 .skip_read = bytes_left_in_plan == 0 && max_bytes == 0,
+                .current_leader_epoch = fp.current_leader_epoch,
               };
 
               plan.fetches_per_shard[*shard].push_back(

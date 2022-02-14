@@ -29,6 +29,7 @@ struct fetch_session_partition {
     model::offset fetch_offset;
     model::offset high_watermark;
     model::offset last_stable_offset;
+    kafka::leader_epoch current_leader_epoch = invalid_leader_epoch;
 };
 /**
  * Map of partitions that is kept by fetch session. This map is using intrusive

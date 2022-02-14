@@ -21,6 +21,7 @@ static fetch_session_partition make_fetch_partition(
       .fetch_offset = p.fetch_offset,
       .high_watermark = model::offset(-1),
       .last_stable_offset = model::offset(-1),
+      .current_leader_epoch = p.current_leader_epoch,
     };
 }
 
