@@ -38,6 +38,13 @@ struct segment_ordering {
     bool operator()(const type& seg, model::timestamp value) const {
         return seg->index().max_timestamp() < value;
     }
+
+    bool operator()(const type& seg, model::term_id value) const {
+        return seg->offsets().term < value;
+    }
+    bool operator()(model::term_id value, const type& seg) const {
+        return value < seg->offsets().term;
+    }
 };
 
 segment_set::segment_set(segment_set::underlying_t segs)
@@ -140,6 +147,17 @@ segment_set::const_iterator
 segment_set::lower_bound(model::timestamp needle) const {
     return segments_lower_bound(
       std::cbegin(_handles), std::cend(_handles), needle);
+}
+
+segment_set::iterator segment_set::upper_bound(model::term_id term) {
+    return std::upper_bound(
+      _handles.begin(), _handles.end(), term, segment_ordering{});
+}
+
+segment_set::const_iterator
+segment_set::upper_bound(model::term_id term) const {
+    return std::upper_bound(
+      _handles.cbegin(), _handles.cend(), term, segment_ordering{});
 }
 
 std::ostream& operator<<(std::ostream& o, const segment_set& s) {

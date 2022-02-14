@@ -73,6 +73,8 @@ public:
     const_iterator lower_bound(model::offset o) const;
     iterator lower_bound(model::timestamp o);
     const_iterator lower_bound(model::timestamp o) const;
+    iterator upper_bound(model::term_id o);
+    const_iterator upper_bound(model::term_id o) const;
 
     const_iterator cbegin() const { return _handles.cbegin(); }
     const_iterator cend() const { return _handles.cend(); }
