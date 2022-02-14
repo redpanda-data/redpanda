@@ -49,7 +49,7 @@ enum class disk_space_alert { ok = 0, low_space = 1, degraded = 2 };
  */
 struct local_state {
     application_version redpanda_version;
-    cluster_version logical_version;
+    cluster_version logical_version{invalid_version};
     std::chrono::milliseconds uptime;
     // Eventually support multiple volumes.
     std::vector<disk> disks;

@@ -139,7 +139,7 @@ std::ostream& operator<<(std::ostream& o, const partitions_filter& filter) {
 namespace reflection {
 
 template<typename T>
-void read_and_assert_version(std::string_view type, iobuf_parser& parser) {
+int8_t read_and_assert_version(std::string_view type, iobuf_parser& parser) {
     auto version = adl<int8_t>{}.from(parser);
     vassert(
       version <= T::current_version,
@@ -147,6 +147,7 @@ void read_and_assert_version(std::string_view type, iobuf_parser& parser) {
       type,
       version,
       T::current_version);
+    return version;
 }
 
 void adl<cluster::node_state>::to(iobuf& out, cluster::node_state&& s) {
@@ -240,7 +241,7 @@ void adl<cluster::node_health_report>::to(
 
 cluster::node_health_report
 adl<cluster::node_health_report>::from(iobuf_parser& p) {
-    read_and_assert_version<cluster::node_health_report>(
+    auto version = read_and_assert_version<cluster::node_health_report>(
       "cluster::node_health_report", p);
 
     auto id = adl<model::node_id>{}.from(p);
@@ -248,7 +249,10 @@ adl<cluster::node_health_report>::from(iobuf_parser& p) {
     auto uptime = adl<std::chrono::milliseconds>{}.from(p);
     auto disks = adl<std::vector<cluster::node::disk>>{}.from(p);
     auto topics = adl<std::vector<cluster::topic_status>>{}.from(p);
-    auto logical_version = adl<cluster::cluster_version>{}.from(p);
+    cluster::cluster_version logical_version{cluster::invalid_version};
+    if (version >= 1) {
+        logical_version = adl<cluster::cluster_version>{}.from(p);
+    }
 
     return cluster::node_health_report{
       .id = id,

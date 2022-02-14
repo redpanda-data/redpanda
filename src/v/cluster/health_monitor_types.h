@@ -80,7 +80,7 @@ struct topic_status {
  * instance of time
  */
 struct node_health_report {
-    static constexpr int8_t current_version = 0;
+    static constexpr int8_t current_version = 1;
 
     model::node_id id;
     node::local_state local_state;
