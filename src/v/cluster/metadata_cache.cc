@@ -160,10 +160,14 @@ metadata_cache::get_leader_id(const model::ntp& ntp) const {
     return _leaders.local().get_leader(ntp);
 }
 
-std::optional<model::node_id>
-metadata_cache::get_previous_leader_id(const model::ntp& ntp) const {
-    return _leaders.local().get_previous_leader(
-      model::topic_namespace_view(ntp), ntp.tp.partition);
+std::optional<model::node_id> metadata_cache::get_leader_id(
+  model::topic_namespace_view tp_ns, model::partition_id p_id) const {
+    return _leaders.local().get_leader(tp_ns, p_id);
+}
+
+std::optional<model::node_id> metadata_cache::get_previous_leader_id(
+  model::topic_namespace_view tp_ns, model::partition_id p_id) const {
+    return _leaders.local().get_previous_leader(tp_ns, p_id);
 }
 
 /// If present returns a leader of raft0 group
