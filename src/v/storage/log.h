@@ -72,6 +72,8 @@ public:
         virtual storage::offset_stats offsets() const = 0;
         virtual std::ostream& print(std::ostream& o) const = 0;
         virtual std::optional<model::term_id> get_term(model::offset) const = 0;
+        virtual std::optional<model::offset>
+          get_term_last_offset(model::term_id) const = 0;
 
         virtual ss::future<model::offset>
         monitor_eviction(ss::abort_source&) = 0;
@@ -150,6 +152,12 @@ public:
     std::optional<model::term_id> get_term(model::offset o) const {
         return _impl->get_term(o);
     }
+
+    std::optional<model::offset>
+    get_term_last_offset(model::term_id term) const {
+        return _impl->get_term_last_offset(term);
+    }
+
     ss::future<std::optional<timequery_result>>
     timequery(timequery_config cfg) {
         return _impl->timequery(cfg);
