@@ -33,6 +33,7 @@ set(handlers_srcs
   server/handlers/create_acls.cc
   server/handlers/delete_acls.cc
   server/handlers/create_partitions.cc
+  server/handlers/offset_for_leader_epoch.cc
   server/handlers/topics/types.cc
   server/handlers/topics/topic_utils.cc
 )
