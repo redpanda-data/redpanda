@@ -11,6 +11,8 @@
 #pragma once
 #include "cluster/partition_probe.h"
 #include "kafka/server/partition_proxy.h"
+#include "kafka/types.h"
+#include "model/fundamental.h"
 #include "raft/errc.h"
 #include "storage/log.h"
 
@@ -40,6 +42,15 @@ public:
     }
 
     bool is_leader() const final { return _partition->is_leader(); }
+
+    kafka::leader_epoch leader_epoch() const final {
+        return leader_epoch_from_term(_partition->term());
+    }
+
+    std::optional<model::offset>
+    get_leader_epoch_last_offset(kafka::leader_epoch epoch) const final {
+        return _partition->get_term_last_offset(model::term_id(epoch()));
+    }
 
     ss::future<std::error_code> linearizable_barrier() final {
         return _partition->linearizable_barrier().then(
