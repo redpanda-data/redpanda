@@ -32,8 +32,14 @@ public:
     const model::ntp& ntp() const { return _log.config().ntp(); }
     const storage::ntp_config& config() const { return _log.config(); }
     bool is_leader() const { return _source->is_leader(); }
+    model::term_id term() const { return _source->term(); }
     model::revision_id get_revision_id() const {
         return _log.config().get_revision();
+    }
+
+    std::optional<model::offset>
+    get_term_last_offset(model::term_id term) const {
+        return _source->get_term_last_offset(term);
     }
 
     /// \brief Returns a reader that enters the \ref _gate when it performs
