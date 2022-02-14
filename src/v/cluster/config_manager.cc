@@ -134,14 +134,11 @@ void config_manager::start_bootstrap() {
                       }
                   }
               });
-        }).handle_exception([](const std::exception_ptr&) {
+        }).handle_exception([](const std::exception_ptr& e) {
             // Explicitly handle exception so that we do not risk an
             // 'ignored exceptional future' error.  The only exceptions
             // we expect here are things like sleep_aborted during shutdown.
-            vlog(
-              clusterlog.warn,
-              "Exception during bootstrap: {}",
-              std::current_exception());
+            vlog(clusterlog.warn, "Exception during bootstrap: {}", e);
         });
 }
 
