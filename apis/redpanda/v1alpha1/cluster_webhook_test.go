@@ -946,6 +946,25 @@ func TestCreation(t *testing.T) {
 		err := tls.ValidateCreate()
 		assert.Error(t, err)
 	})
+	t.Run("kafka external subdomain is provided along with preferred address type", func(t *testing.T) {
+		rp := redpandaCluster.DeepCopy()
+		rp.Spec.Configuration.KafkaAPI = append(rp.Spec.Configuration.KafkaAPI,
+			v1alpha1.KafkaAPI{Port: 123, External: v1alpha1.ExternalConnectivityConfig{Enabled: true, PreferredAddressType: "preferred", Subdomain: "subdomain"}})
+		err := rp.ValidateCreate()
+		assert.Error(t, err)
+	})
+	// No support for IP-based TLS certs (#2256)
+	t.Run("kafka TLS for external listener without a subdomain", func(t *testing.T) {
+		rp := redpandaCluster.DeepCopy()
+		rp.Spec.Configuration.KafkaAPI = append(rp.Spec.Configuration.KafkaAPI,
+			v1alpha1.KafkaAPI{
+				TLS: v1alpha1.KafkaAPITLS{
+					Enabled: true,
+				},
+				Port: 123, External: v1alpha1.ExternalConnectivityConfig{Enabled: true, PreferredAddressType: "InternalIP"}})
+		err := rp.ValidateCreate()
+		assert.Error(t, err)
+	})
 }
 
 func TestSchemaRegistryValidations(t *testing.T) {
