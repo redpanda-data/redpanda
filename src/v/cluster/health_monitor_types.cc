@@ -148,14 +148,18 @@ std::ostream& operator<<(std::ostream& o, const partitions_filter& filter) {
 namespace reflection {
 
 template<typename T>
-void read_and_assert_version(std::string_view type, iobuf_parser& parser) {
+int8_t read_and_assert_version(
+  std::string_view type,
+  iobuf_parser& parser,
+  int8_t expect_version = T::current_version) {
     auto version = adl<int8_t>{}.from(parser);
     vassert(
-      version <= T::current_version,
+      version <= expect_version,
       "unsupported version of {}, max_supported version: {}, read version: {}",
       type,
       version,
       T::current_version);
+    return version;
 }
 
 void adl<cluster::node_disk_space>::to(
@@ -268,14 +272,19 @@ void adl<cluster::node_health_report>::to(
 
 cluster::node_health_report
 adl<cluster::node_health_report>::from(iobuf_parser& p) {
-    read_and_assert_version<cluster::node_health_report>(
-      "cluster::node_health_report", p);
+    auto version = read_and_assert_version<cluster::node_health_report>(
+      "cluster::node_health_report", p, 1);
 
     auto id = adl<model::node_id>{}.from(p);
     auto redpanda_version = adl<cluster::application_version>{}.from(p);
     auto uptime = adl<std::chrono::milliseconds>{}.from(p);
     auto disk_space = adl<std::vector<cluster::node_disk_space>>{}.from(p);
     auto topics = adl<std::vector<cluster::topic_status>>{}.from(p);
+
+    if (version >= 1) {
+        // Consume v1 logical version field to nowhere.
+        adl<int64_t>{}.from(p);
+    }
 
     return cluster::node_health_report{
       .id = id,
