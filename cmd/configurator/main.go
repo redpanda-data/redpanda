@@ -22,6 +22,7 @@ import (
 
 	"github.com/hashicorp/go-multierror"
 	"github.com/spf13/afero"
+	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/networking"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
@@ -31,31 +32,33 @@ import (
 )
 
 const (
-	hostNameEnvVar                      = "HOSTNAME"
-	svcFQDNEnvVar                       = "SERVICE_FQDN"
-	configSourceDirEnvVar               = "CONFIG_SOURCE_DIR"
-	configDestinationEnvVar             = "CONFIG_DESTINATION"
-	redpandaRPCPortEnvVar               = "REDPANDA_RPC_PORT"
-	nodeNameEnvVar                      = "NODE_NAME"
-	externalConnectivityEnvVar          = "EXTERNAL_CONNECTIVITY"
-	externalConnectivitySubDomainEnvVar = "EXTERNAL_CONNECTIVITY_SUBDOMAIN"
-	hostPortEnvVar                      = "HOST_PORT"
-	proxyHostPortEnvVar                 = "PROXY_HOST_PORT"
+	hostNameEnvVar                        = "HOSTNAME"
+	svcFQDNEnvVar                         = "SERVICE_FQDN"
+	configSourceDirEnvVar                 = "CONFIG_SOURCE_DIR"
+	configDestinationEnvVar               = "CONFIG_DESTINATION"
+	redpandaRPCPortEnvVar                 = "REDPANDA_RPC_PORT"
+	nodeNameEnvVar                        = "NODE_NAME"
+	externalConnectivityEnvVar            = "EXTERNAL_CONNECTIVITY"
+	externalConnectivitySubDomainEnvVar   = "EXTERNAL_CONNECTIVITY_SUBDOMAIN"
+	externalConnectivityAddressTypeEnvVar = "EXTERNAL_CONNECTIVITY_ADDRESS_TYPE"
+	hostPortEnvVar                        = "HOST_PORT"
+	proxyHostPortEnvVar                   = "PROXY_HOST_PORT"
 )
 
 type brokerID int
 
 type configuratorConfig struct {
-	hostName             string
-	svcFQDN              string
-	configSourceDir      string
-	configDestination    string
-	nodeName             string
-	subdomain            string
-	externalConnectivity bool
-	redpandaRPCPort      int
-	hostPort             int
-	proxyHostPort        int
+	hostName                        string
+	svcFQDN                         string
+	configSourceDir                 string
+	configDestination               string
+	nodeName                        string
+	subdomain                       string
+	externalConnectivity            bool
+	externalConnectivityAddressType corev1.NodeAddressType
+	redpandaRPCPort                 int
+	hostPort                        int
+	proxyHostPort                   int
 }
 
 func (c *configuratorConfig) String() string {
@@ -67,6 +70,7 @@ func (c *configuratorConfig) String() string {
 		"nodeName: %s\n"+
 		"externalConnectivity: %t\n"+
 		"externalConnectivitySubdomain: %s\n"+
+		"externalConnectivityAddressType: %s\n"+
 		"redpandaRPCPort: %d\n"+
 		"hostPort: %d\n"+
 		"proxyHostPort: %d\n",
@@ -77,6 +81,7 @@ func (c *configuratorConfig) String() string {
 		c.nodeName,
 		c.externalConnectivity,
 		c.subdomain,
+		c.externalConnectivityAddressType,
 		c.redpandaRPCPort,
 		c.hostPort,
 		c.proxyHostPort)
@@ -220,7 +225,7 @@ func registerAdvertisedKafkaAPI(
 
 	cfg.Redpanda.AdvertisedKafkaApi = append(cfg.Redpanda.AdvertisedKafkaApi, config.NamedSocketAddress{
 		SocketAddress: config.SocketAddress{
-			Address: getExternalIP(node),
+			Address: networking.GetPreferredAddress(node, c.externalConnectivityAddressType),
 			Port:    c.hostPort,
 		},
 		Name: "kafka-external",
@@ -352,6 +357,12 @@ func checkEnvVars() (configuratorConfig, error) {
 	c.externalConnectivity, err = strconv.ParseBool(extCon)
 	if err != nil {
 		result = multierror.Append(result, fmt.Errorf("unable to parse bool: %w", err))
+	}
+
+	// Providing the address type is optional.
+	addressType, exists := os.LookupEnv(externalConnectivityAddressTypeEnvVar)
+	if exists {
+		c.externalConnectivityAddressType = corev1.NodeAddressType(addressType)
 	}
 
 	c.redpandaRPCPort, err = strconv.Atoi(rpcPort)
