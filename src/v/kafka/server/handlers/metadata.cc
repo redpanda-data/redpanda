@@ -64,15 +64,16 @@ static constexpr model::node_id no_leader(-1);
  * nodes that may not be partitioned.
  */
 model::node_id get_leader(
-  const model::ntp& ntp,
+  model::topic_namespace_view tp_ns,
+  model::partition_id p_id,
   const cluster::metadata_cache& md_cache,
   const std::vector<model::node_id>& replicas) {
-    const auto current = md_cache.get_leader_id(ntp);
+    const auto current = md_cache.get_leader_id(tp_ns, p_id);
     if (current) {
         return *current;
     }
 
-    const auto previous = md_cache.get_previous_leader_id(ntp);
+    const auto previous = md_cache.get_previous_leader_id(tp_ns, p_id);
     if (previous == config::node().node_id()) {
         auto idx = fast_prng_source() % replicas.size();
         return replicas[idx];
@@ -103,8 +104,7 @@ metadata_response::topic make_topic_response_from_topic_metadata(
           metadata_response::partition p;
           p.error_code = error_code::none;
           p.partition_index = p_md.id;
-          p.leader_id = get_leader(
-            model::ntp(tp_ns.ns, tp_ns.tp, p_md.id), md_cache, replicas);
+          p.leader_id = get_leader(tp_ns, p_md.id, md_cache, replicas);
           p.replica_nodes = std::move(replicas);
           p.isr_nodes = p.replica_nodes;
           p.offline_replicas = {};
