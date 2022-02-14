@@ -78,6 +78,8 @@ different redpanda version that does not recognize certain properties.`,
 		newStatusCommand(fs),
 		newResetCommand(fs),
 		newLintCommand(fs),
+		newSetCommand(fs),
+		newGetCommand(fs),
 	)
 
 	return command
