@@ -76,10 +76,19 @@ bool group_member::should_keep_alive(
 }
 
 std::ostream& operator<<(std::ostream& o, const group_member& m) {
+    auto timer_expires =
+      [](const auto& timer) -> std::optional<group_member::duration_type> {
+        if (timer.armed()) {
+            return timer.get_timeout() - group_member::clock_type::now();
+        }
+        return std::nullopt;
+    };
+
     fmt::print(
       o,
       "id={} group={} group_inst={} proto_type={} assignment_len={} "
-      "timeouts={}/{} protocols={}",
+      "timeouts={}/{} protocols={} is_new={} joining={} syncing={} "
+      "latest_heartbeat={} expires={}",
       m.id(),
       m.group_id(),
       m.group_instance_id(),
@@ -87,7 +96,12 @@ std::ostream& operator<<(std::ostream& o, const group_member& m) {
       m.assignment().size(),
       m.session_timeout(),
       m.rebalance_timeout(),
-      m._state.protocols);
+      m._state.protocols,
+      m._is_new,
+      m.is_joining(),
+      m.is_syncing(),
+      m._latest_heartbeat.time_since_epoch(),
+      timer_expires(m._expire_timer));
     return o;
 }
 
