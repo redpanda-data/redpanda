@@ -1,6 +1,7 @@
 #include "kafka/server/group_stm.h"
 
 #include "cluster/logger.h"
+#include "kafka/types.h"
 
 namespace kafka {
 
@@ -49,9 +50,8 @@ void group_stm::update_prepared(
           .log_offset = offset,
           .offset = tx_offset.offset,
           .metadata = tx_offset.metadata.value_or(""),
+          .committed_leader_epoch = kafka::leader_epoch(tx_offset.leader_epoch),
         };
-        // BUG: support leader_epoch (KIP-320)
-        // https://github.com/vectorizedio/redpanda/issues/1181
         prepared_it->second.offsets[tx_offset.tp] = md;
     }
 }
