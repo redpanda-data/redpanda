@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from collections import namedtuple
 import time
 import requests
 import json
@@ -673,6 +674,48 @@ class ClusterConfigTest(RedpandaTest):
         self.logger.info("Restarting with linted config")
         self.redpanda.stop_node(node)
         self.redpanda.start_node(node, write_config=False)
+
+    @cluster(num_nodes=1)
+    def test_rpk_get_set(self):
+        """
+        Test RPK's getter+setter helpers
+        """
+
+        Example = namedtuple('Example', ['key', 'strval', 'yamlval'])
+
+        valid_examples = [
+            Example("kafka_qdc_enable", "true", True),
+            Example("append_chunk_size", "32768", 32768),
+            Example("superusers", "['bob','alice']", ["bob", "alice"])
+        ]
+
+        def yamlize(input):
+            """Create a YAML representation that matches
+            what yaml-cpp produces: PyYAML includes trailing
+            ellipsis lines that must be removed."""
+            return "\n".join([
+                i for i in yaml.dump(e.yamlval).split("\n")
+                if i.strip() != "..."
+            ]).strip()
+
+        for e in valid_examples:
+            self.logger.info(f"Checking {e.key}={e.strval} ({e.yamlval})")
+            self.rpk.cluster_config_set(e.key, e.strval)
+
+            # CLI readback should give same as we set
+            cli_readback = self.rpk.cluster_config_get(e.key)
+
+            expect_cli_readback = yamlize(e.yamlval)
+
+            self.logger.info(
+                f"CLI readback '{cli_readback}' expect '{expect_cli_readback}'"
+            )
+            assert cli_readback == expect_cli_readback
+
+            # API readback should give properly structured+typed value
+            api_readback = self.admin.get_cluster_config()[e.key]
+            self.logger.info(f"API readback '{api_readback}'")
+            assert api_readback == e.yamlval
 
     @cluster(num_nodes=3)
     def test_secret_redaction(self):
