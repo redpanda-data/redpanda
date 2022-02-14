@@ -37,6 +37,7 @@
 #include "kafka/server/handlers/metadata.h"
 #include "kafka/server/handlers/offset_commit.h"
 #include "kafka/server/handlers/offset_fetch.h"
+#include "kafka/server/handlers/offset_for_leader_epoch.h"
 #include "kafka/server/handlers/produce.h"
 #include "kafka/server/handlers/sasl_authenticate.h"
 #include "kafka/server/handlers/sasl_handshake.h"

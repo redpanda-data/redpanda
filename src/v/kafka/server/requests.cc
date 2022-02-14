@@ -303,6 +303,8 @@ process_request(request_context&& ctx, ss::smp_service_group g) {
         return do_process<end_txn_handler>(std::move(ctx), g);
     case create_partitions_handler::api::key:
         return do_process<create_partitions_handler>(std::move(ctx), g);
+    case offset_for_leader_epoch_handler::api::key:
+        return do_process<offset_for_leader_epoch_handler>(std::move(ctx), g);
     };
     throw std::runtime_error(
       fmt::format("Unsupported API {}", ctx.header().key));
