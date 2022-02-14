@@ -110,6 +110,8 @@ public:
     }
 
     std::optional<model::node_id> get_leader_id(const model::ntp&) const;
+    std::optional<cluster::leader_term>
+      get_leader_term(model::topic_namespace_view, model::partition_id) const;
 
     std::optional<model::node_id>
       get_leader_id(model::topic_namespace_view, model::partition_id) const;

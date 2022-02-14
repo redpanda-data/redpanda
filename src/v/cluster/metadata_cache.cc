@@ -159,6 +159,10 @@ std::optional<model::node_id>
 metadata_cache::get_leader_id(const model::ntp& ntp) const {
     return _leaders.local().get_leader(ntp);
 }
+std::optional<cluster::leader_term> metadata_cache::get_leader_term(
+  model::topic_namespace_view tp_ns, model::partition_id pid) const {
+    return _leaders.local().get_leader_term(tp_ns, pid);
+}
 
 std::optional<model::node_id> metadata_cache::get_leader_id(
   model::topic_namespace_view tp_ns, model::partition_id p_id) const {
