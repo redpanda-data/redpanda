@@ -62,13 +62,15 @@ metadata_cache::get_source_topic(model::topic_namespace_view tp) const {
     return mt->second.get_source_topic();
 }
 
-std::optional<model::topic_metadata>
-metadata_cache::get_topic_metadata(model::topic_namespace_view tp) const {
+std::optional<model::topic_metadata> metadata_cache::get_topic_metadata(
+  model::topic_namespace_view tp, metadata_cache::with_leaders leaders) const {
     auto md = _topics_state.local().get_topic_metadata(tp);
     if (!md) {
         return md;
     }
-    fill_partition_leaders(_leaders.local(), *md);
+    if (leaders) {
+        fill_partition_leaders(_leaders.local(), *md);
+    }
 
     return md;
 }
@@ -82,10 +84,13 @@ metadata_cache::get_topic_timestamp_type(model::topic_namespace_view tp) const {
     return _topics_state.local().get_topic_timestamp_type(tp);
 }
 
-std::vector<model::topic_metadata> metadata_cache::all_topics_metadata() const {
+std::vector<model::topic_metadata> metadata_cache::all_topics_metadata(
+  metadata_cache::with_leaders leaders) const {
     auto all_md = _topics_state.local().all_topics_metadata();
-    for (auto& md : all_md) {
-        fill_partition_leaders(_leaders.local(), md);
+    if (leaders) {
+        for (auto& md : all_md) {
+            fill_partition_leaders(_leaders.local(), md);
+        }
     }
     return all_md;
 }
