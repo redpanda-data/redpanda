@@ -25,17 +25,27 @@ class RpkException(Exception):
 
 
 class RpkPartition:
-    def __init__(self, id, leader, replicas, hw, start_offset):
+    def __init__(self, id, leader, leader_epoch, replicas, hw, start_offset):
         self.id = id
         self.leader = leader
+        self.leader_epoch = leader_epoch
         self.replicas = replicas
         self.high_watermark = hw
         self.start_offset = start_offset
 
     def __str__(self):
-        return "id: {}, leader: {}, replicas: {}, hw: {}, start_offset: {}".format(
-            self.id, self.leader, self.replicas, self.high_watermark,
-            self.start_offset)
+        return "id: {}, leader: {}, leader_epoch: {} replicas: {}, hw: {}, start_offset: {}".format(
+            self.id, self.leader, self.leader_epoch, self.replicas,
+            self.high_watermark, self.start_offset)
+
+    def __eq__(self, other):
+        if other is None:
+            return False
+        return self.id == other.id and self.leader == other.leader \
+            and self.leader_epoch == other.leader_epoch \
+            and self.replicas == other.replicas \
+            and self.high_watermark == other.high_watermark \
+            and self.start_offset == other.start_offset
 
 
 class RpkClusterInfoNode:
@@ -125,13 +135,14 @@ class RpkTool:
 
         def partition_line(line):
             m = re.match(
-                r" *(?P<id>\d+) +(?P<leader>\d+) +\[(?P<replicas>.+?)\] +(?P<logstart>\d+?) +(?P<hw>\d+) *",
+                r" *(?P<id>\d+) +(?P<leader>\d+) +(?P<epoch>\d+) +\[(?P<replicas>.+?)\] +(?P<logstart>\d+?) +(?P<hw>\d+) *",
                 line)
             if m == None:
                 return None
             replicas = list(map(lambda r: int(r), m.group('replicas').split()))
             return RpkPartition(id=int(m.group('id')),
                                 leader=int(m.group('leader')),
+                                leader_epoch=int(m.group('epoch')),
                                 replicas=replicas,
                                 hw=int(m.group('hw')),
                                 start_offset=int(m.group("logstart")))
