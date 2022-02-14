@@ -256,6 +256,15 @@ public:
         }
     }
 
+    std::optional<model::offset> get_term_last_offset(model::term_id) const;
+
+    model::term_id get_term(model::offset o) const {
+        return _raft->get_term(o);
+    }
+
+    std::optional<model::offset>
+    get_cloud_term_last_offset(model::term_id term) const;
+
 private:
     friend partition_manager;
     friend replicated_partition_probe;
