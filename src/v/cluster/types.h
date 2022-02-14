@@ -16,6 +16,7 @@
 #include "kafka/types.h"
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
@@ -846,6 +847,16 @@ struct config_update_request final {
 struct config_update_reply {
     errc error;
     cluster::config_version latest_version{config_version_unset};
+};
+
+struct leader_term {
+    leader_term(std::optional<model::node_id> leader, model::term_id term)
+      : leader(leader)
+      , term(term) {}
+
+    std::optional<model::node_id> leader;
+    model::term_id term;
+    friend std::ostream& operator<<(std::ostream&, const leader_term&);
 };
 
 } // namespace cluster
