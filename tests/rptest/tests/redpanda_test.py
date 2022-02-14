@@ -28,8 +28,11 @@ class RedpandaTest(Test):
                  extra_rp_conf=dict(),
                  enable_pp=False,
                  enable_sr=False,
-                 resource_settings=None,
-                 si_settings=None):
+                 **kwargs):
+        """
+        Any trailing keyword arguments are passed through to the
+        RedpandaService constructor.
+        """
         super(RedpandaTest, self).__init__(test_context)
         self.scale = Scale(test_context)
         self.redpanda = RedpandaService(test_context,
@@ -37,8 +40,7 @@ class RedpandaTest(Test):
                                         extra_rp_conf=extra_rp_conf,
                                         enable_pp=enable_pp,
                                         enable_sr=enable_sr,
-                                        resource_settings=resource_settings,
-                                        si_settings=si_settings)
+                                        **kwargs)
         self._client = DefaultClient(self.redpanda)
 
     @property

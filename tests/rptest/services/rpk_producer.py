@@ -1,6 +1,7 @@
 from ducktape.services.background_thread import BackgroundThreadService
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from threading import Event
+from typing import Optional
 
 
 class RpkProducer(BackgroundThreadService):
@@ -12,11 +13,13 @@ class RpkProducer(BackgroundThreadService):
     def __init__(self,
                  context,
                  redpanda,
-                 topic,
-                 msg_size,
-                 msg_count,
-                 acks=None,
-                 printable=False):
+                 topic: str,
+                 msg_size: int,
+                 msg_count: int,
+                 acks: Optional[bool] = None,
+                 printable=False,
+                 quiet: bool = False,
+                 produce_timeout: Optional[int] = None):
         super(RpkProducer, self).__init__(context, num_nodes=1)
         self._redpanda = redpanda
         self._topic = topic
@@ -25,26 +28,42 @@ class RpkProducer(BackgroundThreadService):
         self._acks = acks
         self._printable = printable
         self._stopping = Event()
+        self._quiet = quiet
+
+        if produce_timeout is None:
+            produce_timeout = 10
+        self._produce_timeout = produce_timeout
 
     def _worker(self, _idx, node):
         rpk_binary = self._redpanda.find_binary("rpk")
-        cmd = f"dd if=/dev/urandom bs={self._msg_size} count={self._msg_count}"
+        key_size = 16
+        cmd = f"dd if=/dev/urandom bs={self._msg_size + key_size} count={self._msg_count}"
+
         if self._printable:
             cmd += ' | hexdump -e "1/1 \\"%02x\\""'
 
-        cmd += f" | {rpk_binary} topic --brokers {self._redpanda.brokers()} produce --compression none --key test {self._topic} -f '%V{{{self._msg_size}}}%v'"
+        cmd += f" | {rpk_binary} topic --brokers {self._redpanda.brokers()} produce --compression none {self._topic} -f '%V{{{self._msg_size}}}%K{{{key_size}}}%k%v'"
+
         if self._acks is not None:
             cmd += f" --acks {self._acks}"
 
+        if self._quiet:
+            # Suppress default "Produced to..." output lines by setting output template to empty string
+            cmd += " -o \"\""
+
         self._stopping.clear()
         try:
-            for line in node.account.ssh_capture(cmd, timeout_sec=10):
+            for line in node.account.ssh_capture(
+                    cmd, timeout_sec=self._produce_timeout):
                 self.logger.debug(line.rstrip())
-        except RemoteCommandError as e:
+        except RemoteCommandError:
             if self._stopping.is_set():
                 pass
             else:
                 raise
+
+        self._redpanda.logger.debug(
+            f"Finished sending {self._msg_count} messages")
 
     def stop_node(self, node):
         self._stopping.set()

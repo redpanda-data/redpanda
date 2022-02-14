@@ -170,6 +170,14 @@ class ResourceSettings:
 
         self._nfiles = nfiles
 
+    @property
+    def memory_mb(self):
+        return self._memory_mb
+
+    @property
+    def num_cpus(self):
+        return self._num_cpus
+
     def to_cli(self):
         """
         :return: 2 tuple of strings, first goes before the binary, second goes after it
@@ -281,15 +289,21 @@ class RedpandaService(Service):
                  enable_pp=False,
                  enable_sr=False,
                  resource_settings=None,
-                 si_settings=None):
+                 si_settings=None,
+                 log_level: Optional[str] = None):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
         self._context = context
         self._enable_rp = enable_rp
         self._extra_rp_conf = extra_rp_conf or dict()
         self._enable_pp = enable_pp
         self._enable_sr = enable_sr
-        self._log_level = self._context.globals.get(self.LOG_LEVEL_KEY,
-                                                    self.DEFAULT_LOG_LEVEL)
+
+        if log_level is None:
+            self._log_level = self._context.globals.get(
+                self.LOG_LEVEL_KEY, self.DEFAULT_LOG_LEVEL)
+        else:
+            self._log_level = log_level
+
         self._admin = Admin(self)
         self._started = []
         self._security_config = dict()
@@ -452,6 +466,26 @@ class RedpandaService(Service):
 
         # Fall through: no problematic lines found
         return True
+
+    def lsof_node(self, node: ClusterNode):
+        """
+        Get the list of open files for a running node
+        :return: yields strings
+        """
+        first = True
+        for line in node.account.ssh_capture(
+                f"lsof -nP -p {self.redpanda_pid(node)}"):
+            if first:
+                # First line is a header, skip it
+                first = False
+                continue
+            try:
+                filename = line.split()[-1]
+            except IndexError:
+                # Malformed line
+                pass
+            else:
+                yield filename
 
     def start_node(self, node, override_cfg_params=None, timeout=None):
         """
