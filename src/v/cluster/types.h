@@ -16,6 +16,7 @@
 #include "kafka/types.h"
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
@@ -789,6 +790,37 @@ struct config_status_request {
 
 struct config_status_reply {
     errc error;
+};
+
+struct create_non_replicable_topics_request {
+    static constexpr int8_t current_version = 1;
+    std::vector<non_replicable_topic> topics;
+    model::timeout_clock::duration timeout;
+};
+
+struct create_non_replicable_topics_reply {
+    static constexpr int8_t current_version = 1;
+    std::vector<topic_result> results;
+};
+
+struct config_update_request final {
+    std::vector<std::pair<ss::sstring, ss::sstring>> upsert;
+    std::vector<ss::sstring> remove;
+};
+
+struct config_update_reply {
+    errc error;
+    cluster::config_version latest_version{config_version_unset};
+};
+
+struct leader_term {
+    leader_term(std::optional<model::node_id> leader, model::term_id term)
+      : leader(leader)
+      , term(term) {}
+
+    std::optional<model::node_id> leader;
+    model::term_id term;
+    friend std::ostream& operator<<(std::ostream&, const leader_term&);
 };
 
 } // namespace cluster

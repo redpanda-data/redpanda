@@ -355,6 +355,11 @@ operator<<(std::ostream& o, const custom_partition_assignment& cas) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const leader_term& lt) {
+    fmt::print(o, "{{leader: {}, term: {}}}", lt.leader, lt.term);
+    return o;
+}
+
 } // namespace cluster
 
 namespace reflection {
