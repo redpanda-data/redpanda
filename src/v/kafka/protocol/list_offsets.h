@@ -76,26 +76,34 @@ struct list_offsets_response final {
       model::partition_id id,
       error_code error,
       model::timestamp timestamp,
-      model::offset offset) {
+      model::offset offset,
+      leader_epoch leader_epoch) {
         return list_offset_partition_response{
           .partition_index = id,
           .error_code = error,
           .timestamp = timestamp,
           .offset = offset,
+          .leader_epoch = leader_epoch,
         };
     }
 
     static list_offset_partition_response make_partition(
       model::partition_id id,
       model::timestamp timestamp,
-      model::offset offset) {
-        return make_partition(id, error_code::none, timestamp, offset);
+      model::offset offset,
+      kafka::leader_epoch leader_epoch) {
+        return make_partition(
+          id, error_code::none, timestamp, offset, leader_epoch);
     }
 
     static list_offset_partition_response
     make_partition(model::partition_id id, error_code error) {
         return make_partition(
-          id, error, model::timestamp(-1), model::offset(-1));
+          id,
+          error,
+          model::timestamp(-1),
+          model::offset(-1),
+          invalid_leader_epoch);
     }
 
     void encode(response_writer& writer, api_version version) {

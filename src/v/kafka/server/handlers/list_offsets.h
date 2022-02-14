@@ -14,6 +14,6 @@
 
 namespace kafka {
 
-using list_offsets_handler = handler<list_offsets_api, 0, 3>;
+using list_offsets_handler = handler<list_offsets_api, 0, 4>;
 
 }
