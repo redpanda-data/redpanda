@@ -224,6 +224,17 @@ public:
             auto& members = app.controller->get_members_table();
             return members.local().contains(id);
         });
+
+        // Wait for feature manager to be initialized: this writes to
+        // the raft0 log on first startup, so must be complete before
+        // tests start (tests use raft0 offsets to guess at the revision
+        // ids of partitions they create)
+        co_await tests::cooperative_spin_wait_with_timeout(
+          10s, [this]() -> bool {
+              auto& feature_table = app.controller->get_feature_table().local();
+              return feature_table.get_active_version()
+                     != cluster::invalid_version;
+          });
     }
 
     ss::future<kafka::client::transport> make_kafka_client() {
