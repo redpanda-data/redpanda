@@ -30,4 +30,4 @@ namespace rpc {
 /// the one that exists. This path is then passed to GnuTLS.
 ss::future<std::optional<ss::sstring>> find_ca_file();
 
-} // namespace net
+} // namespace rpc
