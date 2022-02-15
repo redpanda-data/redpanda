@@ -169,9 +169,20 @@ ss::future<> config_manager::do_bootstrap() {
     _frontend.local().set_next_version(config_version{1});
 
     try {
-        co_await _frontend.local().patch(
+        auto patch_result = co_await _frontend.local().patch(
           std::move(update),
           model::timeout_clock::now() + bootstrap_write_timeout);
+        if (patch_result.errc) {
+            vlog(
+              clusterlog.warn,
+              "Failed to write bootstrap delta: {}",
+              patch_result.errc.message());
+        } else {
+            vlog(
+              clusterlog.debug,
+              "Wrote bootstrap config version {}",
+              patch_result.version);
+        }
     } catch (...) {
         // On errors, just drop out: start_bootstrap will go around
         // its loop again.
