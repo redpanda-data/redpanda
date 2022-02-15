@@ -24,7 +24,8 @@ config_frontend::config_frontend(
   : _stm(stm)
   , _connections(connections)
   , _leaders(leaders)
-  , _as(as) {}
+  , _as(as)
+  , _self(config::node().node_id()) {}
 
 ss::future<> config_frontend::start() { return ss::now(); }
 ss::future<> config_frontend::stop() { return ss::now(); }
@@ -40,13 +41,12 @@ ss::future<config_frontend::patch_result> config_frontend::patch(
         co_return patch_result{
           .errc = errc::no_leader_controller, .version = config_version_unset};
     }
-    auto self = config::node().node_id();
-    if (leader == self) {
+    if (leader == _self) {
         co_return co_await do_patch(std::move(update), timeout);
     } else {
         auto res = co_await _connections.local()
                      .with_node_client<cluster::controller_client_protocol>(
-                       self,
+                       _self,
                        ss::this_shard_id(),
                        *leader,
                        timeout,
