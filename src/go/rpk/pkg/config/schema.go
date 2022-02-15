@@ -43,15 +43,29 @@ func (c *Config) File() *Config {
 
 type RedpandaConfig struct {
 	Directory                            string                 `yaml:"data_directory" mapstructure:"data_directory" json:"dataDirectory"`
+	Id                                   int                    `yaml:"node_id" mapstructure:"node_id" json:"id"`
+	Rack                                 string                 `yaml:"rack,omitempty" mapstructure:"rack" json:"rack"`
+	SeedServers                          []SeedServer           `yaml:"seed_servers" mapstructure:"seed_servers" json:"seedServers"`
+
 	RPCServer                            SocketAddress          `yaml:"rpc_server" mapstructure:"rpc_server" json:"rpcServer"`
-	AdvertisedRPCAPI                     *SocketAddress         `yaml:"advertised_rpc_api,omitempty" mapstructure:"advertised_rpc_api,omitempty" json:"advertisedRpcApi,omitempty"`
+	RPCServerTLS                         []ServerTLS            `yaml:"rpc_server_tls,omitempty" mapstructure:"rpc_server_tls,omitempty" json:"rpcServerTls"`
+
 	KafkaApi                             []NamedSocketAddress   `yaml:"kafka_api" mapstructure:"kafka_api" json:"kafkaApi"`
-	AdvertisedKafkaApi                   []NamedSocketAddress   `yaml:"advertised_kafka_api,omitempty" mapstructure:"advertised_kafka_api,omitempty" json:"advertisedKafkaApi,omitempty"`
 	KafkaApiTLS                          []ServerTLS            `yaml:"kafka_api_tls,omitempty" mapstructure:"kafka_api_tls,omitempty" json:"kafkaApiTls"`
+
 	AdminApi                             []NamedSocketAddress   `yaml:"admin" mapstructure:"admin" json:"admin"`
 	AdminApiTLS                          []ServerTLS            `yaml:"admin_api_tls,omitempty" mapstructure:"admin_api_tls,omitempty" json:"adminApiTls"`
-	Id                                   int                    `yaml:"node_id" mapstructure:"node_id" json:"id"`
-	SeedServers                          []SeedServer           `yaml:"seed_servers" mapstructure:"seed_servers" json:"seedServers"`
+
+	CoprocSupervisorServer               SocketAddress          `yaml:"coproc_supervisor_server,omitempty" mapstructure:"coproc_supervisor_server" json:"coprocSupervisorServer"`
+
+	AdminAPIDocDir                       string                 `yaml:"admin_api_doc_dir,omitempty" mapstructure:"admin_api_doc_dir" json:"adminApiDocDir"`
+	DashboardDir                         string                 `yaml:"dashboard_dir,omitempty" mapstructure:"dashboard_dir" json:"dashboardDir"`
+
+	CloudStorageCacheDirectory           string                 `yaml:"cloud_storage_cache_directory,omitempty" mapstructure:"cloud_storage_cache_directory" json:"CloudStorageCacheDirectory"`
+
+	AdvertisedRPCAPI                     *SocketAddress         `yaml:"advertised_rpc_api,omitempty" mapstructure:"advertised_rpc_api,omitempty" json:"advertisedRpcApi,omitempty"`
+	AdvertisedKafkaApi                   []NamedSocketAddress   `yaml:"advertised_kafka_api,omitempty" mapstructure:"advertised_kafka_api,omitempty" json:"advertisedKafkaApi,omitempty"`
+
 	Other                                map[string]interface{} `yaml:",inline" mapstructure:",remain"`
 }
 
