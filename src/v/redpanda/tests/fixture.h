@@ -233,9 +233,24 @@ public:
         // ids of partitions they create)
         co_await tests::cooperative_spin_wait_with_timeout(
           10s, [this]() -> bool {
+              // Await feature manager bootstrap
               auto& feature_table = app.controller->get_feature_table().local();
-              return feature_table.get_active_version()
-                     != cluster::invalid_version;
+              if (
+                feature_table.get_active_version()
+                == cluster::invalid_version) {
+                  return false;
+              }
+
+              // Await config manager bootstrap
+              auto& config_mgr = app.controller->get_config_manager().local();
+              if (config_mgr.get_version() == cluster::config_version_unset) {
+                  return false;
+              }
+
+              // Await initial config status messages from all nodes
+              auto& members = app.controller->get_members_table().local();
+              return config_mgr.get_status().size()
+                     == members.all_brokers().size();
           });
     }
 
