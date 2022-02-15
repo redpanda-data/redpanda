@@ -12,7 +12,6 @@
 
 #include "bytes/iobuf_istreambuf.h"
 #include "bytes/iobuf_ostreambuf.h"
-#include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/types.h"
 #include "hashing/xx.h"
 #include "json/writer.h"
@@ -212,21 +211,5 @@ remote_manifest_path topic_manifest::get_manifest_path() const {
     vassert(_topic_config, "Topic config is not set");
     return get_topic_manifest_path(
       _topic_config->tp_ns.ns, _topic_config->tp_ns.tp);
-}
-
-std::vector<remote_manifest_path>
-topic_manifest::get_partition_manifests() const {
-    std::vector<remote_manifest_path> result;
-    const int32_t npart = _topic_config->partition_count;
-    result.reserve(npart);
-    for (int32_t i = 0; i < npart; i++) {
-        model::ntp ntp(
-          _topic_config->tp_ns.ns(),
-          _topic_config->tp_ns.tp(),
-          model::partition_id(i));
-        auto path = generate_partition_manifest_path(ntp, _rev);
-        result.emplace_back(std::move(path));
-    }
-    return result;
 }
 } // namespace cloud_storage

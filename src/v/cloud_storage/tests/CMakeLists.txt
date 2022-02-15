@@ -4,6 +4,7 @@ rp_test(
   SOURCES
     directory_walker_test.cc
     partition_manifest_test.cc
+    topic_manifest_test.cc
     s3_imposter.cc
     remote_test.cc
     cache_test.cc

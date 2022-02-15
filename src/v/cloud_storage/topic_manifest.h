@@ -43,11 +43,8 @@ public:
     /// \param out output stream that should be used to output the json
     void serialize(std::ostream& out) const;
 
-    /// Return all possible manifest locations
-    std::vector<remote_manifest_path> get_partition_manifests() const;
-
     manifest_type get_manifest_type() const override {
-        return manifest_type::partition;
+        return manifest_type::topic;
     };
 
     model::initial_revision_id get_revision() const noexcept { return _rev; }
