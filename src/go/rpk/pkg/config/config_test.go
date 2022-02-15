@@ -30,7 +30,7 @@ func getValidConfig() *Config {
 			SocketAddress{"127.0.0.1", 33146},
 		},
 	}
-	conf.Redpanda.DeveloperMode = false
+	conf.Redpanda.Other["developer_mode"] = false
 	conf.Rpk = RpkConfig{
 		EnableUsageStats:         true,
 		TuneNetwork:              true,
@@ -378,7 +378,7 @@ func TestDefault(t *testing.T) {
 			}},
 			Id:            0,
 			SeedServers:   []SeedServer{},
-			DeveloperMode: true,
+			Other: map[string]interface{}{"developer_mode" : true},
 		},
 		Rpk: RpkConfig{
 			CoredumpDir: "/var/lib/redpanda/coredump",
@@ -1053,7 +1053,7 @@ schema_registry: {}
 			conf: func() *Config {
 				c := getValidConfig()
 				size := 536870912
-				c.Redpanda.LogSegmentSize = &size
+				c.Redpanda.Other["log_segment_size"] = &size
 				return c
 			},
 			wantErr: false,
@@ -1337,114 +1337,6 @@ schema_registry: {}
 `,
 		},
 		{
-			name: "shall write config with group_topic_partitions value",
-			conf: func() *Config {
-				c := getValidConfig()
-				val := 16
-				c.Redpanda.GroupTopicPartitions = &val
-				return c
-			},
-			wantErr: false,
-			expected: `config_file: /etc/redpanda/redpanda.yaml
-pandaproxy: {}
-redpanda:
-  admin:
-  - address: 0.0.0.0
-    port: 9644
-  data_directory: /var/lib/redpanda/data
-  developer_mode: false
-  group_topic_partitions: 16
-  kafka_api:
-  - address: 0.0.0.0
-    port: 9092
-  node_id: 0
-  rpc_server:
-    address: 0.0.0.0
-    port: 33145
-  seed_servers:
-  - host:
-      address: 127.0.0.1
-      port: 33145
-  - host:
-      address: 127.0.0.1
-      port: 33146
-rpk:
-  coredump_dir: /var/lib/redpanda/coredumps
-  enable_memory_locking: true
-  enable_usage_stats: true
-  overprovisioned: false
-  tune_aio_events: true
-  tune_ballast_file: true
-  tune_clocksource: true
-  tune_coredump: true
-  tune_cpu: true
-  tune_disk_irq: true
-  tune_disk_nomerges: true
-  tune_disk_scheduler: true
-  tune_disk_write_cache: true
-  tune_fstrim: true
-  tune_network: true
-  tune_swappiness: true
-  tune_transparent_hugepages: true
-  well_known_io: vendor:vm:storage
-schema_registry: {}
-`,
-		},
-		{
-			name: "shall write config with SASL enabled",
-			conf: func() *Config {
-				c := getValidConfig()
-				enabled := true
-				c.Redpanda.EnableSASL = &enabled
-				return c
-			},
-			wantErr: false,
-			expected: `config_file: /etc/redpanda/redpanda.yaml
-pandaproxy: {}
-redpanda:
-  admin:
-  - address: 0.0.0.0
-    port: 9644
-  data_directory: /var/lib/redpanda/data
-  developer_mode: false
-  enable_sasl: true
-  kafka_api:
-  - address: 0.0.0.0
-    port: 9092
-  node_id: 0
-  rpc_server:
-    address: 0.0.0.0
-    port: 33145
-  seed_servers:
-  - host:
-      address: 127.0.0.1
-      port: 33145
-  - host:
-      address: 127.0.0.1
-      port: 33146
-rpk:
-  coredump_dir: /var/lib/redpanda/coredumps
-  enable_memory_locking: true
-  enable_usage_stats: true
-  overprovisioned: false
-  tune_aio_events: true
-  tune_ballast_file: true
-  tune_clocksource: true
-  tune_coredump: true
-  tune_cpu: true
-  tune_disk_irq: true
-  tune_disk_nomerges: true
-  tune_disk_scheduler: true
-  tune_disk_write_cache: true
-  tune_fstrim: true
-  tune_network: true
-  tune_swappiness: true
-  tune_transparent_hugepages: true
-  well_known_io: vendor:vm:storage
-schema_registry: {}
-`,
-		},
-		{
 			name: "shall write config with pandproxy client SASL mechanism and SCRAM credentials",
 			conf: func() *Config {
 				c := getValidConfig()
@@ -1485,148 +1377,6 @@ redpanda:
   - host:
       address: 127.0.0.1
       port: 33146
-rpk:
-  coredump_dir: /var/lib/redpanda/coredumps
-  enable_memory_locking: true
-  enable_usage_stats: true
-  overprovisioned: false
-  tune_aio_events: true
-  tune_ballast_file: true
-  tune_clocksource: true
-  tune_coredump: true
-  tune_cpu: true
-  tune_disk_irq: true
-  tune_disk_nomerges: true
-  tune_disk_scheduler: true
-  tune_disk_write_cache: true
-  tune_fstrim: true
-  tune_network: true
-  tune_swappiness: true
-  tune_transparent_hugepages: true
-  well_known_io: vendor:vm:storage
-schema_registry: {}
-`,
-		},
-		{
-			name: "shall write config with archival configuration",
-			conf: func() *Config {
-				c := getValidConfig()
-				enabled := true
-				access := "access"
-				bucket := "bucket"
-				region := "region"
-				secret := "secret"
-				interval := 20000
-				conns := 4
-				endpoint := "http"
-				tls := true
-				port := 100
-				trustfile := "trust"
-				c.Redpanda.CloudStorageEnabled = &enabled
-				c.Redpanda.CloudStorageAccessKey = &access
-				c.Redpanda.CloudStorageBucket = &bucket
-				c.Redpanda.CloudStorageRegion = &region
-				c.Redpanda.CloudStorageSecretKey = &secret
-				c.Redpanda.CloudStorageReconciliationIntervalMs = &interval
-				c.Redpanda.CloudStorageMaxConnections = &conns
-				c.Redpanda.CloudStorageApiEndpoint = &endpoint
-				c.Redpanda.CloudStorageDisableTls = &tls
-				c.Redpanda.CloudStorageApiEndpointPort = &port
-				c.Redpanda.CloudStorageTrustFile = &trustfile
-				return c
-			},
-			wantErr: false,
-			expected: `config_file: /etc/redpanda/redpanda.yaml
-pandaproxy: {}
-redpanda:
-  admin:
-  - address: 0.0.0.0
-    port: 9644
-  cloud_storage_access_key: access
-  cloud_storage_api_endpoint: http
-  cloud_storage_api_endpoint_port: 100
-  cloud_storage_bucket: bucket
-  cloud_storage_disable_tls: true
-  cloud_storage_enabled: true
-  cloud_storage_max_connections: 4
-  cloud_storage_reconciliation_interval_ms: 20000
-  cloud_storage_region: region
-  cloud_storage_secret_key: secret
-  cloud_storage_trust_file: trust
-  data_directory: /var/lib/redpanda/data
-  developer_mode: false
-  kafka_api:
-  - address: 0.0.0.0
-    port: 9092
-  node_id: 0
-  rpc_server:
-    address: 0.0.0.0
-    port: 33145
-  seed_servers:
-  - host:
-      address: 127.0.0.1
-      port: 33145
-  - host:
-      address: 127.0.0.1
-      port: 33146
-rpk:
-  coredump_dir: /var/lib/redpanda/coredumps
-  enable_memory_locking: true
-  enable_usage_stats: true
-  overprovisioned: false
-  tune_aio_events: true
-  tune_ballast_file: true
-  tune_clocksource: true
-  tune_coredump: true
-  tune_cpu: true
-  tune_disk_irq: true
-  tune_disk_nomerges: true
-  tune_disk_scheduler: true
-  tune_disk_write_cache: true
-  tune_fstrim: true
-  tune_network: true
-  tune_swappiness: true
-  tune_transparent_hugepages: true
-  well_known_io: vendor:vm:storage
-schema_registry: {}
-`,
-		},
-		{
-			name: "shall write a valid config file with two superusers",
-			conf: func() *Config {
-				c := getValidConfig()
-				c.Redpanda.Superusers = []string{
-					"jerry",
-					"garcia",
-				}
-				return c
-			},
-			wantErr: false,
-			expected: `config_file: /etc/redpanda/redpanda.yaml
-pandaproxy: {}
-redpanda:
-  admin:
-  - address: 0.0.0.0
-    port: 9644
-  data_directory: /var/lib/redpanda/data
-  developer_mode: false
-  kafka_api:
-  - address: 0.0.0.0
-    port: 9092
-  node_id: 0
-  rpc_server:
-    address: 0.0.0.0
-    port: 33145
-  seed_servers:
-  - host:
-      address: 127.0.0.1
-      port: 33145
-  - host:
-      address: 127.0.0.1
-      port: 33146
-  superusers:
-  - jerry
-  - garcia
 rpk:
   coredump_dir: /var/lib/redpanda/coredumps
   enable_memory_locking: true
@@ -1907,7 +1657,7 @@ func TestSetMode(t *testing.T) {
 		return func() *Config {
 			conf := Default()
 			val := mode == ModeProd
-			conf.Redpanda.DeveloperMode = !val
+			conf.Redpanda.Other["developer_mode"] = !val
 			conf.Rpk = RpkConfig{
 				TuneNetwork:        val,
 				TuneDiskScheduler:  val,

@@ -159,7 +159,7 @@ func SetMode(mode string, conf *Config) (*Config, error) {
 }
 
 func setDevelopment(conf *Config) *Config {
-	conf.Redpanda.DeveloperMode = true
+	conf.Redpanda.Other["developer_mode"] = true
 	// Defaults to setting all tuners to false
 	conf.Rpk = RpkConfig{
 		TLS:                  conf.Rpk.TLS,
@@ -178,7 +178,7 @@ func setDevelopment(conf *Config) *Config {
 }
 
 func setProduction(conf *Config) *Config {
-	conf.Redpanda.DeveloperMode = false
+	conf.Redpanda.Other["developer_mode"] = false
 	conf.Rpk.TuneNetwork = true
 	conf.Rpk.TuneDiskScheduler = true
 	conf.Rpk.TuneNomerges = true

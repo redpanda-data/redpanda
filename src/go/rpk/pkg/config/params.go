@@ -248,7 +248,7 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 				Address: "0.0.0.0",
 				Port:    9644,
 			}}},
-			DeveloperMode: true,
+			Other: map[string]interface{}{"developer_mode": true},
 		},
 		Rpk: RpkConfig{
 			CoredumpDir: "/var/lib/redpanda/coredump",
