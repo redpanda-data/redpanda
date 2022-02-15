@@ -75,6 +75,7 @@ class ManyPartitionsTest(RedpandaTest):
                 # on weaker test nodes.
                 'raft_heartbeat_interval_ms': 450,
                 'raft_heartbeat_timeout_ms': 9000,
+                'election_timeout_ms': 4500,
                 'replicate_append_timeout_ms': 9000,
                 'recovery_append_timeout_ms': 15000,
             },
