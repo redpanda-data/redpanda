@@ -30,7 +30,6 @@ struct admin_server_cfg {
     std::vector<config::endpoint_tls_config> endpoints_tls;
     std::optional<ss::sstring> dashboard_dir;
     ss::sstring admin_api_docs_dir;
-    bool enable_admin_api;
     ss::scheduling_group sg;
 };
 

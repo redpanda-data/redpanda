@@ -354,7 +354,7 @@ class ClusterConfigTest(RedpandaTest):
 
         # Don't change these settings, they prevent the test from subsequently
         # using the cluster
-        exclude_settings = {'enable_sasl', 'enable_admin_api'}
+        exclude_settings = {'enable_sasl'}
 
         initial_config = self.admin.get_cluster_config()
 
