@@ -60,6 +60,9 @@ struct configuration final : public config_store {
     bounded_property<std::optional<std::size_t>> topic_memory_per_partition;
     bounded_property<std::optional<int32_t>> topic_fds_per_partition;
 
+    // Admin API
+    property<bool> admin_api_require_auth;
+
     // Raft
     deprecated_property seed_server_meta_topic_partitions;
     bounded_property<std::chrono::milliseconds> raft_heartbeat_interval_ms;

@@ -147,6 +147,13 @@ configuration::configuration()
         .max = 1000 // A system with 1M ulimit should be allowed to create at
                     // least 1000 partitions
       })
+  , admin_api_require_auth(
+      *this,
+      "admin_api_require_auth",
+      "Whether admin API clients must provide HTTP Basic authentication "
+      "headers",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      false)
   , seed_server_meta_topic_partitions(
       *this, "seed_server_meta_topic_partitions")
   , raft_heartbeat_interval_ms(
