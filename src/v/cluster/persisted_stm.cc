@@ -178,6 +178,7 @@ ss::future<bool> persisted_stm::do_sync(
   model::term_id term) {
     const auto committed = _c->committed_offset();
     const auto ntp = _c->ntp();
+    _c->events().notify_commit_index();
 
     if (offset > committed) {
         try {
