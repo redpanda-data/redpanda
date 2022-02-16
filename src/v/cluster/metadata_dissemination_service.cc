@@ -41,6 +41,7 @@
 #include <seastar/core/sleep.hh>
 
 #include <absl/container/flat_hash_set.h>
+#include <absl/container/node_hash_map.h>
 
 #include <chrono>
 #include <exception>
@@ -357,27 +358,90 @@ ss::future<> metadata_dissemination_service::dispatch_disseminate_leadership() {
 
 ss::future<> metadata_dissemination_service::update_leaders_with_health_report(
   cluster_health_report report) {
+    struct leader {
+        model::term_id term;
+        std::optional<model::node_id> leader;
+    };
+
+    // collect reports for each NTP
+    absl::node_hash_map<model::ntp, std::vector<leader>> ntp_leaders;
     for (auto& node_report : report.node_reports) {
-        co_await _leaders.invoke_on_all(
-          [node_report](partition_leaders_table& leaders) {
-              for (auto& tp : node_report.topics) {
-                  for (auto& p : tp.partitions) {
-                      // Nodes may report a null leader if they're out of
-                      // touch, even if the leader is actually still up.  Only
-                      // trust leadership updates from health reports if
-                      // they're non-null (non-null updates are safe to apply
-                      // in any order because update_partition leader will
-                      // ignore old terms)
-                      if (p.leader_id.has_value()) {
-                          leaders.update_partition_leader(
-                            model::ntp(tp.tp_ns.ns, tp.tp_ns.tp, p.id),
-                            p.term,
-                            p.leader_id);
-                      }
-                  }
-              }
-          });
+        for (auto& tp : node_report.topics) {
+            for (auto& p : tp.partitions) {
+                const model::ntp ntp(tp.tp_ns.ns, tp.tp_ns.tp, p.id);
+
+                ntp_leaders[ntp].push_back(
+                  leader{.term = p.term, .leader = p.leader_id});
+            }
+        }
     }
+
+    struct leader_update {
+        model::ntp ntp;
+        model::term_id term;
+        std::optional<model::node_id> leader_id;
+        partition_leaders_table::force_leader_update force_update
+          = partition_leaders_table::force_leader_update::no;
+    };
+    std::vector<leader_update> effective_updates;
+    effective_updates.reserve(ntp_leaders.size());
+    /**
+     * We use a heuristic here to deal with the partitions that were deleted and
+     * recreated. The heuristic is based on the assumption that majority of
+     * nodes is always right about leadership even if the term is smaller than
+     * the one in leaders table. We use the heuristic as a simple solution to
+     * the proble that we do not deliver partition revision_id with leadership
+     * information this way we are unable to identify if the update is related
+     * with current or previous ntp instance.
+     *
+     * TODO: remove this heuristic as soon as we will deliver revision id with
+     * leadership updates.
+     */
+    for (auto& [ntp, leaders] : ntp_leaders) {
+        std::sort(
+          leaders.begin(),
+          leaders.end(),
+          [](const leader& lhs, const leader& rhs) {
+              return lhs.term < rhs.term;
+          });
+        leader_update current_update{
+          .ntp = ntp,
+          .term = leaders.begin()->term,
+          .leader_id = leaders.begin()->leader,
+        };
+        const size_t majority = leaders.size() / 2 + 1;
+        size_t terms_in_agreement = 0;
+        for (auto& l : leaders) {
+            if (
+              l.term == current_update.term
+              && l.leader == current_update.leader_id) {
+                terms_in_agreement++;
+            }
+        }
+        current_update.force_update
+          = partition_leaders_table::force_leader_update(
+            terms_in_agreement >= majority);
+        effective_updates.push_back(std::move(current_update));
+    }
+
+    co_await _leaders.invoke_on_all(
+      [effective_updates](partition_leaders_table& leaders) {
+          for (auto& update : effective_updates) {
+              // Nodes may report a null leader if they're out of
+              // touch, even if the leader is actually still up. Only
+              // trust leadership updates from health reports if
+              // they're non-null (non-null updates are safe to apply
+              // in any order because update_partition leader will
+              // ignore old terms)
+              if (update.leader_id.has_value()) {
+                  leaders.update_partition_leader(
+                    update.ntp,
+                    update.term,
+                    update.leader_id,
+                    update.force_update);
+              }
+          }
+      });
 }
 
 ss::future<> metadata_dissemination_service::dispatch_one_update(
