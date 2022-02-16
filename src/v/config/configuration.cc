@@ -175,12 +175,7 @@ configuration::configuration()
   , max_version(*this, "max_version")
 
   , use_scheduling_groups(*this, "use_scheduling_groups")
-  , enable_admin_api(
-      *this,
-      "enable_admin_api",
-      "Enable the admin API",
-      base_property::metadata{},
-      true)
+  , enable_admin_api(*this, "enable_admin_api")
   , default_num_windows(
       *this,
       "default_num_windows",

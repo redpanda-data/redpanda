@@ -69,7 +69,7 @@ struct configuration final : public config_store {
     deprecated_property max_version;
     // Kafka
     deprecated_property use_scheduling_groups;
-    property<bool> enable_admin_api;
+    deprecated_property enable_admin_api;
     bounded_property<int16_t> default_num_windows;
     bounded_property<std::chrono::milliseconds> default_window_sec;
     property<std::chrono::milliseconds> quota_manager_gc_sec;
