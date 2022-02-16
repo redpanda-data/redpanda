@@ -42,6 +42,10 @@ type HttpError struct {
 	Response *http.Response
 	Body     []byte
 }
+type BasicCredentials struct {
+	Username string
+	Password string
+}
 
 // AdminAPI is a client to interact with Redpanda's admin server.
 type AdminAPI struct {
@@ -50,7 +54,16 @@ type AdminAPI struct {
 	brokerIdToUrls      map[int]string
 	retryClient         *pester.Client
 	oneshotClient       *http.Client
+	basicCredentials    BasicCredentials
 	tlsConfig           *tls.Config
+}
+
+func getBasicCredentials(cfg *config.Config) BasicCredentials {
+	if cfg.Rpk.KafkaApi.SASL != nil {
+		return BasicCredentials{Username: cfg.Rpk.KafkaApi.SASL.User, Password: cfg.Rpk.KafkaApi.SASL.Password}
+	} else {
+		return BasicCredentials{Username: "", Password: ""}
+	}
 }
 
 // NewClient returns an AdminAPI client that talks to each of the addresses in
@@ -62,7 +75,7 @@ func NewClient(fs afero.Fs, cfg *config.Config) (*AdminAPI, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unable to create admin api tls config: %v", err)
 	}
-	return NewAdminAPI(addrs, tc)
+	return NewAdminAPI(addrs, getBasicCredentials(cfg), tc)
 }
 
 // NewHostClient returns an AdminAPI that talks to the given host, which is
@@ -92,14 +105,18 @@ func NewHostClient(
 		addrs = []string{host} // trust input is hostname (validate below)
 	}
 
-	return NewAdminAPI(addrs, tc)
+	return NewAdminAPI(addrs, getBasicCredentials(cfg), tc)
 }
 
-func NewAdminAPI(urls []string, tlsConfig *tls.Config) (*AdminAPI, error) {
-	return newAdminAPI(urls, tlsConfig)
+func NewAdminAPI(
+	urls []string, creds BasicCredentials, tlsConfig *tls.Config,
+) (*AdminAPI, error) {
+	return newAdminAPI(urls, creds, tlsConfig)
 }
 
-func newAdminAPI(urls []string, tlsConfig *tls.Config) (*AdminAPI, error) {
+func newAdminAPI(
+	urls []string, creds BasicCredentials, tlsConfig *tls.Config,
+) (*AdminAPI, error) {
 	// General purpose backoff, includes 503s and other errors
 	const retryBackoffMs = 1500
 
@@ -135,11 +152,12 @@ func newAdminAPI(urls []string, tlsConfig *tls.Config) (*AdminAPI, error) {
 	client.Timeout = 10 * time.Second
 
 	a := &AdminAPI{
-		urls:           make([]string, len(urls)),
-		retryClient:    client,
-		oneshotClient:  &http.Client{Timeout: 10 * time.Second},
-		tlsConfig:      tlsConfig,
-		brokerIdToUrls: make(map[int]string),
+		urls:             make([]string, len(urls)),
+		retryClient:      client,
+		oneshotClient:    &http.Client{Timeout: 10 * time.Second},
+		basicCredentials: creds,
+		tlsConfig:        tlsConfig,
+		brokerIdToUrls:   make(map[int]string),
 	}
 	if tlsConfig != nil {
 		a.retryClient.Transport = &http.Transport{TLSClientConfig: tlsConfig}
@@ -168,7 +186,7 @@ func newAdminAPI(urls []string, tlsConfig *tls.Config) (*AdminAPI, error) {
 }
 
 func (a *AdminAPI) newAdminForSingleHost(host string) (*AdminAPI, error) {
-	return newAdminAPI([]string{host}, a.tlsConfig)
+	return newAdminAPI([]string{host}, a.basicCredentials, a.tlsConfig)
 }
 
 func (a *AdminAPI) urlsWithPath(path string) []string {
@@ -489,6 +507,10 @@ func (a *AdminAPI) sendAndReceive(
 	req, err := http.NewRequestWithContext(ctx, method, url, r)
 	if err != nil {
 		return nil, err
+	}
+
+	if a.basicCredentials.Username != "" {
+		req.SetBasicAuth(a.basicCredentials.Username, a.basicCredentials.Password)
 	}
 
 	const applicationJson = "application/json"
