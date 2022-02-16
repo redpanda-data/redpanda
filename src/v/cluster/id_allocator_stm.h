@@ -97,6 +97,7 @@ private:
 
     ss::future<> apply(model::record_batch) override;
 
+    ss::future<> write_snapshot();
     ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) override;
     ss::future<stm_snapshot> take_snapshot() override;
     ss::future<> handle_eviction() override;
@@ -125,6 +126,8 @@ private:
     int64_t _curr_id{0};
     int64_t _curr_batch{0};
     int64_t _state{0};
+
+    bool _is_writing_snapshot{false};
 };
 
 } // namespace cluster
