@@ -12,6 +12,7 @@ v_cc_library(
   DEPS
     Seastar::seastar
     absl::node_hash_map
+    v::config
   )
 
 add_subdirectory(tests)

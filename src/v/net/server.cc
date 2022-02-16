@@ -20,6 +20,7 @@
 #include "vlog.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/loop.hh>
 #include <seastar/core/metrics.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/net/api.hh>
@@ -42,8 +43,26 @@ void server::start() {
         setup_metrics();
         _probe.setup_metrics(_metrics, cfg.name.c_str());
     }
-    if (cfg.conection_rate_info) {
-        _connection_rates.emplace(cfg.conection_rate_info.value());
+
+    if (cfg.connection_rate_bindings) {
+        connection_rate_bindings.emplace(cfg.connection_rate_bindings.value());
+
+        connection_rate_info info{
+          .max_connection_rate
+          = connection_rate_bindings.value().config_general_rate(),
+          .overrides
+          = connection_rate_bindings.value().config_overrides_rate()};
+
+        _connection_rates.emplace(std::move(info), _conn_gate);
+
+        connection_rate_bindings.value().config_general_rate.watch([this] {
+            _connection_rates->update_general_rate(
+              connection_rate_bindings.value().config_general_rate());
+        });
+        connection_rate_bindings.value().config_overrides_rate.watch([this] {
+            _connection_rates->update_overrides_rate(
+              connection_rate_bindings.value().config_overrides_rate());
+        });
     }
     for (const auto& endpoint : cfg.addrs) {
         ss::server_socket ss;
@@ -137,9 +156,25 @@ ss::future<> server::accept(listener& s) {
                     SOL_SOCKET, SO_SNDBUF, &send_buf, sizeof(send_buf));
               }
 
+              auto name = s.name;
+              if (_connection_rates) {
+                  try {
+                      co_await _connection_rates->maybe_wait(
+                        ar.remote_address.addr());
+                  } catch (const std::exception& e) {
+                      vlog(
+                        rpc::rpclog.trace,
+                        "Timeout while waiting free token for connection rate. "
+                        "addr:{}",
+                        ar.remote_address);
+                      _probe.timeout_waiting_rate_limit();
+                      co_return ss::stop_iteration::no;
+                  }
+              }
+
               auto conn = ss::make_lw_shared<net::connection>(
                 _connections,
-                s.name,
+                name,
                 std::move(ar.connection),
                 ar.remote_address,
                 _probe);
@@ -148,7 +183,7 @@ ss::future<> server::accept(listener& s) {
                 "{} - Incoming connection from {} on \"{}\"",
                 _proto->name(),
                 ar.remote_address,
-                s.name);
+                name);
               if (_conn_gate.is_closed()) {
                   co_await conn->shutdown();
                   throw ss::gate_closed_exception();
