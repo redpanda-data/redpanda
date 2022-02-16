@@ -80,7 +80,8 @@ partition_leaders_table::get_leader(const model::ntp& ntp) const {
 void partition_leaders_table::update_partition_leader(
   const model::ntp& ntp,
   model::term_id term,
-  std::optional<model::node_id> leader_id) {
+  std::optional<model::node_id> leader_id,
+  force_leader_update force_update) {
     auto key = leader_key_view{
       model::topic_namespace_view(ntp), ntp.tp.partition};
     auto it = _leaders.find(key);
@@ -92,7 +93,7 @@ void partition_leaders_table::update_partition_leader(
         it = new_it;
     } else {
         // existing partition
-        if (it->second.update_term > term) {
+        if (it->second.update_term > term && !force_update) {
             // Do nothing if update term is older
             return;
         }
@@ -106,11 +107,12 @@ void partition_leaders_table::update_partition_leader(
     vlog(
       clusterlog.trace,
       "updated partition: {} leader: {{term: {}, current leader: {}, previous "
-      "leader: {}}}",
+      "leader: {}, force update: {}}}",
       ntp,
       it->second.update_term,
       it->second.current_leader,
-      it->second.previous_leader);
+      it->second.previous_leader,
+      force_update);
     // notify waiters if update is setting the leader
     if (!leader_id) {
         return;

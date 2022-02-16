@@ -18,6 +18,7 @@
 #include "utils/expiring_promise.h"
 
 #include <seastar/core/sharded.hh>
+#include <seastar/util/bool_class.hh>
 
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/node_hash_map.h>
@@ -33,6 +34,7 @@ namespace cluster {
 /// received by cluster::metadata_dissemination_service.
 class partition_leaders_table {
 public:
+    using force_leader_update = ss::bool_class<struct force_leader_update_tag>;
     explicit partition_leaders_table(ss::sharded<topic_table>&);
 
     ss::future<> stop();
@@ -78,7 +80,10 @@ public:
     }
 
     void update_partition_leader(
-      const model::ntp&, model::term_id, std::optional<model::node_id>);
+      const model::ntp&,
+      model::term_id,
+      std::optional<model::node_id>,
+      force_leader_update force_update = force_leader_update::no);
 
 private:
     // optimized to reduce number of ntp copies
