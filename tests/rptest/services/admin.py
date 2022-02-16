@@ -25,10 +25,16 @@ class Admin:
     value is a decoded dict of the JSON payload, for other requests
     the successful HTTP response object is returned.
     """
-    def __init__(self, redpanda, default_node=None, retry_codes=None):
+    def __init__(self,
+                 redpanda,
+                 default_node=None,
+                 retry_codes=None,
+                 auth=None):
         self.redpanda = redpanda
 
         self._session = requests.Session()
+        if auth is not None:
+            self._session.auth = auth
 
         self._default_node = default_node
 
@@ -118,6 +124,9 @@ class Admin:
 
         r.raise_for_status()
         return r
+
+    def get_status_ready(self, node=None):
+        return self._request("GET", "status/ready", node=node).json()
 
     def get_cluster_config(self, node=None):
         return self._request("GET", "config", node=node).json()
@@ -259,6 +268,9 @@ class Admin:
         path = f"security/users/{username}"
 
         self._request("delete", path)
+
+    def list_users(self, node=None):
+        return self._request("get", "security/users", node=node).json()
 
     def partition_transfer_leadership(self, namespace, topic, partition,
                                       target_id):
