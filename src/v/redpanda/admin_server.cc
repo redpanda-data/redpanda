@@ -56,7 +56,6 @@
 #include <seastar/core/with_scheduling_group.hh>
 #include <seastar/http/api_docs.hh>
 #include <seastar/http/httpd.hh>
-#include <seastar/http/json_path.hh>
 
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -298,6 +297,16 @@ ss::future<> admin_server::configure_listeners() {
     }
 }
 
+void admin_server::log_request(
+  const ss::httpd::request& req, const request_auth_result& auth_state) const {
+    vlog(
+      logger.debug,
+      "[{}] {}",
+      auth_state.get_username().size() > 0 ? auth_state.get_username()
+                                           : "_anonymous",
+      req.get_url());
+}
+
 void admin_server::rearm_log_level_timer() {
     _log_level_timer.cancel();
 
@@ -531,41 +540,41 @@ ss::future<> admin_server::throw_on_error(
 }
 
 void admin_server::register_config_routes() {
-    static ss::httpd::handle_function get_config_handler =
-      []([[maybe_unused]] ss::const_req req, ss::reply& reply) {
+    auto get_config_handler_f = new ss::httpd::function_handler{
+      [this](ss::const_req req, ss::reply& reply) {
+          _auth.authenticate(req).require_superuser();
           rapidjson::StringBuffer buf;
           rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
           config::shard_local_cfg().to_json(writer);
 
           reply.set_status(ss::httpd::reply::status_type::ok, buf.GetString());
           return "";
-      };
-
-    auto get_config_handler_f = new ss::httpd::function_handler{
-      get_config_handler, "json"};
+      },
+      "json"};
 
     ss::httpd::config_json::get_config.set(
       _server._routes, get_config_handler_f);
 
-    static ss::httpd::handle_function get_node_config_handler =
-      []([[maybe_unused]] ss::const_req req, ss::reply& reply) {
+    auto get_node_config_handler_f = new ss::httpd::function_handler{
+      [this](ss::const_req req, ss::reply& reply) {
+          _auth.authenticate(req).require_superuser();
           rapidjson::StringBuffer buf;
           rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
           config::node().to_json(writer);
 
           reply.set_status(ss::httpd::reply::status_type::ok, buf.GetString());
           return "";
-      };
-
-    auto get_node_config_handler_f = new ss::httpd::function_handler{
-      get_node_config_handler, "json"};
+      },
+      "json"};
 
     ss::httpd::config_json::get_node_config.set(
       _server._routes, get_node_config_handler_f);
 
-    ss::httpd::config_json::set_log_level.set(
-      _server._routes, [this](ss::const_req req) {
-          auto name = req.param["name"];
+    register_route<superuser>(
+      ss::httpd::config_json::set_log_level,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          auto name = req->param["name"];
 
           // current level: will be used revert after a timeout (optional)
           ss::log_level cur_level;
@@ -580,17 +589,17 @@ void admin_server::register_config_routes() {
           ss::log_level new_level;
           try {
               new_level = boost::lexical_cast<ss::log_level>(
-                req.get_query_param("level"));
+                req->get_query_param("level"));
           } catch (const boost::bad_lexical_cast& e) {
               throw ss::httpd::bad_param_exception(fmt::format(
                 "Cannot set log level for {{{}}}: unknown level {{{}}}",
                 name,
-                req.get_query_param("level")));
+                req->get_query_param("level")));
           }
 
           // how long should the new log level be active
           std::optional<std::chrono::seconds> expires;
-          if (auto e = req.get_query_param("expires"); !e.empty()) {
+          if (auto e = req->get_query_param("expires"); !e.empty()) {
               try {
                   expires = std::chrono::seconds(
                     boost::lexical_cast<unsigned int>(e));
@@ -633,7 +642,7 @@ void admin_server::register_config_routes() {
 
           rearm_log_level_timer();
 
-          return ss::json::json_return_type(ss::json::json_void());
+          co_return ss::json::json_return_type(ss::json::json_void());
       });
 }
 
@@ -661,9 +670,9 @@ void admin_server::register_cluster_config_routes() {
     static thread_local auto cluster_config_validator(
       make_cluster_config_validator());
 
-    ss::httpd::cluster_config_json::get_cluster_config_status.set(
-      _server._routes,
-      [this](std::unique_ptr<ss::httpd::request> req)
+    register_route<superuser>(
+      ss::httpd::cluster_config_json::get_cluster_config_status,
+      [this](std::unique_ptr<ss::httpd::request>)
         -> ss::future<ss::json::json_return_type> {
           std::vector<ss::httpd::cluster_config_json::cluster_config_status>
             res;
@@ -699,8 +708,8 @@ void admin_server::register_cluster_config_routes() {
           co_return ss::json::json_return_type(std::move(res));
       });
 
-    ss::httpd::cluster_config_json::get_cluster_config_schema.set(
-      _server._routes,
+    register_route<publik>(
+      ss::httpd::cluster_config_json::get_cluster_config_schema,
       [](std::unique_ptr<ss::httpd::request> req)
         -> ss::future<ss::json::json_return_type> {
           using property_map = std::map<
@@ -760,9 +769,11 @@ void admin_server::register_cluster_config_routes() {
           co_return ss::json::json_return_type(std::move(response));
       });
 
-    ss::httpd::cluster_config_json::patch_cluster_config.set(
-      _server._routes,
-      [this](std::unique_ptr<ss::httpd::request> req)
+    register_route<superuser, true>(
+      ss::httpd::cluster_config_json::patch_cluster_config,
+      [this](
+        std::unique_ptr<ss::httpd::request> req,
+        request_auth_result const& auth)
         -> ss::future<ss::json::json_return_type> {
           if (
             !config::node().enable_central_config()
@@ -935,8 +946,9 @@ void admin_server::register_cluster_config_routes() {
 }
 
 void admin_server::register_raft_routes() {
-    ss::httpd::raft_json::raft_transfer_leadership.set(
-      _server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
+    register_route<superuser>(
+      ss::httpd::raft_json::raft_transfer_leadership,
+      [this](std::unique_ptr<ss::httpd::request> req) {
           raft::group_id group_id;
           try {
               group_id = raft::group_id(std::stoll(req->param["group_id"]));
@@ -1056,8 +1068,8 @@ static bool match_scram_credential(
 }
 
 void admin_server::register_security_routes() {
-    ss::httpd::security_json::create_user.set(
-      _server._routes,
+    register_route<superuser>(
+      ss::httpd::security_json::create_user,
       [this](std::unique_ptr<ss::httpd::request> req)
         -> ss::future<ss::json::json_return_type> {
           auto doc = parse_json_body(*req);
@@ -1100,8 +1112,8 @@ void admin_server::register_security_routes() {
           co_return ss::json::json_return_type(ss::json::json_void());
       });
 
-    ss::httpd::security_json::delete_user.set(
-      _server._routes,
+    register_route<superuser>(
+      ss::httpd::security_json::delete_user,
       [this](std::unique_ptr<ss::httpd::request> req)
         -> ss::future<ss::json::json_return_type> {
           auto user = security::credential_user(req->param["user"]);
@@ -1119,8 +1131,8 @@ void admin_server::register_security_routes() {
           co_return ss::json::json_return_type(ss::json::json_void());
       });
 
-    ss::httpd::security_json::update_user.set(
-      _server._routes,
+    register_route<superuser>(
+      ss::httpd::security_json::update_user,
       [this](std::unique_ptr<ss::httpd::request> req)
         -> ss::future<ss::json::json_return_type> {
           auto user = security::credential_user(req->param["user"]);
@@ -1137,8 +1149,9 @@ void admin_server::register_security_routes() {
           co_return ss::json::json_return_type(ss::json::json_void());
       });
 
-    ss::httpd::security_json::list_users.set(
-      _server._routes, [this](std::unique_ptr<ss::httpd::request>) {
+    register_route<superuser>(
+      ss::httpd::security_json::list_users,
+      [this](std::unique_ptr<ss::httpd::request>) {
           std::vector<ss::sstring> users;
           for (const auto& [user, _] :
                _controller->get_credential_store().local()) {
@@ -1150,8 +1163,8 @@ void admin_server::register_security_routes() {
 }
 
 void admin_server::register_kafka_routes() {
-    ss::httpd::partition_json::kafka_transfer_leadership.set(
-      _server._routes,
+    register_route<superuser>(
+      ss::httpd::partition_json::kafka_transfer_leadership,
       [this](std::unique_ptr<ss::httpd::request> req)
         -> ss::future<ss::json::json_return_type> {
           auto ns = model::ns(req->param["namespace"]);
@@ -1225,8 +1238,9 @@ void admin_server::register_kafka_routes() {
 }
 
 void admin_server::register_status_routes() {
-    ss::httpd::status_json::ready.set(
-      _server._routes, [this](std::unique_ptr<ss::httpd::request>) {
+    register_route<publik>(
+      ss::httpd::status_json::ready,
+      [this](std::unique_ptr<ss::httpd::request>) {
           std::unordered_map<ss::sstring, ss::sstring> status_map{
             {"status", _ready ? "ready" : "booting"}};
           return ss::make_ready_future<ss::json::json_return_type>(status_map);
@@ -1263,8 +1277,9 @@ model::node_id parse_broker_id(const ss::httpd::request& req) {
 }
 
 void admin_server::register_broker_routes() {
-    ss::httpd::broker_json::get_cluster_view.set(
-      _server._routes, [this](std::unique_ptr<ss::httpd::request>) {
+    register_route<user>(
+      ss::httpd::broker_json::get_cluster_view,
+      [this](std::unique_ptr<ss::httpd::request>) {
           cluster::node_report_filter filter;
 
           return _controller->get_health_monitor()
@@ -1333,8 +1348,9 @@ void admin_server::register_broker_routes() {
             });
       });
 
-    ss::httpd::broker_json::get_brokers.set(
-      _server._routes, [this](std::unique_ptr<ss::httpd::request>) {
+    register_route<user>(
+      ss::httpd::broker_json::get_brokers,
+      [this](std::unique_ptr<ss::httpd::request>) {
           cluster::node_report_filter filter;
 
           return _controller->get_health_monitor()
@@ -1391,8 +1407,9 @@ void admin_server::register_broker_routes() {
             });
       });
 
-    ss::httpd::broker_json::get_broker.set(
-      _server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
+    register_route<user>(
+      ss::httpd::broker_json::get_broker,
+      [this](std::unique_ptr<ss::httpd::request> req) {
           model::node_id id = parse_broker_id(*req);
           auto broker = _metadata_cache.local().get_broker(id);
           if (!broker) {
@@ -1407,8 +1424,8 @@ void admin_server::register_broker_routes() {
           return ss::make_ready_future<ss::json::json_return_type>(ret);
       });
 
-    ss::httpd::broker_json::decommission.set(
-      _server._routes,
+    register_route<superuser>(
+      ss::httpd::broker_json::decommission,
       [this](std::unique_ptr<ss::httpd::request> req)
         -> ss::future<ss::json::json_return_type> {
           model::node_id id = parse_broker_id(*req);
@@ -1420,8 +1437,9 @@ void admin_server::register_broker_routes() {
           co_await throw_on_error(*req, ec, model::controller_ntp, id);
           co_return ss::json::json_void();
       });
-    ss::httpd::broker_json::recommission.set(
-      _server._routes,
+
+    register_route<superuser>(
+      ss::httpd::broker_json::recommission,
       [this](std::unique_ptr<ss::httpd::request> req)
         -> ss::future<ss::json::json_return_type> {
           model::node_id id = parse_broker_id(*req);
@@ -1478,8 +1496,9 @@ void admin_server::register_partition_routes() {
     /*
      * Get a list of partition summaries.
      */
-    ss::httpd::partition_json::get_partitions.set(
-      _server._routes, [this](std::unique_ptr<ss::httpd::request>) {
+    register_route<user>(
+      ss::httpd::partition_json::get_partitions,
+      [this](std::unique_ptr<ss::httpd::request>) {
           using summary = ss::httpd::partition_json::partition_summary;
           auto get_summaries = [](auto& partition_manager, bool materialized) {
               return partition_manager.map_reduce0(
@@ -1519,8 +1538,9 @@ void admin_server::register_partition_routes() {
     /*
      * Get detailed information about a partition.
      */
-    ss::httpd::partition_json::get_partition.set(
-      _server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
+    register_route<user>(
+      ss::httpd::partition_json::get_partition,
+      [this](std::unique_ptr<ss::httpd::request> req) {
           const model::ntp ntp = parse_ntp_from_request(req->param);
           const bool is_controller = ntp == model::controller_ntp;
 
@@ -1603,8 +1623,8 @@ void admin_server::register_partition_routes() {
     /*
      * Get detailed information about transactions for partition.
      */
-    ss::httpd::partition_json::get_transactions.set(
-      _server._routes,
+    register_route<user>(
+      ss::httpd::partition_json::get_transactions,
       [this](std::unique_ptr<ss::httpd::request> req)
         -> ss::future<ss::json::json_return_type> {
           const model::ntp ntp = parse_ntp_from_request(req->param);
@@ -1691,8 +1711,8 @@ void admin_server::register_partition_routes() {
     /*
      * Abort transaction for partition
      */
-    ss::httpd::partition_json::mark_transaction_expired.set(
-      _server._routes,
+    register_route<superuser>(
+      ss::httpd::partition_json::mark_transaction_expired,
       [this](std::unique_ptr<ss::httpd::request> req)
         -> ss::future<ss::json::json_return_type> {
           const model::ntp ntp = parse_ntp_from_request(req->param);
@@ -1766,8 +1786,8 @@ void admin_server::register_partition_routes() {
     static thread_local json_validator set_replicas_validator(
       make_set_replicas_validator());
 
-    ss::httpd::partition_json::set_partition_replicas.set(
-      _server._routes,
+    register_route<superuser>(
+      ss::httpd::partition_json::set_partition_replicas,
       [this](std::unique_ptr<ss::httpd::request> req)
         -> ss::future<ss::json::json_return_type> {
           auto ns = model::ns(req->param["namespace"]);
@@ -1893,8 +1913,9 @@ void admin_server::register_hbadger_routes() {
      */
 
     if constexpr (!finjector::honey_badger::is_enabled()) {
-        ss::httpd::hbadger_json::get_failure_probes.set(
-          _server._routes, [](std::unique_ptr<ss::httpd::request>) {
+        register_route<user>(
+          ss::httpd::hbadger_json::get_failure_probes,
+          [](std::unique_ptr<ss::httpd::request>) {
               ss::httpd::hbadger_json::failure_injector_status status;
               status.enabled = false;
               return ss::make_ready_future<ss::json::json_return_type>(
@@ -1902,8 +1923,10 @@ void admin_server::register_hbadger_routes() {
           });
         return;
     }
-    ss::httpd::hbadger_json::get_failure_probes.set(
-      _server._routes, [](std::unique_ptr<ss::httpd::request>) {
+
+    register_route<user>(
+      ss::httpd::hbadger_json::get_failure_probes,
+      [](std::unique_ptr<ss::httpd::request>) {
           auto modules = finjector::shard_local_badger().modules();
           ss::httpd::hbadger_json::failure_injector_status status;
           status.enabled = true;
@@ -1927,8 +1950,9 @@ void admin_server::register_hbadger_routes() {
     static constexpr std::string_view exception_type = "exception";
     static constexpr std::string_view terminate_type = "terminate";
 
-    ss::httpd::hbadger_json::set_failure_probe.set(
-      _server._routes, [](std::unique_ptr<ss::httpd::request> req) {
+    register_route<superuser>(
+      ss::httpd::hbadger_json::set_failure_probe,
+      [](std::unique_ptr<ss::httpd::request> req) {
           auto m = req->param["module"];
           auto p = req->param["point"];
           auto type = req->param["type"];
@@ -1983,8 +2007,8 @@ void admin_server::register_hbadger_routes() {
 }
 
 void admin_server::register_transaction_routes() {
-    ss::httpd::transaction_json::get_all_transactions.set(
-      _server._routes,
+    register_route<user>(
+      ss::httpd::transaction_json::get_all_transactions,
       [this](std::unique_ptr<ss::httpd::request> req)
         -> ss::future<ss::json::json_return_type> {
           if (!config::shard_local_cfg().enable_transactions) {

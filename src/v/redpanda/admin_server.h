@@ -22,6 +22,7 @@
 #include <seastar/http/exception.hh>
 #include <seastar/http/file_handler.hh>
 #include <seastar/http/httpd.hh>
+#include <seastar/http/json_path.hh>
 #include <seastar/util/log.hh>
 
 #include <absl/container/flat_hash_map.h>
@@ -33,6 +34,12 @@ struct admin_server_cfg {
     ss::sstring admin_api_docs_dir;
     ss::scheduling_group sg;
 };
+
+namespace detail {
+// Helper for static_assert-ing false below.
+template<auto V>
+struct dependent_false : std::false_type {};
+} // namespace detail
 
 class admin_server {
 public:
@@ -70,6 +77,59 @@ private:
               path, std::move(req), std::move(rep));
         }
     };
+
+    enum class auth_level {
+        // Unauthenticated endpoint (not a typo, 'public' is a keyword)
+        publik = 0,
+        // Requires authentication (if enabled) but not superuser status
+        user = 1,
+        // Requires authentication (if enabled) and superuser status
+        superuser = 2
+    };
+
+    // Enable handlers to refer without auth_level:: prefix
+    static constexpr auth_level publik = auth_level::publik;
+    static constexpr auth_level user = auth_level::user;
+    static constexpr auth_level superuser = auth_level::superuser;
+
+    /**
+     * Helper for binding handlers to routes, which also adds in
+     * authentication step and common request logging.
+     */
+    template<auth_level required_auth, bool peek_auth = false, typename F>
+    void register_route(ss::httpd::path_description const& path, F handler) {
+        path.set(
+          _server._routes,
+          [this, handler](std::unique_ptr<ss::httpd::request> req) {
+              auto auth_state = _auth.authenticate(*req);
+              if constexpr (required_auth == auth_level::superuser) {
+                  auth_state.require_superuser();
+              } else if constexpr (required_auth == auth_level::user) {
+                  auth_state.require_authenticated();
+              } else if constexpr (required_auth == auth_level::publik) {
+                  auth_state.pass();
+              } else {
+                  static_assert(
+                    detail::dependent_false<required_auth>::value,
+                    "Invalid auth_level");
+              }
+
+              // Note: a request is only logged if it does not throw
+              // from authenticate().  We
+              log_request(*req, auth_state);
+
+              if constexpr (peek_auth) {
+                  return handler(std::move(req), auth_state);
+              } else {
+                  return handler(std::move(req));
+              }
+          });
+    }
+
+    void log_request(
+      const ss::httpd::request& req,
+      const request_auth_result& auth_state) const;
+
     ss::future<> configure_listeners();
     void configure_dashboard();
     void configure_metrics_route();
