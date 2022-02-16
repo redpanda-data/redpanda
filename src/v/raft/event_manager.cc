@@ -42,6 +42,6 @@ ss::future<> event_manager::wait(
     return _commit_index.wait(offset, timeout, as);
 }
 
-void event_manager::notify_commit_index(model::offset) { _cond.signal(); }
+void event_manager::notify_commit_index() { _cond.signal(); }
 
 } // namespace raft
