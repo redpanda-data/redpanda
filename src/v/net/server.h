@@ -11,7 +11,9 @@
 
 #pragma once
 
+#include "config/property.h"
 #include "net/connection.h"
+#include "net/connection_rate.h"
 #include "net/types.h"
 #include "utils/hdr_hist.h"
 
@@ -25,6 +27,7 @@
 #include <boost/intrusive/list.hpp>
 
 #include <list>
+#include <optional>
 #include <type_traits>
 #include <vector>
 
@@ -62,6 +65,11 @@ struct server_endpoint {
 
 std::ostream& operator<<(std::ostream&, const server_endpoint&);
 
+struct config_connection_rate_bindings {
+    config::binding<std::optional<int64_t>> config_general_rate;
+    config::binding<std::vector<ss::sstring>> config_overrides_rate;
+};
+
 struct server_configuration {
     std::vector<server_endpoint> addrs;
     int64_t max_service_memory_per_core;
@@ -70,6 +78,7 @@ struct server_configuration {
     std::optional<int> tcp_send_buf;
     net::metrics_disabled disable_metrics = net::metrics_disabled::no;
     ss::sstring name;
+    std::optional<config_connection_rate_bindings> connection_rate_bindings;
     // we use the same default as seastar for load balancing algorithm
     ss::server_socket::load_balancing_algorithm load_balancing_algo
       = ss::server_socket::load_balancing_algorithm::connection_distribution;
@@ -171,6 +180,9 @@ private:
     hdr_hist _hist;
     server_probe _probe;
     ss::metrics::metric_groups _metrics;
+
+    std::optional<config_connection_rate_bindings> connection_rate_bindings;
+    std::optional<connection_rate> _connection_rates;
 };
 
 } // namespace net
