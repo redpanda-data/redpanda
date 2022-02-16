@@ -171,7 +171,7 @@ public:
         return _raft->get_latest_configuration_offset();
     }
 
-    ss::lw_shared_ptr<cluster::id_allocator_stm>& id_allocator_stm() {
+    ss::shared_ptr<cluster::id_allocator_stm> id_allocator_stm() {
         return _id_allocator_stm;
     }
 
@@ -244,6 +244,21 @@ public:
         return _cloud_storage_partition->make_reader(config, deadline);
     }
 
+    ss::future<> remove_persistent_state() {
+        if (_rm_stm) {
+            co_await _rm_stm->remove_persistent_state();
+        }
+        if (_tm_stm) {
+            co_await _tm_stm->remove_persistent_state();
+        }
+        if (_archival_meta_stm) {
+            co_await _archival_meta_stm->remove_persistent_state();
+        }
+        if (_id_allocator_stm) {
+            co_await _id_allocator_stm->remove_persistent_state();
+        }
+    }
+
 private:
     friend partition_manager;
     friend replicated_partition_probe;
@@ -253,7 +268,7 @@ private:
 private:
     consensus_ptr _raft;
     ss::lw_shared_ptr<raft::log_eviction_stm> _log_eviction_stm;
-    ss::lw_shared_ptr<cluster::id_allocator_stm> _id_allocator_stm;
+    ss::shared_ptr<cluster::id_allocator_stm> _id_allocator_stm;
     ss::shared_ptr<cluster::rm_stm> _rm_stm;
     ss::shared_ptr<cluster::tm_stm> _tm_stm;
     ss::shared_ptr<archival_metadata_stm> _archival_meta_stm;
