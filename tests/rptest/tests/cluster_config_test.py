@@ -615,7 +615,7 @@ class ClusterConfigTest(RedpandaTest):
             assert int(node_id) == self.redpanda.idx(node)
 
     @cluster(num_nodes=3)
-    def test_rpk_reset(self):
+    def test_rpk_force_reset(self):
         """
         Verify that RPK's `reset` command for disaster recovery works as
         expected: redpanda should start up and behave as if the property
@@ -633,7 +633,7 @@ class ClusterConfigTest(RedpandaTest):
         for node in self.redpanda.nodes:
             rpk_remote = RpkRemoteTool(self.redpanda, node)
             self.redpanda.stop_node(node)
-            rpk_remote.cluster_config_reset("kafka_qdc_enable")
+            rpk_remote.cluster_config_force_reset("kafka_qdc_enable")
             self.redpanda.start_node(node)
 
         # Check that the reset property has reverted to its default

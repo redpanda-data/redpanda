@@ -38,9 +38,11 @@ class RpkRemoteTool:
             ["cd", working_dir, ";",
              self._rpk_binary(), "debug", "bundle"])
 
-    def cluster_config_reset(self, property_name):
-        return self._execute(
-            [self._rpk_binary(), 'cluster', 'config', 'reset', property_name])
+    def cluster_config_force_reset(self, property_name):
+        return self._execute([
+            self._rpk_binary(), 'cluster', 'config', 'force-reset',
+            property_name
+        ])
 
     def cluster_config_lint(self):
         return self._execute([self._rpk_binary(), 'cluster', 'config', 'lint'])

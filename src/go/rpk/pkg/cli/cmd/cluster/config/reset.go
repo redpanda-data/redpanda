@@ -19,21 +19,25 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-func newResetCommand(fs afero.Fs) *cobra.Command {
+func newForceResetCommand(fs afero.Fs) *cobra.Command {
 	var configCacheFile string
 	cmd := &cobra.Command{
-		Use:   "reset [PROPERTY...]",
+		Use:   "force-reset [PROPERTY...]",
 		Short: "Forcibly clear a cluster configuration property on this node.",
 		Long: `Forcibly clear a cluster configuration property on this node.
 
 This command is not for general changes to cluster configuration: use this only
 when redpanda will not start due to a configuration issue.
 
+If your cluster is working properly and you would like to reset a property
+to its default, you may use the 'set' command with an empty string, or
+use the 'edit' command and delete the property's line.
+
 This command erases a named property from an internal cache of the cluster
 configuration on the local node, so that on next startup redpanda will treat
 the setting as if it was set to the default.
 `,
-        Args: cobra.MinimumNArgs(1),
+		Args: cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, propertyNames []string) {
 			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
