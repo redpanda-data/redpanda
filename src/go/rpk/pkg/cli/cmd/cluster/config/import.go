@@ -16,6 +16,7 @@ import (
 	"os"
 	"reflect"
 	"sort"
+	"strings"
 
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
@@ -132,28 +133,10 @@ func importConfig(
 	// PUT to admin API
 	result, err := client.PatchClusterConfig(upsert, remove)
 	if he := (*admin.HttpError)(nil); errors.As(err, &he) {
-		// Normal case: user input is a yaml array
+		// Special case 400 (validation) errors with friendly output
+		// about which configuration properties were invalid.
 		if he.Response.StatusCode == 400 {
-			// Output structured validation errors from server
-			var validationErrs map[string]string
-			bodyErr := json.Unmarshal(he.Body, &validationErrs)
-			// If no proper JSON body, fall back to generic HTTP error report
-			if bodyErr != nil {
-				out.MaybeDie(err, "error setting config: %v", err)
-			}
-
-			type kv struct{ k, v string }
-			var sortedErrs []kv
-			for k, v := range validationErrs {
-				sortedErrs = append(sortedErrs, kv{k, v})
-			}
-			sort.Slice(sortedErrs, func(i, j int) bool { return sortedErrs[i].k < sortedErrs[j].k })
-
-			fmt.Fprintf(os.Stderr, "Validation errors:\n")
-			for _, kv := range sortedErrs {
-				fmt.Fprintf(os.Stderr, " * %s: %s\n", kv.k, kv.v)
-			}
-			fmt.Fprintf(os.Stderr, "\n")
+			fmt.Fprint(os.Stderr, formatValidationError(err, he))
 			out.Die("No changes were made.")
 		}
 	}
@@ -164,6 +147,32 @@ func importConfig(
 	fmt.Printf("Successfully updated config, new config version %d.\n", result.ConfigVersion)
 
 	return nil
+}
+
+func formatValidationError(err error, http_err *admin.HttpError) string {
+	// Output structured validation errors from server
+	var validationErrs map[string]string
+	bodyErr := json.Unmarshal(http_err.Body, &validationErrs)
+	// If no proper JSON body, fall back to generic HTTP error report
+	if bodyErr != nil {
+		out.MaybeDie(err, "error setting config: %v", err)
+	}
+
+	type kv struct{ k, v string }
+	var sortedErrs []kv
+	for k, v := range validationErrs {
+		sortedErrs = append(sortedErrs, kv{k, v})
+	}
+	sort.Slice(sortedErrs, func(i, j int) bool { return sortedErrs[i].k < sortedErrs[j].k })
+
+	var buf strings.Builder
+	fmt.Fprintf(&buf, "Validation errors:\n")
+	for _, kv := range sortedErrs {
+		fmt.Fprintf(&buf, " * %s: %s\n", kv.k, kv.v)
+	}
+	fmt.Fprintf(&buf, "\n")
+
+	return buf.String()
 }
 
 func newImportCommand(fs afero.Fs, all *bool) *cobra.Command {

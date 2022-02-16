@@ -7,6 +7,8 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from collections import namedtuple
+from email.policy import default
 import time
 import requests
 import json
@@ -17,6 +19,7 @@ import tempfile
 from rptest.services.admin import Admin
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.rpk import RpkTool, RpkException
+from rptest.clients.rpk_remote import RpkRemoteTool
 from rptest.clients.kcl import KCL
 from rptest.services.cluster import cluster
 from ducktape.mark import parametrize
@@ -610,6 +613,142 @@ class ClusterConfigTest(RedpandaTest):
 
             node = self.redpanda.nodes[i]
             assert int(node_id) == self.redpanda.idx(node)
+
+    @cluster(num_nodes=3)
+    def test_rpk_force_reset(self):
+        """
+        Verify that RPK's `reset` command for disaster recovery works as
+        expected: redpanda should start up and behave as if the property
+        is its default value.
+        """
+        # Set some non-default config value
+        pr = self.admin.patch_cluster_config(upsert={
+            'kafka_qdc_enable': True,
+            'append_chunk_size': 65536
+        })
+        self._wait_for_version_sync(pr['config_version'])
+        self._check_value_everywhere("kafka_qdc_enable", True)
+
+        # Reset the property on all nodes
+        for node in self.redpanda.nodes:
+            rpk_remote = RpkRemoteTool(self.redpanda, node)
+            self.redpanda.stop_node(node)
+            rpk_remote.cluster_config_force_reset("kafka_qdc_enable")
+            self.redpanda.start_node(node)
+
+        # Check that the reset property has reverted to its default
+        self._check_value_everywhere("kafka_qdc_enable", False)
+
+        # Check that the bystander config property was not reset
+        self._check_value_everywhere("append_chunk_size", 65536)
+
+    @cluster(num_nodes=1)
+    def test_rpk_lint(self):
+        """
+        Verify that if a redpanda config contains a cluster config
+        property, then running `lint` cleans out that value, as it
+        is no longer used.
+        """
+        node = self.redpanda.nodes[0]
+
+        # Put an old-style property in the config
+        self.logger.info("Restarting with legacy property")
+        self.redpanda.restart_nodes([node],
+                                    override_cfg_params={
+                                        "kafka_qdc_enable": True,
+                                    })
+        old_conf = node.account.ssh_output(
+            "cat /etc/redpanda/redpanda.yaml").decode('utf-8')
+        assert 'kafka_qdc_enable' in old_conf
+
+        # Run lint
+        self.logger.info("Linting config")
+        rpk_remote = RpkRemoteTool(self.redpanda, node)
+        rpk_remote.cluster_config_lint()
+
+        # Check that the old style config property was removed
+        new_conf = node.account.ssh_output(
+            "cat /etc/redpanda/redpanda.yaml").decode('utf-8')
+        assert 'kafka_qdc_enable' not in new_conf
+
+        # Check that the linted config file is not corrupt (redpanda loads with it)
+        self.logger.info("Restarting with linted config")
+        self.redpanda.stop_node(node)
+        self.redpanda.start_node(node, write_config=False)
+
+    @cluster(num_nodes=1)
+    def test_rpk_get_set(self):
+        """
+        Test RPK's getter+setter helpers
+        """
+
+        Example = namedtuple('Example', ['key', 'strval', 'yamlval'])
+
+        valid_examples = [
+            Example("kafka_qdc_enable", "true", True),
+            Example("append_chunk_size", "32768", 32768),
+            Example("superusers", "['bob','alice']", ["bob", "alice"])
+        ]
+
+        def yamlize(input):
+            """Create a YAML representation that matches
+            what yaml-cpp produces: PyYAML includes trailing
+            ellipsis lines that must be removed."""
+            return "\n".join([
+                i for i in yaml.dump(e.yamlval).split("\n")
+                if i.strip() != "..."
+            ]).strip()
+
+        # Check that valid changes are accepted, and the change is reflected
+        # in the underlying API-visible configuration
+        for e in valid_examples:
+            self.logger.info(f"Checking {e.key}={e.strval} ({e.yamlval})")
+            self.rpk.cluster_config_set(e.key, e.strval)
+
+            # CLI readback should give same as we set
+            cli_readback = self.rpk.cluster_config_get(e.key)
+
+            expect_cli_readback = yamlize(e.yamlval)
+
+            self.logger.info(
+                f"CLI readback '{cli_readback}' expect '{expect_cli_readback}'"
+            )
+            assert cli_readback == expect_cli_readback
+
+            # API readback should give properly structured+typed value
+            api_readback = self.admin.get_cluster_config()[e.key]
+            self.logger.info(f"API readback for {e.key} '{api_readback}'")
+            assert api_readback == e.yamlval
+
+        # Check that the `set` command hits proper validation paths
+        invalid_examples = [
+            ("kafka_qdc_enable", "rhubarb"),
+            ("append_chunk_size", "-123"),
+            ("superusers", "43"),
+        ]
+        for key, strval in invalid_examples:
+            try:
+                self.rpk.cluster_config_set(key, strval)
+            except RpkException as e:
+                pass
+            else:
+                self.logger.error(
+                    f"Config setting {key}={strval} should have been rejected")
+                assert False
+
+        # Check that resetting properties to their default via `set` works
+        default_examples = [
+            ("kafka_qdc_enable", False),
+            ("append_chunk_size", 16384),
+            ("superusers", []),
+        ]
+        for key, expect_default in default_examples:
+            self.rpk.cluster_config_set(key, "")
+            api_readback = self.admin.get_cluster_config()[key]
+            self.logger.info(
+                f"API readback for {key} '{api_readback}' (expect {expect_default})"
+            )
+            assert api_readback == expect_default
 
     @cluster(num_nodes=3)
     def test_secret_redaction(self):

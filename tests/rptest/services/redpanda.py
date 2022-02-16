@@ -487,7 +487,11 @@ class RedpandaService(Service):
             else:
                 yield filename
 
-    def start_node(self, node, override_cfg_params=None, timeout=None):
+    def start_node(self,
+                   node,
+                   override_cfg_params=None,
+                   timeout=None,
+                   write_config=True):
         """
         Start a single instance of redpanda. This function will not return until
         redpanda appears to have started successfully. If redpanda does not
@@ -497,7 +501,8 @@ class RedpandaService(Service):
         node.account.mkdirs(RedpandaService.DATA_DIR)
         node.account.mkdirs(os.path.dirname(RedpandaService.CONFIG_FILE))
 
-        self.write_conf_file(node, override_cfg_params)
+        if write_config:
+            self.write_conf_file(node, override_cfg_params)
 
         if self.coproc_enabled():
             self.start_wasm_engine(node)
