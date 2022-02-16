@@ -154,6 +154,7 @@ ss::future<> partition_manager::remove(const model::ntp& ntp) {
       .remove(partition->raft())
       .then([this, ntp] { _unmanage_watchers.notify(ntp, ntp.tp.partition); })
       .then([partition] { return partition->stop(); })
+      .then([partition] { return partition->remove_persistent_state(); })
       .then([this, ntp] { return _storage.log_mgr().remove(ntp); })
       .finally([partition] {}); // in the end remove partition
 }
