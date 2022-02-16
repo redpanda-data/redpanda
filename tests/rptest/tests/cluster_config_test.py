@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 from collections import namedtuple
+from email.policy import default
 import time
 import requests
 import json
@@ -698,6 +699,8 @@ class ClusterConfigTest(RedpandaTest):
                 if i.strip() != "..."
             ]).strip()
 
+        # Check that valid changes are accepted, and the change is reflected
+        # in the underlying API-visible configuration
         for e in valid_examples:
             self.logger.info(f"Checking {e.key}={e.strval} ({e.yamlval})")
             self.rpk.cluster_config_set(e.key, e.strval)
@@ -714,8 +717,38 @@ class ClusterConfigTest(RedpandaTest):
 
             # API readback should give properly structured+typed value
             api_readback = self.admin.get_cluster_config()[e.key]
-            self.logger.info(f"API readback '{api_readback}'")
+            self.logger.info(f"API readback for {e.key} '{api_readback}'")
             assert api_readback == e.yamlval
+
+        # Check that the `set` command hits proper validation paths
+        invalid_examples = [
+            ("kafka_qdc_enable", "rhubarb"),
+            ("append_chunk_size", "-123"),
+            ("superusers", "43"),
+        ]
+        for key, strval in invalid_examples:
+            try:
+                self.rpk.cluster_config_set(key, strval)
+            except RpkException as e:
+                pass
+            else:
+                self.logger.error(
+                    f"Config setting {key}={strval} should have been rejected")
+                assert False
+
+        # Check that resetting properties to their default via `set` works
+        default_examples = [
+            ("kafka_qdc_enable", False),
+            ("append_chunk_size", 16384),
+            ("superusers", []),
+        ]
+        for key, expect_default in default_examples:
+            self.rpk.cluster_config_set(key, "")
+            api_readback = self.admin.get_cluster_config()[key]
+            self.logger.info(
+                f"API readback for {key} '{api_readback}' (expect {expect_default})"
+            )
+            assert api_readback == expect_default
 
     @cluster(num_nodes=3)
     def test_secret_redaction(self):

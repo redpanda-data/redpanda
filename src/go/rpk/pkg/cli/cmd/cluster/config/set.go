@@ -29,7 +29,9 @@ func newSetCommand(fs afero.Fs) *cobra.Command {
 		Long: `Set a single cluster configuration property.
 
 This command is provided for use in scripts.  For interactive editing, or bulk
-changes, use the 'edit' and 'import' commands respectively.`,
+changes, use the 'edit' and 'import' commands respectively.
+
+If an empty string is given as the value, the property is reset to its default.`,
 		Args: cobra.ExactArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
 			key := args[0]
@@ -50,25 +52,33 @@ changes, use the 'edit' and 'import' commands respectively.`,
 				out.Die("Unknown property %q", key)
 			}
 
+			upsert := make(map[string]interface{})
+			remove := make([]string, 0)
+
 			// - For scalars, pass string values through to the REST
 			// API -- it will give more informative errors than we can
-			// about validation.
+			// about validation.  Special case strings for nullable
+			// properties ('null') and for resetting to default ('')
 			// - For arrays, make an effort: otherwise the REST API
 			// may interpret a scalar string as a list of length 1
 			// (via one_or_many_property).
-			var yamlVal interface{}
-			if meta.Type == "array" {
+
+			if meta.Nullable && value == "null" {
+				// Nullable types may be explicitly set to null
+				upsert[key] = nil
+			} else if meta.Type != "string" && (value == "") {
+				// Non-string types that receive an empty string
+				// are reset to default
+				remove = append(remove, key)
+			} else if meta.Type == "array" {
 				var a []interface{}
 				err = yaml.Unmarshal([]byte(value), &a)
 				out.MaybeDie(err, "invalid list syntax")
-				yamlVal = a
+				upsert[key] = a
 			} else {
-				yamlVal = value
+				upsert[key] = value
 			}
 
-			upsert := make(map[string]interface{})
-			upsert[key] = yamlVal
-			remove := make([]string, 0)
 			result, err := client.PatchClusterConfig(upsert, remove)
 			if he := (*admin.HttpError)(nil); errors.As(err, &he) {
 				// Special case 400 (validation) errors with friendly output
