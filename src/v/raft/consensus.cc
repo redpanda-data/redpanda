@@ -2397,7 +2397,7 @@ consensus::do_maybe_update_leader_commit_idx(ss::semaphore_units<> u) {
           range_start,
           _commit_index);
         _commit_index_updated.broadcast();
-        _event_manager.notify_commit_index(_commit_index);
+        _event_manager.notify_commit_index();
         // if we successfully acknowledged all quorum writes we can make pending
         // relaxed consistency requests visible
         if (_commit_index >= _last_quorum_replicated_index) {
@@ -2425,7 +2425,7 @@ consensus::maybe_update_follower_commit_idx(model::offset request_commit_idx) {
             vlog(
               _ctxlog.trace, "Follower commit index updated {}", _commit_index);
             _commit_index_updated.broadcast();
-            _event_manager.notify_commit_index(_commit_index);
+            _event_manager.notify_commit_index();
         }
     }
     return ss::make_ready_future<>();
