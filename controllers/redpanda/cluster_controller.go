@@ -512,7 +512,7 @@ func (r *ClusterReconciler) setInitialSuperUserPassword(
 		urls = append(urls, fmt.Sprintf("%s-%d.%s:%d", redpandaCluster.Name, i, fqdn, adminInternalPort))
 	}
 
-	adminAPI, err := admin.NewAdminAPI(urls, nil)
+	adminAPI, err := admin.NewAdminAPI(urls, admin.BasicCredentials{}, nil)
 	if err != nil {
 		return fmt.Errorf("creating admin api: %w", err)
 	}
