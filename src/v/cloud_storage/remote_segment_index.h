@@ -86,18 +86,19 @@ private:
     /// Find index entry which is strictly lower than the provided value
     ///
     /// The encoder and the write buffer have to be provided via parameters.
-    /// The returned value is a variant which contains a monostate if no value
-    /// can be found; index_value if the value is found in the encoder;
-    /// find_result if the value is found in the write buffer (in this case no
-    /// further search is needed).
+    /// The returned value is a variant which contains a monostate if no
+    /// value can be found; index_value if the value is found in the
+    /// encoder; find_result if the value is found in the write buffer (in
+    /// this case no further search is needed).
     std::variant<std::monostate, index_value, find_result> maybe_find_offset(
       model::offset upper_bound,
       deltafor_encoder<int64_t>& encoder,
       const std::array<int64_t, buffer_depth>& write_buffer);
 
     /// Find element inside the offset range stored in the decoder which is
-    /// less than offset. Return last element if no such element can be found.
-    /// Return nullopt if all emlements are larger or equal than offset.
+    /// less than offset. Return last element if no such element can be
+    /// found. Return nullopt if all emlements are larger or equal than
+    /// offset.
     static std::optional<index_value>
     _find_under(deltafor_decoder<int64_t> decoder, int64_t offset);
 
@@ -117,5 +118,50 @@ private:
     deltafor_encoder<int64_t> _kaf_encoder;
     deltafor_encoder<int64_t> _file_encoder;
 };
+
+class remote_segment_index_builder : public storage::batch_consumer {
+public:
+    using consume_result = storage::batch_consumer::consume_result;
+    using stop_parser = storage::batch_consumer::stop_parser;
+
+    remote_segment_index_builder(
+      offset_index& ix, model::offset initial_delta, size_t sampling_step);
+
+    virtual consume_result
+    accept_batch_start(const model::record_batch_header&) const;
+
+    virtual void consume_batch_start(
+      model::record_batch_header,
+      size_t physical_base_offset,
+      size_t size_on_disk);
+
+    virtual void skip_batch_start(
+      model::record_batch_header,
+      size_t physical_base_offset,
+      size_t size_on_disk);
+
+    virtual void consume_records(iobuf&&);
+    virtual stop_parser consume_batch_end();
+    virtual void print(std::ostream&) const;
+
+private:
+    offset_index& _ix;
+    model::offset _running_delta;
+    size_t _window{0};
+    size_t _sampling_step;
+};
+
+inline ss::lw_shared_ptr<storage::continuous_batch_parser>
+make_remote_segment_index_builder(
+  ss::input_stream<char> stream,
+  offset_index& ix,
+  model::offset initial_delta,
+  size_t sampling_step) {
+    auto parser = ss::make_lw_shared<storage::continuous_batch_parser>(
+      std::make_unique<remote_segment_index_builder>(
+        ix, initial_delta, sampling_step),
+      std::move(stream));
+    return parser;
+}
 
 } // namespace cloud_storage

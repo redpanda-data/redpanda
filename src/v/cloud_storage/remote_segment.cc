@@ -12,10 +12,14 @@
 
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/logger.h"
+#include "cloud_storage/remote_segment_index.h"
 #include "cloud_storage/types.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
+#include "model/record.h"
+#include "model/record_batch_types.h"
 #include "resource_mgmt/io_priority.h"
+#include "ssx/future-util.h"
 #include "storage/parser.h"
 #include "utils/retry_chain_node.h"
 #include "utils/stream_utils.h"
@@ -30,6 +34,7 @@
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/temporary_buffer.hh>
 #include <seastar/core/timed_out_error.hh>
+#include <seastar/core/when_all.hh>
 #include <seastar/util/defer.hh>
 #include <seastar/util/log.hh>
 
@@ -78,7 +83,7 @@ remote_segment::remote_segment(
   cache& c,
   s3::bucket_name bucket,
   const partition_manifest& m,
-  const partition_manifest::key& name,
+  const partition_manifest::key& key,
   retry_chain_node& parent)
   : _api(r)
   , _cache(c)
@@ -87,14 +92,14 @@ remote_segment::remote_segment(
   , _rtc(&parent)
   , _ctxlog(cst_log, _rtc, get_ntp().path())
   , _wait_list(expiry_handler_impl) {
-    auto meta = m.get(name);
-    vassert(meta, "Can't find segment metadata in manifest, name: {}", name);
+    auto meta = m.get(key);
+    vassert(meta, "Can't find segment metadata in manifest, key: {}", key);
 
-    _path = m.generate_segment_path(name, *meta);
+    _path = m.generate_segment_path(key, *meta);
 
     auto parsed_name = parse_segment_name(
-      generate_segment_name(name.base_offset, name.term));
-    vassert(parsed_name, "Can't parse segment name, name: {}", name);
+      generate_segment_name(key.base_offset, key.term));
+    vassert(parsed_name, "Can't parse segment name, name: {}", key);
     _term = parsed_name->term;
 
     _base_rp_offset = meta->base_offset;
@@ -103,7 +108,7 @@ remote_segment::remote_segment(
       meta->delta_offset, model::offset(0), model::offset::max());
 
     // run hydration loop in the background
-    (void)run_hydrate_bg();
+    ssx::background = run_hydrate_bg();
 }
 
 // Find manifest key in the manifest using base offset of the segment.
@@ -177,6 +182,56 @@ remote_segment::data_stream(size_t pos, ss::io_priority_class io_priority) {
     co_return data_stream;
 }
 
+ss::future<> remote_segment::do_hydrate() {
+    auto callback = [this](
+                      uint64_t size_bytes,
+                      ss::input_stream<char> s) -> ss::future<uint64_t> {
+        offset_index tmpidx(get_base_rp_offset(), get_base_kafka_offset(), 0);
+        auto [sparse, sput] = input_stream_fanout<2>(std::move(s), 1);
+        auto parser = make_remote_segment_index_builder(
+          std::move(sparse), tmpidx, _base_offset_delta, 1); // TODO: use 64KB
+        auto fparse = parser->consume().finally(
+          [parser] { return parser->close(); });
+        auto fput = _cache.put(_path, sput).finally([sref = std::ref(sput)] {
+            return sref.get().close();
+        });
+        auto [rparse, rput] = co_await ss::when_all(
+          std::move(fparse), std::move(fput));
+        if (rparse.failed()) {
+            vlog(
+              _ctxlog.warn,
+              "Failed to build a remote_segment index, error: {}",
+              rparse.get_exception());
+            rparse.ignore_ready_future();
+        }
+        if (rput.failed()) {
+            vlog(
+              _ctxlog.warn,
+              "Failed to write a segment file to cache, error: {}",
+              rput.get_exception());
+            rput.get();
+        }
+        _index = std::move(tmpidx);
+        co_return size_bytes;
+    };
+
+    retry_chain_node local_rtc(
+      cache_hydration_timeout, cache_hydration_backoff, &_rtc);
+
+    auto res = co_await _api.download_segment(
+      _bucket, _path, callback, local_rtc);
+
+    if (res != download_result::success) {
+        vlog(
+          _ctxlog.debug,
+          "Failed to hydrating a segment {}, {} waiter will be "
+          "invoked",
+          _path,
+          _wait_list.size());
+        throw download_exception(res, _path);
+    }
+}
+
 ss::future<> remote_segment::run_hydrate_bg() {
     ss::gate::holder guard(_gate);
     try {
@@ -216,27 +271,10 @@ ss::future<> remote_segment::run_hydrate_bg() {
                     break;
                 case cache_element_status::not_available: {
                     vlog(_ctxlog.info, "Hydrating segment {}", _path);
-                    auto callback =
-                      [this](
-                        uint64_t size_bytes,
-                        ss::input_stream<char> s) -> ss::future<uint64_t> {
-                        co_await _cache.put(_path, s).finally(
-                          [&s] { return s.close(); });
-                        co_return size_bytes;
-                    };
-                    retry_chain_node local_rtc(
-                      cache_hydration_timeout, cache_hydration_backoff, &_rtc);
-                    auto res = co_await _api.download_segment(
-                      _bucket, _path, callback, local_rtc);
-                    if (res != download_result::success) {
-                        vlog(
-                          _ctxlog.debug,
-                          "Failed to hydrating a segment {}, {} waiter will be "
-                          "invoked",
-                          _path,
-                          _wait_list.size());
-                        err = std::make_exception_ptr(
-                          download_exception(res, _path));
+                    try {
+                        co_await do_hydrate();
+                    } catch (const download_exception&) {
+                        err = std::current_exception();
                     }
                 } break;
                 }

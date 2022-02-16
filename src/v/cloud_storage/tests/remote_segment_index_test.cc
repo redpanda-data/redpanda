@@ -8,7 +8,10 @@
  * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "bytes/iobuf.h"
 #include "cloud_storage/remote_segment_index.h"
+#include "common_def.h"
+#include "model/record_batch_types.h"
 #include "random/generators.h"
 #include "vlog.h"
 
@@ -101,4 +104,41 @@ BOOST_AUTO_TEST_CASE(remote_segment_index_search_test) {
     BOOST_REQUIRE_EQUAL(kopt_last->rp_offset, last);
     BOOST_REQUIRE_EQUAL(kopt_last->kaf_offset, klast);
     BOOST_REQUIRE_EQUAL(kopt_last->file_pos, flast);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_remote_segment_index_builder) {
+    static const model::offset base_offset{100};
+    std::vector<batch_t> batches;
+    for (int i = 0; i < 1000; i++) {
+        auto num_records = random_generators::get_int(1, 20);
+        std::vector<size_t> record_sizes;
+        for (int i = 0; i < num_records; i++) {
+            record_sizes.push_back(random_generators::get_int(1, 100));
+        }
+        batch_t batch = {
+          .num_records = num_records,
+          .type = model::record_batch_type::raft_data,
+          .record_sizes = std::move(record_sizes),
+        };
+        batches.push_back(std::move(batch));
+    }
+    auto segment = generate_segment(base_offset, batches);
+    auto is = make_iobuf_input_stream(std::move(segment));
+    offset_index ix(base_offset, base_offset, 0);
+    auto parser = make_remote_segment_index_builder(
+      std::move(is), ix, model::offset(0), 0);
+    auto result = parser->consume().get();
+    BOOST_REQUIRE(result.has_value());
+    BOOST_REQUIRE(result.value() != 0);
+    parser->close().get();
+
+    auto offset = base_offset;
+    for (const auto& batch : batches) {
+        auto res = ix.find_rp_offset(offset + model::offset(1));
+        BOOST_REQUIRE(res.has_value());
+        BOOST_REQUIRE_EQUAL(res->rp_offset, offset);
+        BOOST_REQUIRE_EQUAL(res->kaf_offset, offset);
+
+        offset += batch.num_records;
+    }
 }

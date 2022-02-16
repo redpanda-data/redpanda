@@ -10,6 +10,9 @@
 
 #include "cloud_storage/remote_segment_index.h"
 
+#include "model/record_batch_types.h"
+#include "vlog.h"
+
 namespace cloud_storage {
 
 offset_index::offset_index(
@@ -194,6 +197,54 @@ offset_index::_fetch_ix(deltafor_decoder<int64_t> decoder, size_t target_ix) {
         buffer = {};
     }
     return std::nullopt;
+}
+
+remote_segment_index_builder::remote_segment_index_builder(
+  offset_index& ix, model::offset initial_delta, size_t sampling_step)
+  : _ix(ix)
+  , _running_delta(initial_delta)
+  , _sampling_step(sampling_step) {}
+
+remote_segment_index_builder::consume_result
+remote_segment_index_builder::accept_batch_start(
+  const model::record_batch_header&) const {
+    return consume_result::accept_batch;
+}
+
+void remote_segment_index_builder::consume_batch_start(
+  model::record_batch_header hdr,
+  size_t physical_base_offset,
+  size_t size_on_disk) {
+    if (
+      hdr.type == model::record_batch_type::raft_configuration
+      || hdr.type == model::record_batch_type::archival_metadata) {
+        _running_delta += hdr.last_offset_delta + 1;
+    } else {
+        if (_window >= _sampling_step) {
+            _ix.add(
+              hdr.base_offset,
+              hdr.base_offset - _running_delta,
+              static_cast<int64_t>(physical_base_offset));
+            _window = 0;
+        }
+    }
+    _window += size_on_disk;
+}
+
+void remote_segment_index_builder::skip_batch_start(
+  model::record_batch_header, size_t, size_t) {
+    vassert(false, "no batches should be skipped by this consumer");
+}
+
+void remote_segment_index_builder::consume_records(iobuf&&) {}
+
+remote_segment_index_builder::stop_parser
+remote_segment_index_builder::consume_batch_end() {
+    return stop_parser::no;
+}
+
+void remote_segment_index_builder::print(std::ostream& o) const {
+    o << "remote_segment_index_builder";
 }
 
 } // namespace cloud_storage
