@@ -77,6 +77,7 @@ public:
     ss::sharded<kafka::group_router> group_router;
     ss::sharded<cluster::shard_table> shard_table;
     ss::sharded<storage::api> storage;
+    ss::sharded<storage::node_api> storage_node;
     std::unique_ptr<coproc::api> coprocessing;
     ss::sharded<coproc::partition_manager> cp_partition_manager;
     ss::sharded<cluster::partition_manager> partition_manager;
@@ -129,6 +130,15 @@ private:
         s = std::make_unique<Service>(std::forward<Args>(args)...);
         _deferred.emplace_back([&s] { s->stop().get(); });
     }
+
+    template<typename Service, typename... Args>
+    ss::future<>
+    construct_single_service_sharded(ss::sharded<Service>& s, Args&&... args) {
+        auto f = s.start_single(std::forward<Args>(args)...);
+        _deferred.emplace_back([&s] { s.stop().get(); });
+        return f;
+    }
+
     void setup_metrics();
     std::unique_ptr<ss::app_template> _app;
     bool _redpanda_enabled{true};

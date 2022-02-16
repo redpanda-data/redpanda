@@ -53,6 +53,7 @@ public:
       ss::sharded<partition_manager>&,
       ss::sharded<raft::group_manager>&,
       ss::sharded<ss::abort_source>&,
+      ss::sharded<storage::node_api>&,
       config::binding<size_t> storage_min_bytes_threshold,
       config::binding<unsigned> storage_min_percent_threshold);
 

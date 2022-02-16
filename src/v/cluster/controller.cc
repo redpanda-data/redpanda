@@ -54,6 +54,7 @@ controller::controller(
   ss::sharded<partition_manager>& pm,
   ss::sharded<shard_table>& st,
   ss::sharded<storage::api>& storage,
+  ss::sharded<storage::node_api>& storage_node,
   ss::sharded<raft::group_manager>& raft_manager,
   ss::sharded<v8_engine::data_policy_table>& data_policy_table)
   : _config_preload(std::move(config_preload))
@@ -61,6 +62,7 @@ controller::controller(
   , _partition_manager(pm)
   , _shard_table(st)
   , _storage(storage)
+  , _storage_node(storage_node)
   , _tp_updates_dispatcher(_partition_allocator, _tp_state, _partition_leaders)
   , _security_manager(_credentials, _authorizer)
   , _data_policy_manager(data_policy_table)
@@ -283,6 +285,7 @@ ss::future<> controller::start() {
             std::ref(_partition_manager),
             std::ref(_raft_manager),
             std::ref(_as),
+            std::ref(_storage_node),
             config::shard_local_cfg()
               .storage_space_alert_free_threshold_bytes.bind(),
             config::shard_local_cfg()

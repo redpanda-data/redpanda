@@ -14,6 +14,7 @@
 namespace storage {
 
 class api;
+class node_api;
 class kvstore;
 class log_manager;
 class ntp_config;

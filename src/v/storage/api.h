@@ -14,9 +14,30 @@
 #include "seastarx.h"
 #include "storage/kvstore.h"
 #include "storage/log_manager.h"
+#include "storage/probe.h"
 
 namespace storage {
 
+// Per-node API. For non-sharded state.
+class node_api {
+public:
+    ss::future<> start() {
+        _probe.setup_node_metrics();
+        return ss::now();
+    }
+
+    ss::future<> stop() { return ss::now(); }
+
+    void set_disk_metrics(
+      uint64_t total_bytes, uint64_t free_bytes, disk_space_alert alert) {
+        _probe.set_disk_metrics(total_bytes, free_bytes, alert);
+    }
+
+private:
+    storage::node_probe _probe;
+};
+
+// Top-level sharded storage API.
 class api {
 public:
     explicit api(

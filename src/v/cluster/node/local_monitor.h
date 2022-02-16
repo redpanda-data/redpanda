@@ -18,6 +18,7 @@
 #include <sys/statvfs.h>
 
 #include <chrono>
+#include <functional>
 
 // Local node state monitoring is kept separate in case we want to access it
 // pre-quorum formation in the future, etc.
@@ -26,7 +27,9 @@ namespace cluster::node {
 class local_monitor {
 public:
     local_monitor(
-      config::binding<size_t> min_bytes, config::binding<unsigned> min_percent);
+      config::binding<size_t> min_bytes,
+      config::binding<unsigned> min_percent,
+      ss::sharded<storage::node_api>& api);
     local_monitor(local_monitor&) = default;
     local_monitor(local_monitor&&) = default;
     ~local_monitor() = default;
@@ -50,6 +53,7 @@ private:
     ss::future<std::vector<storage::disk>> get_disks();
     ss::future<struct statvfs> get_statvfs(const ss::sstring&);
     void update_alert_state();
+    ss::future<> update_disk_metrics();
     void maybe_log_space_error(const storage::disk&);
 
     // configuration
@@ -63,6 +67,8 @@ private:
       std::chrono::hours(1));
     config::binding<size_t> _free_bytes_alert_threshold;
     config::binding<unsigned> _free_percent_alert_threshold;
+
+    ss::sharded<storage::node_api>& _storage_api; // single instance
 
     // Injection points for unit tests
     ss::sstring _path_for_test;

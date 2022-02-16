@@ -23,6 +23,7 @@
 #include "rpc/connection_cache.h"
 #include "security/authorizer.h"
 #include "security/credential_store.h"
+#include "storage/api.h"
 #include "storage/fwd.h"
 
 #include <seastar/core/abort_source.hh>
@@ -39,6 +40,7 @@ public:
       ss::sharded<partition_manager>& pm,
       ss::sharded<shard_table>& st,
       ss::sharded<storage::api>& storage,
+      ss::sharded<storage::node_api>& storage_node,
       ss::sharded<raft::group_manager>&,
       ss::sharded<v8_engine::data_policy_table>&);
 
@@ -118,6 +120,7 @@ private:
     ss::sharded<partition_manager>& _partition_manager;
     ss::sharded<shard_table>& _shard_table;
     ss::sharded<storage::api>& _storage;
+    ss::sharded<storage::node_api>& _storage_node; // single instance
     topic_updates_dispatcher _tp_updates_dispatcher;
     ss::sharded<security::credential_store> _credentials;
     security_manager _security_manager;

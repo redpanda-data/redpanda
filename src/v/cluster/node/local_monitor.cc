@@ -15,7 +15,9 @@
 #include "cluster/node/types.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
+#include "storage/api.h"
 #include "utils/human.h"
+#include "vassert.h"
 #include "version.h"
 
 #include <seastar/core/coroutine.hh>
@@ -34,9 +36,12 @@
 namespace cluster::node {
 
 local_monitor::local_monitor(
-  config::binding<size_t> min_bytes, config::binding<unsigned> min_percent)
+  config::binding<size_t> min_bytes,
+  config::binding<unsigned> min_percent,
+  ss::sharded<storage::node_api>& api)
   : _free_bytes_alert_threshold(min_bytes)
-  , _free_percent_alert_threshold(min_percent) {}
+  , _free_percent_alert_threshold(min_percent)
+  , _storage_api(api) {}
 
 ss::future<> local_monitor::update_state() {
     // grab new snapshot of local state
@@ -44,14 +49,14 @@ ss::future<> local_monitor::update_state() {
     auto vers = application_version(ss::sstring(redpanda_version()));
     auto uptime = std::chrono::duration_cast<std::chrono::milliseconds>(
       ss::engine().uptime());
-
+    vassert(!disks.empty(), "No disk available to monitor.");
     _state = {
       .redpanda_version = vers,
       .uptime = uptime,
       .disks = disks,
     };
     update_alert_state();
-    co_return;
+    co_return co_await update_disk_metrics();
 }
 
 const local_state& local_monitor::get_state_cached() const { return _state; }
@@ -138,6 +143,15 @@ void local_monitor::update_alert_state() {
             maybe_log_space_error(d);
         }
     }
+}
+// Preconditions: _state.disks is non-empty.
+ss::future<> local_monitor::update_disk_metrics() {
+    auto& d = _state.disks[0];
+    return _storage_api.invoke_on_all(
+      &storage::node_api::set_disk_metrics,
+      d.total,
+      d.free,
+      _state.storage_space_alert);
 }
 
 } // namespace cluster::node
