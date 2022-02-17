@@ -163,23 +163,38 @@ cluster::node_state adl<cluster::node_state>::from(iobuf_parser& p) {
 
 void adl<cluster::partition_status>::to(
   iobuf& out, cluster::partition_status&& s) {
-    serialize(out, s.current_version, s.id, s.term, s.leader_id);
+    // if revision is not set fallback to old version, we do it here to prevent
+    // old redpanda version from crashing, request handler will decode request
+    // version and base on that handle revision_id field correctly.
+    if (s.revision_id == model::revision_id{}) {
+        serialize(out, int8_t(0), s.id, s.term, s.leader_id);
+    } else {
+        serialize(
+          out,
+          cluster::partition_status::current_version,
+          s.id,
+          s.term,
+          s.leader_id,
+          s.revision_id);
+    }
 }
 
 cluster::partition_status
 adl<cluster::partition_status>::from(iobuf_parser& p) {
-    read_and_assert_version<cluster::partition_status>(
-      "cluster::partition_status", p);
+    auto version = adl<int8_t>{}.from(p);
 
     auto id = adl<model::partition_id>{}.from(p);
     auto term = adl<model::term_id>{}.from(p);
     auto leader = adl<std::optional<model::node_id>>{}.from(p);
-
-    return cluster::partition_status{
+    cluster::partition_status ret{
       .id = id,
       .term = term,
       .leader_id = leader,
     };
+    if (version < 0) {
+        ret.revision_id = adl<model::revision_id>{}.from(p);
+    }
+    return ret;
 }
 
 void adl<cluster::topic_status>::to(iobuf& out, cluster::topic_status&& l) {

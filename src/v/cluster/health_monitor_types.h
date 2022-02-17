@@ -44,11 +44,19 @@ struct node_state {
 };
 
 struct partition_status {
-    static constexpr int8_t current_version = 0;
+    /**
+     * We increase a version here 'backward' since incorrect assertion would
+     * cause older redpanda versions to crash.
+     *
+     * Version: -1: added revision_id field
+     */
+    static constexpr int8_t current_version = -1;
 
     model::partition_id id;
     model::term_id term;
     std::optional<model::node_id> leader_id;
+    model::revision_id revision_id;
+
     friend std::ostream& operator<<(std::ostream&, const partition_status&);
     friend bool operator==(const partition_status&, const partition_status&)
       = default;
