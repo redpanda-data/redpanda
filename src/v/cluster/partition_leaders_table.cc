@@ -81,6 +81,15 @@ void partition_leaders_table::update_partition_leader(
   const model::ntp& ntp,
   model::term_id term,
   std::optional<model::node_id> leader_id) {
+    // we set revision_id to invalid, this way we will skip revision check
+    update_partition_leader(ntp, model::revision_id{}, term, leader_id);
+}
+
+void partition_leaders_table::update_partition_leader(
+  const model::ntp& ntp,
+  model::revision_id revision_id,
+  model::term_id term,
+  std::optional<model::node_id> leader_id) {
     auto key = leader_key_view{
       model::topic_namespace_view(ntp), ntp.tp.partition};
     auto it = _leaders.find(key);
@@ -88,29 +97,52 @@ void partition_leaders_table::update_partition_leader(
         auto [new_it, _] = _leaders.emplace(
           leader_key{
             model::topic_namespace(ntp.ns, ntp.tp.topic), ntp.tp.partition},
-          leader_meta{.current_leader = leader_id, .update_term = term});
+          leader_meta{
+            .current_leader = leader_id,
+            .update_term = term,
+            .partition_revision = revision_id});
         it = new_it;
     } else {
+        // Currently we have to check if revision id is valid since not all the
+        // code paths devlivers revision information
+        //
+        // TODO: always check revision after we will add revision to metadata
+        // dissemination requests
+        const bool revision_id_valid = revision_id >= model::revision_id{0};
+        // skip update for partition with previous revision
+        if (revision_id_valid && revision_id < it->second.partition_revision) {
+            return;
+        }
+        // reset the term for new ntp revision
+        if (revision_id_valid && revision_id > it->second.partition_revision) {
+            it->second.update_term = model::term_id{};
+        }
+
         // existing partition
         if (it->second.update_term > term) {
             // Do nothing if update term is older
             return;
         }
+
         // if current leader has value, store it as a previous leader
         if (it->second.current_leader) {
             it->second.previous_leader = it->second.current_leader;
         }
         it->second.current_leader = leader_id;
         it->second.update_term = term;
+        if (revision_id_valid) {
+            it->second.partition_revision = revision_id;
+        }
     }
     vlog(
       clusterlog.trace,
       "updated partition: {} leader: {{term: {}, current leader: {}, previous "
-      "leader: {}}}",
+      "leader: {}, revision: {}}}",
       ntp,
       it->second.update_term,
       it->second.current_leader,
-      it->second.previous_leader);
+      it->second.previous_leader,
+      it->second.partition_revision);
     // notify waiters if update is setting the leader
     if (!leader_id) {
         return;
