@@ -528,7 +528,7 @@ health_monitor_backend::collect_current_node_health(node_report_filter filter) {
 
     co_return ret;
 }
-
+namespace {
 struct ntp_leader {
     model::ntp ntp;
     model::term_id term;
@@ -587,7 +587,7 @@ reduce_leaders_map(leaders_acc_t acc, std::vector<ntp_leader> current_leaders) {
     }
     return acc;
 }
-
+} // namespace
 ss::future<std::vector<topic_status>>
 health_monitor_backend::collect_topic_status(partitions_filter filters) {
     auto leaders_map = co_await _partition_manager.map_reduce0(
