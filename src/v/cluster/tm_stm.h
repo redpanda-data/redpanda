@@ -80,6 +80,33 @@ struct tm_transaction {
     std::vector<tx_group> groups;
 
     friend std::ostream& operator<<(std::ostream&, const tm_transaction&);
+
+    std::string_view get_status() const {
+        switch (status) {
+        case tx_status::ongoing:
+            return "ongoing";
+        case tx_status::preparing:
+            return "preparing";
+        case tx_status::prepared:
+            return "prepared";
+        case tx_status::aborting:
+            return "aborting";
+        case tx_status::killed:
+            return "killed";
+        case tx_status::ready:
+            return "ready";
+        case tx_status::tombstone:
+            return "tombstone";
+        }
+    }
+
+    std::chrono::milliseconds get_staleness() const {
+        auto now = ss::lowres_system_clock::now();
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+          now - last_update_ts);
+    }
+
+    std::chrono::milliseconds get_timeout() const { return timeout_ms; }
 };
 
 struct tm_snapshot {
@@ -177,6 +204,10 @@ public:
     }
 
     absl::btree_set<kafka::transactional_id> get_expired_txs();
+
+    using get_txs_result
+      = checked<std::vector<tm_transaction>, tm_stm::op_status>;
+    ss::future<get_txs_result> get_all_transactions();
 
 protected:
     ss::future<> handle_eviction() override;
