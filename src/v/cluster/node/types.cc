@@ -30,6 +30,21 @@ std::ostream& operator<<(std::ostream& o, const disk& d) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const disk_space_alert d) {
+    switch (d) {
+    case disk_space_alert::ok:
+        o << "ok";
+        break;
+    case disk_space_alert::low_space:
+        o << "low_space";
+        break;
+    case disk_space_alert::degraded:
+        o << "degraded";
+        break;
+    }
+    return o;
+}
+
 std::ostream& operator<<(std::ostream& o, const local_state& s) {
     fmt::print(
       o,

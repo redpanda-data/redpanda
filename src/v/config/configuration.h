@@ -51,9 +51,9 @@ struct configuration final : public config_store {
     bounded_property<std::optional<int>> rpc_server_tcp_send_buf;
     // Coproc
     property<bool> enable_coproc;
-    property<std::size_t> coproc_max_inflight_bytes;
-    property<std::size_t> coproc_max_ingest_bytes;
-    property<std::size_t> coproc_max_batch_size;
+    property<size_t> coproc_max_inflight_bytes;
+    property<size_t> coproc_max_ingest_bytes;
+    property<size_t> coproc_max_batch_size;
     property<std::chrono::milliseconds> coproc_offset_flush_interval_ms;
 
     // Controller
@@ -233,6 +233,8 @@ struct configuration final : public config_store {
     // health monitor
     property<std::chrono::milliseconds> health_monitor_tick_interval;
     property<std::chrono::milliseconds> health_monitor_max_metadata_age;
+    bounded_property<unsigned> storage_space_alert_free_threshold_percent;
+    bounded_property<size_t> storage_space_alert_free_threshold_bytes;
     // metrics reporter
     property<bool> enable_metrics_reporter;
     property<std::chrono::milliseconds> metrics_reporter_tick_interval;

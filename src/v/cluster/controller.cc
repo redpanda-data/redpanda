@@ -271,7 +271,11 @@ ss::future<> controller::start() {
             std::ref(_connections),
             std::ref(_partition_manager),
             std::ref(_raft_manager),
-            std::ref(_as));
+            std::ref(_as),
+            config::shard_local_cfg()
+              .storage_space_alert_free_threshold_bytes.bind(),
+            config::shard_local_cfg()
+              .storage_space_alert_free_threshold_percent.bind());
       })
       .then([this] { return _hm_frontend.start(std::ref(_hm_backend)); })
       .then([this] {

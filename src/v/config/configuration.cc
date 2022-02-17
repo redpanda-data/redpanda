@@ -9,6 +9,7 @@
 
 #include "config/configuration.h"
 
+#include "cluster/node/constants.h"
 #include "config/base_property.h"
 #include "config/node_config.h"
 #include "model/metadata.h"
@@ -1034,6 +1035,23 @@ configuration::configuration()
       "Max age of metadata cached in the health monitor of non controller node",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       10s)
+  , storage_space_alert_free_threshold_percent(
+      *this,
+      "storage_space_alert_free_threshold_percent",
+      "Threshold of minimim percent free space before setting storage space "
+      "alert",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      5,
+      {.min = cluster::node::min_percent_free_threshold,
+       .max = cluster::node::max_percent_free_threshold})
+  , storage_space_alert_free_threshold_bytes(
+      *this,
+      "storage_space_alert_free_threshold_bytes",
+      "Threshold of minimim bytes free space before setting storage space "
+      "alert",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1_GiB,
+      {.min = cluster::node::min_bytes_free_threshold})
   , enable_metrics_reporter(
       *this,
       "enable_metrics_reporter",
