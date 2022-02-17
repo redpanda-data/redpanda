@@ -522,6 +522,12 @@ FIXTURE_TEST(test_remote_partition_scan_second_half, cloud_storage_fixture) {
     print_segments(segments);
 
     auto headers_read = scan_remote_partition(*this, base, max);
+    vlog(test_log.debug, "scan results: \n\n");
+    int hdr_ix = 0;
+    for (const auto& hdr : headers_read) {
+        vlog(test_log.debug, "header at pos {}: {}", hdr_ix, hdr);
+        hdr_ix++;
+    }
 
     BOOST_REQUIRE_EQUAL(headers_read.size(), total_batches / 2);
     auto coverage = get_coverage(headers_read, segments, batches_per_segment);

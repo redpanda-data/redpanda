@@ -182,6 +182,55 @@ remote_segment::data_stream(size_t pos, ss::io_priority_class io_priority) {
     co_return data_stream;
 }
 
+ss::future<remote_segment::input_stream_with_offsets>
+remote_segment::offset_data_stream(
+  model::offset kafka_offset, ss::io_priority_class io_priority) {
+    vlog(
+      _ctxlog.debug,
+      "remote segment file input stream at offset {}",
+      kafka_offset);
+    ss::gate::holder g(_gate);
+    co_await hydrate();
+    auto pos = maybe_get_offsets(kafka_offset)
+                 .value_or(offset_index::find_result{
+                   .rp_offset = _base_rp_offset,
+                   .kaf_offset = _base_rp_offset - _base_offset_delta,
+                   .file_pos = 0,
+                 });
+    ss::file_input_stream_options options{};
+    options.buffer_size = config::shard_local_cfg().storage_read_buffer_size();
+    options.read_ahead
+      = config::shard_local_cfg().storage_read_readahead_count();
+    options.io_priority_class = io_priority;
+    auto data_stream = ss::make_file_input_stream(
+      _data_file, pos.file_pos, std::move(options));
+    co_return input_stream_with_offsets{
+      .stream = std::move(data_stream),
+      .rp_offset = pos.rp_offset,
+      .kafka_offset = pos.kaf_offset,
+    };
+}
+
+std::optional<offset_index::find_result>
+remote_segment::maybe_get_offsets(model::offset kafka_offset) {
+    if (!_index) {
+        return {};
+    }
+    auto pos = _index->find_kaf_offset(kafka_offset);
+    if (!pos) {
+        return {};
+    }
+    vlog(
+      _ctxlog.debug,
+      "Using index to locate {}, the result is rp-offset: {}, kafka-offset: "
+      "{}, file-pos: {}",
+      kafka_offset,
+      pos->rp_offset,
+      pos->kaf_offset,
+      pos->file_pos);
+    return pos;
+}
+
 ss::future<> remote_segment::do_hydrate() {
     auto callback = [this](
                       uint64_t size_bytes,
@@ -189,7 +238,10 @@ ss::future<> remote_segment::do_hydrate() {
         offset_index tmpidx(get_base_rp_offset(), get_base_kafka_offset(), 0);
         auto [sparse, sput] = input_stream_fanout<2>(std::move(s), 1);
         auto parser = make_remote_segment_index_builder(
-          std::move(sparse), tmpidx, _base_offset_delta, 1); // TODO: use 64KB
+          std::move(sparse),
+          tmpidx,
+          _base_offset_delta,
+          remote_segment_sampling_step_bytes);
         auto fparse = parser->consume().finally(
           [parser] { return parser->close(); });
         auto fput = _cache.put(_path, sput).finally([sref = std::ref(sput)] {
@@ -628,13 +680,19 @@ remote_segment_batch_reader::read_some(
 
 ss::future<std::unique_ptr<storage::continuous_batch_parser>>
 remote_segment_batch_reader::init_parser() {
-    vlog(_ctxlog.debug, "remote_segment_batch_reader::init_parser");
-    auto stream = co_await _seg->data_stream(
-      0, priority_manager::local().shadow_indexing_priority());
+    vlog(
+      _ctxlog.debug,
+      "remote_segment_batch_reader::init_parser, start_offset: {}",
+      _config.start_offset);
+    auto stream_off = co_await _seg->offset_data_stream(
+      _config.start_offset,
+      priority_manager::local().shadow_indexing_priority());
     auto parser = std::make_unique<storage::continuous_batch_parser>(
       std::make_unique<remote_segment_batch_consumer>(
         _config, *this, _seg->get_term(), _seg->get_ntp(), _rtc),
-      std::move(stream));
+      std::move(stream_off.stream));
+    _cur_rp_offset = stream_off.rp_offset;
+    _cur_delta = stream_off.rp_offset - stream_off.kafka_offset;
     co_return parser;
 }
 

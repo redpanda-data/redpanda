@@ -34,7 +34,7 @@
 
 namespace cloud_storage {
 
-static constexpr size_t max_index_error_bytes = 32_KiB;
+static constexpr size_t remote_segment_sampling_step_bytes = 64_KiB;
 class download_exception : public std::exception {
 public:
     explicit download_exception(download_result r, std::filesystem::path p);
@@ -99,6 +99,16 @@ public:
     ss::future<ss::input_stream<char>>
     data_stream(size_t pos, ss::io_priority_class);
 
+    struct input_stream_with_offsets {
+        ss::input_stream<char> stream;
+        model::offset rp_offset;
+        model::offset kafka_offset;
+    };
+    /// create an input stream _sharing_ the underlying file handle
+    /// starting at position @pos
+    ss::future<input_stream_with_offsets>
+    offset_data_stream(model::offset kafka_offset, ss::io_priority_class);
+
     /// Hydrate the segment
     ss::future<> hydrate();
 
@@ -107,6 +117,11 @@ public:
     bool download_in_progress() const noexcept { return !_wait_list.empty(); }
 
 private:
+    /// get a file offset for the corresponding kafka offset
+    /// if the index is available
+    std::optional<offset_index::find_result>
+    maybe_get_offsets(model::offset kafka_offset);
+
     /// Run hydration loop. The method is supposed to be constantly running
     /// in the background. The background loop is triggered by the condition
     /// variable '_bg_cvar' and the promise list '_wait_list'. When the promise
