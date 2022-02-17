@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "cluster/health_monitor_types.h"
 #include "cluster/tests/utils.h"
 #include "cluster/types.h"
 #include "model/compression.h"
@@ -14,6 +15,7 @@
 #include "model/metadata.h"
 #include "model/timestamp.h"
 #include "random/generators.h"
+#include "reflection/adl.h"
 #include "test_utils/randoms.h"
 #include "test_utils/rpc.h"
 #include "tristate.h"
@@ -363,4 +365,90 @@ SEASTAR_THREAD_TEST_CASE(incremental_topic_updates_backward_compatibilty_test) {
     BOOST_CHECK(
       old_updates_with_dp.retention_duration == result.retention_duration);
     BOOST_CHECK(old_updates_with_dp.segment_size == result.segment_size);
+}
+
+SEASTAR_THREAD_TEST_CASE(partition_status_serialiaztion_test) {
+    cluster::partition_status status{
+      .id = model::partition_id(10),
+      .term = model::term_id(256),
+      .leader_id = model::node_id(123),
+      .revision_id = model::revision_id(1024),
+    };
+    auto original = status;
+
+    auto result = serialize_roundtrip_rpc(std::move(status));
+
+    BOOST_CHECK(result == original);
+}
+
+struct partition_status_v0 {
+    int8_t version = 0;
+    model::partition_id id;
+    model::term_id term;
+    std::optional<model::node_id> leader_id;
+};
+
+SEASTAR_THREAD_TEST_CASE(partition_status_serialization_backward_compat_test) {
+    partition_status_v0 status{
+      .id = model::partition_id(10),
+      .term = model::term_id(256),
+      .leader_id = model::node_id(123),
+    };
+
+    auto original = status;
+    auto buf = reflection::to_iobuf(std::move(status));
+    auto result = reflection::from_iobuf<cluster::partition_status>(
+      std::move(buf));
+
+    BOOST_REQUIRE_EQUAL(result.id, original.id);
+    BOOST_REQUIRE_EQUAL(result.term, original.term);
+    BOOST_REQUIRE_EQUAL(result.leader_id, original.leader_id);
+    BOOST_REQUIRE_EQUAL(result.revision_id, model::revision_id{});
+}
+namespace reflection {
+template<>
+struct adl<partition_status_v0> {
+    void to(iobuf& out, partition_status_v0&& s) {
+        serialize(out, int8_t(0), s.id, s.term, s.leader_id);
+    }
+
+    partition_status_v0 from(iobuf_parser& p) {
+        auto version = adl<int8_t>{}.from(p);
+        auto id = adl<model::partition_id>{}.from(p);
+        auto term = adl<model::term_id>{}.from(p);
+        auto leader = adl<std::optional<model::node_id>>{}.from(p);
+
+        return partition_status_v0{
+          .id = id,
+          .term = term,
+          .leader_id = leader,
+        };
+    }
+};
+} // namespace reflection
+
+SEASTAR_THREAD_TEST_CASE(partition_status_serialization_old_version) {
+    std::vector<cluster::partition_status> statuses;
+    statuses.push_back(cluster::partition_status{
+      .id = model::partition_id(0),
+      .term = model::term_id(256),
+      .leader_id = model::node_id(123),
+      .revision_id = model::revision_id{},
+    });
+    statuses.push_back(cluster::partition_status{
+      .id = model::partition_id(1),
+      .term = model::term_id(256),
+      .leader_id = model::node_id(123),
+      .revision_id = model::revision_id{},
+    });
+
+    auto original = statuses;
+    auto buf = reflection::to_iobuf(std::move(statuses));
+    auto result = reflection::from_iobuf<std::vector<partition_status_v0>>(
+      std::move(buf));
+    for (auto i = 0; i < statuses.size(); ++i) {
+        BOOST_CHECK(result[i].id == original[i].id);
+        BOOST_CHECK(result[i].term == original[i].term);
+        BOOST_CHECK(result[i].leader_id == original[i].leader_id);
+    }
 }
