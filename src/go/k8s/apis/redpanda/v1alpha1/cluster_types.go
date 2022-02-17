@@ -69,7 +69,9 @@ func (r *RedpandaResourceRequirements) RedpandaCPU() *resource.Quantity {
 func (r *RedpandaResourceRequirements) RedpandaMemory() *resource.Quantity {
 	q := r.Redpanda.Memory()
 	if q == nil || q.IsZero() {
-		q = r.Requests.Memory()
+		requestedMemory := r.Requests.Memory().Value()
+		requestedMemory = int64(float64(requestedMemory) * RedpandaMemoryAllocationRatio)
+		q = resource.NewQuantity(requestedMemory, resource.BinarySI)
 	}
 	qd := q.DeepCopy()
 	return &qd
@@ -510,6 +512,8 @@ type SocketAddress struct {
 const (
 	// MinimumMemoryPerCore the minimum amount of memory needed per core
 	MinimumMemoryPerCore = 2 * gb
+	// RedpandaMemoryAllocationRatio reserves 10% for the OS
+	RedpandaMemoryAllocationRatio = 0.9
 )
 
 func init() {
