@@ -12,6 +12,7 @@
 #include "cluster/node/constants.h"
 #include "config/base_property.h"
 #include "config/node_config.h"
+#include "config/validators.h"
 #include "model/metadata.h"
 #include "storage/chunk_cache.h"
 #include "storage/segment_appender.h"
@@ -374,6 +375,23 @@ configuration::configuration()
       "refreshed",
       {.visibility = visibility::tunable},
       2s)
+  , kafka_connection_rate_limit(
+      *this,
+      "kafka_connection_rate_limit",
+      "Maximum connections per second for one core",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt,
+      {.min = 1})
+  , kafka_connection_rate_limit_overrides(
+      *this,
+      "kafka_connection_rate_limit_overrides",
+      "Overrides for specific ips for maximum connections per second for one "
+      "core",
+      {.needs_restart = needs_restart::no,
+       .example = R"(['127.0.0.1:90', '50.20.1.1:40'])",
+       .visibility = visibility::user},
+      {},
+      validate_connection_rate)
   , transactional_id_expiration_ms(
       *this,
       "transactional_id_expiration_ms",
