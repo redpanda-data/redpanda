@@ -533,6 +533,7 @@ struct ntp_leader {
     model::ntp ntp;
     model::term_id term;
     std::optional<model::node_id> leader_id;
+    model::revision_id revision_id;
 };
 
 partition_status to_partition_leader(const ntp_leader& ntpl) {
@@ -540,6 +541,7 @@ partition_status to_partition_leader(const ntp_leader& ntpl) {
       .id = ntpl.ntp.tp.partition,
       .term = ntpl.term,
       .leader_id = ntpl.leader_id,
+      .revision_id = ntpl.revision_id,
     };
 }
 
@@ -558,6 +560,7 @@ std::vector<ntp_leader> collect_shard_local_leaders(
                 .ntp = p.first,
                 .term = p.second->term(),
                 .leader_id = p.second->get_leader_id(),
+                .revision_id = p.second->get_revision_id(),
               };
           });
     } else {
@@ -567,6 +570,7 @@ std::vector<ntp_leader> collect_shard_local_leaders(
                   .ntp = ntp,
                   .term = partition->term(),
                   .leader_id = partition->get_leader_id(),
+                  .revision_id = partition->get_revision_id(),
                 });
             }
         }
