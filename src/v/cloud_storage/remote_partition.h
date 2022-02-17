@@ -301,7 +301,6 @@ private:
     retry_chain_node _rtc;
     retry_chain_logger _ctxlog;
     ss::gate _gate;
-    ss::abort_source _as;
     remote& _api;
     cache& _cache;
     const partition_manifest& _manifest;
