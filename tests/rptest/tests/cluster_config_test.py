@@ -390,6 +390,10 @@ class ClusterConfigTest(RedpandaTest):
                 # Don't try enabling coproc, it has external dependencies
                 continue
 
+            if name == 'admin_api_require_auth':
+                # Don't lock ourselves out of the admin API!
+                continue
+
             updates[name] = valid_value
 
         patch_result = self.admin.patch_cluster_config(upsert=updates,
