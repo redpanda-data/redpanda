@@ -95,6 +95,9 @@ struct configuration final : public config_store {
     property<model::compression> log_compression_type;
     property<size_t> fetch_max_bytes;
     property<std::chrono::milliseconds> metadata_status_wait_timeout_ms;
+    bounded_property<std::optional<int64_t>> rpc_server_connection_rate_limit;
+    property<std::vector<ss::sstring>>
+      rpc_server_connection_rate_limit_overrides;
     // same as transactional.id.expiration.ms in kafka
     property<std::chrono::milliseconds> transactional_id_expiration_ms;
     property<bool> enable_idempotence;
