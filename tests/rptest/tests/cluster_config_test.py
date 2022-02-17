@@ -8,7 +8,6 @@
 # by the Apache License, Version 2.0
 
 from collections import namedtuple
-from email.policy import default
 import time
 import requests
 import json
@@ -22,6 +21,7 @@ from rptest.clients.rpk import RpkTool, RpkException
 from rptest.clients.rpk_remote import RpkRemoteTool
 from rptest.clients.kcl import KCL
 from rptest.services.cluster import cluster
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
 
@@ -614,7 +614,7 @@ class ClusterConfigTest(RedpandaTest):
             node = self.redpanda.nodes[i]
             assert int(node_id) == self.redpanda.idx(node)
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_rpk_force_reset(self):
         """
         Verify that RPK's `reset` command for disaster recovery works as
@@ -642,7 +642,7 @@ class ClusterConfigTest(RedpandaTest):
         # Check that the bystander config property was not reset
         self._check_value_everywhere("append_chunk_size", 65536)
 
-    @cluster(num_nodes=1)
+    @cluster(num_nodes=1, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_rpk_lint(self):
         """
         Verify that if a redpanda config contains a cluster config
