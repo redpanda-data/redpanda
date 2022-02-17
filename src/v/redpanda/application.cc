@@ -1010,6 +1010,17 @@ void application::wire_up_redpanda_services() {
 
               c.disable_metrics = net::metrics_disabled(
                 config::shard_local_cfg().disable_metrics());
+
+              net::config_connection_rate_bindings bindings{
+                .config_general_rate
+                = config::shard_local_cfg()
+                    .rpc_server_connection_rate_limit.bind(),
+                .config_overrides_rate
+                = config::shard_local_cfg()
+                    .rpc_server_connection_rate_limit_overrides.bind(),
+              };
+
+              c.connection_rate_bindings.emplace(std::move(bindings));
           });
       })
       .get();
