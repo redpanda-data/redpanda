@@ -351,7 +351,7 @@ configuration::configuration()
       "metadata_status_wait_timeout_ms",
       "Maximum time to wait in metadata request for cluster health to be "
       "refreshed",
-      required::no,
+      {.visibility = visibility::tunable},
       2s)
   , transactional_id_expiration_ms(
       *this,
@@ -865,31 +865,31 @@ configuration::configuration()
       *this,
       "cloud_storage_upload_ctrl_update_interval_ms",
       "",
-      required::no,
+      {.visibility = visibility::tunable},
       60s)
   , cloud_storage_upload_ctrl_p_coeff(
       *this,
       "cloud_storage_upload_ctrl_p_coeff",
       "proportional coefficient for upload PID controller",
-      required::no,
+      {.visibility = visibility::tunable},
       -2.0)
   , cloud_storage_upload_ctrl_d_coeff(
       *this,
       "cloud_storage_upload_ctrl_d_coeff",
       "derivative coefficient for upload PID controller.",
-      required::no,
+      {.visibility = visibility::tunable},
       0.0)
   , cloud_storage_upload_ctrl_min_shares(
       *this,
       "cloud_storage_upload_ctrl_min_shares",
       "minimum number of IO and CPU shares that archival upload can use",
-      required::no,
+      {.visibility = visibility::tunable},
       100)
   , cloud_storage_upload_ctrl_max_shares(
       *this,
       "cloud_storage_upload_ctrl_max_shares",
       "maximum number of IO and CPU shares that archival upload can use",
-      required::no,
+      {.visibility = visibility::tunable},
       1000)
   , cloud_storage_cache_size(
       *this,

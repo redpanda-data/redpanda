@@ -21,13 +21,13 @@ configuration::configuration()
     *this,
     "schema_registry_api",
     "Schema Registry API listen address and port",
-    config::required::no,
+    {},
     {model::broker_endpoint(net::unresolved_address("0.0.0.0", 8081))})
   , schema_registry_api_tls(
       *this,
       "schema_registry_api_tls",
       "TLS configuration for Schema Registry API",
-      config::required::no,
+      {},
       {},
       config::endpoint_tls_config::validate_many)
   , schema_registry_replication_factor(
@@ -35,13 +35,13 @@ configuration::configuration()
       "schema_registry_replication_factor",
       "Replication factor for internal _schemas topic.  If unset, defaults to "
       "`default_topic_replication`",
-      config::required::no,
+      {},
       std::nullopt)
   , api_doc_dir(
       *this,
       "api_doc_dir",
       "API doc directory",
-      config::required::no,
+      {},
       "/usr/share/redpanda/proxy-api-doc") {}
 
 } // namespace pandaproxy::schema_registry

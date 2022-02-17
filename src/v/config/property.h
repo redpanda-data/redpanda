@@ -46,18 +46,6 @@ public:
       , _default(std::move(def))
       , _validator(std::move(validator)) {}
 
-    property(
-      config_store& conf,
-      std::string_view name,
-      std::string_view desc,
-      required req = {},
-      T def = T{},
-      property::validator validator = property::noop_validator)
-      : base_property(conf, name, desc, {.required = req})
-      , _value(def)
-      , _default(std::move(def))
-      , _validator(std::move(validator)) {}
-
     /**
      * Properties aren't moved in normal used on the per-shard
      * cluster configuration objects.  This method exists for

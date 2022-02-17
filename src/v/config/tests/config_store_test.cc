@@ -50,13 +50,12 @@ struct test_config : public config::config_store {
           "Required string value",
           {.needs_restart = config::needs_restart::no,
            .visibility = config::visibility::user})
-      , an_int64_t(
-          *this, "an_int64_t", "Some other int type", config::required::no, 200)
+      , an_int64_t(*this, "an_int64_t", "Some other int type", {}, 200)
       , an_aggregate(
           *this,
           "an_aggregate",
           "Aggregate type",
-          config::required::no,
+          {},
           custom_aggregate{"str", 10})
       , strings(
           *this,
@@ -67,13 +66,13 @@ struct test_config : public config::config_store {
           *this,
           "nullable_int",
           "A nullable (std::optional) int value",
-          config::required::no,
+          {},
           std::nullopt)
       , nullable_string(
           *this,
           "optional_string",
           "An optional string value",
-          config::required::no,
+          {},
           std::nullopt)
       , boolean(
           *this,
@@ -82,19 +81,9 @@ struct test_config : public config::config_store {
           config::base_property::metadata{
             .needs_restart = config::needs_restart::no},
           false)
-      , seconds(*this, "seconds", "Plain seconds", config::required::no, {})
-      , optional_seconds(
-          *this,
-          "optional_seconds",
-          "Optional seconds",
-          config::required::no,
-          {})
-      , milliseconds(
-          *this,
-          "milliseconds",
-          "Plain milliseconds",
-          config::required::no,
-          {}) {}
+      , seconds(*this, "seconds", "Plain seconds")
+      , optional_seconds(*this, "optional_seconds", "Optional seconds")
+      , milliseconds(*this, "milliseconds", "Plain milliseconds") {}
 };
 
 YAML::Node minimal_valid_configuration() {
