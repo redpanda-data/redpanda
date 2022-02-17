@@ -371,6 +371,7 @@ ss::future<> metadata_dissemination_service::update_leaders_with_health_report(
                       if (p.leader_id.has_value()) {
                           leaders.update_partition_leader(
                             model::ntp(tp.tp_ns.ns, tp.tp_ns.tp, p.id),
+                            p.revision_id,
                             p.term,
                             p.leader_id);
                       }
