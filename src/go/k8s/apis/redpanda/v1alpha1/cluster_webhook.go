@@ -11,6 +11,7 @@ package v1alpha1
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 
 	cmmeta "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
@@ -492,7 +493,8 @@ func (r *Cluster) validateRedpandaMemory() field.ErrorList {
 	}
 
 	redpandaCores := r.Spec.Resources.RedpandaCPU().Value()
-	if !r.Spec.Resources.RedpandaMemory().IsZero() && r.Spec.Resources.RedpandaMemory().Value() < redpandaCores*MinimumMemoryPerCore {
+	minimumMemoryPerCore := int64(math.Floor(MinimumMemoryPerCore * RedpandaMemoryAllocationRatio))
+	if !r.Spec.Resources.RedpandaMemory().IsZero() && r.Spec.Resources.RedpandaMemory().Value() < redpandaCores*minimumMemoryPerCore {
 		allErrs = append(allErrs,
 			field.Invalid(
 				field.NewPath("spec").Child("resources").Child("redpanda").Child("memory"),

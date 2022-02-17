@@ -48,7 +48,7 @@ func TestRedpandaResourceRequirements(t *testing.T) {
 			{
 				name:                "RedpandaMemory is set from requests.memory",
 				setRequestsMem:      resource.MustParse("3000Mi"),
-				expectedRedpandaMem: resource.MustParse("3000Mi"),
+				expectedRedpandaMem: resource.MustParse("2700Mi"),
 			},
 			{
 				name:                "RedpandaMemory is set from lower redpanda.memory",
