@@ -18,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
+// nolint:funlen // this is ok for a test
 func TestRedpandaResourceRequirements(t *testing.T) {
 	type test struct {
 		name                string
@@ -104,6 +105,22 @@ func TestRedpandaResourceRequirements(t *testing.T) {
 				setRequestsMem:      resource.MustParse("20Gi"),
 				setRedpandaCPU:      resource.MustParse("1001m"),
 				expectedRedpandaCPU: resource.MustParse("2"),
+			},
+			{
+				name:                "RedpandaCPU is limited by 2GiB/core",
+				setRequestsCPU:      resource.MustParse("10"),
+				setRequestsMem:      resource.MustParse("4Gi"),
+				expectedRedpandaCPU: resource.MustParse("2"),
+			},
+			{
+				name:                "RedpandaCPU has a minimum if requests >0",
+				setRequestsCPU:      resource.MustParse("100m"),
+				setRequestsMem:      resource.MustParse("100Mi"),
+				expectedRedpandaCPU: resource.MustParse("1"),
+			},
+			{
+				name:                "RedpandaCPU not set if no request",
+				expectedRedpandaCPU: resource.MustParse("0"),
 			},
 		}
 		for _, tt := range tests {
