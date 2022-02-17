@@ -309,6 +309,9 @@ class RedpandaService(Service):
             self._log_level = log_level
 
         self._admin = Admin(self)
+        self._admin = Admin(self,
+                            auth=(self.SUPERUSER_CREDENTIALS.username,
+                                  self.SUPERUSER_CREDENTIALS.password))
         self._started = []
         self._security_config = dict()
 
