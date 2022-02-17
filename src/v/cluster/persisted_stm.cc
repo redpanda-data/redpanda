@@ -31,6 +31,11 @@ persisted_stm::persisted_stm(
       ss::default_priority_class())
   , _log(logger) {}
 
+ss::future<> persisted_stm::remove_persistent_state() {
+    co_await _snapshot_mgr.remove_snapshot();
+    co_await _snapshot_mgr.remove_partial_snapshots();
+}
+
 ss::future<std::optional<stm_snapshot>> persisted_stm::load_snapshot() {
     auto maybe_reader = co_await _snapshot_mgr.open_snapshot();
     if (!maybe_reader) {
@@ -178,6 +183,7 @@ ss::future<bool> persisted_stm::do_sync(
   model::term_id term) {
     const auto committed = _c->committed_offset();
     const auto ntp = _c->ntp();
+    _c->events().notify_commit_index();
 
     if (offset > committed) {
         try {

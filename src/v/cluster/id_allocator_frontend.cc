@@ -190,7 +190,7 @@ ss::future<allocate_id_reply> id_allocator_frontend::do_allocate_id(
               return ss::make_ready_future<allocate_id_reply>(
                 allocate_id_reply{0, errc::topic_not_exists});
           }
-          auto& stm = partition->id_allocator_stm();
+          auto stm = partition->id_allocator_stm();
           if (!stm) {
               vlog(
                 clusterlog.warn,

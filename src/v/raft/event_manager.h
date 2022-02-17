@@ -51,7 +51,7 @@ public:
     ss::future<>
     wait(model::offset, model::timeout_clock::time_point, ss::abort_source&);
 
-    void notify_commit_index(model::offset);
+    void notify_commit_index();
 
 private:
     consensus* _consensus;
