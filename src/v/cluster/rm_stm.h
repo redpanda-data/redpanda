@@ -344,6 +344,7 @@ private:
     std::chrono::milliseconds _tx_timeout_delay;
     std::chrono::milliseconds _abort_interval_ms;
     uint32_t _abort_index_segment_size;
+    uint32_t _seq_table_min_size;
     model::violation_recovery_policy _recovery_policy;
     std::chrono::milliseconds _transactional_id_expiration;
     bool _is_autoabort_enabled{true};
