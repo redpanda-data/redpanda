@@ -518,8 +518,15 @@ ss::future<tm_stm::get_txs_result> tm_stm::get_all_transactions() {
     }
 
     std::vector<tm_transaction> ans;
-    for (const auto& [_, tx] : _tx_table) {
+    for (const auto& [_, tx] : _mem_txes) {
         ans.push_back(tx);
+    }
+
+    for (const auto& [id, tx] : _log_txes) {
+        auto it = _mem_txes.find(id);
+        if (it == _mem_txes.end()) {
+            ans.push_back(tx);
+        }
     }
 
     co_return ans;
