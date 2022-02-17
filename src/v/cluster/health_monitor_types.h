@@ -146,9 +146,12 @@ using force_refresh = ss::bool_class<struct hm_force_refresh_tag>;
  */
 
 struct get_node_health_request {
-    static constexpr int8_t current_version = 0;
+    // version -1: included revision id in partition status
+    static constexpr int8_t current_version = -1;
 
     node_report_filter filter;
+    // this field is not serialized
+    int8_t decoded_version = current_version;
 };
 
 struct get_node_health_reply {
@@ -159,11 +162,13 @@ struct get_node_health_reply {
 };
 
 struct get_cluster_health_request {
-    static constexpr int8_t current_version = 0;
-
+    // version -1: included revision id in partition status
+    static constexpr int8_t current_version = -1;
     cluster_report_filter filter;
     // if set to true will force node health metadata refresh
     force_refresh refresh = force_refresh::no;
+    // this field is not serialized
+    int8_t decoded_version = current_version;
 };
 
 struct get_cluster_health_reply {

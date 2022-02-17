@@ -80,9 +80,14 @@ std::ostream& operator<<(std::ostream& o, const cluster_health_report& r) {
     return o;
 }
 
-std::ostream& operator<<(std::ostream& o, const partition_status& pl) {
+std::ostream& operator<<(std::ostream& o, const partition_status& ps) {
     fmt::print(
-      o, "{{id: {}, term: {}, leader_id: {}}}", pl.id, pl.term, pl.leader_id);
+      o,
+      "{{id: {}, term: {}, leader_id: {}, revision_id: {}}}",
+      ps.id,
+      ps.term,
+      ps.leader_id,
+      ps.revision_id);
     return o;
 }
 
@@ -376,13 +381,13 @@ void adl<cluster::get_node_health_request>::to(
 
 cluster::get_node_health_request
 adl<cluster::get_node_health_request>::from(iobuf_parser& p) {
-    read_and_assert_version<cluster::get_node_health_request>(
-      "cluster::get_node_health_request", p);
+    auto version = adl<int8_t>{}.from(p);
 
     auto filter = adl<cluster::node_report_filter>{}.from(p);
 
     return cluster::get_node_health_request{
       .filter = std::move(filter),
+      .decoded_version = version,
     };
 }
 
@@ -411,8 +416,7 @@ void adl<cluster::get_cluster_health_request>::to(
 
 cluster::get_cluster_health_request
 adl<cluster::get_cluster_health_request>::from(iobuf_parser& p) {
-    read_and_assert_version<cluster::get_cluster_health_request>(
-      "cluster::get_cluster_health_request", p);
+    auto version = adl<int8_t>{}.from(p);
 
     auto filter = adl<cluster::cluster_report_filter>{}.from(p);
     auto refresh = adl<cluster::force_refresh>{}.from(p);
@@ -420,6 +424,7 @@ adl<cluster::get_cluster_health_request>::from(iobuf_parser& p) {
     return cluster::get_cluster_health_request{
       .filter = std::move(filter),
       .refresh = refresh,
+      .decoded_version = version,
     };
 }
 
