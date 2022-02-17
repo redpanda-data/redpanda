@@ -288,6 +288,12 @@ configuration::configuration()
       "Time to wait state catch up before rejecting a request",
       {.visibility = visibility::user},
       10s)
+  , seq_table_min_size(
+      *this,
+      "seq_table_min_size",
+      "Minimum size of the seq table non affected by compaction",
+      {.visibility = visibility::user},
+      1000)
   , tx_timeout_delay_ms(
       *this,
       "tx_timeout_delay_ms",

@@ -86,6 +86,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> tm_sync_timeout_ms;
     property<model::violation_recovery_policy> tm_violation_recovery_policy;
     property<std::chrono::milliseconds> rm_sync_timeout_ms;
+    property<uint32_t> seq_table_min_size;
     property<std::chrono::milliseconds> tx_timeout_delay_ms;
     property<model::violation_recovery_policy> rm_violation_recovery_policy;
     property<std::chrono::milliseconds> fetch_reads_debounce_timeout;
