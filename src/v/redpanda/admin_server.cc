@@ -666,6 +666,62 @@ static json_validator make_cluster_config_validator() {
     return json_validator(schema);
 }
 
+/**
+ * This function provides special case validation for configuration
+ * properties that need to check other properties' values as well
+ * as their own.
+ *
+ * Ideally this would be built into the config_store/property generic
+ * interfaces, but that's a lot of plumbing for a few relatively simple
+ * checks, so for the moment we just do the checks here by hand.
+ */
+void config_multi_property_validation(
+  ss::sstring const& username,
+  cluster::config_update_request const& req,
+  config::configuration const& updated_config,
+  std::map<ss::sstring, ss::sstring>& errors) {
+    absl::flat_hash_set<ss::sstring> modified_keys;
+    for (const auto& i : req.upsert) {
+        modified_keys.insert(i.first);
+    }
+
+    bool auth_now_enabled = config::shard_local_cfg().admin_api_require_auth();
+    if (modified_keys.contains("admin_api_require_auth")) {
+        auth_now_enabled = updated_config.admin_api_require_auth();
+    }
+
+    if (
+      (modified_keys.contains("admin_api_require_auth")
+       || modified_keys.contains("superusers"))
+      && auth_now_enabled) {
+        // We are switching on admin_api_require_auth.  Apply rules to prevent
+        // the user "locking themselves out of the house".
+
+        // There must be some superusers defined
+        auto superusers = config::shard_local_cfg().superusers();
+        if (modified_keys.contains("superusers")) {
+            superusers = updated_config.superusers();
+        }
+
+        const bool auth_was_enabled
+          = config::shard_local_cfg().admin_api_require_auth();
+
+        absl::flat_hash_set<ss::sstring> superusers_set(
+          superusers.begin(), superusers.end());
+        if (superusers.empty()) {
+            // Some superusers must be defined, or nobody will be able
+            // to use the admin API after this request.
+            errors["admin_api_require_auth"] = "No superusers defined";
+            return;
+        } else if (!superusers_set.contains(username) && !auth_was_enabled) {
+            // When enabling auth, user making the change must be in the list of
+            // superusers, or they would be locking themselves out.
+            errors["admin_api_require_auth"] = "May only be set by a superuser";
+            return;
+        }
+    }
+}
+
 void admin_server::register_cluster_config_routes() {
     static thread_local auto cluster_config_validator(
       make_cluster_config_validator());
@@ -773,7 +829,7 @@ void admin_server::register_cluster_config_routes() {
       ss::httpd::cluster_config_json::patch_cluster_config,
       [this](
         std::unique_ptr<ss::httpd::request> req,
-        request_auth_result const& auth)
+        request_auth_result const& auth_state)
         -> ss::future<ss::json::json_return_type> {
           if (
             !config::node().enable_central_config()
@@ -819,6 +875,10 @@ void admin_server::register_cluster_config_routes() {
               // by config_manager much after config is written to controller
               // log.
               config::configuration cfg;
+
+              // Configuration properties cannot do multi-property validation
+              // themselves, so there is some special casing here for critical
+              // properties.
 
               std::map<ss::sstring, ss::sstring> errors;
               for (const auto& i : update.upsert) {
@@ -902,6 +962,11 @@ void admin_server::register_cluster_config_routes() {
                         message);
                   }
               }
+
+              // After checking each individual property, check for
+              // any multi-property validation errors
+              config_multi_property_validation(
+                auth_state.get_username(), update, cfg, errors);
 
               if (!errors.empty()) {
                   rapidjson::StringBuffer buf;
