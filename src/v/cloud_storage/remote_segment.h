@@ -13,6 +13,7 @@
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/logger.h"
 #include "cloud_storage/partition_manifest.h"
+#include "cloud_storage/partition_probe.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
@@ -158,7 +159,8 @@ class remote_segment_batch_reader final {
 public:
     remote_segment_batch_reader(
       ss::lw_shared_ptr<remote_segment>,
-      const storage::log_reader_config& config) noexcept;
+      const storage::log_reader_config& config,
+      partition_probe& probe) noexcept;
 
     remote_segment_batch_reader(
       remote_segment_batch_reader&&) noexcept = delete;
@@ -197,6 +199,7 @@ private:
 
     ss::lw_shared_ptr<remote_segment> _seg;
     storage::log_reader_config _config;
+    partition_probe& _probe;
     ss::circular_buffer<model::record_batch> _ringbuf;
     std::optional<std::reference_wrapper<storage::offset_translator_state>>
       _cur_ot_state;
