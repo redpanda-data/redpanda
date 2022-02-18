@@ -400,6 +400,8 @@ ss::future<> admin_server::throw_on_error(
             throw ss::httpd::base_exception(
               fmt::format("Not ready: {}", ec.message()),
               ss::httpd::reply::status_type::service_unavailable);
+        case raft::errc::transfer_to_current_leader:
+            co_return;
         case raft::errc::not_leader:
             throw co_await redirect_to_leader(req, ntp);
         default:

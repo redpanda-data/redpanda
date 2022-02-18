@@ -1091,10 +1091,10 @@ controller_backend::delete_partition(model::ntp ntp, model::revision_id rev) {
       .invoke_on_all([ntp, group_id, rev](shard_table& st) mutable {
           st.erase(ntp, group_id, rev);
       })
-      .then([this, ntp] {
+      .then([this, ntp, rev] {
           return _partition_leaders_table.invoke_on_all(
-            [ntp](partition_leaders_table& leaders) {
-                leaders.remove_leader(ntp);
+            [ntp, rev](partition_leaders_table& leaders) {
+                leaders.remove_leader(ntp, rev);
             });
       })
       .then([this, ntp = std::move(ntp)] {

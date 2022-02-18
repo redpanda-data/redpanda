@@ -90,9 +90,14 @@ std::ostream& operator<<(std::ostream& o, const node_disk_space& s) {
     return o;
 }
 
-std::ostream& operator<<(std::ostream& o, const partition_status& pl) {
+std::ostream& operator<<(std::ostream& o, const partition_status& ps) {
     fmt::print(
-      o, "{{id: {}, term: {}, leader_id: {}}}", pl.id, pl.term, pl.leader_id);
+      o,
+      "{{id: {}, term: {}, leader_id: {}, revision_id: {}}}",
+      ps.id,
+      ps.term,
+      ps.leader_id,
+      ps.revision_id);
     return o;
 }
 
@@ -193,23 +198,38 @@ cluster::node_state adl<cluster::node_state>::from(iobuf_parser& p) {
 
 void adl<cluster::partition_status>::to(
   iobuf& out, cluster::partition_status&& s) {
-    serialize(out, s.current_version, s.id, s.term, s.leader_id);
+    // if revision is not set fallback to old version, we do it here to prevent
+    // old redpanda version from crashing, request handler will decode request
+    // version and base on that handle revision_id field correctly.
+    if (s.revision_id == model::revision_id{}) {
+        serialize(out, int8_t(0), s.id, s.term, s.leader_id);
+    } else {
+        serialize(
+          out,
+          cluster::partition_status::current_version,
+          s.id,
+          s.term,
+          s.leader_id,
+          s.revision_id);
+    }
 }
 
 cluster::partition_status
 adl<cluster::partition_status>::from(iobuf_parser& p) {
-    read_and_assert_version<cluster::partition_status>(
-      "cluster::partition_status", p);
+    auto version = adl<int8_t>{}.from(p);
 
     auto id = adl<model::partition_id>{}.from(p);
     auto term = adl<model::term_id>{}.from(p);
     auto leader = adl<std::optional<model::node_id>>{}.from(p);
-
-    return cluster::partition_status{
+    cluster::partition_status ret{
       .id = id,
       .term = term,
       .leader_id = leader,
     };
+    if (version < 0) {
+        ret.revision_id = adl<model::revision_id>{}.from(p);
+    }
+    return ret;
 }
 
 void adl<cluster::topic_status>::to(iobuf& out, cluster::topic_status&& l) {
@@ -391,13 +411,13 @@ void adl<cluster::get_node_health_request>::to(
 
 cluster::get_node_health_request
 adl<cluster::get_node_health_request>::from(iobuf_parser& p) {
-    read_and_assert_version<cluster::get_node_health_request>(
-      "cluster::get_node_health_request", p);
+    auto version = adl<int8_t>{}.from(p);
 
     auto filter = adl<cluster::node_report_filter>{}.from(p);
 
     return cluster::get_node_health_request{
       .filter = std::move(filter),
+      .decoded_version = version,
     };
 }
 
@@ -426,8 +446,7 @@ void adl<cluster::get_cluster_health_request>::to(
 
 cluster::get_cluster_health_request
 adl<cluster::get_cluster_health_request>::from(iobuf_parser& p) {
-    read_and_assert_version<cluster::get_cluster_health_request>(
-      "cluster::get_cluster_health_request", p);
+    auto version = adl<int8_t>{}.from(p);
 
     auto filter = adl<cluster::cluster_report_filter>{}.from(p);
     auto refresh = adl<cluster::force_refresh>{}.from(p);
@@ -435,6 +454,7 @@ adl<cluster::get_cluster_health_request>::from(iobuf_parser& p) {
     return cluster::get_cluster_health_request{
       .filter = std::move(filter),
       .refresh = refresh,
+      .decoded_version = version,
     };
 }
 

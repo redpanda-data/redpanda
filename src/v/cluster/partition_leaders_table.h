@@ -72,13 +72,23 @@ public:
         }
     }
 
-    void remove_leader(const model::ntp& ntp) {
-        _leaders.erase(
+    void remove_leader(const model::ntp& ntp, model::revision_id revision) {
+        auto it = _leaders.find(
           leader_key_view{model::topic_namespace_view(ntp), ntp.tp.partition});
+        // ignore updates with old revision
+        if (it != _leaders.end() && it->second.partition_revision <= revision) {
+            _leaders.erase(it);
+        }
     }
 
     void update_partition_leader(
       const model::ntp&, model::term_id, std::optional<model::node_id>);
+
+    void update_partition_leader(
+      const model::ntp&,
+      model::revision_id,
+      model::term_id,
+      std::optional<model::node_id>);
 
 private:
     // optimized to reduce number of ntp copies
@@ -145,6 +155,7 @@ private:
         // elected for the topic before
         std::optional<model::node_id> previous_leader;
         model::term_id update_term;
+        model::revision_id partition_revision;
     };
 
     std::optional<leader_meta>
