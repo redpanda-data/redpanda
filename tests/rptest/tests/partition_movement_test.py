@@ -530,3 +530,66 @@ class PartitionMovementTest(EndToEndTest):
         assert admin.get_partitions(name, 0)['status'] == "in_progress"
         rpk.delete_topic(name)
         assert name not in rpk.list_topics()
+
+    @cluster(num_nodes=4)
+    def test_deletion_stops_move(self):
+        """
+        Delete topic which partitions are being moved and check status after 
+        topic is created again, old move 
+        opeartions should not influcence newly created topic
+        """
+        self.start_redpanda(num_nodes=3)
+
+        # create a single topic with replication factor of 1
+        topic = 'test-topic'
+        rpk = RpkTool(self.redpanda)
+        rpk.create_topic(topic, 1, 1)
+        partition = 0
+        num_records = 1000
+
+        self.logger.info(f"Producing to {topic}")
+        producer = KafProducer(self.test_context, self.redpanda, topic,
+                               num_records)
+        producer.start()
+        self.logger.info(
+            f"Finished producing to {topic}, waiting for producer...")
+        producer.wait()
+        producer.free()
+        self.logger.info(f"Producer stop complete.")
+
+        admin = Admin(self.redpanda)
+        # get current assignments
+        assignments = self._get_assignments(admin, topic, partition)
+        assert len(assignments) == 1
+        self.logger.info(f"assignments for {topic}-{partition}: {assignments}")
+        brokers = admin.get_brokers()
+        self.logger.info(f"available brokers: {brokers}")
+        candidates = list(
+            filter(lambda b: b['node_id'] != assignments[0]['node_id'],
+                   brokers))
+        replacement = random.choice(candidates)
+        target_assignment = [{'node_id': replacement['node_id'], 'core': 0}]
+        self.logger.info(
+            f"target assignments for {topic}-{partition}: {target_assignment}")
+        # shutdown target node to make sure that move will never complete
+        node = self.redpanda.get_node(replacement['node_id'])
+        self.redpanda.stop_node(node)
+        admin.set_partition_replicas(topic, partition, target_assignment)
+
+        # check that the status is in progress
+
+        def get_status():
+            partition_info = admin.get_partitions(topic, partition)
+            self.logger.info(
+                f"current assignments for {topic}-{partition}: {partition_info}"
+            )
+            return partition_info["status"]
+
+        wait_until(lambda: get_status() == 'in_progress', 10, 1)
+        # delete the topic
+        rpk.delete_topic(topic)
+        # start the node back up
+        self.redpanda.start_node(node)
+        # create topic again
+        rpk.create_topic(topic, 1, 1)
+        assert get_status() == "done"
