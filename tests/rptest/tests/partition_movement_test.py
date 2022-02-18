@@ -334,6 +334,21 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         else:
             raise RuntimeError(f"Expected 400 but got {r.status_code}")
 
+        # Not unique replicas in replica set
+        assignments = [{
+            "node_id": valid_dest,
+            "core": 0
+        }, {
+            "node_id": valid_dest,
+            "core": 0
+        }]
+        try:
+            r = admin.set_partition_replicas(topic, partition, assignments)
+        except requests.exceptions.HTTPError as e:
+            assert e.response.status_code == 400
+        else:
+            raise RuntimeError(f"Expected 400 but got {r.status_code}")
+
         # Finally a valid move
         assignments = [{"node_id": valid_dest, "core": 0}]
         r = admin.set_partition_replicas(topic, partition, assignments)
