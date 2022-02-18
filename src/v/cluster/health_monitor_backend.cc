@@ -528,11 +528,12 @@ health_monitor_backend::collect_current_node_health(node_report_filter filter) {
 
     co_return ret;
 }
-
+namespace {
 struct ntp_leader {
     model::ntp ntp;
     model::term_id term;
     std::optional<model::node_id> leader_id;
+    model::revision_id revision_id;
 };
 
 partition_status to_partition_leader(const ntp_leader& ntpl) {
@@ -540,6 +541,7 @@ partition_status to_partition_leader(const ntp_leader& ntpl) {
       .id = ntpl.ntp.tp.partition,
       .term = ntpl.term,
       .leader_id = ntpl.leader_id,
+      .revision_id = ntpl.revision_id,
     };
 }
 
@@ -558,6 +560,7 @@ std::vector<ntp_leader> collect_shard_local_leaders(
                 .ntp = p.first,
                 .term = p.second->term(),
                 .leader_id = p.second->get_leader_id(),
+                .revision_id = p.second->get_revision_id(),
               };
           });
     } else {
@@ -567,6 +570,7 @@ std::vector<ntp_leader> collect_shard_local_leaders(
                   .ntp = ntp,
                   .term = partition->term(),
                   .leader_id = partition->get_leader_id(),
+                  .revision_id = partition->get_revision_id(),
                 });
             }
         }
@@ -587,7 +591,7 @@ reduce_leaders_map(leaders_acc_t acc, std::vector<ntp_leader> current_leaders) {
     }
     return acc;
 }
-
+} // namespace
 ss::future<std::vector<topic_status>>
 health_monitor_backend::collect_topic_status(partitions_filter filters) {
     auto leaders_map = co_await _partition_manager.map_reduce0(
