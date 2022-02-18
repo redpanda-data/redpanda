@@ -11,6 +11,7 @@ import sys
 import time
 import re
 import random
+from typing import Optional
 
 from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
@@ -214,6 +215,16 @@ class RaftAvailabilityTest(RedpandaTest):
     def _expect_available(self):
         self._ping_pong()
         self.logger.info("Cluster is available as expected")
+
+    def _transfer_leadership(self, admin: Admin, namespace: str, topic: str,
+                             target_node_id: int) -> None:
+        self.logger.info(f"Starting transfer to {target_node_id}")
+        admin.partition_transfer_leadership("kafka", topic, 0, target_node_id)
+
+        self._wait_for_leader(
+            lambda l : l and l == target_node_id,
+            timeout=ELECTION_TIMEOUT * 2)
+        self.logger.info(f"Completed transfer to {target_node_id}")
 
     @cluster(num_nodes=3)
     def test_one_node_down(self):
@@ -434,14 +445,7 @@ class RaftAvailabilityTest(RedpandaTest):
             target_idx = (initial_leader_id + n) % len(self.redpanda.nodes)
             target_node_id = target_idx + 1
 
-            self.logger.info(f"Starting transfer to {target_node_id}")
-            admin.partition_transfer_leadership("kafka", self.topic, 0,
-                                                target_node_id)
-
-            self._wait_for_leader(
-                lambda l: l is not None and l == target_node_id,
-                timeout=ELECTION_TIMEOUT * 2)
-            self.logger.info(f"Completed transfer to {target_node_id}")
+            self._transfer_leadership(admin, "kafka", self.topic, target_node_id)
 
         self.logger.info(f"Completed {transfer_count} transfers successfully")
 
