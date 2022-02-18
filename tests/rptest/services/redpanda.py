@@ -299,7 +299,9 @@ class RedpandaService(Service):
         'enable_metrics_reporter': False,
         'superusers': [SUPERUSER_CREDENTIALS[0]],
         'enable_auto_rebalance_on_node_add': True,
-        'cluster_id': CLUSTER_NAME
+        'cluster_id': CLUSTER_NAME,
+        'enable_transactions': True,
+        'enable_idempotence': True
     }
 
     logs = {
