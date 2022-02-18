@@ -125,9 +125,9 @@ class TxAdminTest(RedpandaTest):
                                                   target=None)
 
                 def leader_is_changed():
-                    return self.admin.get_partition_leader(
-                        namespace="kafka", topic=topic,
-                        partition=partition) != old_leader
+                    new_leader = self.admin.get_partition_leader(
+                        namespace="kafka", topic=topic, partition=partition)
+                    return (new_leader != -1) and (new_leader != old_leader)
 
                 wait_until(leader_is_changed,
                            timeout_sec=30,
