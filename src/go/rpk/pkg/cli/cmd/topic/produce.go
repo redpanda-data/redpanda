@@ -293,7 +293,7 @@ takes precedence over the default passed in topic. If no topic is specified
 directly and no topic is parsed, this command will quit with an error.
 
 The input format can parse partitions to produce directly to with %p. Doing so
-requires specifying a non-negative --partition flag. Any parsed parstition
+requires specifying a non-negative --partition flag. Any parsed partition
 takes precedence over the --partition flag; specifying the flag is the main
 requirement for being able to directly control which partition to produce to.
 
