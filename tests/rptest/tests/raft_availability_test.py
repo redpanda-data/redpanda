@@ -221,9 +221,20 @@ class RaftAvailabilityTest(RedpandaTest):
         self.logger.info(f"Starting transfer to {target_node_id}")
         admin.partition_transfer_leadership("kafka", topic, 0, target_node_id)
 
-        self._wait_for_leader(
-            lambda l : l and l == target_node_id,
-            timeout=ELECTION_TIMEOUT * 2)
+        last_log_msg = ""      # avoid spamming log
+        def leader_predicate(l: Optional[int]) -> bool:
+            nonlocal last_log_msg, target_node_id
+            if not l:
+                return False
+            if l != target_node_id:
+                log_msg = f'Still waiting for leader {target_node_id}, got {l}'
+                if log_msg != last_log_msg:  # type: ignore # "unbound"
+                    self.logger.info(log_msg)
+                    last_log_msg = log_msg
+                return False
+            return True
+
+        self._wait_for_leader(leader_predicate, timeout=ELECTION_TIMEOUT * 2)
         self.logger.info(f"Completed transfer to {target_node_id}")
 
     @cluster(num_nodes=3)
