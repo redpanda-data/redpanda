@@ -11,6 +11,7 @@ import sys
 import time
 import re
 import random
+import ducktape.errors
 from typing import Optional
 
 from ducktape.mark import parametrize
@@ -218,15 +219,13 @@ class RaftAvailabilityTest(RedpandaTest):
 
     def _transfer_leadership(self, admin: Admin, namespace: str, topic: str,
                              target_node_id: int) -> None:
-        self.logger.info(f"Starting transfer to {target_node_id}")
-        admin.partition_transfer_leadership("kafka", topic, 0, target_node_id)
 
         last_log_msg = ""      # avoid spamming log
         def leader_predicate(l: Optional[int]) -> bool:
             nonlocal last_log_msg, target_node_id
             if not l:
                 return False
-            if l != target_node_id:
+            if l != target_node_id: # type: ignore
                 log_msg = f'Still waiting for leader {target_node_id}, got {l}'
                 if log_msg != last_log_msg:  # type: ignore # "unbound"
                     self.logger.info(log_msg)
@@ -234,7 +233,24 @@ class RaftAvailabilityTest(RedpandaTest):
                 return False
             return True
 
-        self._wait_for_leader(leader_predicate, timeout=ELECTION_TIMEOUT * 2)
+        retry_once = True
+        while True:
+            self.logger.info(f"Starting transfer to {target_node_id}")
+            admin.partition_transfer_leadership("kafka", topic, 0,
+                                                target_node_id)
+            try:
+                self._wait_for_leader(leader_predicate,
+                                      timeout=ELECTION_TIMEOUT * 2)
+            except ducktape.errors.TimeoutError as e:
+                if retry_once:
+                    self.logger.info(
+                        f'Failed to get desired leader, retrying once.')
+                    retry_once = False
+                    continue
+                else:
+                    raise e
+            break
+
         self.logger.info(f"Completed transfer to {target_node_id}")
 
     @cluster(num_nodes=3)
