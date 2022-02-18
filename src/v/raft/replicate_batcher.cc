@@ -15,7 +15,9 @@
 #include "raft/consensus.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
+#include "raft/replicate_entries_stm.h"
 #include "raft/types.h"
+#include "ssx/future-util.h"
 #include "utils/gate_guard.h"
 
 #include <seastar/core/circular_buffer.hh>
@@ -38,13 +40,15 @@ replicate_batcher::replicate_batcher(consensus* ptr, size_t cache_size)
   , _max_batch_size(cache_size) {}
 
 replicate_stages replicate_batcher::replicate(
-  std::optional<model::term_id> expected_term, model::record_batch_reader&& r) {
+  std::optional<model::term_id> expected_term,
+  model::record_batch_reader&& r,
+  consistency_level consistency_lvl) {
     ss::promise<> enqueued;
     auto enqueued_f = enqueued.get_future();
     try {
         gate_guard guard(_bg);
         auto f
-          = do_cache(expected_term, std::move(r))
+          = do_cache(expected_term, std::move(r), consistency_lvl)
               .then_wrapped(
                 [this,
                  enqueued = std::move(enqueued),
@@ -99,10 +103,12 @@ ss::future<> replicate_batcher::stop() {
 }
 
 ss::future<replicate_batcher::item_ptr> replicate_batcher::do_cache(
-  std::optional<model::term_id> expected_term, model::record_batch_reader&& r) {
+  std::optional<model::term_id> expected_term,
+  model::record_batch_reader&& r,
+  consistency_level consistency_lvl) {
     return model::consume_reader_to_memory(std::move(r), model::no_timeout)
-      .then([this,
-             expected_term](ss::circular_buffer<model::record_batch> batches) {
+      .then([this, expected_term, consistency_lvl](
+              ss::circular_buffer<model::record_batch> batches) {
           ss::circular_buffer<model::record_batch> data;
           size_t bytes = std::accumulate(
             batches.cbegin(),
@@ -112,7 +118,7 @@ ss::future<replicate_batcher::item_ptr> replicate_batcher::do_cache(
                 return sum + b.size_bytes();
             });
           return do_cache_with_backpressure(
-            expected_term, std::move(batches), bytes);
+            expected_term, std::move(batches), bytes, consistency_lvl);
       });
 }
 
@@ -120,7 +126,8 @@ ss::future<replicate_batcher::item_ptr>
 replicate_batcher::do_cache_with_backpressure(
   std::optional<model::term_id> expected_term,
   ss::circular_buffer<model::record_batch> batches,
-  size_t bytes) {
+  size_t bytes,
+  consistency_level consistency_lvl) {
     /**
      * Produce a message larger than the internal raft batch accumulator
      * (default 1Mb) the semaphore can't be acquired. Closing
@@ -135,135 +142,139 @@ replicate_batcher::do_cache_with_backpressure(
      */
 
     return ss::get_units(_max_batch_size_sem, std::min(bytes, _max_batch_size))
-      .then([this, expected_term, batches = std::move(batches)](
-              ss::semaphore_units<> u) mutable {
-          size_t record_count = 0;
-          auto i = ss::make_lw_shared<item>();
-          for (auto& b : batches) {
-              record_count += b.record_count();
-              if (b.header().ctx.owner_shard == ss::this_shard_id()) {
-                  i->data.push_back(std::move(b));
-              } else {
-                  i->data.push_back(b.copy());
-              }
-          }
-          i->expected_term = expected_term;
-          i->record_count = record_count;
-          i->units = std::move(u);
-          _item_cache.emplace_back(i);
-          return i;
-      });
+      .then(
+        [this, expected_term, batches = std::move(batches), consistency_lvl](
+          ss::semaphore_units<> u) mutable {
+            size_t record_count = 0;
+            auto i = ss::make_lw_shared<item>();
+            for (auto& b : batches) {
+                record_count += b.record_count();
+                if (b.header().ctx.owner_shard == ss::this_shard_id()) {
+                    i->data.push_back(std::move(b));
+                } else {
+                    i->data.push_back(b.copy());
+                }
+            }
+            i->expected_term = expected_term;
+            i->record_count = record_count;
+            i->units = std::move(u);
+            i->consistency_lvl = consistency_lvl;
+
+            _item_cache.emplace_back(i);
+            return i;
+        });
 }
 
-ss::future<>
-replicate_batcher::flush(ss::semaphore_units<> u, bool const transfer_flush) {
-    return ss::try_with_gate(
-      _bg, [this, batcher_units = std::move(u), transfer_flush]() mutable {
-          auto item_cache = std::exchange(_item_cache, {});
-          if (item_cache.empty()) {
-              return ss::now();
-          }
+ss::future<> replicate_batcher::flush(
+  ss::semaphore_units<> batcher_units, bool const transfer_flush) {
+    auto holder = _bg.hold();
 
-          return _ptr->_op_lock.get_units().then_wrapped(
-            [this,
-             item_cache = std::move(item_cache),
-             batcher_units = std::move(batcher_units),
-             transfer_flush](ss::future<ss::semaphore_units<>> f) mutable {
-                // if we failed to acquire units, propagate exception to cached
-                // promises
-                if (f.failed()) {
-                    for (auto& i : item_cache) {
-                        i->_promise.set_exception(f.get_exception());
-                    }
-                    return ss::now();
+    auto item_cache = std::exchange(_item_cache, {});
+    if (item_cache.empty()) {
+        co_return;
+    }
+    try {
+        auto u = co_await _ptr->_op_lock.get_units();
+
+        if (!transfer_flush && _ptr->_transferring_leadership) {
+            vlog(_ptr->_ctxlog.warn, "Dropping flush, leadership transferring");
+            for (auto& n : item_cache) {
+                n->_promise.set_value(errc::not_leader);
+            }
+            co_return;
+        }
+
+        // release batcher replicate batcher lock
+        batcher_units.return_all();
+        // we have to check if we are the leader
+        // it is critical as term could have been updated already by
+        // vote request and entries from current node could be accepted
+        // by the followers while it is no longer a leader
+        // this problem caused truncation failure.
+
+        if (!_ptr->is_leader()) {
+            for (auto& n : item_cache) {
+                n->_promise.set_value(errc::not_leader);
+            }
+            co_return;
+        }
+
+        auto meta = _ptr->meta();
+        auto const term = model::term_id(meta.term);
+        ss::circular_buffer<model::record_batch> data;
+        std::vector<item_ptr> notifications;
+        ss::semaphore_units<> item_memory_units(_max_batch_size_sem, 0);
+        auto needs_flush = append_entries_request::flush_after_append::no;
+
+        for (auto& n : item_cache) {
+            if (
+              !n->expected_term.has_value()
+              || n->expected_term.value() == term) {
+                item_memory_units.adopt(std::move(n->units));
+                if (n->consistency_lvl == consistency_level::quorum_ack) {
+                    needs_flush
+                      = append_entries_request::flush_after_append::yes;
                 }
-                auto u = f.get();
-
-                if (!transfer_flush && _ptr->_transferring_leadership) {
-                    vlog(
-                      _ptr->_ctxlog.warn,
-                      "Dropping flush, leadership transferring");
-                    for (auto& n : item_cache) {
-                        n->_promise.set_value(errc::not_leader);
-                    }
-                    return ss::now();
+                for (auto& b : n->data) {
+                    b.set_term(term);
+                    data.push_back(std::move(b));
                 }
+                notifications.push_back(std::move(n));
+            } else {
+                n->_promise.set_value(errc::not_leader);
+            }
+        }
 
-                // release batcher replicate batcher lock
-                batcher_units.return_all();
-                // we have to check if we are the leader
-                // it is critical as term could have been updated already by
-                // vote request and entries from current node could be accepted
-                // by the followers while it is no longer a leader
-                // this problem caused truncation failure.
+        if (notifications.empty()) {
+            co_return;
+        }
 
-                if (!_ptr->is_leader()) {
-                    for (auto& n : item_cache) {
-                        n->_promise.set_value(errc::not_leader);
-                    }
-                    return ss::make_ready_future<>();
-                }
+        auto seqs = _ptr->next_followers_request_seq();
+        append_entries_request req(
+          _ptr->_self,
+          meta,
+          model::make_memory_record_batch_reader(std::move(data)),
+          needs_flush);
 
-                auto meta = _ptr->meta();
-                auto const term = model::term_id(meta.term);
-                ss::circular_buffer<model::record_batch> data;
-                std::vector<item_ptr> notifications;
-                ss::semaphore_units<> item_memory_units(_max_batch_size_sem, 0);
-                for (auto& n : item_cache) {
-                    item_memory_units.adopt(std::move(n->units));
-                    if (
-                      !n->expected_term.has_value()
-                      || n->expected_term.value() == term) {
-                        for (auto& b : n->data) {
-                            b.set_term(term);
-                            data.push_back(std::move(b));
-                        }
-                        notifications.push_back(std::move(n));
-                    } else {
-                        n->_promise.set_value(errc::not_leader);
-                    }
-                }
-
-                if (notifications.empty()) {
-                    return ss::now();
-                }
-
-                auto seqs = _ptr->next_followers_request_seq();
-                append_entries_request req(
-                  _ptr->_self,
-                  std::move(meta),
-                  model::make_memory_record_batch_reader(std::move(data)));
-                std::vector<ss::semaphore_units<>> units;
-                units.reserve(2);
-                units.push_back(std::move(u));
-                // we will release memory semaphore as soon as append entry
-                // requests will be dispatched
-                units.push_back(std::move(item_memory_units));
-                return do_flush(
-                  std::move(notifications),
-                  std::move(req),
-                  std::move(units),
-                  std::move(seqs));
-            });
-      });
+        std::vector<ss::semaphore_units<>> units;
+        units.reserve(2);
+        units.push_back(std::move(u));
+        // we will release memory semaphore as soon as append entry
+        // requests will be dispatched
+        units.push_back(std::move(item_memory_units));
+        co_await do_flush(
+          std::move(notifications),
+          std::move(req),
+          std::move(units),
+          std::move(seqs));
+    } catch (...) {
+        for (auto& i : item_cache) {
+            i->_promise.set_exception(std::current_exception());
+        }
+        co_return;
+    }
 }
 
+template<typename Predicate>
 static void propagate_result(
   result<replicate_result> r,
-  std::vector<replicate_batcher::item_ptr>& notifications) {
-    if (r.has_value()) {
-        // iterate backward to calculate last offsets
-        auto last_offset = r.value().last_offset;
-        for (auto it = notifications.rbegin(); it != notifications.rend();
-             ++it) {
-            (*it)->_promise.set_value(replicate_result{last_offset});
-            last_offset = last_offset - model::offset((*it)->record_count);
+  std::vector<replicate_batcher::item_ptr>& notifications,
+  const Predicate& pred) {
+    if (r.has_error()) {
+        // propagate an error
+        for (auto& n : notifications) {
+            n->_promise.set_value(r.error());
         }
         return;
     }
-    // propagate an error
-    for (auto& n : notifications) {
-        n->_promise.set_value(r.error());
+
+    // iterate backward to calculate last offsets
+    auto last_offset = r.value().last_offset;
+    for (auto it = notifications.rbegin(); it != notifications.rend(); ++it) {
+        if (pred(*it)) {
+            (*it)->_promise.set_value(replicate_result{last_offset});
+        }
+        last_offset = last_offset - model::offset((*it)->record_count);
     }
 }
 
@@ -281,14 +292,61 @@ ss::future<> replicate_batcher::do_flush(
   append_entries_request req,
   std::vector<ss::semaphore_units<>> u,
   absl::flat_hash_map<vnode, follower_req_seq> seqs) {
+    auto needs_flush = req.flush;
     _ptr->_probe.replicate_batch_flushed();
+    auto stm = ss::make_lw_shared<replicate_entries_stm>(
+      _ptr, std::move(req), std::move(seqs));
     try {
-        auto result = co_await _ptr->dispatch_replicate(
-          std::move(req), std::move(u), std::move(seqs));
+        auto holder = _bg.hold();
+        auto leader_result = co_await stm->apply(std::move(u));
 
-        propagate_result(result, notifications);
+        /**
+         * First phase, if leader result has error just propagate error
+         * otherwise propagate result to relaxed consistency requests
+         */
+        propagate_result(
+          leader_result, notifications, [](const item_ptr& item) {
+              return item->consistency_lvl == consistency_level::leader_ack
+                     || item->consistency_lvl == consistency_level::no_ack;
+          });
+        /**
+         * Second phase, wait for majority to replicate if leader result has
+         * error just propagate error otherwise propagate results to relaxed
+         * consistency requests.
+         *
+         * NOTE: this happens in background since we do not want to block
+         * replicate batcher
+         */
+        if (leader_result && needs_flush) {
+            (void)stm->wait_for_majority()
+              .then([holder = std::move(holder),
+                     notifications = std::move(notifications)](
+                      result<replicate_result> quorum_result) mutable {
+                  propagate_result(
+                    quorum_result, notifications, [](const item_ptr& item) {
+                        return item->consistency_lvl
+                               == consistency_level::quorum_ack;
+                    });
+              })
+              .finally([stm] {});
+        }
     } catch (...) {
         propagate_current_exception(notifications);
     }
+
+    auto f = stm->wait_for_shutdown().finally([stm] {});
+    if (_bg.is_closed()) {
+        _ptr->_ctxlog.info(
+          "gate-closed, waiting to finish background requests");
+        co_return co_await std::move(f);
+    }
+    ssx::spawn_with_gate(_bg, [this, stm, f = std::move(f)]() mutable {
+        return std::move(f).handle_exception(
+          [this](const std::exception_ptr& e) {
+              _ptr->_ctxlog.debug(
+                "Error waiting for background acks to finish - {}", e);
+          });
+    });
 }
+
 } // namespace raft
