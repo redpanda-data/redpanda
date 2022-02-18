@@ -130,6 +130,7 @@ topic_table::apply(delete_topic_cmd cmd, model::offset offset) {
 
         for (auto& p : tp->second.configuration.assignments) {
             auto ntp = model::ntp(cmd.key.ns, cmd.key.tp, p.id);
+            _update_in_progress.erase(ntp);
             _pending_deltas.emplace_back(
               std::move(ntp), std::move(p), offset, delete_type);
         }
