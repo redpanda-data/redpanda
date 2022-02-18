@@ -250,7 +250,7 @@ class RaftAvailabilityTest(RedpandaTest):
                     continue
                 else:
                     raise e
-            break
+            break  # no exception -> success, we can return now
 
         self.logger.info(f"Completed transfer to {target_node_id}")
 
