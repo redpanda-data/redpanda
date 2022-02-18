@@ -489,4 +489,4 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         self.redpanda.start_node(node)
         # create topic again
         rpk.create_topic(topic, 1, 1)
-        assert get_status() == "done"
+        wait_until(lambda: get_status() == 'done', 10, 1)
