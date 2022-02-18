@@ -1262,7 +1262,20 @@ void admin_server::register_partition_routes() {
                     node_id,
                     shard));
               }
-
+              auto contains_already = std::find_if(
+                                        replicas.begin(),
+                                        replicas.end(),
+                                        [node_id](
+                                          const model::broker_shard& bs) {
+                                            return bs.node_id == node_id;
+                                        })
+                                      != replicas.end();
+              if (contains_already) {
+                  throw ss::httpd::bad_request_exception(fmt::format(
+                    "All the replicas must be placed on separate nodes. "
+                    "Requested replica set contains node: {} more than once",
+                    node_id));
+              }
               replicas.push_back(
                 model::broker_shard{.node_id = node_id, .shard = shard});
           }
