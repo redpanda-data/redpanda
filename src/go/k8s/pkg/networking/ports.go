@@ -15,6 +15,8 @@ type PortsDefinition struct {
 	// property is set to false, External port will be used for both container
 	// port as well as hostPort
 	ExternalPortIsGenerated bool
+	// For the Kafka API we support the option of having a bootstrap load balancer
+	ExternalBootstrap *resources.NamedServicePort
 }
 
 // RedpandaPorts defines ports for all redpanda listeners
@@ -56,6 +58,13 @@ func NewRedpandaPorts(rpCluster *redpandav1alpha1.Cluster) *RedpandaPorts {
 				Name: resources.ExternalListenerName,
 			}
 			result.KafkaAPI.ExternalPortIsGenerated = true
+		}
+		if externalListener.External.Bootstrap != nil {
+			result.KafkaAPI.ExternalBootstrap = &resources.NamedServicePort{
+				Port:       externalListener.External.Bootstrap.Port,
+				TargetPort: result.KafkaAPI.External.Port,
+				Name:       resources.ExternalListenerBootstrapName,
+			}
 		}
 	}
 	if adminAPIInternal != nil {
