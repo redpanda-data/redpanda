@@ -131,9 +131,13 @@ func (r *ClusterReconciler) Reconcile(
 	if redpandaPorts.PandaProxy.Internal != nil {
 		headlessPorts = append(headlessPorts, resources.NamedServicePort{Name: resources.PandaproxyPortInternalName, Port: *redpandaPorts.PandaProxy.InternalPort()})
 	}
-
+	lbPorts := []resources.NamedServicePort{}
+	if redpandaPorts.KafkaAPI.ExternalBootstrap != nil {
+		lbPorts = append(lbPorts, *redpandaPorts.KafkaAPI.ExternalBootstrap)
+	}
 	headlessSvc := resources.NewHeadlessService(r.Client, &redpandaCluster, r.Scheme, headlessPorts, log)
 	nodeportSvc := resources.NewNodePortService(r.Client, &redpandaCluster, r.Scheme, nodeports, log)
+	bootstrapSvc := resources.NewLoadBalancerService(r.Client, &redpandaCluster, r.Scheme, lbPorts, true, log)
 
 	clusterPorts := []resources.NamedServicePort{}
 	if redpandaPorts.PandaProxy.External != nil {
@@ -198,6 +202,7 @@ func (r *ClusterReconciler) Reconcile(
 		clusterSvc,
 		nodeportSvc,
 		ingress,
+		bootstrapSvc,
 		proxySu,
 		schemaRegistrySu,
 		configMapResource,
@@ -257,6 +262,7 @@ func (r *ClusterReconciler) Reconcile(
 		clusterSvc.ServiceFQDN(r.clusterDomain),
 		schemaRegistryPort,
 		nodeportSvc.Key(),
+		bootstrapSvc.Key(),
 	)
 	if err != nil {
 		log.Error(err, "Unable to report status")
@@ -297,6 +303,7 @@ func (r *ClusterReconciler) reportStatus(
 	clusterFQDN string,
 	schemaRegistryPort int,
 	nodeportSvcName types.NamespacedName,
+	bootstrapSvcName types.NamespacedName,
 ) error {
 	var observedPods corev1.PodList
 
@@ -314,7 +321,7 @@ func (r *ClusterReconciler) reportStatus(
 		observedNodesInternal = append(observedNodesInternal, fmt.Sprintf("%s.%s", item.Name, internalFQDN))
 	}
 
-	nodeList, err := r.createExternalNodesList(ctx, observedPods.Items, redpandaCluster, nodeportSvcName)
+	nodeList, err := r.createExternalNodesList(ctx, observedPods.Items, redpandaCluster, nodeportSvcName, bootstrapSvcName)
 	if err != nil {
 		return fmt.Errorf("failed to construct external node list: %w", err)
 	}
@@ -364,7 +371,8 @@ func statusShouldBeUpdated(
 			!reflect.DeepEqual(nodeList.External, status.Nodes.External) ||
 			!reflect.DeepEqual(nodeList.ExternalAdmin, status.Nodes.ExternalAdmin) ||
 			!reflect.DeepEqual(nodeList.ExternalPandaproxy, status.Nodes.ExternalPandaproxy) ||
-			!reflect.DeepEqual(nodeList.SchemaRegistry, status.Nodes.SchemaRegistry)) ||
+			!reflect.DeepEqual(nodeList.SchemaRegistry, status.Nodes.SchemaRegistry) ||
+			!reflect.DeepEqual(nodeList.ExternalBootstrap, status.Nodes.ExternalBootstrap)) ||
 		status.Replicas != readyReplicas
 }
 
@@ -390,6 +398,7 @@ func (r *ClusterReconciler) createExternalNodesList(
 	pods []corev1.Pod,
 	pandaCluster *redpandav1alpha1.Cluster,
 	nodePortName types.NamespacedName,
+	bootstrapName types.NamespacedName,
 ) (*redpandav1alpha1.NodesList, error) {
 	externalKafkaListener := pandaCluster.ExternalListener()
 	externalAdminListener := pandaCluster.AdminAPIExternal()
@@ -489,6 +498,15 @@ func (r *ClusterReconciler) createExternalNodesList(
 		result.PandaproxyIngress = &externalProxyListener.External.Subdomain
 	}
 
+	if externalKafkaListener.External.Bootstrap != nil {
+		var bootstrapSvc corev1.Service
+		if err := r.Get(ctx, bootstrapName, &bootstrapSvc); err != nil {
+			return nil, fmt.Errorf("failed to retrieve bootstrap lb service %s: %w", bootstrapName, err)
+		}
+		result.ExternalBootstrap = &redpandav1alpha1.LoadBalancerStatus{
+			LoadBalancerStatus: bootstrapSvc.Status.LoadBalancer,
+		}
+	}
 	return result, nil
 }
 
