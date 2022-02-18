@@ -220,12 +220,13 @@ class RaftAvailabilityTest(RedpandaTest):
     def _transfer_leadership(self, admin: Admin, namespace: str, topic: str,
                              target_node_id: int) -> None:
 
-        last_log_msg = ""      # avoid spamming log
+        last_log_msg = ""  # avoid spamming log
+
         def leader_predicate(l: Optional[int]) -> bool:
             nonlocal last_log_msg, target_node_id
             if not l:
                 return False
-            if l != target_node_id: # type: ignore
+            if l != target_node_id:  # type: ignore
                 log_msg = f'Still waiting for leader {target_node_id}, got {l}'
                 if log_msg != last_log_msg:  # type: ignore # "unbound"
                     self.logger.info(log_msg)
@@ -472,7 +473,8 @@ class RaftAvailabilityTest(RedpandaTest):
             target_idx = (initial_leader_id + n) % len(self.redpanda.nodes)
             target_node_id = target_idx + 1
 
-            self._transfer_leadership(admin, "kafka", self.topic, target_node_id)
+            self._transfer_leadership(admin, "kafka", self.topic,
+                                      target_node_id)
 
         self.logger.info(f"Completed {transfer_count} transfers successfully")
 
