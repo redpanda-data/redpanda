@@ -1,4 +1,4 @@
-// Copyright 2021 Vectorized, Inc.
+// Copyright 2022 Vectorized, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -25,45 +25,47 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-var _ Resource = &ClusterServiceResource{}
+var _ Resource = &LoadBalancerServiceResource{}
 
-// ClusterServiceResource is part of the reconciliation of redpanda.vectorized.io CRD
-// focusing on the internal connectivity management of redpanda cluster
-type ClusterServiceResource struct {
+// LoadBalancerServiceResource is part of the reconciliation of redpanda.vectorized.io CRD
+// focusing on the external load balancer connectivity management of redpanda cluster
+type LoadBalancerServiceResource struct {
 	k8sclient.Client
 	scheme       *runtime.Scheme
 	pandaCluster *redpandav1alpha1.Cluster
 	svcPorts     []NamedServicePort
+	isBootstrap  bool
 	logger       logr.Logger
 }
 
-// NewClusterService creates ClusterServiceResource
-func NewClusterService(
+// NewLoadBalancerService creates a LoadBalancerServiceResource
+func NewLoadBalancerService(
 	client k8sclient.Client,
 	pandaCluster *redpandav1alpha1.Cluster,
 	scheme *runtime.Scheme,
 	svcPorts []NamedServicePort,
+	isBootstrap bool,
 	logger logr.Logger,
-) *ClusterServiceResource {
-	return &ClusterServiceResource{
+) *LoadBalancerServiceResource {
+	return &LoadBalancerServiceResource{
 		client,
 		scheme,
 		pandaCluster,
 		svcPorts,
+		isBootstrap,
 		logger.WithValues(
 			"Kind", serviceKind(),
-			"ServiceType", corev1.ServiceTypeClusterIP,
+			"ServiceType", corev1.ServiceTypeLoadBalancer,
 		),
 	}
 }
 
-// Ensure will manage kubernetes v1.Service for redpanda.vectorized.io custom resource
+// Ensure manages load-balancer v1.Service for redpanda.vectorized.io
 // nolint:dupl // TODO multiple services have the same Ensure function
-func (r *ClusterServiceResource) Ensure(ctx context.Context) error {
+func (r *LoadBalancerServiceResource) Ensure(ctx context.Context) error {
 	if len(r.svcPorts) == 0 {
 		return nil
 	}
-
 	obj, err := r.obj()
 	if err != nil {
 		return fmt.Errorf("unable to construct object: %w", err)
@@ -82,23 +84,24 @@ func (r *ClusterServiceResource) Ensure(ctx context.Context) error {
 }
 
 // obj returns resource managed client.Object
-func (r *ClusterServiceResource) obj() (k8sclient.Object, error) {
+func (r *LoadBalancerServiceResource) obj() (k8sclient.Object, error) {
 	ports := make([]corev1.ServicePort, 0, len(r.svcPorts))
 	for _, svcPort := range r.svcPorts {
 		ports = append(ports, corev1.ServicePort{
 			Name:       svcPort.Name,
 			Protocol:   corev1.ProtocolTCP,
 			Port:       int32(svcPort.Port),
-			TargetPort: intstr.FromInt(svcPort.Port),
+			TargetPort: intstr.FromInt(svcPort.TargetPort),
 		})
 	}
 
 	objLabels := labels.ForCluster(r.pandaCluster)
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: r.Key().Namespace,
-			Name:      r.Key().Name,
-			Labels:    objLabels,
+			Namespace:   r.Key().Namespace,
+			Name:        r.Key().Name,
+			Labels:      objLabels,
+			Annotations: r.getAnnotation(),
 		},
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Service",
@@ -106,7 +109,7 @@ func (r *ClusterServiceResource) obj() (k8sclient.Object, error) {
 		},
 		Spec: corev1.ServiceSpec{
 			PublishNotReadyAddresses: true,
-			Type:                     corev1.ServiceTypeClusterIP,
+			Type:                     corev1.ServiceTypeLoadBalancer,
 			Ports:                    ports,
 			Selector:                 objLabels.AsAPISelector().MatchLabels,
 		},
@@ -121,29 +124,21 @@ func (r *ClusterServiceResource) obj() (k8sclient.Object, error) {
 }
 
 // Key returns namespace/name object that is used to identify object.
+// The default naming just adds "-lb", unless the LB is used for bootstrapping,
+// which further appends "-bootstrap".
 // For reference please visit types.NamespacedName docs in k8s.io/apimachinery
-func (r *ClusterServiceResource) Key() types.NamespacedName {
-	return types.NamespacedName{Name: r.pandaCluster.Name + "-cluster", Namespace: r.pandaCluster.Namespace}
+func (r *LoadBalancerServiceResource) Key() types.NamespacedName {
+	name := r.pandaCluster.Name + "-lb"
+	if r.isBootstrap {
+		name += "-bootstrap"
+	}
+	return types.NamespacedName{Name: name, Namespace: r.pandaCluster.Namespace}
 }
 
-// ServiceFQDN returns fully qualified domain name for cluster service.
-// It can be used to communicate between namespaces if the network policy
-// allows it.
-func (r *ClusterServiceResource) ServiceFQDN(clusterDomain string) string {
-	// In every dns name there is trailing dot to query absolute path
-	// For trailing dot explanation please visit http://www.dns-sd.org/trailingdotsindomainnames.html
-	if r.pandaCluster.Spec.DNSTrailingDotDisabled {
-		return fmt.Sprintf("%s%c%s.svc.%s",
-			r.Key().Name,
-			'.',
-			r.Key().Namespace,
-			clusterDomain,
-		)
+func (r *LoadBalancerServiceResource) getAnnotation() map[string]string {
+	ext := r.pandaCluster.ExternalListener()
+	if !r.isBootstrap || ext == nil || ext.External.Bootstrap == nil {
+		return nil
 	}
-	return fmt.Sprintf("%s%c%s.svc.%s.",
-		r.Key().Name,
-		'.',
-		r.Key().Namespace,
-		clusterDomain,
-	)
+	return ext.External.Bootstrap.Annotations
 }
