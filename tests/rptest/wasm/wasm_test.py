@@ -148,35 +148,27 @@ class WasmTest(RedpandaTest):
         output_tps = self._expand_topic_spec(
             self._to_output_topic_spec(
                 self.topics, flat_map(lambda script: script.outputs, scripts)))
+        self.logger.info(f"Input consumer assigned: {input_tps}")
+        self.logger.info(f"Output consumer assigned: {output_tps}")
+        self._input_consumer = NativeKafkaConsumer(self.redpanda.brokers(),
+                                                   list(input_tps), topic_spec)
+        self._output_consumer = NativeKafkaConsumer(self.redpanda.brokers(),
+                                                    list(output_tps),
+                                                    output_topic_spec)
+        self._input_consumer.start()
+        self._output_consumer.start()
 
-        # Calcualte expected records on all inputs / outputs
+        # Calcualte expected records on all inputs / outputs -- only for logging
         total_inputs = reduce(operator.add, [v for k, v in topic_spec.items()],
                               0)
         total_outputs = reduce(operator.add,
                                [v for k, v in output_topic_spec.items()], 0)
-
-        self.logger.info(f"Input consumer assigned: {input_tps}")
-        self.logger.info(f"Output consumer assigned: {output_tps}")
-
-        try:
-            self._input_consumer = NativeKafkaConsumer(self.redpanda.brokers(),
-                                                       list(input_tps),
-                                                       total_inputs)
-            self._output_consumer = NativeKafkaConsumer(
-                self.redpanda.brokers(), list(output_tps), total_outputs)
-        except Exception as e:
-            self.logger.error(f"Failed to create NativeKafkaConsumer: {e}")
-            raise
-
         self.logger.info(
             f"Waiting for {total_inputs} input records and {total_outputs}"
             " result records")
-        self._input_consumer.start()
-        self._output_consumer.start()
 
     def wait_on_results(self):
         def all_done():
-            # Uncomment to periodically see the amt of data read
             self.logger.info("Input: %d" %
                              self._input_consumer.results.num_records())
             self.logger.info("Output: %d" %
@@ -210,8 +202,8 @@ class WasmTest(RedpandaTest):
                          f" records and"
                          f" {output_consumed} result records")
 
-        input_expected = self._input_consumer._num_records
-        output_expected = self._output_consumer._num_records
+        input_expected = self._input_consumer.total_expected_records()
+        output_expected = self._output_consumer.total_expected_records()
         if input_consumed < input_expected:
             raise Exception(
                 f"Consumed {input_consumed} expected {input_expected} input records"

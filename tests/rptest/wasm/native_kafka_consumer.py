@@ -19,11 +19,11 @@ class NativeKafkaConsumer(BackgroundTask):
     def __init__(self,
                  brokers,
                  topic_partitions,
-                 num_records=1,
+                 max_records_per_partition,
                  batch_size=4092):
         super(NativeKafkaConsumer, self).__init__()
         self._topic_partitions = topic_partitions
-        self._num_records = num_records
+        self._max_records_per_partition = max_records_per_partition
         self._brokers = brokers
         self._batch_size = batch_size
         self._max_attempts = 20
@@ -31,6 +31,9 @@ class NativeKafkaConsumer(BackgroundTask):
 
     def task_name(self):
         return f"consumer-worker-{str(random.randint(0,9999))}"
+
+    def total_expected_records(self):
+        return sum(self._max_records_per_partition.values())
 
     def _init_consumer(self):
         consumer = KafkaConsumer(client_id=self.task_name(),
@@ -43,11 +46,17 @@ class NativeKafkaConsumer(BackgroundTask):
             consumer.seek_to_beginning(tps)
         return consumer
 
+    def _finished_consume(self):
+        for topic, throughput in self._max_records_per_partition.items():
+            if self.results.num_records_for_topic(topic) < throughput:
+                return False
+        return True
+
     def _run(self):
         def stop_consume(empty_attempts):
-            read_all = self.results.num_records() >= self._num_records
             waited_enough = empty_attempts >= self._max_attempts
-            return self.is_finished() or read_all or waited_enough
+            return self.is_finished() or self._finished_consume(
+            ) or waited_enough
 
         consumer = self._init_consumer()
         empty_reads = 0

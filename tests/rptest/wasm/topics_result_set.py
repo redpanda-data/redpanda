@@ -46,6 +46,10 @@ class TopicsResultSet:
     def num_records(self):
         return reduce(lambda acc, kv: acc + len(kv[1]), self.rset.items(), 0)
 
+    def num_records_for_topic(self, topic):
+        new_trs = self.filter(lambda x: x.topic == topic)
+        return new_trs.num_records()
+
     def filter(self, predicate):
         """
         Returns a set containing the keys & values passing 'predicate'
