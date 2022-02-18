@@ -117,6 +117,43 @@ func TestRedpandaPorts(t *testing.T) {
 				},
 			},
 		}},
+		{"kafka api external has bootstrap loadbalancer",
+			&redpandav1alpha1.Cluster{
+				Spec: redpandav1alpha1.ClusterSpec{
+					Configuration: redpandav1alpha1.RedpandaConfig{
+						KafkaAPI: []redpandav1alpha1.KafkaAPI{
+							{
+								Port: 123,
+							},
+							{
+								External: redpandav1alpha1.ExternalConnectivityConfig{
+									Enabled: true,
+									Bootstrap: &redpandav1alpha1.LoadBalancerConfig{
+										Port: 1234,
+									},
+								},
+							},
+						},
+					},
+				}},
+			&networking.RedpandaPorts{
+				KafkaAPI: networking.PortsDefinition{
+					Internal: &resources.NamedServicePort{
+						Name: resources.InternalListenerName,
+						Port: 123,
+					},
+					External: &resources.NamedServicePort{
+						Name: resources.ExternalListenerName,
+						Port: 124,
+					},
+					ExternalPortIsGenerated: true,
+					ExternalBootstrap: &resources.NamedServicePort{
+						Name:       resources.ExternalListenerBootstrapName,
+						Port:       1234,
+						TargetPort: 123 + 1,
+					},
+				}},
+		},
 	}
 	for _, tt := range tests {
 		actual := networking.NewRedpandaPorts(tt.inputCluster)
