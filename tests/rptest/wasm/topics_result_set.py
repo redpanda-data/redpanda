@@ -28,9 +28,20 @@ class BasicKafkaRecord:
         self.value = value
         self.offset = offset
 
+    def to_tuple(self):
+        return (self.topic, self.partition, self.key, self.value, self.offset)
+
+    def to_tuple_without_offset(self):
+        return (self.topic, self.partition, self.key, self.value)
+
+    def hash_without_offset(self):
+        return hash(self.to_tuple_without_offset())
+
     def __eq__(self, o):
-        return self.topic == o.topic and self.partition == o.partition \
-            and self.key == o.key and self.value == o.value
+        return self.to_tuple() == o.to_tuple()
+
+    def __hash__(self):
+        return hash(self.to_tuple())
 
 
 class TopicsResultSet:
@@ -50,6 +61,17 @@ class TopicsResultSet:
         new_trs = self.filter(lambda x: x.topic == topic)
         return new_trs.num_records()
 
+    def deduplicate(self):
+        """
+        Returns a new set without any duplicates
+        """
+        def ddup(records):
+            d = {r.hash_without_offset(): r for r in records}
+            return list(sorted(d.values(), key=lambda x: x.offset))
+
+        return TopicsResultSet(
+            dict([(k, ddup(v)) for k, v in self.rset.items()]))
+
     def filter(self, predicate):
         """
         Returns a set containing the keys & values passing 'predicate'
@@ -57,6 +79,14 @@ class TopicsResultSet:
         """
         new_rset = dict([(k, v) for k, v in self.rset.items()
                          if predicate(k) is True])
+        return TopicsResultSet(new_rset)
+
+    def map(self, lambda_fn):
+        """
+        Modify each BasicKafkaRecord across all partitions
+        """
+        new_rset = dict([(k, [lambda_fn(x) for x in v])
+                         for k, v in self.rset.items()])
         return TopicsResultSet(new_rset)
 
     def append(self, r):
@@ -129,24 +159,20 @@ def materialized_result_set_compare(oset, materialized_set):
 
 def materialized_at_least_once_compare(oset, materialized_set):
     """
-    Within the wasm framework since offsets are periodically written to
-    disk it may be the case that duplicate records are observed within the
-    materialized topics.
+    Performs the same checks as 'materialized_result_set_compare' but removes
+    duplicate records from the 'materialized_set', as they are expected to exist in the
+    case of failures.
+
+    'oset' remains unchanged because duplicates are not expected since records were
+    produced with idempotency enabled
     """
-    def cmp_duplicates_allowed(input_data, records):
-        """ Ensures all keys from input exist in output, and values match,
-        also ensures missing keys from either set in the others set.
-        """
-        input_map = dict((x.key, x.value) for x in records)
-        for record in records:
-            input_value = input_map.get(record.key)
-            if input_value is None or record.value != input_value:
-                return False
+    def strip_offset(r):
+        return BasicKafkaRecord(topic=r.topic,
+                                partition=r.partition,
+                                key=r.key,
+                                value=r.value,
+                                offset=0)
 
-        # one last verification, ensure that there are no extra keys in input
-        # space that is missing from the output space of results
-        unique_keys = set(x.key for x in records)
-        return all(x in unique_keys for x in input_map)
-
-    return _materialized_topic_set_compare(oset, materialized_set,
-                                           cmp_duplicates_allowed)
+    deduplicated = materialized_set.deduplicate()
+    return materialized_result_set_compare(oset.map(strip_offset),
+                                           deduplicated.map(strip_offset))
