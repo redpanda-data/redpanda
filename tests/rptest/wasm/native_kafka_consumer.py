@@ -66,8 +66,6 @@ class NativeKafkaConsumer(BackgroundTask):
             if results is None or len(results) == 0:
                 empty_reads += 1
                 time.sleep(1)
-                consumer.close()
-                consumer = self._init_consumer()
             else:
                 empty_reads = 0
                 self.results.append(results)
