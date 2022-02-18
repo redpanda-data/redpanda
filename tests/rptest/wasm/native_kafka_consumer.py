@@ -40,7 +40,10 @@ class NativeKafkaConsumer(BackgroundTask):
                                  bootstrap_servers=self._brokers,
                                  request_timeout_ms=1000,
                                  enable_auto_commit=False,
-                                 auto_offset_reset="latest")
+                                 metadata_max_age_ms=5000,
+                                 reconnect_backoff_max_ms=0,
+                                 reconnect_backoff_ms=1000,
+                                 auto_offset_reset="throw")
         consumer.assign(self._topic_partitions)
         for tps in self._topic_partitions:
             consumer.seek_to_beginning(tps)
@@ -53,14 +56,23 @@ class NativeKafkaConsumer(BackgroundTask):
         return True
 
     def _run(self):
-        def stop_consume(empty_attempts):
-            waited_enough = empty_attempts >= self._max_attempts
-            return self.is_finished() or self._finished_consume(
-            ) or waited_enough
-
         consumer = self._init_consumer()
         empty_reads = 0
-        while not stop_consume(empty_reads):
+        empty_reads_post_complete = 0
+        while True:
+            if self.is_finished():
+                break  # User stopped background task
+            if self._finished_consume():
+                # The idea is to not stop consuming even if the bounds
+                # have been reached, and stop when there really is not more data
+                empty_reads_post_complete += 1
+                if empty_reads_post_complete >= 3:
+                    break
+            if empty_reads >= self._max_attempts:
+                # However if a lower bound hasn't been reached, wait longer
+                # possibly to avert situations where log hasn't been yet populated
+                break
+
             results = consumer.poll(timeout_ms=1000,
                                     max_records=self._batch_size)
             if results is None or len(results) == 0:
@@ -68,4 +80,5 @@ class NativeKafkaConsumer(BackgroundTask):
                 time.sleep(1)
             else:
                 empty_reads = 0
+                empty_reads_post_complete = 0
                 self.results.append(results)
