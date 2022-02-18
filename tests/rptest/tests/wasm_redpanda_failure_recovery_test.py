@@ -17,6 +17,10 @@ from rptest.wasm.wasm_script import WasmScript
 from rptest.wasm.wasm_build_tool import WasmTemplateRepository
 from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST
 
+WASM_CHAOS_LOG_ALLOW_LIST = CHAOS_LOG_ALLOW_LIST + [
+    "Wasm engine failed to reply to heartbeat", "Failed to connect wasm engine"
+]
+
 
 class WasmRedpandaFailureRecoveryTest(WasmTest):
     topics = (TopicSpec(partition_count=3,
@@ -54,7 +58,7 @@ class WasmRedpandaFailureRecoveryTest(WasmTest):
         return {topic: self._num_records for topic in self.wasm_test_output()}
 
     @ignore  # https://github.com/vectorizedio/redpanda/issues/2514
-    @cluster(num_nodes=3, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    @cluster(num_nodes=3, log_allow_list=WASM_CHAOS_LOG_ALLOW_LIST)
     def verify_materialized_topics_test(self):
         self.verify_results(materialized_at_least_once_compare)
 
