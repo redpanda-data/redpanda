@@ -176,3 +176,19 @@ def materialized_at_least_once_compare(oset, materialized_set):
     deduplicated = materialized_set.deduplicate()
     return materialized_result_set_compare(oset.map(strip_offset),
                                            deduplicated.map(strip_offset))
+
+
+def group_fan_in_verifier(topics, input_results, output_results):
+    """
+    A materialized topic will contain Nx the input records where N is the number
+    of scripts deployed. Since it cannot be determined which script came from what
+    coprocessor (in order to split into distinct result sets and compare) just compare
+    totals for now
+    """
+    def compare(topic):
+        iis = input_results.filter(lambda x: x.topic == topic)
+        oos = output_results.filter(
+            lambda x: get_source_topic(x.topic) == topic)
+        return iis.num_records() == oos.num_records()
+
+    return all(compare(topic) for topic in topics)

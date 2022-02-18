@@ -11,7 +11,7 @@ import random
 from ducktape.mark import ignore
 from rptest.clients.types import TopicSpec
 from rptest.wasm.wasm_test import WasmTest
-from rptest.wasm.topics_result_set import materialized_at_least_once_compare
+from rptest.wasm.topics_result_set import materialized_at_least_once_compare, group_fan_in_verifier
 from rptest.services.cluster import cluster
 from rptest.wasm.wasm_script import WasmScript
 from rptest.wasm.wasm_build_tool import WasmTemplateRepository
@@ -164,4 +164,9 @@ class WasmRPMeshFailureRecoveryTest(WasmRedpandaFailureRecoveryTest):
     @ignore  # https://github.com/vectorizedio/redpanda/issues/2514
     @cluster(num_nodes=6, log_allow_list=WASM_CHAOS_LOG_ALLOW_LIST)
     def verify_materialized_topics_test(self):
-        self.verify_results(materialized_at_least_once_compare)
+        self.start_wasm()
+        input_results, output_results = self.wait_on_results()
+        if not group_fan_in_verifier(self.topics, input_results,
+                                     output_results):
+            raise Exception(
+                "Incorrect number of records observed across topics")

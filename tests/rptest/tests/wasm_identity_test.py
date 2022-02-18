@@ -11,7 +11,7 @@ from rptest.services.cluster import cluster
 from ducktape.mark import ignore
 from rptest.clients.types import TopicSpec
 from rptest.wasm.topic import get_source_topic
-from rptest.wasm.topics_result_set import materialized_result_set_compare
+from rptest.wasm.topics_result_set import materialized_result_set_compare, group_fan_in_verifier
 from rptest.wasm.wasm_test import WasmTest
 from rptest.wasm.wasm_script import WasmScript
 from rptest.wasm.wasm_build_tool import WasmTemplateRepository
@@ -225,13 +225,7 @@ class WasmAllInputsToAllOutputsIdentityTest(WasmIdentityTest):
         # Cannot compare topics to topics, can only verify # of records
         self.start_wasm()
         input_results, output_results = self.wait_on_results()
-
-        def compare(topic):
-            iis = input_results.filter(lambda x: x.topic == topic)
-            oos = output_results.filter(
-                lambda x: get_source_topic(x.topic) == topic)
-            return iis.num_records() == oos.num_records()
-
-        if not all(compare(topic) for topic in self.topics):
+        if not group_fan_in_verifier(self.topics, input_results,
+                                     output_results):
             raise Exception(
                 "Incorrect number of records observed across topics")
