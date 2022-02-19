@@ -65,7 +65,8 @@ rp_test(
   SOURCES partition_moving_test.cc
   LIBRARIES v::seastar_testing_main v::application v::storage_test_utils
   DEFINITIONS SEASTAR_TESTING_MAIN
-  LABELS cluster
+  # disabled for issue #2909
+  LABELS cluster disable_on_ci
 )
 
 rp_test(
