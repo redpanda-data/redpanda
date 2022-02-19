@@ -60,7 +60,8 @@ public:
       , _partition(std::move(part))
       , _ot_state(std::move(ot_state))
       , _it(_partition->begin())
-      , _end(_partition->end()) {
+      , _end(_partition->end())
+      , _gate_guard(_partition->_gate) {
         if (config.abort_source) {
             vlog(_ctxlog.debug, "abort_source is set");
             auto sub = config.abort_source->get().subscribe([this]() noexcept {
@@ -142,7 +143,7 @@ public:
                 co_return storage_t{};
             }
             while (co_await maybe_reset_reader()) {
-                if (_partition->_as.abort_requested()) {
+                if (_partition->_gate.is_closed()) {
                     co_await set_end_of_stream();
                     co_return storage_t{};
                 }
@@ -315,6 +316,8 @@ private:
     std::unique_ptr<remote_segment_batch_reader> _reader;
     /// Cancelation subscription
     ss::abort_source::subscription _as_sub;
+    /// Guard for the partition gate
+    gate_guard _gate_guard;
 };
 
 remote_partition::remote_partition(
@@ -333,9 +336,7 @@ ss::future<> remote_partition::start() {
 
     _stm_timer.set_callback([this] {
         gc_stale_materialized_segments(false);
-        if (!_as.abort_requested()) {
-            _stm_timer.rearm(_stm_jitter());
-        }
+        _stm_timer.rearm(_stm_jitter());
     });
     _stm_timer.rearm(_stm_jitter());
     co_return;
@@ -345,19 +346,14 @@ ss::future<> remote_partition::run_eviction_loop() {
     // Evict readers asynchronously
     gate_guard g(_gate);
     try {
-        while (!_as.abort_requested()) {
-            co_await _cvar.wait([this] {
-                return _as.abort_requested() || !_eviction_list.empty();
-            });
+        while (true) {
+            co_await _cvar.wait([this] { return !_eviction_list.empty(); });
             auto tmp_list = std::exchange(_eviction_list, {});
             for (auto& rs : tmp_list) {
                 co_await std::visit([](auto&& rs) { return rs->stop(); }, rs);
             }
         }
     } catch (const ss::broken_condition_variable&) {
-    }
-    for (auto& rs : _eviction_list) {
-        co_await std::visit([](auto&& rs) { return rs->stop(); }, rs);
     }
     vlog(_ctxlog.debug, "remote partition eviction loop stopped");
 }
@@ -463,11 +459,16 @@ bool remote_partition::is_data_available() const {
 
 ss::future<> remote_partition::stop() {
     vlog(_ctxlog.debug, "remote partition stop {} segments", _segments.size());
-    _as.request_abort();
     _stm_timer.cancel();
     _cvar.broken();
 
     co_await _gate.close();
+
+    // Do the last pass over the eviction list to stop remaining items returned
+    // from readers after the eviction loop stopped.
+    for (auto& rs : _eviction_list) {
+        co_await std::visit([](auto&& rs) { return rs->stop(); }, rs);
+    }
 
     for (auto& [offset, seg] : _segments) {
         vlog(_ctxlog.debug, "remote partition stop {}", offset);
@@ -564,7 +565,6 @@ ss::future<storage::translating_reader> remote_partition::make_reader(
   storage::log_reader_config config,
   std::optional<model::timeout_clock::time_point> deadline) {
     std::ignore = deadline;
-    gate_guard g(_gate);
     vlog(
       _ctxlog.debug,
       "remote partition make_reader invoked, config: {}, num segments {}",
