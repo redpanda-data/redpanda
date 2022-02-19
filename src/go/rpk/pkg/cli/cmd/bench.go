@@ -30,7 +30,6 @@ import (
 	"github.com/twmb/franz-go/pkg/sasl/scram"
 	"github.com/twmb/franz-go/plugin/kprom"
 	"github.com/twmb/tlscfg"
-
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/out"
@@ -44,7 +43,14 @@ func printRate(rateRecs *int64, rateBytes *int64) {
 	}
 }
 
-func newRecord(num int64, useStaticValue bool, staticPool sync.Pool, pool sync.Pool, poolProduce bool, recordBytes int) *kgo.Record {
+func newRecord(
+	num int64,
+	useStaticValue bool,
+	staticPool sync.Pool,
+	pool sync.Pool,
+	poolProduce bool,
+	recordBytes int,
+) *kgo.Record {
 	var r *kgo.Record
 	if useStaticValue {
 		return staticPool.Get().(*kgo.Record)
