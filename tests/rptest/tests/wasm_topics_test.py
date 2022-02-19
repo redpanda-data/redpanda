@@ -28,6 +28,7 @@ class WasmCreateTopicsTest(WasmIdentityTest):
                        script=WasmTemplateRepository.IDENTITY_TRANSFORM)
         ]
 
+    @ignore  # see: #3858
     @cluster(num_nodes=3)
     def verify_materialized_topics_test(self):
         super().verify_materialized_topics_test()
