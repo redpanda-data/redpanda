@@ -69,6 +69,7 @@ func Execute() {
 	rootCmd.AddCommand(NewContainerCommand())
 	rootCmd.AddCommand(NewTopicCommand(fs, mgr))
 	rootCmd.AddCommand(NewClusterCommand(fs))
+	rootCmd.AddCommand(NewBenchCommand(fs))
 	rootCmd.AddCommand(NewACLCommand(fs, mgr))
 	rootCmd.AddCommand(group.NewCommand(fs, mgr))
 

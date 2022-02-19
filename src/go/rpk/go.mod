@@ -3,7 +3,7 @@ module github.com/vectorizedio/redpanda/src/go/rpk
 go 1.16
 
 require (
-	cloud.google.com/go v0.46.3
+	cloud.google.com/go v0.65.0
 	github.com/AlecAivazis/survey/v2 v2.3.2
 	github.com/BurntSushi/toml v0.3.1
 	github.com/Microsoft/go-winio v0.4.12 // indirect
@@ -20,13 +20,11 @@ require (
 	github.com/docker/go-units v0.4.0
 	github.com/fatih/color v1.7.0
 	github.com/fsnotify/fsnotify v1.4.9 // indirect
-	github.com/golang/protobuf v1.4.2 // indirect
 	github.com/google/go-cmp v0.5.6 // indirect
 	github.com/google/uuid v1.1.1
 	github.com/gorilla/mux v1.7.3 // indirect
 	github.com/hashicorp/go-multierror v1.1.0
 	github.com/icza/dyno v0.0.0-20200205103839-49cb13720835
-	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lorenzosaino/go-sysctl v0.1.0
 	github.com/mattn/go-colorable v0.1.11 // indirect
@@ -41,10 +39,10 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.12 // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_model v0.2.0
-	github.com/prometheus/common v0.9.1
+	github.com/prometheus/common v0.30.0
 	github.com/safchain/ethtool v0.0.0-20190326074333-42ed695e3de8
 	github.com/sethgrid/pester v1.1.0
-	github.com/sirupsen/logrus v1.4.2
+	github.com/sirupsen/logrus v1.6.0
 	github.com/spf13/afero v1.6.0
 	github.com/spf13/cobra v1.1.3
 	github.com/spf13/pflag v1.0.5
@@ -54,16 +52,16 @@ require (
 	github.com/twmb/franz-go v1.3.0
 	github.com/twmb/franz-go/pkg/kadm v0.0.0-20220106030238-d62f1bef74f9
 	github.com/twmb/franz-go/pkg/kmsg v0.0.0-20220106030238-d62f1bef74f9
+	github.com/twmb/franz-go/plugin/kprom v1.0.0
 	github.com/twmb/tlscfg v1.2.0
 	github.com/twmb/types v1.1.6
 	golang.org/x/crypto v0.0.0-20211117183948-ae814b36b871
 	golang.org/x/mod v0.4.1 // indirect
-	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
+	golang.org/x/sync v0.0.0-20201207232520-09787c993a3a
 	golang.org/x/sys v0.0.0-20211101204403-39c9dd37992c
 	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211 // indirect
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/tools v0.0.0-20210114065538-d78b04bdf963 // indirect
-	google.golang.org/protobuf v1.25.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
