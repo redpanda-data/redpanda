@@ -81,7 +81,6 @@ class TxAdminTest(RedpandaTest):
                     assert (tx['timeout_ms'] == 60000)
 
     @cluster(num_nodes=3)
-    @ignore  # https://github.com/redpanda-data/redpanda/issues/3849
     def test_expired_transaction(self):
         '''
         Problem: rm_stm contains timer to run try_abort_old_txs.
@@ -104,7 +103,7 @@ class TxAdminTest(RedpandaTest):
         producer1 = ck.Producer({
             'bootstrap.servers': self.redpanda.brokers(),
             'transactional.id': '0',
-            'transaction.timeout.ms': '30000'
+            'transaction.timeout.ms': '900000'
         })
         producer1.init_transactions()
         producer1.begin_transaction()
