@@ -10,7 +10,6 @@
 from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
 from ducktape.utils.util import wait_until
-from ducktape.mark import ignore
 from rptest.services.admin import Admin
 import confluent_kafka as ck
 from rptest.tests.redpanda_test import RedpandaTest
