@@ -11,4 +11,7 @@ v_cc_library(
     tls.cc
   DEPS
     Seastar::seastar
+    absl::node_hash_map
   )
+
+add_subdirectory(tests)
