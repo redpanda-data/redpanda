@@ -13,6 +13,7 @@ from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
+from ducktape.mark import ignore
 from ducktape.utils.util import wait_until
 
 from rptest.tests.redpanda_test import RedpandaTest
@@ -26,6 +27,7 @@ class RecreateTopicMetadataTest(RedpandaTest):
                              num_brokers=5,
                              extra_rp_conf={})
 
+    @ignore  # issue #3859
     @cluster(num_nodes=5)
     @parametrize(replication_factor=3)
     @parametrize(replication_factor=5)
