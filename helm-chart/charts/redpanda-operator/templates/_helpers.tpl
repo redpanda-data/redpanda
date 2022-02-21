@@ -42,7 +42,7 @@ Create chart name and version as used by the chart label.
 {{- end }}
 
 {{- define "redpanda-operator.webhook-cert" -}}
-{{- printf "webhook-server-cert" }}
+{{- printf .Values.webhookSecretName }}
 {{- end }}
 
 {{/*
