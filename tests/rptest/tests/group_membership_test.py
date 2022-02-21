@@ -225,23 +225,36 @@ class GroupMetricsTest(RedpandaTest):
         group = "g0"
 
         def check_metric():
+            if topic_spec.name not in rpk.list_topics():
+                return False
             for i in range(100):
                 payload = str(random.randint(0, 1000))
                 offset = rpk.produce(topic, "", payload, timeout=5)
-
             metric_key = (topic, "0")
             rpk.consume(topic, group=group, n=50)
             metrics_offsets = self._get_offset_from_metrics(group)
-            assert metric_key in metrics_offsets
-            assert metrics_offsets[metric_key] == 50
+            if metric_key not in metrics_offsets:
+                return False
+            if metrics_offsets[metric_key] <= 0:
+                return False
+            return True
 
-            self.client().delete_topic(topic)
+        wait_until(lambda: check_metric(),
+                   timeout_sec=10,
+                   backoff_sec=1,
+                   err_msg="Initial check metric failed")
 
-        check_metric()
-        metrics_offsets = self._get_offset_from_metrics(group)
-        assert metrics_offsets is None
+        self.client().delete_topic(topic)
+        wait_until(lambda: self._get_offset_from_metrics(group) is None,
+                   timeout_sec=10,
+                   backoff_sec=1,
+                   err_msg="Topic metrics haven't dissapeared")
+
         self.client().create_topic(topic_spec)
-        check_metric()
+        wait_until(lambda: check_metric(),
+                   timeout_sec=10,
+                   backoff_sec=1,
+                   err_msg="Topic recreation check metric failed")
 
     @cluster(num_nodes=7)
     def test_leadership_transfer(self):
