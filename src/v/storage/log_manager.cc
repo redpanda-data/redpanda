@@ -292,13 +292,15 @@ ss::future<> log_manager::dispatch_topic_dir_deletion(ss::sstring dir) {
                 if (!exists) {
                     return ss::now();
                 }
-                return directory_walker::empty(std::filesystem::path(dir))
-                  .then([dir](bool empty) {
-                      if (!empty) {
-                          return ss::now();
-                      }
-                      return ss::remove_file(dir);
-                  });
+                return ss::sync_directory(dir).then([dir] {
+                    return directory_walker::empty(std::filesystem::path(dir))
+                      .then([dir](bool empty) {
+                          if (!empty) {
+                              return ss::now();
+                          }
+                          return ss::remove_file(dir);
+                      });
+                });
             });
         });
     });
