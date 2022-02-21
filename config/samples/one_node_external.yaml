@@ -24,6 +24,11 @@ spec:
       port: 30001
     pandaproxyApi:
     - port: 8082
+    schemaRegistry:
+      port: 8081
+      external:
+        enabled: true
+        subdomain: local.rp
     adminApi:
     - port: 9644
     developerMode: true
