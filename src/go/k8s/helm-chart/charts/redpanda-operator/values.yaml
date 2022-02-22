@@ -96,3 +96,5 @@ labels:
 # monitoring -- Add service monitor to the deployment
 monitoring:
   enabled: false
+
+webhookSecretName: webhook-server-cert
