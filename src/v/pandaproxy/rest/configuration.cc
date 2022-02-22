@@ -30,32 +30,30 @@ configuration::configuration()
     *this,
     "pandaproxy_api",
     "Rest API listen address and port",
-    config::required::no,
+    {},
     {model::broker_endpoint(net::unresolved_address("0.0.0.0", 8082))})
   , pandaproxy_api_tls(
       *this,
       "pandaproxy_api_tls",
       "TLS configuration for Pandaproxy api",
-      config::required::no,
+      {},
       {},
       config::endpoint_tls_config::validate_many)
   , advertised_pandaproxy_api(
       *this,
       "advertised_pandaproxy_api",
-      "Rest API address and port to publish to client",
-      config::required::no,
-      {})
+      "Rest API address and port to publish to client")
   , api_doc_dir(
       *this,
       "api_doc_dir",
       "API doc directory",
-      config::required::no,
+      {},
       "/usr/share/redpanda/proxy-api-doc")
   , consumer_instance_timeout(
       *this,
       "consumer_instance_timeout_ms",
       "How long to wait for an idle consumer before removing it",
-      config::required::no,
+      {},
       std::chrono::minutes{5}) {}
 
 } // namespace pandaproxy::rest
