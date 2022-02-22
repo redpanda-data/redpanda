@@ -655,6 +655,23 @@ class RedpandaService(Service):
                         allowed = True
                         break
 
+                if 'LeakSanitizer' in line:
+                    # Special case for LeakSanitizer errors, where tiny leaks
+                    # are permitted, as they can occur during Seastar shutdown.
+                    # See https://github.com/redpanda-data/redpanda/issues/3626
+                    for summary_line in node.account.ssh_capture(
+                            f"grep -e \"SUMMARY: AddressSanitizer:\" {RedpandaService.STDOUT_STDERR_CAPTURE} | true"
+                    ):
+                        m = re.match(
+                            "SUMMARY: AddressSanitizer: (\d+) byte\(s\) leaked in (\d+) allocation\(s\).",
+                            summary_line.strip())
+                        if m and int(m.group(1)) < 1024:
+                            self.logger.warn(
+                                f"Ignoring memory leak, small quantity: {summary_line}"
+                            )
+                            allowed = True
+                            break
+
                 if not allowed:
                     bad_lines[node].append(line)
                     self.logger.warn(
