@@ -94,6 +94,9 @@ CHAOS_LOG_ALLOW_LIST = [
 
     # rpc - Service handler threw an exception: std::exception (std::exception)
     re.compile("rpc - Service handler threw an exception: std"),
+
+    # rpc - Service handler threw an exception: seastar::broken_promise (broken promise)"
+    re.compile("rpc - Service handler threw an exception: seastar"),
 ]
 
 
