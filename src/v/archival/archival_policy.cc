@@ -101,10 +101,6 @@ archival_policy::lookup_result archival_policy::find_segment(
     }
     const auto& set = plog->segments();
 
-    if (start_offset <= adjusted_lso) {
-        _ntp_probe.upload_lag(adjusted_lso - start_offset);
-    }
-
     const auto& ntp_conf = plog->config();
     auto it = set.lower_bound(start_offset);
     if (it == set.end() || (*it)->is_compacted_segment()) {
