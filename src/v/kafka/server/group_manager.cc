@@ -20,6 +20,7 @@
 #include "kafka/protocol/offset_commit.h"
 #include "kafka/protocol/offset_fetch.h"
 #include "kafka/protocol/request_reader.h"
+#include "kafka/server/group_recovery_consumer.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "model/record.h"
@@ -327,9 +328,9 @@ ss::future<> group_manager::handle_partition_leader_change(
                   .then([this, term, p, timeout](
                           model::record_batch_reader reader) {
                       return std::move(reader)
-                        .consume(recovery_batch_consumer(p->as), timeout)
+                        .consume(group_recovery_consumer(p->as), timeout)
                         .then([this, term, p](
-                                recovery_batch_consumer_state state) {
+                                group_recovery_consumer_state state) {
                             // avoid trying to recover if we stopped the
                             // reader because an abort was requested
                             if (p->as.abort_requested()) {
@@ -353,7 +354,7 @@ ss::future<> group_manager::handle_partition_leader_change(
 ss::future<> group_manager::recover_partition(
   model::term_id term,
   ss::lw_shared_ptr<attached_partition> p,
-  recovery_batch_consumer_state ctx) {
+  group_recovery_consumer_state ctx) {
     for (auto& [_, group] : _groups) {
         if (group->partition()->ntp() == p->partition->ntp()) {
             group->reset_tx_state(term);
@@ -425,180 +426,6 @@ ss::future<> group_manager::recover_partition(
     }
 
     _groups.rehash(0);
-
-    return ss::make_ready_future<>();
-}
-
-template<typename T>
-static group_tx_cmd<T>
-parse_tx_batch(const model::record_batch& batch, int8_t version) {
-    vassert(batch.record_count() == 1, "tx batch must contain a single record");
-    auto r = batch.copy_records();
-    auto& record = *r.begin();
-    auto key_buf = record.release_key();
-    auto val_buf = record.release_value();
-
-    iobuf_parser val_reader(std::move(val_buf));
-    auto tx_version = reflection::adl<int8_t>{}.from(val_reader);
-    vassert(
-      tx_version == version,
-      "unknown group inflight tx record version: {} expected: {}",
-      tx_version,
-      version);
-    auto cmd = reflection::adl<T>{}.from(val_reader);
-
-    iobuf_parser key_reader(std::move(key_buf));
-    auto batch_type = reflection::adl<model::record_batch_type>{}.from(
-      key_reader);
-    const auto& hdr = batch.header();
-    vassert(
-      hdr.type == batch_type,
-      "broken tx group message. expected batch type {} got: {}",
-      hdr.type,
-      batch_type);
-    auto p_id = model::producer_id(reflection::adl<int64_t>{}.from(key_reader));
-    auto bid = model::batch_identity::from(hdr);
-    vassert(
-      p_id == bid.pid.id,
-      "broken tx group message. expected pid/id {} got: {}",
-      bid.pid.id,
-      p_id);
-
-    return group_tx_cmd<T>{.pid = bid.pid, .cmd = std::move(cmd)};
-}
-
-ss::future<ss::stop_iteration>
-recovery_batch_consumer::operator()(model::record_batch batch) {
-    if (as.abort_requested()) {
-        return ss::make_ready_future<ss::stop_iteration>(
-          ss::stop_iteration::yes);
-    }
-
-    if (batch.header().type == model::record_batch_type::raft_data) {
-        batch_base_offset = batch.base_offset();
-        return ss::do_with(
-                 std::move(batch),
-                 [this](model::record_batch& batch) {
-                     return model::for_each_record(
-                       batch, [this](model::record& r) {
-                           return handle_record(std::move(r));
-                       });
-                 })
-          .then([] { return ss::stop_iteration::no; });
-    } else if (
-      batch.header().type == model::record_batch_type::group_prepare_tx) {
-        auto val = parse_tx_batch<group_log_prepared_tx>(
-                     batch, group::prepared_tx_record_version)
-                     .cmd;
-
-        auto [group_it, _] = st.groups.try_emplace(val.group_id);
-        group_it->second.update_prepared(batch.last_offset(), val);
-
-        return ss::make_ready_future<ss::stop_iteration>(
-          ss::stop_iteration::no);
-    } else if (
-      batch.header().type == model::record_batch_type::group_commit_tx) {
-        auto cmd = parse_tx_batch<group_log_commit_tx>(
-          batch, group::commit_tx_record_version);
-
-        auto [group_it, _] = st.groups.try_emplace(cmd.cmd.group_id);
-        group_it->second.commit(cmd.pid);
-
-        return ss::make_ready_future<ss::stop_iteration>(
-          ss::stop_iteration::no);
-    } else if (
-      batch.header().type == model::record_batch_type::group_abort_tx) {
-        auto cmd = parse_tx_batch<group_log_aborted_tx>(
-          batch, group::aborted_tx_record_version);
-
-        auto [group_it, _] = st.groups.try_emplace(cmd.cmd.group_id);
-        group_it->second.abort(cmd.pid, cmd.cmd.tx_seq);
-
-        return ss::make_ready_future<ss::stop_iteration>(
-          ss::stop_iteration::no);
-    } else if (batch.header().type == model::record_batch_type::tx_fence) {
-        auto cmd = parse_tx_batch<group_log_fencing>(
-          batch, group::fence_control_record_version);
-
-        auto [group_it, _] = st.groups.try_emplace(cmd.cmd.group_id);
-        group_it->second.try_set_fence(cmd.pid.get_id(), cmd.pid.get_epoch());
-        return ss::make_ready_future<ss::stop_iteration>(
-          ss::stop_iteration::no);
-    } else {
-        vlog(
-          klog.trace, "ignorning batch with type {}", int(batch.header().type));
-        return ss::make_ready_future<ss::stop_iteration>(
-          ss::stop_iteration::no);
-    }
-}
-
-ss::future<> recovery_batch_consumer::handle_record(model::record r) {
-    auto key = reflection::adl<group_log_record_key>{}.from(r.share_key());
-    auto value = r.has_value() ? r.release_value() : std::optional<iobuf>();
-
-    switch (key.record_type) {
-    case group_log_record_key::type::group_metadata:
-        return handle_group_metadata(std::move(key.key), std::move(value));
-
-    case group_log_record_key::type::offset_commit:
-        return handle_offset_metadata(std::move(key.key), std::move(value));
-
-    case group_log_record_key::type::noop:
-        // skip control structure
-        return ss::make_ready_future<>();
-
-    default:
-        return ss::make_exception_future<>(std::runtime_error(fmt::format(
-          "Unknown record type={} in group recovery", int(key.record_type))));
-    }
-}
-
-ss::future<> recovery_batch_consumer::handle_group_metadata(
-  iobuf key_buf, std::optional<iobuf> val_buf) {
-    auto group_id = kafka::group_id(
-      reflection::from_iobuf<kafka::group_id::type>(std::move(key_buf)));
-
-    vlog(klog.trace, "Recovering group metadata {}", group_id);
-
-    if (val_buf) {
-        // until we switch over to a compacted topic or use raft snapshots,
-        // always take the latest entry in the log.
-
-        auto metadata = reflection::from_iobuf<group_log_group_metadata>(
-          std::move(*val_buf));
-
-        auto [group_it, _] = st.groups.try_emplace(group_id, group_stm());
-        group_it->second.overwrite_metadata(std::move(metadata));
-    } else {
-        // tombstone
-        auto [group_it, _] = st.groups.try_emplace(group_id, group_stm());
-        group_it->second.remove();
-    }
-
-    return ss::make_ready_future<>();
-}
-
-ss::future<> recovery_batch_consumer::handle_offset_metadata(
-  iobuf key_buf, std::optional<iobuf> val_buf) {
-    auto key = reflection::from_iobuf<group_log_offset_key>(std::move(key_buf));
-    model::topic_partition tp(key.topic, key.partition);
-    if (val_buf) {
-        auto metadata = reflection::from_iobuf<group_log_offset_metadata>(
-          std::move(*val_buf));
-        vlog(
-          klog.trace, "Recovering offset {} with metadata {}", key, metadata);
-        // until we switch over to a compacted topic or use raft snapshots,
-        // always take the latest entry in the log.
-        auto [group_it, _] = st.groups.try_emplace(key.group, group_stm());
-        group_it->second.update_offset(
-          tp, batch_base_offset, std::move(metadata));
-    } else {
-        // tombstone
-        auto group_it = st.groups.find(key.group);
-        if (group_it != st.groups.end()) {
-            group_it->second.remove_offset(tp);
-        }
-    }
 
     return ss::make_ready_future<>();
 }
