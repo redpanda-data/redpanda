@@ -6,6 +6,7 @@
 // As of the Change Date specified in that file, in accordance with
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
+#include "config/mock_property.h"
 #include "random/generators.h"
 #include "security/authorizer.h"
 #include "utils/base64.h"
@@ -75,6 +76,14 @@ static auto get_acls(authorizer& auth, acl_binding_filter filter) {
     }
     return found;
 }
+static authorizer make_test_instance(
+  authorizer::allow_empty_matches allow = authorizer::allow_empty_matches::no) {
+    auto b = []() {
+        return config::mock_binding<std::vector<ss::sstring>>(
+          std::vector<ss::sstring>{});
+    };
+    return authorizer(allow, b);
+}
 
 BOOST_AUTO_TEST_CASE(resource_type_auto) {
     BOOST_REQUIRE(
@@ -99,7 +108,7 @@ BOOST_AUTO_TEST_CASE(empty_resource_name) {
     acl_principal user(principal_type::user, "alice");
     acl_host host("192.168.0.1");
 
-    authorizer auth;
+    auto auth = make_test_instance();
 
     BOOST_REQUIRE(
       !auth.authorized(kafka::group_id(""), acl_operation::read, user, host));
@@ -126,7 +135,7 @@ BOOST_AUTO_TEST_CASE(deny_applies_first) {
     acl_principal user(principal_type::user, "alice");
     acl_host host("192.168.2.1");
 
-    authorizer auth;
+    auto auth = make_test_instance();
 
     acl_entry allow(
       acl_wildcard_user,
@@ -151,7 +160,7 @@ BOOST_AUTO_TEST_CASE(allow_all) {
     acl_principal user(principal_type::user, "random");
     acl_host host("192.0.4.4");
 
-    authorizer auth;
+    auto auth = make_test_instance();
 
     acl_entry acl(
       acl_wildcard_user,
@@ -174,7 +183,13 @@ BOOST_AUTO_TEST_CASE(super_user_allow) {
     acl_principal user2(principal_type::user, "superuser2");
     acl_host host("192.0.4.4");
 
-    authorizer auth;
+    config::mock_property<std::vector<ss::sstring>> superuser_config_prop(
+      std::vector<ss::sstring>{});
+    authorizer auth(
+      [&superuser_config_prop]() mutable
+      -> config::binding<std::vector<ss::sstring>> {
+          return superuser_config_prop.bind();
+      });
 
     acl_entry acl(
       acl_wildcard_user,
@@ -194,11 +209,20 @@ BOOST_AUTO_TEST_CASE(super_user_allow) {
     BOOST_REQUIRE(
       !auth.authorized(default_topic, acl_operation::read, user2, host));
 
-    auth.add_superuser(acl_principal(principal_type::user, "superuser1"));
-    auth.add_superuser(acl_principal(principal_type::user, "superuser2"));
+    // Adding superusers
+    superuser_config_prop.update({"superuser1", "superuser2"});
 
     BOOST_REQUIRE(
       auth.authorized(default_topic, acl_operation::read, user1, host));
+
+    BOOST_REQUIRE(
+      auth.authorized(default_topic, acl_operation::read, user2, host));
+
+    // Revoking a superuser
+    superuser_config_prop.update({"superuser2"});
+
+    BOOST_REQUIRE(
+      !auth.authorized(default_topic, acl_operation::read, user1, host));
 
     BOOST_REQUIRE(
       auth.authorized(default_topic, acl_operation::read, user2, host));
@@ -208,7 +232,7 @@ BOOST_AUTO_TEST_CASE(wildcards) {
     acl_principal user(principal_type::user, "alice");
     acl_host host("192.168.0.1");
 
-    authorizer auth;
+    auto auth = make_test_instance();
 
     BOOST_REQUIRE(
       !auth.authorized(default_topic, acl_operation::read, user, host));
@@ -252,7 +276,7 @@ BOOST_AUTO_TEST_CASE(no_acls_deny) {
     acl_principal user(principal_type::user, "alice");
     acl_host host("192.168.0.1");
 
-    authorizer auth;
+    auto auth = make_test_instance();
 
     BOOST_REQUIRE(
       !auth.authorized(default_topic, acl_operation::read, user, host));
@@ -262,7 +286,7 @@ BOOST_AUTO_TEST_CASE(no_acls_allow) {
     acl_principal user(principal_type::user, "alice");
     acl_host host("192.168.0.1");
 
-    authorizer auth(authorizer::allow_empty_matches::yes);
+    auto auth = make_test_instance(authorizer::allow_empty_matches::yes);
 
     BOOST_REQUIRE(
       auth.authorized(default_topic, acl_operation::read, user, host));
@@ -275,7 +299,7 @@ BOOST_AUTO_TEST_CASE(implied_acls) {
 
         acl_entry acl(user, acl_wildcard_host, op, acl_permission::allow);
 
-        authorizer auth;
+        auto auth = make_test_instance();
 
         std::vector<acl_binding> bindings;
         resource_pattern resource(
@@ -316,7 +340,7 @@ BOOST_AUTO_TEST_CASE(implied_acls) {
         acl_entry allow(
           user, acl_wildcard_host, acl_operation::all, acl_permission::allow);
 
-        authorizer auth;
+        auto auth = make_test_instance();
 
         std::vector<acl_binding> bindings;
         resource_pattern resource(
@@ -398,7 +422,7 @@ BOOST_AUTO_TEST_CASE(allow_for_all_wildcard_resource) {
       acl_operation::read,
       acl_permission::allow);
 
-    authorizer auth;
+    auto auth = make_test_instance();
 
     std::vector<acl_binding> bindings;
     resource_pattern resource(
@@ -412,7 +436,7 @@ BOOST_AUTO_TEST_CASE(allow_for_all_wildcard_resource) {
 }
 
 BOOST_AUTO_TEST_CASE(remove_acl_wildcard_resource) {
-    authorizer auth;
+    auto auth = make_test_instance();
 
     std::vector<acl_binding> bindings;
     bindings.emplace_back(wildcard_resource, allow_read_acl);
@@ -430,7 +454,7 @@ BOOST_AUTO_TEST_CASE(remove_acl_wildcard_resource) {
 }
 
 BOOST_AUTO_TEST_CASE(remove_all_acl_wildcard_resource) {
-    authorizer auth;
+    auto auth = make_test_instance();
 
     std::vector<acl_binding> bindings;
     bindings.emplace_back(wildcard_resource, allow_read_acl);
@@ -455,7 +479,7 @@ BOOST_AUTO_TEST_CASE(allow_for_all_prefixed_resource) {
       acl_operation::read,
       acl_permission::allow);
 
-    authorizer auth;
+    auto auth = make_test_instance();
 
     std::vector<acl_binding> bindings;
     resource_pattern resource(
@@ -469,7 +493,7 @@ BOOST_AUTO_TEST_CASE(allow_for_all_prefixed_resource) {
 }
 
 BOOST_AUTO_TEST_CASE(remove_acl_prefixed_resource) {
-    authorizer auth;
+    auto auth = make_test_instance();
 
     std::vector<acl_binding> bindings;
     bindings.emplace_back(prefixed_resource, allow_read_acl);
@@ -487,7 +511,7 @@ BOOST_AUTO_TEST_CASE(remove_acl_prefixed_resource) {
 }
 
 BOOST_AUTO_TEST_CASE(remove_all_acl_prefixed_resource) {
-    authorizer auth;
+    auto auth = make_test_instance();
 
     std::vector<acl_binding> bindings;
     bindings.emplace_back(prefixed_resource, allow_read_acl);
@@ -503,7 +527,7 @@ BOOST_AUTO_TEST_CASE(remove_all_acl_prefixed_resource) {
 }
 
 BOOST_AUTO_TEST_CASE(acls_on_literal_resource) {
-    authorizer auth;
+    auto auth = make_test_instance();
 
     std::vector<acl_binding> bindings;
     bindings.emplace_back(default_resource, allow_read_acl);
@@ -537,7 +561,7 @@ BOOST_AUTO_TEST_CASE(acls_on_literal_resource) {
 }
 
 BOOST_AUTO_TEST_CASE(acls_on_wildcard_resource) {
-    authorizer auth;
+    auto auth = make_test_instance();
 
     std::vector<acl_binding> bindings;
     bindings.emplace_back(wildcard_resource, allow_read_acl);
@@ -561,7 +585,7 @@ BOOST_AUTO_TEST_CASE(acls_on_wildcard_resource) {
 }
 
 BOOST_AUTO_TEST_CASE(acls_on_prefixed_resource) {
-    authorizer auth;
+    auto auth = make_test_instance();
 
     std::vector<acl_binding> bindings;
     bindings.emplace_back(prefixed_resource, allow_read_acl);
@@ -588,7 +612,7 @@ BOOST_AUTO_TEST_CASE(auth_prefix_resource) {
     acl_principal user(principal_type::user, "alice");
     acl_host host("192.168.3.1");
 
-    authorizer auth;
+    auto auth = make_test_instance();
 
     auto add_acl = [&auth](ss::sstring name, pattern_type type) {
         std::vector<acl_binding> bindings;
@@ -633,7 +657,7 @@ BOOST_AUTO_TEST_CASE(single_char) {
     acl_principal user(principal_type::user, "alice");
     acl_host host("192.168.3.1");
 
-    authorizer auth;
+    auto auth = make_test_instance();
 
     std::vector<acl_binding> bindings;
     bindings.emplace_back(
@@ -666,7 +690,7 @@ BOOST_AUTO_TEST_CASE(single_char) {
 BOOST_AUTO_TEST_CASE(get_acls_principal) {
     acl_principal user(principal_type::user, "alice");
 
-    authorizer auth;
+    auto auth = make_test_instance();
 
     std::vector<acl_binding> bindings;
     bindings.emplace_back(
@@ -739,7 +763,7 @@ BOOST_AUTO_TEST_CASE(acl_filter) {
         acl_operation::read,
         acl_permission::allow));
 
-    authorizer auth;
+    auto auth = make_test_instance();
     auth.add_bindings({acl1, acl2, acl3, acl4});
 
     auto to_set = [](std::vector<acl_binding> bindings) {
@@ -812,7 +836,7 @@ BOOST_AUTO_TEST_CASE(topic_acl) {
     bindings.emplace_back(resource, acl6);
     bindings.emplace_back(resource, acl7);
 
-    authorizer auth;
+    auto auth = make_test_instance();
     auth.add_bindings(bindings);
 
     BOOST_REQUIRE(
@@ -855,7 +879,7 @@ BOOST_AUTO_TEST_CASE(topic_acl) {
 // a bug had allowed a topic with read permissions (prefix) to authorize a group
 // for read permissions when the topic name was a prefix of the group name
 BOOST_AUTO_TEST_CASE(topic_group_same_name) {
-    authorizer auth;
+    auto auth = make_test_instance();
 
     std::vector<acl_binding> bindings;
 

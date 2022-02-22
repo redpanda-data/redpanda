@@ -907,7 +907,7 @@ configuration::configuration()
       *this,
       "superusers",
       "List of superuser usernames",
-      {.visibility = visibility::user},
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
       {})
   , kafka_qdc_latency_alpha(
       *this,
