@@ -10,9 +10,6 @@
  */
 
 #include "kafka/server/group_recovery_consumer.h"
-#include "header"
-
-#include "kafka/server/group_stm.h"
 
 namespace kafka {
 
@@ -69,21 +66,16 @@ parse_tx_batch(const model::record_batch& batch, int8_t version) {
 ss::future<ss::stop_iteration>
 group_recovery_consumer::operator()(model::record_batch batch) {
     if (_as.abort_requested()) {
-        return ss::make_ready_future<ss::stop_iteration>(
-          ss::stop_iteration::yes);
+        co_return ss::stop_iteration::yes;
     }
 
     if (batch.header().type == model::record_batch_type::raft_data) {
         _batch_base_offset = batch.base_offset();
-        return ss::do_with(
-                 std::move(batch),
-                 [this](model::record_batch& batch) {
-                     return model::for_each_record(
-                       batch, [this](model::record& r) {
-                           return handle_record(std::move(r));
-                       });
-                 })
-          .then([] { return ss::stop_iteration::no; });
+        co_await model::for_each_record(batch, [this](model::record& r) {
+            return handle_record(std::move(r));
+        });
+
+        co_return ss::stop_iteration::no;
     } else if (
       batch.header().type == model::record_batch_type::group_prepare_tx) {
         auto val = parse_tx_batch<group_log_prepared_tx>(
@@ -93,8 +85,7 @@ group_recovery_consumer::operator()(model::record_batch batch) {
         auto [group_it, _] = _state.groups.try_emplace(val.group_id);
         group_it->second.update_prepared(batch.last_offset(), val);
 
-        return ss::make_ready_future<ss::stop_iteration>(
-          ss::stop_iteration::no);
+        co_return ss::stop_iteration::no;
     } else if (
       batch.header().type == model::record_batch_type::group_commit_tx) {
         auto cmd = parse_tx_batch<group_log_commit_tx>(
@@ -103,8 +94,7 @@ group_recovery_consumer::operator()(model::record_batch batch) {
         auto [group_it, _] = _state.groups.try_emplace(cmd.cmd.group_id);
         group_it->second.commit(cmd.pid);
 
-        return ss::make_ready_future<ss::stop_iteration>(
-          ss::stop_iteration::no);
+        co_return ss::stop_iteration::no;
     } else if (
       batch.header().type == model::record_batch_type::group_abort_tx) {
         auto cmd = parse_tx_batch<group_log_aborted_tx>(
@@ -113,21 +103,18 @@ group_recovery_consumer::operator()(model::record_batch batch) {
         auto [group_it, _] = _state.groups.try_emplace(cmd.cmd.group_id);
         group_it->second.abort(cmd.pid, cmd.cmd.tx_seq);
 
-        return ss::make_ready_future<ss::stop_iteration>(
-          ss::stop_iteration::no);
+        co_return ss::stop_iteration::no;
     } else if (batch.header().type == model::record_batch_type::tx_fence) {
         auto cmd = parse_tx_batch<group_log_fencing>(
           batch, group::fence_control_record_version);
 
         auto [group_it, _] = _state.groups.try_emplace(cmd.cmd.group_id);
         group_it->second.try_set_fence(cmd.pid.get_id(), cmd.pid.get_epoch());
-        return ss::make_ready_future<ss::stop_iteration>(
-          ss::stop_iteration::no);
+        co_return ss::stop_iteration::no;
     } else {
         vlog(
           klog.trace, "ignorning batch with type {}", int(batch.header().type));
-        return ss::make_ready_future<ss::stop_iteration>(
-          ss::stop_iteration::no);
+        co_return ss::stop_iteration::no;
     }
 }
 
@@ -174,7 +161,7 @@ ss::future<> group_recovery_consumer::handle_group_metadata(
         group_it->second.remove();
     }
 
-    return ss::make_ready_future<>();
+    co_return;
 }
 
 ss::future<> group_recovery_consumer::handle_offset_metadata(
@@ -199,7 +186,7 @@ ss::future<> group_recovery_consumer::handle_offset_metadata(
         }
     }
 
-    return ss::make_ready_future<>();
+    co_return;
 }
 
 } // namespace kafka
