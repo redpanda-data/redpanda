@@ -3,6 +3,7 @@ v_cc_library(
   NAME cloud_storage
   SRCS
     cache_service.cc
+    cache_probe.cc
     manifest.cc
     recursive_directory_walker.cc
     remote.cc

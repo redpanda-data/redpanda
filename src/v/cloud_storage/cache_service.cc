@@ -61,8 +61,10 @@ uint64_t cache::get_total_cleaned() { return _total_cleaned; }
 
 ss::future<> cache::clean_up_at_start() {
     gate_guard guard{_gate};
-    auto [unused, candidates_for_deletion] = co_await _walker.walk(
+    auto [cache_size, candidates_for_deletion] = co_await _walker.walk(
       _cache_dir.native());
+    probe.set_size(cache_size);
+    probe.set_num_files(candidates_for_deletion.size());
 
     for (auto& file_item : candidates_for_deletion) {
         auto filepath_to_remove = file_item.path;
@@ -96,6 +98,8 @@ ss::future<> cache::clean_up_cache() {
     gate_guard guard{_gate};
     auto [curr_cache_size, candidates_for_deletion] = co_await _walker.walk(
       _cache_dir.native());
+    probe.set_size(curr_cache_size);
+    probe.set_num_files(candidates_for_deletion.size());
 
     if (curr_cache_size >= _max_cache_size) {
         auto size_to_delete
@@ -163,6 +167,7 @@ ss::future<> cache::stop() {
 ss::future<std::optional<cache_item>> cache::get(std::filesystem::path key) {
     gate_guard guard{_gate};
     vlog(cst_log.debug, "Trying to get {} from archival cache.", key.native());
+    probe.get();
     ss::file cache_file;
     try {
         /*
@@ -183,6 +188,7 @@ ss::future<std::optional<cache_item>> cache::get(std::filesystem::path key) {
     }
 
     auto data_size = co_await cache_file.size();
+    probe.cached_get();
     co_return std::optional(cache_item{std::move(cache_file), data_size});
 }
 
@@ -194,9 +200,14 @@ ss::future<> cache::put(
   unsigned int write_behind) {
     gate_guard guard{_gate};
     vlog(cst_log.debug, "Trying to put {} to archival cache.", key.native());
+    probe.put();
 
     _files_in_progress.insert(key);
-    auto deferred = ss::defer([this, key] { _files_in_progress.erase(key); });
+    probe.put_started();
+    auto deferred = ss::defer([this, key] {
+        _files_in_progress.erase(key);
+        probe.put_ended();
+    });
     auto filename = (_cache_dir / key).filename();
     if (std::string_view(filename.native()).ends_with(tmp_extension)) {
         throw std::invalid_argument(fmt::format(
