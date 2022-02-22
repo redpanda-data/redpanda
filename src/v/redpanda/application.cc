@@ -324,8 +324,8 @@ void application::hydrate_config(const po::variables_map& cfg) {
     };
     _redpanda_enabled = config["redpanda"];
     if (_redpanda_enabled) {
-        ss::smp::invoke_on_all([&config] {
-            config::node().load(config);
+        ss::smp::invoke_on_all([&config, cfg_path] {
+            config::node().load(cfg_path, config);
         }).get0();
 
         auto node_config_errors = config::node().load(config);
