@@ -32,6 +32,10 @@ ALLOWED_REPLICATION = [1, 3]
 
 
 class NodeOperationFuzzyTest(EndToEndTest):
+    max_suspend_duration_seconds = 10
+    min_inter_failure_time = 20
+    max_inter_failure_time = 45
+
     def generate_random_workload(self, count, skip_nodes, available_nodes):
         op_types = [ADD, DECOMMISSION]
         tp_op_types = [ADD_TOPIC, DELETE_TOPIC]
@@ -158,7 +162,8 @@ class NodeOperationFuzzyTest(EndToEndTest):
                 length = 0
                 # allow suspending any node
                 if f_type == FailureSpec.FAILURE_SUSPEND:
-                    length = random.randint(1, 10)
+                    length = random.randint(
+                        1, NodeOperationFuzzyTest.max_suspend_duration_seconds)
                     node = random.choice(self.redpanda.nodes)
                 else:
                     #kill/termianate only active nodes (not to influence the test outcome)
@@ -168,7 +173,9 @@ class NodeOperationFuzzyTest(EndToEndTest):
                 f_injector.inject_failure(
                     FailureSpec(node=node, type=f_type, length=length))
 
-                delay = random.randint(20, 45)
+                delay = random.randint(
+                    NodeOperationFuzzyTest.min_inter_failure_time,
+                    NodeOperationFuzzyTest.max_inter_failure_time)
                 self.redpanda.logger.info(
                     f"waiting {delay} seconds before next failure")
                 time.sleep(delay)
@@ -271,11 +278,14 @@ class NodeOperationFuzzyTest(EndToEndTest):
                 self.redpanda.clean_node(self.redpanda.get_node(idx),
                                          preserve_logs=True)
             # we do not reuse previous node ids and override seed server list
-            self.redpanda.start_node(self.redpanda.get_node(idx),
-                                     override_cfg_params={
-                                         "node_id": id,
-                                         "seed_servers": seed_servers_for(idx)
-                                     })
+            self.redpanda.start_node(
+                self.redpanda.get_node(idx),
+                timeout=NodeOperationFuzzyTest.min_inter_failure_time +
+                NodeOperationFuzzyTest.max_suspend_duration_seconds + 30,
+                override_cfg_params={
+                    "node_id": id,
+                    "seed_servers": seed_servers_for(idx)
+                })
 
             def has_new_replicas():
                 per_node = replicas_per_node()
