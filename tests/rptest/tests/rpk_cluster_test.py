@@ -12,7 +12,6 @@ import re
 import zipfile
 import json
 
-from ducktape.mark import ignore
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from ducktape.utils.util import wait_until
@@ -119,7 +118,6 @@ class RpkClusterTest(RedpandaTest):
         assert 'enable_transactions' in parsed
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    @ignore  # https://github.com/redpanda-data/redpanda/issues/3847
     def test_node_down(self):
         """
         Test RPK's handling of a degraded cluster.  For requests using the
