@@ -286,6 +286,7 @@ ntp_archiver::schedule_uploads(
       "scheduling uploads, start_upload_offset: {}, last_stable_offset: {}",
       start_upload_offset,
       last_stable_offset);
+    _probe.upload_lag(last_stable_offset - start_upload_offset);
 
     return ss::do_with(
       std::vector<scheduled_upload>(),
