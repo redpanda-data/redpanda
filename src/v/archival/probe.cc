@@ -18,10 +18,7 @@
 namespace archival {
 
 ntp_level_probe::ntp_level_probe(
-  per_ntp_metrics_disabled disabled, const model::ntp& ntp)
-  : _uploaded()
-  , _missing()
-  , _pending() {
+  per_ntp_metrics_disabled disabled, const model::ntp& ntp) {
     if (disabled) {
         return;
     }
@@ -40,14 +37,19 @@ ntp_level_probe::ntp_level_probe(
       prometheus_sanitize::metrics_name("ntp_archiver"),
       {
         sm::make_counter(
-          "missing",
-          [this] { return _missing; },
-          sm::description("Missing offsets due to gaps"),
-          labels),
-        sm::make_counter(
           "uploaded",
           [this] { return _uploaded; },
           sm::description("Uploaded offsets"),
+          labels),
+        sm::make_total_bytes(
+          "uploaded_bytes",
+          [this] { return _uploaded_bytes; },
+          sm::description("Total number of uploaded bytes"),
+          labels),
+        sm::make_counter(
+          "missing",
+          [this] { return _missing; },
+          sm::description("Missing offsets due to gaps"),
           labels),
         sm::make_gauge(
           "pending",

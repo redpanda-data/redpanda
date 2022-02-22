@@ -356,6 +356,7 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
         }
         const auto& upload = scheduled[ixupload[i]];
         _probe.uploaded(*upload.delta);
+        _probe.uploaded_bytes(upload.meta->size_bytes);
         _manifest.add(segment_name(*upload.name), *upload.meta);
     }
     if (total.num_succeded != 0) {
