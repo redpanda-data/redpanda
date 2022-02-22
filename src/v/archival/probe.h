@@ -35,6 +35,8 @@ public:
     /// Register log-segment upload
     void uploaded(model::offset offset_delta) { _uploaded += offset_delta; }
 
+    void uploaded_bytes(uint64_t bytes) { _uploaded_bytes += bytes; }
+
     /// Register gap
     void gap_detected(model::offset offset_delta) { _missing += offset_delta; }
 
@@ -43,11 +45,13 @@ public:
 
 private:
     /// Uploaded offsets
-    int64_t _uploaded;
+    uint64_t _uploaded = 0;
+    /// Total uploaded bytes
+    uint64_t _uploaded_bytes = 0;
     /// Missing offsets due to gaps
-    int64_t _missing;
+    int64_t _missing = 0;
     /// Width of the offset range yet to be uploaded
-    int64_t _pending;
+    int64_t _pending = 0;
 
     ss::metrics::metric_groups _metrics;
 };
