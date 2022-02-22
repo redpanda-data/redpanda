@@ -336,7 +336,7 @@ scheduler_service_impl::create_archivers(std::vector<model::ntp> to_create) {
               && (part->get_ntp_config().is_archival_enabled()
                   || config::shard_local_cfg().cloud_storage_enable_remote_read())) {
               auto svc = ss::make_lw_shared<ntp_archiver>(
-                log->config(), _conf, _remote.local(), part, _probe);
+                log->config(), _conf, _remote.local(), part);
               return ss::repeat(
                 [this, svc = std::move(svc)] { return add_ntp_archiver(svc); });
           } else {

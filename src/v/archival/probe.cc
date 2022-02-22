@@ -67,10 +67,6 @@ service_probe::service_probe(service_metrics_disabled disabled) {
       prometheus_sanitize::metrics_name("archival_service"),
       {
         sm::make_counter(
-          "num_gaps",
-          [this] { return _cnt_gaps; },
-          sm::description("Number of detected offset gaps")),
-        sm::make_counter(
           "start_archiving_ntp",
           [this] { return _cnt_start_archiving_ntp; },
           sm::description("Start archiving ntp event counter")),

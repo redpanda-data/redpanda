@@ -46,20 +46,13 @@ ntp_archiver::ntp_archiver(
   const storage::ntp_config& ntp,
   const configuration& conf,
   cloud_storage::remote& remote,
-  ss::lw_shared_ptr<cluster::partition> part,
-  service_probe& svc_probe)
-  : _svc_probe(svc_probe)
-  , _probe(conf.ntp_metrics_disabled, ntp.ntp())
+  ss::lw_shared_ptr<cluster::partition> part)
+  : _probe(conf.ntp_metrics_disabled, ntp.ntp())
   , _ntp(ntp.ntp())
   , _rev(ntp.get_initial_revision())
   , _remote(remote)
   , _partition(std::move(part))
-  , _policy(
-      _ntp,
-      _svc_probe,
-      std::ref(_probe),
-      conf.time_limit,
-      conf.upload_io_priority)
+  , _policy(_ntp, std::ref(_probe), conf.time_limit, conf.upload_io_priority)
   , _bucket(conf.bucket_name)
   , _manifest(_ntp, _rev)
   , _gate()

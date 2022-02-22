@@ -66,8 +66,7 @@ public:
       const storage::ntp_config& ntp,
       const configuration& conf,
       cloud_storage::remote& remote,
-      ss::lw_shared_ptr<cluster::partition> part,
-      service_probe& svc_probe);
+      ss::lw_shared_ptr<cluster::partition> part);
 
     /// Stop archiver.
     ///
@@ -165,7 +164,6 @@ private:
     ss::future<cloud_storage::upload_result>
     upload_segment(upload_candidate candidate, retry_chain_node& fib);
 
-    service_probe& _svc_probe;
     ntp_level_probe _probe;
     model::ntp _ntp;
     model::initial_revision_id _rev;

@@ -57,9 +57,6 @@ class service_probe {
 public:
     explicit service_probe(service_metrics_disabled disabled);
 
-    /// Increment gap counter (global)
-    void add_gap() { _cnt_gaps++; }
-
     /// Count new ntp archiving event
     void start_archiving_ntp() { _cnt_start_archiving_ntp++; }
 
@@ -68,8 +65,6 @@ public:
     void stop_archiving_ntp() { _cnt_stop_archiving_ntp++; }
 
 private:
-    /// Number of gaps dected
-    uint64_t _cnt_gaps = 0;
     /// Start archiving npt event counter
     uint64_t _cnt_start_archiving_ntp = 0;
     /// Stop archiving npt event counter
