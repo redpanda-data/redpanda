@@ -57,11 +57,7 @@ ntp_level_probe::ntp_level_probe(
       });
 }
 
-service_probe::service_probe(service_metrics_disabled disabled)
-  : _cnt_gaps()
-  , _cnt_start_archiving_ntp()
-  , _cnt_stop_archiving_ntp()
-  , _cnt_reconciliations() {
+service_probe::service_probe(service_metrics_disabled disabled) {
     if (disabled) {
         return;
     }
@@ -85,11 +81,7 @@ service_probe::service_probe(service_metrics_disabled disabled)
         sm::make_gauge(
           "num_archived_ntp",
           [this] { return _cnt_start_archiving_ntp - _cnt_stop_archiving_ntp; },
-          sm::description("Total number of ntp that archiver manages")),
-        sm::make_counter(
-          "num_reconciliations",
-          [this] { return _cnt_reconciliations; },
-          sm::description("Number of reconciliation loop iterations")),
+          sm::description("Current number of ntp that archiver manages")),
       });
 }
 
