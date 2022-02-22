@@ -46,22 +46,15 @@ uint32_t default_raft_non_local_requests() {
 }
 
 configuration::configuration()
-  : developer_mode(
+  : log_segment_size(
     *this,
-    "developer_mode",
-    "Skips most of the checks performed at startup, not recomended for "
-    "production use",
-    {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-    false)
-  , log_segment_size(
-      *this,
-      "log_segment_size",
-      "How large in bytes should each log segment be (default 1G)",
-      {.needs_restart = needs_restart::no,
-       .example = "2147483648",
-       .visibility = visibility::tunable},
-      1_GiB,
-      {.min = 1_MiB})
+    "log_segment_size",
+    "How large in bytes should each log segment be (default 1G)",
+    {.needs_restart = needs_restart::no,
+     .example = "2147483648",
+     .visibility = visibility::tunable},
+    1_GiB,
+    {.min = 1_MiB})
   , compacted_log_segment_size(
       *this,
       "compacted_log_segment_size",

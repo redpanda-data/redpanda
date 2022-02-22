@@ -383,7 +383,7 @@ void application::hydrate_config(const po::variables_map& cfg) {
 void application::check_environment() {
     syschecks::systemd_message("checking environment (CPU, Mem)").get();
     syschecks::cpu();
-    syschecks::memory(config::shard_local_cfg().developer_mode());
+    syschecks::memory(config::node().developer_mode());
     if (_redpanda_enabled) {
         storage::directories::initialize(
           config::node().data_directory().as_sstring())
