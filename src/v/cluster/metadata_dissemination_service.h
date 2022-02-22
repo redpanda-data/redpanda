@@ -82,7 +82,10 @@ public:
       ss::sharded<health_monitor_frontend>&);
 
     void disseminate_leadership(
-      model::ntp, model::term_id, std::optional<model::node_id>);
+      model::ntp,
+      model::revision_id,
+      model::term_id,
+      std::optional<model::node_id>);
 
     void initialize_leadership_metadata();
 
@@ -94,7 +97,7 @@ private:
     // When update was delivered successfully the finished flag is set to true
     // and object is removed from pending updates map
     struct update_retry_meta {
-        ntp_leaders updates;
+        std::vector<ntp_leader_revision> updates;
         bool finished = false;
     };
     // Used to track the process of requesting update when redpanda starts
@@ -147,7 +150,7 @@ private:
     model::broker _self;
     std::chrono::milliseconds _dissemination_interval;
     config::tls_config _rpc_tls_config;
-    std::vector<ntp_leader> _requests;
+    std::vector<ntp_leader_revision> _requests;
     std::vector<net::unresolved_address> _seed_servers;
     broker_updates_t _pending_updates;
     mutex _lock;
