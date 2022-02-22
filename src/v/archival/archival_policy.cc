@@ -53,12 +53,10 @@ std::ostream& operator<<(std::ostream& s, const upload_candidate& c) {
 
 archival_policy::archival_policy(
   model::ntp ntp,
-  service_probe& svc_probe,
   ntp_level_probe& ntp_probe,
   std::optional<segment_time_limit> limit,
   ss::io_priority_class io_priority)
   : _ntp(std::move(ntp))
-  , _svc_probe(svc_probe)
   , _ntp_probe(ntp_probe)
   , _upload_limit(limit)
   , _io_priority(io_priority) {}
@@ -119,7 +117,6 @@ archival_policy::lookup_result archival_policy::find_segment(
                 auto offset = sg->offsets().base_offset;
                 auto delta = offset - start_offset;
                 start_offset = offset;
-                _svc_probe.add_gap();
                 _ntp_probe.gap_detected(delta);
                 break;
             }

@@ -45,7 +45,6 @@ class archival_policy {
 public:
     explicit archival_policy(
       model::ntp ntp,
-      service_probe& svc_probe,
       ntp_level_probe& ntp_probe,
       std::optional<segment_time_limit> limit = std::nullopt,
       ss::io_priority_class io_priority = ss::default_priority_class());
@@ -83,7 +82,6 @@ private:
       const storage::offset_translator_state&);
 
     model::ntp _ntp;
-    service_probe& _svc_probe;
     ntp_level_probe& _ntp_probe;
     std::optional<segment_time_limit> _upload_limit;
     std::optional<ss::lowres_clock::time_point> _upload_deadline;
