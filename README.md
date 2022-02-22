@@ -64,6 +64,19 @@ curl -1sLf \
 sudo yum install redpanda
 ```
 
+## GitHub Actions
+
+
+```yaml
+    - name: start redpanda
+      uses: redpanda-data/github-action@v0.1.3
+      with:
+        version: "latest"
+```
+
+Now you should be able to connect to `redpanda` (kafka-api) running at `localhost:9092` 
+
+
 ## Build Manually
 
 We provide a very simple build system that uses your system libraries. We recommend
