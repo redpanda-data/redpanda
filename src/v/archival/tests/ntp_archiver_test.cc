@@ -200,8 +200,7 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
     };
     init_storage_api_local(segments);
     auto& lm = get_local_storage_api().log_mgr();
-    ntp_level_probe ntp_probe(per_ntp_metrics_disabled::yes, manifest_ntp);
-    archival::archival_policy policy(manifest_ntp, ntp_probe);
+    archival::archival_policy policy(manifest_ntp);
 
     log_segment_set(lm);
 
@@ -265,9 +264,7 @@ SEASTAR_THREAD_TEST_CASE(test_archival_policy_timeboxed_uploads) {
         storage::maybe_compress_batches::no,
         model::record_batch_type::archival_metadata);
 
-    ntp_level_probe ntp_probe(per_ntp_metrics_disabled::yes, manifest_ntp);
-    archival::archival_policy policy(
-      manifest_ntp, ntp_probe, segment_time_limit{0s});
+    archival::archival_policy policy(manifest_ntp, segment_time_limit{0s});
 
     auto log = b.get_log();
 
@@ -726,8 +723,7 @@ FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
     };
     init_storage_api_local(segments);
     auto& lm = get_local_storage_api().log_mgr();
-    ntp_level_probe ntp_probe(per_ntp_metrics_disabled::yes, manifest_ntp);
-    archival::archival_policy policy(manifest_ntp, ntp_probe);
+    archival::archival_policy policy(manifest_ntp);
 
     // Patch segment offsets to create overlaps for the archival_policy.
     // The archival_policy instance only touches the offsets, not the
