@@ -67,18 +67,13 @@ public:
     /// of the ntp event
     void stop_archiving_ntp() { _cnt_stop_archiving_ntp++; }
 
-    /// Count reconciliation loop iterations (liveliness probe)
-    void reconciliation() { _cnt_reconciliations++; }
-
 private:
     /// Number of gaps dected
-    uint64_t _cnt_gaps;
+    uint64_t _cnt_gaps = 0;
     /// Start archiving npt event counter
-    uint64_t _cnt_start_archiving_ntp;
+    uint64_t _cnt_start_archiving_ntp = 0;
     /// Stop archiving npt event counter
-    uint64_t _cnt_stop_archiving_ntp;
-    /// Number of reconciliation loop iterations
-    uint64_t _cnt_reconciliations;
+    uint64_t _cnt_stop_archiving_ntp = 0;
 
     ss::metrics::metric_groups _metrics;
 };
