@@ -90,7 +90,7 @@ class EndToEndTest(Test):
             on_record_consumed=self.on_record_consumed)
         self.consumer.start()
 
-    def start_producer(self, num_nodes=1, throughput=1000):
+    def start_producer(self, num_nodes=1, throughput=1000, acks=None):
         assert self.redpanda
         assert self.topic
         self.producer = VerifiableProducer(
@@ -99,7 +99,8 @@ class EndToEndTest(Test):
             redpanda=self.redpanda,
             topic=self.topic,
             throughput=throughput,
-            message_validator=is_int_with_prefix)
+            message_validator=is_int_with_prefix,
+            acks=acks)
         self.producer.start()
 
     def on_record_consumed(self, record, node):
