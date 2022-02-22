@@ -112,9 +112,15 @@ private:
       = absl::flat_hash_map<model::node_id, update_retry_meta>;
 
     void handle_leadership_notification(
-      model::ntp, model::revision_id, model::term_id, std::optional<model::node_id>);
+      model::ntp,
+      model::revision_id,
+      model::term_id,
+      std::optional<model::node_id>);
     ss::future<> apply_leadership_notification(
-      model::ntp, model::revision_id, model::term_id, std::optional<model::node_id>);
+      model::ntp,
+      model::revision_id,
+      model::term_id,
+      std::optional<model::node_id>);
 
     void collect_pending_updates();
     void cleanup_finished_updates();

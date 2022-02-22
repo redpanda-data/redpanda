@@ -102,7 +102,10 @@ ss::future<> metadata_dissemination_service::start() {
             }
             auto ntp = c->ntp();
             handle_leadership_notification(
-              std::move(ntp), c->config().revision_id(), term, std::move(leader_id));
+              std::move(ntp),
+              c->config().revision_id(),
+              term,
+              std::move(leader_id));
         });
 
     if (ss::this_shard_id() != 0) {
@@ -145,24 +148,31 @@ ss::future<> metadata_dissemination_service::start() {
 }
 
 void metadata_dissemination_service::handle_leadership_notification(
-  model::ntp ntp, model::revision_id revision, model::term_id term, std::optional<model::node_id> lid) {
+  model::ntp ntp,
+  model::revision_id revision,
+  model::term_id term,
+  std::optional<model::node_id> lid) {
     ssx::spawn_with_gate(
       _bg, [this, ntp = std::move(ntp), lid, revision, term]() mutable {
           // the lock sequences the updates from raft
-          return _lock.with([this, ntp = std::move(ntp), lid, revision, term]() mutable {
-              return container().invoke_on(
-                0,
-                [ntp = std::move(ntp), lid, revision, term](
-                  metadata_dissemination_service& s) mutable {
-                    return s.apply_leadership_notification(
-                      std::move(ntp), revision, term, lid);
-                });
-          });
+          return _lock.with(
+            [this, ntp = std::move(ntp), lid, revision, term]() mutable {
+                return container().invoke_on(
+                  0,
+                  [ntp = std::move(ntp), lid, revision, term](
+                    metadata_dissemination_service& s) mutable {
+                      return s.apply_leadership_notification(
+                        std::move(ntp), revision, term, lid);
+                  });
+            });
       });
 }
 
 ss::future<> metadata_dissemination_service::apply_leadership_notification(
-  model::ntp ntp, model::revision_id revision, model::term_id term, std::optional<model::node_id> lid) {
+  model::ntp ntp,
+  model::revision_id revision,
+  model::term_id term,
+  std::optional<model::node_id> lid) {
     // the gate also needs to be taken on the destination core.
     return ss::with_gate(
       _bg, [this, ntp = std::move(ntp), lid, revision, term]() mutable {
