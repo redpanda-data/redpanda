@@ -90,6 +90,10 @@ public:
         return _conn->server().config_frontend();
     }
 
+    ss::sharded<cluster::feature_table>& feature_table() const {
+        return _conn->server().feature_table();
+    }
+
     cluster::id_allocator_frontend& id_allocator_frontend() const {
         return _conn->server().id_allocator_frontend();
     }

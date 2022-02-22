@@ -14,6 +14,9 @@
 #include "cluster/controller_backend.h"
 #include "cluster/controller_service.h"
 #include "cluster/data_policy_frontend.h"
+#include "cluster/feature_backend.h"
+#include "cluster/feature_manager.h"
+#include "cluster/feature_table.h"
 #include "cluster/fwd.h"
 #include "cluster/health_monitor_backend.h"
 #include "cluster/health_monitor_frontend.h"
@@ -66,6 +69,7 @@ controller::controller(
 ss::future<> controller::wire_up() {
     return _as.start()
       .then([this] { return _members_table.start(); })
+      .then([this] { return _feature_table.start(); })
       .then([this] {
           return _partition_allocator.start_single(
             std::ref(_members_table),
@@ -105,6 +109,9 @@ ss::future<> controller::start() {
           return _members_manager.local().validate_configuration_invariants();
       })
       .then([this] {
+          return _feature_backend.start_single(std::ref(_feature_table));
+      })
+      .then([this] {
           return _config_frontend.start(
             std::ref(_stm),
             std::ref(_connections),
@@ -117,6 +124,7 @@ ss::future<> controller::start() {
             std::ref(_config_frontend),
             std::ref(_connections),
             std::ref(_partition_leaders),
+            std::ref(_feature_table),
             std::ref(_as));
       })
       .then([this] {
@@ -128,7 +136,8 @@ ss::future<> controller::start() {
             std::ref(_security_manager),
             std::ref(_members_manager),
             std::ref(_data_policy_manager),
-            std::ref(_config_manager));
+            std::ref(_config_manager),
+            std::ref(_feature_backend));
       })
       .then([this] {
           return _members_frontend.start(
@@ -225,12 +234,19 @@ ss::future<> controller::start() {
             members_manager::shard, &members_backend::start);
       })
       .then([this] {
-          if (config::node().enable_central_config()) {
-              return _config_manager.invoke_on(
-                config_manager::shard, &config_manager::start);
-          } else {
-              return ss::now();
-          }
+          return _config_manager.invoke_on(
+            config_manager::shard, &config_manager::start);
+      })
+      .then([this] {
+          return _feature_manager.start_single(
+            std::ref(_stm),
+            std::ref(_as),
+            std::ref(_members_table),
+            std::ref(_raft_manager),
+            std::ref(_hm_frontend),
+            std::ref(_hm_backend),
+            std::ref(_feature_table),
+            _raft0->group());
       })
       .then([this] {
           _leader_balancer = std::make_unique<leader_balancer>(
@@ -279,6 +295,10 @@ ss::future<> controller::start() {
       })
       .then([this] { return _hm_frontend.start(std::ref(_hm_backend)); })
       .then([this] {
+          return _feature_manager.invoke_on(
+            feature_manager::backend_shard, &feature_manager::start);
+      })
+      .then([this] {
           return _metrics_reporter.start_single(
             _raft0,
             std::ref(_members_table),
@@ -314,6 +334,7 @@ ss::future<> controller::stop() {
                                                      : ss::now();
         return stop_leader_balancer
           .then([this] { return _metrics_reporter.stop(); })
+          .then([this] { return _feature_manager.stop(); })
           .then([this] { return _hm_frontend.stop(); })
           .then([this] { return _hm_backend.stop(); })
           .then([this] { return _health_manager.stop(); })
@@ -326,6 +347,7 @@ ss::future<> controller::stop() {
           .then([this] { return _data_policy_frontend.stop(); })
           .then([this] { return _members_frontend.stop(); })
           .then([this] { return _config_frontend.stop(); })
+          .then([this] { return _feature_backend.stop(); })
           .then([this] { return _stm.stop(); })
           .then([this] { return _authorizer.stop(); })
           .then([this] { return _credentials.stop(); })
@@ -333,6 +355,7 @@ ss::future<> controller::stop() {
           .then([this] { return _members_manager.stop(); })
           .then([this] { return _partition_allocator.stop(); })
           .then([this] { return _partition_leaders.stop(); })
+          .then([this] { return _feature_table.stop(); })
           .then([this] { return _members_table.stop(); })
           .then([this] { return _as.stop(); });
     });

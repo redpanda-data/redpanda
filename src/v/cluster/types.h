@@ -32,6 +32,13 @@ namespace cluster {
 using consensus_ptr = ss::lw_shared_ptr<raft::consensus>;
 using broker_ptr = ss::lw_shared_ptr<model::broker>;
 
+// A cluster version is a logical protocol version describing the content
+// of the raft0 on disk structures, and available features.  These are
+// passed over the network via the health_manager, and persisted in
+// the feature_manager
+using cluster_version = named_type<int64_t, struct cluster_version_tag>;
+constexpr cluster_version invalid_version = cluster_version{-1};
+
 struct allocate_id_request {
     model::timeout_clock::duration timeout;
 };
@@ -267,15 +274,51 @@ struct abort_group_tx_reply {
     tx_errc ec;
 };
 
-/// Join request sent by node to join raft-0
+/// Old-style request sent by node to join raft-0
+/// - Does not specify logical version
+/// - Always specifies node_id
+/// (remove this RPC two versions after join_node_request was
+///  added to replace it)
 struct join_request {
     explicit join_request(model::broker b)
       : node(std::move(b)) {}
+
     model::broker node;
 };
 
 struct join_reply {
     bool success;
+};
+
+/// Successor to join_request:
+/// - Include version metadata for joining node
+/// - Has fields for implementing auto-selection of
+///   node_id (https://github.com/vectorizedio/redpanda/issues/2793)
+///   in future.
+struct join_node_request {
+    explicit join_node_request(
+      cluster_version lv, std::vector<uint8_t> nuuid, model::broker b)
+      : logical_version(lv)
+      , node_uuid(nuuid)
+      , node(std::move(b)) {}
+
+    explicit join_node_request(cluster_version lv, model::broker b)
+      : logical_version(lv)
+      , node(std::move(b)) {}
+
+    static constexpr int8_t current_version = 1;
+    cluster_version logical_version;
+
+    // node_uuid may be empty: this is for future use implementing auto
+    // selection of node_id.  Convert to a more convenient type later:
+    // the vector is just to reserve the on-disk layout.
+    std::vector<uint8_t> node_uuid;
+    model::broker node;
+};
+
+struct join_node_reply {
+    bool success{false};
+    model::node_id id{-1};
 };
 
 struct configuration_update_request {
@@ -549,6 +592,7 @@ struct patch {
 
 // generic type used for various registration handles such as in ntp_callbacks.h
 using notification_id_type = named_type<int32_t, struct notification_id>;
+constexpr notification_id_type notification_id_type_invalid{-1};
 
 struct configuration_invariants {
     static constexpr uint8_t current_version = 0;
@@ -693,6 +737,16 @@ struct cluster_config_status_cmd_data {
     config_status status;
 };
 
+struct feature_update_cmd_data {
+    // To avoid ambiguity on 'versions' here: `current_version`
+    // is the encoding version of the struct, subsequent version
+    // fields are the payload.
+    static constexpr int8_t current_version = 0;
+
+    cluster_version logical_version;
+};
+std::ostream& operator<<(std::ostream&, const feature_update_cmd_data&);
+
 enum class reconciliation_status : int8_t {
     done,
     in_progress,
@@ -822,6 +876,13 @@ struct adl<cluster::join_request> {
     void to(iobuf&, cluster::join_request&&);
     cluster::join_request from(iobuf);
     cluster::join_request from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::join_node_request> {
+    void to(iobuf&, cluster::join_node_request&&);
+    cluster::join_node_request from(iobuf);
+    cluster::join_node_request from(iobuf_parser&);
 };
 
 template<>
@@ -955,4 +1016,11 @@ struct adl<cluster::incremental_topic_custom_updates> {
     void to(iobuf& out, cluster::incremental_topic_custom_updates&&);
     cluster::incremental_topic_custom_updates from(iobuf_parser&);
 };
+
+template<>
+struct adl<cluster::feature_update_cmd_data> {
+    void to(iobuf&, cluster::feature_update_cmd_data&&);
+    cluster::feature_update_cmd_data from(iobuf_parser&);
+};
+
 } // namespace reflection

@@ -439,6 +439,29 @@ cluster::join_request adl<cluster::join_request>::from(iobuf_parser& in) {
     return cluster::join_request(adl<model::broker>().from(in));
 }
 
+void adl<cluster::join_node_request>::to(
+  iobuf& out, cluster::join_node_request&& r) {
+    adl<uint8_t>().to(out, r.current_version);
+    adl<cluster::cluster_version>().to(out, r.logical_version);
+    adl<std::vector<uint8_t>>().to(out, r.node_uuid);
+    adl<model::broker>().to(out, std::move(r.node));
+}
+
+cluster::join_node_request adl<cluster::join_node_request>::from(iobuf io) {
+    return reflection::from_iobuf<cluster::join_node_request>(std::move(io));
+}
+
+cluster::join_node_request
+adl<cluster::join_node_request>::from(iobuf_parser& in) {
+    auto version = adl<uint8_t>().from(in);
+    vassert(version >= 1, "Malformed join_node_request");
+    auto logical_version = adl<cluster::cluster_version>().from(in);
+    auto node_uuid = adl<std::vector<uint8_t>>().from(in);
+    auto node = adl<model::broker>().from(in);
+
+    return cluster::join_node_request{logical_version, node_uuid, node};
+}
+
 void adl<cluster::configuration_update_request>::to(
   iobuf& out, cluster::configuration_update_request&& r) {
     serialize(out, r.node, r.target_node);
@@ -1145,6 +1168,20 @@ adl<cluster::incremental_topic_custom_updates>::from(iobuf_parser& in) {
       = adl<cluster::property_update<std::optional<v8_engine::data_policy>>>{}
           .from(in);
     return updates;
+}
+
+void adl<cluster::feature_update_cmd_data>::to(
+  iobuf& out, cluster::feature_update_cmd_data&& data) {
+    reflection::serialize(out, data.current_version, data.logical_version);
+}
+
+cluster::feature_update_cmd_data
+adl<cluster::feature_update_cmd_data>::from(iobuf_parser& in) {
+    auto version = adl<int8_t>{}.from(in);
+    std::ignore = version;
+
+    auto logical_version = adl<cluster::cluster_version>{}.from(in);
+    return {.logical_version = logical_version};
 }
 
 } // namespace reflection

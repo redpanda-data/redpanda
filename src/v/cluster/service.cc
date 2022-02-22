@@ -14,6 +14,7 @@
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
 #include "cluster/health_monitor_frontend.h"
+#include "cluster/logger.h"
 #include "cluster/members_frontend.h"
 #include "cluster/members_manager.h"
 #include "cluster/metadata_cache.h"
@@ -23,6 +24,7 @@
 #include "config/configuration.h"
 #include "model/timeout_clock.h"
 #include "rpc/errc.h"
+#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
@@ -39,6 +41,7 @@ service::service(
   ss::sharded<controller_api>& api,
   ss::sharded<members_frontend>& members_frontend,
   ss::sharded<config_frontend>& config_frontend,
+  ss::sharded<feature_table>& feature_table,
   ss::sharded<health_monitor_frontend>& hm_frontend)
   : controller_service(sg, ssg)
   , _topics_frontend(tf)
@@ -48,22 +51,53 @@ service::service(
   , _api(api)
   , _members_frontend(members_frontend)
   , _config_frontend(config_frontend)
+  , _feature_table(feature_table)
   , _hm_frontend(hm_frontend) {}
 
 ss::future<join_reply>
-service::join(join_request&& req, rpc::streaming_context&) {
+service::join(join_request&& req, rpc::streaming_context& context) {
+    auto jnr = join_node_request(invalid_version, req.node);
+    return join_node(std::move(jnr), context).then([](join_node_reply r) {
+        return join_reply{r.success};
+    });
+}
+
+ss::future<join_node_reply>
+service::join_node(join_node_request&& req, rpc::streaming_context&) {
+    // For now, the new-style join_node_request only differs from join_request
+    // in that it has a logical version to validate, so do the validation and
+    // then pass it through to the code that handles old-style join requests.
+    cluster_version expect_version
+      = _feature_table.local().get_active_version();
+    if (expect_version == invalid_version) {
+        // Feature table isn't initialized, fall back to requiring that
+        // joining node is as recent as this node.
+        expect_version = feature_table::get_latest_logical_version();
+    }
+
+    if (req.logical_version < expect_version) {
+        vlog(
+          clusterlog.warn,
+          "Rejecting join request from node {}, logical version {} < {}",
+          req.node,
+          req.logical_version,
+          expect_version);
+        return ss::make_ready_future<join_node_reply>(
+          join_node_reply{false, model::node_id{-1}});
+    }
+
     return ss::with_scheduling_group(
-      get_scheduling_group(), [this, broker = std::move(req.node)]() mutable {
+      get_scheduling_group(), [this, req]() mutable {
           return _members_manager
             .invoke_on(
               members_manager::shard,
               get_smp_service_group(),
-              [broker = std::move(broker)](members_manager& mm) mutable {
-                  return mm.handle_join_request(std::move(broker));
+              [req](members_manager& mm) mutable {
+                  return mm.handle_join_request(req);
               })
-            .then([](result<join_reply> r) {
+            .then([](result<join_node_reply> r) {
                 if (!r) {
-                    return join_reply{false};
+                    return join_node_reply{false, model::node_id{-1}};
                 }
                 return r.value();
             });

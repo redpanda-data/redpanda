@@ -86,6 +86,8 @@ public:
         return _hm_frontend;
     }
 
+    ss::sharded<feature_table>& get_feature_table() { return _feature_table; }
+
     ss::future<> wire_up();
 
     ss::future<> start();
@@ -128,6 +130,9 @@ private:
     ss::sharded<health_monitor_backend> _hm_backend;   // single instance
     ss::sharded<health_manager> _health_manager;
     ss::sharded<metrics_reporter> _metrics_reporter;
+    ss::sharded<feature_manager> _feature_manager; // single instance
+    ss::sharded<feature_backend> _feature_backend; // instance per core
+    ss::sharded<feature_table> _feature_table;     // instance per core
     std::unique_ptr<leader_balancer> _leader_balancer;
     consensus_ptr _raft0;
 };

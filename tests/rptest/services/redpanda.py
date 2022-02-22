@@ -290,7 +290,8 @@ class RedpandaService(Service):
                  enable_sr=False,
                  resource_settings=None,
                  si_settings=None,
-                 log_level: Optional[str] = None):
+                 log_level: Optional[str] = None,
+                 environment: Optional[dict[str, str]] = None):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
         self._context = context
         self._enable_rp = enable_rp
@@ -318,7 +319,14 @@ class RedpandaService(Service):
         self._si_settings = si_settings
         self._s3client = None
 
+        if environment is None:
+            environment = dict()
+        self._environment = environment
+
         self.config_file_lock = threading.Lock()
+
+    def set_environment(self, environment: dict[str, str]):
+        self._environment = environment
 
     def set_resource_settings(self, rs):
         self._resource_settings = rs
@@ -405,8 +413,12 @@ class RedpandaService(Service):
     def start_redpanda(self, node):
         preamble, res_args = self._resource_settings.to_cli()
 
+        # Pass environment variables via FOO=BAR shell expressions
+        env_preamble = " ".join(
+            [f"{k}={v}" for (k, v) in self._environment.items()])
+
         cmd = (
-            f"{preamble}nohup {self.find_binary('redpanda')}"
+            f"{preamble} {env_preamble} nohup {self.find_binary('redpanda')}"
             f" --redpanda-cfg {RedpandaService.CONFIG_FILE}"
             f" --default-log-level {self._log_level}"
             f" --logger-log-level=exception=debug:archival=debug:io=debug:cloud_storage=debug "

@@ -81,6 +81,9 @@ static constexpr int8_t finish_reallocations_cmd_type = 2;
 static constexpr int8_t cluster_config_delta_cmd_type = 0;
 static constexpr int8_t cluster_config_status_cmd_type = 1;
 
+// feature_manager command types
+static constexpr int8_t feature_update_cmd_type = 0;
+
 using create_topic_cmd = controller_command<
   model::topic_namespace,
   topic_configuration_assignment,
@@ -193,6 +196,12 @@ using cluster_config_status_cmd = controller_command<
   cluster_config_status_cmd_data,
   cluster_config_status_cmd_type,
   model::record_batch_type::cluster_config_cmd>;
+
+using feature_update_cmd = controller_command<
+  feature_update_cmd_data,
+  int8_t, // unused
+  feature_update_cmd_type,
+  model::record_batch_type::feature_update>;
 
 // typelist utils
 // clang-format off

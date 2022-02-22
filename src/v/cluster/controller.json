@@ -12,6 +12,11 @@
             "output_type": "join_reply"
         },
         {
+            "name": "join_node",
+            "input_type": "join_node_request",
+            "output_type": "join_node_reply"
+        },
+        {
             "name": "update_node_configuration",
             "input_type": "configuration_update_request",
             "output_type": "configuration_update_reply"

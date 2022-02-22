@@ -350,6 +350,8 @@ std::ostream& operator<<(std::ostream& o, record_batch_type bt) {
         return o << "batch_type::archival_metadata";
     case record_batch_type::cluster_config_cmd:
         return o << "batch_type::cluster_config_cmd";
+    case record_batch_type::feature_update:
+        return o << "batch_type::feature_update";
     }
 
     return o << "batch_type::unknown{" << static_cast<int>(bt) << "}";

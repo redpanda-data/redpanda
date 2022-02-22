@@ -12,6 +12,7 @@
 
 #include "cluster/controller_service.h"
 #include "cluster/errc.h"
+#include "cluster/feature_table.h"
 #include "cluster/fwd.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/logger.h"
@@ -66,6 +67,34 @@ health_monitor_backend::health_monitor_backend(
           std::optional<model::node_id> leader_id) {
             on_leadership_changed(group, term, leader_id);
         });
+}
+
+cluster::notification_id_type
+health_monitor_backend::register_node_callback(health_node_cb_t cb) {
+    vassert(ss::this_shard_id() == shard, "Called on wrong shard");
+
+    auto id = _next_callback_id++;
+    // call notification for all the groups
+    for (const auto& report : _reports) {
+        cb(report.second, {});
+    }
+    _node_callbacks.emplace_back(id, std::move(cb));
+    return id;
+}
+
+void health_monitor_backend::unregister_node_callback(
+  cluster::notification_id_type id) {
+    vassert(ss::this_shard_id() == shard, "Called on wrong shard");
+
+    _node_callbacks.erase(
+      std::remove_if(
+        _node_callbacks.begin(),
+        _node_callbacks.end(),
+        [id](
+          const std::pair<cluster::notification_id_type, health_node_cb_t>& n) {
+            return n.first == id;
+        }),
+      _node_callbacks.end());
 }
 
 ss::future<> health_monitor_backend::stop() {
@@ -171,6 +200,8 @@ std::optional<node_health_report> health_monitor_backend::build_node_report(
     report.id = id;
 
     report.local_state = it->second.local_state;
+    report.local_state.logical_version
+      = feature_table::get_latest_logical_version();
 
     if (f.include_partitions) {
         report.topics = filter_topic_status(it->second.topics, f.ntp_filters);
@@ -497,8 +528,10 @@ ss::future<> health_monitor_backend::collect_cluster_health() {
           }
           return collect_remote_node_health(id);
       });
+
+    auto old_reports = std::exchange(_reports, {});
+
     // update nodes reports
-    _reports.clear();
     for (auto& r : reports) {
         if (r) {
             const auto id = r.value().id;
@@ -507,6 +540,24 @@ ss::future<> health_monitor_backend::collect_cluster_health() {
               "collected node {} health report: {}",
               id,
               r.value());
+
+            std::optional<std::reference_wrapper<const node_health_report>>
+              old_report;
+            if (auto old_i = old_reports.find(id); old_i != old_reports.end()) {
+                vlog(
+                  clusterlog.debug,
+                  "(previous node report from {}: {})",
+                  id,
+                  old_i->second);
+                old_report = old_i->second;
+            } else {
+                vlog(clusterlog.debug, "(initial node report from {})", id);
+            }
+
+            for (auto& cb : _node_callbacks) {
+                cb.second(r.value(), old_report);
+            }
+
             _reports.emplace(id, std::move(r.value()));
         }
     }
@@ -520,6 +571,8 @@ health_monitor_backend::collect_current_node_health(node_report_filter filter) {
 
     co_await _local_monitor.update_state();
     ret.local_state = _local_monitor.get_state_cached();
+    ret.local_state.logical_version
+      = feature_table::get_latest_logical_version();
 
     if (filter.include_partitions) {
         ret.topics = co_await collect_topic_status(

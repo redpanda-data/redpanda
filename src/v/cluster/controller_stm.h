@@ -13,6 +13,7 @@
 
 #include "cluster/config_manager.h"
 #include "cluster/data_policy_manager.h"
+#include "cluster/feature_backend.h"
 #include "cluster/members_manager.h"
 #include "cluster/security_manager.h"
 #include "cluster/topic_updates_dispatcher.h"
@@ -26,7 +27,8 @@ using controller_stm = raft::mux_state_machine<
   security_manager,
   members_manager,
   data_policy_manager,
-  config_manager>;
+  config_manager,
+  feature_backend>;
 
 static constexpr ss::shard_id controller_stm_shard = 0;
 

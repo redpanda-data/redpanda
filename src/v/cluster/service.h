@@ -32,10 +32,14 @@ public:
       ss::sharded<controller_api>&,
       ss::sharded<members_frontend>&,
       ss::sharded<config_frontend>&,
+      ss::sharded<feature_table>&,
       ss::sharded<health_monitor_frontend>&);
 
     virtual ss::future<join_reply>
     join(join_request&&, rpc::streaming_context&) override;
+
+    virtual ss::future<join_node_reply>
+    join_node(join_node_request&&, rpc::streaming_context&) override;
 
     virtual ss::future<create_topics_reply>
     create_topics(create_topics_request&&, rpc::streaming_context&) override;
@@ -111,6 +115,7 @@ private:
     ss::sharded<controller_api>& _api;
     ss::sharded<members_frontend>& _members_frontend;
     ss::sharded<config_frontend>& _config_frontend;
+    ss::sharded<feature_table>& _feature_table;
     ss::sharded<health_monitor_frontend>& _hm_frontend;
 };
 } // namespace cluster

@@ -344,20 +344,17 @@ wait_for_next_join_retry(std::chrono::milliseconds tout, ss::abort_source& as) {
       });
 }
 
-ss::future<result<join_reply>> members_manager::dispatch_join_to_remote(
-  const config::seed_server& target, model::broker joining_node) {
+ss::future<result<join_node_reply>> members_manager::dispatch_join_to_remote(
+  const config::seed_server& target, join_node_request&& req) {
     vlog(clusterlog.info, "Sending join request to {}", target.addr);
     return do_with_client_one_shot<controller_client_protocol>(
       target.addr,
       _rpc_tls_config,
       _join_timeout,
-      [joining_node = std::move(joining_node),
-       timeout = rpc::clock_type::now()
-                 + _join_timeout](controller_client_protocol c) mutable {
-          return c
-            .join(
-              join_request(std::move(joining_node)), rpc::client_opts(timeout))
-            .then(&rpc::get_ctx_data<join_reply>);
+      [req = std::move(req), timeout = rpc::clock_type::now() + _join_timeout](
+        controller_client_protocol c) mutable {
+          return c.join_node(std::move(req), rpc::client_opts(timeout))
+            .then(&rpc::get_ctx_data<join_node_reply>);
       });
 }
 
@@ -366,8 +363,11 @@ void members_manager::join_raft0() {
         vlog(clusterlog.debug, "Trying to join the cluster");
         return ss::repeat([this] {
                    return dispatch_join_to_seed_server(
-                            std::cbegin(_seed_servers))
-                     .then([this](result<join_reply> r) {
+                            std::cbegin(_seed_servers),
+                            std::move(join_node_request{
+                              feature_table::get_latest_logical_version(),
+                              _self}))
+                     .then([this](result<join_node_reply> r) {
                          bool success = r && r.value().success;
                          // stop on success or closed gate
                          if (
@@ -392,9 +392,10 @@ void members_manager::join_raft0() {
     });
 }
 
-ss::future<result<join_reply>>
-members_manager::dispatch_join_to_seed_server(seed_iterator it) {
-    using ret_t = result<join_reply>;
+ss::future<result<join_node_reply>>
+members_manager::dispatch_join_to_seed_server(
+  seed_iterator it, join_node_request const& req) {
+    using ret_t = result<join_node_reply>;
     auto f = ss::make_ready_future<ret_t>(errc::seed_servers_exhausted);
     if (it == std::cend(_seed_servers)) {
         return f;
@@ -402,13 +403,15 @@ members_manager::dispatch_join_to_seed_server(seed_iterator it) {
     // Current node is a seed server, just call the method
     if (it->addr == _self.rpc_address()) {
         vlog(clusterlog.debug, "Using current node as a seed server");
-        f = handle_join_request(_self);
+        f = handle_join_request(req);
     } else {
-        // If seed is the other server then dispatch join requst to it
-        f = dispatch_join_to_remote(*it, _self);
+        // If seed is the other server then dispatch join requst to it.
+        // Copy request because if this fails we will proceed to next
+        // see server and reuse original request object
+        f = dispatch_join_to_remote(*it, join_node_request(req));
     }
 
-    return f.then_wrapped([it, this](ss::future<ret_t> fut) {
+    return f.then_wrapped([it, this, req](ss::future<ret_t> fut) {
         try {
             auto r = fut.get0();
             if (r && r.value().success) {
@@ -425,7 +428,7 @@ members_manager::dispatch_join_to_seed_server(seed_iterator it) {
         }
 
         // Dispatch to next server
-        return dispatch_join_to_seed_server(std::next(it));
+        return dispatch_join_to_seed_server(std::next(it), req);
     });
 }
 
@@ -456,48 +459,57 @@ auto members_manager::dispatch_rpc_to_leader(
       std::forward<Func>(f));
 }
 
-ss::future<result<join_reply>>
-members_manager::handle_join_request(model::broker broker) {
-    using ret_t = result<join_reply>;
-    vlog(clusterlog.info, "Processing node '{}' join request", broker.id());
+ss::future<result<join_node_reply>>
+members_manager::handle_join_request(join_node_request const req) {
+    using ret_t = result<join_node_reply>;
+    vlog(
+      clusterlog.info,
+      "Processing node '{}' join request (version {})",
+      req.node.id(),
+      req.logical_version);
+
     // curent node is a leader
     if (_raft0->is_leader()) {
         // if configuration contains the broker already just update its config
         // with data from join request
 
-        if (_raft0->config().contains_broker(broker.id())) {
+        if (_raft0->config().contains_broker(req.node.id())) {
             vlog(
               clusterlog.info,
               "Broker {} is already member of a cluster, updating "
               "configuration",
-              broker.id());
-            auto req = configuration_update_request(
-              std::move(broker), _self.id());
+              req.node.id());
+            auto node_id = req.node.id();
+            auto update_req = configuration_update_request(
+              req.node, _self.id());
             co_return co_await handle_configuration_update_request(
-              std::move(req))
-              .then([](result<configuration_update_reply> r) {
+              std::move(update_req))
+              .then([node_id](result<configuration_update_reply> r) {
                   if (r) {
-                      return ret_t(join_reply{.success = r.value().success});
+                      auto success = r.value().success;
+                      return ret_t(join_node_reply{
+                        .success = success,
+                        .id = success ? node_id : model::node_id{-1}});
                   }
                   return ret_t(r.error());
               });
         }
 
-        if (_raft0->config().contains_address(broker.rpc_address())) {
+        if (_raft0->config().contains_address(req.node.rpc_address())) {
             vlog(
               clusterlog.info,
               "Broker {} address ({}) conflicts with the address of another "
               "node",
-              broker.id(),
-              broker.rpc_address());
-            co_return ret_t(join_reply{.success = false});
+              req.node.id(),
+              req.node.rpc_address());
+            co_return ret_t(join_node_reply{.success = false});
         }
-        if (broker.id() != _self.id()) {
+        if (req.node.id() != _self.id()) {
             co_await update_broker_client(
               _self.id(),
               _connection_cache,
-              broker.id(),
-              broker.rpc_address(),
+              req.node.id(),
+              req.node.rpc_address(),
               _rpc_tls_config);
         }
         // Just update raft0 configuration
@@ -505,10 +517,10 @@ members_manager::handle_join_request(model::broker broker) {
         // 0 which is perfectly fine. this will work like revision less raft
         // protocol.
         co_return co_await _raft0
-          ->add_group_members({broker}, model::revision_id(0))
-          .then([broker](std::error_code ec) {
+          ->add_group_members({req.node}, model::revision_id(0))
+          .then([broker = req.node](std::error_code ec) {
               if (!ec) {
-                  return ret_t(join_reply{true});
+                  return ret_t(join_node_reply{true, broker.id()});
               }
               vlog(
                 clusterlog.warn,
@@ -522,11 +534,10 @@ members_manager::handle_join_request(model::broker broker) {
     // controller
     co_return co_await dispatch_rpc_to_leader(
       _join_timeout,
-      [broker = std::move(broker),
-       tout = rpc::clock_type::now()
-              + _join_timeout](controller_client_protocol c) mutable {
-          return c.join(join_request(std::move(broker)), rpc::client_opts(tout))
-            .then(&rpc::get_ctx_data<join_reply>);
+      [req, tout = rpc::clock_type::now() + _join_timeout](
+        controller_client_protocol c) mutable {
+          return c.join_node(join_node_request(req), rpc::client_opts(tout))
+            .then(&rpc::get_ctx_data<join_node_reply>);
       })
       .handle_exception([](const std::exception_ptr& e) {
           vlog(

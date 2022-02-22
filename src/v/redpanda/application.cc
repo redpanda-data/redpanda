@@ -345,10 +345,10 @@ void application::hydrate_config(const po::variables_map& cfg) {
             throw std::invalid_argument("Validation errors in node config");
         }
 
-        if (config::node().enable_central_config) {
-            _config_preload = cluster::config_manager::preload().get0();
-        }
-
+        // This initial load is independent of whether the central
+        // config feature is active, since its fallback is just
+        // to read redpanda.yaml anyway
+        _config_preload = cluster::config_manager::preload().get0();
         if (_config_preload.version == cluster::config_version_unset) {
             ss::smp::invoke_on_all([&config] {
                 config::shard_local_cfg().load(config);
@@ -1149,6 +1149,7 @@ void application::start_redpanda() {
             std::ref(controller->get_api()),
             std::ref(controller->get_members_frontend()),
             std::ref(controller->get_config_frontend()),
+            std::ref(controller->get_feature_table()),
             std::ref(controller->get_health_monitor()));
 
           proto->register_service<cluster::metadata_dissemination_handler>(
@@ -1234,6 +1235,7 @@ void application::start_kafka(::stop_signal& app_signal) {
             metadata_cache,
             controller->get_topics_frontend(),
             controller->get_config_frontend(),
+            controller->get_feature_table(),
             quota_mgr,
             group_router,
             shard_table,

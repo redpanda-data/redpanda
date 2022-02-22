@@ -30,6 +30,10 @@ namespace cluster {
  */
 
 using alive = ss::bool_class<struct node_alive_tag>;
+
+// An application version is a software release, like v1.2.3_gfa0d09f8a
+using application_version = named_type<ss::sstring, struct version_number_tag>;
+
 /**
  * node state is determined from controller, and it doesn't require contacting
  * with the node directly
@@ -76,7 +80,7 @@ struct topic_status {
  * instance of time
  */
 struct node_health_report {
-    static constexpr int8_t current_version = 0;
+    static constexpr int8_t current_version = 1;
 
     model::node_id id;
     node::local_state local_state;

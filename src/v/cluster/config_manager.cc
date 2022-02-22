@@ -14,6 +14,7 @@
 #include "cluster/config_frontend.h"
 #include "cluster/controller_service.h"
 #include "cluster/errc.h"
+#include "cluster/feature_table.h"
 #include "cluster/logger.h"
 #include "cluster/partition_leaders_table.h"
 #include "config/configuration.h"
@@ -48,11 +49,13 @@ config_manager::config_manager(
   ss::sharded<config_frontend>& cf,
   ss::sharded<rpc::connection_cache>& cc,
   ss::sharded<partition_leaders_table>& pl,
+  ss::sharded<feature_table>& ft,
   ss::sharded<ss::abort_source>& as)
   : _self(config::node().node_id())
   , _frontend(cf)
   , _connection_cache(cc)
   , _leaders(pl)
+  , _feature_table(ft)
   , _as(as) {
     if (ss::this_shard_id() == controller_stm_shard) {
         // Only the controller stm shard handles updates: leave these
@@ -101,9 +104,27 @@ void config_manager::start_bootstrap() {
                       if (leader == _self) {
                           // We are the leader.  Proceed to bootstrap cluster
                           // configuration from our local configuration.
-                          co_await do_bootstrap();
-                          vlog(
-                            clusterlog.info, "Completed bootstrap as leader");
+                          if (!_feature_table.local().is_active(
+                                feature::central_config)) {
+                              vlog(
+                                clusterlog.trace,
+                                "Central config feature not active, waiting");
+                              co_await _feature_table.local().await_feature(
+                                feature::central_config, _as.local());
+                          }
+                          if (config::node().enable_central_config()) {
+                              co_await do_bootstrap();
+                              vlog(
+                                clusterlog.info,
+                                "Completed bootstrap as leader");
+                          } else {
+                              // This is a node property, so fixed for
+                              // process lifetime.  Block until the abort
+                              // source is signalled.
+                              vlog(clusterlog.trace, "Central config disabled");
+                              co_await ss::sleep_abortable(
+                                bootstrap_retry, _as.local());
+                          }
                       } else {
                           // Someone else got leadership.  Maybe they
                           // successfully bootstrap config, maybe they don't.
@@ -113,14 +134,11 @@ void config_manager::start_bootstrap() {
                       }
                   }
               });
-        }).handle_exception([](const std::exception_ptr&) {
+        }).handle_exception([](const std::exception_ptr& e) {
             // Explicitly handle exception so that we do not risk an
             // 'ignored exceptional future' error.  The only exceptions
             // we expect here are things like sleep_aborted during shutdown.
-            vlog(
-              clusterlog.warn,
-              "Exception during bootstrap: {}",
-              std::current_exception());
+            vlog(clusterlog.warn, "Exception during bootstrap: {}", e);
         });
 }
 
