@@ -23,6 +23,7 @@
 #include "kafka/protocol/sync_group.h"
 #include "kafka/protocol/txn_offset_commit.h"
 #include "kafka/server/group.h"
+#include "kafka/server/group_recovery_consumer.h"
 #include "kafka/server/group_stm.h"
 #include "kafka/server/member.h"
 #include "model/namespace.h"
@@ -38,8 +39,6 @@
 #include <cluster/partition_manager.h>
 
 namespace kafka {
-
-struct recovery_batch_consumer_state;
 
 /*
  * \brief Manages the Kafka group lifecycle.
@@ -220,7 +219,7 @@ private:
     ss::future<> recover_partition(
       model::term_id,
       ss::lw_shared_ptr<attached_partition>,
-      recovery_batch_consumer_state);
+      group_recovery_consumer_state);
 
     ss::future<> gc_partition_state(ss::lw_shared_ptr<attached_partition>);
 
@@ -247,55 +246,6 @@ private:
     //
 
     model::broker _self;
-};
-
-template<typename T>
-struct group_tx_cmd {
-    model::producer_identity pid;
-    T cmd;
-};
-
-/**
- * the key type for group membership log records.
- *
- * the opaque key field is decoded based on the actual type.
- *
- * TODO: The `noop` type indicates a control structure used to synchronize raft
- * state in a transition to leader state so that a consistent read is made. this
- * is a temporary work-around until we fully address consistency semantics in
- * raft.
- */
-struct group_log_record_key {
-    enum class type : int8_t { group_metadata, offset_commit, noop };
-
-    type record_type;
-    iobuf key;
-};
-
-/*
- * This batch consumer is used during partition recovery to read, index, and
- * deduplicate both group and commit metadata snapshots.
- */
-struct recovery_batch_consumer_state {
-    absl::node_hash_map<kafka::group_id, group_stm> groups;
-};
-
-struct recovery_batch_consumer {
-    explicit recovery_batch_consumer(ss::abort_source& as)
-      : as(as) {}
-
-    ss::future<ss::stop_iteration> operator()(model::record_batch batch);
-
-    ss::future<> handle_record(model::record);
-    ss::future<> handle_group_metadata(iobuf, std::optional<iobuf>);
-    ss::future<> handle_offset_metadata(iobuf, std::optional<iobuf>);
-
-    recovery_batch_consumer_state end_of_stream() { return std::move(st); }
-
-    recovery_batch_consumer_state st;
-    model::offset batch_base_offset;
-
-    ss::abort_source& as;
 };
 
 } // namespace kafka
