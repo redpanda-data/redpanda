@@ -109,8 +109,11 @@ request_auth_result request_authenticator::do_authenticate(
               "Unauthorized", ss::httpd::reply::status_type::unauthorized);
         } else {
             const auto& cred = cred_opt.value();
-            bool is_valid = security::scram_sha256::validate_password(
-              password, cred.stored_key(), cred.salt(), cred.iterations());
+            bool is_valid = (
+              security::scram_sha256::validate_password(
+                password, cred.stored_key(), cred.salt(), cred.iterations())
+              || security::scram_sha512::validate_password(
+                password, cred.stored_key(), cred.salt(), cred.iterations()));
             if (!is_valid) {
                 // User found, password doesn't match
                 vlog(

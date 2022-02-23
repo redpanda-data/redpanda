@@ -17,6 +17,18 @@ from ducktape.cluster.cluster import ClusterNode
 DEFAULT_TIMEOUT = 30
 
 
+class AuthPreservingSession(requests.Session):
+    """
+    Override `requests` default behaviour of dropping Authorization
+    headers when redirecting.  This makes sense as a general default,
+    but in the case of the redpanda admin API, we trust the server to
+    only redirect us to other equally privileged servers within
+    the same cluster.
+    """
+    def should_strip_auth(self, old_url, new_url):
+        return False
+
+
 class Admin:
     """
     Wrapper for Redpanda admin REST API.
@@ -32,7 +44,7 @@ class Admin:
                  auth=None):
         self.redpanda = redpanda
 
-        self._session = requests.Session()
+        self._session = AuthPreservingSession()
         if auth is not None:
             self._session.auth = auth
 
@@ -52,7 +64,8 @@ class Admin:
                         connect=0,
                         backoff_factor=1,
                         status_forcelist=retry_codes,
-                        method_whitelist=None)
+                        method_whitelist=None,
+                        remove_headers_on_redirect=[])
 
         self._session.mount("http://", HTTPAdapter(max_retries=retries))
 

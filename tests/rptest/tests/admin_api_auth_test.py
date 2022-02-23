@@ -115,6 +115,38 @@ class AdminApiAuthTest(RedpandaTest):
         self.anonymous_admin.get_status_ready()
         self.redpanda.metrics(self.redpanda.nodes[0])
 
+    @cluster(num_nodes=3)
+    def test_scram_sha512(self):
+        """
+        Check that username/password authentication works for users that
+        were created using the scram_sha512 mechanism (as opposed to the
+        default scram_sha256)
+        """
+
+        import requests
+        rpath = requests.urllib3.util.retry.__file__
+        self.logger.info(f"rpath = '{rpath}'")
+
+        try:
+            charles = SaslCredentials("charles", "highEntropyHipster",
+                                      "SCRAM-SHA-512")
+            create_user_and_wait(self.redpanda, self.superuser_admin, charles)
+            self.redpanda.set_cluster_config({
+                'superusers': [
+                    charles.username,
+                    self.redpanda.SUPERUSER_CREDENTIALS.username
+                ]
+            })
+
+            charles_admin = Admin(self.redpanda,
+                                  auth=(charles.username, charles.password))
+            # Hit an endpoint requiring superuser
+            charles_admin.get_cluster_config()
+        except:
+            import time
+            self.logger.exception("I need an adult")
+            time.sleep(3600)
+
 
 class AdminApiAuthEnablementTest(RedpandaTest):
     """
