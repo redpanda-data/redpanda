@@ -45,9 +45,12 @@ public:
     ss::future<get_leadership_reply>
     get_leadership(get_leadership_request&&, rpc::streaming_context&) final;
 
+    ss::future<update_leadership_reply> update_leadership_v2(
+      update_leadership_request_v2&&, rpc::streaming_context&) final;
+
 private:
     ss::future<update_leadership_reply>
-    do_update_leadership(update_leadership_request&&);
+      do_update_leadership(std::vector<ntp_leader_revision>);
 
     ss::sharded<partition_leaders_table>& _leaders;
 }; // namespace cluster

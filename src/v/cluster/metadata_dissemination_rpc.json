@@ -14,6 +14,11 @@
             "name": "get_leadership",
             "input_type": "get_leadership_request",
             "output_type": "get_leadership_reply"
+        },
+        {
+            "name": "update_leadership_v2",
+            "input_type": "update_leadership_request_v2",
+            "output_type": "update_leadership_reply"
         }
     ]
 }
