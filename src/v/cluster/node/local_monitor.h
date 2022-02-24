@@ -42,9 +42,9 @@ public:
     static constexpr std::string_view stable_alert_string
       = "storage space alert"; // for those who grep the logs..
 
-    void set_path_for_test(const ss::sstring& path);
+    void testing_only_set_path(const ss::sstring& path);
     void
-      set_statvfs_for_test(std::function<struct statvfs(const ss::sstring&)>);
+      testing_only_set_statvfs(std::function<struct statvfs(const ss::sstring&)>);
 
 private:
     // helpers

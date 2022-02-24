@@ -61,11 +61,11 @@ ss::future<> local_monitor::update_state() {
 
 const local_state& local_monitor::get_state_cached() const { return _state; }
 
-void local_monitor::set_path_for_test(const ss::sstring& path) {
+void local_monitor::testing_only_set_path(const ss::sstring& path) {
     _path_for_test = path;
 }
 
-void local_monitor::set_statvfs_for_test(
+void local_monitor::testing_only_set_statvfs(
   std::function<struct statvfs(const ss::sstring&)> func) {
     _statvfs_for_test = std::move(func);
 }
