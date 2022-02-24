@@ -11,6 +11,7 @@
 
 #pragma once
 #include "bytes/bytes.h"
+#include "model/fundamental.h"
 #include "reflection/adl.h"
 #include "seastarx.h"
 #include "utils/named_type.h"
@@ -155,6 +156,14 @@ std::ostream& operator<<(std::ostream&, const member_protocol&);
 
 using assignments_type = std::unordered_map<member_id, bytes>;
 
+inline kafka::leader_epoch leader_epoch_from_term(model::term_id term) {
+    try {
+        return kafka::leader_epoch(
+          boost::numeric_cast<kafka::leader_epoch::type>(term()));
+    } catch (boost::bad_numeric_cast&) {
+        return kafka::invalid_leader_epoch;
+    }
+}
 } // namespace kafka
 
 /*
