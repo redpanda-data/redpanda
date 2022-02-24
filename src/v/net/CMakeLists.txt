@@ -6,6 +6,7 @@ v_cc_library(
     dns.cc
     transport.cc
     connection.cc
+    conn_quota.cc
     server.cc
     probes.cc
     tls.cc
@@ -13,6 +14,7 @@ v_cc_library(
     Seastar::seastar
     absl::node_hash_map
     v::config
+    v::rphashing
   )
 
 add_subdirectory(tests)
