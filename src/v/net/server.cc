@@ -113,21 +113,24 @@ static inline void print_exceptional_future(
       address,
       f.get_exception());
 }
-static ss::future<>
-apply_proto(server::protocol* proto, server::resources&& rs) {
+
+static ss::future<> apply_proto(
+  server::protocol* proto, server::resources&& rs, conn_quota::units cq_units) {
     auto conn = rs.conn;
     return proto->apply(std::move(rs))
-      .then_wrapped([proto, conn](ss::future<> f) {
-          print_exceptional_future(
-            proto, std::move(f), "applying protocol", conn->addr);
-          return conn->shutdown().then_wrapped(
-            [proto, addr = conn->addr](ss::future<> f) {
-                print_exceptional_future(
-                  proto, std::move(f), "shutting down", addr);
-            });
-      })
+      .then_wrapped(
+        [proto, conn, cq_units = std::move(cq_units)](ss::future<> f) {
+            print_exceptional_future(
+              proto, std::move(f), "applying protocol", conn->addr);
+            return conn->shutdown().then_wrapped(
+              [proto, addr = conn->addr](ss::future<> f) {
+                  print_exceptional_future(
+                    proto, std::move(f), "shutting down", addr);
+              });
+        })
       .finally([conn] {});
 }
+
 ss::future<> server::accept(listener& s) {
     return ss::repeat([this, &s]() mutable {
         return s.socket.accept().then_wrapped(
@@ -140,6 +143,25 @@ ss::future<> server::accept(listener& s) {
               auto ar = f_cs_sa.get();
               ar.connection.set_nodelay(true);
               ar.connection.set_keepalive(true);
+
+              // `s` is a lambda reference argument to a coroutine:
+              // this is the last place we may refer to it before
+              // any scheduling points.
+              auto name = s.name;
+
+              conn_quota::units cq_units;
+              if (cfg.conn_quotas) {
+                  cq_units = co_await cfg.conn_quotas->get().local().get(
+                    ar.remote_address.addr());
+                  if (!cq_units.live()) {
+                      // Connection limit hit, drop this connection.
+                      vlog(
+                        rpc::rpclog.info,
+                        "Connection limit reached, rejecting {}",
+                        ar.remote_address.addr());
+                      co_return ss::stop_iteration::no;
+                  }
+              }
 
               // Apply socket buffer size settings
               if (cfg.tcp_recv_buf.has_value()) {
@@ -156,7 +178,6 @@ ss::future<> server::accept(listener& s) {
                     SOL_SOCKET, SO_SNDBUF, &send_buf, sizeof(send_buf));
               }
 
-              auto name = s.name;
               if (_connection_rates) {
                   try {
                       co_await _connection_rates->maybe_wait(
@@ -188,9 +209,12 @@ ss::future<> server::accept(listener& s) {
                   co_await conn->shutdown();
                   throw ss::gate_closed_exception();
               }
-              ssx::spawn_with_gate(_conn_gate, [this, conn]() mutable {
-                  return apply_proto(_proto.get(), resources(this, conn));
-              });
+              ssx::spawn_with_gate(
+                _conn_gate,
+                [this, conn, cq_units = std::move(cq_units)]() mutable {
+                    return apply_proto(
+                      _proto.get(), resources(this, conn), std::move(cq_units));
+                });
               co_return ss::stop_iteration::no;
           });
     });

@@ -12,6 +12,7 @@
 #pragma once
 
 #include "config/property.h"
+#include "net/conn_quota.h"
 #include "net/connection.h"
 #include "net/connection_rate.h"
 #include "net/types.h"
@@ -82,6 +83,8 @@ struct server_configuration {
     // we use the same default as seastar for load balancing algorithm
     ss::server_socket::load_balancing_algorithm load_balancing_algo
       = ss::server_socket::load_balancing_algorithm::connection_distribution;
+
+    std::optional<std::reference_wrapper<ss::sharded<conn_quota>>> conn_quotas;
 
     explicit server_configuration(ss::sstring n)
       : name(std::move(n)) {}
