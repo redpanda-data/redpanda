@@ -286,8 +286,8 @@ func (r *ConfigMapResource) createConfiguration(
 		cr.Other = make(map[string]interface{})
 	}
 	cr.Other["auto_create_topics_enabled"] = r.pandaCluster.Spec.Configuration.AutoCreateTopics
-	cr.Other["enable_idempotence"] = true
-	cr.Other["enable_transactions"] = true
+	cr.Other["enable_idempotence"] = false
+	cr.Other["enable_transactions"] = false
 	if featuregates.ShadowIndex(r.pandaCluster.Spec.Version) {
 		cr.Other["cloud_storage_segment_max_upload_interval_sec"] = 60 * 30 // 60s * 30 = 30 minutes
 	}
