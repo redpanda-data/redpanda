@@ -43,15 +43,15 @@ public:
       = "storage space alert"; // for those who grep the logs..
 
     void testing_only_set_path(const ss::sstring& path);
-    void
-      testing_only_set_statvfs(std::function<struct statvfs(const ss::sstring&)>);
+    void testing_only_set_statvfs(
+      std::function<struct statvfs(const ss::sstring)>);
 
 private:
     // helpers
     std::tuple<size_t, size_t>
     minimum_free_by_bytes_and_percent(size_t bytes_available) const;
     ss::future<std::vector<storage::disk>> get_disks();
-    ss::future<struct statvfs> get_statvfs(const ss::sstring&);
+    ss::future<struct statvfs> get_statvfs(const ss::sstring);
     void update_alert_state();
     ss::future<> update_disk_metrics();
     void maybe_log_space_error(const storage::disk&);
@@ -72,7 +72,7 @@ private:
 
     // Injection points for unit tests
     ss::sstring _path_for_test;
-    std::optional<std::function<struct statvfs(const ss::sstring&)>>
+    std::optional<std::function<struct statvfs(const ss::sstring)>>
       _statvfs_for_test;
 };
 

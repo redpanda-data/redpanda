@@ -66,7 +66,7 @@ void local_monitor::testing_only_set_path(const ss::sstring& path) {
 }
 
 void local_monitor::testing_only_set_statvfs(
-  std::function<struct statvfs(const ss::sstring&)> func) {
+  std::function<struct statvfs(const ss::sstring)> func) {
     _statvfs_for_test = std::move(func);
 }
 
@@ -92,7 +92,8 @@ ss::future<std::vector<storage::disk>> local_monitor::get_disks() {
     }};
 }
 
-ss::future<struct statvfs> local_monitor::get_statvfs(const ss::sstring& path) {
+// NOLINTNEXTLINE (performance-unnecessary-value-param)
+ss::future<struct statvfs> local_monitor::get_statvfs(const ss::sstring path) {
     if (_statvfs_for_test) {
         co_return _statvfs_for_test.value()(path);
     } else {
