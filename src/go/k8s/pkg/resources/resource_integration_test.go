@@ -148,10 +148,10 @@ func TestEnsure_ConfigMap(t *testing.T) {
 	if !strings.Contains(data, "auto_create_topics_enabled: false") {
 		t.Fatalf("expecting configmap containing 'auto_create_topics_enabled: false' but got %v", data)
 	}
-	if !strings.Contains(data, "enable_idempotence: true") {
+	if !strings.Contains(data, "enable_idempotence: false") {
 		t.Fatalf("expecting configmap containing 'enable_idempotence: true' but got %v", data)
 	}
-	if !strings.Contains(data, "enable_transactions: true") {
+	if !strings.Contains(data, "enable_transactions: false") {
 		t.Fatalf("expecting configmap containing 'enable_transactions: true' but got %v", data)
 	}
 
