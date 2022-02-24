@@ -21,19 +21,26 @@ class MetricCheckFailed(Exception):
 
 
 class MetricCheck(object):
-    def __init__(self, logger, redpanda, node, metrics, labels):
+    """
+    A MetricCheck spans a region of code: instantiate at the start, then
+    call `expect` or `evaluate` later to measure how your metrics of
+    interest have changed over that region.
+    """
+    def __init__(self, logger, redpanda, node, metrics, labels, reduce=None):
         """
         :param redpanda: a RedpandaService
         :param logger: a Logger
         :param node: a ducktape Node
         :param metrics: a list of metric names, or a single compiled regex (use re.compile())
         :param labels: dict, to filter metrics as we capture and check.
+        :param reduce: reduction function (e.g. sum) if multiple samples match metrics+labels
         """
         self.redpanda = redpanda
         self.node = node
         self.labels = labels
         self.logger = logger
 
+        self._reduce = reduce
         self._initial_samples = self._capture(metrics)
 
     def _capture(self, check_metrics):
@@ -59,14 +66,29 @@ class MetricCheck(object):
                 if label_mismatch:
                     continue
 
-                if sample.name in samples:
-                    raise RuntimeError(
-                        f"Labels {self.labels} on {sample.name} not specific enough"
-                    )
-
                 self.logger.info(
-                    f"  Captured {sample.name}={sample.value} {sample.labels}")
-                samples[sample.name] = sample.value
+                    f"  Read {sample.name}={sample.value} {sample.labels}")
+                if sample.name in samples:
+                    if self._reduce is None:
+                        raise RuntimeError(
+                            f"Labels {self.labels} on {sample.name} not specific enough"
+                        )
+                    else:
+                        samples[sample.name] = self._reduce(
+                            [samples[sample.name], sample.value])
+
+                else:
+                    samples[sample.name] = sample.value
+
+        for k, v in samples.items():
+            self.logger.info(f"  Captured {k}={v}")
+
+        if len(samples) == 0:
+            url = f"http://{self.node.account.hostname}:9644/metrics"
+            import requests
+            dump = requests.get(url).text
+            self.logger.warn(f"Metrics dump: {dump}")
+            raise RuntimeError("Failed to capture metrics!")
 
         return samples
 
@@ -95,3 +117,20 @@ class MetricCheck(object):
 
         if error:
             raise error
+
+    def evaluate(self, expectations):
+        """
+        Similar to `expect`, but instead of asserting the expections are
+        true, just evaluate whether they are and return a boolean.
+        """
+        samples = self._capture([e[0] for e in expectations])
+        for (metric, comparator) in expectations:
+            old_value = self._initial_samples.get(metric, None)
+            if old_value is None:
+                return False
+
+            new_value = samples[metric]
+            if not comparator(old_value, new_value):
+                return False
+
+        return True
