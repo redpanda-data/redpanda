@@ -54,6 +54,7 @@ private:
     ss::future<struct statvfs> get_statvfs(const ss::sstring);
     void update_alert_state();
     ss::future<> update_disk_metrics();
+    float percent_free(const storage::disk& disk);
     void maybe_log_space_error(const storage::disk&);
 
     // configuration

@@ -101,7 +101,7 @@ ss::future<struct statvfs> local_monitor::get_statvfs(const ss::sstring path) {
     }
 }
 
-float percent_free(const storage::disk& disk) {
+float local_monitor::percent_free(const storage::disk& disk) {
     long double free = disk.free, total = disk.total;
     return float((free / total) * 100.0);
 }
