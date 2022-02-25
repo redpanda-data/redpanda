@@ -60,6 +60,7 @@ v_cc_library(
     server/replicated_partition.cc
     server/partition_proxy.cc
     server/group_recovery_consumer.cc
+    server/group_metadata.cc
  DEPS
     Seastar::seastar
     v::bytes
