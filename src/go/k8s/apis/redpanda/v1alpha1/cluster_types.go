@@ -32,11 +32,31 @@ type RedpandaResourceRequirements struct {
 
 // RedpandaCPU returns a copy of the rounded value for Redpanda CPU
 //
-// If it's not explicitly set, the Request.Cpu is used.
+// If it's not explicitly set, the Request.Cpu is used. This allows
+// overprovisioning the CPU, which is not recommended, but --smp can't be
+// reduced on an update.
+//
+// The value returned is:
+// * Is rounded up to an integer.
+// * Is limited by 2Gi per core if requests.memory is set.
+//
+// Example:
+//    in: minimum requirement per core, 2GB
+//    in: Requests.Memory, 16GB
+//    => maxAllowedCores = 8
+//    if requestedCores == 8, set smp = 8 (with 2GB per core)
+//    if requestedCores == 4, set smp = 4 (with 4GB per core)
 func (r *RedpandaResourceRequirements) RedpandaCPU() *resource.Quantity {
 	q := r.Redpanda.Cpu()
 	if q == nil || q.IsZero() {
-		q = r.Requests.Cpu()
+		requestedMemory := r.Requests.Memory().Value()
+		requestedCores := r.Requests.Cpu().Value()
+		maxAllowedCores := requestedMemory / MinimumMemoryPerCore
+		smp := maxAllowedCores
+		if smp == 0 || requestedCores < smp {
+			smp = requestedCores
+		}
+		q = resource.NewQuantity(smp, resource.BinarySI)
 	}
 	qd := q.DeepCopy()
 	qd.RoundUp(0)
@@ -49,7 +69,9 @@ func (r *RedpandaResourceRequirements) RedpandaCPU() *resource.Quantity {
 func (r *RedpandaResourceRequirements) RedpandaMemory() *resource.Quantity {
 	q := r.Redpanda.Memory()
 	if q == nil || q.IsZero() {
-		q = r.Requests.Memory()
+		requestedMemory := r.Requests.Memory().Value()
+		requestedMemory = int64(float64(requestedMemory) * RedpandaMemoryAllocationRatio)
+		q = resource.NewQuantity(requestedMemory, resource.BinarySI)
 	}
 	qd := q.DeepCopy()
 	return &qd
@@ -490,6 +512,8 @@ type SocketAddress struct {
 const (
 	// MinimumMemoryPerCore the minimum amount of memory needed per core
 	MinimumMemoryPerCore = 2 * gb
+	// RedpandaMemoryAllocationRatio reserves 10% for the OS
+	RedpandaMemoryAllocationRatio = 0.9
 )
 
 func init() {

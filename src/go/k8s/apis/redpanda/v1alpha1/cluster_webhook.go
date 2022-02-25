@@ -11,6 +11,7 @@ package v1alpha1
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 
 	cmmeta "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
@@ -437,7 +438,7 @@ func (r *Cluster) validateResources(rf resourceField) field.ErrorList {
 			field.Invalid(
 				rf.path.Child("requests").Child("memory"),
 				rf.resources.Requests.Memory(),
-				"Memory limit cannot be lower than the request, either increase the limit or remove it"))
+				"limits.memory < requests.memory; either increase the limit or remove it"))
 	}
 
 	// CPU limit (if set) cannot be lower than the requested
@@ -447,7 +448,7 @@ func (r *Cluster) validateResources(rf resourceField) field.ErrorList {
 			field.Invalid(
 				rf.path.Child("requests").Child("cpu"),
 				rf.resources.Requests.Cpu(),
-				"CPU limit cannot be lower than the request, either increase the limit or remove it"))
+				"limits.cpu < requests.cpu; either increase the limit or remove it"))
 	}
 
 	return allErrs
@@ -458,22 +459,13 @@ func (r *Cluster) validateRedpandaResources(
 ) field.ErrorList {
 	allErrs := r.validateResources(resourceField{&rf.resources.ResourceRequirements, rf.path})
 
-	// Memory redpanda (if set) must be less than or equal to limit (if set)
-	if !rf.resources.Limits.Memory().IsZero() && !rf.resources.RedpandaMemory().IsZero() && rf.resources.Limits.Memory().Cmp(*rf.resources.RedpandaMemory()) == -1 {
-		allErrs = append(allErrs,
-			field.Invalid(
-				rf.path.Child("redpanda").Child("memory"),
-				rf.resources.Requests.Memory(),
-				"Memory limit cannot be lower than the redanda memory, either increase the limit, decrease redpanda, or remove either"))
-	}
-
 	// Memory redpanda (if set) must be less than or equal to request (if set)
 	if !rf.resources.Requests.Memory().IsZero() && !rf.resources.RedpandaMemory().IsZero() && rf.resources.Requests.Memory().Cmp(*rf.resources.RedpandaMemory()) == -1 {
 		allErrs = append(allErrs,
 			field.Invalid(
 				rf.path.Child("redpanda").Child("memory"),
 				rf.resources.Requests.Memory(),
-				"Memory request cannot be lower than the redanda memory, either increase the request, decrease redpanda, or remove either"))
+				"requests.memory < redpanda.memory; decrease or remove redpanda.memory"))
 	}
 
 	return allErrs
@@ -497,16 +489,17 @@ func (r *Cluster) validateRedpandaMemory() field.ErrorList {
 			field.Invalid(
 				field.NewPath("spec").Child("resources").Child("requests").Child("memory"),
 				r.Spec.Resources.Requests.Memory(),
-				"need 2GB of memory per core; need to decrease the requested CPU or increase the memory request"))
+				"requests.memory < 2Gi per core; either decrease requests.cpu or increase requests.memory"))
 	}
 
 	redpandaCores := r.Spec.Resources.RedpandaCPU().Value()
-	if !r.Spec.Resources.RedpandaMemory().IsZero() && r.Spec.Resources.RedpandaMemory().Value() < redpandaCores*MinimumMemoryPerCore {
+	minimumMemoryPerCore := int64(math.Floor(MinimumMemoryPerCore * RedpandaMemoryAllocationRatio))
+	if !r.Spec.Resources.RedpandaMemory().IsZero() && r.Spec.Resources.RedpandaMemory().Value() < redpandaCores*minimumMemoryPerCore {
 		allErrs = append(allErrs,
 			field.Invalid(
 				field.NewPath("spec").Child("resources").Child("redpanda").Child("memory"),
 				r.Spec.Resources.Requests.Memory(),
-				"need 2GB of memory per core; need to decrease the redpanda CPU or increase the redpanda memory"))
+				"redpanda.memory < 2Gi per core; either decrease redpanda.cpu or increase redpanda.memory"))
 	}
 
 	return allErrs
@@ -528,12 +521,12 @@ func (r *Cluster) validateRedpandaCoreChanges(old *Cluster) field.ErrorList {
 		newCores := newCPURequest.Value()
 
 		if newCores < oldCores {
-			minAllowedCPU := fmt.Sprintf("%dm", (oldCores-1)*1000+1)
+			minAllowedCPU := (oldCores-1)*1000 + 1
 			allErrs = append(allErrs,
 				field.Invalid(
 					field.NewPath("spec").Child("resources").Child("requests").Child("cpu"),
 					r.Spec.Resources.Requests.Cpu(),
-					fmt.Sprintf("CPU request may decrease the number of cores used in the existing cluster; increase the CPU request to at least %s", minAllowedCPU)))
+					fmt.Sprintf("CPU request must not be decreased; increase requests.cpu or redpanda.cpu to at least %dm", minAllowedCPU)))
 		}
 	}
 
