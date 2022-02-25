@@ -64,7 +64,7 @@ private:
 
     // state
     local_state _state;
-    ss::logger::rate_limit despam_interval = ss::logger::rate_limit(
+    ss::logger::rate_limit _despam_interval = ss::logger::rate_limit(
       std::chrono::hours(1));
     config::binding<size_t> _free_bytes_alert_threshold;
     config::binding<unsigned> _free_percent_alert_threshold;

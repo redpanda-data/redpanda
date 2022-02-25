@@ -112,7 +112,7 @@ void local_monitor::maybe_log_space_error(const storage::disk& disk) {
     auto min_space = std::min(min_by_percent, min_by_bytes);
     clusterlog.log(
       ss::log_level::error,
-      despam_interval,
+      _despam_interval,
       "{}: free space at {:.3f}% on {}: {} total, {} free, "
       "min. free {}. Please adjust retention policies as needed to "
       "avoid running out of space.",
