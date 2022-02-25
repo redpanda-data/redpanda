@@ -24,6 +24,10 @@ spec:
      - port: 8082
        tls:
          enabled: true
+    schemaRegistry:
+       port: 8081
+       tls:
+         enabled: true
     adminApi:
     - port: 9644
     developerMode: true
