@@ -72,8 +72,7 @@ private:
 
     // Injection points for unit tests
     ss::sstring _path_for_test;
-    std::optional<std::function<struct statvfs(const ss::sstring)>>
-      _statvfs_for_test;
+    std::function<struct statvfs(const ss::sstring)> _statvfs_for_test;
 };
 
 } // namespace cluster::node
