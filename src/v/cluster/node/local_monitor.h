@@ -30,7 +30,7 @@ public:
       config::binding<size_t> min_bytes,
       config::binding<unsigned> min_percent,
       ss::sharded<storage::node_api>& api);
-    local_monitor(local_monitor&) = default;
+    local_monitor(const local_monitor&) = delete;
     local_monitor(local_monitor&&) = default;
     ~local_monitor() = default;
     local_monitor& operator=(local_monitor const&) = delete;
