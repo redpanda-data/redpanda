@@ -67,9 +67,7 @@ public:
     }
 
     void update_offset(
-      const model::topic_partition&,
-      model::offset,
-      offset_metadata_value&&);
+      const model::topic_partition&, model::offset, offset_metadata_value&&);
     void remove_offset(const model::topic_partition&);
     void update_prepared(model::offset, group_log_prepared_tx);
     void commit(model::producer_identity);
