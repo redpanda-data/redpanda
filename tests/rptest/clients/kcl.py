@@ -7,8 +7,18 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from collections import namedtuple
+import re
 import subprocess
 import time
+
+KclPartitionOffset = namedtuple(
+    'KclPartitionOffset',
+    ['broker', 'topic', 'partition', 'start_offset', 'end_offset', 'error'])
+
+KclPartitionEpochEndOffset = namedtuple('KclPartitionEpochEndOffset', [
+    'broker', 'topic', 'partition', 'leader_epoch', 'epoch_end_offset', 'error'
+])
 
 
 class KCL:
@@ -23,6 +33,55 @@ class KCL:
 
     def produce(self, topic, msg):
         return self._cmd(["produce", topic], input=msg)
+
+    def offset_for_leader_epoch(self,
+                                topics,
+                                leader_epoch,
+                                current_leader_epoch=None):
+        cmd = ['misc', 'offset-for-leader-epoch']
+        if isinstance(topics, list):
+            cmd += topics
+        else:
+            cmd += [topics]
+        cmd += ['-e', str(leader_epoch)]
+        if current_leader_epoch:
+            cmd += ['-c', str(current_leader_epoch)]
+        lines = self._cmd(cmd).splitlines()
+        ret = []
+        for l in lines:
+            m = re.match(
+                r" *(?P<broker>\d+) +(?P<topic>.+?) +(?P<partition>\d+) +(?P<epoch>-?\d*?) +(?P<end_offset>-?\d*?) +(?P<error>.*) *",
+                l)
+            if m:
+                ret.append(
+                    KclPartitionEpochEndOffset(
+                        m['broker'], m['topic'], int(m['partition']),
+                        int(m['epoch']) if m['epoch'] is not None else -1,
+                        int(m['end_offset'])
+                        if m['end_offset'] is not None else -1, m['error']))
+        return ret
+
+    def list_offsets(self, topics):
+        cmd = ['misc', 'list-offsets']
+        if isinstance(topics, list):
+            cmd += topics
+        else:
+            cmd += [topics]
+
+        lines = self._cmd(cmd).splitlines()
+        ret = []
+        for l in lines:
+            m = re.match(
+                r" *(?P<broker>\d+) +(?P<topic>.+?) +(?P<partition>\d+) +(?P<start>-?\d*?) +(?P<end>-?\d*?) +(?P<error>.*) *",
+                l)
+            if m:
+                ret.append(
+                    KclPartitionOffset(m['broker'], m['topic'],
+                                       int(m['partition']),
+                                       int(m['start']) if m['start'] else -1,
+                                       int(m['end']) if m['end'] else -1,
+                                       m['error']))
+        return ret
 
     def consume(self,
                 topic,

@@ -62,13 +62,15 @@ metadata_cache::get_source_topic(model::topic_namespace_view tp) const {
     return mt->second.get_source_topic();
 }
 
-std::optional<model::topic_metadata>
-metadata_cache::get_topic_metadata(model::topic_namespace_view tp) const {
+std::optional<model::topic_metadata> metadata_cache::get_topic_metadata(
+  model::topic_namespace_view tp, metadata_cache::with_leaders leaders) const {
     auto md = _topics_state.local().get_topic_metadata(tp);
     if (!md) {
         return md;
     }
-    fill_partition_leaders(_leaders.local(), *md);
+    if (leaders) {
+        fill_partition_leaders(_leaders.local(), *md);
+    }
 
     return md;
 }
@@ -82,10 +84,13 @@ metadata_cache::get_topic_timestamp_type(model::topic_namespace_view tp) const {
     return _topics_state.local().get_topic_timestamp_type(tp);
 }
 
-std::vector<model::topic_metadata> metadata_cache::all_topics_metadata() const {
+std::vector<model::topic_metadata> metadata_cache::all_topics_metadata(
+  metadata_cache::with_leaders leaders) const {
     auto all_md = _topics_state.local().all_topics_metadata();
-    for (auto& md : all_md) {
-        fill_partition_leaders(_leaders.local(), md);
+    if (leaders) {
+        for (auto& md : all_md) {
+            fill_partition_leaders(_leaders.local(), md);
+        }
     }
     return all_md;
 }
@@ -154,11 +159,19 @@ std::optional<model::node_id>
 metadata_cache::get_leader_id(const model::ntp& ntp) const {
     return _leaders.local().get_leader(ntp);
 }
+std::optional<cluster::leader_term> metadata_cache::get_leader_term(
+  model::topic_namespace_view tp_ns, model::partition_id pid) const {
+    return _leaders.local().get_leader_term(tp_ns, pid);
+}
 
-std::optional<model::node_id>
-metadata_cache::get_previous_leader_id(const model::ntp& ntp) const {
-    return _leaders.local().get_previous_leader(
-      model::topic_namespace_view(ntp), ntp.tp.partition);
+std::optional<model::node_id> metadata_cache::get_leader_id(
+  model::topic_namespace_view tp_ns, model::partition_id p_id) const {
+    return _leaders.local().get_leader(tp_ns, p_id);
+}
+
+std::optional<model::node_id> metadata_cache::get_previous_leader_id(
+  model::topic_namespace_view tp_ns, model::partition_id p_id) const {
+    return _leaders.local().get_previous_leader(tp_ns, p_id);
 }
 
 /// If present returns a leader of raft0 group

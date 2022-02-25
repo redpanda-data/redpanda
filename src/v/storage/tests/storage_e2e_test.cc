@@ -22,6 +22,7 @@
 #include "storage/tests/utils/disk_log_builder.h"
 #include "storage/tests/utils/random_batch.h"
 #include "storage/types.h"
+#include "utils/to_string.h"
 
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/semaphore.hh>
@@ -1975,4 +1976,57 @@ FIXTURE_TEST(reader_prevents_log_shutdown, storage_test_fixture) {
         f = mgr.shutdown(ntp);
     }
     f.get();
+}
+
+FIXTURE_TEST(test_querying_term_last_offset, storage_test_fixture) {
+    auto cfg = default_log_config(test_dir);
+    storage::ntp_config::default_overrides overrides;
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+    auto log = mgr
+                 .manage(storage::ntp_config(
+                   ntp,
+                   mgr.config().base_dir,
+                   std::make_unique<storage::ntp_config::default_overrides>(
+                     overrides)))
+                 .get0();
+    // append some baches in term 0
+    append_random_batches(log, 10, model::term_id(0));
+    auto lstats_term_0 = log.offsets();
+    // append some batches in term 1
+    append_random_batches(log, 10, model::term_id(1));
+    if (cfg.stype == storage::log_config::storage_type::disk) {
+        auto disk_log = get_disk_log(log);
+        // force segment roll
+        disk_log->force_roll(ss::default_priority_class()).get();
+    }
+    // append more batches in the same term
+    append_random_batches(log, 10, model::term_id(1));
+    auto lstats_term_1 = log.offsets();
+    // append some batche sin term 2
+    append_random_batches(log, 10, model::term_id(2));
+
+    BOOST_REQUIRE_EQUAL(
+      lstats_term_0.dirty_offset,
+      log.get_term_last_offset(model::term_id(0)).value());
+    BOOST_REQUIRE_EQUAL(
+      lstats_term_1.dirty_offset,
+      log.get_term_last_offset(model::term_id(1)).value());
+    BOOST_REQUIRE_EQUAL(
+      log.offsets().dirty_offset,
+      log.get_term_last_offset(model::term_id(2)).value());
+
+    BOOST_REQUIRE(!log.get_term_last_offset(model::term_id(3)).has_value());
+    // prefix truncate log at end offset fo term 0
+
+    log
+      .truncate_prefix(storage::truncate_prefix_config(
+        lstats_term_0.dirty_offset + model::offset(1),
+        ss::default_priority_class()))
+      .get();
+
+    BOOST_REQUIRE(!log.get_term_last_offset(model::term_id(0)).has_value());
 }

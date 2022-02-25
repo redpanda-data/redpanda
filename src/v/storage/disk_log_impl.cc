@@ -46,6 +46,7 @@
 #include <fmt/format.h>
 
 #include <iterator>
+#include <optional>
 #include <sstream>
 
 using namespace std::literals::chrono_literals;
@@ -884,6 +885,26 @@ std::optional<model::term_id> disk_log_impl::get_term(model::offset o) const {
 
     return std::nullopt;
 }
+
+std::optional<model::offset>
+disk_log_impl::get_term_last_offset(model::term_id term) const {
+    if (unlikely(_segs.empty())) {
+        return std::nullopt;
+    }
+
+    auto it = _segs.upper_bound(term);
+    if (it == _segs.begin()) {
+        return std::nullopt;
+    }
+    it = std::prev(it);
+
+    if ((*it)->offsets().term == term) {
+        return (*it)->offsets().dirty_offset;
+    }
+
+    return std::nullopt;
+}
+
 ss::future<std::optional<timequery_result>>
 disk_log_impl::timequery(timequery_config cfg) {
     vassert(!_closed, "timequery on closed log - {}", *this);

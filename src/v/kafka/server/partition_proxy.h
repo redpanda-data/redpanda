@@ -13,6 +13,7 @@
 #include "cluster/metadata_cache.h"
 #include "cluster/partition.h"
 #include "coproc/fwd.h"
+#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "storage/translating_reader.h"
 #include "storage/types.h"
@@ -33,6 +34,9 @@ public:
         virtual model::offset start_offset() const = 0;
         virtual model::offset high_watermark() const = 0;
         virtual model::offset last_stable_offset() const = 0;
+        virtual kafka::leader_epoch leader_epoch() const = 0;
+        virtual std::optional<model::offset>
+          get_leader_epoch_last_offset(kafka::leader_epoch) const = 0;
         virtual bool is_leader() const = 0;
         virtual ss::future<std::error_code> linearizable_barrier() = 0;
         virtual ss::future<storage::translating_reader> make_reader(
@@ -91,6 +95,13 @@ public:
     }
 
     cluster::partition_probe& probe() { return _impl->probe(); }
+
+    kafka::leader_epoch leader_epoch() const { return _impl->leader_epoch(); }
+
+    std::optional<model::offset>
+    get_leader_epoch_last_offset(kafka::leader_epoch epoch) const {
+        return _impl->get_leader_epoch_last_offset(epoch);
+    }
 
 private:
     std::unique_ptr<impl> _impl;

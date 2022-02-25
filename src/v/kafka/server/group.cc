@@ -1629,7 +1629,8 @@ group::prepare_tx(cluster::prepare_group_tx_request r) {
         offset_metadata md{
           .log_offset = e.value().last_offset,
           .offset = offset.offset,
-          .metadata = offset.metadata.value_or("")};
+          .metadata = offset.metadata.value_or(""),
+          .committed_leader_epoch = offset.leader_epoch};
         ptx.offsets[tp] = md;
     }
     _prepared_txs[r.pid] = ptx;
@@ -1817,6 +1818,7 @@ group::offset_commit_stages group::store_offsets(offset_commit_request&& r) {
             offset_metadata md{
               .offset = p.committed_offset,
               .metadata = p.committed_metadata.value_or(""),
+              .committed_leader_epoch = p.committed_leader_epoch,
             };
 
             offset_commits.emplace_back(std::make_pair(tp, md));
@@ -2045,11 +2047,11 @@ group::handle_offset_fetch(offset_fetch_request&& r) {
             offset_fetch_response_partition p = {
               .partition_index = e.first.partition,
               .committed_offset = e.second->metadata.offset,
+              .committed_leader_epoch
+              = e.second->metadata.committed_leader_epoch,
               .metadata = e.second->metadata.metadata,
               .error_code = error_code::none,
             };
-            // BUG: support leader_epoch (KIP-320)
-            // https://github.com/vectorizedio/redpanda/issues/1181
             tmp[e.first.topic].push_back(std::move(p));
         }
         for (auto& e : tmp) {

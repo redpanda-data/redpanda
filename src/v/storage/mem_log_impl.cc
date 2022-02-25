@@ -372,6 +372,16 @@ struct mem_log_impl final : log::impl {
         return std::nullopt;
     }
 
+    std::optional<model::offset>
+    get_term_last_offset(model::term_id term) const final {
+        for (auto it = _data.rbegin(); it != _data.rend(); ++it) {
+            if (it->term() == term) {
+                return it->last_offset();
+            }
+        }
+        return std::nullopt;
+    }
+
     size_t segment_count() const final { return 1; }
 
     storage::offset_stats offsets() const final {

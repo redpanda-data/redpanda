@@ -175,10 +175,6 @@ public:
         return _id_allocator_stm;
     }
 
-    const raft::configuration_manager& get_cfg_manager() const {
-        return _raft->get_configuration_manager();
-    }
-
     ss::lw_shared_ptr<const storage::offset_translator_state>
     get_offset_translator_state() const {
         return _raft->get_offset_translator_state();
@@ -258,6 +254,15 @@ public:
             co_await _id_allocator_stm->remove_persistent_state();
         }
     }
+
+    std::optional<model::offset> get_term_last_offset(model::term_id) const;
+
+    model::term_id get_term(model::offset o) const {
+        return _raft->get_term(o);
+    }
+
+    std::optional<model::offset>
+    get_cloud_term_last_offset(model::term_id term) const;
 
 private:
     friend partition_manager;

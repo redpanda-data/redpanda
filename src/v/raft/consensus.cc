@@ -2119,7 +2119,7 @@ ss::future<storage::append_result> consensus::disk_append(
       });
 }
 
-model::term_id consensus::get_term(model::offset o) {
+model::term_id consensus::get_term(model::offset o) const {
     if (unlikely(o < model::offset(0))) {
         return model::term_id{};
     }

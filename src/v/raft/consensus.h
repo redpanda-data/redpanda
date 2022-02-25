@@ -313,15 +313,13 @@ public:
     std::vector<follower_metrics> get_follower_metrics() const;
     result<follower_metrics> get_follower_metrics(model::node_id) const;
 
-    const configuration_manager& get_configuration_manager() const {
-        return _configuration_manager;
-    }
-
     offset_monitor& visible_offset_monitor() {
         return _consumable_offset_monitor;
     }
 
     ss::future<> refresh_commit_index();
+
+    model::term_id get_term(model::offset) const;
 
 private:
     friend replicate_entries_stm;
@@ -388,7 +386,6 @@ private:
     void maybe_update_leader_commit_idx();
     ss::future<> do_maybe_update_leader_commit_idx(ss::semaphore_units<>);
 
-    model::term_id get_term(model::offset);
     clock_type::time_point majority_heartbeat() const;
     /*
      * Start an election. When leadership transfer is requested, the election is

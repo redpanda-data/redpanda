@@ -9,11 +9,11 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
-#include "kafka/protocol/list_offsets.h"
+#include "kafka/protocol/offset_for_leader_epoch.h"
 #include "kafka/server/handlers/handler.h"
 
 namespace kafka {
 
-using list_offsets_handler = handler<list_offsets_api, 0, 4>;
-
+using offset_for_leader_epoch_handler
+  = handler<offset_for_leader_epoch_api, 0, 3>;
 }

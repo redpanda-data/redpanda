@@ -258,6 +258,24 @@ path_type_map = {
     "CreatePartitionsRequestData": {
         "TimeoutMs": ("std::chrono::milliseconds", "int32")
     },
+    "OffsetForLeaderEpochRequestData": {
+        "Topics": {
+            "Partitions": {
+                "Partition": ("model::partition_id", "int32"),
+                "CurrentLeaderEpoch": ("kafka::leader_epoch", "int32"),
+                "LeaderEpoch": ("kafka::leader_epoch", "int32"),
+            }
+        }
+    },
+    "OffsetForLeaderEpochResponseData": {
+        "Topics": {
+            "Partitions": {
+                "Partition": ("model::partition_id", "int32"),
+                "LeaderEpoch": ("kafka::leader_epoch", "int32"),
+                "EndOffset": ("model::offset", "int64"),
+            }
+        }
+    }
 }
 
 # a few kafka field types specify an entity type
@@ -393,6 +411,10 @@ STRUCT_TYPES = [
     "CreatePartitionsTopic",
     "CreatePartitionsTopicResult",
     "CreatePartitionsAssignment",
+    "OffsetForLeaderTopic",
+    "OffsetForLeaderPartition",
+    "OffsetForLeaderTopicResult",
+    "EpochEndOffset",
 ]
 
 SCALAR_TYPES = list(basic_type_map.keys())
