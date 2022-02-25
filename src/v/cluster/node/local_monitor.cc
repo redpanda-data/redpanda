@@ -94,7 +94,7 @@ ss::future<std::vector<storage::disk>> local_monitor::get_disks() {
 
 // NOLINTNEXTLINE (performance-unnecessary-value-param)
 ss::future<struct statvfs> local_monitor::get_statvfs(const ss::sstring path) {
-    if (_statvfs_for_test) {
+    if (unlikely(_statvfs_for_test)) {
         co_return _statvfs_for_test(path);
     } else {
         co_return co_await ss::engine().statvfs(path);
