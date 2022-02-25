@@ -223,6 +223,166 @@ offset_metadata_value offset_metadata_value::decode(request_reader& reader) {
     return ret;
 }
 
+namespace {
+template<typename T>
+std::optional<T> read_optional_value(std::optional<request_reader>& reader) {
+    if (!reader) {
+        return std::nullopt;
+    }
+    return T::decode(*reader);
+}
+} // namespace
+
+group_metadata_serializer make_backward_compatible_serializer() {
+    struct impl : group_metadata_serializer::impl {
+        group_metadata_type get_metadata_type(iobuf buffer) final {
+            auto key = reflection::from_iobuf<old::group_log_record_key>(
+              std::move(buffer));
+            switch (key.record_type) {
+            case old::group_log_record_key::type::offset_commit:
+                return group_metadata_type::offset_commit;
+            case old::group_log_record_key::type::group_metadata:
+                return group_metadata_type::group_metadata;
+            case old::group_log_record_key::type::noop:
+                return group_metadata_type::noop;
+            }
+        };
+
+        group_metadata_serializer::key_value to_kv(group_metadata_kv md) final {
+            group_metadata_serializer::key_value ret;
+            ret.key = reflection::to_iobuf(old::group_log_record_key{
+              .record_type = old::group_log_record_key::type::group_metadata,
+              .key = reflection::to_iobuf(md.key.group_id),
+            });
+
+            if (md.value) {
+                old::group_log_group_metadata old_metadata{
+                  .protocol_type = std::move(md.value->protocol_type),
+                  .generation = md.value->generation,
+                  .protocol = std::move(md.value->protocol),
+                  .leader = std::move(md.value->leader),
+                  .state_timestamp = static_cast<int32_t>(
+                    md.value->state_timestamp.value()),
+                };
+
+                old_metadata.members.reserve(md.value->members.size());
+                std::transform(
+                  md.value->members.begin(),
+                  md.value->members.end(),
+                  std::back_inserter(old_metadata.members),
+                  [](member_state& ms) {
+                      return old::member_state{
+                        .id = std::move(ms.id),
+                        .session_timeout = ms.session_timeout,
+                        .rebalance_timeout = ms.rebalance_timeout,
+                        .instance_id = ms.instance_id,
+                        .assignment = std::move(ms.assignment),
+                        .client_id = std::move(ms.client_id),
+                        .client_host = std::move(ms.client_host),
+                      };
+                  });
+                ret.value = reflection::to_iobuf(std::move(old_metadata));
+            }
+
+            return ret;
+        }
+        group_metadata_serializer::key_value
+        to_kv(offset_metadata_kv md) final {
+            group_metadata_serializer::key_value ret;
+
+            ret.key = reflection::to_iobuf(old::group_log_record_key{
+              .record_type = old::group_log_record_key::type::offset_commit,
+              .key = reflection::to_iobuf(old::group_log_offset_key{
+                std::move(md.key.group_id),
+                std::move(md.key.topic),
+                md.key.partition,
+              }),
+            });
+
+            if (md.value) {
+                ret.value = reflection::to_iobuf(old::group_log_offset_metadata{
+                  md.value->offset,
+                  md.value->leader_epoch,
+                  md.value->metadata,
+                });
+            }
+            return ret;
+        }
+
+        group_metadata_kv decode_group_metadata(model::record record) final {
+            group_metadata_kv ret;
+            auto record_key = reflection::from_iobuf<old::group_log_record_key>(
+              record.release_key());
+            auto group_id = kafka::group_id(
+              reflection::from_iobuf<kafka::group_id::type>(
+                std::move(record_key.key)));
+
+            ret.key = group_metadata_key{.group_id = group_id};
+
+            if (record.has_value()) {
+                auto md = reflection::from_iobuf<old::group_log_group_metadata>(
+                  record.release_value());
+
+                ret.value = group_metadata_value{
+                  .protocol_type = std::move(md.protocol_type),
+                  .generation = md.generation,
+                  .protocol = std::move(md.protocol),
+                  .leader = std::move(md.leader),
+                  .state_timestamp = model::timestamp(md.state_timestamp),
+                };
+                ret.value->members.reserve(md.members.size());
+                std::transform(
+                  md.members.begin(),
+                  md.members.end(),
+                  std::back_inserter(ret.value->members),
+                  [](old::member_state& member) {
+                      return member_state{
+                        .id = std::move(member.id),
+                        .instance_id = std::move(member.instance_id),
+                        .client_id = std::move(member.client_id),
+                        .client_host = std::move(member.client_host),
+                        .rebalance_timeout = member.rebalance_timeout,
+                        .session_timeout = member.session_timeout,
+                        .subscription = iobuf{},
+                        .assignment = std::move(member.assignment),
+                      };
+                  });
+            }
+
+            return ret;
+        }
+
+        offset_metadata_kv decode_offset_metadata(model::record r) final {
+            offset_metadata_kv ret;
+            auto record_key = reflection::from_iobuf<old::group_log_record_key>(
+              r.release_key());
+            auto key = reflection::from_iobuf<old::group_log_offset_key>(
+              std::move(record_key.key));
+
+            ret.key = offset_metadata_key{
+              .group_id = std::move(key.group),
+              .topic = std::move(key.topic),
+              .partition = key.partition,
+            };
+
+            if (r.has_value()) {
+                auto metadata
+                  = reflection::from_iobuf<old::group_log_offset_metadata>(
+                    r.release_value());
+
+                ret.value = offset_metadata_value{
+                  .offset = metadata.offset,
+                  .leader_epoch = kafka::leader_epoch(metadata.leader_epoch),
+                  .metadata = metadata.metadata.value_or(""),
+                  .commit_timestamp = model::timestamp(-1),
+                };
+            }
+            return ret;
+        }
+    };
+    return group_metadata_serializer(std::make_unique<impl>());
+}
+
 std::ostream& operator<<(std::ostream& o, const member_state& v) {
     fmt::print(
       o,
