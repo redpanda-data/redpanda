@@ -73,7 +73,7 @@ group::group(
 
 group::group(
   kafka::group_id id,
-  group_log_group_metadata& md,
+  old::group_log_group_metadata& md,
   config::configuration& conf,
   ss::lw_shared_ptr<cluster::partition> partition)
   : _id(std::move(id))
@@ -1123,7 +1123,7 @@ group::handle_sync_group(sync_group_request&& r) {
 }
 
 model::record_batch group::checkpoint(const assignments_type& assignments) {
-    group_log_group_metadata gr;
+    old::group_log_group_metadata gr;
 
     gr.protocol_type = protocol_type().value_or(kafka::protocol_type(""));
     gr.generation = generation();
@@ -1146,8 +1146,8 @@ model::record_batch group::checkpoint(const assignments_type& assignments) {
     cluster::simple_batch_builder builder(
       model::record_batch_type::raft_data, model::offset(0));
 
-    group_log_record_key key{
-      .record_type = group_log_record_key::type::group_metadata,
+    old::group_log_record_key key{
+      .record_type = old::group_log_record_key::type::group_metadata,
       .key = reflection::to_iobuf(_id),
     };
 
@@ -1799,15 +1799,15 @@ group::offset_commit_stages group::store_offsets(offset_commit_request&& r) {
 
     for (const auto& t : r.data.topics) {
         for (const auto& p : t.partitions) {
-            group_log_record_key key{
-              .record_type = group_log_record_key::type::offset_commit,
-              .key = reflection::to_iobuf(group_log_offset_key{
+            old::group_log_record_key key{
+              .record_type = old::group_log_record_key::type::offset_commit,
+              .key = reflection::to_iobuf(old::group_log_offset_key{
                 _id,
                 t.name,
                 p.partition_index,
               }),
             };
-            group_log_offset_metadata val{
+            old::group_log_offset_metadata val{
               p.committed_offset,
               p.committed_leader_epoch,
               p.committed_metadata,
@@ -2144,9 +2144,9 @@ ss::future<error_code> group::remove() {
       model::record_batch_type::raft_data, model::offset(0));
 
     for (auto& offset : _offsets) {
-        group_log_record_key key{
-          .record_type = group_log_record_key::type::offset_commit,
-          .key = reflection::to_iobuf(group_log_offset_key{
+        old::group_log_record_key key{
+          .record_type = old::group_log_record_key::type::offset_commit,
+          .key = reflection::to_iobuf(old::group_log_offset_key{
             _id,
             offset.first.topic,
             offset.first.partition,
@@ -2157,8 +2157,8 @@ ss::future<error_code> group::remove() {
     }
 
     // build group tombstone
-    group_log_record_key key{
-      .record_type = group_log_record_key::type::group_metadata,
+    old::group_log_record_key key{
+      .record_type = old::group_log_record_key::type::group_metadata,
       .key = reflection::to_iobuf(_id),
     };
 
@@ -2237,9 +2237,9 @@ group::remove_topic_partitions(const std::vector<model::topic_partition>& tps) {
         vlog(
           klog.trace, "Removing offset for group {} tp {}", _id, offset.first);
 
-        group_log_record_key key{
-          .record_type = group_log_record_key::type::offset_commit,
-          .key = reflection::to_iobuf(group_log_offset_key{
+        old::group_log_record_key key{
+          .record_type = old::group_log_record_key::type::offset_commit,
+          .key = reflection::to_iobuf(old::group_log_offset_key{
             _id,
             offset.first.topic,
             offset.first.partition,
@@ -2251,8 +2251,8 @@ group::remove_topic_partitions(const std::vector<model::topic_partition>& tps) {
 
     // gc the group?
     if (in_state(group_state::dead) && generation() > 0) {
-        group_log_record_key key{
-          .record_type = group_log_record_key::type::group_metadata,
+        old::group_log_record_key key{
+          .record_type = old::group_log_record_key::type::group_metadata,
           .key = reflection::to_iobuf(_id),
         };
         builder.add_raw_kv(reflection::to_iobuf(std::move(key)), std::nullopt);

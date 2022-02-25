@@ -275,4 +275,138 @@ std::ostream& operator<<(std::ostream& o, const offset_metadata_value& v) {
       v.commit_timestamp);
     return o;
 }
+namespace old {
+std::ostream& operator<<(std::ostream& os, const group_log_offset_key& key) {
+    fmt::print(
+      os,
+      "group {} topic {} partition {}",
+      key.group(),
+      key.topic(),
+      key.partition());
+    return os;
+}
+
+std::ostream&
+operator<<(std::ostream& os, const group_log_offset_metadata& md) {
+    fmt::print(os, "offset {}", md.offset());
+    return os;
+}
+} // namespace old
 } // namespace kafka
+namespace reflection {
+
+namespace old {
+struct member_state_v0 {
+    kafka::member_id id;
+    std::chrono::milliseconds session_timeout;
+    std::chrono::milliseconds rebalance_timeout;
+    std::optional<kafka::group_instance_id> instance_id;
+    kafka::protocol_type protocol_type;
+    std::vector<kafka::member_protocol> protocols;
+    iobuf assignment;
+};
+
+struct group_log_group_metadata_v0 {
+    kafka::protocol_type protocol_type;
+    kafka::generation_id generation;
+    std::optional<kafka::protocol_name> protocol;
+    std::optional<kafka::member_id> leader;
+    int32_t state_timestamp;
+    std::vector<member_state_v0> members;
+};
+
+struct client_host_id {
+    kafka::client_id id;
+    kafka::client_host host;
+};
+} // namespace old
+
+void adl<kafka::old::group_log_group_metadata>::to(
+  iobuf& out, kafka::old::group_log_group_metadata&& data) {
+    // create instance of old version of members
+    std::vector<old::member_state_v0> members_v0;
+    members_v0.reserve(data.members.size());
+    for (auto& member : data.members) {
+        members_v0.push_back(old::member_state_v0{
+          .id = std::move(member.id),
+          .session_timeout = member.session_timeout,
+          .rebalance_timeout = member.rebalance_timeout,
+          .instance_id = std::move(member.instance_id),
+          .protocol_type = std::move(member.protocol_type),
+          .protocols = std::move(member.protocols),
+          .assignment = std::move(member.assignment),
+        });
+    }
+
+    // create instance of old version of group metadata
+    old::group_log_group_metadata_v0 metadata_v0{
+      .protocol_type = std::move(data.protocol_type),
+      .generation = data.generation,
+      .protocol = std::move(data.protocol),
+      .leader = std::move(data.leader),
+      .state_timestamp = data.state_timestamp,
+      .members = std::move(members_v0),
+    };
+
+    // this puts a version on disk that older code can read
+    serialize(out, std::move(metadata_v0));
+
+    // now append the client host/id information for new code
+    std::vector<old::client_host_id> client_info;
+    client_info.reserve(data.members.size());
+    for (auto& member : data.members) {
+        client_info.push_back(old::client_host_id{
+          .id = std::move(member.client_id),
+          .host = std::move(member.client_host),
+        });
+    }
+    serialize(out, std::move(client_info));
+}
+
+kafka::old::group_log_group_metadata
+adl<kafka::old::group_log_group_metadata>::from(iobuf_parser& in) {
+    auto metadata_v0 = adl<old::group_log_group_metadata_v0>{}.from(in);
+
+    std::vector<old::client_host_id> client_info;
+    if (in.bytes_left()) {
+        client_info = adl<std::vector<old::client_host_id>>{}.from(in);
+        vassert(
+          client_info.size() == metadata_v0.members.size(),
+          "Expected client info size {} got {}",
+          metadata_v0.members.size(),
+          client_info.size());
+    }
+
+    std::vector<kafka::old::member_state> members_out;
+    members_out.reserve(metadata_v0.members.size());
+
+    for (auto& member : metadata_v0.members) {
+        members_out.push_back(kafka::old::member_state{
+          .id = std::move(member.id),
+          .session_timeout = member.session_timeout,
+          .rebalance_timeout = member.rebalance_timeout,
+          .instance_id = std::move(member.instance_id),
+          .protocol_type = std::move(member.protocol_type),
+          .protocols = std::move(member.protocols),
+          .assignment = std::move(member.assignment),
+        });
+    }
+
+    for (size_t i = 0; i < client_info.size(); i++) {
+        members_out[i].client_id = std::move(client_info[i].id);
+        members_out[i].client_host = std::move(client_info[i].host);
+    }
+
+    kafka::old::group_log_group_metadata metadata_out{
+      .protocol_type = std::move(metadata_v0.protocol_type),
+      .generation = metadata_v0.generation,
+      .protocol = std::move(metadata_v0.protocol),
+      .leader = std::move(metadata_v0.leader),
+      .state_timestamp = metadata_v0.state_timestamp,
+      .members = std::move(members_out),
+    };
+
+    return metadata_out;
+}
+
+} // namespace reflection

@@ -250,8 +250,8 @@ ss::future<> group_manager::inject_noop(
   [[maybe_unused]] ss::lowres_clock::time_point timeout) {
     cluster::simple_batch_builder builder(
       model::record_batch_type::raft_data, model::offset(0));
-    group_log_record_key key{
-      .record_type = group_log_record_key::type::noop,
+    old::group_log_record_key key{
+      .record_type = old::group_log_record_key::type::noop,
     };
     builder.add_kv(std::move(key), iobuf());
     auto batch = std::move(builder).build();
@@ -300,7 +300,7 @@ ss::future<> group_manager::handle_partition_leader_change(
         + config::shard_local_cfg().kafka_group_recovery_timeout_ms();
     /*
      * we just became leader. make sure the log is up-to-date. see
-     * struct group_log_record_key{} for more details. _catchup_lock
+     * struct old::group_log_record_key{} for more details. _catchup_lock
      * is rarely contended we take a writer lock only when leadership
      * changes (infrequent event)
      */

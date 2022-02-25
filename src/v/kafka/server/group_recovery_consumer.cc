@@ -119,17 +119,17 @@ group_recovery_consumer::operator()(model::record_batch batch) {
 }
 
 ss::future<> group_recovery_consumer::handle_record(model::record r) {
-    auto key = reflection::adl<group_log_record_key>{}.from(r.share_key());
+    auto key = reflection::adl<old::group_log_record_key>{}.from(r.share_key());
     auto value = r.has_value() ? r.release_value() : std::optional<iobuf>();
 
     switch (key.record_type) {
-    case group_log_record_key::type::group_metadata:
+    case old::group_log_record_key::type::group_metadata:
         return handle_group_metadata(std::move(key.key), std::move(value));
 
-    case group_log_record_key::type::offset_commit:
+    case old::group_log_record_key::type::offset_commit:
         return handle_offset_metadata(std::move(key.key), std::move(value));
 
-    case group_log_record_key::type::noop:
+    case old::group_log_record_key::type::noop:
         // skip control structure
         return ss::make_ready_future<>();
 
@@ -150,7 +150,7 @@ ss::future<> group_recovery_consumer::handle_group_metadata(
         // until we switch over to a compacted topic or use raft snapshots,
         // always take the latest entry in the log.
 
-        auto metadata = reflection::from_iobuf<group_log_group_metadata>(
+        auto metadata = reflection::from_iobuf<old::group_log_group_metadata>(
           std::move(*val_buf));
 
         auto [group_it, _] = _state.groups.try_emplace(group_id, group_stm());
@@ -166,10 +166,11 @@ ss::future<> group_recovery_consumer::handle_group_metadata(
 
 ss::future<> group_recovery_consumer::handle_offset_metadata(
   iobuf key_buf, std::optional<iobuf> val_buf) {
-    auto key = reflection::from_iobuf<group_log_offset_key>(std::move(key_buf));
+    auto key = reflection::from_iobuf<old::group_log_offset_key>(
+      std::move(key_buf));
     model::topic_partition tp(key.topic, key.partition);
     if (val_buf) {
-        auto metadata = reflection::from_iobuf<group_log_offset_metadata>(
+        auto metadata = reflection::from_iobuf<old::group_log_offset_metadata>(
           std::move(*val_buf));
         vlog(
           klog.trace, "Recovering offset {} with metadata {}", key, metadata);
