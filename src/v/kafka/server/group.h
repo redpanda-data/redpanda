@@ -42,8 +42,9 @@ struct configuration;
 }
 
 namespace kafka {
-
+namespace old {
 struct group_log_group_metadata;
+}
 
 /**
  * \defgroup kafka-groups Kafka group membership API
@@ -169,7 +170,7 @@ public:
     // constructor used when loading state from log
     group(
       kafka::group_id id,
-      group_log_group_metadata& md,
+      old::group_log_group_metadata& md,
       config::configuration& conf,
       ss::lw_shared_ptr<cluster::partition> partition);
 

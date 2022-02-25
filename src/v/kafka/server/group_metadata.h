@@ -22,6 +22,98 @@
 #include "utils/named_type.h"
 
 namespace kafka {
+namespace old {
+/**
+ * the key type for group membership log records.
+ *
+ * the opaque key field is decoded based on the actual type.
+ *
+ * TODO: The `noop` type indicates a control structure used to synchronize raft
+ * state in a transition to leader state so that a consistent read is made. this
+ * is a temporary work-around until we fully address consistency semantics in
+ * raft.
+ */
+struct group_log_record_key {
+    enum class type : int8_t { group_metadata, offset_commit, noop };
+
+    type record_type;
+    iobuf key;
+};
+
+/// \addtogroup kafka-groups
+/// @{
+
+/**
+ * Member state.
+ *
+ * This structure is used in-memory at runtime to hold member state. It is also
+ * serialized to stable storage to checkpoint group state, and is therefore
+ * sensitive to change.
+ */
+struct member_state {
+    kafka::member_id id;
+    std::chrono::milliseconds session_timeout;
+    std::chrono::milliseconds rebalance_timeout;
+    std::optional<kafka::group_instance_id> instance_id;
+    kafka::protocol_type protocol_type;
+    std::vector<member_protocol> protocols;
+    iobuf assignment;
+    kafka::client_id client_id;
+    kafka::client_host client_host;
+
+    member_state copy() const {
+        return member_state{
+          .id = id,
+          .session_timeout = session_timeout,
+          .rebalance_timeout = rebalance_timeout,
+          .instance_id = instance_id,
+          .protocol_type = protocol_type,
+          .protocols = protocols,
+          .assignment = assignment.copy(),
+          .client_id = client_id,
+          .client_host = client_host,
+        };
+    }
+
+    friend bool operator==(const member_state&, const member_state&) = default;
+};
+/**
+ * the value type of a group metadata log record.
+ */
+struct group_log_group_metadata {
+    kafka::protocol_type protocol_type;
+    kafka::generation_id generation;
+    std::optional<kafka::protocol_name> protocol;
+    std::optional<kafka::member_id> leader;
+    int32_t state_timestamp;
+    std::vector<member_state> members;
+};
+
+/**
+ * the key type for offset commit records.
+ */
+struct group_log_offset_key {
+    kafka::group_id group;
+    model::topic topic;
+    model::partition_id partition;
+
+    bool operator==(const group_log_offset_key& other) const = default;
+
+    friend std::ostream& operator<<(std::ostream&, const group_log_offset_key&);
+};
+
+/**
+ * the value type for offset commit records.
+ */
+struct group_log_offset_metadata {
+    model::offset offset;
+    int32_t leader_epoch;
+    std::optional<ss::sstring> metadata;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const group_log_offset_metadata&);
+};
+}; // namespace old
 
 enum group_metadata_type {
     offset_commit,
@@ -179,3 +271,23 @@ struct hash<kafka::offset_metadata_key> {
 };
 
 } // namespace std
+
+namespace reflection {
+
+/*
+ * new code + new version: will see extra bytes for client host/id
+ * new code + old version: will observe no extra bytes
+ * old code + old/new version: will not read new appended fields
+ *
+ * on the wire we write out a version that is compatible with old code and then
+ * append the additional client host/id information for each member. then when
+ * deserializing we process the appended data by updating the old versions from
+ * disk in the new in-memory structs which contain the extra member metadata.
+ * old code skips over the appended data.
+ */
+template<>
+struct adl<kafka::old::group_log_group_metadata> {
+    void to(iobuf& out, kafka::old::group_log_group_metadata&& data);
+    kafka::old::group_log_group_metadata from(iobuf_parser& in);
+};
+} // namespace reflection

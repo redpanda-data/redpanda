@@ -30,13 +30,6 @@ namespace kafka {
  * is a temporary work-around until we fully address consistency semantics in
  * raft.
  */
-struct group_log_record_key {
-    enum class type : int8_t { group_metadata, offset_commit, noop };
-
-    type record_type;
-    iobuf key;
-};
-
 struct group_recovery_consumer_state {
     absl::node_hash_map<kafka::group_id, group_stm> groups;
 };

@@ -15,6 +15,7 @@
 #include "kafka/protocol/join_group.h"
 #include "kafka/protocol/schemata/describe_groups_response.h"
 #include "kafka/protocol/sync_group.h"
+#include "kafka/server/group_metadata.h"
 #include "kafka/types.h"
 #include "utils/concepts-enabled.h"
 
@@ -34,44 +35,6 @@
 
 namespace kafka {
 
-/// \addtogroup kafka-groups
-/// @{
-
-/**
- * Member state.
- *
- * This structure is used in-memory at runtime to hold member state. It is also
- * serialized to stable storage to checkpoint group state, and is therefore
- * sensitive to change.
- */
-struct member_state {
-    kafka::member_id id;
-    std::chrono::milliseconds session_timeout;
-    std::chrono::milliseconds rebalance_timeout;
-    std::optional<kafka::group_instance_id> instance_id;
-    kafka::protocol_type protocol_type;
-    std::vector<member_protocol> protocols;
-    iobuf assignment;
-    kafka::client_id client_id;
-    kafka::client_host client_host;
-
-    member_state copy() const {
-        return member_state{
-          .id = id,
-          .session_timeout = session_timeout,
-          .rebalance_timeout = rebalance_timeout,
-          .instance_id = instance_id,
-          .protocol_type = protocol_type,
-          .protocols = protocols,
-          .assignment = assignment.copy(),
-          .client_id = client_id,
-          .client_host = client_host,
-        };
-    }
-
-    friend bool operator==(const member_state&, const member_state&) = default;
-};
-
 /// \brief A Kafka group member.
 class group_member {
 public:
@@ -89,7 +52,7 @@ public:
       kafka::protocol_type protocol_type,
       std::vector<member_protocol> protocols)
       : group_member(
-        member_state({
+        old::member_state({
           std::move(member_id),
           session_timeout,
           rebalance_timeout,
@@ -102,12 +65,12 @@ public:
         }),
         std::move(group_id)) {}
 
-    group_member(kafka::member_state state, kafka::group_id group_id)
+    group_member(kafka::old::member_state state, kafka::group_id group_id)
       : _state(std::move(state))
       , _group_id(std::move(group_id))
       , _is_new(false) {}
 
-    const member_state& state() const { return _state; }
+    const old::member_state& state() const { return _state; }
 
     /// Get the member id.
     const kafka::member_id& id() const { return _state.id; }
@@ -234,7 +197,7 @@ private:
 
     friend std::ostream& operator<<(std::ostream&, const group_member&);
 
-    member_state _state;
+    old::member_state _state;
     kafka::group_id _group_id;
 
     bool _is_new;
