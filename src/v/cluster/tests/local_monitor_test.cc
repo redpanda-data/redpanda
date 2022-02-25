@@ -83,7 +83,7 @@ struct statvfs local_monitor_fixture::make_statvfs(
 
 void local_monitor_fixture::set_config_alert_thresholds(
   unsigned percent, size_t bytes) {
-    (void)ss::smp::invoke_on_all([percent, bytes]() {
+    auto f = ss::smp::invoke_on_all([percent, bytes]() {
         config::shard_local_cfg()
           .get("storage_space_alert_free_threshold_bytes")
           .set_value(std::any_cast<size_t>(bytes));
@@ -91,6 +91,7 @@ void local_monitor_fixture::set_config_alert_thresholds(
           .get("storage_space_alert_free_threshold_percent")
           .set_value(std::any_cast<unsigned>(percent));
     });
+    f.get();
 }
 
 FIXTURE_TEST(local_state_has_single_disk, local_monitor_fixture) {
