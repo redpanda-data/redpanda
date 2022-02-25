@@ -11,6 +11,11 @@
 
 #include "kafka/server/group_recovery_consumer.h"
 
+#include "kafka/protocol/request_reader.h"
+#include "kafka/server/group_metadata.h"
+
+#include <exception>
+
 namespace kafka {
 
 /*
@@ -68,7 +73,6 @@ group_recovery_consumer::operator()(model::record_batch batch) {
     if (_as.abort_requested()) {
         co_return ss::stop_iteration::yes;
     }
-
     if (batch.header().type == model::record_batch_type::raft_data) {
         _batch_base_offset = batch.base_offset();
         co_await model::for_each_record(batch, [this](model::record& r) {
@@ -112,82 +116,74 @@ group_recovery_consumer::operator()(model::record_batch batch) {
         group_it->second.try_set_fence(cmd.pid.get_id(), cmd.pid.get_epoch());
         co_return ss::stop_iteration::no;
     } else {
-        vlog(
-          klog.trace, "ignorning batch with type {}", int(batch.header().type));
+        vlog(klog.trace, "ignoring batch with type {}", batch.header().type);
         co_return ss::stop_iteration::no;
     }
 }
 
-ss::future<> group_recovery_consumer::handle_record(model::record r) {
-    auto key = reflection::adl<old::group_log_record_key>{}.from(r.share_key());
-    auto value = r.has_value() ? r.release_value() : std::optional<iobuf>();
-
-    switch (key.record_type) {
-    case old::group_log_record_key::type::group_metadata:
-        return handle_group_metadata(std::move(key.key), std::move(value));
-
-    case old::group_log_record_key::type::offset_commit:
-        return handle_offset_metadata(std::move(key.key), std::move(value));
-
-    case old::group_log_record_key::type::noop:
-        // skip control structure
-        return ss::make_ready_future<>();
-
-    default:
-        return ss::make_exception_future<>(std::runtime_error(fmt::format(
-          "Unknown record type={} in group recovery", int(key.record_type))));
-    }
-}
-
-ss::future<> group_recovery_consumer::handle_group_metadata(
-  iobuf key_buf, std::optional<iobuf> val_buf) {
-    auto group_id = kafka::group_id(
-      reflection::from_iobuf<kafka::group_id::type>(std::move(key_buf)));
-
-    vlog(klog.trace, "Recovering group metadata {}", group_id);
-
-    if (val_buf) {
-        // until we switch over to a compacted topic or use raft snapshots,
-        // always take the latest entry in the log.
-
-        auto metadata = reflection::from_iobuf<old::group_log_group_metadata>(
-          std::move(*val_buf));
-
-        auto [group_it, _] = _state.groups.try_emplace(group_id, group_stm());
-        group_it->second.overwrite_metadata(std::move(metadata));
-    } else {
-        // tombstone
-        auto [group_it, _] = _state.groups.try_emplace(group_id, group_stm());
-        group_it->second.remove();
-    }
-
-    co_return;
-}
-
-ss::future<> group_recovery_consumer::handle_offset_metadata(
-  iobuf key_buf, std::optional<iobuf> val_buf) {
-    auto key = reflection::from_iobuf<old::group_log_offset_key>(
-      std::move(key_buf));
-    model::topic_partition tp(key.topic, key.partition);
-    if (val_buf) {
-        auto metadata = reflection::from_iobuf<old::group_log_offset_metadata>(
-          std::move(*val_buf));
+void group_recovery_consumer::handle_record(model::record r) {
+    try {
+        auto record_type = _serializer.get_metadata_type(r.key().copy());
+        switch (record_type) {
+        case offset_commit:
+            handle_offset_metadata(
+              _serializer.decode_offset_metadata(std::move(r)));
+            return;
+        case group_metadata:
+            handle_group_metadata(
+              _serializer.decode_group_metadata(std::move(r)));
+            return;
+        case noop:
+            // ignore noops, they are handled for backward compatibility
+            return;
+        }
+        __builtin_unreachable();
+    } catch (...) {
         vlog(
-          klog.trace, "Recovering offset {} with metadata {}", key, metadata);
+          klog.error,
+          "error handling record record - {}",
+          std::current_exception());
+    }
+}
+
+void group_recovery_consumer::handle_group_metadata(group_metadata_kv md) {
+    vlog(klog.trace, "Recovering group metadata {}", md.key.group_id);
+
+    if (md.value) {
         // until we switch over to a compacted topic or use raft snapshots,
         // always take the latest entry in the log.
-        auto [group_it, _] = _state.groups.try_emplace(key.group, group_stm());
-        group_it->second.update_offset(
-          tp, _batch_base_offset, std::move(metadata));
+
+        auto [group_it, _] = _state.groups.try_emplace(
+          md.key.group_id, group_stm());
+        group_it->second.overwrite_metadata(std::move(*md.value));
     } else {
         // tombstone
-        auto group_it = _state.groups.find(key.group);
+        _state.groups.erase(md.key.group_id);
+    }
+}
+
+void group_recovery_consumer::handle_offset_metadata(offset_metadata_kv md) {
+    model::topic_partition tp(md.key.topic, md.key.partition);
+    if (md.value) {
+        vlog(
+          klog.trace,
+          "Recovering offset {}/{} with metadata {}",
+          md.key.topic,
+          md.key.partition,
+          *md.value);
+        // until we switch over to a compacted topic or use raft snapshots,
+        // always take the latest entry in the log.
+        auto [group_it, _] = _state.groups.try_emplace(
+          md.key.group_id, group_stm());
+        group_it->second.update_offset(
+          tp, _batch_base_offset, std::move(*md.value));
+    } else {
+        // tombstone
+        auto group_it = _state.groups.find(md.key.group_id);
         if (group_it != _state.groups.end()) {
             group_it->second.remove_offset(tp);
         }
     }
-
-    co_return;
 }
 
 } // namespace kafka

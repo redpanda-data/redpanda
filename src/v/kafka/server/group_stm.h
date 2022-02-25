@@ -3,7 +3,7 @@
 #include "cluster/partition.h"
 #include "kafka/protocol/fwd.h"
 #include "kafka/server/group.h"
-#include "kafka/server/group_stm.h"
+#include "kafka/server/group_metadata.h"
 #include "kafka/server/member.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
@@ -52,18 +52,14 @@ struct group_log_aborted_tx {
     model::tx_seq tx_seq;
 };
 
-} // namespace kafka
-
-namespace kafka {
-
 class group_stm {
 public:
     struct logged_metadata {
         model::offset log_offset;
-        old::group_log_offset_metadata metadata;
+        offset_metadata_value metadata;
     };
 
-    void overwrite_metadata(old::group_log_group_metadata&&);
+    void overwrite_metadata(group_metadata_value&&);
     void remove() {
         _offsets.clear();
         _is_loaded = false;
@@ -73,7 +69,7 @@ public:
     void update_offset(
       const model::topic_partition&,
       model::offset,
-      old::group_log_offset_metadata&&);
+      offset_metadata_value&&);
     void remove_offset(const model::topic_partition&);
     void update_prepared(model::offset, group_log_prepared_tx);
     void commit(model::producer_identity);
@@ -104,14 +100,14 @@ public:
         return _fence_pid_epoch;
     }
 
-    old::group_log_group_metadata& get_metadata() { return _metadata; }
+    group_metadata_value& get_metadata() { return _metadata; }
 
 private:
     absl::node_hash_map<model::topic_partition, logged_metadata> _offsets;
     absl::node_hash_map<model::producer_id, group::prepared_tx> _prepared_txs;
     absl::node_hash_map<model::producer_id, model::producer_epoch>
       _fence_pid_epoch;
-    old::group_log_group_metadata _metadata;
+    group_metadata_value _metadata;
     bool _is_loaded{false};
     bool _is_removed{false};
 };

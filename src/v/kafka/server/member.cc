@@ -37,12 +37,12 @@ throw_out_of_range(const ss::sstring& msg) {
 const kafka::protocol_name& group_member::vote_for_protocol(
   const absl::flat_hash_set<protocol_name>& candidates) const {
     auto it = std::find_if(
-      _state.protocols.cbegin(),
-      _state.protocols.cend(),
+      _protocols.cbegin(),
+      _protocols.cend(),
       [&candidates](const member_protocol& p) {
           return candidates.find(p.name) != candidates.end();
       });
-    if (it == _state.protocols.cend()) {
+    if (it == _protocols.cend()) {
         throw_out_of_range("no matching protocol found");
     } else {
         return it->name;
@@ -52,10 +52,10 @@ const kafka::protocol_name& group_member::vote_for_protocol(
 const bytes& group_member::get_protocol_metadata(
   const kafka::protocol_name& protocol) const {
     auto it = std::find_if(
-      _state.protocols.cbegin(),
-      _state.protocols.cend(),
+      _protocols.cbegin(),
+      _protocols.cend(),
       [&protocol](const member_protocol& p) { return p.name == protocol; });
-    if (it == _state.protocols.cend()) {
+    if (it == _protocols.cend()) {
         throw_out_of_range(fmt::format("protocol {} not found", protocol));
     } else {
         return it->metadata;
@@ -96,7 +96,7 @@ std::ostream& operator<<(std::ostream& o, const group_member& m) {
       m.assignment().size(),
       m.session_timeout(),
       m.rebalance_timeout(),
-      m._state.protocols,
+      m._protocols,
       m._is_new,
       m.is_joining(),
       m.is_syncing(),
