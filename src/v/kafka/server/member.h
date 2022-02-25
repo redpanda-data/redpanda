@@ -52,25 +52,32 @@ public:
       kafka::protocol_type protocol_type,
       std::vector<member_protocol> protocols)
       : group_member(
-        old::member_state({
-          std::move(member_id),
-          session_timeout,
-          rebalance_timeout,
-          std::move(group_instance_id),
-          std::move(protocol_type),
-          std::move(protocols),
-          iobuf(),
-          std::move(client_id),
-          std::move(client_host),
-        }),
-        std::move(group_id)) {}
+        member_state{
+          .id = std::move(member_id),
+          .instance_id = std::move(group_instance_id),
+          .client_id = std::move(client_id),
+          .client_host = std::move(client_host),
+          .rebalance_timeout = rebalance_timeout,
+          .session_timeout = session_timeout,
+          .subscription = iobuf{},
+          .assignment = iobuf{},
+        },
+        std::move(group_id),
+        std::move(protocol_type),
+        std::move(protocols)) {}
 
-    group_member(kafka::old::member_state state, kafka::group_id group_id)
+    group_member(
+      kafka::member_state state,
+      kafka::group_id group_id,
+      kafka::protocol_type protocol_type,
+      std::vector<member_protocol> protocols)
       : _state(std::move(state))
       , _group_id(std::move(group_id))
-      , _is_new(false) {}
+      , _is_new(false)
+      , _protocol_type(std::move(protocol_type))
+      , _protocols(std::move(protocols)) {}
 
-    const old::member_state& state() const { return _state; }
+    const member_state& state() const { return _state; }
 
     /// Get the member id.
     const kafka::member_id& id() const { return _state.id; }
@@ -90,9 +97,7 @@ public:
     duration_type rebalance_timeout() const { return _state.rebalance_timeout; }
 
     /// Get the member's protocol type.
-    const kafka::protocol_type& protocol_type() const {
-        return _state.protocol_type;
-    }
+    const kafka::protocol_type& protocol_type() const { return _protocol_type; }
 
     /// Get the member's assignment.
     const bytes assignment() const { return iobuf_to_bytes(_state.assignment); }
@@ -105,13 +110,11 @@ public:
     /// Clear the member's assignment.
     void clear_assignment() { _state.assignment.clear(); }
 
-    const std::vector<member_protocol>& protocols() const {
-        return _state.protocols;
-    }
+    const std::vector<member_protocol>& protocols() const { return _protocols; }
 
     /// Update the set of protocols supported by the member.
     void set_protocols(std::vector<member_protocol> protocols) {
-        _state.protocols = std::move(protocols);
+        _protocols = std::move(protocols);
     }
 
     /// Update the is_new flag.
@@ -197,12 +200,14 @@ private:
 
     friend std::ostream& operator<<(std::ostream&, const group_member&);
 
-    old::member_state _state;
+    member_state _state;
     kafka::group_id _group_id;
 
     bool _is_new;
     clock_type::time_point _latest_heartbeat;
     ss::timer<clock_type> _expire_timer;
+    kafka::protocol_type _protocol_type;
+    std::vector<member_protocol> _protocols;
 
     // external shutdown synchronization
     std::unique_ptr<sync_promise> _sync_promise;

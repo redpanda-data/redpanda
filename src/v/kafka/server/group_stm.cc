@@ -5,7 +5,7 @@
 
 namespace kafka {
 
-void group_stm::overwrite_metadata(old::group_log_group_metadata&& metadata) {
+void group_stm::overwrite_metadata(group_metadata_value&& metadata) {
     _metadata = std::move(metadata);
     _is_loaded = true;
 }
@@ -17,7 +17,7 @@ void group_stm::remove_offset(const model::topic_partition& key) {
 void group_stm::update_offset(
   const model::topic_partition& key,
   model::offset offset,
-  old::group_log_offset_metadata&& meta) {
+  offset_metadata_value&& meta) {
     _offsets[key] = logged_metadata{
       .log_offset = offset, .metadata = std::move(meta)};
 }
@@ -72,9 +72,11 @@ void group_stm::commit(model::producer_identity pid) {
     }
 
     for (const auto& [tp, md] : prepared_it->second.offsets) {
-        old::group_log_offset_metadata val{
+        offset_metadata_value val{
           .offset = md.offset,
-          .leader_epoch = 0, // we never use leader_epoch down the stack
+          .leader_epoch
+          = kafka::invalid_leader_epoch, // we never use leader_epoch down the
+                                         // stack
           .metadata = md.metadata};
 
         _offsets[tp] = logged_metadata{

@@ -9,6 +9,7 @@
 
 #include "config/configuration.h"
 #include "kafka/server/group.h"
+#include "kafka/server/group_metadata.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/sstring.hh>
@@ -44,7 +45,12 @@ static bool is_uuid(const ss::sstring& uuid) {
  */
 static group get() {
     static config::configuration conf;
-    return group(kafka::group_id("g"), group_state::empty, conf, nullptr);
+    return group(
+      kafka::group_id("g"),
+      group_state::empty,
+      conf,
+      nullptr,
+      make_backward_compatible_serializer());
 }
 
 static const std::vector<member_protocol> test_group_protos = {

@@ -20,6 +20,7 @@
 #include "kafka/protocol/offset_commit.h"
 #include "kafka/protocol/offset_fetch.h"
 #include "kafka/protocol/request_reader.h"
+#include "kafka/server/group_metadata.h"
 #include "kafka/server/group_recovery_consumer.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
@@ -248,22 +249,14 @@ void group_manager::handle_leader_change(
 ss::future<> group_manager::inject_noop(
   ss::lw_shared_ptr<cluster::partition> p,
   [[maybe_unused]] ss::lowres_clock::time_point timeout) {
-    cluster::simple_batch_builder builder(
-      model::record_batch_type::raft_data, model::offset(0));
-    old::group_log_record_key key{
-      .record_type = old::group_log_record_key::type::noop,
-    };
-    builder.add_kv(std::move(key), iobuf());
-    auto batch = std::move(builder).build();
-    auto reader = model::make_memory_record_batch_reader(std::move(batch));
-
+    auto dirty_offset = p->dirty_offset();
+    auto barrier_offset = co_await p->linearizable_barrier();
     // synchronization provided by raft after future resolves is sufficient to
     // get an up-to-date commit offset as an upperbound for our reader.
-    return p
-      ->replicate(
-        std::move(reader),
-        raft::replicate_options(raft::consistency_level::quorum_ack))
-      .discard_result();
+    while (barrier_offset.has_value()
+           && barrier_offset.value() < dirty_offset) {
+        barrier_offset = co_await p->linearizable_barrier();
+    }
 }
 
 ss::future<>
@@ -328,7 +321,10 @@ ss::future<> group_manager::handle_partition_leader_change(
                   .then([this, term, p, timeout](
                           model::record_batch_reader reader) {
                       return std::move(reader)
-                        .consume(group_recovery_consumer(p->as), timeout)
+                        .consume(
+                          group_recovery_consumer(
+                            make_backward_compatible_serializer(), p->as),
+                          timeout)
                         .then([this, term, p](
                                 group_recovery_consumer_state state) {
                             // avoid trying to recover if we stopped the
@@ -365,9 +361,18 @@ ss::future<> group_manager::recover_partition(
     for (auto& [group_id, group_stm] : ctx.groups) {
         if (group_stm.has_data()) {
             auto group = get_group(group_id);
+            vlog(
+              klog.info,
+              "Recovering {} - {}",
+              group_id,
+              group_stm.get_metadata());
             if (!group) {
                 group = ss::make_lw_shared<kafka::group>(
-                  group_id, group_stm.get_metadata(), _conf, p->partition);
+                  group_id,
+                  group_stm.get_metadata(),
+                  _conf,
+                  p->partition,
+                  make_backward_compatible_serializer());
                 group->reset_tx_state(term);
                 _groups.emplace(group_id, group);
                 group->reschedule_all_member_heartbeats();
@@ -379,7 +384,7 @@ ss::future<> group_manager::recover_partition(
                   group::offset_metadata{
                     meta.log_offset,
                     meta.metadata.offset,
-                    meta.metadata.metadata.value_or(""),
+                    meta.metadata.metadata,
                   });
             }
 
@@ -396,7 +401,11 @@ ss::future<> group_manager::recover_partition(
         auto group = get_group(group_id);
         if (!group) {
             group = ss::make_lw_shared<kafka::group>(
-              group_id, group_state::empty, _conf, p->partition);
+              group_id,
+              group_state::empty,
+              _conf,
+              p->partition,
+              make_backward_compatible_serializer());
             group->reset_tx_state(term);
             _groups.emplace(group_id, group);
         }
@@ -487,7 +496,11 @@ group_manager::join_group(join_group_request&& r) {
         }
         auto p = it->second->partition;
         group = ss::make_lw_shared<kafka::group>(
-          r.data.group_id, group_state::empty, _conf, p);
+          r.data.group_id,
+          group_state::empty,
+          _conf,
+          p,
+          make_backward_compatible_serializer());
         group->reset_tx_state(it->second->term);
         _groups.emplace(r.data.group_id, group);
         _groups.rehash(0);
@@ -616,7 +629,11 @@ group_manager::txn_offset_commit(txn_offset_commit_request&& r) {
               // so allow the commit</kafka>
 
               group = ss::make_lw_shared<kafka::group>(
-                r.data.group_id, group_state::empty, _conf, p->partition);
+                r.data.group_id,
+                group_state::empty,
+                _conf,
+                p->partition,
+                make_backward_compatible_serializer());
               group->reset_tx_state(p->term);
               _groups.emplace(r.data.group_id, group);
               _groups.rehash(0);
@@ -695,7 +712,11 @@ group_manager::begin_tx(cluster::begin_group_tx_request&& r) {
           auto group = get_group(r.group_id);
           if (!group) {
               group = ss::make_lw_shared<kafka::group>(
-                r.group_id, group_state::empty, _conf, p->partition);
+                r.group_id,
+                group_state::empty,
+                _conf,
+                p->partition,
+                make_backward_compatible_serializer());
               group->reset_tx_state(p->term);
               _groups.emplace(r.group_id, group);
               _groups.rehash(0);
@@ -796,7 +817,11 @@ group_manager::offset_commit(offset_commit_request&& r) {
             // allow the commit</kafka>
             auto p = _partitions.find(r.ntp)->second;
             group = ss::make_lw_shared<kafka::group>(
-              r.data.group_id, group_state::empty, _conf, p->partition);
+              r.data.group_id,
+              group_state::empty,
+              _conf,
+              p->partition,
+              make_backward_compatible_serializer());
             group->reset_tx_state(p->term);
             _groups.emplace(r.data.group_id, group);
             _groups.rehash(0);
