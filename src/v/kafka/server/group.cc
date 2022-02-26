@@ -441,7 +441,12 @@ bool group::leader_rejoined() {
 
 ss::future<join_group_response>
 group::handle_join_group(join_group_request&& r, bool is_new_group) {
-    vlog(_ctxlog.trace, "Handling join request {}", r);
+    vlog(
+      _ctxlog.trace,
+      "Handling join request {} for {} group {}",
+      r,
+      (is_new_group ? "new" : "existing"),
+      *this);
 
     auto ret = ss::make_ready_future<join_group_response>(
       join_group_response(error_code::none));
@@ -510,7 +515,7 @@ group::join_group_unknown_member(join_group_request&& r) {
           _ctxlog.trace,
           "Requesting rejoin for unknown member with new id {}",
           new_member_id);
-        add_pending_member(new_member_id);
+        add_pending_member(new_member_id, r.data.session_timeout_ms);
         return make_join_error(new_member_id, error_code::member_id_required);
     } else {
         return add_member_and_rebalance(std::move(new_member_id), std::move(r));
@@ -960,7 +965,7 @@ void group::schedule_next_heartbeat_expiration(member_ptr member) {
     member->expire_timer().arm(deadline);
 }
 
-void group::remove_pending_member(const kafka::member_id& member_id) {
+void group::remove_pending_member(kafka::member_id member_id) {
     _pending_members.erase(member_id);
     vlog(_ctxlog.trace, "Removing pending member {}", member_id);
     if (in_state(group_state::preparing_rebalance)) {
@@ -2254,22 +2259,49 @@ group::remove_topic_partitions(const std::vector<model::topic_partition>& tps) {
 }
 
 std::ostream& operator<<(std::ostream& o, const group& g) {
+    const auto ntp = [&g] {
+        if (g._partition) {
+            return fmt::format("{}", g._partition->ntp());
+        } else {
+            return std::string("<none>");
+        }
+    }();
+
+    auto timer_expires =
+      [](const auto& timer) -> std::optional<group::duration_type> {
+        if (timer.armed()) {
+            return timer.get_timeout() - group::clock_type::now();
+        }
+        return std::nullopt;
+    };
+
     fmt::print(
       o,
       "id={} state={} gen={} proto_type={} proto={} leader={} "
-      "empty={} ntp=",
+      "empty={} ntp={} num_members_joining={} new_member_added={} "
+      "join_timer={}",
       g.id(),
       g.state(),
       g.generation(),
       g.protocol_type(),
       g.protocol(),
       g.leader(),
-      !g.has_members());
-    if (g._partition) {
-        o << g._partition->ntp();
-    } else {
-        o << "<none>";
+      !g.has_members(),
+      ntp,
+      g._num_members_joining,
+      g._new_member_added,
+      timer_expires(g._join_timer));
+
+    fmt::print(o, " pending members [");
+    for (const auto& m : g._pending_members) {
+        fmt::print(o, "{} expires={} ", m.first, timer_expires(m.second));
     }
+    fmt::print(o, "] full members [");
+    for (const auto& m : g._members) {
+        fmt::print(o, "{} ", m.second);
+    }
+    fmt::print(o, "]");
+
     return o;
 }
 
@@ -2294,6 +2326,30 @@ ss::sstring group_state_to_kafka_name(group_state gs) {
     default:
         std::terminate(); // make gcc happy
     }
+}
+
+void group::add_pending_member(
+  const kafka::member_id& member_id, duration_type timeout) {
+    auto res = _pending_members.try_emplace(member_id, [this, member_id] {
+        vlog(
+          _ctxlog.trace,
+          "Handling expired heartbeat for pending member {}",
+          member_id);
+        remove_pending_member(member_id);
+    });
+
+    // let existing timer expire
+    if (!res.second) {
+        return;
+    }
+
+    vlog(
+      _ctxlog.trace,
+      "Scheduling heartbeat expiration {} ms for pending {}",
+      timeout,
+      member_id);
+
+    res.first->second.arm(timeout);
 }
 
 } // namespace kafka

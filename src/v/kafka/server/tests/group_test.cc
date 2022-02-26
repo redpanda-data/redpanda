@@ -134,9 +134,18 @@ SEASTAR_THREAD_TEST_CASE(has_members) {
 SEASTAR_THREAD_TEST_CASE(pending_members) {
     auto g = get();
     BOOST_TEST(!g.contains_pending_member(kafka::member_id("m")));
-    g.add_pending_member(kafka::member_id("m"));
+    g.add_pending_member(kafka::member_id("m"), 5s);
     BOOST_TEST(g.contains_pending_member(kafka::member_id("m")));
     g.remove_pending_member(kafka::member_id("m"));
+    BOOST_TEST(!g.contains_pending_member(kafka::member_id("m")));
+}
+
+SEASTAR_THREAD_TEST_CASE(pending_members_expire) {
+    auto g = get();
+    BOOST_TEST(!g.contains_pending_member(kafka::member_id("m")));
+    g.add_pending_member(kafka::member_id("m"), 1s);
+    BOOST_TEST(g.contains_pending_member(kafka::member_id("m")));
+    ss::sleep(2s).get();
     BOOST_TEST(!g.contains_pending_member(kafka::member_id("m")));
 }
 
@@ -254,7 +263,7 @@ SEASTAR_THREAD_TEST_CASE(all_members_joined) {
     auto m = get_group_member();
     (void)g.add_member(m);
     BOOST_TEST(g.all_members_joined());
-    g.add_pending_member(kafka::member_id("x"));
+    g.add_pending_member(kafka::member_id("x"), 5s);
     BOOST_TEST(!g.all_members_joined());
 }
 
