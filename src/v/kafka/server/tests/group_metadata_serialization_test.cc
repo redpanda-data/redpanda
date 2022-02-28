@@ -314,3 +314,64 @@ FIXTURE_TEST(test_backward_compatible_serializer_metadata_type, fixture) {
           batch.copy_records().back().share_key());
     }
 }
+
+template<typename T>
+model::record to_record(T t) {
+    storage::record_batch_builder builder(
+      model::record_batch_type::raft_data, model::offset(0));
+
+    builder.add_raw_kv(std::move(t.key), std::move(t.value));
+    return std::move(std::move(builder).build().copy_records().front());
+}
+
+FIXTURE_TEST(test_consumer_offsets_serializer, fixture) {
+    auto serializer = kafka::make_consumer_offsets_serializer();
+
+    kafka::group_metadata_key group_md_key;
+    group_md_key.group_id = random_named_string<kafka::group_id>();
+
+    kafka::group_metadata_value group_md;
+    group_md.protocol_type = random_named_string<kafka::protocol_type>();
+    group_md.generation = random_named_int<kafka::generation_id>();
+    group_md.leader = random_optional<kafka::member_id>();
+    group_md.protocol = random_optional<kafka::protocol_name>();
+    group_md.leader = random_optional<kafka::member_id>();
+    group_md.state_timestamp = model::timestamp::now();
+    for (auto i : boost::irange(0, random_generators::get_int(0, 10))) {
+        group_md.members.push_back(random_member_state());
+    }
+    auto group_kv = serializer.to_kv(kafka::group_metadata_kv{
+      .key = group_md_key,
+      .value = group_md.copy(),
+    });
+
+    auto group_md_kv = serializer.decode_group_metadata(
+      to_record(std::move(group_kv)));
+
+    BOOST_REQUIRE_EQUAL(group_md_key, group_md_kv.key);
+    BOOST_REQUIRE_EQUAL(group_md, group_md_kv.value);
+
+    kafka::offset_metadata_key offset_key;
+    offset_key.group_id = random_named_string<kafka::group_id>();
+    offset_key.topic = random_named_string<model::topic>();
+    offset_key.partition = random_named_int<model::partition_id>();
+
+    kafka::offset_metadata_value offset_md;
+
+    offset_md.offset = random_named_int<model::offset>();
+    offset_md.leader_epoch = random_named_int<kafka::leader_epoch>();
+    offset_md.metadata = random_named_string<ss::sstring>();
+    offset_md.commit_timestamp = model::timestamp::now();
+    offset_md.expire_timestamp = model::timestamp::now();
+
+    auto offset_kv = serializer.to_kv(kafka::offset_metadata_kv{
+      .key = offset_key,
+      .value = offset_md,
+    });
+
+    auto offset_md_kv = serializer.decode_offset_metadata(
+      to_record(std::move(offset_kv)));
+
+    BOOST_REQUIRE_EQUAL(offset_key, offset_md_kv.key);
+    BOOST_REQUIRE_EQUAL(offset_md, offset_md_kv.value);
+}
