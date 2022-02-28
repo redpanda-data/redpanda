@@ -20,6 +20,7 @@
 namespace cluster {
 
 enum class feature {
+    feature_manager = 0x1,
     central_config = 0x1,
 };
 

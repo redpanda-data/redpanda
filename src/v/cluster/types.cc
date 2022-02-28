@@ -360,6 +360,26 @@ std::ostream& operator<<(std::ostream& o, const leader_term& lt) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const feature_update_action& fua) {
+    std::string_view action_name;
+    switch (fua.action) {
+    case feature_update_action::action_t::complete_preparing:
+        action_name = "complete_preparing";
+        break;
+    case feature_update_action::action_t::administrative_activate:
+        action_name = "administrative_activate";
+        break;
+    case feature_update_action::action_t::administrative_deactivate:
+        action_name = "administrative_deactivate";
+        break;
+    default:
+        __builtin_unreachable();
+    }
+
+    fmt::print(o, "{{action {} {} }}", fua.feature_name, action_name);
+    return o;
+}
+
 } // namespace cluster
 
 namespace reflection {
@@ -1161,6 +1181,32 @@ adl<cluster::cluster_config_status_cmd_data>::from(iobuf_parser& in) {
     };
 }
 
+void adl<cluster::feature_update_action>::to(
+  iobuf& out, cluster::feature_update_action&& cmd) {
+    return serialize(
+      out,
+      cmd.current_version,
+      std::move(cmd.feature_name),
+      std::move(cmd.action));
+}
+
+cluster::feature_update_action
+adl<cluster::feature_update_action>::from(iobuf_parser& in) {
+    auto version = adl<int8_t>{}.from(in);
+    vassert(
+      version == cluster::feature_update_action::current_version,
+      "Unexpected version: {} (expected {})",
+      version,
+      cluster::feature_update_action::current_version);
+    auto feature_name = adl<ss::sstring>().from(in);
+    auto action = adl<cluster::feature_update_action::action_t>().from(in);
+
+    return cluster::feature_update_action{
+      .feature_name = std::move(feature_name),
+      .action = std::move(action),
+    };
+}
+
 void adl<cluster::incremental_topic_custom_updates>::to(
   iobuf& out, cluster::incremental_topic_custom_updates&& t) {
     reflection::serialize(out, t.data_policy);
@@ -1177,7 +1223,8 @@ adl<cluster::incremental_topic_custom_updates>::from(iobuf_parser& in) {
 
 void adl<cluster::feature_update_cmd_data>::to(
   iobuf& out, cluster::feature_update_cmd_data&& data) {
-    reflection::serialize(out, data.current_version, data.logical_version);
+    reflection::serialize(
+      out, data.current_version, data.logical_version, data.actions);
 }
 
 cluster::feature_update_cmd_data
@@ -1186,7 +1233,8 @@ adl<cluster::feature_update_cmd_data>::from(iobuf_parser& in) {
     std::ignore = version;
 
     auto logical_version = adl<cluster::cluster_version>{}.from(in);
-    return {.logical_version = logical_version};
+    auto actions = adl<std::vector<cluster::feature_update_action>>{}.from(in);
+    return {.logical_version = logical_version, .actions = std::move(actions)};
 }
 
 } // namespace reflection

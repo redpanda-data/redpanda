@@ -738,13 +738,32 @@ struct cluster_config_status_cmd_data {
     config_status status;
 };
 
+struct feature_update_action {
+    static constexpr int8_t current_version = 1;
+    enum class action_t : std::uint16_t {
+        // Notify when a feature is done with preparing phase
+        complete_preparing = 1,
+        // Notify when a feature is explicitly made available by administrator
+        administrative_activate = 2,
+        // Notify when a feature is explicitly disabled by an administrator
+        administrative_deactivate = 3
+    };
+
+    // Features have an internal bitflag representation, but it is not
+    // meant to be stable for use on the wire, so we refer to features by name
+    ss::sstring feature_name;
+    action_t action;
+};
+std::ostream& operator<<(std::ostream&, const feature_update_action&);
+
 struct feature_update_cmd_data {
     // To avoid ambiguity on 'versions' here: `current_version`
     // is the encoding version of the struct, subsequent version
     // fields are the payload.
-    static constexpr int8_t current_version = 0;
+    static constexpr int8_t current_version = 1;
 
     cluster_version logical_version;
+    std::vector<feature_update_action> actions;
 };
 std::ostream& operator<<(std::ostream&, const feature_update_cmd_data&);
 
@@ -825,6 +844,14 @@ struct config_status_request {
 };
 
 struct config_status_reply {
+    errc error;
+};
+
+struct feature_action_request {
+    feature_update_action action;
+};
+
+struct feature_action_response {
     errc error;
 };
 
@@ -1020,6 +1047,12 @@ template<>
 struct adl<cluster::cluster_config_status_cmd_data> {
     void to(iobuf& out, cluster::cluster_config_status_cmd_data&&);
     cluster::cluster_config_status_cmd_data from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::feature_update_action> {
+    void to(iobuf& out, cluster::feature_update_action&&);
+    cluster::feature_update_action from(iobuf_parser&);
 };
 
 template<>
