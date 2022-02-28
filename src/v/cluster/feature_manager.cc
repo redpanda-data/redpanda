@@ -288,4 +288,63 @@ ss::future<> feature_manager::do_maybe_update_active_version() {
     vlog(clusterlog.info, "Updated cluster version to {}", max_version);
 }
 
+ss::future<std::error_code>
+feature_manager::write_action(cluster::feature_update_action action) {
+    // TODO: validate earlier that the feature name is known to us
+
+    // Validate that teh feature is in a state compatible with the
+    // requested transition.
+    bool valid = true;
+    auto state = _feature_table.local().get_state(action.feature_name);
+    switch (action.action) {
+    case cluster::feature_update_action::action_t::complete_preparing:
+        // Look up feature by name
+        if (state.get_state() != feature_state::state::preparing) {
+            // Drop this silently, we presume that this is some kind of
+            // race and the thing we thought was preparing is either
+            // now active or administratively deactivated.
+            valid = false;
+        }
+
+        break;
+    case cluster::feature_update_action::action_t::administrative_activate:
+        if (
+          state.get_state() != feature_state::state::available
+          && state.get_state() != feature_state::state::disabled_clean
+          && state.get_state() != feature_state::state::disabled_active
+          && state.get_state() != feature_state::state::disabled_preparing) {
+            valid = false;
+        }
+        break;
+    case cluster::feature_update_action::action_t::administrative_deactivate:
+        if (
+          state.get_state() == feature_state::state::disabled_clean
+          || state.get_state() == feature_state::state::disabled_preparing
+          || state.get_state() == feature_state::state::disabled_active) {
+            valid = false;
+        }
+    default:
+        vlog(clusterlog.error, "Invalid action {}", action.action);
+    }
+
+    if (!valid) {
+        vlog(
+          clusterlog.warn,
+          "Dropping feature action {}, feature not in expected state",
+          action);
+        return ss::make_ready_future<std::error_code>(cluster::errc::success);
+    } else {
+        // Construct and dispatch command to log
+        auto timeout = model::timeout_clock::now() + status_retry;
+        auto data = feature_update_cmd_data{
+          .logical_version = _feature_table.local().get_active_version(),
+          .actions = {action}};
+        auto cmd = feature_update_cmd(
+          std::move(data),
+          0 // unused
+        );
+        return replicate_and_wait(_stm, _as, std::move(cmd), timeout);
+    }
+}
+
 } // namespace cluster

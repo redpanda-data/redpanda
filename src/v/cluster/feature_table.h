@@ -175,6 +175,8 @@ public:
     void transition_preparing();
     void transition_active();
 
+    state get_state() { return _state; };
+
 private:
     state _state{state::unavailable};
 };
@@ -214,6 +216,8 @@ public:
     static cluster_version get_latest_logical_version();
 
     feature_table();
+
+    feature_state& get_state(std::string_view feature_name);
 
 private:
     // Only for use by our friends feature backend & manager

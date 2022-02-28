@@ -12,6 +12,7 @@
 #include "cluster/config_frontend.h"
 #include "cluster/controller_api.h"
 #include "cluster/errc.h"
+#include "cluster/feature_manager.h"
 #include "cluster/fwd.h"
 #include "cluster/health_monitor_frontend.h"
 #include "cluster/logger.h"
@@ -41,6 +42,7 @@ service::service(
   ss::sharded<controller_api>& api,
   ss::sharded<members_frontend>& members_frontend,
   ss::sharded<config_frontend>& config_frontend,
+  ss::sharded<feature_manager>& feature_manager,
   ss::sharded<feature_table>& feature_table,
   ss::sharded<health_monitor_frontend>& hm_frontend)
   : controller_service(sg, ssg)
@@ -51,6 +53,7 @@ service::service(
   , _api(api)
   , _members_frontend(members_frontend)
   , _config_frontend(config_frontend)
+  , _feature_manager(feature_manager)
   , _feature_table(feature_table)
   , _hm_frontend(hm_frontend) {}
 
@@ -432,6 +435,19 @@ service::do_get_cluster_health_report(get_cluster_health_request req) {
     co_return get_cluster_health_reply{
       .error = errc::success,
       .report = std::move(report),
+    };
+}
+
+ss::future<feature_action_response>
+service::feature_action(feature_action_request&& req, rpc::streaming_context&) {
+    co_await _feature_manager.invoke_on(
+      feature_manager::backend_shard,
+      [req = std::move(req)](feature_manager& fm) {
+          return fm.write_action(req.action);
+      });
+
+    co_return feature_action_response{
+      .error = errc::success,
     };
 }
 

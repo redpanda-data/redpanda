@@ -32,6 +32,7 @@ public:
       ss::sharded<controller_api>&,
       ss::sharded<members_frontend>&,
       ss::sharded<config_frontend>&,
+      ss::sharded<feature_manager>&,
       ss::sharded<feature_table>&,
       ss::sharded<health_monitor_frontend>&);
 
@@ -85,6 +86,9 @@ public:
     ss::future<get_cluster_health_reply> get_cluster_health_report(
       get_cluster_health_request&&, rpc::streaming_context&) final;
 
+    ss::future<feature_action_response>
+    feature_action(feature_action_request&& req, rpc::streaming_context&) final;
+
 private:
     std::
       pair<std::vector<model::topic_metadata>, std::vector<topic_configuration>>
@@ -115,6 +119,7 @@ private:
     ss::sharded<controller_api>& _api;
     ss::sharded<members_frontend>& _members_frontend;
     ss::sharded<config_frontend>& _config_frontend;
+    ss::sharded<feature_manager>& _feature_manager;
     ss::sharded<feature_table>& _feature_table;
     ss::sharded<health_monitor_frontend>& _hm_frontend;
 };
