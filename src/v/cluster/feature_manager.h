@@ -83,6 +83,8 @@ public:
     ss::future<> start();
     ss::future<> stop();
 
+    ss::future<std::error_code> write_action(cluster::feature_update_action);
+
 private:
     void update_node_version(model::node_id, cluster_version v);
 

@@ -151,4 +151,14 @@ ss::future<> feature_table::await_feature(feature f, ss::abort_source& as) {
     }
 }
 
+feature_state& feature_table::get_state(std::string_view feature_name) {
+    for (auto& i : _feature_state) {
+        if (i.spec.name == feature_name) {
+            return i;
+        }
+    }
+
+    throw std::runtime_error(fmt::format("Unknown feature {}", feature_name));
+}
+
 } // namespace cluster
