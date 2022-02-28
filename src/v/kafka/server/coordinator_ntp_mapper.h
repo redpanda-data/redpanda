@@ -43,9 +43,11 @@ namespace kafka {
  */
 class coordinator_ntp_mapper {
 public:
-    explicit coordinator_ntp_mapper(ss::sharded<cluster::metadata_cache>& md)
+    explicit coordinator_ntp_mapper(
+      ss::sharded<cluster::metadata_cache>& md,
+      model::topic_namespace group_topic)
       : _md(md)
-      , _tp_ns(model::kafka_internal_namespace, model::kafka_group_topic) {}
+      , _tp_ns(std::move(group_topic)) {}
 
     std::optional<model::ntp> ntp_for(const kafka::group_id& group) const {
         auto md = _md.local().get_topic_metadata(_tp_ns);
