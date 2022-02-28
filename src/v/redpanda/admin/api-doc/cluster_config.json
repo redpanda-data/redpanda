@@ -35,6 +35,32 @@
               }
             }
           }
+        },
+        {"method": "GET",
+          "summary": "Read cluster configuration",
+          "type": "void",
+          "nickname": "get_cluster_config",
+          "produces": ["application/json"],
+          "parameters": [
+            {
+              "in": "query",
+              "name": "include_defaults",
+              "schema": {"type": "boolean"},
+              "required": false,
+              "description": "If false, only properties which have been changed from the default are included."
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "OK"
+            },
+            "400": {
+              "description": "Invalid properties.  Response is a map of property name to error string",
+              "schema":{
+                "type": "object"
+              }
+            }
+          }
         }
       ]
     },

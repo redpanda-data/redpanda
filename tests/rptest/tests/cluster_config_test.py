@@ -49,12 +49,19 @@ class ClusterConfigTest(RedpandaTest):
         self.rpk = RpkTool(self.redpanda)
 
     @cluster(num_nodes=3)
-    def test_get_config(self):
+    @parametrize(legacy=False)
+    @parametrize(legacy=True)
+    def test_get_config(self, legacy):
         """
         Verify that the config GET endpoint serves valid json with some options in it.
+
+        :param legacy: whether to use the legacy /config endpoint
         """
         admin = Admin(self.redpanda)
-        config = admin.get_cluster_config()
+        if legacy:
+            config = admin._request("GET", "config").json()
+        else:
+            config = admin.get_cluster_config()
 
         # Pick an arbitrary config property to verify that the result
         # contained some properties

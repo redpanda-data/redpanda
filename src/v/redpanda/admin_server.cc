@@ -551,6 +551,17 @@ void admin_server::register_config_routes() {
       });
 
     register_route_raw<superuser>(
+      ss::httpd::cluster_config_json::get_cluster_config,
+      [](ss::const_req, ss::reply& reply) {
+          rapidjson::StringBuffer buf;
+          rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
+          config::shard_local_cfg().to_json(writer);
+
+          reply.set_status(ss::httpd::reply::status_type::ok, buf.GetString());
+          return "";
+      });
+
+    register_route_raw<superuser>(
       ss::httpd::config_json::get_node_config,
       [](ss::const_req, ss::reply& reply) {
           rapidjson::StringBuffer buf;

@@ -142,7 +142,7 @@ class Admin:
         return self._request("GET", "status/ready", node=node).json()
 
     def get_cluster_config(self, node=None):
-        return self._request("GET", "config", node=node).json()
+        return self._request("GET", "cluster_config", node=node).json()
 
     def get_cluster_config_schema(self, node=None):
         return self._request("GET", "cluster_config/schema", node=node).json()
