@@ -338,6 +338,69 @@ group_metadata_serializer make_backward_compatible_serializer() {
     return group_metadata_serializer(std::make_unique<impl>());
 }
 
+template<typename T>
+iobuf metadata_to_iobuf(const T& t) {
+    iobuf buffer;
+    response_writer writer(buffer);
+    T::encode(writer, t);
+    return buffer;
+}
+
+group_metadata_serializer make_consumer_offsets_serializer() {
+    struct impl : group_metadata_serializer::impl {
+        group_metadata_type get_metadata_type(iobuf buffer) final {
+            auto reader = request_reader(std::move(buffer));
+            return decode_metadata_type(reader);
+        };
+
+        group_metadata_serializer::key_value to_kv(group_metadata_kv md) final {
+            group_metadata_serializer::key_value ret;
+            ret.key = metadata_to_iobuf(md.key);
+            if (md.value) {
+                ret.value = metadata_to_iobuf(*md.value);
+            }
+
+            return ret;
+        }
+
+        group_metadata_serializer::key_value
+        to_kv(offset_metadata_kv md) final {
+            group_metadata_serializer::key_value ret;
+            ret.key = metadata_to_iobuf(md.key);
+            if (md.value) {
+                ret.value = metadata_to_iobuf(*md.value);
+            }
+
+            return ret;
+        }
+
+        group_metadata_kv decode_group_metadata(model::record record) final {
+            group_metadata_kv ret;
+            request_reader k_reader(record.release_key());
+            ret.key = group_metadata_key::decode(k_reader);
+            if (record.has_value()) {
+                request_reader v_reader(record.release_value());
+                ret.value = group_metadata_value::decode(v_reader);
+            }
+
+            return ret;
+        }
+
+        offset_metadata_kv decode_offset_metadata(model::record record) final {
+            offset_metadata_kv ret;
+            request_reader k_reader(record.release_key());
+            ret.key = offset_metadata_key::decode(k_reader);
+            if (record.has_value()) {
+                request_reader v_reader(record.release_value());
+                ret.value = offset_metadata_value::decode(v_reader);
+            }
+
+            return ret;
+        }
+    };
+    return group_metadata_serializer(std::make_unique<impl>());
+}
+
 std::ostream& operator<<(std::ostream& o, const member_state& v) {
     fmt::print(
       o,
