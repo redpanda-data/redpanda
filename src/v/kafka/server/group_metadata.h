@@ -300,6 +300,8 @@ private:
 
 group_metadata_serializer make_backward_compatible_serializer();
 
+group_metadata_serializer make_consumer_offsets_serializer();
+
 } // namespace kafka
 
 namespace std {
