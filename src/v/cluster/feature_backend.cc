@@ -26,6 +26,11 @@ feature_backend::apply_update(model::record_batch b) {
           t.set_active_version(v);
       });
 
+    for (const auto& a : update.key.actions) {
+        co_await _feature_table.invoke_on_all(
+          [a](feature_table& t) mutable { t.apply_action(a); });
+    }
+
     co_return errc::success;
 }
 

@@ -170,6 +170,12 @@ public:
     void notify_version(cluster_version v);
 
     // State transition hooks
+    void transition_unavailable() { _state = state::unavailable; }
+
+    void transition_disabled_clean() { _state = state::disabled_clean; }
+    void transition_disabled_preparing() { _state = state::disabled_preparing; }
+    void transition_disabled_active() { _state = state::disabled_active; }
+
     void transition_available();
     void transition_preparing();
     void transition_active();
@@ -221,6 +227,7 @@ public:
 private:
     // Only for use by our friends feature backend & manager
     void set_active_version(cluster_version);
+    void apply_action(const feature_update_action& fua);
 
     cluster_version _active_version{invalid_version};
 
