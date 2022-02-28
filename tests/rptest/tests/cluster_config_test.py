@@ -72,6 +72,32 @@ class ClusterConfigTest(RedpandaTest):
         # Some arbitrary property to check syntax of result
         assert 'kafka_api' in node_config
 
+    @cluster(num_nodes=1)
+    def test_get_config_nodefaults(self):
+        admin = Admin(self.redpanda)
+        initial_short_config = admin.get_cluster_config(include_defaults=False)
+        long_config = admin.get_cluster_config(include_defaults=True)
+
+        assert len(long_config) > len(initial_short_config)
+
+        assert 'kafka_qdc_enable' not in initial_short_config
+
+        # After setting something to non-default is should appear
+        patch_result = self.admin.patch_cluster_config(
+            upsert={'kafka_qdc_enable': True})
+        self._wait_for_version_sync(patch_result['config_version'])
+        short_config = admin.get_cluster_config(include_defaults=False)
+        assert 'kafka_qdc_enable' in short_config
+        assert len(short_config) == len(initial_short_config) + 1
+
+        # After resetting to default it should disappear
+        patch_result = self.admin.patch_cluster_config(
+            remove=['kafka_qdc_enable'])
+        self._wait_for_version_sync(patch_result['config_version'])
+        short_config = admin.get_cluster_config(include_defaults=False)
+        assert 'kafka_qdc_enable' not in short_config
+        assert len(short_config) == len(initial_short_config)
+
     @cluster(num_nodes=3)
     def test_bootstrap(self):
         """

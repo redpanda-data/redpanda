@@ -43,10 +43,11 @@
           "produces": ["application/json"],
           "parameters": [
             {
-              "in": "query",
               "name": "include_defaults",
+              "in": "query",
               "schema": {"type": "boolean"},
               "required": false,
+              "allowMultiple": false,
               "description": "If false, only properties which have been changed from the default are included."
             }
           ],

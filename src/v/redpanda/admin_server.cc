@@ -539,6 +539,14 @@ ss::future<> admin_server::throw_on_error(
     }
 }
 
+bool str_to_bool(std::string_view s) {
+    if (s == "0" || s == "false" || s == "False") {
+        return false;
+    } else {
+        return true;
+    }
+}
+
 void admin_server::register_config_routes() {
     register_route_raw<superuser>(
       ss::httpd::config_json::get_config, [](ss::const_req, ss::reply& reply) {
@@ -552,10 +560,20 @@ void admin_server::register_config_routes() {
 
     register_route_raw<superuser>(
       ss::httpd::cluster_config_json::get_cluster_config,
-      [](ss::const_req, ss::reply& reply) {
+      [](ss::const_req req, ss::reply& reply) {
           rapidjson::StringBuffer buf;
           rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
-          config::shard_local_cfg().to_json(writer);
+
+          bool include_defaults = true;
+          auto include_defaults_str = req.get_query_param("include_defaults");
+          if (!include_defaults_str.empty()) {
+              include_defaults = str_to_bool(include_defaults_str);
+          }
+
+          config::shard_local_cfg().to_json(
+            writer, [include_defaults](config::base_property& p) {
+                return include_defaults || !p.is_default();
+            });
 
           reply.set_status(ss::httpd::reply::status_type::ok, buf.GetString());
           return "";
