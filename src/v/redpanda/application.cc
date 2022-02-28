@@ -804,7 +804,9 @@ void application::wire_up_redpanda_services() {
       std::ref(config::shard_local_cfg()))
       .get();
     syschecks::systemd_message("Creating kafka group shard mapper").get();
-    construct_service(coordinator_ntp_mapper, std::ref(metadata_cache)).get();
+    construct_service(
+      coordinator_ntp_mapper, std::ref(metadata_cache), model::kafka_group_nt)
+      .get();
     syschecks::systemd_message("Creating kafka group router").get();
     construct_service(
       group_router,
