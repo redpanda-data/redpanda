@@ -93,29 +93,42 @@ private:
     static constexpr auth_level superuser = auth_level::superuser;
 
     /**
+     * Authenticate, and raise if `required_auth` is not met by
+     * the credential (or pass if authentication is disabled).
+     */
+    template<auth_level required_auth>
+    request_auth_result apply_auth(ss::const_req req) {
+        auto auth_state = _auth.authenticate(req);
+        if constexpr (required_auth == auth_level::superuser) {
+            auth_state.require_superuser();
+        } else if constexpr (required_auth == auth_level::user) {
+            auth_state.require_authenticated();
+        } else if constexpr (required_auth == auth_level::publik) {
+            auth_state.pass();
+        } else {
+            static_assert(
+              detail::dependent_false<required_auth>::value,
+              "Invalid auth_level");
+        }
+
+        return auth_state;
+    }
+
+    /**
      * Helper for binding handlers to routes, which also adds in
-     * authentication step and common request logging.
+     * authentication step and common request logging.  Expects
+     * `handler` to be a ss::httpd::future_json_function, or variant
+     * with an extra request_auth_state argument if peek_auth is true.
      */
     template<auth_level required_auth, bool peek_auth = false, typename F>
     void register_route(ss::httpd::path_description const& path, F handler) {
         path.set(
           _server._routes,
           [this, handler](std::unique_ptr<ss::httpd::request> req) {
-              auto auth_state = _auth.authenticate(*req);
-              if constexpr (required_auth == auth_level::superuser) {
-                  auth_state.require_superuser();
-              } else if constexpr (required_auth == auth_level::user) {
-                  auth_state.require_authenticated();
-              } else if constexpr (required_auth == auth_level::publik) {
-                  auth_state.pass();
-              } else {
-                  static_assert(
-                    detail::dependent_false<required_auth>::value,
-                    "Invalid auth_level");
-              }
+              auto auth_state = apply_auth<required_auth>(*req);
 
               // Note: a request is only logged if it does not throw
-              // from authenticate().  We
+              // from authenticate().
               log_request(*req, auth_state);
 
               if constexpr (peek_auth) {
@@ -124,6 +137,31 @@ private:
                   return handler(std::move(req));
               }
           });
+    }
+
+    /**
+     * Variant of register_route for routes that use the raw `handle_function`
+     * callback interface (for returning raw strings) rather than the usual
+     * json handlers.
+     *
+     * This is 'raw' in the sense that less auto-serialization is going on,
+     * and the handler has direct access to the `reply` object
+     */
+    template<auth_level required_auth>
+    void register_route_raw(
+      ss::httpd::path_description const& path,
+      ss::httpd::handle_function handler) {
+        auto handler_f = new ss::httpd::function_handler{
+          [this, handler](ss::const_req req, ss::reply& reply) {
+              auto auth_state = apply_auth<required_auth>(req);
+
+              log_request(req, auth_state);
+
+              return handler(req, reply);
+          },
+          "json"};
+
+        path.set(_server._routes, handler_f);
     }
 
     void log_request(

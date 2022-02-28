@@ -540,35 +540,26 @@ ss::future<> admin_server::throw_on_error(
 }
 
 void admin_server::register_config_routes() {
-    auto get_config_handler_f = new ss::httpd::function_handler{
-      [this](ss::const_req req, ss::reply& reply) {
-          _auth.authenticate(req).require_superuser();
+    register_route_raw<superuser>(
+      ss::httpd::config_json::get_config, [](ss::const_req, ss::reply& reply) {
           rapidjson::StringBuffer buf;
           rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
           config::shard_local_cfg().to_json(writer);
 
           reply.set_status(ss::httpd::reply::status_type::ok, buf.GetString());
           return "";
-      },
-      "json"};
+      });
 
-    ss::httpd::config_json::get_config.set(
-      _server._routes, get_config_handler_f);
-
-    auto get_node_config_handler_f = new ss::httpd::function_handler{
-      [this](ss::const_req req, ss::reply& reply) {
-          _auth.authenticate(req).require_superuser();
+    register_route_raw<superuser>(
+      ss::httpd::config_json::get_node_config,
+      [](ss::const_req, ss::reply& reply) {
           rapidjson::StringBuffer buf;
           rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
           config::node().to_json(writer);
 
           reply.set_status(ss::httpd::reply::status_type::ok, buf.GetString());
           return "";
-      },
-      "json"};
-
-    ss::httpd::config_json::get_node_config.set(
-      _server._routes, get_node_config_handler_f);
+      });
 
     register_route<superuser>(
       ss::httpd::config_json::set_log_level,
