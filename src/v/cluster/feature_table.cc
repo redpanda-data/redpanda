@@ -28,6 +28,13 @@ std::string_view to_string_view(feature f) {
 // on protocol changes to raft0 structures, like adding new services.
 static constexpr cluster_version latest_version = cluster_version{1};
 
+feature_table::feature_table() {
+    _feature_state.reserve(feature_schema.size());
+    for (const auto& spec : feature_schema) {
+        _feature_state.emplace_back(feature_state{spec});
+    }
+}
+
 /**
  * The latest version is hardcoded in normal operation.  This getter
  * exists to enable injection of synthetic versions in integration tests.
@@ -85,8 +92,41 @@ feature_list feature_table::get_active_features() const {
     }
 }
 
+void feature_state::transition_active() { _state = state::active; }
+
+void feature_state::transition_preparing() {
+    if (spec.prepare_rule == feature_spec::prepare_policy::always) {
+        // Policy does not require a preparing stage: proceed immediately
+        // to the next state
+        transition_active();
+    } else {
+        // Hold in this state, wait for input.
+        _state = state::preparing;
+    }
+}
+
+void feature_state::transition_available() {
+    if (spec.available_rule == feature_spec::available_policy::always) {
+        // Policy does not require external input to proceed.
+        transition_preparing();
+    } else {
+        // Hold in this state, wait for input.
+        _state = state::available;
+    }
+}
+
+void feature_state::notify_version(cluster_version v) {
+    if (_state == state::unavailable && v >= spec.require_version) {
+        transition_available();
+    }
+}
+
 void feature_table::set_active_version(cluster_version v) {
     _active_version = v;
+
+    for (auto& fs : _feature_state) {
+        fs.notify_version(v);
+    }
 
     // Update mask for fast is_active() lookup
     _active_features_mask = 0x0;
