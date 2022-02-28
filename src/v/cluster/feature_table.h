@@ -181,7 +181,7 @@ public:
     void transition_preparing();
     void transition_active();
 
-    state get_state() { return _state; };
+    state get_state() const { return _state; };
 
 private:
     state _state{state::unavailable};
@@ -217,18 +217,40 @@ public:
         return (uint64_t(f) & _active_features_mask) != 0;
     }
 
+    /**
+     * Query whether a feature has reached ::preparing state, i.e. it is
+     * ready to go active, but will wait for preparatory work to be done
+     * elsewhere in the system first.
+     *
+     * Once the preparatory work (like a data migration) is complete,
+     * the feature may be advanced to ::active with a `feature_action`
+     * RPC to the controller leader
+     */
+    bool is_preparing(feature f) const noexcept {
+        return get_state(f).get_state() == feature_state::state::preparing;
+    }
+
     ss::future<> await_feature(feature f, ss::abort_source& as);
+
+    ss::future<> await_feature_preparing(feature f, ss::abort_source& as);
 
     static cluster_version get_latest_logical_version();
 
     feature_table();
 
-    feature_state& get_state(std::string_view feature_name);
+    feature_state& get_state(feature f_id);
+    const feature_state& get_state(feature f_id) const {
+        return const_cast<feature_table&>(*this).get_state(f_id);
+    }
 
 private:
     // Only for use by our friends feature backend & manager
     void set_active_version(cluster_version);
     void apply_action(const feature_update_action& fua);
+
+    std::optional<feature> resolve_name(std::string_view feature_name) const;
+
+    void on_update();
 
     cluster_version _active_version{invalid_version};
 
@@ -238,8 +260,11 @@ private:
     // just use a bigger one.  Do not serialize this as a bitmask anywhere.
     uint64_t _active_features_mask{0};
 
-    // Waiting for a particular feature to be available
-    waiter_queue<feature> _waiters;
+    // Waiting for a particular feature to be active
+    waiter_queue<feature> _waiters_active;
+
+    // Waiting for a particular feature to be preparing
+    waiter_queue<feature> _waiters_preparing;
 
     // feature_manager is a friend so that they can initialize
     // the active version on single-node first start.
