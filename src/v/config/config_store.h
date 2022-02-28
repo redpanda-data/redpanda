@@ -108,13 +108,26 @@ public:
         }
     }
 
-    void to_json(rapidjson::Writer<rapidjson::StringBuffer>& w) const {
+    /**
+     *
+     * @param filter optional callback for filtering out config properties.
+     *               callback should return false to exclude a property.
+     */
+    void to_json(
+      rapidjson::Writer<rapidjson::StringBuffer>& w,
+      std::optional<std::function<bool(base_property&)>> filter
+      = std::nullopt) const {
         w.StartObject();
 
         for (const auto& [name, property] : _properties) {
             if (property->get_visibility() == visibility::deprecated) {
                 continue;
             }
+
+            if (filter && !filter.value()(*property)) {
+                continue;
+            }
+
             w.Key(name.data(), name.size());
             property->to_json(w);
         }
