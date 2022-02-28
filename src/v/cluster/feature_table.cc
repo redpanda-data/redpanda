@@ -128,11 +128,29 @@ void feature_table::set_active_version(cluster_version v) {
         fs.notify_version(v);
     }
 
+    on_update();
+}
+
+/**
+ * Call this after changing any state.
+ *
+ * Update any watchers, update bitmask
+ */
+void feature_table::on_update() {
     // Update mask for fast is_active() lookup
     _active_features_mask = 0x0;
-    for (const auto& f : get_active_features()) {
-        _active_features_mask |= uint64_t(f);
-        _waiters.notify(f);
+    for (const auto& fs : _feature_state) {
+        if (fs.get_state() == feature_state::state::active) {
+            _active_features_mask |= uint64_t(fs.spec.bits);
+            _waiters_active.notify(fs.spec.bits);
+
+            // Anyone waiting on 'preparing' is triggered when we
+            // reach active, because at this point we're never going
+            // to go to 'preparing' and we don't want to wait forever.
+            _waiters_preparing.notify(fs.spec.bits);
+        } else if (fs.get_state() == feature_state::state::preparing) {
+            _waiters_preparing.notify(fs.spec.bits);
+        }
     }
 }
 
@@ -204,10 +222,12 @@ void feature_table::apply_action(const feature_update_action& fua) {
         vassert(
           false, "Unknown feature action {}", static_cast<uint8_t>(fua.action));
     }
+
+    on_update();
 }
 
 /**
- * Wait until this feature becomes available, or the abort
+ * Wait until this feature becomes active, or the abort
  * source fires.  If the abort source fires, the future
  * will be an exceptional future.
  */
@@ -216,19 +236,54 @@ ss::future<> feature_table::await_feature(feature f, ss::abort_source& as) {
         vlog(clusterlog.trace, "Feature {} already active", to_string_view(f));
         return ss::now();
     } else {
-        vlog(clusterlog.trace, "Waiting for feature {}", to_string_view(f));
-        return _waiters.await(f, as);
+        vlog(
+          clusterlog.trace, "Waiting for feature active {}", to_string_view(f));
+        return _waiters_active.await(f, as);
     }
 }
 
-feature_state& feature_table::get_state(std::string_view feature_name) {
+/**
+ * Wait until this feature hits 'preparing' state, which is the trigger
+ * for any data migration work to start.  This will also return if
+ * the feature reaches 'active' state: callers should re-check state
+ * after the future is ready.
+ */
+ss::future<>
+feature_table::await_feature_preparing(feature f, ss::abort_source& as) {
+    if (is_preparing(f)) {
+        vlog(
+          clusterlog.trace, "Feature {} already preparing", to_string_view(f));
+        return ss::now();
+    } else {
+        vlog(
+          clusterlog.trace,
+          "Waiting for feature preparing {}",
+          to_string_view(f));
+        return _waiters_preparing.await(f, as);
+    }
+}
+
+feature_state& feature_table::get_state(feature f_id) {
     for (auto& i : _feature_state) {
-        if (i.spec.name == feature_name) {
+        if (i.spec.bits == f_id) {
             return i;
         }
     }
 
-    throw std::runtime_error(fmt::format("Unknown feature {}", feature_name));
+    // Should never happen: type of `feature` is enum and
+    // _feature_state is initialized to include all possible features
+    vassert(false, "Invalid feature ID {}", static_cast<uint64_t>(f_id));
+}
+
+std::optional<feature>
+feature_table::resolve_name(std::string_view feature_name) const {
+    for (auto& i : feature_schema) {
+        if (i.name == feature_name) {
+            return i.bits;
+        }
+    }
+
+    return std::nullopt;
 }
 
 } // namespace cluster

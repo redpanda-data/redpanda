@@ -290,12 +290,16 @@ ss::future<> feature_manager::do_maybe_update_active_version() {
 
 ss::future<std::error_code>
 feature_manager::write_action(cluster::feature_update_action action) {
-    // TODO: validate earlier that the feature name is known to us
+    auto feature_id_opt = _feature_table.local().resolve_name(
+      action.feature_name);
+
+    // This should  have been validated by admin server before calling us
+    vassert(feature_id_opt.has_value(), "Invalid feature name");
 
     // Validate that teh feature is in a state compatible with the
     // requested transition.
     bool valid = true;
-    auto state = _feature_table.local().get_state(action.feature_name);
+    auto state = _feature_table.local().get_state(feature_id_opt.value());
     switch (action.action) {
     case cluster::feature_update_action::action_t::complete_preparing:
         // Look up feature by name
