@@ -136,6 +136,75 @@ void feature_table::set_active_version(cluster_version v) {
     }
 }
 
+void feature_table::apply_action(const feature_update_action& fua) {
+    auto feature_id_opt = resolve_name(fua.feature_name);
+    if (!feature_id_opt.has_value()) {
+        vlog(clusterlog.warn, "Ignoring action {}, unknown feature", fua);
+        return;
+    } else {
+        if (ss::this_shard_id() == 0) {
+            vlog(clusterlog.debug, "apply_action {}", fua);
+        }
+    }
+
+    auto& fstate = get_state(feature_id_opt.value());
+    if (fua.action == feature_update_action::action_t::complete_preparing) {
+        if (fstate.get_state() == feature_state::state::preparing) {
+            fstate.transition_active();
+        } else {
+            vlog(
+              clusterlog.warn,
+              "Ignoring action {}, feature is in state {}",
+              fua,
+              fstate.get_state());
+        }
+    } else if (
+      fua.action == feature_update_action::action_t::administrative_activate) {
+        auto current_state = fstate.get_state();
+        if (current_state == feature_state::state::disabled_clean) {
+            if (_active_version >= fstate.spec.require_version) {
+                fstate.transition_preparing();
+            } else {
+                fstate.transition_unavailable();
+            }
+        } else if (current_state == feature_state::state::disabled_preparing) {
+            fstate.transition_preparing();
+        } else if (current_state == feature_state::state::disabled_active) {
+            fstate.transition_active();
+        } else if (current_state == feature_state::state::available) {
+            fstate.transition_preparing();
+        } else {
+            vlog(
+              clusterlog.warn,
+              "Ignoring action {}, feature is in state {}",
+              fua,
+              current_state);
+        }
+    } else if (
+      fua.action
+      == feature_update_action::action_t::administrative_deactivate) {
+        auto current_state = fstate.get_state();
+        if (
+          current_state == feature_state::state::disabled_preparing
+          || current_state == feature_state::state::disabled_active
+          || current_state == feature_state::state::disabled_clean) {
+            vlog(
+              clusterlog.warn,
+              "Ignoring action {}, feature is in state {}",
+              fua,
+              current_state);
+        } else if (current_state == feature_state::state::active) {
+            fstate.transition_disabled_active();
+        } else if (current_state == feature_state::state::preparing) {
+            fstate.transition_disabled_preparing();
+        } else {
+            fstate.transition_disabled_clean();
+        }
+    } else {
+        vassert(false, "Unknown feature action");
+    }
+}
+
 /**
  * Wait until this feature becomes available, or the abort
  * source fires.  If the abort source fires, the future
