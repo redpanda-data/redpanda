@@ -11,11 +11,15 @@ import random
 from ducktape.mark import ignore
 from rptest.clients.types import TopicSpec
 from rptest.wasm.wasm_test import WasmTest
-from rptest.wasm.topics_result_set import materialized_at_least_once_compare
+from rptest.wasm.topics_result_set import materialized_at_least_once_compare, group_fan_in_verifier
 from rptest.services.cluster import cluster
 from rptest.wasm.wasm_script import WasmScript
 from rptest.wasm.wasm_build_tool import WasmTemplateRepository
 from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST
+
+WASM_CHAOS_LOG_ALLOW_LIST = CHAOS_LOG_ALLOW_LIST + [
+    "Wasm engine failed to reply to heartbeat", "Failed to connect wasm engine"
+]
 
 
 class WasmRedpandaFailureRecoveryTest(WasmTest):
@@ -54,7 +58,7 @@ class WasmRedpandaFailureRecoveryTest(WasmTest):
         return {topic: self._num_records for topic in self.wasm_test_output()}
 
     @ignore  # https://github.com/vectorizedio/redpanda/issues/2514
-    @cluster(num_nodes=3, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    @cluster(num_nodes=4, log_allow_list=WASM_CHAOS_LOG_ALLOW_LIST)
     def verify_materialized_topics_test(self):
         self.verify_results(materialized_at_least_once_compare)
 
@@ -117,6 +121,11 @@ class WasmRPMultiInputTopicFailureRecoveryTest(WasmRedpandaFailureRecoveryTest
                        script=WasmTemplateRepository.IDENTITY_TRANSFORM)
         ]
 
+    @ignore  # https://github.com/vectorizedio/redpanda/issues/2514
+    @cluster(num_nodes=6, log_allow_list=WASM_CHAOS_LOG_ALLOW_LIST)
+    def verify_materialized_topics_test(self):
+        self.verify_results(materialized_at_least_once_compare)
+
 
 class WasmRPMeshFailureRecoveryTest(WasmRedpandaFailureRecoveryTest):
     topics = (
@@ -151,3 +160,13 @@ class WasmRPMeshFailureRecoveryTest(WasmRedpandaFailureRecoveryTest):
                 outputs=["output_topic_a", "output_topic_b", "output_topic_c"],
                 script=WasmTemplateRepository.IDENTITY_TRANSFORM)
         ]
+
+    @ignore  # https://github.com/vectorizedio/redpanda/issues/2514
+    @cluster(num_nodes=6, log_allow_list=WASM_CHAOS_LOG_ALLOW_LIST)
+    def verify_materialized_topics_test(self):
+        self.start_wasm()
+        input_results, output_results = self.wait_on_results()
+        if not group_fan_in_verifier(self.topics, input_results,
+                                     output_results):
+            raise Exception(
+                "Incorrect number of records observed across topics")

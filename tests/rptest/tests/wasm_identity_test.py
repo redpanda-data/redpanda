@@ -11,10 +11,15 @@ from rptest.services.cluster import cluster
 from ducktape.mark import ignore
 from rptest.clients.types import TopicSpec
 from rptest.wasm.topic import get_source_topic
-from rptest.wasm.topics_result_set import materialized_result_set_compare
+from rptest.wasm.topics_result_set import materialized_result_set_compare, group_fan_in_verifier
 from rptest.wasm.wasm_test import WasmTest
 from rptest.wasm.wasm_script import WasmScript
 from rptest.wasm.wasm_build_tool import WasmTemplateRepository
+from rptest.services.redpanda import DEFAULT_LOG_ALLOW_LIST
+
+WASM_LOG_ALLOW_LIST = DEFAULT_LOG_ALLOW_LIST + [
+    "Wasm engine failed to reply to heartbeat", "Failed to connect wasm engine"
+]
 
 
 class WasmIdentityTest(WasmTest):
@@ -46,7 +51,7 @@ class WasmIdentityTest(WasmTest):
         return {topic: self._num_records for topic in self.wasm_test_output()}
 
     @ignore  # https://github.com/vectorizedio/redpanda/issues/2514
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=4, log_allow_list=WASM_LOG_ALLOW_LIST)
     def verify_materialized_topics_test(self):
         self.verify_results(materialized_result_set_compare)
 
@@ -153,6 +158,11 @@ class WasmMultiInputTopicIdentityTest(WasmIdentityTest):
                        script=WasmTemplateRepository.IDENTITY_TRANSFORM)
         ]
 
+    @ignore  # https://github.com/vectorizedio/redpanda/issues/2514
+    @cluster(num_nodes=6, log_allow_list=WASM_LOG_ALLOW_LIST)
+    def verify_materialized_topics_test(self):
+        self.verify_results(materialized_result_set_compare)
+
 
 class WasmAllInputsToAllOutputsIdentityTest(WasmIdentityTest):
     """
@@ -210,18 +220,12 @@ class WasmAllInputsToAllOutputsIdentityTest(WasmIdentityTest):
         ]
 
     @ignore  # https://github.com/vectorizedio/redpanda/issues/2514
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=6, log_allow_list=WASM_LOG_ALLOW_LIST)
     def verify_materialized_topics_test(self):
         # Cannot compare topics to topics, can only verify # of records
         self.start_wasm()
         input_results, output_results = self.wait_on_results()
-
-        def compare(topic):
-            iis = input_results.filter(lambda x: x.topic == topic)
-            oos = output_results.filter(
-                lambda x: get_source_topic(x.topic) == topic)
-            return iis.num_records() == oos.num_records()
-
-        if not all(compare(topic) for topic in self.topics):
+        if not group_fan_in_verifier(self.topics, input_results,
+                                     output_results):
             raise Exception(
                 "Incorrect number of records observed across topics")

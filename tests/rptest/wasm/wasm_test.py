@@ -13,7 +13,7 @@ from kafka import TopicPartition
 from rptest.wasm.topics_result_set import CmpErr, cmp_err_to_str
 from rptest.wasm.topic import get_source_topic, get_dest_topic, is_materialized_topic, construct_materialized_topic
 from rptest.wasm.native_kafka_consumer import NativeKafkaConsumer
-from rptest.wasm.cli_kafka_producer import CliKafkaProducer
+from rptest.services.verifiable_producer import VerifiableProducer
 
 from rptest.wasm.wasm_build_tool import WasmBuildTool
 
@@ -39,12 +39,14 @@ class WasmTest(RedpandaTest):
         def enable_wasm_options():
             return dict(developer_mode=True,
                         enable_coproc=True,
+                        enable_idempotence=True,
                         auto_create_topics_enabled=False)
 
         wasm_opts = enable_wasm_options()
         wasm_opts.update(extra_rp_conf)
         super(WasmTest, self).__init__(test_context, extra_rp_conf=wasm_opts)
         self._rpk_tool = RpkTool(self.redpanda)
+        self._test_context = test_context
         self._build_tool = WasmBuildTool(self._rpk_tool)
         self._input_consumer = None
         self._output_consumer = None
@@ -104,6 +106,26 @@ class WasmTest(RedpandaTest):
     def _verify_materialized_outputs(outputs):
         return all([is_materialized_topic(t) for t in outputs.keys()])
 
+    def _create_input_producers(self, topics, rate_lookup):
+        producers = {}
+        for tp_spec in topics:
+            topic = tp_spec.name
+            num_records = rate_lookup[topic]
+            self.logger.info(
+                f"Input producer assigned: {tp_spec} - {num_records}")
+
+            producer = VerifiableProducer(self._test_context,
+                                          num_nodes=1,
+                                          redpanda=self.redpanda,
+                                          topic=topic,
+                                          acks=-1,
+                                          max_messages=num_records,
+                                          message_validator=(lambda x: True),
+                                          enable_idempotence=True)
+            producer.start()
+            producers[topic] = producer
+        return producers
+
     def start_wasm(self):
         """
         Build all wasm scripts, produce onto inputs while starting consumers
@@ -119,55 +141,34 @@ class WasmTest(RedpandaTest):
         for script in scripts:
             self._build_script(script)
 
+        self.logger.info(f"Input producer assigned: {self.topics}")
+        self._producers = self._create_input_producers(self.topics, topic_spec)
+
         input_tps = self._expand_topic_spec(self.topics)
         output_tps = self._expand_topic_spec(
             self._to_output_topic_spec(
                 self.topics, flat_map(lambda script: script.outputs, scripts)))
+        self.logger.info(f"Input consumer assigned: {input_tps}")
+        self.logger.info(f"Output consumer assigned: {output_tps}")
+        self._input_consumer = NativeKafkaConsumer(self.redpanda.brokers(),
+                                                   list(input_tps), topic_spec)
+        self._output_consumer = NativeKafkaConsumer(self.redpanda.brokers(),
+                                                    list(output_tps),
+                                                    output_topic_spec)
+        self._input_consumer.start()
+        self._output_consumer.start()
 
-        self._producers = []
-
-        for tp_spec in self.topics:
-            try:
-                topic = tp_spec.name
-                num_records = topic_spec[topic]
-                self.logger.info(
-                    f"Input producer assigned: {tp_spec} - {num_records}")
-                producer = CliKafkaProducer(self.redpanda, topic, num_records,
-                                            self._record_size)
-                producer.start()
-                self._producers.append(producer)
-            except Exception as e:
-                self.logger.error(f"Failed to create CliKafkaProducer: {e}")
-                raise
-
-        # Calcualte expected records on all inputs / outputs
+        # Calcualte expected records on all inputs / outputs -- only for logging
         total_inputs = reduce(operator.add, [v for k, v in topic_spec.items()],
                               0)
         total_outputs = reduce(operator.add,
                                [v for k, v in output_topic_spec.items()], 0)
-
-        self.logger.info(f"Input consumer assigned: {input_tps}")
-        self.logger.info(f"Output consumer assigned: {output_tps}")
-
-        try:
-            self._input_consumer = NativeKafkaConsumer(self.redpanda.brokers(),
-                                                       list(input_tps),
-                                                       total_inputs)
-            self._output_consumer = NativeKafkaConsumer(
-                self.redpanda.brokers(), list(output_tps), total_outputs)
-        except Exception as e:
-            self.logger.error(f"Failed to create NativeKafkaConsumer: {e}")
-            raise
-
         self.logger.info(
             f"Waiting for {total_inputs} input records and {total_outputs}"
             " result records")
-        self._input_consumer.start()
-        self._output_consumer.start()
 
     def wait_on_results(self):
         def all_done():
-            # Uncomment to periodically see the amt of data read
             self.logger.info("Input: %d" %
                              self._input_consumer.results.num_records())
             self.logger.info("Output: %d" %
@@ -179,10 +180,16 @@ class WasmTest(RedpandaTest):
             return self._input_consumer.is_finished() \
                 and self._output_consumer.is_finished()
 
+        # Wait for all production to stop first
+        for _, producer in self._producers.items():
+            wait_until(lambda: producer.num_acked >= producer.max_messages,
+                       timeout_sec=20,
+                       backoff_sec=1)
+            producer.stop()
+
         timeout, backoff = self.wasm_test_timeout()
         wait_until(all_done, timeout_sec=timeout, backoff_sec=backoff)
         try:
-            [x.join() for x in self._producers]
             self._input_consumer.join()
             self._output_consumer.join()
         except Exception as e:
@@ -195,8 +202,8 @@ class WasmTest(RedpandaTest):
                          f" records and"
                          f" {output_consumed} result records")
 
-        input_expected = self._input_consumer._num_records
-        output_expected = self._output_consumer._num_records
+        input_expected = self._input_consumer.total_expected_records()
+        output_expected = self._output_consumer.total_expected_records()
         if input_consumed < input_expected:
             raise Exception(
                 f"Consumed {input_consumed} expected {input_expected} input records"
