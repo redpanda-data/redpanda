@@ -1331,8 +1331,8 @@ void admin_server::register_status_routes() {
 }
 
 void admin_server::register_features_routes() {
-    ss::httpd::features_json::get_features.set(
-      _server._routes,
+    register_route<user>(
+      ss::httpd::features_json::get_features,
       [this](std::unique_ptr<ss::httpd::request>)
         -> ss::future<ss::json::json_return_type> {
           ss::httpd::features_json::features_response res;
@@ -2073,8 +2073,9 @@ void admin_server::register_hbadger_routes() {
     /*
      * Remove all failure injectors at given point
      */
-    ss::httpd::hbadger_json::delete_failure_probe.set(
-      _server._routes, [](std::unique_ptr<ss::httpd::request> req) {
+    register_route<superuser>(
+      ss::httpd::hbadger_json::delete_failure_probe,
+      [](std::unique_ptr<ss::httpd::request> req) {
           auto m = req->param["module"];
           auto p = req->param["point"];
           vlog(
