@@ -38,9 +38,12 @@ class ClusterConfigTest(RedpandaTest):
         # Enable our feature flag
         rp_conf['enable_central_config'] = True
 
-        super(ClusterConfigTest, self).__init__(*args,
-                                                extra_rp_conf=rp_conf,
-                                                **kwargs)
+        super(ClusterConfigTest, self).__init__(
+            *args,
+            extra_rp_conf=rp_conf,
+            # Force verbose logging for the secret redaction test
+            log_level='trace',
+            **kwargs)
 
         self.admin = Admin(self.redpanda)
         self.rpk = RpkTool(self.redpanda)
