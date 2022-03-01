@@ -367,6 +367,8 @@ class ClusterConfigTest(RedpandaTest):
             initial_value = initial_config[name]
             if 'example' in p:
                 valid_value = p['example']
+                if p['type'] == "array":
+                    valid_value = yaml.load(valid_value)
             elif p['type'] == 'integer':
                 if initial_value:
                     valid_value = initial_value * 2
