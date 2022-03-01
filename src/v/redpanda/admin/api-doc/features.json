@@ -21,6 +21,37 @@
                     "parameters": []
                 }
             ]
+        },
+        {
+            "path": "/v1/features/{feature_name}",
+            "operations": [
+                {
+                    "method": "PUT",
+                    "summary": "Activate or deactivate a feature",
+                    "nickname": "put_feature",
+                    "type": "void",
+                    "produces": ["application/json"],
+                    "parameters": [
+                        {
+                            "name": "feature_name",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "OK"
+                        },
+                        "400": {
+                            "description": "Invalid action, response body contains reason",
+                            "schema":{
+                                "type": "json"
+                            }
+                        }
+                    }
+                }
+            ]
         }
     ],
     "models": {

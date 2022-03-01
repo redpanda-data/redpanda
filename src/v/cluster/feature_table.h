@@ -243,12 +243,12 @@ public:
         return const_cast<feature_table&>(*this).get_state(f_id);
     }
 
+    std::optional<feature> resolve_name(std::string_view feature_name) const;
+
 private:
     // Only for use by our friends feature backend & manager
     void set_active_version(cluster_version);
     void apply_action(const feature_update_action& fua);
-
-    std::optional<feature> resolve_name(std::string_view feature_name) const;
 
     void on_update();
 
