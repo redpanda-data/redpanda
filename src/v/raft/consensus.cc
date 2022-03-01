@@ -2940,6 +2940,10 @@ voter_priority consensus::next_target_priority() {
  * so it should give us fairly even distribution of leaders across the nodes.
  */
 voter_priority consensus::get_node_priority(vnode rni) const {
+    if (_node_priority_override.has_value() && rni == _self) {
+        return _node_priority_override.value();
+    }
+
     auto& latest_cfg = _configuration_manager.get_latest();
     auto& brokers = latest_cfg.brokers();
 

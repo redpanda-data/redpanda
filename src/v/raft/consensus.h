@@ -327,6 +327,19 @@ public:
 
     model::term_id get_term(model::offset) const;
 
+    /*
+     * Prevent the current node from becoming a leader for this group. If the
+     * node is the leader then this only takes affect if leadership is lost.
+     */
+    void block_new_leadership() {
+        _node_priority_override = raft::zero_voter_priority;
+    }
+
+    /*
+     * Allow the current node to become a leader for this group.
+     */
+    void unblock_new_leadership() { _node_priority_override.reset(); }
+
 private:
     friend replicate_entries_stm;
     friend vote_stm;
@@ -579,6 +592,8 @@ private:
     model::offset _majority_replicated_index;
     model::offset _visibility_upper_bound_index;
     voter_priority _target_priority = voter_priority::max();
+    std::optional<voter_priority> _node_priority_override;
+
     /**
      * We keep an idex of the most recent entry replicated with quorum
      * consistency level to make sure that all requests replicated with quorum

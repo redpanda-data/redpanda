@@ -138,6 +138,9 @@ public:
 
     bool is_leader() const { return _raft->is_leader(); }
 
+    void block_new_leadership() const { _raft->block_new_leadership(); }
+    void unblock_new_leadership() const { _raft->unblock_new_leadership(); }
+
     ss::future<result<model::offset>> linearizable_barrier() {
         return _raft->linearizable_barrier();
     }
