@@ -1,5 +1,6 @@
 from io import BytesIO
 import logging
+import os
 import struct
 from model import *
 from reader import Reader
@@ -329,15 +330,18 @@ class KvStore:
             self.kv[key] = entry['data']
 
     def decode(self):
-        snap = KvSnapshot(f"{self.ntp.path}/snapshot")
-        snap.decode()
-        logger.debug(f"snapshot last offset: {snap.last_offset}")
+        if os.path.exists(f"{self.ntp.path}/snapshot"):
+            snap = KvSnapshot(f"{self.ntp.path}/snapshot")
+            snap.decode()
+            logger.info(f"snapshot last offset: {snap.last_offset}")
+            for r in snap.data_batch:
+                d = KvStoreRecordDecoder(r,
+                                         snap.data_batch.header,
+                                         value_is_optional_type=False)
+                self._apply(d.decode())
+        else:
+            logger.info(f"{self.ntp.path}/snapshot does not exist")
 
-        for r in snap.data_batch:
-            d = KvStoreRecordDecoder(r,
-                                     snap.data_batch.header,
-                                     value_is_optional_type=False)
-            self._apply(d.decode())
         for path in self.ntp.segments:
             s = Segment(path)
             for batch in s:
