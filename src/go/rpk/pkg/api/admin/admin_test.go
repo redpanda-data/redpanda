@@ -101,7 +101,7 @@ func TestAdminAPI(t *testing.T) {
 				urls = append(urls, ts.URL)
 			}
 
-			adminClient, err := NewAdminAPI(urls, nil)
+			adminClient, err := NewAdminAPI(urls, BasicCredentials{}, nil)
 			require.NoError(t, err)
 			err = tt.action(t, adminClient)
 			require.NoError(t, err)

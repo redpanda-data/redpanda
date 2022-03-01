@@ -21,8 +21,10 @@ static inline size_t encode_capacity(size_t input_size) {
     return (((4 * input_size) / 3) + 3) & ~0x3U;
 }
 
-bytes base64_to_bytes(std::string_view input) {
-    bytes output(bytes::initialized_later{}, input.size());
+template<typename S>
+S base64_to_string_impl(std::string_view input) {
+    using initialized_later = typename S::initialized_later;
+    S output(initialized_later{}, input.size());
     size_t output_len; // NOLINT
     int ret = base64_decode(
       input.data(),
@@ -40,6 +42,14 @@ bytes base64_to_bytes(std::string_view input) {
       input.size());
     output.resize(output_len);
     return output;
+}
+
+bytes base64_to_bytes(std::string_view input) {
+    return base64_to_string_impl<bytes>(input);
+}
+
+ss::sstring base64_to_string(std::string_view input) {
+    return base64_to_string_impl<ss::sstring>(input);
 }
 
 ss::sstring bytes_to_base64(bytes_view input) {

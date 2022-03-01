@@ -17,6 +17,18 @@ from ducktape.cluster.cluster import ClusterNode
 DEFAULT_TIMEOUT = 30
 
 
+class AuthPreservingSession(requests.Session):
+    """
+    Override `requests` default behaviour of dropping Authorization
+    headers when redirecting.  This makes sense as a general default,
+    but in the case of the redpanda admin API, we trust the server to
+    only redirect us to other equally privileged servers within
+    the same cluster.
+    """
+    def should_strip_auth(self, old_url, new_url):
+        return False
+
+
 class Admin:
     """
     Wrapper for Redpanda admin REST API.
@@ -25,10 +37,16 @@ class Admin:
     value is a decoded dict of the JSON payload, for other requests
     the successful HTTP response object is returned.
     """
-    def __init__(self, redpanda, default_node=None, retry_codes=None):
+    def __init__(self,
+                 redpanda,
+                 default_node=None,
+                 retry_codes=None,
+                 auth=None):
         self.redpanda = redpanda
 
-        self._session = requests.Session()
+        self._session = AuthPreservingSession()
+        if auth is not None:
+            self._session.auth = auth
 
         self._default_node = default_node
 
@@ -46,7 +64,8 @@ class Admin:
                         connect=0,
                         backoff_factor=1,
                         status_forcelist=retry_codes,
-                        method_whitelist=None)
+                        method_whitelist=None,
+                        remove_headers_on_redirect=[])
 
         self._session.mount("http://", HTTPAdapter(max_retries=retries))
 
@@ -118,6 +137,9 @@ class Admin:
 
         r.raise_for_status()
         return r
+
+    def get_status_ready(self, node=None):
+        return self._request("GET", "status/ready", node=node).json()
 
     def get_cluster_config(self, node=None):
         return self._request("GET", "config", node=node).json()
@@ -259,6 +281,9 @@ class Admin:
         path = f"security/users/{username}"
 
         self._request("delete", path)
+
+    def list_users(self, node=None):
+        return self._request("get", "security/users", node=node).json()
 
     def partition_transfer_leadership(self, namespace, topic, partition,
                                       target_id):

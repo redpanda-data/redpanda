@@ -289,4 +289,19 @@ BOOST_AUTO_TEST_CASE(server_final_message_ctor) {
     }
 }
 
+BOOST_AUTO_TEST_CASE(validate_password) {
+    ss::sstring password = "letmein";
+    ss::sstring garbage = "letmeout";
+    int iterations = 3;
+
+    auto creds = scram_sha256::make_credentials(password, iterations);
+
+    bool check_password = scram_sha256::validate_password(
+      password, creds.stored_key(), creds.salt(), creds.iterations());
+    bool check_garbage = scram_sha256::validate_password(
+      garbage, creds.stored_key(), creds.salt(), creds.iterations());
+    BOOST_REQUIRE_EQUAL(check_password, true);
+    BOOST_REQUIRE_EQUAL(check_garbage, false);
+}
+
 } // namespace security

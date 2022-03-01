@@ -60,6 +60,9 @@ struct configuration final : public config_store {
     bounded_property<std::optional<std::size_t>> topic_memory_per_partition;
     bounded_property<std::optional<int32_t>> topic_fds_per_partition;
 
+    // Admin API
+    property<bool> admin_api_require_auth;
+
     // Raft
     deprecated_property seed_server_meta_topic_partitions;
     bounded_property<std::chrono::milliseconds> raft_heartbeat_interval_ms;
@@ -69,7 +72,7 @@ struct configuration final : public config_store {
     deprecated_property max_version;
     // Kafka
     deprecated_property use_scheduling_groups;
-    property<bool> enable_admin_api;
+    deprecated_property enable_admin_api;
     bounded_property<int16_t> default_num_windows;
     bounded_property<std::chrono::milliseconds> default_window_sec;
     property<std::chrono::milliseconds> quota_manager_gc_sec;

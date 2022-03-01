@@ -309,6 +309,9 @@ class RedpandaService(Service):
             self._log_level = log_level
 
         self._admin = Admin(self)
+        self._admin = Admin(self,
+                            auth=(self.SUPERUSER_CREDENTIALS.username,
+                                  self.SUPERUSER_CREDENTIALS.password))
         self._started = []
         self._security_config = dict()
 
@@ -610,6 +613,35 @@ class RedpandaService(Service):
         if self._s3client:
             return self._s3client.list_objects(
                 self._si_settings.cloud_storage_bucket)
+
+    def set_cluster_config(self, values: dict, expect_restart: bool = False):
+        """
+        Update cluster configuration and wait for all nodes to report that they
+        have seen the new config.
+
+        :param values: dict of property name to value
+        :param expect_restart: set to true if you wish to permit a node restart for needs_restart=yes properties.
+                               If you set such a property without this flag, an assertion error will be raised.
+        """
+        patch_result = self._admin.patch_cluster_config(upsert=values)
+        new_version = patch_result['config_version']
+        wait_until(
+            lambda: set([
+                n['config_version']
+                for n in self._admin.get_cluster_config_status()
+            ]) == {new_version},
+            timeout_sec=10,
+            backoff_sec=0.5,
+            err_msg=f"Config status versions did not converge on {new_version}"
+        )
+
+        any_restarts = any(n['restart']
+                           for n in self._admin.get_cluster_config_status())
+        if any_restarts and expect_restart:
+            self.restart_nodes(self.nodes)
+        elif any_restarts:
+            raise AssertionError(
+                "Nodes report restart required but expect_restart is False")
 
     def monitor_log(self, node):
         assert node in self._started

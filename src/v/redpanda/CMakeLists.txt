@@ -73,6 +73,7 @@ v_cc_library(
   NAME application
   SRCS 
     admin_server.cc
+    request_auth.cc
     application.cc
   DEPS
     Seastar::seastar
