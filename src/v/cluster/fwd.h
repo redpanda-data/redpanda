@@ -45,5 +45,6 @@ class metrics_reporter;
 class feature_frontend;
 class feature_manager;
 class feature_table;
+class drain_manager;
 
 } // namespace cluster

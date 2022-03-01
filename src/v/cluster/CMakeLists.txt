@@ -91,6 +91,7 @@ v_cc_library(
     feature_manager.cc
     feature_barrier.cc
     feature_table.cc
+    drain_manager.cc
   DEPS
     Seastar::seastar
     controller_rpc
