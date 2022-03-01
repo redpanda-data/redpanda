@@ -253,8 +253,10 @@ func (r *StatefulSetResource) obj(
 
 	externalListener := r.pandaCluster.ExternalListener()
 	externalSubdomain := ""
+	externalAddressType := ""
 	if externalListener != nil {
 		externalSubdomain = externalListener.External.Subdomain
+		externalAddressType = externalListener.External.PreferredAddressType
 	}
 
 	ss := &appsv1.StatefulSet{
@@ -343,6 +345,10 @@ func (r *StatefulSetResource) obj(
 								{
 									Name:  "EXTERNAL_CONNECTIVITY_SUBDOMAIN",
 									Value: externalSubdomain,
+								},
+								{
+									Name:  "EXTERNAL_CONNECTIVITY_ADDRESS_TYPE",
+									Value: externalAddressType,
 								},
 								{
 									Name:  "HOST_PORT",

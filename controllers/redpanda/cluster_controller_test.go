@@ -155,7 +155,11 @@ var _ = Describe("RedPandaCluster controller", func() {
 					Addresses: []corev1.NodeAddress{{
 						Type:    corev1.NodeExternalIP,
 						Address: "9.8.7.6",
-					}},
+					},
+						{
+							Type:    corev1.NodeInternalIP,
+							Address: "11.11.11.11",
+						}},
 				},
 			}
 			Expect(k8sClient.Create(context.Background(), node)).Should(Succeed())
@@ -491,6 +495,100 @@ var _ = Describe("RedPandaCluster controller", func() {
 					*sts.Spec.Replicas == replicas
 			}, timeout, interval).Should(BeTrue())
 
+		})
+		It("creates redpanda cluster with preferred address type", func() {
+			resources := corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("1"),
+				corev1.ResourceMemory: resource.MustParse("2Gi"),
+			}
+			key := types.NamespacedName{
+				Name:      "preferred-address-redpanda",
+				Namespace: "default",
+			}
+			redpandaCluster := &v1alpha1.Cluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      key.Name,
+					Namespace: key.Namespace,
+				},
+				Spec: v1alpha1.ClusterSpec{
+					Image:    redpandaContainerImage,
+					Version:  redpandaContainerTag,
+					Replicas: pointer.Int32Ptr(replicas),
+					Configuration: v1alpha1.RedpandaConfig{
+						KafkaAPI: []v1alpha1.KafkaAPI{
+							{
+								Port: kafkaPort,
+							},
+							{
+								External: v1alpha1.ExternalConnectivityConfig{
+									Enabled:              true,
+									PreferredAddressType: "InternalIP",
+								},
+							},
+						},
+						AdminAPI: []v1alpha1.AdminAPI{{Port: adminPort}},
+					},
+					Resources: v1alpha1.RedpandaResourceRequirements{
+						ResourceRequirements: corev1.ResourceRequirements{
+							Limits:   resources,
+							Requests: resources,
+						},
+						Redpanda: nil,
+					},
+				},
+			}
+			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
+
+			redpandaPod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      key.Name,
+					Namespace: key.Namespace,
+					Labels: map[string]string{
+						"app.kubernetes.io/component": "redpanda",
+						"app.kubernetes.io/instance":  "preferred-address-redpanda",
+						"app.kubernetes.io/name":      "redpanda",
+					},
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "test-node",
+					Containers: []corev1.Container{{
+						Name:  "test",
+						Image: "test",
+					}},
+				},
+				Status: corev1.PodStatus{},
+			}
+			Expect(k8sClient.Create(context.Background(), redpandaPod)).Should(Succeed())
+
+			By("Creating StatefulSet")
+			var sts appsv1.StatefulSet
+			Eventually(func() bool {
+				err := k8sClient.Get(context.Background(), key, &sts)
+				return err == nil &&
+					*sts.Spec.Replicas == replicas
+			}, timeout, interval).Should(BeTrue())
+
+			By("Creating external service")
+			var svc corev1.Service
+			Eventually(func() bool {
+				err := k8sClient.Get(context.Background(), types.NamespacedName{
+					Name:      key.Name + "-external",
+					Namespace: key.Namespace,
+				}, &svc)
+				return err == nil &&
+					svc.Spec.Type == corev1.ServiceTypeNodePort &&
+					len(svc.Spec.Ports) == 1
+			}, timeout, interval).Should(BeTrue())
+
+			By("Reporting external connectivity through InternalIP")
+			var rc v1alpha1.Cluster
+			nodeport := svc.Spec.Ports[0].NodePort
+			Eventually(func() bool {
+				err := k8sClient.Get(context.Background(), key, &rc)
+				return err == nil &&
+					len(rc.Status.Nodes.External) == 1 &&
+					rc.Status.Nodes.External[0] == fmt.Sprintf("%s:%d", "11.11.11.11", nodeport)
+			}, timeout, interval).Should(BeTrue())
 		})
 	})
 
