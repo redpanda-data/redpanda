@@ -294,7 +294,10 @@ feature_manager::write_action(cluster::feature_update_action action) {
       action.feature_name);
 
     // This should  have been validated by admin server before calling us
-    vassert(feature_id_opt.has_value(), "Invalid feature name");
+    vassert(
+      feature_id_opt.has_value(),
+      "Invalid feature name '{}'",
+      action.feature_name);
 
     // Validate that teh feature is in a state compatible with the
     // requested transition.

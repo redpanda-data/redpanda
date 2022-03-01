@@ -463,6 +463,21 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
       url, ss::httpd::reply::status_type::temporary_redirect);
 }
 
+namespace {
+bool need_redirect_to_leader(
+  model::ntp ntp, ss::sharded<cluster::metadata_cache>& metadata_cache) {
+    auto leader_id_opt = metadata_cache.local().get_leader_id(ntp);
+    if (!leader_id_opt.has_value()) {
+        throw ss::httpd::base_exception(
+          fmt::format(
+            "Partition {} does not have a leader, cannot redirect", ntp),
+          ss::httpd::reply::status_type::service_unavailable);
+    }
+
+    return leader_id_opt.value() != config::node().node_id();
+}
+} // namespace
+
 /**
  * Throw an appropriate seastar HTTP exception if we saw
  * a redpanda error during a request.
@@ -1330,7 +1345,27 @@ void admin_server::register_status_routes() {
       });
 }
 
+static json_validator make_feature_put_validator() {
+    const std::string schema = R"(
+{
+    "type": "object",
+    "properties": {
+        "state": {
+            "type": "string",
+            "enum": ["active", "disabled"]
+        }
+    },
+    "additionalProperties": false,
+    "required": ["state"]
+}
+)";
+    return json_validator(schema);
+}
+
 void admin_server::register_features_routes() {
+    static thread_local auto feature_put_validator(
+      make_feature_put_validator());
+
     register_route<user>(
       ss::httpd::features_json::get_features,
       [this](std::unique_ptr<ss::httpd::request>)
@@ -1346,6 +1381,51 @@ void admin_server::register_features_routes() {
           }
 
           co_return std::move(res);
+      });
+
+    register_route<superuser>(
+      ss::httpd::features_json::put_feature,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          auto doc = parse_json_body(*req);
+          apply_validator(feature_put_validator, doc);
+
+          auto feature_name = req->param["feature_name"];
+
+          if (!_controller->get_feature_table()
+                 .local()
+                 .resolve_name(feature_name)
+                 .has_value()) {
+              throw ss::httpd::bad_request_exception("Unknown feature name");
+          }
+
+          cluster::feature_update_action action{.feature_name = feature_name};
+          auto& new_state_str = doc["state"];
+          if (new_state_str == "active") {
+              action.action = cluster::feature_update_action::action_t::
+                administrative_activate;
+          } else if (new_state_str == "disabled") {
+              action.action = cluster::feature_update_action::action_t::
+                administrative_deactivate;
+          } else {
+              throw ss::httpd::bad_request_exception("Invalid state");
+          }
+
+          if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
+              throw co_await redirect_to_leader(*req, model::controller_ntp);
+          }
+
+          auto& fm = _controller->get_feature_manager();
+          auto err = co_await fm.invoke_on(
+            cluster::feature_manager::backend_shard,
+            [action](cluster::feature_manager& fm) {
+                return fm.write_action(action);
+            });
+          if (err) {
+              throw ss::httpd::bad_request_exception(fmt::format("{}", err));
+          } else {
+              co_return ss::json::json_void();
+          }
       });
 }
 
@@ -1556,21 +1636,6 @@ model::ntp parse_ntp_from_request(ss::httpd::parameters& param) {
     }
 
     return model::ntp(std::move(ns), std::move(topic), partition);
-}
-
-bool need_redirect_to_leader(
-  model::ntp ntp, ss::sharded<cluster::metadata_cache>& metadata_cache) {
-    auto leader_id_opt = metadata_cache.local().get_leader_id(ntp);
-    if (!leader_id_opt.has_value()) {
-        throw ss::httpd::base_exception(
-          fmt_with_ctx(
-            fmt::format,
-            "Partition {} does not have a leader, cannot redirect",
-            ntp),
-          ss::httpd::reply::status_type::service_unavailable);
-    }
-
-    return leader_id_opt.value() != config::node().node_id();
 }
 
 } // namespace
