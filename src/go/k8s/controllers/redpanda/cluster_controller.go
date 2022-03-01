@@ -442,7 +442,7 @@ func (r *ClusterReconciler) createExternalNodesList(
 		} else if externalKafkaListener != nil {
 			result.External = append(result.External,
 				fmt.Sprintf("%s:%d",
-					getExternalIP(&node),
+					networking.GetPreferredAddress(&node, corev1.NodeAddressType(externalKafkaListener.External.PreferredAddressType)),
 					getNodePort(&nodePortSvc, resources.ExternalListenerName),
 				))
 		}

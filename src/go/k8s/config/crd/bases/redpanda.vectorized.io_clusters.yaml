@@ -166,6 +166,15 @@ spec:
                               description: Enabled enables the external connectivity
                                 feature
                               type: boolean
+                            preferredAddressType:
+                              description: The preferred address type to be assigned
+                                to the external advertised addresses. The valid types
+                                are ExternalDNS, ExternalIP, InternalDNS, InternalIP,
+                                and Hostname. When the address of the preferred type
+                                is not found the advertised addresses remains empty.
+                                The default preferred address type is ExternalIP.
+                                This option only applies when Subdomain is empty.
+                              type: string
                             subdomain:
                               description: Subdomain can be used to change the behavior
                                 of an advertised KafkaAPI. Each broker advertises
@@ -210,6 +219,15 @@ spec:
                               description: Enabled enables the external connectivity
                                 feature
                               type: boolean
+                            preferredAddressType:
+                              description: The preferred address type to be assigned
+                                to the external advertised addresses. The valid types
+                                are ExternalDNS, ExternalIP, InternalDNS, InternalIP,
+                                and Hostname. When the address of the preferred type
+                                is not found the advertised addresses remains empty.
+                                The default preferred address type is ExternalIP.
+                                This option only applies when Subdomain is empty.
+                              type: string
                             subdomain:
                               description: Subdomain can be used to change the behavior
                                 of an advertised KafkaAPI. Each broker advertises
@@ -318,6 +336,15 @@ spec:
                               description: Enabled enables the external connectivity
                                 feature
                               type: boolean
+                            preferredAddressType:
+                              description: The preferred address type to be assigned
+                                to the external advertised addresses. The valid types
+                                are ExternalDNS, ExternalIP, InternalDNS, InternalIP,
+                                and Hostname. When the address of the preferred type
+                                is not found the advertised addresses remains empty.
+                                The default preferred address type is ExternalIP.
+                                This option only applies when Subdomain is empty.
+                              type: string
                             subdomain:
                               description: Subdomain can be used to change the behavior
                                 of an advertised KafkaAPI. Each broker advertises
@@ -359,6 +386,15 @@ spec:
                             description: Enabled enables the external connectivity
                               feature
                             type: boolean
+                          preferredAddressType:
+                            description: The preferred address type to be assigned
+                              to the external advertised addresses. The valid types
+                              are ExternalDNS, ExternalIP, InternalDNS, InternalIP,
+                              and Hostname. When the address of the preferred type
+                              is not found the advertised addresses remains empty.
+                              The default preferred address type is ExternalIP. This
+                              option only applies when Subdomain is empty.
+                            type: string
                           subdomain:
                             description: Subdomain can be used to change the behavior
                               of an advertised KafkaAPI. Each broker advertises Kafka
