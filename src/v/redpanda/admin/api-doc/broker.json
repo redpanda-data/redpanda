@@ -105,6 +105,79 @@
                     ]
                 }
             ]
+        },
+        {
+            "path": "/v1/brokers/{id}/maintenance",
+            "operations": [
+                {
+                    "method": "PUT",
+                    "nickname": "start_broker_maintenance",
+                    "summary": "Request broker enter maintenance mode",
+                    "type": "void",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "id",
+                            "in": "path",
+                            "required": true,
+                            "type": "long"
+                        }
+                    ]
+                },
+                {
+                    "method": "DELETE",
+                    "nickname": "stop_broker_maintenance",
+                    "summary": "Request broker exit maintenance mode",
+                    "type": "void",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "id",
+                            "in": "path",
+                            "required": true,
+                            "type": "long"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "path": "/v1/maintenance",
+            "operations": [
+                {
+                    "method": "PUT",
+                    "summary": "Force start local maintenance",
+                    "type": "void",
+                    "nickname": "start_local_maintenance",
+                    "produces": [
+                        "application/json"
+                    ]
+                },
+                {
+                    "method": "DELETE",
+                    "summary": "Force stop local maintenance",
+                    "type": "void",
+                    "nickname": "stop_local_maintenance",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                },
+                {
+                    "method": "GET",
+                    "summary": "Get local maintenance status",
+                    "type": "maintenance_status",
+                    "nickname": "get_local_maintenance",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
         }
     ],
     "models": {
@@ -171,6 +244,40 @@
                 "total": {
                     "type": "long",
                     "description": "total space bytes"
+                }
+            }
+        },
+        "maintenance_status": {
+            "id": "maintenance_status",
+            "description": "Drain status",
+            "properties": {
+                "draining": {
+                    "type": "boolean",
+                    "description": "in maintenance state"
+                },
+                "finished": {
+                    "type": "boolean",
+                    "description": "drain finished"
+                },
+                "errors": {
+                    "type": "boolean",
+                    "description": "drain errors"
+                },
+                "partitions": {
+                    "type": "long",
+                    "description": "partition count"
+                },
+                "eligible": {
+                    "type": "long",
+                    "description": "eligible partition count"
+                },
+                "transferring": {
+                    "type": "long",
+                    "description": "transferring partition count"
+                },
+                "failed": {
+                    "type": "long",
+                    "description": "failed transfer partition count"
                 }
             }
         }

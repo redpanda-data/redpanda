@@ -216,8 +216,6 @@ private:
     cluster::controller* _controller;
     ss::sharded<cluster::shard_table>& _shard_table;
     ss::sharded<cluster::metadata_cache>& _metadata_cache;
-
     request_authenticator _auth;
-
     bool _ready{false};
 };

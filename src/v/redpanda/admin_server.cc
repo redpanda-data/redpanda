@@ -1672,6 +1672,75 @@ void admin_server::register_broker_routes() {
           co_await throw_on_error(*req, ec, model::controller_ntp, id);
           co_return ss::json::json_void();
       });
+
+    register_route<superuser>(
+      ss::httpd::broker_json::start_broker_maintenance,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          model::node_id id = parse_broker_id(*req);
+          auto ec = co_await _controller->get_members_frontend()
+                      .local()
+                      .set_maintenance_mode(id, true);
+          co_await throw_on_error(*req, ec, model::controller_ntp, id);
+          co_return ss::json::json_void();
+      });
+
+    register_route<superuser>(
+      ss::httpd::broker_json::stop_broker_maintenance,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          model::node_id id = parse_broker_id(*req);
+          auto ec = co_await _controller->get_members_frontend()
+                      .local()
+                      .set_maintenance_mode(id, false);
+          co_await throw_on_error(*req, ec, model::controller_ntp, id);
+          co_return ss::json::json_void();
+      });
+
+    register_route<superuser>(
+      ss::httpd::broker_json::start_local_maintenance,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          co_await _controller->get_drain_manager().invoke_on_all(
+            [](cluster::drain_manager& dm) { return dm.drain(); });
+          co_return ss::json::json_void();
+      });
+
+    register_route<superuser>(
+      ss::httpd::broker_json::stop_local_maintenance,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          co_await _controller->get_drain_manager().invoke_on_all(
+            [](cluster::drain_manager& dm) { return dm.restore(); });
+          co_return ss::json::json_void();
+      });
+
+    register_route<superuser>(
+      ss::httpd::broker_json::get_local_maintenance,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          auto status
+            = co_await _controller->get_drain_manager().local().status();
+          ss::httpd::broker_json::maintenance_status res;
+          res.draining = status.has_value();
+          if (status.has_value()) {
+              res.finished = status->finished;
+              res.errors = status->errors;
+              if (status->partitions.has_value()) {
+                  res.partitions = status->partitions.value();
+              }
+              if (status->eligible.has_value()) {
+                  res.eligible = status->eligible.value();
+              }
+              if (status->transferring.has_value()) {
+                  res.transferring = status->transferring.value();
+              }
+              if (status->failed.has_value()) {
+                  res.failed = status->failed.value();
+              }
+          }
+          co_return res;
+      });
 }
 
 // Helpers for partition routes
