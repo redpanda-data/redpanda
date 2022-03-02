@@ -257,6 +257,18 @@ type ExternalConnectivityConfig struct {
 	// addresses remains empty. The default preferred address type is
 	// ExternalIP. This option only applies when Subdomain is empty.
 	PreferredAddressType string `json:"preferredAddressType,omitempty"`
+	// Configures a load balancer for bootstrapping
+	Bootstrap *LoadBalancerConfig `json:"bootstrapLoadBalancer,omitempty"`
+}
+
+// LoadBalancerConfig defines the load balancer specification
+type LoadBalancerConfig struct {
+	// If specified, sets the load balancer service annotations.
+	// Example usage includes configuring the load balancer to
+	// be an internal one through provider-specific annotations.
+	Annotations map[string]string `json:"annotations,omitempty"`
+	// The port used to communicate to the load balancer.
+	Port int `json:"port,omitempty"`
 }
 
 // ClusterStatus defines the observed state of Cluster
@@ -280,6 +292,7 @@ type ClusterStatus struct {
 type NodesList struct {
 	Internal           []string              `json:"internal,omitempty"`
 	External           []string              `json:"external,omitempty"`
+	ExternalBootstrap  *LoadBalancerStatus   `json:"externalBootstrap,omitempty"`
 	ExternalAdmin      []string              `json:"externalAdmin,omitempty"`
 	ExternalPandaproxy []string              `json:"externalPandaproxy,omitempty"`
 	PandaproxyIngress  *string               `json:"pandaproxyIngress,omitempty"`
@@ -382,6 +395,12 @@ type SchemaRegistryStatus struct {
 	// empty. This gives user ability to register all addresses individually
 	// in DNS provider of choice.
 	ExternalNodeIPs []string `json:"externalNodeIPs,omitempty"`
+}
+
+// LoadBalancerStatus reports the load balancer status as generated
+// by the load balancer core service
+type LoadBalancerStatus struct {
+	corev1.LoadBalancerStatus `json:""`
 }
 
 // KafkaAPITLS configures TLS for redpanda Kafka API
@@ -672,11 +691,13 @@ type TLSConfig struct {
 // Kafka API
 
 // GetPort returns API port
+//nolint:gocritic // TODO KafkaAPI is now 81 bytes, consider a pointer
 func (k KafkaAPI) GetPort() int {
 	return k.Port
 }
 
 // GetTLS returns API TLSConfig
+//nolint:gocritic // TODO KafkaAPI is now 81 bytes, consider a pointer
 func (k KafkaAPI) GetTLS() *TLSConfig {
 	return &TLSConfig{
 		Enabled:           k.TLS.Enabled,
@@ -687,6 +708,7 @@ func (k KafkaAPI) GetTLS() *TLSConfig {
 }
 
 // GetExternal returns API's ExternalConnectivityConfig
+//nolint:gocritic // TODO KafkaAPI is now 81 bytes, consider a pointer
 func (k KafkaAPI) GetExternal() *ExternalConnectivityConfig {
 	return &k.External
 }

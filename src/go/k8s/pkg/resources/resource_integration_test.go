@@ -374,3 +374,55 @@ func TestEnsure_NodePortService(t *testing.T) {
 		t.Fatalf("expecting configmap updated but got %d", port)
 	}
 }
+
+func TestEnsure_LoadbalancerService(t *testing.T) {
+	t.Run("create-loadbalancer-service", func(t *testing.T) {
+		cluster := pandaCluster()
+		cluster = cluster.DeepCopy()
+		cluster.Spec.Configuration.KafkaAPI = append(cluster.Spec.Configuration.KafkaAPI,
+			[]redpandav1alpha1.KafkaAPI{
+				{
+					Port: 1111,
+				},
+				{
+					External: redpandav1alpha1.ExternalConnectivityConfig{
+						Enabled: true,
+						Bootstrap: &redpandav1alpha1.LoadBalancerConfig{
+							Annotations: map[string]string{"key1": "val1"},
+							Port:        2222,
+						},
+					},
+				},
+			}...)
+		cluster.Name = "ensure-integration-lb-cluster"
+
+		lb := res.NewLoadBalancerService(
+			c,
+			cluster,
+			scheme.Scheme,
+			[]res.NamedServicePort{
+				{Name: "kafka-external-bootstrap", Port: 2222, TargetPort: 1112},
+			},
+			true,
+			ctrl.Log.WithName("test"))
+
+		err := lb.Ensure(context.Background())
+		assert.NoError(t, err)
+
+		actual := &corev1.Service{}
+		err = c.Get(context.Background(), lb.Key(), actual)
+		assert.NoError(t, err)
+
+		assert.Equal(t, "ensure-integration-lb-cluster-lb-bootstrap", actual.Name)
+
+		_, annotationExists := actual.Annotations["key1"]
+		assert.True(t, annotationExists)
+		assert.Equal(t, "val1", actual.Annotations["key1"])
+
+		assert.True(t, len(actual.Spec.Ports) == 1)
+		assert.Equal(t, int32(2222), actual.Spec.Ports[0].Port)
+		assert.Equal(t, 1112, actual.Spec.Ports[0].TargetPort.IntValue())
+		assert.Equal(t, corev1.ProtocolTCP, actual.Spec.Ports[0].Protocol)
+		assert.Equal(t, "kafka-external-bootstrap", actual.Spec.Ports[0].Name)
+	})
+}
