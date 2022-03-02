@@ -97,6 +97,11 @@ CHAOS_LOG_ALLOW_LIST = [
 
     # rpc - Service handler threw an exception: seastar::broken_promise (broken promise)"
     re.compile("rpc - Service handler threw an exception: seastar"),
+
+    # rpc - server.cc:91 - vectorized internal rpc protocol - Error[applying protocol] remote address: 172.18.0.10:60503 - rpc::rpc_internal_body_parsing_exception (Unable to parse received RPC request payload - std::out_of_range (parse_utils out of range. got:9726 bytes and expected:46927 bytes
+    re.compile(
+        "rpc - .*Unable to parse received RPC request payload - std::out_of_range"
+    ),
 ]
 
 
