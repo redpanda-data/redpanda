@@ -1324,8 +1324,8 @@ void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
         } else {
             seq_it->second.update(bid.last_seq, last_offset);
         }
-        seq_it->second.last_write_timestamp = bid.max_timestamp.value();
-        _oldest_session = std::min(_oldest_session, bid.max_timestamp);
+        seq_it->second.last_write_timestamp = bid.first_timestamp.value();
+        _oldest_session = std::min(_oldest_session, bid.first_timestamp);
     }
 
     if (bid.is_transactional) {
