@@ -64,6 +64,7 @@ public:
     }
     void notify(const T& value) {
         auto items = std::exchange(_items, {});
+        _items.reserve(items.size());
         for (auto& wi : items) {
             if (wi->data == value) {
                 wi->p.set_value();
@@ -71,5 +72,6 @@ public:
                 _items.push_back(std::move(wi));
             }
         }
+        _items.shrink_to_fit();
     };
 };
