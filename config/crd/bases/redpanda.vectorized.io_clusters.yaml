@@ -162,6 +162,22 @@ spec:
                             API outside of a Kubernetes cluster. For more information
                             please go to ExternalConnectivityConfig
                           properties:
+                            bootstrapLoadBalancer:
+                              description: Configures a load balancer for bootstrapping
+                              properties:
+                                annotations:
+                                  additionalProperties:
+                                    type: string
+                                  description: If specified, sets the load balancer
+                                    service annotations. Example usage includes configuring
+                                    the load balancer to be an internal one through
+                                    provider-specific annotations.
+                                  type: object
+                                port:
+                                  description: The port used to communicate to the
+                                    load balancer.
+                                  type: integer
+                              type: object
                             enabled:
                               description: Enabled enables the external connectivity
                                 feature
@@ -215,6 +231,22 @@ spec:
                             outside of a Kubernetes cluster. For more information
                             please go to ExternalConnectivityConfig
                           properties:
+                            bootstrapLoadBalancer:
+                              description: Configures a load balancer for bootstrapping
+                              properties:
+                                annotations:
+                                  additionalProperties:
+                                    type: string
+                                  description: If specified, sets the load balancer
+                                    service annotations. Example usage includes configuring
+                                    the load balancer to be an internal one through
+                                    provider-specific annotations.
+                                  type: object
+                                port:
+                                  description: The port used to communicate to the
+                                    load balancer.
+                                  type: integer
+                              type: object
                             enabled:
                               description: Enabled enables the external connectivity
                                 feature
@@ -332,6 +364,22 @@ spec:
                             outside of a Kubernetes cluster. For more information
                             please go to ExternalConnectivityConfig
                           properties:
+                            bootstrapLoadBalancer:
+                              description: Configures a load balancer for bootstrapping
+                              properties:
+                                annotations:
+                                  additionalProperties:
+                                    type: string
+                                  description: If specified, sets the load balancer
+                                    service annotations. Example usage includes configuring
+                                    the load balancer to be an internal one through
+                                    provider-specific annotations.
+                                  type: object
+                                port:
+                                  description: The port used to communicate to the
+                                    load balancer.
+                                  type: integer
+                              type: object
                             enabled:
                               description: Enabled enables the external connectivity
                                 feature
@@ -382,6 +430,22 @@ spec:
                           outside of a Kubernetes cluster. For more information please
                           go to ExternalConnectivityConfig
                         properties:
+                          bootstrapLoadBalancer:
+                            description: Configures a load balancer for bootstrapping
+                            properties:
+                              annotations:
+                                additionalProperties:
+                                  type: string
+                                description: If specified, sets the load balancer
+                                  service annotations. Example usage includes configuring
+                                  the load balancer to be an internal one through
+                                  provider-specific annotations.
+                                type: object
+                              port:
+                                description: The port used to communicate to the load
+                                  balancer.
+                                type: integer
+                            type: object
                           enabled:
                             description: Enabled enables the external connectivity
                               feature
@@ -711,6 +775,65 @@ spec:
                     items:
                       type: string
                     type: array
+                  externalBootstrap:
+                    description: LoadBalancerStatus reports the load balancer status
+                      as generated by the load balancer core service
+                    properties:
+                      ingress:
+                        description: Ingress is a list containing ingress points for
+                          the load-balancer. Traffic intended for the service should
+                          be sent to these ingress points.
+                        items:
+                          description: 'LoadBalancerIngress represents the status
+                            of a load-balancer ingress point: traffic intended for
+                            the service should be sent to an ingress point.'
+                          properties:
+                            hostname:
+                              description: Hostname is set for load-balancer ingress
+                                points that are DNS based (typically AWS load-balancers)
+                              type: string
+                            ip:
+                              description: IP is set for load-balancer ingress points
+                                that are IP based (typically GCE or OpenStack load-balancers)
+                              type: string
+                            ports:
+                              description: Ports is a list of records of service ports
+                                If used, every port defined in the service should
+                                have an entry in it
+                              items:
+                                properties:
+                                  error:
+                                    description: 'Error is to record the problem with
+                                      the service port The format of the error shall
+                                      comply with the following rules: - built-in
+                                      error values shall be specified in this file
+                                      and those shall use   CamelCase names - cloud
+                                      provider specific error values must have names
+                                      that comply with the   format foo.example.com/CamelCase.
+                                      --- The regex it matches is (dns1123SubdomainFmt/)?(qualifiedNameFmt)'
+                                    maxLength: 316
+                                    pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                                    type: string
+                                  port:
+                                    description: Port is the port number of the service
+                                      port of which status is recorded here
+                                    format: int32
+                                    type: integer
+                                  protocol:
+                                    default: TCP
+                                    description: 'Protocol is the protocol of the
+                                      service port of which status is recorded here
+                                      The supported values are: "TCP", "UDP", "SCTP"'
+                                    type: string
+                                required:
+                                - port
+                                - protocol
+                                type: object
+                              type: array
+                              x-kubernetes-list-type: atomic
+                          type: object
+                        type: array
+                    type: object
                   externalPandaproxy:
                     items:
                       type: string

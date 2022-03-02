@@ -965,6 +965,39 @@ func TestCreation(t *testing.T) {
 		err := rp.ValidateCreate()
 		assert.Error(t, err)
 	})
+	t.Run("bootstrap loadbalancer for kafka api needs a port", func(t *testing.T) {
+		rp := redpandaCluster.DeepCopy()
+		rp.Spec.Configuration.KafkaAPI = append(rp.Spec.Configuration.KafkaAPI,
+			v1alpha1.KafkaAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true, Bootstrap: &v1alpha1.LoadBalancerConfig{}}})
+		err := rp.ValidateCreate()
+		assert.Error(t, err)
+	})
+	t.Run("bootstrap loadbalancer not allowed for admin", func(t *testing.T) {
+		rp := redpandaCluster.DeepCopy()
+		rp.Spec.Configuration.AdminAPI = append(rp.Spec.Configuration.AdminAPI,
+			v1alpha1.AdminAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true, Bootstrap: &v1alpha1.LoadBalancerConfig{
+				Port: 123,
+			}}})
+		err := rp.ValidateCreate()
+		assert.Error(t, err)
+	})
+	t.Run("bootstrap loadbalancer not allowed for pandaproxy", func(t *testing.T) {
+		rp := redpandaCluster.DeepCopy()
+		rp.Spec.Configuration.PandaproxyAPI = append(rp.Spec.Configuration.PandaproxyAPI,
+			v1alpha1.PandaproxyAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true, Bootstrap: &v1alpha1.LoadBalancerConfig{
+				Port: 123,
+			}}})
+		err := rp.ValidateCreate()
+		assert.Error(t, err)
+	})
+	t.Run("bootstrap loadbalancer not allowed for schemaregistry", func(t *testing.T) {
+		rp := redpandaCluster.DeepCopy()
+		rp.Spec.Configuration.SchemaRegistry = &v1alpha1.SchemaRegistryAPI{External: &v1alpha1.ExternalConnectivityConfig{Enabled: true, Bootstrap: &v1alpha1.LoadBalancerConfig{
+			Port: 123,
+		}}}
+		err := rp.ValidateCreate()
+		assert.Error(t, err)
+	})
 }
 
 func TestSchemaRegistryValidations(t *testing.T) {

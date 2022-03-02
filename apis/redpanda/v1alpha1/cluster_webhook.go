@@ -238,6 +238,12 @@ func (r *Cluster) validateAdminListeners() field.ErrorList {
 				r.Spec.Configuration.AdminAPI,
 				"cannot have an preferred address type for admin listener"))
 	}
+	if externalAdmin != nil && externalAdmin.External.Bootstrap != nil {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("configuration").Child("adminApi"),
+				r.Spec.Configuration.AdminAPI,
+				"bootstrap loadbalancer not available for http admin api"))
+	}
 
 	// for now only one listener can have TLS to be backward compatible with v1alpha1 API
 	foundListenerWithTLS := false
@@ -321,6 +327,13 @@ func (r *Cluster) validateKafkaListeners() field.ErrorList {
 				r.Spec.Configuration.KafkaAPI,
 				"cannot provide both a preferred address type and a subdomain"))
 	}
+	if external != nil && external.External.Bootstrap != nil && external.External.Bootstrap.Port == 0 {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("configuration").Child("kafkaApi"),
+				r.Spec.Configuration.KafkaAPI,
+				"bootstrap port cannot be empty"))
+	}
+
 	return allErrs
 }
 
@@ -350,6 +363,12 @@ func (r *Cluster) validatePandaproxyListeners() field.ErrorList {
 				field.Invalid(field.NewPath("spec").Child("configuration").Child("pandaproxyApi").Index(i).Child("external").Child("preferredAddressType"),
 					r.Spec.Configuration.PandaproxyAPI[i].External.PreferredAddressType,
 					"cannot have a pandaproxy external preferred address type"))
+		}
+		if proxyExternal != nil && proxyExternal.External.Bootstrap != nil {
+			allErrs = append(allErrs,
+				field.Invalid(field.NewPath("spec").Child("configuration").Child("pandaproxyApi").Index(i),
+					r.Spec.Configuration.PandaproxyAPI[i],
+					"bootstrap loadbalancer not available for pandaproxy"))
 		}
 		if (kafkaExternal == nil || !kafkaExternal.External.Enabled) && (proxyExternal != nil && proxyExternal.External.Enabled) {
 			allErrs = append(allErrs,
@@ -421,35 +440,6 @@ func (r *Cluster) validateSchemaRegistryListener() field.ErrorList {
 	if schemaRegistry == nil {
 		return allErrs
 	}
-	if r.IsSchemaRegistryExternallyAvailable() {
-		kafkaExternal := r.ExternalListener()
-
-		if kafkaExternal == nil || !kafkaExternal.External.Enabled {
-			allErrs = append(allErrs,
-				field.Invalid(field.NewPath("spec").Child("configuration").Child("schemaRegistry"),
-					r.Spec.Configuration.SchemaRegistry,
-					"cannot have a schema registry external listener without a kafka external listener"))
-		}
-		if kafkaExternal == nil && schemaRegistry.External.Subdomain != "" {
-			allErrs = append(allErrs,
-				field.Invalid(field.NewPath("spec").Child("configuration").Child("schemaRegistry").Child("external").Child("subdomain"),
-					r.Spec.Configuration.SchemaRegistry.External.Subdomain,
-					"the external kafka listener can't be empty if the registry subdomain is set"))
-		}
-		if kafkaExternal != nil && kafkaExternal.External.Subdomain != schemaRegistry.External.Subdomain {
-			allErrs = append(allErrs,
-				field.Invalid(field.NewPath("spec").Child("configuration").Child("schemaRegistry").Child("external").Child("subdomain"),
-					r.Spec.Configuration.SchemaRegistry.External.Subdomain,
-					"sudomain of external schema registry must be the same as kafka's"))
-		}
-		if schemaRegistry.External.PreferredAddressType != "" {
-			allErrs = append(allErrs,
-				field.Invalid(field.NewPath("spec").Child("configuration").Child("schemaRegistry").Child("external").Child("preferredAddressType"),
-					r.Spec.Configuration.SchemaRegistry.External.PreferredAddressType,
-					"cannot provide a preferred address type for schema registry"))
-		}
-	}
-
 	if schemaRegistry.TLS != nil {
 		tlsErrs := validateTLS(
 			schemaRegistry.TLS.Enabled,
@@ -461,6 +451,40 @@ func (r *Cluster) validateSchemaRegistryListener() field.ErrorList {
 			field.NewPath("spec").Child("configuration").Child("schemaRegistry").Child("external"),
 		)
 		allErrs = append(allErrs, tlsErrs...)
+	}
+	if !r.IsSchemaRegistryExternallyAvailable() {
+		return allErrs
+	}
+	kafkaExternal := r.ExternalListener()
+	if kafkaExternal == nil || !kafkaExternal.External.Enabled {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("configuration").Child("schemaRegistry"),
+				r.Spec.Configuration.SchemaRegistry,
+				"cannot have a schema registry external listener without a kafka external listener"))
+	}
+	if kafkaExternal == nil && schemaRegistry.External.Subdomain != "" {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("configuration").Child("schemaRegistry").Child("external").Child("subdomain"),
+				r.Spec.Configuration.SchemaRegistry.External.Subdomain,
+				"the external kafka listener can't be empty if the registry subdomain is set"))
+	}
+	if kafkaExternal != nil && kafkaExternal.External.Subdomain != schemaRegistry.External.Subdomain {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("configuration").Child("schemaRegistry").Child("external").Child("subdomain"),
+				r.Spec.Configuration.SchemaRegistry.External.Subdomain,
+				"sudomain of external schema registry must be the same as kafka's"))
+	}
+	if schemaRegistry.External.PreferredAddressType != "" {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("configuration").Child("schemaRegistry").Child("external").Child("preferredAddressType"),
+				r.Spec.Configuration.SchemaRegistry.External.PreferredAddressType,
+				"cannot provide a preferred address type for schema registry"))
+	}
+	if schemaRegistry.External.Bootstrap != nil {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("configuration").Child("schemaRegistry"),
+				r.Spec.Configuration.SchemaRegistry.External,
+				"bootstrap loadbalancer not available for schema reigstry"))
 	}
 	return allErrs
 }

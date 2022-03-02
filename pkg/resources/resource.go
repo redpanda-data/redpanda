@@ -36,6 +36,8 @@ const (
 	InternalListenerName = "kafka"
 	// ExternalListenerName is name of external listener
 	ExternalListenerName = "kafka-external"
+	// ExternalListenerBootstrapName is the name of external bootstrap service
+	ExternalListenerBootstrapName = "kafka-external-bootstrap"
 	// PandaproxyPortInternalName is the name of the pandaproxy internal port
 	PandaproxyPortInternalName = "proxy"
 	// PandaproxyPortExternalName is the name of the pandaproxy external port
@@ -50,8 +52,9 @@ const (
 
 // NamedServicePort allows to pass name ports, e.g., to service resources
 type NamedServicePort struct {
-	Name string
-	Port int
+	Name       string
+	Port       int
+	TargetPort int
 }
 
 // NamedServiceNodePort allows to specify which nodeports should be created
