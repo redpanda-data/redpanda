@@ -25,6 +25,7 @@
 *.out
 *.app
 /*build*
+!.buildkite
 /dbuild
 bin
 _e2e_artifacts/
