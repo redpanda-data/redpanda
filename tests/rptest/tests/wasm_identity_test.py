@@ -156,7 +156,6 @@ class WasmMultiInputTopicIdentityTest(WasmIdentityTest):
                        script=WasmTemplateRepository.IDENTITY_TRANSFORM)
         ]
 
-    @ignore  # https://github.com/vectorizedio/redpanda/issues/2514
     @cluster(num_nodes=6, log_allow_list=WASM_LOG_ALLOW_LIST)
     def verify_materialized_topics_test(self):
         self.verify_results(materialized_result_set_compare)
