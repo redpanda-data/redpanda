@@ -8,7 +8,7 @@ spec:
   replicas: 1
   enableSasl: true
   superUsers:
-    - admin
+    - username: admin
   resources:
     requests:
       cpu: 1
