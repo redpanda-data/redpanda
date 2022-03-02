@@ -2489,6 +2489,21 @@ ss::future<timeout_now_reply> consensus::timeout_now(timeout_now_request&& r) {
         });
     }
 
+    if (_node_priority_override == zero_voter_priority) {
+        vlog(
+          _ctxlog.debug,
+          "Ignoring timeout request in state {} with node voter priority zero "
+          "from node {} at term {}",
+          _vstate,
+          r.node_id,
+          r.term);
+
+        return ss::make_ready_future<timeout_now_reply>(timeout_now_reply{
+          .term = _term,
+          .result = timeout_now_reply::status::failure,
+        });
+    }
+
     // start an election immediately
     dispatch_vote(true);
 
