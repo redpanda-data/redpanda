@@ -141,8 +141,14 @@ class Admin:
     def get_status_ready(self, node=None):
         return self._request("GET", "status/ready", node=node).json()
 
-    def get_cluster_config(self, node=None):
-        return self._request("GET", "config", node=node).json()
+    def get_cluster_config(self, node=None, include_defaults=None):
+        if include_defaults is not None:
+            kwargs = {"params": {"include_defaults": include_defaults}}
+        else:
+            kwargs = {}
+
+        return self._request("GET", "cluster_config", node=node,
+                             **kwargs).json()
 
     def get_cluster_config_schema(self, node=None):
         return self._request("GET", "cluster_config/schema", node=node).json()
