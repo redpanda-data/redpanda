@@ -358,3 +358,106 @@ FIXTURE_TEST(
       logs_after.begin()->second.size(), logs_before.begin()->second.size());
     validate_offset_translation(gr);
 }
+
+FIXTURE_TEST(abort_configuration_change, raft_test_fixture) {
+    // raft group with single replica
+    raft_group gr = raft_group(raft::group_id(0), 1);
+    gr.enable_all();
+    auto res = replicate_random_batches(gr, 5).get();
+    // try to move raft group to
+    std::vector<model::broker> new_members;
+    new_members.reserve(1);
+    // replace configuration with the node that does not exists
+    new_members.push_back(gr.make_broker(model::node_id(10)));
+
+    res = retry_with_leader(gr, 5, 5s, [new_members](raft_node& leader) {
+              return leader.consensus
+                ->replace_configuration(new_members, model::revision_id(0))
+                .then([](std::error_code ec) {
+                    info("configuration replace result: {}", ec.message());
+                    return !ec
+                           || ec
+                                == raft::errc::configuration_change_in_progress;
+                });
+          }).get();
+
+    res = retry_with_leader(gr, 5, 5s, [new_members](raft_node& leader) {
+              return leader.consensus
+                ->abort_configuration_change(model::revision_id(0))
+                .then([](std::error_code ec) {
+                    info("configuration abort result: {}", ec.message());
+                    return !ec
+                           || ec
+                                == raft::errc::configuration_change_in_progress;
+                });
+          }).get();
+
+    BOOST_REQUIRE(res);
+
+    auto current_cfg = gr.get_member(model::node_id(0)).consensus->config();
+    BOOST_REQUIRE_EQUAL(current_cfg.brokers().size(), 1);
+    BOOST_REQUIRE(current_cfg.type() == raft::configuration_type::simple);
+
+    auto logs_before = gr.read_all_logs();
+    // replicate more data, partition should be writable
+    res = replicate_random_batches(gr, 5).get();
+    BOOST_REQUIRE(res);
+    auto logs_after = gr.read_all_logs();
+    BOOST_REQUIRE_GT(
+      logs_after.begin()->second.size(), logs_before.begin()->second.size());
+    validate_offset_translation(gr);
+}
+
+FIXTURE_TEST(revert_configuration_change, raft_test_fixture) {
+    raft_group gr = raft_group(raft::group_id(0), 3);
+    gr.enable_all();
+    info("replicating some batches");
+    auto res = replicate_random_batches(gr, 5).get0();
+    // all nodes are replaced with new node
+    gr.create_new_node(model::node_id(5));
+    std::vector<model::broker> new_members;
+    new_members.reserve(1);
+    new_members.push_back(gr.get_member(model::node_id(5)).broker);
+    bool success = false;
+    info("replacing configuration");
+    res = retry_with_leader(gr, 5, 5s, [new_members](raft_node& leader) {
+              return leader.consensus
+                ->replace_configuration(new_members, model::revision_id(0))
+                .then([](std::error_code ec) {
+                    info("configuration replace result: {}", ec.message());
+                    return !ec
+                           || ec
+                                == raft::errc::configuration_change_in_progress;
+                });
+          }).get0();
+
+    BOOST_REQUIRE(res);
+
+    res = retry_with_leader(gr, 5, 5s, [new_members](raft_node& leader) {
+              return leader.consensus
+                ->revert_configuration_change(model::revision_id(0))
+                .then([](std::error_code ec) {
+                    info("configuration revert result: {}", ec.message());
+                    return !ec;
+                });
+          }).get0();
+
+    wait_for(
+      5s,
+      [&gr]() {
+          auto leader_id = gr.get_leader_id();
+          if (!leader_id) {
+              return false;
+          }
+          return gr.get_member(*leader_id).consensus->config().type()
+                 == raft::configuration_type::simple;
+      },
+      "new nodes are up to date");
+
+    auto new_leader_id = gr.get_leader_id();
+    if (new_leader_id) {
+        auto& new_leader = gr.get_member(*new_leader_id);
+        BOOST_REQUIRE_EQUAL(new_leader.consensus->config().brokers().size(), 3);
+    }
+    validate_offset_translation(gr);
+}
