@@ -89,6 +89,10 @@ RUN git -C /opt clone https://github.com/Shopify/sarama.git && \
     git -C /opt clone --branch ducktape2 https://github.com/vectorizedio/kafka-streams-examples.git && \
     cd /opt/kafka-streams-examples && mvn -DskipTests=true clean package
 
+# Install our in-tree go tests
+COPY --chown=0:0 tests/go /tmp/go
+RUN cd /tmp/go/sarama/produce_test && go mod tidy && go build
+
 RUN go install github.com/twmb/kcl@latest && \
     mv /root/go/bin/kcl /usr/local/bin/
 
