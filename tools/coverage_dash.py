@@ -7,8 +7,19 @@ import io
 import argparse
 import tempfile
 import gen_coverage as rpcov
+import itertools
+from concurrent.futures import ThreadPoolExecutor
+import multiprocessing
+import logging
 
 KCLIENTS = ["FranzGo", "KafkaStreams", "Sarama"]
+
+logger = logging.getLogger(__name__)
+logger_handler = logging.StreamHandler()
+logger_handler.setFormatter(
+    logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+logger.addHandler(logger_handler)
+logger.setLevel(logging.INFO)
 
 
 def create_profraw_files_dict(files_list):
@@ -34,37 +45,57 @@ def get_profraw_files(test_dir):
     results = subprocess.run(find,
                              shell=True,
                              capture_output=True,
-                             encoding="utf-8")
+                             encoding="utf-8",
+                             check=True)
 
     results = results.stdout.strip().split("\n")
-    return create_profraw_files_dict(results)
+    by_test = create_profraw_files_dict(results)
+    return by_test
 
 
-def gen_coverage(profraw_files, rp_binary, ignore_regex):
+def gen_coverage(test_dir, profraw_files, rp_binary, ignore_regex):
     cov_totals = {}
 
-    for duck_test in profraw_files:
+    def process_one(test_name, files):
         data_profile = tempfile.NamedTemporaryFile()
 
-        rpcov.merge_profraw_files(profraw_files=profraw_files[duck_test],
+        rpcov.merge_profraw_files(profraw_files=files,
                                   data_profile=data_profile)
         rpcov.gen_coverage_html(rp_binary=rp_binary,
                                 data_profile=data_profile,
                                 ignore_regex=ignore_regex,
-                                out_dir=duck_test)
+                                out_dir=test_name)
         cov_json = rpcov.gen_coverage_json(rp_binary=rp_binary,
                                            data_profile=data_profile,
                                            ignore_regex=ignore_regex)
 
         # Writes coverage.json for each test
-        cov_path = os.path.join(duck_test, "coverage.json")
+        cov_path = os.path.join(test_name, "coverage.json")
         with open(cov_path, "w") as out_file:
             json.dump(cov_json, out_file, indent=4, sort_keys=True)
 
         # The last index has the totals for the test case
-        cov_totals[duck_test] = cov_json[-1]
+        cov_totals[test_name] = cov_json[-1]
 
         data_profile.close()
+
+    # Do the total calculation outside of the thread pool, it's much
+    # more RAM intensive so can OOM if run concurrently with
+    # other things.
+    logger.info("Calculating total coverage...")
+    total_path = os.path.join(test_dir, "coverage_total")
+    process_one(total_path,
+                list(itertools.chain.from_iterable(profraw_files.values())))
+
+    logger.info("Calculating per-test coverage...")
+    futures = []
+    executor = ThreadPoolExecutor(
+        max_workers=max(multiprocessing.cpu_count() / 2, 1))
+    for test_name, files in profraw_files.items():
+        futures.append(executor.submit(process_one, test_name, files))
+
+    for f in futures:
+        f.result()
 
     return cov_totals
 
@@ -198,30 +229,31 @@ def main(args):
     duck_sess = os.path.join(args.build_root, "ducktape/results",
                              args.ducktape_session)
 
-    print("Getting profraw files ...")
+    logger.info("Getting profraw files ...")
     profraw_files = get_profraw_files(test_dir=duck_sess)
     rp_binary = os.path.join(args.build_root, "debug/clang/bin/redpanda")
 
     # generate code coverage report for each ducktape test
     # and capture the totals
-    print("Generating coverage reports ...")
-    cov_totals = gen_coverage(profraw_files=profraw_files,
+    logger.info("Generating coverage reports ...")
+    cov_totals = gen_coverage(test_dir=duck_sess,
+                              profraw_files=profraw_files,
                               rp_binary=rp_binary,
                               ignore_regex=args.coverage_ignore_regex)
 
     # check test status for the Kafka Clients we do compat testing on
-    print("Checking status of compat tests ...")
+    logger.info("Checking status of compat tests ...")
     compat_results = check_compat_tests(test_dir=duck_sess)
 
     # write coverage dash html file
-    print("Writing coverage dashboard html ...")
+    logger.info("Writing coverage dashboard html ...")
     dash_path = os.path.join(duck_sess, "coverage_dash.html")
     create_dashboard_page(duck_sess=args.ducktape_session,
                           dash_path=dash_path,
                           cov_totals=cov_totals,
                           compat_results=compat_results)
 
-    print("... Done.")
+    logger.info("... Done.")
 
 
 if __name__ == '__main__':
