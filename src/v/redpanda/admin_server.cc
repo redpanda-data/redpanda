@@ -1775,9 +1775,9 @@ void admin_server::register_partition_routes() {
       ss::httpd::partition_json::get_partitions,
       [this](std::unique_ptr<ss::httpd::request>) {
           using summary = ss::httpd::partition_json::partition_summary;
-          auto get_summaries = [](auto& partition_manager, bool materialized) {
+          auto get_summaries = [](auto& partition_manager, bool materialized, auto get_leader) {
               return partition_manager.map_reduce0(
-                [materialized](auto& pm) {
+                [materialized, get_leader](auto& pm) {
                     std::vector<summary> partitions;
                     partitions.reserve(pm.partitions().size());
                     for (const auto& it : pm.partitions()) {
@@ -1787,6 +1787,7 @@ void admin_server::register_partition_routes() {
                         p.partition_id = it.first.tp.partition;
                         p.core = ss::this_shard_id();
                         p.materialized = materialized;
+                        p.leader = get_leader(it.second);
                         partitions.push_back(std::move(p));
                     }
                     return partitions;
@@ -1797,8 +1798,8 @@ void admin_server::register_partition_routes() {
                     return acc;
                 });
           };
-          auto f1 = get_summaries(_partition_manager, false);
-          auto f2 = get_summaries(_cp_partition_manager, true);
+          auto f1 = get_summaries(_partition_manager, false, [](const auto& p) { return p->get_leader_id().value_or(model::node_id(-1))(); });
+          auto f2 = get_summaries(_cp_partition_manager, true, [](const auto&) { return -1; });
           return ss::when_all_succeed(std::move(f1), std::move(f2))
             .then([](auto summaries) {
                 auto& [partitions, s2] = summaries;

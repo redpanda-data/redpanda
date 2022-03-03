@@ -241,6 +241,10 @@
                 "materialized": {
                     "type": "boolean",
                     "description": "materialized"
+                },
+                "leader": {
+                    "type": "long",
+                    "description": "Latest known leader (or -1 if unknown)"
                 }
             }
         },
