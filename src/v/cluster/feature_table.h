@@ -19,8 +19,11 @@
 
 namespace cluster {
 
-enum class feature {
+enum class feature : std::uint64_t {
     central_config = 0x1,
+
+    // Dummy features for testing only
+    test_alpha = uint64_t(1) << 63,
 };
 
 /**
@@ -69,12 +72,19 @@ struct feature_spec {
     prepare_policy prepare_rule;
 };
 
-constexpr static std::array feature_schema{feature_spec{
-  cluster_version{1},
-  "central_config",
-  feature::central_config,
-  feature_spec::available_policy::always,
-  feature_spec::prepare_policy::always}};
+constexpr static std::array feature_schema{
+  feature_spec{
+    cluster_version{1},
+    "central_config",
+    feature::central_config,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+  feature_spec{
+    cluster_version{2001},
+    "__test_alpha",
+    feature::test_alpha,
+    feature_spec::available_policy::explicit_only,
+    feature_spec::prepare_policy::always}};
 
 /**
  * Feature states
