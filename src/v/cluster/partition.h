@@ -137,6 +137,7 @@ public:
       timequery(model::timestamp, model::offset, ss::io_priority_class);
 
     bool is_leader() const { return _raft->is_leader(); }
+    bool has_followers() const { return _raft->has_followers(); }
 
     void block_new_leadership() const { _raft->block_new_leadership(); }
     void unblock_new_leadership() const { _raft->unblock_new_leadership(); }
