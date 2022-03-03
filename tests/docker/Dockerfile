@@ -106,6 +106,10 @@ RUN git -C /opt clone https://github.com/Shopify/sarama.git && \
     cd /opt/sarama/examples/consumergroup && go mod tidy && go build && \
     cd /opt/sarama/examples/sasl_scram_client && go mod tidy && go build
 
+# Install our in-tree go tests
+COPY --chown=0:0 tests/go /tmp/go
+RUN cd /tmp/go/sarama/produce_test && go mod tidy && go build
+
 # Install franz-go
 RUN git -C /opt clone https://github.com/twmb/franz-go.git && cd /opt/franz-go && \
     cd /opt/franz-go/examples/bench && go mod tidy && go build
