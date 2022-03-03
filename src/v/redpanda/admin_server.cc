@@ -1376,8 +1376,52 @@ void admin_server::register_features_routes() {
           auto version = ft.get_active_version();
 
           res.cluster_version = version;
-          for (const auto& f : ft.get_active_features()) {
-              res.features.push(ss::sstring(cluster::to_string_view(f)));
+          for (const auto& fs : ft.get_feature_state()) {
+              ss::httpd::features_json::feature_state item;
+              vlog(
+                logger.trace,
+                "feature_state: {} {}",
+                fs.spec.name,
+                fs.get_state());
+              item.name = ss::sstring(fs.spec.name);
+
+              switch (fs.get_state()) {
+              case cluster::feature_state::state::active:
+                  item.state = ss::httpd::features_json::feature_state::
+                    feature_state_state::active;
+                  break;
+              case cluster::feature_state::state::unavailable:
+                  item.state = ss::httpd::features_json::feature_state::
+                    feature_state_state::unavailable;
+                  break;
+              case cluster::feature_state::state::available:
+                  item.state = ss::httpd::features_json::feature_state::
+                    feature_state_state::available;
+                  break;
+              case cluster::feature_state::state::preparing:
+                  item.state = ss::httpd::features_json::feature_state::
+                    feature_state_state::preparing;
+                  break;
+              case cluster::feature_state::state::disabled_clean:
+              case cluster::feature_state::state::disabled_active:
+              case cluster::feature_state::state::disabled_preparing:
+                  item.state = ss::httpd::features_json::feature_state::
+                    feature_state_state::disabled;
+                  break;
+              }
+
+              switch (fs.get_state()) {
+              case cluster::feature_state::state::active:
+              case cluster::feature_state::state::preparing:
+              case cluster::feature_state::state::disabled_active:
+              case cluster::feature_state::state::disabled_preparing:
+                  item.was_active = true;
+                  break;
+              default:
+                  item.was_active = false;
+              }
+
+              res.features.push(item);
           }
 
           co_return std::move(res);
