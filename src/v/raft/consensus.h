@@ -122,7 +122,11 @@ public:
     // Replace configuration of raft group with given set of nodes
     ss::future<std::error_code>
       replace_configuration(std::vector<model::broker>, model::revision_id);
-
+    // Abort ongoing configuration change - may cause data loss
+    ss::future<std::error_code> abort_configuration_change(model::revision_id);
+    // Revert current configuration change - this is safe and will never cause
+    // data loss
+    ss::future<std::error_code> revert_configuration_change(model::revision_id);
     bool is_leader() const { return _vstate == vote_state::leader; }
     bool is_candidate() const { return _vstate == vote_state::candidate; }
     std::optional<model::node_id> get_leader_id() const {
@@ -429,6 +433,10 @@ private:
 
     template<typename Func>
     ss::future<std::error_code> change_configuration(Func&&);
+
+    template<typename Func>
+    ss::future<std::error_code>
+      interrupt_configuration_change(model::revision_id, Func);
 
     ss::future<> maybe_commit_configuration(ss::semaphore_units<>);
     void maybe_promote_to_voter(vnode);
