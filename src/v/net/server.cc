@@ -155,6 +155,7 @@ ss::future<> server::accept(listener& s) {
                     ar.remote_address.addr());
                   if (!cq_units.live()) {
                       // Connection limit hit, drop this connection.
+                      _probe.connection_rejected();
                       vlog(
                         rpc::rpclog.info,
                         "Connection limit reached, rejecting {}",
