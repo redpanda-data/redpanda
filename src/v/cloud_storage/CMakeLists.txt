@@ -3,12 +3,14 @@ v_cc_library(
   NAME cloud_storage
   SRCS
     cache_service.cc
+    cache_probe.cc
     topic_manifest.cc
     partition_manifest.cc
     recursive_directory_walker.cc
     remote.cc
     offset_translation_layer.cc
     probe.cc
+    partition_probe.cc
     partition_recovery_manager.cc
     types.cc
     remote_segment.cc

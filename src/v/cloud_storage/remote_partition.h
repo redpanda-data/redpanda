@@ -11,6 +11,7 @@
 #pragma once
 
 #include "cloud_storage/offset_translation_layer.h"
+#include "cloud_storage/partition_probe.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_segment.h"
 #include "cloud_storage/types.h"
@@ -233,7 +234,9 @@ private:
         /// Borrow reader or make a new one.
         /// In either case return a reader.
         std::unique_ptr<remote_segment_batch_reader> borrow_reader(
-          const storage::log_reader_config& cfg, retry_chain_logger& ctxlog);
+          const storage::log_reader_config& cfg,
+          retry_chain_logger& ctxlog,
+          partition_probe& probe);
 
         ss::future<> stop();
 
@@ -320,6 +323,7 @@ private:
     /// Timer use to periodically evict stale readers
     ss::timer<ss::lowres_clock> _stm_timer;
     simple_time_jitter<ss::lowres_clock> _stm_jitter;
+    partition_probe _probe;
 };
 
 } // namespace cloud_storage

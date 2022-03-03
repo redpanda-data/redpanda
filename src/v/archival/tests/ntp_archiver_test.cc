@@ -104,7 +104,6 @@ void log_upload_candidate(const archival::upload_candidate& up) {
 FIXTURE_TEST(test_upload_segments, archiver_fixture) {
     set_expectations_and_listen({});
     auto [arch_conf, remote_conf] = get_configurations();
-    service_probe probe(service_metrics_disabled::yes);
     cloud_storage::remote remote(
       remote_conf.connection_limit, remote_conf.client_config);
 
@@ -128,8 +127,7 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
       part->committed_offset(),
       *part);
 
-    archival::ntp_archiver archiver(
-      get_ntp_conf(), arch_conf, remote, part, probe);
+    archival::ntp_archiver archiver(get_ntp_conf(), arch_conf, remote, part);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
     retry_chain_node fib;
@@ -202,9 +200,7 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
     };
     init_storage_api_local(segments);
     auto& lm = get_local_storage_api().log_mgr();
-    ntp_level_probe ntp_probe(per_ntp_metrics_disabled::yes, manifest_ntp);
-    service_probe svc_probe(service_metrics_disabled::yes);
-    archival::archival_policy policy(manifest_ntp, svc_probe, ntp_probe);
+    archival::archival_policy policy(manifest_ntp);
 
     log_segment_set(lm);
 
@@ -268,10 +264,7 @@ SEASTAR_THREAD_TEST_CASE(test_archival_policy_timeboxed_uploads) {
         storage::maybe_compress_batches::no,
         model::record_batch_type::archival_metadata);
 
-    ntp_level_probe ntp_probe(per_ntp_metrics_disabled::yes, manifest_ntp);
-    service_probe svc_probe(service_metrics_disabled::yes);
-    archival::archival_policy policy(
-      manifest_ntp, svc_probe, ntp_probe, segment_time_limit{0s});
+    archival::archival_policy policy(manifest_ntp, segment_time_limit{0s});
 
     auto log = b.get_log();
 
@@ -370,11 +363,9 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
 
     set_expectations_and_listen(expectations);
     auto [arch_conf, remote_conf] = get_configurations();
-    service_probe probe(service_metrics_disabled::yes);
     cloud_storage::remote remote(
       remote_conf.connection_limit, remote_conf.client_config);
-    archival::ntp_archiver archiver(
-      get_ntp_conf(), arch_conf, remote, part, probe);
+    archival::ntp_archiver archiver(get_ntp_conf(), arch_conf, remote, part);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
     retry_chain_node fib;
@@ -588,10 +579,9 @@ static void test_partial_upload_impl(
     test.set_expectations_and_listen(expectations);
 
     auto [aconf, cconf] = get_configurations();
-    service_probe probe(service_metrics_disabled::yes);
     cloud_storage::remote remote(cconf.connection_limit, cconf.client_config);
     aconf.time_limit = segment_time_limit(0s);
-    archival::ntp_archiver archiver(get_ntp_conf(), aconf, remote, part, probe);
+    archival::ntp_archiver archiver(get_ntp_conf(), aconf, remote, part);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
     retry_chain_node fib;
@@ -733,9 +723,7 @@ FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
     };
     init_storage_api_local(segments);
     auto& lm = get_local_storage_api().log_mgr();
-    ntp_level_probe ntp_probe(per_ntp_metrics_disabled::yes, manifest_ntp);
-    service_probe svc_probe(service_metrics_disabled::yes);
-    archival::archival_policy policy(manifest_ntp, svc_probe, ntp_probe);
+    archival::archival_policy policy(manifest_ntp);
 
     // Patch segment offsets to create overlaps for the archival_policy.
     // The archival_policy instance only touches the offsets, not the

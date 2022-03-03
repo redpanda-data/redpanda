@@ -18,10 +18,7 @@
 namespace archival {
 
 ntp_level_probe::ntp_level_probe(
-  per_ntp_metrics_disabled disabled, const model::ntp& ntp)
-  : _uploaded()
-  , _missing()
-  , _pending() {
+  per_ntp_metrics_disabled disabled, const model::ntp& ntp) {
     if (disabled) {
         return;
     }
@@ -40,14 +37,19 @@ ntp_level_probe::ntp_level_probe(
       prometheus_sanitize::metrics_name("ntp_archiver"),
       {
         sm::make_counter(
-          "missing",
-          [this] { return _missing; },
-          sm::description("Missing offsets due to gaps"),
-          labels),
-        sm::make_counter(
           "uploaded",
           [this] { return _uploaded; },
           sm::description("Uploaded offsets"),
+          labels),
+        sm::make_total_bytes(
+          "uploaded_bytes",
+          [this] { return _uploaded_bytes; },
+          sm::description("Total number of uploaded bytes"),
+          labels),
+        sm::make_counter(
+          "missing",
+          [this] { return _missing; },
+          sm::description("Missing offsets due to gaps"),
           labels),
         sm::make_gauge(
           "pending",
@@ -57,11 +59,7 @@ ntp_level_probe::ntp_level_probe(
       });
 }
 
-service_probe::service_probe(service_metrics_disabled disabled)
-  : _cnt_gaps()
-  , _cnt_start_archiving_ntp()
-  , _cnt_stop_archiving_ntp()
-  , _cnt_reconciliations() {
+service_probe::service_probe(service_metrics_disabled disabled) {
     if (disabled) {
         return;
     }
@@ -70,10 +68,6 @@ service_probe::service_probe(service_metrics_disabled disabled)
     _metrics.add_group(
       prometheus_sanitize::metrics_name("archival_service"),
       {
-        sm::make_counter(
-          "num_gaps",
-          [this] { return _cnt_gaps; },
-          sm::description("Number of detected offset gaps")),
         sm::make_counter(
           "start_archiving_ntp",
           [this] { return _cnt_start_archiving_ntp; },
@@ -85,11 +79,7 @@ service_probe::service_probe(service_metrics_disabled disabled)
         sm::make_gauge(
           "num_archived_ntp",
           [this] { return _cnt_start_archiving_ntp - _cnt_stop_archiving_ntp; },
-          sm::description("Total number of ntp that archiver manages")),
-        sm::make_counter(
-          "num_reconciliations",
-          [this] { return _cnt_reconciliations; },
-          sm::description("Number of reconciliation loop iterations")),
+          sm::description("Current number of ntp that archiver manages")),
       });
 }
 
