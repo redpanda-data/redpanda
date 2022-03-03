@@ -87,13 +87,10 @@ void feature_state::transition_preparing() {
 }
 
 void feature_state::transition_available() {
-    if (spec.available_rule == feature_spec::available_policy::always) {
-        // Policy does not require external input to proceed.
-        transition_preparing();
-    } else {
-        // Hold in this state, wait for input.
-        _state = state::available;
-    }
+    // Even if we have prepare_policy::always, we stop at available here.
+    // The responsibility for going active is in feature_manager, where it
+    // is conditional on the global features_auto_enable property.
+    _state = state::available;
 }
 
 void feature_state::notify_version(cluster_version v) {
@@ -171,6 +168,11 @@ void feature_table::apply_action(const feature_update_action& fua) {
         } else if (current_state == feature_state::state::disabled_active) {
             fstate.transition_active();
         } else if (current_state == feature_state::state::available) {
+            fstate.transition_preparing();
+        } else if (
+          current_state == feature_state::state::unavailable
+          && _active_version >= fstate.spec.require_version) {
+            // Activation during upgrade
             fstate.transition_preparing();
         } else {
             vlog(
