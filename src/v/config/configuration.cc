@@ -1099,7 +1099,14 @@ configuration::configuration()
       "cluster metrics reporter url",
       {.needs_restart = needs_restart::no,
        .visibility = visibility::deprecated},
-      "https://m.rp.vectorized.io/v2") {}
+      "https://m.rp.vectorized.io/v2")
+  , features_auto_enable(
+      *this,
+      "features_auto_enable",
+      "Whether new feature flags may auto-activate after upgrades (true) or "
+      "must wait for manual activation via the admin API (false)",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      true) {}
 
 configuration::error_map_t configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {
