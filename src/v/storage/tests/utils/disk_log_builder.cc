@@ -31,7 +31,7 @@ disk_log_builder::disk_log_builder(storage::log_config config)
             _log_config.base_dir,
             debug_sanitize_files::yes);
       },
-      _log_config) {}
+      [this]() { return _log_config; }) {}
 
 // Batch generation
 ss::future<> disk_log_builder::add_random_batch(

@@ -108,11 +108,13 @@ struct raft_node {
                   storage_dir,
                   storage::debug_sanitize_files::yes);
             },
-            storage::log_config(
-              storage_type,
-              storage_dir,
-              segment_size,
-              storage::debug_sanitize_files::yes))
+            [storage_type, storage_dir, segment_size]() {
+                return storage::log_config(
+                  storage_type,
+                  storage_dir,
+                  segment_size,
+                  storage::debug_sanitize_files::yes);
+            })
           .get();
         storage.invoke_on_all(&storage::api::start).get();
 

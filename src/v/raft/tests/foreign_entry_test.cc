@@ -53,11 +53,13 @@ struct foreign_entry_fixture {
               test_dir,
               storage::debug_sanitize_files::yes);
         },
-        storage::log_config(
-          storage::log_config::storage_type::disk,
-          test_dir,
-          1_GiB,
-          storage::debug_sanitize_files::yes)) {
+        [this]() {
+            return storage::log_config(
+              storage::log_config::storage_type::disk,
+              test_dir,
+              1_GiB,
+              storage::debug_sanitize_files::yes);
+        }) {
         _storage.start().get();
         (void)_storage.log_mgr()
           .manage(storage::ntp_config(_ntp, "test.dir"))

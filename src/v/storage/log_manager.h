@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "config/property.h"
 #include "model/fundamental.h"
 #include "random/simple_time_jitter.h"
 #include "seastarx.h"
@@ -41,21 +42,9 @@
 
 namespace storage {
 
+// class log_config {
 struct log_config {
     enum class storage_type { memory, disk };
-    log_config(
-      storage_type type,
-      ss::sstring directory,
-      size_t segment_size,
-      debug_sanitize_files should,
-      ss::io_priority_class compaction_priority,
-      with_cache with) noexcept
-      : stype(type)
-      , base_dir(std::move(directory))
-      , max_segment_size(segment_size)
-      , sanitize_fileops(should)
-      , compaction_priority(compaction_priority)
-      , cache(with) {}
 
     log_config(
       storage_type type,
@@ -66,20 +55,40 @@ struct log_config {
       = ss::default_priority_class()) noexcept
       : stype(type)
       , base_dir(std::move(directory))
-      , max_segment_size(segment_size)
+      , max_segment_size(config::mock_binding<size_t>(std::move(segment_size)))
+      , compacted_segment_size(config::mock_binding<size_t>(256_MiB))
+      , max_compacted_segment_size(config::mock_binding<size_t>(5_GiB))
       , sanitize_fileops(should)
-      , compaction_priority(compaction_priority) {}
+      , compaction_priority(compaction_priority)
+      , retention_bytes(
+          config::mock_binding<std::optional<size_t>>(std::nullopt))
+      , compaction_interval(config::mock_binding<std::chrono::milliseconds>(
+          std::chrono::minutes(10)))
+      , delete_retention(config::mock_binding<std::chrono::milliseconds>(
+          std::chrono::minutes(10080))) {}
+
     log_config(
       storage_type type,
       ss::sstring directory,
       size_t segment_size,
-      size_t compacted_segment_size,
-      size_t max_compacted_segment_size,
       debug_sanitize_files should,
       ss::io_priority_class compaction_priority,
-      std::optional<size_t> ret_bytes,
-      std::chrono::milliseconds compaction_ival,
-      std::chrono::milliseconds del_ret,
+      with_cache with) noexcept
+      : log_config(type, directory, segment_size, should, compaction_priority) {
+        cache = with;
+    }
+
+    log_config(
+      storage_type type,
+      ss::sstring directory,
+      config::binding<size_t> segment_size,
+      config::binding<size_t> compacted_segment_size,
+      config::binding<size_t> max_compacted_segment_size,
+      debug_sanitize_files should,
+      ss::io_priority_class compaction_priority,
+      config::binding<std::optional<size_t>> ret_bytes,
+      config::binding<std::chrono::milliseconds> compaction_ival,
+      config::binding<std::chrono::milliseconds> del_ret,
       with_cache c,
       batch_cache::reclaim_options recopts,
       std::chrono::milliseconds rdrs_cache_eviction_timeout,
@@ -109,19 +118,19 @@ struct log_config {
 
     storage_type stype;
     ss::sstring base_dir;
-    size_t max_segment_size;
+    config::binding<size_t> max_segment_size;
 
     // compacted segment size
-    size_t compacted_segment_size = 256_MiB;
-    size_t max_compacted_segment_size = 5_GiB;
+    config::binding<size_t> compacted_segment_size;
+    config::binding<size_t> max_compacted_segment_size;
     // used for testing: keeps a backtrace of operations for debugging
     debug_sanitize_files sanitize_fileops = debug_sanitize_files::no;
     ss::io_priority_class compaction_priority;
     // same as retention.bytes in kafka
-    std::optional<size_t> retention_bytes = std::nullopt;
-    std::chrono::milliseconds compaction_interval = std::chrono::minutes(10);
+    config::binding<std::optional<size_t>> retention_bytes;
+    config::binding<std::chrono::milliseconds> compaction_interval;
     // same as delete.retention.ms in kafka - default 1 week
-    std::chrono::milliseconds delete_retention = std::chrono::minutes(10080);
+    config::binding<std::chrono::milliseconds> delete_retention;
     with_cache cache = with_cache::yes;
     batch_cache::reclaim_options reclaim_opts{
       .growth_window = std::chrono::seconds(3),

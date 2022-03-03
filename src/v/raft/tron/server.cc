@@ -94,11 +94,13 @@ public:
                 directory,
                 storage::debug_sanitize_files::yes);
           },
-          storage::log_config(
-            storage::log_config::storage_type::disk,
-            std::move(directory),
-            1_GiB,
-            storage::debug_sanitize_files::yes))
+          [directory]() {
+              return storage::log_config(
+                storage::log_config::storage_type::disk,
+                std::move(directory),
+                1_GiB,
+                storage::debug_sanitize_files::yes);
+          })
       , _hbeats(
           raft_heartbeat_interval,
           _consensus_client_protocol,

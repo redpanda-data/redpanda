@@ -102,7 +102,7 @@ FIXTURE_TEST(append_twice_to_same_segment, storage_test_fixture) {
 
 FIXTURE_TEST(test_assigning_offsets_in_multiple_segment, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
-    cfg.max_segment_size = 1_KiB;
+    cfg.max_segment_size = config::mock_binding<size_t>(1_KiB);
     storage::log_manager mgr = make_log_manager(std::move(cfg));
     info("Configuration: {}", mgr.config());
     auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
@@ -124,7 +124,7 @@ FIXTURE_TEST(test_assigning_offsets_in_multiple_segment, storage_test_fixture) {
 
 FIXTURE_TEST(test_single_record_per_segment, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
-    cfg.max_segment_size = 10;
+    cfg.max_segment_size = config::mock_binding<size_t>(10);
     storage::log_manager mgr = make_log_manager(std::move(cfg));
     info("Configuration: {}", mgr.config());
     auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
@@ -151,7 +151,7 @@ FIXTURE_TEST(test_single_record_per_segment, storage_test_fixture) {
 
 FIXTURE_TEST(test_segment_rolling, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
-    cfg.max_segment_size = 10 * 1024;
+    cfg.max_segment_size = config::mock_binding<size_t>(10 * 1024);
     storage::log_manager mgr = make_log_manager(std::move(cfg));
     info("Configuration: {}", mgr.config());
     auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
@@ -519,7 +519,7 @@ FIXTURE_TEST(test_time_based_eviction, storage_test_fixture) {
 
 FIXTURE_TEST(test_size_based_eviction, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
-    cfg.max_segment_size = 10;
+    cfg.max_segment_size = config::mock_binding<size_t>(10);
     cfg.stype = storage::log_config::storage_type::disk;
     ss::abort_source as;
     storage::log_manager mgr = make_log_manager(cfg);
@@ -565,7 +565,7 @@ FIXTURE_TEST(test_size_based_eviction, storage_test_fixture) {
 FIXTURE_TEST(test_eviction_notification, storage_test_fixture) {
     ss::promise<model::offset> last_evicted_offset;
     auto cfg = default_log_config(test_dir);
-    cfg.max_segment_size = 10;
+    cfg.max_segment_size = config::mock_binding<size_t>(10);
     cfg.stype = storage::log_config::storage_type::disk;
     ss::abort_source as;
     storage::log_manager mgr = make_log_manager(cfg);
@@ -656,7 +656,7 @@ ss::future<storage::append_result> append_exactly(
 FIXTURE_TEST(write_concurrently_with_gc, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
     // make sure segments are small
-    cfg.max_segment_size = 1000;
+    cfg.max_segment_size = config::mock_binding<size_t>(1000);
     cfg.stype = storage::log_config::storage_type::disk;
     ss::abort_source as;
     storage::log_manager mgr = make_log_manager(cfg);
@@ -1115,7 +1115,7 @@ FIXTURE_TEST(check_max_segment_size, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
 
     // defaults
-    cfg.max_segment_size = 1_GiB;
+    cfg.max_segment_size = config::mock_binding<size_t>(10_GiB);
     cfg.stype = storage::log_config::storage_type::disk;
     ss::abort_source as;
     storage::log_manager mgr = make_log_manager(cfg);
@@ -1140,8 +1140,8 @@ FIXTURE_TEST(check_max_segment_size, storage_test_fixture) {
 FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
     // make sure segments are small
-    cfg.max_segment_size = 10_KiB;
-    cfg.compacted_segment_size = 10_KiB;
+    cfg.max_segment_size = config::mock_binding<size_t>(10_KiB);
+    cfg.compacted_segment_size = config::mock_binding<size_t>(10_KiB);
     cfg.stype = storage::log_config::storage_type::disk;
     // we want force reading most recent compacted batches, disable the cache
     cfg.cache = storage::with_cache::no;
@@ -1198,7 +1198,7 @@ FIXTURE_TEST(check_segment_size_jitter, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
 
     // defaults
-    cfg.max_segment_size = 100_KiB;
+    cfg.max_segment_size = config::mock_binding<size_t>(100_KiB);
     cfg.stype = storage::log_config::storage_type::disk;
     ss::abort_source as;
     storage::log_manager mgr = make_log_manager(cfg);
@@ -1344,7 +1344,7 @@ FIXTURE_TEST(adjacent_segment_compaction_terms, storage_test_fixture) {
 
 FIXTURE_TEST(max_adjacent_segment_compaction, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
-    cfg.max_compacted_segment_size = 6_MiB;
+    cfg.max_compacted_segment_size = config::mock_binding<size_t>(6_MiB);
     cfg.stype = storage::log_config::storage_type::disk;
     cfg.cache = storage::with_cache::yes;
     storage::ntp_config::default_overrides overrides;
@@ -1487,7 +1487,7 @@ FIXTURE_TEST(reader_reusability_test_parser_header, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
     cfg.stype = storage::log_config::storage_type::disk;
     cfg.cache = storage::with_cache::no;
-    cfg.max_segment_size = 10_MiB;
+    cfg.max_segment_size = config::mock_binding<size_t>(10_MiB);
     storage::ntp_config::default_overrides overrides;
     ss::abort_source as;
     storage::log_manager mgr = make_log_manager(cfg);
@@ -1547,7 +1547,7 @@ FIXTURE_TEST(reader_reusability_test_parser_header, storage_test_fixture) {
 
 FIXTURE_TEST(compaction_backlog_calculation, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
-    cfg.max_compacted_segment_size = 100_MiB;
+    cfg.max_compacted_segment_size = config::mock_binding<size_t>(100_MiB);
     cfg.stype = storage::log_config::storage_type::disk;
     cfg.cache = storage::with_cache::yes;
     storage::ntp_config::default_overrides overrides;
@@ -1625,7 +1625,7 @@ FIXTURE_TEST(compaction_backlog_calculation, storage_test_fixture) {
 
 FIXTURE_TEST(not_compacted_log_backlog, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
-    cfg.max_compacted_segment_size = 100_MiB;
+    cfg.max_compacted_segment_size = config::mock_binding<size_t>(100_MiB);
     cfg.stype = storage::log_config::storage_type::disk;
     cfg.cache = storage::with_cache::yes;
     storage::ntp_config::default_overrides overrides;
@@ -1692,7 +1692,7 @@ FIXTURE_TEST(disposing_in_use_reader, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
     cfg.stype = storage::log_config::storage_type::disk;
     cfg.cache = storage::with_cache::no;
-    cfg.max_segment_size = 100_MiB;
+    cfg.max_segment_size = config::mock_binding<size_t>(100_MiB);
     storage::ntp_config::default_overrides overrides;
     ss::abort_source as;
     storage::log_manager mgr = make_log_manager(cfg);
@@ -1758,7 +1758,7 @@ FIXTURE_TEST(committed_offset_updates, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
     cfg.stype = storage::log_config::storage_type::disk;
     cfg.cache = storage::with_cache::no;
-    cfg.max_segment_size = 500_MiB;
+    cfg.max_segment_size = config::mock_binding<size_t>(500_MiB);
     cfg.sanitize_fileops = storage::debug_sanitize_files::no;
     storage::ntp_config::default_overrides overrides;
     ss::abort_source as;
@@ -1829,7 +1829,7 @@ FIXTURE_TEST(committed_offset_updates, storage_test_fixture) {
 FIXTURE_TEST(changing_cleanup_policy_back_and_forth, storage_test_fixture) {
     // issue: https://github.com/vectorizedio/redpanda/issues/2214
     auto cfg = default_log_config(test_dir);
-    cfg.max_compacted_segment_size = 100_MiB;
+    cfg.max_compacted_segment_size = config::mock_binding<size_t>(100_MiB);
     cfg.stype = storage::log_config::storage_type::disk;
     cfg.cache = storage::with_cache::no;
     storage::ntp_config::default_overrides overrides;
@@ -1941,7 +1941,7 @@ FIXTURE_TEST(reader_prevents_log_shutdown, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
     cfg.stype = storage::log_config::storage_type::disk;
     cfg.cache = storage::with_cache::no;
-    cfg.max_segment_size = 10_MiB;
+    cfg.max_segment_size = config::mock_binding<size_t>(10_MiB);
     storage::ntp_config::default_overrides overrides;
     ss::abort_source as;
     storage::log_manager mgr = make_log_manager(cfg);

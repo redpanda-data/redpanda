@@ -38,7 +38,11 @@ struct base_fixture {
     base_fixture()
       : _test_dir(
         fmt::format("test_{}", random_generators::gen_alphanum_string(6))) {
-        _api.start([this]() { return make_kv_cfg(); }, make_log_cfg()).get();
+        _api
+          .start(
+            [this]() { return make_kv_cfg(); },
+            [this]() { return make_log_cfg(); })
+          .get();
         _api.invoke_on_all(&storage::api::start).get();
     }
 

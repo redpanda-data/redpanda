@@ -20,14 +20,15 @@ namespace storage {
 class api {
 public:
     explicit api(
-      std::function<kvstore_config()> kv_conf_cb, log_config log_conf) noexcept
+      std::function<kvstore_config()> kv_conf_cb,
+      std::function<log_config()> log_conf_cb) noexcept
       : _kv_conf_cb(std::move(kv_conf_cb))
-      , _log_conf(std::move(log_conf)) {}
+      , _log_conf_cb(std::move(log_conf_cb)) {}
 
     ss::future<> start() {
         _kvstore = std::make_unique<kvstore>(_kv_conf_cb());
         return _kvstore->start().then([this] {
-            _log_mgr = std::make_unique<log_manager>(_log_conf, kvs());
+            _log_mgr = std::make_unique<log_manager>(_log_conf_cb(), kvs());
         });
     }
 
@@ -47,7 +48,7 @@ public:
 
 private:
     std::function<kvstore_config()> _kv_conf_cb;
-    log_config _log_conf;
+    std::function<log_config()> _log_conf_cb;
 
     std::unique_ptr<kvstore> _kvstore;
     std::unique_ptr<log_manager> _log_mgr;
