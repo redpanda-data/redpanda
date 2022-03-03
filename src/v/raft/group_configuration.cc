@@ -466,6 +466,16 @@ bool operator==(const group_configuration& a, const group_configuration& b) {
     return a._brokers == b._brokers && a._current == b._current
            && a._old == b._old;
 }
+
+std::ostream& operator<<(std::ostream& o, configuration_type t) {
+    switch (t) {
+    case configuration_type::simple:
+        return o << "simple";
+    case configuration_type::joint:
+        return o << "joint";
+    }
+    __builtin_unreachable();
+}
 } // namespace raft
 
 namespace reflection {

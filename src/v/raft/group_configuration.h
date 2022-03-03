@@ -13,6 +13,7 @@
 #include "model/metadata.h"
 #include "reflection/adl.h"
 #include "utils/concepts-enabled.h"
+#include "utils/to_string.h"
 
 #include <boost/range/join.hpp>
 
@@ -49,6 +50,8 @@ private:
 };
 
 enum class configuration_type : uint8_t { simple, joint };
+
+std::ostream& operator<<(std::ostream& o, configuration_type t);
 
 struct group_nodes {
     std::vector<vnode> voters;
