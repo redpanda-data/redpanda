@@ -20,6 +20,8 @@ std::string_view to_string_view(feature f) {
     switch (f) {
     case feature::central_config:
         return "central_config";
+    case feature::test_alpha:
+        return "test_alpha";
     }
     __builtin_unreachable();
 }
@@ -29,8 +31,16 @@ std::string_view to_string_view(feature f) {
 static constexpr cluster_version latest_version = cluster_version{1};
 
 feature_table::feature_table() {
+    // Intentionally undocumented environment variable, only for use
+    // in integration tests.
+    const bool enable_test_features
+      = (std::getenv("__REDPANDA_TEST_FEATURES") != nullptr);
+
     _feature_state.reserve(feature_schema.size());
     for (const auto& spec : feature_schema) {
+        if (spec.name.substr(0, 6) == "__test" && !enable_test_features) {
+            continue;
+        }
         _feature_state.emplace_back(feature_state{spec});
     }
 }
