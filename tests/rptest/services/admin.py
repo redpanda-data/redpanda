@@ -179,6 +179,9 @@ class Admin:
     def get_features(self):
         return self._request("GET", "features").json()
 
+    def put_feature(self, feature_name, body):
+        return self._request("PUT", f"features/{feature_name}", json=body)
+
     def set_log_level(self, name, level, expires=None):
         """
         Set broker log level
