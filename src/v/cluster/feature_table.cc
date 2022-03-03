@@ -63,35 +63,6 @@ cluster_version feature_table::get_latest_logical_version() {
     return latest_version_cache;
 }
 
-feature_list feature_table::get_active_features() const {
-    if (_active_version == invalid_version) {
-        // The active version will be invalid_version when
-        // the first version of redpanda with feature_manager
-        // first runs (all nodes must check in before active_version
-        // gets updated to a valid version for the first time)
-        vlog(
-          clusterlog.debug,
-          "Feature manager not yet initialized, returning no features");
-        return {};
-    }
-
-    if (_active_version < cluster_version{1}) {
-        // 1 was the earliest version number, and invalid_version was
-        // handled above.  This an unexpected situation.
-        vlog(
-          clusterlog.warn,
-          "Invalid logical version {}, returning no features",
-          _active_version);
-        return {};
-    } else {
-        // A single branch for now, this will become a check of _active_version
-        // with different features per version when we add another version
-        return {
-          feature::central_config,
-        };
-    }
-}
-
 void feature_state::transition_active() { _state = state::active; }
 
 void feature_state::transition_preparing() {

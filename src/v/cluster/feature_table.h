@@ -189,8 +189,6 @@ private:
 
 std::string_view to_string_view(feature);
 
-using feature_list = std::vector<feature>;
-
 /**
  * To enable all shards to efficiently check enablement of features
  * in their hot paths, the cluster logical version and features
@@ -204,7 +202,9 @@ public:
         return _active_version;
     }
 
-    feature_list get_active_features() const;
+    const std::vector<feature_state>& get_feature_state() const {
+        return _feature_state;
+    }
 
     /**
      * Query whether a feature is active, i.e. whether functionality

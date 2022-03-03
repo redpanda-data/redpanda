@@ -55,6 +55,23 @@
         }
     ],
     "models": {
+        "feature_state": {
+            "id": "feature_state",
+            "description": "State of one feature (active, available etc)",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string",
+                    "enum": ["active", "preparing", "available", "unavailable", "disabled"]
+                },
+                "was_active": {
+                    "type": "boolean",
+                    "description": "Whether the feature has ever been active, i.e. data depending on this feature may have been written to disk"
+                }
+            }
+        },
         "features_response": {
             "id": "features_response",
             "description": "Describe available features in this redpanda cluster",
@@ -65,10 +82,8 @@
                 },
                 "features": {
                     "type": "array",
-                    "description": "list of feature names",
-                    "items": {
-                        "type": "string"
-                    }
+                    "description": "list of feature_state for each feature",
+                    "items": {"type": "feature_state"}
                 }
             }
         }
