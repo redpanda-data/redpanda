@@ -262,14 +262,42 @@ ss::future<> feature_manager::do_maybe_update_active_version() {
     }
 
     // All node checks passed, we are ready to increment active version
-    auto timeout = model::timeout_clock::now() + status_retry;
-
     auto data = feature_update_cmd_data{.logical_version = max_version};
+
+    // Identify any features which should auto-activate in this version
+    if (config::shard_local_cfg().features_auto_enable()) {
+        /*
+         * We auto-enable features if:
+         * - They are not disabled
+         * - Their required version is satisfied
+         * - Their policy is not explicit_only
+         * - The global features_auto_enable setting is true.
+         */
+        for (const auto& fs : _feature_table.local().get_feature_state()) {
+            if (
+              fs.get_state() == feature_state::state::unavailable
+              && fs.spec.available_rule
+                   == feature_spec::available_policy::always
+              && max_version >= fs.spec.require_version) {
+                vlog(
+                  clusterlog.info,
+                  "Auto-activating feature {} (logical version {})",
+                  fs.spec.name,
+                  max_version);
+                data.actions.push_back(cluster::feature_update_action{
+                  .feature_name = ss::sstring(fs.spec.name),
+                  .action
+                  = feature_update_action::action_t ::administrative_activate});
+            }
+        }
+    }
+
     auto cmd = feature_update_cmd(
       std::move(data),
       0 // unused
     );
 
+    auto timeout = model::timeout_clock::now() + status_retry;
     auto err = co_await replicate_and_wait(_stm, _as, std::move(cmd), timeout);
     if (err == errc::not_leader) {
         // Harmless, we lost leadership so the new controller
@@ -281,11 +309,7 @@ ss::future<> feature_manager::do_maybe_update_active_version() {
           "Error storing cluster version {}: {}", max_version, err));
     }
 
-    // Log a full readout of node versions when updating cluster version
-    for (const auto& i : _node_versions) {
-        vlog(clusterlog.info, "Node {} logical version {}", i.first, i.second);
-    }
-    vlog(clusterlog.info, "Updated cluster version to {}", max_version);
+    vlog(clusterlog.info, "Updated cluster (logical version {})", max_version);
 }
 
 ss::future<std::error_code>
