@@ -352,6 +352,46 @@ bool group_configuration::maybe_demote_removed_voters() {
     return true;
 }
 
+void group_configuration::abort_configuration_change() {
+    vassert(
+      _old,
+      "can not abort configuration change if it is of simple type - "
+      "{}",
+      *this);
+
+    absl::flat_hash_set<model::node_id> physical_node_ids;
+
+    for (auto& id : _old->learners) {
+        physical_node_ids.insert(id.id());
+    }
+
+    for (auto& id : _old->voters) {
+        physical_node_ids.insert(id.id());
+    }
+    std::erase_if(_brokers, [&physical_node_ids](model::broker& b) {
+        return !physical_node_ids.contains(b.id());
+    });
+    _current = *_old;
+    _old.reset();
+
+    // make sure that all nodes are voters
+    for (auto id : _current.learners) {
+        promote_to_voter(id);
+    }
+}
+
+void group_configuration::revert_configuration_change() {
+    vassert(
+      _old,
+      "can not abort configuration change if it is of simple type - "
+      "{}",
+      *this);
+
+    auto tmp = _current;
+    _current = *_old;
+    _old = std::move(tmp);
+}
+
 void group_configuration::discard_old_config() {
     vassert(
       _old,

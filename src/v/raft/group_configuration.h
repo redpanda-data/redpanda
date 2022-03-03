@@ -129,6 +129,23 @@ public:
     void discard_old_config();
 
     /**
+     * Forcefully abort changing configuration. If current configuration in in
+     * joint state it drops the new configuration part and allow raft to operate
+     * with old quorum
+     *
+     * NOTE: may lead to data loss in some situations use only for cluster
+     * recovery from critical failures
+     */
+    void abort_configuration_change();
+
+    /**
+     * Reverts configuration change, the configuration is still in joint state
+     * but the direction of change is being changed
+     *
+     */
+    void revert_configuration_change();
+
+    /**
      * demotes all voters if they were removed from current configuration,
      * returns false if no voters were demoted
      */
