@@ -102,6 +102,9 @@ CHAOS_LOG_ALLOW_LIST = [
     re.compile(
         "rpc - .*Unable to parse received RPC request payload - std::out_of_range"
     ),
+    re.compile(
+        "cluster - .*exception while executing partition operation:.*std::exception (std::exception)"
+    ),
 ]
 
 
