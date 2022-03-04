@@ -676,15 +676,7 @@ void application::wire_up_redpanda_services() {
     }
 
     syschecks::systemd_message("Adding partition manager").get();
-    construct_service(
-      partition_manager,
-      std::ref(rs.storage),
-      std::ref(rs.raft_group_manager),
-      std::ref(rs.tx_gateway_frontend),
-      std::ref(rs.partition_recovery_manager),
-      std::ref(rs.cloud_storage_api),
-      std::ref(rs.shadow_index_cache))
-      .get();
+    construct_service(partition_manager, std::ref(rs)).get();
     vlog(_log.info, "Partition manager started");
 
     construct_service(cp_partition_manager, std::ref(rs.storage)).get();

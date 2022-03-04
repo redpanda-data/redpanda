@@ -20,6 +20,7 @@
 #include "raft/consensus_client_protocol.h"
 #include "raft/group_manager.h"
 #include "raft/heartbeat_manager.h"
+#include "redpanda/services.h"
 #include "storage/api.h"
 #include "utils/named_type.h"
 
@@ -31,13 +32,7 @@ public:
     using ntp_table_container
       = absl::flat_hash_map<model::ntp, ss::lw_shared_ptr<partition>>;
 
-    partition_manager(
-      ss::sharded<storage::api>&,
-      ss::sharded<raft::group_manager>&,
-      ss::sharded<cluster::tx_gateway_frontend>&,
-      ss::sharded<cloud_storage::partition_recovery_manager>&,
-      ss::sharded<cloud_storage::remote>&,
-      ss::sharded<cloud_storage::cache>&);
+    partition_manager(services&);
 
     using manage_cb_t
       = ss::noncopyable_function<void(ss::lw_shared_ptr<partition>)>;

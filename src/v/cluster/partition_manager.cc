@@ -30,19 +30,13 @@
 
 namespace cluster {
 
-partition_manager::partition_manager(
-  ss::sharded<storage::api>& storage,
-  ss::sharded<raft::group_manager>& raft,
-  ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
-  ss::sharded<cloud_storage::partition_recovery_manager>& recovery_mgr,
-  ss::sharded<cloud_storage::remote>& cloud_storage_api,
-  ss::sharded<cloud_storage::cache>& cloud_storage_cache)
-  : _storage(storage.local())
-  , _raft_manager(raft)
-  , _tx_gateway_frontend(tx_gateway_frontend)
-  , _partition_recovery_mgr(recovery_mgr)
-  , _cloud_storage_api(cloud_storage_api)
-  , _cloud_storage_cache(cloud_storage_cache) {}
+partition_manager::partition_manager(services& rs)
+  : _storage(rs.storage.local())
+  , _raft_manager(rs.raft_group_manager)
+  , _tx_gateway_frontend(rs.tx_gateway_frontend)
+  , _partition_recovery_mgr(rs.partition_recovery_manager)
+  , _cloud_storage_api(rs.cloud_storage_api)
+  , _cloud_storage_cache(rs.shadow_index_cache) {}
 
 partition_manager::ntp_table_container
 partition_manager::get_topic_partition_table(
