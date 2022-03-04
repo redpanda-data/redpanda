@@ -9,6 +9,7 @@
 import typing
 from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.kcl import KCL
 from rptest.clients.rpk import RpkTool
 from kafka import KafkaAdminClient
 
@@ -108,3 +109,7 @@ class DefaultClient:
     def delete_topic_config(self, topic: str, key: str):
         rpk = RpkTool(self._redpanda)
         rpk.delete_topic_config(topic, key)
+
+    def alter_broker_config(self, values, incremental, broker=None):
+        kcl = KCL(self._redpanda)
+        return kcl.alter_broker_config(values, incremental, broker)
