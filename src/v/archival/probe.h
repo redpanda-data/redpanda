@@ -35,6 +35,8 @@ public:
     /// Register log-segment upload
     void uploaded(model::offset offset_delta) { _uploaded += offset_delta; }
 
+    void uploaded_bytes(uint64_t bytes) { _uploaded_bytes += bytes; }
+
     /// Register gap
     void gap_detected(model::offset offset_delta) { _missing += offset_delta; }
 
@@ -43,11 +45,13 @@ public:
 
 private:
     /// Uploaded offsets
-    int64_t _uploaded;
+    uint64_t _uploaded = 0;
+    /// Total uploaded bytes
+    uint64_t _uploaded_bytes = 0;
     /// Missing offsets due to gaps
-    int64_t _missing;
+    int64_t _missing = 0;
     /// Width of the offset range yet to be uploaded
-    int64_t _pending;
+    int64_t _pending = 0;
 
     ss::metrics::metric_groups _metrics;
 };
@@ -57,9 +61,6 @@ class service_probe {
 public:
     explicit service_probe(service_metrics_disabled disabled);
 
-    /// Increment gap counter (global)
-    void add_gap() { _cnt_gaps++; }
-
     /// Count new ntp archiving event
     void start_archiving_ntp() { _cnt_start_archiving_ntp++; }
 
@@ -67,18 +68,11 @@ public:
     /// of the ntp event
     void stop_archiving_ntp() { _cnt_stop_archiving_ntp++; }
 
-    /// Count reconciliation loop iterations (liveliness probe)
-    void reconciliation() { _cnt_reconciliations++; }
-
 private:
-    /// Number of gaps dected
-    uint64_t _cnt_gaps;
     /// Start archiving npt event counter
-    uint64_t _cnt_start_archiving_ntp;
+    uint64_t _cnt_start_archiving_ntp = 0;
     /// Stop archiving npt event counter
-    uint64_t _cnt_stop_archiving_ntp;
-    /// Number of reconciliation loop iterations
-    uint64_t _cnt_reconciliations;
+    uint64_t _cnt_stop_archiving_ntp = 0;
 
     ss::metrics::metric_groups _metrics;
 };

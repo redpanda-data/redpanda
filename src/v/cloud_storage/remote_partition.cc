@@ -80,9 +80,11 @@ public:
         if (!is_end_of_stream()) {
             initialize_reader_state(config);
         }
+        _partition->_probe.reader_created();
     }
 
     ~partition_record_batch_reader_impl() noexcept override {
+        _partition->_probe.reader_destroyed();
         if (_reader) {
             // We must not destroy this reader: it is not safe to do so
             // without calling stop() on it.  The remote_partition is
@@ -161,6 +163,11 @@ public:
                     throw std::system_error(result.error());
                 }
                 data_t d = std::move(result.value());
+                for (const auto& batch : d) {
+                    _partition->_probe.add_bytes_read(
+                      batch.header().size_bytes);
+                    _partition->_probe.add_records_read(batch.record_count());
+                }
                 co_return storage_t{std::move(d)};
             }
         } catch (const ss::gate_closed_exception&) {
@@ -328,7 +335,8 @@ remote_partition::remote_partition(
   , _cache(c)
   , _manifest(m)
   , _bucket(std::move(bucket))
-  , _stm_jitter(stm_jitter_duration) {}
+  , _stm_jitter(stm_jitter_duration)
+  , _probe(m.get_ntp()) {}
 
 ss::future<> remote_partition::start() {
     update_segments_incrementally();
@@ -523,8 +531,11 @@ void remote_partition::update_segments_incrementally() {
 
             std::visit([this](auto&& p) { p->offload(this); }, prev_it->second);
         }
-        _segments.insert_or_assign(
+        auto res = _segments.insert_or_assign(
           o, offloaded_segment_state(meta.first.base_offset));
+        if (res.second) {
+            _probe.segment_added();
+        }
     }
 }
 
@@ -539,12 +550,12 @@ std::unique_ptr<remote_segment_batch_reader> remote_partition::borrow_reader(
       [this, &config, offset_key = key, &st](
         offloaded_segment_state& off_state) {
           auto tmp = off_state->materialize(*this, offset_key);
-          auto res = tmp->borrow_reader(config, this->_ctxlog);
+          auto res = tmp->borrow_reader(config, this->_ctxlog, _probe);
           st = std::move(tmp);
           return res;
       },
       [this, &config](materialized_segment_ptr& m_state) {
-          return m_state->borrow_reader(config, _ctxlog);
+          return m_state->borrow_reader(config, _ctxlog, _probe);
       });
 }
 
@@ -590,6 +601,7 @@ remote_partition::offloaded_segment_state::materialize(
   remote_partition& p, model::offset offset_key) {
     auto st = std::make_unique<materialized_segment_state>(
       base_rp_offset, offset_key, p);
+    p._probe.segment_materialized();
     return st;
 }
 
@@ -622,7 +634,9 @@ void remote_partition::materialized_segment_state::return_reader(
 /// In either case return a reader.
 std::unique_ptr<remote_segment_batch_reader>
 remote_partition::materialized_segment_state::borrow_reader(
-  const storage::log_reader_config& cfg, retry_chain_logger& ctxlog) {
+  const storage::log_reader_config& cfg,
+  retry_chain_logger& ctxlog,
+  partition_probe& probe) {
     atime = ss::lowres_clock::now();
     for (auto it = readers.begin(); it != readers.end(); it++) {
         if ((*it)->config().start_offset == cfg.start_offset) {
@@ -638,7 +652,7 @@ remote_partition::materialized_segment_state::borrow_reader(
         }
     }
     vlog(ctxlog.debug, "creating new reader, config: {}", cfg);
-    return std::make_unique<remote_segment_batch_reader>(segment, cfg);
+    return std::make_unique<remote_segment_batch_reader>(segment, cfg, probe);
 }
 
 ss::future<> remote_partition::materialized_segment_state::stop() {
@@ -656,6 +670,7 @@ remote_partition::materialized_segment_state::offload(
         partition->evict_reader(std::move(rs));
     }
     partition->evict_segment(std::move(segment));
+    partition->_probe.segment_offloaded();
     return offloaded_segment_state(base_rp_offset);
 }
 

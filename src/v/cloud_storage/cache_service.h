@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "cloud_storage/cache_probe.h"
 #include "cloud_storage/recursive_directory_walker.h"
 #include "resource_mgmt/io_priority.h"
 #include "seastarx.h"
@@ -106,6 +107,7 @@ private:
     cloud_storage::recursive_directory_walker _walker;
     uint64_t _total_cleaned;
     std::set<std::filesystem::path> _files_in_progress;
+    cache_probe probe;
 };
 
 } // namespace cloud_storage

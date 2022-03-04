@@ -166,7 +166,8 @@ FIXTURE_TEST(
       model::offset(1), model::offset(1), ss::default_priority_class());
     auto segment = ss::make_lw_shared<remote_segment>(
       remote, *cache, bucket, m, key, fib);
-    remote_segment_batch_reader reader(segment, reader_config);
+    partition_probe probe(manifest_ntp);
+    remote_segment_batch_reader reader(segment, reader_config, probe);
     storage::offset_translator_state ot_state(m.get_ntp());
 
     auto s = reader.read_some(model::no_timeout, ot_state).get();
@@ -257,7 +258,8 @@ void test_remote_segment_batch_reader(
     reader_config.max_bytes = std::numeric_limits<size_t>::max();
     auto segment = ss::make_lw_shared<remote_segment>(
       remote, *fixture.cache, bucket, m, key, fib);
-    remote_segment_batch_reader reader(segment, reader_config);
+    partition_probe probe(manifest_ntp);
+    remote_segment_batch_reader reader(segment, reader_config, probe);
     storage::offset_translator_state ot_state(m.get_ntp());
 
     size_t batch_ix = 0;
@@ -363,12 +365,14 @@ FIXTURE_TEST(
     auto segment = ss::make_lw_shared<remote_segment>(
       remote, *cache, bucket, m, key, fib);
 
+    partition_probe probe(manifest_ntp);
     remote_segment_batch_reader reader(
       segment,
       storage::log_reader_config(
         headers.at(0).base_offset,
         headers.at(0).last_offset(),
-        ss::default_priority_class()));
+        ss::default_priority_class()),
+      probe);
     storage::offset_translator_state ot_state(m.get_ntp());
 
     auto s = reader.read_some(model::no_timeout, ot_state).get();

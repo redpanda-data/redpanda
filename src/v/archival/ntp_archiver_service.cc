@@ -46,20 +46,13 @@ ntp_archiver::ntp_archiver(
   const storage::ntp_config& ntp,
   const configuration& conf,
   cloud_storage::remote& remote,
-  ss::lw_shared_ptr<cluster::partition> part,
-  service_probe& svc_probe)
-  : _svc_probe(svc_probe)
-  , _probe(conf.ntp_metrics_disabled, ntp.ntp())
+  ss::lw_shared_ptr<cluster::partition> part)
+  : _probe(conf.ntp_metrics_disabled, ntp.ntp())
   , _ntp(ntp.ntp())
   , _rev(ntp.get_initial_revision())
   , _remote(remote)
   , _partition(std::move(part))
-  , _policy(
-      _ntp,
-      _svc_probe,
-      std::ref(_probe),
-      conf.time_limit,
-      conf.upload_io_priority)
+  , _policy(_ntp, conf.time_limit, conf.upload_io_priority)
   , _bucket(conf.bucket_name)
   , _manifest(_ntp, _rev)
   , _gate()
@@ -292,6 +285,7 @@ ntp_archiver::schedule_uploads(
       "scheduling uploads, start_upload_offset: {}, last_stable_offset: {}",
       start_upload_offset,
       last_stable_offset);
+    _probe.upload_lag(last_stable_offset - start_upload_offset);
 
     return ss::do_with(
       std::vector<scheduled_upload>(),
@@ -361,7 +355,21 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
             break;
         }
         const auto& upload = scheduled[ixupload[i]];
+
         _probe.uploaded(*upload.delta);
+        _probe.uploaded_bytes(upload.meta->size_bytes);
+        model::offset expected_base_offset;
+        if (_manifest.get_last_offset() < model::offset{0}) {
+            expected_base_offset = model::offset{0};
+        } else {
+            expected_base_offset = _manifest.get_last_offset()
+                                   + model::offset{1};
+        }
+        if (upload.meta->base_offset > expected_base_offset) {
+            _probe.gap_detected(
+              upload.meta->base_offset - expected_base_offset);
+        }
+
         _manifest.add(segment_name(*upload.name), *upload.meta);
     }
     if (total.num_succeded != 0) {
