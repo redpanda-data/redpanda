@@ -335,6 +335,20 @@ ss::future<> members_backend::reconcile() {
 
     // process one update at a time
     auto& meta = _updates.front();
+
+    // leadership changed, drop not yet requested reallocations to make sure
+    // there is no stale state
+    auto current_term = _raft0->term();
+    if (_last_term != current_term) {
+        for (auto& reallocation : meta.partition_reallocations) {
+            if (reallocation.state == reallocation_state::reassigned) {
+                reallocation.new_assignment.reset();
+                reallocation.state = reallocation_state::initial;
+            }
+        }
+    }
+    _last_term = current_term;
+
     co_await try_to_finish_update(meta);
 
     vlog(

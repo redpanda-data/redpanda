@@ -12,6 +12,7 @@
 #include "raft/offset_translator.h"
 
 #include "raft/consensus_utils.h"
+#include "raft/logger.h"
 #include "storage/api.h"
 #include "storage/kvstore.h"
 #include "vlog.h"
@@ -359,6 +360,75 @@ ss::future<> offset_translator::do_checkpoint() {
       highest_known_offset_key(),
       std::move(hko_buf));
     _bytes_processed_at_checkpoint = bytes_processed;
+}
+
+ss::future<> offset_translator::move_persistent_state(
+  raft::group_id group,
+  ss::shard_id source_shard,
+  ss::shard_id target_shard,
+  ss::sharded<storage::api>& api) {
+    struct ot_state {
+        std::optional<iobuf> highest_known_offset;
+        std::optional<iobuf> offset_map;
+    };
+    using state_ptr = std::unique_ptr<ot_state>;
+    vlog(
+      raftlog.debug,
+      "moving group {} offset translator state from {} to {}",
+      group,
+      source_shard,
+      target_shard);
+    static constexpr auto ks = storage::kvstore::key_space::offset_translator;
+    auto state = co_await api.invoke_on(
+      source_shard, [gr = group](storage::api& api) {
+          ot_state st{
+            .highest_known_offset = api.kvs().get(
+              ks,
+              serialize_kvstore_key(
+                gr, kvstore_key_type::highest_known_offset)),
+            .offset_map = api.kvs().get(
+              ks, serialize_kvstore_key(gr, kvstore_key_type::offsets_map)),
+          };
+          return ss::make_foreign<state_ptr>(
+            std::make_unique<ot_state>(std::move(st)));
+      });
+
+    co_await api.invoke_on(
+      target_shard,
+      [gr = group,
+       state = std::move(state)](storage::api& api) -> ss::future<> {
+          std::vector<ss::future<>> write_futures;
+          write_futures.reserve(2);
+          if (state->offset_map) {
+              write_futures.push_back(api.kvs().put(
+                ks,
+                serialize_kvstore_key(gr, kvstore_key_type::offsets_map),
+                state->offset_map->copy()));
+          }
+          if (state->highest_known_offset) {
+              write_futures.push_back(api.kvs().put(
+                ks,
+                serialize_kvstore_key(
+                  gr, kvstore_key_type::highest_known_offset),
+                state->highest_known_offset->copy()));
+          }
+
+          return ss::when_all_succeed(
+            write_futures.begin(), write_futures.end());
+      });
+
+    // remove on source shard
+    co_await api.invoke_on(source_shard, [gr = group](storage::api& api) {
+        std::vector<ss::future<>> remove_futures;
+        remove_futures.reserve(2);
+        remove_futures.push_back(api.kvs().remove(
+          ks,
+          serialize_kvstore_key(gr, kvstore_key_type::highest_known_offset)));
+        remove_futures.push_back(api.kvs().remove(
+          ks, serialize_kvstore_key(gr, kvstore_key_type::offsets_map)));
+        return ss::when_all_succeed(
+          remove_futures.begin(), remove_futures.end());
+    });
 }
 
 } // namespace raft

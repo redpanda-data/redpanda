@@ -272,9 +272,13 @@ bool is_cross_core_update(model::node_id self, const topic_table_delta& delta) {
 }
 ss::future<>
 controller_backend::bootstrap_ntp(const model::ntp& ntp, deltas_t& deltas) {
-    vlog(clusterlog.trace, "bootstrapping {}", ntp);
     // find last delta that has to be applied
     auto bootstrap_deltas = calculate_bootstrap_deltas(_self, deltas);
+    vlog(
+      clusterlog.trace,
+      "bootstrapping {} with deltas {}",
+      ntp,
+      bootstrap_deltas);
 
     // if empty do nothing
     if (bootstrap_deltas.empty()) {
@@ -282,10 +286,16 @@ controller_backend::bootstrap_ntp(const model::ntp& ntp, deltas_t& deltas) {
     }
 
     auto& first_delta = bootstrap_deltas.front();
+    vlog(clusterlog.trace, "first bootstrap delta of {}: {}", ntp, first_delta);
     // if first operation is a cross core update, find initial revision on
     // current node and store it in bootstrap map
     using op_t = topic_table::delta::op_type;
     if (is_cross_core_update(_self, first_delta)) {
+        vlog(
+          clusterlog.trace,
+          "first bootstrap delta of {}, is a x-core update, looking for "
+          "initial revision",
+          ntp);
         // find opeartion that created current partition on this node
         auto it = std::find_if(
           deltas.rbegin(),
@@ -305,13 +315,38 @@ controller_backend::bootstrap_ntp(const model::ntp& ntp, deltas_t& deltas) {
           ntp);
         // if we found update finished operation it is preceeding operation that
         // created partition on current node
-        if (it->type == op_t::update_finished) {
+        vlog(
+          clusterlog.trace,
+          "first {} operation that doesn't contain current node - {}",
+          ntp,
+          *it);
+        /**
+         * At this point we may have two situations
+         * 1. replica was created on current node shard when partition was
+         *    created, with addition delta, in this case `it` contains this
+         *    addition delta.
+         *
+         * 2. replica was moved to this node with `update` delta type, in this
+         *    case `it` contains either `update_finished` delta from previous
+         *    operation or `add` delta from previous operation. In this case
+         *    operation does not contain current node and we need to execute
+         *    operation that is following the found one as this is the first
+         *    operation that created replica on current node
+         *
+         */
+        if (!contains_node(_self, it->new_assignment.replicas)) {
             vassert(
               it != deltas.rbegin(),
-              "update finished delta {} must have preceeding operation",
+              "operation {} must have following operation that created a "
+              "replica on current node",
               *it);
             it = std::prev(it);
         }
+        vlog(
+          clusterlog.trace,
+          "initial revision source delta - {} - {}",
+          ntp,
+          *it);
         // persist revision in order to create partition with correct revision
         _bootstrap_revisions[ntp] = model::revision_id(it->offset());
     }
@@ -763,6 +798,9 @@ ss::future<std::error_code> controller_backend::process_partition_update(
               previous_shard);
             co_await raft::details::move_persistent_state(
               requested.group, *previous_shard, ss::this_shard_id(), _storage);
+            co_await raft::details::move_persistent_state(
+              requested.group, *previous_shard, ss::this_shard_id(), _storage);
+
             auto ec = co_await create_partition(
               ntp,
               requested.group,

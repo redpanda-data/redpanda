@@ -11,6 +11,7 @@
 #include "raft/offset_translator.h"
 #include "random/generators.h"
 #include "storage/api.h"
+#include "storage/fwd.h"
 #include "storage/kvstore.h"
 #include "storage/log_manager.h"
 #include "storage/record_batch_builder.h"
@@ -18,6 +19,9 @@
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/core/sharded.hh>
+
+#include <boost/test/tools/old/interface.hpp>
 
 using namespace std::chrono_literals; // NOLINT
 
@@ -33,9 +37,9 @@ static model::record_batch create_batch(
 struct base_fixture {
     base_fixture()
       : _test_dir(
-        fmt::format("test_{}", random_generators::gen_alphanum_string(6)))
-      , _api(make_kv_cfg(), make_log_cfg()) {
-        _api.start().get();
+        fmt::format("test_{}", random_generators::gen_alphanum_string(6))) {
+        _api.start(make_kv_cfg(), make_log_cfg()).get();
+        _api.invoke_on_all(&storage::api::start).get();
     }
 
     storage::kvstore_config make_kv_cfg() const {
@@ -57,16 +61,24 @@ struct base_fixture {
            model::record_batch_type::checkpoint},
           raft::group_id(0),
           test_ntp,
-          _api};
+          _api.local()};
     }
 
     model::ntp test_ntp = model::ntp(
       model::ns("test"), model::topic("tp"), model::partition_id(0));
     ss::sstring _test_dir;
-    storage::api _api;
+    ss::sharded<storage::api> _api;
 
     ~base_fixture() { _api.stop().get(); }
 };
+
+void validate_translation(
+  raft::offset_translator& tr,
+  model::offset log_offset,
+  model::offset kafka_offset) {
+    BOOST_REQUIRE_EQUAL(tr.state()->from_log_offset(log_offset), kafka_offset);
+    BOOST_REQUIRE_EQUAL(tr.state()->to_log_offset(kafka_offset), log_offset);
+}
 
 struct offset_translator_fixture : base_fixture {
     offset_translator_fixture()
@@ -76,10 +88,7 @@ struct offset_translator_fixture : base_fixture {
 
     void validate_offset_translation(
       model::offset log_offset, model::offset kafka_offset) {
-        BOOST_REQUIRE_EQUAL(
-          tr.state()->from_log_offset(log_offset), kafka_offset);
-        BOOST_REQUIRE_EQUAL(
-          tr.state()->to_log_offset(kafka_offset), log_offset);
+        validate_translation(tr, log_offset, kafka_offset);
     }
 
     raft::offset_translator tr;
@@ -570,4 +579,87 @@ FIXTURE_TEST(fuzz_operations_test, base_fixture) {
         checker.validate();
         checker.stop().get();
     }
+}
+
+FIXTURE_TEST(test_moving_persistent_state, base_fixture) {
+    std::set<model::offset> batch_offsets{
+      // data batch @ 0 -> kafka 0
+      // data batch @ 1 -> kafka 1
+      model::offset(2),
+      model::offset(3),
+      model::offset(4),
+      model::offset(5),
+      model::offset(6),
+      // data batch @ 7 -> kafka 2
+      model::offset(8),
+      // data batch @ 9 -> kafka 3
+    };
+    auto local_ot = make_offset_translator();
+    local_ot
+      .start(
+        raft::offset_translator::must_reset::yes,
+        raft::offset_translator::bootstrap_state{})
+      .get();
+    for (auto o : batch_offsets) {
+        local_ot.process(
+          create_batch(model::record_batch_type::raft_configuration, o));
+    }
+
+    // process some fake large batches to force offset translator checkpoint
+    for (auto i = 0; i < 10; ++i) {
+        auto large_batch = create_batch(
+          model::record_batch_type::raft_data, model::offset(9 + i));
+        large_batch.header().size_bytes = 8_MiB;
+        local_ot.process(large_batch);
+    }
+
+    local_ot.maybe_checkpoint().get();
+
+    validate_translation(local_ot, model::offset(0), model::offset(0));
+    validate_translation(local_ot, model::offset(1), model::offset(1));
+    validate_translation(local_ot, model::offset(7), model::offset(2));
+    validate_translation(local_ot, model::offset(9), model::offset(3));
+    validate_translation(local_ot, model::offset(10), model::offset(4));
+    validate_translation(local_ot, model::offset(11), model::offset(5));
+
+    // use last available shard
+    auto target_shard = ss::smp::count - 1;
+    // move state to target shard
+    raft::offset_translator::move_persistent_state(
+      raft::group_id(0), ss::this_shard_id(), target_shard, _api)
+      .get();
+
+    // validate translation on target shard
+    ss::smp::submit_to(
+      target_shard,
+      [&api = _api, ntp = test_ntp]() -> ss::future<> {
+          auto remote_ot = raft::offset_translator{
+            {model::record_batch_type::raft_configuration,
+             model::record_batch_type::checkpoint},
+            raft::group_id(0),
+            ntp,
+            api.local()};
+          co_await remote_ot.start(
+            raft::offset_translator::must_reset::no,
+            raft::offset_translator::bootstrap_state{});
+
+          validate_translation(remote_ot, model::offset(0), model::offset(0));
+          validate_translation(remote_ot, model::offset(1), model::offset(1));
+          validate_translation(remote_ot, model::offset(7), model::offset(2));
+          validate_translation(remote_ot, model::offset(9), model::offset(3));
+          validate_translation(remote_ot, model::offset(10), model::offset(4));
+          validate_translation(remote_ot, model::offset(11), model::offset(5));
+      })
+      .get();
+
+    // check if keys were deleted
+    auto map = _api.local().kvs().get(
+      storage::kvstore::key_space::offset_translator,
+      local_ot.offsets_map_key());
+    auto highest_known_offset = _api.local().kvs().get(
+      storage::kvstore::key_space::offset_translator,
+      local_ot.highest_known_offset_key());
+
+    BOOST_REQUIRE_EQUAL(map.has_value(), false);
+    BOOST_REQUIRE_EQUAL(highest_known_offset.has_value(), false);
 }
