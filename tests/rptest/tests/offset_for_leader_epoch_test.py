@@ -8,7 +8,6 @@
 # by the Apache License, Version 2.0
 
 import random
-from ducktape.mark import ignore
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 
@@ -49,7 +48,6 @@ class OffsetForLeaderEpochTest(RedpandaTest):
                                  "log_compaction_interval_ms": 1000
                              })
 
-    @ignore  # Temporarily disabled see issue #3907
     @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_offset_for_leader_epoch(self):
         replication_factors = [1, 3, 5]
