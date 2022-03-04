@@ -843,13 +843,13 @@ class ClusterConfigTest(RedpandaTest):
         incremental = True
 
         # Set a property by its redpanda name
-        out = kcl.alter_broker_config(
+        out = self.client().alter_broker_config(
             {"log_message_timestamp_type": "CreateTime"}, incremental)
         # kcl does not set an error exist status when config set fails, so must
         # read its output text to validate that calls are successful
         assert 'OK' in out
 
-        out = kcl.alter_broker_config(
+        out = self.client().alter_broker_config(
             {"log_message_timestamp_type": "LogAppendTime"}, incremental)
         assert 'OK' in out
         if incremental:
@@ -865,22 +865,23 @@ class ClusterConfigTest(RedpandaTest):
         }
         for property, value_list in kafka_props.items():
             for value in value_list:
-                out = kcl.alter_broker_config({property: value}, incremental)
+                out = self.client().alter_broker_config({property: value},
+                                                        incremental)
                 assert 'OK' in out
 
         # Set a nonexistent property
-        out = kcl.alter_broker_config({"does_not_exist": "avalue"},
-                                      incremental)
+        out = self.client().alter_broker_config({"does_not_exist": "avalue"},
+                                                incremental)
         assert 'INVALID_CONFIG' in out
 
         # Set a malformed property
-        out = kcl.alter_broker_config(
+        out = self.client().alter_broker_config(
             {"log_message_timestamp_type": "BadValue"}, incremental)
         assert 'INVALID_CONFIG' in out
 
         # Set a property on a named broker: should fail because this
         # interface is only for cluster-wide properties
-        out = kcl.alter_broker_config(
+        out = self.client().alter_broker_config(
             {"log_message_timestamp_type": "CreateTime"},
             incremental,
             broker="1")
@@ -894,8 +895,7 @@ class ClusterConfigTest(RedpandaTest):
         are correctly handled with an 'unsupported' response.
         """
 
-        kcl = KCL(self.redpanda)
-        out = kcl.alter_broker_config(
+        out = self.client().alter_broker_config(
             {"log_message_timestamp_type": "CreateTime"}, incremental=False)
         self.logger.info("AlterConfigs output: {out}")
         assert 'INVALID_CONFIG' in out
