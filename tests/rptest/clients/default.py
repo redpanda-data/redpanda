@@ -9,6 +9,7 @@
 import typing
 from collections.abc import Sequence
 from rptest.clients.types import TopicSpec
+from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.kcl import KCL
 from rptest.clients.rpk import RpkTool
@@ -37,6 +38,12 @@ class TopicConfigValue(typing.NamedTuple):
         return self.value == other
 
 
+class BrokerDescription(typing.NamedTuple):
+    id: int
+    host: str
+    port: int
+
+
 class DefaultClient:
     def __init__(self, redpanda):
         self._redpanda = redpanda
@@ -52,6 +59,19 @@ class DefaultClient:
                                      assignments: Sequence[Sequence[int]]):
         client = KafkaCliTools(self._redpanda)
         client.create_topic_with_assignment(name, assignments)
+
+    def brokers(self):
+        """
+        Note for implementers: this method is expected to return the set of
+        brokers reported by the cluster, rather than the nodes allocated for use
+        in the self._redpanda service.
+        """
+        client = PythonLibrdkafka(self._redpanda)
+        brokers = client.brokers()
+        return {
+            b.id: BrokerDescription(id=b.id, host=b.host, port=b.port)
+            for b in brokers.values()
+        }
 
     def delete_topic(self, name):
         client = KafkaCliTools(self._redpanda)
