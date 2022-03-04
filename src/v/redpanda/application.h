@@ -27,6 +27,7 @@
 #include "platform/stop_signal.h"
 #include "raft/fwd.h"
 #include "redpanda/admin_server.h"
+#include "redpanda/services.h"
 #include "resource_mgmt/cpu_scheduling.h"
 #include "resource_mgmt/memory_groups.h"
 #include "resource_mgmt/smp_groups.h"
@@ -72,15 +73,12 @@ public:
     ss::future<> set_proxy_config(ss::sstring name, std::any val);
     ss::future<> set_proxy_client_config(ss::sstring name, std::any val);
 
-    ss::sharded<cluster::metadata_cache> metadata_cache;
-    ss::sharded<kafka::group_router> group_router;
-    ss::sharded<cluster::shard_table> shard_table;
-    ss::sharded<storage::api> storage;
+    services rs;
+
     std::unique_ptr<coproc::api> coprocessing;
     ss::sharded<coproc::partition_manager> cp_partition_manager;
     ss::sharded<cluster::partition_manager> partition_manager;
     ss::sharded<raft::recovery_throttle> recovery_throttle;
-    ss::sharded<raft::group_manager> raft_group_manager;
     ss::sharded<cluster::metadata_dissemination_service>
       md_dissemination_service;
     ss::sharded<kafka::coordinator_ntp_mapper> coordinator_ntp_mapper;
@@ -89,15 +87,10 @@ public:
     smp_groups smp_service_groups;
     ss::sharded<kafka::quota_manager> quota_mgr;
     ss::sharded<cluster::id_allocator_frontend> id_allocator_frontend;
-    ss::sharded<cloud_storage::remote> cloud_storage_api;
-    ss::sharded<cloud_storage::partition_recovery_manager>
-      partition_recovery_manager;
     ss::sharded<archival::scheduler_service> archival_scheduler;
     ss::sharded<kafka::rm_group_frontend> rm_group_frontend;
     ss::sharded<cluster::rm_partition_frontend> rm_partition_frontend;
-    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
     ss::sharded<v8_engine::data_policy_table> data_policies;
-    ss::sharded<cloud_storage::cache> shadow_index_cache;
 
 private:
     using deferred_actions

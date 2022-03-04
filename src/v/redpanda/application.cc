@@ -443,8 +443,8 @@ void application::configure_admin_server() {
       std::ref(partition_manager),
       std::ref(cp_partition_manager),
       controller.get(),
-      std::ref(shard_table),
-      std::ref(metadata_cache))
+      std::ref(rs.shard_table),
+      std::ref(rs.metadata_cache))
       .get();
 }
 
@@ -610,11 +610,11 @@ void application::wire_up_redpanda_services() {
     syschecks::systemd_message("Adding raft client cache").get();
     construct_service(_connection_cache).get();
     syschecks::systemd_message("Building shard-lookup tables").get();
-    construct_service(shard_table).get();
+    construct_service(rs.shard_table).get();
 
     syschecks::systemd_message("Intializing storage services").get();
     construct_service(
-      storage,
+      rs.storage,
       []() { return kvstore_config_from_global_config(); },
       [this]() {
           auto log_cfg = manager_config_from_global_config(_scheduling_groups);
@@ -631,7 +631,7 @@ void application::wire_up_redpanda_services() {
       .get();
 
     syschecks::systemd_message("Intializing raft group manager").get();
-    raft_group_manager
+    rs.raft_group_manager
       .start(
         model::node_id(config::node().node_id()),
         config::shard_local_cfg().raft_io_timeout_ms(),
@@ -639,7 +639,7 @@ void application::wire_up_redpanda_services() {
         config::shard_local_cfg().raft_heartbeat_interval_ms(),
         config::shard_local_cfg().raft_heartbeat_timeout_ms(),
         std::ref(_connection_cache),
-        std::ref(storage),
+        std::ref(rs.storage),
         std::ref(recovery_throttle))
       .get();
 
@@ -650,7 +650,7 @@ void application::wire_up_redpanda_services() {
     _deferred.emplace_back([this] {
         recovery_throttle.invoke_on_all(&raft::recovery_throttle::shutdown)
           .get();
-        raft_group_manager.stop().get();
+        rs.raft_group_manager.stop().get();
         recovery_throttle.stop().get();
     });
 
@@ -664,12 +664,12 @@ void application::wire_up_redpanda_services() {
                 [&c](cloud_storage::configuration cfg) { c = std::move(cfg); });
           })
           .get();
-        construct_service(cloud_storage_api, std::ref(cloud_configs)).get();
+        construct_service(rs.cloud_storage_api, std::ref(cloud_configs)).get();
 
         construct_service(
-          partition_recovery_manager,
+          rs.partition_recovery_manager,
           cloud_configs.local().bucket_name,
-          std::ref(cloud_storage_api))
+          std::ref(rs.cloud_storage_api))
           .get();
 
         cloud_configs.stop().get();
@@ -678,16 +678,16 @@ void application::wire_up_redpanda_services() {
     syschecks::systemd_message("Adding partition manager").get();
     construct_service(
       partition_manager,
-      std::ref(storage),
-      std::ref(raft_group_manager),
-      std::ref(tx_gateway_frontend),
-      std::ref(partition_recovery_manager),
-      std::ref(cloud_storage_api),
-      std::ref(shadow_index_cache))
+      std::ref(rs.storage),
+      std::ref(rs.raft_group_manager),
+      std::ref(rs.tx_gateway_frontend),
+      std::ref(rs.partition_recovery_manager),
+      std::ref(rs.cloud_storage_api),
+      std::ref(rs.shadow_index_cache))
       .get();
     vlog(_log.info, "Partition manager started");
 
-    construct_service(cp_partition_manager, std::ref(storage)).get();
+    construct_service(cp_partition_manager, std::ref(rs.storage)).get();
 
     // controller
 
@@ -700,15 +700,15 @@ void application::wire_up_redpanda_services() {
       std::move(_config_preload),
       _connection_cache,
       partition_manager,
-      shard_table,
-      storage,
-      std::ref(raft_group_manager),
+      rs.shard_table,
+      rs.storage,
+      std::ref(rs.raft_group_manager),
       data_policies);
 
     controller->wire_up().get0();
     syschecks::systemd_message("Creating kafka metadata cache").get();
     construct_service(
-      metadata_cache,
+      rs.metadata_cache,
       std::ref(controller->get_topics_state()),
       std::ref(controller->get_members_table()),
       std::ref(controller->get_partition_leaders()),
@@ -740,7 +740,8 @@ void application::wire_up_redpanda_services() {
         // Prior to shutting down partition manager (which clears out all the
         // raft `consensus` instances), stop processing heartbeats.  Otherwise
         // we are receiving heartbeats that we can't match up to raft groups.
-        raft_group_manager.invoke_on_all(&raft::group_manager::stop_heartbeats)
+        rs.raft_group_manager
+          .invoke_on_all(&raft::group_manager::stop_heartbeats)
           .get();
     });
     _deferred.emplace_back([this] {
@@ -751,7 +752,7 @@ void application::wire_up_redpanda_services() {
     syschecks::systemd_message("Creating metadata dissemination service").get();
     construct_service(
       md_dissemination_service,
-      std::ref(raft_group_manager),
+      std::ref(rs.raft_group_manager),
       std::ref(partition_manager),
       std::ref(controller->get_partition_leaders()),
       std::ref(controller->get_members_table()),
@@ -775,10 +776,10 @@ void application::wire_up_redpanda_services() {
         auto cache_interval = config::shard_local_cfg()
                                 .cloud_storage_cache_check_interval_ms.value();
         construct_service(
-          shadow_index_cache, cache_dir, cache_size, cache_interval)
+          rs.shadow_index_cache, cache_dir, cache_size, cache_interval)
           .get();
 
-        shadow_index_cache
+        rs.shadow_index_cache
           .invoke_on_all(
             [](cloud_storage::cache& cache) { return cache.start(); })
           .get();
@@ -797,8 +798,8 @@ void application::wire_up_redpanda_services() {
           .get();
         construct_service(
           archival_scheduler,
-          std::ref(cloud_storage_api),
-          std::ref(storage),
+          std::ref(rs.cloud_storage_api),
+          std::ref(rs.storage),
           std::ref(partition_manager),
           std::ref(controller->get_topics_state()),
           std::ref(arch_configs))
@@ -815,20 +816,21 @@ void application::wire_up_redpanda_services() {
     syschecks::systemd_message("Creating partition manager").get();
     construct_service(
       _group_manager,
-      std::ref(raft_group_manager),
+      std::ref(rs.raft_group_manager),
       std::ref(partition_manager),
       std::ref(controller->get_topics_state()),
       std::ref(config::shard_local_cfg()))
       .get();
     syschecks::systemd_message("Creating kafka group shard mapper").get();
-    construct_service(coordinator_ntp_mapper, std::ref(metadata_cache)).get();
+    construct_service(coordinator_ntp_mapper, std::ref(rs.metadata_cache))
+      .get();
     syschecks::systemd_message("Creating kafka group router").get();
     construct_service(
-      group_router,
+      rs.group_router,
       _scheduling_groups.kafka_sg(),
       smp_service_groups.kafka_smp_sg(),
       std::ref(_group_manager),
-      std::ref(shard_table),
+      std::ref(rs.shard_table),
       std::ref(coordinator_ntp_mapper))
       .get();
 
@@ -837,11 +839,11 @@ void application::wire_up_redpanda_services() {
         construct_single_service(
           coprocessing,
           config::node().coproc_supervisor_server(),
-          std::ref(storage),
+          std::ref(rs.storage),
           std::ref(controller->get_topics_state()),
-          std::ref(shard_table),
+          std::ref(rs.shard_table),
           std::ref(controller->get_topics_frontend()),
-          std::ref(metadata_cache),
+          std::ref(rs.metadata_cache),
           std::ref(partition_manager),
           std::ref(cp_partition_manager));
         coprocessing->start().get();
@@ -903,8 +905,8 @@ void application::wire_up_redpanda_services() {
       id_allocator_frontend,
       smp_service_groups.raft_smp_sg(),
       std::ref(partition_manager),
-      std::ref(shard_table),
-      std::ref(metadata_cache),
+      std::ref(rs.shard_table),
+      std::ref(rs.metadata_cache),
       std::ref(_connection_cache),
       std::ref(controller->get_partition_leaders()),
       std::ref(controller))
@@ -914,12 +916,12 @@ void application::wire_up_redpanda_services() {
       .get();
     construct_service(
       rm_group_frontend,
-      std::ref(metadata_cache),
+      std::ref(rs.metadata_cache),
       std::ref(_connection_cache),
       std::ref(controller->get_partition_leaders()),
       controller.get(),
       std::ref(coordinator_ntp_mapper),
-      std::ref(group_router))
+      std::ref(rs.group_router))
       .get();
 
     _rm_group_proxy = std::make_unique<kafka::rm_group_proxy_impl>(
@@ -931,8 +933,8 @@ void application::wire_up_redpanda_services() {
       rm_partition_frontend,
       smp_service_groups.raft_smp_sg(),
       std::ref(partition_manager),
-      std::ref(shard_table),
-      std::ref(metadata_cache),
+      std::ref(rs.shard_table),
+      std::ref(rs.metadata_cache),
       std::ref(_connection_cache),
       std::ref(controller->get_partition_leaders()),
       controller.get())
@@ -946,11 +948,11 @@ void application::wire_up_redpanda_services() {
     // is a safe bet, sharing _rm_group_proxy is fine because it wraps
     // sharded service with only `.local()' access
     construct_service(
-      tx_gateway_frontend,
+      rs.tx_gateway_frontend,
       smp_service_groups.raft_smp_sg(),
       std::ref(partition_manager),
-      std::ref(shard_table),
-      std::ref(metadata_cache),
+      std::ref(rs.shard_table),
+      std::ref(rs.metadata_cache),
       std::ref(_connection_cache),
       std::ref(controller->get_partition_leaders()),
       controller.get(),
@@ -1024,7 +1026,7 @@ void application::wire_up_redpanda_services() {
       .get();
     construct_service(
       _compaction_controller,
-      std::ref(storage),
+      std::ref(rs.storage),
       compaction_controller_config(
         _scheduling_groups.compaction_sg(),
         priority_manager::local().compaction_priority()))
@@ -1084,7 +1086,7 @@ void application::start(::stop_signal& app_signal) {
 
 void application::start_redpanda() {
     syschecks::systemd_message("Staring storage services").get();
-    storage.invoke_on_all(&storage::api::start).get();
+    rs.storage.invoke_on_all(&storage::api::start).get();
 
     syschecks::systemd_message("Starting the partition manager").get();
     partition_manager.invoke_on_all(&cluster::partition_manager::start).get();
@@ -1093,7 +1095,7 @@ void application::start_redpanda() {
     cp_partition_manager.invoke_on_all(&coproc::partition_manager::start).get();
 
     syschecks::systemd_message("Starting Raft group manager").get();
-    raft_group_manager.invoke_on_all(&raft::group_manager::start).get();
+    rs.raft_group_manager.invoke_on_all(&raft::group_manager::start).get();
 
     syschecks::systemd_message("Starting Kafka group manager").get();
     _group_manager.invoke_on_all(&kafka::group_manager::start).get();
@@ -1130,7 +1132,7 @@ void application::start_redpanda() {
           proto->register_service<cluster::tx_gateway>(
             _scheduling_groups.raft_sg(),
             smp_service_groups.raft_smp_sg(),
-            std::ref(tx_gateway_frontend),
+            std::ref(rs.tx_gateway_frontend),
             _rm_group_proxy.get(),
             std::ref(rm_partition_frontend));
           proto->register_service<
@@ -1138,14 +1140,14 @@ void application::start_redpanda() {
             _scheduling_groups.raft_sg(),
             smp_service_groups.raft_smp_sg(),
             partition_manager,
-            shard_table.local(),
+            rs.shard_table.local(),
             config::shard_local_cfg().raft_heartbeat_interval_ms());
           proto->register_service<cluster::service>(
             _scheduling_groups.cluster_sg(),
             smp_service_groups.cluster_smp_sg(),
             std::ref(controller->get_topics_frontend()),
             std::ref(controller->get_members_manager()),
-            std::ref(metadata_cache),
+            std::ref(rs.metadata_cache),
             std::ref(controller->get_security_frontend()),
             std::ref(controller->get_api()),
             std::ref(controller->get_members_frontend()),
@@ -1233,13 +1235,13 @@ void application::start_kafka(::stop_signal& app_signal) {
       .invoke_on_all([this, qdc_config](net::server& s) {
           auto proto = std::make_unique<kafka::protocol>(
             smp_service_groups.kafka_smp_sg(),
-            metadata_cache,
+            rs.metadata_cache,
             controller->get_topics_frontend(),
             controller->get_config_frontend(),
             controller->get_feature_table(),
             quota_mgr,
-            group_router,
-            shard_table,
+            rs.group_router,
+            rs.shard_table,
             partition_manager,
             coordinator_ntp_mapper,
             fetch_session_cache,
@@ -1248,7 +1250,7 @@ void application::start_kafka(::stop_signal& app_signal) {
             controller->get_authorizer(),
             controller->get_security_frontend(),
             controller->get_api(),
-            tx_gateway_frontend,
+            rs.tx_gateway_frontend,
             cp_partition_manager,
             data_policies,
             qdc_config);
