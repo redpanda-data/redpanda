@@ -51,7 +51,18 @@ class TopicDeleteTest(RedpandaTest):
                 map(lambda n: self.topic not in n.ns["kafka"].topics,
                     storage.nodes))
 
-        wait_until(lambda: topic_storage_purged(),
-                   timeout_sec=30,
-                   backoff_sec=2,
-                   err_msg="Topic storage was not removed")
+        try:
+            wait_until(lambda: topic_storage_purged(),
+                       timeout_sec=30,
+                       backoff_sec=2,
+                       err_msg="Topic storage was not removed")
+
+        except:
+            # On errors, dump listing of the storage location
+            for node in self.redpanda.nodes:
+                self.logger.error(f"Storage listing on {node.name}:")
+                for line in node.account.ssh_capture(
+                        f"find {self.redpanda.DATA_DIR}"):
+                    self.logger.error(line.strip())
+
+            raise

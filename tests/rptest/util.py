@@ -122,7 +122,16 @@ def wait_for_segments_removal(redpanda, topic, partition_idx, count):
             partitions.append(p <= count)
         return all(partitions)
 
-    wait_until(done,
-               timeout_sec=120,
-               backoff_sec=5,
-               err_msg="Segments were not removed")
+    try:
+        wait_until(done,
+                   timeout_sec=120,
+                   backoff_sec=5,
+                   err_msg="Segments were not removed")
+    except:
+        # On errors, dump listing of the storage location
+        for node in redpanda.nodes:
+            redpanda.logger.error(f"Storage listing on {node.name}:")
+            for line in node.account.ssh_capture(f"find {redpanda.DATA_DIR}"):
+                redpanda.logger.error(line.strip())
+
+        raise
