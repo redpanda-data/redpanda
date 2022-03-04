@@ -24,8 +24,19 @@ class OffsetForLeaderEpochTest(RedpandaTest):
     """
     Check offset for leader epoch handling
     """
+    def _all_have_leaders(self, topic):
+        rpk = RpkTool(self.redpanda)
+        partitions = rpk.describe_topic(topic)
+
+        for p in partitions:
+            self.logger.debug(f"rpk partition: {p}")
+            if p.leader == None or p.leader == -1:
+                return False
+        return True
+
     def _produce(self, topic, msg_cnt):
         rpk = RpkTool(self.redpanda)
+        wait_until(lambda: self._all_have_leaders(topic), 20, backoff_sec=2)
         for i in range(0, msg_cnt):
             rpk.produce(topic, f"k-{i}", f"v-{i}")
 
