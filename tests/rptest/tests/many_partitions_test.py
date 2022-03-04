@@ -20,7 +20,7 @@ from rptest.clients.rpk import RpkTool, RpkException
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.rpk_producer import RpkProducer
 from rptest.services.rpk_consumer import RpkConsumer
-from rptest.services.redpanda import ResourceSettings
+from rptest.services.redpanda import ResourceSettings, RESTART_LOG_ALLOW_LIST
 
 # This parameter is low today, to constrain the resources required
 # for the test (not just memory, but how much IO we have to do to
@@ -132,7 +132,7 @@ class ManyPartitionsTest(RedpandaTest):
             consumer.stop()
             consumer.free()
 
-    @cluster(num_nodes=8)
+    @cluster(num_nodes=8, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @parametrize(n_partitions=100,
                  n_topics=1)  # 100 partitions (baseline non-stressed test)
     @parametrize(n_partitions=int(NODE_MEMORY_MB / 10),

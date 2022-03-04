@@ -24,6 +24,8 @@ from rptest.wasm.wasm_script import WasmScript
 
 from rptest.tests.partition_movement import PartitionMovementMixin
 from rptest.clients.types import TopicSpec
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
+from rptest.tests.partition_movement_test import PARTITION_MOVEMENT_LOG_ERRORS
 
 
 class WasmPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
@@ -140,7 +142,7 @@ class WasmPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
             'materialized_topic': materialized_topic
         }
 
-    @cluster(num_nodes=6)
+    @cluster(num_nodes=6, log_allow_list=PARTITION_MOVEMENT_LOG_ERRORS)
     def test_dynamic(self):
         """
         Move partitions with active consumer / producer
@@ -169,7 +171,13 @@ class WasmPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         # Since the identity copro was deployed, contents of logs should be identical
         assert set(self.records_consumed) == set(self.result_data)
 
-    @cluster(num_nodes=6)
+    @cluster(
+        num_nodes=6,
+        log_allow_list=PARTITION_MOVEMENT_LOG_ERRORS + RESTART_LOG_ALLOW_LIST +
+        [
+            "coproc - .*Failed to connect wasm engine" +
+            "coproc - .*Wasm engine failed to reply to heartbeat within the expected interval"
+        ])
     def test_dynamic_with_failure(self):
         s = self._prime_env()
         _, partition, assignments = self._do_move_and_verify(

@@ -16,6 +16,7 @@ from rptest.clients.types import TopicSpec
 from rptest.clients.default import DefaultClient
 from rptest.clients.rpk import RpkTool
 from rptest.tests.end_to_end import EndToEndTest
+from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST
 
 
 class MultiRestartTest(EndToEndTest):
@@ -67,7 +68,7 @@ class MultiRestartTest(EndToEndTest):
         self.s3_client.empty_bucket(self.s3_bucket_name)
         super().tearDown()
 
-    @cluster(num_nodes=5)
+    @cluster(num_nodes=5, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_recovery_after_multiple_restarts(self):
         self.start_redpanda(3, extra_rp_conf=self._extra_rp_conf)
         spec = TopicSpec(partition_count=60, replication_factor=3)
