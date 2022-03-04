@@ -113,3 +113,7 @@ class DefaultClient:
     def alter_broker_config(self, values, incremental, broker=None):
         kcl = KCL(self._redpanda)
         return kcl.alter_broker_config(values, incremental, broker)
+
+    def delete_broker_config(self, keys, incremental):
+        kcl = KCL(self._redpanda)
+        return kcl.delete_broker_config(keys, incremental)
