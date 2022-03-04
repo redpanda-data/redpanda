@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 import typing
+from collections.abc import Sequence
 from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.kcl import KCL
@@ -46,6 +47,11 @@ class DefaultClient:
         client = KafkaCliTools(self._redpanda)
         for spec in specs:
             client.create_topic(spec)
+
+    def create_topic_with_assignment(self, name: str,
+                                     assignments: Sequence[Sequence[int]]):
+        client = KafkaCliTools(self._redpanda)
+        client.create_topic_with_assignment(name, assignments)
 
     def delete_topic(self, name):
         client = KafkaCliTools(self._redpanda)
