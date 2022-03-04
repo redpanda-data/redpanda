@@ -12,11 +12,11 @@ from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kcl import KCL
-from rptest.clients.rpk import RpkTool
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
+from rptest.services.rpk_producer import RpkProducer
 
 
 class OffsetForLeaderEpochTest(RedpandaTest):
@@ -29,15 +29,22 @@ class OffsetForLeaderEpochTest(RedpandaTest):
 
         for p in partitions:
             self.logger.debug(f"rpk partition: {p}")
-            if p.leader == None or p.leader == -1:
+            if p.leader is None or p.leader == -1:
                 return False
         return True
 
     def _produce(self, topic, msg_cnt):
-        rpk = RpkTool(self.redpanda)
         wait_until(lambda: self._all_have_leaders(topic), 20, backoff_sec=2)
-        for i in range(0, msg_cnt):
-            rpk.produce(topic, f"k-{i}", f"v-{i}")
+
+        producer = RpkProducer(self.test_context,
+                               self.redpanda,
+                               topic,
+                               16384,
+                               msg_cnt,
+                               acks=-1)
+        producer.start()
+        producer.wait()
+        producer.free()
 
     def __init__(self, test_context):
         super(OffsetForLeaderEpochTest,
@@ -48,7 +55,7 @@ class OffsetForLeaderEpochTest(RedpandaTest):
                                  "log_compaction_interval_ms": 1000
                              })
 
-    @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_offset_for_leader_epoch(self):
         replication_factors = [1, 3, 5]
         cleanup_policies = [
