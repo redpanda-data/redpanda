@@ -199,6 +199,7 @@ rm_stm::rm_stm(
                          .abort_timed_out_transactions_interval_ms.value())
   , _abort_index_segment_size(
       config::shard_local_cfg().abort_index_segment_size.value())
+  , _seq_table_min_size(config::shard_local_cfg().seq_table_min_size.value())
   , _recovery_policy(
       config::shard_local_cfg().rm_violation_recovery_policy.value())
   , _transactional_id_expiration(
@@ -1113,10 +1114,37 @@ void rm_stm::compact_snapshot() {
     if (cutoff_timestamp <= _oldest_session.value()) {
         return;
     }
+
+    if (_log_state.seq_table.size() <= _seq_table_min_size) {
+        return;
+    }
+
+    if (_log_state.seq_table.size() == 0) {
+        return;
+    }
+
+    std::vector<model::timestamp::type> lw_tss;
+    lw_tss.reserve(_log_state.seq_table.size());
+    for (auto it = _log_state.seq_table.cbegin();
+         it != _log_state.seq_table.cend();
+         it++) {
+        lw_tss.push_back(it->second.last_write_timestamp);
+    }
+    std::sort(lw_tss.begin(), lw_tss.end());
+    auto pivot = lw_tss[lw_tss.size() - 1 - _seq_table_min_size];
+
+    if (pivot < cutoff_timestamp) {
+        cutoff_timestamp = pivot;
+    }
+
     auto next_oldest_session = model::timestamp::now();
+    auto size = _log_state.seq_table.size();
     for (auto it = _log_state.seq_table.cbegin();
          it != _log_state.seq_table.cend();) {
-        if (it->second.last_write_timestamp < cutoff_timestamp) {
+        if (
+          size > _seq_table_min_size
+          && it->second.last_write_timestamp <= cutoff_timestamp) {
+            size--;
             _log_state.seq_table.erase(it++);
         } else {
             next_oldest_session = std::min(
@@ -1458,8 +1486,8 @@ void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
         } else {
             seq_it->second.update(bid.last_seq, last_offset);
         }
-        seq_it->second.last_write_timestamp = bid.max_timestamp.value();
-        _oldest_session = std::min(_oldest_session, bid.max_timestamp);
+        seq_it->second.last_write_timestamp = bid.first_timestamp.value();
+        _oldest_session = std::min(_oldest_session, bid.first_timestamp);
     }
 
     if (bid.is_transactional) {
