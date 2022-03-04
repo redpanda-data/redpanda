@@ -6,34 +6,38 @@
 set -uo pipefail
 set +e
 
-PARALLEL_STEPS=1
+disable_hook="${DISABLE_PRE_COMMAND_HOOK:-0}"
 
-repo=$(echo $BUILDKITE_REPO | awk -F/ '{print $NF}' | awk -F. '{print $1}')
+if [[ ${disable_hook} == 0 ]]; then
+  PARALLEL_STEPS=1
 
-if [[ ${BUILDKITE_PULL_REQUEST} != false ]]; then
-  labels=$(curl \
-    --retry 3 --retry-connrefused --fail \
-    -H "Accept: application/vnd.github.v3+json" \
-    -H "Authorization: token ${GITHUB_API_TOKEN}" \
-    "https://api.github.com/repos/redpanda-data/${repo}/issues/${BUILDKITE_PULL_REQUEST}/labels")
+  repo=$(echo $BUILDKITE_REPO | awk -F/ '{print $NF}' | awk -F. '{print $1}')
 
-  if [[ $? == "0" ]]; then
-    set -e
-    parallel=$(echo "${labels}" | jq -r '.[].name|select(startswith("ci-repeat-"))|ltrimstr("ci-repeat-")' | head -1)
-    curl \
-      -X "DELETE" \
-      --retry 3 --retry-connrefused --silent \
+  if [[ ${BUILDKITE_PULL_REQUEST} != false ]]; then
+    labels=$(curl \
+      --retry 3 --retry-connrefused --fail \
       -H "Accept: application/vnd.github.v3+json" \
       -H "Authorization: token ${GITHUB_API_TOKEN}" \
-      "https://api.github.com/repos/redpanda-data/${repo}/issues/${BUILDKITE_PULL_REQUEST}/labels/ci-repeat-$parallel"
+      "https://api.github.com/repos/redpanda-data/${repo}/issues/${BUILDKITE_PULL_REQUEST}/labels")
 
-    if ((parallel > 1 && parallel < 20)); then
-      PARALLEL_STEPS=$parallel
-    else
-      echo >&2 "Provided parallel number is out of range(2-19). Changing to 1."
-      PARALLEL_STEPS=1
+    if [[ $? == "0" ]]; then
+      set -e
+      parallel=$(echo "${labels}" | jq -r '.[].name|select(startswith("ci-repeat-"))|ltrimstr("ci-repeat-")' | head -1)
+      curl \
+        -X "DELETE" \
+        --retry 3 --retry-connrefused --silent \
+        -H "Accept: application/vnd.github.v3+json" \
+        -H "Authorization: token ${GITHUB_API_TOKEN}" \
+        "https://api.github.com/repos/redpanda-data/${repo}/issues/${BUILDKITE_PULL_REQUEST}/labels/ci-repeat-$parallel"
+
+      if ((parallel > 1 && parallel < 20)); then
+        PARALLEL_STEPS=$parallel
+      else
+        echo >&2 "Provided parallel number is out of range(2-19). Changing to 1."
+        PARALLEL_STEPS=1
+      fi
     fi
   fi
-fi
 
-export PARALLEL_STEPS
+  export PARALLEL_STEPS
+fi
