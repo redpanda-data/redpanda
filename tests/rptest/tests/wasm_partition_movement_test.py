@@ -12,7 +12,7 @@ import random
 from rptest.services.admin import Admin
 from rptest.services.verifiable_consumer import VerifiableConsumer
 
-from ducktape.mark.resource import cluster
+from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 
 from rptest.tests.end_to_end import EndToEndTest

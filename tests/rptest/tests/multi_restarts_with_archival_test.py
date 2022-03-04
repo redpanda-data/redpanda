@@ -9,7 +9,7 @@
 
 import uuid
 
-from ducktape.mark.resource import cluster
+from rptest.services.cluster import cluster
 from rptest.archival.s3_client import S3Client
 from ducktape.utils.util import wait_until
 from rptest.clients.types import TopicSpec
