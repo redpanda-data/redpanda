@@ -17,6 +17,7 @@ logger = logging.getLogger('viewer')
 def print_kv_store(store):
     for ntp in store.ntps:
         if ntp.nspace == "redpanda" and ntp.topic == "kvstore":
+            logger.info(f"inspecting {ntp}")
             kv = KvStore(ntp)
             kv.decode()
             items = kv.items()
