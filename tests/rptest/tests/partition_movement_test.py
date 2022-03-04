@@ -24,6 +24,7 @@ from rptest.services.honey_badger import HoneyBadger
 from rptest.services.rpk_producer import RpkProducer
 from rptest.services.kaf_producer import KafProducer
 from rptest.services.rpk_consumer import RpkConsumer
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 
 # Errors we should tolerate when moving partitions around
 PARTITION_MOVEMENT_LOG_ERRORS = [
@@ -237,7 +238,9 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
             self._move_and_verify()
         self.run_validation(enable_idempotence=False, consumer_timeout_sec=45)
 
-    @cluster(num_nodes=5, log_allow_list=PARTITION_MOVEMENT_LOG_ERRORS)
+    @cluster(num_nodes=5,
+             log_allow_list=PARTITION_MOVEMENT_LOG_ERRORS +
+             RESTART_LOG_ALLOW_LIST)
     def test_bootstrapping_after_move(self):
         """
         Move partitions with active consumer / producer
