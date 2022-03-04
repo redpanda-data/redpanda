@@ -26,10 +26,9 @@ class CustomTopicAssignmentTest(RedpandaTest):
     def create_and_validate(self, name, custom_assignment):
         self.redpanda.logger.info(
             f"creating topic {name} with {custom_assignment}")
-        cli = KafkaCliTools(self.redpanda)
         rpk = RpkTool(self.redpanda)
 
-        cli.create_topic_with_assignment(name, custom_assignment)
+        self.client().create_topic_with_assignment(name, custom_assignment)
 
         def replica_matches():
             replicas_per_partition = {}
