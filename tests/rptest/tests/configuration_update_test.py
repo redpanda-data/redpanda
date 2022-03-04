@@ -9,7 +9,6 @@
 
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
-from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.services.redpanda import RedpandaService
 
 from rptest.tests.redpanda_test import RedpandaTest
@@ -105,8 +104,7 @@ class ConfigurationUpdateTest(RedpandaTest):
         self.redpanda.start_node(node_3, override_cfg_params=altered_cfg_3)
 
         def metadata_updated():
-            client = PythonLibrdkafka(self.redpanda)
-            brokers = client.brokers()
+            brokers = self.client().brokers()
             self.redpanda.logger.debug(f"brokers metadata: {brokers}")
             ports = [b.port for _, b in brokers.items()]
             ports.sort()
@@ -139,8 +137,7 @@ class ConfigurationUpdateTest(RedpandaTest):
         self.redpanda.start_node(node, altered_port_cfg_1)
 
         def broker_configuration_updated():
-            client = PythonLibrdkafka(self.redpanda)
-            brokers = client.brokers()
+            brokers = self.client().brokers()
             self.logger.debug(f"brokers metadata: {brokers}")
 
             try:
