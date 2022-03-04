@@ -19,7 +19,6 @@ from rptest.services.admin import Admin
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.clients.rpk_remote import RpkRemoteTool
-from rptest.clients.kcl import KCL
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from ducktape.mark import parametrize
@@ -836,8 +835,6 @@ class ClusterConfigTest(RedpandaTest):
         :param incremental: whether to use incremental kafka config API or
                             legacy config API.
         """
-        kcl = KCL(self.redpanda)
-
         # Redpanda only support incremental config changes: the legacy
         # AlterConfig API is a bad user experience
         incremental = True
@@ -853,8 +850,8 @@ class ClusterConfigTest(RedpandaTest):
             {"log_message_timestamp_type": "LogAppendTime"}, incremental)
         assert 'OK' in out
         if incremental:
-            kcl.delete_broker_config(["log_message_timestamp_type"],
-                                     incremental)
+            self.client().delete_broker_config(["log_message_timestamp_type"],
+                                               incremental)
             assert 'OK' in out
 
         # Set a property by its Kafka-interop names and values
