@@ -174,6 +174,7 @@ failure of enabling each logger is individually printed.
 var possibleLoggers = []string{
 	"admin_api_server",
 	"archival",
+	"archival-ctrl",
 	"assert",
 	"cloud_storage",
 	"cluster",
@@ -186,9 +187,12 @@ var possibleLoggers = []string{
 	"http",
 	"httpd",
 	"io",
+	"json",
 	"kafka",
 	// "kafka/client", disabled until redpanda supports slashes in the handler
 	"kvstore",
+	"metrics-reporter",
+	"offset_translator",
 	"pandaproxy",
 	// "r/heartbeat", disabled until redpanda supports slashes in the handler
 	"raft",
@@ -200,5 +204,7 @@ var possibleLoggers = []string{
 	"seastar",
 	"security",
 	"storage",
+	"storage-gc",
 	"syschecks",
+	"tx",
 }
