@@ -60,16 +60,20 @@ BOOST_AUTO_TEST_CASE(remote_segment_index_search_test) {
         fpos += random_generators::get_int(1, 1000);
     }
 
-    offset_index index(segment_base_rp_offset, segment_base_kaf_offset, 0U);
+    offset_index tmp_index(segment_base_rp_offset, segment_base_kaf_offset, 0U);
     model::offset last;
     model::offset klast;
     size_t flast;
     for (size_t i = 0; i < rp_offsets.size(); i++) {
-        index.add(rp_offsets.at(i), kaf_offsets.at(i), file_offsets.at(i));
+        tmp_index.add(rp_offsets.at(i), kaf_offsets.at(i), file_offsets.at(i));
         last = rp_offsets.at(i);
         klast = kaf_offsets.at(i);
         flast = file_offsets.at(i);
     }
+
+    offset_index index(segment_base_rp_offset, segment_base_kaf_offset, 0U);
+    auto buf = tmp_index.to_iobuf();
+    index.from_iobuf(std::move(buf));
 
     // Query element before the first one
     auto opt_first = index.find_rp_offset(

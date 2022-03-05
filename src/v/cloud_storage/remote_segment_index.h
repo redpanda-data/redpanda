@@ -77,6 +77,12 @@ public:
     /// returned.
     std::optional<find_result> find_kaf_offset(model::offset upper_bound);
 
+    /// Serialize offset_index
+    iobuf to_iobuf();
+
+    /// Deserialize offset_index
+    void from_iobuf(iobuf in);
+
 private:
     struct index_value {
         size_t ix;
@@ -114,9 +120,11 @@ private:
     model::offset _initial_rp;
     model::offset _initial_kaf;
     int64_t _initial_file_pos;
-    deltafor_encoder<int64_t> _rp_encoder;
-    deltafor_encoder<int64_t> _kaf_encoder;
-    deltafor_encoder<int64_t> _file_encoder;
+    using encoder_t = deltafor_encoder<int64_t>;
+    using decoder_t = deltafor_decoder<int64_t>;
+    encoder_t _rp_index;
+    encoder_t _kaf_index;
+    encoder_t _file_index;
 };
 
 class remote_segment_index_builder : public storage::batch_consumer {

@@ -977,3 +977,83 @@ SEASTAR_THREAD_TEST_CASE(test_btree_iterator_range_scan) {
 
     auto it = iter_t(map);
 }
+
+FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {
+    // This test checks index materialization code path.
+    // It's triggered when the segment is already present in the cache
+    // when the remote_segment is created.
+    // In oreder to have the segment hydrated we need to access it first and
+    // then wait until eviction will collect unused remote_segment (60s).
+    // This is unreliable and lengthy, so instead of doing this this test
+    // uses two remote_partition instances. First one hydrates segment in
+    // the cache. The second one is used to materialize the segment.
+    constexpr int num_segments = 3;
+    batch_t batch = {
+      .num_records = 5,
+      .type = model::record_batch_type::raft_data,
+      .record_sizes = {100, 200, 300, 200, 100},
+    };
+    std::vector<std::vector<batch_t>> batches = {
+      {batch, batch, batch},
+      {batch, batch, batch},
+      {batch, batch, batch},
+    };
+    auto segments = setup_s3_imposter(*this, batches);
+    auto base = segments[0].base_offset;
+    auto max = segments[num_segments - 1].max_offset;
+    vlog(test_log.debug, "offset range: {}-{}", base, max);
+
+    auto conf = get_configuration();
+    auto bucket = s3::bucket_name("bucket");
+    remote api(s3_connection_limit(10), conf);
+    auto action = ss::defer([&api] { api.stop().get(); });
+    auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
+      manifest_ntp, manifest_revision);
+
+    auto manifest = hydrate_manifest(api, bucket);
+
+    // starting max_bytes
+    constexpr size_t max_bytes_limit = 4_KiB;
+
+    // Read first segment using first remote_partition instance.
+    // After this block finishes the segment will be hydrated.
+    {
+        auto partition = ss::make_lw_shared<remote_partition>(
+          manifest, api, *cache, bucket);
+        auto partition_stop = ss::defer(
+          [&partition] { partition->stop().get(); });
+        partition->start().get();
+
+        storage::log_reader_config reader_config(
+          base, max, ss::default_priority_class());
+
+        reader_config.start_offset = segments.front().base_offset;
+        reader_config.max_bytes = max_bytes_limit;
+        vlog(test_log.info, "read first segment {}", reader_config);
+        auto reader = partition->make_reader(reader_config).get().reader;
+        auto headers_read
+          = reader.consume(test_consumer(), model::no_timeout).get();
+        BOOST_REQUIRE(!headers_read.empty());
+    }
+
+    // Read first segment using second remote_partition instance.
+    // This will trigger offset_index materialization from cache.
+    {
+        auto partition = ss::make_lw_shared<remote_partition>(
+          manifest, api, *cache, bucket);
+        auto partition_stop = ss::defer(
+          [&partition] { partition->stop().get(); });
+        partition->start().get();
+
+        storage::log_reader_config reader_config(
+          base, max, ss::default_priority_class());
+
+        reader_config.start_offset = segments.front().base_offset;
+        reader_config.max_bytes = max_bytes_limit;
+        vlog(test_log.info, "read last segment: {}", reader_config);
+        auto reader = partition->make_reader(reader_config).get().reader;
+        auto headers_read
+          = reader.consume(test_consumer(), model::no_timeout).get();
+        BOOST_REQUIRE(!headers_read.empty());
+    }
+}

@@ -10,6 +10,7 @@
 
 #include "cloud_storage/remote_segment.h"
 
+#include "bytes/iobuf.h"
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/logger.h"
 #include "cloud_storage/remote_segment_index.h"
@@ -249,12 +250,14 @@ ss::future<> remote_segment::do_hydrate() {
         });
         auto [rparse, rput] = co_await ss::when_all(
           std::move(fparse), std::move(fput));
+        bool index_prepared = true;
         if (rparse.failed()) {
             vlog(
               _ctxlog.warn,
               "Failed to build a remote_segment index, error: {}",
               rparse.get_exception());
             rparse.ignore_ready_future();
+            index_prepared = false;
         }
         if (rput.failed()) {
             vlog(
@@ -263,7 +266,11 @@ ss::future<> remote_segment::do_hydrate() {
               rput.get_exception());
             rput.get();
         }
-        _index = std::move(tmpidx);
+        if (index_prepared) {
+            auto index_stream = make_iobuf_input_stream(tmpidx.to_iobuf());
+            co_await _cache.put(_path().native() + ".index", index_stream);
+            _index = std::move(tmpidx);
+        }
         co_return size_bytes;
     };
 
@@ -281,6 +288,48 @@ ss::future<> remote_segment::do_hydrate() {
           _path,
           _wait_list.size());
         throw download_exception(res, _path);
+    }
+}
+
+ss::future<> remote_segment::maybe_materialize_index() {
+    ss::gate::holder guard(_gate);
+    auto path = _path().native() + ".index";
+    offset_index ix(_base_rp_offset, _base_rp_offset - _base_offset_delta, 0);
+    if (auto cache_item = co_await _cache.get(path); cache_item.has_value()) {
+        // The cache item is expected to be present if the segment is present
+        // so it's very unlikely that we will call this method if there is no
+        // segment. This can only happen due to race condition between the
+        // remote_segment materialization and cache eviction.
+        vlog(_ctxlog.info, "Trying to materialize index '{}'", path);
+        try {
+            ss::file_input_stream_options options{};
+            options.buffer_size
+              = config::shard_local_cfg().storage_read_buffer_size;
+            options.read_ahead
+              = config::shard_local_cfg().storage_read_readahead_count;
+            options.io_priority_class
+              = priority_manager::local().shadow_indexing_priority();
+            auto inp_stream = ss::make_file_input_stream(
+              cache_item->body, options);
+            iobuf state;
+            auto out_stream = make_iobuf_ref_output_stream(state);
+            co_await ss::copy(inp_stream, out_stream).finally([&inp_stream] {
+                return inp_stream.close();
+            });
+            ix.from_iobuf(std::move(state));
+            _index = std::move(ix);
+        } catch (...) {
+            // In case of any failure during index materialization just continue
+            // without the index.
+            vlog(
+              _ctxlog.warn,
+              "Failed to materialize index '{}'. Error: {}",
+              path,
+              std::current_exception());
+        }
+        co_await cache_item->body.close();
+    } else {
+        vlog(_ctxlog.info, "Index '{}' is not available", path);
     }
 }
 
@@ -351,6 +400,10 @@ ss::future<> remote_segment::run_hydrate_bg() {
                         continue;
                     }
                     _data_file = maybe_file->body;
+                    if (!_index) {
+                        // materialize index state
+                        co_await maybe_materialize_index();
+                    }
                 }
             }
             // Invariant: here we should have a data file or error to be set.

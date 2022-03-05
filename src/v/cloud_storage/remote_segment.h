@@ -133,6 +133,9 @@ private:
     /// to the cache dir and updates the segment index.
     ss::future<> do_hydrate();
 
+    /// Load segment index from file (if available)
+    ss::future<> maybe_materialize_index();
+
     ss::gate _gate;
     remote& _api;
     cache& _cache;
