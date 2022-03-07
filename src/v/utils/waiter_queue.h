@@ -11,8 +11,11 @@
 
 #pragma once
 
-#include "seastar/core/abort_source.hh"
-#include "seastar/core/weak_ptr.hh"
+#include "seastarx.h"
+
+#include <seastar/core/abort_source.hh>
+#include <seastar/core/future.hh>
+#include <seastar/core/weak_ptr.hh>
 
 /**
  * Generic 'list of waiters' helper, where a waiter is waiting for a particular
