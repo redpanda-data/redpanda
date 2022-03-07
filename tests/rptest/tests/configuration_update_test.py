@@ -13,6 +13,11 @@ from rptest.services.redpanda import RedpandaService
 
 from rptest.tests.redpanda_test import RedpandaTest
 
+# Choose ports _below_ the default 33145, because test environment
+# is configured to only use emphemeral ports above 34000: this avoids
+# port collisions.
+ALTERNATIVE_RPC_PORTS = [12345, 20001]
+
 
 class ConfigurationUpdateTest(RedpandaTest):
     """
@@ -29,10 +34,10 @@ class ConfigurationUpdateTest(RedpandaTest):
         self.redpanda.stop_node(node_1)
         self.redpanda.stop_node(node_2)
         # change both ports
-        altered_port_cfg_1 = dict(
-            rpc_server=dict(address="{}".format(node_1.name), port=12345))
-        altered_port_cfg_2 = dict(
-            rpc_server=dict(address="{}".format(node_2.name), port=54321))
+        altered_port_cfg_1 = dict(rpc_server=dict(
+            address="{}".format(node_1.name), port=ALTERNATIVE_RPC_PORTS[0]))
+        altered_port_cfg_2 = dict(rpc_server=dict(
+            address="{}".format(node_2.name), port=ALTERNATIVE_RPC_PORTS[1]))
 
         # start both nodes
         self.redpanda.start_node(node_1, altered_port_cfg_1)
@@ -127,7 +132,8 @@ class ConfigurationUpdateTest(RedpandaTest):
 
         # change rpc port & kafka advertised address
         altered_port_cfg_1 = dict(
-            rpc_server=dict(address="{}".format(node.name), port=54321),
+            rpc_server=dict(address="{}".format(node.name),
+                            port=ALTERNATIVE_RPC_PORTS[1]),
             kafka_api=make_new_address(node, 10091),
             advertised_kafka_api=make_new_address(node, 10091))
         # remove node data folder
