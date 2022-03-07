@@ -26,10 +26,9 @@ class CustomTopicAssignmentTest(RedpandaTest):
     def create_and_validate(self, name, custom_assignment):
         self.redpanda.logger.info(
             f"creating topic {name} with {custom_assignment}")
-        cli = KafkaCliTools(self.redpanda)
         rpk = RpkTool(self.redpanda)
 
-        cli.create_topic_with_assignment(name, custom_assignment)
+        self.client().create_topic_with_assignment(name, custom_assignment)
 
         def replica_matches():
             replicas_per_partition = {}
@@ -53,8 +52,6 @@ class CustomTopicAssignmentTest(RedpandaTest):
 
     @cluster(num_nodes=5)
     def test_create_topic_with_custom_partition_assignment(self):
-        cli = KafkaCliTools(self.redpanda)
-        rpk = RpkTool(self.redpanda)
         # 3 partitions with single replica
         self.create_and_validate("topic-1", [[1], [3], [5]])
         # 3 partitions with replication factor of 2

@@ -115,7 +115,8 @@ class KCL:
             cmd.extend(["-k", f"s:{k}={v}" if incremental else f"{k}={v}"])
 
         if broker:
-            cmd.append(broker)
+            # cmd needs to be string, so handle things like broker=1
+            cmd.append(str(broker))
 
         return self._cmd(cmd, attempts=1)
 
@@ -142,6 +143,7 @@ class KCL:
         brokers = self._redpanda.brokers()
         cmd = ["kcl", "-X", f"seed_brokers={brokers}", "--no-config-file"
                ] + cmd
+        assert attempts > 0
         for retry in reversed(range(attempts)):
             try:
                 res = subprocess.check_output(cmd,
@@ -157,3 +159,6 @@ class KCL:
                     "kcl retrying after exit code {}: {}".format(
                         e.returncode, e.output))
                 time.sleep(1)
+        # it looks impossible to reach this case, but pyright static analyzer
+        # can't see that and deduces Optional[str] as return type.
+        raise RuntimeError(f"Command failed after retries: {cmd}")

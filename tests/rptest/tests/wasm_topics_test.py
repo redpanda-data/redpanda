@@ -38,15 +38,11 @@ class WasmCreateTopicsTest(WasmIdentityTest):
 
         # Verify sound input, and grab the input topics config
         test_cfg = self._rpk_tool.describe_topic(self.topic)
-        if test_cfg == None:
-            raise Exception("Input topic missing {}" % self.topic)
         test_cfg = sorted(test_cfg, key=rpk_partition_sort)
 
         # Ensure all materialized topics created and configs match inputs
         for topic in self.wasm_test_output():
             output = self._rpk_tool.describe_topic(topic)
-            if output == None:
-                raise Exception("Materialized topic missing {}" % topic)
             output = sorted(output, key=rpk_partition_sort)
             if output != test_cfg:
                 raise Exception("Bad config, expected: %s observed: %s" %

@@ -172,7 +172,7 @@ class RpkTool:
         cmd = ['describe', topic, '-p']
         output = self._run_topic(cmd)
         if "not found" in output:
-            return None
+            raise Exception(f"Topic not found: {topic}")
         lines = output.splitlines()
 
         def partition_line(line):
@@ -189,7 +189,7 @@ class RpkTool:
                                 hw=int(m.group('hw')),
                                 start_offset=int(m.group("logstart")))
 
-        return filter(lambda p: p != None, map(partition_line, lines))
+        return filter(None, map(partition_line, lines))
 
     def describe_topic_configs(self, topic):
         cmd = ['describe', topic, '-c']

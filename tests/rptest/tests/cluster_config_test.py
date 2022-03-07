@@ -19,7 +19,6 @@ from rptest.services.admin import Admin
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.clients.rpk_remote import RpkRemoteTool
-from rptest.clients.kcl import KCL
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from ducktape.mark import parametrize
@@ -507,7 +506,7 @@ class ClusterConfigTest(RedpandaTest):
         text = self._export(all)
 
         # Validate that RPK gives us valid yaml
-        _ = yaml.load(text)
+        _ = yaml.full_load(text)
 
         self.logger.debug(f"Exported config before modification: {text}")
 
@@ -836,25 +835,23 @@ class ClusterConfigTest(RedpandaTest):
         :param incremental: whether to use incremental kafka config API or
                             legacy config API.
         """
-        kcl = KCL(self.redpanda)
-
         # Redpanda only support incremental config changes: the legacy
         # AlterConfig API is a bad user experience
         incremental = True
 
         # Set a property by its redpanda name
-        out = kcl.alter_broker_config(
+        out = self.client().alter_broker_config(
             {"log_message_timestamp_type": "CreateTime"}, incremental)
         # kcl does not set an error exist status when config set fails, so must
         # read its output text to validate that calls are successful
         assert 'OK' in out
 
-        out = kcl.alter_broker_config(
+        out = self.client().alter_broker_config(
             {"log_message_timestamp_type": "LogAppendTime"}, incremental)
         assert 'OK' in out
         if incremental:
-            kcl.delete_broker_config(["log_message_timestamp_type"],
-                                     incremental)
+            self.client().delete_broker_config(["log_message_timestamp_type"],
+                                               incremental)
             assert 'OK' in out
 
         # Set a property by its Kafka-interop names and values
@@ -865,25 +862,26 @@ class ClusterConfigTest(RedpandaTest):
         }
         for property, value_list in kafka_props.items():
             for value in value_list:
-                out = kcl.alter_broker_config({property: value}, incremental)
+                out = self.client().alter_broker_config({property: value},
+                                                        incremental)
                 assert 'OK' in out
 
         # Set a nonexistent property
-        out = kcl.alter_broker_config({"does_not_exist": "avalue"},
-                                      incremental)
+        out = self.client().alter_broker_config({"does_not_exist": "avalue"},
+                                                incremental)
         assert 'INVALID_CONFIG' in out
 
         # Set a malformed property
-        out = kcl.alter_broker_config(
+        out = self.client().alter_broker_config(
             {"log_message_timestamp_type": "BadValue"}, incremental)
         assert 'INVALID_CONFIG' in out
 
         # Set a property on a named broker: should fail because this
         # interface is only for cluster-wide properties
-        out = kcl.alter_broker_config(
+        out = self.client().alter_broker_config(
             {"log_message_timestamp_type": "CreateTime"},
             incremental,
-            broker="1")
+            broker=1)
         assert 'INVALID_CONFIG' in out
         assert "Setting broker properties on named brokers is unsupported" in out
 
@@ -894,8 +892,7 @@ class ClusterConfigTest(RedpandaTest):
         are correctly handled with an 'unsupported' response.
         """
 
-        kcl = KCL(self.redpanda)
-        out = kcl.alter_broker_config(
+        out = self.client().alter_broker_config(
             {"log_message_timestamp_type": "CreateTime"}, incremental=False)
         self.logger.info("AlterConfigs output: {out}")
         assert 'INVALID_CONFIG' in out

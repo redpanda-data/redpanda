@@ -7,8 +7,11 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 import typing
+from collections.abc import Sequence
 from rptest.clients.types import TopicSpec
+from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.kcl import KCL
 from rptest.clients.rpk import RpkTool
 from kafka import KafkaAdminClient
 
@@ -35,6 +38,12 @@ class TopicConfigValue(typing.NamedTuple):
         return self.value == other
 
 
+class BrokerDescription(typing.NamedTuple):
+    id: int
+    host: str
+    port: int
+
+
 class DefaultClient:
     def __init__(self, redpanda):
         self._redpanda = redpanda
@@ -45,6 +54,24 @@ class DefaultClient:
         client = KafkaCliTools(self._redpanda)
         for spec in specs:
             client.create_topic(spec)
+
+    def create_topic_with_assignment(self, name: str,
+                                     assignments: Sequence[Sequence[int]]):
+        client = KafkaCliTools(self._redpanda)
+        client.create_topic_with_assignment(name, assignments)
+
+    def brokers(self):
+        """
+        Note for implementers: this method is expected to return the set of
+        brokers reported by the cluster, rather than the nodes allocated for use
+        in the self._redpanda service.
+        """
+        client = PythonLibrdkafka(self._redpanda)
+        brokers = client.brokers()
+        return {
+            b.id: BrokerDescription(id=b.id, host=b.host, port=b.port)
+            for b in brokers.values()
+        }
 
     def delete_topic(self, name):
         client = KafkaCliTools(self._redpanda)
@@ -108,3 +135,15 @@ class DefaultClient:
     def delete_topic_config(self, topic: str, key: str):
         rpk = RpkTool(self._redpanda)
         rpk.delete_topic_config(topic, key)
+
+    def alter_broker_config(self,
+                            values: dict[str, typing.Any],
+                            incremental: bool,
+                            *,
+                            broker: typing.Optional[int] = None):
+        kcl = KCL(self._redpanda)
+        return kcl.alter_broker_config(values, incremental, broker)
+
+    def delete_broker_config(self, keys: list[str], incremental: bool):
+        kcl = KCL(self._redpanda)
+        return kcl.delete_broker_config(keys, incremental)
