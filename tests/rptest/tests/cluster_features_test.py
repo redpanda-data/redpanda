@@ -35,7 +35,7 @@ class FeaturesTestBase(RedpandaTest):
         # This assertion will break each time we increment the value
         # of `latest_version` in the redpanda source.  Update it when
         # that happens.
-        assert features_response['cluster_version'] == 1
+        assert features_response['cluster_version'] == 2
 
         assert features_response['features'] == ['central_config']
 
