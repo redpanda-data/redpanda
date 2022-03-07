@@ -15,6 +15,7 @@
 #include "cloud_storage/fwd.h"
 #include "cluster/config_manager.h"
 #include "cluster/fwd.h"
+#include "config/node_config.h"
 #include "coproc/fwd.h"
 #include "kafka/client/configuration.h"
 #include "kafka/client/fwd.h"
@@ -110,8 +111,8 @@ private:
     void hydrate_config(const po::variables_map&);
 
     bool coproc_enabled() {
-        const auto& cfg = config::shard_local_cfg();
-        return cfg.developer_mode() && cfg.enable_coproc();
+        return config::node().developer_mode()
+               && config::shard_local_cfg().enable_coproc();
     }
 
     bool archival_storage_enabled();

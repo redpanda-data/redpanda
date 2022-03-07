@@ -147,8 +147,9 @@ class FeaturesSingleNodeTest(FeaturesTestBase):
         initial_version = self.admin.get_features()['cluster_version']
 
         new_version = initial_version + 1
-        self.logger.info("Simulating upgrade from version {} to version {}",
-                         initial_version, new_version)
+        self.logger.info(
+            f"Simulating upgrade from version {initial_version} to version {new_version}"
+        )
 
         # Modified environment variables apply to processes restarted from this point onwards
         self.redpanda.set_environment(

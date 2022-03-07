@@ -37,6 +37,19 @@ ss::future<iobuf> read_fully(const std::filesystem::path& name) {
     });
 }
 
+/**
+ * This helper is useful for YAML loading, because yaml-cpp expects
+ * a string.
+ *
+ * Background on why: https://github.com/jbeder/yaml-cpp/issues/765
+ */
+ss::future<ss::sstring>
+read_fully_to_string(const std::filesystem::path& name) {
+    return read_fully_tmpbuf(name).then([](ss::temporary_buffer<char> buf) {
+        return ss::to_sstring(std::move(buf));
+    });
+}
+
 ss::future<> write_fully(const std::filesystem::path& p, iobuf buf) {
     static constexpr const size_t buf_size = 4096;
     auto flags = ss::open_flags::wo | ss::open_flags::create

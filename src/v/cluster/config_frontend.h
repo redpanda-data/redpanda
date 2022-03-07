@@ -62,5 +62,8 @@ private:
 
     // Serialize writes to generate version numbers.
     mutex _write_lock;
+
+    // Set once at construction to enable unit testing
+    model::node_id _self;
 };
 } // namespace cluster

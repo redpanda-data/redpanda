@@ -20,6 +20,7 @@ namespace config {
 
 struct node_config final : public config_store {
 public:
+    property<bool> developer_mode;
     property<data_directory_path> data_directory;
     property<model::node_id> node_id;
     property<std::optional<ss::sstring>> rack;
@@ -47,8 +48,7 @@ public:
     // Shadow indexing/S3 cache location
     property<std::optional<ss::sstring>> cloud_storage_cache_directory;
 
-    // Feature flag for central config
-    property<bool> enable_central_config;
+    deprecated_property enable_central_config;
 
     // build pidfile path: `<data_directory>/pid.lock`
     std::filesystem::path pidfile_path() const {
@@ -73,10 +73,20 @@ public:
 
     node_config() noexcept;
     error_map_t load(const YAML::Node& root_node);
+    error_map_t load(
+      std::filesystem::path const& loaded_from, const YAML::Node& root_node) {
+        _cfg_file_path = loaded_from;
+        return load(root_node);
+    }
+
+    std::filesystem::path const& get_cfg_file_path() const {
+        return _cfg_file_path;
+    }
 
 private:
     property<std::optional<net::unresolved_address>> _advertised_rpc_api;
     one_or_many_property<model::broker_endpoint> _advertised_kafka_api;
+    std::filesystem::path _cfg_file_path;
 };
 
 node_config& node();

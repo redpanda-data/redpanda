@@ -41,9 +41,9 @@ class WasmPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
                 # partition movement and the balancer would interfere
                 'enable_leader_balancer': False,
                 'enable_coproc': True,
-                'developer_mode': True,
                 'auto_create_topics_enabled': False
             },
+            extra_node_conf={'developer_mode': True},
             **kvargs)
         self._ctx = ctx
         self._rpk_tool = None

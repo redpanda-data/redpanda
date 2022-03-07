@@ -318,9 +318,8 @@ static ss::future<std::vector<resp_resource_t>> alter_broker_configuartion(
     responses.reserve(resources.size());
 
     // If central config is disabled, we cannot set broker properties
-    if (!(config::node().enable_central_config()
-          && ctx.feature_table().local().is_active(
-            cluster::feature::central_config))) {
+    if (!ctx.feature_table().local().is_active(
+          cluster::feature::central_config)) {
         co_return co_await unsupported_broker_configuration<
           req_resource_t,
           resp_resource_t>(

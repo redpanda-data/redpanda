@@ -37,14 +37,16 @@ class WasmTest(RedpandaTest):
 
     def __init__(self, test_context, extra_rp_conf=dict(), record_size=1024):
         def enable_wasm_options():
-            return dict(developer_mode=True,
-                        enable_coproc=True,
+            return dict(enable_coproc=True,
                         enable_idempotence=True,
                         auto_create_topics_enabled=False)
 
         wasm_opts = enable_wasm_options()
         wasm_opts.update(extra_rp_conf)
-        super(WasmTest, self).__init__(test_context, extra_rp_conf=wasm_opts)
+        super(WasmTest,
+              self).__init__(test_context,
+                             extra_rp_conf=wasm_opts,
+                             extra_node_conf={'developer_mode': True})
         self._rpk_tool = RpkTool(self.redpanda)
         self._test_context = test_context
         self._build_tool = WasmBuildTool(self._rpk_tool)

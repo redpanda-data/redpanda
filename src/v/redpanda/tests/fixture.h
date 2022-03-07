@@ -162,7 +162,6 @@ public:
             auto& config = config::shard_local_cfg();
 
             config.get("enable_pid_file").set_value(false);
-            config.get("developer_mode").set_value(true);
             config.get("join_retry_timeout_ms").set_value(100ms);
             config.get("members_backend_retry_ms").set_value(1000ms);
             config.get("disable_metrics").set_value(true);
@@ -170,6 +169,7 @@ public:
             auto& node_config = config::node();
             node_config.get("admin").set_value(
               std::vector<model::broker_endpoint>());
+            node_config.get("developer_mode").set_value(true);
             node_config.get("node_id").set_value(node_id);
             node_config.get("rack").set_value(
               std::optional<ss::sstring>(rack_name));
@@ -233,9 +233,24 @@ public:
         // ids of partitions they create)
         co_await tests::cooperative_spin_wait_with_timeout(
           10s, [this]() -> bool {
+              // Await feature manager bootstrap
               auto& feature_table = app.controller->get_feature_table().local();
-              return feature_table.get_active_version()
-                     != cluster::invalid_version;
+              if (
+                feature_table.get_active_version()
+                == cluster::invalid_version) {
+                  return false;
+              }
+
+              // Await config manager bootstrap
+              auto& config_mgr = app.controller->get_config_manager().local();
+              if (config_mgr.get_version() == cluster::config_version_unset) {
+                  return false;
+              }
+
+              // Await initial config status messages from all nodes
+              auto& members = app.controller->get_members_table().local();
+              return config_mgr.get_status().size()
+                     == members.all_brokers().size();
           });
     }
 

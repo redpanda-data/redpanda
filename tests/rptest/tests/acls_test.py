@@ -17,14 +17,12 @@ class AccessControlListTest(RedpandaTest):
     algorithm = "SCRAM-SHA-256"
 
     def __init__(self, test_context):
-        extra_rp_conf = dict(
-            developer_mode=True,
-            enable_sasl=True,
-        )
+        extra_rp_conf = dict(enable_sasl=True, )
         super(AccessControlListTest,
               self).__init__(test_context,
                              num_brokers=3,
-                             extra_rp_conf=extra_rp_conf)
+                             extra_rp_conf=extra_rp_conf,
+                             extra_node_conf={'developer_mode': True})
 
     def get_client(self, user):
         return KafkaCliTools(self.redpanda, user=user, passwd=self.password)

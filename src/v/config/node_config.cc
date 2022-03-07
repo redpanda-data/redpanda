@@ -14,11 +14,18 @@
 namespace config {
 
 node_config::node_config() noexcept
-  : data_directory(
+  : developer_mode(
     *this,
-    "data_directory",
-    "Place where redpanda will keep the data",
-    {.required = required::yes, .visibility = visibility::user})
+    "developer_mode",
+    "Skips most of the checks performed at startup, not recomended for "
+    "production use",
+    {.visibility = visibility::tunable},
+    false)
+  , data_directory(
+      *this,
+      "data_directory",
+      "Place where redpanda will keep the data",
+      {.required = required::yes, .visibility = visibility::user})
   , node_id(
       *this,
       "node_id",
@@ -102,12 +109,7 @@ node_config::node_config() noexcept
       "`cloud_storage_enabled` is present",
       {.visibility = visibility::user},
       std::nullopt)
-  , enable_central_config(
-      *this,
-      "enable_central_config",
-      "Enable central storage + sync of cluster configuration",
-      {.visibility = visibility::user},
-      false)
+  , enable_central_config(*this, "enable_central_config")
   , _advertised_rpc_api(
       *this,
       "advertised_rpc_api",

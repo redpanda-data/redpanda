@@ -50,12 +50,15 @@ class EndToEndTest(Test):
       - Perform some action (e.g. partition movement)
       - Run validation
     """
-    def __init__(self, test_context, extra_rp_conf=None):
+    def __init__(self, test_context, extra_rp_conf=None, extra_node_conf=None):
         super(EndToEndTest, self).__init__(test_context=test_context)
         if extra_rp_conf is None:
             self._extra_rp_conf = {}
         else:
             self._extra_rp_conf = extra_rp_conf
+
+        self._extra_node_conf = extra_node_conf
+
         self.records_consumed = []
         self.last_consumed_offsets = {}
         self.redpanda = None
@@ -68,9 +71,11 @@ class EndToEndTest(Test):
             # paramter takes the precedence
             self._extra_rp_conf = {**self._extra_rp_conf, **extra_rp_conf}
         assert self.redpanda is None
+
         self.redpanda = RedpandaService(self.test_context,
                                         num_nodes,
-                                        extra_rp_conf=self._extra_rp_conf)
+                                        extra_rp_conf=self._extra_rp_conf,
+                                        extra_node_conf=self._extra_node_conf)
         self.redpanda.start()
         self._client = DefaultClient(self.redpanda)
 

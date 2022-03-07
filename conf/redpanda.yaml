@@ -40,8 +40,6 @@ redpanda:
     address: "0.0.0.0"
     port: 9644
 
-  auto_create_topics_enabled: true
-
   # Skips most of the checks performed at startup (i.e. memory, xfs)
   # not recomended for production use
   developer_mode: true
