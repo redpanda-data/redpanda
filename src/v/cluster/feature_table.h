@@ -21,6 +21,7 @@ namespace cluster {
 
 enum class feature : std::uint64_t {
     central_config = 0x1,
+    consumer_offsets = 0x2,
 
     // Dummy features for testing only
     test_alpha = uint64_t(1) << 63,
@@ -79,6 +80,12 @@ constexpr static std::array feature_schema{
     feature::central_config,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
+  feature_spec{
+    cluster_version{2},
+    "consumer_offsets",
+    feature::consumer_offsets,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::requires_migration},
   feature_spec{
     cluster_version{2001},
     "__test_alpha",

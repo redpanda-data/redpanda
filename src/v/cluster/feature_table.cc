@@ -20,6 +20,8 @@ std::string_view to_string_view(feature f) {
     switch (f) {
     case feature::central_config:
         return "central_config";
+    case feature::consumer_offsets:
+        return "consumer_offsets";
     case feature::test_alpha:
         return "test_alpha";
     }
@@ -28,7 +30,7 @@ std::string_view to_string_view(feature f) {
 
 // The version that this redpanda node will report: increment this
 // on protocol changes to raft0 structures, like adding new services.
-static constexpr cluster_version latest_version = cluster_version{1};
+static constexpr cluster_version latest_version = cluster_version{2};
 
 feature_table::feature_table() {
     // Intentionally undocumented environment variable, only for use
