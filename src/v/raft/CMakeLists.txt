@@ -33,6 +33,7 @@ v_cc_library(
     append_entries_buffer.cc
     follower_queue.cc
     offset_translator.cc
+    recovery_memory_quota.cc
   DEPS
     v::storage
     raft_rpc

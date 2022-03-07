@@ -26,6 +26,7 @@
 #include "raft/offset_translator.h"
 #include "raft/prevote_stm.h"
 #include "raft/probe.h"
+#include "raft/recovery_memory_quota.h"
 #include "raft/recovery_throttle.h"
 #include "raft/replicate_batcher.h"
 #include "raft/timeout_jitter.h"
@@ -92,7 +93,8 @@ public:
       consensus_client_protocol,
       leader_cb_t,
       storage::api&,
-      std::optional<std::reference_wrapper<recovery_throttle>>);
+      std::optional<std::reference_wrapper<recovery_throttle>>,
+      recovery_memory_quota&);
 
     /// Initial call. Allow for internal state recovery
     ss::future<> start();
@@ -560,6 +562,7 @@ private:
     ss::abort_source _as;
     storage::api& _storage;
     std::optional<std::reference_wrapper<recovery_throttle>> _recovery_throttle;
+    recovery_memory_quota& _recovery_mem_quota;
     storage::simple_snapshot_manager _snapshot_mgr;
     std::optional<storage::snapshot_writer> _snapshot_writer;
     model::offset _last_snapshot_index;

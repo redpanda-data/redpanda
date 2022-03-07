@@ -11,6 +11,7 @@
 
 #pragma once
 #include "config/configuration.h"
+#include "config/property.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -96,7 +97,14 @@ struct raft_node {
       model::cleanup_policy_bitflags cleanup_policy,
       size_t segment_size)
       : broker(std::move(broker))
-      , leader_callback(std::move(l_clb)) {
+      , leader_callback(std::move(l_clb))
+      , recovery_mem_quota([] {
+          return raft::recovery_memory_quota::configuration{
+            .max_recovery_memory = config::mock_binding<std::optional<size_t>>(
+              std::nullopt),
+            .default_read_buffer_size = config::mock_binding(512_KiB),
+          };
+      }) {
         cache.start().get();
 
         storage
@@ -151,7 +159,8 @@ struct raft_node {
           raft::make_rpc_client_protocol(self_id, cache),
           [this](raft::leadership_status st) { leader_callback(st); },
           storage.local(),
-          recovery_throttle.local());
+          recovery_throttle.local(),
+          recovery_mem_quota);
 
         // create connections to initial nodes
         consensus->config().for_each_broker(
@@ -312,6 +321,7 @@ struct raft_node {
     ss::sharded<rpc::connection_cache> cache;
     ss::sharded<net::server> server;
     ss::sharded<test_raft_manager> raft_manager;
+    raft::recovery_memory_quota recovery_mem_quota;
     std::unique_ptr<raft::heartbeat_manager> hbeats;
     consensus_ptr consensus;
     std::unique_ptr<raft::log_eviction_stm> _nop_stm;

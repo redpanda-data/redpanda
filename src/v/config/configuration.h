@@ -70,6 +70,8 @@ struct configuration final : public config_store {
     property<size_t> raft_heartbeat_disconnect_failures;
     deprecated_property min_version;
     deprecated_property max_version;
+    bounded_property<std::optional<size_t>> raft_max_recovery_memory;
+    bounded_property<size_t> raft_recovery_default_read_size;
     // Kafka
     deprecated_property use_scheduling_groups;
     deprecated_property enable_admin_api;

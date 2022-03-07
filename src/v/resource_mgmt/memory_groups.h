@@ -24,7 +24,7 @@ struct memory_groups {
     /// \brief includes raft & all services
     static size_t rpc_total_memory() {
         // 30%
-        return ss::memory::stats().total_memory() * .30;
+        return ss::memory::stats().total_memory() * .20;
     }
 
     /**
@@ -45,5 +45,9 @@ struct memory_groups {
      */
     static size_t chunk_cache_max_memory() {
         return ss::memory::stats().total_memory() * .30; // NOLINT
+    }
+
+    static size_t recovery_max_memory() {
+        return ss::memory::stats().total_memory() * .10;
     }
 };

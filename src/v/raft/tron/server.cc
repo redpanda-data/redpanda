@@ -105,7 +105,14 @@ public:
           raft_heartbeat_interval,
           _consensus_client_protocol,
           self,
-          raft_heartbeat_interval * 20) {}
+          raft_heartbeat_interval * 20)
+      , _recovery_memory_quota([] {
+          return raft::recovery_memory_quota::configuration{
+            .max_recovery_memory = config::mock_binding<std::optional<size_t>>(
+              std::nullopt),
+            .default_read_buffer_size = config::mock_binding(512_KiB),
+          };
+      }) {}
 
     ss::lw_shared_ptr<raft::consensus> consensus_for(raft::group_id) {
         return _consensus;
@@ -146,7 +153,8 @@ public:
                               st.group);
                         },
                         _storage,
-                        std::nullopt);
+                        std::nullopt,
+                        _recovery_memory_quota);
                       return _consensus->start().then(
                         [this] { return _hbeats.register_group(_consensus); });
                   });
@@ -164,6 +172,7 @@ private:
     raft::consensus_client_protocol _consensus_client_protocol;
     storage::api _storage;
     raft::heartbeat_manager _hbeats;
+    raft::recovery_memory_quota _recovery_memory_quota;
     model::ntp _ntp{
       model::ns("master_control_program"),
       model::topic("tron"),

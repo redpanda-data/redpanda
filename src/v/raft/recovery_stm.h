@@ -14,26 +14,33 @@
 #include "model/metadata.h"
 #include "outcome.h"
 #include "raft/logger.h"
+#include "raft/recovery_memory_quota.h"
 #include "storage/snapshot.h"
 #include "utils/prefix_logger.h"
+
+#include <seastar/core/semaphore.hh>
+
+#include <vector>
 
 namespace raft {
 
 class recovery_stm {
 public:
-    recovery_stm(consensus*, vnode, scheduling_config);
+    recovery_stm(consensus*, vnode, scheduling_config, recovery_memory_quota&);
     ss::future<> apply();
 
 private:
     ss::future<> recover();
     ss::future<> do_recover(ss::io_priority_class);
     ss::future<std::optional<model::record_batch_reader>>
-    read_range_for_recovery(model::offset, ss::io_priority_class, bool);
+    read_range_for_recovery(model::offset, ss::io_priority_class, bool, size_t);
 
     ss::future<> replicate(
-      model::record_batch_reader&&, append_entries_request::flush_after_append);
-    ss::future<result<append_entries_reply>>
-    dispatch_append_entries(append_entries_request&&);
+      model::record_batch_reader&&,
+      append_entries_request::flush_after_append,
+      ss::semaphore_units<>);
+    ss::future<result<append_entries_reply>> dispatch_append_entries(
+      append_entries_request&&, std::vector<ss::semaphore_units<>>);
     std::optional<follower_index_metadata*> get_follower_meta();
     clock_type::time_point append_entries_timeout();
 
@@ -60,6 +67,7 @@ private:
     size_t _snapshot_size = 0;
     // needed to early exit. (node down)
     bool _stop_requested = false;
+    recovery_memory_quota& _memory_quota;
 };
 
 } // namespace raft
