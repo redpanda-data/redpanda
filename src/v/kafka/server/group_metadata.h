@@ -21,6 +21,8 @@
 #include "seastarx.h"
 #include "utils/named_type.h"
 
+#include <seastar/util/noncopyable_function.hh>
+
 namespace kafka {
 namespace old {
 /**
@@ -301,6 +303,9 @@ private:
 group_metadata_serializer make_backward_compatible_serializer();
 
 group_metadata_serializer make_consumer_offsets_serializer();
+
+using group_metadata_serializer_factory
+  = ss::noncopyable_function<group_metadata_serializer()>;
 
 } // namespace kafka
 
