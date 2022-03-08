@@ -461,7 +461,8 @@ struct topic_configuration {
       model::initial_revision_id) const;
 
     bool is_internal() const {
-        return tp_ns.ns == model::kafka_internal_namespace;
+        return tp_ns.ns == model::kafka_internal_namespace
+               || tp_ns == model::kafka_consumer_offsets_nt;
     }
 
     model::topic_namespace tp_ns;
