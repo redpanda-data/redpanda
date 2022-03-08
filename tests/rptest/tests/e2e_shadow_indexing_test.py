@@ -303,3 +303,143 @@ class ShadowIndexingWhileBusyTest(PreallocNodesTest):
         producer.wait()
         rand_consumer.shutdown()
         rand_consumer.wait()
+
+
+class ShadowIndexingConsumerGroupsTest(RedpandaTest):
+    # Run a workload against SI with group consuming.
+    # In the past, a customer has run into issues with group consuming on systems
+    # with SI enabled
+    # This class ports Test7 from https://github.com/redpanda-data/redpanda/issues/3572
+    # into ducktape.
+    segment_size = 1048576
+    num_groups = 2
+    groups = [f'group-{i}' for i in range(num_groups)]
+    topics = [TopicSpec(partition_count=5) for i in range(num_groups)]
+
+    # 1k messages of size 2**15
+    # is ~32MB of data. Using ~32MB of data
+    # because RpkConsumer fails at
+    # GBs of data.
+    msg_size = 2**15
+    msg_count = 1000
+
+    def __init__(self, test_context):
+        self._si_settings = SISettings(
+            log_segment_size=self.segment_size,
+            cloud_storage_cache_size=20 * 2**30,
+            cloud_storage_reconciliation_interval_ms=500,
+            cloud_storage_max_connections=5,
+            cloud_storage_enable_remote_read=False,
+            cloud_storage_enable_remote_write=False)
+
+        super(ShadowIndexingConsumerGroupsTest,
+              self).__init__(test_context=test_context,
+                             num_brokers=3,
+                             si_settings=self._si_settings)
+
+        self._exceptions = [None] * self.num_groups
+
+    def _worker(self, idx):
+        producer = FranzGoVerifiableProducer(self.test_context, self.redpanda,
+                                             self.topics[idx].name,
+                                             self.msg_size, self.msg_count)
+        # Using RpkConsumer because the si-verifier (underneath FranzGoVerifier)
+        # does not support consumer groups
+        consumer = RpkConsumer(self.test_context,
+                               self.redpanda,
+                               self.topics[idx].name,
+                               group=self.groups[idx],
+                               num_msgs=self.msg_count)
+
+        if os.environ.get('BUILD_TYPE', None) == 'debug':
+            self.logger.info(
+                "Skipping test in debug mode (requires release build)")
+            return
+
+        try:
+            producer.start(clean=False)
+            await_minimum_produced_records(self.redpanda,
+                                           producer,
+                                           min_acked=self.msg_count / 10)
+            await_s3_objects(self.redpanda)
+
+            consumer.start()
+            # Wait for consumer to fetch all data
+            consumer.wait()
+        except Exception as ex:
+            self._exceptions[idx] = ex
+            return
+
+        # The si-verifier (underneath FranzGoVerifier) writes non-printable bytes
+        # as the key and value. Check those.
+        key_size = 25
+
+        def check_msgs():
+
+            if len(consumer.messages) < self.msg_count:
+                return False
+
+            self.logger.debug(f'Len: {len(consumer.messages)}')
+
+            for msg in consumer.messages:
+                topic = msg['topic']
+                key = msg['key']
+                value = msg['value']
+
+                if topic != self.topics[idx].name:
+                    self.logger.debug(f'Topic check failed: {topic}')
+                    return False
+
+                if len(key) != key_size:
+                    self.logger.debug(
+                        f'Key check failed: Expected size {key_size}, got size {len(key)}'
+                    )
+                    return False
+
+                if len(value) != self.msg_size:
+                    self.logger.debug(
+                        f'Value check failed: Expected size {self.msg_size}, got size {len(value)}'
+                    )
+                    return False
+
+            return True
+
+        try:
+            wait_until(check_msgs,
+                       timeout_sec=300,
+                       backoff_sec=1,
+                       err_msg='consumer failed to fetch all messages')
+        except Exception as ex:
+            self._exceptions[idx] = ex
+
+        producer.stop()
+        consumer.stop()
+
+    @cluster(num_nodes=7, log_allow_list=KGO_ALLOW_LOGS)
+    def test_consumer_groups(self):
+
+        await_bucket_creation(self.redpanda,
+                              self._si_settings.cloud_storage_bucket)
+
+        # Remote write/read and retention set at topic level
+        rpk = RpkTool(self.redpanda)
+        for spec in self.topics:
+            rpk.alter_topic_config(spec.name, 'redpanda.remote.write', 'true')
+            rpk.alter_topic_config(spec.name, 'redpanda.remote.read', 'true')
+            rpk.alter_topic_config(spec.name, 'retention.bytes',
+                                   str(self.segment_size))
+
+        workers = []
+        for idx in range(self.num_groups):
+            th = threading.Thread(name=f'LoadGen-{idx}',
+                                  target=self._worker,
+                                  args=(idx, ))
+            th.start()
+            workers.append(th)
+
+        for th in workers:
+            th.join()
+
+        for ex in self._exceptions:
+            if ex:
+                raise ex
