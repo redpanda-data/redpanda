@@ -42,7 +42,6 @@ public:
       ss::sharded<kafka::group_router>&,
       ss::sharded<cluster::shard_table>&,
       ss::sharded<cluster::partition_manager>&,
-      ss::sharded<coordinator_ntp_mapper>& coordinator_mapper,
       ss::sharded<fetch_session_cache>&,
       ss::sharded<cluster::id_allocator_frontend>&,
       ss::sharded<security::credential_store>&,
@@ -92,9 +91,8 @@ public:
     ss::sharded<cluster::partition_manager>& partition_manager() {
         return _partition_manager;
     }
-    coordinator_ntp_mapper& coordinator_mapper() {
-        return _coordinator_mapper.local();
-    }
+    coordinator_ntp_mapper& coordinator_mapper();
+
     fetch_session_cache& fetch_sessions_cache() {
         return _fetch_session_cache.local();
     }
@@ -148,7 +146,6 @@ private:
     ss::sharded<kafka::group_router>& _group_router;
     ss::sharded<cluster::shard_table>& _shard_table;
     ss::sharded<cluster::partition_manager>& _partition_manager;
-    ss::sharded<kafka::coordinator_ntp_mapper>& _coordinator_mapper;
     ss::sharded<kafka::fetch_session_cache>& _fetch_session_cache;
     ss::sharded<cluster::id_allocator_frontend>& _id_allocator_frontend;
     bool _is_idempotence_enabled{false};

@@ -248,6 +248,10 @@ public:
     ss::future<std::vector<deletable_group_result>>
     delete_groups(std::vector<group_id> groups);
 
+    ss::sharded<coordinator_ntp_mapper>& coordinator_mapper() {
+        return _coordinators;
+    }
+
 private:
     using sharded_groups = absl::
       node_hash_map<ss::shard_id, std::vector<std::pair<model::ntp, group_id>>>;

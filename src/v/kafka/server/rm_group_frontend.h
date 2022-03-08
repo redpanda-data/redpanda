@@ -33,7 +33,6 @@ public:
       ss::sharded<rpc::connection_cache>&,
       ss::sharded<cluster::partition_leaders_table>&,
       cluster::controller*,
-      ss::sharded<kafka::coordinator_ntp_mapper>&,
       ss::sharded<kafka::group_router>&);
 
     ss::future<cluster::begin_group_tx_reply> begin_group_tx(
@@ -71,7 +70,6 @@ private:
     ss::sharded<rpc::connection_cache>& _connection_cache;
     ss::sharded<cluster::partition_leaders_table>& _leaders;
     cluster::controller* _controller;
-    ss::sharded<kafka::coordinator_ntp_mapper>& _coordinator_mapper;
     ss::sharded<kafka::group_router>& _group_router;
     int16_t _metadata_dissemination_retries;
     std::chrono::milliseconds _metadata_dissemination_retry_delay_ms;

@@ -903,7 +903,6 @@ void application::wire_up_redpanda_services() {
       std::ref(_connection_cache),
       std::ref(controller->get_partition_leaders()),
       controller.get(),
-      std::ref(coordinator_ntp_mapper),
       std::ref(group_router))
       .get();
 
@@ -1251,7 +1250,6 @@ void application::start_kafka(::stop_signal& app_signal) {
             group_router,
             shard_table,
             partition_manager,
-            coordinator_ntp_mapper,
             fetch_session_cache,
             id_allocator_frontend,
             controller->get_credential_store(),
