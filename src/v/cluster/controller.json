@@ -95,6 +95,11 @@
             "name": "feature_action",
             "input_type": "feature_action_request",
             "output_type": "feature_action_response"
+        },
+        {
+            "name": "feature_barrier",
+            "input_type": "feature_barrier_request",
+            "output_type": "feature_barrier_response"
         }
     ]
 }
