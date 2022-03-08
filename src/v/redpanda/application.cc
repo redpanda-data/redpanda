@@ -40,6 +40,7 @@
 #include "kafka/server/queue_depth_monitor.h"
 #include "kafka/server/quota_manager.h"
 #include "kafka/server/rm_group_frontend.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "net/server.h"
 #include "pandaproxy/rest/configuration.h"
@@ -801,11 +802,23 @@ void application::wire_up_redpanda_services() {
       &kafka::make_backward_compatible_serializer,
       std::ref(config::shard_local_cfg()))
       .get();
+    construct_service(
+      _co_group_manager,
+      model::kafka_consumer_offsets_tn,
+      std::ref(raft_group_manager),
+      std::ref(partition_manager),
+      std::ref(controller->get_topics_state()),
+      &kafka::make_consumer_offsets_serializer,
       std::ref(config::shard_local_cfg()))
       .get();
     syschecks::systemd_message("Creating kafka group shard mapper").get();
     construct_service(
       coordinator_ntp_mapper, std::ref(metadata_cache), model::kafka_group_nt)
+      .get();
+    construct_service(
+      co_coordinator_ntp_mapper,
+      std::ref(metadata_cache),
+      model::kafka_consumer_offsets_tn)
       .get();
     syschecks::systemd_message("Creating kafka group router").get();
     construct_service(
@@ -813,8 +826,10 @@ void application::wire_up_redpanda_services() {
       _scheduling_groups.kafka_sg(),
       smp_service_groups.kafka_smp_sg(),
       std::ref(_group_manager),
+      std::ref(_co_group_manager),
       std::ref(shard_table),
-      std::ref(coordinator_ntp_mapper))
+      std::ref(coordinator_ntp_mapper),
+      std::ref(co_coordinator_ntp_mapper))
       .get();
 
     if (coproc_enabled()) {
@@ -1082,6 +1097,7 @@ void application::start_redpanda() {
 
     syschecks::systemd_message("Starting Kafka group manager").get();
     _group_manager.invoke_on_all(&kafka::group_manager::start).get();
+    _co_group_manager.invoke_on_all(&kafka::group_manager::start).get();
 
     syschecks::systemd_message("Starting controller").get();
     controller->start().get0();
@@ -1214,7 +1230,18 @@ void application::start_kafka(::stop_signal& app_signal) {
           = config::shard_local_cfg().kafka_qdc_depth_update_ms(),
         };
     }
-
+    /**
+     * for now disable using `__consumer_offsets` topic if group topic is
+     * present
+     */
+    if (controller->get_topics_state().local().contains(
+          model::kafka_group_nt, model::partition_id{0})) {
+        group_router
+          .invoke_on_all([](kafka::group_router& router) {
+              router.set_use_consumer_offsets_topic(false);
+          })
+          .get();
+    }
     _kafka_server
       .invoke_on_all([this, qdc_config](net::server& s) {
           auto proto = std::make_unique<kafka::protocol>(
