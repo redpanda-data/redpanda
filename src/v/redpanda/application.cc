@@ -1223,7 +1223,6 @@ void application::start_kafka(::stop_signal& app_signal) {
             group_router,
             shard_table,
             partition_manager,
-            coordinator_ntp_mapper,
             fetch_session_cache,
             id_allocator_frontend,
             controller->get_credential_store(),
