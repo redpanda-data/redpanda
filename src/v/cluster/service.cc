@@ -451,4 +451,16 @@ service::feature_action(feature_action_request&& req, rpc::streaming_context&) {
     };
 }
 
+ss::future<feature_barrier_response> service::feature_barrier(
+  feature_barrier_request&& req, rpc::streaming_context&) {
+    auto result = co_await _feature_manager.invoke_on(
+      feature_manager::backend_shard,
+      [req = std::move(req)](feature_manager& fm) {
+          return fm.update_barrier(req.tag, req.peer, req.entered);
+      });
+
+    co_return feature_barrier_response{
+      .entered = result.entered, .complete = result.complete};
+}
+
 } // namespace cluster
