@@ -192,10 +192,20 @@ class MoreE2EShadowIndexingTest(EndToEndTest):
         self.s3_client.create_bucket(self.s3_bucket_name)
         self.redpanda.start()
 
-        spec = TopicSpec(partition_count=5)
-        self.kafka_tools.create_topic(spec)
-        self.topic = spec.name
-        self.topics.append(spec)
+        if self.test_context.function_name == 'test_consumer_groups':
+            self.topics = [
+                TopicSpec(partition_count=5) for i in range(self.num_groups)
+            ]
+            self.groups = [f'group-{i}' for i in range(self.num_groups)]
+
+            for spec in self.topics:
+                self.kafka_tools.create_topic(spec)
+                self.topic = spec.name
+        else:
+            spec = TopicSpec(partition_count=5)
+            self.kafka_tools.create_topic(spec)
+            self.topic = spec.name
+            self.topics.append(spec)
 
     def tearDown(self):
         self.s3_client.empty_bucket(self.s3_bucket_name)
@@ -331,3 +341,97 @@ class MoreE2EShadowIndexingTest(EndToEndTest):
         producer.wait()
         rand_consumer.shutdown()
         rand_consumer.wait()
+
+    def _worker(self, idx):
+        # 1k messages of size 2**15
+        # is ~32MB of data.
+        msg_size = 2**15
+        msg_count = 1000
+        producer = FranzGoVerifiableProducer(self.test_context, self.redpanda,
+                                             self.topics[idx].name, msg_size,
+                                             msg_count)
+        # Using RpkConsumer because the si-verifier (underneath FranzGoVerifier)
+        # does not support consumer groups
+        consumer = RpkConsumer(self.test_context,
+                               self.redpanda,
+                               self.topics[idx].name,
+                               group=self.groups[idx],
+                               num_msgs=msg_count)
+
+        producer.start(clean=False)
+        producer.wait()
+
+        consumer.start()
+        consumer.wait()
+
+        # The si-verifier (underneath FranzGoVerifier) writes non-printable bytes
+        # as the key and value. Check those.
+        key_size = 25
+
+        def check_msgs():
+
+            if len(consumer.messages) < msg_count:
+                return False
+
+            self.logger.debug(f'Len: {len(consumer.messages)}')
+
+            for msg in consumer.messages:
+                topic = msg['topic']
+                key = msg['key']
+                value = msg['value']
+
+                if topic != self.topics[idx].name:
+                    self.logger.debug(f'Topic check failed: {topic}')
+                    return False
+
+                if len(key) != key_size:
+                    self.logger.debug(
+                        f'Key check failed: Expected size {key_size}, got size {len(key)}'
+                    )
+                    return False
+
+                if len(value) != msg_size:
+                    self.logger.debug(
+                        f'Value check failed: Expected size {msg_size}, got size {len(value)}'
+                    )
+                    return False
+
+            return True
+
+        try:
+            wait_until(check_msgs,
+                       timeout_sec=300,
+                       backoff_sec=1,
+                       err_msg='consumer failed to fetch all messages')
+        except Exception as ex:
+            self._exceptions[idx] = ex
+
+        producer.stop()
+        consumer.stop()
+
+    # Run a workload against SI with group consuming.
+    # In the past, a customer has run into issues with group consuming on systems
+    # with SI enabled
+    @cluster(num_nodes=7)
+    def test_consumer_groups(self):
+        # Remote write/read and retention set at topic level
+        rpk = RpkTool(self.redpanda)
+        for spec in self.topics:
+            rpk.alter_topic_config(spec.name, 'redpanda.remote.write', 'true')
+            rpk.alter_topic_config(spec.name, 'redpanda.remote.read', 'true')
+            rpk.alter_topic_config(spec.name, 'retention.bytes',
+                                   str(self.segment_size))
+        workers = []
+        for idx in range(self.num_groups):
+            th = threading.Thread(name=f'LoadGen-{idx}',
+                                  target=self._worker,
+                                  args=(idx, ))
+            th.start()
+            workers.append(th)
+
+        for th in workers:
+            th.join()
+
+        for ex in self._exceptions:
+            if ex:
+                raise ex
