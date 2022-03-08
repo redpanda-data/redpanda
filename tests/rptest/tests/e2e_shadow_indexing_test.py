@@ -259,3 +259,75 @@ class MoreE2EShadowIndexingTest(EndToEndTest):
         producer.wait()
         rand_consumer.shutdown()
         rand_consumer.wait()
+
+    # Run common operations against a cluster
+    # while the system is under load (busy).
+    @cluster(num_nodes=4)
+    def test_create_or_delete_topics_while_busy(self):
+        # Node alloc is first because CI fails in the debug pipeline due to
+        # the warning message "Test requested X nodes, used only Y"
+        fgo_node = self.test_context.cluster.alloc(ClusterSpec.simple_linux(1))
+        self.logger.debug(f"Allocated verifier node {fgo_node[0].name}")
+
+        self.logger.info(f"Environment: {os.environ}")
+        if os.environ.get('BUILD_TYPE', None) == 'debug':
+            self.logger.info(
+                "Skipping test in debug mode (requires release build)")
+            return
+
+        # Remote write/read and retention set at topic level
+        rpk = RpkTool(self.redpanda)
+        rpk.alter_topic_config(self.topic, 'redpanda.remote.write', 'true')
+        rpk.alter_topic_config(self.topic, 'redpanda.remote.read', 'true')
+        rpk.alter_topic_config(self.topic, 'retention.bytes',
+                               str(self.segment_size))
+
+        # 1k messages of size 2**15
+        # is ~32MB of data.
+        msg_size = 2**15
+        msg_count = 1000
+
+        self._gen_manifests(msg_size, fgo_node)
+
+        producer = FranzGoVerifiableProducer(self.test_context, self.redpanda,
+                                             self.topic, msg_size, msg_count,
+                                             fgo_node)
+        rand_consumer = FranzGoVerifiableRandomConsumer(
+            self.test_context, self.redpanda, self.topic, msg_size, 100, 10,
+            fgo_node)
+
+        producer.start(clean=False)
+        rand_consumer.start(clean=False)
+
+        random_topics = []
+
+        # Do random ops until the validation stops
+        def create_or_delete_until_producer_fin():
+            nonlocal random_topics
+            trigger = random.randint(1, 6)
+
+            if trigger == 2:
+                some_topic = TopicSpec()
+                print(f'Create topic: {some_topic}')
+                self.kafka_tools.create_topic(some_topic)
+                random_topics.append(some_topic)
+
+            if trigger == 3:
+                if len(random_topics) > 0:
+                    some_topic = random_topics.pop()
+                    print(f'Delete topic: {some_topic}')
+                    self.kafka_tools.delete_topic(some_topic.name)
+
+            if trigger == 4:
+                random.shuffle(random_topics)
+
+            return producer.status == ServiceStatus.FINISH
+
+        wait_until(create_or_delete_until_producer_fin,
+                   timeout_sec=300,
+                   backoff_sec=0.5,
+                   err_msg='Producer did not finish')
+
+        producer.wait()
+        rand_consumer.shutdown()
+        rand_consumer.wait()
