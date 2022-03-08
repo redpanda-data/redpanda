@@ -11,6 +11,7 @@ from ducktape.utils.util import wait_until
 from ducktape.cluster.cluster_spec import ClusterSpec
 
 from rptest.services.cluster import cluster
+from ducktape.mark import ok_to_fail
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.types import TopicSpec
 from rptest.services.redpanda import RedpandaService, SISettings
@@ -203,6 +204,101 @@ class ShadowIndexingInfiniteRetentionTest(PreallocNodesTest):
             self.test_context, self.redpanda, self.topic, msg_size, 100, 10,
             self.preallocated_nodes)
         rand_consumer.start(clean=False)
+
+        producer.wait()
+        rand_consumer.shutdown()
+        rand_consumer.wait()
+
+
+class ShadowIndexingWhileBusyTest(PreallocNodesTest):
+    # With SI enabled, run common operations against a cluster
+    # while the system is under load (busy).
+    # This class ports Test6 from https://github.com/redpanda-data/redpanda/issues/3572
+    # into ducktape.
+    segment_size = 2**30
+    topics = [TopicSpec(partition_count=5)]
+
+    def __init__(self, test_context):
+        self._si_settings = SISettings(
+            log_segment_size=self.segment_size,
+            cloud_storage_cache_size=20 * 2**30,
+            cloud_storage_reconciliation_interval_ms=500,
+            cloud_storage_max_connections=5,
+            cloud_storage_enable_remote_read=False,
+            cloud_storage_enable_remote_write=False)
+
+        super(ShadowIndexingWhileBusyTest,
+              self).__init__(test_context=test_context,
+                             node_prealloc_count=1,
+                             num_brokers=3,
+                             si_settings=self._si_settings)
+
+    @ok_to_fail  # broken pipe inconsistently causes failure from cloud_storage/remote.cc:108
+    @cluster(num_nodes=4, log_allow_list=KGO_ALLOW_LOGS)
+    def test_create_or_delete_topics_while_busy(self):
+        self.logger.info(f"Environment: {os.environ}")
+        if os.environ.get('BUILD_TYPE', None) == 'debug':
+            self.logger.info(
+                "Skipping test in debug mode (requires release build)")
+            return
+
+        await_bucket_creation(self.redpanda,
+                              self._si_settings.cloud_storage_bucket)
+
+        # Remote write/read and retention set at topic level
+        rpk = RpkTool(self.redpanda)
+        rpk.alter_topic_config(self.topic, 'redpanda.remote.write', 'true')
+        rpk.alter_topic_config(self.topic, 'redpanda.remote.read', 'true')
+        rpk.alter_topic_config(self.topic, 'retention.bytes',
+                               str(self.segment_size))
+
+        # 100k messages of size 2**18
+        # is ~24GB of data.
+        msg_size = 2**18
+        msg_count = 100000
+        timeout = 600
+
+        producer = FranzGoVerifiableProducer(self.test_context, self.redpanda,
+                                             self.topic, msg_size, msg_count,
+                                             self.preallocated_nodes)
+        producer.start(clean=False)
+        await_minimum_produced_records(self.redpanda,
+                                       producer,
+                                       min_acked=msg_count / 10)
+        await_s3_objects(self.redpanda)
+
+        rand_consumer = FranzGoVerifiableRandomConsumer(
+            self.test_context, self.redpanda, self.topic, msg_size, 100, 10,
+            self.preallocated_nodes)
+
+        rand_consumer.start(clean=False)
+
+        random_topics = []
+
+        # Do random ops until the producer stops
+        def create_or_delete_until_producer_fin():
+            nonlocal random_topics
+            trigger = random.randint(1, 2)
+
+            if trigger == 1:
+                some_topic = TopicSpec()
+                self.logger.debug(f'Create topic: {some_topic}')
+                self.client().create_topic(some_topic)
+                random_topics.append(some_topic)
+
+            if trigger == 2:
+                if len(random_topics) > 0:
+                    random.shuffle(random_topics)
+                    some_topic = random_topics.pop()
+                    self.logger.debug(f'Delete topic: {some_topic}')
+                    self.client().delete_topic(some_topic.name)
+
+            return producer.status == ServiceStatus.FINISH
+
+        wait_until(create_or_delete_until_producer_fin,
+                   timeout_sec=timeout,
+                   backoff_sec=0.5,
+                   err_msg='Producer did not finish')
 
         producer.wait()
         rand_consumer.shutdown()
