@@ -9,6 +9,7 @@
 
 from ducktape.utils.util import wait_until
 from ducktape.cluster.cluster_spec import ClusterSpec
+from ducktape.services.background_thread import BackgroundThreadService
 
 from rptest.services.cluster import cluster
 from ducktape.mark import ok_to_fail
@@ -443,3 +444,226 @@ class ShadowIndexingConsumerGroupsTest(RedpandaTest):
         for ex in self._exceptions:
             if ex:
                 raise ex
+
+
+# Original listdir in RedpandaService uses SFTP underneath.
+# Unfortunately, ducky hangs when calling SFTP procedures
+# while producers are running.
+# Therefore, the below is a re-write of listdir using SSH
+# only.
+def _listdir(node, path, only_dirs=False):
+    cmd = f'ls {path}/'
+    if only_dirs:
+        cmd = f'ls -d {path}/*/'
+
+    try:
+        ents = node.account.ssh_output(cmd)
+        return ents.decode().strip().split()
+    except Exception as ex:
+        return []
+
+
+# A service to collect segment filenames continuously
+# in the background.
+class ProfileDataDirService(BackgroundThreadService):
+    def __init__(self, test_context, redpanda, topic):
+        super(ProfileDataDirService, self).__init__(test_context, num_nodes=1)
+
+        self.segments = []
+
+        self.redpanda = redpanda
+
+        self.topic = topic
+
+        self.running = True
+
+    def _find_segment_files_on_node(self, topic_path, node, segments):
+        # Get the partition directories
+        partition_dirs = _listdir(node, topic_path, only_dirs=True)
+        self.logger.debug(
+            f'node: {node.name}, path: {topic_path}, partition dirs: {partition_dirs}'
+        )
+
+        for partition_path in partition_dirs:
+            files = _listdir(node, partition_path)
+
+            self.logger.debug(
+                f'node: {node.name}, path: {partition_path}, files: {files}')
+            for _file in files:
+                # The regex is from src/v/storage/fs_utils.h::parse_segment_filename
+                match = re.match(r'(^(\d+)-(\d+)-([\x00-\x7F]+).log$)', _file)
+                if match and _file not in segments:
+                    self.logger.debug(f'Adding {_file}')
+                    segments.append(_file)
+
+    def _find_segment_files_on_all_nodes(self, segments):
+        topic_path = f'/var/lib/redpanda/data/kafka/{self.topic}'
+
+        for node in self.redpanda.nodes:
+            self._find_segment_files_on_node(topic_path, node, segments)
+
+    def _worker(self, idx, node):
+        # Make sure running is True
+        self.running = True
+        while self.running:
+            self._find_segment_files_on_all_nodes(self.segments)
+            time.sleep(0.1)
+
+    def stop_node(self, node):
+        self.running = False
+
+
+class ShadowIndexingCachedSegmentsTest(PreallocNodesTest):
+    # Check that the segment files loaded into the SI cache
+    # were also within the local data dir before
+    # retention deleted the segments.
+    # This class ports Test8 from https://github.com/redpanda-data/redpanda/issues/3572
+    # into ducktape.
+    segment_size = 1048576  # 1MB
+    topics = [TopicSpec(partition_count=1)]
+
+    def __init__(self, test_context):
+        self._si_settings = SISettings(
+            log_segment_size=self.segment_size,
+            cloud_storage_cache_size=20 * 2**30,
+            cloud_storage_reconciliation_interval_ms=500,
+            cloud_storage_max_connections=5,
+            cloud_storage_enable_remote_read=False,
+            cloud_storage_enable_remote_write=False)
+
+        super(ShadowIndexingCachedSegmentsTest,
+              self).__init__(test_context=test_context,
+                             node_prealloc_count=1,
+                             num_brokers=3,
+                             si_settings=self._si_settings)
+
+    def _check_si_cache_before_fetch(self):
+        # On all nodes, the SI cache should be empty or not exist
+        for node in self.redpanda.nodes:
+            contents = _listdir(node,
+                                '/var/lib/redpanda/data/cloud_storage_cache')
+
+            if contents != []:
+                raise FileNotFoundError(f'{node.name} SI cache not empty')
+
+    def _check_si_cache_after_fetch(self, data_dir_segments):
+        # Sample file path:
+        # /var/lib/redpanda/data/cloud_storage_cache/<some string>/kafka/<topic name>/<partition>/<segment file>
+        root = '/var/lib/redpanda/data/cloud_storage_cache'
+
+        segment_files = []
+
+        # Get the paths to the partition dirs within the
+        # SI cache
+        for node in self.redpanda.nodes:
+            partitions_on_node = []
+            some_dirs = _listdir(node, root, only_dirs=True)
+
+            for d in some_dirs:
+                path = f'{d}kafka/{self.topic}'
+                partition_dirs = _listdir(node, path, only_dirs=True)
+
+                # Merge the lists of partitions together.
+                partitions_on_node += partition_dirs
+
+            for partition_dir in partitions_on_node:
+                files = _listdir(node, partition_dir)
+                self.logger.debug(files)
+
+                # The data within the SI cache is a .log.N segment file
+                # where N is an positive integer
+                # Trim off the .N of the segment file
+                # Also, ignore the .index file in the SI cache
+                temp = []
+                for _file in files:
+                    if '.index' not in _file:
+                        temp.append(_file[:-2])
+
+                # Merge the list of files
+                segment_files += temp
+
+        for segment_file in segment_files:
+            match = re.match(r'(^(\d+)-(\d+)-([\x00-\x7F]+).log$)',
+                             segment_file)
+            if match is None:
+                raise Exception(f'Invalid segment filename {segment_file}')
+
+            if segment_file not in data_dir_segments:
+                raise FileNotFoundError(f'{segment_file} not in data dir')
+
+    @ok_to_fail  # NoSuchBucket error inconsistently causes failure
+    @cluster(num_nodes=6, log_allow_list=KGO_ALLOW_LOGS)
+    def test_cached_segments(self):
+        # 1k messages of size 2**15
+        # is ~32MB of data.
+        msg_size = 2**15
+        msg_count = 1000
+
+        # Node alloc is first because CI fails in the debug pipeline due to
+        # the warning message "Test requested X nodes, used only Y"
+        producer = FranzGoVerifiableProducer(self.test_context, self.redpanda,
+                                             self.topic, msg_size, msg_count,
+                                             self.preallocated_nodes)
+
+        consumer = RpkConsumer(self.test_context,
+                               self.redpanda,
+                               self.topic,
+                               num_msgs=msg_count)
+
+        # Need to profile the data dir from the beginning
+        # or else we may miss some segment files
+        data_dir_monitor = ProfileDataDirService(self.test_context,
+                                                 self.redpanda, self.topic)
+
+        self.logger.info(f"Environment: {os.environ}")
+        if os.environ.get('BUILD_TYPE', None) == 'debug':
+            self.logger.info(
+                "Skipping test in debug mode (requires release build)")
+            return
+
+        await_bucket_creation(self.redpanda,
+                              self._si_settings.cloud_storage_bucket)
+
+        # Remote write/read and retention set at topic level
+        rpk = RpkTool(self.redpanda)
+        rpk.alter_topic_config(self.topic, 'redpanda.remote.write', 'true')
+        rpk.alter_topic_config(self.topic, 'redpanda.remote.read', 'true')
+        rpk.alter_topic_config(self.topic, 'retention.bytes',
+                               str(self.segment_size))
+        # Small retention.ms so we do not have to wait that long
+        # for segment removal
+        rpk.alter_topic_config(self.topic, 'retention.ms', '120000')
+
+        data_dir_monitor.start()
+
+        # Produce some data
+        producer.start(clean=False)
+        await_minimum_produced_records(self.redpanda,
+                                       producer,
+                                       min_acked=msg_count / 10)
+        await_s3_objects(self.redpanda)
+        producer.wait()
+
+        # Retention will kick-in soon. So suspend
+        # execution until only a few segments are left
+        # in the data dir.
+        wait_for_segments_removal(redpanda=self.redpanda,
+                                  topic=self.topic,
+                                  partition_idx=0,
+                                  count=1)
+
+        self._check_si_cache_before_fetch()
+
+        # Fetch the data. The data should go
+        # into the SI cache.
+        consumer.start()
+        consumer.wait()
+
+        assert len(consumer.messages) == msg_count
+
+        data_dir_monitor.stop()
+        data_dir_monitor.wait()
+
+        # The SI cache should have segments in it.
+        # Check if those segment files existed before retention
+        self._check_si_cache_after_fetch(data_dir_monitor.segments)
