@@ -1,4 +1,4 @@
-# Copyright 2021 Redpanda Data, Inc.
+# Copyright 2022 Vectorized, Inc.
 #
 # Use of this software is governed by the Business Source License
 # included in the file licenses/BSL.md
@@ -7,19 +7,32 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from ducktape.utils.util import wait_until
+from ducktape.cluster.cluster_spec import ClusterSpec
+
 from rptest.services.cluster import cluster
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.types import TopicSpec
-from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda import RedpandaService, SISettings
 from rptest.util import Scale
 from rptest.archival.s3_client import S3Client
 from rptest.tests.end_to_end import EndToEndTest
-from rptest.util import (
-    produce_until_segments,
-    wait_for_segments_removal,
-)
+from rptest.util import (produce_until_segments, wait_for_segments_removal,
+                         await_bucket_creation)
+from rptest.clients.rpk import RpkTool
+from rptest.services.franz_go_verifiable_services import FranzGoVerifiableProducer, FranzGoVerifiableSeqConsumer, FranzGoVerifiableRandomConsumer
+from rptest.services.franz_go_verifiable_services import ServiceStatus, KGO_ALLOW_LOGS
+from rptest.services.rpk_consumer import RpkConsumer
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.tests.prealloc_nodes import PreallocNodesTest
 
 import uuid
+import os
+import time
+import requests
+import random
+import threading
+import re
 
 
 class EndToEndShadowIndexingTest(EndToEndTest):
@@ -110,3 +123,87 @@ class EndToEndShadowIndexingTest(EndToEndTest):
 
         self.start_consumer()
         self.run_validation()
+
+
+def await_minimum_produced_records(redpanda, producer, min_acked=0):
+    # Block until the producer has
+    # written a minimum amount of data.
+    wait_until(lambda: producer.produce_status.acked > min_acked,
+               timeout_sec=300,
+               backoff_sec=5)
+
+
+def await_s3_objects(redpanda):
+    # Check that some data is written to S3
+    def check_s3():
+        objects = list(redpanda.get_objects_from_si())
+        return len(objects) > 0
+
+    wait_until(check_s3,
+               timeout_sec=30,
+               backoff_sec=1,
+               err_msg='Failed to write objects to S3')
+
+
+class ShadowIndexingInfiniteRetentionTest(PreallocNodesTest):
+    # Test infinite retention while SI is enabled.
+    # This class ports Test5 from https://github.com/redpanda-data/redpanda/issues/3572
+    # into ducktape.
+    segment_size = 2**30
+    topics = [TopicSpec(partition_count=5)]
+
+    def __init__(self, test_context):
+        self._si_settings = SISettings(
+            log_segment_size=self.segment_size,
+            cloud_storage_cache_size=20 * 2**30,
+            cloud_storage_reconciliation_interval_ms=500,
+            cloud_storage_max_connections=5,
+            cloud_storage_enable_remote_read=False,
+            cloud_storage_enable_remote_write=False)
+
+        super(ShadowIndexingInfiniteRetentionTest,
+              self).__init__(test_context=test_context,
+                             node_prealloc_count=1,
+                             num_brokers=3,
+                             si_settings=self._si_settings)
+
+    @cluster(num_nodes=4, log_allow_list=KGO_ALLOW_LOGS)
+    def test_infinite_retention(self):
+        self.logger.info(f"Environment: {os.environ}")
+        if os.environ.get('BUILD_TYPE', None) == 'debug':
+            self.logger.info(
+                "Skipping test in debug mode (requires release build)")
+            return
+
+        await_bucket_creation(self.redpanda,
+                              self._si_settings.cloud_storage_bucket)
+
+        # Remote write/read and retention set at topic level
+        rpk = RpkTool(self.redpanda)
+        rpk.alter_topic_config(self.topic, 'redpanda.remote.write', 'true')
+        rpk.alter_topic_config(self.topic, 'redpanda.remote.read', 'true')
+        rpk.alter_topic_config(self.topic, 'retention.bytes', '-1')
+        rpk.alter_topic_config(self.topic, 'retention.ms', '-1')
+
+        # 100k messages of size 2**18
+        # is ~24GB of data.
+        msg_size = 2**18
+        msg_count = 100000
+
+        producer = FranzGoVerifiableProducer(self.test_context, self.redpanda,
+                                             self.topic, msg_size, msg_count,
+                                             self.preallocated_nodes)
+        producer.start(clean=False)
+        await_minimum_produced_records(self.redpanda,
+                                       producer,
+                                       min_acked=msg_count / 10)
+        await_s3_objects(self.redpanda)
+
+        rand_consumer = FranzGoVerifiableRandomConsumer(
+            self.test_context, self.redpanda, self.topic, msg_size, 100, 10,
+            self.preallocated_nodes)
+        rand_consumer.start(clean=False)
+
+        producer.wait()
+        rand_consumer.shutdown()
+        rand_consumer.wait()
