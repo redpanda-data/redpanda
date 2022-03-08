@@ -38,6 +38,11 @@ inline const model::topic kafka_group_topic("group");
 inline const model::topic_namespace
   kafka_group_nt(model::kafka_internal_namespace, kafka_group_topic);
 
+inline const model::topic kafka_consumer_offsets_topic("__consumer_offsets");
+
+inline const model::topic_namespace kafka_consumer_offsets_tn(
+  model::kafka_namespace, kafka_consumer_offsets_topic);
+
 inline const model::topic
   coprocessor_internal_topic("coprocessor_internal_topic");
 
