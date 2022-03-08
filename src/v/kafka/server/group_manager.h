@@ -26,6 +26,7 @@
 #include "kafka/server/group_recovery_consumer.h"
 #include "kafka/server/group_stm.h"
 #include "kafka/server/member.h"
+#include "model/metadata.h"
 #include "model/namespace.h"
 #include "raft/group_manager.h"
 #include "seastarx.h"
@@ -112,9 +113,11 @@ namespace kafka {
 class group_manager {
 public:
     group_manager(
+      model::topic_namespace,
       ss::sharded<raft::group_manager>& gm,
       ss::sharded<cluster::partition_manager>& pm,
       ss::sharded<cluster::topic_table>&,
+      group_metadata_serializer_factory,
       config::configuration& conf);
 
     ss::future<> start();
@@ -171,6 +174,8 @@ public:
     static bool valid_group_id(const group_id& group, api_key api);
 
 private:
+    model::topic_namespace _tp_ns;
+
     group_ptr get_group(const group_id& group) {
         if (auto it = _groups.find(group); it != _groups.end()) {
             return it->second;
@@ -239,6 +244,7 @@ private:
     ss::sharded<raft::group_manager>& _gm;
     ss::sharded<cluster::partition_manager>& _pm;
     ss::sharded<cluster::topic_table>& _topic_table;
+    group_metadata_serializer_factory _serializer_factory;
     config::configuration& _conf;
     absl::node_hash_map<group_id, group_ptr> _groups;
     absl::node_hash_map<model::ntp, ss::lw_shared_ptr<attached_partition>>

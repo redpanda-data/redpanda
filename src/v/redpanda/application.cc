@@ -794,9 +794,13 @@ void application::wire_up_redpanda_services() {
     syschecks::systemd_message("Creating partition manager").get();
     construct_service(
       _group_manager,
+      model::kafka_group_nt,
       std::ref(raft_group_manager),
       std::ref(partition_manager),
       std::ref(controller->get_topics_state()),
+      &kafka::make_backward_compatible_serializer,
+      std::ref(config::shard_local_cfg()))
+      .get();
       std::ref(config::shard_local_cfg()))
       .get();
     syschecks::systemd_message("Creating kafka group shard mapper").get();
