@@ -63,6 +63,10 @@ partition::partition(
                             && _raft->ntp().tp.topic
                                  == model::kafka_group_topic;
 
+        is_group_ntp |= _raft->ntp().ns == model::kafka_namespace
+                        && _raft->ntp().tp.topic
+                             == model::kafka_consumer_offsets_topic;
+
         bool has_rm_stm = (_is_tx_enabled || _is_idempotence_enabled)
                           && model::controller_ntp != _raft->ntp()
                           && !is_group_ntp;
