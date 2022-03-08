@@ -231,7 +231,7 @@ ss::future<std::error_code> reconciliation_backend::process_shutdown(
   std::vector<model::broker_shard> new_replicas) {
     vlog(coproclog.info, "Processing shutdown of: {}", ntp);
     auto ids = co_await _pacemaker.local().shutdown_partition(src);
-    vlog(coproclog.debug, "Ids {} shutdown");
+    vlog(coproclog.debug, "Ids {} shutdown", ids);
     co_await _shard_table.invoke_on_all(
       [ntp, rev](cluster::shard_table& st) { st.erase(ntp, rev); });
     auto copro_partition = _coproc_pm.local().get(ntp);

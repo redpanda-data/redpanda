@@ -12,7 +12,7 @@ import time
 from rptest.services.admin import Admin
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.tests.redpanda_test import RedpandaTest
-from ducktape.mark.resource import cluster
+from rptest.services.cluster import cluster
 from ducktape.errors import TimeoutError as DucktapeTimeoutError
 
 from ducktape.utils.util import wait_until
