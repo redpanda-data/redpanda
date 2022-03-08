@@ -22,6 +22,13 @@
               "schema": {"type": "integer"},
               "required": false,
               "description": "If nonzero, skip validation of properties, and permit setting unknown properties"
+            },
+            {
+              "in": "query",
+              "name": "dry_run",
+              "schema": {"type": "integer"},
+              "required": false,
+              "description": "If nonzero, do not apply any changes (but still do validation and return 400 on errors)"
             }
           ],
           "responses": {

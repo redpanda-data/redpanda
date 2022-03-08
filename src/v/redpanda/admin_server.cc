@@ -1004,6 +1004,21 @@ void admin_server::register_cluster_config_routes() {
               }
           }
 
+          if (get_boolean_query_param(*req, "dry_run")) {
+              auto current_version
+                = co_await _controller->get_config_manager().invoke_on(
+                  cluster::config_manager::shard,
+                  [](cluster::config_manager& cm) { return cm.get_version(); });
+
+              // A dry run doesn't really need a result, but it's simpler for
+              // the API definition if we return the same structure as a
+              // normal write.
+              ss::httpd::cluster_config_json::cluster_config_write_result
+                result;
+              result.config_version = current_version;
+              co_return ss::json::json_return_type(std::move(result));
+          }
+
           vlog(
             logger.trace,
             "patch_cluster_config: {} upserts, {} removes",
@@ -1537,7 +1552,6 @@ void admin_server::register_broker_routes() {
 
 // Helpers for partition routes
 namespace {
-
 model::ntp parse_ntp_from_request(ss::httpd::parameters& param) {
     auto ns = model::ns(param["namespace"]);
     auto topic = model::topic(param["topic"]);
@@ -1768,14 +1782,15 @@ void admin_server::register_partition_routes() {
                       tx_info.lso_bound);
 
                     auto staleness = tx_info.get_staleness();
-                    // -1 is returned for expired transaction, because how long
-                    // transaction do not do progress is useless for expired tx.
+                    // -1 is returned for expired transaction, because how
+                    // long transaction do not do progress is useless for
+                    // expired tx.
                     new_tx.staleness_ms = staleness.has_value()
                                             ? staleness.value().count()
                                             : -1;
                     auto timeout = tx_info.get_timeout();
-                    // -1 is returned for expired transaction, because timeout
-                    // is useless for expired tx.
+                    // -1 is returned for expired transaction, because
+                    // timeout is useless for expired tx.
                     new_tx.timeout_ms = timeout.has_value()
                                           ? timeout.value().count()
                                           : -1;
@@ -1922,7 +1937,8 @@ void admin_server::register_partition_routes() {
                                 .validate_shard(node_id, shard);
               if (!is_valid) {
                   throw ss::httpd::bad_request_exception(fmt::format(
-                    "Replica set refers to non-existent node/shard (node {} "
+                    "Replica set refers to non-existent node/shard (node "
+                    "{} "
                     "shard {})",
                     node_id,
                     shard));
@@ -1938,7 +1954,8 @@ void admin_server::register_partition_routes() {
               if (contains_already) {
                   throw ss::httpd::bad_request_exception(fmt::format(
                     "All the replicas must be placed on separate nodes. "
-                    "Requested replica set contains node: {} more than once",
+                    "Requested replica set contains node: {} more than "
+                    "once",
                     node_id));
               }
               replicas.push_back(
@@ -1990,9 +2007,9 @@ void admin_server::register_partition_routes() {
 
 void admin_server::register_hbadger_routes() {
     /**
-     * we always register `v1/failure-probes` route. It will ALWAYS return empty
-     * list of probes in production mode, and flag indicating that honey badger
-     * is disabled
+     * we always register `v1/failure-probes` route. It will ALWAYS return
+     * empty list of probes in production mode, and flag indicating that
+     * honey badger is disabled
      */
 
     if constexpr (!finjector::honey_badger::is_enabled()) {
@@ -2041,7 +2058,8 @@ void admin_server::register_hbadger_routes() {
           auto type = req->param["type"];
           vlog(
             logger.info,
-            "Request to set failure probe of type '{}' in  '{}' at point '{}'",
+            "Request to set failure probe of type '{}' in  '{}' at point "
+            "'{}'",
             type,
             m,
             p);
