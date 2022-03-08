@@ -21,6 +21,7 @@
 #include "kafka/types.h"
 #include "likely.h"
 #include "model/metadata.h"
+#include "model/namespace.h"
 #include "model/timeout_clock.h"
 #include "utils/to_string.h"
 
@@ -88,13 +89,21 @@ std::optional<cluster::leader_term> get_leader_term(
     return leader_term;
 }
 
+namespace {
+bool is_internal(const model::topic_namespace& tp_ns) {
+    return tp_ns == model::kafka_consumer_offsets_tn;
+}
+
+} // namespace
+
 metadata_response::topic make_topic_response_from_topic_metadata(
   const cluster::metadata_cache& md_cache, model::topic_metadata&& tp_md) {
     metadata_response::topic tp;
     tp.error_code = error_code::none;
     auto tp_ns = tp_md.tp_ns;
     tp.name = std::move(tp_md.tp_ns.tp);
-    tp.is_internal = false; // no internal topics yet
+
+    tp.is_internal = is_internal(tp_ns);
     std::transform(
       tp_md.partitions.begin(),
       tp_md.partitions.end(),
