@@ -130,6 +130,22 @@ class BadLogLines(Exception):
         return self.__str__()
 
 
+class NodeCrash(Exception):
+    def __init__(self, crashes):
+        self.crashes = crashes
+
+        # Not legal to construct empty
+        assert len(crashes)
+
+    def __str__(self):
+        example = f"{self.crashes[0][0].name}: {self.crashes[0][1]}"
+        if len(self.crashes) == 1:
+            return f"<NodeCrash {example}>"
+        else:
+            names = ",".join([c[0].name for c in self.crashes])
+            return f"<NodeCrash ({names}) {example}>"
+
+
 class MetricSamples:
     def __init__(self, samples):
         self.samples = samples
@@ -675,6 +691,42 @@ class RedpandaService(Service):
         assert node in self._started
         return node.account.monitor_log(RedpandaService.STDOUT_STDERR_CAPTURE)
 
+    def raise_on_crash(self):
+        """
+        Check if any redpanda nodes are unexpectedly not running,
+        or if any logs contain segfaults or assertions.
+
+        Call this after a test fails, to generate a more useful
+        error message, rather than having failures on "timeouts" which
+        are actually redpanda crashes.
+        """
+        crashes = []
+        for node in self.nodes:
+            self.logger.info(
+                f"Scanning node {node.account.hostname} log for errors...")
+
+            crash_log = None
+            for line in node.account.ssh_capture(
+                    f"grep -e SEGV -e Segmentation\ fault -e [Aa]ssert {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
+            ):
+                if "No such file or directory" not in line:
+                    crash_log = line
+                    break
+
+            if crash_log:
+                crashes.append((node, line))
+
+        if not crashes:
+            # Even if there is no assertion or segfault, look for unexpectedly
+            # not-running processes
+            for node in self._started:
+                if not self.pids(node):
+                    crashes.append(
+                        (node, "Redpanda process unexpectedly stopped"))
+
+        if crashes:
+            raise NodeCrash(crashes)
+
     def raise_on_bad_logs(self, allow_list=None):
         """
         Raise a BadLogLines exception if any nodes' logs contain errors
@@ -720,7 +772,7 @@ class RedpandaService(Service):
                     # are permitted, as they can occur during Seastar shutdown.
                     # See https://github.com/redpanda-data/redpanda/issues/3626
                     for summary_line in node.account.ssh_capture(
-                            f"grep -e \"SUMMARY: AddressSanitizer:\" {RedpandaService.STDOUT_STDERR_CAPTURE} | true"
+                            f"grep -e \"SUMMARY: AddressSanitizer:\" {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
                     ):
                         m = re.match(
                             "SUMMARY: AddressSanitizer: (\d+) byte\(s\) leaked in (\d+) allocation\(s\).",
