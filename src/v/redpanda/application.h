@@ -87,6 +87,7 @@ public:
     ss::sharded<cluster::metadata_dissemination_service>
       md_dissemination_service;
     ss::sharded<kafka::coordinator_ntp_mapper> coordinator_ntp_mapper;
+    ss::sharded<kafka::coordinator_ntp_mapper> co_coordinator_ntp_mapper;
     std::unique_ptr<cluster::controller> controller;
     ss::sharded<kafka::fetch_session_cache> fetch_session_cache;
     smp_groups smp_service_groups;
@@ -154,6 +155,7 @@ private:
 
     ss::sharded<rpc::connection_cache> _connection_cache;
     ss::sharded<kafka::group_manager> _group_manager;
+    ss::sharded<kafka::group_manager> _co_group_manager;
     ss::sharded<net::server> _rpc;
     ss::sharded<admin_server> _admin;
     ss::sharded<net::conn_quota> _kafka_conn_quotas;

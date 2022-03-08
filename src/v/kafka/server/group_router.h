@@ -62,7 +62,7 @@ class group_router final {
         r.ntp = std::move(m->first);
         return with_scheduling_group(
           _sg, [this, func, shard = m->second, r = std::move(r)]() mutable {
-              return _group_manager.invoke_on(
+              return get_group_manager().invoke_on(
                 shard,
                 _ssg,
                 [func, r = std::move(r)](group_manager& mgr) mutable {
@@ -93,7 +93,7 @@ class group_router final {
         r.ntp = std::move(m->first);
         return with_scheduling_group(
           _sg, [this, func, shard = m->second, r = std::move(r)]() mutable {
-              return _group_manager.invoke_on(
+              return get_group_manager().invoke_on(
                 shard,
                 _ssg,
                 [func, r = std::move(r)](group_manager& mgr) mutable {
@@ -106,14 +106,18 @@ public:
     group_router(
       ss::scheduling_group sched_group,
       ss::smp_service_group smp_group,
-      ss::sharded<group_manager>& group_manager,
+      ss::sharded<group_manager>& gr_manager,
+      ss::sharded<group_manager>& consumer_offsets_gr_manager,
       ss::sharded<cluster::shard_table>& shards,
-      ss::sharded<coordinator_ntp_mapper>& coordinators)
+      ss::sharded<coordinator_ntp_mapper>& coordinators,
+      ss::sharded<coordinator_ntp_mapper>& consumer_offsets_coordinators)
       : _sg(sched_group)
       , _ssg(smp_group)
-      , _group_manager(group_manager)
+      , _group_manager(gr_manager)
+      , _consumer_offsets_group_manager(consumer_offsets_gr_manager)
       , _shards(shards)
-      , _coordinators(coordinators) {}
+      , _coordinators(coordinators)
+      , _consumer_offsets_coordinators(consumer_offsets_coordinators) {}
 
     auto join_group(join_group_request&& request) {
         return route(std::move(request), &group_manager::join_group);
@@ -146,7 +150,7 @@ public:
            shard = m->second,
            request = std::move(request),
            dispatched = std::move(dispatched)]() mutable {
-              return _group_manager.invoke_on(
+              return get_group_manager().invoke_on(
                 shard,
                 _ssg,
                 [request = std::move(request),
@@ -213,7 +217,7 @@ public:
     // return groups from across all shards, and if any core was still loading
     ss::future<std::pair<error_code, std::vector<listed_group>>> list_groups() {
         using type = std::pair<error_code, std::vector<listed_group>>;
-        return _group_manager.map_reduce0(
+        return get_group_manager().map_reduce0(
           [](group_manager& mgr) { return mgr.list_groups(); },
           type{},
           [](type a, type b) {
@@ -235,7 +239,7 @@ public:
         }
         return with_scheduling_group(
           _sg, [this, g = std::move(g), m = std::move(m)]() mutable {
-              return _group_manager.invoke_on(
+              return get_group_manager().invoke_on(
                 m->second,
                 _ssg,
                 [g = std::move(g),
@@ -249,16 +253,22 @@ public:
     delete_groups(std::vector<group_id> groups);
 
     ss::sharded<coordinator_ntp_mapper>& coordinator_mapper() {
+        if (use_consumer_offsets_topic()) {
+            return _consumer_offsets_coordinators;
+        }
         return _coordinators;
     }
 
+    void set_use_consumer_offsets_topic(bool value) {
+        _use_consumer_offsets_topic = value;
+    }
 private:
     using sharded_groups = absl::
       node_hash_map<ss::shard_id, std::vector<std::pair<model::ntp, group_id>>>;
 
     std::optional<std::pair<model::ntp, ss::shard_id>>
     shard_for(const group_id& group) {
-        if (auto ntp = _coordinators.local().ntp_for(group); ntp) {
+        if (auto ntp = coordinator_mapper().local().ntp_for(group); ntp) {
             if (auto shard_id = _shards.local().shard_for(*ntp); shard_id) {
                 return std::make_pair(std::move(*ntp), *shard_id);
             }
@@ -266,6 +276,14 @@ private:
         return std::nullopt;
     }
 
+    ss::sharded<group_manager>& get_group_manager() {
+        if (use_consumer_offsets_topic()) {
+            return _consumer_offsets_group_manager;
+        }
+        return _group_manager;
+    }
+
+    bool use_consumer_offsets_topic() { return _use_consumer_offsets_topic; }
     ss::future<std::vector<deletable_group_result>> route_delete_groups(
       ss::shard_id, std::vector<std::pair<model::ntp, group_id>>);
 
@@ -275,8 +293,11 @@ private:
     ss::scheduling_group _sg;
     ss::smp_service_group _ssg;
     ss::sharded<group_manager>& _group_manager;
+    ss::sharded<group_manager>& _consumer_offsets_group_manager;
     ss::sharded<cluster::shard_table>& _shards;
     ss::sharded<coordinator_ntp_mapper>& _coordinators;
+    ss::sharded<coordinator_ntp_mapper>& _consumer_offsets_coordinators;
+    bool _use_consumer_offsets_topic = true;
 };
 
 } // namespace kafka

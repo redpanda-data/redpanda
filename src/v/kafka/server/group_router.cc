@@ -21,7 +21,7 @@ group_router::route_delete_groups(
   ss::shard_id shard, std::vector<std::pair<model::ntp, group_id>> groups) {
     return ss::with_scheduling_group(
       _sg, [this, shard, groups = std::move(groups)]() mutable {
-          return _group_manager.invoke_on(
+          return get_group_manager().invoke_on(
             shard,
             _ssg,
             [groups = std::move(groups)](group_manager& mgr) mutable {
