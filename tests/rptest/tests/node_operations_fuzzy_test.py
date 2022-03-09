@@ -117,7 +117,8 @@ class NodeOperationFuzzyTest(EndToEndTest):
     """
 
     @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
-    @parametrize(enable_failures=True)
+    # @ignore failures=True mode for https://github.com/redpanda-data/redpanda/issues/3866
+    #@parametrize(enable_failures=True)
     @parametrize(enable_failures=False)
     def test_node_operations(self, enable_failures):
         # allocate 5 nodes for the cluster
