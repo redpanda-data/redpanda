@@ -286,6 +286,34 @@ class ClusterConfigTest(RedpandaTest):
             raise RuntimeError(
                 f"Expected 400 but got {patch_result} for {key}={value})")
 
+    @cluster(num_nodes=1)
+    def test_dry_run(self):
+        """
+        Verify that when the dry_run flag is used, validation is done but
+        changes are not made.
+        """
+
+        # An invalid PUT
+        try:
+            self.admin.patch_cluster_config(
+                upsert={"log_message_timestamp_type": "rhubarb"}, dry_run=True)
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code != 400:
+                raise
+            assert set(
+                e.response.json().keys()) == {"log_message_timestamp_type"}
+        else:
+            raise RuntimeError(f"Expected 400 but got success")
+
+        # A valid PUT
+        self.admin.patch_cluster_config(
+            upsert={"log_message_timestamp_type": "LogAppendTime"},
+            dry_run=True)
+
+        # Check the value didn't get set (i.e. remains default)
+        self._check_value_everywhere("log_message_timestamp_type",
+                                     "CreateTime")
+
     @cluster(num_nodes=3)
     def test_invalid_settings_forced(self):
         """

@@ -153,15 +153,26 @@ class Admin:
     def get_cluster_config_schema(self, node=None):
         return self._request("GET", "cluster_config/schema", node=node).json()
 
-    def patch_cluster_config(self, upsert=None, remove=None, force=False):
+    def patch_cluster_config(self,
+                             upsert=None,
+                             remove=None,
+                             force=False,
+                             dry_run=False):
         if upsert is None:
             upsert = {}
         if remove is None:
             remove = []
 
         path = "cluster_config"
+        params = {}
         if force:
-            path = path + "?force=true"
+            params['force'] = 'true'
+        if dry_run:
+            params['dry_run'] = 'true'
+
+        if params:
+            joined = "&".join([f"{k}={v}" for k, v in params.items()])
+            path = path + f"?{joined}"
 
         return self._request("PUT",
                              path,
