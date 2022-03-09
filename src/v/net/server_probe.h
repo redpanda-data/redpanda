@@ -46,6 +46,8 @@ public:
 
     void waiting_for_available_memory() { ++_requests_blocked_memory; }
 
+    void timeout_waiting_rate_limit() { ++_declined_new_connections; }
+
     void setup_metrics(ss::metrics::metric_groups& mgs, const char* name);
 
 private:
@@ -60,6 +62,7 @@ private:
     uint32_t _corrupted_headers = 0;
     uint32_t _method_not_found_errors = 0;
     uint32_t _requests_blocked_memory = 0;
+    uint32_t _declined_new_connections = 0;
     friend std::ostream& operator<<(std::ostream& o, const server_probe& p);
 };
 

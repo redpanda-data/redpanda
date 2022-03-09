@@ -13,12 +13,14 @@
 #include "likely.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "rpc/logger.h"
+#include "seastar/core/coroutine.hh"
 #include "ssx/future-util.h"
 #include "ssx/sformat.h"
 #include "vassert.h"
 #include "vlog.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/loop.hh>
 #include <seastar/core/metrics.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/net/api.hh>
@@ -40,6 +42,27 @@ void server::start() {
     if (!cfg.disable_metrics) {
         setup_metrics();
         _probe.setup_metrics(_metrics, cfg.name.c_str());
+    }
+
+    if (cfg.connection_rate_bindings) {
+        connection_rate_bindings.emplace(cfg.connection_rate_bindings.value());
+
+        connection_rate_info info{
+          .max_connection_rate
+          = connection_rate_bindings.value().config_general_rate(),
+          .overrides
+          = connection_rate_bindings.value().config_overrides_rate()};
+
+        _connection_rates.emplace(std::move(info), _conn_gate);
+
+        connection_rate_bindings.value().config_general_rate.watch([this] {
+            _connection_rates->update_general_rate(
+              connection_rate_bindings.value().config_general_rate());
+        });
+        connection_rate_bindings.value().config_overrides_rate.watch([this] {
+            _connection_rates->update_overrides_rate(
+              connection_rate_bindings.value().config_overrides_rate());
+        });
     }
     for (const auto& endpoint : cfg.addrs) {
         ss::server_socket ss;
@@ -108,11 +131,11 @@ apply_proto(server::protocol* proto, server::resources&& rs) {
 ss::future<> server::accept(listener& s) {
     return ss::repeat([this, &s]() mutable {
         return s.socket.accept().then_wrapped(
-          [this, &s](ss::future<ss::accept_result> f_cs_sa) mutable {
+          [this, &s](ss::future<ss::accept_result> f_cs_sa) mutable
+          -> ss::future<ss::stop_iteration> {
               if (_as.abort_requested()) {
                   f_cs_sa.ignore_ready_future();
-                  return ss::make_ready_future<ss::stop_iteration>(
-                    ss::stop_iteration::yes);
+                  co_return ss::stop_iteration::yes;
               }
               auto ar = f_cs_sa.get();
               ar.connection.set_nodelay(true);
@@ -133,9 +156,25 @@ ss::future<> server::accept(listener& s) {
                     SOL_SOCKET, SO_SNDBUF, &send_buf, sizeof(send_buf));
               }
 
+              auto name = s.name;
+              if (_connection_rates) {
+                  try {
+                      co_await _connection_rates->maybe_wait(
+                        ar.remote_address.addr());
+                  } catch (const std::exception& e) {
+                      vlog(
+                        rpc::rpclog.trace,
+                        "Timeout while waiting free token for connection rate. "
+                        "addr:{}",
+                        ar.remote_address);
+                      _probe.timeout_waiting_rate_limit();
+                      co_return ss::stop_iteration::no;
+                  }
+              }
+
               auto conn = ss::make_lw_shared<net::connection>(
                 _connections,
-                s.name,
+                name,
                 std::move(ar.connection),
                 ar.remote_address,
                 _probe);
@@ -144,18 +183,15 @@ ss::future<> server::accept(listener& s) {
                 "{} - Incoming connection from {} on \"{}\"",
                 _proto->name(),
                 ar.remote_address,
-                s.name);
+                name);
               if (_conn_gate.is_closed()) {
-                  return conn->shutdown().then([] {
-                      return ss::make_exception_future<ss::stop_iteration>(
-                        ss::gate_closed_exception());
-                  });
+                  co_await conn->shutdown();
+                  throw ss::gate_closed_exception();
               }
               ssx::spawn_with_gate(_conn_gate, [this, conn]() mutable {
                   return apply_proto(_proto.get(), resources(this, conn));
               });
-              return ss::make_ready_future<ss::stop_iteration>(
-                ss::stop_iteration::no);
+              co_return ss::stop_iteration::no;
           });
     });
 }

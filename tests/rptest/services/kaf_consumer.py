@@ -13,7 +13,12 @@ from ducktape.services.background_thread import BackgroundThreadService
 
 
 class KafConsumer(BackgroundThreadService):
-    def __init__(self, context, redpanda, topic, num_records=1):
+    def __init__(self,
+                 context,
+                 redpanda,
+                 topic,
+                 num_records=1,
+                 offset_for_read="newest"):
         super(KafConsumer, self).__init__(context, num_nodes=1)
         self._redpanda = redpanda
         self._topic = topic
@@ -21,13 +26,14 @@ class KafConsumer(BackgroundThreadService):
         self._stopping = threading.Event()
         self.done = False
         self.offset = dict()
+        self._offset_for_read = offset_for_read
 
     def _worker(self, _, node):
         self._stopping.clear()
         try:
             partition = None
-            cmd = "kaf consume -b %s -f --offset newest %s" % (
-                self._redpanda.brokers(), self._topic)
+            cmd = "kaf consume -b %s -f --offset %s %s" % (
+                self._redpanda.brokers(), self._offset_for_read, self._topic)
             for line in node.account.ssh_capture(cmd):
                 if self._stopping.is_set():
                     break
