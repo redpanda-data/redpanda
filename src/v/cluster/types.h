@@ -839,6 +839,17 @@ struct finish_reallocation_reply {
     errc error;
 };
 
+struct set_maintenance_mode_request {
+    static constexpr int8_t current_version = 1;
+    model::node_id id;
+    bool enabled;
+};
+
+struct set_maintenance_mode_reply {
+    static constexpr int8_t current_version = 1;
+    errc error;
+};
+
 struct config_status_request {
     config_status status;
 };
@@ -1093,6 +1104,18 @@ template<>
 struct adl<cluster::feature_barrier_response> {
     void to(iobuf&, cluster::feature_barrier_response&&);
     cluster::feature_barrier_response from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::set_maintenance_mode_request> {
+    void to(iobuf&, cluster::set_maintenance_mode_request&&);
+    cluster::set_maintenance_mode_request from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::set_maintenance_mode_reply> {
+    void to(iobuf&, cluster::set_maintenance_mode_reply&&);
+    cluster::set_maintenance_mode_reply from(iobuf_parser&);
 };
 
 } // namespace reflection

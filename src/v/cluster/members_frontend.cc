@@ -132,4 +132,41 @@ members_frontend::recommission_node(model::node_id id) {
     }
     co_return res.value().data.error;
 }
+
+ss::future<std::error_code>
+members_frontend::set_maintenance_mode(model::node_id id, bool enabled) {
+    auto leader = _leaders.local().get_leader(model::controller_ntp);
+    if (!leader) {
+        co_return errc::no_leader_controller;
+    }
+
+    if (leader == _self) {
+        co_return co_await replicate_and_wait(
+          _stm,
+          _as,
+          maintenance_mode_cmd(id, enabled),
+          _node_op_timeout + model::timeout_clock::now());
+    }
+
+    std::chrono::duration timeout = _node_op_timeout;
+    auto res
+      = co_await _connections.local()
+          .with_node_client<cluster::controller_client_protocol>(
+            _self,
+            ss::this_shard_id(),
+            *leader,
+            timeout,
+            [id, enabled, timeout](controller_client_protocol cp) mutable {
+                return cp.set_maintenance_mode(
+                  set_maintenance_mode_request{.id = id, .enabled = enabled},
+                  rpc::client_opts(model::timeout_clock::now() + timeout));
+            });
+
+    if (res.has_error()) {
+        co_return res.error();
+    }
+
+    co_return res.value().data.error;
+}
+
 } // namespace cluster

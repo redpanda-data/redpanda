@@ -1278,4 +1278,43 @@ adl<cluster::feature_barrier_response>::from(iobuf_parser& parser) {
       .entered = entered, .complete = complete};
 }
 
+void adl<cluster::set_maintenance_mode_request>::to(
+  iobuf& out, cluster::set_maintenance_mode_request&& r) {
+    reflection::serialize(out, r.current_version, r.id, r.enabled);
+}
+
+cluster::set_maintenance_mode_request
+adl<cluster::set_maintenance_mode_request>::from(iobuf_parser& parser) {
+    auto version = adl<uint8_t>{}.from(parser);
+    vassert(
+      version == cluster::set_maintenance_mode_request::current_version,
+      "Unexpected version: {} (expected {})",
+      version,
+      cluster::set_maintenance_mode_request::current_version);
+
+    auto id = adl<model::node_id>{}.from(parser);
+    auto enabled = adl<bool>{}.from(parser);
+
+    return cluster::set_maintenance_mode_request{.id = id, .enabled = enabled};
+}
+
+void adl<cluster::set_maintenance_mode_reply>::to(
+  iobuf& out, cluster::set_maintenance_mode_reply&& r) {
+    reflection::serialize(out, r.current_version, r.error);
+}
+
+cluster::set_maintenance_mode_reply
+adl<cluster::set_maintenance_mode_reply>::from(iobuf_parser& parser) {
+    auto version = adl<uint8_t>{}.from(parser);
+    vassert(
+      version == cluster::set_maintenance_mode_reply::current_version,
+      "Unexpected version: {} (expected {})",
+      version,
+      cluster::set_maintenance_mode_reply::current_version);
+
+    auto error = adl<cluster::errc>{}.from(parser);
+
+    return cluster::set_maintenance_mode_reply{.error = error};
+}
+
 } // namespace reflection

@@ -72,6 +72,11 @@
             "output_type": "finish_reallocation_reply"
         },
         {
+            "name": "set_maintenance_mode",
+            "input_type": "set_maintenance_mode_request",
+            "output_type": "set_maintenance_mode_reply"
+        },
+        {
             "name": "config_status",
             "input_type": "config_status_request",
             "output_type": "config_status_reply"

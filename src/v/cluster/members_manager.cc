@@ -11,6 +11,7 @@
 
 #include "cluster/cluster_utils.h"
 #include "cluster/commands.h"
+#include "cluster/drain_manager.h"
 #include "cluster/fwd.h"
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
@@ -239,6 +240,23 @@ members_manager::apply_update(model::record_batch b) {
             .push_eventually(node_update{
               .id = cmd.key, .type = node_update_type::reallocation_finished})
             .then([] { return make_error_code(errc::success); });
+      },
+      [this, update_offset](maintenance_mode_cmd cmd) {
+          return dispatch_updates_to_cores(update_offset, cmd)
+            .then([this, cmd](std::error_code error) {
+                auto f = ss::now();
+                if (!error && cmd.key == _self.id()) {
+                    f = _drain_manager.invoke_on_all(
+                      [enabled = cmd.value](cluster::drain_manager& dm) {
+                          if (enabled) {
+                              return dm.drain();
+                          } else {
+                              return dm.restore();
+                          }
+                      });
+                }
+                return f.then([error] { return error; });
+            });
       });
 }
 ss::future<std::error_code>
