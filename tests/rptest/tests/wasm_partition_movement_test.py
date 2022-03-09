@@ -175,7 +175,7 @@ class WasmPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         num_nodes=6,
         log_allow_list=PARTITION_MOVEMENT_LOG_ERRORS + RESTART_LOG_ALLOW_LIST +
         [
-            "coproc - .*Failed to connect wasm engine" +
+            "coproc - .*Failed to connect wasm engine",
             "coproc - .*Wasm engine failed to reply to heartbeat within the expected interval"
         ])
     def test_dynamic_with_failure(self):
