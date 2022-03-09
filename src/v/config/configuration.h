@@ -248,6 +248,8 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> metrics_reporter_report_interval;
     property<ss::sstring> metrics_reporter_url;
 
+    property<bool> features_auto_enable;
+
     configuration();
 
     error_map_t load(const YAML::Node& root_node);

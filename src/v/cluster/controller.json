@@ -90,6 +90,11 @@
             "name": "get_cluster_health_report",
             "input_type": "get_cluster_health_request",
             "output_type": "get_cluster_health_reply"
+        },
+        {
+            "name": "feature_action",
+            "input_type": "feature_action_request",
+            "output_type": "feature_action_response"
         }
     ]
 }

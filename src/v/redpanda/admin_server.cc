@@ -463,6 +463,21 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
       url, ss::httpd::reply::status_type::temporary_redirect);
 }
 
+namespace {
+bool need_redirect_to_leader(
+  model::ntp ntp, ss::sharded<cluster::metadata_cache>& metadata_cache) {
+    auto leader_id_opt = metadata_cache.local().get_leader_id(ntp);
+    if (!leader_id_opt.has_value()) {
+        throw ss::httpd::base_exception(
+          fmt::format(
+            "Partition {} does not have a leader, cannot redirect", ntp),
+          ss::httpd::reply::status_type::service_unavailable);
+    }
+
+    return leader_id_opt.value() != config::node().node_id();
+}
+} // namespace
+
 /**
  * Throw an appropriate seastar HTTP exception if we saw
  * a redpanda error during a request.
@@ -1345,9 +1360,29 @@ void admin_server::register_status_routes() {
       });
 }
 
+static json_validator make_feature_put_validator() {
+    const std::string schema = R"(
+{
+    "type": "object",
+    "properties": {
+        "state": {
+            "type": "string",
+            "enum": ["active", "disabled"]
+        }
+    },
+    "additionalProperties": false,
+    "required": ["state"]
+}
+)";
+    return json_validator(schema);
+}
+
 void admin_server::register_features_routes() {
-    ss::httpd::features_json::get_features.set(
-      _server._routes,
+    static thread_local auto feature_put_validator(
+      make_feature_put_validator());
+
+    register_route<user>(
+      ss::httpd::features_json::get_features,
       [this](std::unique_ptr<ss::httpd::request>)
         -> ss::future<ss::json::json_return_type> {
           ss::httpd::features_json::features_response res;
@@ -1356,11 +1391,100 @@ void admin_server::register_features_routes() {
           auto version = ft.get_active_version();
 
           res.cluster_version = version;
-          for (const auto& f : ft.get_active_features()) {
-              res.features.push(ss::sstring(cluster::to_string_view(f)));
+          for (const auto& fs : ft.get_feature_state()) {
+              ss::httpd::features_json::feature_state item;
+              vlog(
+                logger.trace,
+                "feature_state: {} {}",
+                fs.spec.name,
+                fs.get_state());
+              item.name = ss::sstring(fs.spec.name);
+
+              switch (fs.get_state()) {
+              case cluster::feature_state::state::active:
+                  item.state = ss::httpd::features_json::feature_state::
+                    feature_state_state::active;
+                  break;
+              case cluster::feature_state::state::unavailable:
+                  item.state = ss::httpd::features_json::feature_state::
+                    feature_state_state::unavailable;
+                  break;
+              case cluster::feature_state::state::available:
+                  item.state = ss::httpd::features_json::feature_state::
+                    feature_state_state::available;
+                  break;
+              case cluster::feature_state::state::preparing:
+                  item.state = ss::httpd::features_json::feature_state::
+                    feature_state_state::preparing;
+                  break;
+              case cluster::feature_state::state::disabled_clean:
+              case cluster::feature_state::state::disabled_active:
+              case cluster::feature_state::state::disabled_preparing:
+                  item.state = ss::httpd::features_json::feature_state::
+                    feature_state_state::disabled;
+                  break;
+              }
+
+              switch (fs.get_state()) {
+              case cluster::feature_state::state::active:
+              case cluster::feature_state::state::preparing:
+              case cluster::feature_state::state::disabled_active:
+              case cluster::feature_state::state::disabled_preparing:
+                  item.was_active = true;
+                  break;
+              default:
+                  item.was_active = false;
+              }
+
+              res.features.push(item);
           }
 
           co_return std::move(res);
+      });
+
+    register_route<superuser>(
+      ss::httpd::features_json::put_feature,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          auto doc = parse_json_body(*req);
+          apply_validator(feature_put_validator, doc);
+
+          auto feature_name = req->param["feature_name"];
+
+          if (!_controller->get_feature_table()
+                 .local()
+                 .resolve_name(feature_name)
+                 .has_value()) {
+              throw ss::httpd::bad_request_exception("Unknown feature name");
+          }
+
+          cluster::feature_update_action action{.feature_name = feature_name};
+          auto& new_state_str = doc["state"];
+          if (new_state_str == "active") {
+              action.action = cluster::feature_update_action::action_t::
+                administrative_activate;
+          } else if (new_state_str == "disabled") {
+              action.action = cluster::feature_update_action::action_t::
+                administrative_deactivate;
+          } else {
+              throw ss::httpd::bad_request_exception("Invalid state");
+          }
+
+          if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
+              throw co_await redirect_to_leader(*req, model::controller_ntp);
+          }
+
+          auto& fm = _controller->get_feature_manager();
+          auto err = co_await fm.invoke_on(
+            cluster::feature_manager::backend_shard,
+            [action](cluster::feature_manager& fm) {
+                return fm.write_action(action);
+            });
+          if (err) {
+              throw ss::httpd::bad_request_exception(fmt::format("{}", err));
+          } else {
+              co_return ss::json::json_void();
+          }
       });
 }
 
@@ -1570,21 +1694,6 @@ model::ntp parse_ntp_from_request(ss::httpd::parameters& param) {
     }
 
     return model::ntp(std::move(ns), std::move(topic), partition);
-}
-
-bool need_redirect_to_leader(
-  model::ntp ntp, ss::sharded<cluster::metadata_cache>& metadata_cache) {
-    auto leader_id_opt = metadata_cache.local().get_leader_id(ntp);
-    if (!leader_id_opt.has_value()) {
-        throw ss::httpd::base_exception(
-          fmt_with_ctx(
-            fmt::format,
-            "Partition {} does not have a leader, cannot redirect",
-            ntp),
-          ss::httpd::reply::status_type::service_unavailable);
-    }
-
-    return leader_id_opt.value() != config::node().node_id();
 }
 
 } // namespace
@@ -2091,8 +2200,9 @@ void admin_server::register_hbadger_routes() {
     /*
      * Remove all failure injectors at given point
      */
-    ss::httpd::hbadger_json::delete_failure_probe.set(
-      _server._routes, [](std::unique_ptr<ss::httpd::request> req) {
+    register_route<superuser>(
+      ss::httpd::hbadger_json::delete_failure_probe,
+      [](std::unique_ptr<ss::httpd::request> req) {
           auto m = req->param["module"];
           auto p = req->param["point"];
           vlog(

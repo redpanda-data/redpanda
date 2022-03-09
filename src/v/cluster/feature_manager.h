@@ -31,23 +31,14 @@ using version_map = std::map<model::node_id, cluster_version>;
  *  - The version is useful for protocol changes that don't necessarily
  *    correspond to a feature, but are needed to safely read or write
  *    persistent structures in the controller log.
- *  - Feature flags could be stored independently to the version, but
- *    our linear development process makes it unnecessary: we can simply
- *    hardcode which versions have which features.
- *
- *  At time of writing, features auto enable as soon as all the nodes
- *  support them.  However, this is not ideal for some upgrade
- *  scenarios where a rollback may be needed: once we've written
- *  structures that require a new feature, rollback becomes hard.
- *  So we might move to a model where new features only enable on
- *  an explicit API request, to be issued usually by the k8s operator
- *  once all nodes are up and it has satisfied that health checks
- *  are OK.
  *
  *  The persistence of the cluster version is also useful for marking
  *  in the controller log where the upgrade was finalized: in a disaster
  *  if we need to snip the controller log back to something an old
  *  version can read, that would be the offset at which to snip.
+ *
+ *  For the detail of how individual features are enabled, consult
+ *  the definition of `feature_state`.
  */
 
 /**
@@ -82,6 +73,8 @@ public:
 
     ss::future<> start();
     ss::future<> stop();
+
+    ss::future<std::error_code> write_action(cluster::feature_update_action);
 
 private:
     void update_node_version(model::node_id, cluster_version v);

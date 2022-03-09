@@ -262,14 +262,42 @@ ss::future<> feature_manager::do_maybe_update_active_version() {
     }
 
     // All node checks passed, we are ready to increment active version
-    auto timeout = model::timeout_clock::now() + status_retry;
-
     auto data = feature_update_cmd_data{.logical_version = max_version};
+
+    // Identify any features which should auto-activate in this version
+    if (config::shard_local_cfg().features_auto_enable()) {
+        /*
+         * We auto-enable features if:
+         * - They are not disabled
+         * - Their required version is satisfied
+         * - Their policy is not explicit_only
+         * - The global features_auto_enable setting is true.
+         */
+        for (const auto& fs : _feature_table.local().get_feature_state()) {
+            if (
+              fs.get_state() == feature_state::state::unavailable
+              && fs.spec.available_rule
+                   == feature_spec::available_policy::always
+              && max_version >= fs.spec.require_version) {
+                vlog(
+                  clusterlog.info,
+                  "Auto-activating feature {} (logical version {})",
+                  fs.spec.name,
+                  max_version);
+                data.actions.push_back(cluster::feature_update_action{
+                  .feature_name = ss::sstring(fs.spec.name),
+                  .action
+                  = feature_update_action::action_t ::administrative_activate});
+            }
+        }
+    }
+
     auto cmd = feature_update_cmd(
       std::move(data),
       0 // unused
     );
 
+    auto timeout = model::timeout_clock::now() + status_retry;
     auto err = co_await replicate_and_wait(_stm, _as, std::move(cmd), timeout);
     if (err == errc::not_leader) {
         // Harmless, we lost leadership so the new controller
@@ -281,11 +309,71 @@ ss::future<> feature_manager::do_maybe_update_active_version() {
           "Error storing cluster version {}: {}", max_version, err));
     }
 
-    // Log a full readout of node versions when updating cluster version
-    for (const auto& i : _node_versions) {
-        vlog(clusterlog.info, "Node {} logical version {}", i.first, i.second);
+    vlog(clusterlog.info, "Updated cluster (logical version {})", max_version);
+}
+
+ss::future<std::error_code>
+feature_manager::write_action(cluster::feature_update_action action) {
+    auto feature_id_opt = _feature_table.local().resolve_name(
+      action.feature_name);
+
+    // This should  have been validated by admin server before calling us
+    vassert(
+      feature_id_opt.has_value(),
+      "Invalid feature name '{}'",
+      action.feature_name);
+
+    // Validate that teh feature is in a state compatible with the
+    // requested transition.
+    bool valid = true;
+    auto state = _feature_table.local().get_state(feature_id_opt.value());
+    switch (action.action) {
+    case cluster::feature_update_action::action_t::complete_preparing:
+        // Look up feature by name
+        if (state.get_state() != feature_state::state::preparing) {
+            // Drop this silently, we presume that this is some kind of
+            // race and the thing we thought was preparing is either
+            // now active or administratively deactivated.
+            valid = false;
+        }
+
+        break;
+    case cluster::feature_update_action::action_t::administrative_activate:
+        if (
+          state.get_state() != feature_state::state::available
+          && state.get_state() != feature_state::state::disabled_clean
+          && state.get_state() != feature_state::state::disabled_active
+          && state.get_state() != feature_state::state::disabled_preparing) {
+            valid = false;
+        }
+        break;
+    case cluster::feature_update_action::action_t::administrative_deactivate:
+        if (
+          state.get_state() == feature_state::state::disabled_clean
+          || state.get_state() == feature_state::state::disabled_preparing
+          || state.get_state() == feature_state::state::disabled_active) {
+            valid = false;
+        }
     }
-    vlog(clusterlog.info, "Updated cluster version to {}", max_version);
+
+    if (!valid) {
+        vlog(
+          clusterlog.warn,
+          "Dropping feature action {}, feature not in expected state",
+          action);
+        return ss::make_ready_future<std::error_code>(cluster::errc::success);
+    } else {
+        // Construct and dispatch command to log
+        auto timeout = model::timeout_clock::now() + status_retry;
+        auto data = feature_update_cmd_data{
+          .logical_version = _feature_table.local().get_active_version(),
+          .actions = {action}};
+        auto cmd = feature_update_cmd(
+          std::move(data),
+          0 // unused
+        );
+        return replicate_and_wait(_stm, _as, std::move(cmd), timeout);
+    }
 }
 
 } // namespace cluster

@@ -88,6 +88,9 @@ public:
         return _hm_frontend;
     }
 
+    ss::sharded<feature_manager>& get_feature_manager() {
+        return _feature_manager;
+    }
     ss::sharded<feature_table>& get_feature_table() { return _feature_table; }
 
     ss::future<> wire_up();
