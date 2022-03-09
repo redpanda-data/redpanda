@@ -46,6 +46,7 @@ health_monitor_backend::health_monitor_backend(
   ss::sharded<partition_manager>& partition_manager,
   ss::sharded<raft::group_manager>& raft_manager,
   ss::sharded<ss::abort_source>& as,
+  ss::sharded<storage::node_api>& storage_api,
   config::binding<size_t> storage_min_bytes_threshold,
   config::binding<unsigned> storage_min_percent_threshold)
   : _raft0(std::move(raft0))
@@ -56,7 +57,8 @@ health_monitor_backend::health_monitor_backend(
   , _as(as)
   , _local_monitor(
       std::move(storage_min_bytes_threshold),
-      std::move(storage_min_percent_threshold)) {
+      std::move(storage_min_percent_threshold),
+      storage_api) {
     _tick_timer.set_callback([this] { tick(); });
     _tick_timer.arm(tick_interval());
     _leadership_notification_handle

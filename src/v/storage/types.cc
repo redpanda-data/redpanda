@@ -17,6 +17,32 @@
 #include <fmt/ostream.h>
 
 namespace storage {
+
+std::ostream& operator<<(std::ostream& o, const disk_space_alert d) {
+    switch (d) {
+    case disk_space_alert::ok:
+        o << "ok";
+        break;
+    case disk_space_alert::low_space:
+        o << "low_space";
+        break;
+    case disk_space_alert::degraded:
+        o << "degraded";
+        break;
+    }
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const disk& d) {
+    fmt::print(
+      o,
+      "{{path: {}, free: {}, total: {}}}",
+      d.path,
+      human::bytes(d.free),
+      human::bytes(d.total));
+    return o;
+}
+
 std::ostream& operator<<(std::ostream& o, const log_reader_config& cfg) {
     o << "{start_offset:" << cfg.start_offset
       << ", max_offset:" << cfg.max_offset << ", min_bytes:" << cfg.min_bytes

@@ -13,6 +13,7 @@
 #include "model/fundamental.h"
 #include "storage/fwd.h"
 #include "storage/logger.h"
+#include "storage/types.h"
 
 #include <seastar/core/metrics_registration.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -20,6 +21,25 @@
 #include <cstdint>
 
 namespace storage {
+struct disk_metrics {
+    uint64_t total_bytes = 0;
+    uint64_t free_bytes = 0;
+    disk_space_alert space_alert = disk_space_alert::ok;
+};
+
+// Per-node storage probe (metrics).
+class node_probe {
+public:
+    void setup_node_metrics();
+    void set_disk_metrics(
+      uint64_t total_bytes, uint64_t free_bytes, disk_space_alert alert);
+
+private:
+    disk_metrics _disk;
+    ss::metrics::metric_groups _metrics;
+};
+
+// Per-NTP probe.
 class probe {
 public:
     void add_bytes_written(uint64_t written) {

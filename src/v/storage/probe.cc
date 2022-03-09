@@ -16,7 +16,46 @@
 
 #include <seastar/core/metrics.hh>
 
+#include <type_traits>
+
 namespace storage {
+
+void node_probe::set_disk_metrics(
+  uint64_t total_bytes, uint64_t free_bytes, disk_space_alert alert) {
+    _disk = {
+      .total_bytes = total_bytes,
+      .free_bytes = free_bytes,
+      .space_alert = alert};
+}
+
+void node_probe::setup_node_metrics() {
+    if (config::shard_local_cfg().disable_metrics()) {
+        return;
+    }
+
+    namespace sm = ss::metrics;
+    _metrics.add_group(
+      prometheus_sanitize::metrics_name("storage:disk"),
+      {
+        sm::make_total_bytes(
+          "total_bytes",
+          [this] { return _disk.total_bytes; },
+          sm::description("Total size of attached storage, in bytes.")),
+        sm::make_total_bytes(
+          "free_bytes",
+          [this] { return _disk.free_bytes; },
+          sm::description("Disk storage bytes free.")),
+        sm::make_gauge(
+          "free_space_alert",
+          [this] {
+              return static_cast<std::underlying_type_t<disk_space_alert>>(
+                _disk.space_alert);
+          },
+          sm::description(
+            "Status of low storage space alert. 0-OK, 1-Low Space 2-Degraded")),
+      });
+}
+
 void probe::setup_metrics(const model::ntp& ntp) {
     if (config::shard_local_cfg().disable_metrics()) {
         return;
