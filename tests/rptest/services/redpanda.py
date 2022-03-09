@@ -20,7 +20,7 @@ import threading
 import collections
 import re
 import uuid
-from typing import Optional
+from typing import Mapping, Optional
 
 import yaml
 from ducktape.services.service import Service
@@ -147,10 +147,10 @@ class NodeCrash(Exception):
 
 
 class MetricSamples:
-    def __init__(self, samples):
+    def __init__(self, samples: list[MetricSample]):
         self.samples = samples
 
-    def label_filter(self, labels):
+    def label_filter(self, labels: Mapping[str, float]):
         def f(sample):
             for key, value in labels.items():
                 assert key in sample.labels
@@ -1173,7 +1173,9 @@ class RedpandaService(Service):
         assert resp.status_code == 200
         return text_string_to_metric_families(resp.text)
 
-    def metrics_sample(self, sample_pattern, nodes=None):
+    def metrics_sample(self,
+                       sample_pattern,
+                       nodes=None) -> Optional[MetricSamples]:
         """
         Query metrics for a single sample using fuzzy name matching. This
         interface matches the sample pattern against sample names, and requires
