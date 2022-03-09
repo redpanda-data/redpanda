@@ -353,7 +353,7 @@ static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
     if (total_max_bytes > max_bytes_per_fetch) {
         auto per_partition = max_bytes_per_fetch / ntp_fetch_configs.size();
         vlog(
-          klog.info,
+          klog.debug,
           "Fetch requested very large response ({}), clamping each partition's "
           "max_bytes to {} bytes",
           total_max_bytes,
