@@ -277,6 +277,26 @@ group_manager::gc_partition_state(ss::lw_shared_ptr<attached_partition> p) {
     _groups.rehash(0);
 }
 
+ss::future<> group_manager::reload_groups() {
+    std::vector<ss::future<>> futures;
+    for (auto& [ntp, attached] : _partitions) {
+        auto leader = attached->partition->get_leader_id();
+        if (leader == _self.id()) {
+            attached->loading = true;
+        }
+        auto term = attached->partition->term();
+        auto f = ss::with_semaphore(
+                   attached->sem,
+                   1,
+                   [this, p = attached, leader, term]() mutable {
+                       return handle_partition_leader_change(term, p, leader);
+                   })
+                   .finally([p = attached->partition] {});
+        futures.push_back(std::move(f));
+    }
+    co_await ss::when_all_succeed(futures.begin(), futures.end());
+}
+
 ss::future<> group_manager::handle_partition_leader_change(
   model::term_id term,
   ss::lw_shared_ptr<attached_partition> p,

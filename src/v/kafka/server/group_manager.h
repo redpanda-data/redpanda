@@ -167,6 +167,8 @@ public:
     ss::future<std::vector<deletable_group_result>>
       delete_groups(std::vector<std::pair<model::ntp, group_id>>);
 
+    ss::future<> reload_groups();
+
 public:
     error_code validate_group_status(
       const model::ntp& ntp, const group_id& group, api_key api);
