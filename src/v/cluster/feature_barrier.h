@@ -18,6 +18,7 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/core/sleep.hh>
 
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/node_hash_map.h>
@@ -85,14 +86,14 @@ private:
  * Subsequently, before cleaning up some old data, we might want to barrier
  * on all nodes seeing the `active` state.
  */
-class feature_barrier_state {
+class feature_barrier_state_base {
 public:
     using rpc_fn_ret
       = ss::future<result<rpc::client_context<feature_barrier_response>>>;
     using rpc_fn = ss::noncopyable_function<rpc_fn_ret(
       model::node_id, model::node_id, feature_barrier_tag, bool)>;
 
-    feature_barrier_state(
+    feature_barrier_state_base(
       model::node_id self,
       members_table& members,
       ss::abort_source& as,
@@ -126,7 +127,9 @@ public:
         return _barrier_state[tag];
     }
 
-private:
+protected:
+    virtual ss::future<> retry_sleep() = 0;
+
     members_table& _members;
     ss::abort_source& _as;
     ss::gate& _gate;
@@ -139,6 +142,32 @@ private:
     rpc_fn _rpc_hook;
 
     ss::abort_source::subscription _abort_sub;
+};
+
+/**
+ * Concrete class, with a clock.
+ *
+ * Instantiate this with a real clock for normal builds, with a manual_clock
+ * for unit testing.
+ */
+template<typename Clock = ss::lowres_clock>
+class feature_barrier_state : public feature_barrier_state_base {
+public:
+    feature_barrier_state(
+      model::node_id self,
+      members_table& members,
+      ss::abort_source& as,
+      ss::gate& gate,
+      rpc_fn fn)
+      : feature_barrier_state_base(self, members, as, gate, std::move(fn)) {}
+
+protected:
+    static constexpr std::chrono::duration retry_period = 500ms;
+
+    ss::future<> retry_sleep() override {
+        using namespace std::chrono_literals;
+        return ss::sleep_abortable<Clock>(retry_period, _as);
+    };
 };
 
 } // namespace cluster

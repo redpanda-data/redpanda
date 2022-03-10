@@ -14,21 +14,27 @@
 #include "test_utils/fixture.h"
 #include "vlog.h"
 
+#include <seastar/core/manual_clock.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/testing/thread_test_case.hh>
 
 using namespace std::chrono_literals;
 using namespace cluster;
 
+// Variant for unit testing, using manual_clock
+using feature_barrier_state_test = feature_barrier_state<ss::manual_clock>;
+
+static ss::logger logger("test");
+
 struct node_state {
     ss::abort_source as;
     ss::gate gate;
-    feature_barrier_state barrier_state;
+    feature_barrier_state_test barrier_state;
 
     node_state(
       members_table& members,
       model::node_id id,
-      feature_barrier_state::rpc_fn fn)
+      feature_barrier_state_test::rpc_fn fn)
       : barrier_state(id, members, as, gate, std::move(fn)) {}
 
     ~node_state() {
@@ -69,7 +75,7 @@ struct barrier_fixture {
         create_node_state(id);
     }
 
-    feature_barrier_state::rpc_fn_ret rpc_hook(
+    feature_barrier_state_test::rpc_fn_ret rpc_hook(
       model::node_id src,
       model::node_id dst,
       feature_barrier_tag tag,
@@ -101,9 +107,15 @@ struct barrier_fixture {
         return r;
     }
 
-    feature_barrier_state& get_barrier_state(model::node_id id) {
+    feature_barrier_state_test& get_barrier_state(model::node_id id) {
         return get_node_state(id)->barrier_state;
     }
+
+    /**
+     * Call this in places where the test wishes to advance
+     * to the next I/O wait.
+     */
+    void drain_tasks() { ss::sleep(10ms).get(); }
 
     std::map<model::node_id, ss::lw_shared_ptr<node_state>> states;
 
@@ -222,14 +234,22 @@ FIXTURE_TEST(test_barrier_node_isolated, barrier_fixture) {
                 .barrier(feature_barrier_tag{"test"});
 
     // Without comms to node 2, this barrier should block to complete
-    ss::sleep(1000ms).get();
+    ss::sleep(10ms).get();
+
+    // Advance clock long enough for them to retry and still see an error
+    vlog(logger.debug, "Should have just tried first time and failed");
+    ss::manual_clock::advance(1000ms);
+    ss::sleep(10ms).get();
+    vlog(logger.debug, "Should have just retried and failed again");
 
     rpc_rx_errors.clear();
     rpc_tx_errors.clear();
 
-    // After comms are restored the barrier should succeed (waiting for
-    // the retry period in barrier())
-    ss::sleep(1000ms).get();
+    // Advance clock far enough for the nodes to all retry (and succeed) their
+    // RPCs
+    ss::manual_clock::advance(1000ms);
+    ss::sleep(10ms).get();
+    vlog(logger.debug, "Should have just retried and succeeded");
 
     BOOST_REQUIRE(f0.available());
     BOOST_REQUIRE(f1.available());
