@@ -59,7 +59,7 @@ public:
     void wire_up_services();
     void wire_up_redpanda_services();
     void start(::stop_signal&);
-    void start_redpanda();
+    void start_redpanda(::stop_signal&);
     void start_kafka(::stop_signal&);
 
     explicit application(ss::sstring = "redpanda::main");

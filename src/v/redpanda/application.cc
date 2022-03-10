@@ -35,6 +35,7 @@
 #include "kafka/client/configuration.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/group_manager.h"
+#include "kafka/server/group_metadata_migration.h"
 #include "kafka/server/group_router.h"
 #include "kafka/server/protocol.h"
 #include "kafka/server/queue_depth_monitor.h"
@@ -1078,7 +1079,7 @@ application::set_proxy_client_config(ss::sstring name, std::any val) {
 
 void application::start(::stop_signal& app_signal) {
     if (_redpanda_enabled) {
-        start_redpanda();
+        start_redpanda(app_signal);
     }
 
     if (_proxy_config) {
@@ -1107,7 +1108,7 @@ void application::start(::stop_signal& app_signal) {
     syschecks::systemd_notify_ready().get();
 }
 
-void application::start_redpanda() {
+void application::start_redpanda(::stop_signal& app_signal) {
     syschecks::systemd_message("Staring storage services").get();
     // single instance
     storage_node.invoke_on_all(&storage::node_api::start).get0();
@@ -1137,6 +1138,12 @@ void application::start_redpanda() {
      *
      * NOTE controller has to be stopped only after it was started
      */
+    auto group_migration = ss::make_lw_shared<kafka::group_metadata_migration>(
+      *controller, group_router);
+
+    _deferred.emplace_back(
+      [group_migration] { group_migration->await().get(); });
+
     _deferred.emplace_back([this] { controller->shutdown_input().get(); });
     // FIXME: in first patch explain why this is started after the
     // controller so the broker set will be available. Then next patch fix.
@@ -1228,6 +1235,8 @@ void application::start_redpanda() {
     _archival_upload_controller
       .invoke_on_all(&archival::upload_controller::start)
       .get();
+
+    group_migration->start(app_signal.abort_source()).get();
 }
 
 /**
