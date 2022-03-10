@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 from ducktape.mark.resource import cluster
+from ducktape.mark import ignore
 from ducktape.utils.util import wait_until
 from ducktape.cluster.cluster_spec import ClusterSpec
 
@@ -90,6 +91,7 @@ class ConnectionRateLimitTest(RedpandaTest):
 
         wait_until(consumed, timeout_sec=180, backoff_sec=3)
 
+    @ignore  # https://github.com/redpanda-data/redpanda/issues/3975
     @cluster(num_nodes=8)
     def connection_rate_test(self):
         self._producer.start(clean=False)
