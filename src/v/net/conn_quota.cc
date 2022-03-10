@@ -30,8 +30,10 @@ conn_quota::conn_quota(conn_quota::config_fn cfg_f) noexcept
     if (ss::this_shard_id() == total_shard) {
         if (_cfg.max_connections()) {
             // Initialize state for enforcement of global connection count
-            total_home.max = _cfg.max_connections().value();
-            total_home.available = total_home.max;
+            total_home = ss::make_lw_shared<home_allowance>(
+              _cfg.max_connections().value(), _cfg.max_connections().value());
+        } else {
+            total_home = ss::make_lw_shared<home_allowance>(0, 0);
         }
     }
 
@@ -42,9 +44,9 @@ conn_quota::conn_quota(conn_quota::config_fn cfg_f) noexcept
                   rpc::rpclog.info,
                   "Connection count limit updated to {}",
                   _cfg.max_connections().value());
-                update_limit({}, total_home, _cfg.max_connections().value());
+                update_limit({}, *total_home, _cfg.max_connections().value());
             } else {
-                total_home = home_allowance{};
+                total_home = ss::make_lw_shared<home_allowance>(0, 0);
                 vlog(rpc::rpclog.info, "Connection count limit disabled");
             }
         } else {
@@ -74,7 +76,7 @@ conn_quota::conn_quota(conn_quota::config_fn cfg_f) noexcept
             }
 
             for (auto& i : ip_home) {
-                update_limit(i.first, i.second, new_limit);
+                update_limit(i.first, *(i.second), new_limit);
             }
         }
     });
@@ -195,13 +197,13 @@ void conn_quota::update_limit(
     // to the limit.
     if (was_dirty_decrease) {
         ssx::spawn_with_gate(_gate, [this, addr]() {
-            auto& allowance = get_home_allowance(addr);
+            auto allowance = get_home_allowance(addr);
             return reclaim_to(allowance, addr, true);
         });
     }
 }
 
-conn_quota::home_allowance&
+ss::lw_shared_ptr<conn_quota::home_allowance>
 conn_quota::get_home_allowance(ss::net::inet_address addr) {
     assert_on_home(addr);
 
@@ -214,9 +216,9 @@ conn_quota::get_home_allowance(ss::net::inet_address addr) {
         } else {
             auto [iter, created] = ip_home.insert(std::make_pair(
               addr,
-              home_allowance{
-                .max = _cfg.max_connections_per_ip().value(),
-                .available = _cfg.max_connections_per_ip().value()}));
+              ss::make_lw_shared<home_allowance>(
+                _cfg.max_connections_per_ip().value(),
+                _cfg.max_connections_per_ip().value())));
             return iter->second;
         }
     }
@@ -244,18 +246,18 @@ conn_quota::get_remote_allowance(ss::net::inet_address addr) {
  * that we can claw back.
  */
 ss::future<> conn_quota::reclaim_to(
-  conn_quota::home_allowance& allowance,
+  ss::lw_shared_ptr<conn_quota::home_allowance> allowance,
   ss::net::inet_address addr,
   bool one_time) {
-    auto locked = allowance.reclaim_lock.get_units();
-    if (allowance.reclaim) {
+    auto locked = allowance->reclaim_lock.get_units();
+    if (allowance->reclaim) {
         // We are already in reclaim mode: remote allowances will
         // not be holding any units belong to us, so don't waste
         // time looking.
         co_return;
     }
 
-    allowance.reclaim = true;
+    allowance->reclaim = true;
     uint32_t total_released = co_await container().map_reduce0(
       [addr, one_time, home = ss::this_shard_id()](conn_quota& cq) -> uint32_t {
           if (home == ss::this_shard_id()) {
@@ -267,8 +269,8 @@ ss::future<> conn_quota::reclaim_to(
       0,
       std::plus<uint32_t>());
 
-    allowance.available = std::min(
-      allowance.max, allowance.available + total_released);
+    allowance->available = std::min(
+      allowance->max, allowance->available + total_released);
 }
 
 /**
@@ -318,11 +320,11 @@ void conn_quota::cancel_reclaim_from(ss::net::inet_address addr) {
 ss::future<bool> conn_quota::home_get_units(ss::net::inet_address addr) {
     assert_on_home(addr);
 
-    auto& allowance = get_home_allowance(addr);
+    auto allowance = get_home_allowance(addr);
     vlog(rpc::rpclog.trace, "home_get_units({}) allowance={}", addr, allowance);
 
-    bool result = try_get_units(allowance);
-    if (result || allowance.reclaim) {
+    bool result = try_get_units(*allowance);
+    if (result || allowance->reclaim) {
         // If we got a token, or we didn't and are already in
         // reclaim mode, this is the final answer
         vlog(rpc::rpclog.trace, "home_get_units: fast path got={}", result);
@@ -334,7 +336,7 @@ ss::future<bool> conn_quota::home_get_units(ss::net::inet_address addr) {
 
     // This can still fail if there were no reclaimable units, but
     // we did our best.
-    result = try_get_units(allowance);
+    result = try_get_units(*allowance);
     vlog(
       rpc::rpclog.trace, "home_get_units: slow (reclaim) path got={}", result);
     co_return result;
@@ -367,23 +369,30 @@ bool conn_quota::should_leave_reclaim(home_allowance& allowance) {
  * Broadcast (in the background) to all other shards that they
  * may clear the reclaim flag.
  */
-void conn_quota::cancel_reclaim_to(ss::net::inet_address addr) {
+void conn_quota::cancel_reclaim_to(
+  ss::net::inet_address addr, ss::lw_shared_ptr<home_allowance> allowance) {
     assert_on_home(addr);
 
     vlog(rpc::rpclog.trace, "cancel_reclaim_to({})", addr);
 
-    // Guaranteed to have units because of precheck in
-    // should_leave_reclaim
-    auto& allowance = get_home_allowance(addr);
-    auto units = allowance.reclaim_lock.try_get_units().value();
-    allowance.reclaim = false;
-
-    ssx::spawn_with_gate(_gate, [this, addr, units = std::move(units)] {
-        return container().invoke_on_others(
-          [addr](conn_quota& cq) -> ss::future<> {
-              cq.cancel_reclaim_from(addr);
-              return ss::now();
-          });
+    ssx::spawn_with_gate(_gate, [this, allowance = std::move(allowance), addr] {
+        // Re-check conditions are still suitable.
+        if (should_leave_reclaim(*allowance)) {
+            // Guaranteed to have units because of precheck in
+            // should_leave_reclaim
+            auto units = allowance->reclaim_lock.try_get_units().value();
+            allowance->reclaim = false;
+            return container()
+              .invoke_on_others([addr](conn_quota& cq) -> ss::future<> {
+                  cq.cancel_reclaim_from(addr);
+                  return ss::now();
+              })
+              .finally([u = std::move(units)] {})
+              // Keep allowance alive until after units are dropped
+              .finally([allowance] {});
+        } else {
+            return ss::now();
+        }
     });
 }
 
@@ -393,10 +402,10 @@ void conn_quota::do_put(ss::net::inet_address addr) {
     auto home_shard = addr_to_shard(addr);
     if (home_shard == ss::this_shard_id()) {
         vlog(rpc::rpclog.trace, "do_put: release directly to home");
-        auto& allowance = get_home_allowance(addr);
-        allowance.put();
-        if (should_leave_reclaim(allowance)) {
-            cancel_reclaim_to(addr);
+        auto allowance = get_home_allowance(addr);
+        allowance->put();
+        if (should_leave_reclaim(*allowance)) {
+            cancel_reclaim_to(addr, allowance);
         }
     } else {
         auto& allowance = get_remote_allowance(addr);
@@ -417,9 +426,10 @@ void conn_quota::do_put(ss::net::inet_address addr) {
 bool conn_quota::test_only_is_in_reclaim(ss::net::inet_address addr) const {
     auto home_shard = addr_to_shard(addr);
     if (home_shard == ss::this_shard_id()) {
-        if (addr == ss::net::inet_address{} || ip_home.contains(addr)) {
-            auto& allowance = get_home_allowance(addr);
-            return allowance.reclaim;
+        if (addr == ss::net::inet_address{}) {
+            return total_home->reclaim;
+        } else if (ip_home.contains(addr)) {
+            return ip_home.find(addr)->second->reclaim;
         } else {
             return false;
         }

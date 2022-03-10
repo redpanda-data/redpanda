@@ -17,7 +17,7 @@
 #include "utils/mutex.h"
 #include "vassert.h"
 
-#include <absl/container/node_hash_map.h>
+#include <absl/container/flat_hash_map.h>
 #include <absl/hash/hash.h>
 
 #include <stdint.h>
@@ -104,6 +104,9 @@ private:
      * by another core (i.e. in a remote_allowance::borrowed)
      */
     struct home_allowance {
+        home_allowance(uint32_t m, uint32_t a)
+          : max(m)
+          , available(a) {}
         uint32_t max{0};
         uint32_t available{0};
 
@@ -160,7 +163,8 @@ private:
     // Which shard holds home_allowance for this address?
     ss::shard_id addr_to_shard(ss::net::inet_address) const;
 
-    void assert_on_home([[maybe_unused]] ss::net::inet_address const& addr) {
+    void
+    assert_on_home([[maybe_unused]] ss::net::inet_address const& addr) const {
 #ifndef NDEBUG
         vassert(
           conn_quota::addr_to_shard(addr) == ss::this_shard_id(),
@@ -178,30 +182,42 @@ private:
     bool try_get_units(home_allowance& allowance);
 
     // Reclaim logic
-    ss::future<>
-    reclaim_to(home_allowance& allowance, ss::net::inet_address, bool one_time);
+    ss::future<> reclaim_to(
+      ss::lw_shared_ptr<home_allowance> allowance,
+      ss::net::inet_address,
+      bool one_time);
     uint32_t reclaim_from(ss::net::inet_address, bool one_time);
-    void cancel_reclaim_to(ss::net::inet_address);
+    void cancel_reclaim_to(
+      ss::net::inet_address, ss::lw_shared_ptr<home_allowance>);
     void cancel_reclaim_from(ss::net::inet_address);
     bool should_leave_reclaim(home_allowance& allowance);
 
-    home_allowance& get_home_allowance(ss::net::inet_address);
-    const home_allowance& get_home_allowance(ss::net::inet_address addr) const {
-        return const_cast<conn_quota&>(*this).get_home_allowance(addr);
-    };
+    ss::lw_shared_ptr<home_allowance> get_home_allowance(ss::net::inet_address);
     remote_allowance& get_remote_allowance(ss::net::inet_address);
     const remote_allowance&
     get_remote_allowance(ss::net::inet_address addr) const {
         return const_cast<conn_quota&>(*this).get_remote_allowance(addr);
     };
 
+    /**
+     * A note on types:
+     * - the home_allowance instances in the `ip_home` map need to
+     *   be refcounted to enable safely holding the encapsulated mutex
+     *   across scheduling points, where the entry could get removed
+     *   from ip_home in the background.
+     * - total_home does not have this problem, but it's wrapped in
+     *   a smart pointer just to conform to the common get_home_allowance
+     *   interface.
+     */
+
     // Allowance state for total connection count
-    home_allowance total_home;     // Valid on shard 0
-    remote_allowance total_remote; // Valid on shard !=0
+    ss::lw_shared_ptr<home_allowance> total_home; // Valid on shard 0
+    remote_allowance total_remote;                // Valid on shard !=0
 
     // Allowance state for each client IP.
-    absl::node_hash_map<inet_address_key, home_allowance> ip_home;
-    absl::node_hash_map<inet_address_key, remote_allowance> ip_remote;
+    absl::flat_hash_map<inet_address_key, ss::lw_shared_ptr<home_allowance>>
+      ip_home;
+    absl::flat_hash_map<inet_address_key, remote_allowance> ip_remote;
 
     // Apply a configuration change
     void
