@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "cluster/feature_table.h"
 #include "cluster/fwd.h"
 #include "cluster/shard_table.h"
 #include "kafka/protocol/describe_groups.h"
@@ -110,14 +111,16 @@ public:
       ss::sharded<group_manager>& consumer_offsets_gr_manager,
       ss::sharded<cluster::shard_table>& shards,
       ss::sharded<coordinator_ntp_mapper>& coordinators,
-      ss::sharded<coordinator_ntp_mapper>& consumer_offsets_coordinators)
+      ss::sharded<coordinator_ntp_mapper>& consumer_offsets_coordinators,
+      ss::sharded<cluster::feature_table>& feature_table)
       : _sg(sched_group)
       , _ssg(smp_group)
       , _group_manager(gr_manager)
       , _consumer_offsets_group_manager(consumer_offsets_gr_manager)
       , _shards(shards)
       , _coordinators(coordinators)
-      , _consumer_offsets_coordinators(consumer_offsets_coordinators) {}
+      , _consumer_offsets_coordinators(consumer_offsets_coordinators)
+      , _feature_table(feature_table) {}
 
     auto join_group(join_group_request&& request) {
         return route(std::move(request), &group_manager::join_group);
@@ -263,10 +266,6 @@ public:
 
     void enable() { _disabled = false; }
 
-    void set_use_consumer_offsets_topic(bool value) {
-        _use_consumer_offsets_topic = value;
-    }
-
     ss::sharded<group_manager>& get_group_manager() {
         if (use_consumer_offsets_topic()) {
             return _consumer_offsets_group_manager;
@@ -287,7 +286,12 @@ private:
         }
         return std::nullopt;
     }
-    bool use_consumer_offsets_topic() { return _use_consumer_offsets_topic; }
+
+    bool use_consumer_offsets_topic() {
+        return _feature_table.local().is_active(
+          cluster::feature::consumer_offsets);
+    }
+
     ss::future<std::vector<deletable_group_result>> route_delete_groups(
       ss::shard_id, std::vector<std::pair<model::ntp, group_id>>);
 
@@ -301,7 +305,7 @@ private:
     ss::sharded<cluster::shard_table>& _shards;
     ss::sharded<coordinator_ntp_mapper>& _coordinators;
     ss::sharded<coordinator_ntp_mapper>& _consumer_offsets_coordinators;
-    bool _use_consumer_offsets_topic = true;
+    ss::sharded<cluster::feature_table>& _feature_table;
     bool _disabled = false;
 };
 

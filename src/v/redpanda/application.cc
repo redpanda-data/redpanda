@@ -833,9 +833,9 @@ void application::wire_up_redpanda_services() {
       std::ref(_co_group_manager),
       std::ref(shard_table),
       std::ref(coordinator_ntp_mapper),
-      std::ref(co_coordinator_ntp_mapper))
+      std::ref(co_coordinator_ntp_mapper),
+      std::ref(controller->get_feature_table()))
       .get();
-
     if (coproc_enabled()) {
         syschecks::systemd_message("Creating coproc::api").get();
         construct_single_service(
@@ -1256,18 +1256,6 @@ void application::start_kafka(::stop_signal& app_signal) {
           .depth_update_freq
           = config::shard_local_cfg().kafka_qdc_depth_update_ms(),
         };
-    }
-    /**
-     * for now disable using `__consumer_offsets` topic if group topic is
-     * present
-     */
-    if (controller->get_topics_state().local().contains(
-          model::kafka_group_nt, model::partition_id{0})) {
-        group_router
-          .invoke_on_all([](kafka::group_router& router) {
-              router.set_use_consumer_offsets_topic(false);
-          })
-          .get();
     }
     _kafka_server
       .invoke_on_all([this, qdc_config](net::server& s) {
