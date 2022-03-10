@@ -100,6 +100,8 @@ public:
 
     group_metadata_value& get_metadata() { return _metadata; }
 
+    const group_metadata_value& get_metadata() const { return _metadata; }
+
 private:
     absl::node_hash_map<model::topic_partition, logged_metadata> _offsets;
     absl::node_hash_map<model::producer_id, group::prepared_tx> _prepared_txs;
