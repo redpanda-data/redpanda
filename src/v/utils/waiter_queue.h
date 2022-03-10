@@ -11,8 +11,11 @@
 
 #pragma once
 
-#include "seastar/core/abort_source.hh"
-#include "seastar/core/weak_ptr.hh"
+#include "seastarx.h"
+
+#include <seastar/core/abort_source.hh>
+#include <seastar/core/future.hh>
+#include <seastar/core/weak_ptr.hh>
 
 /**
  * Generic 'list of waiters' helper, where a waiter is waiting for a particular
@@ -41,14 +44,25 @@ class waiter_queue {
     std::vector<std::unique_ptr<wait_item>> _items;
 
 public:
+    ~waiter_queue() {
+        for (auto& i : _items) {
+            i->p.set_exception(ss::abort_requested_exception());
+        }
+        _items.clear();
+    }
+
     ss::future<> await(T value, ss::abort_source& as) {
         auto item = std::make_unique<wait_item>(value);
         auto fut = item->p.get_future();
 
         auto sub_opt = as.subscribe(
-          [item_ptr = item->weak_from_this()]() noexcept {
+          [this, item_ptr = item->weak_from_this()]() noexcept {
               if (item_ptr) {
                   item_ptr->p.set_exception(ss::abort_requested_exception());
+                  std::erase_if(
+                    _items, [item_ptr](const std::unique_ptr<wait_item>& it) {
+                        return it.get() == item_ptr.get();
+                    });
               }
           });
 

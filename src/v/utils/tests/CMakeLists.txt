@@ -11,6 +11,7 @@ rp_test(
     expiring_promise_test.cc
     retry_chain_node_test.cc
     input_stream_fanout_test.cc
+    waiter_queue_test.cc
   LIBRARIES v::seastar_testing_main v::utils v::bytes
   ARGS "-- -c 1"
   LABELS utils
