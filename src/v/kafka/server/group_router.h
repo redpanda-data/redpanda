@@ -262,10 +262,18 @@ public:
     void disable() { _disabled = true; }
 
     void enable() { _disabled = false; }
-    
+
     void set_use_consumer_offsets_topic(bool value) {
         _use_consumer_offsets_topic = value;
     }
+
+    ss::sharded<group_manager>& get_group_manager() {
+        if (use_consumer_offsets_topic()) {
+            return _consumer_offsets_group_manager;
+        }
+        return _group_manager;
+    }
+
 private:
     using sharded_groups = absl::
       node_hash_map<ss::shard_id, std::vector<std::pair<model::ntp, group_id>>>;
@@ -279,14 +287,6 @@ private:
         }
         return std::nullopt;
     }
-
-    ss::sharded<group_manager>& get_group_manager() {
-        if (use_consumer_offsets_topic()) {
-            return _consumer_offsets_group_manager;
-        }
-        return _group_manager;
-    }
-
     bool use_consumer_offsets_topic() { return _use_consumer_offsets_topic; }
     ss::future<std::vector<deletable_group_result>> route_delete_groups(
       ss::shard_id, std::vector<std::pair<model::ntp, group_id>>);
