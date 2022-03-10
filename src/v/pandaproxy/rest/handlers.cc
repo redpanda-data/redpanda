@@ -50,6 +50,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <iterator>
 #include <system_error>
 
 namespace ppj = pandaproxy::json;
@@ -122,14 +123,11 @@ get_topics_names(server::request_t rq, server::reply_t rp) {
               kafka::metadata_request::api_type::response_type res) mutable {
           std::vector<model::topic_view> names;
           names.reserve(res.data.topics.size());
-
-          std::transform(
-            res.data.topics.begin(),
-            res.data.topics.end(),
-            std::back_inserter(names),
-            [](const kafka::metadata_response::topic& e) {
-                return model::topic_view(e.name);
-            });
+          for (auto& topic : res.data.topics) {
+              if (!topic.is_internal) {
+                  names.emplace_back(topic.name);
+              }
+          }
 
           auto json_rslt = ppj::rjson_serialize(names);
           rp.rep->write_body("json", json_rslt);
