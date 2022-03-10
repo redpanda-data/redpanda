@@ -96,6 +96,13 @@ public:
 
     ss::sharded<drain_manager>& get_drain_manager() { return _drain_manager; }
 
+    ss::sharded<partition_manager>& get_partition_manager() {
+        return _partition_manager;
+    }
+
+    ss::sharded<shard_table>& get_shard_table() { return _shard_table; }
+
+    ss::sharded<ss::abort_source>& get_abort_source() { return _as; }
     ss::future<> wire_up();
 
     ss::future<> start();
