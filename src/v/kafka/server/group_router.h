@@ -55,7 +55,7 @@ class group_router final {
         using resp_type = typename return_type::value_type;
 
         auto m = shard_for(r.data.group_id);
-        if (!m) {
+        if (!m || _disabled) {
             return ss::make_ready_future<resp_type>(
               resp_type(r, error_code::not_coordinator));
         }
@@ -81,7 +81,7 @@ class group_router final {
         using resp_type = typename return_type::value_type;
 
         auto m = shard_for(r.group_id);
-        if (!m) {
+        if (!m || _disabled) {
             resp_type reply;
             // route_tx routes internal intra cluster so it uses
             // cluster::tx_errc instead of kafka::error_code
@@ -137,7 +137,7 @@ public:
 
     group::offset_commit_stages offset_commit(offset_commit_request&& request) {
         auto m = shard_for(request.data.group_id);
-        if (!m) {
+        if (!m || _disabled) {
             return group::offset_commit_stages(
               offset_commit_response(request, error_code::not_coordinator));
         }
@@ -259,6 +259,10 @@ public:
         return _coordinators;
     }
 
+    void disable() { _disabled = true; }
+
+    void enable() { _disabled = false; }
+    
     void set_use_consumer_offsets_topic(bool value) {
         _use_consumer_offsets_topic = value;
     }
@@ -298,6 +302,7 @@ private:
     ss::sharded<coordinator_ntp_mapper>& _coordinators;
     ss::sharded<coordinator_ntp_mapper>& _consumer_offsets_coordinators;
     bool _use_consumer_offsets_topic = true;
+    bool _disabled = false;
 };
 
 } // namespace kafka

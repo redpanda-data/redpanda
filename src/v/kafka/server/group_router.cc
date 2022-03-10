@@ -51,6 +51,14 @@ group_router::delete_groups(std::vector<group_id> groups) {
     // partition groups by owner shard
     sharded_groups groups_by_shard;
     for (auto& group : groups) {
+        if (unlikely(_disabled)) {
+            results.push_back(deletable_group_result{
+              .group_id = std::move(group),
+              .error_code = error_code::not_coordinator,
+            });
+            continue;
+        }
+
         if (auto m = shard_for(group); m) {
             groups_by_shard[m->second].emplace_back(
               std::make_pair(std::move(m->first), std::move(group)));
