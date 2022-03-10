@@ -43,6 +43,7 @@ members_manager::members_manager(
   ss::sharded<rpc::connection_cache>& connections,
   ss::sharded<partition_allocator>& allocator,
   ss::sharded<storage::api>& storage,
+  ss::sharded<drain_manager>& drain_manager,
   ss::sharded<ss::abort_source>& as)
   : _seed_servers(config::node().seed_servers())
   , _self(make_self_broker(config::node()))
@@ -53,6 +54,7 @@ members_manager::members_manager(
   , _connection_cache(connections)
   , _allocator(allocator)
   , _storage(storage)
+  , _drain_manager(drain_manager)
   , _as(as)
   , _rpc_tls_config(config::node().rpc_server_tls())
   , _update_queue(max_updates_queue_size) {

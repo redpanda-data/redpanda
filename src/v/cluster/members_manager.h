@@ -61,6 +61,7 @@ public:
       ss::sharded<rpc::connection_cache>&,
       ss::sharded<partition_allocator>&,
       ss::sharded<storage::api>&,
+      ss::sharded<drain_manager>&,
       ss::sharded<ss::abort_source>&);
 
     ss::future<> start();
@@ -127,6 +128,7 @@ private:
     ss::sharded<rpc::connection_cache>& _connection_cache;
     ss::sharded<partition_allocator>& _allocator;
     ss::sharded<storage::api>& _storage;
+    ss::sharded<drain_manager>& _drain_manager;
     ss::sharded<ss::abort_source>& _as;
     config::tls_config _rpc_tls_config;
     ss::gate _gate;

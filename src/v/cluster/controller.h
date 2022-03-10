@@ -14,6 +14,7 @@
 #include "cluster/config_frontend.h"
 #include "cluster/config_manager.h"
 #include "cluster/controller_stm.h"
+#include "cluster/drain_manager.h"
 #include "cluster/fwd.h"
 #include "cluster/health_manager.h"
 #include "cluster/health_monitor_frontend.h"
@@ -93,6 +94,8 @@ public:
     }
     ss::sharded<feature_table>& get_feature_table() { return _feature_table; }
 
+    ss::sharded<drain_manager>& get_drain_manager() { return _drain_manager; }
+
     ss::future<> wire_up();
 
     ss::future<> start();
@@ -109,6 +112,7 @@ private:
     ss::sharded<members_table> _members_table;             // instance per core
     ss::sharded<partition_leaders_table>
       _partition_leaders;                            // instance per core
+    ss::sharded<drain_manager> _drain_manager;       // instance per core
     ss::sharded<members_manager> _members_manager;   // single instance
     ss::sharded<topics_frontend> _tp_frontend;       // instance per core
     ss::sharded<controller_backend> _backend;        // instance per core
