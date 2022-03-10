@@ -19,33 +19,24 @@
 #include "kafka/protocol/schemata/describe_groups_response.h"
 #include "kafka/protocol/sync_group.h"
 #include "kafka/server/group_manager.h"
+#include "kafka/server/group_metadata.h"
 #include "kafka/server/logger.h"
+#include "kafka/types.h"
 #include "likely.h"
+#include "model/fundamental.h"
 #include "raft/errc.h"
+#include "storage/record_batch_builder.h"
 #include "utils/to_string.h"
 #include "vassert.h"
 
 #include <seastar/core/coroutine.hh>
-#include <seastar/core/future.hh>
-#include <seastar/core/print.hh>
-#include <seastar/core/sstring.hh>
 
 #include <absl/container/flat_hash_set.h>
 #include <boost/uuid/random_generator.hpp>
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_io.hpp>
-#include <fmt/core.h>
 #include <fmt/ostream.h>
 #include <fmt/ranges.h>
-
-#include <algorithm>
-#include <chrono>
-#include <iterator>
-#include <ostream>
-#include <set>
-#include <stdexcept>
-#include <streambuf>
-#include <utility>
 
 namespace kafka {
 
@@ -57,10 +48,11 @@ group::group(
   kafka::group_id id,
   group_state s,
   config::configuration& conf,
-  ss::lw_shared_ptr<cluster::partition> partition)
+  ss::lw_shared_ptr<cluster::partition> partition,
+  group_metadata_serializer serializer)
   : _id(std::move(id))
   , _state(s)
-  , _state_timestamp(clock_type::now())
+  , _state_timestamp(model::timestamp::now())
   , _generation(0)
   , _num_members_joining(0)
   , _new_member_added(false)
@@ -69,13 +61,15 @@ group::group(
   , _recovery_policy(
       config::shard_local_cfg().rm_violation_recovery_policy.value())
   , _ctxlog(klog, *this)
-  , _ctx_txlog(cluster::txlog, *this) {}
+  , _ctx_txlog(cluster::txlog, *this)
+  , _md_serializer(std::move(serializer)) {}
 
 group::group(
   kafka::group_id id,
-  group_log_group_metadata& md,
+  group_metadata_value& md,
   config::configuration& conf,
-  ss::lw_shared_ptr<cluster::partition> partition)
+  ss::lw_shared_ptr<cluster::partition> partition,
+  group_metadata_serializer serializer)
   : _id(std::move(id))
   , _num_members_joining(0)
   , _new_member_added(false)
@@ -84,17 +78,23 @@ group::group(
   , _recovery_policy(
       config::shard_local_cfg().rm_violation_recovery_policy.value())
   , _ctxlog(klog, *this)
-  , _ctx_txlog(cluster::txlog, *this) {
+  , _ctx_txlog(cluster::txlog, *this)
+  , _md_serializer(std::move(serializer)) {
     _state = md.members.empty() ? group_state::empty : group_state::stable;
     _generation = md.generation;
     _protocol_type = md.protocol_type;
     _protocol = md.protocol;
     _leader = md.leader;
-    _state_timestamp = clock_type::time_point(
-      std::chrono::milliseconds(md.state_timestamp));
-
+    _state_timestamp = md.state_timestamp;
     for (auto& m : md.members) {
-        auto member = ss::make_lw_shared<group_member>(std::move(m), id);
+        auto member = ss::make_lw_shared<group_member>(
+          std::move(m),
+          id,
+          _protocol_type.value(),
+          std::vector<kafka::member_protocol>{member_protocol{
+            .name = _protocol.value_or(protocol_name("")),
+            .metadata = iobuf_to_bytes(m.subscription),
+          }});
         vlog(_ctxlog.trace, "Initializing group with member {}", member);
         add_member_no_join(member);
     }
@@ -149,7 +149,7 @@ group_state group::set_state(group_state s) {
       _state,
       s);
     vlog(_ctxlog.trace, "Changing state from {} to {}", _state, s);
-    _state_timestamp = clock_type::now();
+    _state_timestamp = model::timestamp::now();
     return std::exchange(_state, s);
 }
 
@@ -1123,16 +1123,15 @@ group::handle_sync_group(sync_group_request&& r) {
 }
 
 model::record_batch group::checkpoint(const assignments_type& assignments) {
-    group_log_group_metadata gr;
+    group_metadata_key key;
+    key.group_id = _id;
+    group_metadata_value metadata;
 
-    gr.protocol_type = protocol_type().value_or(kafka::protocol_type(""));
-    gr.generation = generation();
-    gr.protocol = protocol();
-    gr.leader = leader();
-    auto state_timestamp = _state_timestamp.time_since_epoch();
-    gr.state_timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-                           state_timestamp)
-                           .count();
+    metadata.protocol_type = protocol_type().value_or(kafka::protocol_type(""));
+    metadata.generation = generation();
+    metadata.protocol = protocol();
+    metadata.leader = leader();
+    metadata.state_timestamp = _state_timestamp;
 
     for (const auto& it : _members) {
         auto& member = it.second;
@@ -1140,18 +1139,17 @@ model::record_batch group::checkpoint(const assignments_type& assignments) {
         // this is not coming from the member itself because the checkpoint
         // occurs right before the members go live and get their assignments.
         state.assignment = bytes_to_iobuf(assignments.at(member->id()));
-        gr.members.push_back(std::move(state));
+        state.subscription = bytes_to_iobuf(
+          it.second->get_protocol_metadata(_protocol.value()));
+        metadata.members.push_back(std::move(state));
     }
 
     cluster::simple_batch_builder builder(
       model::record_batch_type::raft_data, model::offset(0));
 
-    group_log_record_key key{
-      .record_type = group_log_record_key::type::group_metadata,
-      .key = reflection::to_iobuf(_id),
-    };
-
-    builder.add_kv(std::move(key), std::move(gr));
+    auto kv = _md_serializer.to_kv(
+      group_metadata_kv{.key = std::move(key), .value = std::move(metadata)});
+    builder.add_raw_kv(std::move(kv.key), std::move(kv.value));
 
     return std::move(builder).build();
 }
@@ -1799,20 +1797,19 @@ group::offset_commit_stages group::store_offsets(offset_commit_request&& r) {
 
     for (const auto& t : r.data.topics) {
         for (const auto& p : t.partitions) {
-            group_log_record_key key{
-              .record_type = group_log_record_key::type::offset_commit,
-              .key = reflection::to_iobuf(group_log_offset_key{
-                _id,
-                t.name,
-                p.partition_index,
-              }),
+            offset_metadata_key key{
+              .group_id = _id, .topic = t.name, .partition = p.partition_index};
+
+            offset_metadata_value value{
+              .offset = p.committed_offset,
+              .leader_epoch = p.committed_leader_epoch,
+              .metadata = p.committed_metadata.value_or(""),
+              .commit_timestamp = model::timestamp(p.commit_timestamp),
             };
-            group_log_offset_metadata val{
-              p.committed_offset,
-              p.committed_leader_epoch,
-              p.committed_metadata,
-            };
-            builder.add_kv(std::move(key), std::move(val));
+
+            auto kv = _md_serializer.to_kv(offset_metadata_kv{
+              .key = std::move(key), .value = std::move(value)});
+            builder.add_raw_kv(std::move(kv.key), std::move(kv.value));
 
             model::topic_partition tp(t.name, p.partition_index);
             offset_metadata md{
@@ -2126,6 +2123,33 @@ described_group group::describe() const {
     return desc;
 }
 
+namespace {
+void add_offset_tombstone_record(
+  const kafka::group_id& group,
+  const model::topic_partition& tp,
+  group_metadata_serializer& serializer,
+  storage::record_batch_builder& builder) {
+    offset_metadata_key key{
+      .group_id = group,
+      .topic = tp.topic,
+      .partition = tp.partition,
+    };
+    auto kv = serializer.to_kv(offset_metadata_kv{.key = std::move(key)});
+    builder.add_raw_kv(reflection::to_iobuf(std::move(kv.key)), std::nullopt);
+}
+
+void add_group_tombstone_record(
+  const kafka::group_id& group,
+  group_metadata_serializer& serializer,
+  storage::record_batch_builder& builder) {
+    group_metadata_key key{
+      .group_id = group,
+    };
+    auto kv = serializer.to_kv(group_metadata_kv{.key = std::move(key)});
+    builder.add_raw_kv(reflection::to_iobuf(std::move(kv.key)), std::nullopt);
+}
+} // namespace
+
 ss::future<error_code> group::remove() {
     switch (state()) {
     case group_state::dead:
@@ -2144,25 +2168,11 @@ ss::future<error_code> group::remove() {
       model::record_batch_type::raft_data, model::offset(0));
 
     for (auto& offset : _offsets) {
-        group_log_record_key key{
-          .record_type = group_log_record_key::type::offset_commit,
-          .key = reflection::to_iobuf(group_log_offset_key{
-            _id,
-            offset.first.topic,
-            offset.first.partition,
-          }),
-        };
-
-        builder.add_raw_kv(reflection::to_iobuf(std::move(key)), std::nullopt);
+        add_offset_tombstone_record(_id, offset.first, _md_serializer, builder);
     }
 
     // build group tombstone
-    group_log_record_key key{
-      .record_type = group_log_record_key::type::group_metadata,
-      .key = reflection::to_iobuf(_id),
-    };
-
-    builder.add_raw_kv(reflection::to_iobuf(std::move(key)), std::nullopt);
+    add_group_tombstone_record(_id, _md_serializer, builder);
 
     auto batch = std::move(builder).build();
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
@@ -2236,26 +2246,12 @@ group::remove_topic_partitions(const std::vector<model::topic_partition>& tps) {
     for (auto& offset : removed) {
         vlog(
           klog.trace, "Removing offset for group {} tp {}", _id, offset.first);
-
-        group_log_record_key key{
-          .record_type = group_log_record_key::type::offset_commit,
-          .key = reflection::to_iobuf(group_log_offset_key{
-            _id,
-            offset.first.topic,
-            offset.first.partition,
-          }),
-        };
-
-        builder.add_raw_kv(reflection::to_iobuf(std::move(key)), std::nullopt);
+        add_offset_tombstone_record(_id, offset.first, _md_serializer, builder);
     }
 
     // gc the group?
     if (in_state(group_state::dead) && generation() > 0) {
-        group_log_record_key key{
-          .record_type = group_log_record_key::type::group_metadata,
-          .key = reflection::to_iobuf(_id),
-        };
-        builder.add_raw_kv(reflection::to_iobuf(std::move(key)), std::nullopt);
+        add_group_tombstone_record(_id, _md_serializer, builder);
     }
 
     auto batch = std::move(builder).build();

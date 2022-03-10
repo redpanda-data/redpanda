@@ -23,6 +23,7 @@
 #include "kafka/protocol/sync_group.h"
 #include "kafka/protocol/txn_offset_commit.h"
 #include "kafka/server/group.h"
+#include "kafka/server/group_recovery_consumer.h"
 #include "kafka/server/group_stm.h"
 #include "kafka/server/member.h"
 #include "model/namespace.h"
@@ -38,8 +39,6 @@
 #include <cluster/partition_manager.h>
 
 namespace kafka {
-
-struct recovery_batch_consumer_state;
 
 /*
  * \brief Manages the Kafka group lifecycle.
@@ -220,7 +219,7 @@ private:
     ss::future<> recover_partition(
       model::term_id,
       ss::lw_shared_ptr<attached_partition>,
-      recovery_batch_consumer_state);
+      group_recovery_consumer_state);
 
     ss::future<> gc_partition_state(ss::lw_shared_ptr<attached_partition>);
 
@@ -249,181 +248,4 @@ private:
     model::broker _self;
 };
 
-template<typename T>
-struct group_tx_cmd {
-    model::producer_identity pid;
-    T cmd;
-};
-
-/**
- * the key type for group membership log records.
- *
- * the opaque key field is decoded based on the actual type.
- *
- * TODO: The `noop` type indicates a control structure used to synchronize raft
- * state in a transition to leader state so that a consistent read is made. this
- * is a temporary work-around until we fully address consistency semantics in
- * raft.
- */
-struct group_log_record_key {
-    enum class type : int8_t { group_metadata, offset_commit, noop };
-
-    type record_type;
-    iobuf key;
-};
-
-/*
- * This batch consumer is used during partition recovery to read, index, and
- * deduplicate both group and commit metadata snapshots.
- */
-struct recovery_batch_consumer_state {
-    absl::node_hash_map<kafka::group_id, group_stm> groups;
-};
-
-struct recovery_batch_consumer {
-    explicit recovery_batch_consumer(ss::abort_source& as)
-      : as(as) {}
-
-    ss::future<ss::stop_iteration> operator()(model::record_batch batch);
-
-    ss::future<> handle_record(model::record);
-    ss::future<> handle_group_metadata(iobuf, std::optional<iobuf>);
-    ss::future<> handle_offset_metadata(iobuf, std::optional<iobuf>);
-
-    recovery_batch_consumer_state end_of_stream() { return std::move(st); }
-
-    recovery_batch_consumer_state st;
-    model::offset batch_base_offset;
-
-    ss::abort_source& as;
-};
-
 } // namespace kafka
-
-namespace reflection {
-
-/*
- * new code + new version: will see extra bytes for client host/id
- * new code + old version: will observe no extra bytes
- * old code + old/new version: will not read new appended fields
- *
- * on the wire we write out a version that is compatible with old code and then
- * append the additional client host/id information for each member. then when
- * deserializing we process the appended data by updating the old versions from
- * disk in the new in-memory structs which contain the extra member metadata.
- * old code skips over the appended data.
- */
-template<>
-struct adl<kafka::group_log_group_metadata> {
-    struct member_state_v0 {
-        kafka::member_id id;
-        std::chrono::milliseconds session_timeout;
-        std::chrono::milliseconds rebalance_timeout;
-        std::optional<kafka::group_instance_id> instance_id;
-        kafka::protocol_type protocol_type;
-        std::vector<kafka::member_protocol> protocols;
-        iobuf assignment;
-    };
-
-    struct group_log_group_metadata_v0 {
-        kafka::protocol_type protocol_type;
-        kafka::generation_id generation;
-        std::optional<kafka::protocol_name> protocol;
-        std::optional<kafka::member_id> leader;
-        int32_t state_timestamp;
-        std::vector<member_state_v0> members;
-    };
-
-    struct client_host_id {
-        kafka::client_id id;
-        kafka::client_host host;
-    };
-
-    void to(iobuf& out, kafka::group_log_group_metadata&& data) {
-        // create instance of old version of members
-        std::vector<member_state_v0> members_v0;
-        members_v0.reserve(data.members.size());
-        for (auto& member : data.members) {
-            members_v0.push_back(member_state_v0{
-              .id = std::move(member.id),
-              .session_timeout = member.session_timeout,
-              .rebalance_timeout = member.rebalance_timeout,
-              .instance_id = std::move(member.instance_id),
-              .protocol_type = std::move(member.protocol_type),
-              .protocols = std::move(member.protocols),
-              .assignment = std::move(member.assignment),
-            });
-        }
-
-        // create instance of old version of group metadata
-        group_log_group_metadata_v0 metadata_v0{
-          .protocol_type = std::move(data.protocol_type),
-          .generation = data.generation,
-          .protocol = std::move(data.protocol),
-          .leader = std::move(data.leader),
-          .state_timestamp = data.state_timestamp,
-          .members = std::move(members_v0),
-        };
-
-        // this puts a version on disk that older code can read
-        serialize(out, std::move(metadata_v0));
-
-        // now append the client host/id information for new code
-        std::vector<client_host_id> client_info;
-        client_info.reserve(data.members.size());
-        for (auto& member : data.members) {
-            client_info.push_back(client_host_id{
-              .id = std::move(member.client_id),
-              .host = std::move(member.client_host),
-            });
-        }
-        serialize(out, std::move(client_info));
-    }
-
-    kafka::group_log_group_metadata from(iobuf_parser& in) {
-        auto metadata_v0 = adl<group_log_group_metadata_v0>{}.from(in);
-
-        std::vector<client_host_id> client_info;
-        if (in.bytes_left()) {
-            client_info = adl<std::vector<client_host_id>>{}.from(in);
-            vassert(
-              client_info.size() == metadata_v0.members.size(),
-              "Expected client info size {} got {}",
-              metadata_v0.members.size(),
-              client_info.size());
-        }
-
-        std::vector<kafka::member_state> members_out;
-        members_out.reserve(metadata_v0.members.size());
-
-        for (auto& member : metadata_v0.members) {
-            members_out.push_back(kafka::member_state{
-              .id = std::move(member.id),
-              .session_timeout = member.session_timeout,
-              .rebalance_timeout = member.rebalance_timeout,
-              .instance_id = std::move(member.instance_id),
-              .protocol_type = std::move(member.protocol_type),
-              .protocols = std::move(member.protocols),
-              .assignment = std::move(member.assignment),
-            });
-        }
-
-        for (size_t i = 0; i < client_info.size(); i++) {
-            members_out[i].client_id = std::move(client_info[i].id);
-            members_out[i].client_host = std::move(client_info[i].host);
-        }
-
-        kafka::group_log_group_metadata metadata_out{
-          .protocol_type = std::move(metadata_v0.protocol_type),
-          .generation = metadata_v0.generation,
-          .protocol = std::move(metadata_v0.protocol),
-          .leader = std::move(metadata_v0.leader),
-          .state_timestamp = metadata_v0.state_timestamp,
-          .members = std::move(members_out),
-        };
-
-        return metadata_out;
-    }
-};
-
-} // namespace reflection

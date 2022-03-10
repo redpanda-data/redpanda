@@ -17,6 +17,7 @@
 #include "kafka/group_probe.h"
 #include "kafka/protocol/fwd.h"
 #include "kafka/protocol/offset_commit.h"
+#include "kafka/server/group_metadata.h"
 #include "kafka/server/logger.h"
 #include "kafka/server/member.h"
 #include "kafka/types.h"
@@ -42,7 +43,6 @@ struct configuration;
 }
 
 namespace kafka {
-
 struct group_log_group_metadata;
 
 /**
@@ -164,14 +164,16 @@ public:
       kafka::group_id id,
       group_state s,
       config::configuration& conf,
-      ss::lw_shared_ptr<cluster::partition> partition);
+      ss::lw_shared_ptr<cluster::partition> partition,
+      group_metadata_serializer);
 
     // constructor used when loading state from log
     group(
       kafka::group_id id,
-      group_log_group_metadata& md,
+      group_metadata_value& md,
       config::configuration& conf,
-      ss::lw_shared_ptr<cluster::partition> partition);
+      ss::lw_shared_ptr<cluster::partition> partition,
+      group_metadata_serializer);
 
     /// Get the group id.
     const kafka::group_id& id() const { return _id; }
@@ -619,7 +621,7 @@ private:
 
     kafka::group_id _id;
     group_state _state;
-    clock_type::time_point _state_timestamp;
+    model::timestamp _state_timestamp;
     kafka::generation_id _generation;
     protocol_support _supported_protocols;
     member_map _members;
@@ -640,6 +642,7 @@ private:
     model::violation_recovery_policy _recovery_policy;
     ctx_log _ctxlog;
     ctx_log _ctx_txlog;
+    group_metadata_serializer _md_serializer;
 
     absl::flat_hash_map<model::producer_id, ss::lw_shared_ptr<mutex>> _tx_locks;
     model::term_id _term;

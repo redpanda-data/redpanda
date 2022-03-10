@@ -59,6 +59,8 @@ v_cc_library(
     server/fetch_session_cache.cc
     server/replicated_partition.cc
     server/partition_proxy.cc
+    server/group_recovery_consumer.cc
+    server/group_metadata.cc
  DEPS
     Seastar::seastar
     v::bytes
