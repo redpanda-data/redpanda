@@ -25,9 +25,15 @@
 namespace {
 
 // In test we can get situation when one fiber succesfull go in
-// semaphore.wait(), but increase counter for next_second
+// semaphore.wait(), but increase counter on next second.
 void check_rate(int64_t rate, int64_t prev_diff, int64_t max_rate) {
     BOOST_CHECK(rate <= max_rate + prev_diff);
+}
+
+int64_t get_diff(int64_t rate, int64_t prev_diff, int64_t max_rate) {
+    // We should understand how much connections from current second we accept
+    auto accepted_connections = std::max(0l, rate - prev_diff);
+    return std::max(0l, max_rate - accepted_connections);
 }
 
 } // namespace
@@ -47,7 +53,7 @@ SEASTAR_THREAD_TEST_CASE(rate_test) {
     net::connection_rate connection_rate(info, gate);
 
     std::vector<ss::future<>> futures;
-    std::unordered_map<int64_t, int64_t> rate_counter;
+    std::vector<int64_t> rate_counter(max_wait_time_sec + 10, 0);
 
     auto start = ss::lowres_clock::now();
     while (true) {
@@ -83,17 +89,19 @@ SEASTAR_THREAD_TEST_CASE(rate_test) {
 
     ss::when_all(futures.begin(), futures.end()).get();
 
-    auto diff = 0;
-    for (const auto& [second, rate] : rate_counter) {
+    int64_t diff = 0;
+    for (auto second = 0; second < rate_counter.size(); ++second) {
+        auto rate = rate_counter[second];
+        std::cout << second << " " << rate << " " << diff << std::endl;
         // For zero second we have max_rate tokens, and will add new each
         // 1000ms/max_rate, so for seconds with max_rate tokens we can expect
         // max_rate * 2 connections
         if (second == 0) {
             check_rate(rate, diff, 2 * max_rate);
-            diff = 2 * max_rate - rate;
+            diff = get_diff(rate, diff, max_rate * 2);
         } else {
             check_rate(rate, diff, max_rate);
-            diff = max_rate - rate;
+            diff = std::max(0l, max_rate - rate);
         }
     }
 }
@@ -178,10 +186,10 @@ SEASTAR_THREAD_TEST_CASE(update_rate_test) {
             .count()
           == second) {
             check_rate(rate, diff, max_rate * 2);
-            diff = max_rate * 2 - rate;
+            diff = get_diff(rate, diff, max_rate * 2);
         } else {
             check_rate(rate, diff, max_rate);
-            diff = max_rate - rate;
+            diff = get_diff(rate, diff, max_rate);
         }
     }
 }
