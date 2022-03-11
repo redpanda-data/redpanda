@@ -27,18 +27,20 @@ class KafConsumer(BackgroundThreadService):
         self.done = False
         self.offset = dict()
         self._offset_for_read = offset_for_read
+        self._pid = None
 
     def _worker(self, _, node):
         self._stopping.clear()
         try:
             partition = None
-            cmd = "kaf consume -b %s -f --offset %s %s" % (
+            cmd = "echo $$ ; kaf consume -b %s -f --offset %s %s" % (
                 self._redpanda.brokers(), self._offset_for_read, self._topic)
             for line in node.account.ssh_capture(cmd):
+                if self._pid is None:
+                    self._pid = line.strip()
+
                 if self._stopping.is_set():
                     break
-
-                self.logger.debug(line.rstrip())
 
                 m = re.match("Partition:\s+(?P<partition>\d+)", line)
                 if m:
@@ -63,4 +65,8 @@ class KafConsumer(BackgroundThreadService):
 
     def stop_node(self, node):
         self._stopping.set()
-        node.account.kill_process("kaf", clean_shutdown=False)
+        if self._pid is not None:
+            self.logger.debug("Killing pid %s" % {self._pid})
+            node.account.signal(self._pid, 9, allow_fail=True)
+        else:
+            node.account.kill_process("kaf", clean_shutdown=False)
