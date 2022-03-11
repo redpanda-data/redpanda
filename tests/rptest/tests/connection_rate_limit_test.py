@@ -25,9 +25,10 @@ from rptest.services.kaf_consumer import KafConsumer
 
 class ConnectionRateLimitTest(RedpandaTest):
     MSG_SIZE = 1000000
-    PRODUCE_COUNT = 2100
-    READ_COUNT = 2000
+    PRODUCE_COUNT = 10
+    READ_COUNT = 10
     RANDOM_READ_PARALLEL = 2
+    MAX_RETRY_COUNT = 4
 
     topics = (TopicSpec(partition_count=1, replication_factor=1), )
 
@@ -69,43 +70,70 @@ class ConnectionRateLimitTest(RedpandaTest):
             f"Freeing verifier node {self._node_for_franz_go[0].name}")
         self.test_context.cluster.free_single(self._node_for_franz_go[0])
 
-    def read_data(self, consumers_count):
-        consumers = []
-        for i in range(consumers_count):
-            new_consumer = KafConsumer(self.test_context, self.redpanda,
-                                       self.topics[0], self.READ_COUNT,
-                                       "oldest")
-            consumers.append(new_consumer)
+    def start_consumer(self):
+        return KafConsumer(self.test_context, self.redpanda, self.topics[0],
+                           self.READ_COUNT, "oldest")
 
-        for consumer in consumers:
-            consumer.start()
+    def stop_consumer(self, consumer):
+        try:
+            consumer.stop()
+        except:
+            # Should ignore exception form kaf_consumer
+            pass
+        consumer.free()
+
+    def read_data(self, consumers_count):
+        consumers = dict()
+        for i in range(consumers_count):
+            consumers[i] = self.start_consumer()
+
+        start = time.time()
+
+        for i in range(consumers_count):
+            consumers[i].start()
 
         def consumed():
             need_finish = True
-            for consumer in consumers:
-                self.logger.debug(consumer.offset)
-                if (consumer.offset.get(0) is
-                        None) or consumer.offset[0] < self.READ_COUNT:
+            for i in range(consumers_count):
+                self.logger.debug(
+                    f"Offset for {i} consumer: {consumers[i].offset}")
+
+                if consumers[i].done is True:
+                    self.stop_consumer(consumers[i])
+                    self.logger.debug(f"Rerun consumer {i}")
+                    consumers[i] = self.start_consumer()
+                    consumers[i].start()
+
+                if (consumers[i].offset.get(0) is
+                        None) or consumers[i].offset[0] == 0:
                     need_finish = False
+
             return need_finish
 
-        wait_until(consumed, timeout_sec=180, backoff_sec=3)
+        wait_until(consumed, timeout_sec=190, backoff_sec=0.1)
 
-    @ignore  # https://github.com/redpanda-data/redpanda/issues/3975
-    @cluster(num_nodes=8)
+        finish = time.time()
+
+        for i in range(consumers_count):
+            self.stop_consumer(consumers[i])
+
+        return finish - start
+
+    def get_read_time(self, consumers_count):
+        deltas = list()
+
+        for i in range(10):
+            time = self.read_data(consumers_count)
+            deltas.append(time)
+
+        return sum(deltas) / len(deltas)
+
+    @cluster(num_nodes=6)
     def connection_rate_test(self):
         self._producer.start(clean=False)
         self._producer.wait()
 
-        start1 = time.time()
-        self.read_data(self.RANDOM_READ_PARALLEL)
-        finish1 = time.time()
-
-        start2 = time.time()
-        self.read_data(self.RANDOM_READ_PARALLEL * 2)
-        finish2 = time.time()
-
-        time1 = finish1 - start1
-        time2 = finish2 - start2
+        time1 = self.get_read_time(self.RANDOM_READ_PARALLEL)
+        time2 = self.get_read_time(self.RANDOM_READ_PARALLEL * 2)
 
         assert time2 >= time1 * 1.7
