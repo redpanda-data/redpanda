@@ -371,6 +371,8 @@ class RedpandaService(Service):
 
         self.config_file_lock = threading.Lock()
 
+        self._saved_executable = False
+
     def set_environment(self, environment: dict[str, str]):
         self._environment = environment
 
@@ -725,6 +727,7 @@ class RedpandaService(Service):
                         (node, "Redpanda process unexpectedly stopped"))
 
         if crashes:
+            self.save_executable()
             raise NodeCrash(crashes)
 
     def raise_on_bad_logs(self, allow_list=None):
@@ -793,7 +796,10 @@ class RedpandaService(Service):
         for node, lines in bad_lines.items():
             # LeakSanitizer type errors may include raw backtraces that the devloper
             # needs the binary to decode + investigate
-            if any(['Sanitizer' in l for l in lines]):
+            if any([
+                    re.findall("Sanitizer|[Aa]ssert|SEGV|Segmentation fault",
+                               l) for l in lines
+            ]):
                 self.save_executable()
                 break
 
@@ -1284,6 +1290,11 @@ class RedpandaService(Service):
         environments, the developer already has the binary.
         """
 
+        if self._saved_executable:
+            # Only ever do this once per test: the whole test runs with
+            # the same binaries.
+            return
+
         if os.environ.get('CI', None) == 'false':
             # We are on a developer workstation
             self.logger.info("Skipping saving executable, not in CI")
@@ -1306,4 +1317,5 @@ class RedpandaService(Service):
             self.logger.exception(
                 f"Error while compressing binary {binary} to {save_to}")
         else:
+            self._saved_executable = True
             self._context.log_collect['executable', self] = True
