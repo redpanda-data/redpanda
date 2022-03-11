@@ -100,7 +100,6 @@ jobs:
 
       - name: Install gon via HomeBrew for code signing and app notarization
         run: |
-          brew tap mitchellh/gon
           brew install mitchellh/gon/gon
 
       - name: Sign the mac binaries with Gon
