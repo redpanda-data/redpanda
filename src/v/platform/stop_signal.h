@@ -29,21 +29,21 @@ public:
         ss::engine().handle_signal(SIGTERM, [] {});
     }
     ss::future<> wait() {
-        return _cond.wait([this] { return _caught; });
+        return _cond.wait([this] { return _as.abort_requested(); });
     }
 
-    bool stopping() const { return _caught; }
+    bool stopping() const { return _as.abort_requested(); }
 
     ss::abort_source& abort_source() { return _as; };
 
 private:
     void signaled() {
-        _caught = true;
-        _as.request_abort();
+        if (!_as.abort_requested()) {
+            _as.request_abort();
+        }
         _cond.broadcast();
     }
 
-    bool _caught = false;
     ss::condition_variable _cond;
     ss::abort_source _as;
 };
