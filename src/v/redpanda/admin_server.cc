@@ -1677,6 +1677,11 @@ void admin_server::register_broker_routes() {
       ss::httpd::broker_json::start_broker_maintenance,
       [this](std::unique_ptr<ss::httpd::request> req)
         -> ss::future<ss::json::json_return_type> {
+          if (!_controller->get_feature_table().local().is_active(
+                cluster::feature::maintenance_mode)) {
+              throw ss::httpd::bad_request_exception(
+                "Maintenance mode feature not active (upgrade in progress?)");
+          }
           model::node_id id = parse_broker_id(*req);
           auto ec = co_await _controller->get_members_frontend()
                       .local()
@@ -1689,6 +1694,11 @@ void admin_server::register_broker_routes() {
       ss::httpd::broker_json::stop_broker_maintenance,
       [this](std::unique_ptr<ss::httpd::request> req)
         -> ss::future<ss::json::json_return_type> {
+          if (!_controller->get_feature_table().local().is_active(
+                cluster::feature::maintenance_mode)) {
+              throw ss::httpd::bad_request_exception(
+                "Maintenance mode feature not active (upgrade in progress?)");
+          }
           model::node_id id = parse_broker_id(*req);
           auto ec = co_await _controller->get_members_frontend()
                       .local()
@@ -1697,6 +1707,12 @@ void admin_server::register_broker_routes() {
           co_return ss::json::json_void();
       });
 
+    /*
+     * Unlike start|stop_broker_maintenace, the xxx_local_maintenance versions
+     * below operate on local state only and could be used to force a node out
+     * of maintenance mode if needed. they don't require the feature flag
+     * because the feature is available locally.
+     */
     register_route<superuser>(
       ss::httpd::broker_json::start_local_maintenance,
       [this](std::unique_ptr<ss::httpd::request> req)
