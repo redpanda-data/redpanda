@@ -239,3 +239,28 @@ FIXTURE_TEST(test_barrier_node_isolated, barrier_fixture) {
     f1.get();
     f2.get();
 }
+
+SEASTAR_THREAD_TEST_CASE(test_barrier_encoding) {
+    feature_barrier_request req{
+      .tag = feature_barrier_tag{"ohai"},
+      .peer = model::node_id{2},
+      .entered = true};
+    auto req2 = req;
+
+    iobuf req_io = reflection::to_iobuf(std::move(req2));
+    iobuf_parser req_parser(std::move(req_io));
+    auto req_decoded = reflection::adl<feature_barrier_request>{}.from(
+      req_parser);
+    BOOST_REQUIRE_EQUAL(req.tag, req_decoded.tag);
+    BOOST_REQUIRE_EQUAL(req.peer, req_decoded.peer);
+    BOOST_REQUIRE_EQUAL(req.entered, req_decoded.entered);
+
+    feature_barrier_response resp{.entered = true, .complete = true};
+
+    iobuf resp_io = reflection::to_iobuf(std::move(resp));
+    iobuf_parser resp_parser(std::move(resp_io));
+    auto resp_decoded = reflection::adl<feature_barrier_response>{}.from(
+      resp_parser);
+    BOOST_REQUIRE_EQUAL(resp.entered, resp_decoded.entered);
+    BOOST_REQUIRE_EQUAL(resp.complete, resp_decoded.complete);
+}
