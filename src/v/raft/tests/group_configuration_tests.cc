@@ -82,3 +82,43 @@ BOOST_AUTO_TEST_CASE(test_demoting_removed_voters) {
     demoted = test_grp.maybe_demote_removed_voters();
     BOOST_REQUIRE_EQUAL(demoted, false);
 }
+
+BOOST_AUTO_TEST_CASE(test_aborting_configuration_change) {
+    raft::group_configuration test_grp = raft::group_configuration(
+      {create_broker(3)}, model::revision_id(0));
+
+    auto original_brokers = test_grp.brokers();
+    auto original_voters = test_grp.current_config().voters;
+
+    // add brokers
+    test_grp.add({create_broker(1), create_broker(2)}, model::revision_id{0});
+    auto demoted = test_grp.maybe_demote_removed_voters();
+    BOOST_REQUIRE_EQUAL(demoted, false);
+
+    // abort change
+    test_grp.abort_configuration_change();
+
+    BOOST_REQUIRE_EQUAL(test_grp.type(), raft::configuration_type::simple);
+    BOOST_REQUIRE_EQUAL(test_grp.brokers(), original_brokers);
+    BOOST_REQUIRE_EQUAL(test_grp.current_config().voters, original_voters);
+}
+
+BOOST_AUTO_TEST_CASE(test_reverting_configuration_change) {
+    raft::group_configuration test_grp = raft::group_configuration(
+      {create_broker(3)}, model::revision_id(0));
+
+    // add brokers
+    test_grp.add({create_broker(1), create_broker(2)}, model::revision_id{0});
+    auto demoted = test_grp.maybe_demote_removed_voters();
+    BOOST_REQUIRE_EQUAL(demoted, false);
+    auto current = test_grp.current_config();
+    auto old = *test_grp.old_config();
+
+    // abort change
+    test_grp.revert_configuration_change();
+
+    BOOST_REQUIRE_EQUAL(test_grp.type(), raft::configuration_type::joint);
+    BOOST_REQUIRE_EQUAL(test_grp.brokers().size(), 3);
+    BOOST_REQUIRE_EQUAL(test_grp.current_config(), old);
+    BOOST_REQUIRE_EQUAL(test_grp.old_config(), current);
+}

@@ -13,6 +13,7 @@
 #include "model/metadata.h"
 #include "reflection/adl.h"
 #include "utils/concepts-enabled.h"
+#include "utils/to_string.h"
 
 #include <boost/range/join.hpp>
 
@@ -49,6 +50,8 @@ private:
 };
 
 enum class configuration_type : uint8_t { simple, joint };
+
+std::ostream& operator<<(std::ostream& o, configuration_type t);
 
 struct group_nodes {
     std::vector<vnode> voters;
@@ -124,6 +127,23 @@ public:
      * become simple
      */
     void discard_old_config();
+
+    /**
+     * Forcefully abort changing configuration. If current configuration in in
+     * joint state it drops the new configuration part and allow raft to operate
+     * with old quorum
+     *
+     * NOTE: may lead to data loss in some situations use only for cluster
+     * recovery from critical failures
+     */
+    void abort_configuration_change();
+
+    /**
+     * Reverts configuration change, the configuration is still in joint state
+     * but the direction of change is being changed
+     *
+     */
+    void revert_configuration_change();
 
     /**
      * demotes all voters if they were removed from current configuration,

@@ -940,6 +940,54 @@ ss::future<std::error_code> consensus::replace_configuration(
       });
 }
 
+template<typename Func>
+ss::future<std::error_code>
+consensus::interrupt_configuration_change(model::revision_id revision, Func f) {
+    auto u = co_await _op_lock.get_units();
+    auto latest_cfg = config();
+    // latest configuration is of joint type
+    if (latest_cfg.type() == configuration_type::simple) {
+        vlog(_ctxlog.info, "no configuration changes in progress");
+        co_return errc::invalid_configuration_update;
+    }
+    if (latest_cfg.revision_id() > revision) {
+        co_return errc::invalid_configuration_update;
+    }
+    result<group_configuration> new_cfg = f(std::move(latest_cfg));
+    if (new_cfg.has_error()) {
+        co_return new_cfg.error();
+    }
+
+    co_return co_await replicate_configuration(
+      std::move(u), std::move(new_cfg.value()));
+}
+
+ss::future<std::error_code>
+consensus::revert_configuration_change(model::revision_id revision) {
+    vlog(
+      _ctxlog.info,
+      "requested revert of current configuration change - {}",
+      config());
+    return interrupt_configuration_change(
+      revision, [](raft::group_configuration cfg) {
+          cfg.revert_configuration_change();
+          return cfg;
+      });
+}
+
+ss::future<std::error_code>
+consensus::abort_configuration_change(model::revision_id revision) {
+    vlog(
+      _ctxlog.info,
+      "requested abort of current configuration change - {}",
+      config());
+    return interrupt_configuration_change(
+      revision, [](raft::group_configuration cfg) {
+          cfg.abort_configuration_change();
+          return cfg;
+      });
+}
+
 ss::future<> consensus::start() {
     return ss::try_with_gate(_bg, [this] { return do_start(); });
 }
