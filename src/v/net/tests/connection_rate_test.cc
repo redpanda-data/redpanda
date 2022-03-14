@@ -53,7 +53,7 @@ SEASTAR_THREAD_TEST_CASE(rate_test) {
     net::connection_rate connection_rate(info, gate);
 
     std::vector<ss::future<>> futures;
-    std::vector<int64_t> rate_counter(max_wait_time_sec + 10, 0);
+    std::vector<int64_t> rate_counter(max_wait_time_sec, 0);
 
     auto start = ss::lowres_clock::now();
     while (true) {
@@ -72,7 +72,9 @@ SEASTAR_THREAD_TEST_CASE(rate_test) {
                        auto duration
                          = std::chrono::duration_cast<std::chrono::seconds>(
                            current_time - start);
-                       rate_counter[duration.count()]++;
+                       if (duration.count() < rate_counter.size()) {
+                           rate_counter[duration.count()]++;
+                       }
                    })
                    .handle_exception([](std::exception_ptr const&) {});
 
@@ -92,7 +94,6 @@ SEASTAR_THREAD_TEST_CASE(rate_test) {
     int64_t diff = 0;
     for (auto second = 0; second < rate_counter.size(); ++second) {
         auto rate = rate_counter[second];
-        std::cout << second << " " << rate << " " << diff << std::endl;
         // For zero second we have max_rate tokens, and will add new each
         // 1000ms/max_rate, so for seconds with max_rate tokens we can expect
         // max_rate * 2 connections
@@ -112,7 +113,7 @@ SEASTAR_THREAD_TEST_CASE(update_rate_test) {
     net::connection_rate connection_rate(info, gate);
     int64_t max_wait_time_sec = 10;
 
-    std::vector<int64_t> rate_counter(40, 0);
+    std::vector<int64_t> rate_counter(30, 0);
 
     struct rate_test_t {
         int64_t max_rate;
@@ -147,7 +148,9 @@ SEASTAR_THREAD_TEST_CASE(update_rate_test) {
                            auto duration
                              = std::chrono::duration_cast<std::chrono::seconds>(
                                current_time - start);
-                           rate_counter[duration.count()]++;
+                           if (duration.count() < rate_counter.size()) {
+                               rate_counter[duration.count()]++;
+                           }
                        })
                        .handle_exception([](std::exception_ptr const&) {});
 
