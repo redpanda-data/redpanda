@@ -27,8 +27,8 @@ class ConnectionRateLimitTest(RedpandaTest):
     MSG_SIZE = 1000000
     PRODUCE_COUNT = 10
     READ_COUNT = 10
-    RANDOM_READ_PARALLEL = 2
-    MAX_RETRY_COUNT = 4
+    RANDOM_READ_PARALLEL = 3
+    REFRESH_TOKENS_TIME_SEC = 2.0
 
     topics = (TopicSpec(partition_count=1, replication_factor=1), )
 
@@ -123,12 +123,15 @@ class ConnectionRateLimitTest(RedpandaTest):
         deltas = list()
 
         for i in range(10):
-            time = self.read_data(consumers_count)
-            deltas.append(time)
+            connection_time = self.read_data(consumers_count)
+            deltas.append(connection_time)
+
+            # We should wait moment when all tokens will be refreshed
+            time.sleep(self.REFRESH_TOKENS_TIME_SEC)
 
         return sum(deltas) / len(deltas)
 
-    @cluster(num_nodes=6)
+    @cluster(num_nodes=8)
     def connection_rate_test(self):
         self._producer.start(clean=False)
         self._producer.wait()
