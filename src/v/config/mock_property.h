@@ -29,7 +29,9 @@ public:
           _mock_store,
           "anonymous",
           "",
-          base_property::metadata{.needs_restart = needs_restart::no}) {}
+          base_property::metadata{.needs_restart = needs_restart::no}) {
+        _property.set_value(value);
+    }
 
     void update(T&& value) { _property.update_value(std::move(value)); }
 

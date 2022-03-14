@@ -710,6 +710,7 @@ void application::wire_up_redpanda_services() {
         if (_kafka_server.local_is_initialized()) {
             _kafka_server.invoke_on_all(&net::server::wait_for_shutdown).get();
             _kafka_server.stop().get();
+            _kafka_conn_quotas.stop().get();
         }
     });
 
@@ -941,11 +942,23 @@ void application::wire_up_redpanda_services() {
       std::ref(rm_partition_frontend))
       .get();
 
+    _kafka_conn_quotas
+      .start([]() {
+          return net::conn_quota_config{
+            .max_connections
+            = config::shard_local_cfg().kafka_connections_max.bind(),
+            .max_connections_per_ip
+            = config::shard_local_cfg().kafka_connections_max_per_ip.bind(),
+          };
+      })
+      .get();
+
     ss::sharded<net::server_configuration> kafka_cfg;
     kafka_cfg.start(ss::sstring("kafka_rpc")).get();
     kafka_cfg
       .invoke_on_all([this](net::server_configuration& c) {
           return ss::async([this, &c] {
+              c.conn_quotas = std::ref(_kafka_conn_quotas);
               c.max_service_memory_per_core
                 = memory_groups::kafka_total_memory();
               c.listen_backlog

@@ -20,6 +20,7 @@
 #include "kafka/client/configuration.h"
 #include "kafka/client/fwd.h"
 #include "kafka/server/fwd.h"
+#include "net/conn_quota.h"
 #include "net/fwd.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/rest/fwd.h"
@@ -155,6 +156,7 @@ private:
     ss::sharded<kafka::group_manager> _group_manager;
     ss::sharded<net::server> _rpc;
     ss::sharded<admin_server> _admin;
+    ss::sharded<net::conn_quota> _kafka_conn_quotas;
     ss::sharded<net::server> _kafka_server;
     ss::sharded<kafka::client::client> _proxy_client;
     ss::sharded<pandaproxy::rest::proxy> _proxy;

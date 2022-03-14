@@ -30,6 +30,8 @@ public:
 
     void connection_close_error() { ++_connection_close_error; }
 
+    void connection_rejected() { ++_connections_rejected; }
+
     void add_bytes_sent(size_t sent) { _out_bytes += sent; }
 
     void add_bytes_received(size_t recv) { _in_bytes += recv; }
@@ -59,6 +61,7 @@ private:
     uint64_t _service_errors = 0;
     uint32_t _connections = 0;
     uint32_t _connection_close_error = 0;
+    uint64_t _connections_rejected = 0;
     uint32_t _corrupted_headers = 0;
     uint32_t _method_not_found_errors = 0;
     uint32_t _requests_blocked_memory = 0;

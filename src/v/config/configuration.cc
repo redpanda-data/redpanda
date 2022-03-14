@@ -792,6 +792,19 @@ configuration::configuration()
       "Time between members backend reconciliation loop retries ",
       {.visibility = visibility::tunable},
       5s)
+  , kafka_connections_max(
+      *this,
+      "kafka_connections_max",
+      "Maximum number of Kafka client connections per broker",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt)
+  , kafka_connections_max_per_ip(
+      *this,
+      "kafka_connections_max_per_ip",
+      "Maximum number of Kafka client connections from each IP addreess, per "
+      "broker",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt)
   , cloud_storage_enabled(
       *this,
       "cloud_storage_enabled",

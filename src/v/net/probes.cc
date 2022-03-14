@@ -40,6 +40,12 @@ void server_probe::setup_metrics(
           sm::description(ssx::sformat(
             "{}: Number of errors when shutting down the connection", proto))),
         sm::make_derive(
+          "connections_rejected",
+          [this] { return _connections_rejected; },
+          sm::description(ssx::sformat(
+            "{}: Number of connections rejected for hitting connection limits",
+            proto))),
+        sm::make_derive(
           "requests_completed",
           [this] { return _requests_completed; },
           sm::description(
