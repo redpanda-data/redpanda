@@ -14,6 +14,8 @@ from ducktape.mark import ignore
 from rptest.services.admin import Admin
 import confluent_kafka as ck
 from rptest.tests.redpanda_test import RedpandaTest
+from rptest.clients.rpk import RpkTool
+import requests
 
 
 class TxAdminTest(RedpandaTest):
@@ -244,3 +246,215 @@ class TxAdminTest(RedpandaTest):
                 expected_partitions[topic.name]) == topic.partition_count
             for partition in range(topic.partition_count):
                 assert partition in expected_partitions[topic.name]
+
+    @cluster(num_nodes=3)
+    def test_delete_topic_from_ongoin_tx(self):
+        tx_id = "0"
+        producer = ck.Producer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'transactional.id': tx_id,
+        })
+        producer.init_transactions()
+        producer.begin_transaction()
+
+        for topic in self.topics:
+            for partition in range(topic.partition_count):
+                producer.produce(topic.name, '0', '0', partition)
+
+        producer.flush()
+
+        txs_info = self.admin.get_all_transactions()
+        assert len(
+            txs_info) == 1, "Should be only one transaction in current time"
+
+        rpk = RpkTool(self.redpanda)
+        topic_name = self.topics[0].name
+        rpk.delete_topic(topic_name)
+
+        tx = txs_info[0]
+        assert tx[
+            "transactional_id"] == tx_id, f"Expected transactional_id: {tx_id}, but got {tx['transactional_id']}"
+
+        for partition in tx["partitions"]:
+            assert (partition["ns"] == "kafka")
+            if partition["topic"] == topic_name:
+                self.admin.delete_partition_from_transaction(
+                    tx["transactional_id"], partition["ns"],
+                    partition["topic"], partition["partition_id"],
+                    partition["etag"])
+
+        producer.commit_transaction()
+
+        producer = ck.Producer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'transactional.id': tx_id,
+        })
+        producer.init_transactions()
+        producer.begin_transaction()
+
+        for topic in self.topics:
+            if topic.name is not topic_name:
+                for partition in range(topic.partition_count):
+                    producer.produce(topic.name, '0', '0', partition)
+
+        producer.commit_transaction()
+
+    @cluster(num_nodes=3)
+    def test_delete_topic_from_prepared_tx(self):
+        tx_id = "0"
+        producer = ck.Producer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'transactional.id': tx_id,
+        })
+        producer.init_transactions()
+        producer.begin_transaction()
+
+        for topic in self.topics:
+            for partition in range(topic.partition_count):
+                producer.produce(topic.name, '0', '0', partition)
+
+        producer.flush()
+
+        rpk = RpkTool(self.redpanda)
+        topic_name = self.topics[0].name
+        rpk.delete_topic(topic_name)
+
+        try:
+            producer.commit_transaction()
+            raise Exception("commit_transaction should fail")
+        except ck.cimpl.KafkaException as e:
+            kafka_error = e.args[0]
+            assert kafka_error.code() == ck.cimpl.KafkaError.UNKNOWN
+
+        producer = ck.Producer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'transactional.id': tx_id,
+        })
+        try:
+            producer.init_transactions()
+            raise Exception("init_transaction should fail")
+        except ck.cimpl.KafkaException as e:
+            kafka_error = e.args[0]
+            assert kafka_error.code(
+            ) == ck.cimpl.KafkaError.BROKER_NOT_AVAILABLE
+
+        txs_info = self.admin.get_all_transactions()
+        assert len(
+            txs_info) == 1, "Should be only one transaction in current time"
+        tx = txs_info[0]
+
+        for partition in tx["partitions"]:
+            assert (partition["ns"] == "kafka")
+            if partition["topic"] == topic_name:
+                self.admin.delete_partition_from_transaction(
+                    tx["transactional_id"], partition["ns"],
+                    partition["topic"], partition["partition_id"],
+                    partition["etag"])
+
+        producer = ck.Producer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'transactional.id': tx_id,
+        })
+        producer.init_transactions()
+        producer.begin_transaction()
+
+        for topic in self.topics:
+            if topic.name is not topic_name:
+                for partition in range(topic.partition_count):
+                    producer.produce(topic.name, '0', '0', partition)
+
+        producer.commit_transaction()
+
+    @cluster(num_nodes=3)
+    def test_delete_non_existent_topic(self):
+        tx_id = "0"
+        producer = ck.Producer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'transactional.id': tx_id,
+        })
+        producer.init_transactions()
+        producer.begin_transaction()
+
+        error_topic_name = "error_topic"
+
+        for topic in self.topics:
+            assert error_topic_name is not topic.name
+            for partition in range(topic.partition_count):
+                producer.produce(topic.name, '0', '0', partition)
+
+        producer.flush()
+
+        try:
+            self.admin.delete_partition_from_transaction(
+                tx_id, "kafka", error_topic_name, 0, 0)
+        except requests.exceptions.HTTPError as e:
+            assert e.response.text == '{"message": "Can not find partition({kafka/error_topic/0}) in transaction for delete", "code": 400}'
+
+        producer.commit_transaction()
+
+    @cluster(num_nodes=3)
+    def test_delete_non_existent_tid(self):
+        tx_id = "0"
+        producer = ck.Producer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'transactional.id': tx_id,
+        })
+        producer.init_transactions()
+        producer.begin_transaction()
+
+        for topic in self.topics:
+            for partition in range(topic.partition_count):
+                producer.produce(topic.name, '0', '0', partition)
+
+        producer.flush()
+
+        txs_info = self.admin.get_all_transactions()
+        tx = txs_info[0]
+
+        topic_name = self.topics[0].name
+        error_tx_id = "1"
+
+        for partition in tx["partitions"]:
+            if partition["topic"] == topic_name:
+                try:
+                    self.admin.delete_partition_from_transaction(
+                        error_tx_id, partition["ns"], partition["topic"],
+                        partition["partition_id"], partition["etag"])
+                except requests.exceptions.HTTPError as e:
+                    assert e.response.text == '{"message": "Unexpected tx_error error: Unknown server error", "code": 500}'
+
+        producer.commit_transaction()
+
+    @cluster(num_nodes=3)
+    def test_delete_non_existent_etag(self):
+        tx_id = "0"
+        producer = ck.Producer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'transactional.id': tx_id,
+        })
+        producer.init_transactions()
+        producer.begin_transaction()
+
+        for topic in self.topics:
+            for partition in range(topic.partition_count):
+                producer.produce(topic.name, '0', '0', partition)
+
+        producer.flush()
+
+        txs_info = self.admin.get_all_transactions()
+        tx = txs_info[0]
+
+        topic_name = self.topics[0].name
+
+        for partition in tx["partitions"]:
+            if partition["topic"] == topic_name:
+                try:
+                    self.admin.delete_partition_from_transaction(
+                        tx_id, partition["ns"], partition["topic"],
+                        partition["partition_id"], partition["etag"] + 100)
+                except requests.exceptions.HTTPError as e:
+                    e.response.text == '{{"message": "Can not find partition({{{}/{}/{}}}) in transaction for delete", "code": 400}}'.format(
+                        partition["ns"], partition["topic"],
+                        partition["partition_id"])
+
+        producer.commit_transaction()
