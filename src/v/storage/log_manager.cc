@@ -300,10 +300,6 @@ ss::future<> log_manager::dispatch_topic_dir_deletion(ss::sstring dir) {
                 return directory_walker::empty(std::filesystem::path(dir))
                   .then([dir](bool empty) {
                       if (!empty) {
-                          vlog(
-                            stlog.warn,
-                            "Not deleting non-empty topic dir {}",
-                            dir);
                           return ss::now();
                       }
                       return ss::remove_file(dir);
