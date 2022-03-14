@@ -22,6 +22,54 @@ namespace cluster {
 
 static constexpr std::chrono::seconds status_retry = 5s;
 
+feature_manager::feature_manager(
+  ss::sharded<controller_stm>& stm,
+  ss::sharded<ss::abort_source>& as,
+  ss::sharded<members_table>& members,
+  ss::sharded<raft::group_manager>& group_manager,
+  ss::sharded<health_monitor_frontend>& hm_frontend,
+  ss::sharded<health_monitor_backend>& hm_backend,
+  ss::sharded<feature_table>& table,
+  ss::sharded<rpc::connection_cache>& connection_cache,
+  raft::group_id raft0_group)
+  : _stm(stm)
+  , _as(as)
+  , _members(members)
+  , _group_manager(group_manager)
+  , _hm_frontend(hm_frontend)
+  , _hm_backend(hm_backend)
+  , _feature_table(table)
+  , _connection_cache(connection_cache)
+  , _raft0_group(raft0_group)
+  , _barrier_state(
+      config::node().node_id(),
+      members.local(),
+      as.local(),
+      _gate,
+      [this](
+        model::node_id from,
+        model::node_id to,
+        feature_barrier_tag tag,
+        bool entered)
+        -> ss::future<result<rpc::client_context<feature_barrier_response>>> {
+          auto timeout = 5s;
+          return _connection_cache.local()
+            .with_node_client<cluster::controller_client_protocol>(
+              from,
+              ss::this_shard_id(),
+              to,
+              timeout,
+              [from, tag, timeout, entered](
+                controller_client_protocol cp) mutable {
+                  return cp.feature_barrier(
+                    feature_barrier_request{
+                      .tag = tag, .peer = from, .entered = entered},
+                    rpc::client_opts(model::timeout_clock::now() + timeout));
+              });
+      }
+
+    ) {}
+
 ss::future<> feature_manager::start() {
     vlog(clusterlog.info, "Starting...");
 

@@ -855,6 +855,22 @@ struct feature_action_response {
     errc error;
 };
 
+using feature_barrier_tag
+  = named_type<ss::sstring, struct feature_barrier_tag_type>;
+
+struct feature_barrier_request {
+    static constexpr int8_t current_version = 1;
+    feature_barrier_tag tag; // Each cooperative barrier must use a unique tag
+    model::node_id peer;
+    bool entered; // Has the requester entered?
+};
+
+struct feature_barrier_response {
+    static constexpr int8_t current_version = 1;
+    bool entered;  // Has the respondent entered?
+    bool complete; // Has the respondent exited?
+};
+
 struct create_non_replicable_topics_request {
     static constexpr int8_t current_version = 1;
     std::vector<non_replicable_topic> topics;
@@ -1065,6 +1081,18 @@ template<>
 struct adl<cluster::feature_update_cmd_data> {
     void to(iobuf&, cluster::feature_update_cmd_data&&);
     cluster::feature_update_cmd_data from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::feature_barrier_request> {
+    void to(iobuf&, cluster::feature_barrier_request&&);
+    cluster::feature_barrier_request from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::feature_barrier_response> {
+    void to(iobuf&, cluster::feature_barrier_response&&);
+    cluster::feature_barrier_response from(iobuf_parser&);
 };
 
 } // namespace reflection

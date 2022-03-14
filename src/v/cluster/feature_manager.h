@@ -12,9 +12,11 @@
 #pragma once
 
 #include "cluster/controller_stm.h"
+#include "cluster/feature_barrier.h"
 #include "cluster/fwd.h"
 #include "cluster/logger.h"
 #include "cluster/types.h"
+#include "config/node_config.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
@@ -61,20 +63,31 @@ public:
       ss::sharded<health_monitor_frontend>& hm_frontend,
       ss::sharded<health_monitor_backend>& hm_backend,
       ss::sharded<feature_table>& table,
-      raft::group_id raft0_group)
-      : _stm(stm)
-      , _as(as)
-      , _members(members)
-      , _group_manager(group_manager)
-      , _hm_frontend(hm_frontend)
-      , _hm_backend(hm_backend)
-      , _feature_table(table)
-      , _raft0_group(raft0_group) {}
+      ss::sharded<rpc::connection_cache>& connection_cache,
+      raft::group_id raft0_group);
 
     ss::future<> start();
     ss::future<> stop();
 
     ss::future<std::error_code> write_action(cluster::feature_update_action);
+
+    /**
+     * If you know a barrier must be over, e.g. because feature has already
+     * proceeded to active state, then register that here so that any peers
+     * trying to enter the barrier will skip it too.
+     */
+    void exit_barrier(feature_barrier_tag tag) {
+        _barrier_state.exit_barrier(tag);
+    }
+
+    feature_barrier_response
+    update_barrier(feature_barrier_tag tag, model::node_id peer, bool entered) {
+        return _barrier_state.update_barrier(tag, peer, entered);
+    }
+
+    ss::future<> barrier(feature_barrier_tag tag) {
+        return _barrier_state.barrier(tag);
+    }
 
 private:
     void update_node_version(model::node_id, cluster_version v);
@@ -90,6 +103,7 @@ private:
     ss::sharded<health_monitor_frontend>& _hm_frontend;
     ss::sharded<health_monitor_backend>& _hm_backend;
     ss::sharded<feature_table>& _feature_table;
+    ss::sharded<rpc::connection_cache>& _connection_cache;
     raft::group_id _raft0_group;
 
     std::vector<std::pair<model::node_id, cluster_version>> _updates;
@@ -99,6 +113,9 @@ private:
       notification_id_type_invalid};
     cluster::notification_id_type _health_notify_handle{
       notification_id_type_invalid};
+
+    // Barriers are only populated on shard 0
+    feature_barrier_state _barrier_state;
 
     // The individually reported versions of nodes, which
     // are usually all the same but will differ during upgrades.
