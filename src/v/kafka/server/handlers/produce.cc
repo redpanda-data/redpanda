@@ -239,6 +239,26 @@ static partition_produce_stages produce_topic_partition(
           model::timestamp_type::append_time, model::timestamp::now());
     }
 
+#ifndef NDEBUG
+    auto now = model::timestamp::now();
+    vlog(
+      klog.trace,
+      "produce batch timestamps: now={} first {} max {}",
+      now,
+      batch.header().first_timestamp,
+      batch.header().max_timestamp);
+    if (
+      batch.header().first_timestamp > now
+      || batch.header().max_timestamp > now) {
+        vlog(
+          klog.warn,
+          "produce batch timestamps in future: now={} first {} max {}",
+          now,
+          batch.header().first_timestamp,
+          batch.header().max_timestamp);
+    }
+#endif
+
     const auto& hdr = batch.header();
     auto bid = model::batch_identity::from(hdr);
     auto batch_size = batch.size_bytes();

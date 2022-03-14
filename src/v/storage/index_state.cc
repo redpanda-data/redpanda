@@ -59,6 +59,24 @@ bool index_state::maybe_index(
     // last one
     last_timestamp = std::max(first_timestamp, last_timestamp);
     max_timestamp = std::max(max_timestamp, last_timestamp);
+
+#ifndef NDEBUG
+    // If future-timestamped content creeps into our storage layer,
+    // it can disrupt time-based compaction: log when this happens.
+    // Related: https://github.com/redpanda-data/redpanda/issues/3924
+    auto now = model::timestamp::now();
+    if (max_timestamp > model::timestamp::now()) {
+        vlog(
+          stlog.warn,
+          "Updating index with max timestamp {} in future (now={}, "
+          "first_timestamp={}, base_timestamp={})",
+          max_timestamp,
+          now,
+          first_timestamp,
+          base_timestamp());
+    }
+#endif
+
     // always saving the first batch simplifies a lot of book keeping
     if (accumulator >= step || retval) {
         // We know that a segment cannot be > 4GB

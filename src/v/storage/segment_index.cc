@@ -14,6 +14,7 @@
 #include "storage/index_state.h"
 #include "storage/logger.h"
 #include "vassert.h"
+#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/fstream.hh>
@@ -71,7 +72,12 @@ void segment_index::maybe_track(
           hdr.max_timestamp)) {
         _acc = 0;
     }
-    _needs_persistence = true;
+
+    vlog(
+      stlog.trace,
+      "maybe_track timestamps: base {} max {}",
+      base_timestamp(),
+      max_timestamp());
 }
 
 std::optional<segment_index::entry>
