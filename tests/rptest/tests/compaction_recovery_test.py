@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 from rptest.services.cluster import cluster
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from ducktape.utils.util import wait_until
 
 from rptest.clients.types import TopicSpec
@@ -53,7 +54,7 @@ class CompactionRecoveryTest(RedpandaTest):
                              extra_rp_conf=extra_rp_conf)
 
     @cluster(num_nodes=3)
-    def test_index_recovery(self):
+    def test_index_recovery(self, log_allow_list=RESTART_LOG_ALLOW_LIST):
         partitions = self.produce_until_segments(3)
 
         for p in partitions:
