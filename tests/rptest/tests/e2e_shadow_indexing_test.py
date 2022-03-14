@@ -131,6 +131,7 @@ class MoreE2EShadowIndexingTest(EndToEndTest):
     # This class ports many of those tests to ducktape.
     # For more details, see https://github.com/redpanda-data/redpanda/issues/3572
     segment_size = 1048576  # 1MB
+    cloud_cache_size = None
     s3_host_name = "minio-s3"
     s3_access_key = "panda-user"
     s3_secret_key = "panda-secret"
@@ -145,6 +146,7 @@ class MoreE2EShadowIndexingTest(EndToEndTest):
               self).__init__(test_context=test_context)
 
         self.s3_bucket_name = f"panda-bucket-{uuid.uuid1()}"
+
         self._extra_rp_conf = dict(
             cloud_storage_enabled=True,
             cloud_storage_access_key=self.s3_access_key,
@@ -160,8 +162,9 @@ class MoreE2EShadowIndexingTest(EndToEndTest):
 
         if test_context.function_name == 'test_si_cache_limit':
             self.segment_size = 2**30
-            self._extra_rp_conf.update(cloud_storage_cache_size=5 *
-                                       self.segment_size)
+            self.cloud_cache_size = 5 * self.segment_size
+            self._extra_rp_conf.update(
+                cloud_storage_cache_size=self.cloud_cache_size)
 
         elif test_context.function_name == 'test_infinite_retention':
             self.segment_size = 2**30
@@ -610,3 +613,112 @@ class MoreE2EShadowIndexingTest(EndToEndTest):
         # Check if those segment files existed before retention
         self.logger.debug('After fetch')
         self._check_si_cache_after_fetch(data_dir_segments)
+
+    # Test the SI cache limit
+    @cluster(num_nodes=4)
+    def test_si_cache_limit(self):
+        # Node alloc is first because CI fails in the debug pipeline due to
+        # the warning message "Test requested X nodes, used only Y"
+        fgo_node = self.test_context.cluster.alloc(ClusterSpec.simple_linux(1))
+        self.logger.debug(f"Allocated verifier node {fgo_node[0].name}")
+
+        self.logger.info(f"Environment: {os.environ}")
+        if os.environ.get('BUILD_TYPE', None) == 'debug':
+            self.logger.info(
+                "Skipping test in debug mode (requires release build)")
+            return
+
+        # Remote write/read set at topic level
+        rpk = RpkTool(self.redpanda)
+        rpk.alter_topic_config(self.topic, 'redpanda.remote.write', 'true')
+        rpk.alter_topic_config(self.topic, 'redpanda.remote.read', 'true')
+        rpk.alter_topic_config(self.topic, 'retention.bytes',
+                               str(self.segment_size))
+
+        # 100k messages of size 2**18
+        # is ~24GB of data.
+        msg_size = 2**18
+        msg_count = 100000
+
+        self._gen_manifests(msg_size, fgo_node)
+
+        producer = FranzGoVerifiableProducer(self.test_context, self.redpanda,
+                                             self.topic, msg_size, msg_count,
+                                             fgo_node)
+
+        # The SI cache is set to 5GB in size. Test the cache limit by
+        # running 8 readers that consume 1GB segments effectively forcing
+        # ~8GB of IO. The readers read from random offsets.
+        rand_consumer = FranzGoVerifiableRandomConsumer(
+            self.test_context, self.redpanda, self.topic, msg_size, 10, 8,
+            fgo_node)
+
+        producer.start(clean=False)
+        rand_consumer.start(clean=False)
+
+        producer.wait()
+        rand_consumer.shutdown()
+        rand_consumer.wait()
+
+        # Return True if x is within the percent threshold of
+        # the given size
+        def in_percent_threshold(x, size, threshold):
+            percent_of_size = size * (threshold / 100)
+            percent_threshold = size + percent_of_size
+            self.logger.debug(f'Percent threshold: {percent_threshold}')
+            return x < percent_threshold
+
+        # Check SI cache size on all nodes
+        def check_si_cache_size():
+            is_cache_size_respected = True
+
+            for node in self.redpanda.nodes:
+                cmd = 'df --block-size=1 /var/lib/redpanda/data/cloud_storage_cache | awk \'{print $3}\' | tail -n1'
+                result = node.account.ssh_output(cmd, timeout_sec=45).decode()
+                df = float(result)
+
+                # Use -b so we get values in bytes. This flag also accounts
+                #for holes in "sparse" files since -b uses --apparent-size underneath
+                cmd = 'du -sb /var/lib/redpanda/data/cloud_storage_cache | awk \'{print $1}\''
+                result = node.account.ssh_output(cmd, timeout_sec=45).decode()
+                du = float(result)
+
+                self.logger.debug(
+                    f'{node.name}, cache-size: {self.cloud_cache_size}, df: {df}, du: {du}'
+                )
+
+                # Disk usage on si cache should be no more than 5%
+                # larger than the configured cache size. In general,
+                # 5% is an OK place to start.
+                if not in_percent_threshold(
+                        du, self.cloud_cache_size, threshold=5):
+                    is_cache_size_respected = False
+
+            return is_cache_size_respected
+
+        wait_until(check_si_cache_size,
+                   timeout_sec=30,
+                   backoff_sec=1,
+                   err_msg='Exceeded SI cache size on a node')
+
+        # Check open files count on all nodes
+        file_counts = {node.name: 0 for node in self.redpanda.nodes}
+
+        def is_open_file_count_increasing():
+            is_count_stable = True
+            for node in self.redpanda.nodes:
+                files = self.redpanda.lsof_node(node)
+                file_count = sum(1 for _ in files)
+                self.logger.debug(f'{node.name} open file count: {file_count}')
+
+                nonlocal file_counts
+                if file_count > file_counts[node.name]:
+                    file_counts[node.name] = file_count
+                    is_count_stable = False
+
+            return is_count_stable
+
+        wait_until(is_open_file_count_increasing,
+                   timeout_sec=30,
+                   backoff_sec=1,
+                   err_msg='Open file count is increasing on a node')
