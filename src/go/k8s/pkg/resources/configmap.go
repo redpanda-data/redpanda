@@ -326,14 +326,14 @@ func (r *ConfigMapResource) CreateConfiguration(
 			Namespace: r.pandaCluster.Spec.CloudStorage.SecretKeyRef.Namespace,
 		}
 		// We need to retrieve the Secret containing the provided cloud storage secret key and extract the key itself.
-		secretKeyStr, err := r.getSecretValue(ctx, secretName, r.pandaCluster.Spec.CloudStorage.SecretKeyRef.Name)
+		secretKeyStr, accessKeyStr, err := r.getSecretValue(ctx, secretName, r.pandaCluster.Spec.CloudStorage.SecretKeyRef.Name)
 		if err != nil {
 			return nil, fmt.Errorf("cannot retrieve cloud storage secret for data archival: %w", err)
 		}
 		if secretKeyStr == "" {
 			return nil, fmt.Errorf("secret name %s, ns %s: %w", secretName.Name, secretName.Namespace, errCloudStorageSecretKeyCannotBeEmpty)
 		}
-		r.prepareCloudStorage(cfg, secretKeyStr)
+		r.prepareCloudStorage(cfg, secretKeyStr, accessKeyStr)
 	}
 
 	for _, user := range r.pandaCluster.Spec.Superusers {
@@ -416,10 +416,14 @@ func calculateExternalPort(kafkaInternalPort, specifiedExternalPort int) int {
 }
 
 func (r *ConfigMapResource) prepareCloudStorage(
-	cfg *configuration.GlobalConfiguration, secretKeyStr string,
+	cfg *configuration.GlobalConfiguration, secretKeyStr,
+	accessKeyStr string,
 ) {
 	cfg.SetAdditionalRedpandaProperty("cloud_storage_enabled", r.pandaCluster.Spec.CloudStorage.Enabled)
-	cfg.SetAdditionalRedpandaProperty("cloud_storage_access_key", r.pandaCluster.Spec.CloudStorage.AccessKey)
+	if accessKeyStr == "" {
+		accessKeyStr = r.pandaCluster.Spec.CloudStorage.AccessKey
+	}
+	cfg.SetAdditionalRedpandaProperty("cloud_storage_access_key", accessKeyStr)
 	cfg.SetAdditionalRedpandaProperty("cloud_storage_region", r.pandaCluster.Spec.CloudStorage.Region)
 	cfg.SetAdditionalRedpandaProperty("cloud_storage_bucket", r.pandaCluster.Spec.CloudStorage.Bucket)
 	cfg.SetAdditionalRedpandaProperty("cloud_storage_secret_key", secretKeyStr)
@@ -604,20 +608,26 @@ func (r *ConfigMapResource) prepareSchemaRegistryTLS(cfgRpk *config.Config) {
 	}
 }
 
+// getSecretValue returns the cloud storage secret and (optional) access keys from the named secret
 func (r *ConfigMapResource) getSecretValue(
 	ctx context.Context, nsName types.NamespacedName, key string,
-) (string, error) {
+) (secretKey, accessKey string, _ error) {
 	var secret corev1.Secret
 	err := r.Get(ctx, nsName, &secret)
 	if err != nil {
-		return "", err
+		return "", "", err
+	}
+
+	// the presence of secretKey indicates the ConfigMap may also contain accessKey
+	if v, exists := secret.Data["secretKey"]; exists {
+		return string(v), string(secret.Data["accessKey"]), nil
 	}
 
 	if v, exists := secret.Data[key]; exists {
-		return string(v), nil
+		return string(v), "", nil
 	}
 
-	return "", fmt.Errorf("secret name %s, ns %s, data key %s: %w", nsName.Name, nsName.Namespace, key, errKeyDoesNotExistInSecretData)
+	return "", "", fmt.Errorf("secret name %s, ns %s, data key %s: %w", nsName.Name, nsName.Namespace, key, errKeyDoesNotExistInSecretData)
 }
 
 func clusterCRPortOrRPKDefault(clusterPort, defaultPort int) int {

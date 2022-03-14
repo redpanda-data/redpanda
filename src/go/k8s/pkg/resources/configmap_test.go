@@ -22,6 +22,16 @@ func TestEnsureConfigMap(t *testing.T) {
 	clusterWithExternal := pandaCluster().DeepCopy()
 	clusterWithExternal.Spec.Configuration.KafkaAPI = append(clusterWithExternal.Spec.Configuration.KafkaAPI, redpandav1alpha1.KafkaAPI{Port: 30001, External: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true}})
 
+	cloudStorage := *pandaCluster().DeepCopy()
+	cloudStorage.Spec.CloudStorage.Enabled = true
+	cloudStorage.Spec.CloudStorage.SecretKeyRef.Name = "cloud_storage_secret"
+	cloudStorage.Spec.CloudStorage.SecretKeyRef.Namespace = "default"
+
+	cloudStorageWithAccessKey := cloudStorage.DeepCopy()
+	cloudStorageWithAccessKey.Spec.CloudStorage.SecretKeyRef.Name = "cloud_storage_secret_with_access"
+
+	cloudStorage.Spec.CloudStorage.AccessKey = "KEY"
+
 	testcases := []struct {
 		name           string
 		cluster        redpandav1alpha1.Cluster
@@ -34,20 +44,57 @@ func TestEnsureConfigMap(t *testing.T) {
           port: 30001
           name: kafka-external`,
 		},
+		{
+			name:    "Cloud storage enabled",
+			cluster: cloudStorage,
+			expectedString: `
+    cloud_storage_enabled: true
+    cloud_storage_access_key: KEY
+    cloud_storage_secret_key: JUST_SECRET`,
+		},
+		{
+			name:    "Cloud storage with access key in secret",
+			cluster: *cloudStorageWithAccessKey,
+			expectedString: `
+    cloud_storage_access_key: KEY
+    cloud_storage_secret_key: SECRET`,
+		},
 	}
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
 			c := fake.NewClientBuilder().Build()
-			secret := v1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "archival",
-					Namespace: "default",
+			for _, secret := range []v1.Secret{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "archival",
+						Namespace: "default",
+					},
+					Data: map[string][]byte{
+						"archival": []byte("XXX"),
+					},
 				},
-				Data: map[string][]byte{
-					"archival": []byte("XXX"),
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "cloud_storage_secret",
+						Namespace: "default",
+					},
+					Data: map[string][]byte{
+						"cloud_storage_secret": []byte("JUST_SECRET"),
+					},
 				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "cloud_storage_secret_with_access",
+						Namespace: "default",
+					},
+					Data: map[string][]byte{
+						"accessKey": []byte("KEY"),
+						"secretKey": []byte("SECRET"),
+					},
+				},
+			} {
+				require.NoError(t, c.Create(context.TODO(), &secret))
 			}
-			require.NoError(t, c.Create(context.TODO(), &secret))
 			cfgRes := resources.NewConfigMap(
 				c,
 				&tc.cluster,
