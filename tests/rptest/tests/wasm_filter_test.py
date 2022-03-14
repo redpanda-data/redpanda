@@ -33,19 +33,17 @@ class WasmFilterTest(WasmTest):
             script=WasmTemplateRepository.FILTER_TRANSFORM,
         )
 
-    def push_test_data_to_inputs(self):
-        for topic in self.topics:
-            for i in range(topic.partition_count):
-                for j in range(self._num_records):
-                    self._rpk_tool.produce(topic.name,
-                                           str(j),
-                                           str(j), [],
-                                           partition=i)
+    def push_test_data_to_inputs(self, topic, n_partitions, amt):
+        for i in range(n_partitions):
+            for j in range(amt):
+                self._rpk_tool.produce(topic, str(j), str(j), [], partition=i)
 
     @cluster(num_nodes=3)
     def verify_filter_test(self):
         # 1. Fill source topics with test data
-        self.push_test_data_to_inputs()
+        num_partitions = self.topics[0].partition_count
+        self.push_test_data_to_inputs(self.topic, num_partitions,
+                                      self._num_records)
 
         # 2. Start coprocessor
         self._build_script(self._script)
@@ -55,10 +53,12 @@ class WasmFilterTest(WasmTest):
             self.topic, self._output_topic)
         output_tps = [
             TopicPartition(materialized_topic, i)
-            for i in range(self.topics[0].partition_count)
+            for i in range(num_partitions)
         ]
+        expected_total = self._expected_record_cnt * num_partitions
+        topic_spec = {self.topic: expected_total}
         consumer = NativeKafkaConsumer(self.redpanda.brokers(), output_tps,
-                                       self._expected_record_cnt)
+                                       topic_spec)
 
         # Wait until materialized topic is up
         def topic_created():
@@ -70,11 +70,12 @@ class WasmFilterTest(WasmTest):
         # Consume from materialized topic
         def finished():
             self.logger.info("Recs read: %s" % consumer.results.num_records())
-            return consumer.is_finished()
+            return consumer.is_finished(
+            ) or consumer.results.num_records() >= expected_total
 
         consumer.start()
         wait_until(finished, timeout_sec=10, backoff_sec=1)
         consumer.join()
 
         # Assert success
-        assert consumer.results.num_records() == self._expected_record_cnt
+        assert consumer.results.num_records() == expected_total
