@@ -646,10 +646,17 @@ controller_backend::ask_remote_shard_for_initail_rev(
           if (auto it = remote._cross_shard_requests.find(ntp);
               it != remote._cross_shard_requests.end()) {
               ret_t ret{std::move(it->second)};
-              remote._cross_shard_requests.erase(it);
               return ret;
           }
           return ret_t{};
+      });
+}
+
+ss::future<> controller_backend::ack_remote_shard_partition_created(
+  model::ntp ntp, ss::shard_id shard) {
+    return container().invoke_on(
+      shard, [ntp = std::move(ntp)](controller_backend& remote) {
+          remote._cross_shard_requests.erase(ntp);
       });
 }
 
@@ -850,6 +857,8 @@ ss::future<std::error_code> controller_backend::process_partition_update(
             }
             // finally remove bootstarp revision
             _bootstrap_revisions.erase(ntp);
+            // notify remote shard about success
+            co_await ack_remote_shard_partition_created(ntp, *previous_shard);
         }
 
         co_return errc::waiting_for_recovery;

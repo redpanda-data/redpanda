@@ -121,6 +121,8 @@ private:
     ss::future<std::optional<cross_shard_move_request>>
       ask_remote_shard_for_initail_rev(model::ntp, ss::shard_id);
 
+    ss::future<> ack_remote_shard_partition_created(model::ntp, ss::shard_id);
+
     void housekeeping();
     void setup_metrics();
     ss::sharded<topic_table>& _topics;
