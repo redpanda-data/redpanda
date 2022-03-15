@@ -122,7 +122,7 @@ private:
       ask_remote_shard_for_initail_rev(model::ntp, ss::shard_id);
 
     void housekeeping();
-
+    void setup_metrics();
     ss::sharded<topic_table>& _topics;
     ss::sharded<shard_table>& _shard_table;
     ss::sharded<partition_manager>& _partition_manager;
@@ -153,6 +153,7 @@ private:
      * first created on current node before cross core move series
      */
     absl::node_hash_map<model::ntp, model::revision_id> _bootstrap_revisions;
+    ss::metrics::metric_groups _metrics;
 };
 
 std::vector<topic_table::delta> calculate_bootstrap_deltas(
