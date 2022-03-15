@@ -154,10 +154,10 @@ void probe::setup_metrics(const model::ntp& ntp) {
 }
 
 void probe::add_initial_segment(const segment& s) {
-    _partition_bytes += s.reader().file_size();
+    _partition_bytes += s.file_size();
 }
 void probe::delete_segment(const segment& s) {
-    _partition_bytes -= s.reader().file_size();
+    _partition_bytes -= s.file_size();
 }
 
 void readers_cache_probe::setup_metrics(const model::ntp& ntp) {

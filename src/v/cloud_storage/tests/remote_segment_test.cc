@@ -54,6 +54,19 @@ using namespace cloud_storage;
 
 inline ss::logger test_log("test"); // NOLINT
 
+/**
+ * Helper: generate a function suitable for passing to upload_segment(),
+ * exposing some synthetic data as a segment_reader_handle.
+ */
+ss::noncopyable_function<ss::future<storage::segment_reader_handle>()>
+make_reset_fn(iobuf& segment_bytes) {
+    return [&segment_bytes]() -> ss::future<storage::segment_reader_handle> {
+        auto out = iobuf_deep_copy(segment_bytes);
+        co_return storage::segment_reader_handle(
+          make_iobuf_input_stream(std::move(out)));
+    };
+}
+
 FIXTURE_TEST(
   test_remote_segment_successful_download, cloud_storage_fixture) { // NOLINT
     set_expectations_and_listen({});
@@ -67,10 +80,7 @@ FIXTURE_TEST(
     iobuf segment_bytes = generate_segment(model::offset(1), 20);
     uint64_t clen = segment_bytes.size_bytes();
     auto action = ss::defer([&remote] { remote.stop().get(); });
-    auto reset_stream = [&segment_bytes] {
-        auto out = iobuf_deep_copy(segment_bytes);
-        return make_iobuf_input_stream(std::move(out));
-    };
+    auto reset_stream = make_reset_fn(segment_bytes);
     retry_chain_node fib(1000ms, 200ms);
     partition_manifest::segment_meta meta{
       .is_compacted = false,
@@ -88,12 +98,13 @@ FIXTURE_TEST(
     m.add(key, meta);
 
     remote_segment segment(remote, *cache, bucket, m, key, fib);
-    auto stream = segment.data_stream(0, ss::default_priority_class()).get();
+    auto reader_handle
+      = segment.data_stream(0, ss::default_priority_class()).get();
 
     iobuf downloaded;
     auto rds = make_iobuf_ref_output_stream(downloaded);
-    ss::copy(stream, rds).get();
-    stream.close().get();
+    ss::copy(reader_handle.stream(), rds).get();
+    reader_handle.close().get();
 
     segment.stop().get();
 
@@ -151,10 +162,7 @@ FIXTURE_TEST(
     auto path = m.generate_segment_path(key, meta);
     uint64_t clen = segment_bytes.size_bytes();
     auto action = ss::defer([&remote] { remote.stop().get(); });
-    auto reset_stream = [&segment_bytes] {
-        auto out = iobuf_deep_copy(segment_bytes);
-        return make_iobuf_input_stream(std::move(out));
-    };
+    auto reset_stream = make_reset_fn(segment_bytes);
     retry_chain_node fib(1000ms, 200ms);
     auto upl_res
       = remote.upload_segment(bucket, path, clen, reset_stream, fib).get();
@@ -194,7 +202,7 @@ make_recording_batch_parser(
     auto parser = std::make_unique<storage::continuous_batch_parser>(
       std::make_unique<recording_batch_consumer>(
         headers, records, file_offsets),
-      std::move(stream));
+      storage::segment_reader_handle(std::move(stream)));
     return parser;
 }
 
@@ -238,10 +246,7 @@ void test_remote_segment_batch_reader(
       .delta_offset = model::offset(0),
       .ntp_revision = manifest_revision};
     auto path = m.generate_segment_path(key, meta);
-    auto reset_stream = [&segment_bytes] {
-        auto out = iobuf_deep_copy(segment_bytes);
-        return make_iobuf_input_stream(std::move(out));
-    };
+    auto reset_stream = make_reset_fn(segment_bytes);
     retry_chain_node fib(1000ms, 200ms);
     auto upl_res
       = remote.upload_segment(bucket, path, clen, reset_stream, fib).get();
@@ -351,10 +356,7 @@ FIXTURE_TEST(
       .delta_offset = model::offset(0),
       .ntp_revision = manifest_revision};
     auto path = m.generate_segment_path(key, meta);
-    auto reset_stream = [&segment_bytes] {
-        auto out = iobuf_deep_copy(segment_bytes);
-        return make_iobuf_input_stream(std::move(out));
-    };
+    auto reset_stream = make_reset_fn(segment_bytes);
     retry_chain_node fib(1000ms, 200ms);
     auto upl_res
       = remote.upload_segment(bucket, path, clen, reset_stream, fib).get();

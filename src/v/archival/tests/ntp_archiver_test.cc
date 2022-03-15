@@ -73,7 +73,7 @@ static void log_segment(const storage::segment& s) {
     vlog(
       test_log.info,
       "Log segment {}. Offsets: {} {}. Is compacted: {}. Is sealed: {}.",
-      s.reader().filename(),
+      s.filename(),
       s.offsets().base_offset,
       s.offsets().dirty_offset,
       s.is_compacted_segment(),
@@ -474,7 +474,7 @@ calculate_segment_stats(const ss::httpd::request& req) {
     counting_batch_consumer::stream_stats stats{};
     auto consumer = std::make_unique<counting_batch_consumer>(std::ref(stats));
     storage::continuous_batch_parser parser(
-      std::move(consumer), std::move(stream));
+      std::move(consumer), storage::segment_reader_handle(std::move(stream)));
     parser.consume().get();
     parser.close().get();
     return stats;

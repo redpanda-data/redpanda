@@ -231,9 +231,8 @@ ntp_archiver::upload_segment(upload_candidate candidate) {
     vlog(ctxlog.debug, "Uploading segment {} to {}", candidate, path);
 
     auto reset_func = [this, candidate] {
-        auto stream = candidate.source->reader().data_stream(
+        return candidate.source->reader().data_stream(
           candidate.file_offset, candidate.final_file_offset, _io_priority);
-        return stream;
     };
     co_return co_await _remote.upload_segment(
       _bucket, path, candidate.content_length, reset_func, fib);

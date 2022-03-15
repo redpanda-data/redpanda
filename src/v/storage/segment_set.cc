@@ -216,7 +216,7 @@ unsafe_do_recover(segment_set&& segments, ss::abort_source& as) {
                       "Error materializing index:{}. Recovering parent "
                       "segment:{}. Details:{}",
                       s.index().filename(),
-                      s.reader().filename(),
+                      s.filename(),
                       std::current_exception());
                     to_recover_set.insert(&s);
                 }

@@ -437,16 +437,13 @@ ss::future<> do_swap_data_file_handles(
       s->reader().filename());
     co_await ss::rename_file(old_name, s->reader().filename());
 
-    auto to_open = std::filesystem::path(s->reader().filename().c_str());
-    auto f = co_await make_reader_handle(to_open, cfg.sanitize);
-    auto st = co_await f.stat();
-
     auto r = segment_reader(
       s->reader().filename(),
-      std::move(f),
-      st.st_size,
       config::shard_local_cfg().storage_read_buffer_size(),
-      config::shard_local_cfg().storage_read_readahead_count());
+      config::shard_local_cfg().storage_read_readahead_count(),
+      cfg.sanitize);
+    co_await r.load_size();
+
     // update partition size probe
     pb.delete_segment(*s.get());
     std::swap(s->reader(), r);
@@ -627,9 +624,10 @@ ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
     auto writer = co_await make_writer_handle(path, cfg.sanitize);
     auto output = co_await ss::make_file_output_stream(std::move(writer));
     for (auto& segment : segments) {
-        auto input = segment->reader().data_stream(0, cfg.iopc);
-        co_await ss::copy(input, output);
-        co_await input.close();
+        auto reader_handle = co_await segment->reader().data_stream(
+          0, cfg.iopc);
+        co_await ss::copy(reader_handle.stream(), output);
+        co_await reader_handle.close();
     }
     co_await output.close();
 
@@ -642,14 +640,12 @@ ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
     offsets.stable_offset = segments.back()->offsets().stable_offset;
 
     // build segment reader over combined data
-    auto reader_fd = co_await internal::make_reader_handle(path, cfg.sanitize);
-    auto segment_size = (co_await reader_fd.stat()).st_size;
     segment_reader reader(
       path.string(),
-      std::move(reader_fd),
-      segment_size,
       config::shard_local_cfg().storage_read_buffer_size(),
-      config::shard_local_cfg().storage_read_readahead_count());
+      config::shard_local_cfg().storage_read_readahead_count(),
+      cfg.sanitize);
+    co_await reader.load_size();
 
     // build an empty index for the segment
     auto index_name = path;

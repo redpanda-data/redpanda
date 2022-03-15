@@ -94,7 +94,7 @@ log_replayer::checkpoint
 log_replayer::recover_in_thread(const ss::io_priority_class& prio) {
     vlog(stlog.debug, "Recovering segment {}", *_seg);
     // explicitly not using the index to recover the full file
-    auto data_stream = _seg->reader().data_stream(0, prio);
+    auto data_stream = _seg->reader().data_stream(0, prio).get();
     auto consumer = std::make_unique<checksumming_consumer>(_seg, _ckpt);
     auto parser = continuous_batch_parser(
       std::move(consumer), std::move(data_stream), true);

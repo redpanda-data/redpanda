@@ -338,7 +338,7 @@ ss::future<upload_result> remote::upload_segment(
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         auto [client, deleter] = co_await _pool.acquire();
-        auto stream = reset_str();
+        auto reader_handle = co_await reset_str();
         auto path = s3::object_key(segment_path());
         vlog(ctxlog.debug, "Uploading segment to path {}", segment_path);
         std::exception_ptr eptr = nullptr;
@@ -348,15 +348,21 @@ ss::future<upload_result> remote::upload_segment(
               bucket,
               path,
               content_length,
-              std::move(stream),
+              reader_handle.take_stream(),
               tags,
               fib.get_timeout());
             _probe.successful_upload();
             _probe.register_upload_size(content_length);
+            co_await reader_handle.close();
             co_return upload_result::success;
         } catch (...) {
             eptr = std::current_exception();
         }
+
+        // `put_object` closed the encapsulated input_stream, but we must
+        // call close() on the segment_reader_handle to release the FD.
+        co_await reader_handle.close();
+
         co_await client->shutdown();
         auto outcome = categorize_error(eptr, fib, bucket, path);
         switch (outcome) {

@@ -138,7 +138,7 @@ ss::future<result<stop_parser>> continuous_batch_parser::consume_header() {
             auto remaining = _header->size_bytes
                              - model::packed_record_batch_header_size;
             auto b = co_await verify_read_iobuf(
-              _input, remaining, "parser::skip_batch", _recovery);
+              get_stream(), remaining, "parser::skip_batch", _recovery);
 
             if (!b) {
                 co_return b.error();
@@ -216,7 +216,7 @@ static ss::future<result<model::record_batch_header>> read_header_impl(
 
 ss::future<result<model::record_batch_header>>
 continuous_batch_parser::read_header() {
-    return read_header_impl(_input, *_consumer, _recovery);
+    return read_header_impl(get_stream(), *_consumer, _recovery);
 }
 
 ss::future<result<stop_parser>> continuous_batch_parser::consume_one() {
@@ -244,7 +244,8 @@ void continuous_batch_parser::add_bytes_and_reset() {
 }
 ss::future<result<stop_parser>> continuous_batch_parser::consume_records() {
     auto sz = _header->size_bytes - model::packed_record_batch_header_size;
-    return verify_read_iobuf(_input, sz, "parser::consume_records", _recovery)
+    return verify_read_iobuf(
+             get_stream(), sz, "parser::consume_records", _recovery)
       .then([this](result<iobuf> record) -> result<stop_parser> {
           if (!record) {
               return record.error();
@@ -264,7 +265,7 @@ ss::future<result<size_t>> continuous_batch_parser::consume() {
                        _err = parser_errc(s.error().value());
                        return ss::stop_iteration::yes;
                    }
-                   if (_input.eof()) {
+                   if (get_stream().eof()) {
                        return ss::stop_iteration::yes;
                    }
                    if (s.value() == stop_parser::yes) {

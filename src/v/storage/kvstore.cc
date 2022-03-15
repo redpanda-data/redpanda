@@ -506,12 +506,14 @@ void kvstore::replay_segments_in_thread(segment_set segs) {
           seg->offsets().base_offset,
           _next_offset);
 
-        auto input = seg->reader().data_stream(0, ss::default_priority_class());
+        auto reader_handle
+          = seg->reader().data_stream(0, ss::default_priority_class()).get();
         auto parser = std::make_unique<continuous_batch_parser>(
-          std::make_unique<replay_consumer>(this), std::move(input));
+          std::make_unique<replay_consumer>(this), std::move(reader_handle));
         auto p = parser.get();
         p->consume()
           .discard_result()
+          .then([p]() { return p->close(); })
           .finally([parser = std::move(parser)] {})
           .get();
 

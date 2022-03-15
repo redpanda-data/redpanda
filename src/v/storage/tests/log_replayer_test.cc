@@ -52,11 +52,8 @@ struct context {
         auto indexer = segment_index(
           base_name + ".index", std::move(fidx), base, 4096);
         auto reader = segment_reader(
-          base_name,
-          ss::open_file_dma(base_name, ss::open_flags::ro).get0(),
-          appender->file_byte_offset(),
-          128_KiB,
-          10);
+          base_name, 128_KiB, 10, debug_sanitize_files::no);
+        reader.load_size().get();
         _seg = ss::make_lw_shared<segment>(
           segment::offset_tracker(model::term_id(0), base),
           std::move(reader),

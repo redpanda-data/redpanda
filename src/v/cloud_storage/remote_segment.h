@@ -21,6 +21,7 @@
 #include "model/record.h"
 #include "s3/client.h"
 #include "storage/parser.h"
+#include "storage/segment_reader.h"
 #include "storage/translating_reader.h"
 #include "storage/types.h"
 #include "utils/retry_chain_node.h"
@@ -97,7 +98,7 @@ public:
 
     /// create an input stream _sharing_ the underlying file handle
     /// starting at position @pos
-    ss::future<ss::input_stream<char>>
+    ss::future<storage::segment_reader_handle>
     data_stream(size_t pos, ss::io_priority_class);
 
     struct input_stream_with_offsets {

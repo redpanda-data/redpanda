@@ -449,7 +449,7 @@ ss::future<append_result> segment::append(model::record_batch&& b) {
     });
 }
 
-ss::input_stream<char>
+ss::future<segment_reader_handle>
 segment::offset_data_stream(model::offset o, ss::io_priority_class iopc) {
     check_segment_not_closed("offset_data_stream()");
     auto nearest = _idx.find_nearest(o);
@@ -555,20 +555,10 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
           record_version_type::v1,
           path));
     }
-    // note: this file _must_ be open in `ro` mode only. Seastar uses dma
-    // files with no shared buffer cache around them. When we use a writer
-    // w/ dma at the same time as the reader, we need a way to synchronize
-    // filesytem metadata. In order to prevent expensive synchronization
-    // primitives fsyncing both *reads* and *writes* we open this file in ro
-    // mode and if raft requires truncation, we open yet-another handle w/
-    // rw mode just for the truncation which gives us all the benefits of
-    // preventing x-file synchronization This is fine, because truncation to
-    // sealed segments are supposed to be very rare events. The hotpath of
-    // truncating the appender, is optimized.
-    auto f = co_await internal::make_reader_handle(path, sanitize_fileops);
-    auto st = co_await f.stat();
+
     auto rdr = std::make_unique<segment_reader>(
-      path.string(), std::move(f), st.st_size, buf_size, read_ahead);
+      path.string(), buf_size, read_ahead, sanitize_fileops);
+    co_await rdr->load_size();
 
     auto index_name = std::filesystem::path(rdr->filename().c_str())
                         .replace_extension("base_index")
@@ -581,6 +571,7 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
      * returning if we happen to also hit an error opening the index.
      */
     std::exception_ptr e;
+    ss::file f;
     try {
         f = co_await internal::make_handle(
           index_name,

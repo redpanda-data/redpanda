@@ -15,6 +15,7 @@
 #include "cloud_storage/types.h"
 #include "random/simple_time_jitter.h"
 #include "s3/client.h"
+#include "storage/segment_reader.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/abort_source.hh>
@@ -35,7 +36,7 @@ public:
     /// Functor that returns fresh input_stream object that can be used
     /// to re-upload and will return all data that needs to be uploaded
     using reset_input_stream
-      = ss::noncopyable_function<ss::input_stream<char>()>;
+      = ss::noncopyable_function<ss::future<storage::segment_reader_handle>()>;
 
     /// Functor that attempts to consume the input stream. If the connection
     /// is broken during the download the functor is responsible for he cleanup.

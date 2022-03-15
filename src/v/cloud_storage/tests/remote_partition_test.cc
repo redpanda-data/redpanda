@@ -68,7 +68,7 @@ make_recording_batch_parser(
     auto parser = std::make_unique<storage::continuous_batch_parser>(
       std::make_unique<recording_batch_consumer>(
         headers, records, file_offsets),
-      std::move(stream));
+      storage::segment_reader_handle(std::move(stream)));
     return parser;
 }
 
@@ -107,6 +107,7 @@ static in_memory_segment make_segment(model::offset base, int num_batches) {
     s.records = std::move(rec);
     s.file_offsets = std::move(off);
     s.sname = segment_name(fmt::format("{}-1-v1.log", s.base_offset()));
+    p1->close().get();
     return s;
 }
 
@@ -130,6 +131,7 @@ make_segment(model::offset base, const std::vector<batch_t>& batches) {
     auto p1 = make_recording_batch_parser(
       iobuf_deep_copy(segment_bytes), hdr, rec, off);
     p1->consume().get();
+    p1->close().get();
     in_memory_segment s;
     s.bytes = linearize_iobuf(std::move(segment_bytes));
     s.base_offset = hdr.front().base_offset;

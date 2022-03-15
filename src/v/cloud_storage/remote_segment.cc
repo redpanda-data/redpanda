@@ -168,7 +168,7 @@ ss::future<> remote_segment::stop() {
     }
 }
 
-ss::future<ss::input_stream<char>>
+ss::future<storage::segment_reader_handle>
 remote_segment::data_stream(size_t pos, ss::io_priority_class io_priority) {
     vlog(_ctxlog.debug, "remote segment file input stream at {}", pos);
     ss::gate::holder g(_gate);
@@ -180,7 +180,7 @@ remote_segment::data_stream(size_t pos, ss::io_priority_class io_priority) {
     options.io_priority_class = io_priority;
     auto data_stream = ss::make_file_input_stream(
       _data_file, pos, std::move(options));
-    co_return data_stream;
+    co_return storage::segment_reader_handle(std::move(data_stream));
 }
 
 ss::future<remote_segment::input_stream_with_offsets>
@@ -751,7 +751,7 @@ remote_segment_batch_reader::init_parser() {
     auto parser = std::make_unique<storage::continuous_batch_parser>(
       std::make_unique<remote_segment_batch_consumer>(
         _config, *this, _seg->get_term(), _seg->get_ntp(), _rtc),
-      std::move(stream_off.stream));
+      storage::segment_reader_handle(std::move(stream_off.stream)));
     _cur_rp_offset = stream_off.rp_offset;
     _cur_delta = stream_off.rp_offset - stream_off.kafka_offset;
     co_return parser;

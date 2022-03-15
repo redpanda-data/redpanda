@@ -393,9 +393,10 @@ void segment_matcher<Fixture>::verify_segment(
     auto segment = get_segment(ntp, name);
     auto pos = segment->offsets().base_offset;
     auto size = segment->size_bytes();
-    auto stream = segment->offset_data_stream(
-      pos, ss::default_priority_class());
-    auto tmp = stream.read_exactly(size).get0();
+    auto reader_handle
+      = segment->offset_data_stream(pos, ss::default_priority_class()).get();
+    auto tmp = reader_handle.stream().read_exactly(size).get0();
+    reader_handle.close().get();
     ss::sstring actual = {tmp.get(), tmp.size()};
     vlog(
       fixt_log.info,
