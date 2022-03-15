@@ -17,12 +17,19 @@ import subprocess
 import os
 from time import sleep
 
+from confluent_kafka import (Consumer, Producer, KafkaException)
+
 from ducktape.mark import matrix, ignore
 
 ERROR_LOGS = [
     # e.g. rpc - server.cc:91 - kafka rpc protocol - Error[applying protocol] remote address: 172.18.0.11:34024 - std::out_of_range (Invalid skip(n). Expected:220385, but skipped:79943)
     "rpc - server.cc.*std::out_of_range.*"
 ]
+
+
+def on_delivery(err, msg):
+    if err is not None:
+        raise KafkaException(err)
 
 
 class LibrdkafkaTest(RedpandaTest):
@@ -39,8 +46,8 @@ class LibrdkafkaTest(RedpandaTest):
             "auto_create_topics_enabled": True,
             "enable_idempotence": True,
             "enable_transactions": True,
-            "transaction_coordinator_replication": 1,
-            "id_allocator_replication": 1,
+            "transaction_coordinator_replication": 3,
+            "id_allocator_replication": 3,
             "default_topic_replications": 1,
             "default_topic_partitions": 4,
             "enable_leader_balancer": False,
@@ -49,6 +56,31 @@ class LibrdkafkaTest(RedpandaTest):
 
         super(LibrdkafkaTest, self).__init__(test_context=test_context,
                                              extra_rp_conf=extra_rp_conf)
+
+    def warmup(self):
+        producer = Producer({
+            "bootstrap.servers": self.redpanda.brokers(),
+            "enable.idempotence": True,
+            "retries": 5
+        })
+        producer.produce("topic1",
+                         key="key1".encode('utf-8'),
+                         value="value1".encode('utf-8'),
+                         callback=on_delivery)
+        producer.flush()
+        consumer = Consumer({
+            "bootstrap.servers": self.redpanda.brokers(),
+            "group.id": "group1",
+            "auto.offset.reset": "earliest"
+        })
+        consumer.subscribe(["topic1"])
+        producer = Producer({
+            "bootstrap.servers": self.redpanda.brokers(),
+            "enable.idempotence": True,
+            "retries": 5,
+            "transactional.id": "tx1"
+        })
+        producer.init_transactions()
 
     # yapf: disable
     @cluster(num_nodes=3, log_allow_list=ERROR_LOGS)
@@ -68,8 +100,6 @@ class LibrdkafkaTest(RedpandaTest):
     @ignore(test_num=82, num_brokers=1)
     @ignore(test_num=99, num_brokers=1)
     @ignore(test_num=30, num_brokers=1)
-    @ignore(test_num=61, num_brokers=1) # transactions
-    @ignore(test_num=98, num_brokers=1) # transactions
     # @ignore appears to not be quite smart enough to handle the partial
     # parameterization so we repeat them here with num_brokers=3. this would be
     # a nice enhancement that we could upstream.
@@ -88,8 +118,6 @@ class LibrdkafkaTest(RedpandaTest):
     @ignore(test_num=44, num_brokers=3)
     @ignore(test_num=69, num_brokers=3)
     @ignore(test_num=81, num_brokers=3)
-    @ignore(test_num=61, num_brokers=3)
-    @ignore(test_num=98, num_brokers=3)
     @matrix(test_num=range(101), num_brokers=[1, 3])
     # yapf: enable
     def test_librdkafka(self, test_num, num_brokers):
@@ -97,8 +125,18 @@ class LibrdkafkaTest(RedpandaTest):
             brokers = self.redpanda.brokers()
             f.write("metadata.broker.list={}".format(brokers))
 
-        retries = 5
+        retries = 12
+        while True:
+            retries -= 1
+            try:
+                self.warmup()
+                break
+            except:
+                if retries == 0:
+                    raise
+                sleep(5)
 
+        retries = 12
         while True:
             # retrying failing tests to avoid transient 'Broker: Not coordinator' error
             retries -= 1
