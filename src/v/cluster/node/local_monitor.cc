@@ -61,12 +61,12 @@ ss::future<> local_monitor::update_state() {
 
 const local_state& local_monitor::get_state_cached() const { return _state; }
 
-void local_monitor::set_path_for_test(const ss::sstring& path) {
+void local_monitor::testing_only_set_path(const ss::sstring& path) {
     _path_for_test = path;
 }
 
-void local_monitor::set_statvfs_for_test(
-  std::function<struct statvfs(const ss::sstring&)> func) {
+void local_monitor::testing_only_set_statvfs(
+  std::function<struct statvfs(const ss::sstring)> func) {
     _statvfs_for_test = std::move(func);
 }
 
@@ -92,15 +92,16 @@ ss::future<std::vector<storage::disk>> local_monitor::get_disks() {
     }};
 }
 
-ss::future<struct statvfs> local_monitor::get_statvfs(const ss::sstring& path) {
-    if (_statvfs_for_test) {
-        co_return _statvfs_for_test.value()(path);
+// NOLINTNEXTLINE (performance-unnecessary-value-param)
+ss::future<struct statvfs> local_monitor::get_statvfs(const ss::sstring path) {
+    if (unlikely(_statvfs_for_test)) {
+        co_return _statvfs_for_test(path);
     } else {
         co_return co_await ss::engine().statvfs(path);
     }
 }
 
-float percent_free(const storage::disk& disk) {
+float local_monitor::percent_free(const storage::disk& disk) {
     long double free = disk.free, total = disk.total;
     return float((free / total) * 100.0);
 }
@@ -111,7 +112,7 @@ void local_monitor::maybe_log_space_error(const storage::disk& disk) {
     auto min_space = std::min(min_by_percent, min_by_bytes);
     clusterlog.log(
       ss::log_level::error,
-      despam_interval,
+      _despam_interval,
       "{}: free space at {:.3f}% on {}: {} total, {} free, "
       "min. free {}. Please adjust retention policies as needed to "
       "avoid running out of space.",

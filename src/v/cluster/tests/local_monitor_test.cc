@@ -50,7 +50,7 @@ local_monitor_fixture::local_monitor_fixture()
     } else {
         clusterlog.info("{}: created test dir {}", __func__, _test_path);
     }
-    _local_monitor.set_path_for_test(_test_path.string());
+    _local_monitor.testing_only_set_path(_test_path.string());
     BOOST_ASSERT(ss::engine_is_ready());
 
     set_config_alert_thresholds(
@@ -83,7 +83,7 @@ struct statvfs local_monitor_fixture::make_statvfs(
 
 void local_monitor_fixture::set_config_alert_thresholds(
   unsigned percent, size_t bytes) {
-    (void)ss::smp::invoke_on_all([percent, bytes]() {
+    auto f = ss::smp::invoke_on_all([percent, bytes]() {
         config::shard_local_cfg()
           .get("storage_space_alert_free_threshold_bytes")
           .set_value(std::any_cast<size_t>(bytes));
@@ -91,6 +91,7 @@ void local_monitor_fixture::set_config_alert_thresholds(
           .get("storage_space_alert_free_threshold_percent")
           .set_value(std::any_cast<unsigned>(percent));
     });
+    f.get();
 }
 
 FIXTURE_TEST(local_state_has_single_disk, local_monitor_fixture) {
@@ -102,7 +103,7 @@ FIXTURE_TEST(local_monitor_inject_statvfs, local_monitor_fixture) {
     static constexpr auto free = 100UL, total = 200UL, block_size = 4096UL;
     struct statvfs stats = make_statvfs(free, total, block_size);
     auto lamb = [&](const ss::sstring& _ignore) { return stats; };
-    _local_monitor.set_statvfs_for_test(lamb);
+    _local_monitor.testing_only_set_statvfs(lamb);
 
     auto ls = update_state();
     BOOST_TEST_REQUIRE(ls.disks.size() == 1);
@@ -118,7 +119,7 @@ FIXTURE_TEST(local_monitor_alert_on_space_percent, local_monitor_fixture) {
                                      * (default_percent_threshold / 100.0);
     struct statvfs stats = make_statvfs(free, total, block_size);
     auto lamb = [&](const ss::sstring&) { return stats; };
-    _local_monitor.set_statvfs_for_test(lamb);
+    _local_monitor.testing_only_set_statvfs(lamb);
 
     // One block over the threshold should not alert
     stats.f_bfree = min_free_percent_blocks + 1;
@@ -144,7 +145,7 @@ FIXTURE_TEST(local_monitor_alert_on_space_bytes, local_monitor_fixture) {
     struct statvfs stats = make_statvfs(
       min_bytes_in_blocks + 1, total, block_size);
     auto lamb = [&](const ss::sstring&) { return stats; };
-    _local_monitor.set_statvfs_for_test(lamb);
+    _local_monitor.testing_only_set_statvfs(lamb);
 
     auto ls = update_state();
     BOOST_TEST_REQUIRE(ls.storage_space_alert == storage::disk_space_alert::ok);
