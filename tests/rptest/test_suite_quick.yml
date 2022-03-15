@@ -10,6 +10,3 @@
 quick:
   included:
   - tests/
-
-  excluded:
-  - tests/librdkafka_test.py
