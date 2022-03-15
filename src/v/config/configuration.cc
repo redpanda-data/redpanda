@@ -1128,8 +1128,7 @@ configuration::configuration()
       *this,
       "metrics_reporter_url",
       "cluster metrics reporter url",
-      {.needs_restart = needs_restart::no,
-       .visibility = visibility::deprecated},
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       "https://m.rp.vectorized.io/v2")
   , features_auto_enable(
       *this,
