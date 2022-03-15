@@ -81,6 +81,7 @@ ss::future<> segment::close() {
      * the gate should be closed without the write lock because there may be a
      * pending background roll operation that requires the write lock.
      */
+    vlog(stlog.trace, "closing segment: {} ", *this);
     return _gate.close().then([this] {
         return write_lock().then([this](ss::rwlock::holder h) {
             return do_flush()
