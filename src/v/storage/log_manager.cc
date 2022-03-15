@@ -290,27 +290,34 @@ ss::future<> log_manager::remove(model::ntp ntp) {
 }
 
 ss::future<> log_manager::dispatch_topic_dir_deletion(ss::sstring dir) {
-    return ss::smp::submit_to(0, [dir = std::move(dir)]() mutable {
-        static thread_local mutex fs_lock;
-        return fs_lock.with([dir = std::move(dir)] {
-            return ss::file_exists(dir).then([dir](bool exists) {
-                if (!exists) {
-                    return ss::now();
-                }
-                return directory_walker::empty(std::filesystem::path(dir))
-                  .then([dir](bool empty) {
-                      if (!empty) {
-                          vlog(
-                            stlog.warn,
-                            "Not deleting non-empty topic dir {}",
-                            dir);
-                          return ss::now();
-                      }
-                      return ss::remove_file(dir);
-                  });
-            });
-        });
-    });
+    return ss::smp::submit_to(
+             0,
+             [dir = std::move(dir)]() mutable {
+                 static thread_local mutex fs_lock;
+                 return fs_lock.with([dir = std::move(dir)] {
+                     return ss::file_exists(dir).then([dir](bool exists) {
+                         if (!exists) {
+                             return ss::now();
+                         }
+                         return directory_walker::empty(
+                                  std::filesystem::path(dir))
+                           .then([dir](bool empty) {
+                               if (!empty) {
+                                   return ss::now();
+                               }
+                               return ss::remove_file(dir);
+                           });
+                     });
+                 });
+             })
+      .handle_exception_type([](const std::filesystem::filesystem_error& e) {
+          // directory might have already been used by different shard,
+          // just ignore the error
+          if (e.code() == std::errc::directory_not_empty) {
+              return ss::now();
+          }
+          return ss::make_exception_future<>(e);
+      });
 }
 
 absl::flat_hash_set<model::ntp> log_manager::get_all_ntps() const {

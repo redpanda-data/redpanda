@@ -13,8 +13,8 @@ from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from ducktape.mark import ignore
 from ducktape.utils.util import wait_until
+from rptest.services.rpk_producer import RpkProducer
 
 from rptest.tests.redpanda_test import RedpandaTest
 
@@ -27,8 +27,7 @@ class RecreateTopicMetadataTest(RedpandaTest):
                              num_brokers=5,
                              extra_rp_conf={})
 
-    @ignore  # issue #3859
-    @cluster(num_nodes=5)
+    @cluster(num_nodes=6)
     @parametrize(replication_factor=3)
     @parametrize(replication_factor=5)
     def test_recreated_topic_metadata_are_valid(self, replication_factor):
@@ -63,9 +62,17 @@ class RecreateTopicMetadataTest(RedpandaTest):
                 wait_until(lambda: wait_for_leader(p.id, target),
                            timeout_sec=30,
                            backoff_sec=1)
+            msg_cnt = 100
+            producer = RpkProducer(self.test_context,
+                                   self.redpanda,
+                                   topic,
+                                   16384,
+                                   msg_cnt,
+                                   acks=-1)
 
-        for i in range(0, 100):
-            rpk.produce(topic=topic, key=str(i), msg=f"payload-{i}")
+            producer.start()
+            producer.wait()
+            producer.free()
 
         # transfer leadership to grow the term
         for i in range(0, 10):
