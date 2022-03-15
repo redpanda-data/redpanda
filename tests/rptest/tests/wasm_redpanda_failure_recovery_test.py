@@ -8,7 +8,6 @@
 # by the Apache License, Version 2.0
 
 import random
-from ducktape.mark import ignore
 from rptest.clients.types import TopicSpec
 from rptest.wasm.wasm_test import WasmTest
 from rptest.wasm.topics_result_set import materialized_at_least_once_compare, group_fan_in_verifier
@@ -57,7 +56,6 @@ class WasmRedpandaFailureRecoveryTest(WasmTest):
         """
         return {topic: self._num_records for topic in self.wasm_test_output()}
 
-    @ignore  # https://github.com/vectorizedio/redpanda/issues/2514
     @cluster(num_nodes=4, log_allow_list=WASM_CHAOS_LOG_ALLOW_LIST)
     def verify_materialized_topics_test(self):
         self.verify_results(materialized_at_least_once_compare)
@@ -121,7 +119,6 @@ class WasmRPMultiInputTopicFailureRecoveryTest(WasmRedpandaFailureRecoveryTest
                        script=WasmTemplateRepository.IDENTITY_TRANSFORM)
         ]
 
-    @ignore  # https://github.com/vectorizedio/redpanda/issues/2514
     @cluster(num_nodes=6, log_allow_list=WASM_CHAOS_LOG_ALLOW_LIST)
     def verify_materialized_topics_test(self):
         self.verify_results(materialized_at_least_once_compare)
@@ -161,7 +158,6 @@ class WasmRPMeshFailureRecoveryTest(WasmRedpandaFailureRecoveryTest):
                 script=WasmTemplateRepository.IDENTITY_TRANSFORM)
         ]
 
-    @ignore  # https://github.com/vectorizedio/redpanda/issues/2514
     @cluster(num_nodes=6, log_allow_list=WASM_CHAOS_LOG_ALLOW_LIST)
     def verify_materialized_topics_test(self):
         self.start_wasm()

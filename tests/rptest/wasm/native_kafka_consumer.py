@@ -19,11 +19,11 @@ class NativeKafkaConsumer(BackgroundTask):
     def __init__(self,
                  brokers,
                  topic_partitions,
-                 max_records_per_partition,
+                 max_records_per_topic,
                  batch_size=4092):
         super(NativeKafkaConsumer, self).__init__()
         self._topic_partitions = topic_partitions
-        self._max_records_per_partition = max_records_per_partition
+        self._max_records_per_topic = max_records_per_topic
         self._brokers = brokers
         self._batch_size = batch_size
         self._max_attempts = 20
@@ -33,7 +33,7 @@ class NativeKafkaConsumer(BackgroundTask):
         return f"consumer-worker-{str(random.randint(0,9999))}"
 
     def total_expected_records(self):
-        return sum(self._max_records_per_partition.values())
+        return sum(self._max_records_per_topic.values())
 
     def _init_consumer(self):
         consumer = KafkaConsumer(client_id=self.task_name(),
@@ -50,7 +50,7 @@ class NativeKafkaConsumer(BackgroundTask):
         return consumer
 
     def _finished_consume(self):
-        for topic, throughput in self._max_records_per_partition.items():
+        for topic, throughput in self._max_records_per_topic.items():
             if self.results.num_records_for_topic(topic) < throughput:
                 return False
         return True
