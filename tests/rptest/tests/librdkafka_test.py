@@ -69,10 +69,6 @@ class LibrdkafkaTest(RedpandaTest):
     @ignore(test_num=99, num_brokers=1)
     @ignore(test_num=30, num_brokers=1)
     @ignore(test_num=61, num_brokers=1) # transactions
-    @ignore(test_num=76, num_brokers=1) # idempotent producer
-    @ignore(test_num=86, num_brokers=1) # idempotent producer
-    @ignore(test_num=90, num_brokers=1) # idempotent producer
-    @ignore(test_num=94, num_brokers=1) # idempotent producer
     @ignore(test_num=98, num_brokers=1) # transactions
     # @ignore appears to not be quite smart enough to handle the partial
     # parameterization so we repeat them here with num_brokers=3. this would be
@@ -93,10 +89,6 @@ class LibrdkafkaTest(RedpandaTest):
     @ignore(test_num=69, num_brokers=3)
     @ignore(test_num=81, num_brokers=3)
     @ignore(test_num=61, num_brokers=3)
-    @ignore(test_num=76, num_brokers=3)
-    @ignore(test_num=86, num_brokers=3)
-    @ignore(test_num=90, num_brokers=3)
-    @ignore(test_num=94, num_brokers=3)
     @ignore(test_num=98, num_brokers=3)
     @matrix(test_num=range(101), num_brokers=[1, 3])
     # yapf: enable
