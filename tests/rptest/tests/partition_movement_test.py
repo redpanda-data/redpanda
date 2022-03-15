@@ -227,7 +227,8 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         """
         Move partitions with active consumer / producer
         """
-        self.start_redpanda(num_nodes=3)
+        self.start_redpanda(num_nodes=3,
+                            extra_rp_conf={"default_topic_replications": 3})
         spec = TopicSpec(name="topic", partition_count=3, replication_factor=3)
         self.client().create_topic(spec)
         self.topic = spec.name
