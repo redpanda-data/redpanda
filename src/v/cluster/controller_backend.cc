@@ -187,7 +187,24 @@ ss::future<> controller_backend::stop() {
     return _gate.close();
 }
 
+void controller_backend::setup_metrics() {
+    if (config::shard_local_cfg().disable_metrics()) {
+        return;
+    }
+    namespace sm = ss::metrics;
+    _metrics.add_group(
+      prometheus_sanitize::metrics_name("cluster:controller"),
+      {
+        sm::make_gauge(
+          "pending_partition_operations",
+          [this] { return _topic_deltas.size(); },
+          sm::description(
+            "Number of partitions with ongoing/requested operations")),
+      });
+}
+
 ss::future<> controller_backend::start() {
+    setup_metrics();
     return bootstrap_controller_backend().then([this] {
         start_topics_reconciliation_loop();
         _housekeeping_timer.set_callback([this] { housekeeping(); });
