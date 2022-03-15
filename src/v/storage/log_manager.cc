@@ -306,6 +306,14 @@ ss::future<> log_manager::dispatch_topic_dir_deletion(ss::sstring dir) {
                   });
             });
         });
+    })
+    .handle_exception_type([](const std::filesystem::filesystem_error& e) {
+        // directory might have already been used by different shard, 
+        // just ignore the error
+         if(e.code() == std::errc::directory_not_empty) {
+             return ss::now();
+         }
+         return ss::make_exception_future<>(e);
     });
 }
 
