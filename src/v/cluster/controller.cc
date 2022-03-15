@@ -152,6 +152,7 @@ ss::future<> controller::start() {
             std::ref(_stm),
             std::ref(_connections),
             std::ref(_partition_leaders),
+            std::ref(_feature_table),
             std::ref(_as));
       })
       .then([this] {

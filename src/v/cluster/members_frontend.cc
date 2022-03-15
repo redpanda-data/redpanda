@@ -12,6 +12,7 @@
 #include "cluster/controller_service.h"
 #include "cluster/controller_stm.h"
 #include "cluster/errc.h"
+#include "cluster/feature_table.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
@@ -31,6 +32,7 @@ members_frontend::members_frontend(
   ss::sharded<controller_stm>& stm,
   ss::sharded<rpc::connection_cache>& connections,
   ss::sharded<partition_leaders_table>& leaders,
+  ss::sharded<feature_table>& feature_table,
   ss::sharded<ss::abort_source>& as)
   : _self(config::node().node_id())
   , _node_op_timeout(
@@ -38,6 +40,7 @@ members_frontend::members_frontend(
   , _stm(stm)
   , _connections(connections)
   , _leaders(leaders)
+  , _feature_table(feature_table)
   , _as(as) {}
 
 ss::future<> members_frontend::start() { return ss::now(); }
@@ -135,6 +138,13 @@ members_frontend::recommission_node(model::node_id id) {
 
 ss::future<std::error_code>
 members_frontend::set_maintenance_mode(model::node_id id, bool enabled) {
+    if (!_feature_table.local().is_active(cluster::feature::maintenance_mode)) {
+        vlog(
+          clusterlog.info,
+          "Maintenance mode feature is not active (upgrade in progress?)");
+        co_return errc::invalid_node_operation;
+    }
+
     auto leader = _leaders.local().get_leader(model::controller_ntp);
     if (!leader) {
         co_return errc::no_leader_controller;
