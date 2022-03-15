@@ -58,7 +58,22 @@ ss::future<> members_backend::stop() {
     return _bg.close();
 }
 
+void members_backend::setup_metrics() {
+    if (config::shard_local_cfg().disable_metrics()) {
+        return;
+    }
+    namespace sm = ss::metrics;
+    _metrics.add_group(
+      prometheus_sanitize::metrics_name("cluster:members:backend"),
+      {
+        sm::make_gauge(
+          "queued_node_operations",
+          [this] { return _updates.size(); },
+          sm::description("Number of queued node operations")),
+      });
+}
 void members_backend::start() {
+    setup_metrics();
     ssx::spawn_with_gate(_bg, [this] {
         return ss::do_until(
           [this] { return _as.local().abort_requested(); },
