@@ -116,7 +116,7 @@ class NodeMetricsTest(RedpandaTest):
         # validating that these metrics exist and are non-zero is a good
         # integration test.
         wait_until(lambda: self._produce_consumed_space(orig_free),
-                   timeout_sec=45,
+                   timeout_sec=120,
                    err_msg="Failed to consume free space metric via producer")
 
         t2 = time()
