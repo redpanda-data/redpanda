@@ -22,7 +22,10 @@
 static std::unique_ptr<cluster::allocation_node>
 create_allocation_node(model::node_id nid, uint32_t cores) {
     return std::make_unique<cluster::allocation_node>(
-      nid, cores, absl::node_hash_map<ss::sstring, ss::sstring>{});
+      nid,
+      cores,
+      absl::node_hash_map<ss::sstring, ss::sstring>{},
+      std::nullopt);
 }
 
 static void validate_delta(

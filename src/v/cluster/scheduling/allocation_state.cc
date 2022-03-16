@@ -105,7 +105,8 @@ void allocation_state::update_allocation_nodes(
               std::make_unique<allocation_node>(
                 b.id(),
                 b.properties().cores,
-                absl::node_hash_map<ss::sstring, ss::sstring>{}));
+                absl::node_hash_map<ss::sstring, ss::sstring>{},
+                b.rack()));
         } else {
             it->second->update_core_count(b.properties().cores);
             // node was added back to the cluster

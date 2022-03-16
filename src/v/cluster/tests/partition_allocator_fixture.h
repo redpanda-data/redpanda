@@ -42,7 +42,16 @@ struct partition_allocator_fixture {
         allocator.register_node(std::make_unique<cluster::allocation_node>(
           model::node_id(id),
           core_count,
-          absl::node_hash_map<ss::sstring, ss::sstring>{}));
+          absl::node_hash_map<ss::sstring, ss::sstring>{},
+          std::nullopt));
+    }
+
+    void register_node(int id, int core_count, model::rack_id rack) {
+        allocator.register_node(std::make_unique<cluster::allocation_node>(
+          model::node_id(id),
+          core_count,
+          absl::node_hash_map<ss::sstring, ss::sstring>{},
+          std::move(rack)));
     }
 
     void saturate_all_machines() {
