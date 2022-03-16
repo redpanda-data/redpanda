@@ -653,16 +653,11 @@ ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
     if (co_await ss::file_exists(index_name.string())) {
         co_await ss::remove_file(index_name.string());
     }
-    auto index_fd = co_await make_handle(
-      index_name.string(),
-      ss::open_flags::create | ss::open_flags::rw,
-      {},
-      cfg.sanitize);
     segment_index index(
       index_name.string(),
-      index_fd,
       offsets.base_offset,
-      segment_index::default_data_buffer_step);
+      segment_index::default_data_buffer_step,
+      cfg.sanitize);
 
     co_return ss::make_lw_shared<segment>(
       offsets,

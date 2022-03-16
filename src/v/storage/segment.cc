@@ -564,34 +564,11 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
                         .replace_extension("base_index")
                         .string();
 
-    /*
-     * NOTE for the next round of clean-up here: it is safe to let a file handle
-     * be destroyed without closing as long as there isn't any queued work on
-     * the file. thus in this case we don't need to close the reader before
-     * returning if we happen to also hit an error opening the index.
-     */
-    std::exception_ptr e;
-    ss::file f;
-    try {
-        f = co_await internal::make_handle(
-          index_name,
-          ss::open_flags::create | ss::open_flags::rw,
-          {},
-          sanitize_fileops);
-    } catch (...) {
-        e = std::current_exception();
-    }
-
-    if (e) {
-        co_await rdr->close();
-        std::rethrow_exception(e);
-    }
-
     auto idx = segment_index(
       index_name,
-      std::move(f),
       meta->base_offset,
-      segment_index::default_data_buffer_step);
+      segment_index::default_data_buffer_step,
+      sanitize_fileops);
 
     co_return ss::make_lw_shared<segment>(
       segment::offset_tracker(meta->term, meta->base_offset),
