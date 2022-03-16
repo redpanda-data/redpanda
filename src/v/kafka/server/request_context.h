@@ -32,6 +32,7 @@
 #include <seastar/util/log.hh>
 
 #include <memory>
+#include <type_traits>
 
 namespace kafka {
 
@@ -54,6 +55,11 @@ struct request_header {
     bool is_flexible() const { return tags_size_bytes > 0; }
 
     friend std::ostream& operator<<(std::ostream&, const request_header&);
+};
+
+template<typename T>
+concept has_throttle_time_ms = requires(T a) {
+    {a.data.throttle_time_ms};
 };
 
 class request_context {
@@ -120,10 +126,9 @@ public:
         return _conn->server().tx_gateway_frontend();
     }
 
-    int32_t throttle_delay_ms() const {
+    std::chrono::milliseconds throttle_delay_ms() const {
         return std::chrono::duration_cast<std::chrono::milliseconds>(
-                 _throttle_delay)
-          .count();
+          _throttle_delay);
     }
 
     kafka::group_router& groups() { return _conn->server().group_router(); }
@@ -176,6 +181,17 @@ public:
                 version = api_version(0);
             }
         }
+
+        /// Many responses contain a throttle_time_ms field, to prevent each
+        /// handler from manually having to set this value, it can be done in
+        /// one place here, with this concept check
+        if constexpr (has_throttle_time_ms<ResponseType>) {
+            /// Allow request handlers to override the throttle response, if
+            /// multiple throttles detected, choose larger of the two
+            r.data.throttle_time_ms = std::max(
+              r.data.throttle_time_ms, throttle_delay_ms());
+        }
+
         auto resp = std::make_unique<response>(is_flexible);
         r.encode(resp->writer(), version);
         return ss::make_ready_future<response_ptr>(std::move(resp));
