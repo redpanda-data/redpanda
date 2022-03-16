@@ -123,10 +123,20 @@ void consensus::setup_metrics() {
     _metrics.add_group(
       prometheus_sanitize::metrics_name("raft"),
       {sm::make_gauge(
-        "leader_for",
-        [this] { return is_leader(); },
-        sm::description("Number of groups for which node is a leader"),
-        labels)});
+         "leader_for",
+         [this] { return is_leader(); },
+         sm::description("Number of groups for which node is a leader"),
+         labels),
+       sm::make_gauge(
+         "configuration_change_in_progress",
+         [this] {
+             return is_leader()
+                    && _configuration_manager.get_latest().type()
+                         == configuration_type::joint;
+         },
+         sm::description("Indicates if current raft group configuration is in "
+                         "joint state i.e. configuration is being changed"),
+         labels)});
 }
 
 void consensus::do_step_down() {

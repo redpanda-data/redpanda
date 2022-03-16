@@ -72,6 +72,7 @@ private:
     void handle_reallocation_finished(model::node_id);
     void reassign_replicas(partition_assignment&, partition_reallocation&);
     void calculate_reallocations_after_node_added(update_meta&) const;
+    void setup_metrics();
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<topic_table>& _topics;
     ss::sharded<partition_allocator>& _allocator;
@@ -90,6 +91,7 @@ private:
     std::chrono::milliseconds _retry_timeout;
     ss::timer<> _retry_timer;
     ss::condition_variable _new_updates;
+    ss::metrics::metric_groups _metrics;
 };
 
 } // namespace cluster
