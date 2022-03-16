@@ -22,9 +22,11 @@ from rptest.util import (
     wait_for_segments_removal,
 )
 from rptest.clients.rpk import RpkTool
-from rptest.services.franz_go_verifiable_services import FranzGoVerifiableProducer, FranzGoVerifiableSeqConsumer, FranzGoVerifiableRandomConsumer
+from rptest.services.franz_go_verifiable_services import FranzGoVerifiableProducer, FranzGoVerifiableSeqConsumer, FranzGoVerifiableRandomConsumer, ManifestMaker
 from rptest.services.franz_go_verifiable_services import ServiceStatus
 from rptest.services.rpk_consumer import RpkConsumer
+from rptest.services.redpanda import SISettings
+from rptest.tests.redpanda_test import RedpandaTest
 
 import uuid
 import os
@@ -125,105 +127,71 @@ class EndToEndShadowIndexingTest(EndToEndTest):
         self.run_validation()
 
 
-class MoreE2EShadowIndexingTest(EndToEndTest):
+class MoreE2EShadowIndexingTest(RedpandaTest):
     # Over the last couple months, engineers were tasked to identify failures with one of Redpanda's latest features, shadow indexing.
     # Many new tests and workloads were made as a result of this effort. These tests, however, were setup and run manually.
     # This class ports many of those tests to ducktape.
     # For more details, see https://github.com/redpanda-data/redpanda/issues/3572
     segment_size = 1048576  # 1MB
-    cloud_cache_size = None
-    s3_host_name = "minio-s3"
-    s3_access_key = "panda-user"
-    s3_secret_key = "panda-secret"
-    s3_region = "panda-region"
-    s3_topic_name = "panda-topic"
     topics = []
     groups = []
     num_groups = 2
 
     def __init__(self, test_context):
-        super(MoreE2EShadowIndexingTest,
-              self).__init__(test_context=test_context)
 
-        self.s3_bucket_name = f"panda-bucket-{uuid.uuid1()}"
+        # Cache limit test and infinite retention have
+        # segment size of 1G
+        if test_context.function_name == 'test_si_cache_limit' or test_context.function_name == 'test_infinite_retention':
+            self.segment_size = 2**30
 
-        self._extra_rp_conf = dict(
-            cloud_storage_enabled=True,
-            cloud_storage_access_key=self.s3_access_key,
-            cloud_storage_secret_key=self.s3_secret_key,
-            cloud_storage_region=self.s3_region,
-            cloud_storage_bucket=self.s3_bucket_name,
-            cloud_storage_disable_tls=True,
-            cloud_storage_api_endpoint=self.s3_host_name,
-            cloud_storage_api_endpoint_port=9000,
-            cloud_storage_reconciliation_interval_ms=500,
-            cloud_storage_max_connections=5,
-        )
-
+        # All tests use 20GB cache except or test_si_cache_limit.
+        # 20GB is the default size in RP docs.
         if test_context.function_name == 'test_si_cache_limit':
-            self.segment_size = 2**30
-            self.cloud_cache_size = 5 * self.segment_size
-            self._extra_rp_conf.update(
-                cloud_storage_cache_size=self.cloud_cache_size)
+            self.si_settings = SISettings(log_segment_size=self.segment_size,
+                                          cloud_storage_cache_size=5 *
+                                          self.segment_size)
+        else:
+            self.si_settings = SISettings(log_segment_size=self.segment_size,
+                                          cloud_storage_cache_size=20 * 2**30)
 
-        elif test_context.function_name == 'test_infinite_retention':
-            self.segment_size = 2**30
+        super(MoreE2EShadowIndexingTest,
+              self).__init__(test_context=test_context,
+                             num_brokers=3,
+                             extra_rp_conf={
+                                 'disable_metrics': True,
+                                 'election_timeout_ms': 5000,
+                                 'raft_heartbeat_interval_ms': 500,
+                             },
+                             si_settings=self.si_settings)
 
-        self._extra_rp_conf.update(log_segment_size=self.segment_size)
-
-        self.scale = Scale(test_context)
-        self.redpanda = RedpandaService(
-            context=test_context,
-            num_brokers=3,
-            extra_rp_conf=self._extra_rp_conf,
-        )
-
-        self.kafka_tools = KafkaCliTools(self.redpanda)
-        self.s3_client = S3Client(
-            region=self.s3_region,
-            access_key=self.s3_access_key,
-            secret_key=self.s3_secret_key,
-            endpoint=f"http://{self.s3_host_name}:9000",
-            logger=self.logger,
-        )
+        self.fgo_node = self.test_context.cluster.alloc(
+            ClusterSpec.simple_linux(1))
+        self.logger.debug(f"Allocated verifier node {self.fgo_node[0].name}")
 
         # Used in the consumer groups tests
         self._exceptions = [None] * self.num_groups
 
     def setUp(self):
-        self.s3_client.empty_bucket(self.s3_bucket_name)
-        self.s3_client.create_bucket(self.s3_bucket_name)
-        self.redpanda.start()
-
         if self.test_context.function_name == 'test_consumer_groups':
             self.topics = [
                 TopicSpec(partition_count=5) for i in range(self.num_groups)
             ]
             self.groups = [f'group-{i}' for i in range(self.num_groups)]
-
-            for spec in self.topics:
-                self.kafka_tools.create_topic(spec)
-                self.topic = spec.name
         else:
-            spec = TopicSpec(partition_count=5)
-            self.kafka_tools.create_topic(spec)
-            self.topic = spec.name
-            self.topics.append(spec)
+            self.topics = [TopicSpec(partition_count=5)]
 
-    def tearDown(self):
-        self.s3_client.empty_bucket(self.s3_bucket_name)
+        super().setUp()
 
-    def _gen_manifests(self, msg_size, custom_node):
+    def _gen_manifests(self, msg_size):
         # Create manifests
-        small_producer = FranzGoVerifiableProducer(self.test_context,
-                                                   self.redpanda, self.topic,
-                                                   msg_size, 10000,
-                                                   custom_node)
+        small_producer = ManifestMaker(self.test_context, self.redpanda,
+                                       self.topics, msg_size, 10000,
+                                       self.fgo_node)
         small_producer.start()
         small_producer.wait()
 
         def check_s3():
-            objects = list(self.s3_client.list_objects(self.s3_bucket_name))
+            objects = list(self.redpanda.get_objects_from_si())
             return len(objects) > 0
 
         wait_until(check_s3,
@@ -231,14 +199,26 @@ class MoreE2EShadowIndexingTest(EndToEndTest):
                    backoff_sec=1,
                    err_msg='Failed to write objects to S3')
 
+    def free_nodes(self):
+        # Free the normally allocated nodes (e.g. RedpandaService)
+        super().free_nodes()
+
+        assert len(self.fgo_node) == 1
+
+        # The verifier opens huge numbers of connections, which can interfere
+        # with subsequent tests' use of the node.  Clear them down first.
+        wait_until(lambda: self.redpanda.sockets_clear(self.fgo_node[0]),
+                   timeout_sec=120,
+                   backoff_sec=10)
+
+        # Free the hand-allocated node that we share between the various
+        # verifier services
+        self.logger.debug(f"Freeing verifier node {self.fgo_node[0].name}")
+        self.test_context.cluster.free_single(self.fgo_node[0])
+
     # Setup a topic with infinite retention.
     @cluster(num_nodes=4)
     def test_infinite_retention(self):
-        # Node alloc is first because CI fails in the debug pipeline due to
-        # the warning message "Test requested X nodes, used only Y"
-        fgo_node = self.test_context.cluster.alloc(ClusterSpec.simple_linux(1))
-        self.logger.debug(f"Allocated verifier node {fgo_node[0].name}")
-
         self.logger.info(f"Environment: {os.environ}")
         if os.environ.get('BUILD_TYPE', None) == 'debug':
             self.logger.info(
@@ -257,14 +237,14 @@ class MoreE2EShadowIndexingTest(EndToEndTest):
         msg_size = 2**18
         msg_count = 100000
 
-        self._gen_manifests(msg_size, fgo_node)
+        self._gen_manifests(msg_size)
 
         producer = FranzGoVerifiableProducer(self.test_context, self.redpanda,
                                              self.topic, msg_size, msg_count,
-                                             fgo_node)
+                                             self.fgo_node)
         rand_consumer = FranzGoVerifiableRandomConsumer(
             self.test_context, self.redpanda, self.topic, msg_size, 100, 10,
-            fgo_node)
+            self.fgo_node)
 
         producer.start(clean=False)
         rand_consumer.start(clean=False)
@@ -277,11 +257,6 @@ class MoreE2EShadowIndexingTest(EndToEndTest):
     # while the system is under load (busy).
     @cluster(num_nodes=4)
     def test_create_or_delete_topics_while_busy(self):
-        # Node alloc is first because CI fails in the debug pipeline due to
-        # the warning message "Test requested X nodes, used only Y"
-        fgo_node = self.test_context.cluster.alloc(ClusterSpec.simple_linux(1))
-        self.logger.debug(f"Allocated verifier node {fgo_node[0].name}")
-
         self.logger.info(f"Environment: {os.environ}")
         if os.environ.get('BUILD_TYPE', None) == 'debug':
             self.logger.info(
@@ -300,14 +275,14 @@ class MoreE2EShadowIndexingTest(EndToEndTest):
         msg_size = 2**15
         msg_count = 1000
 
-        self._gen_manifests(msg_size, fgo_node)
+        self._gen_manifests(msg_size)
 
         producer = FranzGoVerifiableProducer(self.test_context, self.redpanda,
                                              self.topic, msg_size, msg_count,
-                                             fgo_node)
+                                             self.fgo_node)
         rand_consumer = FranzGoVerifiableRandomConsumer(
             self.test_context, self.redpanda, self.topic, msg_size, 100, 10,
-            fgo_node)
+            self.fgo_node)
 
         producer.start(clean=False)
         rand_consumer.start(clean=False)
@@ -322,14 +297,14 @@ class MoreE2EShadowIndexingTest(EndToEndTest):
             if trigger == 2:
                 some_topic = TopicSpec()
                 print(f'Create topic: {some_topic}')
-                self.kafka_tools.create_topic(some_topic)
+                self.client().create_topic(some_topic)
                 random_topics.append(some_topic)
 
             if trigger == 3:
                 if len(random_topics) > 0:
                     some_topic = random_topics.pop()
                     print(f'Delete topic: {some_topic}')
-                    self.kafka_tools.delete_topic(some_topic.name)
+                    self.client().delete_topic(some_topic.name)
 
             if trigger == 4:
                 random.shuffle(random_topics)
@@ -415,7 +390,7 @@ class MoreE2EShadowIndexingTest(EndToEndTest):
     # Run a workload against SI with group consuming.
     # In the past, a customer has run into issues with group consuming on systems
     # with SI enabled
-    @cluster(num_nodes=7)
+    @cluster(num_nodes=8)
     def test_consumer_groups(self):
         # Remote write/read and retention set at topic level
         rpk = RpkTool(self.redpanda)
@@ -424,6 +399,9 @@ class MoreE2EShadowIndexingTest(EndToEndTest):
             rpk.alter_topic_config(spec.name, 'redpanda.remote.read', 'true')
             rpk.alter_topic_config(spec.name, 'retention.bytes',
                                    str(self.segment_size))
+
+        self._gen_manifests(2**15)
+
         workers = []
         for idx in range(self.num_groups):
             th = threading.Thread(name=f'LoadGen-{idx}',
@@ -550,10 +528,9 @@ class MoreE2EShadowIndexingTest(EndToEndTest):
 
     @cluster(num_nodes=5)
     def test_data_loss(self):
-        # Node alloc is first because CI fails in the debug pipeline due to
-        # the warning message "Test requested X nodes, used only Y"
-        fgo_node = self.test_context.cluster.alloc(ClusterSpec.simple_linux(1))
-        self.logger.debug(f"Allocated verifier node {fgo_node[0].name}")
+        # Creating the producer/consumers first because CI fails
+        # in the debug pipeline due to the warning message
+        # "Test requested X nodes, used only Y"
 
         # 1k messages of size 2**15
         # is ~32MB of data.
@@ -561,7 +538,7 @@ class MoreE2EShadowIndexingTest(EndToEndTest):
         msg_count = 1000
         producer = FranzGoVerifiableProducer(self.test_context, self.redpanda,
                                              self.topic, msg_size, msg_count,
-                                             fgo_node)
+                                             self.fgo_node)
 
         consumer = RpkConsumer(self.test_context,
                                self.redpanda,
@@ -585,7 +562,7 @@ class MoreE2EShadowIndexingTest(EndToEndTest):
         retention_ms = 120000
         rpk.alter_topic_config(self.topic, 'retention.ms', str(retention_ms))
 
-        self._gen_manifests(msg_size, fgo_node)
+        self._gen_manifests(msg_size)
 
         # Produce some data
         producer.start(clean=False)
@@ -617,11 +594,6 @@ class MoreE2EShadowIndexingTest(EndToEndTest):
     # Test the SI cache limit
     @cluster(num_nodes=4)
     def test_si_cache_limit(self):
-        # Node alloc is first because CI fails in the debug pipeline due to
-        # the warning message "Test requested X nodes, used only Y"
-        fgo_node = self.test_context.cluster.alloc(ClusterSpec.simple_linux(1))
-        self.logger.debug(f"Allocated verifier node {fgo_node[0].name}")
-
         self.logger.info(f"Environment: {os.environ}")
         if os.environ.get('BUILD_TYPE', None) == 'debug':
             self.logger.info(
@@ -640,18 +612,18 @@ class MoreE2EShadowIndexingTest(EndToEndTest):
         msg_size = 2**18
         msg_count = 100000
 
-        self._gen_manifests(msg_size, fgo_node)
+        self._gen_manifests(msg_size)
 
         producer = FranzGoVerifiableProducer(self.test_context, self.redpanda,
                                              self.topic, msg_size, msg_count,
-                                             fgo_node)
+                                             self.fgo_node)
 
         # The SI cache is set to 5GB in size. Test the cache limit by
         # running 8 readers that consume 1GB segments effectively forcing
         # ~8GB of IO. The readers read from random offsets.
         rand_consumer = FranzGoVerifiableRandomConsumer(
             self.test_context, self.redpanda, self.topic, msg_size, 10, 8,
-            fgo_node)
+            self.fgo_node)
 
         producer.start(clean=False)
         rand_consumer.start(clean=False)
@@ -683,15 +655,14 @@ class MoreE2EShadowIndexingTest(EndToEndTest):
                 result = node.account.ssh_output(cmd, timeout_sec=45).decode()
                 du = float(result)
 
-                self.logger.debug(
-                    f'{node.name}, cache-size: {self.cloud_cache_size}, df: {df}, du: {du}'
-                )
+                self.logger.debug(f'{node.name}, df: {df}, du: {du}')
 
                 # Disk usage on si cache should be no more than 5%
                 # larger than the configured cache size. In general,
                 # 5% is an OK place to start.
                 if not in_percent_threshold(
-                        du, self.cloud_cache_size, threshold=5):
+                        du, self.si_settings.cloud_storage_cache_size,
+                        threshold=5):
                     is_cache_size_respected = False
 
             return is_cache_size_respected
