@@ -12,12 +12,15 @@
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "cluster/scheduling/constraints.h"
+#include "cluster/scheduling/types.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "model/metadata.h"
 #include "storage/segment_appender.h"
 #include "units.h"
 #include "utils/human.h"
+
+#include <seastar/core/shared_ptr.hh>
 
 #include <absl/container/node_hash_set.h>
 #include <sys/resource.h>
@@ -72,6 +75,12 @@ partition_allocator::allocate_partition(partition_constraints p_constraints) {
         effective_constraits.hard_constraints.push_back(
           ss::make_lw_shared<hard_constraint_evaluator>(
             distinct_from(replicas.get())));
+
+        // rack-placement contraint
+        effective_constraits.soft_constraints.push_back(
+          ss::make_lw_shared<soft_constraint_evaluator>(
+            distinct_rack(replicas.get(), *_state)));
+
         effective_constraits.add(p_constraints.constraints);
         auto replica = _allocation_strategy.allocate_replica(
           effective_constraits, *_state);

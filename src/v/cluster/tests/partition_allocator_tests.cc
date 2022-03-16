@@ -510,3 +510,61 @@ FIXTURE_TEST(change_replication_factor, partition_allocator_fixture) {
     BOOST_CHECK_EQUAL(expected_success.has_value(), true);
     validate_replica_set_diversity(expected_success.value().get_assignments());
 }
+FIXTURE_TEST(rack_aware_assignment_1, partition_allocator_fixture) {
+    std::vector<std::tuple<int, model::rack_id, int>> id_rack_ncpu = {
+      std::make_tuple(0, model::rack_id("rack-a"), 1),
+      std::make_tuple(1, model::rack_id("rack-a"), 1),
+      std::make_tuple(2, model::rack_id("rack-b"), 1),
+      std::make_tuple(3, model::rack_id("rack-b"), 1),
+      std::make_tuple(4, model::rack_id("rack-c"), 1),
+      std::make_tuple(5, model::rack_id("rack-c"), 1),
+    };
+
+    for (auto [id, rack, ncpu] : id_rack_ncpu) {
+        register_node(id, ncpu, rack);
+    }
+
+    auto units = allocator.allocate(make_allocation_request(1, 3)).value();
+
+    BOOST_REQUIRE(!units.get_assignments().empty());
+    auto group = units.get_assignments().front();
+    std::set<model::node_id> nodes;
+    for (auto [node_id, shard] : group.replicas) {
+        nodes.insert(node_id);
+    }
+    BOOST_REQUIRE(nodes.size() == 3);
+    BOOST_REQUIRE(nodes.contains(model::node_id(0))); // rack-a
+    BOOST_REQUIRE(nodes.contains(model::node_id(2))); // rack-b
+    BOOST_REQUIRE(nodes.contains(model::node_id(4))); // rack-c
+}
+FIXTURE_TEST(rack_aware_assignment_2, partition_allocator_fixture) {
+    std::vector<std::tuple<int, model::rack_id, int>> id_rack_ncpu = {
+      std::make_tuple(0, model::rack_id("rack-a"), 10),
+      std::make_tuple(1, model::rack_id("rack-a"), 10),
+      std::make_tuple(2, model::rack_id("rack-a"), 10),
+      std::make_tuple(3, model::rack_id("rack-b"), 1),
+    };
+
+    for (auto [id, rack, ncpu] : id_rack_ncpu) {
+        register_node(id, ncpu, rack);
+    }
+
+    auto units = allocator.allocate(make_allocation_request(1, 3)).value();
+
+    BOOST_REQUIRE(!units.get_assignments().empty());
+    auto group = units.get_assignments().front();
+    std::set<ss::sstring> racks;
+    for (auto [node_id, shard] : group.replicas) {
+        auto rack_it = std::lower_bound(
+          id_rack_ncpu.begin(),
+          id_rack_ncpu.end(),
+          std::make_tuple(node_id(), ss::sstring(), 0));
+        BOOST_REQUIRE(rack_it != id_rack_ncpu.end());
+        BOOST_REQUIRE(std::get<0>(*rack_it) == node_id());
+        auto rack = std::get<1>(*rack_it);
+        racks.insert(rack);
+    }
+    BOOST_REQUIRE(racks.size() == 2);
+    BOOST_REQUIRE(racks.contains("rack-a"));
+    BOOST_REQUIRE(racks.contains("rack-b"));
+}

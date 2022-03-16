@@ -10,6 +10,7 @@
 #include "cluster/scheduling/allocation_state.h"
 
 #include "cluster/logger.h"
+#include "ssx/sformat.h"
 
 namespace cluster {
 
@@ -161,6 +162,14 @@ result<uint32_t> allocation_state::allocate(model::node_id id) {
     }
 
     return errc::node_does_not_exists;
+}
+
+std::optional<model::rack_id>
+allocation_state::get_rack_id(model::node_id id) const {
+    if (auto it = _nodes.find(id); it != _nodes.end()) {
+        return it->second->rack();
+    }
+    vassert(false, "unexpected node id {}", id);
 }
 
 } // namespace cluster
