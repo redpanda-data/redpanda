@@ -281,6 +281,12 @@ public:
     ss::future<std::error_code> prepare_transfer_leadership(vnode);
     ss::future<std::error_code>
       do_transfer_leadership(std::optional<model::node_id>);
+    /**
+     * requests leadership to be transferred to the current node. It sends
+     * transer leadership request to the current leader.
+     */
+    ss::future<std::error_code>
+      request_leadership(model::timeout_clock::time_point);
 
     ss::future<> remove_persistent_state();
 
