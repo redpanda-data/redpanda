@@ -297,11 +297,11 @@ SEASTAR_THREAD_TEST_CASE(property_metadata) {
     BOOST_TEST(cfg.nullable_string.is_array() == false);
 
     BOOST_TEST(cfg.required_string.type_name() == "string");
+    BOOST_TEST(cfg.required_string.is_array() == false);
     BOOST_TEST(
       config::to_string_view(cfg.required_string.get_visibility()) == "user");
 
     BOOST_TEST(cfg.boolean.is_nullable() == false);
-    BOOST_TEST(cfg.nullable_string.is_array() == false);
 
     BOOST_TEST(cfg.an_int64_t.type_name() == "integer");
     BOOST_TEST(cfg.boolean.is_nullable() == false);
