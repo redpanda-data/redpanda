@@ -210,3 +210,35 @@ class FranzGoVerifiableProducer(FranzGoVerifiableService):
             self.save_exception(ex)
         finally:
             self.status = ServiceStatus.FINISH
+
+
+class ManifestMaker(FranzGoVerifiableService):
+    # Usefule for tests that use multiple topics
+    # and don't want to create a seperate producer
+    # to generate the manifests for each topic
+    def __init__(self,
+                 context,
+                 redpanda,
+                 topics,
+                 msg_size,
+                 msg_count,
+                 custom_node=None):
+        super(ManifestMaker, self).__init__(context, redpanda, None, msg_size,
+                                            custom_node)
+        self._msg_count = msg_count
+        self._topics = topics
+
+    def _worker(self, idx, node):
+        self.status = ServiceStatus.RUNNING
+        self._stopping.clear()
+        try:
+            for spec in self._topics:
+                cmd = 'echo $$ ; %s --brokers %s --topic %s --msg_size %s --produce_msgs %s --rand_read_msgs 0 --seq_read=0' % (
+                    f"{TESTS_DIR}/si-verifier", self._redpanda.brokers(),
+                    spec.name, self._msg_size, self._msg_count)
+
+                self.execute_cmd(cmd, node)
+        except Exception as ex:
+            self.save_exception(ex)
+        finally:
+            self.status = ServiceStatus.FINISH
