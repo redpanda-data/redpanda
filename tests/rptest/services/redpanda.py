@@ -440,11 +440,22 @@ class RedpandaService(Service):
         self.logger.info("Verifying storage is in expected state")
         storage = self.storage()
         for node in storage.nodes:
-            if not set(node.ns) == {"redpanda"} or not set(
-                    node.ns["redpanda"].topics) == {"controller", "kvstore"}:
+            ns_set = set(node.ns)
+            if "redpanda" in ns_set:
+                if not set(node.ns["redpanda"].topics) == {
+                        "controller", "kvstore"
+                }:
+                    self.logger.error(
+                        f"Unexpected files: redpanda topics={node.ns['redpanda'].topics}"
+                    )
+                    raise RuntimeError("Unexpected files in data directory")
+            elif "kafka" in ns_set:
                 self.logger.error(
-                    f"Unexpected files: ns={node.ns} redpanda topics={node.ns['redpanda'].topics}"
+                    f"Unexpected files: kafka topics={node.ns['kafka'].topics}"
                 )
+                raise RuntimeError("Unexpected files in data directory")
+            else:
+                self.logger.error(f"Unexpected files: ns={node.ns}")
                 raise RuntimeError("Unexpected files in data directory")
 
         if self.sasl_enabled():
