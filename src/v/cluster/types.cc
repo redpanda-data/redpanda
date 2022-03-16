@@ -1247,7 +1247,7 @@ adl<cluster::feature_barrier_request>::from(iobuf_parser& parser) {
       version == cluster::feature_barrier_request::current_version,
       "Unexpected version: {} (expected {})",
       version,
-      cluster::feature_update_action::current_version);
+      cluster::feature_barrier_request::current_version);
 
     auto tag = adl<cluster::feature_barrier_tag>{}.from(parser);
     auto peer = adl<model::node_id>{}.from(parser);
@@ -1269,7 +1269,7 @@ adl<cluster::feature_barrier_response>::from(iobuf_parser& parser) {
       version == cluster::feature_barrier_response::current_version,
       "Unexpected version: {} (expected {})",
       version,
-      cluster::feature_update_action::current_version);
+      cluster::feature_barrier_response::current_version);
 
     auto entered = adl<bool>{}.from(parser);
     auto complete = adl<bool>{}.from(parser);
