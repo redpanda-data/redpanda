@@ -568,41 +568,47 @@ class RedpandaService(Service):
         if write_config:
             self.write_node_conf_file(node, override_cfg_params)
 
-        if self.coproc_enabled():
-            self.start_wasm_engine(node)
-
-        # Maybe redpanda collides with something that wasn't cleaned up
-        # properly: let's peek at what's going on on the node before starting it.
-        self.logger.debug(f"Node status prior to redpanda startup:")
-        for line in node.account.ssh_capture("ps aux"):
-            self.logger.debug(line.strip())
-        for line in node.account.ssh_capture("netstat -ant"):
-            self.logger.debug(line.strip())
-
-        self.start_redpanda(node)
-
         if timeout is None:
             timeout = self.READY_TIMEOUT_SEC
 
-        try:
+        if self.coproc_enabled():
+            self.start_wasm_engine(node)
+
+        def start_rp():
+            self.start_redpanda(node)
+
             wait_until(
                 lambda: Admin.ready(node).get("status") == "ready",
                 timeout_sec=timeout,
                 err_msg=
                 f"Redpanda service {node.account.hostname} failed to start",
                 retry_on_exc=True)
+
+        self.logger.debug(f"Node status prior to redpanda startup:")
+        self.start_service(node, start_rp)
+        self._started.append(node)
+
+    def start_service(self, node, start):
+        def log_node_stats():
+            for line in node.account.ssh_capture("ps aux"):
+                self.logger.debug(line.strip())
+            for line in node.account.ssh_capture("netstat -ant"):
+                self.logger.debug(line.strip())
+
+        # Maybe the service collides with something that wasn't cleaned up
+        # properly: let's peek at what's going on on the node before starting it.
+        log_node_stats()
+
+        try:
+            start()
         except:
             # In case our failure to start is something like an "address in use", we
             # would like to know what else is going on on this node.
             self.logger.warn(
                 f"Failed to start on {node.name}, gathering node ps and netstat..."
             )
-            for line in node.account.ssh_capture("ps aux"):
-                self.logger.warn(line.strip())
-            for line in node.account.ssh_capture("netstat -ant"):
-                self.logger.warn(line.strip())
+            log_node_stats()
             raise
-        self._started.append(node)
 
     def coproc_enabled(self):
         coproc = self._extra_rp_conf.get('enable_coproc')
@@ -624,16 +630,19 @@ class RedpandaService(Service):
         if conf_value is not None:
             wasm_port = conf_value['port']
 
-        with node.account.monitor_log(
-                RedpandaService.WASM_STDOUT_STDERR_CAPTURE) as mon:
-            node.account.ssh(wcmd)
-            mon.wait_until(
-                f"Starting redpanda wasm service on port: {wasm_port}",
-                timeout_sec=RedpandaService.READY_TIMEOUT_SEC,
-                backoff_sec=0.5,
-                err_msg=
-                f"Wasm engine didn't finish startup in {RedpandaService.READY_TIMEOUT_SEC} seconds",
-            )
+        def start_wasm_service():
+            with node.account.monitor_log(
+                    RedpandaService.WASM_STDOUT_STDERR_CAPTURE) as mon:
+                node.account.ssh(wcmd)
+                mon.wait_until(
+                    f"Starting redpanda wasm service on port: {wasm_port}",
+                    timeout_sec=RedpandaService.READY_TIMEOUT_SEC,
+                    err_msg=
+                    f"Wasm engine server startup within {RedpandaService.READY_TIMEOUT_SEC}s timeout"
+                )
+
+        self.logger.debug(f"Node status prior to wasm_engine startup:")
+        self.start_service(node, start_wasm_service)
 
     def start_si(self):
         self._s3client = S3Client(
