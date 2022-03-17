@@ -261,8 +261,9 @@ writer_serialize_batch(response_writer& w, model::record_batch&& batch) {
 
     w.write(int64_t(batch.base_offset()));
     w.write(int32_t(size)); // batch length
-    w.write(int32_t(0));    // partition leader epoch
-    w.write(int8_t(2));     // magic
+    w.write(
+      int32_t(leader_epoch_from_term(batch.term()))); // partition leader epoch
+    w.write(int8_t(2));                               // magic
     w.write(batch.header().crc);
     w.write(int16_t(batch.header().attrs.value()));
     w.write(int32_t(batch.header().last_offset_delta));
