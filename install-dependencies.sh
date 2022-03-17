@@ -97,7 +97,7 @@ case "$ID" in
 esac
 # needed for unit tests
 sysctl -w fs.aio-max-nr=10485760 || true
-curl -1sLf "https://raw.githubusercontent.com/vectorizedio/seastar/master/install-dependencies.sh" | bash
+curl -1sLf "https://raw.githubusercontent.com/redpanda-data/seastar/master/install-dependencies.sh" | bash
 
 set -e
 
