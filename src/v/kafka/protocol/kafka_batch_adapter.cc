@@ -16,6 +16,7 @@
 #include "kafka/protocol/request_reader.h"
 #include "kafka/server/request_context.h"
 #include "likely.h"
+#include "model/fundamental.h"
 #include "model/record.h"
 #include "raft/types.h"
 #include "storage/parser_utils.h"
@@ -34,7 +35,8 @@ model::record_batch_header kafka_batch_adapter::read_header(iobuf_parser& in) {
 
     auto base_offset = model::offset(in.consume_be_type<int64_t>());
     auto batch_length = in.consume_be_type<int32_t>();
-    in.consume_be_type<int32_t>();          /*partition_leader_epoch - IGNORED*/
+    auto partition_leader_epoch
+      = in.consume_be_type<int32_t>();      /*partition_leader_epoch*/
     auto magic = in.consume_type<int8_t>(); /*magic - IGNORED*/
     v2_format = magic == 2;
     if (unlikely(!v2_format)) {
@@ -77,6 +79,10 @@ model::record_batch_header kafka_batch_adapter::read_header(iobuf_parser& in) {
       .producer_epoch = producer_epoch,
       .base_sequence = base_sequence,
       .record_count = record_count};
+
+    // see record_batch_header::context for more info
+
+    header.ctx.term = model::term_id(partition_leader_epoch);
 
     const size_t total_bytes_consumed = in.bytes_consumed()
                                         - initial_bytes_consumed;
