@@ -17,9 +17,9 @@ import (
 	"fmt"
 	"net"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 )
 
 const configFileFlag = "config"

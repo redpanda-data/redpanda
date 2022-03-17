@@ -18,13 +18,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/franz-go/pkg/sasl/scram"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 )
 
 // NewFranzClient returns a franz-go based kafka client.

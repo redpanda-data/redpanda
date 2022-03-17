@@ -13,10 +13,10 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/spf13/afero"
-	"github.com/stretchr/testify/require"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/vendor"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors"
+	"github.com/spf13/afero"
+	"github.com/stretchr/testify/require"
 )
 
 type vendorMock struct {

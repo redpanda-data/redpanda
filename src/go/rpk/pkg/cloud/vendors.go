@@ -13,10 +13,10 @@ import (
 	"errors"
 	"sync"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/aws"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/gcp"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/vendor"
+	log "github.com/sirupsen/logrus"
 )
 
 func vendors() map[string]vendor.Vendor {

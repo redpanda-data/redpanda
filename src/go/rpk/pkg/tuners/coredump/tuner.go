@@ -13,11 +13,11 @@ import (
 	"bytes"
 	"text/template"
 
-	"github.com/spf13/afero"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors/commands"
+	"github.com/spf13/afero"
 )
 
 const (

@@ -15,9 +15,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/system/systemd"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors/commands"
+	"github.com/stretchr/testify/require"
 )
 
 func TestStartSystemdUnitCmdRender(t *testing.T) {

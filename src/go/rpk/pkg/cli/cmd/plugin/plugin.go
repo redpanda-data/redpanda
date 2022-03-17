@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/spf13/afero"
-	"github.com/spf13/cobra"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/plugin"
+	"github.com/spf13/afero"
+	"github.com/spf13/cobra"
 )
 
 const urlBase = "https://vectorized-public.s3.us-west-2.amazonaws.com/rpk-plugins"

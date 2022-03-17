@@ -12,13 +12,13 @@ package tuners
 import (
 	"fmt"
 
-	log "github.com/sirupsen/logrus"
-	"github.com/spf13/afero"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/ethtool"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors/commands"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/irq"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/network"
+	log "github.com/sirupsen/logrus"
+	"github.com/spf13/afero"
 )
 
 func NewNetTuner(

@@ -25,10 +25,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/icza/dyno"
 	"github.com/mitchellh/mapstructure"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/viper"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
 	"gopkg.in/yaml.v2"
 )
 

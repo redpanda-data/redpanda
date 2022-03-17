@@ -13,12 +13,12 @@
 package cmd
 
 import (
-	"github.com/spf13/afero"
-	"github.com/spf13/cobra"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/redpanda"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	rp "github.com/redpanda-data/redpanda/src/go/rpk/pkg/redpanda"
+	"github.com/spf13/afero"
+	"github.com/spf13/cobra"
 )
 
 func NewStartCommand(

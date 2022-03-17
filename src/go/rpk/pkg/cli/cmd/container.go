@@ -10,8 +10,8 @@
 package cmd
 
 import (
-	"github.com/spf13/cobra"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/container"
+	"github.com/spf13/cobra"
 )
 
 func NewContainerCommand() *cobra.Command {

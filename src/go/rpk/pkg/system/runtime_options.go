@@ -14,8 +14,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/spf13/afero"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
+	"github.com/spf13/afero"
 )
 
 type RuntimeOptions struct {

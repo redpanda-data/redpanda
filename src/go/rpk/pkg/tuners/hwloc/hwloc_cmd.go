@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
+	log "github.com/sirupsen/logrus"
 )
 
 const (

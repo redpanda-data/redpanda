@@ -13,8 +13,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/generate/graf"
+	"github.com/stretchr/testify/require"
 )
 
 func defaultDashboard() graf.Dashboard {

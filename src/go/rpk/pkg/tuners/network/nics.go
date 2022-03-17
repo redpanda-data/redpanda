@@ -12,8 +12,8 @@ package network
 import (
 	"fmt"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/irq"
+	log "github.com/sirupsen/logrus"
 )
 
 func getDefaultMode(

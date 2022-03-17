@@ -17,8 +17,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/stretchr/testify/require"
 )
 
 func makeKey(org string, exp time.Time, overrideHash uint32) (string, error) {

@@ -12,9 +12,9 @@ package group
 import (
 	"testing"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/testfs"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/testfs"
 )
 
 func TestParseSeekFile(t *testing.T) {

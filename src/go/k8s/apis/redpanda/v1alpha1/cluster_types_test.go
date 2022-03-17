@@ -12,8 +12,8 @@ package v1alpha1_test
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 )

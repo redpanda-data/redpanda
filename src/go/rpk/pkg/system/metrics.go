@@ -19,10 +19,10 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-multierror"
-	"github.com/spf13/afero"
-	"github.com/tklauser/go-sysconf"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
+	"github.com/spf13/afero"
+	"github.com/tklauser/go-sysconf"
 )
 
 type Metrics struct {

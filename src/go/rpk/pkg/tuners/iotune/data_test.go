@@ -12,8 +12,8 @@ package iotune_test
 import (
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/iotune"
+	"github.com/stretchr/testify/require"
 )
 
 func TestDataFor(t *testing.T) {

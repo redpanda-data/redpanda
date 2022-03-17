@@ -12,8 +12,8 @@ package common
 import (
 	"fmt"
 
-	"github.com/spf13/cobra"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/spf13/cobra"
 )
 
 const FeedbackMsg = `We'd love to hear about your experience with redpanda:

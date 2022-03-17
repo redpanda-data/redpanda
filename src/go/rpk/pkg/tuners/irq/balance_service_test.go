@@ -16,11 +16,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spf13/afero"
-	"github.com/stretchr/testify/require"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
+	"github.com/spf13/afero"
+	"github.com/stretchr/testify/require"
 )
 
 type procMock struct {

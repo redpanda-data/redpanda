@@ -13,12 +13,12 @@ package group
 import (
 	"context"
 
-	"github.com/spf13/afero"
-	"github.com/spf13/cobra"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/spf13/afero"
+	"github.com/spf13/cobra"
 )
 
 func NewCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {

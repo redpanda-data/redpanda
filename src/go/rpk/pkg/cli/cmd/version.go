@@ -10,10 +10,10 @@
 package cmd
 
 import (
-	log "github.com/sirupsen/logrus"
-	"github.com/spf13/cobra"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/version"
+	log "github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
 )
 
 func NewVersionCommand() *cobra.Command {

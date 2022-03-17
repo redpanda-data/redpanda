@@ -10,11 +10,11 @@
 package config
 
 import (
-	"github.com/spf13/afero"
-	"github.com/spf13/cobra"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/spf13/afero"
+	"github.com/spf13/cobra"
 )
 
 func newStatusCommand(fs afero.Fs) *cobra.Command {

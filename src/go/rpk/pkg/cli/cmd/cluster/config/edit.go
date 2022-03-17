@@ -14,11 +14,11 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/spf13/afero"
-	"github.com/spf13/cobra"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/spf13/afero"
+	"github.com/spf13/cobra"
 )
 
 func newEditCommand(fs afero.Fs, all *bool) *cobra.Command {

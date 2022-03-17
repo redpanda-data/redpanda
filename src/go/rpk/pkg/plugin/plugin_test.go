@@ -3,8 +3,8 @@ package plugin
 import (
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/testfs"
+	"github.com/stretchr/testify/require"
 )
 
 func TestListPlugins(t *testing.T) {

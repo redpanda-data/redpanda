@@ -14,9 +14,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
 )
 
 type DeviceInfo interface {

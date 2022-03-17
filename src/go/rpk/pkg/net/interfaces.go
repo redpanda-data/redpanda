@@ -12,8 +12,8 @@ package net
 import (
 	"net"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
+	log "github.com/sirupsen/logrus"
 )
 
 func GetInterfacesByIps(addresses ...string) ([]string, error) {

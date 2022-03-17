@@ -14,9 +14,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
 )
 
 func Stop() *cobra.Command {

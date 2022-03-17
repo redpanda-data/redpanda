@@ -26,11 +26,11 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-multierror"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/net"
 	"github.com/sethgrid/pester"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/net"
 )
 
 // ErrNoAdminAPILeader happen when there's no leader for the Admin API

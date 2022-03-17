@@ -14,10 +14,10 @@ import (
 	"sort"
 	"time"
 
-	log "github.com/sirupsen/logrus"
-	"github.com/spf13/afero"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/redpanda"
+	log "github.com/sirupsen/logrus"
+	"github.com/spf13/afero"
 )
 
 func Check(

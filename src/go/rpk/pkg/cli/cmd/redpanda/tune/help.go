@@ -14,8 +14,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/spf13/cobra"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
+	"github.com/spf13/cobra"
 )
 
 func NewHelpCommand() *cobra.Command {

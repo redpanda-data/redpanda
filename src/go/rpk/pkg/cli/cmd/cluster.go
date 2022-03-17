@@ -10,12 +10,12 @@
 package cmd
 
 import (
-	"github.com/spf13/afero"
-	"github.com/spf13/cobra"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cluster"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cluster/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/group"
+	"github.com/spf13/afero"
+	"github.com/spf13/cobra"
 )
 
 func NewClusterCommand(fs afero.Fs) *cobra.Command {

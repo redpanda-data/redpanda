@@ -13,8 +13,8 @@ import (
 	"bufio"
 	"fmt"
 
-	"github.com/spf13/afero"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/system/systemd"
+	"github.com/spf13/afero"
 )
 
 type installSystemdUnitCommand struct {

@@ -12,8 +12,8 @@ package iotune
 import (
 	"fmt"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/vendor"
+	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
 )
 

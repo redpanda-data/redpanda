@@ -19,11 +19,11 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/olekukonko/tablewriter"
-	"github.com/spf13/afero"
-	"github.com/spf13/cobra"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/ui"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners"
+	"github.com/spf13/afero"
+	"github.com/spf13/cobra"
 )
 
 func NewCheckCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {

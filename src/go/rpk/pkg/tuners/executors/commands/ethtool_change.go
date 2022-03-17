@@ -13,8 +13,8 @@ import (
 	"bufio"
 	"fmt"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/ethtool"
+	log "github.com/sirupsen/logrus"
 )
 
 type ethtoolChangeCommand struct {

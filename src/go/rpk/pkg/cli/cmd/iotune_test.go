@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spf13/afero"
-	"github.com/stretchr/testify/require"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/spf13/afero"
+	"github.com/stretchr/testify/require"
 )
 
 const validConfig string = `redpanda:

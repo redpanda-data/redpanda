@@ -12,10 +12,10 @@ package config
 import (
 	"path/filepath"
 
-	"github.com/spf13/afero"
-	"github.com/spf13/cobra"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/spf13/afero"
+	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v2"
 )
 

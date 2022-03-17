@@ -12,8 +12,8 @@ package cli
 import (
 	"fmt"
 
-	"github.com/spf13/afero"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/redpanda"
+	"github.com/spf13/afero"
 )
 
 func GetOrFindInstallDir(fs afero.Fs, installDir string) (string, error) {
