@@ -21,9 +21,6 @@ import (
 var redpandaInstallDirContent = []string{
 	"bin/rpk",
 	"bin/redpanda",
-	"lib",
-	"libexec/rpk",
-	"libexec/redpanda",
 }
 
 func GetIOConfigPath(configFileDirectory string) string {
