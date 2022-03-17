@@ -3,10 +3,10 @@ package networking_test
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/networking"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
+	"github.com/stretchr/testify/assert"
 )
 
 // nolint:funlen // this is ok for a test

@@ -19,11 +19,11 @@ import (
 
 	"github.com/go-logr/logr"
 	cmetav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
-	"github.com/spf13/afero"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/spf13/afero"
 	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
