@@ -27,7 +27,8 @@ struct partition_allocator_fixture {
         std::ref(members),
         config::mock_binding<std::optional<size_t>>(std::nullopt),
         config::mock_binding<std::optional<int32_t>>(std::nullopt),
-        config::mock_binding<size_t>(32_MiB)) {
+        config::mock_binding<size_t>(32_MiB),
+        config::mock_binding<bool>(true)) {
         members.start().get0();
         ss::smp::invoke_on_all([] {
             config::shard_local_cfg()

@@ -77,7 +77,8 @@ ss::future<> controller::wire_up() {
             std::ref(_members_table),
             config::shard_local_cfg().topic_memory_per_partition.bind(),
             config::shard_local_cfg().topic_fds_per_partition.bind(),
-            config::shard_local_cfg().segment_fallocation_step.bind());
+            config::shard_local_cfg().segment_fallocation_step.bind(),
+            config::shard_local_cfg().enable_rack_awareness.bind());
       })
       .then([this] { return _credentials.start(); })
       .then([this] {

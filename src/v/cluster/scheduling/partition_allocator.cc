@@ -36,13 +36,15 @@ partition_allocator::partition_allocator(
   ss::sharded<members_table>& members,
   config::binding<std::optional<size_t>> memory_per_partition,
   config::binding<std::optional<int32_t>> fds_per_partition,
-  config::binding<size_t> fallocation_step)
+  config::binding<size_t> fallocation_step,
+  config::binding<bool> enable_rack_awareness)
   : _state(std::make_unique<allocation_state>())
   , _allocation_strategy(simple_allocation_strategy())
   , _members(members)
   , _memory_per_partition(memory_per_partition)
   , _fds_per_partition(fds_per_partition)
-  , _fallocation_step(fallocation_step) {}
+  , _fallocation_step(fallocation_step)
+  , _enable_rack_awareness(enable_rack_awareness) {}
 
 allocation_constraints default_constraints() {
     allocation_constraints req;
@@ -77,9 +79,11 @@ partition_allocator::allocate_partition(partition_constraints p_constraints) {
             distinct_from(replicas.get())));
 
         // rack-placement contraint
-        effective_constraits.soft_constraints.push_back(
-          ss::make_lw_shared<soft_constraint_evaluator>(
-            distinct_rack(replicas.get(), *_state)));
+        if (_enable_rack_awareness()) {
+            effective_constraits.soft_constraints.push_back(
+              ss::make_lw_shared<soft_constraint_evaluator>(
+                distinct_rack(replicas.get(), *_state)));
+        }
 
         effective_constraits.add(p_constraints.constraints);
         auto replica = _allocation_strategy.allocate_replica(

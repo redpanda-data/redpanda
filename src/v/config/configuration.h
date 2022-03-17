@@ -250,6 +250,9 @@ struct configuration final : public config_store {
 
     property<bool> features_auto_enable;
 
+    // enables rack aware replica assignment
+    property<bool> enable_rack_awareness;
+
     configuration();
 
     error_map_t load(const YAML::Node& root_node);
