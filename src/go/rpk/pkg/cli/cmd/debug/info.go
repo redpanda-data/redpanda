@@ -19,11 +19,11 @@ import (
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/twmb/franz-go/pkg/kadm"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/api"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/out"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/system"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/system"
 )
 
 func NewInfoCommand(fs afero.Fs) *cobra.Command {

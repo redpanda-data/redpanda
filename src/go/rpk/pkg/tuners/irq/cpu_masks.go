@@ -16,9 +16,9 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/executors"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/executors/commands"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/hwloc"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors/commands"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/hwloc"
 )
 
 type CpuMasks interface {

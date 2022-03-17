@@ -5,7 +5,7 @@
  * License (the "License"); you may not use this file except in compliance with
  * the License. You may obtain a copy of the License at
  *
- * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
+ * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
 #include "v8_engine/script.h"
@@ -34,7 +34,7 @@ script::script(size_t max_heap_size_in_bytes, size_t timeout_ms)
         v8::ArrayBuffer::Allocator::NewDefaultAllocator());
     isolate_params.constraints.ConfigureDefaultsFromHeapSize(
       0, max_heap_size_in_bytes);
-    // https://github.com/vectorizedio/redpanda/issues/3166
+    // https://github.com/redpanda-data/redpanda/issues/3166
     isolate_params.constraints.set_max_old_generation_size_in_bytes(
       _max_old_gen_size);
     _isolate = std::unique_ptr<v8::Isolate, isolate_deleter>(

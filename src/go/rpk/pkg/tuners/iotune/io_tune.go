@@ -15,7 +15,7 @@ import (
 	"time"
 
 	log "github.com/sirupsen/logrus"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/os"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
 )
 
 type OutputFormat string

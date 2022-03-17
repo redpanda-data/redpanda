@@ -307,7 +307,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
      * look up its leadership information in the metadata table. we should
      * fix this with better indexing / interfaces.
      *
-     *   See: https://github.com/vectorizedio/redpanda/issues/2032
+     *   See: https://github.com/redpanda-data/redpanda/issues/2032
      */
     std::optional<model::ntp> ntp;
     for (const auto& topic : _topics.topics_map()) {

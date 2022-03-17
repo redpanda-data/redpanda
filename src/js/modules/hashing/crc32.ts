@@ -5,7 +5,7 @@
  * License (the "License"); you may not use this file except in compliance with
  * the License. You may obtain a copy of the License at
  *
- * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
+ * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
 import { calculate } from "fast-crc32c/impls/js_crc32c";

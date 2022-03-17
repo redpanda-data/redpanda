@@ -9,7 +9,7 @@
 
 package irq
 
-import "github.com/vectorizedio/redpanda/src/go/rpk/pkg/utils"
+import "github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
 
 func GetAllIRQs(deviceIRQs map[string][]int) []int {
 	irqsSet := map[int]bool{}

@@ -205,7 +205,7 @@ iobuf kafka_batch_adapter::adapt(iobuf&& kbatch) {
  * The last message determines the timestamp used on the resulting record batch.
  *
  * TODO
- *   - https://github.com/vectorizedio/redpanda/issues/1396
+ *   - https://github.com/redpanda-data/redpanda/issues/1396
  */
 void kafka_batch_adapter::convert_message_set(
   storage::record_batch_builder& builder,

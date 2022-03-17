@@ -26,7 +26,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 	log "github.com/sirupsen/logrus"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 )
 
 var (

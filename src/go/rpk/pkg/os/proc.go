@@ -21,7 +21,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/utils"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
 )
 
 type Proc interface {

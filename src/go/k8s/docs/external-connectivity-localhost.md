@@ -26,7 +26,7 @@ export VERSION=$(curl -s https://api.github.com/repos/vectorizedio/redpanda/rele
 4. Install CRDs
 ```
 kubectl apply \
--k https://github.com/vectorizedio/redpanda/src/go/k8s/config/crd?ref=$VERSION
+-k https://github.com/redpanda-data/redpanda/src/go/k8s/config/crd?ref=$VERSION
 ```
 5. Install redpanda operator
 ```

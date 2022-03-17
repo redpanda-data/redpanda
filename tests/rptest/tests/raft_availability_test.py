@@ -340,10 +340,10 @@ class RaftAvailabilityTest(RedpandaTest):
         activate recovery_stm.
 
         When acks=1, this is a reproducer for
-        https://github.com/vectorizedio/redpanda/issues/2580
+        https://github.com/redpanda-data/redpanda/issues/2580
 
         When acks=-1, this is a reproducer rfor
-        https://github.com/vectorizedio/redpanda/issues/2606
+        https://github.com/redpanda-data/redpanda/issues/2606
         """
 
         leader_node_id, replicas = self._wait_for_leader()
@@ -378,7 +378,7 @@ class RaftAvailabilityTest(RedpandaTest):
         # reactor stalls and corresponding nondeterministic behaviour/failures.
         # This appears unrelated to the functionality under test, something else
         # is tripping up the cluster when we have so many leadership transfers.
-        # https://github.com/vectorizedio/redpanda/issues/2623
+        # https://github.com/redpanda-data/redpanda/issues/2623
 
         admin = Admin(self.redpanda)
 
@@ -434,7 +434,7 @@ class RaftAvailabilityTest(RedpandaTest):
         On a healthy system, that guess should be accurate and the leadership
         should not flip back to -1 at any stage during startup.
 
-        Reproducer for https://github.com/vectorizedio/redpanda/issues/2546
+        Reproducer for https://github.com/redpanda-data/redpanda/issues/2546
         """
 
         leader_node_id, replicas = self._get_leader()

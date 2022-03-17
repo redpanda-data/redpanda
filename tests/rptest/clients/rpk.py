@@ -82,7 +82,7 @@ class RpkTool:
         """
         Helper for topic operations where rpk does not surface errors
         in return codes
-        (https://github.com/vectorizedio/redpanda/issues/3397)
+        (https://github.com/redpanda-data/redpanda/issues/3397)
         """
 
         lines = output.strip().split("\n")

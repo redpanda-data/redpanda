@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
-	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/labels"
-	res "github.com/vectorizedio/redpanda/src/go/k8s/pkg/resources"
+	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
+	res "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"

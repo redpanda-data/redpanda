@@ -13,9 +13,9 @@ import (
 	"os"
 
 	cmapiv1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
-	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
-	redpandacontrollers "github.com/vectorizedio/redpanda/src/go/k8s/controllers/redpanda"
-	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/resources"
+	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	redpandacontrollers "github.com/redpanda-data/redpanda/src/go/k8s/controllers/redpanda"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"

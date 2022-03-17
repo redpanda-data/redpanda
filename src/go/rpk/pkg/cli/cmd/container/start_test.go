@@ -23,7 +23,7 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
 )
 
 func noopCheck(_ []node) func() error {

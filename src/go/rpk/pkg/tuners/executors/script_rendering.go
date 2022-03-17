@@ -15,7 +15,7 @@ import (
 	"os"
 
 	"github.com/spf13/afero"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/executors/commands"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors/commands"
 )
 
 type scriptRenderingExecutor struct {

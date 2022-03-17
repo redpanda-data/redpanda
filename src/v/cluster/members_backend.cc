@@ -437,7 +437,7 @@ ss::future<> members_backend::reconcile() {
               clusterlog.info,
               "decommissioning finished, removing node {} from cluster",
               meta.update.id);
-            // workaround: https://github.com/vectorizedio/redpanda/issues/891
+            // workaround: https://github.com/redpanda-data/redpanda/issues/891
             std::vector<model::node_id> ids{meta.update.id};
             co_await _raft0
               ->remove_members(std::move(ids), model::revision_id{0})

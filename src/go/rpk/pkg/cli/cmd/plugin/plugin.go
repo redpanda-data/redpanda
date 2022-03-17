@@ -8,8 +8,8 @@ import (
 
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/out"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/plugin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/plugin"
 )
 
 const urlBase = "https://vectorized-public.s3.us-west-2.amazonaws.com/rpk-plugins"

@@ -16,10 +16,10 @@ import (
 	"github.com/lorenzosaino/go-sysctl"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/ethtool"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/irq"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/network"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/utils"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/ethtool"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/irq"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/network"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
 )
 
 type NetCheckersFactory interface {

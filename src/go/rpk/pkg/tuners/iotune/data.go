@@ -13,7 +13,7 @@ import (
 	"fmt"
 
 	log "github.com/sirupsen/logrus"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cloud/vendor"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/vendor"
 	"gopkg.in/yaml.v2"
 )
 

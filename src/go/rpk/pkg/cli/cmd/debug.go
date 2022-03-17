@@ -12,7 +12,7 @@ package cmd
 import (
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/debug"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/debug"
 )
 
 func NewDebugCommand(fs afero.Fs) *cobra.Command {

@@ -2,8 +2,8 @@
 package networking
 
 import (
-	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
-	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/resources"
+	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 )
 
 // PortsDefinition defines internal/external pair of ports for exposed services

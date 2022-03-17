@@ -94,7 +94,7 @@ ss::future<> members_manager::start() {
  * the controller leader will expect us to be listening for its raft messages,
  * and if we're not ready it'll back off and make joining take several seconds
  * longer than it should.
- * (ref https://github.com/vectorizedio/redpanda/issues/3030)
+ * (ref https://github.com/redpanda-data/redpanda/issues/3030)
  */
 ss::future<> members_manager::join_cluster() {
     if (is_already_member()) {

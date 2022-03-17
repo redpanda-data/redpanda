@@ -14,7 +14,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/afero"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/system/systemd"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/system/systemd"
 )
 
 type installSystemdUnitCommand struct {

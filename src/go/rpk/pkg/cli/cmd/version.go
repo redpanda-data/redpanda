@@ -12,8 +12,8 @@ package cmd
 import (
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/version"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/version"
 )
 
 func NewVersionCommand() *cobra.Command {

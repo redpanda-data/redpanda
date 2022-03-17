@@ -18,9 +18,9 @@ import (
 
 	"github.com/go-logr/logr"
 	cmetav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
-	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
-	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/labels"
-	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/resources/featuregates"
+	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"

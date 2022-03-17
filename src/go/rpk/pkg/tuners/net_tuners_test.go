@@ -16,14 +16,14 @@ import (
 
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/os"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/ethtool"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/executors"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/hwloc"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/irq"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/network"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/utils"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/ethtool"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/hwloc"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/irq"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/network"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
 )
 
 func mockNetTunersFactory(

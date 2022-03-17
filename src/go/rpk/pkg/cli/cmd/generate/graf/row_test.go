@@ -14,7 +14,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/generate/graf"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/generate/graf"
 )
 
 func TestRowPanelType(t *testing.T) {

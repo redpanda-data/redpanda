@@ -15,7 +15,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cloud/vendor"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/vendor"
 )
 
 const name = "aws"

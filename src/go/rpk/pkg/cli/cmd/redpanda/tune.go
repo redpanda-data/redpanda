@@ -27,11 +27,11 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
-	tunecmd "github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/redpanda/tune"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/ui"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/factory"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/hwloc"
+	tunecmd "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/redpanda/tune"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/ui"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/factory"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/hwloc"
 )
 
 type result struct {

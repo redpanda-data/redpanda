@@ -2,7 +2,7 @@
 - Status: in-progress
 - Start Date: 2019-10-23
 - Authors: David Castillo
-- Issue: [#226](https://github.com/vectorizedio/v/issues/226), [#227](https://github.com/vectorizedio/v/issue7/227)
+- Issue: [#226](https://github.com/redpanda-data/v/issues/226), [#227](https://github.com/redpanda-data/v/issue7/227)
 
 
 # Summary
@@ -10,7 +10,7 @@
 Sometimes, settings, checks and tuners that are desirable for a production environment
 aren't necessary for someone who's just evaluating redpanda on their personal laptop
 or on a small machine. These settings can even crash the developer's computer
-(see [#226](https://github.com/vectorizedio/v/issues/226)), which is not a good first
+(see [#226](https://github.com/redpanda-data/v/issues/226)), which is not a good first
 impression.
 To avoid these issues, we should have feature flags to be able to control some
 redpanda settings (described below) in a more fine-grained scope, while also making
@@ -311,7 +311,7 @@ Additionally, its implementation is trivial:
   command (e.g. `systemctl start redpanda@--development-mode.service`).
   This alternative, although it makes it straightforward to start redpanda in development
   mode with systemd, requires us to have 2 different service files, which can be
-  [inconvenient for some users](https://github.com/vectorizedio/v/issues/212#issuecomment-544196619),
+  [inconvenient for some users](https://github.com/redpanda-data/v/issues/212#issuecomment-544196619),
   and doesn't allow for installing/ uninstalling files (like the default coredump script),
   which `rpk mode` does.
   

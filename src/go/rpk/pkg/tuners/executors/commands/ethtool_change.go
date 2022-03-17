@@ -14,7 +14,7 @@ import (
 	"fmt"
 
 	log "github.com/sirupsen/logrus"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/ethtool"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/ethtool"
 )
 
 type ethtoolChangeCommand struct {

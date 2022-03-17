@@ -306,7 +306,7 @@ guess_peer_listener(request_context& ctx, cluster::broker_ptr broker) {
     // Peer has no listener with name matching the name of the
     // listener serving this Kafka request.  This can happen during
     // configuration changes
-    // (https://github.com/vectorizedio/redpanda/issues/3588)
+    // (https://github.com/redpanda-data/redpanda/issues/3588)
     //
     // Use a fallback matching to find the best peer address we can.
     vlog(

@@ -14,9 +14,9 @@ import (
 	"sync"
 
 	log "github.com/sirupsen/logrus"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cloud/aws"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cloud/gcp"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cloud/vendor"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/aws"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/gcp"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/vendor"
 )
 
 func vendors() map[string]vendor.Vendor {

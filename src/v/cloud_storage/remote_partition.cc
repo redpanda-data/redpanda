@@ -5,7 +5,7 @@
  * License (the "License"); you may not use this file except in compliance with
  * the License. You may obtain a copy of the License at
  *
- * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
+ * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
 #include "cloud_storage/remote_partition.h"
@@ -102,7 +102,7 @@ public:
             // without calling stop() on it.  The remote_partition is
             // responsible for cleaning up readers, including calling
             // stop() on them in a background fiber so that we don't have to.
-            // (https://github.com/vectorizedio/redpanda/issues/3378)
+            // (https://github.com/redpanda-data/redpanda/issues/3378)
             vlog(
               _ctxlog.debug,
               "partition_record_batch_reader_impl::~ releasing reader on "

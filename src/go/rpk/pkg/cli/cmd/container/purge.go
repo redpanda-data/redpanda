@@ -15,7 +15,7 @@ import (
 	"github.com/docker/docker/api/types"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
 	"golang.org/x/sync/errgroup"
 )
 

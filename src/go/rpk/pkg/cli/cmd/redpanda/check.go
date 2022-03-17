@@ -21,9 +21,9 @@ import (
 	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/ui"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/ui"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners"
 )
 
 func NewCheckCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {

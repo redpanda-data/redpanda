@@ -12,9 +12,9 @@ package cmd
 import (
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/common"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/topic"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/common"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/topic"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 )
 
 func NewTopicCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {

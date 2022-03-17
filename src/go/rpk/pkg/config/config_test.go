@@ -15,8 +15,8 @@ import (
 
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/utils"
-	vyaml "github.com/vectorizedio/redpanda/src/go/rpk/pkg/yaml"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
+	vyaml "github.com/redpanda-data/redpanda/src/go/rpk/pkg/yaml"
 	"gopkg.in/yaml.v2"
 )
 

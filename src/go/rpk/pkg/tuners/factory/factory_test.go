@@ -16,8 +16,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/factory"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/factory"
 )
 
 func getValidTunerParams() *factory.TunerParams {

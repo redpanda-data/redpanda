@@ -9,7 +9,7 @@
 
 package executors
 
-import "github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/executors/commands"
+import "github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors/commands"
 
 type directExecutor struct {
 	Executor

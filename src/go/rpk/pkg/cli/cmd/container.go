@@ -11,7 +11,7 @@ package cmd
 
 import (
 	"github.com/spf13/cobra"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/container"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/container"
 )
 
 func NewContainerCommand() *cobra.Command {

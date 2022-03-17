@@ -17,7 +17,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/generate"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/generate"
 )
 
 func TestPrometheusURLFlagDeprecation(t *testing.T) {

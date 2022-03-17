@@ -28,7 +28,7 @@ jobs:
         formula-name: redpanda
         homebrew-tap: vectorizedio/homebrew-tap
         base-branch: main
-        download-url: https://github.com/vectorizedio/redpanda/releases/download/${{ steps.get_version.outputs.VERSION }}/rpk-darwin-amd64.zip
+        download-url: https://github.com/redpanda-data/redpanda/releases/download/${{ steps.get_version.outputs.VERSION }}/rpk-darwin-amd64.zip
       env:
         COMMITTER_TOKEN: ${{ secrets.HOMEBREW_TOKEN }}
 
@@ -39,6 +39,6 @@ jobs:
         formula-name: redpanda
         homebrew-tap: vectorizedio/homebrew-tap
         base-branch: main
-        download-url: https://github.com/vectorizedio/redpanda/releases/download/${{ steps.get_version.outputs.VERSION }}/rpk-darwin-arm64.zip
+        download-url: https://github.com/redpanda-data/redpanda/releases/download/${{ steps.get_version.outputs.VERSION }}/rpk-darwin-arm64.zip
       env:
         COMMITTER_TOKEN: ${{ secrets.HOMEBREW_TOKEN }}

@@ -21,8 +21,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"gopkg.in/yaml.v2"
 )
 

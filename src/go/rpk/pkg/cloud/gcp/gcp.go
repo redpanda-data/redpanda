@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cloud/vendor"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/vendor"
 )
 
 const name = "gcp"

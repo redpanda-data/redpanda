@@ -76,7 +76,7 @@ ss::future<> connection_context::process_one_request() {
  * request processing can be re-used.
  *
  * Even though we build and decode a request/response, the payload is a small
- * authentication string. https://github.com/vectorizedio/redpanda/issues/1315.
+ * authentication string. https://github.com/redpanda-data/redpanda/issues/1315.
  * When this ticket is complete we'll be able to easily remove this extra
  * serialization step and and easily operate on non-encoded requests/responses.
  */

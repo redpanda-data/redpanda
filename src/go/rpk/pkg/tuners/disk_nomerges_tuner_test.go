@@ -14,7 +14,7 @@ import (
 
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/executors"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors"
 )
 
 func TestDeviceNomergesTuner_Tune(t *testing.T) {

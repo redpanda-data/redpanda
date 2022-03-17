@@ -21,9 +21,9 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/wasm/template"
-	vos "github.com/vectorizedio/redpanda/src/go/rpk/pkg/os"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/out"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/wasm/template"
+	vos "github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 )
 
 func NewGenerateCommand(fs afero.Fs) *cobra.Command {

@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/iotune"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/iotune"
 )
 
 func TestDataFor(t *testing.T) {

@@ -1,4 +1,4 @@
-module github.com/vectorizedio/redpanda/src/go/rpk
+module github.com/redpanda-data/redpanda/src/go/rpk
 
 go 1.16
 

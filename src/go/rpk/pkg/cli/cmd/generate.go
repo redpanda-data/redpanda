@@ -11,8 +11,8 @@ package cmd
 
 import (
 	"github.com/spf13/cobra"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/generate"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/generate"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 )
 
 func NewGenerateCommand(mgr config.Manager) *cobra.Command {

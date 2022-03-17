@@ -23,8 +23,8 @@ import (
 	"github.com/prometheus/common/expfmt"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/generate/graf"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/generate/graf"
 )
 
 var datasource string

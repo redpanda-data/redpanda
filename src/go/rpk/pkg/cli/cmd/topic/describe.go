@@ -22,9 +22,9 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/types"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/out"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 )
 
 func NewDescribeCommand(fs afero.Fs) *cobra.Command {

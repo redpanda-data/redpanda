@@ -163,7 +163,7 @@ ExternalProject_Add(cryptopp
     -DBUILD_TESTING=OFF)
 
 ExternalProject_Add(seastar
-  GIT_REPOSITORY https://github.com/vectorizedio/seastar.git
+  GIT_REPOSITORY https://github.com/redpanda-data/seastar.git
   GIT_TAG f8ec733c36f0829d56a17103c916154a946128be
   INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
@@ -198,7 +198,7 @@ ExternalProject_Add(HdrHistogram
   DEPENDS ${default_depends})
 
 ExternalProject_Add(abseil
-  GIT_REPOSITORY https://github.com/vectorizedio/abseil-cpp.git
+  GIT_REPOSITORY https://github.com/redpanda-data/abseil-cpp.git
   GIT_TAG 20210324.2
   INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
@@ -208,7 +208,7 @@ ExternalProject_Add(abseil
     -DABSL_ENABLE_INSTALL=ON)
 
 ExternalProject_Add(crc32c
-  GIT_REPOSITORY https://github.com/vectorizedio/crc32c.git
+  GIT_REPOSITORY https://github.com/redpanda-data/crc32c.git
   GIT_TAG 47b40d220949c5b013d49c1179643334196ec5a9
   INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
@@ -220,7 +220,7 @@ ExternalProject_Add(crc32c
     -DCRC32C_USE_GLOG=0)
 
 ExternalProject_Add(roaring
-  GIT_REPOSITORY https://github.com/vectorizedio/CRoaring.git
+  GIT_REPOSITORY https://github.com/redpanda-data/CRoaring.git
   GIT_TAG 7b9c83740d4f764941d38144cc8e2122076e38e4
   INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
   DEPENDS ${default_depends}
@@ -231,7 +231,7 @@ ExternalProject_Add(roaring
   -DROARING_BUILD_STATIC=ON)
 
 ExternalProject_Add(alien_thread
-  GIT_REPOSITORY https://github.com/vectorizedio/alien_thread.git
+  GIT_REPOSITORY https://github.com/redpanda-data/alien_thread.git
   GIT_TAG bdfb56f
   INSTALL_DIR @REDPANDA_DEPS_INSTALL_DIR@
   DEPENDS ${default_depends}
@@ -272,7 +272,7 @@ ExternalProject_Add(cppkafka
     -DCPPKAFKA_DISABLE_TESTS=OFF)
 
 ExternalProject_Add(base64_ext
-  GIT_REPOSITORY https://github.com/vectorizedio/base64
+  GIT_REPOSITORY https://github.com/redpanda-data/base64
   GIT_TAG eaebee8
   INSTALL_DIR @REDPANDA_DEPS_INSTALL_DIR@
   DEPENDS ${default_depends}
@@ -369,7 +369,7 @@ INSTALL_COMMAND
 )
 
 ExternalProject_Add(avro
-  GIT_REPOSITORY https://github.com/vectorizedio/avro
+  GIT_REPOSITORY https://github.com/redpanda-data/avro
   GIT_TAG c64be3b874e3208b54ceb3d34bd464f281082147
   INSTALL_DIR @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
@@ -382,7 +382,7 @@ ExternalProject_Add(avro
 )
 
 ExternalProject_Add(rapidjson
-  GIT_REPOSITORY https://github.com/vectorizedio/rapidjson.git
+  GIT_REPOSITORY https://github.com/redpanda-data/rapidjson.git
   GIT_TAG 00dbcf2c6e03c47d6c399338b6de060c71356464
   INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}

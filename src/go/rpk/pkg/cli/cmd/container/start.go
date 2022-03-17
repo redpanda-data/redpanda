@@ -26,10 +26,10 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/ui"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
-	vnet "github.com/vectorizedio/redpanda/src/go/rpk/pkg/net"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/ui"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	vnet "github.com/redpanda-data/redpanda/src/go/rpk/pkg/net"
 	"golang.org/x/sync/errgroup"
 )
 

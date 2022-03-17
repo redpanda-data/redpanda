@@ -24,7 +24,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/franz-go/pkg/sasl/scram"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 )
 
 // NewFranzClient returns a franz-go based kafka client.
@@ -44,7 +44,7 @@ func NewFranzClient(
 		// metadata, and we want it fast since this is a CLI, so we
 		// will use a small min metadata age.
 		//
-		// https://github.com/vectorizedio/redpanda/issues/2546
+		// https://github.com/redpanda-data/redpanda/issues/2546
 		kgo.MetadataMinAge(250 * time.Millisecond),
 	}
 
