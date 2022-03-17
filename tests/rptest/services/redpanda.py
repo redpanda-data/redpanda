@@ -630,16 +630,25 @@ class RedpandaService(Service):
         if conf_value is not None:
             wasm_port = conf_value['port']
 
+        up_re = re.compile(f'.*:{wasm_port}')
+
+        def wasm_service_up():
+            def is_up(line):
+                self.logger.debug(line.strip())
+                return up_re.search(line) is not None
+
+            nsr = node.account.ssh_capture("netstat -ant")
+            return any([is_up(line) for line in nsr])
+
         def start_wasm_service():
-            with node.account.monitor_log(
-                    RedpandaService.WASM_STDOUT_STDERR_CAPTURE) as mon:
-                node.account.ssh(wcmd)
-                mon.wait_until(
-                    f"Starting redpanda wasm service on port: {wasm_port}",
-                    timeout_sec=RedpandaService.READY_TIMEOUT_SEC,
-                    err_msg=
-                    f"Wasm engine server startup within {RedpandaService.READY_TIMEOUT_SEC}s timeout"
-                )
+            node.account.ssh(wcmd)
+
+            wait_until(
+                wasm_service_up,
+                timeout_sec=RedpandaService.READY_TIMEOUT_SEC,
+                err_msg=
+                f"Wasm engine server startup within {RedpandaService.READY_TIMEOUT_SEC}s timeout",
+                retry_on_exc=True)
 
         self.logger.debug(f"Node status prior to wasm_engine startup:")
         self.start_service(node, start_wasm_service)
