@@ -172,7 +172,7 @@ public:
             node_config.get("developer_mode").set_value(true);
             node_config.get("node_id").set_value(node_id);
             node_config.get("rack").set_value(
-              std::optional<ss::sstring>(rack_name));
+              std::optional<model::rack_id>(model::rack_id(rack_name)));
             node_config.get("seed_servers").set_value(seed_servers);
             node_config.get("rpc_server")
               .set_value(net::unresolved_address("127.0.0.1", rpc_port));

@@ -403,6 +403,8 @@ consteval std::string_view property_type_name() {
         return "endpoint_tls_config";
     } else if constexpr (std::is_same_v<type, model::broker_endpoint>) {
         return "broker_endpoint";
+    } else if constexpr (std::is_same_v<type, model::rack_id>) {
+        return "rack_id";
     } else if constexpr (std::is_floating_point_v<type>) {
         return "number";
     } else if constexpr (std::is_integral_v<type>) {
