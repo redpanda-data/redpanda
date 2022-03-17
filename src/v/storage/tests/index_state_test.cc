@@ -21,7 +21,6 @@ static storage::index_state make_random_index_state() {
           random_generators::get_int<uint32_t>(),
           random_generators::get_int<uint32_t>(),
           random_generators::get_int<uint64_t>());
-        return st;
     }
 
     return st;
