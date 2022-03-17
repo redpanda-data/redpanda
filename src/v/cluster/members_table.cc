@@ -62,12 +62,12 @@ void members_table::update_brokers(
          */
         auto it = _brokers.find(br.id());
         if (it != _brokers.end()) {
-            auto membership_state = it->second->get_membership_state();
-            _brokers.insert_or_assign(
-              br.id(), ss::make_lw_shared<model::broker>(br));
+            // save state from the previous version of the broker
+            const auto membership_state = it->second->get_membership_state();
+            it->second = ss::make_lw_shared<model::broker>(br);
 
             if (membership_state != model::membership_state::removed) {
-                // do not override membership state of brokers
+                // preserve state from previous version
                 it->second->set_membership_state(membership_state);
             }
         } else {
