@@ -12,7 +12,7 @@ gcloud container clusters get-credentials redpanda --zone us-central1-c --projec
 ### - Install cert-manager https://cert-manager.io/docs/installation/kubernetes/
 ### - Install latest redpanda operator
 ```
-kubectl apply -k https://github.com/vectorizedio/redpanda/src/go/k8s/config/default
+kubectl apply -k https://github.com/redpanda-data/redpanda/src/go/k8s/config/default
 ```
 ### - Install cluster with external connectivity
 ```

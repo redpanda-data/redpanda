@@ -5,7 +5,7 @@ linters-settings:
     lines: 100
     statements: 50
   gci:
-    local-prefixes: github.com/vectorizedio/redpanda/src/go/k8s
+    local-prefixes: github.com/redpanda-data/redpanda/src/go/k8s
   goconst:
     min-len: 2
     min-occurrences: 2

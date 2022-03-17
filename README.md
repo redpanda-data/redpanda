@@ -1,10 +1,10 @@
 # Redpanda Operator
 
-[Official Redpanda Kubernetes operator](https://github.com/vectorizedio/redpanda/tree/dev/src/go/k8s)
+[Official Redpanda Kubernetes operator](https://github.com/redpanda-data/redpanda/tree/dev/src/go/k8s)
 automates tasks related to managing Redpanda clusters in Kubernetes. It is built using the
 [kubebuilder project](https://github.com/kubernetes-sigs/kubebuilder).
 
-[Redpanda](https://github.com/vectorizedio/redpanda) is a streaming platform for mission critical
+[Redpanda](https://github.com/redpanda-data/redpanda) is a streaming platform for mission critical
 workloads. Kafka® compatible, No Zookeeper®, no JVM, and no code changes required.
 Use all your favorite open source tooling - 10x faster.
 
@@ -48,13 +48,13 @@ resources. To verify that cert manager is ready please follow
 You can simply deploy the Redpanda operator with webhook (recommended) by running the following command
 
 ```
-kubectl apply -k https://github.com/vectorizedio/redpanda/src/go/k8s/config/default
+kubectl apply -k https://github.com/redpanda-data/redpanda/src/go/k8s/config/default
 ```
 
 You can deploy the Redpanda operator without webhook by running the following command:
 
 ```
-kubectl apply -k https://github.com/vectorizedio/redpanda/src/go/k8s/config/without-webhook
+kubectl apply -k https://github.com/redpanda-data/redpanda/src/go/k8s/config/without-webhook
 ```
 
 Install sample RedpandaCluster custom resource
@@ -97,5 +97,5 @@ To remove all resources even the running Redpanda cluster
 please run the following command:
 
 ```
-kubectl delete -k https://github.com/vectorizedio/redpanda/src/go/k8s/config/default
+kubectl delete -k https://github.com/redpanda-data/redpanda/src/go/k8s/config/default
 ```

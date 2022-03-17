@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/networking"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/networking"
 	corev1 "k8s.io/api/core/v1"
 )
 

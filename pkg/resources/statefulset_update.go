@@ -25,7 +25,7 @@ import (
 
 	"github.com/banzaicloud/k8s-objectmatcher/patch"
 	cmetav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
-	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/labels"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -370,7 +370,7 @@ func (r *StatefulSetResource) queryRedpandaStatus(
 
 	// TODO right now we support TLS only on one listener so if external
 	// connectivity is enabled, TLS is enabled only on external listener. This
-	// will be fixed by https://github.com/vectorizedio/redpanda/issues/1084
+	// will be fixed by https://github.com/redpanda-data/redpanda/issues/1084
 	if r.pandaCluster.AdminAPITLS() != nil &&
 		r.pandaCluster.AdminAPIExternal() == nil {
 		tlsConfig := tls.Config{MinVersion: tls.VersionTLS12} // TLS12 is min version allowed by gosec.
