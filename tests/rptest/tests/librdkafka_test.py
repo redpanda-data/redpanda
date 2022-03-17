@@ -46,8 +46,8 @@ class LibrdkafkaTest(RedpandaTest):
             "auto_create_topics_enabled": True,
             "enable_idempotence": True,
             "enable_transactions": True,
-            "transaction_coordinator_replication": 3,
-            "id_allocator_replication": 3,
+            "transaction_coordinator_replication": 1,
+            "id_allocator_replication": 1,
             "default_topic_replications": 1,
             "default_topic_partitions": 4,
             "enable_leader_balancer": False,
@@ -83,44 +83,26 @@ class LibrdkafkaTest(RedpandaTest):
         producer.init_transactions()
 
     # yapf: disable
-    @cluster(num_nodes=3, log_allow_list=ERROR_LOGS)
-    @ignore(test_num=19, num_brokers=1) # segfault in group membership https://app.clubhouse.io/vectorized/story/963/dereferencing-null-pointer-in-kafka-group-membership
-    @ignore(test_num=52, num_brokers=1) # https://app.clubhouse.io/vectorized/story/997/librdkafka-tests-failing-due-to-consumer-out-of-range-timestamps
-    @ignore(test_num=54, num_brokers=1) # timequery issues: https://app.clubhouse.io/vectorized/story/995/librdkafka-offset-time-query
-    @ignore(test_num=63, num_brokers=1) # cluster-id: https://app.clubhouse.io/vectorized/story/939/generate-cluster-id-uuid-on-bootstrap-and-expose-through-metadata-request
-    @ignore(test_num=67, num_brokers=1) # empty topic offset edge case: https://app.clubhouse.io/vectorized/story/940/consuming-from-empty-topic-should-return-eof
-    @ignore(test_num=77, num_brokers=1) # topic compaction settings: https://app.clubhouse.io/vectorized/story/999/support-create-topic-configurations-for-compaction-retention-policies
-    @ignore(test_num=92, num_brokers=1) # no support for v2 -> v1 message version conversion in the broker
-    @ignore(test_num=44, num_brokers=1) # we do not support runtime changes to topic partition count
-    @ignore(test_num=69, num_brokers=1) # we do not support runtime changes to topic partition count
-    @ignore(test_num=81, num_brokers=1) # we do not support replica assignment
-    @ignore(test_num=14, num_brokers=1)
-    @ignore(test_num=34, num_brokers=1)
-    @ignore(test_num=51, num_brokers=1)
-    @ignore(test_num=82, num_brokers=1)
-    @ignore(test_num=99, num_brokers=1)
-    @ignore(test_num=30, num_brokers=1)
-    # @ignore appears to not be quite smart enough to handle the partial
-    # parameterization so we repeat them here with num_brokers=3. this would be
-    # a nice enhancement that we could upstream.
-    @ignore(test_num=14, num_brokers=3)
-    @ignore(test_num=34, num_brokers=3)
-    @ignore(test_num=51, num_brokers=3)
-    @ignore(test_num=82, num_brokers=3)
-    @ignore(test_num=99, num_brokers=3)
-    @ignore(test_num=19, num_brokers=3)
-    @ignore(test_num=52, num_brokers=3)
-    @ignore(test_num=54, num_brokers=3)
-    @ignore(test_num=63, num_brokers=3)
-    @ignore(test_num=67, num_brokers=3)
-    @ignore(test_num=77, num_brokers=3)
-    @ignore(test_num=92, num_brokers=3)
-    @ignore(test_num=44, num_brokers=3)
-    @ignore(test_num=69, num_brokers=3)
-    @ignore(test_num=81, num_brokers=3)
-    @matrix(test_num=range(101), num_brokers=[1, 3])
+    @cluster(num_nodes=1, log_allow_list=ERROR_LOGS)
+    @ignore(test_num=19) # segfault in group membership https://app.clubhouse.io/vectorized/story/963/dereferencing-null-pointer-in-kafka-group-membership
+    @ignore(test_num=52) # https://app.clubhouse.io/vectorized/story/997/librdkafka-tests-failing-due-to-consumer-out-of-range-timestamps
+    @ignore(test_num=54) # timequery issues: https://app.clubhouse.io/vectorized/story/995/librdkafka-offset-time-query
+    @ignore(test_num=63) # cluster-id: https://app.clubhouse.io/vectorized/story/939/generate-cluster-id-uuid-on-bootstrap-and-expose-through-metadata-request
+    @ignore(test_num=67) # empty topic offset edge case: https://app.clubhouse.io/vectorized/story/940/consuming-from-empty-topic-should-return-eof
+    @ignore(test_num=77) # topic compaction settings: https://app.clubhouse.io/vectorized/story/999/support-create-topic-configurations-for-compaction-retention-policies
+    @ignore(test_num=92) # no support for v2 -> v1 message version conversion in the broker
+    @ignore(test_num=44) # we do not support runtime changes to topic partition count
+    @ignore(test_num=69) # we do not support runtime changes to topic partition count
+    @ignore(test_num=81) # we do not support replica assignment
+    @ignore(test_num=14)
+    @ignore(test_num=34)
+    @ignore(test_num=51)
+    @ignore(test_num=82)
+    @ignore(test_num=99)
+    @ignore(test_num=30)
+    @matrix(test_num=range(101))
     # yapf: enable
-    def test_librdkafka(self, test_num, num_brokers):
+    def test_librdkafka(self, test_num):
         with open(LibrdkafkaTest.CONF_FILE, "w") as f:
             brokers = self.redpanda.brokers()
             f.write("metadata.broker.list={}".format(brokers))
