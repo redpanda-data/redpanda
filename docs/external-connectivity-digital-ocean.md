@@ -42,7 +42,7 @@ helm install \
 
 ```
 VERSION=v21.4.15
-kubectl apply -f https://raw.githubusercontent.com/vectorizedio/redpanda/$VERSION/src/go/k8s/config/samples/external_connectivity.yaml
+kubectl apply -f https://raw.githubusercontent.com/redpanda-data/redpanda/$VERSION/src/go/k8s/config/samples/external_connectivity.yaml
 ```
 
 ### - Get broker addresses

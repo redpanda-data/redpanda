@@ -47,7 +47,7 @@ kubectl create ns chat-with-me
 ```
 kubectl apply \
 -n chat-with-me \
--f https://raw.githubusercontent.com/vectorizedio/redpanda/dev/src/go/k8s/config/samples/one_node_external.yaml
+-f https://raw.githubusercontent.com/redpanda-data/redpanda/dev/src/go/k8s/config/samples/one_node_external.yaml
 ```
 8. Etc/hosts
 Make sure 0.local.rp is mapped to 127.0.0.1 on your system. It should contain line similar to this one:

@@ -60,7 +60,7 @@ kubectl apply -k https://github.com/redpanda-data/redpanda/src/go/k8s/config/wit
 Install sample RedpandaCluster custom resource
 
 ```
-kubectl apply -f https://raw.githubusercontent.com/vectorizedio/redpanda/dev/src/go/k8s/config/samples/one_node_cluster.yaml
+kubectl apply -f https://raw.githubusercontent.com/redpanda-data/redpanda/dev/src/go/k8s/config/samples/one_node_cluster.yaml
 ```
 
 #### Developing
