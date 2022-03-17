@@ -42,7 +42,7 @@ generally to OS and hardware features and settings.
 
 1. Creating a Python script to iterate over a major cloud vendor/ VM type/
 storage device type matrix, leveraging our
-[Terraform configuration](https://github.com/vectorizedio/v/tree/master/infra)
+[Terraform configuration](https://github.com/redpanda-data/v/tree/master/infra)
 to deploy test nodes, overriding its default behavior, which is to run the rpk
 tuners and then redpanda, with a script to
 2. Running iotune on the deployed VMs,

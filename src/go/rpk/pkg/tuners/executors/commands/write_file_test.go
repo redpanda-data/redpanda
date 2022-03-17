@@ -16,8 +16,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors/commands"
 	"github.com/spf13/afero"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/executors/commands"
 )
 
 func TestWriteFileCmdExecute(t *testing.T) {

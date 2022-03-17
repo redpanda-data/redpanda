@@ -18,12 +18,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/os"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/utils"
 )
 
 func NewStopCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {

@@ -17,8 +17,8 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors/commands"
 	"github.com/stretchr/testify/require"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/executors/commands"
 )
 
 func TestWriteSizedFileCmdRender(t *testing.T) {

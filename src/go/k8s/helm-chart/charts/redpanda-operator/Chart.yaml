@@ -12,7 +12,7 @@ appVersion: v21.3.4
 
 home: https://vectorized.io
 sources:
-  - https://github.com/vectorizedio/redpanda
+  - https://github.com/redpanda-data/redpanda
 maintainers:
   - name: Vectorizedio
     email: support@vectorized.io

@@ -4,7 +4,7 @@
 # License (the "License"); you may not use this file except in compliance with
 # the License. You may obtain a copy of the License at
 #
-# https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
+# https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
 
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.services.cluster import cluster

@@ -128,7 +128,7 @@ function App() {
               target: "_blank",
             },
             {
-              url: "https://github.com/vectorizedio/redpanda",
+              url: "https://github.com/redpanda-data/redpanda",
               title: "Github",
               target: "_blank",
             },

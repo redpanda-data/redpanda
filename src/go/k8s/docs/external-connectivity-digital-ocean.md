@@ -28,7 +28,7 @@ helm install \
 
 ```
 VERSION=v21.4.15
-kubectl apply -k 'https://github.com/vectorizedio/redpanda/src/go/k8s/config/crd?ref=$VERSION'
+kubectl apply -k 'https://github.com/redpanda-data/redpanda/src/go/k8s/config/crd?ref=$VERSION'
 helm repo add redpanda https://charts.vectorized.io/ && \
 helm repo update \
 helm install \
@@ -42,7 +42,7 @@ helm install \
 
 ```
 VERSION=v21.4.15
-kubectl apply -f https://raw.githubusercontent.com/vectorizedio/redpanda/$VERSION/src/go/k8s/config/samples/external_connectivity.yaml
+kubectl apply -f https://raw.githubusercontent.com/redpanda-data/redpanda/$VERSION/src/go/k8s/config/samples/external_connectivity.yaml
 ```
 
 ### - Get broker addresses

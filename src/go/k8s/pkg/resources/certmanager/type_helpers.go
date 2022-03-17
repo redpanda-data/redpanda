@@ -1,6 +1,6 @@
 package certmanager
 
-import redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+import redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 
 // Helper functions and types for Listeners
 

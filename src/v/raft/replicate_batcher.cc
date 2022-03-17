@@ -135,7 +135,7 @@ replicate_batcher::do_cache_with_backpressure(
      * returned, so the entire partition is no longer writable.
      * see:
      *
-     * https://github.com/vectorizedio/redpanda/issues/1503.
+     * https://github.com/redpanda-data/redpanda/issues/1503.
      *
      * When batch size exceed available semaphore units we just acquire all of
      * them to be able to continue.

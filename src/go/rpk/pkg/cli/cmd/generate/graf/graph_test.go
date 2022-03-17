@@ -13,8 +13,8 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/generate/graf"
 	"github.com/stretchr/testify/require"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/generate/graf"
 )
 
 func TestNewGraphPanel(t *testing.T) {

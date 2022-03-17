@@ -12,9 +12,9 @@ package utils_test
 import (
 	"testing"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/utils"
 )
 
 func TestWriteBytes(t *testing.T) {

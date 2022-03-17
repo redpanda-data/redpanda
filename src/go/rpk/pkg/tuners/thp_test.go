@@ -13,10 +13,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/executors"
 )
 
 func TestTHPTunerSupported(t *testing.T) {

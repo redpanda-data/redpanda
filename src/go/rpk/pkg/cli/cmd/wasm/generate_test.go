@@ -12,9 +12,9 @@ package wasm
 import (
 	"testing"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/wasm/template"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/testfs"
 	"github.com/stretchr/testify/require"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/wasm/template"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/testfs"
 )
 
 func TestGetWasmApiVersion(t *testing.T) {

@@ -79,7 +79,7 @@ class ListGroupsReplicationFactorTest(RedpandaTest):
     def test_list_groups_has_no_duplicates(self):
         """
         Reproducer for:
-        https://github.com/vectorizedio/redpanda/issues/2528
+        https://github.com/redpanda-data/redpanda/issues/2528
         """
         kcl = KCL(self.redpanda)
         kcl.produce(self.topic, "msg\n")

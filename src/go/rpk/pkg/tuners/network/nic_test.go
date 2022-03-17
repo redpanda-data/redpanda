@@ -13,10 +13,10 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/ethtool"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/irq"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/ethtool"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/irq"
 )
 
 type procFileMock struct {

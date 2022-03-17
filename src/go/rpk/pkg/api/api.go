@@ -18,12 +18,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/version"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/system"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/version"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cloud"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/system"
 )
 
 const defaultUrl = "https://m.rp.vectorized.io"

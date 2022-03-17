@@ -13,7 +13,7 @@ import (
 	"bufio"
 	"fmt"
 
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/system/systemd"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/system/systemd"
 )
 
 type startSystemdUnitCommand struct {

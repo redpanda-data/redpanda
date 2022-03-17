@@ -12,8 +12,8 @@ package utils_test
 import (
 	"testing"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
 	"github.com/stretchr/testify/require"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/utils"
 )
 
 func TestStringInSlice(t *testing.T) {

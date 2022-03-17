@@ -12,9 +12,9 @@ package tuners
 import (
 	"testing"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/disk"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/irq"
 	"github.com/stretchr/testify/require"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/disk"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/irq"
 )
 
 type cpuMasksMock struct {

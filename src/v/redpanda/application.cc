@@ -553,7 +553,7 @@ void application::wire_up_services() {
           to_yaml(*_proxy_config),
           smp_service_groups.proxy_smp_sg(),
           // TODO: Improve memory budget for services
-          // https://github.com/vectorizedio/redpanda/issues/1392
+          // https://github.com/redpanda-data/redpanda/issues/1392
           memory_groups::kafka_total_memory(),
           std::reference_wrapper(_proxy_client))
           .get();
@@ -564,7 +564,7 @@ void application::wire_up_services() {
           config::node().node_id(),
           smp_service_groups.proxy_smp_sg(),
           // TODO: Improve memory budget for services
-          // https://github.com/vectorizedio/redpanda/issues/1392
+          // https://github.com/redpanda-data/redpanda/issues/1392
           memory_groups::kafka_total_memory(),
           *_schema_reg_client_config,
           *_schema_reg_config);

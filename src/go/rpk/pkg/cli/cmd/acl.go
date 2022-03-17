@@ -12,11 +12,11 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/acl"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/common"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/acl"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/common"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 )
 
 func NewACLCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {

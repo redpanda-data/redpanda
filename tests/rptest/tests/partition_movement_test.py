@@ -320,7 +320,7 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
             raise RuntimeError(f"Expected 400 but got {r.status_code}")
 
         # An syntactically invalid destination (float instead of int)
-        # Reproducer for https://github.com/vectorizedio/redpanda/issues/2286
+        # Reproducer for https://github.com/redpanda-data/redpanda/issues/2286
         assignments = [{"node_id": valid_dest, "core": 3.14}]
         try:
             r = admin.set_partition_replicas(topic, partition, assignments)
@@ -435,7 +435,7 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
             raise RuntimeError(f"Expected 503 but got {r.status_code}")
 
         # An update to partition properties should succeed
-        # (issue https://github.com/vectorizedio/redpanda/issues/2300)
+        # (issue https://github.com/redpanda-data/redpanda/issues/2300)
         rpk = RpkTool(self.redpanda)
         assert admin.get_partitions(name, 0)['status'] == "in_progress"
         rpk.alter_topic_config(name, "retention.ms", "3600000")

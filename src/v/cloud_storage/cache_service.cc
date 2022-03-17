@@ -5,7 +5,7 @@
  * License (the "License"); you may not use this file except in compliance with
  * the License. You may obtain a copy of the License at
  *
- * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
+ * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
 #include "cloud_storage/logger.h"
@@ -206,7 +206,7 @@ ss::future<std::optional<cache_item>> cache::get(std::filesystem::path key) {
          * timestamp to delete files from oldest to newest. File access time
          * should be updated every time file is returned by cache, see
          *
-         *  https://github.com/vectorizedio/redpanda/issues/2459
+         *  https://github.com/redpanda-data/redpanda/issues/2459
          */
         cache_file = co_await ss::open_file_dma(
           (_cache_dir / key).native(), ss::open_flags::ro);

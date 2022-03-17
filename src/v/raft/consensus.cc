@@ -1013,7 +1013,7 @@ ss::future<> consensus::do_start() {
          * if the group's ntp matches the pattern, then do not load the initial
          * configuration snapshto from the keyvalue store. more info here:
          *
-         * https://github.com/vectorizedio/redpanda/issues/1870
+         * https://github.com/redpanda-data/redpanda/issues/1870
          */
         const auto& ntp = _log.config().ntp();
         const auto normalized_ntp = fmt::format(
@@ -1128,7 +1128,7 @@ ss::future<> consensus::do_start() {
                * fix for incorrectly persisted configuration index. In previous
                * version of redpanda due to the issue with incorrectly assigned
                * raft configuration indicies
-               * (https://github.com/vectorizedio/redpanda/issues/2326) there
+               * (https://github.com/redpanda-data/redpanda/issues/2326) there
                * may be a persistent corruption in offset translation caused by
                * incorrectly persited configuration index. It may cause log
                * offset to be negative. Here we check if this problem exists and

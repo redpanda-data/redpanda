@@ -294,7 +294,7 @@ struct join_reply {
 /// Successor to join_request:
 /// - Include version metadata for joining node
 /// - Has fields for implementing auto-selection of
-///   node_id (https://github.com/vectorizedio/redpanda/issues/2793)
+///   node_id (https://github.com/redpanda-data/redpanda/issues/2793)
 ///   in future.
 struct join_node_request {
     explicit join_node_request(

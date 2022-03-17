@@ -24,10 +24,10 @@ namespace raft {
  * Improvements
  *
  *  - cross-core bandwidth sharing
- *      https://github.com/vectorizedio/redpanda/issues/1770
+ *      https://github.com/redpanda-data/redpanda/issues/1770
  *
  *  - cluster-level recovery control
- *      https://github.com/vectorizedio/redpanda/issues/1771
+ *      https://github.com/redpanda-data/redpanda/issues/1771
  */
 class recovery_throttle {
     using clock_type = ss::lowres_clock;

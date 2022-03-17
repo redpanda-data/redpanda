@@ -46,7 +46,7 @@ SaslCredentials = collections.namedtuple("SaslCredentials",
 
 DEFAULT_LOG_ALLOW_LIST = [
     # Tests currently don't run on XFS, although in future they should.
-    # https://github.com/vectorizedio/redpanda/issues/2376
+    # https://github.com/redpanda-data/redpanda/issues/2376
     re.compile("not on XFS. This is a non-supported setup."),
 
     # This is expected when tests are intentionally run on low memory configurations

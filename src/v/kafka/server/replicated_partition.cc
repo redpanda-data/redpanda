@@ -111,7 +111,8 @@ replicated_partition::aborted_transactions(
     // ids for both local and remote offset ranges. This is true as long as
     // rm_stm state has not been reset (for example when there is a partition
     // transfer or when a stale replica recovers its log from beyond the log
-    // eviction point). See https://github.com/vectorizedio/redpanda/issues/3001
+    // eviction point). See
+    // https://github.com/redpanda-data/redpanda/issues/3001
 
     auto base_rp = ot_state->to_log_offset(base);
     auto last_rp = ot_state->to_log_offset(last);

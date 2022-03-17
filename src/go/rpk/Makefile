@@ -15,8 +15,8 @@ GOOS := $(shell go env GOOS)
 GOARCH := $(shell go env GOARCH)
 OUTDIR := $(GOOS)-$(GOARCH)
 
-VER_PKG=github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/version
-CONT_PKG=github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/container/common
+VER_PKG=github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/version
+CONT_PKG=github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/container/common
 
 REV := $(shell git rev-parse --short HEAD)
 VERSION := $(shell git describe --tags --abbrev=0)

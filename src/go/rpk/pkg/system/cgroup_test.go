@@ -14,9 +14,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/system"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/system"
 )
 
 func setUpCgroup(fs afero.Fs, file, val string, v2 bool) error {

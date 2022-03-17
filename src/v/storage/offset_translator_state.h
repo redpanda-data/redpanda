@@ -23,7 +23,7 @@ namespace storage {
 /// data partitions). This is needed because even though our internal batch
 /// types are filtered out when sent to clients, kafka clients are not prepared
 /// for these batches to occupy offset space (see
-/// https://github.com/vectorizedio/redpanda/issues/1184 for details).
+/// https://github.com/redpanda-data/redpanda/issues/1184 for details).
 ///
 /// It works by maintaining an in-memory map of all filtered batch offsets.
 /// This map allows us to quickly find a delta between the raw log offset and

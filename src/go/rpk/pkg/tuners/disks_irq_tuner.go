@@ -10,11 +10,11 @@
 package tuners
 
 import (
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/disk"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/irq"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/disk"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/executors"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/irq"
 )
 
 type disksIRQsTuner struct {

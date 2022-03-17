@@ -18,7 +18,7 @@ this Agreement, to the exclusion of all other terms.
 
 (a) “Redpanda” shall mean the event streaming platform provided by Vectorized, including both Redpanda Core and Redpanda Enterprise Edition, as defined below.
 
-(b) “Redpanda Core” shall mean the version of Redpanda, available free of charge at https://github.com/vectorizedio/redpanda.
+(b) “Redpanda Core” shall mean the version of Redpanda, available free of charge at https://github.com/redpanda-data/redpanda.
 
 (c) “Redpanda Enterprise Edition” shall mean the additional features made available by Vectorized, the use of which is subject to additional terms set out below.
 

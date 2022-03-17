@@ -12,8 +12,8 @@ package system
 import (
 	"time"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
 	log "github.com/sirupsen/logrus"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/os"
 )
 
 func UnameAndDistro(timeout time.Duration) (string, error) {

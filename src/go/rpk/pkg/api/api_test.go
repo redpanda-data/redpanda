@@ -18,8 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/stretchr/testify/require"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 )
 
 func TestSendMetrics(t *testing.T) {

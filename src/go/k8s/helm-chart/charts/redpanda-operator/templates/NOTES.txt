@@ -17,4 +17,4 @@ The pods will rollout in a few seconds. To check the status:
 
 Now you can install Cluster custom resource:
 
-  kubectl apply -f https://raw.githubusercontent.com/vectorizedio/redpanda/dev/src/go/k8s/config/samples/one_node_cluster.yaml
+  kubectl apply -f https://raw.githubusercontent.com/redpanda-data/redpanda/dev/src/go/k8s/config/samples/one_node_cluster.yaml

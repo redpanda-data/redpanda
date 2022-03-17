@@ -1827,7 +1827,7 @@ FIXTURE_TEST(committed_offset_updates, storage_test_fixture) {
 }
 
 FIXTURE_TEST(changing_cleanup_policy_back_and_forth, storage_test_fixture) {
-    // issue: https://github.com/vectorizedio/redpanda/issues/2214
+    // issue: https://github.com/redpanda-data/redpanda/issues/2214
     auto cfg = default_log_config(test_dir);
     cfg.max_compacted_segment_size = config::mock_binding<size_t>(100_MiB);
     cfg.stype = storage::log_config::storage_type::disk;

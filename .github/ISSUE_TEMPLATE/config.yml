@@ -4,7 +4,7 @@ contact_links:
     url: https://vectorized.io/slack
     about: Chat and ask questions in real time!
   - name: ❓ Github Discussions
-    url: https://github.com/vectorizedio/redpanda/discussions
+    url: https://github.com/redpanda-data/redpanda/discussions
     about: For longer, async, thoughtful discussions
   - name: 💭 Product Feedback
     url: https://vectorized.io/feedback/

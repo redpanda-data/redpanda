@@ -14,7 +14,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/os"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
 )
 
 type executeCommand struct {

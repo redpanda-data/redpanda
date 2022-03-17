@@ -15,10 +15,10 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/system/systemd"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors/commands"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/system/systemd"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/executors/commands"
 )
 
 const body = `[Unit]

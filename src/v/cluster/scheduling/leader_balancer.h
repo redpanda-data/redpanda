@@ -116,7 +116,7 @@ private:
      *   this we need ot add an upcall notification mechanism to the leaders
      *   table / dissemination framework.
      *
-     *      See: https://github.com/vectorizedio/redpanda/issues/2031
+     *      See: https://github.com/redpanda-data/redpanda/issues/2031
      *
      *   Once this item is complete it would also make sense to increase this
      *   timeout to something larger like 5 minutes.

@@ -11,12 +11,12 @@
 package admin
 
 import (
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/common"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/redpanda/admin/brokers"
+	configcmd "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/redpanda/admin/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/common"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/redpanda/admin/brokers"
-	configcmd "github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/redpanda/admin/config"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 )
 
 // NewCommand returns the redpanda admin command.
