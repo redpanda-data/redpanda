@@ -268,6 +268,27 @@ class Admin:
         path = f"partitions/{namespace}/{topic}/{partition}/mark_transaction_expired?id={pid['id']}&epoch={pid['epoch']}"
         return self._request("post", path, node=node)
 
+    def delete_partition_from_transaction(self,
+                                          tid,
+                                          namespace,
+                                          topic,
+                                          partition_id,
+                                          etag,
+                                          node=None):
+        """
+        Delete partition from transaction
+        """
+        partition_info = {
+            "namespace": namespace,
+            "topic": topic,
+            "partition_id": partition_id,
+            "etag": etag
+        }
+
+        params = "&".join([f"{k}={v}" for k, v in partition_info.items()])
+        path = f"transaction/{tid}/delete_partition/?{params}"
+        return self._request('post', path, node=node)
+
     def set_partition_replicas(self,
                                topic,
                                partition,

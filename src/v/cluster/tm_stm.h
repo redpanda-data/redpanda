@@ -50,6 +50,8 @@ struct tm_transaction {
     struct tx_partition {
         model::ntp ntp;
         model::term_id etag;
+
+        bool operator==(const tx_partition& other) const = default;
     };
 
     struct tx_group {
@@ -107,6 +109,10 @@ struct tm_transaction {
     }
 
     std::chrono::milliseconds get_timeout() const { return timeout_ms; }
+
+    bool delete_partition(const tx_partition& ntp) {
+        return std::erase(partitions, ntp) > 0;
+    }
 };
 
 struct tm_snapshot {
@@ -131,6 +137,7 @@ public:
         conflict,
         unknown,
         not_leader,
+        partition_not_found
     };
 
     explicit tm_stm(ss::logger&, raft::consensus*);
@@ -208,6 +215,12 @@ public:
     using get_txs_result
       = checked<std::vector<tm_transaction>, tm_stm::op_status>;
     ss::future<get_txs_result> get_all_transactions();
+
+    ss::future<checked<tm_transaction, tm_stm::op_status>>
+    delete_partition_from_tx(
+      model::term_id term,
+      kafka::transactional_id tid,
+      tm_transaction::tx_partition ntp);
 
 protected:
     ss::future<> handle_eviction() override;

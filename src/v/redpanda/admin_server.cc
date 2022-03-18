@@ -29,6 +29,8 @@
 #include "config/configuration.h"
 #include "config/endpoint_tls_config.h"
 #include "finjector/hbadger.h"
+#include "kafka/types.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/record.h"
@@ -544,6 +546,16 @@ ss::future<> admin_server::throw_on_error(
         case cluster::tx_errc::pid_not_found:
             throw ss::httpd::bad_request_exception(
               fmt_with_ctx(fmt::format, "Can not find pid for ntp:{}", ntp));
+        case cluster::tx_errc::partition_not_found: {
+            ss::sstring error_msg;
+            if (ntp == model::tx_manager_ntp) {
+                error_msg = fmt::format("Can not find ntp:{}", ntp);
+            } else {
+                error_msg = fmt::format(
+                  "Can not find partition({}) in transaction for delete", ntp);
+            }
+            throw ss::httpd::bad_request_exception(error_msg);
+        }
         default:
             throw ss::httpd::server_error_exception(
               fmt::format("Unexpected tx_error error: {}", ec.message()));
@@ -2385,5 +2397,70 @@ void admin_server::register_transaction_routes() {
           }
 
           co_return ss::json::json_return_type(ans);
+      });
+
+    register_route<user>(
+      ss::httpd::transaction_json::delete_partition,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          if (need_redirect_to_leader(model::tx_manager_ntp, _metadata_cache)) {
+              throw co_await redirect_to_leader(*req, model::tx_manager_ntp);
+          }
+
+          auto transaction_id = req->param["transactional_id"];
+
+          auto namespace_from_req = req->get_query_param("namespace");
+          auto topic_from_req = req->get_query_param("topic");
+
+          auto partition_str = req->get_query_param("partition_id");
+          int64_t partition;
+          try {
+              partition = std::stoi(partition_str);
+          } catch (...) {
+              throw ss::httpd::bad_param_exception(
+                fmt::format("Partition must be an integer: {}", partition_str));
+          }
+
+          if (partition < 0) {
+              throw ss::httpd::bad_param_exception(
+                fmt::format("Invalid partition {}", partition));
+          }
+
+          auto etag_str = req->get_query_param("etag");
+          int64_t etag;
+          try {
+              etag = std::stoi(etag_str);
+          } catch (...) {
+              throw ss::httpd::bad_param_exception(
+                fmt::format("Etag must be an integer: {}", etag_str));
+          }
+
+          if (etag < 0) {
+              throw ss::httpd::bad_param_exception(
+                fmt::format("Invalid etag {}", etag));
+          }
+
+          model::ntp ntp(namespace_from_req, topic_from_req, partition);
+          cluster::tm_transaction::tx_partition partition_for_delete{
+            .ntp = ntp, .etag = model::term_id(etag)};
+          kafka::transactional_id tid(transaction_id);
+
+          auto& tx_frontend = _partition_manager.local().get_tx_frontend();
+          if (!tx_frontend.local_is_initialized()) {
+              throw ss::httpd::bad_request_exception(
+                "Transaction are disabled");
+          }
+
+          vlog(
+            logger.info,
+            "Delete partition(ntp: {}, etag: {}) from transaction({})",
+            ntp,
+            etag,
+            tid);
+
+          auto res = co_await tx_frontend.local().delete_partition_from_tx(
+            tid, partition_for_delete);
+          co_await throw_on_error(*req, res, ntp);
+          co_return ss::json::json_return_type(ss::json::json_void());
       });
 }
