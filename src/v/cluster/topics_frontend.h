@@ -79,6 +79,9 @@ public:
 
     ss::future<bool> validate_shard(model::node_id node, uint32_t shard) const;
 
+    void disable_partition_movement() { _partition_movement_disabled = true; }
+    void enable_partition_movement() { _partition_movement_disabled = false; }
+
 private:
     using ntp_leader = std::pair<model::ntp, model::node_id>;
 
@@ -130,6 +133,7 @@ private:
     ss::sharded<topic_table>& _topics;
     ss::sharded<data_policy_frontend>& _dp_frontend;
     ss::sharded<ss::abort_source>& _as;
+    bool _partition_movement_disabled = false;
 };
 
 } // namespace cluster

@@ -85,13 +85,11 @@ rm_group_frontend::rm_group_frontend(
   ss::sharded<rpc::connection_cache>& connection_cache,
   ss::sharded<cluster::partition_leaders_table>& leaders,
   cluster::controller* controller,
-  ss::sharded<kafka::coordinator_ntp_mapper>& coordinator_mapper,
   ss::sharded<kafka::group_router>& group_router)
   : _metadata_cache(metadata_cache)
   , _connection_cache(connection_cache)
   , _leaders(leaders)
   , _controller(controller)
-  , _coordinator_mapper(coordinator_mapper)
   , _group_router(group_router)
   , _metadata_dissemination_retries(
       config::shard_local_cfg().metadata_dissemination_retries.value())
@@ -104,14 +102,15 @@ ss::future<cluster::begin_group_tx_reply> rm_group_frontend::begin_group_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
-    auto ntp_opt = _coordinator_mapper.local().ntp_for(group_id);
+    auto ntp_opt = _group_router.local().coordinator_mapper().local().ntp_for(
+      group_id);
     if (!ntp_opt) {
         vlog(
           cluster::txlog.trace,
           "can't find ntp for {}, creating a consumer group topic",
           group_id);
         auto has_created = co_await try_create_consumer_group_topic(
-          _coordinator_mapper.local(),
+          _group_router.local().coordinator_mapper().local(),
           _controller->get_topics_frontend().local());
         if (!has_created) {
             vlog(
@@ -128,7 +127,8 @@ ss::future<cluster::begin_group_tx_reply> rm_group_frontend::begin_group_tx(
     std::optional<model::node_id> leader_opt;
     cluster::tx_errc ec;
     while (!leader_opt && 0 < retries--) {
-        ntp_opt = _coordinator_mapper.local().ntp_for(group_id);
+        ntp_opt = _group_router.local().coordinator_mapper().local().ntp_for(
+          group_id);
         if (!ntp_opt) {
             vlog(
               cluster::txlog.trace,
@@ -263,7 +263,8 @@ ss::future<cluster::prepare_group_tx_reply> rm_group_frontend::prepare_group_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
-    auto ntp_opt = _coordinator_mapper.local().ntp_for(group_id);
+    auto ntp_opt = _group_router.local().coordinator_mapper().local().ntp_for(
+      group_id);
     if (!ntp_opt) {
         vlog(cluster::txlog.warn, "can't find ntp for {} ", group_id);
         co_return cluster::prepare_group_tx_reply{
@@ -393,7 +394,8 @@ ss::future<cluster::commit_group_tx_reply> rm_group_frontend::commit_group_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
-    auto ntp_opt = _coordinator_mapper.local().ntp_for(group_id);
+    auto ntp_opt = _group_router.local().coordinator_mapper().local().ntp_for(
+      group_id);
     if (!ntp_opt) {
         vlog(cluster::txlog.warn, "can't find ntp for {}", group_id);
         co_return cluster::commit_group_tx_reply{
@@ -514,7 +516,8 @@ ss::future<cluster::abort_group_tx_reply> rm_group_frontend::abort_group_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
-    auto ntp_opt = _coordinator_mapper.local().ntp_for(group_id);
+    auto ntp_opt = _group_router.local().coordinator_mapper().local().ntp_for(
+      group_id);
     if (!ntp_opt) {
         vlog(cluster::txlog.warn, "can't find ntp for {} ", group_id);
         co_return cluster::abort_group_tx_reply{

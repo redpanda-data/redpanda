@@ -318,9 +318,6 @@ class VerifiableConsumer(BackgroundThreadService):
         for offset in fetch_offsets_ev["offsets"]:
             tp = TopicPartition(offset["topic"], offset["partition"])
             offset = offset["offset"]
-            assert self.global_position[tp] >= offset, \
-                "Committed offset %d for partition %s is ahead of the current position %d" % \
-                (offset, str(tp), self.global_position[tp])
             self.global_committed[tp] = offset
 
     def start_cmd(self, node):

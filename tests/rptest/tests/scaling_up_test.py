@@ -23,12 +23,14 @@ class ScalingUpTest(EndToEndTest):
     """
     @cluster(num_nodes=5)
     def test_adding_nodes_to_cluster(self):
-        self.redpanda = RedpandaService(self.test_context, 3)
+        self.redpanda = RedpandaService(
+            self.test_context, 3, extra_rp_conf={"group_topic_partitions": 1})
         # start single node cluster
         self.redpanda.start(nodes=[self.redpanda.nodes[0]])
         # create some topics
         topics = []
-        total_replicas = 0
+        # include __consumer_offsets topic replica
+        total_replicas = 1
         for partition_count in range(1, 5):
             name = f"topic{len(topics)}"
             spec = TopicSpec(name=name,

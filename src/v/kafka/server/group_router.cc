@@ -21,7 +21,7 @@ group_router::route_delete_groups(
   ss::shard_id shard, std::vector<std::pair<model::ntp, group_id>> groups) {
     return ss::with_scheduling_group(
       _sg, [this, shard, groups = std::move(groups)]() mutable {
-          return _group_manager.invoke_on(
+          return get_group_manager().invoke_on(
             shard,
             _ssg,
             [groups = std::move(groups)](group_manager& mgr) mutable {
@@ -51,6 +51,14 @@ group_router::delete_groups(std::vector<group_id> groups) {
     // partition groups by owner shard
     sharded_groups groups_by_shard;
     for (auto& group : groups) {
+        if (unlikely(_disabled)) {
+            results.push_back(deletable_group_result{
+              .group_id = std::move(group),
+              .error_code = error_code::not_coordinator,
+            });
+            continue;
+        }
+
         if (auto m = shard_for(group); m) {
             groups_by_shard[m->second].emplace_back(
               std::make_pair(std::move(m->first), std::move(group)));

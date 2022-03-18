@@ -85,7 +85,7 @@ class PartitionMovementMixin():
                 result.append(dict(node_id=node_id, core=partition["core"]))
         return result
 
-    def _wait_post_move(self, topic, partition, assignments):
+    def _wait_post_move(self, topic, partition, assignments, timeout_sec):
         admin = Admin(self.redpanda)
 
         def status_done():
@@ -96,7 +96,7 @@ class PartitionMovementMixin():
             return converged and info["status"] == "done"
 
         # wait until redpanda reports complete
-        wait_until(status_done, timeout_sec=90, backoff_sec=2)
+        wait_until(status_done, timeout_sec=timeout_sec, backoff_sec=2)
 
         def derived_done():
             info = self._get_current_partitions(admin, topic, partition)
@@ -104,9 +104,9 @@ class PartitionMovementMixin():
                 f"derived assignments for {topic}-{partition}: {info}")
             return self._equal_assignments(info, assignments)
 
-        wait_until(derived_done, timeout_sec=90, backoff_sec=2)
+        wait_until(derived_done, timeout_sec=timeout_sec, backoff_sec=2)
 
-    def _do_move_and_verify(self, topic, partition):
+    def _do_move_and_verify(self, topic, partition, timeout_sec):
         admin = Admin(self.redpanda)
 
         # get the partition's replica set, including core assignments. the kafka
@@ -124,7 +124,7 @@ class PartitionMovementMixin():
 
         r = admin.set_partition_replicas(topic, partition, assignments)
 
-        self._wait_post_move(topic, partition, assignments)
+        self._wait_post_move(topic, partition, assignments, timeout_sec)
 
         return (topic, partition, assignments)
 
@@ -132,6 +132,11 @@ class PartitionMovementMixin():
         # choose a random topic-partition
         metadata = self.client().describe_topics()
         topic, partition = self._random_partition(metadata)
+        # timeout for __consumer_offsets topic has to be long enough
+        # to wait for compaction to finish. For resource constrained machines
+        # and redpanda debug builds it may take a very long time
+        timeout_sec = 360 if topic == "__consumer_offsets" else 90
+
         self.logger.info(f"selected topic-partition: {topic}-{partition}")
 
-        self._do_move_and_verify(topic, partition)
+        self._do_move_and_verify(topic, partition, timeout_sec)

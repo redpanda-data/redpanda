@@ -136,6 +136,7 @@ partition_manager::do_shutdown(ss::lw_shared_ptr<partition> partition) {
     try {
         auto ntp = partition->ntp();
         co_await _raft_manager.local().shutdown(partition->raft());
+        _unmanage_watchers.notify(ntp, ntp.tp.partition);
         co_await partition->stop();
         co_await _storage.log_mgr().shutdown(partition->ntp());
     } catch (...) {

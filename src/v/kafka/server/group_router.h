@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "cluster/feature_table.h"
 #include "cluster/fwd.h"
 #include "cluster/shard_table.h"
 #include "kafka/protocol/describe_groups.h"
@@ -55,14 +56,14 @@ class group_router final {
         using resp_type = typename return_type::value_type;
 
         auto m = shard_for(r.data.group_id);
-        if (!m) {
+        if (!m || _disabled) {
             return ss::make_ready_future<resp_type>(
               resp_type(r, error_code::not_coordinator));
         }
         r.ntp = std::move(m->first);
         return with_scheduling_group(
           _sg, [this, func, shard = m->second, r = std::move(r)]() mutable {
-              return _group_manager.invoke_on(
+              return get_group_manager().invoke_on(
                 shard,
                 _ssg,
                 [func, r = std::move(r)](group_manager& mgr) mutable {
@@ -81,7 +82,7 @@ class group_router final {
         using resp_type = typename return_type::value_type;
 
         auto m = shard_for(r.group_id);
-        if (!m) {
+        if (!m || _disabled) {
             resp_type reply;
             // route_tx routes internal intra cluster so it uses
             // cluster::tx_errc instead of kafka::error_code
@@ -93,7 +94,7 @@ class group_router final {
         r.ntp = std::move(m->first);
         return with_scheduling_group(
           _sg, [this, func, shard = m->second, r = std::move(r)]() mutable {
-              return _group_manager.invoke_on(
+              return get_group_manager().invoke_on(
                 shard,
                 _ssg,
                 [func, r = std::move(r)](group_manager& mgr) mutable {
@@ -106,14 +107,20 @@ public:
     group_router(
       ss::scheduling_group sched_group,
       ss::smp_service_group smp_group,
-      ss::sharded<group_manager>& group_manager,
+      ss::sharded<group_manager>& gr_manager,
+      ss::sharded<group_manager>& consumer_offsets_gr_manager,
       ss::sharded<cluster::shard_table>& shards,
-      ss::sharded<coordinator_ntp_mapper>& coordinators)
+      ss::sharded<coordinator_ntp_mapper>& coordinators,
+      ss::sharded<coordinator_ntp_mapper>& consumer_offsets_coordinators,
+      ss::sharded<cluster::feature_table>& feature_table)
       : _sg(sched_group)
       , _ssg(smp_group)
-      , _group_manager(group_manager)
+      , _group_manager(gr_manager)
+      , _consumer_offsets_group_manager(consumer_offsets_gr_manager)
       , _shards(shards)
-      , _coordinators(coordinators) {}
+      , _coordinators(coordinators)
+      , _consumer_offsets_coordinators(consumer_offsets_coordinators)
+      , _feature_table(feature_table) {}
 
     auto join_group(join_group_request&& request) {
         return route(std::move(request), &group_manager::join_group);
@@ -133,7 +140,7 @@ public:
 
     group::offset_commit_stages offset_commit(offset_commit_request&& request) {
         auto m = shard_for(request.data.group_id);
-        if (!m) {
+        if (!m || _disabled) {
             return group::offset_commit_stages(
               offset_commit_response(request, error_code::not_coordinator));
         }
@@ -146,7 +153,7 @@ public:
            shard = m->second,
            request = std::move(request),
            dispatched = std::move(dispatched)]() mutable {
-              return _group_manager.invoke_on(
+              return get_group_manager().invoke_on(
                 shard,
                 _ssg,
                 [request = std::move(request),
@@ -213,7 +220,7 @@ public:
     // return groups from across all shards, and if any core was still loading
     ss::future<std::pair<error_code, std::vector<listed_group>>> list_groups() {
         using type = std::pair<error_code, std::vector<listed_group>>;
-        return _group_manager.map_reduce0(
+        return get_group_manager().map_reduce0(
           [](group_manager& mgr) { return mgr.list_groups(); },
           type{},
           [](type a, type b) {
@@ -235,7 +242,7 @@ public:
         }
         return with_scheduling_group(
           _sg, [this, g = std::move(g), m = std::move(m)]() mutable {
-              return _group_manager.invoke_on(
+              return get_group_manager().invoke_on(
                 m->second,
                 _ssg,
                 [g = std::move(g),
@@ -248,18 +255,41 @@ public:
     ss::future<std::vector<deletable_group_result>>
     delete_groups(std::vector<group_id> groups);
 
+    ss::sharded<coordinator_ntp_mapper>& coordinator_mapper() {
+        if (use_consumer_offsets_topic()) {
+            return _consumer_offsets_coordinators;
+        }
+        return _coordinators;
+    }
+
+    void disable() { _disabled = true; }
+
+    void enable() { _disabled = false; }
+
+    ss::sharded<group_manager>& get_group_manager() {
+        if (use_consumer_offsets_topic()) {
+            return _consumer_offsets_group_manager;
+        }
+        return _group_manager;
+    }
+
 private:
     using sharded_groups = absl::
       node_hash_map<ss::shard_id, std::vector<std::pair<model::ntp, group_id>>>;
 
     std::optional<std::pair<model::ntp, ss::shard_id>>
     shard_for(const group_id& group) {
-        if (auto ntp = _coordinators.local().ntp_for(group); ntp) {
+        if (auto ntp = coordinator_mapper().local().ntp_for(group); ntp) {
             if (auto shard_id = _shards.local().shard_for(*ntp); shard_id) {
                 return std::make_pair(std::move(*ntp), *shard_id);
             }
         }
         return std::nullopt;
+    }
+
+    bool use_consumer_offsets_topic() {
+        return _feature_table.local().is_active(
+          cluster::feature::consumer_offsets);
     }
 
     ss::future<std::vector<deletable_group_result>> route_delete_groups(
@@ -271,8 +301,12 @@ private:
     ss::scheduling_group _sg;
     ss::smp_service_group _ssg;
     ss::sharded<group_manager>& _group_manager;
+    ss::sharded<group_manager>& _consumer_offsets_group_manager;
     ss::sharded<cluster::shard_table>& _shards;
     ss::sharded<coordinator_ntp_mapper>& _coordinators;
+    ss::sharded<coordinator_ntp_mapper>& _consumer_offsets_coordinators;
+    ss::sharded<cluster::feature_table>& _feature_table;
+    bool _disabled = false;
 };
 
 } // namespace kafka

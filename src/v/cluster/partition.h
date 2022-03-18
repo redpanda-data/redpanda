@@ -22,6 +22,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record_batch_reader.h"
+#include "model/timeout_clock.h"
 #include "raft/consensus.h"
 #include "raft/consensus_utils.h"
 #include "raft/group_configuration.h"
@@ -149,6 +150,11 @@ public:
     ss::future<std::error_code>
     transfer_leadership(std::optional<model::node_id> target) {
         return _raft->do_transfer_leadership(target);
+    }
+
+    ss::future<std::error_code>
+    request_leadership(model::timeout_clock::time_point timeout) {
+        return _raft->request_leadership(timeout);
     }
 
     ss::future<std::error_code> update_replica_set(

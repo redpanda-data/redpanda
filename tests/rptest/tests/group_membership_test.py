@@ -88,11 +88,11 @@ class ListGroupsReplicationFactorTest(RedpandaTest):
         kcl.consume(self.topic, n=1, group="g1")
         kcl.consume(self.topic, n=1, group="g2")
         kcl.consume(self.topic, n=1, group="g3")
-        # transfer kafka_internal/group/0 leadership across the nodes to trigger
+        # transfer kafka/__consumer_offsets/0 leadership across the nodes to trigger
         # group state recovery on each node
         for n in self.redpanda.nodes:
-            self._transfer_with_retry(namespace="kafka_internal",
-                                      topic="group",
+            self._transfer_with_retry(namespace="kafka",
+                                      topic="__consumer_offsets",
                                       partition=0,
                                       target_id=self.redpanda.idx(n))
 
@@ -289,8 +289,8 @@ class GroupMetricsTest(RedpandaTest):
         admin = Admin(redpanda=self.redpanda)
 
         def get_group_partition():
-            return admin.get_partitions(namespace="kafka_internal",
-                                        topic="group",
+            return admin.get_partitions(namespace="kafka",
+                                        topic="__consumer_offsets",
                                         partition=0)
 
         def get_group_leader():
@@ -321,8 +321,8 @@ class GroupMetricsTest(RedpandaTest):
             """
             self.logger.debug(
                 f"Transferring leadership to {new_leader.account.hostname}")
-            admin.transfer_leadership_to(namespace="kafka_internal",
-                                         topic="group",
+            admin.transfer_leadership_to(namespace="kafka",
+                                         topic="__consumer_offsets",
                                          partition=0,
                                          target=self.redpanda.idx(new_leader))
             for _ in range(3):  # re-check a few times

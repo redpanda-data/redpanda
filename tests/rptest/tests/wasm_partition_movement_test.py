@@ -81,7 +81,7 @@ class WasmPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
             f"materialized assignments for {topic}-{partition}: {massignments}"
         )
 
-        self._wait_post_move(topic, partition, assignments)
+        self._wait_post_move(topic, partition, assignments, 90)
 
     def _grab_input(self, topic):
         metadata = self.client().describe_topics()
@@ -150,7 +150,7 @@ class WasmPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         s = self._prime_env()
         for _ in range(5):
             _, partition, assignments = self._do_move_and_verify(
-                s['topic'], s['partition'])
+                s['topic'], s['partition'], 90)
             self._verify_materialized_assignments(s['materialized_topic'],
                                                   partition, assignments)
 
@@ -181,7 +181,7 @@ class WasmPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
     def test_dynamic_with_failure(self):
         s = self._prime_env()
         _, partition, assignments = self._do_move_and_verify(
-            s['topic'], s['partition'])
+            s['topic'], s['partition'], 90)
 
         # Crash a node before verifying, it has a fixed amount of seconds to restart
         n = random.sample(self.redpanda.nodes, 1)[0]

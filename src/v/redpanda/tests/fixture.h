@@ -96,7 +96,6 @@ public:
           app.group_router,
           app.shard_table,
           app.partition_manager,
-          app.coordinator_ntp_mapper,
           app.fetch_session_cache,
           app.id_allocator_frontend,
           app.controller->get_credential_store(),

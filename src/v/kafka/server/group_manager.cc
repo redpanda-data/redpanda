@@ -32,13 +32,17 @@
 namespace kafka {
 
 group_manager::group_manager(
+  model::topic_namespace tp_ns,
   ss::sharded<raft::group_manager>& gm,
   ss::sharded<cluster::partition_manager>& pm,
   ss::sharded<cluster::topic_table>& topic_table,
+  group_metadata_serializer_factory serializer_factory,
   config::configuration& conf)
-  : _gm(gm)
+  : _tp_ns(std::move(tp_ns))
+  , _gm(gm)
   , _pm(pm)
   , _topic_table(topic_table)
+  , _serializer_factory(std::move(serializer_factory))
   , _conf(conf)
   , _self(cluster::make_self_broker(config::node())) {}
 
@@ -49,18 +53,13 @@ ss::future<> group_manager::start() {
      * synchronously invoked for all existing partitions that match the query.
      */
     _manage_notify_handle = _pm.local().register_manage_notification(
-      model::kafka_internal_namespace,
-      model::kafka_group_topic,
-      [this](ss::lw_shared_ptr<cluster::partition> p) {
+      _tp_ns.ns, _tp_ns.tp, [this](ss::lw_shared_ptr<cluster::partition> p) {
           attach_partition(std::move(p));
       });
 
     _unmanage_notify_handle = _pm.local().register_unmanage_notification(
-      model::kafka_internal_namespace,
-      model::kafka_group_topic,
-      [this](model::partition_id p_id) {
-          detach_partition(model::ntp(
-            model::kafka_internal_namespace, model::kafka_group_topic, p_id));
+      _tp_ns.ns, _tp_ns.tp, [this](model::partition_id p_id) {
+          detach_partition(model::ntp(_tp_ns.ns, _tp_ns.tp, p_id));
       });
 
     /*
@@ -278,6 +277,26 @@ group_manager::gc_partition_state(ss::lw_shared_ptr<attached_partition> p) {
     _groups.rehash(0);
 }
 
+ss::future<> group_manager::reload_groups() {
+    std::vector<ss::future<>> futures;
+    for (auto& [ntp, attached] : _partitions) {
+        auto leader = attached->partition->get_leader_id();
+        if (leader == _self.id()) {
+            attached->loading = true;
+        }
+        auto term = attached->partition->term();
+        auto f = ss::with_semaphore(
+                   attached->sem,
+                   1,
+                   [this, p = attached, leader, term]() mutable {
+                       return handle_partition_leader_change(term, p, leader);
+                   })
+                   .finally([p = attached->partition] {});
+        futures.push_back(std::move(f));
+    }
+    co_await ss::when_all_succeed(futures.begin(), futures.end());
+}
+
 ss::future<> group_manager::handle_partition_leader_change(
   model::term_id term,
   ss::lw_shared_ptr<attached_partition> p,
@@ -322,8 +341,7 @@ ss::future<> group_manager::handle_partition_leader_change(
                           model::record_batch_reader reader) {
                       return std::move(reader)
                         .consume(
-                          group_recovery_consumer(
-                            make_backward_compatible_serializer(), p->as),
+                          group_recovery_consumer(_serializer_factory(), p->as),
                           timeout)
                         .then([this, term, p](
                                 group_recovery_consumer_state state) {
@@ -372,7 +390,7 @@ ss::future<> group_manager::recover_partition(
                   group_stm.get_metadata(),
                   _conf,
                   p->partition,
-                  make_backward_compatible_serializer());
+                  _serializer_factory());
                 group->reset_tx_state(term);
                 _groups.emplace(group_id, group);
                 group->reschedule_all_member_heartbeats();
@@ -405,7 +423,7 @@ ss::future<> group_manager::recover_partition(
               group_state::empty,
               _conf,
               p->partition,
-              make_backward_compatible_serializer());
+              _serializer_factory());
             group->reset_tx_state(term);
             _groups.emplace(group_id, group);
         }
@@ -496,11 +514,7 @@ group_manager::join_group(join_group_request&& r) {
         }
         auto p = it->second->partition;
         group = ss::make_lw_shared<kafka::group>(
-          r.data.group_id,
-          group_state::empty,
-          _conf,
-          p,
-          make_backward_compatible_serializer());
+          r.data.group_id, group_state::empty, _conf, p, _serializer_factory());
         group->reset_tx_state(it->second->term);
         _groups.emplace(r.data.group_id, group);
         _groups.rehash(0);
@@ -633,7 +647,7 @@ group_manager::txn_offset_commit(txn_offset_commit_request&& r) {
                 group_state::empty,
                 _conf,
                 p->partition,
-                make_backward_compatible_serializer());
+                _serializer_factory());
               group->reset_tx_state(p->term);
               _groups.emplace(r.data.group_id, group);
               _groups.rehash(0);
@@ -716,7 +730,7 @@ group_manager::begin_tx(cluster::begin_group_tx_request&& r) {
                 group_state::empty,
                 _conf,
                 p->partition,
-                make_backward_compatible_serializer());
+                _serializer_factory());
               group->reset_tx_state(p->term);
               _groups.emplace(r.group_id, group);
               _groups.rehash(0);
@@ -821,7 +835,7 @@ group_manager::offset_commit(offset_commit_request&& r) {
               group_state::empty,
               _conf,
               p->partition,
-              make_backward_compatible_serializer());
+              _serializer_factory());
             group->reset_tx_state(p->term);
             _groups.emplace(r.data.group_id, group);
             _groups.rehash(0);

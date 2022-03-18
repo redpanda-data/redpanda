@@ -35,11 +35,13 @@
 #include "kafka/client/configuration.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/group_manager.h"
+#include "kafka/server/group_metadata_migration.h"
 #include "kafka/server/group_router.h"
 #include "kafka/server/protocol.h"
 #include "kafka/server/queue_depth_monitor.h"
 #include "kafka/server/quota_manager.h"
 #include "kafka/server/rm_group_frontend.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "net/server.h"
 #include "pandaproxy/rest/configuration.h"
@@ -798,23 +800,43 @@ void application::wire_up_redpanda_services() {
     syschecks::systemd_message("Creating partition manager").get();
     construct_service(
       _group_manager,
+      model::kafka_group_nt,
       std::ref(raft_group_manager),
       std::ref(partition_manager),
       std::ref(controller->get_topics_state()),
+      &kafka::make_backward_compatible_serializer,
+      std::ref(config::shard_local_cfg()))
+      .get();
+    construct_service(
+      _co_group_manager,
+      model::kafka_consumer_offsets_nt,
+      std::ref(raft_group_manager),
+      std::ref(partition_manager),
+      std::ref(controller->get_topics_state()),
+      &kafka::make_consumer_offsets_serializer,
       std::ref(config::shard_local_cfg()))
       .get();
     syschecks::systemd_message("Creating kafka group shard mapper").get();
-    construct_service(coordinator_ntp_mapper, std::ref(metadata_cache)).get();
+    construct_service(
+      coordinator_ntp_mapper, std::ref(metadata_cache), model::kafka_group_nt)
+      .get();
+    construct_service(
+      co_coordinator_ntp_mapper,
+      std::ref(metadata_cache),
+      model::kafka_consumer_offsets_nt)
+      .get();
     syschecks::systemd_message("Creating kafka group router").get();
     construct_service(
       group_router,
       _scheduling_groups.kafka_sg(),
       smp_service_groups.kafka_smp_sg(),
       std::ref(_group_manager),
+      std::ref(_co_group_manager),
       std::ref(shard_table),
-      std::ref(coordinator_ntp_mapper))
+      std::ref(coordinator_ntp_mapper),
+      std::ref(co_coordinator_ntp_mapper),
+      std::ref(controller->get_feature_table()))
       .get();
-
     if (coproc_enabled()) {
         syschecks::systemd_message("Creating coproc::api").get();
         construct_single_service(
@@ -901,7 +923,6 @@ void application::wire_up_redpanda_services() {
       std::ref(_connection_cache),
       std::ref(controller->get_partition_leaders()),
       controller.get(),
-      std::ref(coordinator_ntp_mapper),
       std::ref(group_router))
       .get();
 
@@ -1058,7 +1079,7 @@ application::set_proxy_client_config(ss::sstring name, std::any val) {
 
 void application::start(::stop_signal& app_signal) {
     if (_redpanda_enabled) {
-        start_redpanda();
+        start_redpanda(app_signal);
     }
 
     if (_proxy_config) {
@@ -1087,7 +1108,7 @@ void application::start(::stop_signal& app_signal) {
     syschecks::systemd_notify_ready().get();
 }
 
-void application::start_redpanda() {
+void application::start_redpanda(::stop_signal& app_signal) {
     syschecks::systemd_message("Staring storage services").get();
     // single instance
     storage_node.invoke_on_all(&storage::node_api::start).get0();
@@ -1104,6 +1125,7 @@ void application::start_redpanda() {
 
     syschecks::systemd_message("Starting Kafka group manager").get();
     _group_manager.invoke_on_all(&kafka::group_manager::start).get();
+    _co_group_manager.invoke_on_all(&kafka::group_manager::start).get();
 
     syschecks::systemd_message("Starting controller").get();
     controller->start().get0();
@@ -1116,6 +1138,12 @@ void application::start_redpanda() {
      *
      * NOTE controller has to be stopped only after it was started
      */
+    auto group_migration = ss::make_lw_shared<kafka::group_metadata_migration>(
+      *controller, group_router);
+
+    _deferred.emplace_back(
+      [group_migration] { group_migration->await().get(); });
+
     _deferred.emplace_back([this] { controller->shutdown_input().get(); });
     // FIXME: in first patch explain why this is started after the
     // controller so the broker set will be available. Then next patch fix.
@@ -1207,6 +1235,8 @@ void application::start_redpanda() {
     _archival_upload_controller
       .invoke_on_all(&archival::upload_controller::start)
       .get();
+
+    group_migration->start(app_signal.abort_source()).get();
 }
 
 /**
@@ -1236,7 +1266,6 @@ void application::start_kafka(::stop_signal& app_signal) {
           = config::shard_local_cfg().kafka_qdc_depth_update_ms(),
         };
     }
-
     _kafka_server
       .invoke_on_all([this, qdc_config](net::server& s) {
           auto proto = std::make_unique<kafka::protocol>(
@@ -1249,7 +1278,6 @@ void application::start_kafka(::stop_signal& app_signal) {
             group_router,
             shard_table,
             partition_manager,
-            coordinator_ntp_mapper,
             fetch_session_cache,
             id_allocator_frontend,
             controller->get_credential_store(),

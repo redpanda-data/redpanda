@@ -12,6 +12,7 @@
 #include "cluster/logger.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "model/namespace.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "raft/types.h"
@@ -58,10 +59,10 @@ partition::partition(
             _log_eviction_stm = ss::make_lw_shared<raft::log_eviction_stm>(
               _raft.get(), clusterlog, stm_manager, _as);
         }
-
-        bool is_group_ntp = _raft->ntp().ns == model::kafka_internal_namespace
-                            && _raft->ntp().tp.topic
-                                 == model::kafka_group_topic;
+        const model::topic_namespace tp_ns(
+          _raft->ntp().ns, _raft->ntp().tp.topic);
+        bool is_group_ntp = tp_ns == model::kafka_group_nt
+                            || tp_ns == model::kafka_consumer_offsets_nt;
 
         bool has_rm_stm = (_is_tx_enabled || _is_idempotence_enabled)
                           && model::controller_ntp != _raft->ntp()

@@ -14,6 +14,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
+#include "model/timeout_clock.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/consensus_utils.h"
@@ -27,6 +28,7 @@
 #include "raft/types.h"
 #include "raft/vote_stm.h"
 #include "reflection/adl.h"
+#include "rpc/types.h"
 #include "ssx/future-util.h"
 #include "storage/api.h"
 #include "vlog.h"
@@ -2556,6 +2558,32 @@ consensus::transfer_leadership(transfer_leadership_request req) {
     reply.success = true;
     reply.result = errc::success;
     co_return reply;
+}
+
+ss::future<std::error_code>
+consensus::request_leadership(model::timeout_clock::time_point timeout) {
+    if (is_leader()) {
+        co_return errc::success;
+    }
+
+    if (!_leader_id) {
+        co_return errc::not_leader;
+    }
+
+    if (!config().is_voter(_self)) {
+        co_return errc::not_voter;
+    }
+
+    auto result = co_await _client_protocol.transfer_leadership(
+      _leader_id->id(),
+      transfer_leadership_request{.group = _group, .target = _self.id()},
+      rpc::client_opts(timeout));
+
+    if (result) {
+        co_return result.value().result;
+    }
+
+    co_return result.error();
 }
 
 /**

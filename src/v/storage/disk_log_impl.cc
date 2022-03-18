@@ -111,6 +111,7 @@ ss::future<> disk_log_impl::remove() {
 }
 ss::future<> disk_log_impl::close() {
     vassert(!_closed, "Invalid double closing of log - {}", *this);
+    vlog(stlog.debug, "closing log {}", *this);
     _closed = true;
     if (
       _eviction_monitor
@@ -118,8 +119,9 @@ ss::future<> disk_log_impl::close() {
         _eviction_monitor->promise.set_exception(segment_closed_exception());
     }
     // wait for compaction to finish
+    vlog(stlog.trace, "waiting for {} compaction to finish", config().ntp());
     co_await _compaction_gate.close();
-
+    vlog(stlog.trace, "stopping {} readers cache", config().ntp());
     co_await _readers_cache->stop().then([this] {
         return ss::parallel_for_each(_segs, [](ss::lw_shared_ptr<segment>& h) {
             return h->close().handle_exception([h](std::exception_ptr e) {
