@@ -15,3 +15,5 @@ quick:
   - tests/librdkafka_test.py
     # https://github.com/redpanda-data/redpanda/issues/3450
   - tests/availability_test.py::AvailabilityTests.test_availability_when_one_node_failed
+    # https://github.com/redpanda-data/redpanda/issues/3454
+  - tests/pandaproxy_test.py::PandaProxyTest.test_consumer_group_binary_v2
