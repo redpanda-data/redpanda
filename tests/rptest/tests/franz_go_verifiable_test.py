@@ -15,12 +15,12 @@ import os
 
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
-from rptest.tests.redpanda_test import RedpandaTest
+from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.services.redpanda import SISettings
 from rptest.services.franz_go_verifiable_services import FranzGoVerifiableProducer, FranzGoVerifiableSeqConsumer, FranzGoVerifiableRandomConsumer
 
 
-class FranzGoVerifiableBase(RedpandaTest):
+class FranzGoVerifiableBase(PreallocNodesTest):
     """
     Base class for the common logic that allocates a shared
     node for several services and instantiates them.
@@ -32,43 +32,19 @@ class FranzGoVerifiableBase(RedpandaTest):
     RANDOM_READ_PARALLEL = None
 
     def __init__(self, test_context, *args, **kwargs):
-        super().__init__(test_context, *args, **kwargs)
-
-        self._node_for_franz_go = test_context.cluster.alloc(
-            ClusterSpec.simple_linux(1))
-        self.logger.debug(
-            f"Allocated verifier node {self._node_for_franz_go[0].name}")
+        super().__init__(test_context, node_prealloc_count=1, *args, **kwargs)
 
         self._producer = FranzGoVerifiableProducer(test_context, self.redpanda,
                                                    self.topic, self.MSG_SIZE,
                                                    self.PRODUCE_COUNT,
-                                                   self._node_for_franz_go)
+                                                   self.preallocated_nodes)
         self._seq_consumer = FranzGoVerifiableSeqConsumer(
             test_context, self.redpanda, self.topic, self.MSG_SIZE,
-            self._node_for_franz_go)
+            self.preallocated_nodes)
         self._rand_consumer = FranzGoVerifiableRandomConsumer(
             test_context, self.redpanda, self.topic, self.MSG_SIZE,
             self.RANDOM_READ_COUNT, self.RANDOM_READ_PARALLEL,
-            self._node_for_franz_go)
-
-    def free_nodes(self):
-        # Free the normally allocated nodes (e.g. RedpandaService)
-        super().free_nodes()
-
-        assert len(self._node_for_franz_go) == 1
-
-        # The verifier opens huge numbers of connections, which can interfere
-        # with subsequent tests' use of the node.  Clear them down first.
-        wait_until(
-            lambda: self.redpanda.sockets_clear(self._node_for_franz_go[0]),
-            timeout_sec=120,
-            backoff_sec=10)
-
-        # Free the hand-allocated node that we share between the various
-        # verifier services
-        self.logger.debug(
-            f"Freeing verifier node {self._node_for_franz_go[0].name}")
-        self.test_context.cluster.free_single(self._node_for_franz_go[0])
+            self.preallocated_nodes)
 
 
 class FranzGoVerifiableTest(FranzGoVerifiableBase):
@@ -126,7 +102,9 @@ class FranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
         si_settings = SISettings(
             log_segment_size=FranzGoVerifiableWithSiTest.segment_size,
             cloud_storage_cache_size=5 *
-            FranzGoVerifiableWithSiTest.segment_size)
+            FranzGoVerifiableWithSiTest.segment_size,
+            cloud_storage_enable_remote_read=False,
+            cloud_storage_enable_remote_write=False)
 
         super(FranzGoVerifiableWithSiTest, self).__init__(
             test_context=ctx,
