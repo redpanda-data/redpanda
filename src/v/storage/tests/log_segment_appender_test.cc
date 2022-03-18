@@ -45,18 +45,9 @@ segment_appender make_segment_appender(ss::file file, size_t fallocate_size) {
 }
 
 iobuf make_random_data(size_t len) {
-    size_t random_len = std::min(1024UL, len); // NOLINT local constant
-    const auto rbuf = random_generators::gen_alphanum_string(random_len);
-    iobuf output;
-    size_t left = len;
-    while (left > 0) {
-        size_t copy_len = std::min(left, random_len);
-        output.append(rbuf.data(), copy_len);
-        left -= copy_len;
-    }
-    BOOST_CHECK_EQUAL(len, output.size_bytes());
-    return output;
+    return bytes_to_iobuf(random_generators::get_bytes(len));
 }
+
 } // namespace
 
 static void run_test_can_append_multiple_flushes(size_t fallocate_size) {
