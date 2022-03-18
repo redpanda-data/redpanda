@@ -15,6 +15,7 @@ v_cc_library(
     types.cc
     remote_segment.cc
     remote_partition.cc
+    remote_segment_index.cc
   DEPS
     Seastar::seastar
     v::bytes

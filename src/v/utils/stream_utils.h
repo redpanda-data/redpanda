@@ -204,8 +204,8 @@ struct fanout_data_source final : ss::data_source_impl {
     ss::future<ss::temporary_buffer<char>> get() final {
         co_return co_await _isf->get(_id);
     }
-    size_t _id;
     ss::lw_shared_ptr<input_stream_fanout<Ch>> _isf;
+    size_t _id;
 };
 
 template<typename Ch, size_t... ix>

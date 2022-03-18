@@ -15,6 +15,7 @@
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/partition_probe.h"
 #include "cloud_storage/remote.h"
+#include "cloud_storage/remote_segment_index.h"
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
 #include "model/record.h"
@@ -33,7 +34,7 @@
 
 namespace cloud_storage {
 
-static constexpr size_t max_index_error_bytes = 32_KiB;
+static constexpr size_t remote_segment_sampling_step_bytes = 64_KiB;
 class download_exception : public std::exception {
 public:
     explicit download_exception(download_result r, std::filesystem::path p);
@@ -98,6 +99,16 @@ public:
     ss::future<ss::input_stream<char>>
     data_stream(size_t pos, ss::io_priority_class);
 
+    struct input_stream_with_offsets {
+        ss::input_stream<char> stream;
+        model::offset rp_offset;
+        model::offset kafka_offset;
+    };
+    /// create an input stream _sharing_ the underlying file handle
+    /// starting at position @pos
+    ss::future<input_stream_with_offsets>
+    offset_data_stream(model::offset kafka_offset, ss::io_priority_class);
+
     /// Hydrate the segment
     ss::future<> hydrate();
 
@@ -106,8 +117,24 @@ public:
     bool download_in_progress() const noexcept { return !_wait_list.empty(); }
 
 private:
-    /// Hydrates segment in the background if there is any consumer
+    /// get a file offset for the corresponding kafka offset
+    /// if the index is available
+    std::optional<offset_index::find_result>
+    maybe_get_offsets(model::offset kafka_offset);
+
+    /// Run hydration loop. The method is supposed to be constantly running
+    /// in the background. The background loop is triggered by the condition
+    /// variable '_bg_cvar' and the promise list '_wait_list'. When the promise
+    /// is waitning in the list and the cond-variable is triggered the loop
+    /// wakes up and hydrates the segment if needed.
     ss::future<> run_hydrate_bg();
+
+    /// Actually hydrate the segment. The method downloads the segment file
+    /// to the cache dir and updates the segment index.
+    ss::future<> do_hydrate();
+
+    /// Load segment index from file (if available)
+    ss::future<> maybe_materialize_index();
 
     ss::gate _gate;
     remote& _api;
@@ -132,6 +159,7 @@ private:
     ss::expiring_fifo<ss::promise<ss::file>, expiry_handler> _wait_list;
 
     ss::file _data_file;
+    std::optional<offset_index> _index;
 };
 
 class remote_segment_batch_consumer;

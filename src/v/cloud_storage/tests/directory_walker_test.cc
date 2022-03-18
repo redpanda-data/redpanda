@@ -11,6 +11,7 @@
 #include "bytes/iobuf.h"
 #include "cloud_storage/recursive_directory_walker.h"
 #include "seastarx.h"
+#include "test_utils/tmp_dir.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/fstream.hh>
@@ -18,6 +19,8 @@
 #include <seastar/core/sleep.hh>
 #include <seastar/testing/test_case.hh>
 #include <seastar/testing/thread_test_case.hh>
+#include <seastar/util/file.hh>
+#include <seastar/util/tmp_file.hh>
 
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
@@ -28,12 +31,11 @@ using namespace cloud_storage;
 using namespace std::chrono_literals;
 
 SEASTAR_THREAD_TEST_CASE(one_level) {
+    temporary_dir tmpdir("directory-walker");
     cloud_storage::recursive_directory_walker _walker;
-    const std::filesystem::path target_dir{"target_dir"};
-    const std::filesystem::path file_path1{"target_dir/file1.txt"};
-    const std::filesystem::path file_path2{"target_dir/file2.txt"};
-
-    ss::recursive_touch_directory(target_dir.native()).get();
+    const std::filesystem::path target_dir = tmpdir.get_path();
+    const std::filesystem::path file_path1 = target_dir / "file1.txt";
+    const std::filesystem::path file_path2 = target_dir / "file2.txt";
 
     auto flags = ss::open_flags::wo | ss::open_flags::create
                  | ss::open_flags::exclusive;
@@ -41,8 +43,8 @@ SEASTAR_THREAD_TEST_CASE(one_level) {
     file1.close().get();
 
     // sleep is needed to ensure stable order of returned files. directory
-    // walker returns files sorted by timestamp of creation, xfs stores creation
-    // time with 1 second precision.
+    // walker returns files sorted by timestamp of creation, xfs stores
+    // creation time with 1 second precision.
     ss::sleep(ss::lowres_clock::duration(1s)).get();
 
     auto file2 = ss::open_file_dma(file_path2.native(), flags).get();
@@ -57,23 +59,24 @@ SEASTAR_THREAD_TEST_CASE(one_level) {
 }
 
 SEASTAR_THREAD_TEST_CASE(three_levels) {
+    temporary_dir tmpdir("directory-walker");
     cloud_storage::recursive_directory_walker _walker;
-    const std::filesystem::path target_dir{"target_dir1"};
-    const std::filesystem::path file_path1{"target_dir1/a/file1.txt"};
-    const std::filesystem::path file_path2{"target_dir1/file2.txt"};
-    const std::filesystem::path file_path3{"target_dir1/b/c/file3.txt"};
+    const std::filesystem::path target_dir = tmpdir.get_path();
+    const std::filesystem::path file_path1 = target_dir / "a" / "file1.txt";
+    const std::filesystem::path file_path2 = target_dir / "file2.txt";
+    const std::filesystem::path file_path3 = target_dir / "b" / "c"
+                                             / "file3.txt";
 
-    ss::recursive_touch_directory(target_dir.native()).get();
-    ss::recursive_touch_directory("target_dir1/a").get();
-    ss::recursive_touch_directory("target_dir1/b/c").get();
+    ss::recursive_touch_directory((target_dir / "a").native()).get();
+    ss::recursive_touch_directory((target_dir / "b" / "c").native()).get();
 
     auto flags = ss::open_flags::wo | ss::open_flags::create
                  | ss::open_flags::exclusive;
     auto file1 = ss::open_file_dma(file_path1.native(), flags).get();
     file1.close().get();
     // sleep is needed to ensure stable order of returned files. directory
-    // walker returns files sorted by timestamp of creation, xfs stores creation
-    // time with 1 second precision.
+    // walker returns files sorted by timestamp of creation, xfs stores
+    // creation time with 1 second precision.
     ss::sleep(ss::lowres_clock::duration(1s)).get();
 
     auto file2 = ss::open_file_dma(file_path2.native(), flags).get();
@@ -94,27 +97,27 @@ SEASTAR_THREAD_TEST_CASE(three_levels) {
 }
 
 SEASTAR_THREAD_TEST_CASE(no_files) {
+    temporary_dir tmpdir("directory-walker");
     cloud_storage::recursive_directory_walker _walker;
-    const std::filesystem::path target_dir2{"target_dir2"};
-    const std::filesystem::path dir1{"target_dir2/a/b"};
-    const std::filesystem::path dir2{"target_dir2/c"};
+    const std::filesystem::path target_dir = tmpdir.get_path();
+    const std::filesystem::path dir1 = target_dir / "a" / "b";
+    const std::filesystem::path dir2 = target_dir / "c";
 
-    ss::recursive_touch_directory(target_dir2.native()).get();
     ss::recursive_touch_directory(dir1.native()).get();
     ss::recursive_touch_directory(dir2.native()).get();
 
-    auto result = _walker.walk(target_dir2.native()).get();
+    auto result = _walker.walk(target_dir.native()).get();
 
     BOOST_REQUIRE_EQUAL(result.first, 0);
     BOOST_REQUIRE_EQUAL(result.second.size(), 0);
 }
 
 SEASTAR_THREAD_TEST_CASE(empty_dir) {
+    temporary_dir tmpdir("directory-walker");
     cloud_storage::recursive_directory_walker _walker;
-    const std::filesystem::path target_dir3{"target_dir3"};
-    ss::recursive_touch_directory(target_dir3.native()).get();
+    const std::filesystem::path target_dir = tmpdir.get_path();
 
-    auto result = _walker.walk(target_dir3.native()).get();
+    auto result = _walker.walk(target_dir.native()).get();
 
     BOOST_REQUIRE_EQUAL(result.first, 0);
     BOOST_REQUIRE_EQUAL(result.second.size(), 0);
@@ -136,15 +139,16 @@ void write_to_file(auto& target_file, uint64_t size) {
 }
 
 SEASTAR_THREAD_TEST_CASE(total_size_correct) {
+    temporary_dir tmpdir("directory-walker");
     cloud_storage::recursive_directory_walker _walker;
-    const std::filesystem::path target_dir4{"target_dir4"};
-    const std::filesystem::path file_path1{"target_dir4/a/file1.txt"};
-    const std::filesystem::path file_path2{"target_dir4/file2.txt"};
-    const std::filesystem::path file_path3{"target_dir4/b/c/file3.txt"};
+    const std::filesystem::path target_dir = tmpdir.get_path();
+    const std::filesystem::path file_path1 = target_dir / "a" / "file1.txt";
+    const std::filesystem::path file_path2 = target_dir / "file2.txt";
+    const std::filesystem::path file_path3 = target_dir / "b" / "c"
+                                             / "file3.txt";
 
-    ss::recursive_touch_directory(target_dir4.native()).get();
-    ss::recursive_touch_directory("target_dir4/a").get();
-    ss::recursive_touch_directory("target_dir4/b/c").get();
+    ss::recursive_touch_directory((target_dir / "a").native()).get();
+    ss::recursive_touch_directory((target_dir / "b" / "c").native()).get();
 
     auto flags = ss::open_flags::wo | ss::open_flags::create
                  | ss::open_flags::exclusive;
@@ -156,11 +160,7 @@ SEASTAR_THREAD_TEST_CASE(total_size_correct) {
     write_to_file(file2, 8);
     write_to_file(file3, 342);
 
-    file1.close().get();
-    file2.close().get();
-    file3.close().get();
-
-    auto result = _walker.walk(target_dir4.native()).get();
+    auto result = _walker.walk(target_dir.native()).get();
 
     BOOST_REQUIRE_EQUAL(result.first, 3412 + 8 + 342);
     BOOST_REQUIRE_EQUAL(result.second.size(), 3);
