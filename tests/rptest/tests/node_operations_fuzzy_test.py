@@ -138,7 +138,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
 
         self.start_producer(1, throughput=100)
         self.start_consumer(1)
-        self.await_startup()
+        self.await_records_consumed()
         self.active_nodes = set(
             [self.redpanda.idx(n) for n in self.redpanda.nodes])
         # collect current mapping

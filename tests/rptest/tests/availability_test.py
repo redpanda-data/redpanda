@@ -56,7 +56,7 @@ class AvailabilityTests(EndToEndFinjectorTest):
 
         self.start_producer(1, throughput=10000)
         self.start_consumer(1)
-        self.await_startup()
+        self.await_records_consumed()
         # start failure injector with default parameters
         self.start_finjector()
 
@@ -84,7 +84,7 @@ class AvailabilityTests(EndToEndFinjectorTest):
 
         self.start_producer(1, throughput=10000)
         self.start_consumer(1)
-        self.await_startup()
+        self.await_records_consumed()
 
         # inject permanent random failure
         f_spec = FailureSpec(random.choice(FailureSpec.FAILURE_TYPES),

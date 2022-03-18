@@ -145,7 +145,7 @@ class EndToEndTest(Test):
         for s in self.test_context.services:
             self.mark_for_collect(s)
 
-    def await_startup(self, min_records=5, timeout_sec=30):
+    def await_records_consumed(self, min_records=5, timeout_sec=30):
         try:
             wait_until(lambda: self.consumer.total_consumed() >= min_records,
                        timeout_sec=timeout_sec,

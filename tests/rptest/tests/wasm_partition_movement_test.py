@@ -124,7 +124,7 @@ class WasmPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         self.topic = spec.name
         self.start_producer(num_nodes=1, throughput=10000)
         self.start_consumer(1)
-        self.await_startup(min_records=500)
+        self.await_records_consumed(min_records=500)
         materialized_topic = construct_materialized_topic(
             spec.name, output_topic)
 

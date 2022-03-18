@@ -44,7 +44,7 @@ class NodesDecommissioningTest(EndToEndTest):
 
         self.start_producer(1)
         self.start_consumer(1)
-        self.await_startup()
+        self.await_records_consumed()
         admin = Admin(self.redpanda)
 
         brokers = admin.get_brokers()
@@ -82,7 +82,7 @@ class NodesDecommissioningTest(EndToEndTest):
 
         self.start_producer(1)
         self.start_consumer(1)
-        self.await_startup()
+        self.await_records_consumed()
         admin = Admin(self.redpanda)
 
         to_decommission = self.redpanda.nodes[1]
