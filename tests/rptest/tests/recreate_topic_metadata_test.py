@@ -22,10 +22,14 @@ from rptest.tests.redpanda_test import RedpandaTest
 class RecreateTopicMetadataTest(RedpandaTest):
     def __init__(self, test_context):
 
-        super(RecreateTopicMetadataTest,
-              self).__init__(test_context=test_context,
-                             num_brokers=5,
-                             extra_rp_conf={})
+        super(RecreateTopicMetadataTest, self).__init__(
+            test_context=test_context,
+            num_brokers=5,
+            extra_rp_conf={
+                # Test does explicit leadership movements
+                # that the balancer would interfere with.
+                'enable_leader_balancer': False
+            })
 
     @cluster(num_nodes=6)
     @parametrize(replication_factor=3)
