@@ -14,11 +14,13 @@
 #include <absl/container/node_hash_set.h>
 
 #include <chrono>
+#include <ostream>
 namespace cluster {
 
 class members_backend {
 public:
     enum class reallocation_state { initial, reassigned, requested, finished };
+
     struct partition_reallocation {
         explicit partition_reallocation(
           model::ntp ntp, uint16_t replication_factor)
@@ -30,6 +32,8 @@ public:
         absl::node_hash_set<model::node_id> replicas_to_remove;
         std::optional<allocation_units> new_assignment;
         reallocation_state state = reallocation_state::initial;
+        friend std::ostream&
+        operator<<(std::ostream&, const partition_reallocation&);
     };
     /**
      * struct describing partition reallocation
@@ -93,5 +97,7 @@ private:
     ss::condition_variable _new_updates;
     ss::metrics::metric_groups _metrics;
 };
+std::ostream&
+operator<<(std::ostream&, const members_backend::reallocation_state&);
 
 } // namespace cluster
