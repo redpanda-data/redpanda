@@ -17,3 +17,5 @@ quick:
   - tests/availability_test.py::AvailabilityTests.test_availability_when_one_node_failed
     # https://github.com/redpanda-data/redpanda/issues/3454
   - tests/pandaproxy_test.py::PandaProxyTest.test_consumer_group_binary_v2
+    # https://github.com/redpanda-data/redpanda/issues/2501
+  - tests/pandaproxy_test.py::PandaProxyTest.test_consumer_group_json_v2
