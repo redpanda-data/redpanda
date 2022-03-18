@@ -21,3 +21,5 @@ quick:
   - tests/pandaproxy_test.py::PandaProxyTest.test_consumer_group_json_v2
     # https://github.com/redpanda-data/redpanda/issues/3880
   - tests/full_node_recovery_test.py::FullNodeRecoveryTest.test_node_recovery
+    # https://github.com/redpanda-data/redpanda/issues/3858
+  - tests/wasm_topics_test.py::WasmCreateTopicsTest.verify_materialized_topics_test
