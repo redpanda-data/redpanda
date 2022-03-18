@@ -9,7 +9,7 @@
 
 import random
 from rptest.services.cluster import cluster
-from ducktape.mark import parametrize, ignore
+from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
 
 from rptest.clients.types import TopicSpec
@@ -34,7 +34,6 @@ class FullNodeRecoveryTest(EndToEndTest):
         super(FullNodeRecoveryTest, self).__init__(test_context=test_context,
                                                    extra_rp_conf=extra_rp_conf)
 
-    @ignore  # Temporarily disabled: see issue #3880
     @cluster(num_nodes=6, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     @parametrize(recovery_type=PARTIAL_RECOVERY)
     # enable when we implement support for leader epochs

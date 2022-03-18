@@ -19,3 +19,5 @@ quick:
   - tests/pandaproxy_test.py::PandaProxyTest.test_consumer_group_binary_v2
     # https://github.com/redpanda-data/redpanda/issues/2501
   - tests/pandaproxy_test.py::PandaProxyTest.test_consumer_group_json_v2
+    # https://github.com/redpanda-data/redpanda/issues/3880
+  - tests/full_node_recovery_test.py::FullNodeRecoveryTest.test_node_recovery
