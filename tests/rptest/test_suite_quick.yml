@@ -13,3 +13,5 @@ quick:
 
   excluded:
   - tests/librdkafka_test.py
+    # https://github.com/redpanda-data/redpanda/issues/3450
+  - tests/availability_test.py::AvailabilityTests.test_availability_when_one_node_failed

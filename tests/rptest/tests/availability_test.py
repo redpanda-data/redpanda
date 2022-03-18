@@ -9,7 +9,6 @@
 
 import random
 
-from ducktape.mark import ignore
 from rptest.clients.default import DefaultClient
 from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
@@ -34,7 +33,6 @@ class AvailabilityTests(EndToEndFinjectorTest):
                             producer_timeout_sec=producer_timeout_sec,
                             consumer_timeout_sec=consumer_timeout_sec)
 
-    @ignore  # temporarily disabled flaky test, see issue #3450
     @cluster(num_nodes=5, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_availability_when_one_node_failed(self):
         self.redpanda = RedpandaService(
