@@ -7,7 +7,6 @@
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
 
 from rptest.services.cluster import cluster
-from ducktape.mark import ignore
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.archival.s3_client import S3Client
 from rptest.services.redpanda import RedpandaService
@@ -1545,7 +1544,6 @@ class TopicRecoveryTest(RedpandaTest):
             time.sleep(20)
             test_case.after_restart_validation()
 
-    @ignore  # https://github.com/redpanda-data/redpanda/issues/2569
     @cluster(num_nodes=3)
     def test_no_data(self):
         """If we're trying to recovery a topic which didn't have any data
@@ -1555,7 +1553,6 @@ class TopicRecoveryTest(RedpandaTest):
                                self.s3_bucket, self.logger)
         self.do_run(test_case)
 
-    @ignore  # https://github.com/redpanda-data/redpanda/issues/2569
     @cluster(num_nodes=3)
     def test_missing_topic_manifest(self):
         """If we're trying to recovery a topic which didn't have any data
@@ -1565,7 +1562,6 @@ class TopicRecoveryTest(RedpandaTest):
                                          self.rpk, self.s3_bucket, self.logger)
         self.do_run(test_case)
 
-    @ignore  # https://github.com/redpanda-data/redpanda/issues/2569
     @cluster(num_nodes=3)
     def test_missing_partition(self):
         """Test situation when one of the partition manifests are missing.
@@ -1578,7 +1574,6 @@ class TopicRecoveryTest(RedpandaTest):
                                      self.rpk, self.s3_bucket, self.logger)
         self.do_run(test_case)
 
-    @ignore  # https://github.com/redpanda-data/redpanda/issues/2569
     @cluster(num_nodes=3)
     def test_missing_segment(self):
         """Test the handling of the missing segment. The segment is
@@ -1588,7 +1583,6 @@ class TopicRecoveryTest(RedpandaTest):
                                    self.s3_bucket, self.logger)
         self.do_run(test_case)
 
-    @ignore  # https://github.com/redpanda-data/redpanda/issues/2569
     @cluster(num_nodes=3)
     def test_fast1(self):
         """Basic recovery test. This test stresses successful recovery
@@ -1602,7 +1596,6 @@ class TopicRecoveryTest(RedpandaTest):
                               self.s3_bucket, self.logger, topics)
         self.do_run(test_case)
 
-    @ignore  # https://github.com/redpanda-data/redpanda/issues/2569
     @cluster(num_nodes=3)
     def test_fast2(self):
         """Basic recovery test. This test stresses successful recovery
@@ -1619,7 +1612,6 @@ class TopicRecoveryTest(RedpandaTest):
                               self.s3_bucket, self.logger, topics)
         self.do_run(test_case)
 
-    @ignore  # https://github.com/redpanda-data/redpanda/issues/2569
     @cluster(num_nodes=3)
     def test_fast3(self):
         """Basic recovery test. This test stresses successful recovery
@@ -1639,7 +1631,6 @@ class TopicRecoveryTest(RedpandaTest):
                               self.s3_bucket, self.logger, topics)
         self.do_run(test_case)
 
-    @ignore  # https://github.com/redpanda-data/redpanda/issues/2569
     @cluster(num_nodes=3)
     def test_revision_shift1(self):
         """Test handling of situations when the revision of the recovered
@@ -1653,7 +1644,6 @@ class TopicRecoveryTest(RedpandaTest):
                                   self.s3_bucket, self.logger, topics, 0)
         self.do_run(test_case)
 
-    @ignore  # https://github.com/redpanda-data/redpanda/issues/2569
     @cluster(num_nodes=3)
     def test_revision_shift2(self):
         """Test handling of situations when the revision of the recovered
@@ -1667,7 +1657,6 @@ class TopicRecoveryTest(RedpandaTest):
                                   self.s3_bucket, self.logger, topics, -1)
         self.do_run(test_case)
 
-    @ignore  # https://github.com/redpanda-data/redpanda/issues/2569
     @cluster(num_nodes=3)
     def test_revision_shift3(self):
         """Test handling of situations when the revision of the recovered
@@ -1681,7 +1670,6 @@ class TopicRecoveryTest(RedpandaTest):
                                   self.s3_bucket, self.logger, topics, 1)
         self.do_run(test_case)
 
-    @ignore  # https://github.com/redpanda-data/redpanda/issues/2569
     @cluster(num_nodes=3)
     def test_size_based_retention(self):
         """Test topic recovery with size based retention policy.
@@ -1697,7 +1685,6 @@ class TopicRecoveryTest(RedpandaTest):
                                        topics)
         self.do_run(test_case)
 
-    @ignore  # https://github.com/redpanda-data/redpanda/issues/2569
     @cluster(num_nodes=3)
     def test_time_based_retention(self):
         """Test topic recovery with time based retention policy.
@@ -1714,7 +1701,6 @@ class TopicRecoveryTest(RedpandaTest):
                                        topics, False)
         self.do_run(test_case)
 
-    @ignore  # https://github.com/redpanda-data/redpanda/issues/2569
     @cluster(num_nodes=3)
     def test_time_based_retention_with_legacy_manifest(self):
         """Test topic recovery with time based retention policy.
@@ -1731,7 +1717,6 @@ class TopicRecoveryTest(RedpandaTest):
                                        topics, True)
         self.do_run(test_case)
 
-    @ignore  # https://github.com/redpanda-data/redpanda/issues/2569
     @cluster(num_nodes=3)
     def test_restore_moved_partition1(self):
         """Test handling of the moved partition (it will have different revision id)."""
@@ -1745,7 +1730,6 @@ class TopicRecoveryTest(RedpandaTest):
                                           self.logger, topics, False)
         self.do_run(test_case)
 
-    @ignore  # https://github.com/redpanda-data/redpanda/issues/2569
     @cluster(num_nodes=3)
     def test_restore_moved_partition2(self):
         """Test handling of the moved partition (it will have different revision id)."""
@@ -1759,7 +1743,6 @@ class TopicRecoveryTest(RedpandaTest):
                                           self.logger, topics, True)
         self.do_run(test_case)
 
-    @ignore  # https://github.com/redpanda-data/redpanda/issues/2569
     @cluster(num_nodes=3)
     def test_cascading_restore(self):
         """Test handling of the situation when the topic is recovered several times in a row."""

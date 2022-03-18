@@ -25,3 +25,5 @@ quick:
   - tests/wasm_topics_test.py::WasmCreateTopicsTest.verify_materialized_topics_test
     # https://github.com/redpanda-data/redpanda/issues/3745
   - tests/wasm_topics_test.py::WasmDeleteTopicsTest.verify_materialized_topics_test
+    # https://github.com/redpanda-data/redpanda/issues/2569
+  - tests/topic_recovery_test.py::TopicRecoveryTest
