@@ -203,7 +203,7 @@ func NewBundleCommand(fs afero.Fs) *cobra.Command {
 	)
 	command := &cobra.Command{
 		Use:   "bundle",
-		Short: "Collect environment data and create a bundle file for the Vectorized support team to inspect.",
+		Short: "Collect environment data and create a bundle file for the Redpanda Data support team to inspect.",
 		Long: `'rpk debug bundle' collects environment data that can help debug and diagnose
 issues with a redpanda cluster, a broker, or the machine it's running on. It
 then bundles the collected data into a zip file.
