@@ -34,7 +34,7 @@ func NewInfoCommand(fs afero.Fs) *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:     "info",
-		Short:   "Send usage stats to Vectorized.",
+		Short:   "Send usage stats to Redpanda Data.",
 		Hidden:  true,
 		Aliases: []string{"status"},
 		Args:    cobra.ExactArgs(0),
