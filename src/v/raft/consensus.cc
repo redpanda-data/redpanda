@@ -2499,6 +2499,21 @@ ss::future<timeout_now_reply> consensus::timeout_now(timeout_now_request&& r) {
         });
     }
 
+    if (_node_priority_override == zero_voter_priority) {
+        vlog(
+          _ctxlog.debug,
+          "Ignoring timeout request in state {} with node voter priority zero "
+          "from node {} at term {}",
+          _vstate,
+          r.node_id,
+          r.term);
+
+        return ss::make_ready_future<timeout_now_reply>(timeout_now_reply{
+          .term = _term,
+          .result = timeout_now_reply::status::failure,
+        });
+    }
+
     // start an election immediately
     dispatch_vote(true);
 
@@ -2950,6 +2965,10 @@ voter_priority consensus::next_target_priority() {
  * so it should give us fairly even distribution of leaders across the nodes.
  */
 voter_priority consensus::get_node_priority(vnode rni) const {
+    if (_node_priority_override.has_value() && rni == _self) {
+        return _node_priority_override.value();
+    }
+
     auto& latest_cfg = _configuration_manager.get_latest();
     auto& brokers = latest_cfg.brokers();
 

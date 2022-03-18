@@ -12,6 +12,7 @@
 #include "cluster/controller_service.h"
 #include "cluster/controller_stm.h"
 #include "cluster/errc.h"
+#include "cluster/feature_table.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
@@ -31,6 +32,7 @@ members_frontend::members_frontend(
   ss::sharded<controller_stm>& stm,
   ss::sharded<rpc::connection_cache>& connections,
   ss::sharded<partition_leaders_table>& leaders,
+  ss::sharded<feature_table>& feature_table,
   ss::sharded<ss::abort_source>& as)
   : _self(config::node().node_id())
   , _node_op_timeout(
@@ -38,6 +40,7 @@ members_frontend::members_frontend(
   , _stm(stm)
   , _connections(connections)
   , _leaders(leaders)
+  , _feature_table(feature_table)
   , _as(as) {}
 
 ss::future<> members_frontend::start() { return ss::now(); }
@@ -132,4 +135,48 @@ members_frontend::recommission_node(model::node_id id) {
     }
     co_return res.value().data.error;
 }
+
+ss::future<std::error_code>
+members_frontend::set_maintenance_mode(model::node_id id, bool enabled) {
+    if (!_feature_table.local().is_active(cluster::feature::maintenance_mode)) {
+        vlog(
+          clusterlog.info,
+          "Maintenance mode feature is not active (upgrade in progress?)");
+        co_return errc::invalid_node_operation;
+    }
+
+    auto leader = _leaders.local().get_leader(model::controller_ntp);
+    if (!leader) {
+        co_return errc::no_leader_controller;
+    }
+
+    if (leader == _self) {
+        co_return co_await replicate_and_wait(
+          _stm,
+          _as,
+          maintenance_mode_cmd(id, enabled),
+          _node_op_timeout + model::timeout_clock::now());
+    }
+
+    std::chrono::duration timeout = _node_op_timeout;
+    auto res
+      = co_await _connections.local()
+          .with_node_client<cluster::controller_client_protocol>(
+            _self,
+            ss::this_shard_id(),
+            *leader,
+            timeout,
+            [id, enabled, timeout](controller_client_protocol cp) mutable {
+                return cp.set_maintenance_mode(
+                  set_maintenance_mode_request{.id = id, .enabled = enabled},
+                  rpc::client_opts(model::timeout_clock::now() + timeout));
+            });
+
+    if (res.has_error()) {
+        co_return res.error();
+    }
+
+    co_return res.value().data.error;
+}
+
 } // namespace cluster

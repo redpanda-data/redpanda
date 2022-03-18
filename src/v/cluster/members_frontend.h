@@ -13,6 +13,7 @@
 
 #include "cluster/cluster_utils.h"
 #include "cluster/controller_stm.h"
+#include "cluster/fwd.h"
 #include "cluster/types.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
@@ -35,6 +36,7 @@ public:
       ss::sharded<controller_stm>&,
       ss::sharded<rpc::connection_cache>&,
       ss::sharded<partition_leaders_table>&,
+      ss::sharded<feature_table>&,
       ss::sharded<ss::abort_source>&);
 
     ss::future<> start();
@@ -43,6 +45,9 @@ public:
     ss::future<std::error_code> decommission_node(model::node_id);
     ss::future<std::error_code> recommission_node(model::node_id);
     ss::future<std::error_code> finish_node_reallocations(model::node_id);
+
+    ss::future<std::error_code>
+    set_maintenance_mode(model::node_id, bool enabled);
 
 private:
     template<typename T>
@@ -56,6 +61,7 @@ private:
     ss::sharded<controller_stm>& _stm;
     ss::sharded<rpc::connection_cache>& _connections;
     ss::sharded<partition_leaders_table>& _leaders;
+    ss::sharded<feature_table>& _feature_table;
     ss::sharded<ss::abort_source>& _as;
 };
 } // namespace cluster

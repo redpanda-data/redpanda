@@ -42,6 +42,7 @@ public:
 
     std::error_code apply(model::offset, decommission_node_cmd);
     std::error_code apply(model::offset, recommission_node_cmd);
+    std::error_code apply(model::offset, maintenance_mode_cmd);
 
     model::revision_id version() const { return _version; }
 

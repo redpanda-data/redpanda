@@ -38,7 +38,8 @@ public:
     static constexpr auto accepted_commands = make_commands_list<
       decommission_node_cmd,
       recommission_node_cmd,
-      finish_reallocations_cmd>{};
+      finish_reallocations_cmd,
+      maintenance_mode_cmd>{};
     static constexpr ss::shard_id shard = 0;
     static constexpr size_t max_updates_queue_size = 100;
     enum class node_update_type : int8_t {
@@ -61,6 +62,7 @@ public:
       ss::sharded<rpc::connection_cache>&,
       ss::sharded<partition_allocator>&,
       ss::sharded<storage::api>&,
+      ss::sharded<drain_manager>&,
       ss::sharded<ss::abort_source>&);
 
     ss::future<> start();
@@ -127,6 +129,7 @@ private:
     ss::sharded<rpc::connection_cache>& _connection_cache;
     ss::sharded<partition_allocator>& _allocator;
     ss::sharded<storage::api>& _storage;
+    ss::sharded<drain_manager>& _drain_manager;
     ss::sharded<ss::abort_source>& _as;
     config::tls_config _rpc_tls_config;
     ss::gate _gate;
