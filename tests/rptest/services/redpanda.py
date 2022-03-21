@@ -226,7 +226,6 @@ class SISettings:
     """
     def __init__(self,
                  *,
-                 log_segment_size=16 * 1000000,
                  cloud_storage_access_key="panda-user",
                  cloud_storage_secret_key="panda-secret",
                  cloud_storage_region="panda-region",
@@ -234,7 +233,6 @@ class SISettings:
                  cloud_storage_api_endpoint="minio-s3",
                  cloud_storage_api_endpoint_port=9000,
                  cloud_storage_cache_size=160 * 1000000):
-        self.log_segment_size = log_segment_size
         self.cloud_storage_access_key = cloud_storage_access_key
         self.cloud_storage_secret_key = cloud_storage_secret_key
         self.cloud_storage_region = cloud_storage_region
@@ -244,7 +242,6 @@ class SISettings:
         self.cloud_storage_cache_size = cloud_storage_cache_size
 
     def update_rp_conf(self, conf):
-        conf["log_segment_size"] = self.log_segment_size
         conf["cloud_storage_access_key"] = self.cloud_storage_access_key
         conf["cloud_storage_secret_key"] = self.cloud_storage_secret_key
         conf["cloud_storage_region"] = self.cloud_storage_region

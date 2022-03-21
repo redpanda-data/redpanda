@@ -50,7 +50,7 @@ class TopicSpec:
                  cleanup_policy=CLEANUP_DELETE,
                  compression_type=COMPRESSION_PRODUCER,
                  message_timestamp_type=TIMESTAMP_CREATE_TIME,
-                 segment_bytes=1 * (2 ^ 30),
+                 segment_bytes=1 * (2**30),
                  retention_bytes=None,
                  retention_ms=None,
                  redpanda_datapolicy=None,
@@ -83,3 +83,21 @@ class TopicSpec:
     def _random_topic_suffix(self, size=10):
         return "".join(
             random.choice(string.ascii_lowercase) for _ in range(size))
+
+    def extra_config(self):
+        conf = {
+            'cleanup_policy': self.cleanup_policy,
+            'compression_type': self.compression_type,
+            'message.timestamp.type': self.message_timestamp_type,
+            'segment.bytes': self.segment_bytes,
+        }
+        if self.retention_bytes is not None:
+            conf['retention.bytes'] = self.retention_bytes
+        if self.retention_ms is not None:
+            conf['retention.ms'] = self.retention_ms
+        if self.redpanda_remote_read is not None:
+            conf['redpanda.remote.read'] = 'true'
+        if self.redpanda_remote_write is not None:
+            conf['redpanda.remote.write'] = 'true'
+
+        return conf
