@@ -17,7 +17,7 @@
 
 namespace net {
 
-class inet_address_wrapper : public ss::net::inet_address {
+class inet_address_wrapper final : public ss::net::inet_address {
 public:
     inet_address_wrapper(ss::net::inet_address addr)
       : ss::net::inet_address(addr) {}
