@@ -225,7 +225,7 @@ func (c *consumer) writeRecordJSON(r *kgo.Record) {
 		})
 	}
 
-	// We are marshalling a simple type defined just above; this type
+	// We are marshaling a simple type defined just above; this type
 	// cannot cause a marshal error.
 	var out []byte
 	if c.pretty {
