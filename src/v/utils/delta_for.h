@@ -54,17 +54,17 @@ static constexpr uint32_t FOR_buffer_depth = 16;
  * placing values one after another. It uses the following schema
  * instead. Consider the following size classes: 64, 32, 16, and
  * 8-bits. Each 64-bit value can be represented as a series of those + some
- * reminder. For instance, 18-bit value can be represented as 16-bit
- * value + 2-bit reminder, 47-bit value can be represented as 32-bit
- * value + 8-bit value + 7-bit reminder, etc.
+ * remainder. For instance, 18-bit value can be represented as 16-bit
+ * value + 2-bit remainder, 47-bit value can be represented as 32-bit
+ * value + 8-bit value + 7-bit remainder, etc.
  *
  * The bit-packing algorithm works in the following way. First, it
  * calculates minimal number of bits that can be used to store any
  * value in a row. Then the number of bits is factored into one or
- * several size classes + reminder. After that the algorithm writes
+ * several size classes + remainder. After that the algorithm writes
  * the number of bits that corresponds to the largest size class, then
- * the next one, etc. After that it writes the reminder of every element.
- * This means that the data from all 16 values is interliving. The number
+ * the next one, etc. After that it writes the remainder of every element.
+ * This means that the data from all 16 values is interleaving. The number
  * of bits used to represent the row is stored using 8 bits.
  *
  * Example: let's say that we have a row that requires us to use 59
@@ -139,10 +139,10 @@ public:
     /// Return number of rows stored in the underlying iobuf instance
     uint32_t get_row_count() const noexcept { return _cnt; }
 
-    /// Get initial value used to crate the encoder
+    /// Get initial value used to create the encoder
     TVal get_initial_value() const noexcept { return _initial; }
 
-    /// Get last value used to crate the encoder
+    /// Get last value used to create the encoder
     TVal get_last_value() const noexcept { return _last; }
 
 private:
@@ -574,7 +574,7 @@ private:
  *
  * The object can be used to decode the iobuf copied from the encoder.
  * It can only read the whole sequence once. Once it's done reading
- * it can't be reset to read the seqnece again.
+ * it can't be reset to read the sequence again.
  *
  * The initial_value and number of rows should match the corresponding
  * encoder wich was used to compress the data.
