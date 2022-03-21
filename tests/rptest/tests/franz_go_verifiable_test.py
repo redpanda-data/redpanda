@@ -118,13 +118,18 @@ class FranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
 
     segment_size = 5 * 1000000
 
-    topics = (TopicSpec(partition_count=100, replication_factor=3), )
+    topics = (TopicSpec(
+        partition_count=100,
+        replication_factor=3,
+        segment_bytes=segment_size,
+        retention_bytes=segment_size,
+        redpanda_remote_read=True,
+        redpanda_remote_write=True,
+    ), )
 
     def __init__(self, ctx):
-        si_settings = SISettings(
-            log_segment_size=FranzGoVerifiableWithSiTest.segment_size,
-            cloud_storage_cache_size=5 *
-            FranzGoVerifiableWithSiTest.segment_size)
+        si_settings = SISettings(cloud_storage_cache_size=5 *
+                                 FranzGoVerifiableWithSiTest.segment_size)
 
         super(FranzGoVerifiableWithSiTest, self).__init__(
             test_context=ctx,
@@ -152,12 +157,6 @@ class FranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
             self.logger.info(
                 "Skipping test in debug mode (requires release build)")
             return
-
-        rpk = RpkTool(self.redpanda)
-        rpk.alter_topic_config(self.topic, 'redpanda.remote.write', 'true')
-        rpk.alter_topic_config(self.topic, 'redpanda.remote.read', 'true')
-        rpk.alter_topic_config(self.topic, 'retention.bytes',
-                               str(self.segment_size))
 
         # Need create json file for consumer at first
         self._create_json_file(10000)
