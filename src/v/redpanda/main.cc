@@ -18,13 +18,13 @@ static constexpr std::string_view community_msg = R"banner(
 
 Welcome to the Redpanda community!
 
-Slack: https://vectorized.io/slack - is the main way the community interacts with one another in real time :)
-Twitter: https://twitter.com/vectorizedio - come say hi!
-Github Discussion: https://github.com/redpanda-data/redpanda/discussions - is preferred for longer, async, thoughtful discussions
-GitHub Issues: https://github.com/redpanda-data/redpanda/issues - is reserved only for actual issues. Please use the GitHub for discussions.
-Documentation: https://vectorized.io/docs/ - official docs site
-Support: https://support.vectorized.io/ - to share private information with the production support vectorized team
-Product Feedback: https://vectorized.io/feedback/ - let us know how we can improve your experience
+Documentation: https://docs.redpanda.com - official docs site
+Github Discussion: https://github.com/redpanda-data/redpanda/discussions - longer, async, thoughtful discussions
+GitHub Issues: https://github.com/redpanda-data/redpanda/issues - reporting and tracking issues with the codebase
+Support: https://support.redpanda.com - share private information with the production support team
+Product Feedback: https://redpanda.com/feedback - let us know how we can improve your experience
+Slack: https://redpanda.com/slack - the main way the community interacts with one another in real time :)
+Twitter: https://twitter.com/redpandadata - come say hi!
 
 )banner";
 
