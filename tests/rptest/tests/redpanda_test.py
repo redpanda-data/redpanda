@@ -72,10 +72,6 @@ class RedpandaTest(Test):
         return self._client
 
     def _create_initial_topics(self):
-        config = self.redpanda.security_config()
-        user = config.get("sasl_plain_username")
-        passwd = config.get("sasl_plain_password")
-        client = KafkaCliTools(self.redpanda, user=user, passwd=passwd)
         for spec in self.topics:
             self.logger.debug(f"Creating initial topic {spec}")
-            client.create_topic(spec)
+            self.client().create_topic(spec)
