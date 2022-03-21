@@ -20,18 +20,19 @@ import (
 type Config struct {
 	file *Config
 
-	NodeUuid             string                 `yaml:"node_uuid,omitempty" mapstructure:"node_uuid,omitempty" json:"nodeUuid"`
-	Organization         string                 `yaml:"organization,omitempty" mapstructure:"organization,omitempty" json:"organization"`
-	LicenseKey           string                 `yaml:"license_key,omitempty" mapstructure:"license_key,omitempty" json:"licenseKey"`
-	ClusterId            string                 `yaml:"cluster_id,omitempty" mapstructure:"cluster_id,omitempty" json:"clusterId"`
-	ConfigFile           string                 `yaml:"config_file" mapstructure:"config_file" json:"configFile"`
-	Redpanda             RedpandaConfig         `yaml:"redpanda" mapstructure:"redpanda" json:"redpanda"`
-	Rpk                  RpkConfig              `yaml:"rpk" mapstructure:"rpk" json:"rpk"`
-	Pandaproxy           *Pandaproxy            `yaml:"pandaproxy,omitempty" mapstructure:"pandaproxy,omitempty" json:"pandaproxy,omitempty"`
-	PandaproxyClient     *KafkaClient           `yaml:"pandaproxy_client,omitempty" mapstructure:"pandaproxy_client,omitempty" json:"pandaproxyClient,omitempty"`
-	SchemaRegistry       *SchemaRegistry        `yaml:"schema_registry,omitempty" mapstructure:"schema_registry,omitempty" json:"schemaRegistry,omitempty"`
-	SchemaRegistryClient *KafkaClient           `yaml:"schema_registry_client,omitempty" mapstructure:"schema_registry_client,omitempty" json:"schemaRegistryClient,omitempty"`
-	Other                map[string]interface{} `yaml:",inline" mapstructure:",remain"`
+	NodeUuid             string          `yaml:"node_uuid,omitempty" mapstructure:"node_uuid,omitempty" json:"nodeUuid"`
+	Organization         string          `yaml:"organization,omitempty" mapstructure:"organization,omitempty" json:"organization"`
+	LicenseKey           string          `yaml:"license_key,omitempty" mapstructure:"license_key,omitempty" json:"licenseKey"`
+	ClusterId            string          `yaml:"cluster_id,omitempty" mapstructure:"cluster_id,omitempty" json:"clusterId"`
+	ConfigFile           string          `yaml:"config_file" mapstructure:"config_file" json:"configFile"`
+	Redpanda             RedpandaConfig  `yaml:"redpanda" mapstructure:"redpanda" json:"redpanda"`
+	Rpk                  RpkConfig       `yaml:"rpk" mapstructure:"rpk" json:"rpk"`
+	Pandaproxy           *Pandaproxy     `yaml:"pandaproxy,omitempty" mapstructure:"pandaproxy,omitempty" json:"pandaproxy,omitempty"`
+	PandaproxyClient     *KafkaClient    `yaml:"pandaproxy_client,omitempty" mapstructure:"pandaproxy_client,omitempty" json:"pandaproxyClient,omitempty"`
+	SchemaRegistry       *SchemaRegistry `yaml:"schema_registry,omitempty" mapstructure:"schema_registry,omitempty" json:"schemaRegistry,omitempty"`
+	SchemaRegistryClient *KafkaClient    `yaml:"schema_registry_client,omitempty" mapstructure:"schema_registry_client,omitempty" json:"schemaRegistryClient,omitempty"`
+
+	Other map[string]interface{} `yaml:",inline" mapstructure:",remain"`
 }
 
 // File returns the configuration as read from a file, with no defaults
@@ -42,31 +43,24 @@ func (c *Config) File() *Config {
 }
 
 type RedpandaConfig struct {
-	Directory                            string                 `yaml:"data_directory" mapstructure:"data_directory" json:"dataDirectory"`
-	Id                                   int                    `yaml:"node_id" mapstructure:"node_id" json:"id"`
-	Rack                                 string                 `yaml:"rack,omitempty" mapstructure:"rack" json:"rack"`
-	SeedServers                          []SeedServer           `yaml:"seed_servers" mapstructure:"seed_servers" json:"seedServers"`
-
-	RPCServer                            SocketAddress          `yaml:"rpc_server" mapstructure:"rpc_server" json:"rpcServer"`
-	RPCServerTLS                         []ServerTLS            `yaml:"rpc_server_tls,omitempty" mapstructure:"rpc_server_tls,omitempty" json:"rpcServerTls"`
-
-	KafkaApi                             []NamedSocketAddress   `yaml:"kafka_api" mapstructure:"kafka_api" json:"kafkaApi"`
-	KafkaApiTLS                          []ServerTLS            `yaml:"kafka_api_tls,omitempty" mapstructure:"kafka_api_tls,omitempty" json:"kafkaApiTls"`
-
-	AdminApi                             []NamedSocketAddress   `yaml:"admin" mapstructure:"admin" json:"admin"`
-	AdminApiTLS                          []ServerTLS            `yaml:"admin_api_tls,omitempty" mapstructure:"admin_api_tls,omitempty" json:"adminApiTls"`
-
-	CoprocSupervisorServer               SocketAddress          `yaml:"coproc_supervisor_server,omitempty" mapstructure:"coproc_supervisor_server" json:"coprocSupervisorServer"`
-
-	AdminAPIDocDir                       string                 `yaml:"admin_api_doc_dir,omitempty" mapstructure:"admin_api_doc_dir" json:"adminApiDocDir"`
-	DashboardDir                         string                 `yaml:"dashboard_dir,omitempty" mapstructure:"dashboard_dir" json:"dashboardDir"`
-
-	CloudStorageCacheDirectory           string                 `yaml:"cloud_storage_cache_directory,omitempty" mapstructure:"cloud_storage_cache_directory" json:"CloudStorageCacheDirectory"`
-
-	AdvertisedRPCAPI                     *SocketAddress         `yaml:"advertised_rpc_api,omitempty" mapstructure:"advertised_rpc_api,omitempty" json:"advertisedRpcApi,omitempty"`
-	AdvertisedKafkaApi                   []NamedSocketAddress   `yaml:"advertised_kafka_api,omitempty" mapstructure:"advertised_kafka_api,omitempty" json:"advertisedKafkaApi,omitempty"`
-
-	Other                                map[string]interface{} `yaml:",inline" mapstructure:",remain"`
+	Directory                  string                 `yaml:"data_directory" mapstructure:"data_directory" json:"dataDirectory"`
+	Id                         int                    `yaml:"node_id" mapstructure:"node_id" json:"id"`
+	Rack                       string                 `yaml:"rack,omitempty" mapstructure:"rack" json:"rack"`
+	SeedServers                []SeedServer           `yaml:"seed_servers" mapstructure:"seed_servers" json:"seedServers"`
+	RPCServer                  SocketAddress          `yaml:"rpc_server" mapstructure:"rpc_server" json:"rpcServer"`
+	RPCServerTLS               []ServerTLS            `yaml:"rpc_server_tls,omitempty" mapstructure:"rpc_server_tls,omitempty" json:"rpcServerTls"`
+	KafkaApi                   []NamedSocketAddress   `yaml:"kafka_api" mapstructure:"kafka_api" json:"kafkaApi"`
+	KafkaApiTLS                []ServerTLS            `yaml:"kafka_api_tls,omitempty" mapstructure:"kafka_api_tls,omitempty" json:"kafkaApiTls"`
+	AdminApi                   []NamedSocketAddress   `yaml:"admin" mapstructure:"admin" json:"admin"`
+	AdminApiTLS                []ServerTLS            `yaml:"admin_api_tls,omitempty" mapstructure:"admin_api_tls,omitempty" json:"adminApiTls"`
+	CoprocSupervisorServer     SocketAddress          `yaml:"coproc_supervisor_server,omitempty" mapstructure:"coproc_supervisor_server" json:"coprocSupervisorServer"`
+	AdminAPIDocDir             string                 `yaml:"admin_api_doc_dir,omitempty" mapstructure:"admin_api_doc_dir" json:"adminApiDocDir"`
+	DashboardDir               string                 `yaml:"dashboard_dir,omitempty" mapstructure:"dashboard_dir" json:"dashboardDir"`
+	CloudStorageCacheDirectory string                 `yaml:"cloud_storage_cache_directory,omitempty" mapstructure:"cloud_storage_cache_directory" json:"CloudStorageCacheDirectory"`
+	AdvertisedRPCAPI           *SocketAddress         `yaml:"advertised_rpc_api,omitempty" mapstructure:"advertised_rpc_api,omitempty" json:"advertisedRpcApi,omitempty"`
+	AdvertisedKafkaApi         []NamedSocketAddress   `yaml:"advertised_kafka_api,omitempty" mapstructure:"advertised_kafka_api,omitempty" json:"advertisedKafkaApi,omitempty"`
+	DeveloperMode              bool                   `yaml:"developer_mode" mapstructure:"developer_mode" json:"developerMode"`
+	Other                      map[string]interface{} `yaml:",inline" mapstructure:",remain"`
 }
 
 type Pandaproxy struct {

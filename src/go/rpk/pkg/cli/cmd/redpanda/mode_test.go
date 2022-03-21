@@ -29,7 +29,7 @@ import (
 func fillRpkConfig(path, mode string) *config.Config {
 	conf := config.Default()
 	val := mode == config.ModeProd
-	conf.Redpanda.Other["developer_mode"] = !val
+	conf.Redpanda.DeveloperMode = !val
 	conf.Rpk = config.RpkConfig{
 		TuneNetwork:        val,
 		TuneDiskScheduler:  val,

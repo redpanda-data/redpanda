@@ -30,7 +30,7 @@ func getValidConfig() *Config {
 			SocketAddress{"127.0.0.1", 33146},
 		},
 	}
-	conf.Redpanda.Other["developer_mode"] = false
+	conf.Redpanda.DeveloperMode = false
 	conf.Rpk = RpkConfig{
 		EnableUsageStats:         true,
 		TuneNetwork:              true,
@@ -378,7 +378,7 @@ func TestDefault(t *testing.T) {
 			}},
 			Id:            0,
 			SeedServers:   []SeedServer{},
-			Other: map[string]interface{}{"developer_mode" : true},
+			DeveloperMode: true,
 		},
 		Rpk: RpkConfig{
 			CoredumpDir: "/var/lib/redpanda/coredump",
@@ -1053,6 +1053,9 @@ schema_registry: {}
 			conf: func() *Config {
 				c := getValidConfig()
 				size := 536870912
+				if c.Redpanda.Other == nil {
+					c.Redpanda.Other = make(map[string]interface{})
+				}
 				c.Redpanda.Other["log_segment_size"] = &size
 				return c
 			},
@@ -1657,7 +1660,7 @@ func TestSetMode(t *testing.T) {
 		return func() *Config {
 			conf := Default()
 			val := mode == ModeProd
-			conf.Redpanda.Other["developer_mode"] = !val
+			conf.Redpanda.DeveloperMode = !val
 			conf.Rpk = RpkConfig{
 				TuneNetwork:        val,
 				TuneDiskScheduler:  val,
