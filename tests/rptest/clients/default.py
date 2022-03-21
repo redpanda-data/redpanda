@@ -47,17 +47,26 @@ class BrokerDescription(typing.NamedTuple):
 class DefaultClient:
     def __init__(self, redpanda):
         self._redpanda = redpanda
+        config = self._redpanda.security_config()
+        self._user = config.get('sasl_plain_username')
+        self._passwd = config.get('sasl_plain_password')
+        self._algorithm = config.get('sasl_mechanism')
 
     def create_topic(self, specs):
         if isinstance(specs, TopicSpec):
             specs = [specs]
-        client = KafkaCliTools(self._redpanda)
+        rpk = RpkTool(self._redpanda, user=self._user, passwd=self._passwd)
         for spec in specs:
-            client.create_topic(spec)
+            rpk.create_topic(spec.name,
+                             spec.partition_count,
+                             spec.replication_factor,
+                             config=spec.extra_config())
 
     def create_topic_with_assignment(self, name: str,
                                      assignments: Sequence[Sequence[int]]):
-        client = KafkaCliTools(self._redpanda)
+        client = KafkaCliTools(self._redpanda,
+                               user=self._user,
+                               passwd=self._passwd)
         client.create_topic_with_assignment(name, assignments)
 
     def brokers(self):
@@ -66,7 +75,10 @@ class DefaultClient:
         brokers reported by the cluster, rather than the nodes allocated for use
         in the self._redpanda service.
         """
-        client = PythonLibrdkafka(self._redpanda)
+        client = PythonLibrdkafka(self._redpanda,
+                                  username=self._user,
+                                  password=self._passwd,
+                                  algorithm=self._algorithm)
         brokers = client.brokers()
         return {
             b.id: BrokerDescription(id=b.id, host=b.host, port=b.port)
@@ -74,7 +86,9 @@ class DefaultClient:
         }
 
     def delete_topic(self, name):
-        client = KafkaCliTools(self._redpanda)
+        client = KafkaCliTools(self._redpanda,
+                               user=self._user,
+                               passwd=self._passwd)
         client.delete_topic(name)
 
     def describe_topics(self, topics=None):
@@ -105,7 +119,9 @@ class DefaultClient:
         return td[0]
 
     def alter_topic_partition_count(self, topic: str, count: int):
-        client = KafkaCliTools(self._redpanda)
+        client = KafkaCliTools(self._redpanda,
+                               user=self._user,
+                               passwd=self._passwd)
         client.create_topic_partitions(topic, count)
 
     def alter_topic_config(self, topic: str, key: str,
@@ -113,7 +129,7 @@ class DefaultClient:
         """
         Alter a topic configuration property.
         """
-        rpk = RpkTool(self._redpanda)
+        rpk = RpkTool(self._redpanda, user=self._user, passwd=self._passwd)
         rpk.alter_topic_config(topic, key, value)
 
     def alter_topic_configs(self, topic: str,
@@ -121,11 +137,13 @@ class DefaultClient:
         """
         Alter multiple topic configuration properties.
         """
-        kafka_tools = KafkaCliTools(self._redpanda)
+        kafka_tools = KafkaCliTools(self._redpanda,
+                                    user=self._user,
+                                    passwd=self._passwd)
         kafka_tools.alter_topic_config(topic, props)
 
     def describe_topic_configs(self, topic: str):
-        rpk = RpkTool(self._redpanda)
+        rpk = RpkTool(self._redpanda, user=self._user, passwd=self._passwd)
         configs = rpk.describe_topic_configs(topic)
         return {
             key: TopicConfigValue(value=value[0], source=value[1])
@@ -133,7 +151,7 @@ class DefaultClient:
         }
 
     def delete_topic_config(self, topic: str, key: str):
-        rpk = RpkTool(self._redpanda)
+        rpk = RpkTool(self._redpanda, user=self._user, passwd=self._passwd)
         rpk.delete_topic_config(topic, key)
 
     def alter_broker_config(self,
