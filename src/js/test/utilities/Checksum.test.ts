@@ -15,7 +15,7 @@ import { join } from "path";
 describe("Checksum utilities", () => {
   describe("When we call getChecksumFromFile", () => {
     const expectChecksum =
-      "83e60a8e53690ea88e3970e8edfb703700e0a7e8d566ab9fa19a8598d612917e";
+      "d0d8f29527c7226d990eeb26cd44ebcdc8a6311a70a7c68f8f176e61da39d0d0";
     describe("Given a existing file", () => {
       it("Should get file content's checksum", (done) => {
         const checksumPromise = getChecksumFromFile(
