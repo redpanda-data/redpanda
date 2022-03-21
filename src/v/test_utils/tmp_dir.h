@@ -52,7 +52,7 @@ public:
         try {
             vlog(details::tmpdir_logger.info, "About to call remove");
             if (_dir.has_path()) {
-                _dir.remove().get0();
+                _dir.remove().get();
             }
         } catch (...) {
             vlog(
