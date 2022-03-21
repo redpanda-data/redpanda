@@ -138,7 +138,7 @@ configuration::configuration()
       "topic_fds_per_partition",
       "Required file handles per partition when creating topics",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      10,
+      5,
       {
         .min = 1,   // At least one FD per partition, required for appender.
         .max = 1000 // A system with 1M ulimit should be allowed to create at
