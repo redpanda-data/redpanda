@@ -36,8 +36,7 @@ class FullNodeRecoveryTest(EndToEndTest):
 
     @cluster(num_nodes=6, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     @parametrize(recovery_type=PARTIAL_RECOVERY)
-    # enable when we implement support for leader epochs
-    # @parametrize(recovery_type=FULL_RECOVERY)
+    @parametrize(recovery_type=FULL_RECOVERY)
     def test_node_recovery(self, recovery_type):
         self.start_redpanda(num_nodes=3)
         kafka_tools = KafkaCliTools(self.redpanda)
@@ -91,8 +90,10 @@ class FullNodeRecoveryTest(EndToEndTest):
 
         # start node with the same node id, and not empty seed server list to
 
+        # give node more time to start as it has to recover
         self.redpanda.start_node(stopped,
-                                 override_cfg_params={'seed_servers': seeds})
+                                 override_cfg_params={'seed_servers': seeds},
+                                 timeout=90)
 
         def all_topics_recovered():
             metric = self.redpanda.metrics_sample("under_replicated_replicas",
