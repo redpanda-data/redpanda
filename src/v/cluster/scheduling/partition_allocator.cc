@@ -12,12 +12,15 @@
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "cluster/scheduling/constraints.h"
+#include "cluster/scheduling/types.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "model/metadata.h"
 #include "storage/segment_appender.h"
 #include "units.h"
 #include "utils/human.h"
+
+#include <seastar/core/shared_ptr.hh>
 
 #include <absl/container/node_hash_set.h>
 #include <sys/resource.h>
@@ -33,13 +36,15 @@ partition_allocator::partition_allocator(
   ss::sharded<members_table>& members,
   config::binding<std::optional<size_t>> memory_per_partition,
   config::binding<std::optional<int32_t>> fds_per_partition,
-  config::binding<size_t> fallocation_step)
+  config::binding<size_t> fallocation_step,
+  config::binding<bool> enable_rack_awareness)
   : _state(std::make_unique<allocation_state>())
   , _allocation_strategy(simple_allocation_strategy())
   , _members(members)
   , _memory_per_partition(memory_per_partition)
   , _fds_per_partition(fds_per_partition)
-  , _fallocation_step(fallocation_step) {}
+  , _fallocation_step(fallocation_step)
+  , _enable_rack_awareness(enable_rack_awareness) {}
 
 allocation_constraints default_constraints() {
     allocation_constraints req;
@@ -72,6 +77,14 @@ partition_allocator::allocate_partition(partition_constraints p_constraints) {
         effective_constraits.hard_constraints.push_back(
           ss::make_lw_shared<hard_constraint_evaluator>(
             distinct_from(replicas.get())));
+
+        // rack-placement contraint
+        if (_enable_rack_awareness()) {
+            effective_constraits.soft_constraints.push_back(
+              ss::make_lw_shared<soft_constraint_evaluator>(
+                distinct_rack(replicas.get(), *_state)));
+        }
+
         effective_constraits.add(p_constraints.constraints);
         auto replica = _allocation_strategy.allocate_replica(
           effective_constraits, *_state);

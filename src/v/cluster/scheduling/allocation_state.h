@@ -49,6 +49,12 @@ public:
     raft::group_id next_group_id();
     raft::group_id last_group_id() const { return _highest_group; }
 
+    // Get rack information
+    //
+    // Return rack id or nullopt if rack id is not configured
+    // for the broker.
+    std::optional<model::rack_id> get_rack_id(model::node_id) const;
+
 private:
     raft::group_id _highest_group{0};
     underlying_t _nodes;

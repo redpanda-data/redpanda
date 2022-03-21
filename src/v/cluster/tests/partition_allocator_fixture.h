@@ -27,7 +27,8 @@ struct partition_allocator_fixture {
         std::ref(members),
         config::mock_binding<std::optional<size_t>>(std::nullopt),
         config::mock_binding<std::optional<int32_t>>(std::nullopt),
-        config::mock_binding<size_t>(32_MiB)) {
+        config::mock_binding<size_t>(32_MiB),
+        config::mock_binding<bool>(true)) {
         members.start().get0();
         ss::smp::invoke_on_all([] {
             config::shard_local_cfg()
@@ -42,7 +43,16 @@ struct partition_allocator_fixture {
         allocator.register_node(std::make_unique<cluster::allocation_node>(
           model::node_id(id),
           core_count,
-          absl::node_hash_map<ss::sstring, ss::sstring>{}));
+          absl::node_hash_map<ss::sstring, ss::sstring>{},
+          std::nullopt));
+    }
+
+    void register_node(int id, int core_count, model::rack_id rack) {
+        allocator.register_node(std::make_unique<cluster::allocation_node>(
+          model::node_id(id),
+          core_count,
+          absl::node_hash_map<ss::sstring, ss::sstring>{},
+          std::move(rack)));
     }
 
     void saturate_all_machines() {

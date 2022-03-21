@@ -11,6 +11,8 @@
 #include "cluster/scheduling/constraints.h"
 
 #include "cluster/scheduling/allocation_node.h"
+#include "cluster/scheduling/allocation_state.h"
+#include "cluster/scheduling/types.h"
 #include "model/metadata.h"
 
 #include <absl/container/flat_hash_set.h>
@@ -148,6 +150,42 @@ soft_constraint_evaluator least_allocated() {
     };
 
     return soft_constraint_evaluator(std::make_unique<impl>());
+}
+
+soft_constraint_evaluator distinct_rack(
+  const std::vector<model::broker_shard>& replicas,
+  const allocation_state& state) {
+    class impl : public soft_constraint_evaluator::impl {
+    public:
+        impl(
+          const std::vector<model::broker_shard>& replicas,
+          const allocation_state& state)
+          : _replicas(replicas)
+          , _state(state) {}
+        uint64_t score(const allocation_node& node) const final {
+            // score node as 1 if the rack of the node is different
+            // score as 0 otherwise
+            for (auto [node_id, shard] : _replicas) {
+                auto rack = _state.get_rack_id(node_id);
+                if (!rack.has_value()) {
+                    return 1;
+                }
+                if (rack.value() == node.rack()) {
+                    return 0;
+                }
+            }
+            return 1;
+        }
+
+        void print(std::ostream& o) const final {
+            fmt::print(o, "distinct rack");
+        }
+
+        const std::vector<model::broker_shard>& _replicas;
+        const allocation_state& _state;
+    };
+
+    return soft_constraint_evaluator(std::make_unique<impl>(replicas, state));
 }
 
 } // namespace cluster

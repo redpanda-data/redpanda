@@ -28,7 +28,8 @@ public:
       ss::sharded<members_table>&,
       config::binding<std::optional<size_t>>,
       config::binding<std::optional<int32_t>>,
-      config::binding<size_t>);
+      config::binding<size_t>,
+      config::binding<bool>);
 
     void register_node(allocation_state::node_ptr n) {
         _state->register_node(std::move(n));
@@ -117,5 +118,6 @@ private:
     config::binding<std::optional<size_t>> _memory_per_partition;
     config::binding<std::optional<int32_t>> _fds_per_partition;
     config::binding<size_t> _fallocation_step;
+    config::binding<bool> _enable_rack_awareness;
 };
 } // namespace cluster

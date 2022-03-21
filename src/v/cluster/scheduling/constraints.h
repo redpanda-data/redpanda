@@ -15,6 +15,8 @@
 
 namespace cluster {
 
+class allocation_state;
+
 hard_constraint_evaluator not_fully_allocated();
 hard_constraint_evaluator is_active();
 
@@ -26,5 +28,8 @@ hard_constraint_evaluator
 distinct_from(const std::vector<model::broker_shard>&);
 
 soft_constraint_evaluator least_allocated();
+
+soft_constraint_evaluator
+distinct_rack(const std::vector<model::broker_shard>&, const allocation_state&);
 
 } // namespace cluster

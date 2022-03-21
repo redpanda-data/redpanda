@@ -85,6 +85,12 @@ void rjson_serialize(rapidjson::Writer<rapidjson::StringBuffer>& w, T v) {
     rjson_serialize(w, static_cast<std::underlying_type_t<T>>(v));
 }
 
+template<typename T, typename Tag>
+void rjson_serialize(
+  rapidjson::Writer<rapidjson::StringBuffer>& w, const named_type<T, Tag>& v) {
+    rjson_serialize(w, v());
+}
+
 template<typename T>
 void rjson_serialize(
   rapidjson::Writer<rapidjson::StringBuffer>& w, const std::optional<T>& v) {
@@ -93,12 +99,6 @@ void rjson_serialize(
         return;
     }
     w.Null();
-}
-
-template<typename T, typename Tag>
-void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w, const named_type<T, Tag>& v) {
-    rjson_serialize(w, v());
 }
 
 template<typename T, typename A>

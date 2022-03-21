@@ -1136,7 +1136,13 @@ configuration::configuration()
       "Whether new feature flags may auto-activate after upgrades (true) or "
       "must wait for manual activation via the admin API (false)",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      true) {}
+      true)
+  , enable_rack_awareness(
+      *this,
+      "enable_rack_awareness",
+      "Enables rack-aware replica assignment",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      false) {}
 
 configuration::error_map_t configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {

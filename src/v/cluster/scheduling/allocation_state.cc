@@ -10,6 +10,7 @@
 #include "cluster/scheduling/allocation_state.h"
 
 #include "cluster/logger.h"
+#include "ssx/sformat.h"
 
 namespace cluster {
 
@@ -105,7 +106,8 @@ void allocation_state::update_allocation_nodes(
               std::make_unique<allocation_node>(
                 b.id(),
                 b.properties().cores,
-                absl::node_hash_map<ss::sstring, ss::sstring>{}));
+                absl::node_hash_map<ss::sstring, ss::sstring>{},
+                b.rack()));
         } else {
             it->second->update_core_count(b.properties().cores);
             // node was added back to the cluster
@@ -160,6 +162,14 @@ result<uint32_t> allocation_state::allocate(model::node_id id) {
     }
 
     return errc::node_does_not_exists;
+}
+
+std::optional<model::rack_id>
+allocation_state::get_rack_id(model::node_id id) const {
+    if (auto it = _nodes.find(id); it != _nodes.end()) {
+        return it->second->rack();
+    }
+    vassert(false, "unexpected node id {}", id);
 }
 
 } // namespace cluster

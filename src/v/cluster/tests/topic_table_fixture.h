@@ -16,13 +16,17 @@
 #include "cluster/scheduling/partition_allocator.h"
 #include "cluster/tests/utils.h"
 #include "cluster/topic_table.h"
+#include "config/property.h"
 #include "test_utils/fixture.h"
 #include "units.h"
 
 static std::unique_ptr<cluster::allocation_node>
 create_allocation_node(model::node_id nid, uint32_t cores) {
     return std::make_unique<cluster::allocation_node>(
-      nid, cores, absl::node_hash_map<ss::sstring, ss::sstring>{});
+      nid,
+      cores,
+      absl::node_hash_map<ss::sstring, ss::sstring>{},
+      std::nullopt);
 }
 
 static void validate_delta(
@@ -50,7 +54,8 @@ struct topic_table_fixture {
             std::ref(members),
             config::mock_binding<std::optional<size_t>>(std::nullopt),
             config::mock_binding<std::optional<int32_t>>(std::nullopt),
-            config::mock_binding<size_t>(32_MiB))
+            config::mock_binding<size_t>(32_MiB),
+            config::mock_binding<bool>(false))
           .get0();
         allocator.local().register_node(
           create_allocation_node(model::node_id(1), 8));

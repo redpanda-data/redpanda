@@ -267,7 +267,7 @@ group_cfg_from_args(const po::variables_map& opts) {
         opts["ip"].as<ss::sstring>(), opts["port"].as<uint16_t>()),
       net::unresolved_address(
         opts["ip"].as<ss::sstring>(), opts["port"].as<uint16_t>()),
-      std::optional<ss::sstring>(),
+      std::nullopt,
       model::broker_properties{
         .cores = ss::smp::count,
       }));
