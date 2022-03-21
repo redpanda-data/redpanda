@@ -89,7 +89,7 @@ request_auth_result request_authenticator::do_authenticate(
         }
 
         auto colon = decoded_bytes.find(":");
-        if (colon == std::string::npos || colon == decoded_bytes.size() - 1) {
+        if (colon == ss::sstring::npos || colon == decoded_bytes.size() - 1) {
             vlog(logger.info, "Client auth failure: malformed 'user:password'");
             throw ss::httpd::bad_request_exception(
               "Malformed Authorization header");
