@@ -427,41 +427,30 @@ ss::future<> do_swap_data_file_handles(
   ss::lw_shared_ptr<storage::segment> s,
   storage::compaction_config cfg,
   probe& pb) {
-    return s->reader()
-      .close()
-      .then([compacted, s] {
-          ss::sstring old_name = compacted.string();
-          vlog(
-            gclog.trace,
-            "swapping compacted segment temp file {} with the segment {}",
-            old_name,
-            s->reader().filename());
-          return ss::rename_file(old_name, s->reader().filename());
-      })
-      .then([s, cfg] {
-          auto to_open = std::filesystem::path(s->reader().filename().c_str());
-          return make_reader_handle(to_open, cfg.sanitize);
-      })
-      .then([s, &pb](ss::file f) mutable {
-          return f.stat()
-            .then([f](struct stat s) {
-                return ss::make_ready_future<std::tuple<uint64_t, ss::file>>(
-                  std::make_tuple(s.st_size, f));
-            })
-            .then([s, &pb](std::tuple<uint64_t, ss::file> t) {
-                auto& [size, fd] = t;
-                auto r = segment_reader(
-                  s->reader().filename(),
-                  std::move(fd),
-                  size,
-                  config::shard_local_cfg().storage_read_buffer_size(),
-                  config::shard_local_cfg().storage_read_readahead_count());
-                // update partition size probe
-                pb.delete_segment(*s.get());
-                std::swap(s->reader(), r);
-                pb.add_initial_segment(*s.get());
-            });
-      });
+    co_await s->reader().close();
+
+    ss::sstring old_name = compacted.string();
+    vlog(
+      gclog.trace,
+      "swapping compacted segment temp file {} with the segment {}",
+      old_name,
+      s->reader().filename());
+    co_await ss::rename_file(old_name, s->reader().filename());
+
+    auto to_open = std::filesystem::path(s->reader().filename().c_str());
+    auto f = co_await make_reader_handle(to_open, cfg.sanitize);
+    auto st = co_await f.stat();
+
+    auto r = segment_reader(
+      s->reader().filename(),
+      std::move(f),
+      st.st_size,
+      config::shard_local_cfg().storage_read_buffer_size(),
+      config::shard_local_cfg().storage_read_readahead_count());
+    // update partition size probe
+    pb.delete_segment(*s.get());
+    std::swap(s->reader(), r);
+    pb.add_initial_segment(*s.get());
 }
 
 /**
