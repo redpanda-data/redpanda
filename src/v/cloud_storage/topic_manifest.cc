@@ -17,6 +17,8 @@
 #include "cluster/types.h"
 #include "hashing/xx.h"
 #include "json/encodings.h"
+#include "json/istreamwrapper.h"
+#include "json/ostreamwrapper.h"
 #include "json/reader.h"
 #include "json/writer.h"
 #include "model/compression.h"
@@ -29,8 +31,6 @@
 #include <boost/lexical_cast.hpp>
 #include <fmt/ostream.h>
 #include <rapidjson/error/en.h>
-#include <rapidjson/istreamwrapper.h>
-#include <rapidjson/ostreamwrapper.h>
 
 #include <chrono>
 #include <optional>
@@ -278,7 +278,7 @@ ss::future<> topic_manifest::update(ss::input_stream<char> is) {
     iobuf_istreambuf ibuf(result);
     std::istream stream(&ibuf);
 
-    rapidjson::IStreamWrapper wrapper(stream);
+    json::IStreamWrapper wrapper(stream);
     json::Reader reader;
     topic_manifest_handler handler;
     if (reader.Parse(wrapper, handler)) {
@@ -318,8 +318,8 @@ serialized_json_stream topic_manifest::serialize() const {
 }
 
 void topic_manifest::serialize(std::ostream& out) const {
-    rapidjson::OStreamWrapper wrapper(out);
-    json::Writer<rapidjson::OStreamWrapper> w(wrapper);
+    json::OStreamWrapper wrapper(out);
+    json::Writer<json::OStreamWrapper> w(wrapper);
     w.StartObject();
     w.Key("version");
     w.Int(static_cast<int>(manifest_version::v1));
