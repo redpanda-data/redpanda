@@ -9,7 +9,9 @@
 
 #include "raft/kvelldb/httpkvrsm.h"
 
-#include "json/json.h"
+#include "json/document.h"
+#include "json/stringbuffer.h"
+#include "json/writer.h"
 
 #include <seastar/http/function_handlers.hh>
 #include <seastar/http/json_path.hh>
@@ -41,8 +43,8 @@ bool try_parse_json_hash(
 }
 
 ss::sstring reject_as_json() {
-    rapidjson::StringBuffer buffer;
-    rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+    json::StringBuffer buffer;
+    json::Writer<json::StringBuffer> writer(buffer);
 
     writer.StartObject();
     writer.Key("status");
@@ -80,8 +82,8 @@ ss::sstring cmd_result_as_json(raft::kvelldb::kvrsm::cmd_result result) {
         break;
     }
 
-    rapidjson::StringBuffer buffer;
-    rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+    json::StringBuffer buffer;
+    json::Writer<json::StringBuffer> writer(buffer);
 
     writer.StartObject();
     writer.Key("status");

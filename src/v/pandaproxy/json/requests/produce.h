@@ -13,6 +13,8 @@
 
 #include "bytes/iobuf.h"
 #include "json/json.h"
+#include "json/stringbuffer.h"
+#include "json/writer.h"
 #include "kafka/client/types.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/produce.h"
@@ -22,10 +24,6 @@
 #include "tristate.h"
 
 #include <seastar/core/sstring.hh>
-
-#include <rapidjson/reader.h>
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
 
 namespace pandaproxy::json {
 
@@ -44,7 +42,7 @@ private:
     serialization_format _fmt = serialization_format::none;
     state state = state::empty;
 
-    using json_writer = rapidjson::Writer<rapidjson::StringBuffer>;
+    using json_writer = ::json::Writer<::json::StringBuffer>;
 
     // If we're parsing json_v2, and the field is key or value (implied by
     // _json_writer being set), then forward calls to json_writer.
@@ -252,12 +250,12 @@ public:
     }
 
 private:
-    rapidjson::StringBuffer _buf;
+    ::json::StringBuffer _buf;
     std::optional<json_writer> _json_writer;
 };
 
 inline void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  ::json::Writer<::json::StringBuffer>& w,
   const kafka::produce_response::partition& v) {
     w.StartObject();
     w.Key("partition");
@@ -272,7 +270,7 @@ inline void rjson_serialize(
 }
 
 inline void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  ::json::Writer<::json::StringBuffer>& w,
   const kafka::produce_response::topic& v) {
     w.StartObject();
     w.Key("offsets");

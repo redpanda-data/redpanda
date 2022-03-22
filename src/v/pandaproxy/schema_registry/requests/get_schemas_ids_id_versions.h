@@ -21,7 +21,7 @@ struct get_schemas_ids_id_versions_response {
 };
 
 inline void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  ::json::Writer<::json::StringBuffer>& w,
   const get_schemas_ids_id_versions_response& res) {
     w.StartArray();
     for (const auto& sv : res.subject_versions) {

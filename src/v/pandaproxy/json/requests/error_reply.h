@@ -12,6 +12,8 @@
 #pragma once
 
 #include "json/json.h"
+#include "json/stringbuffer.h"
+#include "json/writer.h"
 #include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
@@ -24,8 +26,8 @@ struct error_body {
     ss::sstring message;
 };
 
-inline void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w, const error_body& v) {
+inline void
+rjson_serialize(::json::Writer<::json::StringBuffer>& w, const error_body& v) {
     w.StartObject();
     w.Key("error_code");
     ::json::rjson_serialize(w, v.ec.value());

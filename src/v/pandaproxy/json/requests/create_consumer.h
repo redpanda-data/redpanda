@@ -12,7 +12,8 @@
 #pragma once
 
 #include "bytes/iobuf.h"
-#include "json/json.h"
+#include "json/stringbuffer.h"
+#include "json/writer.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/produce.h"
 #include "kafka/types.h"
@@ -22,10 +23,6 @@
 #include "utils/string_switch.h"
 
 #include <seastar/core/sstring.hh>
-
-#include <rapidjson/reader.h>
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
 
 #include <string_view>
 
@@ -110,7 +107,7 @@ struct create_consumer_response {
 };
 
 inline void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  ::json::Writer<::json::StringBuffer>& w,
   const create_consumer_response& res) {
     w.StartObject();
     w.Key("instance_id");

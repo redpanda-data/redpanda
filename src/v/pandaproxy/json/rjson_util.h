@@ -12,6 +12,8 @@
 #pragma once
 
 #include "json/json.h"
+#include "json/stringbuffer.h"
+#include "json/writer.h"
 #include "pandaproxy/json/exceptions.h"
 #include "pandaproxy/json/types.h"
 #include "utils/concepts-enabled.h"
@@ -21,8 +23,6 @@
 #include <rapidjson/prettywriter.h>
 #include <rapidjson/reader.h>
 #include <rapidjson/stream.h>
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
 
 #include <stdexcept>
 
@@ -30,8 +30,8 @@ namespace pandaproxy::json {
 
 template<typename T>
 ss::sstring rjson_serialize(const T& v) {
-    rapidjson::StringBuffer str_buf;
-    rapidjson::Writer<rapidjson::StringBuffer> wrt(str_buf);
+    ::json::StringBuffer str_buf;
+    ::json::Writer<::json::StringBuffer> wrt(str_buf);
 
     using ::json::rjson_serialize;
     using ::pandaproxy::json::rjson_serialize;
@@ -51,7 +51,7 @@ struct rjson_serialize_fmt_impl {
           std::forward<T>(t));
     }
     template<typename T>
-    void operator()(rapidjson::Writer<rapidjson::StringBuffer>& w, T&& t) {
+    void operator()(::json::Writer<::json::StringBuffer>& w, T&& t) {
         rjson_serialize_impl<std::remove_reference_t<T>>{fmt}(
           w, std::forward<T>(t));
     }
@@ -78,8 +78,8 @@ typename Handler::rjson_parse_result
 inline ss::sstring minify(std::string_view json) {
     rapidjson::Reader r;
     rapidjson::StringStream in(json.data());
-    rapidjson::StringBuffer out;
-    rapidjson::Writer<rapidjson::StringBuffer> w{out};
+    ::json::StringBuffer out;
+    ::json::Writer<::json::StringBuffer> w{out};
     r.Parse(in, w);
     return ss::sstring(out.GetString(), out.GetSize());
 }
@@ -87,8 +87,8 @@ inline ss::sstring minify(std::string_view json) {
 inline ss::sstring prettify(std::string_view json) {
     rapidjson::Reader r;
     rapidjson::StringStream in(json.data());
-    rapidjson::StringBuffer out;
-    rapidjson::PrettyWriter<rapidjson::StringBuffer> w{out};
+    ::json::StringBuffer out;
+    rapidjson::PrettyWriter<::json::StringBuffer> w{out};
     r.Parse(in, w);
     return ss::sstring(out.GetString(), out.GetSize());
 }

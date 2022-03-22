@@ -13,6 +13,8 @@
 
 #include "bytes/iobuf_parser.h"
 #include "json/json.h"
+#include "json/stringbuffer.h"
+#include "json/writer.h"
 #include "model/metadata.h"
 #include "model/record_utils.h"
 #include "pandaproxy/json/rjson_parse.h"
@@ -30,9 +32,6 @@
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/std-coroutine.hh>
-
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
 
 namespace pandaproxy::schema_registry {
 
@@ -159,7 +158,7 @@ struct schema_key {
 };
 
 inline void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  ::json::Writer<::json::StringBuffer>& w,
   const schema_registry::schema_key& key) {
     w.StartObject();
     w.Key("keytype");
@@ -318,7 +317,7 @@ struct schema_value {
 };
 
 inline void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  ::json::Writer<::json::StringBuffer>& w,
   const schema_registry::schema_value& val) {
     w.StartObject();
     w.Key("subject");
@@ -633,7 +632,7 @@ struct config_key {
 };
 
 inline void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  ::json::Writer<::json::StringBuffer>& w,
   const schema_registry::config_key& key) {
     w.StartObject();
     w.Key("keytype");
@@ -766,7 +765,7 @@ struct config_value {
 };
 
 inline void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  ::json::Writer<::json::StringBuffer>& w,
   const schema_registry::config_value& val) {
     w.StartObject();
     w.Key("compatibilityLevel");
@@ -856,8 +855,7 @@ struct delete_subject_key {
 };
 
 inline void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
-  const delete_subject_key& key) {
+  ::json::Writer<::json::StringBuffer>& w, const delete_subject_key& key) {
     w.StartObject();
     w.Key("keytype");
     ::json::rjson_serialize(w, to_string_view(key.keytype));
@@ -998,8 +996,7 @@ struct delete_subject_value {
 };
 
 inline void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
-  const delete_subject_value& val) {
+  ::json::Writer<::json::StringBuffer>& w, const delete_subject_value& val) {
     w.StartObject();
     w.Key("subject");
     ::json::rjson_serialize(w, val.sub);

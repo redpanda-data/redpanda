@@ -148,8 +148,8 @@ ss::future<> config_manager::do_bootstrap() {
     config::shard_local_cfg().for_each([&update](
                                          const config::base_property& p) {
         if (!p.is_default()) {
-            rapidjson::StringBuffer buf;
-            rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
+            json::StringBuffer buf;
+            json::Writer<json::StringBuffer> writer(buf);
             p.to_json(writer);
             ss::sstring key_str(p.name());
             ss::sstring val_str = buf.GetString();

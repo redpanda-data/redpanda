@@ -29,6 +29,8 @@
 #include "config/configuration.h"
 #include "config/endpoint_tls_config.h"
 #include "finjector/hbadger.h"
+#include "json/stringbuffer.h"
+#include "json/writer.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -66,8 +68,6 @@
 #include <fmt/core.h>
 #include <rapidjson/document.h>
 #include <rapidjson/schema.h>
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
 
 #include <limits>
 #include <stdexcept>
@@ -227,8 +227,8 @@ apply_validator(json_validator& validator, rapidjson::Document const& doc) {
     validator.validator.ResetError();
 
     if (!doc.Accept(validator.validator)) {
-        rapidjson::StringBuffer val_buf;
-        rapidjson::Writer<rapidjson::StringBuffer> w{val_buf};
+        json::StringBuffer val_buf;
+        json::Writer<json::StringBuffer> w{val_buf};
         validator.validator.GetError().Accept(w);
         auto s = ss::sstring{val_buf.GetString(), val_buf.GetSize()};
         throw ss::httpd::bad_request_exception(
@@ -577,8 +577,8 @@ bool str_to_bool(std::string_view s) {
 void admin_server::register_config_routes() {
     register_route_raw<superuser>(
       ss::httpd::config_json::get_config, [](ss::const_req, ss::reply& reply) {
-          rapidjson::StringBuffer buf;
-          rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
+          json::StringBuffer buf;
+          json::Writer<json::StringBuffer> writer(buf);
           config::shard_local_cfg().to_json(writer);
 
           reply.set_status(ss::httpd::reply::status_type::ok, buf.GetString());
@@ -588,8 +588,8 @@ void admin_server::register_config_routes() {
     register_route_raw<superuser>(
       ss::httpd::cluster_config_json::get_cluster_config,
       [](ss::const_req req, ss::reply& reply) {
-          rapidjson::StringBuffer buf;
-          rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
+          json::StringBuffer buf;
+          json::Writer<json::StringBuffer> writer(buf);
 
           bool include_defaults = true;
           auto include_defaults_str = req.get_query_param("include_defaults");
@@ -609,8 +609,8 @@ void admin_server::register_config_routes() {
     register_route_raw<superuser>(
       ss::httpd::config_json::get_node_config,
       [](ss::const_req, ss::reply& reply) {
-          rapidjson::StringBuffer buf;
-          rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
+          json::StringBuffer buf;
+          json::Writer<json::StringBuffer> writer(buf);
           config::node().to_json(writer);
 
           reply.set_status(ss::httpd::reply::status_type::ok, buf.GetString());
@@ -901,8 +901,8 @@ void admin_server::register_cluster_config_routes() {
               // Re-serialize the individual value.  Our on-disk format
               // for property values is a YAML value (JSON is a subset
               // of YAML, so encoding with JSON is fine)
-              rapidjson::StringBuffer val_buf;
-              rapidjson::Writer<rapidjson::StringBuffer> w{val_buf};
+              json::StringBuffer val_buf;
+              json::Writer<json::StringBuffer> w{val_buf};
               i.value.Accept(w);
               auto s = ss::sstring{val_buf.GetString(), val_buf.GetSize()};
               update.upsert.push_back({i.name.GetString(), s});
@@ -1014,8 +1014,8 @@ void admin_server::register_cluster_config_routes() {
                 auth_state.get_username(), update, cfg, errors);
 
               if (!errors.empty()) {
-                  rapidjson::StringBuffer buf;
-                  rapidjson::Writer<rapidjson::StringBuffer> w(buf);
+                  json::StringBuffer buf;
+                  json::Writer<json::StringBuffer> w(buf);
 
                   w.StartObject();
                   for (const auto& e : errors) {

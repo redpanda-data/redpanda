@@ -8,6 +8,8 @@
 // by the Apache License, Version 2.0
 
 #include "config/config_store.h"
+#include "json/stringbuffer.h"
+#include "json/writer.h"
 
 #include <seastar/core/thread.hh>
 #include <seastar/testing/thread_test_case.hh>
@@ -225,8 +227,8 @@ SEASTAR_THREAD_TEST_CASE(config_json_serialization) {
                                   "}";
 
     // cfg -> json string
-    rapidjson::StringBuffer cfg_sb;
-    rapidjson::Writer<rapidjson::StringBuffer> cfg_writer(cfg_sb);
+    json::StringBuffer cfg_sb;
+    json::Writer<json::StringBuffer> cfg_writer(cfg_sb);
     cfg.to_json(cfg_writer);
     auto jstr = cfg_sb.GetString();
 

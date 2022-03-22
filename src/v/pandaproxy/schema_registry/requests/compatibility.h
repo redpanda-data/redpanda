@@ -21,7 +21,7 @@ struct post_compatibility_res {
 };
 
 inline void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  ::json::Writer<::json::StringBuffer>& w,
   const schema_registry::post_compatibility_res& res) {
     w.StartObject();
     w.Key("is_compatible");

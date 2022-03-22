@@ -10,6 +10,7 @@
 #pragma once
 
 #include "http/client.h"
+#include "json/document.h"
 #include "pandaproxy/json/exceptions.h"
 #include "pandaproxy/json/types.h"
 #include "pandaproxy/schema_registry/types.h"

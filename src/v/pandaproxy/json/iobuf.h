@@ -13,11 +13,15 @@
 
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
-#include "json/json.h"
+#include "json/reader.h"
+#include "json/stringbuffer.h"
+#include "json/writer.h"
 #include "pandaproxy/json/types.h"
 #include "utils/base64.h"
 
 #include <seastar/core/loop.hh>
+
+#include <rapidjson/stream.h>
 
 #include <optional>
 
@@ -62,7 +66,7 @@ public:
     explicit rjson_serialize_impl(serialization_format fmt)
       : _fmt(fmt) {}
 
-    bool operator()(rapidjson::Writer<rapidjson::StringBuffer>& w, iobuf buf) {
+    bool operator()(::json::Writer<::json::StringBuffer>& w, iobuf buf) {
         switch (_fmt) {
         case serialization_format::none:
             [[fallthrough]];
@@ -77,8 +81,7 @@ public:
         }
     }
 
-    bool
-    encode_base64(rapidjson::Writer<rapidjson::StringBuffer>& w, iobuf buf) {
+    bool encode_base64(::json::Writer<::json::StringBuffer>& w, iobuf buf) {
         if (buf.empty()) {
             return w.Null();
         }
@@ -86,7 +89,7 @@ public:
         return w.String(iobuf_to_base64(buf));
     };
 
-    bool encode_json(rapidjson::Writer<rapidjson::StringBuffer>& w, iobuf buf) {
+    bool encode_json(::json::Writer<::json::StringBuffer>& w, iobuf buf) {
         if (buf.empty()) {
             return w.Null();
         }

@@ -216,7 +216,7 @@ struct post_subject_versions_response {
 };
 
 inline void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  ::json::Writer<::json::StringBuffer>& w,
   const schema_registry::post_subject_versions_response& res) {
     w.StartObject();
     w.Key("id");

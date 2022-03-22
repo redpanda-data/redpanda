@@ -82,7 +82,7 @@ public:
 };
 
 inline void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  ::json::Writer<::json::StringBuffer>& w,
   const schema_registry::get_config_req_rep& res) {
     w.StartObject();
     w.Key(get_config_req_rep::field_name.data());
@@ -91,7 +91,7 @@ inline void rjson_serialize(
 }
 
 inline void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  ::json::Writer<::json::StringBuffer>& w,
   const schema_registry::put_config_req_rep& res) {
     w.StartObject();
     w.Key(put_config_req_rep::field_name.data());
