@@ -15,6 +15,7 @@
 #include "json/document.h"
 #include "json/encodings.h"
 #include "json/stringbuffer.h"
+#include "json/types.h"
 #include "json/writer.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/errors.h"
@@ -187,19 +188,19 @@ result<void> sanitize_avro_type(
 
 result<void> sanitize(json::Value& v, json::MemoryPoolAllocator& alloc) {
     switch (v.GetType()) {
-    case rapidjson::Type::kObjectType: {
+    case json::Type::kObjectType: {
         auto o = v.GetObject();
         return sanitize(o, alloc);
     }
-    case rapidjson::Type::kArrayType: {
+    case json::Type::kArrayType: {
         auto a = v.GetArray();
         return sanitize(a, alloc);
     }
-    case rapidjson::Type::kFalseType:
-    case rapidjson::Type::kTrueType:
-    case rapidjson::Type::kNullType:
-    case rapidjson::Type::kNumberType:
-    case rapidjson::Type::kStringType:
+    case json::Type::kFalseType:
+    case json::Type::kTrueType:
+    case json::Type::kNullType:
+    case json::Type::kNumberType:
+    case json::Type::kStringType:
         return outcome::success();
     }
     __builtin_unreachable();
@@ -265,7 +266,7 @@ sanitize(json::Value::Object& o, json::MemoryPoolAllocator& alloc) {
             return res.assume_error();
         }
 
-        if (t_it->value.GetType() == rapidjson::Type::kStringType) {
+        if (t_it->value.GetType() == json::Type::kStringType) {
             std::string_view type_sv = {
               t_it->value.GetString(), t_it->value.GetStringLength()};
             auto res = sanitize_avro_type(o, type_sv, alloc);
@@ -273,7 +274,7 @@ sanitize(json::Value::Object& o, json::MemoryPoolAllocator& alloc) {
                 return res.assume_error();
             }
         }
-        if (t_it->value.GetType() == rapidjson::Type::kArrayType) {
+        if (t_it->value.GetType() == json::Type::kArrayType) {
             auto a = t_it->value.GetArray();
             for (auto& m : a) {
                 if (m.IsString()) {
