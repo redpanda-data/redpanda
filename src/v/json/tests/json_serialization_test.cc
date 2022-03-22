@@ -109,11 +109,11 @@ SEASTAR_THREAD_TEST_CASE(json_serialization_test) {
     auto jstr = cfg_sb.GetString();
 
     // json string -> rapidjson doc - result
-    rapidjson::Document res_doc;
+    json::Document res_doc;
     res_doc.Parse(jstr);
 
     // json string -> rapidjson doc - expectation
-    rapidjson::Document exp_doc;
+    json::Document exp_doc;
     exp_doc.Parse(expected_result);
 
     BOOST_TEST(res_doc["full_name"].IsString());

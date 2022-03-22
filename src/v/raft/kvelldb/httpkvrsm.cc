@@ -24,7 +24,7 @@ bool try_parse_json_hash(
   ss::sstring json,
   std::vector<ss::sstring> keys,
   absl::flat_hash_map<ss::sstring, ss::sstring>& target) {
-    rapidjson::Document body;
+    json::Document body;
 
     if (body.Parse(json.c_str()).HasParseError()) {
         return false;
@@ -35,7 +35,7 @@ bool try_parse_json_hash(
             return false;
         }
 
-        rapidjson::Value& value = body[key];
+        json::Value& value = body[key];
         target.emplace(key, value.GetString());
     }
 

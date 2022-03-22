@@ -8,14 +8,13 @@
 // by the Apache License, Version 2.0
 
 #include "config/config_store.h"
+#include "json/document.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
 
 #include <seastar/core/thread.hh>
 #include <seastar/testing/thread_test_case.hh>
 #include <seastar/util/log.hh>
-
-#include <rapidjson/document.h>
 
 #include <cstdint>
 #include <iostream>
@@ -233,11 +232,11 @@ SEASTAR_THREAD_TEST_CASE(config_json_serialization) {
     auto jstr = cfg_sb.GetString();
 
     // json string -> rapidjson doc
-    rapidjson::Document res_doc;
+    json::Document res_doc;
     res_doc.Parse(jstr);
 
     // json string -> rapidjson doc
-    rapidjson::Document exp_doc;
+    json::Document exp_doc;
     exp_doc.Parse(expected_result);
 
     // test equivalence

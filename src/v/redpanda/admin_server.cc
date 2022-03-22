@@ -29,6 +29,8 @@
 #include "config/configuration.h"
 #include "config/endpoint_tls_config.h"
 #include "finjector/hbadger.h"
+#include "json/document.h"
+#include "json/schema.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
 #include "kafka/types.h"
@@ -66,8 +68,6 @@
 #include <boost/lexical_cast.hpp>
 #include <boost/lexical_cast/bad_lexical_cast.hpp>
 #include <fmt/core.h>
-#include <rapidjson/document.h>
-#include <rapidjson/schema.h>
 
 #include <limits>
 #include <stdexcept>
@@ -160,18 +160,18 @@ struct json_validator {
       : schema(make_schema_document(schema_text))
       , validator(schema) {}
 
-    static rapidjson::SchemaDocument
+    static json::SchemaDocument
     make_schema_document(const std::string& schema) {
-        rapidjson::Document doc;
+        json::Document doc;
         if (doc.Parse(schema).HasParseError()) {
             throw std::runtime_error(
               fmt::format("Invalid schema document: {}", schema));
         }
-        return rapidjson::SchemaDocument(doc);
+        return json::SchemaDocument(doc);
     }
 
-    const rapidjson::SchemaDocument schema;
-    rapidjson::SchemaValidator validator;
+    const json::SchemaDocument schema;
+    json::SchemaValidator validator;
 };
 
 static json_validator make_set_replicas_validator() {
@@ -205,8 +205,8 @@ static json_validator make_set_replicas_validator() {
  * as an empty request body causes a redpanda crash via a rapidjson
  * assertion when trying to GetObject on the resulting document.
  */
-static rapidjson::Document parse_json_body(ss::httpd::request const& req) {
-    rapidjson::Document doc;
+static json::Document parse_json_body(ss::httpd::request const& req) {
+    json::Document doc;
     doc.Parse(req.content.data());
     if (doc.Parse(req.content.data()).HasParseError()) {
         throw ss::httpd::bad_request_exception(
@@ -222,7 +222,7 @@ static rapidjson::Document parse_json_body(ss::httpd::request const& req) {
  * caller see what went wrong.
  */
 static void
-apply_validator(json_validator& validator, rapidjson::Document const& doc) {
+apply_validator(json_validator& validator, json::Document const& doc) {
     validator.validator.Reset();
     validator.validator.ResetError();
 
@@ -1137,7 +1137,7 @@ void admin_server::register_raft_routes() {
 
 // TODO: factor out generic serialization from seastar http exceptions
 static security::scram_credential
-parse_scram_credential(const rapidjson::Document& doc) {
+parse_scram_credential(const json::Document& doc) {
     if (!doc.IsObject()) {
         throw ss::httpd::bad_request_exception(fmt::format("Not an object"));
     }
@@ -1174,7 +1174,7 @@ parse_scram_credential(const rapidjson::Document& doc) {
 }
 
 static bool match_scram_credential(
-  const rapidjson::Document& doc, const security::scram_credential& creds) {
+  const json::Document& doc, const security::scram_credential& creds) {
     // Document is pre-validated via earlier parse_scram_credential call
     const auto password = ss::sstring(doc["password"].GetString());
     const auto algorithm = std::string_view(
