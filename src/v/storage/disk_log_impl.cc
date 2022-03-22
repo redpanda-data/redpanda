@@ -82,6 +82,8 @@ disk_log_impl::~disk_log_impl() {
 ss::future<> disk_log_impl::remove() {
     vassert(!_closed, "Invalid double closing of log - {}", *this);
     _closed = true;
+    // wait for compaction to finish
+    co_await _compaction_gate.close();
     // gets all the futures started in the background
     std::vector<ss::future<>> permanent_delete;
     permanent_delete.reserve(_segs.size());
@@ -91,8 +93,6 @@ ss::future<> disk_log_impl::remove() {
         permanent_delete.emplace_back(
           remove_segment_permanently(s, "disk_log_impl::remove()"));
     }
-    // wait for compaction to finish
-    co_await _compaction_gate.close();
 
     co_await _readers_cache->stop().then(
       [this, permanent_delete = std::move(permanent_delete)]() mutable {
