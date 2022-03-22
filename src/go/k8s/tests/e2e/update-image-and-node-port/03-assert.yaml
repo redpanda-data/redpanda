@@ -18,6 +18,9 @@ spec:
     volumeMounts:
     - mountPath: /etc/redpanda
       name: config-dir
+    - mountPath: /etc/redpanda/.bootstrap.yaml
+      name: configmap-dir
+      subPath: .bootstrap.yaml
     - mountPath: /var/lib/redpanda/data
       name: datadir
     - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
@@ -38,6 +41,9 @@ spec:
     volumeMounts:
     - mountPath: /etc/redpanda
       name: config-dir
+    - mountPath: /etc/redpanda/.bootstrap.yaml
+      name: configmap-dir
+      subPath: .bootstrap.yaml
     - mountPath: /var/lib/redpanda/data
       name: datadir
     - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
