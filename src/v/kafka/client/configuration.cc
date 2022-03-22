@@ -12,9 +12,6 @@
 #include "config/configuration.h"
 #include "units.h"
 
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
-
 namespace kafka::client {
 using namespace std::chrono_literals;
 

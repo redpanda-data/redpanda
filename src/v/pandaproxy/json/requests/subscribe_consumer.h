@@ -22,10 +22,6 @@
 
 #include <seastar/core/sstring.hh>
 
-#include <rapidjson/reader.h>
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
-
 #include <string_view>
 
 namespace pandaproxy::json {
