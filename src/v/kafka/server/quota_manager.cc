@@ -17,6 +17,12 @@
 
 #include <chrono>
 
+static std::string_view extract_cid(std::optional<std::string_view> client_id) {
+    // requests without a client id are grouped into an anonymous group that
+    // shares a default quota. the anonymous group is keyed on empty string.
+    return client_id ? *client_id : "";
+}
+
 namespace kafka {
 using clock = quota_manager::clock;
 using throttle_delay = quota_manager::throttle_delay;
@@ -33,15 +39,8 @@ ss::future<> quota_manager::start() {
     return ss::make_ready_future<>();
 }
 
-// record a new observation and return <previous delay, new delay>
-throttle_delay quota_manager::record_tp_and_throttle(
-  std::optional<std::string_view> client_id,
-  uint64_t bytes,
-  clock::time_point now) {
-    // requests without a client id are grouped into an anonymous group that
-    // shares a default quota. the anonymous group is keyed on empty string.
-    auto cid = client_id ? *client_id : "";
-
+quota_manager::underlying_t::iterator
+quota_manager::grab_quota(std::string_view cid, const clock::time_point& now) {
     // find or create the throughput tracker for this client
     //
     // c++20: heterogeneous lookup for unordered_map can avoid creation of
@@ -54,6 +53,7 @@ throttle_delay quota_manager::record_tp_and_throttle(
       quota{
         now,
         clock::duration(0),
+        {static_cast<size_t>(_default_num_windows()), _default_window_width()},
         {static_cast<size_t>(_default_num_windows()),
          _default_window_width()}});
 
@@ -61,26 +61,76 @@ throttle_delay quota_manager::record_tp_and_throttle(
     if (!inserted) {
         it->second.last_seen = now;
     }
+    return it;
+}
 
-    auto rate = it->second.tp_rate.record_and_measure(bytes, now);
+void quota_manager::record_time_quota(
+  std::string_view client_id, clock::time_point start, clock::time_point now) {
+    auto it = grab_quota(client_id, now);
+    auto duration = now - start;
+    it->second.time_rate.record(
+      std::chrono::duration_cast<std::chrono::milliseconds>(duration).count(),
+      now);
+}
 
-    std::chrono::milliseconds delay_ms(0);
-    if (rate > _target_tp_rate()) {
-        auto diff = rate - _target_tp_rate();
+ss::lw_shared_ptr<ss::noncopyable_function<void()>>
+quota_manager::time_quota_recorder(std::optional<std::string_view> client_id) {
+    return ss::make_lw_shared<ss::noncopyable_function<void()>>(
+      [this,
+       recorded = false,
+       cid = ss::sstring(extract_cid(client_id)),
+       start = clock::now()]() mutable noexcept {
+          /// The \ref recorded variable prevents misuse of the returned
+          /// functor. The desired behavior is that for each callable returned,
+          /// it either is called 1 or 0 times.
+          if (!recorded) {
+              record_time_quota(cid, start, clock::now());
+          }
+          recorded = true;
+      });
+}
+
+// record a new observation and return <previous delay, new delay>
+throttle_delay quota_manager::record_tp_and_throttle(
+  std::optional<std::string_view> client_id,
+  uint64_t bytes,
+  clock::time_point now) {
+    auto cid = extract_cid(client_id);
+    auto it = grab_quota(cid, now);
+
+    auto bandwidth_rate = it->second.tp_rate.record_and_measure(bytes, now);
+
+    std::chrono::milliseconds bandwidth_delay_ms(0);
+    if (bandwidth_rate > _target_tp_rate()) {
+        auto diff = bandwidth_rate - _target_tp_rate();
         double delay = (diff / _target_tp_rate())
                        * static_cast<double>(
                          std::chrono::duration_cast<std::chrono::milliseconds>(
                            it->second.tp_rate.window_size())
                            .count());
-        delay_ms = std::chrono::milliseconds(static_cast<uint64_t>(delay));
+        bandwidth_delay_ms = std::chrono::milliseconds(
+          static_cast<uint64_t>(delay));
     }
+
+    auto request_rate = std::chrono::milliseconds(
+      static_cast<uint64_t>(it->second.time_rate.measure(now)));
+
+    std::chrono::milliseconds request_delay_ms(0);
+    if (request_rate > _default_window_width()) {
+        request_delay_ms = request_rate - _default_window_width();
+    }
+
+    /// Take the larger of the two delays
+    std::chrono::milliseconds delay_ms = std::max(
+      bandwidth_delay_ms, request_delay_ms);
+
     std::chrono::milliseconds max_delay_ms(_max_delay());
     if (delay_ms > max_delay_ms) {
         vlog(
           klog.info,
           "Found data rate for window of: {} bytes. Client:{}, Estimated "
           "backpressure delay of {}. Limiting to {} backpressure delay",
-          rate,
+          bandwidth_rate,
           cid,
           delay_ms,
           max_delay_ms);

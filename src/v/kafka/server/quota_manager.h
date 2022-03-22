@@ -18,6 +18,7 @@
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/core/timer.hh>
+#include <seastar/util/defer.hh>
 
 #include <absl/container/flat_hash_map.h>
 
@@ -85,26 +86,42 @@ public:
       uint64_t bytes,
       clock::time_point now = clock::now());
 
-private:
-    // erase inactive tracked quotas. windows are considered inactive if they
-    // have not received any updates in ten window's worth of time.
-    void gc(clock::duration full_window);
+    /// record a new observation for time quota
+    void record_time_quota(
+      std::string_view client_id,
+      clock::time_point start,
+      clock::time_point now = clock::now());
+
+    // returns callable that when invoked will call \ref record_time_quota
+    ss::lw_shared_ptr<ss::noncopyable_function<void()>>
+    time_quota_recorder(std::optional<std::string_view> client_id);
 
 private:
     // last_seen: used for gc keepalive
     // delay: last calculated delay
+    // time_rate: time tracking
     // tp_rate: throughput tracking
     struct quota {
         clock::time_point last_seen;
         clock::duration delay;
+        rate_tracker time_rate;
         rate_tracker tp_rate;
     };
+    using underlying_t = absl::flat_hash_map<ss::sstring, quota>;
 
+    // erase inactive tracked quotas. windows are considered inactive if they
+    // have not received any updates in ten window's worth of time.
+    void gc(clock::duration full_window);
+
+    underlying_t::iterator
+    grab_quota(std::string_view cid, const clock::time_point& now);
+
+private:
     config::binding<int16_t> _default_num_windows;
     config::binding<std::chrono::milliseconds> _default_window_width;
 
     config::binding<uint32_t> _target_tp_rate;
-    absl::flat_hash_map<ss::sstring, quota> _quotas;
+    underlying_t _quotas;
 
     ss::timer<> _gc_timer;
     clock::duration _gc_freq;
