@@ -34,15 +34,16 @@ class remote {
 public:
     /// Functor that returns fresh input_stream object that can be used
     /// to re-upload and will return all data that needs to be uploaded
-    using reset_input_stream = std::function<ss::input_stream<char>()>;
+    using reset_input_stream
+      = ss::noncopyable_function<ss::input_stream<char>()>;
 
     /// Functor that attempts to consume the input stream. If the connection
     /// is broken during the download the functor is responsible for he cleanup.
     /// The functor should be reenterable since it can be called many times.
     /// On success it should return content_length. On failure it should
     /// allow the exception from the input_stream to propagate.
-    using try_consume_stream
-      = std::function<ss::future<uint64_t>(uint64_t, ss::input_stream<char>)>;
+    using try_consume_stream = ss::noncopyable_function<ss::future<uint64_t>(
+      uint64_t, ss::input_stream<char>)>;
 
     /// Functor that should be provided by user when list_objects api is called.
     /// It receives every key that matches the query as well as it's modifiation
