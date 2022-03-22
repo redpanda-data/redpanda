@@ -4,7 +4,7 @@ rp_test(
   SOURCES
     script_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES v::seastar_testing_main Boost::unit_test_framework v::v8_engine v::utils
+  LIBRARIES v::seastar_testing_main Boost::unit_test_framework v::v8_engine_internal v::utils
   INPUT_FILES ${CMAKE_CURRENT_SOURCE_DIR}/scripts/sum.js
               ${CMAKE_CURRENT_SOURCE_DIR}/scripts/to_upper.js
               ${CMAKE_CURRENT_SOURCE_DIR}/scripts/compile_timeout.js
@@ -19,7 +19,7 @@ rp_test(
   SOURCES
     executor_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES v::seastar_testing_main Boost::unit_test_framework v::v8_engine
+  LIBRARIES v::seastar_testing_main Boost::unit_test_framework v::v8_engine_internal
   ARGS "-- -c 1"
   LABELS v8_engine
 )
@@ -30,7 +30,7 @@ rp_test(
   SOURCES
     executor_stress_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES v::seastar_testing_main Boost::unit_test_framework v::v8_engine
+  LIBRARIES v::seastar_testing_main Boost::unit_test_framework v::v8_engine_internal
   ARGS "-- -c 1"
   LABELS v8_engine disable_on_ci
 )

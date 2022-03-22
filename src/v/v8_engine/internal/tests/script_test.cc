@@ -10,9 +10,9 @@
 
 #include "seastarx.h"
 #include "utils/file_io.h"
-#include "v8_engine/environment.h"
-#include "v8_engine/executor.h"
-#include "v8_engine/script.h"
+#include "v8_engine/internal/environment.h"
+#include "v8_engine/internal/executor.h"
+#include "v8_engine/internal/script.h"
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/reactor.hh>
