@@ -41,12 +41,13 @@ public:
       , _window_size(window_size)
       , _current(0) {}
 
-    // record an observation and return the updated rate in units/second.
-    double record_and_measure(double v, const clock::time_point& now) {
+    void record(double v, const clock::time_point& now) {
         // update the current window
         maybe_advance_current(now);
         _windows[_current].count += v;
+    }
 
+    double measure(const clock::time_point& now) {
         // process historical samples
         double total = 0.;
         struct window* oldest = nullptr;
@@ -80,6 +81,12 @@ public:
         }
 
         return total / std::chrono::duration<double>(elapsed).count();
+    }
+
+    // record an observation and return the updated rate in units/second.
+    double record_and_measure(double v, const clock::time_point& now) {
+        record(v, now);
+        return measure(now);
     }
 
     clock::duration window_size() const { return _window_size; }
