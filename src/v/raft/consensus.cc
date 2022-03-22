@@ -2983,8 +2983,11 @@ bool consensus::should_reconnect_follower(vnode id) {
 }
 
 voter_priority consensus::next_target_priority() {
+    auto node_count = std::max<size_t>(
+      _configuration_manager.get_latest().brokers().size(), 1);
+
     return voter_priority(std::max<voter_priority::type>(
-      (_target_priority / 5) * 4, min_voter_priority));
+      (_target_priority / node_count) * (node_count - 1), min_voter_priority));
 }
 
 /**
