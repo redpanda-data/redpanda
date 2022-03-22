@@ -9,14 +9,23 @@
 
 #pragma once
 
+#include "json/_include_first.h"
 #include "json/allocator.h"
+#include "json/encodings.h"
 
 #include <rapidjson/document.h>
-#include <rapidjson/encodings.h>
 
 namespace json {
-using Document = rapidjson::GenericDocument<
-  rapidjson::UTF8<>,
-  rapidjson::MemoryPoolAllocator<throwing_allocator>,
-  throwing_allocator>;
-}
+
+template<typename Encoding = json::UTF8<>>
+using GenericDocument = rapidjson::
+  GenericDocument<Encoding, MemoryPoolAllocator, throwing_allocator>;
+
+using Document = GenericDocument<>;
+
+template<typename Encoding = json::UTF8<>>
+using GenericValue = typename GenericDocument<Encoding>::ValueType;
+
+using Value = GenericValue<>;
+
+} // namespace json
