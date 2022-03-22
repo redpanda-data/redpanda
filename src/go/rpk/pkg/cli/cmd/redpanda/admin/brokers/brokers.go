@@ -54,10 +54,26 @@ func newListCommand(fs afero.Fs) *cobra.Command {
 			bs, err := cl.Brokers()
 			out.MaybeDie(err, "unable to request brokers: %v", err)
 
-			tw := out.NewTable("Node ID", "Num Cores", "Membership Status")
+			headers := []string{"Node-ID", "Num-Cores", "Membership-Status"}
+
+			args := func(b *admin.Broker) []interface{} {
+				ret := []interface{}{b.NodeID, b.NumCores, b.MembershipStatus}
+				return ret
+			}
+			for _, b := range bs {
+				if b.IsAlive != nil {
+					headers = append(headers, "Is-Alive")
+					orig := args
+					args = func(b *admin.Broker) []interface{} {
+						return append(orig(b), *b.IsAlive)
+					}
+					break
+				}
+			}
+			tw := out.NewTable(headers...)
 			defer tw.Flush()
 			for _, b := range bs {
-				tw.Print(b.NodeID, b.NumCores, b.MembershipStatus)
+				tw.Print(args(&b)...)
 			}
 		},
 	}
