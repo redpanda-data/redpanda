@@ -976,6 +976,26 @@ void group::remove_pending_member(kafka::member_id member_id) {
     }
 }
 
+void group::shutdown() {
+    // cancel join timer
+    _join_timer.cancel();
+    // cancel pending members timers
+    for (auto& [_, timer] : _pending_members) {
+        timer.cancel();
+    }
+
+    for (auto& [member_id, member] : _members) {
+        member->expire_timer().cancel();
+        if (member->is_syncing()) {
+            member->set_sync_response(sync_group_response(
+              error_code::not_coordinator, member->assignment()));
+        } else if (member->is_joining()) {
+            try_finish_joining_member(
+              member, _make_join_error(member_id, error_code::not_coordinator));
+        }
+    }
+}
+
 void group::remove_member(member_ptr member) {
     vlog(_ctxlog.trace, "Removing member {}", member->id());
 

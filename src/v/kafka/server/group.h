@@ -535,6 +535,9 @@ public:
         return _partition;
     }
 
+    // shutdown group. cancel all pending operations
+    void shutdown();
+
 private:
     using member_map = absl::node_hash_map<kafka::member_id, member_ptr>;
     using protocol_support = absl::node_hash_map<kafka::protocol_name, int>;

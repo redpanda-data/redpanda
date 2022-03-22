@@ -103,7 +103,14 @@ ss::future<> group_manager::stop() {
         e.second->as.request_abort();
     }
 
-    return _gate.close();
+    return _gate.close().then([this] {
+        /**
+         * cancel all pending group opeartions
+         */
+        for (auto& [_, group] : _groups) {
+            group->shutdown();
+        }
+    });
 }
 
 void group_manager::detach_partition(const model::ntp& ntp) {
