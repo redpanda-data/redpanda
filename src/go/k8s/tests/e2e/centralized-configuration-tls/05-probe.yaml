@@ -1,0 +1,30 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: get-centralized-config-tls-2
+spec:
+  template:
+    spec:
+      volumes:
+        - name: tlsadminca
+          secret:
+            defaultMode: 420
+            secretName: centralized-configuration-tls-admin-api-node
+      containers:
+        - name: curl
+          image: curlimages/curl:latest
+          env:
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          command:
+            - /bin/sh
+            - -c
+            - -ex
+          args:
+            - "curl --cacert /etc/tls/certs/admin/ca/ca.crt --silent -L https://centralized-configuration-tls-0.centralized-configuration-tls.$NAMESPACE.svc.cluster.local:9644/v1/config | grep -o '\"segment_appender_flush_timeout_ms\":[^,}]*' | grep -o '[^:]*$' > /dev/termination-log 2>&1"
+          volumeMounts:
+            - mountPath: /etc/tls/certs/admin/ca
+              name: tlsadminca
+      restartPolicy: Never
