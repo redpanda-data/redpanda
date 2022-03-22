@@ -12,6 +12,7 @@
 #include "json/_include_first.h"
 #include "json/allocator.h"
 #include "json/document.h"
+#include "json/reader.h"
 
 #include <rapidjson/schema.h>
 
@@ -22,7 +23,7 @@ using SchemaDocument
 
 template<
   typename SchemaDocumentType,
-  typename OutputHandler = rapidjson::BaseReaderHandler<
+  typename OutputHandler = json::BaseReaderHandler<
     typename SchemaDocumentType::SchemaType::EncodingType>>
 using GenericSchemaValidator = rapidjson::
   GenericSchemaValidator<SchemaDocumentType, OutputHandler, throwing_allocator>;

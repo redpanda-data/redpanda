@@ -24,4 +24,7 @@ using GenericReader = rapidjson::
 
 using Reader = GenericReader<>;
 
+template<typename Encoding = UTF8<>, typename Derived = void>
+using BaseReaderHandler = rapidjson::BaseReaderHandler<Encoding, Derived>;
+
 } // namespace json

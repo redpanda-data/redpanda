@@ -19,7 +19,7 @@ namespace pandaproxy::json {
 
 template<typename encoding = ::json::UTF8<>>
 class base_handler
-  : public rapidjson::BaseReaderHandler<encoding, base_handler<encoding>> {
+  : public ::json::BaseReaderHandler<encoding, base_handler<encoding>> {
 public:
     using Ch = typename encoding::Ch;
 

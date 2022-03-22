@@ -41,7 +41,7 @@
 namespace cloud_storage {
 
 struct topic_manifest_handler
-  : public rapidjson::BaseReaderHandler<json::UTF8<>, topic_manifest_handler> {
+  : public json::BaseReaderHandler<json::UTF8<>, topic_manifest_handler> {
     using key_string = ss::basic_sstring<char, uint32_t, 31>;
     bool StartObject() {
         switch (_state) {

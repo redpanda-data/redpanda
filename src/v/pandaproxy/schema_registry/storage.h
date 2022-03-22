@@ -67,7 +67,7 @@ from_string_view<topic_key_type>(std::string_view sv) {
 // Just peek at the keytype. Allow other fields through.
 template<typename Encoding = ::json::UTF8<>>
 class topic_key_type_handler
-  : public rapidjson::
+  : public ::json::
       BaseReaderHandler<Encoding, topic_key_type_handler<Encoding>> {
     enum class state {
         empty = 0,
@@ -77,12 +77,12 @@ class topic_key_type_handler
     state _state = state::empty;
 
 public:
-    using Ch = typename rapidjson::BaseReaderHandler<Encoding>::Ch;
+    using Ch = typename ::json::BaseReaderHandler<Encoding>::Ch;
     using rjson_parse_result = ss::sstring;
     rjson_parse_result result;
 
     topic_key_type_handler()
-      : rapidjson::
+      : ::json::
         BaseReaderHandler<Encoding, topic_key_type_handler<Encoding>>{} {}
 
     bool Key(const Ch* str, ::json::SizeType len, bool) {
