@@ -1,0 +1,9 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: centralized-configuration
+status:
+  upgrading: true
+  conditions:
+    - type: ClusterConfigured
+      status: "False"

@@ -10,6 +10,10 @@ const (
 // CentralizedConfiguration feature gate should be removed when the operator
 // will no longer support 21.x or older versions
 func CentralizedConfiguration(version string) bool {
+	if version == "dev" {
+		// development version contains this feature
+		return true
+	}
 	v, err := semver.NewVersion(version)
 	if err != nil {
 		return false
