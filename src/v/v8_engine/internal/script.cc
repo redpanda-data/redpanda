@@ -8,7 +8,7 @@
  * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "v8_engine/script.h"
+#include "v8_engine/internal/script.h"
 
 #include "utils/file_io.h"
 

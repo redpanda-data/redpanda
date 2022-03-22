@@ -12,7 +12,7 @@
 
 #include "seastarx.h"
 #include "units.h"
-#include "v8_engine/environment.h"
+#include "v8_engine/internal/environment.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
