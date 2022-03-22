@@ -11,22 +11,11 @@
 
 #pragma once
 
+#include "json/_include_first.h"
 #include "likely.h"
 #include "model/metadata.h"
 #include "net/unresolved_address.h"
 #include "utils/named_type.h"
-
-#include <fmt/core.h>
-
-#define RAPIDJSON_HAS_STDSTRING 1
-#define RAPIDJSON_ASSERT(x)                                                    \
-    do {                                                                       \
-        if (unlikely(!(x))) {                                                  \
-            std::cerr << "Rapidjson failure: " << __FILE__ << ":" << __LINE__  \
-                      << "' " << #x << " '";                                   \
-            std::terminate();                                                  \
-        }                                                                      \
-    } while (0)
 
 #include <seastar/net/inet_address.hh>
 #include <seastar/net/ip.hh>
