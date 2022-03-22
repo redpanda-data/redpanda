@@ -239,6 +239,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
             wait_until(node_removed,
                        timeout_sec=NODE_OP_TIMEOUT,
                        backoff_sec=2)
+            self.redpanda.stop_node(self.redpanda.get_node(idx))
 
         kafkacat = KafkaCat(self.redpanda)
 
