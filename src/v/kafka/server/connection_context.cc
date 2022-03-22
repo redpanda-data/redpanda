@@ -294,6 +294,8 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
               const auto correlation = rctx.header().correlation;
               const sequence_id seq = _seq_idx;
               _seq_idx = _seq_idx + sequence_id(1);
+              auto record_time_quota = _proto.quota_mgr().time_quota_recorder(
+                rctx.header().client_id);
               auto res = kafka::process_request(
                 std::move(rctx), _proto.smp_group(), *sres);
               /**
@@ -302,6 +304,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
               return res.dispatched
                 .then_wrapped([this,
                                f = std::move(res.response),
+                               record_time_quota = std::move(record_time_quota),
                                seq,
                                correlation,
                                self,
@@ -322,7 +325,10 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                                 "Discarding second stage failure {}",
                                 e);
                           })
-                          .finally([self, d = std::move(d)]() mutable {
+                          .finally([self,
+                                    record_time_quota,
+                                    d = std::move(d)]() mutable {
+                              (*record_time_quota)();
                               self->_rs.probe().service_error();
                               self->_rs.probe().request_completed();
                               return std::move(d);
@@ -338,12 +344,15 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                            f = std::move(f),
                            sres = std::move(sres),
                            seq,
+                           record_time_quota,
                            correlation]() mutable {
                               return f.then(
                                 [this,
                                  sres = std::move(sres),
                                  seq,
+                                 record_time_quota,
                                  correlation](response_ptr r) mutable {
+                                    (*record_time_quota)();
                                     r->set_correlation(correlation);
                                     response_and_resources randr{
                                       std::move(r), std::move(sres)};
@@ -351,7 +360,8 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                                     return maybe_process_responses();
                                 });
                           })
-                          .handle_exception([self](std::exception_ptr e) {
+                          .handle_exception([self, record_time_quota](
+                                              std::exception_ptr e) {
                               // ssx::spawn_with_gate already caught
                               // shutdown-like exceptions, so we should only be
                               // taking this path for real errors.  That also
@@ -376,16 +386,19 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                                     e);
                               }
 
+                              (*record_time_quota)();
                               self->_rs.probe().service_error();
                               self->_rs.conn->shutdown_input();
                           });
                     return d;
                 })
-                .handle_exception([self](std::exception_ptr e) {
-                    vlog(
-                      klog.info, "Detected error dispatching request: {}", e);
-                    self->_rs.conn->shutdown_input();
-                });
+                .handle_exception(
+                  [self, record_time_quota](std::exception_ptr e) {
+                      vlog(
+                        klog.info, "Detected error dispatching request: {}", e);
+                      (*record_time_quota)();
+                      self->_rs.conn->shutdown_input();
+                  });
           });
     });
 }
