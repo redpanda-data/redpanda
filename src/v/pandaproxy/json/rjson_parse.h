@@ -11,11 +11,10 @@
 
 #pragma once
 
-#include "json/json.h"
+#include "json/reader.h"
 #include "pandaproxy/json/types.h"
 
 #include <rapidjson/encodings.h>
-#include <rapidjson/reader.h>
 
 namespace pandaproxy::json {
 

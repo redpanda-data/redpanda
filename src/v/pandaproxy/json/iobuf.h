@@ -96,7 +96,7 @@ public:
         iobuf_parser p{std::move(buf)};
         auto str = p.read_string(p.bytes_left());
         static_assert(str.padding(), "StringStream requires null termination");
-        rapidjson::Reader reader;
+        ::json::Reader reader;
         rapidjson::StringStream ss{str.c_str()};
         return reader.Parse(ss, w);
     };

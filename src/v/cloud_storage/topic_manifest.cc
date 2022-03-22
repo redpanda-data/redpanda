@@ -16,6 +16,7 @@
 #include "cloud_storage/types.h"
 #include "cluster/types.h"
 #include "hashing/xx.h"
+#include "json/reader.h"
 #include "json/writer.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
@@ -30,7 +31,6 @@
 #include <rapidjson/error/en.h>
 #include <rapidjson/istreamwrapper.h>
 #include <rapidjson/ostreamwrapper.h>
-#include <rapidjson/reader.h>
 
 #include <chrono>
 #include <optional>
@@ -280,7 +280,7 @@ ss::future<> topic_manifest::update(ss::input_stream<char> is) {
     std::istream stream(&ibuf);
 
     rapidjson::IStreamWrapper wrapper(stream);
-    rapidjson::Reader reader;
+    json::Reader reader;
     topic_manifest_handler handler;
     if (reader.Parse(wrapper, handler)) {
         vlog(cst_log.debug, "Parsed successfully!");

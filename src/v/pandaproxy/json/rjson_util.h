@@ -12,6 +12,7 @@
 #pragma once
 
 #include "json/json.h"
+#include "json/reader.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
 #include "pandaproxy/json/exceptions.h"
@@ -21,7 +22,6 @@
 #include <seastar/core/sstring.hh>
 
 #include <rapidjson/prettywriter.h>
-#include <rapidjson/reader.h>
 #include <rapidjson/stream.h>
 
 #include <stdexcept>
@@ -67,7 +67,7 @@ CONCEPT(requires std::is_same_v<
         typename Handler::rjson_parse_result>)
 typename Handler::rjson_parse_result
   rjson_parse(const char* const s, Handler&& handler) {
-    rapidjson::Reader reader;
+    ::json::Reader reader;
     rapidjson::StringStream ss(s);
     if (!reader.Parse(ss, handler)) {
         throw parse_error(reader.GetErrorOffset());
@@ -76,7 +76,7 @@ typename Handler::rjson_parse_result
 }
 
 inline ss::sstring minify(std::string_view json) {
-    rapidjson::Reader r;
+    ::json::Reader r;
     rapidjson::StringStream in(json.data());
     ::json::StringBuffer out;
     ::json::Writer<::json::StringBuffer> w{out};
@@ -85,7 +85,7 @@ inline ss::sstring minify(std::string_view json) {
 }
 
 inline ss::sstring prettify(std::string_view json) {
-    rapidjson::Reader r;
+    ::json::Reader r;
     rapidjson::StringStream in(json.data());
     ::json::StringBuffer out;
     rapidjson::PrettyWriter<::json::StringBuffer> w{out};
