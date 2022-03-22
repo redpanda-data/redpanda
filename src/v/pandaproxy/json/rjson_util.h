@@ -12,6 +12,7 @@
 #pragma once
 
 #include "json/json.h"
+#include "json/prettywriter.h"
 #include "json/reader.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
@@ -21,7 +22,6 @@
 
 #include <seastar/core/sstring.hh>
 
-#include <rapidjson/prettywriter.h>
 #include <rapidjson/stream.h>
 
 #include <stdexcept>
@@ -88,7 +88,7 @@ inline ss::sstring prettify(std::string_view json) {
     ::json::Reader r;
     rapidjson::StringStream in(json.data());
     ::json::StringBuffer out;
-    rapidjson::PrettyWriter<::json::StringBuffer> w{out};
+    ::json::PrettyWriter<::json::StringBuffer> w{out};
     r.Parse(in, w);
     return ss::sstring(out.GetString(), out.GetSize());
 }
