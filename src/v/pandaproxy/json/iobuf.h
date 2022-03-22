@@ -14,14 +14,13 @@
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "json/reader.h"
+#include "json/stream.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
 #include "pandaproxy/json/types.h"
 #include "utils/base64.h"
 
 #include <seastar/core/loop.hh>
-
-#include <rapidjson/stream.h>
 
 #include <optional>
 
@@ -97,7 +96,7 @@ public:
         auto str = p.read_string(p.bytes_left());
         static_assert(str.padding(), "StringStream requires null termination");
         ::json::Reader reader;
-        rapidjson::StringStream ss{str.c_str()};
+        ::json::StringStream ss{str.c_str()};
         return reader.Parse(ss, w);
     };
 
