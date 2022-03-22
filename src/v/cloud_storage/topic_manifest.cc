@@ -20,6 +20,7 @@
 #include "json/istreamwrapper.h"
 #include "json/ostreamwrapper.h"
 #include "json/reader.h"
+#include "json/types.h"
 #include "json/writer.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
@@ -53,7 +54,7 @@ struct topic_manifest_handler
         }
     }
 
-    bool Key(const char* str, rapidjson::SizeType length, bool /*copy*/) {
+    bool Key(const char* str, json::SizeType length, bool /*copy*/) {
         switch (_state) {
         case state::expect_key:
             _key = key_string(str, length);
@@ -65,7 +66,7 @@ struct topic_manifest_handler
         }
     }
 
-    bool String(const char* str, rapidjson::SizeType length, bool /*copy*/) {
+    bool String(const char* str, json::SizeType length, bool /*copy*/) {
         std::string_view sv(str, length);
         switch (_state) {
         case state::expect_value:
@@ -124,7 +125,7 @@ struct topic_manifest_handler
         }
     }
 
-    bool EndObject(rapidjson::SizeType /*size*/) {
+    bool EndObject(json::SizeType /*size*/) {
         return _state == state::expect_key;
     }
 

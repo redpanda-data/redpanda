@@ -15,6 +15,7 @@
 
 namespace json {
 
+using SizeType = rapidjson::SizeType;
 using Type = rapidjson::Type;
 
 } // namespace json

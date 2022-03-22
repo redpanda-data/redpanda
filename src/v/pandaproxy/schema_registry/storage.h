@@ -14,6 +14,7 @@
 #include "bytes/iobuf_parser.h"
 #include "json/json.h"
 #include "json/stringbuffer.h"
+#include "json/types.h"
 #include "json/writer.h"
 #include "model/metadata.h"
 #include "model/record_utils.h"
@@ -84,7 +85,7 @@ public:
       : rapidjson::
         BaseReaderHandler<Encoding, topic_key_type_handler<Encoding>>{} {}
 
-    bool Key(const Ch* str, rapidjson::SizeType len, bool) {
+    bool Key(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         if (_state == state::object && sv == "keytype") {
             _state = state::keytype;
@@ -92,7 +93,7 @@ public:
         return true;
     }
 
-    bool String(const Ch* str, rapidjson::SizeType len, bool) {
+    bool String(const Ch* str, ::json::SizeType len, bool) {
         if (_state == state::keytype) {
             result = ss::sstring{str, len};
             _state = state::object;
@@ -107,7 +108,7 @@ public:
         return true;
     }
 
-    bool EndObject(rapidjson::SizeType) {
+    bool EndObject(::json::SizeType) {
         if (_state == state::object) {
             _state = state::empty;
         }
@@ -202,7 +203,7 @@ public:
     schema_key_handler()
       : json::base_handler<Encoding>{json::serialization_format::none} {}
 
-    bool Key(const Ch* str, rapidjson::SizeType len, bool) {
+    bool Key(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         switch (_state) {
         case state::object: {
@@ -262,7 +263,7 @@ public:
         return false;
     }
 
-    bool String(const Ch* str, rapidjson::SizeType len, bool) {
+    bool String(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         switch (_state) {
         case state::keytype: {
@@ -290,7 +291,7 @@ public:
         return std::exchange(_state, state::object) == state::empty;
     }
 
-    bool EndObject(rapidjson::SizeType) {
+    bool EndObject(::json::SizeType) {
         return result.seq.has_value() == result.node.has_value()
                && std::exchange(_state, state::empty) == state::object;
     }
@@ -388,7 +389,7 @@ public:
     schema_value_handler()
       : json::base_handler<Encoding>{json::serialization_format::none} {}
 
-    bool Key(const Ch* str, rapidjson::SizeType len, bool) {
+    bool Key(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         switch (_state) {
         case state::object: {
@@ -489,7 +490,7 @@ public:
         return false;
     }
 
-    bool String(const Ch* str, rapidjson::SizeType len, bool) {
+    bool String(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         switch (_state) {
         case state::subject: {
@@ -561,7 +562,7 @@ public:
         return false;
     }
 
-    bool EndObject(rapidjson::SizeType) {
+    bool EndObject(::json::SizeType) {
         switch (_state) {
         case state::object: {
             _state = state::empty;
@@ -595,7 +596,7 @@ public:
 
     bool StartArray() { return _state == state::references; }
 
-    bool EndArray(rapidjson::SizeType) {
+    bool EndArray(::json::SizeType) {
         return std::exchange(_state, state::object) == state::references;
     }
 };
@@ -677,7 +678,7 @@ public:
     config_key_handler()
       : json::base_handler<Encoding>{json::serialization_format::none} {}
 
-    bool Key(const Ch* str, rapidjson::SizeType len, bool) {
+    bool Key(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         std::optional<state> s{string_switch<std::optional<state>>(sv)
                                  .match("keytype", state::keytype)
@@ -715,7 +716,7 @@ public:
         return false;
     }
 
-    bool String(const Ch* str, rapidjson::SizeType len, bool) {
+    bool String(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         switch (_state) {
         case state::keytype: {
@@ -747,7 +748,7 @@ public:
         return std::exchange(_state, state::object) == state::empty;
     }
 
-    bool EndObject(rapidjson::SizeType) {
+    bool EndObject(::json::SizeType) {
         return result.seq.has_value() == result.node.has_value()
                && std::exchange(_state, state::empty) == state::object;
     }
@@ -790,7 +791,7 @@ public:
     config_value_handler()
       : json::base_handler<Encoding>{json::serialization_format::none} {}
 
-    bool Key(const Ch* str, rapidjson::SizeType len, bool) {
+    bool Key(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         if (_state == state::object && sv == "compatibilityLevel") {
             _state = state::compatibility;
@@ -799,7 +800,7 @@ public:
         return false;
     }
 
-    bool String(const Ch* str, rapidjson::SizeType len, bool) {
+    bool String(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         if (_state == state::compatibility) {
             auto s = from_string_view<compatibility_level>(sv);
@@ -816,7 +817,7 @@ public:
         return std::exchange(_state, state::object) == state::empty;
     }
 
-    bool EndObject(rapidjson::SizeType) {
+    bool EndObject(::json::SizeType) {
         return std::exchange(_state, state::empty) == state::object;
     }
 };
@@ -895,7 +896,7 @@ public:
     delete_subject_key_handler()
       : json::base_handler<Encoding>{json::serialization_format::none} {}
 
-    bool Key(const Ch* str, rapidjson::SizeType len, bool) {
+    bool Key(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         switch (_state) {
         case state::object: {
@@ -948,7 +949,7 @@ public:
         return false;
     }
 
-    bool String(const Ch* str, rapidjson::SizeType len, bool) {
+    bool String(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         switch (_state) {
         case state::keytype: {
@@ -975,7 +976,7 @@ public:
         return std::exchange(_state, state::object) == state::empty;
     }
 
-    bool EndObject(rapidjson::SizeType) {
+    bool EndObject(::json::SizeType) {
         return result.seq.has_value() == result.node.has_value()
                && std::exchange(_state, state::empty) == state::object;
     }
@@ -1021,7 +1022,7 @@ public:
     delete_subject_value_handler()
       : json::base_handler<Encoding>{json::serialization_format::none} {}
 
-    bool Key(const Ch* str, rapidjson::SizeType len, bool) {
+    bool Key(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         switch (_state) {
         case state::object: {
@@ -1042,7 +1043,7 @@ public:
         return false;
     }
 
-    bool String(const Ch* str, rapidjson::SizeType len, bool) {
+    bool String(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         switch (_state) {
         case state::subject: {
@@ -1077,7 +1078,7 @@ public:
         return std::exchange(_state, state::object) == state::empty;
     }
 
-    bool EndObject(rapidjson::SizeType) {
+    bool EndObject(::json::SizeType) {
         return std::exchange(_state, state::empty) == state::object;
     }
 };

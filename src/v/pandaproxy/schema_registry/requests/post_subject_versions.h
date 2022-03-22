@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "json/types.h"
 #include "pandaproxy/json/rjson_parse.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/schema_registry/types.h"
@@ -59,7 +60,7 @@ public:
       : json::base_handler<Encoding>{json::serialization_format::none}
       , _schema{std::move(sub)} {}
 
-    bool Key(const Ch* str, rapidjson::SizeType len, bool) {
+    bool Key(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         switch (_state) {
         case state::record: {
@@ -116,7 +117,7 @@ public:
         return false;
     }
 
-    bool String(const Ch* str, rapidjson::SizeType len, bool) {
+    bool String(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         switch (_state) {
         case state::schema: {
@@ -176,7 +177,7 @@ public:
         return false;
     }
 
-    bool EndObject(rapidjson::SizeType) {
+    bool EndObject(::json::SizeType) {
         switch (_state) {
         case state::record: {
             _state = state::empty;
@@ -206,7 +207,7 @@ public:
 
     bool StartArray() { return _state == state::references; }
 
-    bool EndArray(rapidjson::SizeType) {
+    bool EndArray(::json::SizeType) {
         return std::exchange(_state, state::record) == state::references;
     }
 };

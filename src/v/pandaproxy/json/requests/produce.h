@@ -14,6 +14,7 @@
 #include "bytes/iobuf.h"
 #include "json/json.h"
 #include "json/stringbuffer.h"
+#include "json/types.h"
 #include "json/writer.h"
 #include "kafka/client/types.h"
 #include "kafka/protocol/errors.h"
@@ -112,7 +113,7 @@ public:
         }
         return false;
     }
-    bool RawNumber(const Ch* str, rapidjson::SizeType len, bool b) {
+    bool RawNumber(const Ch* str, ::json::SizeType len, bool b) {
         if (auto res = maybe_json(&json_writer::RawNumber, str, len, b);
             res.has_value()) {
             return res.value();
@@ -144,9 +145,9 @@ public:
         return false;
     }
 
-    bool String(const Ch* str, rapidjson::SizeType len, bool b) {
+    bool String(const Ch* str, ::json::SizeType len, bool b) {
         if (auto res = maybe_json<bool (json_writer::*)(
-              const Ch*, rapidjson::SizeType, bool)>(
+              const Ch*, ::json::SizeType, bool)>(
               &json_writer::String, str, len, b);
             res.has_value()) {
             return res.value();
@@ -171,9 +172,9 @@ public:
         return false;
     }
 
-    bool Key(const Ch* str, rapidjson::SizeType len, bool b) {
+    bool Key(const Ch* str, ::json::SizeType len, bool b) {
         if (auto res = maybe_json<bool (json_writer::*)(
-              const Ch*, rapidjson::SizeType, bool)>(
+              const Ch*, ::json::SizeType, bool)>(
               &json_writer::Key, str, len, b);
             res.has_value()) {
             return res.value();
@@ -219,7 +220,7 @@ public:
         return false;
     }
 
-    bool EndObject(rapidjson::SizeType s) {
+    bool EndObject(::json::SizeType s) {
         if (auto res = maybe_json(&json_writer::EndObject, s);
             res.has_value()) {
             return res.value();
@@ -242,7 +243,7 @@ public:
         return state == state::records;
     }
 
-    bool EndArray(rapidjson::SizeType s) {
+    bool EndArray(::json::SizeType s) {
         if (auto res = maybe_json(&json_writer::EndArray, s); res.has_value()) {
             return res.value();
         }

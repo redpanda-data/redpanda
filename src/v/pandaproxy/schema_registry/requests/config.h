@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "json/types.h"
 #include "pandaproxy/json/rjson_parse.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/schema_registry/errors.h"
@@ -46,7 +47,7 @@ public:
       : json::base_handler<Encoding>{json::serialization_format::none}
       , result() {}
 
-    bool Key(const Ch* str, rapidjson::SizeType len, bool) {
+    bool Key(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         if (_state == state::object && sv == put_config_req_rep::field_name) {
             _state = state::compatibility;
@@ -55,7 +56,7 @@ public:
         return false;
     }
 
-    bool String(const Ch* str, rapidjson::SizeType len, bool) {
+    bool String(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         if (_state == state::compatibility) {
             auto s = from_string_view<compatibility_level>(sv);
@@ -76,7 +77,7 @@ public:
         return std::exchange(_state, state::object) == state::empty;
     }
 
-    bool EndObject(rapidjson::SizeType) {
+    bool EndObject(::json::SizeType) {
         return std::exchange(_state, state::empty) == state::object;
     }
 };

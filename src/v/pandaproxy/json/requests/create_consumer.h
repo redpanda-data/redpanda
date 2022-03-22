@@ -13,6 +13,7 @@
 
 #include "bytes/iobuf.h"
 #include "json/stringbuffer.h"
+#include "json/types.h"
 #include "json/writer.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/produce.h"
@@ -57,7 +58,7 @@ public:
     using rjson_parse_result = create_consumer_request;
     rjson_parse_result result;
 
-    bool String(const Ch* str, rapidjson::SizeType len, bool) {
+    bool String(const Ch* str, ::json::SizeType len, bool) {
         switch (_state) {
         case state::empty:
             return false;
@@ -83,7 +84,7 @@ public:
         return true;
     }
 
-    bool Key(const char* str, rapidjson::SizeType len, bool) {
+    bool Key(const char* str, ::json::SizeType len, bool) {
         _state = string_switch<state>({str, len})
                    .match("name", state::name)
                    .match("format", state::format)
@@ -98,7 +99,7 @@ public:
 
     bool StartObject() { return _state == state::empty; }
 
-    bool EndObject(rapidjson::SizeType) { return _state != state::empty; }
+    bool EndObject(::json::SizeType) { return _state != state::empty; }
 };
 
 struct create_consumer_response {
@@ -129,7 +130,7 @@ public:
     using rjson_parse_result = create_consumer_response;
     rjson_parse_result result;
 
-    bool String(const Ch* str, rapidjson::SizeType len, bool) {
+    bool String(const Ch* str, ::json::SizeType len, bool) {
         auto str_view{std::string_view{str, len}};
         switch (_state) {
         case state::empty:
@@ -144,7 +145,7 @@ public:
         return true;
     }
 
-    bool Key(const char* str, rapidjson::SizeType len, bool) {
+    bool Key(const char* str, ::json::SizeType len, bool) {
         _state = string_switch<state>({str, len})
                    .match("instance_id", state::instance_id)
                    .match("base_uri", state::base_uri)
@@ -155,7 +156,7 @@ public:
 
     bool StartObject() { return _state == state::empty; }
 
-    bool EndObject(rapidjson::SizeType) { return _state != state::empty; }
+    bool EndObject(::json::SizeType) { return _state != state::empty; }
 };
 
 } // namespace pandaproxy::json
