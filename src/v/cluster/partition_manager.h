@@ -170,7 +170,8 @@ private:
     /// In this case this method always returns false.
     /// \param ntp_cfg is an ntp_config instance to recover
     /// \return true if the recovery was invoked, false otherwise
-    ss::future<bool> maybe_download_log(storage::ntp_config& ntp_cfg);
+    ss::future<cloud_storage::log_recovery_result>
+    maybe_download_log(storage::ntp_config& ntp_cfg);
 
     ss::future<> do_shutdown(ss::lw_shared_ptr<partition>);
 

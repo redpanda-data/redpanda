@@ -9,17 +9,26 @@
 
 #include "cluster/partition_manager.h"
 
+#include "cloud_storage/partition_recovery_manager.h"
 #include "cluster/fwd.h"
 #include "cluster/logger.h"
 #include "config/configuration.h"
 #include "model/metadata.h"
 #include "raft/consensus.h"
+#include "raft/consensus_utils.h"
+#include "raft/group_configuration.h"
+#include "raft/offset_translator.h"
 #include "raft/rpc_client_protocol.h"
 #include "raft/types.h"
 #include "resource_mgmt/io_priority.h"
+#include "storage/offset_translator_state.h"
+#include "storage/segment_utils.h"
+#include "storage/snapshot.h"
+#include "utils/retry_chain_node.h"
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/io_priority_class.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/smp.hh>
@@ -61,13 +70,33 @@ ss::future<consensus_ptr> partition_manager::manage(
   raft::group_id group,
   std::vector<model::broker> initial_nodes) {
     gate_guard guard(_gate);
-    bool logs_recovered = co_await maybe_download_log(ntp_cfg);
+    auto dl_result = co_await maybe_download_log(ntp_cfg);
+    auto [logs_recovered, min_kafka_offset, max_kafka_offset, manifest]
+      = dl_result;
     if (logs_recovered) {
         vlog(
           clusterlog.info,
-          "Log download complete, ntp: {}, rev: {}",
+          "Log download complete, ntp: {}, rev: {}, "
+          "min_kafka_offset: {}, max_kafka_offset: {}",
           ntp_cfg.ntp(),
-          ntp_cfg.get_revision());
+          ntp_cfg.get_revision(),
+          min_kafka_offset,
+          max_kafka_offset);
+
+        // Manifest is not empty since we were able to recovery
+        // some data.
+        vassert(manifest.size() != 0, "Manifest is empty");
+        auto last_segm_it = manifest.rbegin();
+        auto last_included_term = last_segm_it->second.archiver_term;
+
+        co_await raft::details::bootstrap_pre_existing_partition(
+          _storage,
+          ntp_cfg,
+          group,
+          min_kafka_offset,
+          max_kafka_offset,
+          last_included_term,
+          initial_nodes);
     }
     storage::log log = co_await _storage.log_mgr().manage(std::move(ntp_cfg));
     vlog(
@@ -104,21 +133,36 @@ ss::future<consensus_ptr> partition_manager::manage(
     _manage_watchers.notify(p->ntp(), p);
 
     co_await p->start();
+
+    if (logs_recovered) {
+        // Populate archival snapshot using the generated recovery manifest.
+        // This step is needed to connect the newly created partition with the
+        // data inside the snapshot and to prevent re-uploading of recovered
+        // data.
+        auto timeout = config::shard_local_cfg()
+                         .cloud_storage_segment_upload_timeout_ms.value();
+        auto backoff
+          = config::shard_local_cfg().cloud_storage_initial_backoff_ms.value();
+        retry_chain_node rtc(timeout, backoff);
+        co_await p->archival_meta_stm()->add_segments(manifest, rtc);
+    }
+
     co_return c;
 }
 
-ss::future<bool>
+ss::future<cloud_storage::log_recovery_result>
 partition_manager::maybe_download_log(storage::ntp_config& ntp_cfg) {
     if (_partition_recovery_mgr.local_is_initialized()) {
-        co_return co_await _partition_recovery_mgr.local().download_log(
+        auto res = co_await _partition_recovery_mgr.local().download_log(
           ntp_cfg);
+        co_return res;
     }
     vlog(
       clusterlog.debug,
       "Logs can't be downloaded because cloud storage is not configured. "
       "Continue creating {} witout downloading the logs.",
       ntp_cfg);
-    co_return false;
+    co_return cloud_storage::log_recovery_result{};
 }
 
 ss::future<> partition_manager::stop_partitions() {

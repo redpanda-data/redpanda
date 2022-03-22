@@ -108,6 +108,12 @@ public:
     bytes offsets_map_key() const;
     bytes highest_known_offset_key() const;
 
+    /// Generate kv-store offset-map key
+    static bytes kvstore_offsetmap_key(raft::group_id group);
+
+    /// Generate kv-store highest-known-offset key
+    static bytes kvstore_highest_known_offset_key(raft::group_id group);
+
 private:
     ss::future<> do_checkpoint();
 

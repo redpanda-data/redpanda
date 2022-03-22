@@ -26,8 +26,14 @@ namespace cloud_storage {
 /// It consumes information stored in the manifest.
 class offset_translator final {
 public:
-    offset_translator(model::offset initial_delta)
+    explicit offset_translator(model::offset initial_delta)
       : _initial_delta(initial_delta) {}
+
+    struct stream_stats {
+        model::offset min_offset;
+        model::offset max_offset;
+        uint64_t size_bytes{};
+    };
 
     /// Copy source stream into the destination stream
     ///
@@ -35,7 +41,7 @@ public:
     /// record batch offsets/checksums.
     /// The caller is responsible for patching the segement file name and
     /// passing correct base_offset of the original segment.
-    ss::future<uint64_t> copy_stream(
+    ss::future<stream_stats> copy_stream(
       ss::input_stream<char> src,
       ss::output_stream<char> dst,
       retry_chain_node& fib) const;
