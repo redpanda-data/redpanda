@@ -11,14 +11,13 @@
 
 #pragma once
 
+#include "json/encodings.h"
 #include "json/reader.h"
 #include "pandaproxy/json/types.h"
 
-#include <rapidjson/encodings.h>
-
 namespace pandaproxy::json {
 
-template<typename encoding = rapidjson::UTF8<>>
+template<typename encoding = ::json::UTF8<>>
 class base_handler
   : public rapidjson::BaseReaderHandler<encoding, base_handler<encoding>> {
 public:

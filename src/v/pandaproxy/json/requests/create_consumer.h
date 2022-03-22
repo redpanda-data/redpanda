@@ -37,7 +37,7 @@ struct create_consumer_request {
     ss::sstring consumer_request_timeout_ms;
 };
 
-template<typename Encoding = rapidjson::UTF8<>>
+template<typename Encoding = ::json::UTF8<>>
 class create_consumer_request_handler final : public base_handler<Encoding> {
 private:
     enum class state {
@@ -117,7 +117,7 @@ inline void rjson_serialize(
     w.EndObject();
 }
 
-template<typename Encoding = rapidjson::UTF8<>>
+template<typename Encoding = ::json::UTF8<>>
 class create_consumer_response_handler final : public base_handler<Encoding> {
 private:
     enum class state { empty = 0, instance_id, base_uri };

@@ -26,7 +26,7 @@ struct post_subject_versions_request {
     canonical_schema schema;
 };
 
-template<typename Encoding = rapidjson::UTF8<>>
+template<typename Encoding = ::json::UTF8<>>
 class post_subject_versions_request_handler
   : public json::base_handler<Encoding> {
     enum class state {

@@ -11,15 +11,13 @@
 
 #pragma once
 
-#include "json/json.h"
+#include "json/encodings.h"
 #include "model/fundamental.h"
 #include "pandaproxy/json/rjson_parse.h"
 #include "pandaproxy/json/types.h"
 #include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
-
-#include <rapidjson/encodings.h>
 
 namespace pandaproxy::json {
 
@@ -33,7 +31,7 @@ struct topic_partition_offset {
     };
 };
 
-template<typename Encoding = rapidjson::UTF8<>>
+template<typename Encoding = ::json::UTF8<>>
 class partition_offsets_request_handler final : public base_handler<Encoding> {
 private:
     enum class state {

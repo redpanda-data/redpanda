@@ -27,7 +27,7 @@
 
 namespace pandaproxy::json {
 
-template<typename Encoding = rapidjson::UTF8<>>
+template<typename Encoding = ::json::UTF8<>>
 class produce_request_handler {
 private:
     enum class state {

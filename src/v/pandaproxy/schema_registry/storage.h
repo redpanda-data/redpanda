@@ -64,7 +64,7 @@ from_string_view<topic_key_type>(std::string_view sv) {
 }
 
 // Just peek at the keytype. Allow other fields through.
-template<typename Encoding = rapidjson::UTF8<>>
+template<typename Encoding = ::json::UTF8<>>
 class topic_key_type_handler
   : public rapidjson::
       BaseReaderHandler<Encoding, topic_key_type_handler<Encoding>> {
@@ -180,7 +180,7 @@ inline void rjson_serialize(
     w.EndObject();
 }
 
-template<typename Encoding = rapidjson::UTF8<>>
+template<typename Encoding = ::json::UTF8<>>
 class schema_key_handler : public json::base_handler<Encoding> {
     enum class state {
         empty = 0,
@@ -353,7 +353,7 @@ inline void rjson_serialize(
     w.EndObject();
 }
 
-template<typename Encoding = rapidjson::UTF8<>>
+template<typename Encoding = ::json::UTF8<>>
 class schema_value_handler final : public json::base_handler<Encoding> {
     enum class state {
         empty = 0,
@@ -656,7 +656,7 @@ inline void rjson_serialize(
     w.EndObject();
 }
 
-template<typename Encoding = rapidjson::UTF8<>>
+template<typename Encoding = ::json::UTF8<>>
 class config_key_handler : public json::base_handler<Encoding> {
     enum class state {
         empty = 0,
@@ -773,7 +773,7 @@ inline void rjson_serialize(
     w.EndObject();
 }
 
-template<typename Encoding = rapidjson::UTF8<>>
+template<typename Encoding = ::json::UTF8<>>
 class config_value_handler : public json::base_handler<Encoding> {
     enum class state {
         empty = 0,
@@ -874,7 +874,7 @@ inline void rjson_serialize(
     w.EndObject();
 }
 
-template<typename Encoding = rapidjson::UTF8<>>
+template<typename Encoding = ::json::UTF8<>>
 class delete_subject_key_handler : public json::base_handler<Encoding> {
     enum class state {
         empty = 0,
@@ -1003,7 +1003,7 @@ inline void rjson_serialize(
     w.EndObject();
 }
 
-template<typename Encoding = rapidjson::UTF8<>>
+template<typename Encoding = ::json::UTF8<>>
 class delete_subject_value_handler : public json::base_handler<Encoding> {
     enum class state {
         empty = 0,

@@ -16,6 +16,7 @@
 #include "cloud_storage/types.h"
 #include "cluster/types.h"
 #include "hashing/xx.h"
+#include "json/encodings.h"
 #include "json/reader.h"
 #include "json/writer.h"
 #include "model/compression.h"
@@ -27,7 +28,6 @@
 
 #include <boost/lexical_cast.hpp>
 #include <fmt/ostream.h>
-#include <rapidjson/encodings.h>
 #include <rapidjson/error/en.h>
 #include <rapidjson/istreamwrapper.h>
 #include <rapidjson/ostreamwrapper.h>
@@ -40,8 +40,7 @@
 namespace cloud_storage {
 
 struct topic_manifest_handler
-  : public rapidjson::
-      BaseReaderHandler<rapidjson::UTF8<>, topic_manifest_handler> {
+  : public rapidjson::BaseReaderHandler<json::UTF8<>, topic_manifest_handler> {
     using key_string = ss::basic_sstring<char, uint32_t, 31>;
     bool StartObject() {
         switch (_state) {

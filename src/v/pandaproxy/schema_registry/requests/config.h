@@ -28,7 +28,7 @@ struct put_config_req_rep {
     compatibility_level compat{compatibility_level::none};
 };
 
-template<typename Encoding = rapidjson::UTF8<>>
+template<typename Encoding = ::json::UTF8<>>
 class put_config_handler : public json::base_handler<Encoding> {
     enum class state {
         empty = 0,

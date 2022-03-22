@@ -12,7 +12,7 @@
 #pragma once
 
 #include "bytes/iobuf.h"
-#include "json/json.h"
+#include "json/encodings.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/types.h"
 #include "pandaproxy/json/iobuf.h"
@@ -30,7 +30,7 @@ struct subscribe_consumer_request {
     std::vector<model::topic> topics;
 };
 
-template<typename Encoding = rapidjson::UTF8<>>
+template<typename Encoding = ::json::UTF8<>>
 class subscribe_consumer_request_handler final : public base_handler<Encoding> {
 private:
     enum class state {
