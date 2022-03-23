@@ -63,8 +63,8 @@ const (
 
 	saslMechanism = "SCRAM-SHA-256"
 
-	configKey          = "redpanda.yaml"
-	bootstrapConfigKey = ".bootstrap.yaml"
+	configKey           = "redpanda.yaml"
+	bootstrapConfigFile = ".bootstrap.yaml"
 )
 
 var (
@@ -214,7 +214,7 @@ func (r *ConfigMapResource) obj(ctx context.Context) (k8sclient.Object, error) {
 		cm.Data[configKey] = string(cfgSerialized.RedpandaFile)
 	}
 	if cfgSerialized.BootstrapFile != nil {
-		cm.Data[bootstrapConfigKey] = string(cfgSerialized.BootstrapFile)
+		cm.Data[bootstrapConfigFile] = string(cfgSerialized.BootstrapFile)
 	}
 
 	err = controllerutil.SetControllerReference(r.pandaCluster, cm, r.scheme)
@@ -697,10 +697,10 @@ func (r *ConfigMapResource) globalConfigurationChanged(
 	}
 
 	oldConfigNode := current.Data[configKey]
-	oldConfigBootstrap := current.Data[bootstrapConfigKey]
+	oldConfigBootstrap := current.Data[bootstrapConfigFile]
 
 	newConfigNode := modified.Data[configKey]
-	newConfigBootstrap := modified.Data[bootstrapConfigKey]
+	newConfigBootstrap := modified.Data[bootstrapConfigFile]
 
 	return newConfigNode != oldConfigNode || newConfigBootstrap != oldConfigBootstrap
 }

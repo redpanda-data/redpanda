@@ -13,6 +13,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path"
 	"path/filepath"
 	"strconv"
 
@@ -508,6 +509,14 @@ func (r *StatefulSetResource) obj(
 				},
 			},
 		},
+	}
+
+	if featuregates.CentralizedConfiguration(r.pandaCluster.Spec.Version) {
+		ss.Spec.Template.Spec.Containers[0].VolumeMounts = append(ss.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
+			Name:      "configmap-dir",
+			MountPath: path.Join(configDestinationDir, bootstrapConfigFile),
+			SubPath:   bootstrapConfigFile,
+		})
 	}
 
 	setCloudStorage(ss, r.pandaCluster)
