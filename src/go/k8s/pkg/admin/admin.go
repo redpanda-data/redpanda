@@ -1,10 +1,14 @@
-package utils
+// Package admin contains tools for the operator to connect to the admin API
+package admin
 
 import (
+	"context"
+	"crypto/tls"
 	"fmt"
 
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // NoInternalAdminAPI signal absence of the internal admin API endpoint
@@ -17,11 +21,25 @@ func (n *NoInternalAdminAPI) Error() string {
 // NewInternalAdminAPI is used to construct an admin API client that talks to the cluster via
 // the internal interface.
 func NewInternalAdminAPI(
-	redpandaCluster *redpandav1alpha1.Cluster, fqdn string,
+	ctx context.Context,
+	k8sClient client.Reader,
+	redpandaCluster *redpandav1alpha1.Cluster,
+	fqdn string,
+	adminAPINodeCertSecretKey client.ObjectKey,
+	adminAPIClientCertSecretKey client.ObjectKey,
 ) (AdminAPIClient, error) {
 	adminInternal := redpandaCluster.AdminAPIInternal()
 	if adminInternal == nil {
 		return nil, &NoInternalAdminAPI{}
+	}
+
+	var tlsConfig *tls.Config
+	if adminInternal.TLS.Enabled {
+		var err error
+		tlsConfig, err = GetTLSConfig(ctx, k8sClient, redpandaCluster, adminAPINodeCertSecretKey, adminAPIClientCertSecretKey)
+		if err != nil {
+			return nil, fmt.Errorf("could not create tls configuration for internal admin API: %w", err)
+		}
 	}
 
 	adminInternalPort := adminInternal.Port
@@ -33,14 +51,15 @@ func NewInternalAdminAPI(
 		urls = append(urls, fmt.Sprintf("%s-%d.%s:%d", redpandaCluster.Name, i, fqdn, adminInternalPort))
 	}
 
-	adminAPI, err := admin.NewAdminAPI(urls, admin.BasicCredentials{}, nil)
+	adminAPI, err := admin.NewAdminAPI(urls, admin.BasicCredentials{}, tlsConfig)
 	if err != nil {
-		return nil, fmt.Errorf("error creating admin api: %w", err)
+		return nil, fmt.Errorf("error creating admin api for cluster %s/%s using urls %v (tls=%v): %w", redpandaCluster.Namespace, redpandaCluster.Name, urls, tlsConfig != nil, err)
 	}
 	return adminAPI, nil
 }
 
 // AdminAPIClient is a sub interface of the admin API containing what we need in the operator
+// nolint:revive // usually package is called adminutils
 type AdminAPIClient interface {
 	Config() (admin.Config, error)
 	ClusterConfigStatus() (admin.ConfigStatusResponse, error)
@@ -53,6 +72,14 @@ type AdminAPIClient interface {
 var _ AdminAPIClient = &admin.AdminAPI{}
 
 // AdminAPIClientFactory is an abstract constructor of admin API clients
-type AdminAPIClientFactory func(redpandaCluster *redpandav1alpha1.Cluster, fqdn string) (AdminAPIClient, error)
+// nolint:revive // usually package is called adminutils
+type AdminAPIClientFactory func(
+	ctx context.Context,
+	k8sClient client.Reader,
+	redpandaCluster *redpandav1alpha1.Cluster,
+	fqdn string,
+	adminAPINodeCertSecretKey client.ObjectKey,
+	adminAPIClientCertSecretKey client.ObjectKey,
+) (AdminAPIClient, error)
 
 var _ AdminAPIClientFactory = NewInternalAdminAPI

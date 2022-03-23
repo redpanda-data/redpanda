@@ -19,11 +19,11 @@ import (
 
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/networking"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/certmanager"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	appsv1 "k8s.io/api/apps/v1"
@@ -49,7 +49,7 @@ type ClusterReconciler struct {
 	configuratorSettings  resources.ConfiguratorSettings
 	clusterDomain         string
 	Scheme                *runtime.Scheme
-	AdminAPIClientFactory utils.AdminAPIClientFactory
+	AdminAPIClientFactory adminutils.AdminAPIClientFactory
 }
 
 //+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=clusters,verbs=get;list;watch;create;update;patch;delete
@@ -240,7 +240,7 @@ func (r *ClusterReconciler) Reconcile(
 		secrets = append(secrets, schemaRegistrySu.Key())
 	}
 
-	err := r.setInitialSuperUserPassword(ctx, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), secrets)
+	err := r.setInitialSuperUserPassword(ctx, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), pki.AdminAPINodeCert(), pki.AdminAPIClientCert(), secrets)
 
 	var e *resources.RequeueAfterError
 	if errors.As(err, &e) {
@@ -276,6 +276,7 @@ func (r *ClusterReconciler) Reconcile(
 		&redpandaCluster,
 		configMapResource,
 		sts,
+		pki,
 		headlessSvc.HeadlessServiceFQDN(r.clusterDomain),
 		log,
 	)
@@ -535,10 +536,12 @@ func (r *ClusterReconciler) setInitialSuperUserPassword(
 	ctx context.Context,
 	redpandaCluster *redpandav1alpha1.Cluster,
 	fqdn string,
+	adminAPINodeCertSecretKey client.ObjectKey,
+	adminAPIClientCertSecretKey client.ObjectKey,
 	objs []types.NamespacedName,
 ) error {
-	adminAPI, err := r.getAdminAPIClient(redpandaCluster, fqdn)
-	if err != nil && errors.Is(err, &utils.NoInternalAdminAPI{}) {
+	adminAPI, err := r.AdminAPIClientFactory(ctx, r, redpandaCluster, fqdn, adminAPINodeCertSecretKey, adminAPIClientCertSecretKey)
+	if err != nil && errors.Is(err, &adminutils.NoInternalAdminAPI{}) {
 		return nil
 	} else if err != nil {
 		return err
@@ -567,15 +570,6 @@ func (r *ClusterReconciler) setInitialSuperUserPassword(
 		}
 	}
 	return nil
-}
-
-func (r *ClusterReconciler) getAdminAPIClient(
-	redpandaCluster *redpandav1alpha1.Cluster, fqdn string,
-) (utils.AdminAPIClient, error) {
-	if r.AdminAPIClientFactory != nil {
-		return r.AdminAPIClientFactory(redpandaCluster, fqdn)
-	}
-	return utils.NewInternalAdminAPI(redpandaCluster, fqdn)
 }
 
 func needExternalIP(external redpandav1alpha1.ExternalConnectivityConfig) bool {

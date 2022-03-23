@@ -696,9 +696,10 @@ var _ = Describe("RedPandaCluster controller", func() {
 			// exists. This verifies that these situations are handled
 			// gracefully and without error
 			r := &redpanda.ClusterReconciler{
-				Client: fake.NewClientBuilder().Build(),
-				Log:    ctrl.Log,
-				Scheme: scheme.Scheme,
+				Client:                fake.NewClientBuilder().Build(),
+				Log:                   ctrl.Log,
+				Scheme:                scheme.Scheme,
+				AdminAPIClientFactory: testAdminAPIFactory,
 			}
 			_, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{
 				Namespace: "default",
@@ -717,9 +718,10 @@ var _ = Describe("RedPandaCluster controller", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		r := &redpanda.ClusterReconciler{
-			Client: fake.NewClientBuilder().Build(),
-			Log:    ctrl.Log,
-			Scheme: scheme.Scheme,
+			Client:                fake.NewClientBuilder().Build(),
+			Log:                   ctrl.Log,
+			Scheme:                scheme.Scheme,
+			AdminAPIClientFactory: testAdminAPIFactory,
 		}
 
 		Expect(r.WithConfiguratorSettings(res.ConfiguratorSettings{

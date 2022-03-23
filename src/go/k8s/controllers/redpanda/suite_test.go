@@ -11,6 +11,7 @@ package redpanda_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"path/filepath"
@@ -25,9 +26,9 @@ import (
 	"github.com/onsi/gomega/gexec"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	redpandacontrollers "github.com/redpanda-data/redpanda/src/go/k8s/controllers/redpanda"
+	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/configuration"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -46,6 +47,7 @@ var k8sClient client.Client
 var testEnv *envtest.Environment
 var cfg *rest.Config
 var testAdminAPI *mockAdminAPI
+var testAdminAPIFactory adminutils.AdminAPIClientFactory
 
 func TestAPIs(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -83,13 +85,22 @@ var _ = BeforeSuite(func(done Done) {
 	Expect(err).ToNot(HaveOccurred())
 
 	testAdminAPI = &mockAdminAPI{}
-	fakeAdminAPIFactory := func(_ *redpandav1alpha1.Cluster, _ string) (utils.AdminAPIClient, error) { return testAdminAPI, nil }
+	testAdminAPIFactory = func(
+		_ context.Context,
+		_ client.Reader,
+		_ *redpandav1alpha1.Cluster,
+		_ string,
+		_ client.ObjectKey,
+		_ client.ObjectKey,
+	) (adminutils.AdminAPIClient, error) {
+		return testAdminAPI, nil
+	}
 
 	err = (&redpandacontrollers.ClusterReconciler{
 		Client:                k8sManager.GetClient(),
 		Log:                   ctrl.Log.WithName("controllers").WithName("core").WithName("RedpandaCluster"),
 		Scheme:                k8sManager.GetScheme(),
-		AdminAPIClientFactory: fakeAdminAPIFactory,
+		AdminAPIClientFactory: testAdminAPIFactory,
 	}).WithClusterDomain("cluster.local").WithConfiguratorSettings(resources.ConfiguratorSettings{
 		ConfiguratorBaseImage: "vectorized/configurator",
 		ConfiguratorTag:       "latest",
@@ -145,7 +156,7 @@ type mockAdminAPI struct {
 	monitor          sync.Mutex
 }
 
-var _ utils.AdminAPIClient = &mockAdminAPI{}
+var _ adminutils.AdminAPIClient = &mockAdminAPI{}
 
 type unavailableError struct{}
 

@@ -11,8 +11,6 @@ package resources
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,7 +22,7 @@ import (
 	"time"
 
 	"github.com/banzaicloud/k8s-objectmatcher/patch"
-	cmetav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
+	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
 	appsv1 "k8s.io/api/apps/v1"
@@ -383,14 +381,13 @@ func (r *StatefulSetResource) queryRedpandaStatus(
 	// will be fixed by https://github.com/redpanda-data/redpanda/issues/1084
 	if r.pandaCluster.AdminAPITLS() != nil &&
 		r.pandaCluster.AdminAPIExternal() == nil {
-		tlsConfig := tls.Config{MinVersion: tls.VersionTLS12} // TLS12 is min version allowed by gosec.
-
-		if err := r.populateTLSConfigCert(ctx, &tlsConfig); err != nil {
+		tlsConfig, err := adminutils.GetTLSConfig(ctx, r, r.pandaCluster, r.adminAPINodeCertSecretKey, r.adminAPIClientCertSecretKey)
+		if err != nil {
 			return err
 		}
 
 		client.Transport = &http.Transport{
-			TLSClientConfig: &tlsConfig,
+			TLSClientConfig: tlsConfig,
 		}
 		adminURL.Scheme = "https"
 	}
@@ -407,38 +404,6 @@ func (r *StatefulSetResource) queryRedpandaStatus(
 
 	if resp.StatusCode != http.StatusOK {
 		return errRedpandaNotReady
-	}
-
-	return nil
-}
-
-// Populates crypto/TLS configuration for certificate used by the operator
-// during its client authentication.
-func (r *StatefulSetResource) populateTLSConfigCert(
-	ctx context.Context, tlsConfig *tls.Config,
-) error {
-	var nodeCertSecret corev1.Secret
-	err := r.Get(ctx, r.adminAPINodeCertSecretKey, &nodeCertSecret)
-	if err != nil {
-		return err
-	}
-
-	// Add root CA
-	caCertPool := x509.NewCertPool()
-	caCertPool.AppendCertsFromPEM(nodeCertSecret.Data[cmetav1.TLSCAKey])
-	tlsConfig.RootCAs = caCertPool
-
-	if r.pandaCluster.AdminAPITLS() != nil && r.pandaCluster.AdminAPITLS().TLS.RequireClientAuth {
-		var clientCertSecret corev1.Secret
-		err := r.Get(ctx, r.adminAPIClientCertSecretKey, &clientCertSecret)
-		if err != nil {
-			return err
-		}
-		cert, err := tls.X509KeyPair(clientCertSecret.Data[corev1.TLSCertKey], clientCertSecret.Data[corev1.TLSPrivateKeyKey])
-		if err != nil {
-			return err
-		}
-		tlsConfig.Certificates = []tls.Certificate{cert}
 	}
 
 	return nil
