@@ -231,6 +231,14 @@ configuration::configuration()
        .visibility = visibility::user},
       2_GiB,
       {.min = 1_MiB})
+  , target_quota_time_rate(
+      *this,
+      "target_quota_time_rate",
+      "Target quota time rate measured in percentage (per quota window) above "
+      "which request is throttled - default disabled. Example: 200",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt,
+      {.min = 1})
   , cluster_id(
       *this,
       "cluster_id",

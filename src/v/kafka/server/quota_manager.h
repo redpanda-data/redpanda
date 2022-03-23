@@ -60,6 +60,8 @@ public:
       , _default_window_width(
           config::shard_local_cfg().default_window_sec.bind())
       , _target_tp_rate(config::shard_local_cfg().target_quota_byte_rate.bind())
+      , _target_request_percentage(
+          config::shard_local_cfg().target_quota_time_rate.bind())
       , _gc_freq(config::shard_local_cfg().quota_manager_gc_sec())
       , _max_delay(
           config::shard_local_cfg().max_kafka_throttle_delay_ms.bind()) {
@@ -121,6 +123,7 @@ private:
     config::binding<std::chrono::milliseconds> _default_window_width;
 
     config::binding<uint32_t> _target_tp_rate;
+    config::binding<std::optional<uint32_t>> _target_request_percentage;
     underlying_t _quotas;
 
     ss::timer<> _gc_timer;

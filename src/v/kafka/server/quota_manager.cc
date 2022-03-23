@@ -112,12 +112,27 @@ throttle_delay quota_manager::record_tp_and_throttle(
           static_cast<uint64_t>(delay));
     }
 
-    auto request_rate = std::chrono::milliseconds(
-      static_cast<uint64_t>(it->second.time_rate.measure(now)));
-
     std::chrono::milliseconds request_delay_ms(0);
-    if (request_rate > _default_window_width()) {
-        request_delay_ms = request_rate - _default_window_width();
+
+    if (_target_request_percentage()) {
+        auto request_rate = std::chrono::milliseconds(
+          static_cast<uint64_t>(it->second.time_rate.measure(now)));
+
+        const auto target_request_rate = _default_window_width()
+                                         * (*_target_request_percentage())
+                                         * 0.01;
+        if (request_rate > target_request_rate) {
+            /// The max request time quota delay will be the width of one window
+            request_delay_ms = std::min(
+              _default_window_width(),
+              std::chrono::duration_cast<std::chrono::milliseconds>(
+                request_rate - target_request_rate));
+
+            vlog(
+              klog.trace,
+              "Request rate quota exceeded, calcluated delay ms: {}",
+              request_delay_ms);
+        }
     }
 
     /// Take the larger of the two delays
