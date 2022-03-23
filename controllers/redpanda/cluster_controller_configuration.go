@@ -9,10 +9,11 @@ import (
 
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/certmanager"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/configuration"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	corev1 "k8s.io/api/core/v1"
 )
@@ -23,6 +24,7 @@ func (r *ClusterReconciler) reconcileConfiguration(
 	redpandaCluster *redpandav1alpha1.Cluster,
 	configMapResource *resources.ConfigMapResource,
 	statefulSetResource *resources.StatefulSetResource,
+	pki *certmanager.PkiReconciler,
 	fqdn string,
 	log logr.Logger,
 ) error {
@@ -37,7 +39,7 @@ func (r *ClusterReconciler) reconcileConfiguration(
 		return err
 	}
 
-	if redpandaCluster.Status.GetConditionStatus(redpandav1alpha1.ClusterConfiguredConditionType) != corev1.ConditionFalse {
+	if redpandaCluster.Status.GetConditionStatus(redpandav1alpha1.ClusterConfiguredConditionType) == corev1.ConditionTrue {
 		log.Info("Cluster configuration is synchronized")
 		return nil
 	}
@@ -52,7 +54,7 @@ func (r *ClusterReconciler) reconcileConfiguration(
 		return errorWithContext(err, "could not load the last applied configuration")
 	}
 
-	adminAPI, err := r.getAdminAPIClient(redpandaCluster, fqdn)
+	adminAPI, err := r.AdminAPIClientFactory(ctx, r, redpandaCluster, fqdn, pki.AdminAPINodeCert(), pki.AdminAPIClientCert())
 	if err != nil {
 		return errorWithContext(err, "error creating the admin API client")
 	}
@@ -133,7 +135,7 @@ func (r *ClusterReconciler) getOrInitLastAppliedConfiguration(
 func (r *ClusterReconciler) applyPatchIfNeeded(
 	ctx context.Context,
 	redpandaCluster *redpandav1alpha1.Cluster,
-	adminAPI utils.AdminAPIClient,
+	adminAPI adminutils.AdminAPIClient,
 	cfg *configuration.GlobalConfiguration,
 	schema admin.ConfigSchema,
 	clusterConfig admin.Config,
@@ -186,7 +188,7 @@ func (r *ClusterReconciler) applyPatchIfNeeded(
 }
 
 func (r *ClusterReconciler) retrieveClusterState(
-	redpandaCluster *redpandav1alpha1.Cluster, adminAPI utils.AdminAPIClient,
+	redpandaCluster *redpandav1alpha1.Cluster, adminAPI adminutils.AdminAPIClient,
 ) (admin.ConfigSchema, admin.Config, admin.ConfigStatusResponse, error) {
 	errorWithContext := newErrorWithContext(redpandaCluster.Namespace, redpandaCluster.Name)
 
@@ -267,7 +269,7 @@ func (r *ClusterReconciler) checkCentralizedConfigurationHashChange(
 func (r *ClusterReconciler) synchronizeStatusWithCluster(
 	ctx context.Context,
 	redpandaCluster *redpandav1alpha1.Cluster,
-	adminAPI utils.AdminAPIClient,
+	adminAPI adminutils.AdminAPIClient,
 	log logr.Logger,
 ) (*redpandav1alpha1.ClusterCondition, error) {
 	errorWithContext := newErrorWithContext(redpandaCluster.Namespace, redpandaCluster.Name)
