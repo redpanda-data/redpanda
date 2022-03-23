@@ -31,7 +31,8 @@ using namespace storage; // NOLINT
     BOOST_REQUIRE_EQUAL_COLLECTIONS(                                           \
       actual.begin(), actual.end(), expected.begin(), expected.end());
 
-static ss::circular_buffer<model::record_batch>
+namespace {
+ss::circular_buffer<model::record_batch>
 copy(ss::circular_buffer<model::record_batch>& input) {
     ss::circular_buffer<model::record_batch> ret;
     ret.reserve(input.size());
@@ -50,6 +51,7 @@ void write(
     }
     seg->flush().get();
 }
+} // namespace
 
 SEASTAR_THREAD_TEST_CASE(test_can_read_single_batch_smaller_offset) {
     disk_log_builder b;
