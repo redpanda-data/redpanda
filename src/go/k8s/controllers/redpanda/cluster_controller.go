@@ -19,6 +19,7 @@ import (
 
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/networking"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
@@ -44,10 +45,11 @@ var (
 // ClusterReconciler reconciles a Cluster object
 type ClusterReconciler struct {
 	client.Client
-	Log                  logr.Logger
-	configuratorSettings resources.ConfiguratorSettings
-	clusterDomain        string
-	Scheme               *runtime.Scheme
+	Log                   logr.Logger
+	configuratorSettings  resources.ConfiguratorSettings
+	clusterDomain         string
+	Scheme                *runtime.Scheme
+	AdminAPIClientFactory adminutils.AdminAPIClientFactory
 }
 
 //+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=clusters,verbs=get;list;watch;create;update;patch;delete
@@ -73,7 +75,7 @@ type ClusterReconciler struct {
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
-// nolint:funlen // todo break down
+// nolint:funlen,gocyclo // todo break down
 func (r *ClusterReconciler) Reconcile(
 	ctx context.Context, req ctrl.Request,
 ) (ctrl.Result, error) {
@@ -176,6 +178,7 @@ func (r *ClusterReconciler) Reconcile(
 	pki := certmanager.NewPki(r.Client, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), clusterSvc.ServiceFQDN(r.clusterDomain), r.Scheme, log)
 	sa := resources.NewServiceAccount(r.Client, &redpandaCluster, r.Scheme, log)
 	configMapResource := resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), proxySuKey, schemaRegistrySuKey, log)
+
 	sts := resources.NewStatefulSet(
 		r.Client,
 		&redpandaCluster,
@@ -194,7 +197,7 @@ func (r *ClusterReconciler) Reconcile(
 		pki.SchemaRegistryAPIClientCert(),
 		sa.Key().Name,
 		r.configuratorSettings,
-		configMapResource.GetConfigHash,
+		configMapResource.GetNodeConfigHash,
 		log)
 
 	toApply := []resources.Reconciler{
@@ -237,7 +240,7 @@ func (r *ClusterReconciler) Reconcile(
 		secrets = append(secrets, schemaRegistrySu.Key())
 	}
 
-	err := r.setInitialSuperUserPassword(ctx, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), secrets)
+	err := r.setInitialSuperUserPassword(ctx, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), pki.AdminAPINodeCert(), pki.AdminAPIClientCert(), secrets)
 
 	var e *resources.RequeueAfterError
 	if errors.As(err, &e) {
@@ -265,9 +268,23 @@ func (r *ClusterReconciler) Reconcile(
 		bootstrapSvc.Key(),
 	)
 	if err != nil {
-		log.Error(err, "Unable to report status")
+		return ctrl.Result{}, err
 	}
 
+	err = r.reconcileConfiguration(
+		ctx,
+		&redpandaCluster,
+		configMapResource,
+		sts,
+		pki,
+		headlessSvc.HeadlessServiceFQDN(r.clusterDomain),
+		log,
+	)
+	var requeueErr *resources.RequeueAfterError
+	if errors.As(err, &requeueErr) {
+		log.Info(requeueErr.Error())
+		return ctrl.Result{RequeueAfter: requeueErr.RequeueAfter}, nil
+	}
 	return ctrl.Result{}, err
 }
 
@@ -352,7 +369,12 @@ func (r *ClusterReconciler) reportStatus(
 			cluster.Status.Nodes = *nodeList
 			cluster.Status.Replicas = lastObservedSts.Status.ReadyReplicas
 
-			return r.Status().Update(ctx, &cluster)
+			err = r.Status().Update(ctx, &cluster)
+			if err == nil {
+				// sync original cluster variable to avoid conflicts on subsequent operations
+				*redpandaCluster = cluster
+			}
+			return err
 		})
 		if err != nil {
 			return fmt.Errorf("failed to update cluster status: %w", err)
@@ -514,25 +536,15 @@ func (r *ClusterReconciler) setInitialSuperUserPassword(
 	ctx context.Context,
 	redpandaCluster *redpandav1alpha1.Cluster,
 	fqdn string,
+	adminAPINodeCertSecretKey client.ObjectKey,
+	adminAPIClientCertSecretKey client.ObjectKey,
 	objs []types.NamespacedName,
 ) error {
-	adminInternal := redpandaCluster.AdminAPIInternal()
-	if adminInternal == nil {
+	adminAPI, err := r.AdminAPIClientFactory(ctx, r, redpandaCluster, fqdn, adminAPINodeCertSecretKey, adminAPIClientCertSecretKey)
+	if err != nil && errors.Is(err, &adminutils.NoInternalAdminAPI{}) {
 		return nil
-	}
-
-	adminInternalPort := adminInternal.Port
-
-	var urls []string
-	replicas := *redpandaCluster.Spec.Replicas
-
-	for i := int32(0); i < replicas; i++ {
-		urls = append(urls, fmt.Sprintf("%s-%d.%s:%d", redpandaCluster.Name, i, fqdn, adminInternalPort))
-	}
-
-	adminAPI, err := admin.NewAdminAPI(urls, admin.BasicCredentials{}, nil)
-	if err != nil {
-		return fmt.Errorf("creating admin api: %w", err)
+	} else if err != nil {
+		return err
 	}
 
 	for _, obj := range objs {
