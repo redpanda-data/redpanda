@@ -23,6 +23,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -64,7 +65,10 @@ const (
 )
 
 var (
-	configMapHashAnnotationKey = redpandav1alpha1.GroupVersion.Group + "/configmap-hash"
+	// ConfigMapHashAnnotationKey contains the hash of the node local properties of the cluster
+	ConfigMapHashAnnotationKey = redpandav1alpha1.GroupVersion.Group + "/configmap-hash"
+	// CentralizedConfigurationHashAnnotationKey contains the hash of the centralized configuration properties that require a restart when changed
+	CentralizedConfigurationHashAnnotationKey = redpandav1alpha1.GroupVersion.Group + "/centralized-configuration-hash"
 )
 
 // ConfiguratorSettings holds settings related to configurator container and deployment
@@ -96,12 +100,12 @@ type StatefulSetResource struct {
 	schemaRegistryClientCertSecretKey  types.NamespacedName
 	serviceAccountName                 string
 	configuratorSettings               ConfiguratorSettings
-	// hash of configmap containing configuration for redpanda, it's injected to
+	// hash of configmap containing configuration for redpanda (node config only), it's injected to
 	// annotation to ensure the pods get restarted when configuration changes
 	// this has to be retrieved lazily to achieve the correct order of resources
 	// being applied
-	configMapHashGetter func(context.Context) (string, error)
-	logger              logr.Logger
+	nodeConfigMapHashGetter func(context.Context) (string, error)
+	logger                  logr.Logger
 
 	LastObservedState *appsv1.StatefulSet
 }
@@ -125,7 +129,7 @@ func NewStatefulSet(
 	schemaRegistryClientCertSecretKey types.NamespacedName,
 	serviceAccountName string,
 	configuratorSettings ConfiguratorSettings,
-	configMapHashGetter func(context.Context) (string, error),
+	nodeConfigMapHashGetter func(context.Context) (string, error),
 	logger logr.Logger,
 ) *StatefulSetResource {
 	return &StatefulSetResource{
@@ -147,7 +151,7 @@ func NewStatefulSet(
 		schemaRegistryClientCertSecretKey,
 		serviceAccountName,
 		configuratorSettings,
-		configMapHashGetter,
+		nodeConfigMapHashGetter,
 		logger.WithValues("Kind", statefulSetKind()),
 		nil,
 	}
@@ -188,9 +192,41 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 		return fmt.Errorf("error while fetching StatefulSet resource: %w", err)
 	}
 	r.LastObservedState = &sts
-
 	r.logger.Info("Running update", "resource name", r.Key().Name)
 	return r.runUpdate(ctx, &sts, obj.(*appsv1.StatefulSet))
+}
+
+// GetCentralizedConfigurationHashFromCluster retrieves the current centralized configuratino hash from the statefulset
+func (r *StatefulSetResource) GetCentralizedConfigurationHashFromCluster(
+	ctx context.Context,
+) (string, error) {
+	existing := appsv1.StatefulSet{}
+	if err := r.Client.Get(ctx, r.Key(), &existing); err != nil {
+		return "", fmt.Errorf("could not load statefulset for reading the centralized configuration hash: %w", err)
+	}
+	if hash, ok := existing.Spec.Template.Annotations[CentralizedConfigurationHashAnnotationKey]; ok {
+		return hash, nil
+	}
+	return "", nil
+}
+
+// SetCentralizedConfigurationHashInCluster saves the given centralized configuration hash in the statefulset
+func (r *StatefulSetResource) SetCentralizedConfigurationHashInCluster(
+	ctx context.Context, hash string,
+) error {
+	existing := appsv1.StatefulSet{}
+	if err := r.Client.Get(ctx, r.Key(), &existing); err != nil {
+		if apierrors.IsNotFound(err) {
+			// No place where to store it
+			return nil
+		}
+		return fmt.Errorf("could not load statefulset for storing the centralized configuration hash: %w", err)
+	}
+	if existing.Spec.Template.Annotations == nil {
+		existing.Spec.Template.Annotations = make(map[string]string)
+	}
+	existing.Spec.Template.Annotations[CentralizedConfigurationHashAnnotationKey] = hash
+	return r.Update(ctx, &existing)
 }
 
 func preparePVCResource(
@@ -238,11 +274,11 @@ func (r *StatefulSetResource) obj(
 	if annotations == nil {
 		annotations = map[string]string{}
 	}
-	configMapHash, err := r.configMapHashGetter(ctx)
+	configMapHash, err := r.nodeConfigMapHashGetter(ctx)
 	if err != nil {
 		return nil, err
 	}
-	annotations[configMapHashAnnotationKey] = configMapHash
+	annotations[ConfigMapHashAnnotationKey] = configMapHash
 	tolerations := r.pandaCluster.Spec.Tolerations
 	nodeSelector := r.pandaCluster.Spec.NodeSelector
 
