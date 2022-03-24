@@ -14,17 +14,30 @@ from ducktape.cluster.remoteaccount import RemoteCommandError
 
 
 class ProducerSwarm(BackgroundThreadService):
-    def __init__(self, context, redpanda, topic: str, producers: int,
-                 records_per_producer: int):
+    def __init__(self,
+                 context,
+                 redpanda,
+                 topic: str,
+                 producers: int,
+                 records_per_producer: int,
+                 connect_only=False):
         super(ProducerSwarm, self).__init__(context, num_nodes=1)
         self._redpanda = redpanda
         self._topic = topic
         self._producers = producers
         self._records_per_producer = records_per_producer
         self._stopping = threading.Event()
+        self._connect_only = connect_only
 
     def _worker(self, idx, node):
-        cmd = f"RUST_LOG=INFO conn_test producers {self._redpanda.brokers()} {self._topic} {self._producers} {self._records_per_producer}"
+        base_cmd = "RUST_LOG=INFO conn_test"
+        if self._connect_only:
+            # Special connect-only mode: no Kafka client, just a TCP
+            # socket and some junk bytes
+            cmd = f"{base_cmd} connections {self._redpanda.brokers()} {self._producers}"
+        else:
+            # Normal mode: Kafka producer
+            cmd = f"{base_cmd} producers {self._redpanda.brokers()} {self._topic} {self._producers} {self._records_per_producer}"
 
         try:
             for line in node.account.ssh_capture(cmd):
