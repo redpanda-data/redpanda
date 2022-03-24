@@ -21,6 +21,7 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda import ResourceSettings
 from rptest.services.franz_go_verifiable_services import FranzGoVerifiableProducer
 from rptest.services.kaf_consumer import KafConsumer
+from rptest.services.producer_swarm import ProducerSwarm
 
 
 class ConnectionRateLimitTest(RedpandaTest):
@@ -140,3 +141,70 @@ class ConnectionRateLimitTest(RedpandaTest):
         time2 = self.get_read_time(self.RANDOM_READ_PARALLEL * 2)
 
         assert time2 >= time1 * 1.7
+
+
+class TcpBacklogTest(RedpandaTest):
+    @cluster(num_nodes=2)
+    def test_tcp_backlog(self):
+        """
+        Verify that adjusting the TCP backlog setting enables
+        larger bursts of connections to a Redpanda node.
+        """
+        if self.debug_mode:
+            self.logger.info("Skipping test in debug mode")
+            return
+
+        # An initial low backlog size to trigger connection errors
+        low_limit = 100
+
+        # A connection count that under default conditions results
+        # in hitting the backlog limit and seeing connection failures
+        conn_count = 400
+
+        self.redpanda.set_cluster_config(
+            {'rpc_server_listen_backlog': low_limit}, expect_restart=True)
+
+        # Proving the failure case (client connects too fast, sees errors)
+        # is timing-sensitive, so we retry several times until we see
+        # the failure that we expect.
+        attempts = 10
+        any_expected_failures = False
+        for n in range(0, attempts):
+            self.logger.info(f"Attempt {n+1}/{attempts}")
+            swarm = ProducerSwarm(self.test_context,
+                                  self.redpanda,
+                                  "",
+                                  producers=conn_count,
+                                  records_per_producer=1,
+                                  connect_only=True)
+            swarm.start()
+            try:
+                swarm.wait()
+                swarm.stop_all()
+            except Exception as e:
+                self.logger.info(f"Got exception as expected: {e}")
+                any_expected_failures = True
+                break
+            else:
+                # We _shouldn't_ succeed here, but it can happen
+                # if background noise causes the client workload
+                # to run slowly enough for the server to accept all
+                # its connections
+                self.logger.info(f"Unexpected success")
+            finally:
+                swarm.free()
+
+        # Increase the backlog setting to a size large enough to accomodate
+        # all the connections we will open.
+        self.redpanda.set_cluster_config(
+            {'rpc_server_listen_backlog': conn_count}, expect_restart=True)
+
+        swarm = ProducerSwarm(self.test_context,
+                              self.redpanda,
+                              "",
+                              producers=conn_count,
+                              records_per_producer=1,
+                              connect_only=True)
+        swarm.start()
+        swarm.wait()
+        swarm.free()
