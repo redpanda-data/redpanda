@@ -123,9 +123,12 @@ class ConsumerOffsetsMigrationTest(EndToEndTest):
             wait_until(cluster_is_stable, 90, backoff_sec=2)
 
         def _consumer_offsets_present():
-            partitions = list(
-                self.client().describe_topic("__consumer_offsets"))
-            return len(partitions) > 0
+            try:
+                partitions = list(
+                    self.client().describe_topic("__consumer_offsets"))
+                return len(partitions) > 0
+            except:
+                return False
 
         wait_until(_consumer_offsets_present, timeout_sec=90, backoff_sec=3)
 
