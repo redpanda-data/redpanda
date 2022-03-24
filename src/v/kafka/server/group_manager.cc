@@ -96,6 +96,18 @@ ss::future<> group_manager::start() {
 }
 
 ss::future<> group_manager::stop() {
+    /**
+     * This is not ususal as stop() method should only be called once. For the
+     * purpose of migration we must stop all pending operations & notifications
+     * in previous group manager implementation. This check allow us to call
+     * stop more than once and makes it idemtpotent.
+     *
+     * Stop may be first called during migration and then for the second time
+     * during application shutdown
+     */
+    if (_gate.is_closed()) {
+        return ss::now();
+    }
     _pm.local().unregister_manage_notification(_manage_notify_handle);
     _pm.local().unregister_unmanage_notification(_unmanage_notify_handle);
     _gm.local().unregister_leadership_notification(_leader_notify_handle);
@@ -113,6 +125,7 @@ ss::future<> group_manager::stop() {
         for (auto& [_, group] : _groups) {
             group->shutdown();
         }
+        _partitions.clear();
     });
 }
 

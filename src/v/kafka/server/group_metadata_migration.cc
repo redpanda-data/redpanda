@@ -571,6 +571,10 @@ ss::future<> group_metadata_migration::do_apply() {
       cluster::feature::consumer_offsets, abort_source());
     vlog(mlog.info, "disabling partition movement feature and group router");
     co_await _group_router.invoke_on_all(&group_router::disable);
+    vlog(mlog.info, "shutting down source group manager");
+    co_await _group_router.local().get_group_manager().invoke_on_all(
+      &group_manager::stop);
+
     co_await _controller.get_topics_frontend().invoke_on_all(
       &cluster::topics_frontend::disable_partition_movement);
     vlog(mlog.info, "waiting for stable consumer group topic");
