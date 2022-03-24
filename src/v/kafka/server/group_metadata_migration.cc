@@ -340,9 +340,13 @@ ss::future<> do_dispatch_ntp_migration(
       source->ntp().tp.partition);
 
     auto target_shard = st.local().shard_for(target_ntp);
-    if (!target_shard) {
-        vlog(mlog.error, "unable to find shard for {}", target_ntp);
-        co_return;
+    while (!target_shard) {
+        vlog(
+          mlog.info,
+          "unable to find shard for {}, waiting for it to be present",
+          target_ntp);
+        co_await ss::sleep_abortable(default_wait_time, as.local());
+        target_shard = st.local().shard_for(target_ntp);
     }
 
     /**
