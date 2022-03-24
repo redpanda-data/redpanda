@@ -81,10 +81,10 @@ ss::future<> transport::connect(clock_type::duration connection_timeout) {
 
 ss::future<>
 transport::connect(rpc::clock_type::time_point connection_timeout) {
+    _correlation_idx = 0;
+    _last_seq = sequence_t{0};
+    _seq = sequence_t{0};
     return base_transport::connect(connection_timeout).then([this] {
-        _correlation_idx = 0;
-        _last_seq = sequence_t{0};
-        _seq = sequence_t{0};
         // background
         ssx::spawn_with_gate(_dispatch_gate, [this] {
             return do_reads().then_wrapped([this](ss::future<> f) {
