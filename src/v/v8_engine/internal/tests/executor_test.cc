@@ -9,7 +9,7 @@
  */
 
 #include "seastarx.h"
-#include "v8_engine/executor.h"
+#include "v8_engine/internal/executor.h"
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/gate.hh>

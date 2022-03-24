@@ -8,7 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "v8_engine/executor.h"
+#include "v8_engine/internal/executor.h"
 
 #include "seastarx.h"
 #include "utils/mutex.h"

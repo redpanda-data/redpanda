@@ -8,7 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "v8_engine/environment.h"
+#include "v8_engine/internal/environment.h"
 
 #include "vassert.h"
 
