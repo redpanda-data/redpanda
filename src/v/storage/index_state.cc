@@ -81,7 +81,7 @@ bool index_state::maybe_index(
         // We know that a segment cannot be > 4GB
         add_entry(
           batch_base_offset() - base_offset(),
-          last_timestamp() - base_timestamp(),
+          std::max(last_timestamp() - base_timestamp(), int64_t{0}),
           starting_position_in_file);
 
         retval = true;
