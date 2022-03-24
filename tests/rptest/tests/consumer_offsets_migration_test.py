@@ -17,11 +17,11 @@ from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
 from rptest.services.failure_injector import FailureInjector, FailureSpec
 from rptest.tests.end_to_end import EndToEndTest
-from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST, RedpandaService
+from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST, RedpandaService, ResourceSettings
 from rptest.clients.default import DefaultClient
 from ducktape.utils.util import wait_until
 
-from ducktape.mark import parametrize
+from ducktape.mark import matrix
 
 
 class ConsumerOffsetsMigrationTest(EndToEndTest):
@@ -30,9 +30,8 @@ class ConsumerOffsetsMigrationTest(EndToEndTest):
     max_inter_failure_time_sec = 30
 
     @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
-    @parametrize(failures=True)
-    @parametrize(failures=False)
-    def test_migrating_consume_offsets(self, failures):
+    @matrix(failures=[True, False], cpus=[1, 3])
+    def test_migrating_consume_offsets(self, failures, cpus):
         '''
         Validates correctness while executing consumer offsets migration
         '''
@@ -41,6 +40,7 @@ class ConsumerOffsetsMigrationTest(EndToEndTest):
         self.redpanda = RedpandaService(
             self.test_context,
             5,
+            resource_settings=ResourceSettings(num_cpus=cpus),
             extra_rp_conf={
                 "group_topic_partitions": 16,
                 "default_topic_replications": 3,
