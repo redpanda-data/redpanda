@@ -54,6 +54,10 @@ public:
 
         virtual ss::future<> reset_backoff(model::node_id) = 0;
 
+        virtual ss::future<result<event_notification_reply>> event_notification(
+          model::node_id, event_notification_request&&, rpc::client_opts)
+          = 0;
+
         virtual ~impl() noexcept = default;
     };
 
@@ -109,6 +113,14 @@ public:
 
     ss::future<> reset_backoff(model::node_id target_node) {
         return _impl->reset_backoff(target_node);
+    }
+
+    ss::future<result<event_notification_reply>> event_notification(
+      model::node_id target_node,
+      event_notification_request&& r,
+      rpc::client_opts opts) {
+        return _impl->event_notification(
+          target_node, std::move(r), std::move(opts));
     }
 
 private:

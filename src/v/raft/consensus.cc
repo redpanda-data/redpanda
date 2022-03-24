@@ -1192,6 +1192,7 @@ ss::future<> consensus::do_start() {
           })
           .then([this] { return _event_manager.start(); })
           .then([this] { _append_requests_buffer.start(); })
+          .then([this] { broadcast_start_event(); })
           .then([this] {
               vlog(
                 _ctxlog.info,
@@ -1200,6 +1201,73 @@ ss::future<> consensus::do_start() {
                 _term,
                 _configuration_manager.get_latest());
           });
+    });
+}
+
+/*
+ * Announce to peers that we are starting up. A peer can use this information to
+ * do things like reset backoffs associated with this node which may have just
+ * experienced a restart. See `consensus::event_notification` for how the
+ * `startup` event is handled. Since we don't know who might be the leader, we
+ * send the message to each broker we know about. This is purely an optimization
+ * and the messages are sent in the background with errors ignored.
+ *
+ * TODO: call this at the end of `do_start` appears to be too early because all
+ * of the client requests return `missing_node_rpc_client`. that is, they aren't
+ * in the cache.  either (1) the broadcast needs to happen later, or (2) we
+ * should try to populate the connection cache now.
+ */
+void consensus::broadcast_start_event() {
+    std::vector<ss::future<>> requests;
+
+    const auto& conf = _configuration_manager.get_latest();
+    conf.for_each_broker_id([this, &requests](vnode target) {
+        if (target == _self) {
+            return;
+        }
+
+        event_notification_request req{
+          .node_id = _self,
+          .target_node_id = target,
+          .group = _group,
+          .startup = true,
+        };
+
+        auto f
+          = _client_protocol
+              .event_notification(
+                target.id(),
+                std::move(req),
+                rpc::client_opts(_replicate_append_timeout + clock_type::now()))
+              .then([this, target](result<event_notification_reply> r) {
+                  if (!r) {
+                      vlog(
+                        _ctxlog.debug,
+                        "Event notification (startup) reply from {} has "
+                        "error {}",
+                        target.id(),
+                        r.error().message());
+                      return;
+                  }
+                  vlog(
+                    _ctxlog.debug,
+                    "Event notification (startup) reply from {}: {}",
+                    target.id(),
+                    r.value());
+              })
+              .handle_exception([this, target](std::exception_ptr e) {
+                  vlog(
+                    _ctxlog.debug,
+                    "Event notification (startup) reply from {} has error {}",
+                    target.id(),
+                    e);
+              });
+
+        requests.push_back(std::move(f));
+    });
+
+    ssx::spawn_with_gate(_bg, [requests = std::move(requests)]() mutable {
+        return ss::when_all_succeed(requests.begin(), requests.end());
     });
 }
 
@@ -1347,6 +1415,12 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
     // to have been recently restarted (have failed heartbeats
     // and an <= present term), reset their RPC backoff to get
     // a heartbeat sent out sooner.
+    //
+    // TODO: with the addition of the startup event notification rpc this
+    // optimization should not be needed. however, leaving this optimization in
+    // for a release cycle makes sense because in a mixed version environment
+    // (e.g. middle of a rolling upgrade) this can still serve a purpose. the
+    // two optimizations should not interfere with each other.
     if (is_leader() and r.term <= _term) {
         // Look up follower stats for the requester
         if (auto it = _fstats.find(r.node_id); it != _fstats.end()) {
@@ -2879,6 +2953,37 @@ consensus::do_transfer_leadership(std::optional<model::node_id> target) {
     });
 
     return f.finally([this] { _transferring_leadership = false; });
+}
+
+/*
+ * startup:
+ *
+ * the startup event is emitted by a node and sent to its peers when it
+ * becomes operational. the optimization here is to reset the rpc
+ * backoff so that the node immediately begins to receive heartbeats
+ * preventing it from entering into a vote/pre-vote state if the current
+ * leader is not sending frequent heartbeats due to backoff from the
+ * node being temporarily unavailable during restart period.
+ */
+ss::future<event_notification_reply>
+consensus::event_notification(event_notification_request r) {
+    if (r.startup) {
+        vlog(
+          _ctxlog.debug,
+          "Event notification (startup) from peer {}, {}",
+          r.node_id,
+          is_leader() ? "resetting backoff" : "ignoring as non-leader");
+
+        if (!is_leader()) {
+            co_return event_notification_reply{};
+        }
+
+        co_await _client_protocol.reset_backoff(r.node_id.id());
+        co_return event_notification_reply{};
+    }
+
+    vlog(raftlog.debug, "unhandled event");
+    co_return event_notification_reply{};
 }
 
 ss::future<> consensus::remove_persistent_state() {

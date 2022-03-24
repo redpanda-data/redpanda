@@ -53,6 +53,9 @@ public:
 
     ss::future<> reset_backoff(model::node_id n);
 
+    ss::future<result<event_notification_reply>> event_notification(
+      model::node_id, event_notification_request&&, rpc::client_opts) final;
+
 private:
     model::node_id _self;
     ss::sharded<rpc::connection_cache>& _connection_cache;

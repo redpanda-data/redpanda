@@ -154,6 +154,10 @@ std::ostream& operator<<(std::ostream& o, const install_snapshot_reply& r) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const event_notification_reply&) {
+    return o << "{empty}";
+}
+
 } // namespace raft
 
 namespace reflection {

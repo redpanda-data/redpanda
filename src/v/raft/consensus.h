@@ -288,6 +288,12 @@ public:
     ss::future<std::error_code>
       request_leadership(model::timeout_clock::time_point);
 
+    /*
+     *
+     */
+    ss::future<event_notification_reply>
+      event_notification(event_notification_request);
+
     ss::future<> remove_persistent_state();
 
     /**
@@ -536,6 +542,9 @@ private:
         }
         return false;
     }
+
+    void broadcast_start_event();
+
     // args
     vnode _self;
     raft::group_id _group;
