@@ -62,8 +62,16 @@ class RpkTool:
     """
     Wrapper around rpk.
     """
-    def __init__(self, redpanda):
+    def __init__(self, redpanda, user=None, passwd=None):
         self._redpanda = redpanda
+        self._global_args = []
+
+        if user is not None and passwd is not None:
+            auth_args = [
+                '--user', user, '--password', passwd, '--sasl-mechanism',
+                'SCRAM-SHA-256'
+            ]
+            self._global_args += auth_args
 
     def create_topic(self, topic, partitions=1, replicas=None, config=None):
         cmd = ["create", topic]
@@ -372,6 +380,8 @@ class RpkTool:
         return self._execute(cmd)
 
     def _execute(self, cmd, stdin=None, timeout=None):
+        cmd = cmd + self._global_args
+
         if timeout is None:
             timeout = DEFAULT_TIMEOUT
 
