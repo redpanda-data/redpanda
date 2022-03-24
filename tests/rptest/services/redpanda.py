@@ -370,6 +370,15 @@ class RedpandaService(Service):
 
         self._saved_executable = False
 
+        if self.sasl_enabled():
+            username, password, algorithm = self.SUPERUSER_CREDENTIALS
+            self._security_config = dict(security_protocol='SASL_PLAINTEXT',
+                                         sasl_mechanism=algorithm,
+                                         sasl_plain_username=username,
+                                         sasl_plain_password=password,
+                                         request_timeout_ms=30000,
+                                         api_version_auto_timeout_ms=3000)
+
     def set_environment(self, environment: dict[str, str]):
         self._environment = environment
 
@@ -443,15 +452,6 @@ class RedpandaService(Service):
                     f"Unexpected files: ns={node.ns} redpanda topics={node.ns['redpanda'].topics}"
                 )
                 raise RuntimeError("Unexpected files in data directory")
-
-        if self.sasl_enabled():
-            username, password, algorithm = self.SUPERUSER_CREDENTIALS
-            self._security_config = dict(security_protocol='SASL_PLAINTEXT',
-                                         sasl_mechanism=algorithm,
-                                         sasl_plain_username=username,
-                                         sasl_plain_password=password,
-                                         request_timeout_ms=30000,
-                                         api_version_auto_timeout_ms=3000)
 
         if self._si_settings is not None:
             self.start_si()
