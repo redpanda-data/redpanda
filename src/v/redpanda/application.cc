@@ -805,7 +805,8 @@ void application::wire_up_redpanda_services() {
       std::ref(partition_manager),
       std::ref(controller->get_topics_state()),
       &kafka::make_backward_compatible_serializer,
-      std::ref(config::shard_local_cfg()))
+      std::ref(config::shard_local_cfg()),
+      kafka::enable_group_metrics::no)
       .get();
     construct_service(
       _co_group_manager,
@@ -814,7 +815,8 @@ void application::wire_up_redpanda_services() {
       std::ref(partition_manager),
       std::ref(controller->get_topics_state()),
       &kafka::make_consumer_offsets_serializer,
-      std::ref(config::shard_local_cfg()))
+      std::ref(config::shard_local_cfg()),
+      kafka::enable_group_metrics::yes)
       .get();
     syschecks::systemd_message("Creating kafka group shard mapper").get();
     construct_service(

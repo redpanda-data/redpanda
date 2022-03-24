@@ -49,7 +49,8 @@ group::group(
   group_state s,
   config::configuration& conf,
   ss::lw_shared_ptr<cluster::partition> partition,
-  group_metadata_serializer serializer)
+  group_metadata_serializer serializer,
+  enable_group_metrics group_metrics)
   : _id(std::move(id))
   , _state(s)
   , _state_timestamp(model::timestamp::now())
@@ -62,14 +63,16 @@ group::group(
       config::shard_local_cfg().rm_violation_recovery_policy.value())
   , _ctxlog(klog, *this)
   , _ctx_txlog(cluster::txlog, *this)
-  , _md_serializer(std::move(serializer)) {}
+  , _md_serializer(std::move(serializer))
+  , _enable_group_metrics(group_metrics) {}
 
 group::group(
   kafka::group_id id,
   group_metadata_value& md,
   config::configuration& conf,
   ss::lw_shared_ptr<cluster::partition> partition,
-  group_metadata_serializer serializer)
+  group_metadata_serializer serializer,
+  enable_group_metrics group_metrics)
   : _id(std::move(id))
   , _num_members_joining(0)
   , _new_member_added(false)
@@ -79,7 +82,8 @@ group::group(
       config::shard_local_cfg().rm_violation_recovery_policy.value())
   , _ctxlog(klog, *this)
   , _ctx_txlog(cluster::txlog, *this)
-  , _md_serializer(std::move(serializer)) {
+  , _md_serializer(std::move(serializer))
+  , _enable_group_metrics(group_metrics) {
     _state = md.members.empty() ? group_state::empty : group_state::stable;
     _generation = md.generation;
     _protocol_type = md.protocol_type;

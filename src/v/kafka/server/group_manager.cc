@@ -38,14 +38,16 @@ group_manager::group_manager(
   ss::sharded<cluster::partition_manager>& pm,
   ss::sharded<cluster::topic_table>& topic_table,
   group_metadata_serializer_factory serializer_factory,
-  config::configuration& conf)
+  config::configuration& conf,
+  enable_group_metrics enable_metrics)
   : _tp_ns(std::move(tp_ns))
   , _gm(gm)
   , _pm(pm)
   , _topic_table(topic_table)
   , _serializer_factory(std::move(serializer_factory))
   , _conf(conf)
-  , _self(cluster::make_self_broker(config::node())) {}
+  , _self(cluster::make_self_broker(config::node()))
+  , _enable_group_metrics(enable_metrics) {}
 
 ss::future<> group_manager::start() {
     /*
@@ -396,7 +398,8 @@ ss::future<> group_manager::recover_partition(
                   group_stm.get_metadata(),
                   _conf,
                   p->partition,
-                  _serializer_factory());
+                  _serializer_factory(),
+                  _enable_group_metrics);
                 group->reset_tx_state(term);
                 _groups.emplace(group_id, group);
                 group->reschedule_all_member_heartbeats();
@@ -429,7 +432,8 @@ ss::future<> group_manager::recover_partition(
               group_state::empty,
               _conf,
               p->partition,
-              _serializer_factory());
+              _serializer_factory(),
+              _enable_group_metrics);
             group->reset_tx_state(term);
             _groups.emplace(group_id, group);
         }
@@ -520,7 +524,12 @@ group_manager::join_group(join_group_request&& r) {
         }
         auto p = it->second->partition;
         group = ss::make_lw_shared<kafka::group>(
-          r.data.group_id, group_state::empty, _conf, p, _serializer_factory());
+          r.data.group_id,
+          group_state::empty,
+          _conf,
+          p,
+          _serializer_factory(),
+          _enable_group_metrics);
         group->reset_tx_state(it->second->term);
         _groups.emplace(r.data.group_id, group);
         _groups.rehash(0);
@@ -653,7 +662,8 @@ group_manager::txn_offset_commit(txn_offset_commit_request&& r) {
                 group_state::empty,
                 _conf,
                 p->partition,
-                _serializer_factory());
+                _serializer_factory(),
+                _enable_group_metrics);
               group->reset_tx_state(p->term);
               _groups.emplace(r.data.group_id, group);
               _groups.rehash(0);
@@ -736,7 +746,8 @@ group_manager::begin_tx(cluster::begin_group_tx_request&& r) {
                 group_state::empty,
                 _conf,
                 p->partition,
-                _serializer_factory());
+                _serializer_factory(),
+                _enable_group_metrics);
               group->reset_tx_state(p->term);
               _groups.emplace(r.group_id, group);
               _groups.rehash(0);
@@ -841,7 +852,8 @@ group_manager::offset_commit(offset_commit_request&& r) {
               group_state::empty,
               _conf,
               p->partition,
-              _serializer_factory());
+              _serializer_factory(),
+              _enable_group_metrics);
             group->reset_tx_state(p->term);
             _groups.emplace(r.data.group_id, group);
             _groups.rehash(0);

@@ -29,6 +29,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/util/bool_class.hh>
 #include <seastar/util/log.hh>
 
 #include <absl/container/node_hash_map.h>
@@ -96,6 +97,8 @@ enum class group_state {
     dead,
 };
 
+using enable_group_metrics = ss::bool_class<struct enable_gr_metrics_tag>;
+
 std::ostream& operator<<(std::ostream&, group_state gs);
 
 ss::sstring group_state_to_kafka_name(group_state);
@@ -147,10 +150,13 @@ public:
         offset_metadata_with_probe(
           offset_metadata _metadata,
           const kafka::group_id& group_id,
-          const model::topic_partition& tp)
+          const model::topic_partition& tp,
+          enable_group_metrics enable_metrics)
           : metadata(std::move(_metadata))
           , probe(metadata.offset) {
-            probe.setup_metrics(group_id, tp);
+            if (enable_metrics) {
+                probe.setup_metrics(group_id, tp);
+            }
         }
     };
 
@@ -165,7 +171,8 @@ public:
       group_state s,
       config::configuration& conf,
       ss::lw_shared_ptr<cluster::partition> partition,
-      group_metadata_serializer);
+      group_metadata_serializer,
+      enable_group_metrics);
 
     // constructor used when loading state from log
     group(
@@ -173,7 +180,8 @@ public:
       group_metadata_value& md,
       config::configuration& conf,
       ss::lw_shared_ptr<cluster::partition> partition,
-      group_metadata_serializer);
+      group_metadata_serializer,
+      enable_group_metrics);
 
     /// Get the group id.
     const kafka::group_id& id() const { return _id; }
@@ -491,7 +499,7 @@ public:
             _offsets.emplace(
               std::move(tp),
               std::make_unique<offset_metadata_with_probe>(
-                std::move(md), _id, tp));
+                std::move(md), _id, tp, _enable_group_metrics));
         }
     }
 
@@ -506,7 +514,7 @@ public:
             _offsets.emplace(
               std::move(tp),
               std::make_unique<offset_metadata_with_probe>(
-                std::move(md), _id, tp));
+                std::move(md), _id, tp, _enable_group_metrics));
             return true;
         }
     }
@@ -653,7 +661,7 @@ private:
       _fence_pid_epoch;
     absl::node_hash_map<model::topic_partition, offset_metadata>
       _pending_offset_commits;
-
+    enable_group_metrics _enable_group_metrics;
     struct volatile_offset {
         model::offset offset;
         kafka::leader_epoch leader_epoch;

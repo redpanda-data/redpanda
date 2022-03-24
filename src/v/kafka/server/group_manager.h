@@ -118,7 +118,8 @@ public:
       ss::sharded<cluster::partition_manager>& pm,
       ss::sharded<cluster::topic_table>&,
       group_metadata_serializer_factory,
-      config::configuration& conf);
+      config::configuration& conf,
+      enable_group_metrics group_metrics);
 
     ss::future<> start();
     ss::future<> stop();
@@ -254,6 +255,7 @@ private:
     //
 
     model::broker _self;
+    enable_group_metrics _enable_group_metrics;
 };
 
 } // namespace kafka

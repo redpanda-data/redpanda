@@ -50,7 +50,8 @@ static group get() {
       group_state::empty,
       conf,
       nullptr,
-      make_backward_compatible_serializer());
+      make_backward_compatible_serializer(),
+      enable_group_metrics::no);
 }
 
 static const std::vector<member_protocol> test_group_protos = {
