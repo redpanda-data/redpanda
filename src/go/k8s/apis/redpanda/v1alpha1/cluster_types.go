@@ -142,6 +142,15 @@ type ClusterSpec struct {
 	// DNS name.
 	// http://www.dns-sd.org/trailingdotsindomainnames.html
 	DNSTrailingDotDisabled bool `json:"dnsTrailingDotDisabled,omitempty"`
+	// RestartConfig allows to control the behavior of the cluster when restarting
+	RestartConfig *RestartConfig `json:"restartConfig,omitempty"`
+}
+
+// RestartConfig contains strategies to configure how the cluster behaves when restarting, because of upgrades
+// or other lifecycle events.
+type RestartConfig struct {
+	// DisableMaintenanceModeHooks deactivates the preStop and postStart hooks that force nodes to enter maintenance mode when stopping and exit maintenance mode when up again
+	DisableMaintenanceModeHooks *bool `json:"disableMaintenanceModeHooks,omitempty"`
 }
 
 // PDBConfig specifies how the PodDisruptionBudget should be created for the
@@ -791,6 +800,16 @@ func (r *Cluster) IsSchemaRegistryTLSEnabled() bool {
 func (r *Cluster) IsSchemaRegistryMutualTLSEnabled() bool {
 	return r.IsSchemaRegistryTLSEnabled() &&
 		r.Spec.Configuration.SchemaRegistry.TLS.RequireClientAuth
+}
+
+// IsUsingMaintenanceModeHooks tells if the cluster is configured to use maintenance mode hooks on the pods.
+// Maintenance mode feature needs to be enabled for this to be relevant.
+func (r *Cluster) IsUsingMaintenanceModeHooks() bool {
+	// enabled unless explicitly stated
+	if r.Spec.RestartConfig != nil && r.Spec.RestartConfig.DisableMaintenanceModeHooks != nil {
+		return !*r.Spec.RestartConfig.DisableMaintenanceModeHooks
+	}
+	return true
 }
 
 // ClusterStatus
