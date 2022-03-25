@@ -12,7 +12,7 @@ import json
 import uuid
 import requests
 from rptest.services.cluster import cluster
-from ducktape.mark import ignore
+from ducktape.mark import ok_to_fail
 from ducktape.utils.util import wait_until
 
 from rptest.clients.types import TopicSpec
@@ -679,7 +679,7 @@ class PandaProxyTest(RedpandaTest):
             })
         assert sc_res.status_code == requests.codes.no_content
 
-    @ignore  # https://github.com/redpanda-data/redpanda/issues/3454
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/3454
     @cluster(num_nodes=3)
     def test_consumer_group_binary_v2(self):
         """
@@ -766,7 +766,7 @@ class PandaProxyTest(RedpandaTest):
         rc_res = c0.remove()
         assert rc_res.status_code == requests.codes.no_content
 
-    @ignore  # https://github.com/redpanda-data/redpanda/issues/2501
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/2501
     @cluster(num_nodes=3)
     def test_consumer_group_json_v2(self):
         """
