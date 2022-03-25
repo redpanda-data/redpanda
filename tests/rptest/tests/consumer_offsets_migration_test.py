@@ -104,8 +104,12 @@ class ConsumerOffsetsMigrationTest(EndToEndTest):
             return True
 
         kcl = KCL(self.redpanda)
+
+        def _group_present():
+            return len(kcl.list_groups().splitlines()) > 1
+
         # make sure that group is there
-        assert len(kcl.list_groups().splitlines()) > 1
+        wait_until(_group_present, 10, 1)
 
         # check that consumer offsets topic is not present
         topics = set(kcl.list_topics())
