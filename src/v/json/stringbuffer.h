@@ -13,19 +13,14 @@
 #include "json/allocator.h"
 #include "json/encodings.h"
 
-#include <rapidjson/document.h>
+#include <rapidjson/stringbuffer.h>
 
 namespace json {
 
 template<typename Encoding = json::UTF8<>>
-using GenericDocument = rapidjson::
-  GenericDocument<Encoding, MemoryPoolAllocator, throwing_allocator>;
+using GenericStringBuffer
+  = rapidjson::GenericStringBuffer<Encoding, throwing_allocator>;
 
-using Document = GenericDocument<>;
-
-template<typename Encoding = json::UTF8<>>
-using GenericValue = typename GenericDocument<Encoding>::ValueType;
-
-using Value = GenericValue<>;
+using StringBuffer = GenericStringBuffer<>;
 
 } // namespace json

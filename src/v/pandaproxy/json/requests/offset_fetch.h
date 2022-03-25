@@ -11,15 +11,13 @@
 
 #pragma once
 
-#include "json/json.h"
+#include "json/stringbuffer.h"
+#include "json/writer.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/offset_fetch.h"
 #include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
-
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
 
 namespace pandaproxy::json {
 
@@ -43,7 +41,7 @@ partitions_request_to_offset_request(std::vector<model::topic_partition> tps) {
 }
 
 inline void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  ::json::Writer<::json::StringBuffer>& w,
   const kafka::offset_fetch_response_topic& v) {
     for (const auto& p : v.partitions) {
         w.StartObject();
@@ -60,7 +58,7 @@ inline void rjson_serialize(
 }
 
 inline void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  ::json::Writer<::json::StringBuffer>& w,
   const kafka::offset_fetch_response& v) {
     w.StartObject();
     w.Key("offsets");

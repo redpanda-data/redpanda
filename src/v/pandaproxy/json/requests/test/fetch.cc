@@ -9,6 +9,8 @@
 
 #include "pandaproxy/json/requests/fetch.h"
 
+#include "json/stringbuffer.h"
+#include "json/writer.h"
 #include "kafka/client/test/utils.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/fetch.h"
@@ -26,8 +28,6 @@
 
 #include <boost/test/tools/interface.hpp>
 #include <boost/test/tools/old/interface.hpp>
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
 
 #include <type_traits>
 
@@ -71,8 +71,8 @@ SEASTAR_THREAD_TEST_CASE(test_produce_fetch_empty) {
     auto res = make_fetch_response({tp}, model::offset{0}, 0);
     auto fmt = ppj::serialization_format::binary_v2;
 
-    rapidjson::StringBuffer str_buf;
-    rapidjson::Writer<rapidjson::StringBuffer> w(str_buf);
+    ::json::StringBuffer str_buf;
+    ::json::Writer<::json::StringBuffer> w(str_buf);
     ppj::rjson_serialize_fmt(fmt)(w, std::move(res));
 
     auto expected = R"([])";
@@ -89,8 +89,8 @@ SEASTAR_THREAD_TEST_CASE(test_produce_fetch_one) {
     auto res = make_fetch_response(tps, model::offset{42}, 1);
     auto fmt = ppj::serialization_format::binary_v2;
 
-    rapidjson::StringBuffer str_buf;
-    rapidjson::Writer<rapidjson::StringBuffer> w(str_buf);
+    ::json::StringBuffer str_buf;
+    ::json::Writer<::json::StringBuffer> w(str_buf);
     ppj::rjson_serialize_fmt(fmt)(w, std::move(res));
 
     auto expected

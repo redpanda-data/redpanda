@@ -12,17 +12,16 @@
 #pragma once
 
 #include "json/json.h"
+#include "json/prettywriter.h"
+#include "json/reader.h"
+#include "json/stream.h"
+#include "json/stringbuffer.h"
+#include "json/writer.h"
 #include "pandaproxy/json/exceptions.h"
 #include "pandaproxy/json/types.h"
 #include "utils/concepts-enabled.h"
 
 #include <seastar/core/sstring.hh>
-
-#include <rapidjson/prettywriter.h>
-#include <rapidjson/reader.h>
-#include <rapidjson/stream.h>
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
 
 #include <stdexcept>
 
@@ -30,8 +29,8 @@ namespace pandaproxy::json {
 
 template<typename T>
 ss::sstring rjson_serialize(const T& v) {
-    rapidjson::StringBuffer str_buf;
-    rapidjson::Writer<rapidjson::StringBuffer> wrt(str_buf);
+    ::json::StringBuffer str_buf;
+    ::json::Writer<::json::StringBuffer> wrt(str_buf);
 
     using ::json::rjson_serialize;
     using ::pandaproxy::json::rjson_serialize;
@@ -51,7 +50,7 @@ struct rjson_serialize_fmt_impl {
           std::forward<T>(t));
     }
     template<typename T>
-    void operator()(rapidjson::Writer<rapidjson::StringBuffer>& w, T&& t) {
+    void operator()(::json::Writer<::json::StringBuffer>& w, T&& t) {
         rjson_serialize_impl<std::remove_reference_t<T>>{fmt}(
           w, std::forward<T>(t));
     }
@@ -67,8 +66,8 @@ CONCEPT(requires std::is_same_v<
         typename Handler::rjson_parse_result>)
 typename Handler::rjson_parse_result
   rjson_parse(const char* const s, Handler&& handler) {
-    rapidjson::Reader reader;
-    rapidjson::StringStream ss(s);
+    ::json::Reader reader;
+    ::json::StringStream ss(s);
     if (!reader.Parse(ss, handler)) {
         throw parse_error(reader.GetErrorOffset());
     }
@@ -76,19 +75,19 @@ typename Handler::rjson_parse_result
 }
 
 inline ss::sstring minify(std::string_view json) {
-    rapidjson::Reader r;
-    rapidjson::StringStream in(json.data());
-    rapidjson::StringBuffer out;
-    rapidjson::Writer<rapidjson::StringBuffer> w{out};
+    ::json::Reader r;
+    ::json::StringStream in(json.data());
+    ::json::StringBuffer out;
+    ::json::Writer<::json::StringBuffer> w{out};
     r.Parse(in, w);
     return ss::sstring(out.GetString(), out.GetSize());
 }
 
 inline ss::sstring prettify(std::string_view json) {
-    rapidjson::Reader r;
-    rapidjson::StringStream in(json.data());
-    rapidjson::StringBuffer out;
-    rapidjson::PrettyWriter<rapidjson::StringBuffer> w{out};
+    ::json::Reader r;
+    ::json::StringStream in(json.data());
+    ::json::StringBuffer out;
+    ::json::PrettyWriter<::json::StringBuffer> w{out};
     r.Parse(in, w);
     return ss::sstring(out.GetString(), out.GetSize());
 }

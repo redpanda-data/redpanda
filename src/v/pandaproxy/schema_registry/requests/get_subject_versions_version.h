@@ -23,7 +23,7 @@ struct post_subject_versions_version_response {
 };
 
 inline void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  ::json::Writer<::json::StringBuffer>& w,
   const post_subject_versions_version_response& res) {
     w.StartObject();
     w.Key("subject");

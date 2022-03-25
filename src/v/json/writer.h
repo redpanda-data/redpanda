@@ -10,15 +10,15 @@
 #pragma once
 
 #include "json/allocator.h"
+#include "json/encodings.h"
 
-#include <rapidjson/encodings.h>
 #include <rapidjson/writer.h>
 
 namespace json {
 template<
   typename OutputStream,
-  typename SourceEncoding = rapidjson::UTF8<>,
-  typename TargetEncoding = rapidjson::UTF8<>,
+  typename SourceEncoding = json::UTF8<>,
+  typename TargetEncoding = json::UTF8<>,
   unsigned writeFlags = rapidjson::kWriteDefaultFlags>
 using Writer = rapidjson::Writer<
   OutputStream,

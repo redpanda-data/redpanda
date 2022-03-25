@@ -7,15 +7,16 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "json/document.h"
 #include "json/json.h"
+#include "json/stringbuffer.h"
+#include "json/writer.h"
 #include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/testing/thread_test_case.hh>
 #include <seastar/util/log.hh>
-
-#include <rapidjson/document.h>
 
 #include <optional>
 
@@ -41,8 +42,7 @@ struct personne_t {
 } // namespace
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
-  const personne_t::nested& obj) {
+  json::Writer<json::StringBuffer>& w, const personne_t::nested& obj) {
     w.StartObject();
 
     w.Key("x");
@@ -57,8 +57,7 @@ void rjson_serialize(
     w.EndObject();
 }
 
-void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w, const personne_t& p) {
+void rjson_serialize(json::Writer<json::StringBuffer>& w, const personne_t& p) {
     w.StartObject();
 
     w.Key("full_name");
@@ -104,17 +103,17 @@ SEASTAR_THREAD_TEST_CASE(json_serialization_test) {
     p1.height = 1.78;
     p1.obj = personne_t::nested{98, 78, 13.369};
 
-    rapidjson::StringBuffer cfg_sb;
-    rapidjson::Writer<rapidjson::StringBuffer> cfg_writer(cfg_sb);
+    json::StringBuffer cfg_sb;
+    json::Writer<json::StringBuffer> cfg_writer(cfg_sb);
     rjson_serialize(cfg_writer, p1);
     auto jstr = cfg_sb.GetString();
 
     // json string -> rapidjson doc - result
-    rapidjson::Document res_doc;
+    json::Document res_doc;
     res_doc.Parse(jstr);
 
     // json string -> rapidjson doc - expectation
-    rapidjson::Document exp_doc;
+    json::Document exp_doc;
     exp_doc.Parse(expected_result);
 
     BOOST_TEST(res_doc["full_name"].IsString());

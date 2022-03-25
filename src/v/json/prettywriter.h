@@ -13,19 +13,20 @@
 #include "json/allocator.h"
 #include "json/encodings.h"
 
-#include <rapidjson/document.h>
+#include <rapidjson/prettywriter.h>
 
 namespace json {
 
-template<typename Encoding = json::UTF8<>>
-using GenericDocument = rapidjson::
-  GenericDocument<Encoding, MemoryPoolAllocator, throwing_allocator>;
-
-using Document = GenericDocument<>;
-
-template<typename Encoding = json::UTF8<>>
-using GenericValue = typename GenericDocument<Encoding>::ValueType;
-
-using Value = GenericValue<>;
+template<
+  typename OutputStream,
+  typename SourceEncoding = json::UTF8<>,
+  typename TargetEncoding = json::UTF8<>,
+  unsigned writeFlags = rapidjson::kWriteDefaultFlags>
+using PrettyWriter = rapidjson::PrettyWriter<
+  OutputStream,
+  SourceEncoding,
+  TargetEncoding,
+  throwing_allocator,
+  writeFlags>;
 
 } // namespace json

@@ -11,7 +11,8 @@
 
 #pragma once
 #include "config/validation_error.h"
-#include "json/json.h"
+#include "json/stringbuffer.h"
+#include "json/writer.h"
 #include "seastarx.h"
 
 #include <seastar/util/bool_class.hh>
@@ -74,8 +75,7 @@ public:
     // this serializes the property value. a full configuration serialization is
     // performed in config_store::to_json where the json object key is taken
     // from the property name.
-    virtual void
-    to_json(rapidjson::Writer<rapidjson::StringBuffer>& w) const = 0;
+    virtual void to_json(json::Writer<json::StringBuffer>& w) const = 0;
 
     virtual void print(std::ostream&) const = 0;
     virtual bool set_value(YAML::Node) = 0;

@@ -114,7 +114,7 @@ public:
      *               callback should return false to exclude a property.
      */
     void to_json(
-      rapidjson::Writer<rapidjson::StringBuffer>& w,
+      json::Writer<json::StringBuffer>& w,
       std::optional<std::function<bool(base_property&)>> filter
       = std::nullopt) const {
         w.StartObject();
@@ -152,8 +152,8 @@ private:
 };
 
 inline YAML::Node to_yaml(const config_store& cfg) {
-    rapidjson::StringBuffer buf;
-    rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
+    json::StringBuffer buf;
+    json::Writer<json::StringBuffer> writer(buf);
     cfg.to_json(writer);
     return YAML::Load(buf.GetString());
 }

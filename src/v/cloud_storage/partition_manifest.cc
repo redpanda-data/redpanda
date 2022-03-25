@@ -14,6 +14,8 @@
 #include "bytes/iobuf_ostreambuf.h"
 #include "cloud_storage/types.h"
 #include "hashing/xx.h"
+#include "json/istreamwrapper.h"
+#include "json/ostreamwrapper.h"
 #include "json/writer.h"
 #include "model/timestamp.h"
 #include "ssx/sformat.h"
@@ -22,9 +24,6 @@
 #include <seastar/core/coroutine.hh>
 
 #include <fmt/ostream.h>
-#include <rapidjson/istreamwrapper.h>
-#include <rapidjson/ostreamwrapper.h>
-#include <rapidjson/rapidjson.h>
 
 #include <charconv>
 
@@ -313,7 +312,7 @@ ss::future<> partition_manifest::update(ss::input_stream<char> is) {
     iobuf_istreambuf ibuf(result);
     std::istream stream(&ibuf);
     json::Document m;
-    rapidjson::IStreamWrapper wrapper(stream);
+    json::IStreamWrapper wrapper(stream);
     m.ParseStream(wrapper);
     update(m);
     co_return;
@@ -399,8 +398,8 @@ serialized_json_stream partition_manifest::serialize() const {
 }
 
 void partition_manifest::serialize(std::ostream& out) const {
-    rapidjson::OStreamWrapper wrapper(out);
-    json::Writer<rapidjson::OStreamWrapper> w(wrapper);
+    json::OStreamWrapper wrapper(out);
+    json::Writer<json::OStreamWrapper> w(wrapper);
     w.StartObject();
     w.Key("version");
     w.Int(static_cast<int>(manifest_version::v1));

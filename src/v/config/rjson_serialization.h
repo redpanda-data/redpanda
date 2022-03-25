@@ -17,56 +17,51 @@
 #include "config/tests/custom_aggregate.h"
 #include "config/tls_config.h"
 #include "json/json.h"
+#include "json/stringbuffer.h"
+#include "json/writer.h"
 #include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
 
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
-
 namespace json {
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
-  const config::data_directory_path& v);
+  json::Writer<json::StringBuffer>& w, const config::data_directory_path& v);
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w, const config::seed_server& v);
+  json::Writer<json::StringBuffer>& w, const config::seed_server& v);
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w, const config::key_cert& v);
+  json::Writer<json::StringBuffer>& w, const config::key_cert& v);
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w, const config::tls_config& v);
+  json::Writer<json::StringBuffer>& w, const config::tls_config& v);
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  json::Writer<json::StringBuffer>& w,
   const std::vector<config::seed_server>& v);
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w, const custom_aggregate& v);
+  json::Writer<json::StringBuffer>& w, const custom_aggregate& v);
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
-  const config::endpoint_tls_config& v);
+  json::Writer<json::StringBuffer>& w, const config::endpoint_tls_config& v);
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  json::Writer<json::StringBuffer>& w,
   const std::vector<config::endpoint_tls_config>& v);
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w, const model::compression& v);
+  json::Writer<json::StringBuffer>& w, const model::compression& v);
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
-  const model::timestamp_type& v);
+  json::Writer<json::StringBuffer>& w, const model::timestamp_type& v);
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
-  const model::cleanup_policy_bitflags& v);
+  json::Writer<json::StringBuffer>& w, const model::cleanup_policy_bitflags& v);
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  json::Writer<json::StringBuffer>& w,
   const model::violation_recovery_policy& v);
 
 } // namespace json

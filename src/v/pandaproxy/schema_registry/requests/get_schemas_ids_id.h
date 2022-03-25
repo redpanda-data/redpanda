@@ -21,7 +21,7 @@ struct get_schemas_ids_id_response {
 };
 
 inline void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  ::json::Writer<::json::StringBuffer>& w,
   const get_schemas_ids_id_response& res) {
     w.StartObject();
     w.Key("schema");

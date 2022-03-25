@@ -13,9 +13,6 @@
 
 #include <seastar/testing/thread_test_case.hh>
 
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
-
 #include <type_traits>
 
 namespace ppj = pandaproxy::json;

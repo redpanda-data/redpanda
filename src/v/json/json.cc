@@ -11,48 +11,38 @@
 
 namespace json {
 
-void rjson_serialize(rapidjson::Writer<rapidjson::StringBuffer>& w, short v) {
-    w.Int(v);
-}
+void rjson_serialize(json::Writer<json::StringBuffer>& w, short v) { w.Int(v); }
 
-void rjson_serialize(rapidjson::Writer<rapidjson::StringBuffer>& w, bool v) {
-    w.Bool(v);
-}
+void rjson_serialize(json::Writer<json::StringBuffer>& w, bool v) { w.Bool(v); }
 
-void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w, long long v) {
+void rjson_serialize(json::Writer<json::StringBuffer>& w, long long v) {
     w.Int64(v);
 }
 
-void rjson_serialize(rapidjson::Writer<rapidjson::StringBuffer>& w, int v) {
-    w.Int(v);
-}
+void rjson_serialize(json::Writer<json::StringBuffer>& w, int v) { w.Int(v); }
 
-void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w, unsigned int v) {
+void rjson_serialize(json::Writer<json::StringBuffer>& w, unsigned int v) {
     w.Uint(v);
 }
 
-void rjson_serialize(rapidjson::Writer<rapidjson::StringBuffer>& w, long v) {
+void rjson_serialize(json::Writer<json::StringBuffer>& w, long v) {
     w.Int64(v);
 }
 
-void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w, unsigned long v) {
+void rjson_serialize(json::Writer<json::StringBuffer>& w, unsigned long v) {
     w.Uint64(v);
 }
 
-void rjson_serialize(rapidjson::Writer<rapidjson::StringBuffer>& w, double v) {
+void rjson_serialize(json::Writer<json::StringBuffer>& w, double v) {
     w.Double(v);
 }
 
-void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w, std::string_view v) {
+void rjson_serialize(json::Writer<json::StringBuffer>& w, std::string_view v) {
     w.String(v.data(), v.size());
 }
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w, const ss::socket_address& v) {
+  json::Writer<json::StringBuffer>& w, const ss::socket_address& v) {
     w.StartObject();
 
     std::ostringstream a;
@@ -73,8 +63,7 @@ void rjson_serialize(
 }
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
-  const net::unresolved_address& v) {
+  json::Writer<json::StringBuffer>& w, const net::unresolved_address& v) {
     w.StartObject();
 
     w.Key("address");
@@ -87,22 +76,19 @@ void rjson_serialize(
 }
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
-  const std::chrono::milliseconds& v) {
+  json::Writer<json::StringBuffer>& w, const std::chrono::milliseconds& v) {
     uint64_t _tmp = v.count();
     rjson_serialize(w, _tmp);
 }
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
-  const std::chrono::seconds& v) {
+  json::Writer<json::StringBuffer>& w, const std::chrono::seconds& v) {
     uint64_t _tmp = v.count();
     rjson_serialize(w, _tmp);
 }
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
-  const model::broker_endpoint& ep) {
+  json::Writer<json::StringBuffer>& w, const model::broker_endpoint& ep) {
     w.StartObject();
     w.Key("name");
     w.String(ep.name);

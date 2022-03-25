@@ -16,6 +16,11 @@
 #include "cloud_storage/types.h"
 #include "cluster/types.h"
 #include "hashing/xx.h"
+#include "json/encodings.h"
+#include "json/istreamwrapper.h"
+#include "json/ostreamwrapper.h"
+#include "json/reader.h"
+#include "json/types.h"
 #include "json/writer.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
@@ -26,11 +31,7 @@
 
 #include <boost/lexical_cast.hpp>
 #include <fmt/ostream.h>
-#include <rapidjson/encodings.h>
 #include <rapidjson/error/en.h>
-#include <rapidjson/istreamwrapper.h>
-#include <rapidjson/ostreamwrapper.h>
-#include <rapidjson/reader.h>
 
 #include <chrono>
 #include <optional>
@@ -40,8 +41,7 @@
 namespace cloud_storage {
 
 struct topic_manifest_handler
-  : public rapidjson::
-      BaseReaderHandler<rapidjson::UTF8<>, topic_manifest_handler> {
+  : public json::BaseReaderHandler<json::UTF8<>, topic_manifest_handler> {
     using key_string = ss::basic_sstring<char, uint32_t, 31>;
     bool StartObject() {
         switch (_state) {
@@ -54,7 +54,7 @@ struct topic_manifest_handler
         }
     }
 
-    bool Key(const char* str, rapidjson::SizeType length, bool /*copy*/) {
+    bool Key(const char* str, json::SizeType length, bool /*copy*/) {
         switch (_state) {
         case state::expect_key:
             _key = key_string(str, length);
@@ -66,7 +66,7 @@ struct topic_manifest_handler
         }
     }
 
-    bool String(const char* str, rapidjson::SizeType length, bool /*copy*/) {
+    bool String(const char* str, json::SizeType length, bool /*copy*/) {
         std::string_view sv(str, length);
         switch (_state) {
         case state::expect_value:
@@ -125,7 +125,7 @@ struct topic_manifest_handler
         }
     }
 
-    bool EndObject(rapidjson::SizeType /*size*/) {
+    bool EndObject(json::SizeType /*size*/) {
         return _state == state::expect_key;
     }
 
@@ -279,8 +279,8 @@ ss::future<> topic_manifest::update(ss::input_stream<char> is) {
     iobuf_istreambuf ibuf(result);
     std::istream stream(&ibuf);
 
-    rapidjson::IStreamWrapper wrapper(stream);
-    rapidjson::Reader reader;
+    json::IStreamWrapper wrapper(stream);
+    json::Reader reader;
     topic_manifest_handler handler;
     if (reader.Parse(wrapper, handler)) {
         vlog(cst_log.debug, "Parsed successfully!");
@@ -319,8 +319,8 @@ serialized_json_stream topic_manifest::serialize() const {
 }
 
 void topic_manifest::serialize(std::ostream& out) const {
-    rapidjson::OStreamWrapper wrapper(out);
-    json::Writer<rapidjson::OStreamWrapper> w(wrapper);
+    json::OStreamWrapper wrapper(out);
+    json::Writer<json::OStreamWrapper> w(wrapper);
     w.StartObject();
     w.Key("version");
     w.Int(static_cast<int>(manifest_version::v1));

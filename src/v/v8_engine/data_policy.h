@@ -10,7 +10,6 @@
 
 #pragma once
 
-#include "json/json.h"
 #include "reflection/adl.h"
 #include "seastarx.h"
 #include "vlog.h"

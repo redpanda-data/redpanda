@@ -21,7 +21,8 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "hashing/secure.h"
-#include "json/json.h"
+#include "json/stringbuffer.h"
+#include "json/writer.h"
 #include "model/namespace.h"
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
@@ -43,7 +44,6 @@
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
 #include <fmt/core.h>
-#include <rapidjson/stringbuffer.h>
 
 #include <stdexcept>
 
@@ -274,8 +274,8 @@ ss::future<> metrics_reporter::try_initialize_cluster_info() {
 
 iobuf serialize_metrics_snapshot(
   const metrics_reporter::metrics_snapshot& snapshot) {
-    rapidjson::StringBuffer sb;
-    rapidjson::Writer<rapidjson::StringBuffer> writer(sb);
+    json::StringBuffer sb;
+    json::Writer<json::StringBuffer> writer(sb);
 
     json::rjson_serialize(writer, snapshot);
     iobuf out;
@@ -376,7 +376,7 @@ ss::future<> metrics_reporter::do_report_metrics() {
 
 namespace json {
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  json::Writer<json::StringBuffer>& w,
   const cluster::metrics_reporter::metrics_snapshot& snapshot) {
     w.StartObject();
 
@@ -400,7 +400,7 @@ void rjson_serialize(
 }
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  json::Writer<json::StringBuffer>& w,
   const cluster::metrics_reporter::node_disk_space& ds) {
     w.StartObject();
     w.Key("free");
@@ -411,7 +411,7 @@ void rjson_serialize(
 }
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  json::Writer<json::StringBuffer>& w,
   const cluster::metrics_reporter::node_metrics& nm) {
     w.StartObject();
     w.Key("node_id");

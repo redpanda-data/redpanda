@@ -9,14 +9,19 @@
 
 #pragma once
 
+#include "json/_include_first.h"
 #include "json/logger.h"
 #include "vlog.h"
 
 #include <fmt/format.h>
 #include <rapidjson/allocators.h>
+
 namespace json {
+
 class throwing_allocator {
 public:
+    static const bool kNeedFree = rapidjson::CrtAllocator::kNeedFree;
+
     void* Malloc(size_t size) {
         void* res = _rp_allocator.Malloc(size);
         if (!res && (0 != size)) {
@@ -46,4 +51,7 @@ public:
 private:
     [[no_unique_address]] rapidjson::CrtAllocator _rp_allocator;
 };
+
+using MemoryPoolAllocator = rapidjson::MemoryPoolAllocator<throwing_allocator>;
+
 } // namespace json

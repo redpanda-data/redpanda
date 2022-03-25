@@ -11,15 +11,14 @@
 
 #pragma once
 
-#include "json/json.h"
+#include "json/encodings.h"
+#include "json/types.h"
 #include "model/fundamental.h"
 #include "pandaproxy/json/rjson_parse.h"
 #include "pandaproxy/json/types.h"
 #include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
-
-#include <rapidjson/encodings.h>
 
 namespace pandaproxy::json {
 
@@ -33,7 +32,7 @@ struct topic_partition_offset {
     };
 };
 
-template<typename Encoding = rapidjson::UTF8<>>
+template<typename Encoding = ::json::UTF8<>>
 class partition_offsets_request_handler final : public base_handler<Encoding> {
 private:
     enum class state {
@@ -82,7 +81,7 @@ public:
         }
     }
 
-    bool String(const Ch* str, rapidjson::SizeType len, bool) {
+    bool String(const Ch* str, ::json::SizeType len, bool) {
         if (state == state::topic) {
             result.back().topic = model::topic(ss::sstring(str, len));
             state = state::tpo;
@@ -91,7 +90,7 @@ public:
         return false;
     }
 
-    bool Key(const char* str, rapidjson::SizeType len, bool) {
+    bool Key(const char* str, ::json::SizeType len, bool) {
         auto key = std::string_view(str, len);
         if (state == state::empty && key == "partitions") {
             state = state::partitions;
@@ -124,7 +123,7 @@ public:
         return false;
     }
 
-    bool EndObject(rapidjson::SizeType size) {
+    bool EndObject(::json::SizeType size) {
         if (state == state::tpo) {
             state = state::partitions;
             return size == 3;
@@ -138,7 +137,7 @@ public:
 
     bool StartArray() { return state == state::partitions; }
 
-    bool EndArray(rapidjson::SizeType) { return state == state::partitions; }
+    bool EndArray(::json::SizeType) { return state == state::partitions; }
 };
 
 } // namespace pandaproxy::json

@@ -10,6 +10,7 @@
 #pragma once
 
 #include "http/client.h"
+#include "json/document.h"
 #include "pandaproxy/json/exceptions.h"
 #include "pandaproxy/json/types.h"
 #include "pandaproxy/schema_registry/types.h"
@@ -81,7 +82,7 @@ inline auto get_subject_versions(
 
 inline std::vector<pps::schema_version>
 get_body_versions(const ss::sstring& body) {
-    rapidjson::Document doc;
+    json::Document doc;
     if (doc.Parse(body).HasParseError()) {
         throw ppj::parse_error(doc.GetErrorOffset());
     }
@@ -101,7 +102,7 @@ get_body_versions(const ss::sstring& body) {
 }
 
 inline int get_body_error_code(const ss::sstring& body) {
-    rapidjson::Document doc;
+    json::Document doc;
     if (doc.Parse(body).HasParseError()) {
         throw ppj::parse_error(doc.GetErrorOffset());
     }

@@ -13,7 +13,10 @@
 
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
-#include "json/json.h"
+#include "json/reader.h"
+#include "json/stream.h"
+#include "json/stringbuffer.h"
+#include "json/writer.h"
 #include "pandaproxy/json/types.h"
 #include "utils/base64.h"
 
@@ -62,7 +65,7 @@ public:
     explicit rjson_serialize_impl(serialization_format fmt)
       : _fmt(fmt) {}
 
-    bool operator()(rapidjson::Writer<rapidjson::StringBuffer>& w, iobuf buf) {
+    bool operator()(::json::Writer<::json::StringBuffer>& w, iobuf buf) {
         switch (_fmt) {
         case serialization_format::none:
             [[fallthrough]];
@@ -77,8 +80,7 @@ public:
         }
     }
 
-    bool
-    encode_base64(rapidjson::Writer<rapidjson::StringBuffer>& w, iobuf buf) {
+    bool encode_base64(::json::Writer<::json::StringBuffer>& w, iobuf buf) {
         if (buf.empty()) {
             return w.Null();
         }
@@ -86,15 +88,15 @@ public:
         return w.String(iobuf_to_base64(buf));
     };
 
-    bool encode_json(rapidjson::Writer<rapidjson::StringBuffer>& w, iobuf buf) {
+    bool encode_json(::json::Writer<::json::StringBuffer>& w, iobuf buf) {
         if (buf.empty()) {
             return w.Null();
         }
         iobuf_parser p{std::move(buf)};
         auto str = p.read_string(p.bytes_left());
         static_assert(str.padding(), "StringStream requires null termination");
-        rapidjson::Reader reader;
-        rapidjson::StringStream ss{str.c_str()};
+        ::json::Reader reader;
+        ::json::StringStream ss{str.c_str()};
         return reader.Parse(ss, w);
     };
 

@@ -109,12 +109,12 @@ private:
 } // namespace cluster
 namespace json {
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  json::Writer<json::StringBuffer>& w,
   const cluster::metrics_reporter::metrics_snapshot& v);
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  json::Writer<json::StringBuffer>& w,
   const cluster::metrics_reporter::node_disk_space& v);
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  json::Writer<json::StringBuffer>& w,
   const cluster::metrics_reporter::node_metrics& v);
 } // namespace json
