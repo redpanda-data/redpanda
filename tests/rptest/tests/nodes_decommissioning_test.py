@@ -31,7 +31,7 @@ class NodesDecommissioningTest(EndToEndTest):
         self.start_redpanda(num_nodes=4)
         topics = []
         for partition_count in range(1, 5):
-            for replication_factor in (3, 3):
+            for replication_factor in (1, 3):
                 name = f"topic{len(topics)}"
                 spec = TopicSpec(name=name,
                                  partition_count=partition_count,
@@ -69,7 +69,7 @@ class NodesDecommissioningTest(EndToEndTest):
         self.start_redpanda(num_nodes=4)
         topics = []
         for partition_count in range(1, 5):
-            for replication_factor in (3, 3):
+            for replication_factor in (1, 3):
                 name = f"topic{len(topics)}"
                 spec = TopicSpec(name=name,
                                  partition_count=partition_count,
