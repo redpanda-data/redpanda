@@ -283,9 +283,13 @@ type ClusterStatus struct {
 	// Nodes of the provisioned redpanda nodes
 	// +optional
 	Nodes NodesList `json:"nodes,omitempty"`
-	// Indicates cluster is upgrading
+	// Indicates cluster is upgrading.
 	// +optional
-	Upgrading bool `json:"upgrading"`
+	// Deprecated: replaced by "restarting"
+	DeprecatedUpgrading bool `json:"upgrading"`
+	// Indicates that a cluster is restarting due to an upgrade or a different reason
+	// +optional
+	Restarting bool `json:"restarting"`
 	// Current version of the cluster.
 	// +optional
 	Version string `json:"version"`
@@ -787,6 +791,21 @@ func (r *Cluster) IsSchemaRegistryTLSEnabled() bool {
 func (r *Cluster) IsSchemaRegistryMutualTLSEnabled() bool {
 	return r.IsSchemaRegistryTLSEnabled() &&
 		r.Spec.Configuration.SchemaRegistry.TLS.RequireClientAuth
+}
+
+// ClusterStatus
+
+// IsRestarting tells if the cluster is restarting due to a change in configuration or an upgrade in progress
+func (s *ClusterStatus) IsRestarting() bool {
+	// Let's consider the old field for a transition period
+	return s.Restarting || s.DeprecatedUpgrading
+}
+
+// SetRestarting sets the cluster as restarting
+func (s *ClusterStatus) SetRestarting(restarting bool) {
+	s.Restarting = restarting
+	// keep deprecated upgrading field as some external tools may still rely on it
+	s.DeprecatedUpgrading = restarting
 }
 
 // TLSConfig is a generic TLS configuration
