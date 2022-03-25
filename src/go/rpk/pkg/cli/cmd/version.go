@@ -18,10 +18,9 @@ import (
 
 func NewVersionCommand() *cobra.Command {
 	command := &cobra.Command{
-		Use:          "version",
-		Short:        "Check the current version.",
-		Long:         "",
-		SilenceUsage: true,
+		Use:   "version",
+		Short: "Check the current version.",
+		Long:  "",
 		Run: func(_ *cobra.Command, _ []string) {
 			log.SetFormatter(cli.NewNoopFormatter())
 			log.Infof("%s\n", version.Pretty())

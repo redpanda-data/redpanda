@@ -255,7 +255,6 @@ The following are the data sources that are bundled in the compressed file:
  - dmidecode: The DMI table contents. Only included if this command is run
    as root.
 `,
-		SilenceUsage: true,
 		Run: func(cmd *cobra.Command, args []string) {
 			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)

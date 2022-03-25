@@ -59,7 +59,6 @@ func Execute() {
 		Short: "rpk is the Redpanda CLI & toolbox.",
 		Long:  "",
 	}
-	rootCmd.SilenceUsage = true
 	rootCmd.PersistentFlags().BoolVarP(&verbose, config.FlagVerbose,
 		"v", false, "Enable verbose logging (default: false).")
 
