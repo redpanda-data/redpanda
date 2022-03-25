@@ -512,6 +512,13 @@ func (r *StatefulSetResource) obj(
 		},
 	}
 
+	if featuregates.MaintenanceMode(r.pandaCluster.Spec.Version) && r.pandaCluster.IsUsingMaintenanceModeHooks() {
+		ss.Spec.Template.Spec.Containers[0].Lifecycle = &corev1.Lifecycle{
+			PreStop:   r.getPreStopHook(),
+			PostStart: r.getPostStartHook(),
+		}
+	}
+
 	if featuregates.CentralizedConfiguration(r.pandaCluster.Spec.Version) {
 		ss.Spec.Template.Spec.Containers[0].VolumeMounts = append(ss.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
 			Name:      "configmap-dir",
@@ -533,6 +540,76 @@ func (r *StatefulSetResource) obj(
 	}
 
 	return ss, nil
+}
+
+// getPrestopHook creates a hook that drains the node before shutting down.
+func (r *StatefulSetResource) getPreStopHook() *corev1.Handler {
+	// TODO replace scripts with proper RPK calls
+	curlCommand := r.composeCURLMaintenanceCommand(`-X PUT --silent -o /dev/null -w "%{http_code}"`, nil)
+	genericMaintenancePath := "/v1/maintenance"
+	curlGetCommand := r.composeCURLMaintenanceCommand(`--silent`, &genericMaintenancePath)
+	cmd := strings.Join(
+		[]string{
+			fmt.Sprintf(`until [ "${status:-}" = "200" ]; do status=$(%s); sleep 0.5; done`, curlCommand),
+			fmt.Sprintf(`until [ "${finished:-}" = "true" ]; do finished=$(%s | grep -o '\"finished\":[^,}]*' | grep -o '[^: ]*$'); sleep 0.5; done`, curlGetCommand),
+		}, " && ")
+
+	return &corev1.Handler{
+		Exec: &corev1.ExecAction{
+			Command: []string{
+				"/bin/bash",
+				"-c",
+				cmd,
+			},
+		},
+	}
+}
+
+// getPostStartHook creates a hook that removes maintenance mode after startup.
+func (r *StatefulSetResource) getPostStartHook() *corev1.Handler {
+	// TODO replace scripts with proper RPK calls
+	curlCommand := r.composeCURLMaintenanceCommand(`-X DELETE --silent -o /dev/null -w "%{http_code}"`, nil)
+	// HTTP code 400 is returned by v22 nodes during an upgrade from v21 until the new version reaches quorum and the maintenance mode feature is enabled
+	cmd := fmt.Sprintf(`until [ "${status:-}" = "200" ] || [ "${status:-}" = "400" ]; do status=$(%s); sleep 0.5; done`, curlCommand)
+
+	return &corev1.Handler{
+		Exec: &corev1.ExecAction{
+			Command: []string{
+				"/bin/bash",
+				"-c",
+				cmd,
+			},
+		},
+	}
+}
+
+// nolint:goconst // no need
+func (r *StatefulSetResource) composeCURLMaintenanceCommand(
+	options string, urlOverwrite *string,
+) string {
+	adminAPI := r.pandaCluster.AdminAPIInternal()
+
+	cmd := fmt.Sprintf(`curl %s `, options)
+
+	tlsConfig := adminAPI.GetTLS()
+	proto := "http"
+	if tlsConfig != nil && tlsConfig.Enabled {
+		proto = "https"
+		if tlsConfig.RequireClientAuth {
+			cmd += "--cacert /etc/tls/certs/admin/ca/ca.crt --cert /etc/tls/certs/admin/tls.crt --key /etc/tls/certs/admin/tls.key "
+		} else {
+			cmd += "--cacert /etc/tls/certs/admin/tls.crt "
+		}
+	}
+	cmd += fmt.Sprintf("%s://${POD_NAME}.%s.%s.svc.cluster.local:%d", proto, r.pandaCluster.Name, r.pandaCluster.Namespace, adminAPI.Port)
+
+	if urlOverwrite == nil {
+		prefixLen := len(r.pandaCluster.Name) + 1
+		cmd += fmt.Sprintf("/v1/brokers/${POD_NAME:%d}/maintenance", prefixLen)
+	} else {
+		cmd += *urlOverwrite
+	}
+	return cmd
 }
 
 // setCloudStorage manipulates v1.StatefulSet object in order to add cloud storage specific
