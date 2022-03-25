@@ -127,3 +127,4 @@ This is an example with the `v21.3.5-beta3` version prior to the 21.3.5 release.
 ```
 docker.vectorized.io/vectorized/redpanda:v21.3.5-beta3
 ```
+
