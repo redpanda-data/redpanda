@@ -27,6 +27,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
@@ -46,10 +47,13 @@ type consumer struct {
 	pretty   bool // specific to -f json
 	metaOnly bool // specific to -f json
 
-	// from parseOffset
-	offset kgo.Offset
-	start  int64 // if non-negative, start each partition here
-	end    int64 // if non-negative, end each partition here
+	resetOffset kgo.Offset // defaults to NoResetOffset, can be start or end
+	start       int64      // TODO doc
+
+	// If an end offset is specified, we immediately look up where we will
+	// end and quit rpk when we hit the end.
+	partEnds   map[string]map[int32]int64
+	partStarts map[string]map[int32]int64
 
 	cl *kgo.Client
 }
@@ -66,11 +70,21 @@ func NewConsumeCommand(fs afero.Fs) *cobra.Command {
 		Short: "Consume records from topics.",
 		Long:  helpConsume,
 		Args:  cobra.MinimumNArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			err := c.parseOffset(offset)
-			out.MaybeDie(err, "invalid --offset: %v", err)
+		Run: func(cmd *cobra.Command, topics []string) {
+			p := config.ParamsFromCommand(cmd)
+			cfg, err := p.Load(fs)
+			out.MaybeDie(err, "unable to load config: %v", err)
 
-			opts, err := c.intoOptions(args)
+			adm, err := kafka.NewAdmin(fs, p, cfg)
+			out.MaybeDie(err, "unable to initialize admin kafka client: %v", err)
+
+			err = c.parseOffset(offset, topics, adm)
+			out.MaybeDie(err, "invalid --offset %q: %v", offset, err)
+			if allEmpty := c.filterEmptyPartitions(adm); allEmpty {
+				return
+			}
+
+			opts, err := c.intoOptions(topics)
 			out.MaybeDieErr(err)
 
 			if format != "json" {
@@ -80,10 +94,6 @@ func NewConsumeCommand(fs afero.Fs) *cobra.Command {
 
 			sigs := make(chan os.Signal, 2)
 			signal.Notify(sigs, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
-
-			p := config.ParamsFromCommand(cmd)
-			cfg, err := p.Load(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
 
 			c.cl, err = kafka.NewFranzClient(fs, p, cfg, opts...)
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
@@ -137,10 +147,13 @@ func NewConsumeCommand(fs afero.Fs) *cobra.Command {
 }
 
 func (c *consumer) consume() {
-	var buf []byte
-	var n int
-	var marks []*kgo.Record
-	for {
+	var (
+		buf   []byte
+		n     int
+		marks []*kgo.Record
+		done  bool
+	)
+	for !done {
 		fs := c.cl.PollFetches(context.Background())
 		if fs.IsClientClosed() {
 			return
@@ -151,33 +164,42 @@ func (c *consumer) consume() {
 		})
 
 		marks = marks[:0]
-		for _, f := range fs {
-			for _, t := range f.Topics {
-				for _, p := range t.Partitions {
-					for _, r := range p.Records {
-						if c.f == nil {
-							c.writeRecordJSON(r)
-						} else {
-							buf = c.f.AppendPartitionRecord(buf[:0], &p, r)
-							os.Stdout.Write(buf)
-						}
-
-						// Track this record to be "marked" once this loop
-						// is over.
-						marks = append(marks, r)
-						n++
-
-						// If this pushes us to the --num flag,
-						// we return. We mark any seen records so that
-						// LeaveGroup will autocommit properly.
-						if c.num > 0 && n >= c.num {
-							c.cl.MarkCommitRecords(marks...)
-							return
-						}
-					}
-				}
+		fs.EachPartition(func(p kgo.FetchTopicPartition) {
+			// If we are done, we finished in a prior partition
+			// and just need to exit EachPartition.
+			if done {
+				return
 			}
-		}
+
+			pend, hasEnd := c.getPartitionEnd(p.Topic, p.Partition)
+			if hasEnd && pend < 0 {
+				return // reached end, still draining client
+			}
+
+			for _, r := range p.Records {
+				if c.f == nil {
+					c.writeRecordJSON(r)
+				} else {
+					buf = c.f.AppendPartitionRecord(buf[:0], &p.FetchPartition, r)
+					os.Stdout.Write(buf)
+				}
+
+				// Track this record to be "marked" once this loop
+				// is over.
+				marks = append(marks, r)
+				n++
+
+				if done = c.num > 0 && n >= c.num; done {
+					return
+				}
+
+				if hasEnd && r.Offset >= pend-1 {
+					done = c.markPartitionEnded(p.Topic, p.Partition)
+					return
+				}
+
+			}
+		})
 
 		// Before we poll, we mark everything we just processed to be
 		// available for autocommitting.
@@ -239,73 +261,405 @@ func (c *consumer) writeRecordJSON(r *kgo.Record) {
 
 var newline = []byte("\n")
 
-func (c *consumer) parseOffset(offset string) error {
-	c.start, c.end = -1, -1
-	o := kgo.NewOffset()
-	defer func() { c.offset = o }()
-
-	switch {
-	case offset == "start" || offset == "oldest":
-		o = o.AtStart()
-
-	case offset == "end" || offset == "newest":
-		o = o.AtEnd()
-
-	case strings.HasPrefix(offset, "+"):
-		v, err := strconv.Atoi(offset[1:])
-		if err != nil {
-			return fmt.Errorf("unable to parse relative start offset %q: %v", offset, err)
-		}
-		o = o.AtStart().Relative(int64(v))
-
-	case strings.HasPrefix(offset, "-"):
-		v, err := strconv.Atoi(offset[1:])
-		if err != nil {
-			return fmt.Errorf("unable to parse relative end offset in %q: %v", offset, err)
-		}
-		o = o.AtEnd().Relative(int64(-v))
-
-	default:
-		match := regexp.MustCompile(`^(\d+)(?:-(\d+))?$`).FindStringSubmatch(offset)
-		if len(match) == 0 {
-			return fmt.Errorf("unable to parse exact offset or range offsets in %q", offset)
-		}
-		c.start, _ = strconv.ParseInt(match[1], 10, 64)
-		if match[2] != "" {
-			c.end, _ = strconv.ParseInt(match[2], 10, 64)
-		}
-		o = o.At(c.start)
+func (c *consumer) parseOffset(
+	offset string, topics []string, adm *kadm.Client,
+) error {
+	if strings.HasPrefix(offset, "@") { // timestamp offset; strip @
+		offset = offset[1:]
+		return c.parseTimeOffset(offset, topics, adm)
 	}
 
+	start, end, rel, atStart, atEnd, hasEnd, currentEnd, err := parseFromToOffset(offset)
+
+	if atStart {
+		c.resetOffset = kgo.NewOffset().AtStart().Relative(rel)
+	} else if atEnd {
+		c.resetOffset = kgo.NewOffset().AtEnd().Relative(rel)
+	} else {
+		c.resetOffset = kgo.NewOffset().At(start)
+	}
+
+	// If we have no defined end, we can return now and just use our reset
+	// offset to start consuming. If we have a defined end, then we need to
+	// (a) list the start offsets to know what to consume from,
+	// (b) list the end offsets to define what to consume to,
+	// (c) filter partitions that have nothing to consume.
+	if !(hasEnd || currentEnd) {
+		return nil
+	}
+
+	lstart, err := adm.ListStartOffsets(context.Background(), topics...)
+	if err != nil {
+		return fmt.Errorf("unable to list start offsets: %v", err)
+	}
+	lend, err := adm.ListEndOffsets(context.Background(), topics...)
+	if err != nil {
+		return fmt.Errorf("unable to list end offsets: %v", err)
+	}
+
+	c.setParts(&c.partStarts, lstart, func(o int64) int64 {
+		if !atStart && o < start {
+			o = start
+		}
+		return o
+	})
+	c.setParts(&c.partEnds, lend, func(o int64) int64 {
+		if !currentEnd && o > end {
+			o = end
+		}
+		return o
+	})
 	return nil
+}
+
+// Setting partStarts and partEnds is identical, so we use a small closure to
+// capture the logic: if partitions are specified, we keep only those,
+// otherwise we keep all partitions. The optional offsetFn can be used to
+// override the listed offset (bound to the start, end).
+func (c *consumer) setParts(
+	mp *map[string]map[int32]int64,
+	l kadm.ListedOffsets,
+	offsetFn func(int64) int64,
+) {
+	if offsetFn == nil {
+		offsetFn = func(o int64) int64 { return o }
+	}
+	toffsets := make(map[string]map[int32]int64)
+	*mp = toffsets
+	for t, lps := range l {
+		poffsets := make(map[int32]int64)
+		toffsets[t] = poffsets
+		for _, p := range c.partitions {
+			if l, exists := lps[p]; exists {
+				poffsets[p] = offsetFn(l.Offset)
+			}
+		}
+		if len(c.partitions) == 0 {
+			for p, l := range lps {
+				poffsets[p] = offsetFn(l.Offset)
+			}
+		}
+	}
+}
+
+// The returns:
+//
+// - atStart:    consuming from the start, we might have an end (other bools)
+// - atEnd:      consuming at the *current* end; no end
+// - hasEnd:     consume until the returned end number
+// - currentEnd: consume until the *current* end offset
+//
+// - if !atStart && !atEnd, then we consume at the returned start number
+// - rel is used for relative offsets from atStart or atEnd
+//
+func parseFromToOffset(
+	o string,
+) (
+	start, end, rel int64,
+	atStart, atEnd, hasEnd, currentEnd bool,
+	err error,
+) {
+	switch {
+	case o == "start" || o == "oldest":
+		atStart = true
+		return
+	case o == "end" || o == "newest":
+		atEnd = true
+		return
+	case o == ":end":
+		atStart, currentEnd = true, true
+		return
+	case strings.HasPrefix(o, "+"): // +3, relative to current start offset
+		atStart = true
+		rel, err = strconv.ParseInt(o[1:], 10, 64)
+		return
+	case strings.HasPrefix(o, "-"): // -3, relative to the end offset
+		atEnd = true
+		rel, err = strconv.ParseInt(o, 10, 64)
+		return
+	}
+
+	// oo, oo:, and :oo
+	if start, err = strconv.ParseInt(o, 10, 64); err == nil {
+		return
+	} else if strings.HasSuffix(o, ":") {
+		start, err = strconv.ParseInt(o[:len(o)-1], 10, 64)
+		return
+	} else if strings.HasPrefix(o, ":") {
+		end, err = strconv.ParseInt(o[1:], 10, 64)
+		atStart = true
+		hasEnd = true
+		return
+	}
+
+	// This must be either oo:oo or oo-oo, where oo can be "end".
+	halves := strings.SplitN(o, ":", 2)
+	if len(halves) != 2 {
+		halves = strings.SplitN(o, "-", 2)
+		if len(halves) != 2 {
+			err = errors.New("cannot parse")
+			return
+		}
+	}
+
+	hasEnd = true
+	if start, err = strconv.ParseInt(halves[0], 10, 64); err == nil {
+		if end, err = strconv.ParseInt(halves[1], 10, 64); err != nil && halves[1] == "end" {
+			hasEnd, currentEnd, err = false, true, nil
+			return
+		}
+	}
+	if end <= start {
+		err = fmt.Errorf("end %d <= start %d", end, start)
+	}
+	return
+}
+
+// Until we use go1.17, nano/1e6 converts nanoseconds to milliseconds.
+func unixMilli(nano int64) int64 { return nano / 1e6 }
+
+// Parses the first or second timestamp in a timestamp based offset.
+//
+// The expressions below all end in (?::|$), meaning, a non capturing group for
+// the first time followed by a colon or the second time at the end.
+func parseConsumeTimestamp(
+	half string,
+) (length int, at time.Time, end bool, err error) {
+	switch {
+	// 13 digits is a millisecond.
+	case regexp.MustCompile(`^\d{13}(?::|$)`).MatchString(half):
+		length = 13
+		n, _ := strconv.ParseInt(half[:length], 10, 64)
+		at = time.Unix(0, n*1e6)
+		return
+
+	// 10 digits is a unix second.
+	case regexp.MustCompile(`^\d{10}(?::|$)`).MatchString(half):
+		length = 10
+		n, _ := strconv.ParseInt(half[:length], 10, 64)
+		at = time.Unix(n, 0)
+		return
+
+	// YYYY-MM-DD
+	case regexp.MustCompile(`^\d{4}-\d{2}-\d{2}(?::|$)`).MatchString(half):
+		length = 10
+		at, _ = time.ParseInLocation("2006-01-02", half[:length], time.UTC)
+		return
+
+	// Z marks the end of an RFC3339; we try to parse it and if it
+	// fails, input is invalid.
+	case strings.IndexByte(half, 'Z') != -1:
+		length = strings.IndexByte(half, 'Z') + 1
+		layout := "2006-01-02T15:04:05" // RFC3339 before the fractional second
+		if dotNines := length - len(layout) - 1; dotNines > 0 {
+			layout += "." + strings.Repeat("9", dotNines-1)
+		}
+		layout += "Z"
+		at, err = time.ParseInLocation(layout, half[:length], time.UTC)
+		if err != nil {
+			err = fmt.Errorf("unable to parse RFC3339 timestamp in %q: %v", half, err)
+		}
+		return
+
+	case half == "end": // t2
+		length = 3
+		end = true
+		return
+
+	// This is either a duration or an error.
+	default:
+		if colon := strings.IndexByte(half, ':'); colon != -1 {
+			half = half[:colon]
+		}
+		length = len(half)
+		negate := strings.HasPrefix(half, "-")
+		if negate {
+			half = half[1:]
+		}
+		var rel time.Duration
+		rel, err = time.ParseDuration(half)
+		if err != nil {
+			err = fmt.Errorf("unable to parse duration in %q", half)
+		}
+		if negate {
+			rel = -rel
+		}
+		at = time.Now().Add(rel)
+		return
+	}
+}
+
+// parseTimeOffset is a bit more complicated, because our start & end
+// timestamps can have colons in them (RFC3339). Rather than parse the
+// whole string at a time, we parse each half individually.
+func (c *consumer) parseTimeOffset(
+	offset string, topics []string, adm *kadm.Client,
+) error {
+	if strings.HasPrefix(offset, ":") {
+		c.resetOffset = kgo.NewOffset().AtStart() // no start, we start from beginning; e.g, @:-1m
+	} else {
+		length, startAt, end, err := parseConsumeTimestamp(offset)
+		if err != nil {
+			return err
+		} else if end {
+			return errors.New("invalid offset @end")
+		}
+
+		lstart, err := adm.ListOffsetsAfterMilli(context.Background(), unixMilli(startAt.UnixNano()), topics...)
+		if err != nil {
+			return fmt.Errorf("unable to list offsets after milli %d: %v", unixMilli(startAt.UnixNano()), err)
+		}
+
+		c.setParts(&c.partStarts, lstart, nil)
+		offset = offset[length:]
+		if offset == "" || offset == ":" { // requesting from a time onward; e.g., @1m:
+			return nil
+		}
+	}
+	offset = offset[1:] // strip start:end delimiting colon
+
+	length, endAt, end, err := parseConsumeTimestamp(offset)
+	if err != nil {
+		return err
+	} else if len(offset) != length {
+		return fmt.Errorf("invalid trailing content %q afer offset", offset[length:])
+	}
+	var lend kadm.ListedOffsets
+	if end {
+		if lend, err = adm.ListEndOffsets(context.Background(), topics...); err != nil {
+			return fmt.Errorf("unable to list end offsets: %v", err)
+		}
+	} else {
+		if lend, err = adm.ListOffsetsAfterMilli(context.Background(), unixMilli(endAt.UnixNano()), topics...); err != nil {
+			return fmt.Errorf("unable to list offsets after milli %d: %v", unixMilli(endAt.UnixNano()), err)
+		}
+	}
+	c.setParts(&c.partEnds, lend, nil)
+
+	// If there was no start offset (just "consume from beginning"), then
+	// we want to list offsets to see where to start from and filter empty
+	// partitions.
+	if c.partEnds == nil {
+		lstart, err := adm.ListStartOffsets(context.Background(), topics...)
+		if err != nil {
+			return fmt.Errorf("unable to list start offsets: %v", err)
+		}
+		c.setParts(&c.partStarts, lstart, nil)
+	}
+	return nil
+}
+
+// If we have defined end offsets, we load start offsets and filter empty
+// partitions. If all partitions are empty, we avoid consuming.
+func (c *consumer) filterEmptyPartitions(adm *kadm.Client) (allEmpty bool) {
+	if c.partEnds == nil {
+		return false
+	}
+	starts, ends := c.partStarts, c.partEnds
+	for lt, lps := range starts {
+		rps, exists := ends[lt]
+		if exists {
+			for lp, lat := range lps {
+				rat, exists := rps[lp]
+				if exists && rat == lat {
+					delete(rps, lp)
+					delete(lps, lp)
+				}
+			}
+		}
+		if len(rps) == 0 {
+			delete(ends, lt)
+		}
+		if len(lps) == 0 {
+			delete(starts, lt)
+		}
+	}
+	return len(c.partEnds) == 0 && len(c.partStarts) == 0
+}
+
+// If an end offset was specified, we check where the end is of each partition
+// we consume. If the topic or partition no longer exists, we reached the end
+// of the partition and are still draining what was buffered in the client.
+func (c *consumer) getPartitionEnd(t string, p int32) (pend int64, has bool) {
+	defer func() {
+		if has && pend == -1 {
+			c.markPartitionEnded(t, p) // just in case this was not paused
+		}
+	}()
+	if c.partEnds == nil {
+		return -1, false
+	}
+	tends := c.partEnds[t]
+	if tends == nil {
+		return -1, true
+	}
+	pend, has = tends[p]
+	if !has {
+		return -1, true
+	}
+	return pend, true
+}
+
+// If an end offset was specified and we reach that offset for a partition, we
+// mark it done, pause it from ever being fetched again, and remove it from our
+// ends map. If the ends map is now empty, we are done consuming.
+func (c *consumer) markPartitionEnded(t string, p int32) (done bool) {
+	c.cl.PauseFetchPartitions(map[string][]int32{t: {p}})
+	delete(c.partEnds[t], p)
+	if len(c.partEnds[t]) == 0 {
+		delete(c.partEnds, t)
+	}
+	return len(c.partEnds) == 0
 }
 
 func (c *consumer) intoOptions(topics []string) ([]kgo.Opt, error) {
 	opts := []kgo.Opt{
-		kgo.ConsumeResetOffset(c.offset),
+		kgo.ConsumeResetOffset(c.resetOffset),
 	}
 
-	// We can consume either as a group, or partitions directly, not both.
-	if len(c.partitions) == 0 {
-		opts = append(opts, kgo.ConsumeTopics(topics...))
-		if len(c.group) > 0 {
-			opts = append(opts, kgo.ConsumerGroup(c.group))
-			opts = append(opts, kgo.AutoCommitMarks())
-		}
-	} else {
-		if len(c.group) != 0 {
+	if len(c.group) != 0 {
+		if len(c.partitions) != 0 {
 			return nil, errors.New("invalid flags: only one of --partitions and --group can be specified")
+		} else if c.partEnds != nil {
+			return nil, errors.New("invalid flags: group consuming is not supported with consume-until-end offsets")
 		}
+		opts = append(opts, kgo.ConsumerGroup(c.group))
+		opts = append(opts, kgo.AutoCommitMarks())
+	}
+
+	switch {
+	// If we have a defined end, then we always load what we start at and
+	// filter for only partitions we want to consume.
+	case c.partStarts != nil:
 		offsets := make(map[string]map[int32]kgo.Offset)
-		for _, topic := range topics {
-			partOffsets := make(map[int32]kgo.Offset, len(c.partitions))
-			for _, partition := range c.partitions {
-				partOffsets[partition] = c.offset
+		for t, psStart := range c.partStarts {
+			ps := make(map[int32]kgo.Offset)
+			offsets[t] = ps
+			for p, start := range psStart {
+				ps[p] = kgo.NewOffset().At(start)
 			}
-			offsets[topic] = partOffsets
+		}
+		opts = append(opts, kgo.ConsumePartitions(offsets))
+
+	// If no partitions were specified, we want to consume topics directly.
+	// If we did not specify an end offset, then we just consume them.
+	case len(c.partitions) == 0:
+		opts = append(opts, kgo.ConsumeTopics(topics...))
+
+	// Partitions were specified and there is no end: we create our consume
+	// offsets from our reset offset.
+	default:
+		offsets := make(map[string]map[int32]kgo.Offset)
+		for _, t := range topics {
+			ps := make(map[int32]kgo.Offset, len(c.partitions))
+			for _, p := range c.partitions {
+				ps[p] = c.resetOffset
+			}
+			offsets[t] = ps
 		}
 		opts = append(opts, kgo.ConsumePartitions(offsets))
 	}
+
 	if c.regex {
 		opts = append(opts, kgo.ConsumeRegex())
 	}
@@ -499,17 +853,49 @@ A key length as four big endian bytes, and the key as hex:
 A little endian uint32 and a string unpacked from a value:
     -f '%v{unpack[is$]}'
 
-MISC
+OFFSETS
 
 The --offset flag allows for specifying where to begin consuming, and
-optionally, where to stop consuming:
+optionally, where to stop consuming. The literal words "start" and "end"
+specify consuming from the start and the end.
 
-    start    consume from the beginning
-    end      consume from the end
-    +NNN     consume NNN after the start offset
-    -NNN     consume NNN before the end offset
-    N1-N2    consume from N1 to N2
+    start     consume from the beginning
+    end       consume from the end
+    :end      consume until the current end
+    +oo       consume oo after the current start offset
+    -oo       consume oo before the current end offset
+    oo        consume after an exact offset
+    oo:       alias for oo
+    :oo       consume until an exact offset
+    o1:o2     consume from exact offset o1 until exact offset o2
+    @t        consume starting from a given timestamp
+    @t:       alias for @t
+    @:t       consume until a given timestamp
+    @t1:t2    consume from timestamp t1 until timestamp t2
 
-If consuming a range of offsets, rpk does not currently quit after it has
-consumed all partitions through the end range.
+There are a few options for timestamps, with each option being evaluated
+until one succeeds:
+
+    13 digits             parsed as a unix millisecond
+    9 digits              parsed as a unix second
+    YYYY-MM-DD            parsed as a day, UTC
+    YYYY-MM-DDTHH:MM:SSZ  parsed as RFC3339, UTC; fractional seconds optional (.MMM)
+    -dur                  duration ago; from now (as t1) or from t1 (as t2)
+    dur                   for t2 in @t1:t2, relative duration from t1
+    end                   for t2 in @t1:t2, the current end of the partition
+
+Durations are parsed simply:
+
+    3ms    three milliseconds
+    10s    ten seconds
+    9m     nine minutes
+    1h     one hour
+    1m3ms  one minute and three milliseconds
+
+For example,
+
+    -o @2022-02-14:1h   consume 1h of time on Valentine's Day 2022
+    -o @-48h:-24h       consume from 2 days ago to 1 day ago
+    -o @-1m:end         consume from 1m ago until now
+    -o @:-1hr           consume from the start until an hour ago
 `
