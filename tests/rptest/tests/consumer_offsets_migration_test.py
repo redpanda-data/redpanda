@@ -26,8 +26,8 @@ from ducktape.mark import matrix
 
 class ConsumerOffsetsMigrationTest(EndToEndTest):
     max_suspend_duration_sec = 3
-    min_inter_failure_time_sec = 20
-    max_inter_failure_time_sec = 30
+    min_inter_failure_time_sec = 30
+    max_inter_failure_time_sec = 60
 
     @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     @matrix(failures=[True, False], cpus=[1, 3])
