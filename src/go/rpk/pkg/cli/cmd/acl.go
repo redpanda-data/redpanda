@@ -277,9 +277,13 @@ ADMIN
 
     DeleteGroups      DELETE on GROUP for groups
 
-    DescribeConfigs   DESCRIBE_CONFIGS on CLUSTER for cluster (broker describing)
+    DescribeConfigs   DESCRIBE_CONFIGS on CLUSTER for kafka-cluster (broker describing)
                       DESCRIBE_CONFIGS on TOPIC for topics (topic describing)
 
-    AlterConfigs      ALTER_CONFIGS on CLUSTER for cluster (broker altering)
+    AlterConfigs      ALTER_CONFIGS on CLUSTER for kafka-cluster (broker altering)
                       ALTER_CONFIGS on TOPIC for topics (topic altering)
+
+    CreateACLs        ALTER on CLUSTER for kafka-cluster
+    DeleteACLs        ALTER on CLUSTER for kafka-cluster
+    DescribeACLs      DESCRIBE on CLUSTER for kafka-cluster
 `
