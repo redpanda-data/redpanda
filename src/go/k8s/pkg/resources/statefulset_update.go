@@ -44,13 +44,13 @@ var errRedpandaNotReady = errors.New("redpanda not ready")
 // CR by removing statefulset with orphans Pods. The stateful set is then recreated
 // and all Pods are restarted accordingly to the ordinal number.
 //
-// The process maintains an Upgrading bool status that is set to true once the
+// The process maintains an Restarting bool status that is set to true once the
 // generated stateful differentiate from the actual state. It is set back to
 // false when all pods are verified.
 //
-// The steps are as follows: 1) check the Upgrading status or if the statefulset
+// The steps are as follows: 1) check the Restarting status or if the statefulset
 // differentiate from the current stored statefulset definition 2) if true,
-// set the Upgrading status to true and remove statefulset with the orphan Pods
+// set the Restarting status to true and remove statefulset with the orphan Pods
 // 3) perform rolling update like removing Pods accordingly to theirs ordinal
 // number 4) requeue until the pod is in ready state 5) prior to a pod update
 // verify the previously updated pod and requeue as necessary. Currently, the
@@ -67,7 +67,7 @@ func (r *StatefulSetResource) runUpdate(
 		modified.Spec.Template.Annotations[CentralizedConfigurationHashAnnotationKey] = ann
 	}
 
-	update, err := r.shouldUpdate(r.pandaCluster.Status.Upgrading, current, modified)
+	update, err := r.shouldUpdate(r.pandaCluster.Status.IsRestarting(), current, modified)
 	if err != nil {
 		return fmt.Errorf("unable to determine the update procedure: %w", err)
 	}
@@ -76,8 +76,8 @@ func (r *StatefulSetResource) runUpdate(
 		return nil
 	}
 
-	if err = r.updateUpgradingStatus(ctx, true); err != nil {
-		return fmt.Errorf("unable to turn on upgrading status in cluster custom resource: %w", err)
+	if err = r.updateRestartingStatus(ctx, true); err != nil {
+		return fmt.Errorf("unable to turn on restarting status in cluster custom resource: %w", err)
 	}
 	if err = r.updateStatefulSet(ctx, current, modified); err != nil {
 		return err
@@ -87,9 +87,9 @@ func (r *StatefulSetResource) runUpdate(
 		return err
 	}
 
-	// Update is complete for all pods (and all are ready). Set upgrading status to false.
-	if err = r.updateUpgradingStatus(ctx, false); err != nil {
-		return fmt.Errorf("unable to turn off upgrading status in cluster custom resource: %w", err)
+	// Update is complete for all pods (and all are ready). Set restarting status to false.
+	if err = r.updateRestartingStatus(ctx, false); err != nil {
+		return fmt.Errorf("unable to turn off restarting status in cluster custom resource: %w", err)
 	}
 
 	return nil
@@ -196,7 +196,7 @@ func (r *StatefulSetResource) updateStatefulSet(
 
 // shouldUpdate returns true if changes on the CR require update
 func (r *StatefulSetResource) shouldUpdate(
-	isUpgrading bool, current, modified *appsv1.StatefulSet,
+	isRestarting bool, current, modified *appsv1.StatefulSet,
 ) (bool, error) {
 	prepareResourceForPatch(current, modified)
 	opts := []patch.CalculateOption{
@@ -209,16 +209,16 @@ func (r *StatefulSetResource) shouldUpdate(
 	if err != nil {
 		return false, err
 	}
-	return !patchResult.IsEmpty() || isUpgrading, nil
+	return !patchResult.IsEmpty() || isRestarting, nil
 }
 
-func (r *StatefulSetResource) updateUpgradingStatus(
-	ctx context.Context, upgrading bool,
+func (r *StatefulSetResource) updateRestartingStatus(
+	ctx context.Context, restarting bool,
 ) error {
-	if !reflect.DeepEqual(upgrading, r.pandaCluster.Status.Upgrading) {
-		r.pandaCluster.Status.Upgrading = upgrading
+	if !reflect.DeepEqual(restarting, r.pandaCluster.Status.IsRestarting()) {
+		r.pandaCluster.Status.SetRestarting(restarting)
 		r.logger.Info("Status updated",
-			"status", upgrading,
+			"restarting", restarting,
 			"resource name", r.pandaCluster.Name)
 		if err := r.Status().Update(ctx, r.pandaCluster); err != nil {
 			return err
@@ -370,7 +370,7 @@ func deleteKubernetesTokenVolumeMounts(obj []byte) ([]byte, error) {
 	return obj, nil
 }
 
-// Temporarily using the status/ready endpoint until we have a specific one for upgrading.
+// Temporarily using the status/ready endpoint until we have a specific one for restarting.
 func (r *StatefulSetResource) queryRedpandaStatus(
 	ctx context.Context, adminURL *url.URL,
 ) error {

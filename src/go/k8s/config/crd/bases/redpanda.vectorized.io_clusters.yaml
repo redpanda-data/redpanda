@@ -902,8 +902,13 @@ spec:
                 description: Replicas show how many nodes are working in the cluster
                 format: int32
                 type: integer
+              restarting:
+                description: Indicates that a cluster is restarting due to an upgrade
+                  or a different reason
+                type: boolean
               upgrading:
-                description: Indicates cluster is upgrading
+                description: 'Indicates cluster is upgrading. Deprecated: replaced
+                  by "restarting"'
                 type: boolean
               version:
                 description: Current version of the cluster.
