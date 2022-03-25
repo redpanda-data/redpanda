@@ -12,7 +12,7 @@ import threading
 from ducktape.services.background_thread import BackgroundThreadService
 
 # The franz-go root directory
-TESTS_DIR = os.path.join("/opt", "si-verifier")
+TESTS_DIR = os.path.join("/opt", "kgo-verifier")
 
 from enum import Enum
 
@@ -25,7 +25,7 @@ class ServiceStatus(Enum):
 
 class FranzGoVerifiableService(BackgroundThreadService):
     """
-    FranzGoVerifiableService is si-verifier service.
+    FranzGoVerifiableService is kgo-verifier service.
     To validate produced record user should run consumer and producer in one node.
     Use ctx.cluster.alloc(ClusterSpec.simple_linux(1)) to allocate node and pass it to constructor
     """
@@ -87,8 +87,8 @@ class FranzGoVerifiableService(BackgroundThreadService):
                     self.logger.debug("Killing pid %s" % {self._pid})
                     node.account.signal(self._pid, 9, allow_fail=True)
                 else:
-                    self.logger.debug("Killing si-verifier")
-                    node.account.kill_process("si-verifier",
+                    self.logger.debug("Killing kgo-verifier")
+                    node.account.kill_process("kgo-verifier",
                                               clean_shutdown=False)
             except RemoteCommandError as e:
                 if b"No such process" not in e.msg:
@@ -99,7 +99,7 @@ class FranzGoVerifiableService(BackgroundThreadService):
 
     def clean_node(self, node):
         self._redpanda.logger.info(f"{self.__class__.__name__}.clean_node")
-        node.account.kill_process("si-verifier", clean_shutdown=False)
+        node.account.kill_process("kgo-verifier", clean_shutdown=False)
         node.account.remove("valid_offsets*json", True)
 
     def start_node(self, node, clean=None):
@@ -144,7 +144,7 @@ class FranzGoVerifiableSeqConsumer(FranzGoVerifiableService):
             while not self._stopping.is_set(
             ) and not self._shutting_down.is_set():
                 cmd = 'echo $$ ; %s --brokers %s --topic %s --msg_size %s --produce_msgs 0 --rand_read_msgs 0 --seq_read=1' % (
-                    f"{TESTS_DIR}/si-verifier", self._redpanda.brokers(),
+                    f"{TESTS_DIR}/kgo-verifier", self._redpanda.brokers(),
                     self._topic, self._msg_size)
                 self.execute_cmd(cmd, node)
         except Exception as ex:
@@ -174,7 +174,7 @@ class FranzGoVerifiableRandomConsumer(FranzGoVerifiableService):
             while not self._stopping.is_set(
             ) and not self._shutting_down.is_set():
                 cmd = 'echo $$ ; %s --brokers %s --topic %s --msg_size %s --produce_msgs 0 --rand_read_msgs %s --parallel %s --seq_read=0' % (
-                    f"{TESTS_DIR}/si-verifier", self._redpanda.brokers(),
+                    f"{TESTS_DIR}/kgo-verifier", self._redpanda.brokers(),
                     self._topic, self._msg_size, self._rand_read_msgs,
                     self._parallel)
 
@@ -202,7 +202,7 @@ class FranzGoVerifiableProducer(FranzGoVerifiableService):
         self._stopping.clear()
         try:
             cmd = 'echo $$ ; %s --brokers %s --topic %s --msg_size %s --produce_msgs %s --rand_read_msgs 0 --seq_read=0' % (
-                f"{TESTS_DIR}/si-verifier", self._redpanda.brokers(),
+                f"{TESTS_DIR}/kgo-verifier", self._redpanda.brokers(),
                 self._topic, self._msg_size, self._msg_count)
 
             self.execute_cmd(cmd, node)

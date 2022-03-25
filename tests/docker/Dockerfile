@@ -117,9 +117,9 @@ RUN git -C /opt clone https://github.com/twmb/franz-go.git && cd /opt/franz-go &
 RUN go install github.com/twmb/kcl@latest && \
     mv /root/go/bin/kcl /usr/local/bin/
 
-# Should fork to redpanda repo
-RUN git -C /opt clone https://github.com/jcsp/si-verifier.git && \
-    cd /opt/si-verifier && git reset --hard bcf4996d063e96497f8ff8be35d82fa1cec53180 && \
+# Install the kgo-verifier tool
+RUN git -C /opt clone https://github.com/redpanda-data/kgo-verifier.git && \
+    cd /opt/kgo-verifier && git reset --hard 30c56af && \
     go mod tidy && go build
 
 # Expose port 8080 for any http examples within clients
