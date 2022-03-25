@@ -203,7 +203,7 @@ Percent encoding reads into specific values of a record:
     %T    topic length
     %k    key
     %K    key length
-    %v    topic
+    %v    value
     %V    value length
     %h    begin the header specification
     %H    number of headers
