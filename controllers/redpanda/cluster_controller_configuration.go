@@ -303,16 +303,16 @@ func (r *ClusterReconciler) synchronizeStatusWithCluster(
 	conditionData := mapStatusToCondition(status)
 	conditionChanged := redpandaCluster.Status.SetCondition(conditionData.Type, conditionData.Status, conditionData.Reason, conditionData.Message)
 	stsNeedsRestart := needsRestart(status)
-	if conditionChanged || (stsNeedsRestart && !redpandaCluster.Status.Upgrading) {
+	if conditionChanged || (stsNeedsRestart && !redpandaCluster.Status.IsRestarting()) {
 		// Trigger restart here if needed
 		if stsNeedsRestart {
-			redpandaCluster.Status.Upgrading = true
+			redpandaCluster.Status.SetRestarting(true)
 		}
 		log.Info("Updating configuration state for cluster",
 			"status", conditionData.Status,
 			"reason", conditionData.Reason,
 			"message", conditionData.Message,
-			"upgrading", redpandaCluster.Status.Upgrading,
+			"restarting", redpandaCluster.Status.IsRestarting(),
 		)
 		if err := r.Status().Update(ctx, redpandaCluster); err != nil {
 			return nil, errorWithContext(err, "could not update condition on cluster")
