@@ -11,10 +11,14 @@
 #pragma once
 
 #include "cloud_storage/base_manifest.h"
+#include "cluster/types.h"
 #include "json/document.h"
+
+#include <optional>
 
 namespace cloud_storage {
 
+struct topic_manifest_handler;
 class topic_manifest final : public base_manifest {
 public:
     /// Create manifest for specific ntp
@@ -52,10 +56,15 @@ public:
     /// Change topic-manifest revision
     void set_revision(model::initial_revision_id id) noexcept { _rev = id; }
 
+    std::optional<cluster::topic_configuration> const&
+    get_topic_config() const noexcept {
+        return _topic_config;
+    }
+
 private:
     /// Update manifest content from json document that supposed to be generated
     /// from manifest.json file
-    void update(const json::Document& m);
+    void update(const topic_manifest_handler& handler);
 
     std::optional<cluster::topic_configuration> _topic_config;
     model::initial_revision_id _rev;

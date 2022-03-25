@@ -59,9 +59,7 @@ enum class manifest_version : int32_t {
     v1 = 1,
 };
 
-enum class topic_manifest_version : int32_t {
-    v1 = 1,
-};
+static constexpr int32_t topic_manifest_version = 1;
 
 std::ostream& operator<<(std::ostream& o, const download_result& r);
 
