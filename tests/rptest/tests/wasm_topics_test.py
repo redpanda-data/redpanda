@@ -7,7 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from ducktape.mark import ignore
+from ducktape.mark import ok_to_fail
 from rptest.services.cluster import cluster
 from rptest.tests.wasm_identity_test import WasmIdentityTest
 from rptest.wasm.wasm_script import WasmScript
@@ -28,7 +28,7 @@ class WasmCreateTopicsTest(WasmIdentityTest):
                        script=WasmTemplateRepository.IDENTITY_TRANSFORM)
         ]
 
-    @ignore  # see: #3858
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/3858
     @cluster(num_nodes=4)
     def verify_materialized_topics_test(self):
         super().verify_materialized_topics_test()
@@ -63,7 +63,7 @@ class WasmDeleteTopicsTest(WasmIdentityTest):
                        script=WasmTemplateRepository.IDENTITY_TRANSFORM)
         ]
 
-    @ignore  # https://github.com/redpanda-data/redpanda/issues/3745
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/3745
     @cluster(num_nodes=4)
     def verify_materialized_topics_test(self):
         super().verify_materialized_topics_test()
