@@ -13,6 +13,7 @@
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_istreambuf.h"
 #include "hashing/secure.h"
+#include "http/client.h"
 #include "net/tls.h"
 #include "net/types.h"
 #include "s3/error.h"
@@ -37,6 +38,7 @@
 #include <seastar/net/tls.hh>
 
 #include <boost/beast/core/error.hpp>
+#include <boost/beast/http/field.hpp>
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/xml_parser.hpp>
 #include <gnutls/crypto.h>
@@ -58,12 +60,31 @@ struct aws_header_names {
     static constexpr boost::beast::string_view x_amz_content_sha256
       = "x-amz-content-sha256";
     static constexpr boost::beast::string_view x_amz_tagging = "x-amz-tagging";
+    static constexpr boost::beast::string_view x_amz_request_id
+      = "x-amz-request-id";
 };
 
 struct aws_header_values {
     static constexpr boost::beast::string_view user_agent
       = "redpanda.vectorized.io";
     static constexpr boost::beast::string_view text_plain = "text/plain";
+
+    /// SHA256 of an empty string (used in situation when the signed payload is
+    /// has zero length)
+    static constexpr boost::beast::string_view emptysig
+      = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+    static constexpr boost::beast::string_view unsigned_payload
+      = "UNSIGNED-PAYLOAD";
+};
+
+struct aws_signatures {
+    /// SHA256 of an empty string (used in situation when the signed payload is
+    /// has zero length)
+    static constexpr std::string_view emptysig
+      = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+    static constexpr std::string_view unsigned_payload = "UNSIGNED-PAYLOAD";
 };
 
 // configuration //
@@ -165,16 +186,40 @@ result<http::client::request_header> request_creator::make_get_object_request(
     // x-amz-content-sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
     auto host = fmt::format("{}.{}", name(), _ap());
     auto target = fmt::format("/{}", key().string());
-    std::string emptysig
-      = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
     header.method(boost::beast::http::verb::get);
     header.target(target);
     header.insert(
       boost::beast::http::field::user_agent, aws_header_values::user_agent);
     header.insert(boost::beast::http::field::host, host);
     header.insert(boost::beast::http::field::content_length, "0");
-    header.insert(aws_header_names::x_amz_content_sha256, emptysig);
-    auto ec = _sign.sign_header(header, emptysig);
+    header.insert(
+      aws_header_names::x_amz_content_sha256, aws_header_values::emptysig);
+    auto ec = _sign.sign_header(header, aws_signatures::emptysig);
+    if (ec) {
+        return ec;
+    }
+    return header;
+}
+
+result<http::client::request_header> request_creator::make_head_object_request(
+  bucket_name const& name, object_key const& key) {
+    http::client::request_header header{};
+    // HEAD /{object-id} HTTP/1.1
+    // Host: {bucket-name}.s3.amazonaws.com
+    // x-amz-date:{req-datetime}
+    // Authorization:{signature}
+    // x-amz-content-sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+    auto host = fmt::format("{}.{}", name(), _ap());
+    auto target = fmt::format("/{}", key().string());
+    header.method(boost::beast::http::verb::head);
+    header.target(target);
+    header.insert(
+      boost::beast::http::field::user_agent, aws_header_values::user_agent);
+    header.insert(boost::beast::http::field::host, host);
+    header.insert(boost::beast::http::field::content_length, "0");
+    header.insert(
+      aws_header_names::x_amz_content_sha256, aws_header_values::emptysig);
+    auto ec = _sign.sign_header(header, aws_signatures::emptysig);
     if (ec) {
         return ec;
     }
@@ -199,7 +244,6 @@ request_creator::make_unsigned_put_object_request(
     http::client::request_header header{};
     auto host = fmt::format("{}.{}", name(), _ap());
     auto target = fmt::format("/{}", key().string());
-    std::string sig = "UNSIGNED-PAYLOAD";
     header.method(boost::beast::http::verb::put);
     header.target(target);
     header.insert(
@@ -210,7 +254,9 @@ request_creator::make_unsigned_put_object_request(
     header.insert(
       boost::beast::http::field::content_length,
       std::to_string(payload_size_bytes));
-    header.insert(aws_header_names::x_amz_content_sha256, sig);
+    header.insert(
+      aws_header_names::x_amz_content_sha256,
+      aws_header_values::unsigned_payload);
     if (!tags.empty()) {
         std::stringstream tstr;
         for (const auto& [key, val] : tags) {
@@ -218,7 +264,7 @@ request_creator::make_unsigned_put_object_request(
         }
         header.insert(aws_header_names::x_amz_tagging, tstr.str().substr(1));
     }
-    auto ec = _sign.sign_header(header, sig);
+    auto ec = _sign.sign_header(header, aws_signatures::unsigned_payload);
     if (ec) {
         return ec;
     }
@@ -238,15 +284,14 @@ request_creator::make_list_objects_v2_request(
     http::client::request_header header{};
     auto host = fmt::format("{}.{}", name(), _ap());
     auto target = fmt::format("/?list-type=2");
-    std::string emptysig
-      = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
     header.method(boost::beast::http::verb::get);
     header.target(target);
     header.insert(
       boost::beast::http::field::user_agent, aws_header_values::user_agent);
     header.insert(boost::beast::http::field::host, host);
     header.insert(boost::beast::http::field::content_length, "0");
-    header.insert(aws_header_names::x_amz_content_sha256, emptysig);
+    header.insert(
+      aws_header_names::x_amz_content_sha256, aws_header_values::emptysig);
     if (prefix) {
         header.insert(aws_header_names::prefix, (*prefix)().string());
     }
@@ -256,7 +301,7 @@ request_creator::make_list_objects_v2_request(
     if (max_keys) {
         header.insert(aws_header_names::start_after, std::to_string(*max_keys));
     }
-    auto ec = _sign.sign_header(header, emptysig);
+    auto ec = _sign.sign_header(header, aws_signatures::emptysig);
     vlog(s3_log.trace, "ListObjectsV2:\n {}", header);
     if (ec) {
         return ec;
@@ -277,16 +322,15 @@ request_creator::make_delete_object_request(
     // NOTE: x-amz-mfa, x-amz-bypass-governance-retention are not used for now
     auto host = fmt::format("{}.{}", name(), _ap());
     auto target = fmt::format("/{}", key().string());
-    std::string emptysig
-      = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
     header.method(boost::beast::http::verb::delete_);
     header.target(target);
     header.insert(
       boost::beast::http::field::user_agent, aws_header_values::user_agent);
     header.insert(boost::beast::http::field::host, host);
     header.insert(boost::beast::http::field::content_length, "0");
-    header.insert(aws_header_names::x_amz_content_sha256, emptysig);
-    auto ec = _sign.sign_header(header, emptysig);
+    header.insert(
+      aws_header_names::x_amz_content_sha256, aws_header_values::emptysig);
+    auto ec = _sign.sign_header(header, aws_signatures::emptysig);
     if (ec) {
         return ec;
     }
@@ -376,6 +420,31 @@ ss::future<ResultT> parse_rest_error_response(iobuf&& buf) {
     }
 }
 
+/// Head response doesn't give us an XML encoded error object in
+/// the body. This method uses headers to generate an error object.
+template<class ResultT = void>
+ss::future<ResultT> parse_head_error_response(
+  const http::http_response::header_type& hdr, const object_key& key) {
+    try {
+        ss::sstring code;
+        ss::sstring msg;
+        if (hdr.result() == boost::beast::http::status::not_found) {
+            code = "NoSuchKey";
+            msg = "Not found";
+        } else {
+            code = "Unknown";
+            msg = ss::sstring(hdr.reason().data(), hdr.reason().size());
+        }
+        auto rid = hdr.at(aws_header_names::x_amz_request_id);
+        rest_error_response err(
+          code, msg, ss::sstring(rid.data(), rid.size()), key().native());
+        return ss::make_exception_future<ResultT>(err);
+    } catch (...) {
+        vlog(s3_log.error, "!!error parse error {}", std::current_exception());
+        throw;
+    }
+}
+
 static ss::future<iobuf>
 drain_response_stream(http::client::response_stream_ref resp) {
     return ss::do_with(
@@ -440,6 +509,46 @@ ss::future<http::client::response_stream_ref> client::get_object(
               return ss::make_ready_future<http::client::response_stream_ref>(
                 std::move(ref));
           });
+      });
+}
+
+ss::future<client::head_object_result> client::head_object(
+  bucket_name const& name,
+  object_key const& key,
+  const ss::lowres_clock::duration& timeout) {
+    auto header = _requestor.make_head_object_request(name, key);
+    if (!header) {
+        return ss::make_exception_future<client::head_object_result>(
+          std::system_error(header.error()));
+    }
+    vlog(s3_log.trace, "send https request:\n{}", header);
+    return _client.request(std::move(header.value()), timeout)
+      .then(
+        [key](const http::client::response_stream_ref& ref)
+          -> ss::future<head_object_result> {
+            return ref->prefetch_headers().then(
+              [ref, key]() -> ss::future<head_object_result> {
+                  auto status = ref->get_headers().result();
+                  if (status != boost::beast::http::status::ok) {
+                      return parse_head_error_response<head_object_result>(
+                        ref->get_headers(), key);
+                  }
+                  auto len = boost::lexical_cast<uint64_t>(
+                    ref->get_headers().at(
+                      boost::beast::http::field::content_length));
+                  auto etag = ref->get_headers().at(
+                    boost::beast::http::field::etag);
+                  head_object_result results{
+                    .object_size = len,
+                    .etag = ss::sstring(etag.data(), etag.length()),
+                  };
+                  return ss::make_ready_future<head_object_result>(
+                    std::move(results));
+              });
+        })
+      .handle_exception_type([this](const rest_error_response& err) {
+          _probe->register_failure(err.code());
+          return ss::make_exception_future<head_object_result>(err);
       });
 }
 

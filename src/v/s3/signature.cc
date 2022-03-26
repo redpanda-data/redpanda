@@ -282,7 +282,7 @@ get_canonical_headers(const http::client::request_header& request) {
 inline result<ss::sstring> create_canonical_request(
   const canonical_headers& hdr,
   const http::client::request_header& header,
-  const ss::sstring& hashed_payload) {
+  std::string_view hashed_payload) {
     auto method = std::string(header.method_string());
     auto target = std::string(header.target());
     if (target.empty() || target.at(0) != '/') {
@@ -329,7 +329,7 @@ ss::sstring signature_v4::sha256_hexdigest(std::string_view payload) {
 }
 
 std::error_code signature_v4::sign_header(
-  http::client::request_header& header, const ss::sstring& sha256) const {
+  http::client::request_header& header, std::string_view sha256) const {
     ss::sstring date_str = _sig_time.format_date();
     ss::sstring service = "s3";
     auto sign_key = gen_sig_key(_private_key(), date_str, _region(), service);
