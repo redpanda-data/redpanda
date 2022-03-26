@@ -537,5 +537,73 @@ ss::future<download_result> remote::list_objects(
     _probe.failed_download();
     co_return download_result::timedout;
 }
+ss::future<download_result> remote::segment_exists(
+  const s3::bucket_name& bucket,
+  const remote_segment_path& segment_path,
+  retry_chain_node& parent) {
+    ss::gate::holder gh{_gate};
+    retry_chain_node fib(&parent);
+    retry_chain_logger ctxlog(cst_log, fib);
+    auto path = s3::object_key(segment_path());
+    auto [client, deleter] = co_await _pool.acquire();
+    auto permit = fib.retry();
+    vlog(ctxlog.debug, "Check segment {}", path);
+    std::optional<download_result> result;
+    while (!_gate.is_closed() && permit.is_allowed && !result) {
+        std::exception_ptr eptr = nullptr;
+        try {
+            auto resp = co_await client->head_object(
+              bucket, path, fib.get_timeout());
+            vlog(
+              ctxlog.debug,
+              "Receive OK HeadObject response from {}, object size: {}, etag: "
+              "{}",
+              path,
+              resp.object_size,
+              resp.etag);
+            co_return download_result::success;
+        } catch (...) {
+            eptr = std::current_exception();
+        }
+        co_await client->shutdown();
+        auto outcome = categorize_error(eptr, fib, bucket, path);
+        switch (outcome) {
+        case error_outcome::retry_slowdown:
+            [[fallthrough]];
+        case error_outcome::retry:
+            vlog(
+              ctxlog.debug,
+              "HeadObject from {}, {} backoff required",
+              bucket,
+              std::chrono::milliseconds(permit.delay));
+            co_await ss::sleep_abortable(permit.delay, _as);
+            permit = fib.retry();
+            break;
+        case error_outcome::fail:
+            result = download_result::failed;
+            break;
+        case error_outcome::notfound:
+            result = download_result::notfound;
+            break;
+        }
+    }
+    if (!result) {
+        vlog(
+          ctxlog.warn,
+          "HeadObject from {}, backoff quota exceded, segment at {} "
+          "not available",
+          bucket,
+          path);
+        result = download_result::timedout;
+    } else {
+        vlog(
+          ctxlog.warn,
+          "HeadObject from {}, {}, segment at {} not available",
+          bucket,
+          *result,
+          path);
+    }
+    co_return *result;
+}
 
 } // namespace cloud_storage

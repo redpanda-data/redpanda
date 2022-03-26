@@ -133,6 +133,12 @@ public:
       const std::optional<size_t>& max_keys,
       retry_chain_node& parent);
 
+    /// Checks if the segment exists in the bucket
+    ss::future<download_result> segment_exists(
+      const s3::bucket_name& bucket,
+      const remote_segment_path& path,
+      retry_chain_node& parent);
+
 private:
     s3::client_pool _pool;
     ss::gate _gate;
