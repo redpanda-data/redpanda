@@ -12,6 +12,7 @@
 #pragma once
 
 #include "net/inet_address_wrapper.h"
+#include "seastar/core/coroutine.hh"
 #include "seastarx.h"
 
 #include <seastar/core/abort_source.hh>
@@ -40,7 +41,8 @@ struct connection_rate_info {
 using should_spawn_fiber_on_update
   = ss::bool_class<struct should_spawn_fiber_on_update_tag>;
 
-struct connection_rate_counter {
+class connection_rate_counter {
+public:
     explicit connection_rate_counter(int64_t max_rate) noexcept
       : max_tokens(max_rate)
       , one_token_time(std::max(1000 / max_tokens, 1l))
@@ -60,11 +62,10 @@ struct connection_rate_counter {
           std::max(1000 / max_tokens, 1l));
 
         if (diff > 0) {
-            auto need_add = max_tokens - bucket.current();
+            auto need_add = max_tokens - avaiable_new_connections();
             bucket.signal(need_add);
         } else {
-            auto need_move = static_cast<int64_t>(bucket.current())
-                             - max_tokens;
+            auto need_move = avaiable_new_connections() - max_tokens;
             if (need_move > 0) {
                 bucket.consume(need_move);
             }
@@ -84,8 +85,18 @@ struct connection_rate_counter {
         return static_cast<int64_t>(bucket.current());
     }
 
+    ss::future<> wait(ss::lowres_clock::duration max_wait_time) {
+        co_await bucket.wait(max_wait_time, 1);
+    }
+
+    ss::lowres_clock::time_point get_last_update_time() {
+        return last_update_time;
+    }
+
     int64_t max_tokens;
     std::chrono::milliseconds one_token_time;
+
+private:
     ss::semaphore bucket;
     ss::lowres_clock::time_point last_update_time;
 };

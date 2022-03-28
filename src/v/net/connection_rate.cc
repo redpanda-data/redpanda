@@ -123,7 +123,7 @@ ss::future<> connection_rate::maybe_wait(const ss::net::inet_address& addr) {
     }
 
     allow_new_connections(sem);
-    co_await sem->bucket.wait(_max_wait_time, 1);
+    co_await sem->wait(_max_wait_time);
     spawn_updating_fiber_if_needed(sem);
 }
 
@@ -157,7 +157,7 @@ void connection_rate::allow_new_connections(connection_rate_t rate_counter) {
 
     auto now = ss::lowres_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
-      now - rate_counter->last_update_time);
+      now - rate_counter->get_last_update_time());
 
     int64_t tokens_for_update = duration.count()
                                 / rate_counter->one_token_time.count();
@@ -198,7 +198,7 @@ void connection_rate::spawn_updating_fiber_if_needed(
 void connection_rate::allow_one_new_connection(connection_rate_t rate_counter) {
     auto now = ss::lowres_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
-      now - rate_counter->last_update_time);
+      now - rate_counter->get_last_update_time());
 
     // If somebody update tokens in updating interval we should skip
     // updating phase
