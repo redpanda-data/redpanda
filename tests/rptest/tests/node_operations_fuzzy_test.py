@@ -33,8 +33,8 @@ ALLOWED_REPLICATION = [1, 3]
 
 class NodeOperationFuzzyTest(EndToEndTest):
     max_suspend_duration_seconds = 10
-    min_inter_failure_time = 20
-    max_inter_failure_time = 45
+    min_inter_failure_time = 30
+    max_inter_failure_time = 60
 
     def generate_random_workload(self, count, skip_nodes, available_nodes):
         op_types = [ADD, DECOMMISSION]
