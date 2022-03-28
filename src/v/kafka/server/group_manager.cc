@@ -276,6 +276,7 @@ group_manager::gc_partition_state(ss::lw_shared_ptr<attached_partition> p) {
 
     for (auto it = _groups.begin(); it != _groups.end();) {
         if (it->second->partition()->ntp() == p->partition->ntp()) {
+            it->second->shutdown();
             _groups.erase(it++);
             continue;
         }
