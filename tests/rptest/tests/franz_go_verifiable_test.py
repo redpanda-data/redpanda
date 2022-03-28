@@ -51,15 +51,6 @@ class FranzGoVerifiableBase(RedpandaTest):
             self.RANDOM_READ_COUNT, self.RANDOM_READ_PARALLEL,
             self._node_for_franz_go)
 
-    # In the future producer will signal about json creation
-    def _create_json_file(self, msg_count):
-        small_producer = FranzGoVerifiableProducer(self.test_context,
-                                                   self.redpanda, self.topic,
-                                                   self.MSG_SIZE, msg_count,
-                                                   self._node_for_franz_go)
-        small_producer.start()
-        small_producer.wait()
-
     def free_nodes(self):
         # Free the normally allocated nodes (e.g. RedpandaService)
         super().free_nodes()
@@ -96,18 +87,29 @@ class FranzGoVerifiableTest(FranzGoVerifiableBase):
                 "Skipping test in debug mode (requires release build)")
             return
 
-        # Need create json file for consumer at first
-        self._create_json_file(1000)
-
         self._producer.start(clean=False)
+
+        # Don't start consumers until the producer has written out its first
+        # checkpoint with valid ranges.
+        wait_until(lambda: self._producer.produce_status.acked > 0,
+                   timeout_sec=30,
+                   backoff_sec=0.1)
+        wrote_at_least = self._producer.produce_status.acked
+
         self._seq_consumer.start(clean=False)
         self._rand_consumer.start(clean=False)
 
         self._producer.wait()
+        assert self._producer.produce_status.acked == self.PRODUCE_COUNT
+
         self._seq_consumer.shutdown()
         self._rand_consumer.shutdown()
+
         self._seq_consumer.wait()
         self._rand_consumer.wait()
+
+        assert self._seq_consumer.consumer_status.valid_reads >= wrote_at_least
+        assert self._rand_consumer.consumer_status.total_reads == self.RANDOM_READ_COUNT * self.RANDOM_READ_PARALLEL
 
 
 class FranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
@@ -159,22 +161,37 @@ class FranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
         rpk.alter_topic_config(self.topic, 'retention.bytes',
                                str(self.segment_size))
 
-        # Need create json file for consumer at first
-        self._create_json_file(10000)
+        self._producer.start(clean=False)
 
-        # Verify that we really enabled shadow indexing correctly, such
-        # that some objects were written
+        # Don't start consumers until the producer has written out its first
+        # checkpoint with valid ranges.
+        wait_until(lambda: self._producer.produce_status.acked > 0,
+                   timeout_sec=30,
+                   backoff_sec=5.0)
+
+        # nce we've written a lot of data, check that some of it showed up in S3
+        wait_until(lambda: self._producer.produce_status.acked > 10000,
+                   timeout_sec=300,
+                   backoff_sec=5)
         objects = list(self.redpanda.get_objects_from_si())
         assert len(objects) > 0
         for o in objects:
             self.logger.info(f"S3 object: {o.Key}, {o.ContentLength}")
 
-        self._producer.start(clean=False)
+        wrote_at_least = self._producer.produce_status.acked
         self._seq_consumer.start(clean=False)
         self._rand_consumer.start(clean=False)
 
+        # Wait until we have written all the data we expected to write
         self._producer.wait()
+        assert self._producer.produce_status.acked >= self.PRODUCE_COUNT
+
+        # Wait for last iteration of consumers to finish: if they are currently
+        # mid-run, they'll run to completion.
         self._seq_consumer.shutdown()
         self._rand_consumer.shutdown()
         self._seq_consumer.wait()
         self._rand_consumer.wait()
+
+        assert self._seq_consumer.consumer_status.valid_reads >= wrote_at_least
+        assert self._rand_consumer.consumer_status.total_reads == self.RANDOM_READ_COUNT * self.RANDOM_READ_PARALLEL
