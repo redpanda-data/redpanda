@@ -3,7 +3,7 @@ kind: Cluster
 metadata:
   name: centralized-configuration-upgrade
 status:
-  upgrading: false
+  restarting: false
   conditions:
   - type: ClusterConfigured
     status: "True"

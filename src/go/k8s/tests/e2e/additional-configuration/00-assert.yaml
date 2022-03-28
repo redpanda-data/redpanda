@@ -5,7 +5,7 @@ metadata:
   namespace: default
 status:
   replicas: 1
-  upgrading: false
+  restarting: false
 
 ---
 

@@ -4,7 +4,7 @@ metadata:
   name: centralized-configuration-bootstrap
 status:
   replicas: 1
-  upgrading: false
+  restarting: false
   conditions:
     - type: ClusterConfigured
       status: "True"
