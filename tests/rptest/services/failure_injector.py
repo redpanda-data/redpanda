@@ -42,16 +42,20 @@ class FailureInjector:
 
     def inject_failure(self, spec):
         self.redpanda.logger.info(f"injecting failure: {spec}")
-        self._start_func(spec.type)(spec.node)
-        if spec.length is not None:
-            if spec.length == 0:
-                self._stop_func(spec.type)(spec.node)
-            else:
-                stop_timer = threading.Timer(function=self._stop_func(
-                    spec.type),
-                                             args=[spec.node],
-                                             interval=spec.length)
-                stop_timer.start()
+        try:
+            self._start_func(spec.type)(spec.node)
+        except Exception as e:
+            self.redpanda.logger.info(f"injecting failure error: {e}")
+        finally:
+            if spec.length is not None:
+                if spec.length == 0:
+                    self._stop_func(spec.type)(spec.node)
+                else:
+                    stop_timer = threading.Timer(function=self._stop_func(
+                        spec.type),
+                                                 args=[spec.node],
+                                                 interval=spec.length)
+                    stop_timer.start()
 
     def _start_func(self, tp):
         if tp == FailureSpec.FAILURE_KILL:
