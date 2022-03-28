@@ -64,6 +64,9 @@ BOOST_AUTO_TEST_CASE(test_avro_basic_backwards_compat) {
     // "adding a field with default is a backward compatible change
     BOOST_CHECK(check_compatible(schema2, schema1));
 
+    // "adding a union field with default is a backward compatible change
+    BOOST_CHECK(check_compatible(schema2_union_null_first, schema1));
+
     // "adding a field w/o default is NOT a backward compatible change
     BOOST_CHECK(!check_compatible(schema3, schema1));
 
