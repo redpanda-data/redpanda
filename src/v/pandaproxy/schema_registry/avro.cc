@@ -60,7 +60,15 @@ bool check_compatible(avro::Node& reader, avro::Node& writer) {
                     // if the reader's record schema has a field with no default
                     // value, and writer's schema does not have a field with the
                     // same name, an error is signalled.
-                    return false;
+
+                    // For union, the default must correspond to the first type.
+                    // The default may be null.
+                    const auto& r_leaf = reader.leafAt(int(r_idx));
+                    if (
+                      r_leaf->type() != avro::Type::AVRO_UNION
+                      || r_leaf->leafAt(0)->type() != avro::Type::AVRO_NULL) {
+                        return false;
+                    }
                 }
             }
             return true;
