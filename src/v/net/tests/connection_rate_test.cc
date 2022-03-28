@@ -50,7 +50,7 @@ SEASTAR_THREAD_TEST_CASE(rate_test) {
     const int64_t max_wait_time_sec = 20;
 
     net::connection_rate_info info{.max_connection_rate = max_rate};
-    net::connection_rate connection_rate(info, gate);
+    net::connection_rate<> connection_rate(info, gate);
 
     std::vector<ss::future<>> futures;
     std::vector<int64_t> rate_counter(max_wait_time_sec, 0);
@@ -110,7 +110,7 @@ SEASTAR_THREAD_TEST_CASE(rate_test) {
 SEASTAR_THREAD_TEST_CASE(update_rate_test) {
     ss::gate gate;
     net::connection_rate_info info{.max_connection_rate = 1};
-    net::connection_rate connection_rate(info, gate);
+    net::connection_rate<> connection_rate(info, gate);
     int64_t max_wait_time_sec = 10;
 
     std::vector<int64_t> rate_counter(30, 0);
