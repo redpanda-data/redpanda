@@ -48,13 +48,13 @@ struct connection_rate_info {
 // wait new tokens. We use handlers to on-line updates for redpanda config.
 template<typename Clock = ss::lowres_clock>
 class connection_rate {
-    static constexpr typename Clock::duration _max_wait_time =
-      typename Clock::duration(100ms);
-
 public:
     connection_rate(
-      const connection_rate_info& rate_info, ss::gate& connection_gate) noexcept
-      : _connection_gate(connection_gate) {
+      const connection_rate_info& rate_info,
+      ss::gate& connection_gate,
+      std::chrono::milliseconds max_wait_time = 100ms) noexcept
+      : _max_wait_time(typename Clock::duration(max_wait_time))
+      , _connection_gate(connection_gate) {
         if (rate_info.max_connection_rate) {
             _general_rate = ss::make_lw_shared<connection_rate_counter<Clock>>(
               rate_info.max_connection_rate.value());
@@ -279,6 +279,8 @@ private:
             rate_counter = nullptr;
         }
     }
+
+    const typename Clock::duration _max_wait_time;
 
     connection_rate_t _general_rate;
     // absl::node_hash_map<ss::sstring, connection_rate_t> _overrides;
