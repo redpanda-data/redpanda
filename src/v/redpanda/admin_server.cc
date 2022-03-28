@@ -749,12 +749,28 @@ void config_multi_property_validation(
             // Some superusers must be defined, or nobody will be able
             // to use the admin API after this request.
             errors["admin_api_require_auth"] = "No superusers defined";
-            return;
         } else if (!superusers_set.contains(username) && !auth_was_enabled) {
             // When enabling auth, user making the change must be in the list of
             // superusers, or they would be locking themselves out.
             errors["admin_api_require_auth"] = "May only be set by a superuser";
-            return;
+        }
+    }
+
+    if (updated_config.cloud_storage_enabled()) {
+        // The properties that cloud_storage::configuration requires
+        // to be set if cloud storage is enabled.
+        std::vector<std::reference_wrapper<
+          const config::property<std::optional<ss::sstring>>>>
+          properties{
+            std::ref(updated_config.cloud_storage_secret_key),
+            std::ref(updated_config.cloud_storage_access_key),
+            std::ref(updated_config.cloud_storage_region),
+            std::ref(updated_config.cloud_storage_bucket)};
+        for (auto& p : properties) {
+            if (p() == std::nullopt) {
+                errors[ss::sstring(p.get().name())]
+                  = "Must be set when cloud storage enabled";
+            }
         }
     }
 }
