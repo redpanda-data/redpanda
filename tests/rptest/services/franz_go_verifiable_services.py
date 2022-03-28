@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import os
+import json
 import threading
 from ducktape.services.background_thread import BackgroundThreadService
 
@@ -64,9 +65,12 @@ class FranzGoVerifiableService(BackgroundThreadService):
             if self._pid is None:
                 self._pid = line.strip()
 
-            self.logger.debug(line.rstrip())
             if self._stopping.is_set():
                 break
+
+            line = line.rstrip()
+            self.logger.debug(line)
+            yield line
 
     def save_exception(self, ex):
         if self._stopping.is_set():
@@ -130,12 +134,33 @@ class FranzGoVerifiableService(BackgroundThreadService):
             return super(FranzGoVerifiableService, self).free_all()
 
 
+class ConsumerStatus:
+    def __init__(self, valid_reads, invalid_reads, out_of_scope_invalid_reads):
+        self.valid_reads = valid_reads
+        self.invalid_reads = invalid_reads
+        self.out_of_scope_invalid_reads = out_of_scope_invalid_reads
+
+    @property
+    def total_reads(self):
+        # At time of writing, invalid reads is never nonzero, because the program
+        # terminates as soon as it sees an invalid read
+        return self.valid_reads + self.out_of_scope_invalid_reads
+
+    def __str__(self):
+        return f"ConsumerStatus<{self.valid_reads} {self.invalid_reads} {self.out_of_scope_invalid_reads}>"
+
+
 class FranzGoVerifiableSeqConsumer(FranzGoVerifiableService):
     def __init__(self, context, redpanda, topic, msg_size, nodes=None):
         super(FranzGoVerifiableSeqConsumer,
               self).__init__(context, redpanda, topic, msg_size, nodes)
 
         self._shutting_down = threading.Event()
+        self._consumer_status = ConsumerStatus(0, 0, 0)
+
+    @property
+    def consumer_status(self):
+        return self._consumer_status
 
     def _worker(self, idx, node):
         self.status = ServiceStatus.RUNNING
@@ -146,7 +171,15 @@ class FranzGoVerifiableSeqConsumer(FranzGoVerifiableService):
                 cmd = 'echo $$ ; %s --brokers %s --topic %s --msg_size %s --produce_msgs 0 --rand_read_msgs 0 --seq_read=1' % (
                     f"{TESTS_DIR}/kgo-verifier", self._redpanda.brokers(),
                     self._topic, self._msg_size)
-                self.execute_cmd(cmd, node)
+                for line in self.execute_cmd(cmd, node):
+                    if not line.startswith("{"):
+                        continue
+                    data = json.loads(line)
+                    self._consumer_status = ConsumerStatus(
+                        data['ValidReads'], data['InvalidReads'],
+                        data['OutOfScopeInvalidReads'])
+                    self.logger.info(f"SeqConsumer {self._consumer_status}")
+
         except Exception as ex:
             self.save_exception(ex)
         finally:
@@ -166,6 +199,11 @@ class FranzGoVerifiableRandomConsumer(FranzGoVerifiableService):
               self).__init__(context, redpanda, topic, msg_size, nodes)
         self._rand_read_msgs = rand_read_msgs
         self._parallel = parallel
+        self._consumer_status = ConsumerStatus(0, 0, 0)
+
+    @property
+    def consumer_status(self):
+        return self._consumer_status
 
     def _worker(self, idx, node):
         self.status = ServiceStatus.RUNNING
@@ -178,11 +216,30 @@ class FranzGoVerifiableRandomConsumer(FranzGoVerifiableService):
                     self._topic, self._msg_size, self._rand_read_msgs,
                     self._parallel)
 
-                self.execute_cmd(cmd, node)
+                for line in self.execute_cmd(cmd, node):
+                    if not line.startswith("{"):
+                        continue
+                    data = json.loads(line)
+                    self._consumer_status = ConsumerStatus(
+                        data['ValidReads'], data['InvalidReads'],
+                        data['OutOfScopeInvalidReads'])
+                    self.logger.info(f"RandomConsumer {self._consumer_status}")
+
         except Exception as ex:
             self.save_exception(ex)
         finally:
             self.status = ServiceStatus.FINISH
+
+
+class ProduceStatus:
+    def __init__(self, sent, acked, bad_offsets, restarts):
+        self.sent = sent
+        self.acked = acked
+        self.bad_offsets = bad_offsets
+        self.restarts = restarts
+
+    def __str__(self):
+        return f"ProduceStatus<{self.sent} {self.acked} {self.bad_offsets} {self.restarts}>"
 
 
 class FranzGoVerifiableProducer(FranzGoVerifiableService):
@@ -196,6 +253,11 @@ class FranzGoVerifiableProducer(FranzGoVerifiableService):
         super(FranzGoVerifiableProducer,
               self).__init__(context, redpanda, topic, msg_size, custom_node)
         self._msg_count = msg_count
+        self._status = ProduceStatus(0, 0, 0, 0)
+
+    @property
+    def produce_status(self):
+        return self._status
 
     def _worker(self, idx, node):
         self.status = ServiceStatus.RUNNING
@@ -205,7 +267,14 @@ class FranzGoVerifiableProducer(FranzGoVerifiableService):
                 f"{TESTS_DIR}/kgo-verifier", self._redpanda.brokers(),
                 self._topic, self._msg_size, self._msg_count)
 
-            self.execute_cmd(cmd, node)
+            for line in self.execute_cmd(cmd, node):
+                if line.startswith("{"):
+                    data = json.loads(line)
+                    self._status = ProduceStatus(data['Sent'], data['Acked'],
+                                                 data['BadOffsets'],
+                                                 data['Restarts'])
+                    self.logger.info(str(self._status))
+
         except Exception as ex:
             self.save_exception(ex)
         finally:

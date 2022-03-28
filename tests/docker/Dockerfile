@@ -114,7 +114,7 @@ RUN cd /tmp/go/sarama/produce_test && go mod tidy && go build
 RUN git -C /opt clone https://github.com/twmb/franz-go.git && cd /opt/franz-go && \
     cd /opt/franz-go/examples/bench && go mod tidy && go build
 
-RUN go install github.com/twmb/kcl@latest && \
+RUN go install github.com/twmb/kcl@v0.8.0 && \
     mv /root/go/bin/kcl /usr/local/bin/
 
 # Install the kgo-verifier tool
