@@ -14,6 +14,7 @@ from rptest.services.verifiable_consumer import VerifiableConsumer
 
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
+from ducktape.mark import ignore
 
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.clients.rpk import RpkTool
@@ -171,6 +172,7 @@ class WasmPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         # Since the identity copro was deployed, contents of logs should be identical
         assert set(self.records_consumed) == set(self.result_data)
 
+    @ignore  # https://github.com/redpanda-data/redpanda/issues/4052
     @cluster(
         num_nodes=6,
         log_allow_list=PARTITION_MOVEMENT_LOG_ERRORS + RESTART_LOG_ALLOW_LIST +
