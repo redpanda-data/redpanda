@@ -155,7 +155,7 @@ struct configuration final : public config_store {
     property<bool> release_cache_on_segment_roll;
     property<std::chrono::milliseconds> segment_appender_flush_timeout_ms;
     property<std::chrono::milliseconds> fetch_session_eviction_timeout_ms;
-    property<size_t> append_chunk_size;
+    bounded_property<size_t> append_chunk_size;
     property<size_t> storage_read_buffer_size;
     property<int16_t> storage_read_readahead_count;
     property<size_t> segment_fallocation_step;
