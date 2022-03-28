@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "net/connection_rate_counter.h"
 #include "net/inet_address_wrapper.h"
 #include "seastar/core/coroutine.hh"
 #include "seastarx.h"
@@ -38,69 +39,6 @@ struct connection_rate_info {
     std::vector<ss::sstring> overrides;
 };
 
-using should_spawn_fiber_on_update
-  = ss::bool_class<struct should_spawn_fiber_on_update_tag>;
-
-class connection_rate_counter {
-public:
-    explicit connection_rate_counter(int64_t max_rate) noexcept
-      : max_tokens(max_rate)
-      , one_token_time(std::max(1000 / max_tokens, 1l))
-      , bucket(max_rate)
-      , last_update_time(ss::lowres_clock::now()) {}
-
-    void break_semaphore() { bucket.broken(); }
-
-    should_spawn_fiber_on_update update_max_rate(int64_t new_max_rate) {
-        auto diff = new_max_rate - max_tokens;
-        if (diff == 0) {
-            return should_spawn_fiber_on_update::no;
-        }
-
-        max_tokens = new_max_rate;
-        one_token_time = std::chrono::milliseconds(
-          std::max(1000 / max_tokens, 1l));
-
-        if (diff > 0) {
-            auto need_add = max_tokens - avaiable_new_connections();
-            bucket.signal(need_add);
-        } else {
-            auto need_move = avaiable_new_connections() - max_tokens;
-            if (need_move > 0) {
-                bucket.consume(need_move);
-            }
-            return should_spawn_fiber_on_update::yes;
-        }
-
-        return should_spawn_fiber_on_update::no;
-    }
-
-    void
-    update_rate(int64_t spawned_tokens, ss::lowres_clock::time_point time) {
-        bucket.signal(spawned_tokens);
-        last_update_time = time;
-    }
-
-    int64_t avaiable_new_connections() {
-        return static_cast<int64_t>(bucket.current());
-    }
-
-    ss::future<> wait(ss::lowres_clock::duration max_wait_time) {
-        co_await bucket.wait(max_wait_time, 1);
-    }
-
-    ss::lowres_clock::time_point get_last_update_time() {
-        return last_update_time;
-    }
-
-    int64_t max_tokens;
-    std::chrono::milliseconds one_token_time;
-
-private:
-    ss::semaphore bucket;
-    ss::lowres_clock::time_point last_update_time;
-};
-
 // This class implement logic to count connections for current seconds. It uses
 // token bucket algorithm inside. If we can not accept new connections they will
 // wait new tokens. We use handlers to on-line updates for redpanda config.
@@ -126,7 +64,7 @@ public:
 private:
     void fill_overrides(const std::vector<ss::sstring>& new_overrides);
 
-    using connection_rate_t = ss::lw_shared_ptr<connection_rate_counter>;
+    using connection_rate_t = ss::lw_shared_ptr<connection_rate_counter<>>;
 
     connection_rate_t find_sem(const inet_address_wrapper& addr);
 

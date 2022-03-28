@@ -33,7 +33,7 @@ connection_rate::connection_rate(
   const connection_rate_info& rate_info, ss::gate& connection_gate) noexcept
   : _connection_gate(connection_gate) {
     if (rate_info.max_connection_rate) {
-        _general_rate = ss::make_lw_shared<connection_rate_counter>(
+        _general_rate = ss::make_lw_shared<connection_rate_counter<>>(
           rate_info.max_connection_rate.value());
     }
 
@@ -48,7 +48,7 @@ void connection_rate::update_general_rate(std::optional<int64_t> new_value) {
             return;
         }
 
-        _general_rate = ss::make_lw_shared<connection_rate_counter>(
+        _general_rate = ss::make_lw_shared<connection_rate_counter<>>(
           new_value.value());
     }
 }
@@ -238,7 +238,7 @@ void connection_rate::fill_overrides(
 
         auto [_, res] = _overrides.emplace(
           parsed_override.value().first,
-          ss::make_lw_shared<connection_rate_counter>(
+          ss::make_lw_shared<connection_rate_counter<>>(
             parsed_override.value().second));
 
         vassert(
