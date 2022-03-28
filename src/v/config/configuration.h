@@ -88,16 +88,18 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> metadata_dissemination_retry_delay_ms;
     property<int16_t> metadata_dissemination_retries;
     property<std::chrono::milliseconds> tm_sync_timeout_ms;
-    property<model::violation_recovery_policy> tm_violation_recovery_policy;
+    enum_property<model::violation_recovery_policy>
+      tm_violation_recovery_policy;
     property<std::chrono::milliseconds> rm_sync_timeout_ms;
     property<uint32_t> seq_table_min_size;
     property<std::chrono::milliseconds> tx_timeout_delay_ms;
-    property<model::violation_recovery_policy> rm_violation_recovery_policy;
+    enum_property<model::violation_recovery_policy>
+      rm_violation_recovery_policy;
     property<std::chrono::milliseconds> fetch_reads_debounce_timeout;
     property<std::chrono::milliseconds> alter_topic_cfg_timeout_ms;
     property<model::cleanup_policy_bitflags> log_cleanup_policy;
-    property<model::timestamp_type> log_message_timestamp_type;
-    property<model::compression> log_compression_type;
+    enum_property<model::timestamp_type> log_message_timestamp_type;
+    enum_property<model::compression> log_compression_type;
     property<size_t> fetch_max_bytes;
     property<std::chrono::milliseconds> metadata_status_wait_timeout_ms;
     bounded_property<std::optional<int64_t>> kafka_connection_rate_limit;

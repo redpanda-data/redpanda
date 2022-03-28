@@ -298,7 +298,9 @@ configuration::configuration()
       "Describes how to recover from an invariant violation happened on the "
       "transaction coordinator level",
       {.example = "best_effort", .visibility = visibility::user},
-      model::violation_recovery_policy::crash)
+      model::violation_recovery_policy::crash,
+      {model::violation_recovery_policy::crash,
+       model::violation_recovery_policy::best_effort})
   , rm_sync_timeout_ms(
       *this,
       "rm_sync_timeout_ms",
@@ -323,7 +325,9 @@ configuration::configuration()
       "Describes how to recover from an invariant violation happened on the "
       "partition level",
       {.example = "best_effort", .visibility = visibility::user},
-      model::violation_recovery_policy::crash)
+      model::violation_recovery_policy::crash,
+      {model::violation_recovery_policy::crash,
+       model::violation_recovery_policy::best_effort})
   , fetch_reads_debounce_timeout(
       *this,
       "fetch_reads_debounce_timeout",
@@ -353,7 +357,8 @@ configuration::configuration()
       {.needs_restart = needs_restart::no,
        .example = "LogAppendTime",
        .visibility = visibility::user},
-      model::timestamp_type::create_time)
+      model::timestamp_type::create_time,
+      {model::timestamp_type::create_time, model::timestamp_type::append_time})
   , log_compression_type(
       *this,
       "log_compression_type",
@@ -361,7 +366,13 @@ configuration::configuration()
       {.needs_restart = needs_restart::no,
        .example = "snappy",
        .visibility = visibility::user},
-      model::compression::producer)
+      model::compression::producer,
+      {model::compression::none,
+       model::compression::gzip,
+       model::compression::snappy,
+       model::compression::lz4,
+       model::compression::zstd,
+       model::compression::producer})
   , fetch_max_bytes(
       *this,
       "fetch_max_bytes",
