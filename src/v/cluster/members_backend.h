@@ -31,6 +31,7 @@ public:
         partition_constraints constraints;
         absl::node_hash_set<model::node_id> replicas_to_remove;
         std::optional<allocation_units> new_assignment;
+        std::vector<model::broker_shard> initial_assignment;
         reallocation_state state = reallocation_state::initial;
         friend std::ostream&
         operator<<(std::ostream&, const partition_reallocation&);
