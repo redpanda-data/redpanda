@@ -732,27 +732,17 @@ void config_multi_property_validation(
         modified_keys.insert(i.first);
     }
 
-    bool auth_now_enabled = config::shard_local_cfg().admin_api_require_auth();
-    if (modified_keys.contains("admin_api_require_auth")) {
-        auth_now_enabled = updated_config.admin_api_require_auth();
-    }
-
     if (
       (modified_keys.contains("admin_api_require_auth")
        || modified_keys.contains("superusers"))
-      && auth_now_enabled) {
+      && updated_config.admin_api_require_auth()) {
         // We are switching on admin_api_require_auth.  Apply rules to prevent
         // the user "locking themselves out of the house".
-
-        // There must be some superusers defined
-        auto superusers = config::shard_local_cfg().superusers();
-        if (modified_keys.contains("superusers")) {
-            superusers = updated_config.superusers();
-        }
-
         const bool auth_was_enabled
           = config::shard_local_cfg().admin_api_require_auth();
 
+        // There must be some superusers defined
+        const auto& superusers = updated_config.superusers();
         absl::flat_hash_set<ss::sstring> superusers_set(
           superusers.begin(), superusers.end());
         if (superusers.empty()) {
@@ -921,6 +911,13 @@ void admin_server::register_cluster_config_routes() {
               // log.
               config::configuration cfg;
 
+              // Populate the temporary config object with existing values
+              config::shard_local_cfg().for_each(
+                [&cfg](const config::base_property& p) {
+                    auto& tmp_p = cfg.get(p.name());
+                    tmp_p = p;
+                });
+
               // Configuration properties cannot do multi-property validation
               // themselves, so there is some special casing here for critical
               // properties.
@@ -1005,6 +1002,14 @@ void admin_server::register_cluster_config_routes() {
                         i.first,
                         yaml_value,
                         message);
+                  }
+              }
+
+              for (const auto& key : update.remove) {
+                  if (cfg.contains(key)) {
+                      cfg.get(key).reset();
+                  } else {
+                      errors[key] = "Unknown property";
                   }
               }
 
