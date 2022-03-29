@@ -44,6 +44,7 @@ func init() {
 	//+kubebuilder:scaffold:scheme
 }
 
+// nolint:funlen // length looks good
 func main() {
 	var (
 		clusterDomain               string
@@ -103,6 +104,16 @@ func main() {
 		AdminAPIClientFactory: adminutils.NewInternalAdminAPI,
 	}).WithClusterDomain(clusterDomain).WithConfiguratorSettings(configurator).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "Cluster")
+		os.Exit(1)
+	}
+
+	if err = (&redpandacontrollers.ClusterConfigurationDriftReconciler{
+		Client:                mgr.GetClient(),
+		Log:                   ctrl.Log.WithName("controllers").WithName("redpanda").WithName("ClusterConfigurationDrift"),
+		Scheme:                mgr.GetScheme(),
+		AdminAPIClientFactory: adminutils.NewInternalAdminAPI,
+	}).WithClusterDomain(clusterDomain).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Unable to create controller", "controller", "ClusterConfigurationDrift")
 		os.Exit(1)
 	}
 
