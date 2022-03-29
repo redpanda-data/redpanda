@@ -145,6 +145,10 @@ const auto schema2
   = pps::make_avro_schema_definition(
       R"({"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"},{"type":"string","name":"f2","default":"foo"}]})")
       .value();
+const auto schema2_union_null_first
+  = pps::make_avro_schema_definition(
+      R"({"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"},{"type":["null","int"],"name":"f2_enum","default":null}]})")
+      .value();
 const auto schema3
   = pps::make_avro_schema_definition(
       R"({"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"},{"type":"string","name":"f2"}]})")
