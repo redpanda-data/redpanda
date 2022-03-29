@@ -54,7 +54,7 @@ Datadog: [https://docs.datadoghq.com/integrations/redpanda](https://docs.datadog
 
 ## Projects using Redpanda 
 
-[Tremor-rs](https://github.com/tremor-rs/tremor-redpanda): An event-processing system designed at Wayfair to introduce a configurable traffic-shaping mechanism for the company’s infrastructure platform engineers.
+[Tremor-rs](https://github.com/tremor-rs/tremor-redpanda): An event-processing system designed at Wayfair to introduce a configurable traffic-shaping mechanism.
 
 [Octal Data](https://github.com/octaldata/streamops): A StreamOps platform for developers for discovery, analytics, and operations. 
 
