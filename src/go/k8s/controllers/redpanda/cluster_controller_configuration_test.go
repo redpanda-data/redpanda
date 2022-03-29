@@ -650,7 +650,10 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 
 			// Inject property before creating the cluster, simulating .bootstrap.yaml
 			const val = "nown"
-			testAdminAPI.SetProperty("unk", val)
+			_, err := testAdminAPI.PatchClusterConfig(map[string]interface{}{
+				"unk": val,
+			}, nil)
+			Expect(err).To(BeNil())
 
 			By("Allowing creation of a new cluster")
 			key, baseKey, redpandaCluster := getInitialTestCluster("condition-bootstrap-failure")
@@ -664,12 +667,12 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			Eventually(resourceGetter(baseKey, &corev1.ConfigMap{}), timeout, interval).Should(Succeed())
 			Eventually(resourceGetter(key, &appsv1.StatefulSet{}), timeout, interval).Should(Succeed())
 
+			By("Always adding the last-applied-configuration annotation on the configmap")
+			Eventually(annotationGetter(baseKey, &corev1.ConfigMap{}, lastAppliedConfiguraitonHashKey), timeout, interval).ShouldNot(BeEmpty())
+
 			By("Marking the cluster as not properly configured")
 			Eventually(clusterConfiguredConditionStatusGetter(key), timeout, interval).Should(BeFalse())
 			Consistently(clusterConfiguredConditionStatusGetter(key), timeoutShort, intervalShort).Should(BeFalse())
-
-			By("Not patching config via the admin API")
-			Consistently(testAdminAPI.NumPatchesGetter(), timeoutShort, intervalShort).Should(Equal(0))
 
 			By("Restoring the state when fixing the property")
 			Expect(k8sClient.Get(context.Background(), key, redpandaCluster)).To(Succeed())
