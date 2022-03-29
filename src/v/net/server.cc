@@ -249,6 +249,10 @@ ss::future<> server::wait_for_shutdown() {
         shutdown_input();
     }
 
+    if (_connection_rates.has_value()) {
+        _connection_rates->stop();
+    }
+
     return _conn_gate.close().then([this] {
         return seastar::do_for_each(
           _connections, [](net::connection& c) { return c.shutdown(); });
