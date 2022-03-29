@@ -387,6 +387,8 @@ func (s *ClusterStatus) SetConditionUsingClock(
 const (
 	// ClusterConfiguredReasonUpdating indicates that the desired configuration is being applied to the running cluster
 	ClusterConfiguredReasonUpdating = "Updating"
+	// ClusterConfiguredReasonDrift indicates that the cluster drifted from the desired configuration and needs to be synced
+	ClusterConfiguredReasonDrift = "Drift"
 	// ClusterConfiguredReasonError signals an error when applying the configuration to the Redpanda cluster
 	ClusterConfiguredReasonError = "Error"
 )
