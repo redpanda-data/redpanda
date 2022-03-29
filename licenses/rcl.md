@@ -2,7 +2,7 @@
 
 Please read this Redpanda Community License Agreement (the “Agreement”)
 carefully before using Redpanda (as defined below), which is offered by
-Vectorized, Inc. or its affiliated Legal Entities (“Vectorized”).
+Redpanda Data, Inc. or its affiliated Legal Entities (“Redpanda Data”).
 
 By downloading Redpanda or using it in any manner, You agree that You
 have read and agree to be bound by the terms of this Agreement. If You
@@ -16,15 +16,15 @@ this Agreement, to the exclusion of all other terms.
     terms defined elsewhere in this Agreement, the terms below have the
     following meanings.
 
-(a) “Redpanda” shall mean the event streaming platform provided by Vectorized, including both Redpanda Core and Redpanda Enterprise Edition, as defined below.
+(a) “Redpanda” shall mean the event streaming platform provided by Redpanda Data, including both Redpanda Core and Redpanda Enterprise Edition, as defined below.
 
 (b) “Redpanda Core” shall mean the version of Redpanda, available free of charge at https://github.com/redpanda-data/redpanda.
 
-(c) “Redpanda Enterprise Edition” shall mean the additional features made available by Vectorized, the use of which is subject to additional terms set out below.
+(c) “Redpanda Enterprise Edition” shall mean the additional features made available by Redpanda Data, the use of which is subject to additional terms set out below.
 
-(d) “Contribution” shall mean any work of authorship, including the original version of the Work and any modifications or additions to that Work or Derivative Works thereof, that is intentionally submitted Vectorized for inclusion in the Work by the copyright owner or by an individual or Legal Entity authorized to submit on behalf of the copyright owner. For the purposes of this definition, “submitted” means any form of electronic, verbal, or written communication sent to Vectorized or its representatives, including but not limited to communication on electronic mailing lists, source code control systems, and issue tracking systems that are managed by, or on behalf of, Vectorized for the purpose of discussing and improving the Work, but excluding communication that is conspicuously marked or otherwise designated in writing by the copyright owner as “Not a Contribution.”
+(d) “Contribution” shall mean any work of authorship, including the original version of the Work and any modifications or additions to that Work or Derivative Works thereof, that is intentionally submitted Redpanda Data for inclusion in the Work by the copyright owner or by an individual or Legal Entity authorized to submit on behalf of the copyright owner. For the purposes of this definition, “submitted” means any form of electronic, verbal, or written communication sent to Redpanda Data or its representatives, including but not limited to communication on electronic mailing lists, source code control systems, and issue tracking systems that are managed by, or on behalf of, Redpanda Data for the purpose of discussing and improving the Work, but excluding communication that is conspicuously marked or otherwise designated in writing by the copyright owner as “Not a Contribution.”
 
-(e) “Contributor” shall mean any copyright owner or individual or Legal Entity authorized by the copyright owner, other than Vectorized, from whom Vectorized receives a Contribution that Vectorized subsequently incorporates within the Work.
+(e) “Contributor” shall mean any copyright owner or individual or Legal Entity authorized by the copyright owner, other than Redpanda Data, from whom Redpanda Data receives a Contribution that Redpanda Data subsequently incorporates within the Work.
 
 (f) “Derivative Works” shall mean any work, whether in Source or Object form, that is based on (or derived from) the Work, such as a translation, abridgement, condensation, or any other recasting, transformation, or adaptation for which the editorial revisions, annotations, elaborations, or other modifications represent, as a whole, an original work of authorship. For the purposes of this License, Derivative Works shall not include works that remain separable from, or merely link (or bind by name) to the interfaces of, the Work and Derivative Works thereof.
 
@@ -32,13 +32,13 @@ this Agreement, to the exclusion of all other terms.
 
 (h) “License” shall mean the terms and conditions for use, reproduction, and distribution of a Work as defined by this Agreement.
 
-(i) “Licensor” shall mean Vectorized or a Contributor, as applicable.
+(i) “Licensor” shall mean Redpanda Data or a Contributor, as applicable.
 
 (j) “Object” form shall mean any form resulting from mechanical transformation or translation of a Source form, including but not limited to compiled object code, generated documentation, and conversions to other media types.
 
 (k) “Source” form shall mean the preferred form for making modifications, including but not limited to software source code, documentation source, and configuration files.
 
-(l) “Third Party Works” shall mean Works, including Contributions, and other technology owned by a person or Legal Entity other than Vectorized, as indicated by a copyright notice that is included in or attached to such Works or technology.
+(l) “Third Party Works” shall mean Works, including Contributions, and other technology owned by a person or Legal Entity other than Redpanda Data, as indicated by a copyright notice that is included in or attached to such Works or technology.
 
 (m) “Work” shall mean the work of authorship, whether in Source or Object form, made available under a License, as indicated by a copyright notice that is included in or attached to the work.
 
@@ -89,7 +89,7 @@ this Agreement, to the exclusion of all other terms.
             terminate as of the date such litigation is filed.
 
         3.  ***License to Third Party Works:*** From time to time
-            Vectorized may use, or provide You access to, Third Party
+            Redpanda Data may use, or provide You access to, Third Party
             Works in connection Redpanda Enterprise Edition. You
             acknowledge and agree that in addition to this Agreement,
             Your use of Third Party Works is subject to all other terms
@@ -97,7 +97,7 @@ this Agreement, to the exclusion of all other terms.
             contained in such Third Party Works. Some Third Party Works
             may be licensed to You solely for use with Redpanda
             Enterprise Edition under the terms of a third party License,
-            or as otherwise notified by Vectorized, and not under the
+            or as otherwise notified by Redpanda Data, and not under the
             terms of this Agreement. You agree that the owners and third
             party licensors of Third Party Works are intended third
             party beneficiaries to this Agreement.
@@ -119,7 +119,7 @@ this Agreement, to the exclusion of all other terms.
             or subscribers of such of such third party’s core services.
 
 3.  **<span class="smallcaps">Support</span>.** From time to time, in
-    its sole discretion, Vectorized may offer professional services or
+    its sole discretion, Redpanda Data may offer professional services or
     support for Redpanda, which may now or in the future be subject to
     additional fees.
 
@@ -128,26 +128,26 @@ this Agreement, to the exclusion of all other terms.
 
     1.  **Fees.** The License to Redpanda Enterprise Edition is
         conditioned upon Your payment of the fees specified on
-        [pricing](https://vectorized.io/contact) which You agree to pay to Vectorized in accordance
+        [pricing](https://redpanda.com/contact) which You agree to pay to Redpanda Data in accordance
         with the payment terms set out on that page. Any professional
         services or support for Redpanda may also be subject to Your
-        payment of fees, which will be specified by Vectorized when you
+        payment of fees, which will be specified by Redpanda Data when you
         sign up to receive such professional services or support.
-        Vectorized reserves the right to change the fees at any time
+        Redpanda Data reserves the right to change the fees at any time
         with prior written notice; for recurring fees, any such
         adjustments will take effect as of the next payment period.
 
     2.  **Overdue Payments and Taxes.** Overdue payments are subject to
         a service charge equal to the lesser of 1.5% per month or the
         maximum legal interest rate allowed by law, and You shall pay
-        all Vectorized’s reasonable costs of collection, including court
+        all Redpanda Data’s reasonable costs of collection, including court
         costs and attorneys’ fees. Fees are stated and payable in U.S.
         dollars and are exclusive of all sales, use, value added and
         similar taxes, duties, withholdings and other governmental
-        assessments (but excluding taxes based on Vectorized’s income)
+        assessments (but excluding taxes based on Redpanda Data’s income)
         that may be levied on the transactions contemplated by this
         Agreement in any jurisdiction, all of which are Your
-        responsibility unless you have provided Vectorized with a valid
+        responsibility unless you have provided Redpanda Data with a valid
         tax-exempt certificate.
 
     3.  **Record-keeping and Audit.** If fees for Redpanda Enterprise
@@ -155,11 +155,11 @@ this Agreement, to the exclusion of all other terms.
         Redpanda Enterprise Edition or another use-based unit of
         measurement, You must maintain complete and accurate records
         with respect Your use of Redpanda Enterprise Edition and will
-        provide such records to Vectorized for inspection or audit upon
-        Vectorized’s reasonable request. If an inspection or audit
+        provide such records to Redpanda Data for inspection or audit upon
+        Redpanda Data’s reasonable request. If an inspection or audit
         uncovers additional usage by You for which fees are owed under
         this Agreement, then You shall pay for such additional usage at
-        Vectorized’s then-current rates.
+        Redpanda Data’s then-current rates.
 
 5.  **<span class="smallcaps">Trial License.</span>** If You have signed
     up for a trial or evaluation of Redpanda Enterprise Edition, Your
@@ -170,7 +170,7 @@ this Agreement, to the exclusion of all other terms.
     evaluation of Redpanda Enterprise Edition during the trial or
     evaluation period (a “Trial License”). You may not use Redpanda
     Enterprise Edition under a Trial License more than once in any
-    twelve (12) month period. Vectorized may revoke a Trial License at
+    twelve (12) month period. Redpanda Data may revoke a Trial License at
     any time and for any reason. Sections 3, 4, 9 and 11 of this
     Agreement do not apply to Trial Licenses.
 
@@ -221,18 +221,18 @@ this Agreement, to the exclusion of all other terms.
         modifications, in Source or Object form, provided that each
         Enterprise Derivative Work will be considered to include a
         License to Redpanda Enterprise Edition and thus will be subject
-        to the payment of fees to Vectorized by any user of the
+        to the payment of fees to Redpanda Data by any user of the
         Enterprise Derivative Work.
 
 7.  **<span class="smallcaps">Submission of Contributions.</span>**
     Unless You explicitly state otherwise, any Contribution
     intentionally submitted for inclusion in Redpanda by You to
-    Vectorized shall be under the terms and conditions of
-    [https://cla-assistant.io/vectorizedio/] (which is based off of the
+    Redpanda Data shall be under the terms and conditions of
+    [https://cla-assistant.io/redpanda-data/redpanda] (which is based off of the
     Apache License), without any additional terms or conditions,
     payments of royalties or otherwise to Your benefit. Notwithstanding
     the above, nothing herein shall supersede or modify the terms of any
-    separate license agreement You may have executed with Vectorized
+    separate license agreement You may have executed with Redpanda Data
     regarding such Contributions.
 
 8.  **<span class="smallcaps">Trademarks.</span>** This License does not
@@ -243,32 +243,32 @@ this Agreement, to the exclusion of all other terms.
 
 9.  **<span class="smallcaps">Limited Warranty.</span>**
 
-    1.  **Warranties.** Vectorized warrants to You that: (i) Redpanda
+    1.  **Warranties.** Redpanda Data warrants to You that: (i) Redpanda
         Enterprise Edition will materially perform in accordance with
         the applicable documentation for ninety (90) days after initial
         delivery to You; and (ii) any professional services performed by
-        Vectorized under this Agreement will be performed in a
+        Redpanda Data under this Agreement will be performed in a
         workmanlike manner, in accordance with general industry
         standards.
 
-    2.  **Exclusions.** Vectorized’s warranties in this Section 9 do not
+    2.  **Exclusions.** Redpanda Data’s warranties in this Section 9 do not
         extend to problems that result from: (i) Your failure to
-        implement updates issued by Vectorized during the warranty
+        implement updates issued by Redpanda Data during the warranty
         period; (ii) any alterations or additions (including Enterprise
         Derivative Works and Contributions) to Redpanda not performed by
-        or at the direction of Vectorized; (iii) failures that are not
-        reproducible by Vectorized; (iv) operation of Redpanda
+        or at the direction of Redpanda Data; (iii) failures that are not
+        reproducible by Redpanda Data; (iv) operation of Redpanda
         Enterprise Edition in violation of this Agreement or not in
         accordance with its documentation; (v) failures caused by
         software, hardware or products not licensed or provided by
-        Vectorized hereunder; or (vi) Third Party Works.
+        Redpanda Data hereunder; or (vi) Third Party Works.
 
     3.  **Remedies.** In the event of a breach of a warranty under this
-        Section 9, Vectorized will, at its discretion and cost, either
+        Section 9, Redpanda Data will, at its discretion and cost, either
         repair, replace or re-perform the applicable Works or services
-        or refund a portion of fees previously paid to Vectorized that
+        or refund a portion of fees previously paid to Redpanda Data that
         are associated with the defective Works or services. This is
-        Your exclusive remedy, and Vectorized’s sole liability, arising
+        Your exclusive remedy, and Redpanda Data’s sole liability, arising
         in connection with the limited warranties herein.
 
 10.  **<span class="smallcaps">Disclaimer of Warranty.</span>** EXCEPT AS
@@ -286,7 +286,7 @@ this Agreement, to the exclusion of all other terms.
 
 11. **<span class="smallcaps">Limited Indemnity.</span>**
 
-    1.  **Indemnity.** Vectorized will defend, indemnify and hold You
+    1.  **Indemnity.** Redpanda Data will defend, indemnify and hold You
         harmless against any third party claims, liabilities or expenses
         incurred (including reasonable attorneys’ fees), as well as
         amounts finally awarded in a settlement or a non-appealable
@@ -294,12 +294,12 @@ this Agreement, to the exclusion of all other terms.
         claim or allegation by a third party that Redpanda Enterprise
         Edition infringes or misappropriates a valid United States
         patent, copyright or trade secret right of a third party;
-        provided that You give Vectorized: (i) prompt written notice of
+        provided that You give Redpanda Data: (i) prompt written notice of
         any such claim or allegation; (ii) sole control of the defense
         and settlement thereof; and (iii) reasonable cooperation and
         assistance in such defense or settlement. If any Work within
-        Redpanda Enterprise Edition becomes or, in Vectorized’s opinion,
-        is likely to become, the subject of an injunction, Vectorized
+        Redpanda Enterprise Edition becomes or, in Redpanda Data’s opinion,
+        is likely to become, the subject of an injunction, Redpanda Data
         may, at its option, (A) procure for You the right to continue
         using such Work, (B) replace or modify such Work so that it
         becomes non-infringing without substantially compromising its
@@ -307,23 +307,23 @@ this Agreement, to the exclusion of all other terms.
         practicable, then (C) terminate Your license to the allegedly
         infringing Work and refund to You a prorated portion of the
         prepaid and unearned fees for such infringing Work. The
-        foregoing states the entire liability of Vectorized with respect
+        foregoing states the entire liability of Redpanda Data with respect
         to infringement of patents, copyrights, trade secrets or other
         intellectual property rights.
 
     2.  **Exclusions.** The foregoing obligations shall not apply
-        to: (i) Works modified by any party other than Vectorized
+        to: (i) Works modified by any party other than Redpanda Data
         (including Enterprise Derivative Works and Contributions), if
         the alleged infringement relates to such modification, (ii)
         Works combined or bundled with any products, processes or
-        materials not provided by Vectorized where the alleged
+        materials not provided by Redpanda Data where the alleged
         infringement relates to such combination, (iii) use of a version
         of Redpanda Enterprise Edition other than the version that was
         current at the time of such use, as long as a non-infringing
         version had been released, (iv) any Works created to Your
         specifications, (v) infringement or misappropriation of any
         proprietary right in which You have an interest, or (vi) Third
-        Party Works. You will defend, indemnify and hold Vectorized
+        Party Works. You will defend, indemnify and hold Redpanda Data
         harmless against any Losses arising from any such claim or
         allegation, subject to conditions reciprocal to those in Section
         11(a).
@@ -334,7 +334,7 @@ this Agreement, to the exclusion of all other terms.
     applicable law (such as deliberate and grossly negligent acts), and
     notwithstanding anything in this Agreement to the contrary, shall
     Licensor or any Contributor be liable to You for (i) any amounts in
-    excess, in the aggregate, of the fees paid by You to Vectorized
+    excess, in the aggregate, of the fees paid by You to Redpanda Data
     under this Agreement in the twelve (12) months preceding the date
     the first cause of liability arose), or (ii) any indirect, special,
     incidental, punitive, exemplary, reliance, or consequential damages
@@ -356,14 +356,14 @@ this Agreement, to the exclusion of all other terms.
     consistent with this License. However, in accepting such
     obligations, You may act only on Your own behalf and on Your sole
     responsibility, not on behalf of any other Contributor, and only if
-    You agree to indemnify, defend, and hold Vectorized and each other
+    You agree to indemnify, defend, and hold Redpanda Data and each other
     Contributor harmless for any liability incurred by, or claims
     asserted against, such Contributor by reason of your accepting any
     such warranty or additional liability.
 
 14. **<span class="smallcaps">General.</span>**
 
-    1.  **Relationship of Parties.** You and Vectorized are independent
+    1.  **Relationship of Parties.** You and Redpanda Data are independent
         contractors, and nothing herein shall be deemed to constitute
         either party as the agent or representative of the other or both
         parties as joint venturers or partners for any purpose.
@@ -375,7 +375,7 @@ this Agreement, to the exclusion of all other terms.
 
     3.  **Assignment.** This Agreement and the rights and obligations
         herein may not be assigned or transferred, in whole or in part,
-        by You without the prior written consent of Vectorized. Any
+        by You without the prior written consent of Redpanda Data. Any
         assignment in violation of this provision is void. This
         Agreement shall be binding upon, and inure to the benefit of,
         the successors and permitted assigns of the parties.

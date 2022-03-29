@@ -2,10 +2,10 @@ Redpanda Business Source License 1.1
 
 <u>License</u>: BSL 1.1
 
-<u>Licensor</u>: Vectorized, Inc.
+<u>Licensor</u>: Redpanda Data, Inc.
 
 <u>Licensed Work</u>: Redpanda The Licensed Work is © 2020
-Vectorized, Inc.
+Redpanda Data, Inc.
 
 <u>Additional Use Grant</u>: You may make use of the Licensed Work,
 provided that you may not use the Licensed Work for a Streaming or
