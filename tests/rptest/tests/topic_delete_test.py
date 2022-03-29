@@ -10,9 +10,14 @@
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 
+import time
+import re
+
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.services.rpk_producer import RpkProducer
+from rptest.services.metrics_check import MetricCheck
 
 
 class TopicDeleteTest(RedpandaTest):
@@ -66,3 +71,89 @@ class TopicDeleteTest(RedpandaTest):
                     self.logger.error(line.strip())
 
             raise
+
+
+class TopicDeleteStressTest(RedpandaTest):
+    """
+    The purpose of this test is to execute topic deletion during compaction process.
+
+    The testing strategy is:
+        1. Start to produce messaes
+        2. Produce until compaction starting
+        3. Delete topic
+        4. Verify that all data for kafka namespace will be deleted
+    """
+    def __init__(self, test_context):
+        extra_rp_conf = dict(
+            log_segment_size=1048576,
+            compacted_log_segment_size=1048576,
+            log_compaction_interval_ms=300,
+            auto_create_topics_enabled=False,
+        )
+
+        super(TopicDeleteStressTest,
+              self).__init__(test_context=test_context,
+                             num_brokers=3,
+                             extra_rp_conf=extra_rp_conf)
+
+    @cluster(num_nodes=4)
+    def stress_test(self):
+        for i in range(10):
+            spec = TopicSpec(partition_count=2,
+                             cleanup_policy=TopicSpec.CLEANUP_COMPACT)
+            topic_name = spec.name
+            self.client().create_topic(spec)
+
+            producer = RpkProducer(self.test_context, self.redpanda,
+                                   topic_name, 1024, 100000)
+            producer.start()
+
+            metrics = [
+                MetricCheck(self.logger, self.redpanda, n,
+                            'vectorized_storage_log_compacted_segment_total',
+                            {}, sum) for n in self.redpanda.nodes
+            ]
+
+            def check_compaction():
+                return all([
+                    m.evaluate([
+                        ('vectorized_storage_log_compacted_segment_total',
+                         lambda a, b: b > 3)
+                    ]) for m in metrics
+                ])
+
+            wait_until(check_compaction,
+                       timeout_sec=120,
+                       backoff_sec=5,
+                       err_msg="Segments were not compacted")
+
+            self.client().delete_topic(topic_name)
+
+            try:
+                producer.stop()
+            except:
+                # Should ignore exception form rpk
+                pass
+            producer.free()
+
+            def topic_storage_purged():
+                storage = self.redpanda.storage()
+                return all(
+                    map(lambda n: topic_name not in n.ns["kafka"].topics,
+                        storage.nodes))
+
+            try:
+                wait_until(lambda: topic_storage_purged(),
+                           timeout_sec=60,
+                           backoff_sec=2,
+                           err_msg="Topic storage was not removed")
+
+            except:
+                # On errors, dump listing of the storage location
+                for node in self.redpanda.nodes:
+                    self.logger.error(f"Storage listing on {node.name}:")
+                    for line in node.account.ssh_capture(
+                            f"find {self.redpanda.DATA_DIR}"):
+                        self.logger.error(line.strip())
+
+                raise
