@@ -203,15 +203,17 @@ private:
 
     // Increae rate_counter to max connections for current second
     void allow_new_connections(connection_rate_t rate_counter) {
+        auto now = Clock::now();
+
         int64_t max_tokens_for_update = std::max(
           0l,
           rate_counter->max_tokens - rate_counter->avaiable_new_connections());
 
         if (max_tokens_for_update == 0) {
+            rate_counter->update_rate(0, now);
             return;
         }
 
-        auto now = Clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
           now - rate_counter->get_last_update_time());
 
