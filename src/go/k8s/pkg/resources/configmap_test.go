@@ -93,6 +93,7 @@ func TestEnsureConfigMap(t *testing.T) {
 					},
 				},
 			} {
+				secret := secret // golangci-lint workaround for implicit memory aliasing
 				require.NoError(t, c.Create(context.TODO(), &secret))
 			}
 			cfgRes := resources.NewConfigMap(
