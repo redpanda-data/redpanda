@@ -121,9 +121,11 @@ operator<<(std::ostream& o, const append_entries_reply::status& r) {
     case append_entries_reply::status::group_unavailable:
         o << "group_unavailable";
         return o;
-    default:
-        return o << "uknown append_entries_reply::status";
+    case append_entries_reply::status::timeout:
+        o << "timeout";
+        return o;
     }
+    __builtin_unreachable();
 }
 
 std::ostream& operator<<(std::ostream& o, const install_snapshot_request& r) {
