@@ -72,6 +72,7 @@ type ConfigPropertyMetadata struct {
 	Visibility   string              `json:"visibility"`        // One of 'user', 'deprecated', 'tunable'
 	Units        string              `json:"units,omitempty"`   // A unit like 'ms', or empty.
 	Example      string              `json:"example,omitempty"` // A non-default value for use in docs or tests
+	EnumValues   []string            `json:"enum_values,omitempty"` // Permitted values, or empty list.
 	Items        ConfigPropertyItems `json:"items,omitempty"`   // If this is an array, the contained value type
 }
 
