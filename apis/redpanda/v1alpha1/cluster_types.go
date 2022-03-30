@@ -309,7 +309,7 @@ type ClusterCondition struct {
 }
 
 // ClusterConditionType is a valid value for ClusterCondition.Type
-// +enum
+// +kubebuilder:validation:Enum=ClusterConfigured
 type ClusterConditionType string
 
 // These are valid conditions of the cluster.
