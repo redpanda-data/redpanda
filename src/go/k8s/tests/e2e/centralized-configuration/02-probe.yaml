@@ -3,8 +3,10 @@ kind: Job
 metadata:
   name: get-centralized-config-1
 spec:
+  backoffLimit: 10
   template:
     spec:
+      activeDeadlineSeconds: 90
       containers:
         - name: curl
           image: curlimages/curl:latest
@@ -18,5 +20,5 @@ spec:
             - -c
             - -ex
           args:
-            - "curl --silent -L http://centralized-configuration-0.centralized-configuration.$NAMESPACE.svc.cluster.local:9644/v1/config | grep -o '\"segment_appender_flush_timeout_ms\":[^,}]*' | grep -o '[^:]*$' > /dev/termination-log 2>&1"
+            - res=$(curl --silent -L http://centralized-configuration-0.centralized-configuration.$NAMESPACE.svc.cluster.local:9644/v1/config | grep -o '\"segment_appender_flush_timeout_ms\":[^,}]*' | grep -o '[^:]*$') && echo $res > /dev/termination-log && if [[ "$res" != "1003" ]]; then exit 1; fi
       restartPolicy: Never
