@@ -788,6 +788,8 @@ spec:
                       type: string
                     type:
                       description: Type is the type of the condition
+                      enum:
+                      - ClusterConfigured
                       type: string
                   required:
                   - status
