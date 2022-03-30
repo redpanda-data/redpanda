@@ -54,6 +54,19 @@ func (r *ClusterReconciler) reconcileConfiguration(
 		return errorWithContext(err, "could not load the last applied configuration")
 	}
 
+	// Before trying to contact the admin API we should do a pre-check, to prevent errors and exponential backoff
+	var available bool
+	available, err = adminutils.IsAvailableInPreFlight(ctx, r, redpandaCluster)
+	if err != nil {
+		return errorWithContext(err, "could not perform pre-flight check for admin API availability")
+	} else if !available {
+		log.Info("Waiting for admin API to be available before syncing the configuration")
+		return &resources.RequeueAfterError{
+			RequeueAfter: resources.RequeueDuration,
+			Msg:          "admin API is not available yet",
+		}
+	}
+
 	adminAPI, err := r.AdminAPIClientFactory(ctx, r, redpandaCluster, fqdn, pki.AdminAPINodeCert(), pki.AdminAPIClientCert())
 	if err != nil {
 		return errorWithContext(err, "error creating the admin API client")
