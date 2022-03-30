@@ -36,54 +36,6 @@ namespace internal {
 
 using namespace std::chrono_literals;
 
-class ntp_upload_queue {
-    struct upload_queue_item {
-        ss::lw_shared_ptr<ntp_archiver> archiver;
-        intrusive_list_hook _upl_hook;
-    };
-    using hash_map = absl::node_hash_map<model::ntp, upload_queue_item>;
-
-public:
-    using value = ss::lw_shared_ptr<ntp_archiver>;
-    using key = model::ntp;
-    using iterator = hash_map::iterator;
-
-    ntp_upload_queue() = default;
-
-    // Iteration
-    iterator begin();
-    iterator end();
-
-    /// Insert new item into the queue
-    void insert(value archiver);
-    void erase(const key& ntp);
-    bool contains(const key& ntp) const;
-    value operator[](const key& ntp) const;
-    /// Copy all archiver ntp into output iterator
-    template<class FwdIt, class Func>
-    void copy_if(FwdIt it, const Func& pred) const;
-
-    /// Return number of archivers that queue contains
-    size_t size() const noexcept;
-
-    /// Get next upload candidate
-    value get_upload_candidate();
-
-private:
-    hash_map _archivers;
-    intrusive_list<upload_queue_item, &upload_queue_item::_upl_hook>
-      _upload_queue;
-};
-
-template<class FwdIt, class Func>
-void ntp_upload_queue::copy_if(FwdIt out, const Func& pred) const {
-    for (const auto& [ntp, _] : _archivers) {
-        if (pred(ntp)) {
-            *out++ = ntp;
-        }
-    }
-}
-
 /// Shard-local archiver service.
 /// The service maintains a working set of archivers. Every archiver maintains a
 /// single partition. The working set get reconciled periodically. Unused
@@ -138,9 +90,6 @@ public:
 
     void rearm_timer();
 
-    /// Get next upload or delete candidate
-    ss::lw_shared_ptr<ntp_archiver> get_upload_candidate();
-
     /// Run next round of uploads
     ss::future<> run_uploads();
 
@@ -152,8 +101,10 @@ public:
     /// appers in partition_manager or got removed from it.
     ss::future<> reconcile_archivers();
 
-    /// Return range with all available ntps
-    bool contains(const model::ntp& ntp) const { return _queue.contains(ntp); }
+    /// Return true if there is an archiver for the given ntp.
+    bool contains(const model::ntp& ntp) const {
+        return _archivers.contains(ntp);
+    }
 
     /// Get remote that service uses
     cloud_storage::remote& get_remote();
@@ -183,7 +134,7 @@ private:
     ss::gate _gate;
     ss::abort_source _as;
     ss::semaphore _stop_limit;
-    ntp_upload_queue _queue;
+    absl::btree_map<model::ntp, ss::lw_shared_ptr<ntp_archiver>> _archivers;
     simple_time_jitter<ss::lowres_clock> _backoff{100ms};
     retry_chain_node _rtcnode;
     retry_chain_logger _rtclog;

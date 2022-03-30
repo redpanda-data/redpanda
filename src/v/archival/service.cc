@@ -58,49 +58,6 @@ using namespace std::chrono_literals;
 
 namespace archival::internal {
 
-ntp_upload_queue::iterator ntp_upload_queue::begin() {
-    return _archivers.begin();
-}
-
-ntp_upload_queue::iterator ntp_upload_queue::end() { return _archivers.end(); }
-
-void ntp_upload_queue::insert(ntp_upload_queue::value archiver) {
-    auto key = archiver->get_ntp();
-    auto [it, ok] = _archivers.insert(
-      std::make_pair(key, upload_queue_item{.archiver = archiver}));
-    if (ok) {
-        // We only need to insert new element into the queue if the insert
-        // into the map is actually happend. We don't need to overwrite any
-        // existing archiver.
-        _upload_queue.push_back(it->second);
-    }
-}
-
-void ntp_upload_queue::erase(const ntp_upload_queue::key& ntp) {
-    _archivers.erase(ntp);
-}
-
-bool ntp_upload_queue::contains(const key& ntp) const {
-    return _archivers.contains(ntp);
-}
-
-size_t ntp_upload_queue::size() const noexcept { return _archivers.size(); }
-
-ntp_upload_queue::value ntp_upload_queue::get_upload_candidate() {
-    auto& candidate = _upload_queue.front();
-    candidate._upl_hook.unlink();
-    _upload_queue.push_back(candidate);
-    return candidate.archiver;
-}
-
-ntp_upload_queue::value ntp_upload_queue::operator[](const key& ntp) const {
-    auto it = _archivers.find(ntp);
-    if (it == _archivers.end()) {
-        return nullptr;
-    }
-    return it->second.archiver;
-}
-
 static ss::sstring get_value_or_throw(
   const config::property<std::optional<ss::sstring>>& prop, const char* name) {
     auto opt = prop.value();
@@ -216,9 +173,9 @@ ss::future<> scheduler_service_impl::stop() {
     _timer.cancel();
     _as.request_abort(); // interrupt possible sleep
     std::vector<ss::future<>> outstanding;
-    for (auto& it : _queue) {
+    for (auto& it : _archivers) {
         auto fut = ss::with_semaphore(
-          _stop_limit, 1, [it] { return it.second.archiver->stop(); });
+          _stop_limit, 1, [it] { return it.second->stop(); });
         outstanding.emplace_back(std::move(fut));
     }
     return ss::do_with(
@@ -226,10 +183,6 @@ ss::future<> scheduler_service_impl::stop() {
           return ss::when_all_succeed(outstanding.begin(), outstanding.end())
             .finally([this] { return _gate.close(); });
       });
-}
-
-ss::lw_shared_ptr<ntp_archiver> scheduler_service_impl::get_upload_candidate() {
-    return _queue.get_upload_candidate();
 }
 
 ss::future<> scheduler_service_impl::upload_topic_manifest(
@@ -274,6 +227,11 @@ ss::future<> scheduler_service_impl::upload_topic_manifest(
 
 ss::future<ss::stop_iteration> scheduler_service_impl::add_ntp_archiver(
   ss::lw_shared_ptr<ntp_archiver> archiver) {
+    vassert(
+      !_archivers.contains(archiver->get_ntp()),
+      "archiver for ntp {} already added!",
+      archiver->get_ntp());
+
     if (_gate.is_closed()) {
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::yes);
@@ -284,16 +242,17 @@ ss::future<ss::stop_iteration> scheduler_service_impl::add_ntp_archiver(
           auto ntp = archiver->get_ntp();
           switch (result) {
           case cloud_storage::download_result::success:
-              _queue.insert(archiver);
               vlog(
                 _rtclog.info,
                 "Found manifest for partition {}",
                 archiver->get_ntp());
               _probe.start_archiving_ntp();
+
+              _archivers.emplace(archiver->get_ntp(), archiver);
+
               return ss::make_ready_future<ss::stop_iteration>(
                 ss::stop_iteration::yes);
           case cloud_storage::download_result::notfound:
-              _queue.insert(archiver);
               vlog(
                 _rtclog.info,
                 "Start archiving new partition {}",
@@ -308,6 +267,9 @@ ss::future<ss::stop_iteration> scheduler_service_impl::add_ntp_archiver(
                     archiver->get_revision_id());
               }
               _probe.start_archiving_ntp();
+
+              _archivers.emplace(archiver->get_ntp(), archiver);
+
               return ss::make_ready_future<ss::stop_iteration>(
                 ss::stop_iteration::yes);
           case cloud_storage::download_result::failed:
@@ -352,14 +314,14 @@ scheduler_service_impl::remove_archivers(std::vector<model::ntp> to_remove) {
              to_remove,
              [this](const model::ntp& ntp) -> ss::future<> {
                  vlog(_rtclog.info, "removing archiver for {}", ntp.path());
-                 auto archiver = _queue[ntp];
+                 auto archiver = _archivers.at(ntp);
                  return ss::with_semaphore(
                           _stop_limit,
                           1,
                           [archiver] { return archiver->stop(); })
                    .finally([this, ntp] {
                        vlog(_rtclog.info, "archiver stopped {}", ntp.path());
-                       _queue.erase(ntp);
+                       _archivers.erase(ntp);
                        _probe.stop_archiving_ntp();
                    });
              })
@@ -374,12 +336,14 @@ ss::future<> scheduler_service_impl::reconcile_archivers() {
     auto snapshot = lm.get_all_ntps();
     std::vector<model::ntp> to_remove;
     std::vector<model::ntp> to_create;
-    // find ntps that exist in _svc_per_ntp but no longer present in log_manager
-    _queue.copy_if(
-      std::back_inserter(to_remove), [&snapshot, &pm](const model::ntp& ntp) {
-          auto p = pm.get(ntp);
-          return !snapshot.contains(ntp) || !p || !p->is_leader();
-      });
+    // find ntps that exist in _archivers but no longer present in log_manager
+    for (const auto& [ntp, archiver] : _archivers) {
+        auto p = pm.get(ntp);
+        if (!snapshot.contains(ntp) || !p || !p->is_leader()) {
+            to_remove.push_back(ntp);
+        }
+    }
+
     // find new ntps that present in the snapshot only
     std::copy_if(
       snapshot.begin(),
@@ -387,7 +351,7 @@ ss::future<> scheduler_service_impl::reconcile_archivers() {
       std::back_inserter(to_create),
       [this, &pm](const model::ntp& ntp) {
           auto p = pm.get(ntp);
-          return ntp.ns != model::redpanda_ns && !_queue.contains(ntp) && p
+          return ntp.ns != model::redpanda_ns && !_archivers.contains(ntp) && p
                  && p->is_leader();
       });
     // epxect to_create & to_remove be empty most of the time
@@ -424,10 +388,9 @@ s3::bucket_name scheduler_service_impl::get_bucket() const {
 
 uint64_t scheduler_service_impl::estimate_backlog_size() {
     uint64_t size = 0;
-    for (const auto& [ntp, item] : _queue) {
+    for (const auto& [ntp, archiver] : _archivers) {
         std::ignore = ntp;
-        size += item.archiver->estimate_backlog_size(
-          _partition_manager.local());
+        size += archiver->estimate_backlog_size(_partition_manager.local());
     }
     return size;
 }
@@ -439,19 +402,13 @@ ss::future<> scheduler_service_impl::run_uploads() {
     ss::lowres_clock::duration backoff = initial_backoff;
     while (!_as.abort_requested() && !_gate.is_closed()) {
         try {
-            int quota = _queue.size();
             std::vector<ss::future<ntp_archiver::batch_result>> flist;
-
-            std::transform(
-              boost::make_counting_iterator(0),
-              boost::make_counting_iterator(quota),
-              std::back_inserter(flist),
-              [this](int) {
-                  auto archiver = _queue.get_upload_candidate();
-                  storage::api& api = _storage_api.local();
-                  storage::log_manager& lm = api.log_mgr();
-                  return archiver->upload_next_candidates(lm, _rtcnode);
-              });
+            flist.reserve(_archivers.size());
+            for (const auto& [ntp, archiver] : _archivers) {
+                storage::api& api = _storage_api.local();
+                storage::log_manager& lm = api.log_mgr();
+                flist.push_back(archiver->upload_next_candidates(lm, _rtcnode));
+            }
 
             auto results = co_await ss::when_all_succeed(
               flist.begin(), flist.end());

@@ -174,6 +174,10 @@ struct ntp {
 
     bool operator!=(const ntp& other) const { return !(*this == other); }
 
+    bool operator<(const ntp& other) const {
+        return ns < other.ns || (ns == other.ns && tp < other.tp);
+    }
+
     ss::sstring path() const;
     std::filesystem::path topic_path() const;
 
