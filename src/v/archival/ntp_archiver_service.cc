@@ -66,7 +66,10 @@ ntp_archiver::ntp_archiver(
       _ntp);
     _start_term = _partition->term();
     vlog(
-      archival_log.debug, "created ntp_archiver {} in term", _ntp, _start_term);
+      archival_log.debug,
+      "created ntp_archiver {} in term {}",
+      _ntp,
+      _start_term);
 }
 
 ss::future<> ntp_archiver::stop() {
