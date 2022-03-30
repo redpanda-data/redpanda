@@ -54,7 +54,7 @@ If --seed-addr is passed, it will be used to discover the rest of the cluster
 hosts via redpanda's Kafka API. If --node-addrs is passed, they will be used
 directly. Otherwise, 'rpk generate prometheus-conf' will read the redpanda
 config file and use the node IP configured there. --config may be passed to
-especify an arbitrary config file.`,
+specify an arbitrary config file.`,
 		RunE: func(ccmd *cobra.Command, args []string) error {
 			log.SetFormatter(cli.NewNoopFormatter())
 			// The logger's default stream is stderr, which prevents piping to files
