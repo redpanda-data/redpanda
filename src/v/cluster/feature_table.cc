@@ -25,7 +25,7 @@ std::string_view to_string_view(feature f) {
     case feature::maintenance_mode:
         return "maintenance_mode";
     case feature::test_alpha:
-        return "test_alpha";
+        return "__test_alpha";
     }
     __builtin_unreachable();
 }
