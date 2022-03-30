@@ -716,6 +716,66 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			Expect(k8sClient.Delete(context.Background(), redpandaCluster)).Should(Succeed())
 		})
 	})
+
+	Context("When external factors change configuration of a cluster", func() {
+
+		It("The drift detector restore all managed properties", func() {
+			// Registering two properties, one of them managed by the operator
+			const (
+				unmanagedProp = "unmanaged_prop"
+				managedProp   = "managed_prop"
+
+				desiredManagedPropValue = "desired-managed-value"
+				unmanagedPropValue      = "unmanaged-prop-value"
+
+				externalChangeManagedPropValue   = "external-managed-value"
+				externalChangeUnmanagedPropValue = "external-unmanaged-value"
+			)
+
+			testAdminAPI.RegisterPropertySchema(managedProp, admin.ConfigPropertyMetadata{NeedsRestart: false})
+			testAdminAPI.RegisterPropertySchema(unmanagedProp, admin.ConfigPropertyMetadata{NeedsRestart: false})
+			testAdminAPI.SetProperty(unmanagedProp, unmanagedPropValue)
+
+			By("Allowing creation of a new cluster")
+			key, baseKey, redpandaCluster := getInitialTestCluster("central-drift-detector")
+			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
+
+			By("Creating a Configmap and StatefulSet with the bootstrap configuration")
+			Eventually(resourceGetter(baseKey, &corev1.ConfigMap{}), timeout, interval).Should(Succeed())
+			Eventually(resourceGetter(key, &appsv1.StatefulSet{}), timeout, interval).Should(Succeed())
+
+			By("Synchronizing the condition")
+			Eventually(clusterConfiguredConditionStatusGetter(key), timeout, interval).Should(BeTrue())
+
+			By("Changing the configuration")
+			Expect(k8sClient.Get(context.Background(), key, redpandaCluster)).To(Succeed())
+			if redpandaCluster.Spec.AdditionalConfiguration == nil {
+				redpandaCluster.Spec.AdditionalConfiguration = make(map[string]string)
+			}
+			redpandaCluster.Spec.AdditionalConfiguration["redpanda."+managedProp] = desiredManagedPropValue
+			Expect(k8sClient.Update(context.Background(), redpandaCluster)).To(Succeed())
+
+			By("Having it reflected in the configuration")
+			Eventually(testAdminAPI.PropertyGetter(managedProp), timeout, interval).Should(Equal(desiredManagedPropValue))
+			Eventually(testAdminAPI.PropertyGetter(unmanagedProp), timeout, interval).Should(Equal(unmanagedPropValue))
+
+			By("Synchronizing the condition")
+			Eventually(clusterConfiguredConditionStatusGetter(key), timeout, interval).Should(BeTrue())
+
+			By("Having an external system change both properties")
+			testAdminAPI.SetProperty(managedProp, externalChangeManagedPropValue)
+			testAdminAPI.SetProperty(unmanagedProp, externalChangeUnmanagedPropValue)
+
+			By("Having the managed property restored to the original value")
+			Eventually(testAdminAPI.PropertyGetter(managedProp), timeout, interval).Should(Equal(desiredManagedPropValue))
+
+			By("Leaving the unmanaged property as is")
+			Expect(testAdminAPI.PropertyGetter(unmanagedProp)()).To(Equal(externalChangeUnmanagedPropValue))
+
+			By("Deleting the cluster")
+			Expect(k8sClient.Delete(context.Background(), redpandaCluster)).Should(Succeed())
+		})
+	})
 })
 
 func getInitialTestCluster(
