@@ -21,6 +21,7 @@ from rptest.clients.rpk import RpkTool, RpkException
 from rptest.clients.rpk_remote import RpkRemoteTool
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
+from rptest.util import expect_exception, expect_http_error
 from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
 
@@ -459,6 +460,10 @@ class ClusterConfigTest(RedpandaTest):
 
             if name == 'admin_api_require_auth':
                 # Don't lock ourselves out of the admin API!
+                continue
+
+            if name == 'cloud_storage_enabled':
+                # Enabling cloud storage requires setting other properties too
                 continue
 
             updates[name] = valid_value
@@ -929,3 +934,53 @@ class ClusterConfigTest(RedpandaTest):
         self.logger.info("AlterConfigs output: {out}")
         assert 'INVALID_CONFIG' in out
         assert "changing broker properties isn't supported via this API" in out
+
+    @cluster(num_nodes=3)
+    def test_cloud_validation(self):
+        """
+        Cloud storage configuration has special multi-property rules, check
+        they are enforced.
+        """
+
+        # It is invalid to enable cloud storage without its accompanying properties
+        invalid_update = {'cloud_storage_enabled': True}
+        with expect_http_error(400):
+            self.admin.patch_cluster_config(upsert=invalid_update, remove=[])
+
+        # It is valid to enable cloud storage along with its accompanying properties
+        valid_update = {
+            'cloud_storage_enabled': True,
+            'cloud_storage_secret_key': 'open',
+            'cloud_storage_access_key': 'sesame',
+            'cloud_storage_region': 'us-east-1',
+            'cloud_storage_bucket': 'dearliza'
+        }
+        patch_result = self.admin.patch_cluster_config(upsert=valid_update,
+                                                       remove=[])
+        self._wait_for_version_sync(patch_result['config_version'])
+
+        # Check we really set it properly, and Redpanda can restart without
+        # hitting a validation issue on startup (this is what would happen
+        # if the API validation wasn't working properly)
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+
+        # It is invalid to clear any required cloud storage properties while
+        # cloud storage is enabled
+        forbidden_to_clear = [
+            'cloud_storage_secret_key', 'cloud_storage_access_key',
+            'cloud_storage_region', 'cloud_storage_bucket'
+        ]
+        for key in forbidden_to_clear:
+            with expect_http_error(400):
+                self.admin.patch_cluster_config(upsert={}, remove=[key])
+
+        # Switching off cloud storage is always valid, we can leave the other
+        # properties set
+        patch_result = self.admin.patch_cluster_config(
+            upsert={'cloud_storage_enabled': False}, remove=[])
+        self._wait_for_version_sync(patch_result['config_version'])
+
+        # Clearing related properties is valid now that cloud storage is
+        # disabled
+        for key in forbidden_to_clear:
+            self.admin.patch_cluster_config(upsert={}, remove=[key])

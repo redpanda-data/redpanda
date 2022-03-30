@@ -7,6 +7,9 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from contextlib import contextmanager
+from requests.exceptions import HTTPError
+
 from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 
@@ -135,3 +138,31 @@ def wait_for_segments_removal(redpanda, topic, partition_idx, count):
                 redpanda.logger.error(line.strip())
 
         raise
+
+
+@contextmanager
+def expect_exception(exception_klass, validator):
+    """
+    :param exception_klass: the expected exception type
+    :param validator: a callable that is expected to return true when passed the exception
+    :return: None.  Raises on unexpected exception or no exception.
+    """
+    try:
+        yield
+    except exception_klass as e:
+        if not validator(e):
+            raise
+    else:
+        raise RuntimeError("Expected an exception!")
+
+
+def expect_http_error(status_code: int):
+    """
+    Context manager for HTTP calls expected to result in an HTTP exception
+    carrying a particular status code.
+
+    :param status_code: expected HTTP status code
+    :return: None.  Raises on unexpected exception, no exception, or unexpected status code.
+    """
+    return expect_exception(HTTPError,
+                            lambda e: e.response.status_code == status_code)
