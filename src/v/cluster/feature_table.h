@@ -296,6 +296,9 @@ private:
     // feature_backend is a friend for routine updates when
     // applying raft0 log events.
     friend class feature_backend;
+
+    // Unit testing hook.
+    friend class feature_table_fixture;
 };
 
 } // namespace cluster
