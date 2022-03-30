@@ -371,7 +371,7 @@ feature_manager::write_action(cluster::feature_update_action action) {
       "Invalid feature name '{}'",
       action.feature_name);
 
-    // Validate that teh feature is in a state compatible with the
+    // Validate that the feature is in a state compatible with the
     // requested transition.
     bool valid = true;
     auto state = _feature_table.local().get_state(feature_id_opt.value());
@@ -407,8 +407,10 @@ feature_manager::write_action(cluster::feature_update_action action) {
     if (!valid) {
         vlog(
           clusterlog.warn,
-          "Dropping feature action {}, feature not in expected state",
-          action);
+          "Dropping feature action {}, feature not in expected state "
+          "(state={})",
+          action,
+          state.get_state());
         return ss::make_ready_future<std::error_code>(cluster::errc::success);
     } else {
         // Construct and dispatch command to log
