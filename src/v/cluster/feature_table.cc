@@ -158,8 +158,7 @@ void feature_table::apply_action(const feature_update_action& fua) {
               fua,
               fstate.get_state());
         }
-    } else if (
-      fua.action == feature_update_action::action_t::administrative_activate) {
+    } else if (fua.action == feature_update_action::action_t::activate) {
         auto current_state = fstate.get_state();
         if (current_state == feature_state::state::disabled_clean) {
             if (_active_version >= fstate.spec.require_version) {
@@ -185,9 +184,7 @@ void feature_table::apply_action(const feature_update_action& fua) {
               fua,
               current_state);
         }
-    } else if (
-      fua.action
-      == feature_update_action::action_t::administrative_deactivate) {
+    } else if (fua.action == feature_update_action::action_t::deactivate) {
         auto current_state = fstate.get_state();
         if (
           current_state == feature_state::state::disabled_preparing

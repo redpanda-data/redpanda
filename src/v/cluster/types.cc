@@ -366,11 +366,11 @@ std::ostream& operator<<(std::ostream& o, const feature_update_action& fua) {
     case feature_update_action::action_t::complete_preparing:
         action_name = "complete_preparing";
         break;
-    case feature_update_action::action_t::administrative_activate:
-        action_name = "administrative_activate";
+    case feature_update_action::action_t::activate:
+        action_name = "activate";
         break;
-    case feature_update_action::action_t::administrative_deactivate:
-        action_name = "administrative_deactivate";
+    case feature_update_action::action_t::deactivate:
+        action_name = "deactivate";
         break;
     }
 

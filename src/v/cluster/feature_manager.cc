@@ -334,8 +334,7 @@ ss::future<> feature_manager::do_maybe_update_active_version() {
                   max_version);
                 data.actions.push_back(cluster::feature_update_action{
                   .feature_name = ss::sstring(fs.spec.name),
-                  .action
-                  = feature_update_action::action_t ::administrative_activate});
+                  .action = feature_update_action::action_t::activate});
             }
         }
     }
@@ -386,7 +385,7 @@ feature_manager::write_action(cluster::feature_update_action action) {
         }
 
         break;
-    case cluster::feature_update_action::action_t::administrative_activate:
+    case cluster::feature_update_action::action_t::activate:
         if (
           state.get_state() != feature_state::state::available
           && state.get_state() != feature_state::state::disabled_clean
@@ -395,7 +394,7 @@ feature_manager::write_action(cluster::feature_update_action action) {
             valid = false;
         }
         break;
-    case cluster::feature_update_action::action_t::administrative_deactivate:
+    case cluster::feature_update_action::action_t::deactivate:
         if (
           state.get_state() == feature_state::state::disabled_clean
           || state.get_state() == feature_state::state::disabled_preparing
