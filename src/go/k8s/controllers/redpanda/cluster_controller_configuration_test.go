@@ -75,6 +75,9 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 
 			By("Not using the centralized-config annotation at this stage on the statefulset")
 			Consistently(annotationGetter(key, &sts, centralizedConfigurationHashKey), timeoutShort, intervalShort).Should(BeEmpty())
+
+			By("Deleting the cluster")
+			Expect(k8sClient.Delete(context.Background(), redpandaCluster)).Should(Succeed())
 		})
 
 		It("Should interact with the admin API when doing changes", func() {
@@ -130,6 +133,9 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			By("Never restarting the cluster")
 			Consistently(annotationGetter(key, &appsv1.StatefulSet{}, configMapHashKey), timeoutShort, intervalShort).Should(Equal(configMapHash))
 			Consistently(annotationGetter(key, &appsv1.StatefulSet{}, centralizedConfigurationHashKey), timeoutShort, intervalShort).Should(BeEmpty())
+
+			By("Deleting the cluster")
+			Expect(k8sClient.Delete(context.Background(), redpandaCluster)).Should(Succeed())
 		})
 
 		It("Should remove properties from the admin API when needed", func() {
@@ -217,6 +223,9 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			By("Never restarting the cluster")
 			Consistently(annotationGetter(key, &appsv1.StatefulSet{}, configMapHashKey), timeoutShort, intervalShort).Should(Equal(hash))
 			Consistently(annotationGetter(key, &appsv1.StatefulSet{}, centralizedConfigurationHashKey), timeoutShort, intervalShort).Should(BeEmpty())
+
+			By("Deleting the cluster")
+			Expect(k8sClient.Delete(context.Background(), redpandaCluster)).Should(Succeed())
 		})
 
 		It("Should restart the cluster only when strictly required", func() {
@@ -316,6 +325,9 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 
 			By("Not patching the admin API for node property changes")
 			Consistently(testAdminAPI.NumPatchesGetter(), timeoutShort, intervalShort).Should(Equal(numberOfPatches))
+
+			By("Deleting the cluster")
+			Expect(k8sClient.Delete(context.Background(), redpandaCluster)).Should(Succeed())
 		})
 
 		It("Should defer updating the centralized configuration when admin API is unavailable", func() {
@@ -352,6 +364,9 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			testAdminAPI.SetUnavailable(false)
 			Eventually(clusterConfiguredConditionStatusGetter(key), timeout, interval).Should(BeTrue())
 			Expect(testAdminAPI.PropertyGetter("prop")()).To(Equal(propValue))
+
+			By("Deleting the cluster")
+			Expect(k8sClient.Delete(context.Background(), redpandaCluster)).Should(Succeed())
 		})
 
 	})
@@ -399,6 +414,9 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			Expect(hash2).NotTo(BeEmpty())
 			Consistently(annotationGetter(key, &appsv1.StatefulSet{}, configMapHashKey), timeoutShort, intervalShort).Should(Equal(hash2))
 			Expect(annotationGetter(key, &appsv1.StatefulSet{}, centralizedConfigurationHashKey)()).To(BeEmpty())
+
+			By("Deleting the cluster")
+			Expect(k8sClient.Delete(context.Background(), redpandaCluster)).Should(Succeed())
 		})
 
 	})
@@ -447,6 +465,9 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 
 			By("Not patching the admin API for any reason now")
 			Consistently(testAdminAPI.NumPatchesGetter(), timeoutShort, intervalShort).Should(Equal(0))
+
+			By("Deleting the cluster")
+			Expect(k8sClient.Delete(context.Background(), redpandaCluster)).Should(Succeed())
 		})
 
 		It("Should be able to upgrade and change a cluster even if the admin API is unavailable", func() {
@@ -519,6 +540,8 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			Consistently(testAdminAPI.NumPatchesGetter(), timeoutShort, intervalShort).Should(Equal(1))
 			Expect(testAdminAPI.PropertyGetter("prop")()).To(Equal(propValue))
 
+			By("Deleting the cluster")
+			Expect(k8sClient.Delete(context.Background(), redpandaCluster)).Should(Succeed())
 		})
 
 	})
@@ -601,6 +624,9 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 
 			By("None of the property used here should change the hash")
 			Expect(annotationGetter(key, &appsv1.StatefulSet{}, centralizedConfigurationHashKey)()).To(BeEmpty())
+
+			By("Deleting the cluster")
+			Expect(k8sClient.Delete(context.Background(), redpandaCluster)).Should(Succeed())
 		})
 
 		It("Should report direct validation errors in the condition", func() {
@@ -644,6 +670,9 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 
 			By("None of the property used here should change the hash")
 			Expect(annotationGetter(key, &appsv1.StatefulSet{}, centralizedConfigurationHashKey)()).To(BeEmpty())
+
+			By("Deleting the cluster")
+			Expect(k8sClient.Delete(context.Background(), redpandaCluster)).Should(Succeed())
 		})
 
 		It("Should report configuration errors present in the .bootstrap.yaml file", func() {
@@ -682,6 +711,9 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 
 			By("None of the property used here should change the hash")
 			Expect(annotationGetter(key, &appsv1.StatefulSet{}, centralizedConfigurationHashKey)()).To(BeEmpty())
+
+			By("Deleting the cluster")
+			Expect(k8sClient.Delete(context.Background(), redpandaCluster)).Should(Succeed())
 		})
 	})
 })
