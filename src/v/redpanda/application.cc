@@ -1187,7 +1187,8 @@ void application::start_redpanda(::stop_signal& app_signal) {
             std::ref(controller->get_config_frontend()),
             std::ref(controller->get_feature_manager()),
             std::ref(controller->get_feature_table()),
-            std::ref(controller->get_health_monitor()));
+            std::ref(controller->get_health_monitor()),
+            std::ref(_connection_cache));
 
           proto->register_service<cluster::metadata_dissemination_handler>(
             _scheduling_groups.cluster_sg(),

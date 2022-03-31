@@ -24,6 +24,7 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "model/timeout_clock.h"
+#include "rpc/connection_cache.h"
 #include "rpc/errc.h"
 #include "vlog.h"
 
@@ -44,7 +45,8 @@ service::service(
   ss::sharded<config_frontend>& config_frontend,
   ss::sharded<feature_manager>& feature_manager,
   ss::sharded<feature_table>& feature_table,
-  ss::sharded<health_monitor_frontend>& hm_frontend)
+  ss::sharded<health_monitor_frontend>& hm_frontend,
+  ss::sharded<rpc::connection_cache>& conn_cache)
   : controller_service(sg, ssg)
   , _topics_frontend(tf)
   , _members_manager(mm)
@@ -55,7 +57,8 @@ service::service(
   , _config_frontend(config_frontend)
   , _feature_manager(feature_manager)
   , _feature_table(feature_table)
-  , _hm_frontend(hm_frontend) {}
+  , _hm_frontend(hm_frontend)
+  , _conn_cache(conn_cache) {}
 
 ss::future<join_reply>
 service::join(join_request&& req, rpc::streaming_context& context) {
@@ -320,6 +323,30 @@ ss::future<set_maintenance_mode_reply> service::set_maintenance_mode(
                   .error = errc::replication_error};
             });
       });
+}
+
+/*
+ * A hello message from a peer means that the peer just booted up and setup a
+ * connection to this node. An important optimization is to resume sending
+ * heartbeats to the peer, which might not be active because the connection is
+ * in a back-off state. Resuming heartbeats is important because raft groups on
+ * the peer are likely idle waiting for signs of life without which they will
+ * start calling for votes which may cause disruption.
+ */
+ss::future<hello_reply>
+service::hello(hello_request&& req, rpc::streaming_context&) {
+    vlog(clusterlog.debug, "Handling hello request from node {}", req.peer);
+    co_await _conn_cache.invoke_on_all(
+      [peer = req.peer](rpc::connection_cache& cache) {
+          if (cache.contains(peer)) {
+              vlog(
+                clusterlog.debug,
+                "Resetting backoff for node {} on current shard",
+                peer);
+              cache.get(peer)->reset_backoff();
+          }
+      });
+    co_return hello_reply{.error = errc::success};
 }
 
 ss::future<config_status_reply>

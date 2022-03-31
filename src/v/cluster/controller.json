@@ -105,6 +105,11 @@
             "name": "feature_barrier",
             "input_type": "feature_barrier_request",
             "output_type": "feature_barrier_response"
+        },
+        {
+            "name": "hello",
+            "input_type": "hello_request",
+            "output_type": "hello_reply"
         }
     ]
 }
