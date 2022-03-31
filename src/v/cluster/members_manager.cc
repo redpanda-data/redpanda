@@ -73,8 +73,8 @@ members_manager::members_manager(
 
 ss::future<> members_manager::start() {
     vlog(clusterlog.info, "starting cluster::members_manager...");
-    // join raft0
-    for (auto& b : _raft0->config().brokers()) {
+
+    for (auto c = _raft0->config(); auto& b : c.brokers()) {
         if (b.id() == _self.id()) {
             continue;
         }
