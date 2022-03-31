@@ -138,6 +138,7 @@ connection_rate::find_sem(const inet_address_wrapper& addr) {
 }
 
 void connection_rate::stop() {
+    _as.request_abort();
     if (_general_rate) {
         _general_rate->break_semaphore();
     }
@@ -180,11 +181,15 @@ void connection_rate::spawn_updating_fiber_if_needed(
           [this,
            rate_counter,
            sleep_time = rate_counter->one_token_time]() mutable {
-              return ss::sleep(ss::lowres_clock::duration(sleep_time))
+              return ss::sleep_abortable(
+                       ss::lowres_clock::duration(sleep_time), _as)
                 .then([this, rate_counter] {
                     if (rate_counter.get() != nullptr) {
                         allow_one_new_connection(rate_counter);
                     }
+                })
+                .handle_exception_type([](const ss::sleep_aborted&) {
+                    // Dp nothing;
                 });
           });
     }

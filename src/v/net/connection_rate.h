@@ -14,6 +14,7 @@
 #include "net/inet_address_wrapper.h"
 #include "seastarx.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/semaphore.hh>
@@ -133,6 +134,7 @@ private:
     absl::node_hash_map<inet_address_wrapper, connection_rate_t> _overrides;
 
     ss::gate& _connection_gate;
+    ss::abort_source _as;
 };
 
 } // namespace net
