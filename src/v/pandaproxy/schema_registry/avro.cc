@@ -15,6 +15,8 @@
 #include "pandaproxy/schema_registry/errors.h"
 #include "utils/string_switch.h"
 
+#include <seastar/core/coroutine.hh>
+
 #include <avro/Compiler.hh>
 #include <avro/Exception.hh>
 #include <avro/GenericDatum.hh>
@@ -346,16 +348,19 @@ canonical_schema_definition::raw_string avro_schema_definition::raw() const {
     return canonical_schema_definition::raw_string{_impl.toJson(false)};
 }
 
-result<avro_schema_definition>
-make_avro_schema_definition(std::string_view sv) {
+ss::future<avro_schema_definition>
+make_avro_schema_definition(sharded_store&, canonical_schema schema) {
+    std::optional<avro::Exception> ex;
     try {
-        return avro_schema_definition{avro::compileJsonSchemaFromMemory(
-          reinterpret_cast<const uint8_t*>(sv.data()), sv.length())};
+        auto def = std::move(schema).def().raw()();
+        co_return avro_schema_definition{avro::compileJsonSchemaFromMemory(
+          reinterpret_cast<const uint8_t*>(def.data()), def.length())};
     } catch (const avro::Exception& e) {
-        return error_info{
-          error_code::schema_invalid,
-          fmt::format("Invalid schema {}", e.what())};
+        ex = e;
     }
+    co_return ss::coroutine::make_exception(as_exception(error_info{
+      error_code::schema_invalid,
+      fmt::format("Invalid schema {}", ex->what())}));
 }
 
 result<canonical_schema_definition>
