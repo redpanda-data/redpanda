@@ -33,12 +33,14 @@
 
 namespace pps = pandaproxy::schema_registry;
 
-constexpr std::string_view sv_string_def0{R"({"type":"string"})"};
-constexpr std::string_view sv_int_def0{R"({"type": "int"})"};
 const pps::canonical_schema_definition string_def0{
-  pps::make_avro_schema_definition(sv_string_def0).value()};
+  pps::sanitize_avro_schema_definition(
+    {R"({"type":"string"})", pps::schema_type::avro})
+    .value()};
 const pps::canonical_schema_definition int_def0{
-  pps::make_avro_schema_definition(sv_int_def0).value()};
+  pps::sanitize_avro_schema_definition(
+    {R"({"type": "int"})", pps::schema_type::avro})
+    .value()};
 const pps::subject subject0{"subject0"};
 constexpr pps::topic_key_magic magic0{0};
 constexpr pps::topic_key_magic magic1{1};

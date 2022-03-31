@@ -14,31 +14,38 @@
 namespace pp = pandaproxy;
 namespace pps = pp::schema_registry;
 
-const auto enum2 = pps::make_avro_schema_definition(R"({
+const auto enum2 = pps::sanitize_avro_schema_definition(
+                     {R"({
   "name": "test2",
   "type": "enum",
   "symbols": ["One", "Two"]
-})")
+})",
+                      pps::schema_type::avro})
                      .value();
 
-const auto enum3 = pps::make_avro_schema_definition(R"({
+const auto enum3 = pps::sanitize_avro_schema_definition(
+                     {R"({
   "name": "test2",
   "type": "enum",
   "symbols": ["One", "Two", "Three"]
-})")
+})",
+                      pps::schema_type::avro})
                      .value();
 
-const auto enum2_def = pps::make_avro_schema_definition(
-                         R"({
+const auto enum2_def = pps::sanitize_avro_schema_definition(
+                         {
+                           R"({
   "name": "test2",
   "type": "enum",
   "symbols": ["One", "Two"],
   "default": "One"
-})")
+})",
+                           pps::schema_type::avro})
                          .value();
 
-const auto enum1_mat = pps::make_avro_schema_definition(
-                         R"({
+const auto enum1_mat = pps::sanitize_avro_schema_definition(
+                         {
+                           R"({
   "type": "record",
   "name": "schema_enum",
   "fields": [
@@ -57,11 +64,13 @@ const auto enum1_mat = pps::make_avro_schema_definition(
       }
     }
   ]
-})")
+})",
+                           pps::schema_type::avro})
                          .value();
 
-const auto enum2_mat = pps::make_avro_schema_definition(
-                         R"({
+const auto enum2_mat = pps::sanitize_avro_schema_definition(
+                         {
+                           R"({
   "type": "record",
   "name": "schema_enum",
   "fields": [
@@ -81,28 +90,34 @@ const auto enum2_mat = pps::make_avro_schema_definition(
       }
     }
   ]
-})")
+})",
+                           pps::schema_type::avro})
                          .value();
 
-const auto union0 = pps::make_avro_schema_definition(R"({
+const auto union0 = pps::sanitize_avro_schema_definition(
+                      {R"({
     "name": "init",
     "type": "record",
     "fields": [{
         "name": "inner",
         "type": ["string", "int"]}]
-})")
+})",
+                       pps::schema_type::avro})
                       .value();
 
-const auto union1 = pps::make_avro_schema_definition(R"({
+const auto union1 = pps::sanitize_avro_schema_definition(
+                      {R"({
     "name": "init",
     "type": "record",
     "fields": [{
         "name": "inner",
         "type": ["null", "string"]}]
-})")
+})",
+                       pps::schema_type::avro})
                       .value();
 
-const auto union2 = pps::make_avro_schema_definition(R"({
+const auto union2 = pps::sanitize_avro_schema_definition(
+                      {R"({
     "name": "init",
     "type": "record",
     "fields": [{
@@ -118,80 +133,100 @@ const auto union2 = pps::make_avro_schema_definition(R"({
             }
         ]
     }]
-})")
+})",
+                       pps::schema_type::avro})
                       .value();
 
-const auto int_array = pps::make_avro_schema_definition(R"({
+const auto int_array = pps::sanitize_avro_schema_definition(
+                         {R"({
   "name": "test2",
   "type": "array",
   "items": "int"
-})")
+})",
+                          pps::schema_type::avro})
                          .value();
 
-const auto long_array = pps::make_avro_schema_definition(R"({
+const auto long_array = pps::sanitize_avro_schema_definition(
+                          {R"({
   "name": "test2",
   "type": "array",
   "items": "long"
-})")
+})",
+                           pps::schema_type::avro})
                           .value();
 
 // Schemas defined in AvroCompatibilityTest.java. Used here to ensure
 // compatibility with the schema-registry
 const auto schema1
-  = pps::make_avro_schema_definition(
-      R"({"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"}]})")
+  = pps::sanitize_avro_schema_definition(
+      {R"({"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"}]})",
+       pps::schema_type::avro})
       .value();
 const auto schema2
-  = pps::make_avro_schema_definition(
-      R"({"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"},{"type":"string","name":"f2","default":"foo"}]})")
+  = pps::sanitize_avro_schema_definition(
+      {R"({"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"},{"type":"string","name":"f2","default":"foo"}]})",
+       pps::schema_type::avro})
       .value();
 const auto schema2_union_null_first
-  = pps::make_avro_schema_definition(
-      R"({"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"},{"type":["null","int"],"name":"f2_enum","default":null}]})")
+  = pps::sanitize_avro_schema_definition(
+      {R"({"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"},{"type":["null","int"],"name":"f2_enum","default":null}]})",
+       pps::schema_type::avro})
       .value();
 const auto schema3
-  = pps::make_avro_schema_definition(
-      R"({"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"},{"type":"string","name":"f2"}]})")
+  = pps::sanitize_avro_schema_definition(
+      {R"({"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"},{"type":"string","name":"f2"}]})",
+       pps::schema_type::avro})
       .value();
 const auto schema4
-  = pps::make_avro_schema_definition(
-      R"({"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1_new","aliases":["f1"]}]})")
+  = pps::sanitize_avro_schema_definition(
+      {R"({"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1_new","aliases":["f1"]}]})",
+       pps::schema_type::avro})
       .value();
 const auto schema6
-  = pps::make_avro_schema_definition(
-      R"({"type":"record","name":"myrecord","fields":[{"type":["null","string"],"name":"f1","doc":"doc of f1"}]})")
+  = pps::sanitize_avro_schema_definition(
+      {R"({"type":"record","name":"myrecord","fields":[{"type":["null","string"],"name":"f1","doc":"doc of f1"}]})",
+       pps::schema_type::avro})
       .value();
 const auto schema7
-  = pps::make_avro_schema_definition(
-      R"({"type":"record","name":"myrecord","fields":[{"type":["null","string","int"],"name":"f1","doc":"doc of f1"}]})")
+  = pps::sanitize_avro_schema_definition(
+      {R"({"type":"record","name":"myrecord","fields":[{"type":["null","string","int"],"name":"f1","doc":"doc of f1"}]})",
+       pps::schema_type::avro})
       .value();
 const auto schema8
-  = pps::make_avro_schema_definition(
-      R"({"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"},{"type":"string","name":"f2","default":"foo"}]},{"type":"string","name":"f3","default":"bar"}]})")
+  = pps::sanitize_avro_schema_definition(
+      {R"({"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"},{"type":"string","name":"f2","default":"foo"}]},{"type":"string","name":"f3","default":"bar"}]})",
+       pps::schema_type::avro})
       .value();
-const auto badDefaultNullString_def = pps::make_avro_schema_definition(
-  R"({"type":"record","name":"myrecord","fields":[{"type":["null","string"],"name":"f1","default":"null"},{"type":"string","name":"f2","default":"foo"},{"type":"string","name":"f3","default":"bar"}]})");
+const auto badDefaultNullString_def = pps::sanitize_avro_schema_definition(
+  {R"({"type":"record","name":"myrecord","fields":[{"type":["null","string"],"name":"f1","default":"null"},{"type":"string","name":"f2","default":"foo"},{"type":"string","name":"f3","default":"bar"}]})",
+   pps::schema_type::avro});
 const auto schema_int
-  = pps::make_avro_schema_definition(
-      R"({"type":"record","name":"myrecord","fields":[{"name":"f1","type":"int"}]})")
+  = pps::sanitize_avro_schema_definition(
+      {R"({"type":"record","name":"myrecord","fields":[{"name":"f1","type":"int"}]})",
+       pps::schema_type::avro})
       .value();
 const auto schema_long
-  = pps::make_avro_schema_definition(
-      R"({"type":"record","name":"myrecord","fields":[{"name":"f1","type":"long"}]})")
+  = pps::sanitize_avro_schema_definition(
+      {R"({"type":"record","name":"myrecord","fields":[{"name":"f1","type":"long"}]})",
+       pps::schema_type::avro})
       .value();
 const auto schema_float
-  = pps::make_avro_schema_definition(
-      R"({"type":"record","name":"myrecord","fields":[{"name":"f1","type":"float"}]})")
+  = pps::sanitize_avro_schema_definition(
+      {R"({"type":"record","name":"myrecord","fields":[{"name":"f1","type":"float"}]})",
+       pps::schema_type::avro})
       .value();
 const auto schema_double
-  = pps::make_avro_schema_definition(
-      R"({"type":"record","name":"myrecord","fields":[{"name":"f1","type":"double"}]})")
+  = pps::sanitize_avro_schema_definition(
+      {R"({"type":"record","name":"myrecord","fields":[{"name":"f1","type":"double"}]})",
+       pps::schema_type::avro})
       .value();
 const auto schema_bytes
-  = pps::make_avro_schema_definition(
-      R"({"type":"record","name":"myrecord","fields":[{"name":"f1","type":"bytes"}]})")
+  = pps::sanitize_avro_schema_definition(
+      {R"({"type":"record","name":"myrecord","fields":[{"name":"f1","type":"bytes"}]})",
+       pps::schema_type::avro})
       .value();
 const auto schema_string
-  = pps::make_avro_schema_definition(
-      R"({"type":"record","name":"myrecord","fields":[{"name":"f1","type":"string"}]})")
+  = pps::sanitize_avro_schema_definition(
+      {R"({"type":"record","name":"myrecord","fields":[{"name":"f1","type":"string"}]})",
+       pps::schema_type::avro})
       .value();
