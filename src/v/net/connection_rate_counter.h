@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "net/server_probe.h"
 #include "seastarx.h"
 
 #include <seastar/core/lowres_clock.hh>
@@ -68,7 +69,11 @@ public:
         return static_cast<int64_t>(bucket.current());
     }
 
-    ss::future<> wait(typename Clock::duration max_wait_time) {
+    ss::future<>
+    wait(typename Clock::duration max_wait_time, server_probe& probe) {
+        if (need_wait()) {
+            probe.waiting_for_conection_rate();
+        }
         co_await bucket.wait(max_wait_time, 1);
     }
 
@@ -80,6 +85,8 @@ public:
     std::chrono::milliseconds one_token_time;
 
 private:
+    bool need_wait() { return avaiable_new_connections() == 0; }
+
     ss::basic_semaphore<ss::semaphore_default_exception_factory, Clock> bucket;
     typename Clock::time_point last_update_time;
 };
