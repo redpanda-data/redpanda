@@ -14,6 +14,7 @@
 #include "config/validators.h"
 #include "net/connection_rate_counter.h"
 #include "net/inet_address_wrapper.h"
+#include "net/server_probe.h"
 #include "seastar/core/coroutine.hh"
 #include "seastarx.h"
 #include "ssx/future-util.h"
@@ -52,9 +53,11 @@ public:
     connection_rate(
       const connection_rate_info& rate_info,
       ss::gate& connection_gate,
+      server_probe& probe,
       std::chrono::milliseconds max_wait_time = 100ms) noexcept
       : _max_wait_time(typename Clock::duration(max_wait_time))
-      , _connection_gate(connection_gate) {
+      , _connection_gate(connection_gate)
+      , _probe(probe) {
         if (rate_info.max_connection_rate) {
             _general_rate = ss::make_lw_shared<connection_rate_counter<Clock>>(
               rate_info.max_connection_rate.value());
@@ -153,7 +156,7 @@ public:
         }
 
         allow_new_connections(sem);
-        co_await sem->wait(_max_wait_time);
+        co_await sem->wait(_max_wait_time, _probe);
         spawn_updating_fiber_if_needed(sem);
     }
 
@@ -290,6 +293,8 @@ private:
 
     ss::gate& _connection_gate;
     ss::abort_source _as;
+
+    server_probe& _probe;
 };
 
 } // namespace net

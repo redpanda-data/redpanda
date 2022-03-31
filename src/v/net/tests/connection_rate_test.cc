@@ -26,13 +26,14 @@
 
 SEASTAR_THREAD_TEST_CASE(general_rate_test) {
     ss::gate gate;
+    net::server_probe probe;
 
     const std::vector<int64_t> max_rates = {5, 10, 2};
     const int64_t max_threads = 50;
 
     net::connection_rate_info info{.max_connection_rate = 1};
     net::connection_rate<ss::manual_clock> connection_rate(
-      info, gate, 1000000ms);
+      info, gate, probe, 1000000ms);
 
     for (auto max_rate : max_rates) {
         connection_rate.update_general_rate(max_rate);
@@ -82,6 +83,7 @@ SEASTAR_THREAD_TEST_CASE(general_rate_test) {
 
 SEASTAR_THREAD_TEST_CASE(overrides_rate_test) {
     ss::gate gate;
+    net::server_probe probe;
 
     int64_t max_rate = 10;
     const int64_t max_threads = 50;
@@ -109,7 +111,7 @@ SEASTAR_THREAD_TEST_CASE(overrides_rate_test) {
     net::connection_rate_info info{
       .max_connection_rate = max_rate, .overrides = std::move(overrides)};
     net::connection_rate<ss::manual_clock> connection_rate(
-      info, gate, 1000000ms);
+      info, gate, probe, 1000000ms);
 
     for (auto i = 0; i < max_threads; ++i) {
         for (auto& override : overrides_map) {
