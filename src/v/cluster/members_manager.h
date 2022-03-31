@@ -94,6 +94,8 @@ private:
     void join_raft0();
     bool is_already_member() const;
 
+    ss::future<> initialize_broker_connection(const model::broker&);
+
     ss::future<result<join_node_reply>> dispatch_join_to_seed_server(
       seed_iterator it, join_node_request const& req);
     ss::future<result<join_node_reply>> dispatch_join_to_remote(
