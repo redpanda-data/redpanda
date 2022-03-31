@@ -1347,6 +1347,13 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
     // to have been recently restarted (have failed heartbeats
     // and an <= present term), reset their RPC backoff to get
     // a heartbeat sent out sooner.
+    //
+    // TODO: with the 'hello' RPC this optimization should not be
+    // necessary. however, leaving it in (1) should not conflict
+    // with the 'hello' RPC based version and (2) leaving this
+    // optimization in place for a release cycle means we can
+    // simplify a rolling upgrade scenario where nodes are mixed
+    // w.r.t. supporting the 'hello' RPC.
     if (is_leader() and r.term <= _term) {
         // Look up follower stats for the requester
         if (auto it = _fstats.find(r.node_id); it != _fstats.end()) {
