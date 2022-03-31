@@ -19,10 +19,13 @@
 #include "json/writer.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/errors.h"
+#include "pandaproxy/schema_registry/sharded_store.h"
 #include "utils/string_switch.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/coroutine/exception.hh>
 
+#include <absl/container/flat_hash_set.h>
 #include <avro/Compiler.hh>
 #include <avro/Exception.hh>
 #include <avro/GenericDatum.hh>
@@ -31,8 +34,11 @@
 #include <boost/outcome/std_result.hpp>
 #include <boost/outcome/success_failure.hpp>
 #include <fmt/core.h>
+#include <fmt/format.h>
+#include <fmt/ranges.h>
 #include <rapidjson/error/en.h>
 
+#include <exception>
 #include <string_view>
 
 namespace pandaproxy::schema_registry {
@@ -336,11 +342,54 @@ canonical_schema_definition::raw_string avro_schema_definition::raw() const {
     return canonical_schema_definition::raw_string{_impl.toJson(false)};
 }
 
+class collected_schema {
+public:
+    bool contains(const ss::sstring& name) const {
+        return _names.contains(name);
+    }
+    bool insert(ss::sstring name, canonical_schema_definition def) {
+        bool inserted = _names.insert(std::move(name)).second;
+        if (inserted) {
+            _schemas.push_back(std::move(def).raw()());
+        }
+        return inserted;
+    }
+    ss::sstring flatten() {
+        return fmt::format("{}", fmt::join(_schemas, "\n"));
+    }
+
+private:
+    absl::flat_hash_set<ss::sstring> _names;
+    std::vector<ss::sstring> _schemas;
+};
+
+ss::future<collected_schema> collect_schema(
+  sharded_store& store,
+  collected_schema collected,
+  ss::sstring name,
+  canonical_schema schema) {
+    for (auto& ref : std::move(schema).refs()) {
+        if (!collected.contains(ref.name)) {
+            auto ss = co_await store.get_subject_schema(
+              std::move(ref.sub), ref.version, include_deleted::no);
+            collected = co_await collect_schema(
+              store,
+              std::move(collected),
+              std::move(ref.name),
+              std::move(ss.schema));
+        }
+    }
+    collected.insert(std::move(name), std::move(schema).def());
+    co_return std::move(collected);
+}
+
 ss::future<avro_schema_definition>
-make_avro_schema_definition(sharded_store&, canonical_schema schema) {
+make_avro_schema_definition(sharded_store& store, canonical_schema schema) {
     std::optional<avro::Exception> ex;
     try {
-        auto def = std::move(schema).def().raw()();
+        auto name = schema.sub()();
+        auto refs = co_await collect_schema(store, {}, name, std::move(schema));
+        auto def = refs.flatten();
         co_return avro_schema_definition{avro::compileJsonSchemaFromMemory(
           reinterpret_cast<const uint8_t*>(def.data()), def.length())};
     } catch (const avro::Exception& e) {
