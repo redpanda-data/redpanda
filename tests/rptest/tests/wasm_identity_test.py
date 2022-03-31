@@ -16,6 +16,8 @@ from rptest.wasm.wasm_script import WasmScript
 from rptest.wasm.wasm_build_tool import WasmTemplateRepository
 from rptest.services.redpanda import DEFAULT_LOG_ALLOW_LIST
 
+from ducktape.mark import ok_to_fail
+
 WASM_LOG_ALLOW_LIST = DEFAULT_LOG_ALLOW_LIST + [
     "Wasm engine failed to reply to heartbeat", "Failed to connect wasm engine"
 ]
@@ -216,6 +218,7 @@ class WasmAllInputsToAllOutputsIdentityTest(WasmIdentityTest):
                        script=WasmTemplateRepository.IDENTITY_TRANSFORM)
         ]
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/4061
     @cluster(num_nodes=6, log_allow_list=WASM_LOG_ALLOW_LIST)
     def verify_materialized_topics_test(self):
         # Cannot compare topics to topics, can only verify # of records
