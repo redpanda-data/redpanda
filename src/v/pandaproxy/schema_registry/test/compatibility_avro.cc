@@ -10,12 +10,26 @@
 #include "pandaproxy/schema_registry/test/compatibility_avro.h"
 
 #include "pandaproxy/schema_registry/avro.h"
+#include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/types.h"
 
 #include <seastar/testing/thread_test_case.hh>
 
 namespace pp = pandaproxy;
 namespace pps = pp::schema_registry;
+
+bool check_compatible(
+  const pps::canonical_schema_definition& r,
+  const pps::canonical_schema_definition& w) {
+    pps::sharded_store s;
+    return check_compatible(
+      pps::make_avro_schema_definition(
+        s, {pps::subject("r"), {r.raw(), pps::schema_type::avro}})
+        .get(),
+      pps::make_avro_schema_definition(
+        s, {pps::subject("w"), {w.raw(), pps::schema_type::avro}})
+        .get());
+}
 
 SEASTAR_THREAD_TEST_CASE(test_avro_type_promotion) {
     BOOST_REQUIRE(check_compatible(schema_long, schema_int));
@@ -224,10 +238,15 @@ SEASTAR_THREAD_TEST_CASE(test_avro_schema_definition) {
     pps::canonical_schema_definition expected{
       R"({"type":"record","name":"myrecord","fields":[{"name":"f1","type":"string"},{"name":"f2","type":"string","default":"foo"}]})",
       pps::schema_type::avro};
+    pps::sharded_store s;
+    auto valid
+      = pps::make_avro_schema_definition(
+          s, {pps::subject("s2"), {schema2.raw(), pps::schema_type::avro}})
+          .get();
     static_assert(
       std::
-        is_same_v<std::decay_t<decltype(schema2)>, pps::avro_schema_definition>,
+        is_same_v<std::decay_t<decltype(valid)>, pps::avro_schema_definition>,
       "schema2 is an avro_schema_definition");
-    pps::canonical_schema_definition avro_conversion{schema2};
+    pps::canonical_schema_definition avro_conversion{valid};
     BOOST_CHECK_EQUAL(expected, avro_conversion);
 }
