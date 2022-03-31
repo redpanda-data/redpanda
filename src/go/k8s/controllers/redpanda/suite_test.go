@@ -108,6 +108,16 @@ var _ = BeforeSuite(func(done Done) {
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
+	driftCheckPeriod := 500 * time.Millisecond
+	err = (&redpandacontrollers.ClusterConfigurationDriftReconciler{
+		Client:                k8sManager.GetClient(),
+		Log:                   ctrl.Log.WithName("controllers").WithName("core").WithName("RedpandaCluster"),
+		Scheme:                k8sManager.GetScheme(),
+		AdminAPIClientFactory: testAdminAPIFactory,
+		DriftCheckPeriod:      &driftCheckPeriod,
+	}).WithClusterDomain("cluster.local").SetupWithManager(k8sManager)
+	Expect(err).ToNot(HaveOccurred())
+
 	go func() {
 		err = k8sManager.Start(ctrl.SetupSignalHandler())
 		Expect(err).ToNot(HaveOccurred())

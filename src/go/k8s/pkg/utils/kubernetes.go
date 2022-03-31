@@ -7,5 +7,17 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-// Package utils contains useful functions for the operator
 package utils
+
+import corev1 "k8s.io/api/core/v1"
+
+// IsPodReady tells if a given pod is ready looking at its status.
+func IsPodReady(pod *corev1.Pod) bool {
+	for _, c := range pod.Status.Conditions {
+		if c.Type == corev1.PodReady && c.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+
+	return false
+}

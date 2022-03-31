@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: get-centralized-config-1
+  name: get-centralized-config-2
 spec:
   backoffLimit: 10
   template:
@@ -21,10 +21,10 @@ spec:
             - -ex
           args:
             - >
-              url=http://centralized-configuration-0.centralized-configuration.$NAMESPACE.svc.cluster.local:9644/v1/config
-              res=$(curl --silent -L $url | grep -o '\"segment_appender_flush_timeout_ms\":[^,}]*' | grep -o '[^:]*$') &&
+              url=http://centralized-configuration-drift-0.centralized-configuration-drift.$NAMESPACE.svc.cluster.local:9644/v1/config
+              res=$(curl --silent -L $url | grep -o '\"release_cache_on_segment_roll\":[^,}]*' | grep -o '[^:]*$') &&
               echo $res > /dev/termination-log &&
-              if [[ "$res" != "1003" ]]; then
+              if [[ "$res" != "true" ]]; then
                 exit 1;
               fi
       restartPolicy: Never
