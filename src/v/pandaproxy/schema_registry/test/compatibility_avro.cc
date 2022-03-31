@@ -12,12 +12,12 @@
 #include "pandaproxy/schema_registry/avro.h"
 #include "pandaproxy/schema_registry/types.h"
 
-#include <boost/test/unit_test.hpp>
+#include <seastar/testing/thread_test_case.hh>
 
 namespace pp = pandaproxy;
 namespace pps = pp::schema_registry;
 
-BOOST_AUTO_TEST_CASE(test_avro_type_promotion) {
+SEASTAR_THREAD_TEST_CASE(test_avro_type_promotion) {
     BOOST_REQUIRE(check_compatible(schema_long, schema_int));
     BOOST_REQUIRE(check_compatible(schema_float, schema_int));
     BOOST_REQUIRE(check_compatible(schema_double, schema_int));
@@ -31,7 +31,7 @@ BOOST_AUTO_TEST_CASE(test_avro_type_promotion) {
     BOOST_REQUIRE(check_compatible(schema_bytes, schema_string));
 }
 
-BOOST_AUTO_TEST_CASE(test_avro_enum) {
+SEASTAR_THREAD_TEST_CASE(test_avro_enum) {
     // Adding an enum field is ok
     BOOST_REQUIRE(check_compatible(enum3, enum2));
 
@@ -45,19 +45,19 @@ BOOST_AUTO_TEST_CASE(test_avro_enum) {
     BOOST_REQUIRE(check_compatible(enum2_mat, enum1_mat));
 }
 
-BOOST_AUTO_TEST_CASE(test_avro_union) {
+SEASTAR_THREAD_TEST_CASE(test_avro_union) {
     BOOST_REQUIRE(check_compatible(union2, union0));
 
     BOOST_REQUIRE(!check_compatible(union1, union0));
 }
 
-BOOST_AUTO_TEST_CASE(test_avro_array) {
+SEASTAR_THREAD_TEST_CASE(test_avro_array) {
     BOOST_REQUIRE(check_compatible(long_array, int_array));
 
     BOOST_REQUIRE(!check_compatible(int_array, long_array));
 }
 
-BOOST_AUTO_TEST_CASE(test_avro_basic_backwards_compat) {
+SEASTAR_THREAD_TEST_CASE(test_avro_basic_backwards_compat) {
     // Backward compatibility: A new schema is backward compatible if it can be
     // used to read the data written in the previous schema.
 
@@ -88,7 +88,7 @@ BOOST_AUTO_TEST_CASE(test_avro_basic_backwards_compat) {
     BOOST_CHECK(!check_compatible(schema6, schema7));
 }
 
-BOOST_AUTO_TEST_CASE(test_avro_basic_backwards_transitive_compat) {
+SEASTAR_THREAD_TEST_CASE(test_avro_basic_backwards_transitive_compat) {
     // Backward transitive compatibility: A new schema is backward compatible if
     // it can be used to read the data written in all previous schemas.
 
@@ -104,7 +104,7 @@ BOOST_AUTO_TEST_CASE(test_avro_basic_backwards_transitive_compat) {
     BOOST_CHECK(!check_compatible(schema3, schema1));
 }
 
-BOOST_AUTO_TEST_CASE(test_schemaregistry_basic_forwards_compatibility) {
+SEASTAR_THREAD_TEST_CASE(test_schemaregistry_basic_forwards_compatibility) {
     // Forward compatibility: A new schema is forward compatible if the previous
     // schema can read data written in this schema.
 
@@ -126,7 +126,7 @@ BOOST_AUTO_TEST_CASE(test_schemaregistry_basic_forwards_compatibility) {
     BOOST_CHECK(check_compatible(schema2, schema1));
 }
 
-BOOST_AUTO_TEST_CASE(
+SEASTAR_THREAD_TEST_CASE(
   test_schemaregistry_basic_forwards_transitive_compatibility) {
     // Forward transitive compatibility: A new schema is forward compatible
     // if all previous schemas can read data written in this schema.
@@ -146,7 +146,7 @@ BOOST_AUTO_TEST_CASE(
     BOOST_CHECK(!check_compatible(schema3, schema1));
 }
 
-BOOST_AUTO_TEST_CASE(test_basic_full_compatibility) {
+SEASTAR_THREAD_TEST_CASE(test_basic_full_compatibility) {
     // Full compatibility: A new schema is fully compatible if it’s both
     // backward and forward compatible.
 
@@ -170,7 +170,7 @@ BOOST_AUTO_TEST_CASE(test_basic_full_compatibility) {
     BOOST_CHECK(check_compatible(schema1, schema2));
 }
 
-BOOST_AUTO_TEST_CASE(test_basic_full_transitive_compatibility) {
+SEASTAR_THREAD_TEST_CASE(test_basic_full_transitive_compatibility) {
     // Full transitive compatibility: A new schema is fully compatible
     // if it’s both transitively backward and transitively forward
     // compatible with the entire schema history.
@@ -218,7 +218,7 @@ BOOST_AUTO_TEST_CASE(test_basic_full_transitive_compatibility) {
     BOOST_CHECK(!check_compatible(schema3, schema1));
 }
 
-BOOST_AUTO_TEST_CASE(test_avro_schema_definition) {
+SEASTAR_THREAD_TEST_CASE(test_avro_schema_definition) {
     // Parsing Canonical Form requires fields to be ordered:
     // name, type, fields, symbols, items, values, size
     pps::canonical_schema_definition expected{
