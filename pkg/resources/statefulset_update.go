@@ -146,7 +146,7 @@ func (r *StatefulSetResource) rollingUpdate(
 			return &RequeueAfterError{RequeueAfter: RequeueDuration, Msg: "wait for pod restart"}
 		}
 
-		if !podIsReady(&pod) {
+		if !utils.IsPodReady(&pod) {
 			return &RequeueAfterError{RequeueAfter: RequeueDuration,
 				Msg: fmt.Sprintf("wait for %s pod to become ready", pod.Name)}
 		}
@@ -407,17 +407,6 @@ func (r *StatefulSetResource) queryRedpandaStatus(
 	}
 
 	return nil
-}
-
-func podIsReady(pod *corev1.Pod) bool {
-	for _, c := range pod.Status.Conditions {
-		if c.Type == corev1.PodReady &&
-			c.Status == corev1.ConditionTrue {
-			return true
-		}
-	}
-
-	return false
 }
 
 // RequeueAfterError error carrying the time after which to requeue.
