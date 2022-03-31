@@ -18,6 +18,7 @@
 #include "cloud_storage/types.h"
 #include "model/metadata.h"
 #include "s3/client.h"
+#include "s3/client_probe.h"
 #include "seastarx.h"
 #include "test_utils/async.h"
 #include "test_utils/fixture.h"
@@ -206,4 +207,46 @@ FIXTURE_TEST(test_download_segment_timeout, s3_imposter_fixture) { // NOLINT
     auto dnl_res
       = remote.download_segment(bucket, path, try_consume, fib).get();
     BOOST_REQUIRE(dnl_res == download_result::timedout);
+}
+
+FIXTURE_TEST(test_segment_exists, s3_imposter_fixture) { // NOLINT
+    set_expectations_and_listen({});
+    auto conf = get_configuration();
+    auto bucket = s3::bucket_name("bucket");
+    remote remote(s3_connection_limit(10), conf);
+    auto name = segment_name("1-2-v1.log");
+    auto path = generate_remote_segment_path(
+      manifest_ntp, manifest_revision, name, model::term_id{123});
+    uint64_t clen = manifest_payload.size();
+    auto action = ss::defer([&remote] { remote.stop().get(); });
+    auto reset_stream = [] {
+        iobuf out;
+        out.append(manifest_payload.data(), manifest_payload.size());
+        return make_iobuf_input_stream(std::move(out));
+    };
+    retry_chain_node fib(100ms, 20ms);
+
+    auto expected_notfound = remote.segment_exists(bucket, path, fib).get();
+    BOOST_REQUIRE(expected_notfound == download_result::notfound);
+
+    auto upl_res
+      = remote.upload_segment(bucket, path, clen, reset_stream, fib).get();
+    BOOST_REQUIRE(upl_res == upload_result::success);
+
+    auto expected_success = remote.segment_exists(bucket, path, fib).get();
+
+    BOOST_REQUIRE(expected_success == download_result::success);
+}
+
+FIXTURE_TEST(test_segment_exists_timeout, s3_imposter_fixture) { // NOLINT
+    auto conf = get_configuration();
+    auto bucket = s3::bucket_name("bucket");
+    remote remote(s3_connection_limit(10), conf);
+    auto name = segment_name("1-2-v1.log");
+    auto path = generate_remote_segment_path(
+      manifest_ntp, manifest_revision, name, model::term_id{123});
+
+    retry_chain_node fib(100ms, 20ms);
+    auto expect_timeout = remote.segment_exists(bucket, path, fib).get();
+    BOOST_REQUIRE(expect_timeout == download_result::timedout);
 }
