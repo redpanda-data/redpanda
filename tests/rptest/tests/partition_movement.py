@@ -33,7 +33,7 @@ class PartitionMovementMixin():
 
         # remove random assignment(s). we allow no changes to be made to
         # exercise the code paths responsible for dealing with no-ops.
-        num_replacements = random.randint(0, replication_factor)
+        num_replacements = random.randint(1, replication_factor)
         selected = random.sample(assignments, num_replacements)
         for assignment in selected:
             assignments.remove(assignment)
