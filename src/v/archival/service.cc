@@ -129,7 +129,6 @@ scheduler_service_impl::scheduler_service_impl(
   , _topic_table(tt)
   , _storage_api(api)
   , _jitter(conf.interval, 1ms)
-  , _stop_limit(remote.local().concurrency())
   , _rtclog(archival_log, _rtcnode)
   , _probe(conf.svc_metrics_disabled)
   , _remote(remote)
@@ -170,9 +169,7 @@ ss::future<> scheduler_service_impl::stop() {
     _timer.cancel();
     std::vector<ss::future<>> outstanding;
     for (auto& it : _archivers) {
-        auto fut = ss::with_semaphore(
-          _stop_limit, 1, [it] { return it.second->stop(); });
-        outstanding.emplace_back(std::move(fut));
+        outstanding.emplace_back(it.second->stop());
     }
     return ss::do_with(
       std::move(outstanding), [this](std::vector<ss::future<>>& outstanding) {
@@ -318,15 +315,11 @@ scheduler_service_impl::remove_archivers(std::vector<model::ntp> to_remove) {
              [this](const model::ntp& ntp) -> ss::future<> {
                  vlog(_rtclog.info, "removing archiver for {}", ntp.path());
                  auto archiver = _archivers.at(ntp);
-                 return ss::with_semaphore(
-                          _stop_limit,
-                          1,
-                          [archiver] { return archiver->stop(); })
-                   .finally([this, ntp] {
-                       vlog(_rtclog.info, "archiver stopped {}", ntp.path());
-                       _archivers.erase(ntp);
-                       _probe.stop_archiving_ntp();
-                   });
+                 return archiver->stop().finally([this, ntp] {
+                     vlog(_rtclog.info, "archiver stopped {}", ntp.path());
+                     _archivers.erase(ntp);
+                     _probe.stop_archiving_ntp();
+                 });
              })
       .finally([g = std::move(g)] {});
 }

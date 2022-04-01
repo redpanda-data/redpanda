@@ -129,7 +129,6 @@ private:
     simple_time_jitter<ss::lowres_clock> _jitter;
     ss::timer<ss::lowres_clock> _timer;
     ss::gate _gate;
-    ss::semaphore _stop_limit;
     absl::btree_map<model::ntp, ss::lw_shared_ptr<ntp_archiver>> _archivers;
     retry_chain_node _rtcnode;
     retry_chain_logger _rtclog;
