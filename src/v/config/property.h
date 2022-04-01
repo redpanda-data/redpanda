@@ -356,6 +356,8 @@ concept is_collection = requires(T x) {
     typename T::value_type;
     !std::is_same_v<typename T::value_type, char>;
     {x.size()};
+    {x.begin()};
+    {x.end()};
 };
 
 template<typename T>
