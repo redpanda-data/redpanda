@@ -95,7 +95,7 @@ using persistent_last_applied
 //      |                         |               |          |
 template<typename... T>
 CONCEPT(requires(State<T>, ...))
-class mux_state_machine : public state_machine {
+class mux_state_machine final : public state_machine {
 public:
     explicit mux_state_machine(
       ss::logger&, consensus*, persistent_last_applied, T&...);
@@ -104,12 +104,12 @@ public:
     mux_state_machine(const mux_state_machine&) = delete;
     mux_state_machine& operator=(mux_state_machine&&) = delete;
     mux_state_machine& operator=(const mux_state_machine&) = delete;
-    ~mux_state_machine() override = default;
+    ~mux_state_machine() final = default;
 
     // Lifecycle management
-    ss::future<> start() { return raft::state_machine::start(); }
+    ss::future<> start() final { return raft::state_machine::start(); }
 
-    ss::future<> stop() {
+    ss::future<> stop() final {
         _mutex.broken();
         // close the gate so no new requests will be handled
         co_await raft::state_machine::stop();
