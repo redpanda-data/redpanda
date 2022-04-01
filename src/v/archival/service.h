@@ -119,8 +119,7 @@ private:
     ss::future<> upload_topic_manifest(
       model::topic_namespace topic_ns, model::initial_revision_id rev);
     /// Adds archiver to the reconciliation loop after fetching its manifest.
-    ss::future<ss::stop_iteration>
-    add_ntp_archiver(ss::lw_shared_ptr<ntp_archiver> archiver);
+    ss::future<> add_ntp_archiver(ss::lw_shared_ptr<ntp_archiver> archiver);
 
     configuration _conf;
     ss::sharded<cluster::partition_manager>& _partition_manager;

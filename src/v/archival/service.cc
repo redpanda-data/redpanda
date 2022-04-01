@@ -218,7 +218,7 @@ ss::future<> scheduler_service_impl::upload_topic_manifest(
     }
 }
 
-ss::future<ss::stop_iteration> scheduler_service_impl::add_ntp_archiver(
+ss::future<> scheduler_service_impl::add_ntp_archiver(
   ss::lw_shared_ptr<ntp_archiver> archiver) {
     vassert(
       !_archivers.contains(archiver->get_ntp()),
@@ -226,12 +226,10 @@ ss::future<ss::stop_iteration> scheduler_service_impl::add_ntp_archiver(
       archiver->get_ntp());
 
     if (_gate.is_closed()) {
-        return ss::make_ready_future<ss::stop_iteration>(
-          ss::stop_iteration::yes);
+        return ss::now();
     }
     return archiver->download_manifest().then(
-      [this, archiver](cloud_storage::download_result result)
-        -> ss::future<ss::stop_iteration> {
+      [this, archiver](cloud_storage::download_result result) {
           auto ntp = archiver->get_ntp();
           switch (result) {
           case cloud_storage::download_result::success:
@@ -244,8 +242,7 @@ ss::future<ss::stop_iteration> scheduler_service_impl::add_ntp_archiver(
               _archivers.emplace(archiver->get_ntp(), archiver);
               archiver->run_upload_loop();
 
-              return ss::make_ready_future<ss::stop_iteration>(
-                ss::stop_iteration::yes);
+              return ss::now();
           case cloud_storage::download_result::notfound:
               vlog(
                 _rtclog.info,
@@ -265,16 +262,13 @@ ss::future<ss::stop_iteration> scheduler_service_impl::add_ntp_archiver(
               _archivers.emplace(archiver->get_ntp(), archiver);
               archiver->run_upload_loop();
 
-              return ss::make_ready_future<ss::stop_iteration>(
-                ss::stop_iteration::yes);
+              return ss::now();
           case cloud_storage::download_result::failed:
           case cloud_storage::download_result::timedout:
               vlog(_rtclog.warn, "Manifest download failed");
-              return ss::make_exception_future<ss::stop_iteration>(
-                ss::timed_out_error());
+              return ss::make_exception_future<>(ss::timed_out_error());
           }
-          return ss::make_ready_future<ss::stop_iteration>(
-            ss::stop_iteration::yes);
+          return ss::now();
       });
 }
 
@@ -298,9 +292,7 @@ scheduler_service_impl::create_archivers(std::vector<model::ntp> to_create) {
                 _conf,
                 _remote.local(),
                 part);
-              return ss::repeat([this, svc = std::move(archiver)] {
-                  return add_ntp_archiver(svc);
-              });
+              return add_ntp_archiver(archiver);
           } else {
               return ss::now();
           }
