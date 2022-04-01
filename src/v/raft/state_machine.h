@@ -61,6 +61,7 @@ public:
     state_machine(const state_machine&) = delete;
     state_machine& operator=(state_machine&&) = delete;
     state_machine& operator=(const state_machine&) = delete;
+    virtual ~state_machine() = default;
 
     // start after ready to receive batches through apply upcall.
     virtual ss::future<> start();
@@ -100,8 +101,6 @@ public:
      */
     ss::future<result<model::offset>>
       instert_linerizable_barrier(model::timeout_clock::time_point);
-
-    virtual ~state_machine() {}
 
 protected:
     void set_next(model::offset offset);
