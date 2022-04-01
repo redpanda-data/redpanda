@@ -334,8 +334,7 @@ ss::future<> feature_manager::do_maybe_update_active_version() {
                   max_version);
                 data.actions.push_back(cluster::feature_update_action{
                   .feature_name = ss::sstring(fs.spec.name),
-                  .action
-                  = feature_update_action::action_t ::administrative_activate});
+                  .action = feature_update_action::action_t::activate});
             }
         }
     }
@@ -371,7 +370,7 @@ feature_manager::write_action(cluster::feature_update_action action) {
       "Invalid feature name '{}'",
       action.feature_name);
 
-    // Validate that teh feature is in a state compatible with the
+    // Validate that the feature is in a state compatible with the
     // requested transition.
     bool valid = true;
     auto state = _feature_table.local().get_state(feature_id_opt.value());
@@ -386,7 +385,7 @@ feature_manager::write_action(cluster::feature_update_action action) {
         }
 
         break;
-    case cluster::feature_update_action::action_t::administrative_activate:
+    case cluster::feature_update_action::action_t::activate:
         if (
           state.get_state() != feature_state::state::available
           && state.get_state() != feature_state::state::disabled_clean
@@ -395,7 +394,7 @@ feature_manager::write_action(cluster::feature_update_action action) {
             valid = false;
         }
         break;
-    case cluster::feature_update_action::action_t::administrative_deactivate:
+    case cluster::feature_update_action::action_t::deactivate:
         if (
           state.get_state() == feature_state::state::disabled_clean
           || state.get_state() == feature_state::state::disabled_preparing
@@ -407,8 +406,10 @@ feature_manager::write_action(cluster::feature_update_action action) {
     if (!valid) {
         vlog(
           clusterlog.warn,
-          "Dropping feature action {}, feature not in expected state",
-          action);
+          "Dropping feature action {}, feature not in expected state "
+          "(state={})",
+          action,
+          state.get_state());
         return ss::make_ready_future<std::error_code>(cluster::errc::success);
     } else {
         // Construct and dispatch command to log

@@ -1494,11 +1494,11 @@ void admin_server::register_features_routes() {
           cluster::feature_update_action action{.feature_name = feature_name};
           auto& new_state_str = doc["state"];
           if (new_state_str == "active") {
-              action.action = cluster::feature_update_action::action_t::
-                administrative_activate;
+              action.action
+                = cluster::feature_update_action::action_t::activate;
           } else if (new_state_str == "disabled") {
-              action.action = cluster::feature_update_action::action_t::
-                administrative_deactivate;
+              action.action
+                = cluster::feature_update_action::action_t::deactivate;
           } else {
               throw ss::httpd::bad_request_exception("Invalid state");
           }
