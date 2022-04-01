@@ -44,21 +44,26 @@ namespace archival {
 
 ntp_archiver::ntp_archiver(
   const storage::ntp_config& ntp,
+  storage::log_manager& log_manager,
   const configuration& conf,
   cloud_storage::remote& remote,
   ss::lw_shared_ptr<cluster::partition> part)
   : _probe(conf.ntp_metrics_disabled, ntp.ntp())
   , _ntp(ntp.ntp())
   , _rev(ntp.get_initial_revision())
+  , _log_manager(log_manager)
   , _remote(remote)
   , _partition(std::move(part))
   , _policy(_ntp, conf.time_limit, conf.upload_io_priority)
   , _bucket(conf.bucket_name)
   , _manifest(_ntp, _rev)
   , _gate()
+  , _rtcnode(_as)
+  , _rtclog(archival_log, _rtcnode, _ntp.path())
   , _initial_backoff(conf.initial_backoff)
   , _segment_upload_timeout(conf.segment_upload_timeout)
   , _manifest_upload_timeout(conf.manifest_upload_timeout)
+  , _upload_sg(conf.upload_scheduling_group)
   , _io_priority(conf.upload_io_priority) {
     vassert(
       _partition && _partition->is_leader(),
@@ -70,6 +75,71 @@ ntp_archiver::ntp_archiver(
       "created ntp_archiver {} in term {}",
       _ntp,
       _start_term);
+}
+
+void ntp_archiver::run_upload_loop() {
+    vassert(
+      !_upload_loop_started, "upload loop for ntp {} already started", _ntp);
+    _upload_loop_started = true;
+
+    // NOTE: not using ssx::spawn_with_gate_then here because we want to log
+    // inside the gate (so that _rtclog is guaranteed to be alive).
+    ssx::spawn_with_gate(_gate, [this] {
+        return ss::with_scheduling_group(
+                 _upload_sg, [this] { return upload_loop(); })
+          .handle_exception_type([](const ss::abort_requested_exception&) {})
+          .handle_exception_type([](const ss::sleep_aborted&) {})
+          .handle_exception_type([](const ss::gate_closed_exception&) {})
+          .handle_exception([this](std::exception_ptr e) {
+              vlog(_rtclog.error, "upload loop error: {}", e);
+          })
+          .finally([this] {
+              vlog(_rtclog.debug, "upload loop stopped");
+              _upload_loop_stopped = true;
+          });
+    });
+}
+
+ss::future<> ntp_archiver::upload_loop() {
+    static constexpr ss::lowres_clock::duration initial_backoff = 100ms;
+    static constexpr ss::lowres_clock::duration max_backoff = 10s;
+    ss::lowres_clock::duration backoff = initial_backoff;
+
+    while (!_as.abort_requested() && !_gate.is_closed()
+           && _partition->is_leader() && _partition->term() == _start_term) {
+        auto result = co_await upload_next_candidates();
+        if (result.num_failed != 0) {
+            vlog(
+              _rtclog.error,
+              "Failed to upload {} segments out of {}",
+              result.num_failed,
+              result.num_succeded + result.num_failed);
+        } else if (result.num_succeded != 0) {
+            vlog(
+              _rtclog.debug,
+              "Successfuly uploaded {} segments",
+              result.num_succeded);
+        }
+
+        if (result.num_succeded == 0) {
+            // The backoff algorithm here is used to prevent high CPU
+            // utilization when redpanda is not receiving any data and there
+            // is nothing to update. Also, we want to limit amount of
+            // logging if nothing is uploaded because of bad configuration
+            // or some other problem.
+            //
+            // We want to limit max backoff duration
+            // to some reasonable value (e.g. 5s) because otherwise it can
+            // grow very large disabling the archival storage
+            vlog(
+              _rtclog.trace, "Nothing to upload, applying backoff algorithm");
+            co_await ss::sleep_abortable(
+              backoff + _backoff.next_jitter_duration(), _as);
+            backoff = std::min(backoff * 2, max_backoff);
+        } else {
+            backoff = initial_backoff;
+        }
+    }
 }
 
 ss::future<> ntp_archiver::stop() {
@@ -92,10 +162,9 @@ ntp_archiver::get_remote_manifest() const {
     return _manifest;
 }
 
-ss::future<cloud_storage::download_result>
-ntp_archiver::download_manifest(retry_chain_node& parent) {
+ss::future<cloud_storage::download_result> ntp_archiver::download_manifest() {
     gate_guard guard{_gate};
-    retry_chain_node fib(_manifest_upload_timeout, _initial_backoff, &parent);
+    retry_chain_node fib(_manifest_upload_timeout, _initial_backoff, &_rtcnode);
     retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
     vlog(ctxlog.debug, "Downloading manifest for {}", _ntp);
     auto path = _manifest.get_manifest_path();
@@ -123,10 +192,9 @@ ntp_archiver::download_manifest(retry_chain_node& parent) {
     co_return result;
 }
 
-ss::future<cloud_storage::upload_result>
-ntp_archiver::upload_manifest(retry_chain_node& parent) {
+ss::future<cloud_storage::upload_result> ntp_archiver::upload_manifest() {
     gate_guard guard{_gate};
-    retry_chain_node fib(_manifest_upload_timeout, _initial_backoff, &parent);
+    retry_chain_node fib(_manifest_upload_timeout, _initial_backoff, &_rtcnode);
     retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
     vlog(
       ctxlog.debug,
@@ -136,10 +204,10 @@ ntp_archiver::upload_manifest(retry_chain_node& parent) {
 }
 
 // from offset to offset (by record batch boundary)
-ss::future<cloud_storage::upload_result> ntp_archiver::upload_segment(
-  upload_candidate candidate, retry_chain_node& parent) {
+ss::future<cloud_storage::upload_result>
+ntp_archiver::upload_segment(upload_candidate candidate) {
     gate_guard guard{_gate};
-    retry_chain_node fib(_segment_upload_timeout, _initial_backoff, &parent);
+    retry_chain_node fib(_segment_upload_timeout, _initial_backoff, &_rtcnode);
     retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
 
     auto path = cloud_storage::generate_remote_segment_path(
@@ -157,15 +225,10 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_segment(
 }
 
 ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
-  storage::log_manager& lm,
-  model::offset start_upload_offset,
-  model::offset last_stable_offset,
-  retry_chain_node& parent) {
-    retry_chain_logger ctxlog(archival_log, parent, _ntp.path());
-
-    std::optional<storage::log> log = lm.get(_ntp);
+  model::offset start_upload_offset, model::offset last_stable_offset) {
+    std::optional<storage::log> log = _log_manager.get(_ntp);
     if (!log) {
-        vlog(ctxlog.warn, "couldn't find log in log manager");
+        vlog(_rtclog.warn, "couldn't find log in log manager");
         co_return scheduled_upload{.stop = ss::stop_iteration::yes};
     }
 
@@ -177,7 +240,7 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
 
     if (upload.source.get() == nullptr) {
         vlog(
-          ctxlog.debug,
+          _rtclog.debug,
           "upload candidate not found, start_upload_offset: {}, "
           "last_stable_offset: {}",
           start_upload_offset,
@@ -219,7 +282,7 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
         auto dirty_offset = upload.source->offsets().dirty_offset;
         if (meta->committed_offset < dirty_offset) {
             vlog(
-              ctxlog.info,
+              _rtclog.info,
               "will re-upload {}, last offset in the manifest {}, "
               "candidate dirty offset {}",
               upload,
@@ -227,7 +290,7 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
               dirty_offset);
         } else if (meta->committed_offset >= dirty_offset) {
             vlog(
-              ctxlog.warn,
+              _rtclog.warn,
               "skip upload {} because it's already in the manifest, "
               "last offset in the manifest {}, candidate dirty offset {}",
               upload,
@@ -250,7 +313,7 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
     auto delta
       = base - _partition->get_offset_translator_state()->from_log_offset(base);
     co_return scheduled_upload{
-      .result = upload_segment(upload, parent),
+      .result = upload_segment(upload),
       .inclusive_last_offset = offset,
       .meta = cloud_storage::partition_manifest::segment_meta{
         .is_compacted = upload.source->is_compacted_segment(),
@@ -269,12 +332,7 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
 }
 
 ss::future<std::vector<ntp_archiver::scheduled_upload>>
-ntp_archiver::schedule_uploads(
-  storage::log_manager& lm,
-  model::offset last_stable_offset,
-  retry_chain_node& parent) {
-    retry_chain_logger ctxlog(archival_log, parent, _ntp.path());
-
+ntp_archiver::schedule_uploads(model::offset last_stable_offset) {
     // We have to increment last offset to guarantee progress.
     // The manifest's last offset contains dirty_offset of the
     // latest uploaded segment but '_policy' requires offset that
@@ -285,7 +343,7 @@ ntp_archiver::schedule_uploads(
                                                 : model::offset(0);
 
     vlog(
-      ctxlog.debug,
+      _rtclog.debug,
       "scheduling uploads, start_upload_offset: {}, last_stable_offset: {}",
       start_upload_offset,
       last_stable_offset);
@@ -295,15 +353,13 @@ ntp_archiver::schedule_uploads(
       std::vector<scheduled_upload>(),
       size_t(0),
       start_upload_offset,
-      [this, &lm, last_stable_offset, &parent](
+      [this, last_stable_offset](
         std::vector<scheduled_upload>& scheduled,
         size_t& ix,
         model::offset& start_upload_offset) {
           return ss::repeat([this,
-                             &lm,
                              &start_upload_offset,
                              last_stable_offset,
-                             &parent,
                              &scheduled,
                              &ix] {
                      if (ix == _concurrency) {
@@ -312,10 +368,7 @@ ntp_archiver::schedule_uploads(
                      }
                      ++ix;
                      return schedule_single_upload(
-                              lm,
-                              start_upload_offset,
-                              last_stable_offset,
-                              parent)
+                              start_upload_offset, last_stable_offset)
                        .then([&scheduled,
                               &start_upload_offset](scheduled_upload upload) {
                            auto res = upload.stop;
@@ -334,9 +387,7 @@ ntp_archiver::schedule_uploads(
 }
 
 ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
-  std::vector<ntp_archiver::scheduled_upload> scheduled,
-  retry_chain_node& parent) {
-    retry_chain_logger ctxlog(archival_log, parent, _ntp.path());
+  std::vector<ntp_archiver::scheduled_upload> scheduled) {
     ntp_archiver::batch_result total{};
     std::vector<ss::future<cloud_storage::upload_result>> flist;
     std::vector<size_t> ixupload;
@@ -347,7 +398,7 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
         }
     }
     if (flist.empty()) {
-        vlog(ctxlog.debug, "no uploads started, returning");
+        vlog(_rtclog.debug, "no uploads started, returning");
         co_return total;
     }
     auto results = co_await ss::when_all_succeed(begin(flist), end(flist));
@@ -378,30 +429,30 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
     }
     if (total.num_succeded != 0) {
         vlog(
-          ctxlog.debug,
+          _rtclog.debug,
           "successfully uploaded {} segments (failed {} uploads), "
           "re-uploading manifest file",
           total.num_succeded,
           total.num_failed);
 
-        auto res = co_await upload_manifest(parent);
+        auto res = co_await upload_manifest();
         if (res != cloud_storage::upload_result::success) {
             vlog(
-              ctxlog.warn,
+              _rtclog.warn,
               "manifest upload to {} failed",
               _manifest.get_manifest_path());
         }
 
         if (_partition->archival_meta_stm()) {
             retry_chain_node rc_node(
-              _manifest_upload_timeout, _initial_backoff, &parent);
+              _manifest_upload_timeout, _initial_backoff, &_rtcnode);
             auto error = co_await _partition->archival_meta_stm()->add_segments(
               _manifest, rc_node);
             if (
               error != cluster::errc::success
               && error != cluster::errc::not_leader) {
                 vlog(
-                  ctxlog.warn,
+                  _rtclog.warn,
                   "archival metadata STM update failed: {}",
                   error);
             }
@@ -413,11 +464,8 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
 }
 
 ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
-  storage::log_manager& lm,
-  retry_chain_node& parent,
   std::optional<model::offset> lso_override) {
-    retry_chain_logger ctxlog(archival_log, parent, _ntp.path());
-    vlog(ctxlog.debug, "Uploading next candidates called for {}", _ntp);
+    vlog(_rtclog.debug, "Uploading next candidates called for {}", _ntp);
     if (_gate.is_closed()) {
         return ss::make_ready_future<batch_result>(batch_result{});
     }
@@ -425,14 +473,13 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
                                            : _partition->last_stable_offset();
     return ss::with_gate(
              _gate,
-             [this, &lm, last_stable_offset, &parent] {
+             [this, last_stable_offset] {
                  return ss::with_semaphore(
-                   _mutex, 1, [this, &lm, last_stable_offset, &parent] {
-                       return schedule_uploads(lm, last_stable_offset, parent)
-                         .then([this, &parent](
-                                 std::vector<scheduled_upload> scheduled) {
+                   _mutex, 1, [this, last_stable_offset] {
+                       return schedule_uploads(last_stable_offset)
+                         .then([this](std::vector<scheduled_upload> scheduled) {
                              return wait_all_scheduled_uploads(
-                               std::move(scheduled), parent);
+                               std::move(scheduled));
                          });
                    });
              })

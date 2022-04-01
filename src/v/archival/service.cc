@@ -130,7 +130,6 @@ scheduler_service_impl::scheduler_service_impl(
   , _storage_api(api)
   , _jitter(conf.interval, 1ms)
   , _stop_limit(remote.local().concurrency())
-  , _rtcnode(_as)
   , _rtclog(archival_log, _rtcnode)
   , _probe(conf.svc_metrics_disabled)
   , _remote(remote)
@@ -163,15 +162,12 @@ void scheduler_service_impl::rearm_timer() {
 ss::future<> scheduler_service_impl::start() {
     _timer.set_callback([this] { rearm_timer(); });
     _timer.rearm(_jitter());
-    (void)ss::with_scheduling_group(
-      _upload_sg, [this] { return run_uploads(); });
     return ss::now();
 }
 
 ss::future<> scheduler_service_impl::stop() {
     vlog(_rtclog.info, "Scheduler service stop");
     _timer.cancel();
-    _as.request_abort(); // interrupt possible sleep
     std::vector<ss::future<>> outstanding;
     for (auto& it : _archivers) {
         auto fut = ss::with_semaphore(
@@ -236,7 +232,7 @@ ss::future<ss::stop_iteration> scheduler_service_impl::add_ntp_archiver(
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::yes);
     }
-    return archiver->download_manifest(_rtcnode).then(
+    return archiver->download_manifest().then(
       [this, archiver](cloud_storage::download_result result)
         -> ss::future<ss::stop_iteration> {
           auto ntp = archiver->get_ntp();
@@ -249,6 +245,7 @@ ss::future<ss::stop_iteration> scheduler_service_impl::add_ntp_archiver(
               _probe.start_archiving_ntp();
 
               _archivers.emplace(archiver->get_ntp(), archiver);
+              archiver->run_upload_loop();
 
               return ss::make_ready_future<ss::stop_iteration>(
                 ss::stop_iteration::yes);
@@ -269,6 +266,7 @@ ss::future<ss::stop_iteration> scheduler_service_impl::add_ntp_archiver(
               _probe.start_archiving_ntp();
 
               _archivers.emplace(archiver->get_ntp(), archiver);
+              archiver->run_upload_loop();
 
               return ss::make_ready_future<ss::stop_iteration>(
                 ss::stop_iteration::yes);
@@ -297,10 +295,15 @@ scheduler_service_impl::create_archivers(std::vector<model::ntp> to_create) {
           if (log.has_value() && part && part->is_leader()
               && (part->get_ntp_config().is_archival_enabled()
                   || config::shard_local_cfg().cloud_storage_enable_remote_read())) {
-              auto svc = ss::make_lw_shared<ntp_archiver>(
-                log->config(), _conf, _remote.local(), part);
-              return ss::repeat(
-                [this, svc = std::move(svc)] { return add_ntp_archiver(svc); });
+              auto archiver = ss::make_lw_shared<ntp_archiver>(
+                log->config(),
+                _storage_api.local().log_mgr(),
+                _conf,
+                _remote.local(),
+                part);
+              return ss::repeat([this, svc = std::move(archiver)] {
+                  return add_ntp_archiver(svc);
+              });
           } else {
               return ss::now();
           }
@@ -336,10 +339,10 @@ ss::future<> scheduler_service_impl::reconcile_archivers() {
     auto snapshot = lm.get_all_ntps();
     std::vector<model::ntp> to_remove;
     std::vector<model::ntp> to_create;
-    // find ntps that exist in _archivers but no longer present in log_manager
+    // find archivers that have already stopped
     for (const auto& [ntp, archiver] : _archivers) {
         auto p = pm.get(ntp);
-        if (!snapshot.contains(ntp) || !p || !p->is_leader()) {
+        if (!snapshot.contains(ntp) || !p || archiver->upload_loop_stopped()) {
             to_remove.push_back(ntp);
         }
     }
@@ -393,83 +396,6 @@ uint64_t scheduler_service_impl::estimate_backlog_size() {
         size += archiver->estimate_backlog_size(_partition_manager.local());
     }
     return size;
-}
-
-ss::future<> scheduler_service_impl::run_uploads() {
-    gate_guard g(_gate);
-    static constexpr ss::lowres_clock::duration initial_backoff = 100ms;
-    static constexpr ss::lowres_clock::duration max_backoff = 10s;
-    ss::lowres_clock::duration backoff = initial_backoff;
-    while (!_as.abort_requested() && !_gate.is_closed()) {
-        try {
-            std::vector<ss::future<ntp_archiver::batch_result>> flist;
-            flist.reserve(_archivers.size());
-            for (const auto& [ntp, archiver] : _archivers) {
-                storage::api& api = _storage_api.local();
-                storage::log_manager& lm = api.log_mgr();
-                flist.push_back(archiver->upload_next_candidates(lm, _rtcnode));
-            }
-
-            auto results = co_await ss::when_all_succeed(
-              flist.begin(), flist.end());
-
-            auto total = std::accumulate(
-              results.begin(),
-              results.end(),
-              ntp_archiver::batch_result(),
-              [](
-                const ntp_archiver::batch_result& lhs,
-                const ntp_archiver::batch_result& rhs) {
-                  return ntp_archiver::batch_result{
-                    .num_succeded = lhs.num_succeded + rhs.num_succeded,
-                    .num_failed = lhs.num_failed + rhs.num_failed};
-              });
-
-            if (total.num_failed != 0) {
-                vlog(
-                  _rtclog.error,
-                  "Failed to upload {} segments out of {}",
-                  total.num_failed,
-                  total.num_succeded + total.num_failed);
-            } else if (total.num_succeded != 0) {
-                vlog(
-                  _rtclog.debug,
-                  "Successfuly uploaded {} segments",
-                  total.num_succeded);
-            }
-
-            if (total.num_succeded == 0) {
-                // The backoff algorithm here is used to prevent high CPU
-                // utilization when redpanda is not receiving any data and there
-                // is nothing to update. Also, we want to limit amount of
-                // logging if nothing is uploaded because of bad configuration
-                // or some other problem.
-                //
-                // We want to limit max backoff duration
-                // to some reasonable value (e.g. 5s) because otherwise it can
-                // grow very large disabling the archival storage
-                vlog(
-                  _rtclog.trace,
-                  "Nothing to upload, applying backoff algorithm");
-                co_await ss::sleep_abortable(
-                  backoff + _backoff.next_jitter_duration(), _as);
-                backoff *= 2;
-                if (backoff > max_backoff) {
-                    backoff = max_backoff;
-                }
-                continue;
-            }
-        } catch (const ss::sleep_aborted&) {
-            vlog(_rtclog.debug, "Upload loop aborted");
-        } catch (const ss::gate_closed_exception&) {
-            vlog(_rtclog.debug, "Upload loop aborted (gate closed)");
-        } catch (const ss::abort_requested_exception&) {
-            vlog(_rtclog.debug, "Upload loop aborted (abort requested)");
-        } catch (...) {
-            vlog(
-              _rtclog.error, "Upload loop error: {}", std::current_exception());
-        }
-    }
 }
 
 } // namespace archival::internal

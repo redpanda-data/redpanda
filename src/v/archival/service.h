@@ -90,9 +90,6 @@ public:
 
     void rearm_timer();
 
-    /// Run next round of uploads
-    ss::future<> run_uploads();
-
     /// \brief Sync ntp-archivers with the content of the partition_manager
     ///
     /// This method can invoke asynchronous operations that can potentially
@@ -132,10 +129,8 @@ private:
     simple_time_jitter<ss::lowres_clock> _jitter;
     ss::timer<ss::lowres_clock> _timer;
     ss::gate _gate;
-    ss::abort_source _as;
     ss::semaphore _stop_limit;
     absl::btree_map<model::ntp, ss::lw_shared_ptr<ntp_archiver>> _archivers;
-    simple_time_jitter<ss::lowres_clock> _backoff{100ms};
     retry_chain_node _rtcnode;
     retry_chain_logger _rtclog;
     service_probe _probe;

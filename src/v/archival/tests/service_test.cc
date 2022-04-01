@@ -187,8 +187,6 @@ FIXTURE_TEST(test_segment_upload, archiver_fixture) {
     service.reconcile_archivers().get();
     BOOST_REQUIRE(service.contains(ntp));
 
-    (void)service.run_uploads();
-
     // 2 partition manifests, 1 topic manifest, 2 segments
     const size_t num_requests_expected = 5;
     tests::cooperative_spin_wait_with_timeout(10s, [this] {
