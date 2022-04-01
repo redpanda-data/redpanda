@@ -100,6 +100,12 @@ public:
     explicit mux_state_machine(
       ss::logger&, consensus*, persistent_last_applied, T&...);
 
+    mux_state_machine(mux_state_machine&&) = delete;
+    mux_state_machine(const mux_state_machine&) = delete;
+    mux_state_machine& operator=(mux_state_machine&&) = delete;
+    mux_state_machine& operator=(const mux_state_machine&) = delete;
+    ~mux_state_machine() override = default;
+
     // Lifecycle management
     ss::future<> start() { return raft::state_machine::start(); }
 

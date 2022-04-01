@@ -57,6 +57,10 @@ class consensus;
 class state_machine {
 public:
     state_machine(consensus*, ss::logger& log, ss::io_priority_class io_prio);
+    state_machine(state_machine&&) = delete;
+    state_machine(const state_machine&) = delete;
+    state_machine& operator=(state_machine&&) = delete;
+    state_machine& operator=(const state_machine&) = delete;
 
     // start after ready to receive batches through apply upcall.
     virtual ss::future<> start();
