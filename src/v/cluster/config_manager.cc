@@ -320,6 +320,26 @@ config_manager::preload(YAML::Node const& legacy_config) {
             // in the old fashioned way)
             co_await load_legacy(legacy_config);
         }
+    } else {
+        // We are post-upgrade.  If there are still cluster config
+        // settings in redpanda.yaml, nag the user about them.  This
+        // helps them figure out what's going on if they are trying
+        // to set something in redpanda.yaml and it's not working.
+        if (legacy_config["redpanda"]) {
+            const auto nag_properties
+              = config::shard_local_cfg().property_names();
+            for (auto const& node : legacy_config["redpanda"]) {
+                auto name = node.first.as<ss::sstring>();
+                if (nag_properties.contains(name)) {
+                    vlog(
+                      clusterlog.info,
+                      "Ignoring value for '{}' in redpanda.yaml: use `rpk "
+                      "cluster config edit` to edit cluster configuration "
+                      "properties.",
+                      name);
+                }
+            }
+        }
     }
 
     co_return result;
