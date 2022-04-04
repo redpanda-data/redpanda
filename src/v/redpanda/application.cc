@@ -788,7 +788,6 @@ void application::wire_up_redpanda_services() {
         construct_service(
           archival_scheduler,
           std::ref(cloud_storage_api),
-          std::ref(storage),
           std::ref(partition_manager),
           std::ref(controller->get_topics_state()),
           std::ref(arch_configs))

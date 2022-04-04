@@ -44,14 +44,14 @@ namespace archival {
 
 ntp_archiver::ntp_archiver(
   const storage::ntp_config& ntp,
-  storage::log_manager& log_manager,
+  cluster::partition_manager& partition_manager,
   const configuration& conf,
   cloud_storage::remote& remote,
   ss::lw_shared_ptr<cluster::partition> part)
   : _probe(conf.ntp_metrics_disabled, ntp.ntp())
   , _ntp(ntp.ntp())
   , _rev(ntp.get_initial_revision())
-  , _log_manager(log_manager)
+  , _partition_manager(partition_manager)
   , _remote(remote)
   , _partition(std::move(part))
   , _policy(_ntp, conf.time_limit, conf.upload_io_priority)
@@ -226,7 +226,7 @@ ntp_archiver::upload_segment(upload_candidate candidate) {
 
 ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
   model::offset start_upload_offset, model::offset last_stable_offset) {
-    std::optional<storage::log> log = _log_manager.get(_ntp);
+    std::optional<storage::log> log = _partition_manager.log(_ntp);
     if (!log) {
         vlog(_rtclog.warn, "couldn't find log in log manager");
         co_return scheduled_upload{.stop = ss::stop_iteration::yes};
@@ -491,10 +491,10 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
       });
 }
 
-uint64_t ntp_archiver::estimate_backlog_size(cluster::partition_manager& pm) {
+uint64_t ntp_archiver::estimate_backlog_size() {
     auto last_offset = _manifest.size() ? _manifest.get_last_offset()
                                         : model::offset(0);
-    auto opt_log = pm.log(_manifest.get_ntp());
+    auto opt_log = _partition_manager.log(_manifest.get_ntp());
     if (!opt_log) {
         return 0U;
     }

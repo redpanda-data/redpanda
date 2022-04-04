@@ -64,7 +64,7 @@ public:
     /// \param svc_probe is a service level probe (optional)
     ntp_archiver(
       const storage::ntp_config& ntp,
-      storage::log_manager&,
+      cluster::partition_manager&,
       const configuration& conf,
       cloud_storage::remote& remote,
       ss::lw_shared_ptr<cluster::partition> part);
@@ -112,7 +112,7 @@ public:
     ss::future<batch_result> upload_next_candidates(
       std::optional<model::offset> last_stable_offset_override = std::nullopt);
 
-    uint64_t estimate_backlog_size(cluster::partition_manager& pm);
+    uint64_t estimate_backlog_size();
 
 private:
     /// Information about started upload
@@ -165,7 +165,7 @@ private:
     ntp_level_probe _probe;
     model::ntp _ntp;
     model::initial_revision_id _rev;
-    storage::log_manager& _log_manager;
+    cluster::partition_manager& _partition_manager;
     cloud_storage::remote& _remote;
     ss::lw_shared_ptr<cluster::partition> _partition;
     model::term_id _start_term;

@@ -128,11 +128,7 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
       *part);
 
     archival::ntp_archiver archiver(
-      get_ntp_conf(),
-      get_local_storage_api().log_mgr(),
-      arch_conf,
-      remote,
-      part);
+      get_ntp_conf(), app.partition_manager.local(), arch_conf, remote, part);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
     retry_chain_node fib;
@@ -369,11 +365,7 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     cloud_storage::remote remote(
       remote_conf.connection_limit, remote_conf.client_config);
     archival::ntp_archiver archiver(
-      get_ntp_conf(),
-      get_local_storage_api().log_mgr(),
-      arch_conf,
-      remote,
-      part);
+      get_ntp_conf(), app.partition_manager.local(), arch_conf, remote, part);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
     retry_chain_node fib;
@@ -588,11 +580,7 @@ static void test_partial_upload_impl(
     cloud_storage::remote remote(cconf.connection_limit, cconf.client_config);
     aconf.time_limit = segment_time_limit(0s);
     archival::ntp_archiver archiver(
-      get_ntp_conf(),
-      test.get_local_storage_api().log_mgr(),
-      aconf,
-      remote,
-      part);
+      get_ntp_conf(), test.app.partition_manager.local(), aconf, remote, part);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
     retry_chain_node fib;

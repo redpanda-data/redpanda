@@ -121,13 +121,11 @@ scheduler_service_impl::get_archival_service_config(
 scheduler_service_impl::scheduler_service_impl(
   const configuration& conf,
   ss::sharded<cloud_storage::remote>& remote,
-  ss::sharded<storage::api>& api,
   ss::sharded<cluster::partition_manager>& pm,
   ss::sharded<cluster::topic_table>& tt)
   : _conf(conf)
   , _partition_manager(pm)
   , _topic_table(tt)
-  , _storage_api(api)
   , _jitter(conf.interval, 1ms)
   , _rtclog(archival_log, _rtcnode)
   , _probe(conf.svc_metrics_disabled)
@@ -138,11 +136,10 @@ scheduler_service_impl::scheduler_service_impl(
 
 scheduler_service_impl::scheduler_service_impl(
   ss::sharded<cloud_storage::remote>& remote,
-  ss::sharded<storage::api>& api,
   ss::sharded<cluster::partition_manager>& pm,
   ss::sharded<cluster::topic_table>& tt,
   ss::sharded<archival::configuration>& config)
-  : scheduler_service_impl(config.local(), remote, api, pm, tt) {}
+  : scheduler_service_impl(config.local(), remote, pm, tt) {}
 
 void scheduler_service_impl::rearm_timer() {
     ssx::background = ssx::spawn_with_gate_then(_gate, [this] {
@@ -279,16 +276,14 @@ scheduler_service_impl::create_archivers(std::vector<model::ntp> to_create) {
     auto concurrency = std::max(1UL, _remote.local().concurrency() / 2);
     co_await ss::max_concurrent_for_each(
       std::move(to_create), concurrency, [this](const model::ntp& ntp) {
-          storage::api& api = _storage_api.local();
-          storage::log_manager& lm = api.log_mgr();
-          auto log = lm.get(ntp);
+          auto log = _partition_manager.local().log(ntp);
           auto part = _partition_manager.local().get(ntp);
           if (log.has_value() && part && part->is_leader()
               && (part->get_ntp_config().is_archival_enabled()
                   || config::shard_local_cfg().cloud_storage_enable_remote_read())) {
               auto archiver = ss::make_lw_shared<ntp_archiver>(
                 log->config(),
-                _storage_api.local().log_mgr(),
+                _partition_manager.local(),
                 _conf,
                 _remote.local(),
                 part);
@@ -319,29 +314,26 @@ scheduler_service_impl::remove_archivers(std::vector<model::ntp> to_remove) {
 ss::future<> scheduler_service_impl::reconcile_archivers() {
     gate_guard g(_gate);
     cluster::partition_manager& pm = _partition_manager.local();
-    storage::api& api = _storage_api.local();
-    storage::log_manager& lm = api.log_mgr();
-    auto snapshot = lm.get_all_ntps();
+
     std::vector<model::ntp> to_remove;
-    std::vector<model::ntp> to_create;
     // find archivers that have already stopped
     for (const auto& [ntp, archiver] : _archivers) {
         auto p = pm.get(ntp);
-        if (!snapshot.contains(ntp) || !p || archiver->upload_loop_stopped()) {
+        if (!p || archiver->upload_loop_stopped()) {
             to_remove.push_back(ntp);
         }
     }
 
+    std::vector<model::ntp> to_create;
     // find new ntps that present in the snapshot only
-    std::copy_if(
-      snapshot.begin(),
-      snapshot.end(),
-      std::back_inserter(to_create),
-      [this, &pm](const model::ntp& ntp) {
-          auto p = pm.get(ntp);
-          return ntp.ns != model::redpanda_ns && !_archivers.contains(ntp) && p
-                 && p->is_leader();
-      });
+    for (const auto& [ntp, p] : pm.partitions()) {
+        if (
+          ntp.ns != model::redpanda_ns && !_archivers.contains(ntp)
+          && p->is_leader()) {
+            to_create.push_back(ntp);
+        }
+    }
+
     // epxect to_create & to_remove be empty most of the time
     if (unlikely(!to_remove.empty() || !to_create.empty())) {
         // run in parallel
@@ -378,7 +370,7 @@ uint64_t scheduler_service_impl::estimate_backlog_size() {
     uint64_t size = 0;
     for (const auto& [ntp, archiver] : _archivers) {
         std::ignore = ntp;
-        size += archiver->estimate_backlog_size(_partition_manager.local());
+        size += archiver->estimate_backlog_size();
     }
     return size;
 }

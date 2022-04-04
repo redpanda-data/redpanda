@@ -13,8 +13,6 @@
 #include "cluster/partition_manager.h"
 #include "model/fundamental.h"
 #include "s3/client.h"
-#include "storage/api.h"
-#include "storage/log_manager.h"
 #include "storage/ntp_config.h"
 #include "storage/segment.h"
 #include "storage/segment_set.h"
@@ -56,12 +54,10 @@ public:
     scheduler_service_impl(
       const configuration& conf,
       ss::sharded<cloud_storage::remote>& remote,
-      ss::sharded<storage::api>& api,
       ss::sharded<cluster::partition_manager>& pm,
       ss::sharded<cluster::topic_table>& tt);
     scheduler_service_impl(
       ss::sharded<cloud_storage::remote>& remote,
-      ss::sharded<storage::api>& api,
       ss::sharded<cluster::partition_manager>& pm,
       ss::sharded<cluster::topic_table>& tt,
       ss::sharded<archival::configuration>& configs);
@@ -124,7 +120,6 @@ private:
     configuration _conf;
     ss::sharded<cluster::partition_manager>& _partition_manager;
     ss::sharded<cluster::topic_table>& _topic_table;
-    ss::sharded<storage::api>& _storage_api;
     simple_time_jitter<ss::lowres_clock> _jitter;
     ss::timer<ss::lowres_clock> _timer;
     ss::gate _gate;
@@ -146,7 +141,6 @@ public:
     /// \brief create scheduler service
     ///
     /// \param configuration is a archival cnfiguration
-    /// \param api is a storage api service instance
     /// \param pm is a partition_manager service instance
     using internal::scheduler_service_impl::scheduler_service_impl;
 
