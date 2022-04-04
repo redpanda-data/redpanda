@@ -61,9 +61,16 @@ reconnect_transport::reconnect(clock_type::time_point connection_timeout) {
           _stamp, _backoff_policy.current_backoff_duration())) {
         return ss::make_ready_future<ret_t>(errc::exponential_backoff);
     }
-    _stamp = rpc::clock_type::now();
-    return with_gate(_dispatch_gate, [this, connection_timeout] {
-        return with_semaphore(_connected_sem, 1, [this, connection_timeout] {
+
+    auto now = rpc::clock_type::now();
+    if (now > connection_timeout) {
+        return ss::make_ready_future<ret_t>(errc::client_request_timeout);
+    }
+    auto connection_timeout_duration = connection_timeout - now;
+
+    _stamp = now;
+    return with_gate(_dispatch_gate, [this, connection_timeout, connection_timeout_duration] {
+        return with_semaphore(_connected_sem, 1, connection_timeout_duration, [this, connection_timeout] {
             if (is_valid()) {
                 return ss::make_ready_future<ret_t>(&_transport);
             }
