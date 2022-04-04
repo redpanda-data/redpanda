@@ -12,13 +12,13 @@ package featuregates
 import "github.com/Masterminds/semver/v3"
 
 const (
-	centralizedConfigMajor = uint64(22)
-	centralizedConfigMinor = uint64(1)
+	maintenanceModeMajor = uint64(22)
+	maintenanceModeMinor = uint64(1)
 )
 
-// CentralizedConfiguration feature gate should be removed when the operator
+// MaintenanceMode feature gate should be removed when the operator
 // will no longer support 21.x or older versions
-func CentralizedConfiguration(version string) bool {
+func MaintenanceMode(version string) bool {
 	if version == devVersion {
 		// development version contains this feature
 		return true
@@ -28,5 +28,5 @@ func CentralizedConfiguration(version string) bool {
 		return false
 	}
 
-	return v.Major() == centralizedConfigMajor && v.Minor() >= centralizedConfigMinor || v.Major() > centralizedConfigMajor
+	return v.Major() == maintenanceModeMajor && v.Minor() >= maintenanceModeMinor || v.Major() > maintenanceModeMajor
 }
