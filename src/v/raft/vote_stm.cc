@@ -144,18 +144,11 @@ ss::future<> vote_stm::do_vote() {
     // dispatch requests to all voters
     _config->for_each_voter([this](vnode id) { (void)dispatch_one(id); });
 
-    // wait until majority
-    const size_t majority = (_config->unique_voter_count() / 2) + 1;
-
-    return _sem.wait(majority)
-      .then([this] { return process_replies(); })
-      // porcess results
-      .then([this]() {
-          return _ptr->_op_lock.get_units().then(
-            [this](ss::semaphore_units<> u) {
-                return update_vote_state(std::move(u));
-            });
-      });
+    return process_replies().then([this]() {
+        return _ptr->_op_lock.get_units().then([this](ss::semaphore_units<> u) {
+            return update_vote_state(std::move(u));
+        });
+    });
 }
 
 ss::future<> vote_stm::process_replies() {
