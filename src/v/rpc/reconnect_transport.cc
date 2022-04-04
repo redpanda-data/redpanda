@@ -69,29 +69,37 @@ reconnect_transport::reconnect(clock_type::time_point connection_timeout) {
     auto connection_timeout_duration = connection_timeout - now;
 
     _stamp = now;
-    return with_gate(_dispatch_gate, [this, connection_timeout, connection_timeout_duration] {
-        return with_semaphore(_connected_sem, 1, connection_timeout_duration, [this, connection_timeout] {
-            if (is_valid()) {
-                return ss::make_ready_future<ret_t>(&_transport);
-            }
-            vlog(rpclog.trace, "connecting to {}", _transport.server_address());
-            return _transport.connect(connection_timeout)
-              .then_wrapped([this](ss::future<> f) {
-                  try {
-                      f.get();
-                      rpclog.debug(
-                        "connected to {}", _transport.server_address());
-                      _backoff_policy.reset();
-                      return ss::make_ready_future<ret_t>(&_transport);
-                  } catch (...) {
-                      _backoff_policy.next_backoff();
-                      rpclog.trace(
-                        "error reconnecting {}", std::current_exception());
-                      return ss::make_ready_future<ret_t>(
-                        errc::disconnected_endpoint);
-                  }
-              });
-        });
-    });
+    return with_gate(
+      _dispatch_gate, [this, connection_timeout, connection_timeout_duration] {
+          return with_semaphore(
+            _connected_sem,
+            1,
+            connection_timeout_duration,
+            [this, connection_timeout] {
+                if (is_valid()) {
+                    return ss::make_ready_future<ret_t>(&_transport);
+                }
+                vlog(
+                  rpclog.trace,
+                  "connecting to {}",
+                  _transport.server_address());
+                return _transport.connect(connection_timeout)
+                  .then_wrapped([this](ss::future<> f) {
+                      try {
+                          f.get();
+                          rpclog.debug(
+                            "connected to {}", _transport.server_address());
+                          _backoff_policy.reset();
+                          return ss::make_ready_future<ret_t>(&_transport);
+                      } catch (...) {
+                          _backoff_policy.next_backoff();
+                          rpclog.trace(
+                            "error reconnecting {}", std::current_exception());
+                          return ss::make_ready_future<ret_t>(
+                            errc::disconnected_endpoint);
+                      }
+                  });
+            });
+      });
 }
 } // namespace rpc
