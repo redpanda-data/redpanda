@@ -152,7 +152,6 @@ func (r *ClusterReconciler) Reconcile(
 		nodeportSvc.Key(),
 		pki.RedpandaNodeCert(),
 		pki.RedpandaOperatorClientCert(),
-		pki.RedpandaAdminCert(),
 		pki.AdminAPINodeCert(),
 		pki.AdminAPIClientCert(),
 		pki.PandaproxyAPINodeCert(),

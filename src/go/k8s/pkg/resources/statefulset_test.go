@@ -115,7 +115,6 @@ func TestEnsure(t *testing.T) {
 				types.NamespacedName{},
 				types.NamespacedName{},
 				types.NamespacedName{},
-				types.NamespacedName{},
 				"",
 				res.ConfiguratorSettings{
 					ConfiguratorBaseImage: "vectorized/configurator",

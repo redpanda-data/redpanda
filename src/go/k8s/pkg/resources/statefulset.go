@@ -92,7 +92,6 @@ type StatefulSetResource struct {
 	nodePortSvc                        corev1.Service
 	redpandaCertSecretKey              types.NamespacedName
 	internalClientCertSecretKey        types.NamespacedName
-	adminCertSecretKey                 types.NamespacedName
 	adminAPINodeCertSecretKey          types.NamespacedName
 	adminAPIClientCertSecretKey        types.NamespacedName
 	pandaproxyAPINodeCertSecretKey     types.NamespacedName
@@ -121,7 +120,6 @@ func NewStatefulSet(
 	nodePortName types.NamespacedName,
 	redpandaCertSecretKey types.NamespacedName,
 	internalClientCertSecretKey types.NamespacedName,
-	adminCertSecretKey types.NamespacedName,
 	adminAPINodeCertSecretKey types.NamespacedName,
 	adminAPIClientCertSecretKey types.NamespacedName,
 	pandaproxyAPINodeCertSecretKey types.NamespacedName,
@@ -143,7 +141,6 @@ func NewStatefulSet(
 		corev1.Service{},
 		redpandaCertSecretKey,
 		internalClientCertSecretKey,
-		adminCertSecretKey,
 		adminAPINodeCertSecretKey,
 		adminAPIClientCertSecretKey,
 		pandaproxyAPINodeCertSecretKey,
