@@ -162,6 +162,8 @@ private:
     /// Launch the upload loop fiber.
     ss::future<> upload_loop();
 
+    bool upload_loop_can_continue() const;
+
     ntp_level_probe _probe;
     model::ntp _ntp;
     model::initial_revision_id _rev;

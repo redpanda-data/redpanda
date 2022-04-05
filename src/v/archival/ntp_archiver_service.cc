@@ -105,8 +105,7 @@ ss::future<> ntp_archiver::upload_loop() {
     static constexpr ss::lowres_clock::duration max_backoff = 10s;
     ss::lowres_clock::duration backoff = initial_backoff;
 
-    while (!_as.abort_requested() && !_gate.is_closed()
-           && _partition->is_leader() && _partition->term() == _start_term) {
+    while (upload_loop_can_continue()) {
         auto result = co_await upload_next_candidates();
         if (result.num_failed != 0) {
             vlog(
@@ -119,6 +118,10 @@ ss::future<> ntp_archiver::upload_loop() {
               _rtclog.debug,
               "Successfuly uploaded {} segments",
               result.num_succeded);
+        }
+
+        if (!upload_loop_can_continue()) {
+            break;
         }
 
         if (result.num_succeded == 0) {
@@ -140,6 +143,11 @@ ss::future<> ntp_archiver::upload_loop() {
             backoff = initial_backoff;
         }
     }
+}
+
+bool ntp_archiver::upload_loop_can_continue() const {
+    return !_as.abort_requested() && !_gate.is_closed()
+           && _partition->is_leader() && _partition->term() == _start_term;
 }
 
 ss::future<> ntp_archiver::stop() {
@@ -366,6 +374,12 @@ ntp_archiver::schedule_uploads(model::offset last_stable_offset) {
                          return ss::make_ready_future<ss::stop_iteration>(
                            ss::stop_iteration::yes);
                      }
+
+                     if (!upload_loop_can_continue()) {
+                         return ss::make_ready_future<ss::stop_iteration>(
+                           ss::stop_iteration::yes);
+                     }
+
                      ++ix;
                      return schedule_single_upload(
                               start_upload_offset, last_stable_offset)
@@ -402,6 +416,14 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
         co_return total;
     }
     auto results = co_await ss::when_all_succeed(begin(flist), end(flist));
+
+    if (!upload_loop_can_continue()) {
+        // We exit early even if we have successfully uploaded some segments to
+        // avoid interfering with an archiver that could have started on another
+        // node.
+        co_return batch_result{};
+    }
+
     total.num_succeded = std::count(
       begin(results), end(results), cloud_storage::upload_result::success);
     total.num_failed = flist.size() - total.num_succeded;
@@ -466,9 +488,6 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
 ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
   std::optional<model::offset> lso_override) {
     vlog(_rtclog.debug, "Uploading next candidates called for {}", _ntp);
-    if (_gate.is_closed()) {
-        return ss::make_ready_future<batch_result>(batch_result{});
-    }
     auto last_stable_offset = lso_override ? *lso_override
                                            : _partition->last_stable_offset();
     return ss::with_gate(
