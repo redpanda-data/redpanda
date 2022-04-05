@@ -126,13 +126,6 @@ public:
       const try_consume_stream& cons_str,
       retry_chain_node& parent);
 
-    ss::future<download_result> list_objects(
-      const list_objects_consumer& cons,
-      const s3::bucket_name& bucktet,
-      const std::optional<s3::object_key>& prefix,
-      const std::optional<size_t>& max_keys,
-      retry_chain_node& parent);
-
     /// Checks if the segment exists in the bucket
     ss::future<download_result> segment_exists(
       const s3::bucket_name& bucket,
