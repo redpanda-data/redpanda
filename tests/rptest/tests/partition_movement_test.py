@@ -14,6 +14,7 @@ import requests
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cat import KafkaCat
+from ducktape.mark import ok_to_fail
 
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
@@ -239,6 +240,7 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
             self._move_and_verify()
         self.run_validation(enable_idempotence=False, consumer_timeout_sec=45)
 
+    @ok_to_fail
     @cluster(num_nodes=5, log_allow_list=PARTITION_MOVEMENT_LOG_ERRORS)
     def test_move_consumer_offsets_intranode(self):
         """
