@@ -11,8 +11,11 @@
 #include "kafka/server/replicated_partition.h"
 
 #include "kafka/protocol/errors.h"
+#include "kafka/server/logger.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
+#include "model/timeout_clock.h"
+#include "raft/consensus_utils.h"
 #include "raft/types.h"
 #include "storage/types.h"
 
@@ -205,4 +208,49 @@ std::optional<model::offset> replicated_partition::get_leader_epoch_last_offset(
     }
     return std::nullopt;
 }
+
+ss::future<bool> replicated_partition::is_fetch_offset_valid(
+  model::offset fetch_offset, model::timeout_clock::time_point deadline) {
+    /**
+     * Make sure that we will update high watermark offset if it isn't yet
+     * initialized.
+     *
+     * We use simple heuristic here to determine if high watermark update is
+     * required.
+     *
+     * We only request update if fetch_offset is in range beteween current high
+     * water mark and log end i.e. if high watermark is updated consumer will
+     * receive data.
+     */
+
+    // calculate log end in kafka offset domain
+    const auto log_end = model::next_offset(
+      _translator->from_log_offset(_partition->dirty_offset()));
+
+    while (fetch_offset > high_watermark() && fetch_offset <= log_end) {
+        if (model::timeout_clock::now() > deadline) {
+            break;
+        }
+        // retry linearizable barrier to make sure node is still a leader
+        auto ec = co_await linearizable_barrier();
+        if (ec) {
+            vlog(
+              klog.warn,
+              "error updating partition high watermark with linearizable "
+              "barrier - {}",
+              ec.message());
+            break;
+        }
+        vlog(
+          klog.debug,
+          "updated partition highwatermark with linearizable barrier. "
+          "start offset: {}, hight watermark: {}",
+          _partition->start_offset(),
+          _partition->high_watermark());
+    }
+
+    co_return fetch_offset >= start_offset()
+      && fetch_offset <= high_watermark();
+}
+
 } // namespace kafka

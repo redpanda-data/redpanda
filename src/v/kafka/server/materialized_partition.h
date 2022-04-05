@@ -84,6 +84,11 @@ public:
 
     cluster::partition_probe& probe() final { return _probe; }
 
+    ss::future<bool> is_fetch_offset_valid(
+      model::offset fetch_offset, model::timeout_clock::time_point) final {
+        co_return fetch_offset >= start_offset();
+    }
+
 private:
     static model::offset offset_or_zero(model::offset o) {
         return o > model::offset(0) ? o : model::offset(0);
