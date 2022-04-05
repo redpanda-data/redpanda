@@ -526,9 +526,10 @@ ss::future<> group_metadata_migration::activate_feature(ss::abort_source& as) {
     vlog(mlog.info, "activating consumer offsets feature");
     while (!feature_table().is_active(cluster::feature::consumer_offsets)
            && !as.abort_requested()) {
-        if (
-          _controller.is_raft0_leader()
-          && feature_table().is_preparing(cluster::feature::consumer_offsets)) {
+        if (_controller.is_raft0_leader()) {
+            co_await feature_table().await_feature_preparing(
+              cluster::feature::consumer_offsets, as);
+
             auto err = co_await feature_manager().write_action(
               cluster::feature_update_action{
                 .feature_name = ss::sstring(
