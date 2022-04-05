@@ -12,14 +12,17 @@
 package brokers
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"github.com/twmb/franz-go/pkg/kadm"
 )
 
 // NewCommand returns the brokers admin command.
@@ -31,6 +34,7 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 	}
 	cmd.AddCommand(
 		newListCommand(fs),
+		newListPartitionsCommand(fs),
 		newDecommissionBroker(fs),
 		newRecommissionBroker(fs),
 	)
@@ -38,21 +42,55 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 }
 
 func newListCommand(fs afero.Fs) *cobra.Command {
-	return &cobra.Command{
-		Use:     "list",
-		Aliases: []string{"ls"},
-		Short:   "List the brokers in your cluster.",
+        return &cobra.Command{
+                Use:     "list",
+                Aliases: []string{"ls"},
+                Short:   "List the brokers in your cluster.",
+                Args:    cobra.ExactArgs(0),
+                Run: func(cmd *cobra.Command, _ []string) {
+                        p := config.ParamsFromCommand(cmd)
+                        cfg, err := p.Load(fs)
+                        out.MaybeDie(err, "unable to load config: %v", err)
+
+                        cl, err := admin.NewClient(fs, cfg)
+                        out.MaybeDie(err, "unable to initialize admin client: %v", err)
+
+                        bs, err := cl.Brokers()
+                        out.MaybeDie(err, "unable to request brokers: %v", err)
+
+                        tw := out.NewTable("Node ID", "Num Cores", "Membership Status")
+                        defer tw.Flush()
+                        for _, b := range bs {
+                                tw.Print(b.NodeID, b.NumCores, b.MembershipStatus)
+                        }
+                },
+        }
+}
+
+func newListPartitionsCommand(fs afero.Fs) *cobra.Command {
+	var (
+		brokerId string
+	)
+	cmd :=  &cobra.Command{
+		Use:     "list-partitions",
+		Aliases: []string{"ls-ps"},
+		Short:   "List the partitions in a broker in your cluster.",
 		Args:    cobra.ExactArgs(0),
-		Run: func(cmd *cobra.Command, _ []string) {
+		Run: func(cmd *cobra.Command, args []string) {
 			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			cl, err := admin.NewClient(fs, cfg)
-			out.MaybeDie(err, "unable to initialize admin client: %v", err)
+			//cl, err := admin.NewClient(fs, cfg)
+			//out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-			bs, err := cl.Brokers()
-			out.MaybeDie(err, "unable to request brokers: %v", err)
+			adm, err := kafka.NewAdmin(fs, p, cfg)
+                        out.MaybeDie(err, "unable to initialize kafka client: %v", err)
+                        defer adm.Close()
+
+			var m kadm.Metadata
+                        m, err = adm.Metadata(context.Background(), args...)
+                        out.MaybeDie(err, "unable to request metadata: %v", err)
 
 			headers := []string{"Node-ID", "Num-Cores", "Membership-Status"}
 
@@ -77,6 +115,10 @@ func newListCommand(fs afero.Fs) *cobra.Command {
 			}
 		},
 	}
+
+	cmd.Flags().StringVar(&brokerId, "broker-id", "b", "print the partitions on broker id")
+
+	return cmd
 }
 
 func newDecommissionBroker(fs afero.Fs) *cobra.Command {
