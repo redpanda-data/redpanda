@@ -94,6 +94,9 @@ public:
         return leader_epoch_from_term(_partition->term());
     }
 
+    ss::future<bool> is_fetch_offset_valid(
+      model::offset, model::timeout_clock::time_point) final;
+
 private:
     ss::lw_shared_ptr<cluster::partition> _partition;
     ss::lw_shared_ptr<const storage::offset_translator_state> _translator;
