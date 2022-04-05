@@ -264,7 +264,7 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
             for a in assignments:
                 # Bounce between core 0 and 1
                 a['core'] = (a['core'] + 1) % 2
-                admin.set_partition_replicas(topic, partition, assignments)
+            admin.set_partition_replicas(topic, partition, assignments)
             self._wait_post_move(topic, partition, assignments, 360)
 
         self.run_validation(enable_idempotence=False, consumer_timeout_sec=45)
