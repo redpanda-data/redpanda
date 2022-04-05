@@ -239,6 +239,36 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
             self._move_and_verify()
         self.run_validation(enable_idempotence=False, consumer_timeout_sec=45)
 
+    @cluster(num_nodes=5, log_allow_list=PARTITION_MOVEMENT_LOG_ERRORS)
+    def test_move_consumer_offsets_intranode(self):
+        """
+        Exercise moving the consumer_offsets/0 partition between shards
+        within the same nodes.  This reproduces certain bugs in the special
+        handling of this topic.
+        """
+        self.start_redpanda(num_nodes=3,
+                            extra_rp_conf={"default_topic_replications": 3})
+        spec = TopicSpec(name="topic", partition_count=3, replication_factor=3)
+        self.client().create_topic(spec)
+        self.topic = spec.name
+        self.start_producer(1)
+        self.start_consumer(1)
+        self.await_startup()
+
+        admin = Admin(self.redpanda)
+        topic = "__consumer_offsets"
+        partition = 0
+
+        for _ in range(25):
+            assignments = self._get_assignments(admin, topic, partition)
+            for a in assignments:
+                # Bounce between core 0 and 1
+                a['core'] = (a['core'] + 1) % 2
+                admin.set_partition_replicas(topic, partition, assignments)
+            self._wait_post_move(topic, partition, assignments, 360)
+
+        self.run_validation(enable_idempotence=False, consumer_timeout_sec=45)
+
     @cluster(num_nodes=5,
              log_allow_list=PARTITION_MOVEMENT_LOG_ERRORS +
              RESTART_LOG_ALLOW_LIST)
