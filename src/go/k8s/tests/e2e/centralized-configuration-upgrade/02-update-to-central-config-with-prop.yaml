@@ -5,7 +5,7 @@ metadata:
 spec:
   image: "localhost/redpanda"
   version: "dev"
-  replicas: 2
+  replicas: 3
   resources:
     requests:
       cpu: 100m
