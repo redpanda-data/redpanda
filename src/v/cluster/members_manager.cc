@@ -22,6 +22,7 @@
 #include "raft/errc.h"
 #include "raft/types.h"
 #include "random/generators.h"
+#include "redpanda/application.h"
 #include "reflection/adl.h"
 #include "storage/api.h"
 
@@ -865,7 +866,11 @@ members_manager::initialize_broker_connection(const model::broker& broker) {
       _rpc_tls_config,
       2s,
       [self = _self.id()](controller_client_protocol c) {
-          return c.hello(hello_request{.peer = self}, rpc::client_opts(2s))
+          hello_request req{
+            .peer = self,
+            .start_time = redpanda_start_time,
+          };
+          return c.hello(std::move(req), rpc::client_opts(2s))
             .then(&rpc::get_ctx_data<hello_reply>);
       })
       .then([broker_id](result<hello_reply> r) {

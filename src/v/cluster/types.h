@@ -906,6 +906,9 @@ struct config_update_reply {
 
 struct hello_request final {
     model::node_id peer;
+
+    // milliseconds since epoch
+    std::chrono::milliseconds start_time;
 };
 
 struct hello_reply {

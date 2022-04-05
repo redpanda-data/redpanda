@@ -335,7 +335,11 @@ ss::future<set_maintenance_mode_reply> service::set_maintenance_mode(
  */
 ss::future<hello_reply>
 service::hello(hello_request&& req, rpc::streaming_context&) {
-    vlog(clusterlog.debug, "Handling hello request from node {}", req.peer);
+    vlog(
+      clusterlog.debug,
+      "Handling hello request from node {} with start time {}",
+      req.peer,
+      req.start_time.count());
     co_await _conn_cache.invoke_on_all(
       [peer = req.peer](rpc::connection_cache& cache) {
           if (cache.contains(peer)) {
