@@ -1,4 +1,4 @@
-// Copyright 2022 Vectorized, Inc.
+// Copyright 2022 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -11,9 +11,11 @@ package v1alpha1_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
@@ -129,5 +131,87 @@ func TestRedpandaResourceRequirements(t *testing.T) {
 				assert.Equal(t, tt.expectedRedpandaCPU.Value(), rrr.RedpandaCPU().Value())
 			})
 		}
+	})
+}
+
+func TestConditions(t *testing.T) {
+	earlyClock := func() time.Time {
+		return time.Now().Add(1 * time.Millisecond)
+	}
+
+	t.Run("create a condition", func(t *testing.T) {
+		t.Parallel()
+		cluster := &v1alpha1.Cluster{}
+		assert.True(t, cluster.Status.SetCondition(v1alpha1.ClusterConfiguredConditionType, corev1.ConditionTrue, "reason", "message"))
+		require.Len(t, cluster.Status.Conditions, 1)
+		cond := cluster.Status.Conditions[0]
+		assert.Equal(t, v1alpha1.ClusterConfiguredConditionType, cond.Type)
+		assert.Equal(t, corev1.ConditionTrue, cond.Status)
+		assert.Equal(t, "reason", cond.Reason)
+		assert.Equal(t, "message", cond.Message)
+		condTime := cond.LastTransitionTime
+		assert.False(t, condTime.After(time.Now()))
+	})
+
+	t.Run("update a condition", func(t *testing.T) {
+		t.Parallel()
+		cluster := &v1alpha1.Cluster{}
+		assert.True(t, cluster.Status.SetCondition(v1alpha1.ClusterConfiguredConditionType, corev1.ConditionTrue, "reason", "message"))
+		require.Len(t, cluster.Status.Conditions, 1)
+		cond := cluster.Status.Conditions[0]
+		condTime := cond.LastTransitionTime
+		assert.True(t, cluster.Status.SetConditionUsingClock(v1alpha1.ClusterConfiguredConditionType, corev1.ConditionFalse, "reason2", "message2", earlyClock))
+		require.Len(t, cluster.Status.Conditions, 1)
+		cond = cluster.Status.Conditions[0]
+		assert.Equal(t, v1alpha1.ClusterConfiguredConditionType, cond.Type)
+		assert.Equal(t, corev1.ConditionFalse, cond.Status)
+		assert.Equal(t, "reason2", cond.Reason)
+		assert.Equal(t, "message2", cond.Message)
+		condTime2 := cond.LastTransitionTime
+		assert.True(t, condTime2.After(condTime.Time))
+	})
+
+	t.Run("update to one condition does not affect the other", func(t *testing.T) {
+		t.Parallel()
+		cluster := &v1alpha1.Cluster{}
+		assert.True(t, cluster.Status.SetCondition(v1alpha1.ClusterConfiguredConditionType, corev1.ConditionTrue, "reason", "message"))
+		assert.True(t, cluster.Status.SetCondition("otherType", corev1.ConditionFalse, "reason2", "message2"))
+		require.Len(t, cluster.Status.Conditions, 2)
+		condCluster := cluster.Status.Conditions[0]
+		condClusterTime := condCluster.LastTransitionTime
+		condOther := cluster.Status.Conditions[1]
+		condOtherTime := condOther.LastTransitionTime
+
+		assert.True(t, cluster.Status.SetConditionUsingClock("otherType", corev1.ConditionUnknown, "reason3", "message3", earlyClock))
+		require.Len(t, cluster.Status.Conditions, 2)
+		condCluster = cluster.Status.Conditions[0]
+		assert.Equal(t, v1alpha1.ClusterConfiguredConditionType, condCluster.Type)
+		assert.Equal(t, corev1.ConditionTrue, condCluster.Status)
+		assert.Equal(t, "reason", condCluster.Reason)
+		assert.Equal(t, "message", condCluster.Message)
+		condClusterTime2 := condCluster.LastTransitionTime
+		assert.Equal(t, condClusterTime2, condClusterTime)
+
+		condOther = cluster.Status.Conditions[1]
+		assert.Equal(t, v1alpha1.ClusterConditionType("otherType"), condOther.Type)
+		assert.Equal(t, corev1.ConditionUnknown, condOther.Status)
+		assert.Equal(t, "reason3", condOther.Reason)
+		assert.Equal(t, "message3", condOther.Message)
+		condOtherTime2 := condOther.LastTransitionTime
+		assert.True(t, condOtherTime2.After(condOtherTime.Time))
+	})
+
+	t.Run("updating a condition with itself does not change transition time", func(t *testing.T) {
+		t.Parallel()
+		cluster := &v1alpha1.Cluster{}
+		assert.True(t, cluster.Status.SetCondition(v1alpha1.ClusterConfiguredConditionType, corev1.ConditionTrue, "reason", "message"))
+		require.Len(t, cluster.Status.Conditions, 1)
+		cond := cluster.Status.Conditions[0]
+		condTime := cond.LastTransitionTime
+		assert.False(t, cluster.Status.SetConditionUsingClock(v1alpha1.ClusterConfiguredConditionType, corev1.ConditionTrue, "reason", "message", earlyClock))
+		require.Len(t, cluster.Status.Conditions, 1)
+		cond2 := cluster.Status.Conditions[0]
+		assert.Equal(t, condTime, cond2.LastTransitionTime)
+		assert.Equal(t, condTime, cond2.LastTransitionTime)
 	})
 }

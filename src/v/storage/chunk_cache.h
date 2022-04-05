@@ -41,17 +41,6 @@ public:
     chunk_cache& operator=(const chunk_cache&) = delete;
     ~chunk_cache() noexcept = default;
 
-    /** Validator for chunk size configuration setting */
-    static std::optional<ss::sstring> validate_chunk_size(const size_t& value) {
-        if (value % alignment != 0) {
-            return "Chunk size must be multiple of 4096";
-        } else if (value < alignment) {
-            return "Chunk size must be at least 4096";
-        } else {
-            return std::nullopt;
-        }
-    }
-
     ss::future<> start() {
         const auto num_chunks = memory_groups::chunk_cache_min_memory()
                                 / _chunk_size;

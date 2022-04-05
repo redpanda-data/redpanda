@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Vectorized, Inc.
+ * Copyright 2021 Redpanda Data, Inc.
  *
  * Use of this software is governed by the Business Source License
  * included in the file licenses/BSL.md
@@ -84,7 +84,7 @@ sharded_store::make_canonical_schema(unparsed_schema schema) {
 ss::future<> sharded_store::validate_schema(canonical_schema schema) {
     switch (schema.type()) {
     case schema_type::avro: {
-        make_avro_schema_definition(schema.def().raw()()).value();
+        co_await make_avro_schema_definition(*this, schema);
         co_return;
     }
     case schema_type::protobuf:
@@ -102,7 +102,7 @@ sharded_store::make_valid_schema(canonical_schema schema) {
     // See #3596 for details, especially if modifying it.
     switch (schema.type()) {
     case schema_type::avro: {
-        co_return make_avro_schema_definition(schema.def().raw()()).value();
+        co_return co_await make_avro_schema_definition(*this, schema);
     }
     case schema_type::protobuf: {
         co_return co_await make_protobuf_schema_definition(*this, schema);

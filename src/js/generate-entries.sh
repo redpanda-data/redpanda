@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright 2020 Vectorized, Inc.
+# Copyright 2020 Redpanda Data, Inc.
 #
 # Licensed as a Redpanda Enterprise file under the Redpanda Community
 # License (the "License"); you may not use this file except in compliance with

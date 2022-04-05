@@ -1,4 +1,4 @@
-// Copyright 2022 Vectorized, Inc.
+// Copyright 2022 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -10,15 +10,15 @@
 #pragma once
 
 #include "json/allocator.h"
+#include "json/encodings.h"
 
-#include <rapidjson/encodings.h>
 #include <rapidjson/writer.h>
 
 namespace json {
 template<
   typename OutputStream,
-  typename SourceEncoding = rapidjson::UTF8<>,
-  typename TargetEncoding = rapidjson::UTF8<>,
+  typename SourceEncoding = json::UTF8<>,
+  typename TargetEncoding = json::UTF8<>,
   unsigned writeFlags = rapidjson::kWriteDefaultFlags>
 using Writer = rapidjson::Writer<
   OutputStream,

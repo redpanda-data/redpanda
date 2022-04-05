@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Vectorized, Inc.
+ * Copyright 2021 Redpanda Data, Inc.
  *
  * Use of this software is governed by the Business Source License
  * included in the file licenses/BSL.md
@@ -13,6 +13,9 @@
 
 #include "bytes/iobuf_parser.h"
 #include "json/json.h"
+#include "json/stringbuffer.h"
+#include "json/types.h"
+#include "json/writer.h"
 #include "model/metadata.h"
 #include "model/record_utils.h"
 #include "pandaproxy/json/rjson_parse.h"
@@ -30,9 +33,6 @@
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/std-coroutine.hh>
-
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
 
 namespace pandaproxy::schema_registry {
 
@@ -65,9 +65,9 @@ from_string_view<topic_key_type>(std::string_view sv) {
 }
 
 // Just peek at the keytype. Allow other fields through.
-template<typename Encoding = rapidjson::UTF8<>>
+template<typename Encoding = ::json::UTF8<>>
 class topic_key_type_handler
-  : public rapidjson::
+  : public ::json::
       BaseReaderHandler<Encoding, topic_key_type_handler<Encoding>> {
     enum class state {
         empty = 0,
@@ -77,15 +77,15 @@ class topic_key_type_handler
     state _state = state::empty;
 
 public:
-    using Ch = typename rapidjson::BaseReaderHandler<Encoding>::Ch;
+    using Ch = typename ::json::BaseReaderHandler<Encoding>::Ch;
     using rjson_parse_result = ss::sstring;
     rjson_parse_result result;
 
     topic_key_type_handler()
-      : rapidjson::
+      : ::json::
         BaseReaderHandler<Encoding, topic_key_type_handler<Encoding>>{} {}
 
-    bool Key(const Ch* str, rapidjson::SizeType len, bool) {
+    bool Key(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         if (_state == state::object && sv == "keytype") {
             _state = state::keytype;
@@ -93,7 +93,7 @@ public:
         return true;
     }
 
-    bool String(const Ch* str, rapidjson::SizeType len, bool) {
+    bool String(const Ch* str, ::json::SizeType len, bool) {
         if (_state == state::keytype) {
             result = ss::sstring{str, len};
             _state = state::object;
@@ -108,7 +108,7 @@ public:
         return true;
     }
 
-    bool EndObject(rapidjson::SizeType) {
+    bool EndObject(::json::SizeType) {
         if (_state == state::object) {
             _state = state::empty;
         }
@@ -159,7 +159,7 @@ struct schema_key {
 };
 
 inline void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  ::json::Writer<::json::StringBuffer>& w,
   const schema_registry::schema_key& key) {
     w.StartObject();
     w.Key("keytype");
@@ -181,7 +181,7 @@ inline void rjson_serialize(
     w.EndObject();
 }
 
-template<typename Encoding = rapidjson::UTF8<>>
+template<typename Encoding = ::json::UTF8<>>
 class schema_key_handler : public json::base_handler<Encoding> {
     enum class state {
         empty = 0,
@@ -203,7 +203,7 @@ public:
     schema_key_handler()
       : json::base_handler<Encoding>{json::serialization_format::none} {}
 
-    bool Key(const Ch* str, rapidjson::SizeType len, bool) {
+    bool Key(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         switch (_state) {
         case state::object: {
@@ -263,7 +263,7 @@ public:
         return false;
     }
 
-    bool String(const Ch* str, rapidjson::SizeType len, bool) {
+    bool String(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         switch (_state) {
         case state::keytype: {
@@ -291,7 +291,7 @@ public:
         return std::exchange(_state, state::object) == state::empty;
     }
 
-    bool EndObject(rapidjson::SizeType) {
+    bool EndObject(::json::SizeType) {
         return result.seq.has_value() == result.node.has_value()
                && std::exchange(_state, state::empty) == state::object;
     }
@@ -318,7 +318,7 @@ struct schema_value {
 };
 
 inline void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  ::json::Writer<::json::StringBuffer>& w,
   const schema_registry::schema_value& val) {
     w.StartObject();
     w.Key("subject");
@@ -354,7 +354,7 @@ inline void rjson_serialize(
     w.EndObject();
 }
 
-template<typename Encoding = rapidjson::UTF8<>>
+template<typename Encoding = ::json::UTF8<>>
 class schema_value_handler final : public json::base_handler<Encoding> {
     enum class state {
         empty = 0,
@@ -389,7 +389,7 @@ public:
     schema_value_handler()
       : json::base_handler<Encoding>{json::serialization_format::none} {}
 
-    bool Key(const Ch* str, rapidjson::SizeType len, bool) {
+    bool Key(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         switch (_state) {
         case state::object: {
@@ -490,7 +490,7 @@ public:
         return false;
     }
 
-    bool String(const Ch* str, rapidjson::SizeType len, bool) {
+    bool String(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         switch (_state) {
         case state::subject: {
@@ -562,7 +562,7 @@ public:
         return false;
     }
 
-    bool EndObject(rapidjson::SizeType) {
+    bool EndObject(::json::SizeType) {
         switch (_state) {
         case state::object: {
             _state = state::empty;
@@ -596,7 +596,7 @@ public:
 
     bool StartArray() { return _state == state::references; }
 
-    bool EndArray(rapidjson::SizeType) {
+    bool EndArray(::json::SizeType) {
         return std::exchange(_state, state::object) == state::references;
     }
 };
@@ -633,7 +633,7 @@ struct config_key {
 };
 
 inline void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  ::json::Writer<::json::StringBuffer>& w,
   const schema_registry::config_key& key) {
     w.StartObject();
     w.Key("keytype");
@@ -657,7 +657,7 @@ inline void rjson_serialize(
     w.EndObject();
 }
 
-template<typename Encoding = rapidjson::UTF8<>>
+template<typename Encoding = ::json::UTF8<>>
 class config_key_handler : public json::base_handler<Encoding> {
     enum class state {
         empty = 0,
@@ -678,7 +678,7 @@ public:
     config_key_handler()
       : json::base_handler<Encoding>{json::serialization_format::none} {}
 
-    bool Key(const Ch* str, rapidjson::SizeType len, bool) {
+    bool Key(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         std::optional<state> s{string_switch<std::optional<state>>(sv)
                                  .match("keytype", state::keytype)
@@ -716,7 +716,7 @@ public:
         return false;
     }
 
-    bool String(const Ch* str, rapidjson::SizeType len, bool) {
+    bool String(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         switch (_state) {
         case state::keytype: {
@@ -748,7 +748,7 @@ public:
         return std::exchange(_state, state::object) == state::empty;
     }
 
-    bool EndObject(rapidjson::SizeType) {
+    bool EndObject(::json::SizeType) {
         return result.seq.has_value() == result.node.has_value()
                && std::exchange(_state, state::empty) == state::object;
     }
@@ -766,7 +766,7 @@ struct config_value {
 };
 
 inline void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  ::json::Writer<::json::StringBuffer>& w,
   const schema_registry::config_value& val) {
     w.StartObject();
     w.Key("compatibilityLevel");
@@ -774,7 +774,7 @@ inline void rjson_serialize(
     w.EndObject();
 }
 
-template<typename Encoding = rapidjson::UTF8<>>
+template<typename Encoding = ::json::UTF8<>>
 class config_value_handler : public json::base_handler<Encoding> {
     enum class state {
         empty = 0,
@@ -791,7 +791,7 @@ public:
     config_value_handler()
       : json::base_handler<Encoding>{json::serialization_format::none} {}
 
-    bool Key(const Ch* str, rapidjson::SizeType len, bool) {
+    bool Key(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         if (_state == state::object && sv == "compatibilityLevel") {
             _state = state::compatibility;
@@ -800,7 +800,7 @@ public:
         return false;
     }
 
-    bool String(const Ch* str, rapidjson::SizeType len, bool) {
+    bool String(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         if (_state == state::compatibility) {
             auto s = from_string_view<compatibility_level>(sv);
@@ -817,7 +817,7 @@ public:
         return std::exchange(_state, state::object) == state::empty;
     }
 
-    bool EndObject(rapidjson::SizeType) {
+    bool EndObject(::json::SizeType) {
         return std::exchange(_state, state::empty) == state::object;
     }
 };
@@ -856,8 +856,7 @@ struct delete_subject_key {
 };
 
 inline void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
-  const delete_subject_key& key) {
+  ::json::Writer<::json::StringBuffer>& w, const delete_subject_key& key) {
     w.StartObject();
     w.Key("keytype");
     ::json::rjson_serialize(w, to_string_view(key.keytype));
@@ -876,7 +875,7 @@ inline void rjson_serialize(
     w.EndObject();
 }
 
-template<typename Encoding = rapidjson::UTF8<>>
+template<typename Encoding = ::json::UTF8<>>
 class delete_subject_key_handler : public json::base_handler<Encoding> {
     enum class state {
         empty = 0,
@@ -897,7 +896,7 @@ public:
     delete_subject_key_handler()
       : json::base_handler<Encoding>{json::serialization_format::none} {}
 
-    bool Key(const Ch* str, rapidjson::SizeType len, bool) {
+    bool Key(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         switch (_state) {
         case state::object: {
@@ -950,7 +949,7 @@ public:
         return false;
     }
 
-    bool String(const Ch* str, rapidjson::SizeType len, bool) {
+    bool String(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         switch (_state) {
         case state::keytype: {
@@ -977,7 +976,7 @@ public:
         return std::exchange(_state, state::object) == state::empty;
     }
 
-    bool EndObject(rapidjson::SizeType) {
+    bool EndObject(::json::SizeType) {
         return result.seq.has_value() == result.node.has_value()
                && std::exchange(_state, state::empty) == state::object;
     }
@@ -998,15 +997,14 @@ struct delete_subject_value {
 };
 
 inline void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
-  const delete_subject_value& val) {
+  ::json::Writer<::json::StringBuffer>& w, const delete_subject_value& val) {
     w.StartObject();
     w.Key("subject");
     ::json::rjson_serialize(w, val.sub);
     w.EndObject();
 }
 
-template<typename Encoding = rapidjson::UTF8<>>
+template<typename Encoding = ::json::UTF8<>>
 class delete_subject_value_handler : public json::base_handler<Encoding> {
     enum class state {
         empty = 0,
@@ -1024,7 +1022,7 @@ public:
     delete_subject_value_handler()
       : json::base_handler<Encoding>{json::serialization_format::none} {}
 
-    bool Key(const Ch* str, rapidjson::SizeType len, bool) {
+    bool Key(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         switch (_state) {
         case state::object: {
@@ -1045,7 +1043,7 @@ public:
         return false;
     }
 
-    bool String(const Ch* str, rapidjson::SizeType len, bool) {
+    bool String(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         switch (_state) {
         case state::subject: {
@@ -1080,7 +1078,7 @@ public:
         return std::exchange(_state, state::object) == state::empty;
     }
 
-    bool EndObject(rapidjson::SizeType) {
+    bool EndObject(::json::SizeType) {
         return std::exchange(_state, state::empty) == state::object;
     }
 };

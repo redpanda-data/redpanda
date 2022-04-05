@@ -1,4 +1,4 @@
-// Copyright 2021 Vectorized, Inc.
+// Copyright 2021 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -11,8 +11,6 @@ package resources
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,8 +22,9 @@ import (
 	"time"
 
 	"github.com/banzaicloud/k8s-objectmatcher/patch"
-	cmetav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
+	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -60,7 +59,15 @@ var errRedpandaNotReady = errors.New("redpanda not ready")
 func (r *StatefulSetResource) runUpdate(
 	ctx context.Context, current, modified *appsv1.StatefulSet,
 ) error {
-	update, err := shouldUpdate(r.pandaCluster.Status.Upgrading, current, modified)
+	// Keep existing central config hash annotation during standard reconciliation
+	if ann, ok := current.Spec.Template.Annotations[CentralizedConfigurationHashAnnotationKey]; ok {
+		if modified.Spec.Template.Annotations == nil {
+			modified.Spec.Template.Annotations = make(map[string]string)
+		}
+		modified.Spec.Template.Annotations[CentralizedConfigurationHashAnnotationKey] = ann
+	}
+
+	update, err := r.shouldUpdate(r.pandaCluster.Status.Upgrading, current, modified)
 	if err != nil {
 		return fmt.Errorf("unable to determine the update procedure: %w", err)
 	}
@@ -139,7 +146,7 @@ func (r *StatefulSetResource) rollingUpdate(
 			return &RequeueAfterError{RequeueAfter: RequeueDuration, Msg: "wait for pod restart"}
 		}
 
-		if !podIsReady(&pod) {
+		if !utils.IsPodReady(&pod) {
 			return &RequeueAfterError{RequeueAfter: RequeueDuration,
 				Msg: fmt.Sprintf("wait for %s pod to become ready", pod.Name)}
 		}
@@ -188,19 +195,20 @@ func (r *StatefulSetResource) updateStatefulSet(
 }
 
 // shouldUpdate returns true if changes on the CR require update
-func shouldUpdate(
+func (r *StatefulSetResource) shouldUpdate(
 	isUpgrading bool, current, modified *appsv1.StatefulSet,
 ) (bool, error) {
 	prepareResourceForPatch(current, modified)
 	opts := []patch.CalculateOption{
 		patch.IgnoreStatusFields(),
 		patch.IgnoreVolumeClaimTemplateTypeMetaAndStatus(),
+		utils.IgnoreAnnotation(patch.LastAppliedConfig),
+		utils.IgnoreAnnotation(CentralizedConfigurationHashAnnotationKey),
 	}
 	patchResult, err := patch.DefaultPatchMaker.Calculate(current, modified, opts...)
 	if err != nil {
 		return false, err
 	}
-
 	return !patchResult.IsEmpty() || isUpgrading, nil
 }
 
@@ -373,14 +381,13 @@ func (r *StatefulSetResource) queryRedpandaStatus(
 	// will be fixed by https://github.com/redpanda-data/redpanda/issues/1084
 	if r.pandaCluster.AdminAPITLS() != nil &&
 		r.pandaCluster.AdminAPIExternal() == nil {
-		tlsConfig := tls.Config{MinVersion: tls.VersionTLS12} // TLS12 is min version allowed by gosec.
-
-		if err := r.populateTLSConfigCert(ctx, &tlsConfig); err != nil {
+		tlsConfig, err := adminutils.GetTLSConfig(ctx, r, r.pandaCluster, r.adminAPINodeCertSecretKey, r.adminAPIClientCertSecretKey)
+		if err != nil {
 			return err
 		}
 
 		client.Transport = &http.Transport{
-			TLSClientConfig: &tlsConfig,
+			TLSClientConfig: tlsConfig,
 		}
 		adminURL.Scheme = "https"
 	}
@@ -400,49 +407,6 @@ func (r *StatefulSetResource) queryRedpandaStatus(
 	}
 
 	return nil
-}
-
-// Populates crypto/TLS configuration for certificate used by the operator
-// during its client authentication.
-func (r *StatefulSetResource) populateTLSConfigCert(
-	ctx context.Context, tlsConfig *tls.Config,
-) error {
-	var nodeCertSecret corev1.Secret
-	err := r.Get(ctx, r.adminAPINodeCertSecretKey, &nodeCertSecret)
-	if err != nil {
-		return err
-	}
-
-	// Add root CA
-	caCertPool := x509.NewCertPool()
-	caCertPool.AppendCertsFromPEM(nodeCertSecret.Data[cmetav1.TLSCAKey])
-	tlsConfig.RootCAs = caCertPool
-
-	if r.pandaCluster.AdminAPITLS() != nil && r.pandaCluster.AdminAPITLS().TLS.RequireClientAuth {
-		var clientCertSecret corev1.Secret
-		err := r.Get(ctx, r.adminAPIClientCertSecretKey, &clientCertSecret)
-		if err != nil {
-			return err
-		}
-		cert, err := tls.X509KeyPair(clientCertSecret.Data[corev1.TLSCertKey], clientCertSecret.Data[corev1.TLSPrivateKeyKey])
-		if err != nil {
-			return err
-		}
-		tlsConfig.Certificates = []tls.Certificate{cert}
-	}
-
-	return nil
-}
-
-func podIsReady(pod *corev1.Pod) bool {
-	for _, c := range pod.Status.Conditions {
-		if c.Type == corev1.PodReady &&
-			c.Status == corev1.ConditionTrue {
-			return true
-		}
-	}
-
-	return false
 }
 
 // RequeueAfterError error carrying the time after which to requeue.

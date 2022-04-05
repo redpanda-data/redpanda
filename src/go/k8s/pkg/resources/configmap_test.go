@@ -1,3 +1,12 @@
+// Copyright 2021 Redpanda Data, Inc.
+//
+// Use of this software is governed by the Business Source License
+// included in the file licenses/BSL.md
+//
+// As of the Change Date specified in that file, in accordance with
+// the Business Source License, use of this software will be governed
+// by the Apache License, Version 2.0
+
 package resources_test
 
 import (
@@ -73,30 +82,32 @@ func TestEnsureConfigMap_AdditionalConfig(t *testing.T) {
 	testcases := []struct {
 		name                    string
 		additionalConfiguration map[string]string
-		expectedString          string
+		expectedStrings         []string
 		expectedHash            string
 	}{
 		{
 			name:                    "Primitive object in additional configuration",
 			additionalConfiguration: map[string]string{"redpanda.transactional_id_expiration_ms": "25920000000"},
-			expectedString:          "transactional_id_expiration_ms: 25920000000",
-			expectedHash:            "c9d9847a020aea975358a691539e06fc",
+			expectedStrings:         []string{"transactional_id_expiration_ms: 25920000000"},
+			expectedHash:            "28bea897f8e9276745f112ab0d60cfbd",
 		},
 		{
 			name:                    "Complex struct in additional configuration",
 			additionalConfiguration: map[string]string{"schema_registry.schema_registry_api": "[{'name':'external','address':'0.0.0.0','port':8081}]}"},
-			expectedString: `schema_registry:
+			expectedStrings: []string{`schema_registry:
     schema_registry_api:
         - address: 0.0.0.0
           port: 8081
-          name: external`,
-			expectedHash: "a254899246080e7729f831fa5b9bd75c",
+          name: external`},
+			expectedHash: "862e93acfa2280dcb58e6a3170969232",
 		},
 		{
 			name: "shadow index cache directory",
-			expectedString: `cloud_storage_cache_directory: /var/lib/shadow-index-cache
-    cloud_storage_cache_size: "10737418240"`,
-			expectedHash: "eb6af32178a9f5afd1983505eb4fa3ec",
+			expectedStrings: []string{
+				`cloud_storage_cache_directory: /var/lib/shadow-index-cache`,
+				`cloud_storage_cache_size: "10737418240"`,
+			},
+			expectedHash: "2dd0ca25d4ae2e5aec0adc950b4b8236",
 		},
 	}
 	for _, tc := range testcases {
@@ -128,8 +139,10 @@ func TestEnsureConfigMap_AdditionalConfig(t *testing.T) {
 			err := c.Get(context.Background(), cfgRes.Key(), actual)
 			require.NoError(t, err)
 			data := actual.Data["redpanda.yaml"]
-			require.True(t, strings.Contains(data, tc.expectedString), fmt.Sprintf("expecting %s but got %v", tc.expectedString, data))
-			hash, err := cfgRes.GetConfigHash(context.TODO())
+			for _, es := range tc.expectedStrings {
+				require.True(t, strings.Contains(data, es), fmt.Sprintf("expecting %s but got %v", es, data))
+			}
+			hash, err := cfgRes.GetNodeConfigHash(context.TODO())
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedHash, hash)
 		})

@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Vectorized, Inc.
+ * Copyright 2020 Redpanda Data, Inc.
  *
  * Use of this software is governed by the Business Source License
  * included in the file licenses/BSL.md
@@ -12,6 +12,8 @@
 #pragma once
 #include "config/base_property.h"
 #include "config/rjson_serialization.h"
+#include "json/stringbuffer.h"
+#include "json/writer.h"
 #include "oncore.h"
 #include "reflection/type_traits.h"
 #include "utils/intrusive_list_helpers.h"
@@ -20,8 +22,6 @@
 #include <seastar/util/noncopyable_function.hh>
 
 #include <boost/intrusive/list.hpp>
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
 
 namespace config {
 
@@ -108,7 +108,7 @@ public:
     // serialize the value. the key is taken from the property name at the
     // serialization point in config_store::to_json to avoid users from being
     // forced to consume the property as a json object.
-    void to_json(rapidjson::Writer<rapidjson::StringBuffer>& w) const override {
+    void to_json(json::Writer<json::StringBuffer>& w) const override {
         json::rjson_serialize(w, _value);
     }
 

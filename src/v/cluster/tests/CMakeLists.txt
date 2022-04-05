@@ -32,6 +32,7 @@ set(srcs
     configuration_change_test.cc
     idempotency_tests.cc
     feature_barrier_test.cc
+    feature_table_test.cc
     tm_stm_tests.cc
     rm_stm_tests.cc
     controller_api_tests.cc

@@ -1,4 +1,4 @@
-// Copyright 2021 Vectorized, Inc.
+// Copyright 2021 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -38,11 +38,10 @@ func NewACLCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		helpOperations bool
 	)
 	command := &cobra.Command{
-		Use:          "acl",
-		Short:        "Manage ACLs and SASL users.",
-		Long:         helpACLs,
-		SilenceUsage: true,
-		Args:         cobra.ExactArgs(0),
+		Use:   "acl",
+		Short: "Manage ACLs and SASL users.",
+		Long:  helpACLs,
+		Args:  cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
 			if helpOperations {
 				fmt.Println(helpACLOperations)

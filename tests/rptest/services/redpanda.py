@@ -1,4 +1,4 @@
-# Copyright 2020 Vectorized, Inc.
+# Copyright 2020 Redpanda Data, Inc.
 #
 # Use of this software is governed by the Business Source License
 # included in the file licenses/BSL.md
@@ -271,7 +271,7 @@ class RedpandaService(Service):
                                             "redpanda.profraw")
 
     CLUSTER_NAME = "my_cluster"
-    READY_TIMEOUT_SEC = 10
+    READY_TIMEOUT_SEC = 15
 
     LOG_LEVEL_KEY = "redpanda_log_level"
     DEFAULT_LOG_LEVEL = "info"

@@ -1,0 +1,24 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: centralized-configuration-bootstrap
+status:
+  replicas: 1
+  upgrading: false
+  conditions:
+  - type: ClusterConfigured
+    status: "False"
+---
+
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+collectors:
+- type: pod
+  selector: app.kubernetes.io/name=redpanda
+  tail: -1
+---
+
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+commands:
+  - command: hack/verify-condition-message.sh centralized-configuration-bootstrap append_chunk_size

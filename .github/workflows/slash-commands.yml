@@ -7,9 +7,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Slash Command Dispatch
-        uses: peter-evans/slash-command-dispatch@dc2f82020dc2c4e9bfed7e87eb4a09506afd431b
+        uses: peter-evans/slash-command-dispatch@v2
         with:
-          token: ${{ secrets.VTOOLS_GITHUB_API_TOKEN }}
-          issue-type: pull-request
+          token: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          permission: read
+          issue-type: issue
           commands: |
-            chaos-test
+            backport
+          static-args: |
+            org=redpanda-data
+            repo=redpanda
+            milestone=auto

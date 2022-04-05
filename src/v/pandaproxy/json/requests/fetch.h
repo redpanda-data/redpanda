@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Vectorized, Inc.
+ * Copyright 2020 Redpanda Data, Inc.
  *
  * Use of this software is governed by the Business Source License
  * included in the file licenses/BSL.md
@@ -13,7 +13,8 @@
 
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
-#include "json/json.h"
+#include "json/stringbuffer.h"
+#include "json/writer.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/fetch.h"
 #include "model/fundamental.h"
@@ -28,10 +29,6 @@
 
 #include <seastar/core/sstring.hh>
 
-#include <rapidjson/reader.h>
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
-
 namespace pandaproxy::json {
 
 template<>
@@ -45,8 +42,8 @@ public:
       , _tpv(tpv)
       , _base_offset(base_offset) {}
 
-    void operator()(
-      rapidjson::Writer<rapidjson::StringBuffer>& w, model::record record) {
+    void
+    operator()(::json::Writer<::json::StringBuffer>& w, model::record record) {
         w.StartObject();
         w.Key("topic");
         ::json::rjson_serialize(w, _tpv.topic);
@@ -74,8 +71,7 @@ public:
       : _fmt(fmt) {}
 
     void operator()(
-      rapidjson::Writer<rapidjson::StringBuffer>& w,
-      kafka::fetch_response&& res) {
+      ::json::Writer<::json::StringBuffer>& w, kafka::fetch_response&& res) {
         // Eager check for errors
         for (auto& v : res) {
             if (v.partition_response->error_code != kafka::error_code::none) {

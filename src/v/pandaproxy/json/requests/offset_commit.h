@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Vectorized, Inc.
+ * Copyright 2020 Redpanda Data, Inc.
  *
  * Use of this software is governed by the Business Source License
  * included in the file licenses/BSL.md
@@ -11,7 +11,6 @@
 
 #pragma once
 
-#include "json/json.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/offset_commit.h"
 #include "kafka/protocol/offset_fetch.h"
@@ -20,9 +19,6 @@
 #include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
-
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
 
 namespace pandaproxy::json {
 

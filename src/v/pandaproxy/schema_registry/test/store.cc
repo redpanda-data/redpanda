@@ -1,4 +1,4 @@
-// Copyright 2021 Vectorized, Inc.
+// Copyright 2021 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -22,13 +22,13 @@ constexpr std::string_view sv_string_def0{R"({"type":"string"})"};
 constexpr std::string_view sv_string_def1{R"({"type": "string"})"};
 constexpr std::string_view sv_int_def0{R"({"type": "int"})"};
 const pps::canonical_schema_definition string_def0{
-  pps::make_schema_definition<rapidjson::UTF8<>>(sv_string_def0).value(),
+  pps::make_schema_definition<json::UTF8<>>(sv_string_def0).value(),
   pps::schema_type::avro};
 const pps::canonical_schema_definition string_def1{
-  pps::make_schema_definition<rapidjson::UTF8<>>(sv_string_def1).value(),
+  pps::make_schema_definition<json::UTF8<>>(sv_string_def1).value(),
   pps::schema_type::avro};
 const pps::canonical_schema_definition int_def0{
-  pps::make_schema_definition<rapidjson::UTF8<>>(sv_int_def0).value(),
+  pps::make_schema_definition<json::UTF8<>>(sv_int_def0).value(),
   pps::schema_type::avro};
 const pps::subject subject0{"subject0"};
 const pps::subject subject1{"subject1"};

@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Vectorized, Inc.
+ * Copyright 2022 Redpanda Data, Inc.
  *
  * Licensed as a Redpanda Enterprise file under the Redpanda Community
  * License (the "License"); you may not use this file except in compliance with
@@ -15,7 +15,6 @@
 #include "cloud_storage/types.h"
 #include "config/configuration.h"
 #include "hashing/xx.h"
-#include "json/json.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"

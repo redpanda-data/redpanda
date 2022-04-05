@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Vectorized, Inc.
+ * Copyright 2021 Redpanda Data, Inc.
  *
  * Use of this software is governed by the Business Source License
  * included in the file licenses/BSL.md
@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "json/types.h"
 #include "pandaproxy/json/rjson_parse.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/schema_registry/errors.h"
@@ -28,7 +29,7 @@ struct put_config_req_rep {
     compatibility_level compat{compatibility_level::none};
 };
 
-template<typename Encoding = rapidjson::UTF8<>>
+template<typename Encoding = ::json::UTF8<>>
 class put_config_handler : public json::base_handler<Encoding> {
     enum class state {
         empty = 0,
@@ -46,7 +47,7 @@ public:
       : json::base_handler<Encoding>{json::serialization_format::none}
       , result() {}
 
-    bool Key(const Ch* str, rapidjson::SizeType len, bool) {
+    bool Key(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         if (_state == state::object && sv == put_config_req_rep::field_name) {
             _state = state::compatibility;
@@ -55,7 +56,7 @@ public:
         return false;
     }
 
-    bool String(const Ch* str, rapidjson::SizeType len, bool) {
+    bool String(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         if (_state == state::compatibility) {
             auto s = from_string_view<compatibility_level>(sv);
@@ -76,13 +77,13 @@ public:
         return std::exchange(_state, state::object) == state::empty;
     }
 
-    bool EndObject(rapidjson::SizeType) {
+    bool EndObject(::json::SizeType) {
         return std::exchange(_state, state::empty) == state::object;
     }
 };
 
 inline void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  ::json::Writer<::json::StringBuffer>& w,
   const schema_registry::get_config_req_rep& res) {
     w.StartObject();
     w.Key(get_config_req_rep::field_name.data());
@@ -91,7 +92,7 @@ inline void rjson_serialize(
 }
 
 inline void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  ::json::Writer<::json::StringBuffer>& w,
   const schema_registry::put_config_req_rep& res) {
     w.StartObject();
     w.Key(put_config_req_rep::field_name.data());

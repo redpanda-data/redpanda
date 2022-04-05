@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Modifications copyright (C) 2021 Vectorized
+# Modifications Copyright 2021 Redpanda Data, Inc.
 # - Reformatted code
 # - Replaced dependency on Kafka with Redpanda
 # - Imported annotate_missing_msgs helper from kafka test suite

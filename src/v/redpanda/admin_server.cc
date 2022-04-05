@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Vectorized, Inc.
+ * Copyright 2020 Redpanda Data, Inc.
  *
  * Use of this software is governed by the Business Source License
  * included in the file licenses/BSL.md
@@ -29,6 +29,10 @@
 #include "config/configuration.h"
 #include "config/endpoint_tls_config.h"
 #include "finjector/hbadger.h"
+#include "json/document.h"
+#include "json/schema.h"
+#include "json/stringbuffer.h"
+#include "json/writer.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -64,10 +68,6 @@
 #include <boost/lexical_cast.hpp>
 #include <boost/lexical_cast/bad_lexical_cast.hpp>
 #include <fmt/core.h>
-#include <rapidjson/document.h>
-#include <rapidjson/schema.h>
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
 
 #include <limits>
 #include <stdexcept>
@@ -160,18 +160,18 @@ struct json_validator {
       : schema(make_schema_document(schema_text))
       , validator(schema) {}
 
-    static rapidjson::SchemaDocument
+    static json::SchemaDocument
     make_schema_document(const std::string& schema) {
-        rapidjson::Document doc;
+        json::Document doc;
         if (doc.Parse(schema).HasParseError()) {
             throw std::runtime_error(
               fmt::format("Invalid schema document: {}", schema));
         }
-        return rapidjson::SchemaDocument(doc);
+        return json::SchemaDocument(doc);
     }
 
-    const rapidjson::SchemaDocument schema;
-    rapidjson::SchemaValidator validator;
+    const json::SchemaDocument schema;
+    json::SchemaValidator validator;
 };
 
 static json_validator make_set_replicas_validator() {
@@ -205,8 +205,8 @@ static json_validator make_set_replicas_validator() {
  * as an empty request body causes a redpanda crash via a rapidjson
  * assertion when trying to GetObject on the resulting document.
  */
-static rapidjson::Document parse_json_body(ss::httpd::request const& req) {
-    rapidjson::Document doc;
+static json::Document parse_json_body(ss::httpd::request const& req) {
+    json::Document doc;
     doc.Parse(req.content.data());
     if (doc.Parse(req.content.data()).HasParseError()) {
         throw ss::httpd::bad_request_exception(
@@ -222,13 +222,13 @@ static rapidjson::Document parse_json_body(ss::httpd::request const& req) {
  * caller see what went wrong.
  */
 static void
-apply_validator(json_validator& validator, rapidjson::Document const& doc) {
+apply_validator(json_validator& validator, json::Document const& doc) {
     validator.validator.Reset();
     validator.validator.ResetError();
 
     if (!doc.Accept(validator.validator)) {
-        rapidjson::StringBuffer val_buf;
-        rapidjson::Writer<rapidjson::StringBuffer> w{val_buf};
+        json::StringBuffer val_buf;
+        json::Writer<json::StringBuffer> w{val_buf};
         validator.validator.GetError().Accept(w);
         auto s = ss::sstring{val_buf.GetString(), val_buf.GetSize()};
         throw ss::httpd::bad_request_exception(
@@ -577,8 +577,8 @@ bool str_to_bool(std::string_view s) {
 void admin_server::register_config_routes() {
     register_route_raw<superuser>(
       ss::httpd::config_json::get_config, [](ss::const_req, ss::reply& reply) {
-          rapidjson::StringBuffer buf;
-          rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
+          json::StringBuffer buf;
+          json::Writer<json::StringBuffer> writer(buf);
           config::shard_local_cfg().to_json(writer);
 
           reply.set_status(ss::httpd::reply::status_type::ok, buf.GetString());
@@ -588,8 +588,8 @@ void admin_server::register_config_routes() {
     register_route_raw<superuser>(
       ss::httpd::cluster_config_json::get_cluster_config,
       [](ss::const_req req, ss::reply& reply) {
-          rapidjson::StringBuffer buf;
-          rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
+          json::StringBuffer buf;
+          json::Writer<json::StringBuffer> writer(buf);
 
           bool include_defaults = true;
           auto include_defaults_str = req.get_query_param("include_defaults");
@@ -609,8 +609,8 @@ void admin_server::register_config_routes() {
     register_route_raw<superuser>(
       ss::httpd::config_json::get_node_config,
       [](ss::const_req, ss::reply& reply) {
-          rapidjson::StringBuffer buf;
-          rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
+          json::StringBuffer buf;
+          json::Writer<json::StringBuffer> writer(buf);
           config::node().to_json(writer);
 
           reply.set_status(ss::httpd::reply::status_type::ok, buf.GetString());
@@ -732,39 +732,45 @@ void config_multi_property_validation(
         modified_keys.insert(i.first);
     }
 
-    bool auth_now_enabled = config::shard_local_cfg().admin_api_require_auth();
-    if (modified_keys.contains("admin_api_require_auth")) {
-        auth_now_enabled = updated_config.admin_api_require_auth();
-    }
-
     if (
       (modified_keys.contains("admin_api_require_auth")
        || modified_keys.contains("superusers"))
-      && auth_now_enabled) {
+      && updated_config.admin_api_require_auth()) {
         // We are switching on admin_api_require_auth.  Apply rules to prevent
         // the user "locking themselves out of the house".
-
-        // There must be some superusers defined
-        auto superusers = config::shard_local_cfg().superusers();
-        if (modified_keys.contains("superusers")) {
-            superusers = updated_config.superusers();
-        }
-
         const bool auth_was_enabled
           = config::shard_local_cfg().admin_api_require_auth();
 
+        // There must be some superusers defined
+        const auto& superusers = updated_config.superusers();
         absl::flat_hash_set<ss::sstring> superusers_set(
           superusers.begin(), superusers.end());
         if (superusers.empty()) {
             // Some superusers must be defined, or nobody will be able
             // to use the admin API after this request.
             errors["admin_api_require_auth"] = "No superusers defined";
-            return;
         } else if (!superusers_set.contains(username) && !auth_was_enabled) {
             // When enabling auth, user making the change must be in the list of
             // superusers, or they would be locking themselves out.
             errors["admin_api_require_auth"] = "May only be set by a superuser";
-            return;
+        }
+    }
+
+    if (updated_config.cloud_storage_enabled()) {
+        // The properties that cloud_storage::configuration requires
+        // to be set if cloud storage is enabled.
+        std::vector<std::reference_wrapper<
+          const config::property<std::optional<ss::sstring>>>>
+          properties{
+            std::ref(updated_config.cloud_storage_secret_key),
+            std::ref(updated_config.cloud_storage_access_key),
+            std::ref(updated_config.cloud_storage_region),
+            std::ref(updated_config.cloud_storage_bucket)};
+        for (auto& p : properties) {
+            if (p() == std::nullopt) {
+                errors[ss::sstring(p.get().name())]
+                  = "Must be set when cloud storage enabled";
+            }
         }
     }
 }
@@ -901,8 +907,8 @@ void admin_server::register_cluster_config_routes() {
               // Re-serialize the individual value.  Our on-disk format
               // for property values is a YAML value (JSON is a subset
               // of YAML, so encoding with JSON is fine)
-              rapidjson::StringBuffer val_buf;
-              rapidjson::Writer<rapidjson::StringBuffer> w{val_buf};
+              json::StringBuffer val_buf;
+              json::Writer<json::StringBuffer> w{val_buf};
               i.value.Accept(w);
               auto s = ss::sstring{val_buf.GetString(), val_buf.GetSize()};
               update.upsert.push_back({i.name.GetString(), s});
@@ -920,6 +926,13 @@ void admin_server::register_cluster_config_routes() {
               // by config_manager much after config is written to controller
               // log.
               config::configuration cfg;
+
+              // Populate the temporary config object with existing values
+              config::shard_local_cfg().for_each(
+                [&cfg](const config::base_property& p) {
+                    auto& tmp_p = cfg.get(p.name());
+                    tmp_p = p;
+                });
 
               // Configuration properties cannot do multi-property validation
               // themselves, so there is some special casing here for critical
@@ -1008,14 +1021,22 @@ void admin_server::register_cluster_config_routes() {
                   }
               }
 
+              for (const auto& key : update.remove) {
+                  if (cfg.contains(key)) {
+                      cfg.get(key).reset();
+                  } else {
+                      errors[key] = "Unknown property";
+                  }
+              }
+
               // After checking each individual property, check for
               // any multi-property validation errors
               config_multi_property_validation(
                 auth_state.get_username(), update, cfg, errors);
 
               if (!errors.empty()) {
-                  rapidjson::StringBuffer buf;
-                  rapidjson::Writer<rapidjson::StringBuffer> w(buf);
+                  json::StringBuffer buf;
+                  json::Writer<json::StringBuffer> w(buf);
 
                   w.StartObject();
                   for (const auto& e : errors) {
@@ -1137,7 +1158,7 @@ void admin_server::register_raft_routes() {
 
 // TODO: factor out generic serialization from seastar http exceptions
 static security::scram_credential
-parse_scram_credential(const rapidjson::Document& doc) {
+parse_scram_credential(const json::Document& doc) {
     if (!doc.IsObject()) {
         throw ss::httpd::bad_request_exception(fmt::format("Not an object"));
     }
@@ -1174,7 +1195,7 @@ parse_scram_credential(const rapidjson::Document& doc) {
 }
 
 static bool match_scram_credential(
-  const rapidjson::Document& doc, const security::scram_credential& creds) {
+  const json::Document& doc, const security::scram_credential& creds) {
     // Document is pre-validated via earlier parse_scram_credential call
     const auto password = ss::sstring(doc["password"].GetString());
     const auto algorithm = std::string_view(
@@ -1473,11 +1494,11 @@ void admin_server::register_features_routes() {
           cluster::feature_update_action action{.feature_name = feature_name};
           auto& new_state_str = doc["state"];
           if (new_state_str == "active") {
-              action.action = cluster::feature_update_action::action_t::
-                administrative_activate;
+              action.action
+                = cluster::feature_update_action::action_t::activate;
           } else if (new_state_str == "disabled") {
-              action.action = cluster::feature_update_action::action_t::
-                administrative_deactivate;
+              action.action
+                = cluster::feature_update_action::action_t::deactivate;
           } else {
               throw ss::httpd::bad_request_exception("Invalid state");
           }

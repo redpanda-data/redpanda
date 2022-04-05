@@ -1,4 +1,4 @@
-// Copyright 2020 Vectorized, Inc.
+// Copyright 2020 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -14,6 +14,7 @@
 #include "bytes/iobuf_ostreambuf.h"
 #include "bytes/iobuf_parser.h"
 #include "bytes/tests/utils.h"
+#include "bytes/utils.h"
 
 #include <seastar/core/temporary_buffer.hh>
 #include <seastar/testing/thread_test_case.hh>
@@ -644,4 +645,30 @@ SEASTAR_THREAD_TEST_CASE(iobuf_parser_peek) {
     auto dst_a = parser.peek(1000);
     auto dst_b = parser.copy(1000);
     BOOST_REQUIRE(dst_a == dst_b);
+}
+
+SEASTAR_THREAD_TEST_CASE(iobuf_is_zero_test) {
+    const auto a = random_generators::gen_alphanum_string(1024);
+    const auto b = bytes("abc");
+    std::array<char, 1024> zeros{0};
+    std::array<char, 1> one{1};
+
+    // non zero iobuf
+    iobuf non_zero_1;
+    non_zero_1.append(a.data(), a.size());
+    non_zero_1.append(b.data(), b.size());
+    BOOST_REQUIRE_EQUAL(is_zero(non_zero_1), false);
+
+    iobuf non_zero_2;
+    non_zero_2.append(zeros.data(), zeros.size());
+    non_zero_2.append(one.data(), one.size());
+    BOOST_REQUIRE_EQUAL(is_zero(non_zero_2), false);
+    // empty iobuf is not zero
+    iobuf empty;
+    BOOST_REQUIRE_EQUAL(is_zero(empty), false);
+
+    iobuf zero;
+    zero.append(zeros.data(), zeros.size());
+    zero.append(zeros.data(), zeros.size());
+    BOOST_REQUIRE_EQUAL(is_zero(zero), true);
 }

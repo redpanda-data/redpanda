@@ -1,4 +1,4 @@
-// Copyright 2021 Vectorized, Inc.
+// Copyright 2021 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -11,6 +11,7 @@ package v1alpha1
 
 import (
 	"fmt"
+	"time"
 
 	cmmeta "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -285,7 +286,112 @@ type ClusterStatus struct {
 	// Indicates cluster is upgrading
 	// +optional
 	Upgrading bool `json:"upgrading"`
+	// Current state of the cluster.
+	// +optional
+	Conditions []ClusterCondition `json:"conditions,omitempty"`
 }
+
+// ClusterCondition contains details for the current conditions of the cluster
+type ClusterCondition struct {
+	// Type is the type of the condition
+	Type ClusterConditionType `json:"type"`
+	// Status is the status of the condition
+	Status corev1.ConditionStatus `json:"status"`
+	// Last time the condition transitioned from one status to another
+	// +optional
+	LastTransitionTime metav1.Time `json:"lastTransitionTime,omitempty"`
+	// Unique, one-word, CamelCase reason for the condition's last transition
+	// +optional
+	Reason string `json:"reason,omitempty"`
+	// Human-readable message indicating details about last transition
+	// +optional
+	Message string `json:"message,omitempty"`
+}
+
+// ClusterConditionType is a valid value for ClusterCondition.Type
+// +kubebuilder:validation:Enum=ClusterConfigured
+type ClusterConditionType string
+
+// These are valid conditions of the cluster.
+const (
+	// ClusterConfiguredConditionType indicates whether the Redpanda cluster configuration is in sync with the desired one
+	ClusterConfiguredConditionType ClusterConditionType = "ClusterConfigured"
+)
+
+// GetCondition return the condition of the given type
+func (s *ClusterStatus) GetCondition(
+	cType ClusterConditionType,
+) *ClusterCondition {
+	for i := range s.Conditions {
+		if s.Conditions[i].Type == cType {
+			return &s.Conditions[i]
+		}
+	}
+	return nil
+}
+
+// GetConditionStatus is a shortcut to directly get the status of a given condition
+func (s *ClusterStatus) GetConditionStatus(
+	cType ClusterConditionType,
+) corev1.ConditionStatus {
+	cond := s.GetCondition(cType)
+	if cond == nil {
+		return corev1.ConditionUnknown
+	}
+	return cond.Status
+}
+
+// SetCondition allows setting a condition of a given type.
+// In case of change in any value other than the lastTransitionTime, the lastTransitionTime
+// field will be set to the current timestamp. The return value indicates if a change has happened.
+func (s *ClusterStatus) SetCondition(
+	cType ClusterConditionType,
+	status corev1.ConditionStatus,
+	reason, message string,
+) bool {
+	return s.SetConditionUsingClock(cType, status, reason, message, time.Now)
+}
+
+// SetConditionUsingClock is similar to SetCondition, but allows to specify the function to get the system clock from.
+func (s *ClusterStatus) SetConditionUsingClock(
+	cType ClusterConditionType,
+	status corev1.ConditionStatus,
+	reason, message string,
+	clock func() time.Time,
+) bool {
+	update := func(c *ClusterCondition) bool {
+		changed := c.Status != status || c.Reason != reason || c.Message != message
+		if changed {
+			c.LastTransitionTime = metav1.NewTime(clock())
+		}
+		c.Type = cType
+		c.Status = status
+		c.Reason = reason
+		c.Message = message
+		return changed
+	}
+	// Try updating existing condition
+	for i := range s.Conditions {
+		if s.Conditions[i].Type == cType {
+			return update(&s.Conditions[i])
+		}
+	}
+	// Add a new one if missing
+	newCond := ClusterCondition{}
+	update(&newCond)
+	s.Conditions = append(s.Conditions, newCond)
+	return true
+}
+
+// These are valid reasons for ClusterConfigured
+const (
+	// ClusterConfiguredReasonUpdating indicates that the desired configuration is being applied to the running cluster
+	ClusterConfiguredReasonUpdating = "Updating"
+	// ClusterConfiguredReasonDrift indicates that the cluster drifted from the desired configuration and needs to be synced
+	ClusterConfiguredReasonDrift = "Drift"
+	// ClusterConfiguredReasonError signals an error when applying the configuration to the Redpanda cluster
+	ClusterConfiguredReasonError = "Error"
+)
 
 // NodesList shows where client of Cluster custom resource can reach
 // various listeners of Redpanda cluster

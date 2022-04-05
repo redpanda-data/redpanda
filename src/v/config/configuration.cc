@@ -1,4 +1,4 @@
-// Copyright 2020 Vectorized, Inc.
+// Copyright 2020 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -675,10 +675,10 @@ configuration::configuration()
   , append_chunk_size(
       *this,
       "append_chunk_size",
-      "Size of direct write operations to disk",
+      "Size of direct write operations to disk in bytes",
       {.example = "32768", .visibility = visibility::tunable},
       16_KiB,
-      storage::internal::chunk_cache::validate_chunk_size)
+      {.min = 4096, .max = 32_MiB, .align = 4096})
   , storage_read_buffer_size(
       *this,
       "storage_read_buffer_size",

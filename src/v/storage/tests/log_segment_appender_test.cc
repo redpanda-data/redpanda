@@ -1,4 +1,4 @@
-// Copyright 2020 Vectorized, Inc.
+// Copyright 2020 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -186,6 +186,9 @@ static void run_test_can_append_10MB_sequential_write_sequential_read(
         auto in = make_file_input_stream(f, i * one_meg);
         iobuf result = read_iobuf_exactly(in, one_meg).get0();
         iobuf tmp_o = original.share(i * one_meg, one_meg);
+        // read_iobuf_exactly can return a short read, but we do not expect that
+        // here.
+        BOOST_REQUIRE_EQUAL(one_meg, result.size_bytes());
         BOOST_REQUIRE_EQUAL(tmp_o, result);
         in.close().get();
     }

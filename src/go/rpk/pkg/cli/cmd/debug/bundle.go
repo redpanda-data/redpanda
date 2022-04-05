@@ -1,4 +1,4 @@
-// Copyright 2021 Vectorized, Inc.
+// Copyright 2021 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -255,7 +255,6 @@ The following are the data sources that are bundled in the compressed file:
  - dmidecode: The DMI table contents. Only included if this command is run
    as root.
 `,
-		SilenceUsage: true,
 		Run: func(cmd *cobra.Command, args []string) {
 			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)

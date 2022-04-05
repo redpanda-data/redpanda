@@ -1,4 +1,4 @@
-// Copyright 2021 Vectorized, Inc.
+// Copyright 2021 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -15,6 +15,7 @@ import (
 	cmapiv1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	redpandacontrollers "github.com/redpanda-data/redpanda/src/go/k8s/controllers/redpanda"
+	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -43,6 +44,7 @@ func init() {
 	//+kubebuilder:scaffold:scheme
 }
 
+// nolint:funlen // length looks good
 func main() {
 	var (
 		clusterDomain               string
@@ -96,11 +98,22 @@ func main() {
 	}
 
 	if err = (&redpandacontrollers.ClusterReconciler{
-		Client: mgr.GetClient(),
-		Log:    ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Cluster"),
-		Scheme: mgr.GetScheme(),
+		Client:                mgr.GetClient(),
+		Log:                   ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Cluster"),
+		Scheme:                mgr.GetScheme(),
+		AdminAPIClientFactory: adminutils.NewInternalAdminAPI,
 	}).WithClusterDomain(clusterDomain).WithConfiguratorSettings(configurator).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "Cluster")
+		os.Exit(1)
+	}
+
+	if err = (&redpandacontrollers.ClusterConfigurationDriftReconciler{
+		Client:                mgr.GetClient(),
+		Log:                   ctrl.Log.WithName("controllers").WithName("redpanda").WithName("ClusterConfigurationDrift"),
+		Scheme:                mgr.GetScheme(),
+		AdminAPIClientFactory: adminutils.NewInternalAdminAPI,
+	}).WithClusterDomain(clusterDomain).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Unable to create controller", "controller", "ClusterConfigurationDrift")
 		os.Exit(1)
 	}
 

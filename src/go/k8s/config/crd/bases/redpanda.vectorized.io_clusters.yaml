@@ -764,6 +764,38 @@ spec:
           status:
             description: ClusterStatus defines the observed state of Cluster
             properties:
+              conditions:
+                description: Current state of the cluster.
+                items:
+                  description: ClusterCondition contains details for the current conditions
+                    of the cluster
+                  properties:
+                    lastTransitionTime:
+                      description: Last time the condition transitioned from one status
+                        to another
+                      format: date-time
+                      type: string
+                    message:
+                      description: Human-readable message indicating details about
+                        last transition
+                      type: string
+                    reason:
+                      description: Unique, one-word, CamelCase reason for the condition's
+                        last transition
+                      type: string
+                    status:
+                      description: Status is the status of the condition
+                      type: string
+                    type:
+                      description: Type is the type of the condition
+                      enum:
+                      - ClusterConfigured
+                      type: string
+                  required:
+                  - status
+                  - type
+                  type: object
+                type: array
               nodes:
                 description: Nodes of the provisioned redpanda nodes
                 properties:

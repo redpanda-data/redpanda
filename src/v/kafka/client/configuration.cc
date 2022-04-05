@@ -1,4 +1,4 @@
-// Copyright 2020 Vectorized, Inc.
+// Copyright 2020 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -11,9 +11,6 @@
 
 #include "config/configuration.h"
 #include "units.h"
-
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
 
 namespace kafka::client {
 using namespace std::chrono_literals;

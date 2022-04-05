@@ -1,4 +1,4 @@
-// Copyright 2020 Vectorized, Inc.
+// Copyright 2020 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -11,6 +11,7 @@
 
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
+#include "bytes/utils.h"
 #include "likely.h"
 #include "model/record.h"
 #include "model/record_utils.h"
@@ -155,13 +156,14 @@ read_header_impl(ss::input_stream<char>& input, const Consumer& consumer) {
           consumer);
         co_return parser_errc::input_stream_not_enough_bytes;
     }
-
-    auto header = header_from_iobuf(std::move(b));
-
-    if (unlikely(header.header_crc == 0)) {
+    // check if iobuf is filled is zeros, this means that we are reading
+    // fallocated range filled with zeros
+    if (unlikely(is_zero(b))) {
         // happens when we fallocate the file
         co_return parser_errc::fallocated_file_read_zero_bytes_for_header;
     }
+    auto header = header_from_iobuf(std::move(b));
+
     if (auto computed_crc = model::internal_header_only_crc(header);
         unlikely(header.header_crc != computed_crc)) {
         vlog(

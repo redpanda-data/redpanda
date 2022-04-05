@@ -1,4 +1,4 @@
-# Copyright 2022 Vectorized, Inc.
+# Copyright 2022 Redpanda Data, Inc.
 #
 # Use of this software is governed by the Business Source License
 # included in the file licenses/BSL.md

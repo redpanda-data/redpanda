@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Vectorized, Inc.
+ * Copyright 2021 Redpanda Data, Inc.
  *
  * Use of this software is governed by the Business Source License
  * included in the file licenses/BSL.md

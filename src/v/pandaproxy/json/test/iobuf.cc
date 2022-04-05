@@ -1,4 +1,4 @@
-// Copyright 2020 Vectorized, Inc.
+// Copyright 2020 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -10,7 +10,8 @@
 #include "pandaproxy/json/iobuf.h"
 
 #include "bytes/iobuf_parser.h"
-#include "json/json.h"
+#include "json/stringbuffer.h"
+#include "json/writer.h"
 #include "pandaproxy/json/rjson_util.h"
 
 #include <seastar/testing/thread_test_case.hh>
@@ -40,8 +41,8 @@ SEASTAR_THREAD_TEST_CASE(test_iobuf_serialize_binary) {
     auto expected = ss::sstring("\"cGFuZGFwcm94eQ==\"");
     in_buf.append(input.data(), input.size());
 
-    rapidjson::StringBuffer out_buf;
-    rapidjson::Writer<rapidjson::StringBuffer> w(out_buf);
+    ::json::StringBuffer out_buf;
+    ::json::Writer<::json::StringBuffer> w(out_buf);
     ppj::rjson_serialize_fmt(ppj::serialization_format::binary_v2)(
       w, std::move(in_buf));
     ss::sstring output{out_buf.GetString(), out_buf.GetSize()};

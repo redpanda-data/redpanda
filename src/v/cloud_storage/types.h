@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Vectorized, Inc.
+ * Copyright 2022 Redpanda Data, Inc.
  *
  * Licensed as a Redpanda Enterprise file under the Redpanda Community
  * License (the "License"); you may not use this file except in compliance with
@@ -59,9 +59,7 @@ enum class manifest_version : int32_t {
     v1 = 1,
 };
 
-enum class topic_manifest_version : int32_t {
-    v1 = 1,
-};
+static constexpr int32_t topic_manifest_version = 1;
 
 std::ostream& operator<<(std::ostream& o, const download_result& r);
 

@@ -1,3 +1,12 @@
+// Copyright 2021 Redpanda Data, Inc.
+//
+// Use of this software is governed by the Business Source License
+// included in the file licenses/BSL.md
+//
+// As of the Change Date specified in that file, in accordance with
+// the Business Source License, use of this software will be governed
+// by the Apache License, Version 2.0
+
 package resources // nolint:testpackage // needed to test private method
 
 import (
@@ -46,12 +55,13 @@ func TestShouldUpdate_AnnotationChange(t *testing.T) {
 	}
 	stsWithAnnotation := sts.DeepCopy()
 	stsWithAnnotation.Spec.Template.Annotations = map[string]string{"test": "test2"}
-	update, err := shouldUpdate(false, sts, stsWithAnnotation)
+	ssres := StatefulSetResource{}
+	update, err := ssres.shouldUpdate(false, sts, stsWithAnnotation)
 	require.NoError(t, err)
 	require.True(t, update)
 
 	// same statefulset with same annotation
-	update, err = shouldUpdate(false, stsWithAnnotation, stsWithAnnotation)
+	update, err = ssres.shouldUpdate(false, stsWithAnnotation, stsWithAnnotation)
 	require.NoError(t, err)
 	require.False(t, update)
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Vectorized, Inc.
+ * Copyright 2021 Redpanda Data, Inc.
  *
  * Use of this software is governed by the Business Source License
  * included in the file licenses/BSL.md
@@ -12,11 +12,13 @@
 #pragma once
 
 #include "pandaproxy/schema_registry/errors.h"
+#include "pandaproxy/schema_registry/fwd.h"
 #include "pandaproxy/schema_registry/types.h"
 
 namespace pandaproxy::schema_registry {
 
-result<avro_schema_definition> make_avro_schema_definition(std::string_view sv);
+ss::future<avro_schema_definition>
+make_avro_schema_definition(sharded_store& store, canonical_schema schema);
 
 result<canonical_schema_definition>
 sanitize_avro_schema_definition(unparsed_schema_definition def);

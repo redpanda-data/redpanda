@@ -22,6 +22,9 @@ spec:
       name: tlsadmincert
     - mountPath: /etc/tls/certs/admin/ca
       name: tlsadminca
+    - mountPath: /etc/redpanda/.bootstrap.yaml
+      name: configmap-dir
+      subPath: .bootstrap.yaml
     - mountPath: /var/lib/redpanda/data
       name: datadir
     - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
@@ -46,6 +49,9 @@ spec:
       name: tlsadmincert
     - mountPath: /etc/tls/certs/admin/ca
       name: tlsadminca
+    - mountPath: /etc/redpanda/.bootstrap.yaml
+      name: configmap-dir
+      subPath: .bootstrap.yaml
     - mountPath: /var/lib/redpanda/data
       name: datadir
     - mountPath: /var/run/secrets/kubernetes.io/serviceaccount

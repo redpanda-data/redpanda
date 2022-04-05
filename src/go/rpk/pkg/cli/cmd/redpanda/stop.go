@@ -1,4 +1,4 @@
-// Copyright 2021 Vectorized, Inc.
+// Copyright 2021 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -38,7 +38,6 @@ func NewStopCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 first sends SIGINT, and waits for the specified timeout. Then, if redpanda
 hasn't stopped, it sends SIGTERM. Lastly, it sends SIGKILL if it's still
 running.`,
-		SilenceUsage: true,
 		RunE: func(ccmd *cobra.Command, args []string) error {
 			return executeStop(fs, mgr, configFile, timeout)
 		},

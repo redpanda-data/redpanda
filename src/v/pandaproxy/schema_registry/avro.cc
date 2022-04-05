@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Vectorized, Inc.
+ * Copyright 2021 Redpanda Data, Inc.
  *
  * Use of this software is governed by the Business Source License
  * included in the file licenses/BSL.md
@@ -11,10 +11,21 @@
 
 #include "pandaproxy/schema_registry/avro.h"
 
+#include "json/allocator.h"
+#include "json/document.h"
+#include "json/encodings.h"
+#include "json/stringbuffer.h"
+#include "json/types.h"
+#include "json/writer.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/errors.h"
+#include "pandaproxy/schema_registry/sharded_store.h"
 #include "utils/string_switch.h"
 
+#include <seastar/core/coroutine.hh>
+#include <seastar/coroutine/exception.hh>
+
+#include <absl/container/flat_hash_set.h>
 #include <avro/Compiler.hh>
 #include <avro/Exception.hh>
 #include <avro/GenericDatum.hh>
@@ -23,13 +34,11 @@
 #include <boost/outcome/std_result.hpp>
 #include <boost/outcome/success_failure.hpp>
 #include <fmt/core.h>
-#include <rapidjson/allocators.h>
-#include <rapidjson/document.h>
-#include <rapidjson/encodings.h>
+#include <fmt/format.h>
+#include <fmt/ranges.h>
 #include <rapidjson/error/en.h>
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
 
+#include <exception>
 #include <string_view>
 
 namespace pandaproxy::schema_registry {
@@ -59,7 +68,15 @@ bool check_compatible(avro::Node& reader, avro::Node& writer) {
                     // if the reader's record schema has a field with no default
                     // value, and writer's schema does not have a field with the
                     // same name, an error is signalled.
-                    return false;
+
+                    // For union, the default must correspond to the first type.
+                    // The default may be null.
+                    const auto& r_leaf = reader.leafAt(int(r_idx));
+                    if (
+                      r_leaf->type() != avro::Type::AVRO_UNION
+                      || r_leaf->leafAt(0)->type() != avro::Type::AVRO_NULL) {
+                        return false;
+                    }
                 }
             }
             return true;
@@ -125,19 +142,12 @@ bool check_compatible(avro::Node& reader, avro::Node& writer) {
     return writer.resolve(reader) != avro::RESOLVE_NO_MATCH;
 }
 
-result<void> sanitize(
-  rapidjson::GenericValue<rapidjson::UTF8<>>& v,
-  rapidjson::MemoryPoolAllocator<>& alloc);
-result<void> sanitize(
-  rapidjson::GenericValue<rapidjson::UTF8<>>::Object& o,
-  rapidjson::MemoryPoolAllocator<>& alloc);
-result<void> sanitize(
-  rapidjson::GenericValue<rapidjson::UTF8<>>::Array& a,
-  rapidjson::MemoryPoolAllocator<>& alloc);
+result<void> sanitize(json::Value& v, json::MemoryPoolAllocator& alloc);
+result<void> sanitize(json::Value::Object& o, json::MemoryPoolAllocator& alloc);
+result<void> sanitize(json::Value::Array& a, json::MemoryPoolAllocator& alloc);
 
 result<void> sanitize_union_symbol_name(
-  rapidjson::GenericValue<rapidjson::UTF8<>>& name,
-  rapidjson::MemoryPoolAllocator<>& alloc) {
+  json::Value& name, json::MemoryPoolAllocator& alloc) {
     // A name should have the leading dot stripped iff it's the only one
 
     if (!name.IsString() || name.GetStringLength() == 0) {
@@ -157,9 +167,8 @@ result<void> sanitize_union_symbol_name(
     return outcome::success();
 }
 
-result<void> sanitize_record(
-  rapidjson::GenericValue<rapidjson::UTF8<>>::Object& v,
-  rapidjson::MemoryPoolAllocator<>& alloc) {
+result<void>
+sanitize_record(json::Value::Object& v, json::MemoryPoolAllocator& alloc) {
     auto f_it = v.FindMember("fields");
     if (f_it == v.MemberEnd()) {
         return error_info{
@@ -173,9 +182,9 @@ result<void> sanitize_record(
 }
 
 result<void> sanitize_avro_type(
-  rapidjson::GenericValue<rapidjson::UTF8<>>::Object& o,
+  json::Value::Object& o,
   std::string_view type_sv,
-  rapidjson::MemoryPoolAllocator<>& alloc) {
+  json::MemoryPoolAllocator& alloc) {
     auto type = string_switch<std::optional<avro::Type>>(type_sv)
                   .match("record", avro::Type::AVRO_RECORD)
                   .default_match(std::nullopt);
@@ -193,31 +202,28 @@ result<void> sanitize_avro_type(
     return outcome::success();
 }
 
-result<void> sanitize(
-  rapidjson::GenericValue<rapidjson::UTF8<>>& v,
-  rapidjson::MemoryPoolAllocator<>& alloc) {
+result<void> sanitize(json::Value& v, json::MemoryPoolAllocator& alloc) {
     switch (v.GetType()) {
-    case rapidjson::Type::kObjectType: {
+    case json::Type::kObjectType: {
         auto o = v.GetObject();
         return sanitize(o, alloc);
     }
-    case rapidjson::Type::kArrayType: {
+    case json::Type::kArrayType: {
         auto a = v.GetArray();
         return sanitize(a, alloc);
     }
-    case rapidjson::Type::kFalseType:
-    case rapidjson::Type::kTrueType:
-    case rapidjson::Type::kNullType:
-    case rapidjson::Type::kNumberType:
-    case rapidjson::Type::kStringType:
+    case json::Type::kFalseType:
+    case json::Type::kTrueType:
+    case json::Type::kNullType:
+    case json::Type::kNumberType:
+    case json::Type::kStringType:
         return outcome::success();
     }
     __builtin_unreachable();
 }
 
-result<void> sanitize(
-  rapidjson::GenericValue<rapidjson::UTF8<>>::Object& o,
-  rapidjson::MemoryPoolAllocator<>& alloc) {
+result<void>
+sanitize(json::Value::Object& o, json::MemoryPoolAllocator& alloc) {
     if (auto it = o.FindMember("name"); it != o.MemberEnd()) {
         // A name should have the leading dot stripped iff it's the only one
         // Otherwise split on the last dot into a name and a namespace
@@ -262,8 +268,8 @@ result<void> sanitize(
                 }
             } else {
                 o.AddMember(
-                  rapidjson::Value("namespace", alloc),
-                  rapidjson::Value(
+                  json::Value("namespace"),
+                  json::Value(
                     new_namespace.data(), new_namespace.length(), alloc),
                   alloc);
             }
@@ -276,7 +282,7 @@ result<void> sanitize(
             return res.assume_error();
         }
 
-        if (t_it->value.GetType() == rapidjson::Type::kStringType) {
+        if (t_it->value.GetType() == json::Type::kStringType) {
             std::string_view type_sv = {
               t_it->value.GetString(), t_it->value.GetStringLength()};
             auto res = sanitize_avro_type(o, type_sv, alloc);
@@ -284,7 +290,7 @@ result<void> sanitize(
                 return res.assume_error();
             }
         }
-        if (t_it->value.GetType() == rapidjson::Type::kArrayType) {
+        if (t_it->value.GetType() == json::Type::kArrayType) {
             auto a = t_it->value.GetArray();
             for (auto& m : a) {
                 if (m.IsString()) {
@@ -299,9 +305,7 @@ result<void> sanitize(
     return outcome::success();
 }
 
-result<void> sanitize(
-  rapidjson::GenericValue<rapidjson::UTF8<>>::Array& a,
-  rapidjson::MemoryPoolAllocator<>& alloc) {
+result<void> sanitize(json::Value::Array& a, json::MemoryPoolAllocator& alloc) {
     for (auto& m : a) {
         auto s = sanitize(m, alloc);
         if (s.has_error()) {
@@ -338,21 +342,67 @@ canonical_schema_definition::raw_string avro_schema_definition::raw() const {
     return canonical_schema_definition::raw_string{_impl.toJson(false)};
 }
 
-result<avro_schema_definition>
-make_avro_schema_definition(std::string_view sv) {
-    try {
-        return avro_schema_definition{avro::compileJsonSchemaFromMemory(
-          reinterpret_cast<const uint8_t*>(sv.data()), sv.length())};
-    } catch (const avro::Exception& e) {
-        return error_info{
-          error_code::schema_invalid,
-          fmt::format("Invalid schema {}", e.what())};
+class collected_schema {
+public:
+    bool contains(const ss::sstring& name) const {
+        return _names.contains(name);
     }
+    bool insert(ss::sstring name, canonical_schema_definition def) {
+        bool inserted = _names.insert(std::move(name)).second;
+        if (inserted) {
+            _schemas.push_back(std::move(def).raw()());
+        }
+        return inserted;
+    }
+    ss::sstring flatten() {
+        return fmt::format("{}", fmt::join(_schemas, "\n"));
+    }
+
+private:
+    absl::flat_hash_set<ss::sstring> _names;
+    std::vector<ss::sstring> _schemas;
+};
+
+ss::future<collected_schema> collect_schema(
+  sharded_store& store,
+  collected_schema collected,
+  ss::sstring name,
+  canonical_schema schema) {
+    for (auto& ref : std::move(schema).refs()) {
+        if (!collected.contains(ref.name)) {
+            auto ss = co_await store.get_subject_schema(
+              std::move(ref.sub), ref.version, include_deleted::no);
+            collected = co_await collect_schema(
+              store,
+              std::move(collected),
+              std::move(ref.name),
+              std::move(ss.schema));
+        }
+    }
+    collected.insert(std::move(name), std::move(schema).def());
+    co_return std::move(collected);
+}
+
+ss::future<avro_schema_definition>
+make_avro_schema_definition(sharded_store& store, canonical_schema schema) {
+    std::optional<avro::Exception> ex;
+    try {
+        auto name = schema.sub()();
+        auto refs = co_await collect_schema(store, {}, name, std::move(schema));
+        auto def = refs.flatten();
+        co_return avro_schema_definition{avro::compileJsonSchemaFromMemory(
+          reinterpret_cast<const uint8_t*>(def.data()), def.length())};
+    } catch (const avro::Exception& e) {
+        ex = e;
+    }
+    co_return ss::coroutine::make_exception(as_exception(error_info{
+      error_code::schema_invalid,
+      fmt::format("Invalid schema {}", ex->what())}));
 }
 
 result<canonical_schema_definition>
 sanitize_avro_schema_definition(unparsed_schema_definition def) {
-    rapidjson::GenericDocument<rapidjson::UTF8<>> doc;
+    json::Document doc;
     constexpr auto flags = rapidjson::kParseDefaultFlags
                            | rapidjson::kParseStopWhenDoneFlag;
     const auto& raw = def.raw()();
@@ -377,9 +427,9 @@ sanitize_avro_schema_definition(unparsed_schema_definition def) {
           fmt::format("{} {}", res.assume_error().message(), raw)};
     }
 
-    rapidjson::GenericStringBuffer<rapidjson::UTF8<>> str_buf;
+    json::StringBuffer str_buf;
     str_buf.Reserve(raw.size());
-    rapidjson::Writer<rapidjson::StringBuffer> w{str_buf};
+    json::Writer<json::StringBuffer> w{str_buf};
 
     if (!doc.Accept(w)) {
         return error_info{error_code::schema_invalid, "Invalid schema"};

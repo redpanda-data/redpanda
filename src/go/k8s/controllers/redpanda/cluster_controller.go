@@ -1,4 +1,4 @@
-// Copyright 2021 Vectorized, Inc.
+// Copyright 2021 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -19,6 +19,7 @@ import (
 
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/networking"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
@@ -44,10 +45,11 @@ var (
 // ClusterReconciler reconciles a Cluster object
 type ClusterReconciler struct {
 	client.Client
-	Log                  logr.Logger
-	configuratorSettings resources.ConfiguratorSettings
-	clusterDomain        string
-	Scheme               *runtime.Scheme
+	Log                   logr.Logger
+	configuratorSettings  resources.ConfiguratorSettings
+	clusterDomain         string
+	Scheme                *runtime.Scheme
+	AdminAPIClientFactory adminutils.AdminAPIClientFactory
 }
 
 //+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=clusters,verbs=get;list;watch;create;update;patch;delete
@@ -97,56 +99,20 @@ func (r *ClusterReconciler) Reconcile(
 		return ctrl.Result{}, fmt.Errorf("unable to retrieve Cluster resource: %w", err)
 	}
 
-	managedAnnotationKey := redpandav1alpha1.GroupVersion.Group + "/managed"
-	if managed, exists := redpandaCluster.Annotations[managedAnnotationKey]; exists && managed == "false" {
-		log.Info(fmt.Sprintf("management of %s is disabled; to enable it, change the '%s' annotation to true or remove it",
-			redpandaCluster.Name, managedAnnotationKey))
+	if !isRedpandaClusterManaged(log, &redpandaCluster) {
 		return ctrl.Result{}, nil
 	}
+
 	redpandaPorts := networking.NewRedpandaPorts(&redpandaCluster)
-	nodeports := []resources.NamedServiceNodePort{}
-	kafkaAPINamedNodePort := redpandaPorts.KafkaAPI.ToNamedServiceNodePort()
-	if kafkaAPINamedNodePort != nil {
-		nodeports = append(nodeports, *kafkaAPINamedNodePort)
-	}
-	adminAPINodePort := redpandaPorts.AdminAPI.ToNamedServiceNodePort()
-	if adminAPINodePort != nil {
-		nodeports = append(nodeports, *adminAPINodePort)
-	}
-	pandaProxyNodePort := redpandaPorts.PandaProxy.ToNamedServiceNodePort()
-	if pandaProxyNodePort != nil {
-		nodeports = append(nodeports, *pandaProxyNodePort)
-	}
-	schemaRegistryNodePort := redpandaPorts.SchemaRegistry.ToNamedServiceNodePort()
-	if schemaRegistryNodePort != nil {
-		nodeports = append(nodeports, *schemaRegistryNodePort)
-	}
-	headlessPorts := []resources.NamedServicePort{}
-	if redpandaPorts.AdminAPI.Internal != nil {
-		headlessPorts = append(headlessPorts, resources.NamedServicePort{Name: resources.AdminPortName, Port: *redpandaPorts.AdminAPI.InternalPort()})
-	}
-	if redpandaPorts.KafkaAPI.Internal != nil {
-		headlessPorts = append(headlessPorts, resources.NamedServicePort{Name: resources.InternalListenerName, Port: *redpandaPorts.KafkaAPI.InternalPort()})
-	}
-	if redpandaPorts.PandaProxy.Internal != nil {
-		headlessPorts = append(headlessPorts, resources.NamedServicePort{Name: resources.PandaproxyPortInternalName, Port: *redpandaPorts.PandaProxy.InternalPort()})
-	}
-	lbPorts := []resources.NamedServicePort{}
-	if redpandaPorts.KafkaAPI.ExternalBootstrap != nil {
-		lbPorts = append(lbPorts, *redpandaPorts.KafkaAPI.ExternalBootstrap)
-	}
+	nodeports := collectNodePorts(redpandaPorts)
+	headlessPorts := collectHeadlessPorts(redpandaPorts)
+	lbPorts := collectLBPorts(redpandaPorts)
+	clusterPorts := collectClusterPorts(redpandaPorts, &redpandaCluster)
+
 	headlessSvc := resources.NewHeadlessService(r.Client, &redpandaCluster, r.Scheme, headlessPorts, log)
 	nodeportSvc := resources.NewNodePortService(r.Client, &redpandaCluster, r.Scheme, nodeports, log)
 	bootstrapSvc := resources.NewLoadBalancerService(r.Client, &redpandaCluster, r.Scheme, lbPorts, true, log)
 
-	clusterPorts := []resources.NamedServicePort{}
-	if redpandaPorts.PandaProxy.External != nil {
-		clusterPorts = append(clusterPorts, resources.NamedServicePort{Name: resources.PandaproxyPortExternalName, Port: *redpandaPorts.PandaProxy.ExternalPort()})
-	}
-	if redpandaCluster.Spec.Configuration.SchemaRegistry != nil {
-		port := redpandaCluster.Spec.Configuration.SchemaRegistry.Port
-		clusterPorts = append(clusterPorts, resources.NamedServicePort{Name: resources.SchemaRegistryPortName, Port: port})
-	}
 	clusterSvc := resources.NewClusterService(r.Client, &redpandaCluster, r.Scheme, clusterPorts, log)
 	subdomain := ""
 	proxyAPIExternal := redpandaCluster.PandaproxyAPIExternal()
@@ -176,6 +142,7 @@ func (r *ClusterReconciler) Reconcile(
 	pki := certmanager.NewPki(r.Client, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), clusterSvc.ServiceFQDN(r.clusterDomain), r.Scheme, log)
 	sa := resources.NewServiceAccount(r.Client, &redpandaCluster, r.Scheme, log)
 	configMapResource := resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), proxySuKey, schemaRegistrySuKey, log)
+
 	sts := resources.NewStatefulSet(
 		r.Client,
 		&redpandaCluster,
@@ -194,7 +161,7 @@ func (r *ClusterReconciler) Reconcile(
 		pki.SchemaRegistryAPIClientCert(),
 		sa.Key().Name,
 		r.configuratorSettings,
-		configMapResource.GetConfigHash,
+		configMapResource.GetNodeConfigHash,
 		log)
 
 	toApply := []resources.Reconciler{
@@ -237,7 +204,7 @@ func (r *ClusterReconciler) Reconcile(
 		secrets = append(secrets, schemaRegistrySu.Key())
 	}
 
-	err := r.setInitialSuperUserPassword(ctx, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), secrets)
+	err := r.setInitialSuperUserPassword(ctx, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), pki.AdminAPINodeCert(), pki.AdminAPIClientCert(), secrets)
 
 	var e *resources.RequeueAfterError
 	if errors.As(err, &e) {
@@ -265,9 +232,23 @@ func (r *ClusterReconciler) Reconcile(
 		bootstrapSvc.Key(),
 	)
 	if err != nil {
-		log.Error(err, "Unable to report status")
+		return ctrl.Result{}, err
 	}
 
+	err = r.reconcileConfiguration(
+		ctx,
+		&redpandaCluster,
+		configMapResource,
+		sts,
+		pki,
+		headlessSvc.HeadlessServiceFQDN(r.clusterDomain),
+		log,
+	)
+	var requeueErr *resources.RequeueAfterError
+	if errors.As(err, &requeueErr) {
+		log.Info(requeueErr.Error())
+		return ctrl.Result{RequeueAfter: requeueErr.RequeueAfter}, nil
+	}
 	return ctrl.Result{}, err
 }
 
@@ -352,7 +333,12 @@ func (r *ClusterReconciler) reportStatus(
 			cluster.Status.Nodes = *nodeList
 			cluster.Status.Replicas = lastObservedSts.Status.ReadyReplicas
 
-			return r.Status().Update(ctx, &cluster)
+			err = r.Status().Update(ctx, &cluster)
+			if err == nil {
+				// sync original cluster variable to avoid conflicts on subsequent operations
+				*redpandaCluster = cluster
+			}
+			return err
 		})
 		if err != nil {
 			return fmt.Errorf("failed to update cluster status: %w", err)
@@ -514,25 +500,15 @@ func (r *ClusterReconciler) setInitialSuperUserPassword(
 	ctx context.Context,
 	redpandaCluster *redpandav1alpha1.Cluster,
 	fqdn string,
+	adminAPINodeCertSecretKey client.ObjectKey,
+	adminAPIClientCertSecretKey client.ObjectKey,
 	objs []types.NamespacedName,
 ) error {
-	adminInternal := redpandaCluster.AdminAPIInternal()
-	if adminInternal == nil {
+	adminAPI, err := r.AdminAPIClientFactory(ctx, r, redpandaCluster, fqdn, adminAPINodeCertSecretKey, adminAPIClientCertSecretKey)
+	if err != nil && errors.Is(err, &adminutils.NoInternalAdminAPI{}) {
 		return nil
-	}
-
-	adminInternalPort := adminInternal.Port
-
-	var urls []string
-	replicas := *redpandaCluster.Spec.Replicas
-
-	for i := int32(0); i < replicas; i++ {
-		urls = append(urls, fmt.Sprintf("%s-%d.%s:%d", redpandaCluster.Name, i, fqdn, adminInternalPort))
-	}
-
-	adminAPI, err := admin.NewAdminAPI(urls, admin.BasicCredentials{}, nil)
-	if err != nil {
-		return fmt.Errorf("creating admin api: %w", err)
+	} else if err != nil {
+		return err
 	}
 
 	for _, obj := range objs {
@@ -594,4 +570,80 @@ func getNodePort(svc *corev1.Service, name string) int32 {
 		}
 	}
 	return 0
+}
+
+func collectNodePorts(
+	redpandaPorts *networking.RedpandaPorts,
+) []resources.NamedServiceNodePort {
+	nodeports := []resources.NamedServiceNodePort{}
+	kafkaAPINamedNodePort := redpandaPorts.KafkaAPI.ToNamedServiceNodePort()
+	if kafkaAPINamedNodePort != nil {
+		nodeports = append(nodeports, *kafkaAPINamedNodePort)
+	}
+	adminAPINodePort := redpandaPorts.AdminAPI.ToNamedServiceNodePort()
+	if adminAPINodePort != nil {
+		nodeports = append(nodeports, *adminAPINodePort)
+	}
+	pandaProxyNodePort := redpandaPorts.PandaProxy.ToNamedServiceNodePort()
+	if pandaProxyNodePort != nil {
+		nodeports = append(nodeports, *pandaProxyNodePort)
+	}
+	schemaRegistryNodePort := redpandaPorts.SchemaRegistry.ToNamedServiceNodePort()
+	if schemaRegistryNodePort != nil {
+		nodeports = append(nodeports, *schemaRegistryNodePort)
+	}
+	return nodeports
+}
+
+func collectHeadlessPorts(
+	redpandaPorts *networking.RedpandaPorts,
+) []resources.NamedServicePort {
+	headlessPorts := []resources.NamedServicePort{}
+	if redpandaPorts.AdminAPI.Internal != nil {
+		headlessPorts = append(headlessPorts, resources.NamedServicePort{Name: resources.AdminPortName, Port: *redpandaPorts.AdminAPI.InternalPort()})
+	}
+	if redpandaPorts.KafkaAPI.Internal != nil {
+		headlessPorts = append(headlessPorts, resources.NamedServicePort{Name: resources.InternalListenerName, Port: *redpandaPorts.KafkaAPI.InternalPort()})
+	}
+	if redpandaPorts.PandaProxy.Internal != nil {
+		headlessPorts = append(headlessPorts, resources.NamedServicePort{Name: resources.PandaproxyPortInternalName, Port: *redpandaPorts.PandaProxy.InternalPort()})
+	}
+	return headlessPorts
+}
+
+func collectLBPorts(
+	redpandaPorts *networking.RedpandaPorts,
+) []resources.NamedServicePort {
+	lbPorts := []resources.NamedServicePort{}
+	if redpandaPorts.KafkaAPI.ExternalBootstrap != nil {
+		lbPorts = append(lbPorts, *redpandaPorts.KafkaAPI.ExternalBootstrap)
+	}
+	return lbPorts
+}
+
+func collectClusterPorts(
+	redpandaPorts *networking.RedpandaPorts,
+	redpandaCluster *redpandav1alpha1.Cluster,
+) []resources.NamedServicePort {
+	clusterPorts := []resources.NamedServicePort{}
+	if redpandaPorts.PandaProxy.External != nil {
+		clusterPorts = append(clusterPorts, resources.NamedServicePort{Name: resources.PandaproxyPortExternalName, Port: *redpandaPorts.PandaProxy.ExternalPort()})
+	}
+	if redpandaCluster.Spec.Configuration.SchemaRegistry != nil {
+		port := redpandaCluster.Spec.Configuration.SchemaRegistry.Port
+		clusterPorts = append(clusterPorts, resources.NamedServicePort{Name: resources.SchemaRegistryPortName, Port: port})
+	}
+	return clusterPorts
+}
+
+func isRedpandaClusterManaged(
+	log logr.Logger, redpandaCluster *redpandav1alpha1.Cluster,
+) bool {
+	managedAnnotationKey := redpandav1alpha1.GroupVersion.Group + "/managed"
+	if managed, exists := redpandaCluster.Annotations[managedAnnotationKey]; exists && managed == "false" {
+		log.Info(fmt.Sprintf("management of %s is disabled; to enable it, change the '%s' annotation to true or remove it",
+			redpandaCluster.Name, managedAnnotationKey))
+		return false
+	}
+	return true
 }

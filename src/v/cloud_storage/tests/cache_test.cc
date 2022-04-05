@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Vectorized, Inc.
+ * Copyright 2021 Redpanda Data, Inc.
  *
  * Licensed as a Redpanda Enterprise file under the Redpanda Community
  * License (the "License"); you may not use this file except in compliance with
@@ -209,8 +209,13 @@ FIXTURE_TEST(invalidate_outside_cache_dir_throws, cache_test_fixture) {
     target_dir.close().get();
 
     auto key = std::filesystem::path("../outside_cache/file.txt");
-    auto data_string1 = create_data_string('a', 1_MiB + 1_KiB);
-    put_into_cache(data_string1, key);
+    auto flags = ss::open_flags::wo | ss::open_flags::create
+                 | ss::open_flags::exclusive;
+
+    auto dir_path = (CACHE_DIR / key).remove_filename();
+    ss::recursive_touch_directory(dir_path.string()).get();
+    auto tmp_cache_file
+      = ss::open_file_dma((CACHE_DIR / key).native(), flags).get();
 
     BOOST_CHECK_THROW(
       cache_service.invalidate(key).get(), std::invalid_argument);
@@ -233,10 +238,47 @@ FIXTURE_TEST(invalidate_prefix_outside_cache_dir_throws, cache_test_fixture) {
 
     // CACHE_DIR is "test_cache_dir"
     auto key = std::filesystem::path("../test_cache_dir_bar/file.txt");
-    auto data_string1 = create_data_string('a', 1_MiB + 1_KiB);
-    put_into_cache(data_string1, key);
+    auto flags = ss::open_flags::wo | ss::open_flags::create
+                 | ss::open_flags::exclusive;
+    auto dir_path = (CACHE_DIR / key).remove_filename();
+    ss::recursive_touch_directory(dir_path.string()).get();
+    auto tmp_cache_file
+      = ss::open_file_dma((CACHE_DIR / key).native(), flags).get();
 
     BOOST_CHECK_THROW(
       cache_service.invalidate(key).get(), std::invalid_argument);
     BOOST_CHECK(ss::file_exists((CACHE_DIR / key).native()).get());
+}
+
+FIXTURE_TEST(put_outside_cache_dir_throws, cache_test_fixture) {
+    // make sure the cache directory is empty to get reliable results
+    ss::recursive_touch_directory(CACHE_DIR.native()).get();
+    auto target_dir = ss::open_directory(CACHE_DIR.native()).get();
+    target_dir
+      .list_directory([this](const ss::directory_entry& entry) -> ss::future<> {
+          auto entry_path = std::filesystem::path(CACHE_DIR)
+                            / std::filesystem::path(entry.name);
+          return ss::recursive_remove_directory(entry_path.native());
+      })
+      .done()
+      .get();
+    target_dir.close().get();
+
+    // CACHE_DIR is "test_cache_dir"
+    auto key = std::filesystem::path("../test_cache_dir_put/file.txt");
+    auto data_string1 = create_data_string('a', 1_MiB + 1_KiB);
+    iobuf buf;
+    buf.append(data_string1.data(), data_string1.length());
+    auto input = make_iobuf_input_stream(std::move(buf));
+
+    BOOST_CHECK_EXCEPTION(
+      cache_service.put(key, input).get(),
+      std::invalid_argument,
+      [](std::invalid_argument e) {
+          return std::string(e.what()).find(
+                   "Tried to put test_cache_dir_put/file.txt, which is outside "
+                   "of cache_dir test_cache_dir.")
+                 != std::string::npos;
+      });
+    BOOST_CHECK(!ss::file_exists((CACHE_DIR / key).native()).get());
 }

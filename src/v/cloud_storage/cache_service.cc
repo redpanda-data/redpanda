@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Vectorized, Inc.
+ * Copyright 2021 Redpanda Data, Inc.
  *
  * Licensed as a Redpanda Enterprise file under the Redpanda Community
  * License (the "License"); you may not use this file except in compliance with
@@ -233,20 +233,36 @@ ss::future<> cache::put(
     vlog(cst_log.debug, "Trying to put {} to archival cache.", key.native());
     probe.put();
 
+    std::filesystem::path normal_cache_dir = _cache_dir.lexically_normal();
+    std::filesystem::path normal_key_path
+      = std::filesystem::path(normal_cache_dir / key).lexically_normal();
+
+    auto [p1, p2] = std::mismatch(
+      normal_cache_dir.begin(),
+      normal_cache_dir.end(),
+      normal_key_path.begin());
+    if (p1 != normal_cache_dir.end()) {
+        throw std::invalid_argument(fmt_with_ctx(
+          fmt::format,
+          "Tried to put {}, which is outside of cache_dir {}.",
+          normal_key_path.native(),
+          normal_cache_dir.native()));
+    }
+
     _files_in_progress.insert(key);
     probe.put_started();
     auto deferred = ss::defer([this, key] {
         _files_in_progress.erase(key);
         probe.put_ended();
     });
-    auto filename = (_cache_dir / key).filename();
+    auto filename = normal_key_path.filename();
     if (std::string_view(filename.native()).ends_with(tmp_extension)) {
         throw std::invalid_argument(fmt::format(
           "Cache file key {} is ending with tmp extension {}.",
-          filename.native(),
+          normal_key_path.native(),
           tmp_extension));
     }
-    auto dir_path = (_cache_dir / key).remove_filename();
+    auto dir_path = normal_key_path.remove_filename();
 
     // tmp file is used to protect against concurrent writes to the same
     // file. One tmp file is written only once by one thread. tmp file

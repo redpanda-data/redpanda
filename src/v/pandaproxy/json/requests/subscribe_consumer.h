@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Vectorized, Inc.
+ * Copyright 2020 Redpanda Data, Inc.
  *
  * Use of this software is governed by the Business Source License
  * included in the file licenses/BSL.md
@@ -12,7 +12,8 @@
 #pragma once
 
 #include "bytes/iobuf.h"
-#include "json/json.h"
+#include "json/encodings.h"
+#include "json/types.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/types.h"
 #include "pandaproxy/json/iobuf.h"
@@ -22,10 +23,6 @@
 
 #include <seastar/core/sstring.hh>
 
-#include <rapidjson/reader.h>
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
-
 #include <string_view>
 
 namespace pandaproxy::json {
@@ -34,7 +31,7 @@ struct subscribe_consumer_request {
     std::vector<model::topic> topics;
 };
 
-template<typename Encoding = rapidjson::UTF8<>>
+template<typename Encoding = ::json::UTF8<>>
 class subscribe_consumer_request_handler final : public base_handler<Encoding> {
 private:
     enum class state {
@@ -50,7 +47,7 @@ public:
     using rjson_parse_result = subscribe_consumer_request;
     rjson_parse_result result;
 
-    bool String(const Ch* str, rapidjson::SizeType len, bool) {
+    bool String(const Ch* str, ::json::SizeType len, bool) {
         if (_state != state::topic_name) {
             return false;
         }
@@ -58,7 +55,7 @@ public:
         return true;
     }
 
-    bool Key(const char* str, rapidjson::SizeType len, bool) {
+    bool Key(const char* str, ::json::SizeType len, bool) {
         if (_state != state::topics || std::string_view(str, len) != "topics") {
             return false;
         }
@@ -72,7 +69,7 @@ public:
         _state = state::topic_name;
         return true;
     }
-    bool EndArray(rapidjson::SizeType) {
+    bool EndArray(::json::SizeType) {
         if (_state != state::topic_name) {
             return false;
         }
@@ -91,7 +88,7 @@ public:
         return true;
     }
 
-    bool EndObject(rapidjson::SizeType) { return _state == state::topics; }
+    bool EndObject(::json::SizeType) { return _state == state::topics; }
 };
 
 } // namespace pandaproxy::json
