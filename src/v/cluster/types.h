@@ -905,6 +905,17 @@ struct config_update_reply {
     cluster::config_version latest_version{config_version_unset};
 };
 
+struct hello_request final {
+    model::node_id peer;
+
+    // milliseconds since epoch
+    std::chrono::milliseconds start_time;
+};
+
+struct hello_reply {
+    errc error;
+};
+
 struct leader_term {
     leader_term(std::optional<model::node_id> leader, model::term_id term)
       : leader(leader)

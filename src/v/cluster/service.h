@@ -13,6 +13,7 @@
 #include "cluster/controller_service.h"
 #include "cluster/fwd.h"
 #include "cluster/types.h"
+#include "rpc/fwd.h"
 #include "rpc/types.h"
 
 #include <seastar/core/sharded.hh>
@@ -34,7 +35,8 @@ public:
       ss::sharded<config_frontend>&,
       ss::sharded<feature_manager>&,
       ss::sharded<feature_table>&,
-      ss::sharded<health_monitor_frontend>&);
+      ss::sharded<health_monitor_frontend>&,
+      ss::sharded<rpc::connection_cache>&);
 
     virtual ss::future<join_reply>
     join(join_request&&, rpc::streaming_context&) override;
@@ -95,6 +97,9 @@ public:
     ss::future<set_maintenance_mode_reply> set_maintenance_mode(
       set_maintenance_mode_request&&, rpc::streaming_context&) final;
 
+    ss::future<hello_reply>
+    hello(hello_request&&, rpc::streaming_context&) final;
+
 private:
     std::
       pair<std::vector<model::topic_metadata>, std::vector<topic_configuration>>
@@ -128,5 +133,6 @@ private:
     ss::sharded<feature_manager>& _feature_manager;
     ss::sharded<feature_table>& _feature_table;
     ss::sharded<health_monitor_frontend>& _hm_frontend;
+    ss::sharded<rpc::connection_cache>& _conn_cache;
 };
 } // namespace cluster

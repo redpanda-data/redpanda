@@ -44,6 +44,10 @@
 
 namespace po = boost::program_options; // NOLINT
 
+inline const auto redpanda_start_time{
+  std::chrono::duration_cast<std::chrono::milliseconds>(
+    std::chrono::system_clock::now().time_since_epoch())};
+
 class application {
 public:
     int run(int, char**);
