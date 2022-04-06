@@ -340,9 +340,13 @@ ss::future<> do_dispatch_ntp_migration(
       source->ntp().tp.partition);
 
     auto target_shard = st.local().shard_for(target_ntp);
-    if (!target_shard) {
-        vlog(mlog.error, "unable to find shard for {}", target_ntp);
-        co_return;
+    while (!target_shard) {
+        vlog(
+          mlog.info,
+          "unable to find shard for {}, waiting for it to be present",
+          target_ntp);
+        co_await ss::sleep_abortable(default_wait_time, as.local());
+        target_shard = st.local().shard_for(target_ntp);
     }
 
     /**
@@ -522,9 +526,10 @@ ss::future<> group_metadata_migration::activate_feature(ss::abort_source& as) {
     vlog(mlog.info, "activating consumer offsets feature");
     while (!feature_table().is_active(cluster::feature::consumer_offsets)
            && !as.abort_requested()) {
-        if (
-          _controller.is_raft0_leader()
-          && feature_table().is_preparing(cluster::feature::consumer_offsets)) {
+        if (_controller.is_raft0_leader()) {
+            co_await feature_table().await_feature_preparing(
+              cluster::feature::consumer_offsets, as);
+
             auto err = co_await feature_manager().write_action(
               cluster::feature_update_action{
                 .feature_name = ss::sstring(
@@ -567,6 +572,10 @@ ss::future<> group_metadata_migration::do_apply() {
       cluster::feature::consumer_offsets, abort_source());
     vlog(mlog.info, "disabling partition movement feature and group router");
     co_await _group_router.invoke_on_all(&group_router::disable);
+    vlog(mlog.info, "shutting down source group manager");
+    co_await _group_router.local().get_group_manager().invoke_on_all(
+      &group_manager::stop);
+
     co_await _controller.get_topics_frontend().invoke_on_all(
       &cluster::topics_frontend::disable_partition_movement);
     vlog(mlog.info, "waiting for stable consumer group topic");

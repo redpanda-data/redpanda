@@ -708,6 +708,11 @@ void application::wire_up_redpanda_services() {
             _rpc.stop().get();
         }
     });
+
+    // metrics and quota management
+    syschecks::systemd_message("Adding kafka quota manager").get();
+    construct_service(quota_mgr).get();
+
     _deferred.emplace_back([this] {
         if (_kafka_server.local_is_initialized()) {
             _kafka_server.invoke_on_all(&net::server::wait_for_shutdown).get();
@@ -805,7 +810,8 @@ void application::wire_up_redpanda_services() {
       std::ref(partition_manager),
       std::ref(controller->get_topics_state()),
       &kafka::make_backward_compatible_serializer,
-      std::ref(config::shard_local_cfg()))
+      std::ref(config::shard_local_cfg()),
+      kafka::enable_group_metrics::no)
       .get();
     construct_service(
       _co_group_manager,
@@ -814,7 +820,8 @@ void application::wire_up_redpanda_services() {
       std::ref(partition_manager),
       std::ref(controller->get_topics_state()),
       &kafka::make_consumer_offsets_serializer,
-      std::ref(config::shard_local_cfg()))
+      std::ref(config::shard_local_cfg()),
+      kafka::enable_group_metrics::yes)
       .get();
     syschecks::systemd_message("Creating kafka group shard mapper").get();
     construct_service(
@@ -852,9 +859,6 @@ void application::wire_up_redpanda_services() {
         coprocessing->start().get();
     }
 
-    // metrics and quota management
-    syschecks::systemd_message("Adding kafka quota manager").get();
-    construct_service(quota_mgr).get();
     // rpc
     ss::sharded<net::server_configuration> rpc_cfg;
     rpc_cfg.start(ss::sstring("internal_rpc")).get();

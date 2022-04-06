@@ -17,22 +17,21 @@ from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
 from rptest.services.failure_injector import FailureInjector, FailureSpec
 from rptest.tests.end_to_end import EndToEndTest
-from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST, RedpandaService
+from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST, RedpandaService, ResourceSettings
 from rptest.clients.default import DefaultClient
 from ducktape.utils.util import wait_until
 
-from ducktape.mark import parametrize
+from ducktape.mark import matrix
 
 
 class ConsumerOffsetsMigrationTest(EndToEndTest):
     max_suspend_duration_sec = 3
-    min_inter_failure_time_sec = 20
-    max_inter_failure_time_sec = 30
+    min_inter_failure_time_sec = 30
+    max_inter_failure_time_sec = 60
 
     @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
-    @parametrize(failures=True)
-    @parametrize(failures=False)
-    def test_migrating_consume_offsets(self, failures):
+    @matrix(failures=[True, False], cpus=[1, 3])
+    def test_migrating_consume_offsets(self, failures, cpus):
         '''
         Validates correctness while executing consumer offsets migration
         '''
@@ -41,6 +40,7 @@ class ConsumerOffsetsMigrationTest(EndToEndTest):
         self.redpanda = RedpandaService(
             self.test_context,
             5,
+            resource_settings=ResourceSettings(num_cpus=cpus),
             extra_rp_conf={
                 "group_topic_partitions": 16,
                 "default_topic_replications": 3,
@@ -104,8 +104,12 @@ class ConsumerOffsetsMigrationTest(EndToEndTest):
             return True
 
         kcl = KCL(self.redpanda)
+
+        def _group_present():
+            return len(kcl.list_groups().splitlines()) > 1
+
         # make sure that group is there
-        assert len(kcl.list_groups().splitlines()) > 1
+        wait_until(_group_present, 10, 1)
 
         # check that consumer offsets topic is not present
         topics = set(kcl.list_topics())
@@ -123,9 +127,12 @@ class ConsumerOffsetsMigrationTest(EndToEndTest):
             wait_until(cluster_is_stable, 90, backoff_sec=2)
 
         def _consumer_offsets_present():
-            partitions = list(
-                self.client().describe_topic("__consumer_offsets"))
-            return len(partitions) > 0
+            try:
+                partitions = list(
+                    self.client().describe_topic("__consumer_offsets"))
+                return len(partitions) > 0
+            except:
+                return False
 
         wait_until(_consumer_offsets_present, timeout_sec=90, backoff_sec=3)
 
