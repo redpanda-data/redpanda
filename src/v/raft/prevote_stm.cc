@@ -163,13 +163,8 @@ ss::future<bool> prevote_stm::do_prevote() {
     // dispatch requests to all voters
     _config->for_each_voter([this](vnode id) { (void)dispatch_prevote(id); });
 
-    // wait until majority
-    const size_t majority = (_config->unique_voter_count() / 2) + 1;
-
-    return _sem.wait(majority)
-      .then([this] { return process_replies(); })
-      // process results
-      .then([this]() { return _success; });
+    // process results
+    return process_replies().then([this]() { return _success; });
 }
 
 ss::future<> prevote_stm::process_replies() {
