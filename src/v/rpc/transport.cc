@@ -79,11 +79,14 @@ ss::future<> transport::connect(clock_type::duration connection_timeout) {
     return connect(connection_timeout + rpc::clock_type::now());
 }
 
-ss::future<>
-transport::connect(rpc::clock_type::time_point connection_timeout) {
+void transport::reset_state() {
     _correlation_idx = 0;
     _last_seq = sequence_t{0};
     _seq = sequence_t{0};
+}
+
+ss::future<>
+transport::connect(rpc::clock_type::time_point connection_timeout) {
     return base_transport::connect(connection_timeout).then([this] {
         // background
         ssx::spawn_with_gate(_dispatch_gate, [this] {

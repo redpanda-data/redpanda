@@ -61,6 +61,8 @@ public:
     ss::future<result<client_context<Output>>>
       send_typed(Input, uint32_t, rpc::client_opts);
 
+    void reset_state() final;
+
 private:
     using sequence_t = named_type<uint64_t, struct sequence_tag>;
     struct entry {
