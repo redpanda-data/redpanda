@@ -61,9 +61,13 @@ class S3Client:
     def create_bucket(self, name):
         """Create bucket in S3"""
         try:
-            self._cli.create_bucket(
+            res = self._cli.create_bucket(
                 Bucket=name,
                 CreateBucketConfiguration={'LocationConstraint': self._region})
+
+            self.logger.debug(res)
+            assert res['ResponseMetadata']['HTTPStatusCode'] == 200
+            assert res['Location'].endswith(name)
         except ClientError as err:
             if err.response['Error']['Code'] != 'BucketAlreadyOwnedByYou':
                 raise err
@@ -103,6 +107,13 @@ class S3Client:
                     f"Delete request failed: {e} {v} {stacktrace}")
                 failed_keys.append(key)
         return failed_keys
+
+    def list_buckets(self):
+        try:
+            return self._cli.list_buckets()
+        except Exception:
+            self.logger.warn("Error listing buckets")
+            raise
 
     def delete_object(self, bucket, key, verify=False):
         """Remove object from S3"""

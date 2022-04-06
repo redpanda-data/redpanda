@@ -675,10 +675,19 @@ class RedpandaService(Service):
             self._s3client.delete_bucket(
                 self._si_settings.cloud_storage_bucket)
 
+    def list_buckets(self):
+        if self._s3client:
+            return self._s3client.list_buckets()
+
     def get_objects_from_si(self):
         if self._s3client:
             return self._s3client.list_objects(
                 self._si_settings.cloud_storage_bucket)
+
+    def put_object(self, key, data):
+        if self._s3client:
+            self._s3client.put_object(self._si_settings.cloud_storage_bucket,
+                                      key, data)
 
     def set_cluster_config(self, values: dict, expect_restart: bool = False):
         """
