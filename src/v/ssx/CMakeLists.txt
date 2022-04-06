@@ -4,6 +4,8 @@ v_cc_library(
   HDRS
     "future-util.h"
     "metrics.h"
+    "this_fiber_id.h"
+    "fiber_local.h"
   DEPS
     Seastar::seastar
   )
