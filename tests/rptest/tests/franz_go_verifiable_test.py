@@ -18,6 +18,7 @@ from rptest.clients.types import TopicSpec
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.services.redpanda import SISettings
 from rptest.services.franz_go_verifiable_services import FranzGoVerifiableProducer, FranzGoVerifiableSeqConsumer, FranzGoVerifiableRandomConsumer
+from rptest.services.franz_go_verifiable_services import KGO_ALLOW_LOGS
 
 
 class FranzGoVerifiableBase(PreallocNodesTest):
@@ -55,7 +56,7 @@ class FranzGoVerifiableTest(FranzGoVerifiableBase):
 
     topics = (TopicSpec(partition_count=100, replication_factor=3), )
 
-    @cluster(num_nodes=4)
+    @cluster(num_nodes=4, log_allow_list=KGO_ALLOW_LOGS)
     def test_with_all_type_of_loads(self):
         self.logger.info(f"Environment: {os.environ}")
         if os.environ.get('BUILD_TYPE', None) == 'debug':
@@ -125,7 +126,7 @@ class FranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
             },
             si_settings=si_settings)
 
-    @cluster(num_nodes=4)
+    @cluster(num_nodes=4, log_allow_list=KGO_ALLOW_LOGS)
     def test_with_all_type_of_loads_and_si(self):
         self.logger.info(f"Environment: {os.environ}")
         if os.environ.get('BUILD_TYPE', None) == 'debug':

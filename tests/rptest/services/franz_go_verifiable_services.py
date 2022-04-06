@@ -11,11 +11,17 @@ import os
 import json
 import threading
 from ducktape.services.background_thread import BackgroundThreadService
+from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST
 
 # The franz-go root directory
 TESTS_DIR = os.path.join("/opt", "kgo-verifier")
 
 from enum import Enum
+
+KGO_ALLOW_LOGS = CHAOS_LOG_ALLOW_LIST + [
+    # rpc - server.cc:114 - kafka rpc protocol - Error[applying protocol] remote address: 172.19.0.4:49274 - std::out_of_range (Invalid skip(n). Expected:1000097, but skipped:596871)
+    r'rpc - .*std::out_of_range \(Invalid skip\(n\).*',
+]
 
 
 class ServiceStatus(Enum):
