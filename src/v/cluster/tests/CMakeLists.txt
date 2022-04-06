@@ -81,6 +81,15 @@ rp_test(
 )
 
 rp_test(
+  BENCHMARK_TEST
+  BINARY_NAME leader_balancer_bench
+  SOURCES leader_balancer_bench.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES Seastar::seastar_perf_testing v::cluster
+  LABELS cluster
+)
+
+rp_test(
   UNIT_TEST
   BINARY_NAME metrics_reporter_test
   SOURCES metrics_reporter_test.cc

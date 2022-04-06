@@ -12,6 +12,7 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "cluster/scheduling/leader_balancer_greedy.h"
+#include "leader_balancer_test_utils.h"
 #include "model/metadata.h"
 
 #include <absl/container/flat_hash_set.h>
@@ -29,8 +30,7 @@ using reassignment = cluster::leader_balancer_strategy::reassignment;
 /**
  * @brief Basic validity checks on a reassignment.
  */
-static void check_valid(
-  const index_type& index, const reassignment& movement) {
+static void check_valid(const index_type& index, const reassignment& movement) {
     // from == to is not valid (error should not decrease)
     BOOST_REQUIRE(movement.from != movement.to);
 
@@ -45,42 +45,20 @@ static void check_valid(
 }
 
 BOOST_AUTO_TEST_CASE(greedy_movement) {
-    index_type index;
-
-    // 10 nodes, 2 cores -> 20 shards
-    std::vector<model::broker_shard> shards;
-    for (auto n = 0U; n < 10; n++) {
-        for (auto s = 0U; s < 2; s++) {
-            model::broker_shard shard{model::node_id(n), s};
-            shards.push_back(shard);
-        }
-    }
-
-    size_t replica = 0;
-    for (auto shard : shards) {
-        // 10 groups per shard
-        for (auto g = 0U; g < 10; g++) {
-            raft::group_id group(g);
-            // 3 replica per group
-            std::vector<model::broker_shard> replicas;
-            replicas.push_back(shard); // the "leader"
-            while (replicas.size() != 3) {
-                if (shards[replica % shards.size()] != shard) {
-                    replicas.push_back(shards[replica % shards.size()]);
-                }
-                ++replica;
-            }
-            index[shard][group] = std::move(replicas);
-        }
-    }
+    // 10 nodes
+    // 2 cores x node
+    // 10 partitions per shard
+    // r=3 (3 replicas)
+    auto index = leader_balancer_test_utils::make_cluster_index(10, 2, 10, 3);
 
     auto greed = cluster::greedy_balanced_shards(index, {});
     BOOST_REQUIRE_EQUAL(greed.error(), 0);
 
-    // new groups on shard 5
-    index[shards[5]][raft::group_id(20)] = index[shards[5]][raft::group_id(3)];
-    index[shards[5]][raft::group_id(21)] = index[shards[5]][raft::group_id(3)];
-    index[shards[5]][raft::group_id(22)] = index[shards[5]][raft::group_id(3)];
+    // new groups on shard {2, 0}
+    auto shard20 = model::broker_shard{model::node_id{2}, 0};
+    index[shard20][raft::group_id(20)] = index[shard20][raft::group_id(3)];
+    index[shard20][raft::group_id(21)] = index[shard20][raft::group_id(3)];
+    index[shard20][raft::group_id(22)] = index[shard20][raft::group_id(3)];
 
     greed = cluster::greedy_balanced_shards(index, {});
     BOOST_REQUIRE_GT(greed.error(), 0);
@@ -89,7 +67,7 @@ BOOST_AUTO_TEST_CASE(greedy_movement) {
     auto movement = greed.find_movement({});
     check_valid(index, *movement);
     BOOST_REQUIRE(movement);
-    BOOST_REQUIRE_EQUAL(movement->from, shards[5]);
+    BOOST_REQUIRE_EQUAL(movement->from, shard20);
 }
 
 struct node_spec {
