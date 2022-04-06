@@ -79,7 +79,7 @@ ss::future<> kvrsm::apply(model::record_batch b) {
         result.offset = last_offset;
 
         if (auto it = _promises.find(result.seq); it != _promises.end()) {
-            it->second.set_value(result);
+            it->second->set_value(result);
         }
     }
 
@@ -194,7 +194,7 @@ ss::future<kvrsm::cmd_result> kvrsm::replicate_and_wait(
 
     auto started = std::chrono::steady_clock::now();
 
-    _promises.emplace(seq, expiring_promise<ret_t>{});
+    _promises.emplace(seq, std::make_unique<expiring_promise<ret_t>>());
 
     return replicate(std::move(b))
       .then([this, seq, timeout, started](result<raft::replicate_result> r) {
@@ -215,7 +215,7 @@ ss::future<kvrsm::cmd_result> kvrsm::replicate_and_wait(
           auto it = _promises.find(seq);
 
           return it->second
-            .get_future_with_timeout(
+            ->get_future_with_timeout(
               timeout,
               [seq, last_offset] {
                   auto result = kvrsm::cmd_result(

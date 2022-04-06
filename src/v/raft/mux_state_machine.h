@@ -19,13 +19,14 @@
 #include "raft/consensus.h"
 #include "raft/errc.h"
 #include "raft/state_machine.h"
+#include "ssx/future-util.h"
 #include "utils/expiring_promise.h"
-#include "utils/mutex.h"
 #include "vassert.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/core/timed_out_error.hh>
 #include <seastar/util/bool_class.hh>
 #include <seastar/util/log.hh>
 
@@ -95,23 +96,28 @@ using persistent_last_applied
 //      |                         |               |          |
 template<typename... T>
 CONCEPT(requires(State<T>, ...))
-class mux_state_machine : public state_machine {
+class mux_state_machine final : public state_machine {
 public:
     explicit mux_state_machine(
       ss::logger&, consensus*, persistent_last_applied, T&...);
 
-    // Lifecycle management
-    ss::future<> start() { return raft::state_machine::start(); }
+    mux_state_machine(mux_state_machine&&) = delete;
+    mux_state_machine(const mux_state_machine&) = delete;
+    mux_state_machine& operator=(mux_state_machine&&) = delete;
+    mux_state_machine& operator=(const mux_state_machine&) = delete;
+    ~mux_state_machine() final = default;
 
-    ss::future<> stop() {
-        _mutex.broken();
+    // Lifecycle management
+    ss::future<> start() final { return raft::state_machine::start(); }
+
+    ss::future<> stop() final {
         // close the gate so no new requests will be handled
+        _new_result.broken();
         co_await raft::state_machine::stop();
-        // fail all pending replicate requests
-        for (auto& p : _promises) {
-            p.second.set_value(std::error_code(errc::shutting_down));
-        }
-        _promises.clear();
+        vassert(
+          _pending == 0,
+          "destorying state machine with {} pending replicate requests",
+          _pending);
     }
 
     /// Replicates record batch
@@ -126,54 +132,49 @@ public:
 
 private:
     using promise_t = expiring_promise<std::error_code>;
-    // promises used to wait for result of state applies, keyed by offser
-    // returned in replication result (i.e. last batch end offset)
-    using container_t
-      = absl::node_hash_map<model::offset, expiring_promise<std::error_code>>;
 
     ss::future<> apply(model::record_batch b) final;
+    class replicate_units {
+    public:
+        explicit replicate_units(mux_state_machine<T...>* stm)
+          : _stm(stm) {
+            _stm->_pending++;
+            _units = 1;
+        }
 
-    container_t _promises;
+        replicate_units(replicate_units&& other) noexcept
+          : _stm(other._stm)
+          , _units(std::exchange(other._units, 0)) {}
 
-    /*
-     * Here the _mutex is used to make sure that promise was inserted into
-     * the map before apply is executed. In other words we make sure that
-     * calls to replicate and emplacing a promise in the map will happen
-     * without apply handler executed in between.
-     *
-     *       +--------+
-     *       |
-     *       |        +---------------+
-     *       |        |   Replicate   |     trigger, separate fibre
-     *       |        +-------+-------+- - - - - - - -+
-     *       |                |                       |
-     * lock <|                |  offset               |
-     *       |                v                       |
-     *       |        +-------+------+                |
-     *       |        |Insert promise|                |
-     *       |        |  for offset  |                |
-     *       |        +-------+------+                |
-     *       |                |                       |
-     *       +--------+       | future                |
-     *                        |                       |           +--+
-     *                        |                       v              |
-     *                        |           +-----------+-----------+  |
-     *                        |           |  Apply & set value    |  |> lock
-     *                        |           +-----------------------+  |
-     *                        |                                      |
-     *                        V                                   +--+
-     *                 +------+------+
-     *                 |  Wait for   |
-     *                 |   promise   |
-     *                 +-------------+
-     *
-     * Mutex prevents the 'Apply & set value' to be executed between 'Replicate'
-     * and 'Insert promise for offset'
-     *
-     */
-    mutex _mutex;
+        replicate_units(const replicate_units&) noexcept = delete;
+
+        replicate_units& operator=(replicate_units&& o) noexcept {
+            _stm = o._stm;
+            _units = std::exchange(o._units, 0);
+            return *this;
+        }
+        replicate_units& operator=(const replicate_units&) noexcept = delete;
+
+        void release() {
+            _stm->_pending -= _units;
+            _units = 0;
+        }
+
+        ~replicate_units() { _stm->_pending -= _units; }
+
+    private:
+        mux_state_machine<T...>* _stm;
+        int _units;
+    };
+
+    replicate_units get_units() { return replicate_units(this); }
+
     consensus* _c;
+    absl::node_hash_map<model::offset, std::error_code> _results;
+    model::offset _last_applied;
+    int64_t _pending = 0;
     const persistent_last_applied _persist_last_applied;
+    ss::condition_variable _new_result;
     // we keep states in a tuple to automatically dispatch updates to correct
     // state
     std::tuple<T&...> _state;
@@ -208,31 +209,69 @@ ss::future<std::error_code> mux_state_machine<T...>::replicate_and_wait(
   model::record_batch&& b,
   model::timeout_clock::time_point timeout,
   ss::abort_source& as) {
-    using ret_t = std::error_code;
-    return ss::with_gate(
-      _gate, [this, b = std::move(b), timeout, &as]() mutable {
-          return _mutex.get_units().then([this, b = std::move(b), timeout, &as](
-                                           ss::semaphore_units<> u) mutable {
-              return replicate(std::move(b))
-                .then([this, u = std::move(u), timeout, &as](
-                        result<raft::replicate_result> r) {
-                    if (!r) {
-                        return ss::make_ready_future<ret_t>(r.error());
-                    }
+    if (_gate.is_closed()) {
+        return ss::make_ready_future<std::error_code>(errc::shutting_down);
+    }
 
-                    auto last_offset = r.value().last_offset;
+    auto u = get_units();
+    auto promise = std::make_unique<promise_t>();
+    auto f = promise->get_future_with_timeout(
+      timeout, [] { return make_error_code(errc::timeout); }, as);
 
-                    auto [it, insterted] = _promises.emplace(
-                      last_offset, expiring_promise<ret_t>{});
-                    vassert(
-                      insterted,
-                      "Prosmise for offset {} already registered",
-                      last_offset);
-                    return it->second.get_future_with_timeout(
-                      timeout, [] { return errc::timeout; }, as);
-                });
-          });
+    ssx::spawn_with_gate(
+      _gate,
+      [this,
+       b = std::move(b),
+       u = std::move(u),
+       promise = std::move(promise)]() mutable {
+          return replicate(std::move(b))
+            .then_wrapped(
+              [this, u = std::move(u), promise = std::move(promise)](
+                ss::future<result<raft::replicate_result>> f) mutable {
+                  if (f.failed()) {
+                      promise->set_exception(f.get_exception());
+                      return ss::now();
+                  }
+                  auto r = f.get();
+                  if (!r) {
+                      promise->set_value(r.error());
+                      return ss::now();
+                  }
+
+                  auto last_offset = r.value().last_offset;
+
+                  return _new_result
+                    .wait([this, last_offset] {
+                        return _last_applied >= last_offset;
+                    })
+                    .then_wrapped(
+                      [this,
+                       last_offset,
+                       u = std::move(u),
+                       promise = std::move(promise)](ss::future<> f) mutable {
+                          u.release();
+                          if (f.failed()) {
+                              promise->set_exception(f.get_exception());
+                              return;
+                          }
+                          auto it = _results.find(last_offset);
+                          vassert(
+                            it != _results.end(),
+                            "last applied offset {} is greater than "
+                            "returned replicate result {}. this must "
+                            "imply existence of a result in results map",
+                            _last_applied,
+                            last_offset);
+                          auto res = it->second;
+                          _results.erase(it);
+                          if (_pending == 0) {
+                              _results.clear();
+                          }
+                          promise->set_value(res);
+                      });
+              });
       });
+    return f;
 }
 
 // return value only if state accepts given batch type
@@ -279,20 +318,19 @@ ss::future<> mux_state_machine<T...>::apply(model::record_batch b) {
           *state);
 
         return result_f.then([this, last_offset](std::error_code ec) {
-            return _mutex.with([this, last_offset, ec] {
-                if (auto it = _promises.find(last_offset);
-                    it != _promises.end()) {
-                    it->second.set_value(ec);
-                    _promises.erase(it);
-                }
-                if (
-                  _persist_last_applied
-                  && last_offset > _c->read_last_applied()) {
-                    ssx::spawn_with_gate(_gate, [this, last_offset] {
-                        return _c->write_last_applied(last_offset);
-                    });
-                }
-            });
+            _last_applied = last_offset;
+            if (_pending > 0) {
+                _results.emplace(last_offset, ec);
+                _new_result.broadcast();
+            } else {
+                _results.clear();
+            }
+            if (
+              _persist_last_applied && last_offset > _c->read_last_applied()) {
+                ssx::spawn_with_gate(_gate, [this, last_offset] {
+                    return _c->write_last_applied(last_offset);
+                });
+            }
         });
     });
 }

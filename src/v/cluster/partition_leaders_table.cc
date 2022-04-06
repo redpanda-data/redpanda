@@ -30,7 +30,7 @@ ss::future<> partition_leaders_table::stop() {
     while (!_leader_promises.empty()) {
         auto it = _leader_promises.begin();
         for (auto& promise : it->second) {
-            promise.second.set_exception(
+            promise.second->set_exception(
               std::make_exception_ptr(ss::timed_out_error()));
         }
         _leader_promises.erase(it);
@@ -165,7 +165,7 @@ void partition_leaders_table::update_partition_leader(
 
     if (auto it = _leader_promises.find(ntp); it != _leader_promises.end()) {
         for (auto& promise : it->second) {
-            promise.second.set_value(*leader_id);
+            promise.second->set_value(*leader_id);
         }
     }
 }
@@ -178,11 +178,12 @@ ss::future<model::node_id> partition_leaders_table::wait_for_leader(
         return ss::make_ready_future<model::node_id>(*leader);
     }
     auto id = _promise_id++;
-    _leader_promises[ntp].emplace(id, expiring_promise<model::node_id>{});
+    _leader_promises[ntp].emplace(
+      id, std::make_unique<expiring_promise<model::node_id>>());
     auto& promise = _leader_promises[ntp][id];
 
     return promise
-      .get_future_with_timeout(
+      ->get_future_with_timeout(
         timeout,
         [] { return std::make_exception_ptr(ss::timed_out_error()); },
         as)

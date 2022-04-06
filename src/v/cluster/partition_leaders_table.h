@@ -182,7 +182,9 @@ private:
     int32_t _promise_id = 0;
     using promises_t = absl::node_hash_map<
       model::ntp,
-      absl::node_hash_map<int32_t, expiring_promise<model::node_id>>>;
+      absl::node_hash_map<
+        int32_t,
+        std::unique_ptr<expiring_promise<model::node_id>>>>;
 
     promises_t _leader_promises;
 
