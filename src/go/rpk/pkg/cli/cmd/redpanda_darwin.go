@@ -25,7 +25,7 @@ func NewRedpandaDarwinCommand(
 ) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "redpanda",
-		Short: "Interact with a remote Redpanda process",
+		Short: "Interact with a local/remote Redpanda process",
 	}
 
 	command.AddCommand(admin.NewCommand(fs))
