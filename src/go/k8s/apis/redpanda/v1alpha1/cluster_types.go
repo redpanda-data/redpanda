@@ -286,6 +286,9 @@ type ClusterStatus struct {
 	// Indicates cluster is upgrading
 	// +optional
 	Upgrading bool `json:"upgrading"`
+	// Current version of the cluster.
+	// +optional
+	Version string `json:"version"`
 	// Current state of the cluster.
 	// +optional
 	Conditions []ClusterCondition `json:"conditions,omitempty"`

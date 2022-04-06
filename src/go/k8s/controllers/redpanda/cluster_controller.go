@@ -224,7 +224,7 @@ func (r *ClusterReconciler) Reconcile(
 	err = r.reportStatus(
 		ctx,
 		&redpandaCluster,
-		sts.LastObservedState,
+		sts,
 		headlessSvc.HeadlessServiceFQDN(r.clusterDomain),
 		clusterSvc.ServiceFQDN(r.clusterDomain),
 		schemaRegistryPort,
@@ -279,7 +279,7 @@ func validateImagePullPolicy(imagePullPolicy corev1.PullPolicy) error {
 func (r *ClusterReconciler) reportStatus(
 	ctx context.Context,
 	redpandaCluster *redpandav1alpha1.Cluster,
-	lastObservedSts *appsv1.StatefulSet,
+	sts *resources.StatefulSetResource,
 	internalFQDN string,
 	clusterFQDN string,
 	schemaRegistryPort int,
@@ -307,7 +307,7 @@ func (r *ClusterReconciler) reportStatus(
 		return fmt.Errorf("failed to construct external node list: %w", err)
 	}
 
-	if lastObservedSts == nil {
+	if sts.LastObservedState == nil {
 		return errNonexistentLastObservesState
 	}
 
@@ -319,7 +319,7 @@ func (r *ClusterReconciler) reportStatus(
 	nodeList.Internal = observedNodesInternal
 	nodeList.SchemaRegistry.Internal = fmt.Sprintf("%s:%d", clusterFQDN, schemaRegistryPort)
 
-	if statusShouldBeUpdated(&redpandaCluster.Status, nodeList, lastObservedSts.Status.ReadyReplicas) {
+	if statusShouldBeUpdated(&redpandaCluster.Status, nodeList, sts) {
 		err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 			var cluster redpandav1alpha1.Cluster
 			err := r.Get(ctx, types.NamespacedName{
@@ -331,7 +331,8 @@ func (r *ClusterReconciler) reportStatus(
 			}
 
 			cluster.Status.Nodes = *nodeList
-			cluster.Status.Replicas = lastObservedSts.Status.ReadyReplicas
+			cluster.Status.Replicas = sts.LastObservedState.Status.ReadyReplicas
+			cluster.Status.Version = sts.Version()
 
 			err = r.Status().Update(ctx, &cluster)
 			if err == nil {
@@ -350,7 +351,7 @@ func (r *ClusterReconciler) reportStatus(
 func statusShouldBeUpdated(
 	status *redpandav1alpha1.ClusterStatus,
 	nodeList *redpandav1alpha1.NodesList,
-	readyReplicas int32,
+	sts *resources.StatefulSetResource,
 ) bool {
 	return nodeList != nil &&
 		(!reflect.DeepEqual(nodeList.Internal, status.Nodes.Internal) ||
@@ -359,7 +360,8 @@ func statusShouldBeUpdated(
 			!reflect.DeepEqual(nodeList.ExternalPandaproxy, status.Nodes.ExternalPandaproxy) ||
 			!reflect.DeepEqual(nodeList.SchemaRegistry, status.Nodes.SchemaRegistry) ||
 			!reflect.DeepEqual(nodeList.ExternalBootstrap, status.Nodes.ExternalBootstrap)) ||
-		status.Replicas != readyReplicas
+		status.Replicas != sts.LastObservedState.Status.ReadyReplicas ||
+		status.Version != sts.Version()
 }
 
 // WithConfiguratorSettings set the configurator image settings
