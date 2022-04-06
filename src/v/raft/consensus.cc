@@ -134,12 +134,13 @@ void consensus::setup_metrics() {
          labels)});
 }
 
-void consensus::do_step_down() {
+void consensus::do_step_down(std::string_view ctx) {
     _hbeat = clock_type::now();
     if (_vstate == vote_state::leader) {
         vlog(
           _ctxlog.info,
-          "Stepping down as leader in term {}, dirty offset {}",
+          "[{}] Stepping down as leader in term {}, dirty offset {}",
+          ctx,
           _term,
           _log.offsets().dirty_offset);
     }
@@ -156,7 +157,7 @@ void consensus::maybe_step_down() {
                 }
 
                 if (majority_hbeat + _jit.base_duration() < clock_type::now()) {
-                    do_step_down();
+                    do_step_down("heartbeats_majority");
                     if (_leader_id) {
                         _leader_id = std::nullopt;
                         trigger_leadership_notification();
@@ -1444,7 +1445,7 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
         reply.term = r.term;
         _term = r.term;
         _voted_for = {};
-        do_step_down();
+        do_step_down("voter_term_greater");
         if (_leader_id) {
             _leader_id = std::nullopt;
             trigger_leadership_notification();
@@ -1532,7 +1533,7 @@ consensus::do_append_entries(append_entries_request&& r) {
      * it updates its target priority to the initial value
      */
     _target_priority = voter_priority::max();
-    do_step_down();
+    do_step_down("append_entries_term_greater");
     if (r.meta.term > _term) {
         vlog(
           _ctxlog.debug,
@@ -1836,7 +1837,7 @@ consensus::do_install_snapshot(install_snapshot_request&& r) {
     if (r.term > _term) {
         _term = r.term;
         _voted_for = {};
-        do_step_down();
+        do_step_down("install_snapshot_term_greater");
         return do_install_snapshot(std::move(r));
     }
 
@@ -2350,7 +2351,7 @@ ss::future<> consensus::maybe_commit_configuration(ss::semaphore_units<> u) {
                   vlog(
                     _ctxlog.trace,
                     "current node is not longer group member, stepping down");
-                  do_step_down();
+                  do_step_down("not_longer_member");
               }
           });
     }
@@ -2834,7 +2835,7 @@ consensus::do_transfer_leadership(std::optional<model::node_id> target) {
                           // (If we accepted more writes, our log could get
                           //  ahead of new leader, and it could lose election)
                           auto units = co_await _op_lock.get_units();
-                          do_step_down();
+                          do_step_down("leadership_transfer");
                           if (_leader_id) {
                               _leader_id = std::nullopt;
                               trigger_leadership_notification();
