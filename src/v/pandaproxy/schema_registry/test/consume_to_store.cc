@@ -1,4 +1,4 @@
-// Copyright 2021 Vectorized, Inc.
+// Copyright 2021 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-// Copyright 2020 Vectorized, Inc.
+// Copyright 2020 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -33,12 +33,14 @@
 
 namespace pps = pandaproxy::schema_registry;
 
-constexpr std::string_view sv_string_def0{R"({"type":"string"})"};
-constexpr std::string_view sv_int_def0{R"({"type": "int"})"};
 const pps::canonical_schema_definition string_def0{
-  pps::make_avro_schema_definition(sv_string_def0).value()};
+  pps::sanitize_avro_schema_definition(
+    {R"({"type":"string"})", pps::schema_type::avro})
+    .value()};
 const pps::canonical_schema_definition int_def0{
-  pps::make_avro_schema_definition(sv_int_def0).value()};
+  pps::sanitize_avro_schema_definition(
+    {R"({"type": "int"})", pps::schema_type::avro})
+    .value()};
 const pps::subject subject0{"subject0"};
 constexpr pps::topic_key_magic magic0{0};
 constexpr pps::topic_key_magic magic1{1};

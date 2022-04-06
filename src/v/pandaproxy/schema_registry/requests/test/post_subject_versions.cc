@@ -1,4 +1,4 @@
-// Copyright 2021 Vectorized, Inc.
+// Copyright 2021 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -12,9 +12,6 @@
 #include "seastarx.h"
 
 #include <seastar/testing/thread_test_case.hh>
-
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
 
 #include <type_traits>
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Vectorized, Inc.
+ * Copyright 2020 Redpanda Data, Inc.
  *
  * Use of this software is governed by the Business Source License
  * included in the file licenses/BSL.md
@@ -744,10 +744,11 @@ struct feature_update_action {
     enum class action_t : std::uint16_t {
         // Notify when a feature is done with preparing phase
         complete_preparing = 1,
-        // Notify when a feature is explicitly made available by administrator
-        administrative_activate = 2,
+        // Notify when a feature is made available, either by an administrator
+        // or via auto-activation policy
+        activate = 2,
         // Notify when a feature is explicitly disabled by an administrator
-        administrative_deactivate = 3
+        deactivate = 3
     };
 
     // Features have an internal bitflag representation, but it is not

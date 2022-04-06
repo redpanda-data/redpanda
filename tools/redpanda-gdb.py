@@ -15,7 +15,7 @@
 # along with Scylla.  If not, see <http://www.gnu.org/licenses/>.
 #
 #   - Copyright (C) 2015 ScyllaDB
-#   - 2020 Vectorized - libc++ support and redpanda types
+#   - Copyright 2020 Redpanda Data, Inc. - libc++ support and redpanda types
 #
 # -----
 #

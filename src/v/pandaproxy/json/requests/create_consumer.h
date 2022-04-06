@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Vectorized, Inc.
+ * Copyright 2020 Redpanda Data, Inc.
  *
  * Use of this software is governed by the Business Source License
  * included in the file licenses/BSL.md
@@ -12,7 +12,9 @@
 #pragma once
 
 #include "bytes/iobuf.h"
-#include "json/json.h"
+#include "json/stringbuffer.h"
+#include "json/types.h"
+#include "json/writer.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/produce.h"
 #include "kafka/types.h"
@@ -22,10 +24,6 @@
 #include "utils/string_switch.h"
 
 #include <seastar/core/sstring.hh>
-
-#include <rapidjson/reader.h>
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
 
 #include <string_view>
 
@@ -40,7 +38,7 @@ struct create_consumer_request {
     ss::sstring consumer_request_timeout_ms;
 };
 
-template<typename Encoding = rapidjson::UTF8<>>
+template<typename Encoding = ::json::UTF8<>>
 class create_consumer_request_handler final : public base_handler<Encoding> {
 private:
     enum class state {
@@ -60,7 +58,7 @@ public:
     using rjson_parse_result = create_consumer_request;
     rjson_parse_result result;
 
-    bool String(const Ch* str, rapidjson::SizeType len, bool) {
+    bool String(const Ch* str, ::json::SizeType len, bool) {
         switch (_state) {
         case state::empty:
             return false;
@@ -86,7 +84,7 @@ public:
         return true;
     }
 
-    bool Key(const char* str, rapidjson::SizeType len, bool) {
+    bool Key(const char* str, ::json::SizeType len, bool) {
         _state = string_switch<state>({str, len})
                    .match("name", state::name)
                    .match("format", state::format)
@@ -101,7 +99,7 @@ public:
 
     bool StartObject() { return _state == state::empty; }
 
-    bool EndObject(rapidjson::SizeType) { return _state != state::empty; }
+    bool EndObject(::json::SizeType) { return _state != state::empty; }
 };
 
 struct create_consumer_response {
@@ -110,7 +108,7 @@ struct create_consumer_response {
 };
 
 inline void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  ::json::Writer<::json::StringBuffer>& w,
   const create_consumer_response& res) {
     w.StartObject();
     w.Key("instance_id");
@@ -120,7 +118,7 @@ inline void rjson_serialize(
     w.EndObject();
 }
 
-template<typename Encoding = rapidjson::UTF8<>>
+template<typename Encoding = ::json::UTF8<>>
 class create_consumer_response_handler final : public base_handler<Encoding> {
 private:
     enum class state { empty = 0, instance_id, base_uri };
@@ -132,7 +130,7 @@ public:
     using rjson_parse_result = create_consumer_response;
     rjson_parse_result result;
 
-    bool String(const Ch* str, rapidjson::SizeType len, bool) {
+    bool String(const Ch* str, ::json::SizeType len, bool) {
         auto str_view{std::string_view{str, len}};
         switch (_state) {
         case state::empty:
@@ -147,7 +145,7 @@ public:
         return true;
     }
 
-    bool Key(const char* str, rapidjson::SizeType len, bool) {
+    bool Key(const char* str, ::json::SizeType len, bool) {
         _state = string_switch<state>({str, len})
                    .match("instance_id", state::instance_id)
                    .match("base_uri", state::base_uri)
@@ -158,7 +156,7 @@ public:
 
     bool StartObject() { return _state == state::empty; }
 
-    bool EndObject(rapidjson::SizeType) { return _state != state::empty; }
+    bool EndObject(::json::SizeType) { return _state != state::empty; }
 };
 
 } // namespace pandaproxy::json

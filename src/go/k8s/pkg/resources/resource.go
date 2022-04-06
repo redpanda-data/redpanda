@@ -1,4 +1,4 @@
-// Copyright 2021 Vectorized, Inc.
+// Copyright 2021 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -16,6 +16,7 @@ import (
 
 	"github.com/banzaicloud/k8s-objectmatcher/patch"
 	"github.com/go-logr/logr"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -130,6 +131,8 @@ func Update(
 		patch.IgnoreStatusFields(),
 		patch.IgnoreVolumeClaimTemplateTypeMetaAndStatus(),
 		patch.IgnorePDBSelector(),
+		utils.IgnoreAnnotation(patch.LastAppliedConfig),
+		utils.IgnoreAnnotation(LastAppliedConfigurationAnnotationKey),
 	}
 	patchResult, err := patch.DefaultPatchMaker.Calculate(current, modified, opts...)
 	if err != nil {
@@ -182,6 +185,16 @@ func prepareResourceForUpdate(current runtime.Object, modified client.Object) {
 	case *corev1.ServiceAccount:
 		sa := t
 		sa.Secrets = current.(*corev1.ServiceAccount).Secrets
+	// Additional cases due to controller using update instead of patch
+	case *corev1.ConfigMap:
+		cm := t
+		if ann, ok := current.(*corev1.ConfigMap).Annotations[LastAppliedConfigurationAnnotationKey]; ok {
+			// We always ignore this annotation during normal reconciliation
+			if cm.Annotations == nil {
+				cm.Annotations = make(map[string]string)
+			}
+			cm.Annotations[LastAppliedConfigurationAnnotationKey] = ann
+		}
 	}
 }
 

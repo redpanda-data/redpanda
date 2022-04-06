@@ -1,4 +1,4 @@
-# Copyright 2020 Vectorized, Inc.
+# Copyright 2020 Redpanda Data, Inc.
 #
 # Use of this software is governed by the Business Source License
 # included in the file licenses/BSL.md
@@ -7,44 +7,14 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from contextlib import contextmanager
-from requests.exceptions import HTTPError
-
 from rptest.services.admin import Admin
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.rpk import RpkTool
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import SaslCredentials
+from rptest.util import expect_exception, expect_http_error
 
 from ducktape.utils.util import wait_until
-
-
-@contextmanager
-def expect_exception(exception_klass, validator):
-    """
-    :param exception_klass: the expected exception type
-    :param validator: a callable that is expected to return true when passed the exception
-    :return: None.  Raises on unexpected exception or no exception.
-    """
-    try:
-        yield
-    except exception_klass as e:
-        if not validator(e):
-            raise
-    else:
-        raise RuntimeError("Expected an exception!")
-
-
-def expect_http_error(status_code: int):
-    """
-    Context manager for HTTP calls expected to result in an HTTP exception
-    carrying a particular status code.
-
-    :param status_code: expected HTTP status code
-    :return: None.  Raises on unexpected exception, no exception, or unexpected status code.
-    """
-    return expect_exception(HTTPError,
-                            lambda e: e.response.status_code == status_code)
 
 
 def create_user_and_wait(redpanda, admin: Admin, creds: SaslCredentials):

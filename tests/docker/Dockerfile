@@ -114,12 +114,12 @@ RUN cd /tmp/go/sarama/produce_test && go mod tidy && go build
 RUN git -C /opt clone https://github.com/twmb/franz-go.git && cd /opt/franz-go && \
     cd /opt/franz-go/examples/bench && go mod tidy && go build
 
-RUN go install github.com/twmb/kcl@latest && \
+RUN go install github.com/twmb/kcl@v0.8.0 && \
     mv /root/go/bin/kcl /usr/local/bin/
 
-# Should fork to redpanda repo
-RUN git -C /opt clone https://github.com/jcsp/si-verifier.git && \
-    cd /opt/si-verifier && git reset --hard bcf4996d063e96497f8ff8be35d82fa1cec53180 && \
+# Install the kgo-verifier tool
+RUN git -C /opt clone https://github.com/redpanda-data/kgo-verifier.git && \
+    cd /opt/kgo-verifier && git reset --hard 30c56af && \
     go mod tidy && go build
 
 # Expose port 8080 for any http examples within clients
@@ -137,5 +137,17 @@ RUN python3 -m pip install --upgrade --force pip && \
 
 # copy python tools
 COPY --chown=0:0 tests/python /opt/python
+
+# Compile and install rust-based workload generator.
+# Install & remove compiler in the same step, to avoid bulking
+# out the resulting container image.
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
+    export PATH="/root/.cargo/bin:${PATH}" && \
+    git clone https://github.com/redpanda-data/client-swarm.git && \
+    cd client-swarm && \
+    git reset --hard 9427df19 && \
+    cargo build --release && \
+    cp target/release/client-swarm /usr/local/bin && \
+    cd .. && rm -rf client-swarm && rm -rf /root/.cargo
 
 CMD service ssh start && tail -f /dev/null

@@ -1,0 +1,72 @@
+name: backport-command
+on:
+  repository_dispatch:
+    types: [backport-command]
+jobs:
+  backport:
+    runs-on: ubuntu-latest
+    env:
+      TARGET_ORG: ${{ github.event.client_payload.slash_command.args.named.org }}
+      TARGET_REPO: ${{ github.event.client_payload.slash_command.args.named.repo }}
+    steps:
+      - name: Get assignees
+        env:
+          ASSIGNEES: ${{ toJson(github.event.client_payload.github.payload.issue.assignees) }}
+        id: assignees
+        run: echo ::set-output name=assignees::$(echo "$ASSIGNEES" | jq -r '.[].login' | paste -s -d ',' -)
+
+      - name: Get branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          BRANCH: ${{ github.event.client_payload.slash_command.args.unnamed.arg1 }}
+        id: branch
+        run: |
+          branches=$(gh api "/repos/${TARGET_ORG}/${TARGET_REPO}/branches" --jq .[].name | grep "$BRANCH")
+          if [[ $branches == "" ]]; then
+            exit 2
+          fi
+          echo ::set-output name=branch::"$BRANCH"
+
+      - name: Discover and create milestone
+        env:
+          GITHUB_TOKEN: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          BACKPORT_BRANCH: ${{ steps.branch.outputs.branch }}
+          TARGET_MILESTONE: ${{ github.event.client_payload.slash_command.args.named.milestone }}
+        id: milestone
+        run: |
+          if [[ "${TARGET_MILESTONE}" == "auto" ]]; then
+            major=$(echo "${BACKPORT_BRANCH}" | grep -Eo '^(v[0-9][0-9].[0-9][0-9])')
+            latest_released=$(gh api "repos/${TARGET_ORG}/${TARGET_REPO}/releases" --jq '.[] | select(.draft==false).name'  | grep "${major}" | head -1)
+            assigne_milestone=$(echo ${latest_released} | awk -F. -v OFS=. '{$NF += 1 ; print}')
+          else
+            assigne_milestone="${TARGET_MILESTONE}"
+          fi
+          if [[ $(gh api "repos/${TARGET_ORG}/${TARGET_REPO}/milestones" --jq .[].title | grep "${assigne_milestone}") == "" ]]; then
+            # the below fails of something goes wrong
+            gh api "repos/${TARGET_ORG}/${TARGET_REPO}/milestones" --silent --method POST -f title="${assigne_milestone}"
+            sleep 20 # wait for milestone creation to be propagated
+          fi
+          echo ::set-output name=milestone::${assigne_milestone}
+
+      - name: Create issue
+        env:
+          GITHUB_TOKEN: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          TARGET_MILESTONE: ${{ steps.milestone.outputs.milestone }}
+          BACKPORT_BRANCH: ${{ steps.branch.outputs.branch }}
+          ORIG_TITLE: ${{ github.event.client_payload.github.payload.issue.title }}
+          ORIG_ASSIGNEES: ${{ steps.assignees.outputs.assignees }}
+          ORIG_ISSUE_URL: ${{ github.event.client_payload.github.payload.comment.html_url }}
+        run: |
+          gh issue create --title "[${BACKPORT_BRANCH}] ${ORIG_TITLE}" \
+            --repo "${TARGET_ORG}/${TARGET_REPO}" \
+            --assignee "${ORIG_ASSIGNEES}" \
+            --milestone "${TARGET_MILESTONE}" \
+            --body "Backport ${ORIG_ISSUE_URL} to branch ${BACKPORT_BRANCH}"
+
+      - name: Add reaction
+        uses: peter-evans/create-or-update-comment@v1
+        with:
+          token: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          repository: ${{ github.event.client_payload.github.payload.repository.full_name }}
+          comment-id: ${{ github.event.client_payload.github.payload.comment.id }}
+          reaction-type: hooray

@@ -1,4 +1,4 @@
-// Copyright 2021 Vectorized, Inc.
+// Copyright 2021 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -32,9 +32,8 @@ func NewCheckCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		timeout    time.Duration
 	)
 	command := &cobra.Command{
-		Use:          "check",
-		Short:        "Check if system meets redpanda requirements.",
-		SilenceUsage: true,
+		Use:   "check",
+		Short: "Check if system meets redpanda requirements.",
 		RunE: func(ccmd *cobra.Command, args []string) error {
 			return executeCheck(fs, mgr, configFile, timeout)
 		},

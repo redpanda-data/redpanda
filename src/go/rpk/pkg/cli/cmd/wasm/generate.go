@@ -1,4 +1,4 @@
-// Copyright 2020 Vectorized, Inc.
+// Copyright 2020 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -31,10 +31,9 @@ func NewGenerateCommand(fs afero.Fs) *cobra.Command {
 		skipVersion bool
 	)
 	cmd := &cobra.Command{
-		Use:          "generate [PROJECT DIRECTORY]",
-		Short:        "Create an npm template project for inline WASM engine.",
-		SilenceUsage: true,
-		Args:         cobra.ExactArgs(1),
+		Use:   "generate [PROJECT DIRECTORY]",
+		Short: "Create an npm template project for inline WASM engine.",
+		Args:  cobra.ExactArgs(1),
 		Run: func(_ *cobra.Command, args []string) {
 			path, err := filepath.Abs(args[0])
 			out.MaybeDie(err, "unable to get absolute path for %q: %v", args[0], err)

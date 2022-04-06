@@ -1,4 +1,4 @@
-// Copyright 2020 Vectorized, Inc.
+// Copyright 2020 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -165,8 +165,8 @@ get_topics_records(server::request_t rq, server::reply_t rp) {
       .local()
       .fetch_partition(std::move(tp), offset, max_bytes, timeout)
       .then([res_fmt, rp = std::move(rp)](kafka::fetch_response res) mutable {
-          rapidjson::StringBuffer str_buf;
-          rapidjson::Writer<rapidjson::StringBuffer> w(str_buf);
+          ::json::StringBuffer str_buf;
+          ::json::Writer<::json::StringBuffer> w(str_buf);
 
           ppj::rjson_serialize_fmt(res_fmt)(w, std::move(res));
 
@@ -413,8 +413,8 @@ consumer_fetch(server::request_t rq, server::reply_t rp) {
 
         auto res = co_await client.consumer_fetch(
           group_id, name, timeout, max_bytes);
-        rapidjson::StringBuffer str_buf;
-        rapidjson::Writer<rapidjson::StringBuffer> w(str_buf);
+        ::json::StringBuffer str_buf;
+        ::json::Writer<::json::StringBuffer> w(str_buf);
 
         ppj::rjson_serialize_fmt(res_fmt)(w, std::move(res));
 
@@ -464,8 +464,8 @@ get_consumer_offsets(server::request_t rq, server::reply_t rp) {
 
         auto res = co_await client.consumer_offset_fetch(
           group_id, member_id, std::move(req_data));
-        rapidjson::StringBuffer str_buf;
-        rapidjson::Writer<rapidjson::StringBuffer> w(str_buf);
+        ::json::StringBuffer str_buf;
+        ::json::Writer<::json::StringBuffer> w(str_buf);
         ppj::rjson_serialize(w, res);
         ss::sstring json_rslt = str_buf.GetString();
         rp.rep->write_body("json", json_rslt);

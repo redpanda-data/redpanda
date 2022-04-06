@@ -1,4 +1,4 @@
-# Copyright 2020 Vectorized, Inc.
+# Copyright 2020 Redpanda Data, Inc.
 #
 # Use of this software is governed by the Business Source License
 # included in the file licenses/BSL.md
@@ -53,8 +53,8 @@ class CompactionRecoveryTest(RedpandaTest):
               self).__init__(test_context=test_context,
                              extra_rp_conf=extra_rp_conf)
 
-    @cluster(num_nodes=3)
-    def test_index_recovery(self, log_allow_list=RESTART_LOG_ALLOW_LIST):
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_index_recovery(self):
         partitions = self.produce_until_segments(3)
 
         for p in partitions:

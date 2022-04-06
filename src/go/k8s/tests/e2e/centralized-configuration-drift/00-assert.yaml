@@ -1,0 +1,18 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: centralized-configuration-drift
+status:
+  replicas: 1
+  upgrading: false
+  conditions:
+  - type: ClusterConfigured
+    status: "True"
+---
+
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+collectors:
+- type: pod
+  selector: app.kubernetes.io/name=redpanda
+  tail: -1

@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Vectorized, Inc.
+ * Copyright 2021 Redpanda Data, Inc.
  *
  * Use of this software is governed by the Business Source License
  * included in the file licenses/BSL.md
@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "json/types.h"
 #include "pandaproxy/json/rjson_parse.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/schema_registry/types.h"
@@ -26,7 +27,7 @@ struct post_subject_versions_request {
     canonical_schema schema;
 };
 
-template<typename Encoding = rapidjson::UTF8<>>
+template<typename Encoding = ::json::UTF8<>>
 class post_subject_versions_request_handler
   : public json::base_handler<Encoding> {
     enum class state {
@@ -59,7 +60,7 @@ public:
       : json::base_handler<Encoding>{json::serialization_format::none}
       , _schema{std::move(sub)} {}
 
-    bool Key(const Ch* str, rapidjson::SizeType len, bool) {
+    bool Key(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         switch (_state) {
         case state::record: {
@@ -116,7 +117,7 @@ public:
         return false;
     }
 
-    bool String(const Ch* str, rapidjson::SizeType len, bool) {
+    bool String(const Ch* str, ::json::SizeType len, bool) {
         auto sv = std::string_view{str, len};
         switch (_state) {
         case state::schema: {
@@ -176,7 +177,7 @@ public:
         return false;
     }
 
-    bool EndObject(rapidjson::SizeType) {
+    bool EndObject(::json::SizeType) {
         switch (_state) {
         case state::record: {
             _state = state::empty;
@@ -206,7 +207,7 @@ public:
 
     bool StartArray() { return _state == state::references; }
 
-    bool EndArray(rapidjson::SizeType) {
+    bool EndArray(::json::SizeType) {
         return std::exchange(_state, state::record) == state::references;
     }
 };
@@ -216,7 +217,7 @@ struct post_subject_versions_response {
 };
 
 inline void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  ::json::Writer<::json::StringBuffer>& w,
   const schema_registry::post_subject_versions_response& res) {
     w.StartObject();
     w.Key("id");

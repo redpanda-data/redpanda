@@ -1,4 +1,4 @@
-// Copyright 2020 Vectorized, Inc.
+// Copyright 2020 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -12,8 +12,7 @@
 namespace json {
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
-  const config::data_directory_path& v) {
+  json::Writer<json::StringBuffer>& w, const config::data_directory_path& v) {
     w.StartObject();
 
     w.Key("data_directory");
@@ -23,7 +22,7 @@ void rjson_serialize(
 }
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w, const config::seed_server& v) {
+  json::Writer<json::StringBuffer>& w, const config::seed_server& v) {
     w.StartObject();
     w.Key("host");
     rjson_serialize(w, v.addr);
@@ -31,7 +30,7 @@ void rjson_serialize(
 }
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w, const config::key_cert& v) {
+  json::Writer<json::StringBuffer>& w, const config::key_cert& v) {
     w.StartObject();
     w.Key("key_file");
     w.String(v.key_file.c_str());
@@ -42,7 +41,7 @@ void rjson_serialize(
 }
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w, const config::tls_config& v) {
+  json::Writer<json::StringBuffer>& w, const config::tls_config& v) {
     w.StartObject();
     w.Key("enabled");
     w.Bool(v.is_enabled());
@@ -67,7 +66,7 @@ void rjson_serialize(
 }
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  json::Writer<json::StringBuffer>& w,
   const std::vector<config::seed_server>& v) {
     w.StartArray();
     for (const auto& e : v) {
@@ -77,7 +76,7 @@ void rjson_serialize(
 }
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w, const custom_aggregate& v) {
+  json::Writer<json::StringBuffer>& w, const custom_aggregate& v) {
     w.StartObject();
 
     w.Key("string_value");
@@ -90,8 +89,7 @@ void rjson_serialize(
 }
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
-  const config::endpoint_tls_config& v) {
+  json::Writer<json::StringBuffer>& w, const config::endpoint_tls_config& v) {
     w.StartObject();
 
     w.Key("name");
@@ -119,7 +117,7 @@ void rjson_serialize(
 }
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  json::Writer<json::StringBuffer>& w,
   const std::vector<config::endpoint_tls_config>& v) {
     w.StartArray();
     for (const auto& e : v) {
@@ -133,30 +131,28 @@ void rjson_serialize(
  * Otherwise they would be JSON-ized as their integer representation.
  */
 template<typename T>
-static void
-stringize(rapidjson::Writer<rapidjson::StringBuffer>& w, const T& v) {
+static void stringize(json::Writer<json::StringBuffer>& w, const T& v) {
     w.String(fmt::format("{}", v));
 }
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w, const model::compression& v) {
+  json::Writer<json::StringBuffer>& w, const model::compression& v) {
     stringize(w, v);
 }
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
-  const model::timestamp_type& v) {
+  json::Writer<json::StringBuffer>& w, const model::timestamp_type& v) {
     stringize(w, v);
 }
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  json::Writer<json::StringBuffer>& w,
   const model::cleanup_policy_bitflags& v) {
     stringize(w, v);
 }
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  json::Writer<json::StringBuffer>& w,
   const model::violation_recovery_policy& v) {
     stringize(w, v);
 }

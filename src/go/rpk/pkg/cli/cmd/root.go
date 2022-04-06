@@ -1,4 +1,4 @@
-// Copyright 2020 Vectorized, Inc.
+// Copyright 2020 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -59,7 +59,6 @@ func Execute() {
 		Short: "rpk is the Redpanda CLI & toolbox.",
 		Long:  "",
 	}
-	rootCmd.SilenceUsage = true
 	rootCmd.PersistentFlags().BoolVarP(&verbose, config.FlagVerbose,
 		"v", false, "Enable verbose logging (default: false).")
 

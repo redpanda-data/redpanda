@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Vectorized, Inc.
+ * Copyright 2020 Redpanda Data, Inc.
  *
  * Use of this software is governed by the Business Source License
  * included in the file licenses/BSL.md
@@ -145,8 +145,8 @@ int8_t read_and_assert_version(std::string_view type, iobuf_parser& parser) {
       version <= T::current_version,
       "unsupported version of {}, max_supported version: {}, read version: {}",
       type,
-      version,
-      T::current_version);
+      T::current_version,
+      version);
     return version;
 }
 

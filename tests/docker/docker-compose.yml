@@ -31,6 +31,7 @@ services:
   n:
     image: vectorized/redpanda-test-node
     privileged: true
+    pids_limit: 32768
     ulimits:
       nofile:
         soft: 131072

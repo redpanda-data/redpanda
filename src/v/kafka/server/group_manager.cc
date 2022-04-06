@@ -1,4 +1,4 @@
-// Copyright 2020 Vectorized, Inc.
+// Copyright 2020 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -26,6 +26,7 @@
 #include "model/namespace.h"
 #include "model/record.h"
 #include "resource_mgmt/io_priority.h"
+#include "ssx/future-util.h"
 
 #include <seastar/core/coroutine.hh>
 
@@ -115,28 +116,25 @@ ss::future<> group_manager::stop() {
 
 void group_manager::detach_partition(const model::ntp& ntp) {
     klog.debug("detaching group metadata partition {}", ntp);
-    std::vector<group_ptr> groups;
-    groups.reserve(_groups.size());
-    for (auto& group : _groups) {
-        groups.push_back(group.second);
-    }
-
-    for (auto& gr : groups) {
-        // skip if group is not managed by current NTP
-        if (gr->partition()->ntp() != ntp) {
-            continue;
+    ssx::spawn_with_gate(_gate, [this, ntp]() -> ss::future<> {
+        auto it = _partitions.find(ntp);
+        if (it == _partitions.end()) {
+            co_return;
         }
-        auto it = _groups.find(gr->id());
-        if (it == _groups.end()) {
-            continue;
-        }
+        auto p = it->second;
+        auto units = co_await p->catchup_lock.hold_write_lock();
 
-        vlog(klog.trace, "Removed group {}", gr);
-        _groups.erase(it);
-        _groups.rehash(0);
-    }
-    _partitions.erase(ntp);
-    _partitions.rehash(0);
+        for (auto g_it = _groups.begin(); g_it != _groups.end();) {
+            if (g_it->second->partition()->ntp() == p->partition->ntp()) {
+                g_it->second->shutdown();
+                _groups.erase(g_it++);
+                continue;
+            }
+            ++g_it;
+        }
+        _partitions.erase(it);
+        _partitions.rehash(0);
+    });
 }
 
 void group_manager::attach_partition(ss::lw_shared_ptr<cluster::partition> p) {
@@ -276,6 +274,7 @@ group_manager::gc_partition_state(ss::lw_shared_ptr<attached_partition> p) {
 
     for (auto it = _groups.begin(); it != _groups.end();) {
         if (it->second->partition()->ntp() == p->partition->ntp()) {
+            it->second->shutdown();
             _groups.erase(it++);
             continue;
         }

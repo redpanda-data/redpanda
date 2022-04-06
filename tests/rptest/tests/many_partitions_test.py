@@ -1,4 +1,4 @@
-# Copyright 2022 Vectorized, Inc.
+# Copyright 2022 Redpanda Data, Inc.
 #
 # Use of this software is governed by the Business Source License
 # included in the file licenses/BSL.md
@@ -8,7 +8,6 @@
 # by the Apache License, Version 2.0
 
 import time
-import os
 import psutil
 
 from rptest.services.cluster import cluster
@@ -176,8 +175,7 @@ class ManyPartitionsTest(RedpandaTest):
 
         # Only run on release mode builds.  Debug builds are far too slow to handle
         # large partition counts.
-        self.logger.info(f"Environment: {os.environ}")
-        if os.environ.get('BUILD_TYPE', None) == 'debug':
+        if self.debug_mode:
             self.logger.info(
                 "Skipping test in debug mode (requires release build)")
             return
@@ -192,13 +190,14 @@ class ManyPartitionsTest(RedpandaTest):
         total_memory = psutil.virtual_memory().total
         self.logger.info(f"Memory: {total_memory}")
         if total_memory < resource_settings.memory_mb * 1024 * 1024 * 3:
-            if os.environ.get('CI', None) == 'false':
+            if self.ci_mode:
+                raise RuntimeError(
+                    f"Too little memory {total_memory} on test machine")
+            else:
                 self.logger.warn(
                     f"Skipping resource intensive test, running on low-memory machine with {total_memory} bytes of RAM"
                 )
-            else:
-                raise RuntimeError(
-                    f"Too little memory {total_memory} on test machine")
+                return
 
         disk_usage = psutil.disk_usage('/var')
         self.logger.info(f"Disk: {disk_usage}")

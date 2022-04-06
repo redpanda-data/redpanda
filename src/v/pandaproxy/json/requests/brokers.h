@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Vectorized, Inc.
+ * Copyright 2021 Redpanda Data, Inc.
  *
  * Use of this software is governed by the Business Source License
  * included in the file licenses/BSL.md
@@ -11,7 +11,8 @@
 
 #pragma once
 
-#include "json/json.h"
+#include "json/stringbuffer.h"
+#include "json/writer.h"
 #include "model/metadata.h"
 
 namespace pandaproxy::json {
@@ -21,8 +22,7 @@ struct get_brokers_res {
 };
 
 inline void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
-  const get_brokers_res& brokers) {
+  ::json::Writer<::json::StringBuffer>& w, const get_brokers_res& brokers) {
     w.StartObject();
     w.Key("brokers");
     ::json::rjson_serialize(w, brokers.ids);

@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Vectorized, Inc.
+ * Copyright 2021 Redpanda Data, Inc.
  *
  * Licensed as a Redpanda Enterprise file under the Redpanda Community
  * License (the "License"); you may not use this file except in compliance with
@@ -10,7 +10,6 @@
 
 #pragma once
 
-#include "json/json.h"
 #include "reflection/adl.h"
 #include "seastarx.h"
 #include "vlog.h"

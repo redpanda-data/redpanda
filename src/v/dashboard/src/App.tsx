@@ -113,17 +113,17 @@ function App() {
         <ul>
           {[
             {
-              url: "https://vectorized.io/redpanda",
+              url: "https://redpanda.com/platform",
               title: "Enterprise License",
               target: "_blank",
             },
             {
-              url: "https://vectorized.io/docs",
+              url: "https://docs.redpanda.com",
               title: "Documentation",
               target: "_blank",
             },
             {
-              url: "https://vectorized.io/contact",
+              url: "https://redpanda.com/contact",
               title: "Contact",
               target: "_blank",
             },
@@ -134,12 +134,12 @@ function App() {
             },
             {
               url:
-                "https://join.slack.com/t/vectorizedcommunity/shared_invite/zt-i4adpxqv-g7Zr~bxwQ3ohYPyMIG6Y6w",
+                "https://redpanda.com/slack",
               title: "Slack",
               target: "_blank",
             },
             {
-              url: "https://twitter.com/VectorizedIO",
+              url: "https://twitter.com/redpandadata",
               title: "Twitter",
               target: "_blank",
             },

@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Vectorized, Inc.
+ * Copyright 2022 Redpanda Data, Inc.
  *
  * Use of this software is governed by the Business Source License
  * included in the file licenses/BSL.md
@@ -296,6 +296,9 @@ private:
     // feature_backend is a friend for routine updates when
     // applying raft0 log events.
     friend class feature_backend;
+
+    // Unit testing hook.
+    friend class feature_table_fixture;
 };
 
 } // namespace cluster
