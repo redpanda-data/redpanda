@@ -13,6 +13,7 @@ package admin
 import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/redpanda/admin/brokers"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/redpanda/admin/partitions"
 	configcmd "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/redpanda/admin/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
@@ -68,6 +69,7 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 
 	cmd.AddCommand(
 		brokers.NewCommand(fs),
+		partitions.NewCommand(fs),
 		configcmd.NewCommand(fs),
 	)
 
