@@ -71,11 +71,14 @@ func newListCommand(fs afero.Fs) *cobra.Command {
 				for _, pt := range t.Partitions.Sorted() {
 					for _, rs := range pt.Replicas {
 						if int(rs) == brokerId {
-							var isLeader = "NO"
+							var isLeader bool
 							if int(pt.Leader) == brokerId {
-								isLeader = "YES"
+								isLeader = true
+								tw.Print(t.Topic , pt.Partition, isLeader)
 							}
-							tw.Print(t.Topic , pt.Partition, isLeader)
+							if !leaderOnly && !isLeader {
+								tw.Print(t.Topic , pt.Partition, isLeader)
+							}
 						}
 					}
 				}
