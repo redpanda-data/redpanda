@@ -133,7 +133,9 @@ private:
     sequence_id _last_applied_seq;
     sequence_id _last_generated_seq;
     consensus* _c;
-    absl::flat_hash_map<sequence_id, expiring_promise<cmd_result>> _promises;
+    absl::
+      flat_hash_map<sequence_id, std::unique_ptr<expiring_promise<cmd_result>>>
+        _promises;
     absl::flat_hash_map<ss::sstring, kvrsm::record> kv_map;
 };
 

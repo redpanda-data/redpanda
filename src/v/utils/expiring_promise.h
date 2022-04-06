@@ -24,6 +24,12 @@
 template<typename T, typename Clock = ss::lowres_clock>
 class expiring_promise {
 public:
+    expiring_promise() = default;
+    expiring_promise(expiring_promise&&) = delete;
+    expiring_promise& operator=(const expiring_promise&) = delete;
+    expiring_promise& operator=(expiring_promise&&) = delete;
+    expiring_promise(const expiring_promise&) = delete;
+
     template<typename ErrorFactory>
     ss::future<T> get_future_with_timeout(
       typename Clock::time_point timeout,
