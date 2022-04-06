@@ -24,6 +24,12 @@
 template<typename T, typename Clock = ss::lowres_clock>
 class expiring_promise {
 public:
+    expiring_promise() = default;
+    expiring_promise(expiring_promise&&) = delete;
+    expiring_promise& operator=(const expiring_promise&) = delete;
+    expiring_promise& operator=(expiring_promise&&) = delete;
+    expiring_promise(const expiring_promise&) = delete;
+
     template<typename ErrorFactory>
     ss::future<T> get_future_with_timeout(
       typename Clock::time_point timeout,
@@ -42,7 +48,7 @@ public:
                     _sub = std::move(*opt_sub);
                 } else {
                     set_exception(ss::abort_requested_exception{});
-                    return _promise.get_shared_future();
+                    return _promise.get_future();
                 }
             }
             _timer.set_callback(
@@ -64,7 +70,7 @@ public:
             _timer.arm(timeout);
         }
 
-        auto f = _promise.get_shared_future();
+        auto f = _promise.get_future();
         return f;
     };
 
@@ -115,7 +121,7 @@ private:
     }
 
     bool _available{false};
-    ss::shared_promise<T> _promise;
+    ss::promise<T> _promise;
     ss::timer<Clock> _timer;
     ss::abort_source::subscription _sub;
 };
