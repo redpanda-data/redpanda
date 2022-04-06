@@ -270,6 +270,11 @@ void admin_server::configure_metrics_route() {
 }
 
 ss::future<> admin_server::configure_listeners() {
+    // We will remember any endpoint that is listening
+    // on an external address and does not have mTLS,
+    // for emitting a warning later if user/pass auth is disabled.
+    std::optional<model::broker_endpoint> insecure_ep;
+
     for (auto& ep : _cfg.endpoints) {
         // look for credentials matching current endpoint
         auto tls_it = std::find_if(
@@ -278,6 +283,11 @@ ss::future<> admin_server::configure_listeners() {
           [&ep](const config::endpoint_tls_config& c) {
               return c.name == ep.name;
           });
+
+        const bool localhost = ep.address.host() == "127.0.0.1"
+                               || ep.address.host() == "localhost"
+                               || ep.address.host() == "localhost.localdomain"
+                               || ep.address.host() == "::1";
 
         ss::shared_ptr<ss::tls::server_credentials> cred;
         if (tls_it != _cfg.endpoints_tls.end()) {
@@ -291,11 +301,32 @@ ss::future<> admin_server::configure_listeners() {
                         logger, "API TLS", updated, eptr);
                   });
             }
+
+            if (!localhost && !tls_it->config.get_require_client_auth()) {
+                insecure_ep = ep;
+            }
+        } else {
+            if (!localhost) {
+                insecure_ep = ep;
+            }
         }
+
         auto resolved = co_await net::resolve_dns(ep.address);
         co_await ss::with_scheduling_group(_cfg.sg, [this, cred, resolved] {
             return _server.listen(resolved, cred);
         });
+    }
+
+    if (
+      insecure_ep.has_value()
+      && !config::shard_local_cfg().admin_api_require_auth()) {
+        auto& ep = insecure_ep.value();
+        vlog(
+          logger.warn,
+          "Insecure Admin API listener on {}:{}, consider enabling "
+          "`admin_api_require_auth`",
+          ep.address.host(),
+          ep.address.port());
     }
 }
 
