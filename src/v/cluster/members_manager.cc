@@ -91,7 +91,7 @@ ss::future<> members_manager::start() {
             return initialize_broker_connection(b);
         });
     }
-
+    _last_connection_update_offset = _raft0->get_latest_configuration_offset();
     co_return;
 }
 
@@ -178,9 +178,16 @@ ss::future<> members_manager::handle_raft0_cfg_update(
               [cfg = std::move(cfg), update_offset](members_table& m) mutable {
                   m.update_brokers(update_offset, cfg.brokers());
               })
-            .then([this, diff = std::move(diff)]() mutable {
+            .then([this, diff = std::move(diff), update_offset]() mutable {
+                if (update_offset <= _last_connection_update_offset) {
+                    return ss::now();
+                }
                 // update internode connections
-                return update_connections(std::move(diff));
+
+                return update_connections(std::move(diff))
+                  .then([this, update_offset] {
+                      _last_connection_update_offset = update_offset;
+                  });
             })
             .then([this,
                    added_nodes = std::move(added_brokers),

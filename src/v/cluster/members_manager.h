@@ -136,6 +136,7 @@ private:
     ss::gate _gate;
     ss::queue<node_update> _update_queue;
     ss::abort_source::subscription _queue_abort_subscription;
+    model::offset _last_connection_update_offset;
 };
 
 std::ostream&
