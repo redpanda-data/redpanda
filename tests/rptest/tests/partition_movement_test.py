@@ -248,7 +248,6 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
                             consumer_timeout_sec=45,
                             min_records=records)
 
-    @ok_to_fail
     @cluster(num_nodes=5, log_allow_list=PARTITION_MOVEMENT_LOG_ERRORS)
     def test_move_consumer_offsets_intranode(self):
         """
