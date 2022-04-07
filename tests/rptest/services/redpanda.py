@@ -233,7 +233,11 @@ class SISettings:
                  cloud_storage_bucket=f"panda-bucket-{uuid.uuid1()}",
                  cloud_storage_api_endpoint="minio-s3",
                  cloud_storage_api_endpoint_port=9000,
-                 cloud_storage_cache_size=160 * 1000000):
+                 cloud_storage_cache_size=160 * 1000000,
+                 cloud_storage_enable_remote_read=True,
+                 cloud_storage_enable_remote_write=True,
+                 cloud_storage_reconciliation_interval_ms=None,
+                 cloud_storage_max_connections=None):
         self.log_segment_size = log_segment_size
         self.cloud_storage_access_key = cloud_storage_access_key
         self.cloud_storage_secret_key = cloud_storage_secret_key
@@ -242,6 +246,10 @@ class SISettings:
         self.cloud_storage_api_endpoint = cloud_storage_api_endpoint
         self.cloud_storage_api_endpoint_port = cloud_storage_api_endpoint_port
         self.cloud_storage_cache_size = cloud_storage_cache_size
+        self.cloud_storage_enable_remote_read = cloud_storage_enable_remote_read
+        self.cloud_storage_enable_remote_write = cloud_storage_enable_remote_write
+        self.cloud_storage_reconciliation_interval_ms = cloud_storage_reconciliation_interval_ms
+        self.cloud_storage_max_connections = cloud_storage_max_connections
 
     def update_rp_conf(self, conf):
         conf["log_segment_size"] = self.log_segment_size
@@ -255,6 +263,17 @@ class SISettings:
         conf["cloud_storage_cache_size"] = self.cloud_storage_cache_size
         conf["cloud_storage_enabled"] = True
         conf['cloud_storage_disable_tls'] = True
+        conf[
+            'cloud_storage_enable_remote_read'] = self.cloud_storage_enable_remote_read
+        conf[
+            'cloud_storage_enable_remote_write'] = self.cloud_storage_enable_remote_write
+
+        if self.cloud_storage_reconciliation_interval_ms:
+            conf[
+                'cloud_storage_reconciliation_interval_ms'] = self.cloud_storage_reconciliation_interval_ms
+        if self.cloud_storage_max_connections:
+            conf[
+                'cloud_storage_max_connections'] = self.cloud_storage_max_connections
 
         return conf
 
