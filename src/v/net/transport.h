@@ -51,6 +51,11 @@ public:
 
     virtual ss::future<>
       connect(clock_type::time_point = clock_type::time_point::max());
+
+    // override this method to reset internal state when connection attempt is
+    // being made
+    virtual void reset_state() {}
+
     ss::future<> stop();
     void shutdown() noexcept;
 
