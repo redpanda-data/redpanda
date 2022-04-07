@@ -199,6 +199,11 @@
           "type": "string",
           "description": "Expected syntax of the property value"
         },
+        "enum_values": {
+          "type": "array",
+          "description": "Possible values of the property (in string-ized form)",
+          "items": {"type": "string"}
+        },
         "items": {
           "type": "cluster_config_property_metadata_items",
           "description": "Type of items in an array",

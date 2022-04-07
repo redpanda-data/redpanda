@@ -523,4 +523,74 @@ public:
 
     void set_value(std::any) override { return; }
 };
+
+template<typename T>
+class enum_property : public property<T> {
+public:
+    enum_property(
+      config_store& conf,
+      std::string_view name,
+      std::string_view desc,
+      base_property::metadata meta,
+      T def,
+      std::vector<T> values)
+      : property<T>(
+        conf,
+        name,
+        desc,
+        meta,
+        def,
+        [this](T new_value) -> std::optional<ss::sstring> {
+            auto found = std::find_if(
+              _values.begin(), _values.end(), [&new_value](T const& v) {
+                  return v == new_value;
+              });
+            if (found == _values.end()) {
+                return help_text();
+            } else {
+                return std::nullopt;
+            }
+        })
+      , _values(values) {}
+
+    std::optional<validation_error>
+    validate(YAML::Node n) const final override {
+        try {
+            auto v = n.as<T>();
+            return property<T>::validate(v);
+        } catch (...) {
+            // Not convertible (e.g. if the underlying type is an enum class)
+            // therefore assume it is out of bounds.
+            return validation_error{property<T>::name().data(), help_text()};
+        }
+    }
+
+    std::vector<ss::sstring> enum_values() const final override {
+        std::vector<ss::sstring> r;
+        for (const auto& v : _values) {
+            r.push_back(ssx::sformat("{}", v));
+        }
+
+        return r;
+    }
+
+private:
+    ss::sstring help_text() const {
+        // String-ize the available values
+        std::vector<std::string> str_values;
+        str_values.reserve(_values.size());
+        std::transform(
+          _values.begin(),
+          _values.end(),
+          std::back_inserter(str_values),
+          [](const T& v) { return fmt::format("{}", v); });
+
+        return fmt::format(
+          "Must be one of {}",
+          fmt::join(str_values.begin(), str_values.end(), ","));
+    }
+
+    std::vector<T> _values;
+};
+
 }; // namespace config

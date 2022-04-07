@@ -53,7 +53,9 @@ func exportConfig(
 		// Preface each property with a descriptive comment
 		var commentTokens []string
 
-		if meta.Example != "" {
+		if len(meta.EnumValues) > 0 {
+			commentTokens = append(commentTokens, fmt.Sprintf("one of %s", strings.Join(meta.EnumValues, ", ")))
+		} else if meta.Example != "" {
 			commentTokens = append(commentTokens, fmt.Sprintf("e.g. '%s'", meta.Example))
 		}
 

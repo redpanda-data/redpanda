@@ -861,6 +861,14 @@ void admin_server::register_cluster_config_routes() {
                     pm.type = ss::sstring(p.type_name());
                 }
 
+                auto enum_values = p.enum_values();
+                if (!enum_values.empty()) {
+                    // In swagger, this field would just be called 'enum', but
+                    // because we use C++ code generation for our structures,
+                    // we cannot use that reserved word
+                    pm.enum_values = enum_values;
+                }
+
                 const auto& example = p.example();
                 if (example.has_value()) {
                     pm.example = ss::sstring(example.value());

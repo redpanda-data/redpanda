@@ -105,6 +105,7 @@ public:
     virtual bool is_nullable() const = 0;
     virtual bool is_array() const = 0;
     virtual std::optional<std::string_view> example() const = 0;
+    virtual std::vector<ss::sstring> enum_values() const { return {}; };
 
     /**
      * Validation of a proposed new value before it has been assigned
