@@ -275,11 +275,6 @@ members_manager::apply_raft_configuration_batch(model::record_batch b) {
       "Current batch contains {} records",
       b.record_count());
 
-    // members manager already seen this configuration, skip
-    if (b.base_offset() < _last_seen_configuration_offset) {
-        co_return make_error_code(errc::success);
-    }
-
     auto cfg = reflection::from_iobuf<raft::group_configuration>(
       b.copy_records().front().release_value());
 
