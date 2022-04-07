@@ -21,6 +21,9 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda import ResourceSettings
 from rptest.services.franz_go_verifiable_services import FranzGoVerifiableProducer
 from rptest.services.kaf_consumer import KafConsumer
+from rptest.services.metrics_check import MetricCheck
+
+RATE_METRIC = "vectorized_kafka_rpc_connections_wait_rate_total"
 
 
 class ConnectionRateLimitTest(RedpandaTest):
@@ -140,3 +143,7 @@ class ConnectionRateLimitTest(RedpandaTest):
         time2 = self.get_read_time(self.RANDOM_READ_PARALLEL * 2)
 
         assert time2 >= time1 * 1.7
+
+        metrics = MetricCheck(self.logger, self.redpanda,
+                              self.redpanda.nodes[0], RATE_METRIC, {})
+        metrics.evaluate([(RATE_METRIC, lambda a, b: b > 0)])

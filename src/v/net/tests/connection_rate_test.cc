@@ -12,6 +12,7 @@
 #include "seastarx.h"
 
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/manual_clock.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/when_all.hh>
 #include <seastar/net/inet_address.hh>
@@ -19,180 +20,138 @@
 
 #include <boost/test/tools/old/interface.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <unordered_map>
 
-namespace {
-
-// In test we can get situation when one fiber succesfull go in
-// semaphore.wait(), but increase counter on next second.
-void check_rate(int64_t rate, int64_t prev_diff, int64_t max_rate) {
-    BOOST_CHECK(rate <= max_rate + prev_diff);
-}
-
-int64_t get_diff(int64_t rate, int64_t prev_diff, int64_t max_rate) {
-    // We should understand how much connections from current second we accept
-    auto accepted_connections = std::max(0l, rate - prev_diff);
-    return std::max(0l, max_rate - accepted_connections);
-}
-
-} // namespace
-
-// TODO: for unit tests, it's ideal to avoid sleeps/wallclock time as much as
-// possible. seastar has a manual_clock class for this. Maybe connection_rate
-// could be templated on the clock type, and instantiate it with a manual clock
-// for tests.
-
-SEASTAR_THREAD_TEST_CASE(rate_test) {
+SEASTAR_THREAD_TEST_CASE(general_rate_test) {
     ss::gate gate;
+    net::server_probe probe;
 
-    const int64_t max_rate = 5;
-    const int64_t max_wait_time_sec = 20;
+    const std::vector<int64_t> max_rates = {5, 10, 2};
+    const int64_t max_threads = 50;
 
-    net::connection_rate_info info{.max_connection_rate = max_rate};
-    net::connection_rate connection_rate(info, gate);
+    net::connection_rate_info info{.max_connection_rate = 1};
+    net::connection_rate<ss::manual_clock> connection_rate(
+      info, gate, probe, 1000000ms);
 
-    std::vector<ss::future<>> futures;
-    std::vector<int64_t> rate_counter(max_wait_time_sec, 0);
+    for (auto max_rate : max_rates) {
+        connection_rate.update_general_rate(max_rate);
+        ss::manual_clock::advance(std::chrono::seconds(2));
+        ss::sleep(50ms).get();
 
-    auto start = ss::lowres_clock::now();
-    while (true) {
-        auto current_time = ss::lowres_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::seconds>(
-          current_time - start);
+        const int64_t one_connection_time_ms = std::max(1000 / max_rate, 1l);
+        // In first second max_rate fibers can go in, so we should added it to
+        // expected time
+        const int64_t max_wait_s = ((max_threads - max_rate) / max_rate) * 1000;
 
-        if (duration.count() > max_wait_time_sec) {
-            break;
-        }
+        int64_t wait_time = 0;
+
+        std::vector<ss::future<>> futures;
 
         ss::net::inet_address addr("127.0.0.1");
-        auto f = connection_rate.maybe_wait(addr)
-                   .then([&rate_counter, start] {
-                       auto current_time = ss::lowres_clock::now();
-                       auto duration
-                         = std::chrono::duration_cast<std::chrono::seconds>(
-                           current_time - start);
-                       if (duration.count() < rate_counter.size()) {
-                           rate_counter[duration.count()]++;
-                       }
-                   })
-                   .handle_exception([](std::exception_ptr const&) {});
 
-        futures.push_back(std::move(f));
-
-        // We should move execution to seastar.
-        if (futures.size() % 30 == 0) {
-            ss::sleep(1ms).get();
+        for (auto i = 0; i < max_threads; ++i) {
+            auto f = connection_rate.maybe_wait(addr).handle_exception(
+              [](std::exception_ptr) {
+                  // do notinhg
+              });
+            futures.emplace_back(std::move(f));
         }
+
+        ss::sleep(50ms).get();
+
+        while (
+          !std::all_of(futures.begin(), futures.end(), [](ss::future<>& f) {
+              return f.available();
+          })) {
+            ss::manual_clock::advance(
+              std::chrono::milliseconds(one_connection_time_ms));
+            ss::sleep(50ms).get();
+            wait_time += one_connection_time_ms;
+        }
+
+        BOOST_CHECK(wait_time == max_wait_s);
+
+        ss::manual_clock::advance(std::chrono::seconds(2));
+        ss::sleep(50ms).get();
     }
 
-    connection_rate.stop();
     gate.close().get();
-
-    ss::when_all(futures.begin(), futures.end()).get();
-
-    int64_t diff = 0;
-    for (auto second = 0; second < rate_counter.size(); ++second) {
-        auto rate = rate_counter[second];
-        // For zero second we have max_rate tokens, and will add new each
-        // 1000ms/max_rate, so for seconds with max_rate tokens we can expect
-        // max_rate * 2 connections
-        if (second == 0) {
-            check_rate(rate, diff, 2 * max_rate);
-            diff = get_diff(rate, diff, max_rate * 2);
-        } else {
-            check_rate(rate, diff, max_rate);
-            diff = std::max(0l, max_rate - rate);
-        }
-    }
+    connection_rate.stop();
 }
 
-SEASTAR_THREAD_TEST_CASE(update_rate_test) {
+SEASTAR_THREAD_TEST_CASE(overrides_rate_test) {
     ss::gate gate;
-    net::connection_rate_info info{.max_connection_rate = 1};
-    net::connection_rate connection_rate(info, gate);
-    int64_t max_wait_time_sec = 10;
+    net::server_probe probe;
 
-    std::vector<int64_t> rate_counter(30, 0);
+    int64_t max_rate = 10;
+    const int64_t max_threads = 50;
 
-    struct rate_test_t {
+    std::vector<ss::sstring> overrides = {"127.0.0.2:5", "127.0.0.3:2"};
+
+    struct override {
         int64_t max_rate;
+        ss::net::inet_address addr;
         std::vector<ss::future<>> futures;
-        ss::lowres_clock::time_point updating_rate_time;
+        int64_t wait_time_ms{0};
     };
 
-    std::vector<rate_test_t> rates(3);
-    rates[0].max_rate = 10;
-    rates[1].max_rate = 20;
-    rates[2].max_rate = 5;
+    std::unordered_map<ss::sstring, override> overrides_map;
+    overrides_map["127.0.0.1"] = {
+      .max_rate = 10,
+      .addr = ss::net::inet_address("127.0.0.1")}; // General rate;
+    overrides_map["127.0.0.2"] = {
+      .max_rate = 5, .addr = ss::net::inet_address("127.0.0.2")};
+    overrides_map["127.0.0.3"] = {
+      .max_rate = 2, .addr = ss::net::inet_address("127.0.0.3")};
 
-    auto start = ss::lowres_clock::now();
+    const int64_t min_one_connection_time_ms = std::max(1000 / max_rate, 1l);
 
-    for (auto& rate : rates) {
-        connection_rate.update_general_rate(rate.max_rate);
+    net::connection_rate_info info{
+      .max_connection_rate = max_rate, .overrides = std::move(overrides)};
+    net::connection_rate<ss::manual_clock> connection_rate(
+      info, gate, probe, 1000000ms);
 
-        rate.updating_rate_time = ss::lowres_clock::now();
-        while (true) {
-            auto current_time = ss::lowres_clock::now();
-            auto duration = std::chrono::duration_cast<std::chrono::seconds>(
-              current_time - rate.updating_rate_time);
-
-            if (duration.count() >= max_wait_time_sec) {
-                break;
-            }
-
-            ss::net::inet_address addr("127.0.0.1");
-            auto f = connection_rate.maybe_wait(addr)
-                       .then([&rate_counter, start] {
-                           auto current_time = ss::lowres_clock::now();
-                           auto duration
-                             = std::chrono::duration_cast<std::chrono::seconds>(
-                               current_time - start);
-                           if (duration.count() < rate_counter.size()) {
-                               rate_counter[duration.count()]++;
-                           }
-                       })
-                       .handle_exception([](std::exception_ptr const&) {});
-
-            rate.futures.push_back(std::move(f));
-
-            // We should move execution to seastar.
-            if (rate.futures.size() % 30 == 0) {
-                ss::sleep(1ms).get();
-            }
+    for (auto i = 0; i < max_threads; ++i) {
+        for (auto& override : overrides_map) {
+            auto f = connection_rate.maybe_wait(override.second.addr)
+                       .handle_exception([](std::exception_ptr) {
+                           // do notinhg
+                       });
+            override.second.futures.emplace_back(std::move(f));
         }
     }
 
-    connection_rate.stop();
+    ss::sleep(50ms).get();
+
+    bool need_stop = false;
+    while (!need_stop) {
+        need_stop = true;
+        for (auto& override : overrides_map) {
+            if (std::all_of(
+                  override.second.futures.begin(),
+                  override.second.futures.end(),
+                  [](ss::future<>& f) { return f.available(); })) {
+                int64_t expected_time = ((max_threads
+                                          - override.second.max_rate)
+                                         / override.second.max_rate)
+                                        * 1000;
+                BOOST_CHECK(expected_time == override.second.wait_time_ms);
+            } else {
+                need_stop = false;
+                override.second.wait_time_ms += min_one_connection_time_ms;
+            }
+        }
+
+        ss::manual_clock::advance(
+          std::chrono::milliseconds(min_one_connection_time_ms));
+        ss::sleep(50ms).get();
+    }
+
+    ss::manual_clock::advance(std::chrono::seconds(2));
+    ss::sleep(50ms).get();
+
     gate.close().get();
-
-    for (auto& rate_info : rates) {
-        ss::when_all(rate_info.futures.begin(), rate_info.futures.end()).get();
-    }
-
-    size_t current_index = 0;
-    auto max_rate = rates[0].max_rate;
-    auto change_rate_time = rates[0].updating_rate_time;
-    int64_t diff = 0;
-    for (auto second = 0; second < rate_counter.size(); ++second) {
-        auto rate = rate_counter[second];
-        auto duration = std::chrono::duration_cast<std::chrono::seconds>(
-          rates[current_index].updating_rate_time - start);
-        if (second >= duration.count() + max_wait_time_sec) {
-            current_index = std::min(++current_index, rates.size() - 1);
-            max_rate = rates[current_index].max_rate;
-            change_rate_time = rates[current_index].updating_rate_time;
-        }
-        if (
-          std::chrono::duration_cast<std::chrono::seconds>(
-            change_rate_time - start)
-            .count()
-          == second) {
-            check_rate(rate, diff, max_rate * 2);
-            diff = get_diff(rate, diff, max_rate * 2);
-        } else {
-            check_rate(rate, diff, max_rate);
-            diff = get_diff(rate, diff, max_rate);
-        }
-    }
+    connection_rate.stop();
 }

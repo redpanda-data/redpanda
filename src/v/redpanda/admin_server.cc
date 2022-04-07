@@ -413,7 +413,7 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
         // Assumption: the peer will be listening on the same port that this
         // request was sent to: parse the port out of the Host header
         auto colon = host_hdr.find(":");
-        if (colon == std::string::npos) {
+        if (colon == ss::sstring::npos) {
             // Admin is being served on a standard port, leave port string blank
         } else {
             port = host_hdr.substr(colon);

@@ -53,7 +53,7 @@ void server::start() {
           .overrides
           = connection_rate_bindings.value().config_overrides_rate()};
 
-        _connection_rates.emplace(std::move(info), _conn_gate);
+        _connection_rates.emplace(std::move(info), _conn_gate, _probe);
 
         connection_rate_bindings.value().config_general_rate.watch([this] {
             _connection_rates->update_general_rate(
@@ -247,6 +247,10 @@ void server::shutdown_input() {
 ss::future<> server::wait_for_shutdown() {
     if (!_as.abort_requested()) {
         shutdown_input();
+    }
+
+    if (_connection_rates.has_value()) {
+        _connection_rates->stop();
     }
 
     return _conn_gate.close().then([this] {

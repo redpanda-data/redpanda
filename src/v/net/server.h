@@ -185,7 +185,7 @@ private:
     ss::metrics::metric_groups _metrics;
 
     std::optional<config_connection_rate_bindings> connection_rate_bindings;
-    std::optional<connection_rate> _connection_rates;
+    std::optional<connection_rate<>> _connection_rates;
 };
 
 } // namespace net

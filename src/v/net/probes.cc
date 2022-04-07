@@ -85,6 +85,12 @@ void server_probe::setup_metrics(
           [this] { return _requests_received - _requests_completed; },
           sm::description(ssx::sformat(
             "{}: Number of requests being processed by server", proto))),
+        sm::make_derive(
+          "connections_wait_rate",
+          [this] { return _connections_wait_rate; },
+          sm::description(ssx::sformat(
+            "{}: Number of connections are blocked by connection rate",
+            proto))),
       });
 }
 

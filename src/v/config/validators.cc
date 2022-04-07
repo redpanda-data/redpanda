@@ -23,7 +23,7 @@ namespace config {
 std::optional<std::pair<ss::sstring, int64_t>>
 parse_connection_rate_override(const ss::sstring& raw_option) {
     auto del_pos = raw_option.find(":");
-    if (del_pos == std::string::npos || del_pos == raw_option.size() - 1) {
+    if (del_pos == ss::sstring::npos || del_pos == raw_option.size() - 1) {
         return std::nullopt;
     }
 
