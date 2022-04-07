@@ -1,6 +1,7 @@
 set(srcs
     bounded_property_test.cc
     enum_property_test.cc
+    retention_property_test.cc
     config_store_test.cc
     socket_address_convert_test.cc
     tls_config_convert_test.cc
