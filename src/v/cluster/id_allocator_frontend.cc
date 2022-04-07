@@ -22,6 +22,7 @@
 #include "config/configuration.h"
 #include "model/namespace.h"
 #include "model/record_batch_reader.h"
+#include "vformat.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/do_with.hh>
@@ -80,7 +81,7 @@ id_allocator_frontend::allocate_id(model::timeout_clock::duration timeout) {
     while (!aborted && 0 < retries--) {
         auto leader_opt = _leaders.local().get_leader(model::id_allocator_ntp);
         if (unlikely(!leader_opt)) {
-            error = fmt::format(
+            error = vformat(
               "can't find {} in the leaders cache", model::id_allocator_ntp);
             vlog(
               clusterlog.trace,
@@ -109,11 +110,11 @@ id_allocator_frontend::allocate_id(model::timeout_clock::duration timeout) {
         }
 
         if (likely(r.ec != errc::replication_error)) {
-            error = fmt::format("id allocation failed with {}", r.ec);
+            error = vformat("id allocation failed with {}", r.ec);
             break;
         }
 
-        error = fmt::format("id allocation failed with {}", r.ec);
+        error = vformat("id allocation failed with {}", r.ec);
         vlog(
           clusterlog.trace, "id allocation failed, retries left: {}", retries);
         aborted = !co_await sleep_abortable(delay_ms, _as);
