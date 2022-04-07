@@ -16,18 +16,6 @@ using namespace net;
 using namespace tests;
 using namespace std::chrono_literals;
 
-conn_quota::config_fn get_config_fn(
-  std::optional<uint32_t> max_con, std::optional<uint32_t> max_con_per_ip) {
-    return [max_con, max_con_per_ip]() mutable {
-        return conn_quota_config{
-          .max_connections = config::mock_binding<std::optional<uint32_t>>(
-            std::move(max_con)),
-          .max_connections_per_ip
-          = config::mock_binding<std::optional<uint32_t>>(
-            std::move(max_con_per_ip))};
-    };
-}
-
 // Some made up addresses to make tests terser
 static ss::net::inet_address addr1("10.0.0.1");
 static ss::net::inet_address addr2("10.0.0.2");
@@ -39,20 +27,28 @@ struct conn_quota_fixture {
     ~conn_quota_fixture() {
         drop_shard_units();
         scq.stop().get();
+        max_con_overrides.stop().get();
         max_con_per_ip.stop().get();
         max_con.stop().get();
     }
 
     void start(
       std::optional<uint32_t> max_con_,
-      std::optional<uint32_t> max_con_per_ip_) {
+      std::optional<uint32_t> max_con_per_ip_,
+      std::vector<ss::sstring> max_conn_overrides_ = {}) {
         max_con.start(max_con_).get();
         max_con_per_ip.start(max_con_per_ip_).get();
+
+        std::vector<ss::sstring> overrides;
+        overrides = max_conn_overrides_;
+        max_con_overrides.start(overrides).get();
+
         scq
           .start([this]() {
               return conn_quota_config{
                 .max_connections = max_con.local().bind(),
-                .max_connections_per_ip = max_con_per_ip.local().bind()};
+                .max_connections_per_ip = max_con_per_ip.local().bind(),
+                .max_connections_overrides = max_con_overrides.local().bind()};
           })
           .get();
     }
@@ -140,6 +136,8 @@ struct conn_quota_fixture {
     ss::sharded<conn_quota> scq;
     ss::sharded<config::mock_property<std::optional<uint32_t>>> max_con;
     ss::sharded<config::mock_property<std::optional<uint32_t>>> max_con_per_ip;
+    ss::sharded<config::mock_property<std::vector<ss::sstring>>>
+      max_con_overrides;
 
     // Stash your foreign shard units here, so that the fixture can
     // clean them up for you on destruction (e.g. when handling exception)
@@ -414,6 +412,160 @@ FIXTURE_TEST(test_change_limits_per_ip, conn_quota_fixture) {
     // Having cleared the limit, we should be able to take as many
     // as we want.
     auto took_2 = take_units(addr1, initial_limit * 10);
+}
+
+/**
+ * Check that the 'overrides' config enables a distinct
+ * limit for a particular IP vs. the general per-IP limit
+ */
+FIXTURE_TEST(test_overrides, conn_quota_fixture) {
+    auto core_count = ss::smp::count;
+
+    uint32_t general_limit = core_count * 2;
+    vlog(logger.info, "Constructing with overrides");
+    start(std::nullopt, general_limit, {"10.0.0.1:1", "10.0.0.3:10"});
+
+    // Check that a non-overridden address is able to consume up
+    // to the general per-IP limit.
+    vlog(logger.info, "Taking");
+    {
+        auto took_1 = take_units(addr2, general_limit);
+        expect_no_units(addr2).get();
+    }
+
+    // Check that the overridden address is restricted
+    {
+        vlog(logger.info, "Taking");
+        auto took = take_units(addr1, 1);
+        expect_no_units(addr1).get();
+    }
+
+    // Check that changing the override limit takes effect
+    vlog(logger.info, "Modify override");
+    max_con_overrides
+      .invoke_on_all([](config::mock_property<std::vector<ss::sstring>>& p) {
+          p.update({"10.0.0.1:3", "10.0.0.3:10"});
+      })
+      .get();
+    {
+        vlog(logger.info, "Taking");
+        auto took = take_units(addr1, 3);
+        expect_no_units(addr1).get();
+    }
+
+    // Check that removing the override takes effect
+    vlog(logger.info, "Clearing one override");
+    max_con_overrides
+      .invoke_on_all([](config::mock_property<std::vector<ss::sstring>>& p) {
+          p.update({"10.0.0.3:10"});
+      })
+      .get();
+
+    // Should revert to the general per-IP limit
+    vlog(logger.info, "Taking");
+    {
+        auto took = take_units(addr1, general_limit);
+        expect_no_units(addr1).get();
+    }
+
+    vlog(logger.info, "Clearing all overrides");
+    max_con_overrides
+      .invoke_on_all([](config::mock_property<std::vector<ss::sstring>>& p) {
+          p.update({});
+      })
+      .get();
+}
+
+/**
+ * Check that we can simply block one client with a zero limit
+ */
+FIXTURE_TEST(test_override_block, conn_quota_fixture) {
+    start(std::nullopt, std::nullopt, {"10.0.0.1:0", "10.0.0.3:0"});
+    // The blocked addresses should permit no units
+    expect_no_units(addr1).get();
+    expect_no_units(addr3).get();
+    // Some other address should not be blocked
+    take_units(addr2, 20);
+
+    // Unblock one address
+    max_con_overrides
+      .invoke_on_all([](config::mock_property<std::vector<ss::sstring>>& p) {
+          p.update({"10.0.0.3:0"});
+      })
+      .get();
+
+    // The one we unblocked should be unlimited
+    take_units(addr1, 20);
+    take_units(addr2, 20);
+    expect_no_units(addr3).get();
+
+    // All should be unlimited
+
+    max_con_overrides
+      .invoke_on_all([](config::mock_property<std::vector<ss::sstring>>& p) {
+          p.update({});
+      })
+      .get();
+    take_units(addr1, 20);
+    take_units(addr2, 20);
+    take_units(addr3, 20);
+}
+
+/**
+ * Check setting the default per-IP limit to zero and
+ * adding non-zero overrides, as a form of allow-listing.
+ */
+FIXTURE_TEST(test_override_allowlist, conn_quota_fixture) {
+    start(std::nullopt, 0, {"10.0.0.2:10"});
+
+    // Only the allow-listed address should be able to get units
+    expect_no_units(addr1).get();
+    expect_no_units(addr3).get();
+    {
+        auto took = take_units(addr2, 10);
+        expect_no_units(addr2).get();
+    }
+
+    // Unblock the per-ip setting, everyone should be able to get units now.
+    vlog(logger.info, "Unblocking");
+    max_con_per_ip
+      .invoke_on_all(
+        [](config::mock_property<std::optional<uint32_t>>& p) { p.update(5); })
+      .get();
+
+    {
+        vlog(logger.info, "Checking addr1 after unblock");
+        // Non-overridden client should now have the new per-ip limit
+        auto took = take_units(addr1, 5);
+        expect_no_units(addr1).get();
+    }
+    {
+        vlog(logger.info, "Checking addr2 after unblock");
+        // The overriden client should still have its higher limit
+        auto took = take_units(addr2, 10);
+        expect_no_units(addr2).get();
+    }
+    {
+        vlog(logger.info, "Checking addr3 after unblock");
+        auto took = take_units(addr3, 5);
+        expect_no_units(addr3).get();
+    }
+}
+
+FIXTURE_TEST(test_override_invalid, conn_quota_fixture) {
+    start(std::nullopt, std::nullopt, {"10.0.0.1:zoodle", "10.0.0.2:5"});
+
+    {
+        // The valid entry should still have taken effect
+        auto took = take_units(addr2, 5);
+        expect_no_units(addr2).get();
+    }
+
+    {
+        // The invalid entry should have had no impact (in this case
+        // that means no limit on addr1)
+        take_units(addr1, 20);
+    }
 }
 
 FIXTURE_TEST(test_overlaps, conn_quota_fixture) {

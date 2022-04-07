@@ -10,11 +10,11 @@
 #include "conn_quota.h"
 
 #include "config/configuration.h"
+#include "config/validators.h"
 #include "hashing/xx.h"
 #include "rpc/logger.h"
 #include "seastar/core/coroutine.hh"
 #include "ssx/future-util.h"
-#include "vassert.h"
 #include "vlog.h"
 
 namespace net {
@@ -59,7 +59,9 @@ conn_quota::conn_quota(conn_quota::config_fn cfg_f) noexcept
     });
 
     _cfg.max_connections_per_ip.watch([this]() {
-        if (!_cfg.max_connections_per_ip()) {
+        if (
+          !_cfg.max_connections_per_ip()
+          && _cfg.max_connections_overrides().empty()) {
             if (ss::this_shard_id() == 0) {
                 vlog(
                   rpc::rpclog.info, "Connection count per-IP limit disabled");
@@ -76,8 +78,29 @@ conn_quota::conn_quota(conn_quota::config_fn cfg_f) noexcept
             }
 
             for (auto& i : ip_home) {
+                if (overrides.contains(i.first)) {
+                    // Overridden IPs are exempt from the general per-IP limit
+                    continue;
+                }
                 update_limit(i.first, *(i.second), new_limit);
             }
+        }
+    });
+
+    if (!_cfg.max_connections_overrides().empty()) {
+        apply_overrides();
+    }
+
+    _cfg.max_connections_overrides.watch([this]() {
+        if (
+          !_cfg.max_connections_per_ip()
+          && _cfg.max_connections_overrides().empty()) {
+            overrides.clear();
+            ip_home.clear();
+            ip_remote.clear();
+            return;
+        } else {
+            apply_overrides();
         }
     });
 }
@@ -124,7 +147,7 @@ ss::future<conn_quota::units> conn_quota::get(ss::net::inet_address addr) {
         vlog(rpc::rpclog.trace, "Global conn limit disabled");
     }
 
-    if (_cfg.max_connections_per_ip()) {
+    if (_cfg.max_connections_per_ip() || overrides.contains(addr)) {
         if (!co_await do_get(addr)) {
             // Release the unit we already took for total connection count
             if (_cfg.max_connections()) {
@@ -176,6 +199,12 @@ void conn_quota::update_limit(
   ss::net::inet_address addr,
   conn_quota::home_allowance& allowance,
   uint32_t new_limit) {
+    vlog(
+      rpc::rpclog.trace,
+      "update_limit({}): {} -> {}",
+      addr,
+      allowance.max,
+      new_limit);
     auto in_use = allowance.max - allowance.available;
     bool was_dirty_decrease = in_use != 0 && allowance.max > new_limit;
 
@@ -214,6 +243,11 @@ conn_quota::get_home_allowance(ss::net::inet_address addr) {
         if (found != ip_home.end()) {
             return found->second;
         } else {
+            vlog(
+              rpc::rpclog.trace,
+              "Creating default home_allowance for {} (limit {})",
+              addr,
+              _cfg.max_connections_per_ip().value());
             auto [iter, created] = ip_home.insert(std::make_pair(
               addr,
               ss::make_lw_shared<home_allowance>(
@@ -316,12 +350,24 @@ void conn_quota::cancel_reclaim_from(ss::net::inet_address addr) {
 /**
  * I am the home shard for this address.  Acquire tokens, reclaiming
  * if necessary.
+ *
+ * Return true if we successfully acquired tokens.
  */
 ss::future<bool> conn_quota::home_get_units(ss::net::inet_address addr) {
     assert_on_home(addr);
 
     auto allowance = get_home_allowance(addr);
     vlog(rpc::rpclog.trace, "home_get_units({}) allowance={}", addr, allowance);
+
+    // Optimization: early return if allowance has a zero limit, i.e.
+    // the administrator is using an override to block a particular client
+    if (allowance->max == 0) {
+        vlog(
+          rpc::rpclog.debug,
+          "home_get_units: client {} is blocked (0 connection limit)",
+          addr);
+        co_return false;
+    }
 
     bool result = try_get_units(*allowance);
     if (result || allowance->reclaim) {
@@ -420,6 +466,74 @@ void conn_quota::do_put(ss::net::inet_address addr) {
                   home_shard, [addr](conn_quota& cq) { cq.do_put(addr); });
             });
         }
+    }
+}
+
+/**
+ * When the overrides config binding is updated, call this to populate
+ * all the overridden addresses into ip_home.
+ */
+void conn_quota::apply_overrides() {
+    overrides.clear();
+    overrides.reserve(_cfg.max_connections_overrides().size());
+    for (const auto& o : _cfg.max_connections_overrides()) {
+        auto parsed = config::parse_connection_rate_override(o);
+        if (!parsed.has_value()) {
+            if (ss::this_shard_id() == ss::shard_id{0}) {
+                // Avoid log spam from all shards, only log on shard 0
+                vlog(
+                  rpc::rpclog.warn,
+                  "Invalid entry in kafka_connections_max_overrides: '{}'",
+                  o);
+            }
+            continue;
+        }
+
+        auto [addr, limit] = parsed.value();
+        overrides.emplace(addr, limit);
+    }
+
+    for (const auto& i : overrides) {
+        const auto& addr = i.first;
+
+        // We only care about updating ip_home, where the authoritative
+        // limit is stored.
+        if (addr_to_shard(addr) != ss::this_shard_id()) {
+            continue;
+        }
+
+        auto found = ip_home.find(i.first);
+        if (found != ip_home.end()) {
+            update_limit(i.first, *(found->second), i.second);
+        } else {
+            vlog(
+              rpc::rpclog.trace,
+              "Populating override home_allowance for {}",
+              i.first);
+            ip_home.insert(std::make_pair(
+              i.first, ss::make_lw_shared<home_allowance>(i.second, i.second)));
+        }
+    }
+
+    // In case there were overrides removed, update existing ip_home
+    // state
+    std::vector<inet_address_key> to_delete;
+    for (auto& i : ip_home) {
+        if (!overrides.contains(i.first)) {
+            if (!_cfg.max_connections_per_ip().has_value()) {
+                // If it's not overridden and there is per_ip config,
+                // then we can drop the state.
+                to_delete.emplace_back(i.first);
+            } else if (i.second->max != _cfg.max_connections_per_ip().value()) {
+                // If it used to be overridden, reset its limit to
+                // the general per-IP limit
+                update_limit(
+                  i.first, *(i.second), _cfg.max_connections_per_ip().value());
+            }
+        }
+    }
+    for (const auto& k : to_delete) {
+        ip_home.erase(k);
     }
 }
 
