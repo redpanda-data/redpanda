@@ -1,4 +1,4 @@
-# Copyright 2020 Redpanda Data, Inc.
+# Copyright 2022 Redpanda Data, Inc.
 #
 # Use of this software is governed by the Business Source License
 # included in the file licenses/BSL.md
@@ -141,3 +141,26 @@ class ClusterStorage:
     def partitions(self, ns, topic):
         return itertools.chain(
             *map(lambda n: n.partitions(ns, topic), self.nodes))
+
+
+# Retrieve a summary of storage on a node.
+def listdir(node, path, only_dirs=False):
+    try:
+        ents = node.account.sftp_client.listdir(path)
+    except FileNotFoundError:
+        # Perhaps the directory has been deleted since we saw it.
+        # This is normal if doing a listing concurrently with topic deletion.
+        return []
+
+    if not only_dirs:
+        return ents
+    paths = map(lambda fn: (fn, os.path.join(path, fn)), ents)
+
+    def safe_isdir(path):
+        try:
+            return node.account.isdir(path)
+        except FileNotFoundError:
+            # Things that no longer exist are also no longer directories
+            return False
+
+    return [p[0] for p in paths if safe_isdir(p[1])]

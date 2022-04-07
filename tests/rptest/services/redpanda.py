@@ -31,7 +31,7 @@ from ducktape.cluster.cluster import ClusterNode
 from prometheus_client.parser import text_string_to_metric_families
 
 from rptest.clients.kafka_cat import KafkaCat
-from rptest.services.storage import ClusterStorage, NodeStorage
+from rptest.services.storage import ClusterStorage, NodeStorage, listdir
 from rptest.services.admin import Admin
 from rptest.clients.python_librdkafka import PythonLibrdkafka
 
@@ -1070,41 +1070,17 @@ class RedpandaService(Service):
         return None
 
     def node_storage(self, node):
-        """
-        Retrieve a summary of storage on a node.
-        """
-        def listdir(path, only_dirs=False):
-            try:
-                ents = node.account.sftp_client.listdir(path)
-            except FileNotFoundError:
-                # Perhaps the directory has been deleted since we saw it.
-                # This is normal if doing a listing concurrently with topic deletion.
-                return []
-
-            if not only_dirs:
-                return ents
-            paths = map(lambda fn: (fn, os.path.join(path, fn)), ents)
-
-            def safe_isdir(path):
-                try:
-                    return node.account.isdir(path)
-                except FileNotFoundError:
-                    # Things that no longer exist are also no longer directories
-                    return False
-
-            return [p[0] for p in paths if safe_isdir(p[1])]
-
         store = NodeStorage(RedpandaService.DATA_DIR)
-        for ns in listdir(store.data_dir, True):
+        for ns in listdir(node, store.data_dir, True):
             if ns == '.coprocessor_offset_checkpoints':
                 continue
             ns = store.add_namespace(ns, os.path.join(store.data_dir, ns))
-            for topic in listdir(ns.path):
+            for topic in listdir(node, ns.path):
                 topic = ns.add_topic(topic, os.path.join(ns.path, topic))
-                for num in listdir(topic.path):
+                for num in listdir(node, topic.path):
                     partition = topic.add_partition(
                         num, node, os.path.join(topic.path, num))
-                    partition.add_files(listdir(partition.path))
+                    partition.add_files(listdir(node, partition.path))
         return store
 
     def storage(self):
