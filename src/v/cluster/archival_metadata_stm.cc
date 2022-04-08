@@ -18,6 +18,7 @@
 #include "raft/consensus.h"
 #include "serde/envelope.h"
 #include "serde/serde.h"
+#include "ssx/future-util.h"
 #include "storage/record_batch_builder.h"
 #include "utils/named_type.h"
 #include "vlog.h"
@@ -93,21 +94,31 @@ archival_metadata_stm::archival_metadata_stm(
 // todo: return result
 ss::future<std::error_code> archival_metadata_stm::add_segments(
   const cloud_storage::partition_manifest& manifest,
-  retry_chain_node& rc_node) {
-    return _lock.with(rc_node.get_timeout(), [this, &manifest, &rc_node] {
-        return do_add_segments(manifest, rc_node);
+  ss::lowres_clock::time_point deadline,
+  std::optional<std::reference_wrapper<ss::abort_source>> as) {
+    auto now = ss::lowres_clock::now();
+    auto timeout = now < deadline ? deadline - now : 0ms;
+    return _lock.with(timeout, [this, &manifest, deadline, as] {
+        return do_add_segments(manifest, deadline, as);
     });
 }
 
 // todo: return result
 ss::future<std::error_code> archival_metadata_stm::do_add_segments(
   const cloud_storage::partition_manifest& new_manifest,
-  retry_chain_node& rc_node) {
-    if (!co_await sync(rc_node.get_timeout())) {
-        co_return errc::timeout;
+  ss::lowres_clock::time_point deadline,
+  std::optional<std::reference_wrapper<ss::abort_source>> as) {
+    {
+        auto now = ss::lowres_clock::now();
+        auto timeout = now < deadline ? deadline - now : 0ms;
+        if (!co_await sync(timeout)) {
+            co_return errc::timeout;
+        }
     }
 
-    rc_node.check_abort();
+    if (as) {
+        as->get().check();
+    }
 
     auto segments = segments_from_manifest(new_manifest.difference(_manifest));
     if (segments.empty()) {
@@ -129,8 +140,12 @@ ss::future<std::error_code> archival_metadata_stm::do_add_segments(
       model::make_memory_record_batch_reader(std::move(batch)),
       raft::replicate_options{raft::consistency_level::quorum_ack});
 
-    auto result = co_await ss::with_timeout(
-      rc_node.get_deadline(), std::move(fut));
+    if (as) {
+        fut = ssx::with_timeout_abortable(std::move(fut), deadline, *as);
+    } else {
+        fut = ss::with_timeout(deadline, std::move(fut));
+    }
+    auto result = co_await std::move(fut);
 
     if (!result) {
         vlog(
@@ -140,8 +155,12 @@ ss::future<std::error_code> archival_metadata_stm::do_add_segments(
         co_return result.error();
     }
 
-    auto applied = co_await wait_no_throw(
-      result.value().last_offset, rc_node.get_timeout());
+    bool applied = false;
+    {
+        auto now = ss::lowres_clock::now();
+        auto timeout = now < deadline ? deadline - now : 0ms;
+        applied = co_await wait_no_throw(result.value().last_offset, timeout);
+    }
 
     if (!applied) {
         co_return errc::replication_error;

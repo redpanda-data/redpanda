@@ -466,10 +466,9 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
         }
 
         if (_partition->archival_meta_stm()) {
-            retry_chain_node rc_node(
-              _manifest_upload_timeout, _initial_backoff, &_rtcnode);
+            auto deadline = ss::lowres_clock::now() + _manifest_upload_timeout;
             auto error = co_await _partition->archival_meta_stm()->add_segments(
-              _manifest, rc_node);
+              _manifest, deadline, _as);
             if (
               error != cluster::errc::success
               && error != cluster::errc::not_leader) {
