@@ -43,6 +43,7 @@
 #include "redpanda/admin/api-doc/broker.json.h"
 #include "redpanda/admin/api-doc/cluster_config.json.h"
 #include "redpanda/admin/api-doc/config.json.h"
+#include "redpanda/admin/api-doc/debug.json.h"
 #include "redpanda/admin/api-doc/features.json.h"
 #include "redpanda/admin/api-doc/hbadger.json.h"
 #include "redpanda/admin/api-doc/partition.json.h"
@@ -141,6 +142,8 @@ void admin_server::configure_admin_routes() {
     rb->register_api_file(_server._routes, "broker");
     rb->register_function(_server._routes, insert_comma);
     rb->register_api_file(_server._routes, "transaction");
+    rb->register_function(_server._routes, insert_comma);
+    rb->register_api_file(_server._routes, "debug");
 
     register_config_routes();
     register_cluster_config_routes();
@@ -153,6 +156,7 @@ void admin_server::configure_admin_routes() {
     register_partition_routes();
     register_hbadger_routes();
     register_transaction_routes();
+    register_debug_routes();
 }
 
 struct json_validator {
@@ -2491,5 +2495,18 @@ void admin_server::register_transaction_routes() {
             tid, partition_for_delete);
           co_await throw_on_error(*req, res, ntp);
           co_return ss::json::json_return_type(ss::json::json_void());
+      });
+}
+
+void admin_server::register_debug_routes() {
+    register_route<user>(
+      ss::httpd::debug_json::reset_leaders_info,
+      [this](std::unique_ptr<ss::httpd::request>)
+        -> ss::future<ss::json::json_return_type> {
+          vlog(logger.info, "Request to reset leaders info");
+          co_await _metadata_cache.invoke_on_all(
+            [](auto& mc) { mc.reset_leaders(); });
+
+          co_return ss::json::json_void();
       });
 }
