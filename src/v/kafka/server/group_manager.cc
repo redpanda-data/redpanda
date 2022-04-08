@@ -131,7 +131,8 @@ ss::future<> group_manager::stop() {
 
 void group_manager::detach_partition(const model::ntp& ntp) {
     klog.debug("detaching group metadata partition {}", ntp);
-    ssx::spawn_with_gate(_gate, [this, ntp]() -> ss::future<> {
+    ssx::spawn_with_gate(_gate, [this, _ntp{ntp}]() -> ss::future<> {
+        auto ntp(_ntp);
         auto it = _partitions.find(ntp);
         if (it == _partitions.end()) {
             co_return;
@@ -147,7 +148,7 @@ void group_manager::detach_partition(const model::ntp& ntp) {
             }
             ++g_it;
         }
-        _partitions.erase(it);
+        _partitions.erase(ntp);
         _partitions.rehash(0);
     });
 }
