@@ -1,0 +1,26 @@
+{
+    "apiVersion": "0.0.1",
+    "swaggerVersion": "1.2",
+    "basePath": "/v1",
+    "resourcePath": "/debug",
+    "produces": [
+        "application/json"
+    ],
+    "apis": [
+        {
+            "path": "/v1/debug/reset_leaders",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Reset information about leaders for node",
+                    "type": "void",
+                    "nickname": "reset_leaders_info",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
+        }
+    ]
+}
