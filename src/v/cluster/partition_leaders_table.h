@@ -90,6 +90,8 @@ public:
       model::term_id,
       std::optional<model::node_id>);
 
+    void reset() { _leaders.clear(); }
+
 private:
     // optimized to reduce number of ntp copies
     struct leader_key {
