@@ -13,7 +13,7 @@ licenses           @senior7515 @dswang
 #
 # cloud
 #
-/src/go/k8s   @vectorizedio/k8s
+/src/go/k8s   @redpanda-data/k8s
 
 #
 # build
