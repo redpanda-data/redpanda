@@ -68,3 +68,26 @@ class LeadersInfoApiTest(RedpandaTest):
                    timeout_sec=30,
                    backoff_sec=1,
                    err_msg="Can not refresh leaders")
+
+
+class LeadersInfoApiEndToEndTest(EndToEndTest):
+    @cluster(num_nodes=5)
+    def reset_leaders_info_end_to_end_test(self):
+        self.start_redpanda(num_nodes=3)
+        self.admin = Admin(self.redpanda)
+
+        self.spec = TopicSpec(partition_count=3, replication_factor=3)
+
+        self.client().create_topic(self.spec)
+        self.topic = self.spec.name
+
+        self.start_producer(1, throughput=100)
+        self.start_consumer(1)
+        self.await_startup(min_records=100, timeout_sec=180)
+
+        for node in self.redpanda.nodes:
+            self.admin.reset_leaders_info(node)
+
+        self.run_validation(min_records=10000,
+                            producer_timeout_sec=180,
+                            consumer_timeout_sec=180)
