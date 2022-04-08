@@ -260,3 +260,12 @@ class Admin:
         leader = self.redpanda.get_node(details['leader_id'])
         ret = self._request('post', path=path, node=leader)
         return ret.status_code == 200
+
+    def reset_leaders_info(self, node):
+        """
+        Reset info for leaders on node
+        """
+        id = self.redpanda.idx(node)
+        self.redpanda.logger.info(f"Reset leaders info on {node.name}/{id}")
+        url = "debug/reset_leaders"
+        return self._request("post", url, node=node)
