@@ -19,6 +19,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/semaphore.hh>
+#include <seastar/core/sleep.hh>
 #include <seastar/core/when_all.hh>
 
 #include <algorithm>
@@ -311,6 +312,66 @@ inline auto spawn_with_gate_then(seastar::gate& g, Func&& func) noexcept {
 template<typename Func>
 inline void spawn_with_gate(seastar::gate& g, Func&& func) noexcept {
     background = spawn_with_gate_then(g, std::forward<Func>(func));
+}
+
+/// \brief Create a future that resolves either when the original future
+/// resolves, a timeout elapses (in which case timed_out_error exception is
+/// returned), or the abort source fires (in which case
+/// abort_requested_exception exception is returned), whichever comes first. In
+/// case of either timeout or abort the result of the original future is
+/// ignored.
+///
+/// \param f A future to wrap.
+/// \param deadline A deadline to wait until.
+/// \param as Abort source.
+template<typename Clock, typename Duration, typename... T>
+seastar::future<T...> with_timeout_abortable(
+  seastar::future<T...> f,
+  std::chrono::time_point<Clock, Duration> deadline,
+  seastar::abort_source& as) {
+    if (f.available()) {
+        return f;
+    }
+
+    struct state {
+        seastar::promise<T...> done;
+        seastar::timer<Clock> timer;
+        seastar::abort_source::subscription sub;
+
+        state(typename Clock::time_point deadline, seastar::abort_source& as)
+          : timer([this] {
+              sub = seastar::abort_source::subscription{};
+              done.set_exception(seastar::timed_out_error{});
+          }) {
+            auto maybe_sub = as.subscribe([this]() noexcept {
+                timer.cancel();
+                done.set_exception(seastar::abort_requested_exception{});
+            });
+            if (!maybe_sub) {
+                done.set_exception(seastar::abort_requested_exception{});
+            } else {
+                sub = std::move(*maybe_sub);
+                timer.arm(deadline);
+            }
+        }
+    };
+
+    auto st = std::make_unique<state>(deadline, as);
+    auto result = st->done.get_future();
+
+    (void)f.then_wrapped([st = std::move(st)](auto&& f) {
+        bool fired = !st->timer.armed() || !st->sub;
+        st->timer.cancel();
+        st->sub = seastar::abort_source::subscription{};
+
+        if (fired) {
+            f.ignore_ready_future();
+        } else {
+            f.forward_to(std::move(st->done));
+        }
+    });
+
+    return result;
 }
 
 } // namespace ssx
