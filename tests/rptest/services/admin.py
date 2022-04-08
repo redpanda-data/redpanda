@@ -9,10 +9,15 @@
 import random
 import json
 import requests
+import time
+from time import sleep
 from requests.adapters import HTTPAdapter
+from requests.exceptions import RequestException
 from requests.packages.urllib3.util.retry import Retry
 from ducktape.utils.util import wait_until
 from ducktape.cluster.cluster import ClusterNode
+from typing import Optional, Callable, NamedTuple
+from rptest.util import wait_until_result
 
 DEFAULT_TIMEOUT = 30
 
@@ -27,6 +32,20 @@ class AuthPreservingSession(requests.Session):
     """
     def should_strip_auth(self, old_url, new_url):
         return False
+
+
+class PartitionDetails:
+    def __init__(self):
+        self.replicas = []
+        self.leader = None
+        self.status = None
+
+
+class RedpandaNode(NamedTuple):
+    # host or ip address
+    ip: str
+    # node id in redpanda.yaml
+    id: int
 
 
 class Admin:
@@ -77,6 +96,174 @@ class Admin:
     @staticmethod
     def _url(node, path):
         return f"http://{node.account.hostname}:9644/v1/{path}"
+
+    def _get_configuration(self, host, namespace, topic, partition):
+        url = f"http://{host}:9644/v1/partitions/{namespace}/{topic}/{partition}"
+        self.redpanda.logger.debug(f"Dispatching GET {url}")
+        r = self._session.request("GET", url)
+        if r.status_code != 200:
+            self.redpanda.logger.warn(f"Response {r.status_code}: {r.text}")
+            return None
+        else:
+            try:
+                json = r.json()
+                self.redpanda.logger.debug(f"Response OK, JSON: {json}")
+                return json
+            except json.decoder.JSONDecodeError as e:
+                self.redpanda.logger.debug(
+                    f"Response OK, Malformed JSON: '{r.text}' ({e})")
+                return None
+
+    def _get_stable_configuration(
+            self,
+            hosts,
+            topic,
+            partition=0,
+            namespace="kafka",
+            replication: Optional[int] = None) -> Optional[PartitionDetails]:
+        """
+        Method iterates through hosts and checks that the configuration of
+        namespace/topic/partition is the same on all hosts and that all
+        hosts see the same leader.
+
+        When replication is provided the method also checks that the confi-
+        guration has exactly that amout of nodes.
+
+        When the configuration isn't stable the method returns None
+        """
+        last_leader = -1
+        replicas = None
+        status = None
+        for host in hosts:
+            self.redpanda.logger.debug(
+                f"requesting \"{namespace}/{topic}/{partition}\" details from {host})"
+            )
+            meta = self._get_configuration(host, namespace, topic, partition)
+            if meta == None:
+                return None
+            if "replicas" not in meta:
+                self.redpanda.logger.debug(f"replicas are missing")
+                return None
+            if "status" not in meta:
+                self.redpanda.logger.debug(f"status is missing")
+                return None
+            if status == None:
+                status = meta["status"]
+                self.redpanda.logger.debug(f"get status:{status}")
+            if status != meta["status"]:
+                self.redpanda.logger.debug(
+                    f"get status:{meta['status']} while already observed:{status} before"
+                )
+                return None
+            read_replicas = set([r['node_id'] for r in meta["replicas"]])
+            if replicas is None:
+                replicas = read_replicas
+                self.redpanda.logger.debug(
+                    f"get replicas:{read_replicas} from {host}")
+            elif replicas != read_replicas:
+                self.redpanda.logger.debug(
+                    f"get conflicting replicas:{read_replicas} from {host}")
+                return None
+            if replication != None:
+                if len(meta["replicas"]) != replication:
+                    self.redpanda.logger.debug(
+                        f"expected replication:{replication} got:{len(meta['replicas'])}"
+                    )
+                    return None
+            if meta["leader_id"] < 0:
+                self.redpanda.logger.debug(f"doesn't have leader")
+                return None
+            if last_leader < 0:
+                last_leader = meta["leader_id"]
+                self.redpanda.logger.debug(f"get leader:{last_leader}")
+            if last_leader not in replicas:
+                self.redpanda.logger.debug(
+                    f"leader:{last_leader} isn't in the replica set")
+                return None
+            if last_leader != meta["leader_id"]:
+                self.redpanda.logger.debug(
+                    f"got leader:{meta['leader_id']} but observed {last_leader} before"
+                )
+                return None
+        info = PartitionDetails()
+        info.status = status
+        info.leader = last_leader
+        info.replicas = replicas
+        return info
+
+    def wait_stable_configuration(
+            self,
+            topic,
+            partition=0,
+            namespace="kafka",
+            replication=None,
+            timeout_s=10,
+            hosts: Optional[list[str]] = None) -> PartitionDetails:
+        """
+        Method waits for timeout_s until the configuration is stable and returns it.
+        
+        When the timeout is exhaust it throws TimeoutException
+        """
+        if hosts == None:
+            hosts = [n.account.hostname for n in self.redpanda.nodes]
+        hosts = list(hosts)
+
+        def get_stable_configuration():
+            random.shuffle(hosts)
+            msg = ",".join(hosts)
+            self.redpanda.logger.debug(
+                f"wait details for {namespace}/{topic}/{partition} from nodes: {msg}"
+            )
+            try:
+                info = self._get_stable_configuration(hosts,
+                                                      topic,
+                                                      partition=partition,
+                                                      namespace=namespace,
+                                                      replication=replication)
+                if info == None:
+                    return False
+                return True, info
+            except RequestException:
+                self.redpanda.logger.exception(
+                    "an error on getting stable configuration, retrying")
+                return False
+
+        return wait_until_result(
+            get_stable_configuration,
+            timeout_sec=timeout_s,
+            backoff_sec=1,
+            err_msg=
+            f"can't fetch stable replicas for {namespace}/{topic}/{partition} within {timeout_s} sec"
+        )
+
+    def await_stable_leader(self,
+                            topic,
+                            partition=0,
+                            namespace="kafka",
+                            replication=None,
+                            timeout_s=10,
+                            hosts: Optional[list[str]] = None,
+                            check: Callable[[int],
+                                            bool] = lambda node_id: True):
+        """
+        Method waits for timeout_s until the configuration is stable and check
+        predicate returns true when invoked on the configuration's leader.
+
+        When the timeout is exhaust it throws TimeoutException
+        """
+        def is_leader_stable():
+            info = self.wait_stable_configuration(topic, partition, namespace,
+                                                  replication, timeout_s,
+                                                  hosts)
+            return check(info.leader)
+
+        wait_until(
+            is_leader_stable,
+            timeout_sec=timeout_s,
+            backoff_sec=1,
+            err_msg=
+            f"can't get stable leader of {namespace}/{topic}/{partition} within {timeout_s} sec"
+        )
 
     def _request(self, verb, path, node=None, **kwargs):
         if node is None and self._default_node is not None:
