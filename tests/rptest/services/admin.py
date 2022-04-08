@@ -408,3 +408,12 @@ class Admin:
         self.redpanda.logger.info(
             f"Getting maintenance status on node {node.name}/{id}")
         return self._request("get", "maintenance", node=node).json()
+
+    def reset_leaders_info(self, node):
+        """
+        Reset info for leaders on node
+        """
+        id = self.redpanda.idx(node)
+        self.redpanda.logger.info(f"Reset leaders info on {node.name}/{id}")
+        url = "debug/reset_leaders"
+        return self._request("post", url, node=node)
