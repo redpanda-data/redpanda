@@ -15,6 +15,7 @@
 #include "model/fundamental.h"
 #include "seastarx.h"
 #include "storage/parser.h"
+#include "units.h"
 #include "utils/delta_for.h"
 
 #include <seastar/util/log.hh>
@@ -48,7 +49,8 @@ public:
     offset_index(
       model::offset initial_rp,
       model::offset initial_kaf,
-      int64_t initial_file_pos);
+      int64_t initial_file_pos,
+      int64_t file_pos_step);
 
     /// Add new tuple to the index.
     void
@@ -108,8 +110,22 @@ private:
     _find_under(deltafor_decoder<int64_t> decoder, int64_t offset);
 
     /// Return element by index.
+    template<class DecoderT>
     static std::optional<int64_t>
-    _fetch_ix(deltafor_decoder<int64_t> decoder, size_t target_ix);
+    _fetch_ix(DecoderT decoder, size_t target_ix) {
+        size_t ix = 0;
+        std::array<int64_t, buffer_depth> buffer{};
+        while (decoder.read(buffer)) {
+            for (auto o : buffer) {
+                if (ix == target_ix) {
+                    return o;
+                }
+                ix++;
+            }
+            buffer = {};
+        }
+        return std::nullopt;
+    }
 
 private:
     std::array<int64_t, buffer_depth> _rp_offsets;
@@ -119,11 +135,17 @@ private:
     model::offset _initial_rp;
     model::offset _initial_kaf;
     int64_t _initial_file_pos;
+
     using encoder_t = deltafor_encoder<int64_t>;
     using decoder_t = deltafor_decoder<int64_t>;
+    using delta_delta_t = details::delta_delta<int64_t>;
+    using foffset_encoder_t = deltafor_encoder<int64_t, delta_delta_t>;
+    using foffset_decoder_t = deltafor_decoder<int64_t, delta_delta_t>;
+
     encoder_t _rp_index;
     encoder_t _kaf_index;
-    encoder_t _file_index;
+    foffset_encoder_t _file_index;
+    int64_t _min_file_pos_step;
 };
 
 class remote_segment_index_builder : public storage::batch_consumer {

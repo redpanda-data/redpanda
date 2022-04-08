@@ -40,7 +40,7 @@ BOOST_AUTO_TEST_CASE(remote_segment_index_search_test) {
     std::vector<size_t> file_offsets;
     int64_t rp = segment_base_rp_offset();
     int64_t kaf = segment_base_kaf_offset();
-    size_t fpos = 0;
+    size_t fpos = random_generators::get_int(1000, 2000);
     bool is_config = false;
     for (size_t i = 0; i < segment_num_batches; i++) {
         if (!is_config) {
@@ -57,10 +57,11 @@ BOOST_AUTO_TEST_CASE(remote_segment_index_search_test) {
         is_config = random_generators::get_int(20) == 0;
         rp += batch_size;
         kaf += is_config ? batch_size - 1 : batch_size;
-        fpos += random_generators::get_int(1, 1000);
+        fpos += random_generators::get_int(1000, 2000);
     }
 
-    offset_index tmp_index(segment_base_rp_offset, segment_base_kaf_offset, 0U);
+    offset_index tmp_index(
+      segment_base_rp_offset, segment_base_kaf_offset, 0U, 1000);
     model::offset last;
     model::offset klast;
     size_t flast;
@@ -71,7 +72,8 @@ BOOST_AUTO_TEST_CASE(remote_segment_index_search_test) {
         flast = file_offsets.at(i);
     }
 
-    offset_index index(segment_base_rp_offset, segment_base_kaf_offset, 0U);
+    offset_index index(
+      segment_base_rp_offset, segment_base_kaf_offset, 0U, 1000);
     auto buf = tmp_index.to_iobuf();
     index.from_iobuf(std::move(buf));
 
@@ -128,7 +130,7 @@ SEASTAR_THREAD_TEST_CASE(test_remote_segment_index_builder) {
     }
     auto segment = generate_segment(base_offset, batches);
     auto is = make_iobuf_input_stream(std::move(segment));
-    offset_index ix(base_offset, base_offset, 0);
+    offset_index ix(base_offset, base_offset, 0, 0);
     auto parser = make_remote_segment_index_builder(
       std::move(is), ix, model::offset(0), 0);
     auto result = parser->consume().get();

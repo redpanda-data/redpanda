@@ -35,6 +35,7 @@
 namespace cloud_storage {
 
 static constexpr size_t remote_segment_sampling_step_bytes = 64_KiB;
+
 class download_exception : public std::exception {
 public:
     explicit download_exception(download_result r, std::filesystem::path p);

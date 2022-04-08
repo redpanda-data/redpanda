@@ -236,7 +236,11 @@ ss::future<> remote_segment::do_hydrate() {
     auto callback = [this](
                       uint64_t size_bytes,
                       ss::input_stream<char> s) -> ss::future<uint64_t> {
-        offset_index tmpidx(get_base_rp_offset(), get_base_kafka_offset(), 0);
+        offset_index tmpidx(
+          get_base_rp_offset(),
+          get_base_kafka_offset(),
+          0,
+          remote_segment_sampling_step_bytes);
         auto [sparse, sput] = input_stream_fanout<2>(std::move(s), 1);
         auto parser = make_remote_segment_index_builder(
           std::move(sparse),
@@ -294,7 +298,11 @@ ss::future<> remote_segment::do_hydrate() {
 ss::future<> remote_segment::maybe_materialize_index() {
     ss::gate::holder guard(_gate);
     auto path = _path().native() + ".index";
-    offset_index ix(_base_rp_offset, _base_rp_offset - _base_offset_delta, 0);
+    offset_index ix(
+      _base_rp_offset,
+      _base_rp_offset - _base_offset_delta,
+      0,
+      remote_segment_sampling_step_bytes);
     if (auto cache_item = co_await _cache.get(path); cache_item.has_value()) {
         // The cache item is expected to be present if the segment is present
         // so it's very unlikely that we will call this method if there is no
