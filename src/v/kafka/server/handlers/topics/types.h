@@ -58,6 +58,30 @@ static constexpr std::string_view topic_property_data_policy_function_name
 static constexpr std::string_view topic_property_data_policy_script_name
   = "redpanda.datapolicy.script.name";
 
+// Kafka topic properties that is not relevant for Redpanda
+static constexpr std::string_view allowlist_topic_noop_confs[20] = {
+  "unclean.leader.election.enable",
+  "message.downconversion.enable",
+  "segment.ms",
+  "segment.index.bytes",
+  "segment.jitter.ms",
+  "min.insync.replicas",
+  "min.compaction.lag.ms",
+  "min.cleanable.dirty.ratio",
+  "message.timestamp.difference.max.ms",
+  "message.format.version",
+  "max.message.bytes",
+  "max.compaction.lag.ms",
+  "leader.replication.throttled.replicas",
+  "index.interval.bytes",
+  "follower.replication.throttled.replicas",
+  "flush.ms",
+  "flush.messages",
+  "file.delete.delay.ms",
+  "delete.retention.ms",
+  "preallocate",
+};
+
 /// \brief Type representing Kafka protocol response from
 /// CreateTopics, DeleteTopics and CreatePartitions requests
 /// the types used here match the types used in Kafka protocol specification
