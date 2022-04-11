@@ -274,10 +274,9 @@ FIXTURE_TEST(put_outside_cache_dir_throws, cache_test_fixture) {
     BOOST_CHECK_EXCEPTION(
       cache_service.put(key, input).get(),
       std::invalid_argument,
-      [](std::invalid_argument e) {
+      [](const std::invalid_argument& e) {
           return std::string(e.what()).find(
-                   "Tried to put test_cache_dir_put/file.txt, which is outside "
-                   "of cache_dir test_cache_dir.")
+                   "test_cache_dir_put/file.txt, which is outside of cache_dir")
                  != std::string::npos;
       });
     BOOST_CHECK(!ss::file_exists((CACHE_DIR / key).native()).get());

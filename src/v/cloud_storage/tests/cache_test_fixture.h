@@ -12,6 +12,7 @@
 #include "bytes/iobuf.h"
 #include "cloud_storage/cache_service.h"
 #include "seastarx.h"
+#include "test_utils/tmp_dir.h"
 #include "units.h"
 
 #include <seastar/core/lowres_clock.hh>
@@ -26,6 +27,10 @@
 using namespace cloud_storage;
 using namespace std::chrono_literals;
 
+static inline std::filesystem::path get_cache_dir(std::filesystem::path p) {
+    return p / "test_cache_dir";
+}
+
 class cache_test_fixture {
 public:
     const std::filesystem::path KEY{"abc001/test_topic/test_cache_file.txt"};
@@ -33,19 +38,22 @@ public:
     const std::filesystem::path TEMP_KEY{
       "abc002/test_topic2/test_cache_file2.txt_0_0.part"};
     const std::filesystem::path WRONG_KEY{"abc001/test_topic/wrong_key.txt"};
-    const std::filesystem::path CACHE_DIR{"test_cache_dir"};
 
+    temporary_dir test_dir;
+    const std::filesystem::path CACHE_DIR;
     cloud_storage::cache cache_service;
 
     cache_test_fixture()
-      : cache_service(
-        CACHE_DIR, 1_MiB + 500_KiB, ss::lowres_clock::duration(1s)) {
+      : test_dir("test_cache_dir")
+      , CACHE_DIR(get_cache_dir(test_dir.get_path()))
+      , cache_service(
+          CACHE_DIR, 1_MiB + 500_KiB, ss::lowres_clock::duration(1s)) {
         cache_service.start().get();
     }
 
     ~cache_test_fixture() {
         cache_service.stop().get();
-        boost::filesystem::remove_all(CACHE_DIR.native());
+        test_dir.remove().get();
     }
 
     ss::sstring create_data_string(char symbol_to_fill, uint64_t size) {
