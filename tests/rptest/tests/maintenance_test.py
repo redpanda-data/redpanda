@@ -113,13 +113,19 @@ class MaintenanceTest(RedpandaTest):
                 backoff_sec=5,
                 err_msg=f"expected {node.name} maintenance mode: {expect}")
 
+    def _maintenance_disable(self, node):
+        if self._use_rpk:
+            self.rpk.cluster_maintenance_disable(node)
+        else:
+            self.admin.maintenance_stop(node)
+
     @cluster(num_nodes=3)
     @matrix(use_rpk=[True, False])
     def test_maintenance(self, use_rpk):
         self._use_rpk = use_rpk
         target = random.choice(self.redpanda.nodes)
         self._enable_maintenance(target)
-        self.admin.maintenance_stop(target)
+        self._maintenance_disable(target)
         self._disable_maintenance(target)
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
@@ -134,7 +140,7 @@ class MaintenanceTest(RedpandaTest):
             self.redpanda.restart_nodes(node)
             self._verify_cluster(node, True)
 
-            self.admin.maintenance_stop(node)
+            self._maintenance_disable(node)
             self._disable_maintenance(node)
             self._verify_cluster(node, False)
 
