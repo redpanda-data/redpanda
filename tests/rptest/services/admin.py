@@ -277,3 +277,12 @@ class Admin:
         self.redpanda.logger.info(f"Reset leaders info on {node.name}/{id}")
         url = "debug/reset_leaders"
         return self._request("post", url, node=node)
+
+    def get_leaders_info(self, node):
+        """
+        Get info for leaders on node
+        """
+        id = self.redpanda.idx(node)
+        self.redpanda.logger.info(f"Get leaders info on {node.name}/{id}")
+        url = "debug/partition_leaders_table"
+        return self._request("get", url, node=node).json()
