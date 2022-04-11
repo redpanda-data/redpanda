@@ -92,6 +92,20 @@ public:
 
     void reset() { _leaders.clear(); }
 
+    struct leader_info_t {
+        model::topic_namespace tp_ns;
+        model::partition_id pid;
+
+        std::optional<model::node_id> current_leader;
+        std::optional<model::node_id> previous_leader;
+        model::term_id update_term;
+        model::revision_id partition_revision;
+    };
+
+    using leaders_info_t = std::vector<leader_info_t>;
+
+    leaders_info_t get_leaders() const;
+
 private:
     // optimized to reduce number of ntp copies
     struct leader_key {

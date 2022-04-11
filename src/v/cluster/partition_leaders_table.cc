@@ -183,4 +183,22 @@ ss::future<model::node_id> partition_leaders_table::wait_for_leader(
       });
 }
 
+partition_leaders_table::leaders_info_t
+partition_leaders_table::get_leaders() const {
+    leaders_info_t ans;
+    ans.reserve(_leaders.size());
+    for (const auto& leader_info : _leaders) {
+        leader_info_t info{
+          .tp_ns = leader_info.first.tp_ns,
+          .pid = leader_info.first.pid,
+          .current_leader = leader_info.second.current_leader,
+          .previous_leader = leader_info.second.previous_leader,
+          .update_term = leader_info.second.update_term,
+          .partition_revision = leader_info.second.partition_revision,
+        };
+        ans.push_back(std::move(info));
+    }
+    return ans;
+}
+
 } // namespace cluster
