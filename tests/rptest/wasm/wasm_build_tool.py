@@ -41,9 +41,18 @@ class DirectoryContext():
         os.chdir(self._orig_dir)
 
 
+class WasmBuildToolException(Exception):
+    def __init__(self, msg):
+        self.msg = msg
+
+    def __str__(self):
+        return f"WasmBuildToolException<{self.msg}>"
+
+
 class WasmBuildTool():
     def __init__(self, rpk_tool):
         self._rpk_tool = rpk_tool
+        self._redpanda = self._rpk_tool._redpanda
         self.work_dir = tempfile.mkdtemp()
         dir_path = os.path.dirname(os.path.realpath(__file__))
         self._repo = WasmTemplateRepository(os.path.join(
@@ -57,21 +66,34 @@ class WasmBuildTool():
             f'["{topic}", PolicyInjection.Stored]' for topic in script.inputs
         ])
         if any(x is None for x in script.outputs):
-            raise Exception('Error rendering template, outputs invalid')
+            raise WasmBuildToolException(
+                'Error rendering template, outputs invalid')
         t = jinja2.Template(template)
         return t.render(input_topics=inputs, output_topics=script.outputs)
 
     def _build_source(self, artifact_dir):
+        self._run_npm_cmd(artifact_dir, ["install"])
+        self._run_npm_cmd(artifact_dir, ["run", "build"])
+
+    def _run_npm_cmd(self, artifact_dir, cmd):
         with DirectoryContext(artifact_dir) as _:
-            subprocess.run(["npm", "install"])
-            subprocess.run(["npm", "run", "build"])
+            output = subprocess.run(['npm'] + cmd,
+                                    capture_output=True,
+                                    text=True,
+                                    check=False)
+            if output.returncode != 0:
+                raise WasmBuildToolException(
+                    f"Encountered error building wasm script: {output.stderr}")
+            self._redpanda.logger.info(f"npm - stdout: {output.stdout}")
+            self._redpanda.logger.info(f"npm - stderr: {output.stderr}")
 
     def build_test_artifacts(self, script):
         artifact_dir = os.path.join(self.work_dir, script.dir_name)
         self._rpk_tool.wasm_gen(artifact_dir)
         template = self._repo.get(script.script)
         if template is None:
-            raise Exception(f"Template doesn't exist: {script.script}")
+            raise WasmBuildToolException(
+                f"Template doesn't exist: {script.script}")
         coprocessor = self._compile_template(script, template)
         script_path = os.path.join(artifact_dir, "src",
                                    f"{script.dir_name}.js")
