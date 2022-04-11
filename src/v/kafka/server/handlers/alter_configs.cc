@@ -176,6 +176,15 @@ create_topic_properties_update(alter_configs_resource& resource) {
                   update.properties.retention_duration, cfg.value);
                 continue;
             }
+            if (
+              std::find(
+                std::begin(allowlist_topic_noop_confs),
+                std::end(allowlist_topic_noop_confs),
+                cfg.name)
+              != std::end(allowlist_topic_noop_confs)) {
+                // Skip unsupported Kafka config
+                continue;
+            }
             (check_data_policy(cfg.name));
         } catch (const boost::bad_lexical_cast& e) {
             return make_error_alter_config_resource_response<
