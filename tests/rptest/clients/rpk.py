@@ -480,3 +480,13 @@ class RpkTool:
             str(node_id)
         ]
         return self._execute(cmd)
+
+    def cluster_maintenance_disable(self, node):
+        node_id = self._redpanda.idx(node) if isinstance(node,
+                                                         ClusterNode) else node
+        cmd = [
+            self._rpk_binary(), "--api-urls",
+            self._admin_host(), "cluster", "maintenance", "disable",
+            str(node_id)
+        ]
+        return self._execute(cmd)
