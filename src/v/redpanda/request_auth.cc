@@ -102,7 +102,7 @@ request_auth_result request_authenticator::do_authenticate(
         if (!cred_opt.has_value()) {
             // User not found
             vlog(
-              logger.info,
+              logger.warn,
               "Client auth failure: user '{}' not found",
               username);
             throw ss::httpd::base_exception(
@@ -117,7 +117,7 @@ request_auth_result request_authenticator::do_authenticate(
             if (!is_valid) {
                 // User found, password doesn't match
                 vlog(
-                  logger.info,
+                  logger.warn,
                   "Client auth failure: user '{}' wrong password",
                   username);
                 throw ss::httpd::base_exception(
