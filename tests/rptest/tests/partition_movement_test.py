@@ -233,12 +233,20 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         spec = TopicSpec(name="topic", partition_count=3, replication_factor=3)
         self.client().create_topic(spec)
         self.topic = spec.name
-        self.start_producer(1)
+
+        # reduce test scale for debug builds
+        throughput = 100 if self.debug_mode else 1000
+        records = 500 if self.debug_mode else 5000
+        moves = 5 if self.debug_mode else 25
+
+        self.start_producer(1, throughput=throughput)
         self.start_consumer(1)
         self.await_startup()
-        for _ in range(25):
+        for _ in range(moves):
             self._move_and_verify()
-        self.run_validation(enable_idempotence=False, consumer_timeout_sec=45)
+        self.run_validation(enable_idempotence=False,
+                            consumer_timeout_sec=45,
+                            min_records=records)
 
     @ok_to_fail
     @cluster(num_nodes=5, log_allow_list=PARTITION_MOVEMENT_LOG_ERRORS)
