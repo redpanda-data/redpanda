@@ -301,3 +301,37 @@ func pandaCluster() *redpandav1alpha1.Cluster {
 		},
 	}
 }
+
+func TestVersion(t *testing.T) {
+	var (
+		redpandaContainerName = "redpanda"
+	)
+
+	tests := []struct {
+		Containers      []corev1.Container
+		ExpectedVersion string
+	}{
+		{Containers: []corev1.Container{{Name: redpandaContainerName, Image: "vectorized/redpanda:v21.11.11"}}, ExpectedVersion: "v21.11.11"},
+		{Containers: []corev1.Container{{Name: redpandaContainerName, Image: "vectorized/redpanda:"}}, ExpectedVersion: ""},
+		// Image with no tag does not return "latest" as version.
+		{Containers: []corev1.Container{{Name: redpandaContainerName, Image: "vectorized/redpanda"}}, ExpectedVersion: ""},
+		{Containers: []corev1.Container{{Name: redpandaContainerName, Image: "localhost:5000/redpanda:v21.11.11"}}, ExpectedVersion: "v21.11.11"},
+		{Containers: []corev1.Container{{Name: redpandaContainerName, Image: "localhost:5000/redpanda"}}, ExpectedVersion: ""},
+		{Containers: []corev1.Container{{Name: "", Image: "vectorized/redpanda"}}, ExpectedVersion: ""},
+	}
+
+	for _, tt := range tests {
+		sts := &res.StatefulSetResource{
+			LastObservedState: &v1.StatefulSet{
+				Spec: v1.StatefulSetSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: tt.Containers,
+						},
+					},
+				},
+			},
+		}
+		assert.Equal(t, tt.ExpectedVersion, sts.Version())
+	}
+}
