@@ -14,21 +14,27 @@
 #include "test_utils/fixture.h"
 #include "vlog.h"
 
+#include <seastar/core/manual_clock.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/testing/thread_test_case.hh>
 
 using namespace std::chrono_literals;
 using namespace cluster;
 
+// Variant for unit testing, using manual_clock
+using feature_barrier_state_test = feature_barrier_state<ss::manual_clock>;
+
+static ss::logger logger("test");
+
 struct node_state {
     ss::abort_source as;
     ss::gate gate;
-    feature_barrier_state barrier_state;
+    feature_barrier_state_test barrier_state;
 
     node_state(
       members_table& members,
       model::node_id id,
-      feature_barrier_state::rpc_fn fn)
+      feature_barrier_state_test::rpc_fn fn)
       : barrier_state(id, members, as, gate, std::move(fn)) {}
 
     ~node_state() {
@@ -69,7 +75,7 @@ struct barrier_fixture {
         create_node_state(id);
     }
 
-    feature_barrier_state::rpc_fn_ret rpc_hook(
+    feature_barrier_state_test::rpc_fn_ret rpc_hook(
       model::node_id src,
       model::node_id dst,
       feature_barrier_tag tag,
@@ -101,9 +107,15 @@ struct barrier_fixture {
         return r;
     }
 
-    feature_barrier_state& get_barrier_state(model::node_id id) {
+    feature_barrier_state_test& get_barrier_state(model::node_id id) {
         return get_node_state(id)->barrier_state;
     }
+
+    /**
+     * Call this in places where the test wishes to advance
+     * to the next I/O wait.
+     */
+    void drain_tasks() { ss::sleep(10ms).get(); }
 
     std::map<model::node_id, ss::lw_shared_ptr<node_state>> states;
 
@@ -111,6 +123,28 @@ struct barrier_fixture {
     std::map<model::node_id, std::error_code> rpc_tx_errors;
 
     members_table members;
+};
+
+/**
+ * Barrier on a node that hasn't joined yet, shouldn't
+ * proceed until node sees self in members table.
+ */
+FIXTURE_TEST(test_barrier_joining_node, barrier_fixture) {
+    create_node_state(model::node_id{0});
+
+    auto f = get_barrier_state(model::node_id{0})
+               .barrier(feature_barrier_tag{"test"});
+
+    // Barrier should block until members_table includes the node
+    ss::sleep(10ms).get();
+    BOOST_REQUIRE(!f.available());
+
+    // Populate members_table
+    create_brokers(1);
+    drain_tasks();
+
+    BOOST_REQUIRE(f.available() && !f.failed());
+    f.get();
 };
 
 /**
@@ -139,15 +173,18 @@ FIXTURE_TEST(test_barrier_simple, barrier_fixture) {
 
     auto f0 = get_barrier_state(model::node_id{0})
                 .barrier(feature_barrier_tag{"test"});
-    auto f1 = get_barrier_state(model::node_id{1})
-                .barrier(feature_barrier_tag{"test"});
-
-    BOOST_REQUIRE(!f0.available());
-    BOOST_REQUIRE(!f1.available());
-
     auto f2 = get_barrier_state(model::node_id{2})
                 .barrier(feature_barrier_tag{"test"});
 
+    // The nodes that have entered should not give up or error out,
+    // even if it is a long time until the last node participates.
+    ss::manual_clock::advance(10s);
+    ss::sleep(10ms).get();
+    BOOST_REQUIRE(!f0.available());
+    BOOST_REQUIRE(!f2.available());
+
+    auto f1 = get_barrier_state(model::node_id{1})
+                .barrier(feature_barrier_tag{"test"});
     ss::sleep(10ms).get();
 
     BOOST_REQUIRE(f0.available());
@@ -222,14 +259,22 @@ FIXTURE_TEST(test_barrier_node_isolated, barrier_fixture) {
                 .barrier(feature_barrier_tag{"test"});
 
     // Without comms to node 2, this barrier should block to complete
-    ss::sleep(1000ms).get();
+    ss::sleep(10ms).get();
+
+    // Advance clock long enough for them to retry and still see an error
+    vlog(logger.debug, "Should have just tried first time and failed");
+    ss::manual_clock::advance(1000ms);
+    ss::sleep(10ms).get();
+    vlog(logger.debug, "Should have just retried and failed again");
 
     rpc_rx_errors.clear();
     rpc_tx_errors.clear();
 
-    // After comms are restored the barrier should succeed (waiting for
-    // the retry period in barrier())
-    ss::sleep(1000ms).get();
+    // Advance clock far enough for the nodes to all retry (and succeed) their
+    // RPCs
+    ss::manual_clock::advance(1000ms);
+    ss::sleep(10ms).get();
+    vlog(logger.debug, "Should have just retried and succeeded");
 
     BOOST_REQUIRE(f0.available());
     BOOST_REQUIRE(f1.available());
@@ -238,6 +283,73 @@ FIXTURE_TEST(test_barrier_node_isolated, barrier_fixture) {
     f0.get();
     f1.get();
     f2.get();
+}
+
+/**
+ * Exit during the early part of the barrier, when it is sending
+ * RPCs to peers.
+ */
+FIXTURE_TEST(test_barrier_exit_early, barrier_fixture) {
+    create_brokers(3);
+    create_node_state(model::node_id{0});
+    create_node_state(model::node_id{1});
+    create_node_state(model::node_id{2});
+
+    // Block RPCs to node 2, this will prevent node 1 from getting
+    // past its RPC-sending phase.
+    rpc_rx_errors[model::node_id{2}] = cluster::make_error_code(
+      cluster::errc::timeout);
+    rpc_tx_errors[model::node_id{2}] = cluster::make_error_code(
+      cluster::errc::timeout);
+
+    // Try to barrier on node 0, find that it does not advance
+    auto f0 = get_barrier_state(model::node_id{0})
+                .barrier(feature_barrier_tag{"test"});
+    ss::manual_clock::advance(1000ms);
+    ss::sleep(10ms).get();
+    BOOST_REQUIRE(!f0.available());
+
+    // Exit on node 0, its barrier future should complete with an error
+    kill(model::node_id{0});
+    ss::sleep(10ms).get();
+    BOOST_REQUIRE(f0.available() && f0.failed());
+    try {
+        f0.get();
+    } catch (ss::sleep_aborted&) {
+        // Expected exception
+    } catch (...) {
+        throw;
+    }
+}
+
+/**
+ * Exit during the early part of the barrier, when it is sending
+ * RPCs to peers.
+ */
+FIXTURE_TEST(test_barrier_exit_late, barrier_fixture) {
+    create_brokers(3);
+    create_node_state(model::node_id{0});
+    create_node_state(model::node_id{1});
+    create_node_state(model::node_id{2});
+
+    // Try to barrier on node 0, find that it does not advance
+    auto f0 = get_barrier_state(model::node_id{0})
+                .barrier(feature_barrier_tag{"test"});
+    ss::manual_clock::advance(1000ms);
+    ss::sleep(10ms).get();
+    BOOST_REQUIRE(!f0.available());
+
+    // Exit on node 0, its barrier future should complete with an error
+    kill(model::node_id{0});
+    ss::sleep(10ms).get();
+    BOOST_REQUIRE(f0.available() && f0.failed());
+    try {
+        f0.get();
+    } catch (ss::broken_condition_variable&) {
+        // Expected exception
+    } catch (...) {
+        throw;
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(test_barrier_encoding) {

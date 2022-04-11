@@ -115,7 +115,7 @@ private:
       notification_id_type_invalid};
 
     // Barriers are only populated on shard 0
-    feature_barrier_state _barrier_state;
+    feature_barrier_state<ss::lowres_clock> _barrier_state;
 
     // The individually reported versions of nodes, which
     // are usually all the same but will differ during upgrades.
