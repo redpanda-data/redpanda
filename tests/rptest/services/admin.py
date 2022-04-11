@@ -226,6 +226,14 @@ class Admin:
         path = f"partitions/{namespace}/{topic}/{partition}/transfer_leadership?target={target_id}"
         self._request("POST", path)
 
+    def get_partition_leader(self, *, namespace, topic, partition, node=None):
+        partition_info = self.get_partitions(topic=topic,
+                                             partition=partition,
+                                             namespace=namespace,
+                                             node=node)
+
+        return partition_info['leader_id']
+
     def transfer_leadership_to(self, *, namespace, topic, partition, target):
         """
         Looks up current ntp leader and transfer leadership to target node, 
