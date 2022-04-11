@@ -22,6 +22,7 @@ type Broker struct {
 	NodeID           int    `json:"node_id"`
 	NumCores         int    `json:"num_cores"`
 	MembershipStatus string `json:"membership_status"`
+	IsAlive          *bool  `json:"is_alive"`
 }
 
 // Brokers queries one of the client's hosts and returns the list of brokers.
