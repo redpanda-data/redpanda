@@ -13,6 +13,7 @@
 
 #include "cluster/fwd.h"
 #include "cluster/health_monitor_types.h"
+#include "cluster/partition_leaders_table.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -137,6 +138,7 @@ public:
     std::optional<model::node_id> get_controller_leader_id();
 
     void reset_leaders();
+    cluster::partition_leaders_table::leaders_info_t get_leaders() const;
 
     model::compression get_default_compression() const;
     model::cleanup_policy_bitflags get_default_cleanup_policy_bitflags() const;
