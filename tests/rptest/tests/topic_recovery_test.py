@@ -7,7 +7,7 @@
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
 
 from rptest.services.cluster import cluster
-from ducktape.mark import ignore
+from ducktape.mark import ok_to_fail
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.archival.s3_client import S3Client
 from rptest.services.redpanda import RedpandaService
@@ -1196,6 +1196,7 @@ class TopicRecoveryTest(RedpandaTest):
                                    self.s3_bucket, self.logger)
         self.do_run(test_case)
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/4202
     @cluster(num_nodes=3, log_allow_list=TRANSIENT_ERRORS)
     def test_fast1(self):
         """Basic recovery test. This test stresses successful recovery
@@ -1209,6 +1210,7 @@ class TopicRecoveryTest(RedpandaTest):
                               self.s3_bucket, self.logger, topics)
         self.do_run(test_case)
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/4202
     @cluster(num_nodes=3, log_allow_list=TRANSIENT_ERRORS)
     def test_fast2(self):
         """Basic recovery test. This test stresses successful recovery
@@ -1225,6 +1227,7 @@ class TopicRecoveryTest(RedpandaTest):
                               self.s3_bucket, self.logger, topics)
         self.do_run(test_case)
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/4202
     @cluster(num_nodes=3, log_allow_list=TRANSIENT_ERRORS)
     def test_fast3(self):
         """Basic recovery test. This test stresses successful recovery
