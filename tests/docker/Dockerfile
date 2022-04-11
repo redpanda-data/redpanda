@@ -150,4 +150,15 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
     cp target/release/client-swarm /usr/local/bin && \
     cd .. && rm -rf client-swarm && rm -rf /root/.cargo
 
+# Seastar addrress to line utility
+RUN apt update && \
+    apt install -y \
+      file && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /opt/scripts && \
+    curl https://raw.githubusercontent.com/redpanda-data/seastar/2a9504b3238cba4150be59353bf8d0b3a01fe39c/scripts/addr2line.py -o /opt/scripts/addr2line.py && \
+    curl https://raw.githubusercontent.com/redpanda-data/seastar/2a9504b3238cba4150be59353bf8d0b3a01fe39c/scripts/seastar-addr2line -o /opt/scripts/seastar-addr2line && \
+    chmod +x /opt/scripts/seastar-addr2line
+
 CMD service ssh start && tail -f /dev/null
