@@ -63,3 +63,13 @@ func (a *AdminAPI) EnableMaintenanceMode(nodeId int) error {
 		nil,
 	)
 }
+
+// DisableMaintenanceMode disables maintenance mode for a node.
+func (a *AdminAPI) DisableMaintenanceMode(nodeId int) error {
+	return a.sendAny(
+		http.MethodDelete,
+		fmt.Sprintf("%s/%d/maintenance", brokersEndpoint, nodeId),
+		nil,
+		nil,
+	)
+}
