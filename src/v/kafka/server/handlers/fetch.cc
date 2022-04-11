@@ -146,12 +146,10 @@ static ss::future<read_result> do_read_from_ntp(
     auto kafka_partition = make_partition_proxy(
       ntp_config.ntp(), cluster_pm, coproc_pm);
     if (unlikely(!kafka_partition)) {
-        return ss::make_ready_future<read_result>(
-          error_code::unknown_topic_or_partition);
+        co_return read_result(error_code::unknown_topic_or_partition);
     }
     if (unlikely(!kafka_partition->is_leader())) {
-        return ss::make_ready_future<read_result>(
-          error_code::not_leader_for_partition);
+        co_return read_result(error_code::not_leader_for_partition);
     }
 
     /**
@@ -160,7 +158,7 @@ static ss::future<read_result> do_read_from_ntp(
     auto leader_epoch_err = details::check_leader_epoch(
       ntp_config.cfg.current_leader_epoch, *kafka_partition);
     if (leader_epoch_err != error_code::none) {
-        return ss::make_ready_future<read_result>(leader_epoch_err);
+        co_return read_result(leader_epoch_err);
     }
 
     if (config::shard_local_cfg().enable_transactions.value()) {
@@ -183,11 +181,10 @@ static ss::future<read_result> do_read_from_ntp(
           ntp_config.ntp(),
           ntp_config.cfg.start_offset,
           kafka_partition->start_offset());
-        return ss::make_ready_future<read_result>(
-          error_code::offset_out_of_range);
+        co_return read_result(error_code::offset_out_of_range);
     }
 
-    return read_from_partition(
+    co_return co_await read_from_partition(
       std::move(*kafka_partition), ntp_config.cfg, foreign_read, deadline);
 }
 
