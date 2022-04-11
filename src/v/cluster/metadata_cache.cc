@@ -168,6 +168,11 @@ std::optional<model::node_id> metadata_cache::get_controller_leader_id() {
 
 void metadata_cache::reset_leaders() { _leaders.local().reset(); }
 
+cluster::partition_leaders_table::leaders_info_t
+metadata_cache::get_leaders() const {
+    return _leaders.local().get_leaders();
+}
+
 /**
  * hard coded defaults
  */
