@@ -63,7 +63,9 @@ Currently leadership is not transferred for partitions with one replica.
 		&adminCAFile,
 	)
 
-	cmd.AddCommand(newEnableCommand(fs))
+	cmd.AddCommand(
+		newEnableCommand(fs),
+		newDisableCommand(fs))
 
 	return cmd
 }
