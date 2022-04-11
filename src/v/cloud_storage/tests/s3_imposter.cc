@@ -44,6 +44,8 @@ s3::configuration s3_imposter_fixture::get_configuration() {
       .region = s3::aws_region_name("us-east-1"),
     };
     conf.server_addr = server_addr;
+    conf._probe = ss::make_shared<s3::client_probe>(
+      net::metrics_disabled::yes, "us-east-1", httpd_host_name);
     return conf;
 }
 
@@ -126,6 +128,24 @@ void s3_imposter_fixture::set_routes(
                 }
                 repl.set_status(reply::status_type::no_content);
                 it->second.body = std::nullopt;
+                return "";
+            } else if (request._method == "HEAD") {
+                auto it = expectations.find(request._url);
+                if (it == expectations.end() || !it->second.body.has_value()) {
+                    vlog(fixt_log.trace, "Reply HEAD request with error");
+                    repl.add_header("x-amz-request-id", "placeholder-id");
+                    repl.set_status(reply::status_type::not_found);
+                } else {
+                    repl.add_header("ETag", "placeholder-etag");
+                    repl.add_header(
+                      "Content-Length",
+                      ssx::sformat("{}", it->second.body->size()));
+                    repl.set_status(reply::status_type::ok);
+                }
+                vlog(
+                  fixt_log.trace,
+                  "S3 imposter response: {}",
+                  repl.response_line());
                 return "";
             }
             BOOST_FAIL("Unexpected request");

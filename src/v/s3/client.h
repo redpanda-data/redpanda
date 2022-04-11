@@ -120,6 +120,14 @@ public:
     result<http::client::request_header>
     make_get_object_request(bucket_name const& name, object_key const& key);
 
+    /// \brief Create a 'HeadObject' request header
+    ///
+    /// \param name is a bucket that has the object
+    /// \param key is an object name
+    /// \return initialized and signed http header or error
+    result<http::client::request_header>
+    make_head_object_request(bucket_name const& name, object_key const& key);
+
     /// \brief Create a 'DeleteObject' request header
     ///
     /// \param name is a bucket that has the object
@@ -163,6 +171,20 @@ public:
     /// \param key is an object key
     /// \return future that gets ready after request was sent
     ss::future<http::client::response_stream_ref> get_object(
+      bucket_name const& name,
+      object_key const& key,
+      const ss::lowres_clock::duration& timeout);
+
+    struct head_object_result {
+        uint64_t object_size;
+        ss::sstring etag;
+    };
+
+    /// HeadObject request.
+    /// \param name is a bucket name
+    /// \param key is an id of the object
+    /// \return future that becomes ready when the request is completed
+    ss::future<head_object_result> head_object(
       bucket_name const& name,
       object_key const& key,
       const ss::lowres_clock::duration& timeout);

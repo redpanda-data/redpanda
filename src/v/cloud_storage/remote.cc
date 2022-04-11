@@ -463,79 +463,73 @@ ss::future<download_result> remote::download_segment(
     }
     co_return *result;
 }
-
-static const s3::object_key empty_object_key = s3::object_key();
-
-ss::future<download_result> remote::list_objects(
-  const list_objects_consumer& cons,
+ss::future<download_result> remote::segment_exists(
   const s3::bucket_name& bucket,
-  const std::optional<s3::object_key>& prefix,
-  const std::optional<size_t>& max_keys,
+  const remote_segment_path& segment_path,
   retry_chain_node& parent) {
-    gate_guard guard{_gate};
+    ss::gate::holder gh{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
-    auto permit = fib.retry();
+    auto path = s3::object_key(segment_path());
     auto [client, deleter] = co_await _pool.acquire();
-    std::optional<s3::object_key> last_key;
-    s3::client::list_bucket_result res{
-      .is_truncated = true, .prefix = {}, .contents = {}};
-    while (res.is_truncated) {
-        std::exception_ptr eptr;
+    auto permit = fib.retry();
+    vlog(ctxlog.debug, "Check segment {}", path);
+    std::optional<download_result> result;
+    while (!_gate.is_closed() && permit.is_allowed && !result) {
+        std::exception_ptr eptr = nullptr;
         try {
-            auto res = co_await client->list_objects_v2(
-              bucket, prefix, last_key, max_keys, fib.get_timeout());
+            auto resp = co_await client->head_object(
+              bucket, path, fib.get_timeout());
             vlog(
               ctxlog.debug,
-              "ListObjectV2 response, is_truncated {}, prefix {}, num-keys {}",
-              res.is_truncated,
-              res.prefix,
-              res.contents.size());
-            ss::stop_iteration cons_res = ss::stop_iteration::no;
-            for (auto&& it : res.contents) {
-                vlog(ctxlog.debug, "Response object key {}", it.key);
-                cons_res = cons(
-                  std::move(it.key),
-                  it.last_modified,
-                  it.size_bytes,
-                  std::move(it.etag));
-                if (cons_res == ss::stop_iteration::yes) {
-                    break;
-                }
-            }
-            if (!res.contents.empty()) {
-                last_key = s3::object_key(
-                  std::filesystem::path(res.contents.back().key));
-            }
-            if (!res.is_truncated || cons_res == ss::stop_iteration::yes) {
-                co_return download_result::success;
-            }
+              "Receive OK HeadObject response from {}, object size: {}, etag: "
+              "{}",
+              path,
+              resp.object_size,
+              resp.etag);
+            co_return download_result::success;
         } catch (...) {
             eptr = std::current_exception();
         }
-        auto outcome = categorize_error(eptr, fib, bucket, empty_object_key);
+        co_await client->shutdown();
+        auto outcome = categorize_error(eptr, fib, bucket, path);
         switch (outcome) {
         case error_outcome::retry_slowdown:
-            co_await client->shutdown();
             [[fallthrough]];
         case error_outcome::retry:
             vlog(
               ctxlog.debug,
-              "Listing objects in {}, {} backoff required",
+              "HeadObject from {}, {} backoff required",
               bucket,
               std::chrono::milliseconds(permit.delay));
-            _probe.download_backoff();
             co_await ss::sleep_abortable(permit.delay, _as);
             permit = fib.retry();
             break;
         case error_outcome::fail:
+            result = download_result::failed;
+            break;
         case error_outcome::notfound:
-            co_return download_result::failed;
+            result = download_result::notfound;
+            break;
         }
     }
-    vlog(ctxlog.warn, "ListObjectsV2 backoff quota exceded");
-    _probe.failed_download();
-    co_return download_result::timedout;
+    if (!result) {
+        vlog(
+          ctxlog.warn,
+          "HeadObject from {}, backoff quota exceded, segment at {} "
+          "not available",
+          bucket,
+          path);
+        result = download_result::timedout;
+    } else {
+        vlog(
+          ctxlog.warn,
+          "HeadObject from {}, {}, segment at {} not available",
+          bucket,
+          *result,
+          path);
+    }
+    co_return *result;
 }
 
 } // namespace cloud_storage
