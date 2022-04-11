@@ -11,6 +11,7 @@ from collections import namedtuple
 import subprocess
 import re
 import typing
+from ducktape.cluster.cluster import ClusterNode
 
 DEFAULT_TIMEOUT = 30
 
@@ -469,3 +470,13 @@ class RpkTool:
 
     def _rpk_binary(self):
         return self._redpanda.find_binary("rpk")
+
+    def cluster_maintenance_enable(self, node):
+        node_id = self._redpanda.idx(node) if isinstance(node,
+                                                         ClusterNode) else node
+        cmd = [
+            self._rpk_binary(), "--api-urls",
+            self._admin_host(), "cluster", "maintenance", "enable",
+            str(node_id)
+        ]
+        return self._execute(cmd)
