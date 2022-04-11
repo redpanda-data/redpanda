@@ -331,10 +331,11 @@ class Admin:
         path = f"partitions/{namespace}/{topic}/{partition}/transfer_leadership?target={target_id}"
         self._request("POST", path)
 
-    def get_partition_leader(self, *, namespace, topic, partition):
+    def get_partition_leader(self, *, namespace, topic, partition, node=None):
         partition_info = self.get_partitions(topic=topic,
                                              partition=partition,
-                                             namespace=namespace)
+                                             namespace=namespace,
+                                             node=node)
 
         return partition_info['leader_id']
 
