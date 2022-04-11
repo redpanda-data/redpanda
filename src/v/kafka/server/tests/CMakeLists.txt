@@ -14,6 +14,7 @@ rp_test(
 
 
 set(srcs
+  quota_manager_test.cc
   consumer_groups_test.cc
   member_test.cc
   group_test.cc
