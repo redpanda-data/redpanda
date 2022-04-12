@@ -7,8 +7,10 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from collections import namedtuple
 import subprocess
 import re
+import typing
 
 DEFAULT_TIMEOUT = 30
 
@@ -50,6 +52,26 @@ class RpkPartition:
             and self.replicas == other.replicas \
             and self.high_watermark == other.high_watermark \
             and self.start_offset == other.start_offset
+
+
+class RpkGroupPartition(typing.NamedTuple):
+    topic: str
+    partition: int
+    current_offset: int
+    log_end_offset: int
+    lag: int
+    member_id: str
+    client_id: str
+    host: str
+
+
+class RpkGroup(typing.NamedTuple):
+    name: str
+    coordinator: int
+    state: str
+    balancer: str
+    members: int
+    partitions: list[RpkGroupPartition]
 
 
 class RpkClusterInfoNode:
@@ -245,6 +267,53 @@ class RpkTool:
     def group_seek_to(self, group, to):
         cmd = ["seek", group, "--to", to]
         self._run_group(cmd)
+
+    def group_describe(self, group):
+        def parse_field(field_name, string):
+            pattern = re.compile(f" *{field_name} +(?P<value>.+)")
+            m = pattern.match(string)
+            assert m is not None, f"Field string '{string}' does not match the pattern"
+            return m['value']
+
+        partition_pattern = re.compile(
+            "(?P<topic>.+) +(?P<partition>\d+) +(?P<offset>\d+) +(?P<log_end>\d+) +(?P<lag>\d+) *(?P<member_id>.*)? *(?P<client_id>.*)? *(?P<host>.*)?"
+        )
+
+        def parse_partition(string):
+            m = partition_pattern.match(string)
+            assert m is not None, f"Partition string '{string}' does not match the pattern"
+            return RpkGroupPartition(topic=m['topic'],
+                                     partition=int(m['partition']),
+                                     current_offset=int(m['offset']),
+                                     log_end_offset=int(m['log_end']),
+                                     lag=int(m['lag']),
+                                     member_id=m['member_id'],
+                                     client_id=m['client_id'],
+                                     host=m['host'])
+
+        cmd = ["describe", group]
+        out = self._run_group(cmd)
+        lines = out.splitlines()
+
+        group_name = parse_field("GROUP", lines[0])
+        coordinator = parse_field("COORDINATOR", lines[1])
+        state = parse_field("STATE", lines[2])
+        balancer = parse_field("BALANCER", lines[3])
+        members = parse_field("MEMBERS", lines[4])
+        partitions = []
+        for l in lines[5:]:
+            #skip header line
+            if l.startswith("TOPIC") or len(l) < 2:
+                continue
+            p = parse_partition(l)
+            partitions.append(p)
+
+        return RpkGroup(name=group_name,
+                        coordinator=int(coordinator),
+                        state=state,
+                        balancer=balancer,
+                        members=int(members),
+                        partitions=partitions)
 
     def group_seek_to_group(self, group, to_group):
         cmd = ["seek", group, "--to-group", to_group]
