@@ -2389,15 +2389,9 @@ consensus::do_maybe_update_leader_commit_idx(ss::semaphore_units<> u) {
     majority_match = std::min(majority_match, _flushed_offset);
 
     if (majority_match > _commit_index && get_term(majority_match) == _term) {
-        vlog(_ctxlog.trace, "Leader commit index updated {}", majority_match);
-        auto old_commit_idx = _commit_index;
         _commit_index = majority_match;
-        auto range_start = details::next_offset(model::offset(old_commit_idx));
-        vlog(
-          _ctxlog.trace,
-          "Applying entries from {} to {}",
-          range_start,
-          _commit_index);
+        vlog(_ctxlog.trace, "Leader commit index updated {}", _commit_index);
+
         _commit_index_updated.broadcast();
         _event_manager.notify_commit_index();
         // if we successfully acknowledged all quorum writes we can make pending

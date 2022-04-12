@@ -541,6 +541,7 @@ ss::future<> members_backend::reallocate_replica_set(
 
     switch (meta.state) {
     case reallocation_state::initial: {
+        meta.initial_assignment = current_assignment->replicas;
         // initial state, try to reassign partition replicas
 
         reassign_replicas(*current_assignment, meta);
@@ -556,7 +557,7 @@ ss::future<> members_backend::reallocate_replica_set(
           "[ntp: {}, {} -> {}] new partition assignment calculated "
           "successfully",
           meta.ntp,
-          current_assignment->replicas,
+          meta.initial_assignment,
           get_new_replicas(meta));
         [[fallthrough]];
     }
@@ -568,7 +569,7 @@ ss::future<> members_backend::reallocate_replica_set(
           clusterlog.info,
           "[ntp: {}, {} -> {}] dispatching request to move partition",
           meta.ntp,
-          current_assignment->replicas,
+          meta.initial_assignment,
           get_new_replicas(meta));
         // request topic partition move
         std::error_code error
@@ -581,7 +582,7 @@ ss::future<> members_backend::reallocate_replica_set(
               clusterlog.info,
               "[ntp: {}, {} -> {}] partition move error: {}",
               meta.ntp,
-              current_assignment->replicas,
+              meta.initial_assignment,
               get_new_replicas(meta),
               error.message());
             co_return;
@@ -599,7 +600,7 @@ ss::future<> members_backend::reallocate_replica_set(
           "[ntp: {}, {} -> {}] reconciliation state: {}, pending operations: "
           "{}",
           meta.ntp,
-          current_assignment->replicas,
+          meta.initial_assignment,
           get_new_replicas(meta),
           reconciliation_state.status(),
           reconciliation_state.pending_operations());

@@ -33,8 +33,8 @@ ALLOWED_REPLICATION = [1, 3]
 
 class NodeOperationFuzzyTest(EndToEndTest):
     max_suspend_duration_seconds = 10
-    min_inter_failure_time = 20
-    max_inter_failure_time = 45
+    min_inter_failure_time = 30
+    max_inter_failure_time = 60
 
     def generate_random_workload(self, count, skip_nodes, available_nodes):
         op_types = [ADD, DECOMMISSION]
@@ -117,6 +117,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
     """
 
     @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    @parametrize(enable_failures=True)
     @parametrize(enable_failures=False)
     def test_node_operations(self, enable_failures):
         # allocate 5 nodes for the cluster
@@ -239,6 +240,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
             wait_until(node_removed,
                        timeout_sec=NODE_OP_TIMEOUT,
                        backoff_sec=2)
+            self.redpanda.stop_node(self.redpanda.get_node(idx))
 
         kafkacat = KafkaCat(self.redpanda)
 

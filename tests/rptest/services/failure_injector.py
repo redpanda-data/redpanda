@@ -42,16 +42,20 @@ class FailureInjector:
 
     def inject_failure(self, spec):
         self.redpanda.logger.info(f"injecting failure: {spec}")
-        self._start_func(spec.type)(spec.node)
-        if spec.length is not None:
-            if spec.length == 0:
-                self._stop_func(spec.type)(spec.node)
-            else:
-                stop_timer = threading.Timer(function=self._stop_func(
-                    spec.type),
-                                             args=[spec.node],
-                                             interval=spec.length)
-                stop_timer.start()
+        try:
+            self._start_func(spec.type)(spec.node)
+        except Exception as e:
+            self.redpanda.logger.info(f"injecting failure error: {e}")
+        finally:
+            if spec.length is not None:
+                if spec.length == 0:
+                    self._stop_func(spec.type)(spec.node)
+                else:
+                    stop_timer = threading.Timer(function=self._stop_func(
+                        spec.type),
+                                                 args=[spec.node],
+                                                 interval=spec.length)
+                    stop_timer.start()
 
     def _start_func(self, tp):
         if tp == FailureSpec.FAILURE_KILL:
@@ -73,7 +77,7 @@ class FailureInjector:
 
     def _kill(self, node):
         self.redpanda.logger.info(
-            f"killing redpanda on { self.redpanda.idx(node)}")
+            f"killing redpanda on {node.account.hostname}")
         self.redpanda.signal_redpanda(node,
                                       signal=signal.SIGKILL,
                                       idempotent=True)
@@ -84,7 +88,7 @@ class FailureInjector:
                    timeout_sec)
 
     def _isolate(self, node):
-        self.redpanda.logger.info(f"isolating node {node.account}")
+        self.redpanda.logger.info(f"isolating node {node.account.hostname}")
 
         cmd = "iptables -A OUTPUT -p tcp --destination-port 33145 -j DROP"
         node.account.ssh(cmd)
@@ -92,7 +96,7 @@ class FailureInjector:
         node.account.ssh(cmd)
 
     def _heal(self, node):
-        self.redpanda.logger.info(f"healing node {node.account}")
+        self.redpanda.logger.info(f"healing node {node.account.hostname}")
         cmd = "iptables -D OUTPUT -p tcp --destination-port 33145 -j DROP"
         node.account.ssh(cmd)
         cmd = "iptables -D INPUT -p tcp --destination-port 33145 -j DROP"
@@ -109,12 +113,12 @@ class FailureInjector:
 
     def _suspend(self, node):
         self.redpanda.logger.info(
-            f"suspending redpanda on { self.redpanda.idx(node)}")
+            f"suspending redpanda on {node.account.hostname}")
         self.redpanda.signal_redpanda(node, signal=signal.SIGSTOP)
 
     def _terminate(self, node):
         self.redpanda.logger.info(
-            f"terminating redpanda on { self.redpanda.idx(node)}")
+            f"terminating redpanda on {node.account.hostname}")
         self.redpanda.signal_redpanda(node, signal=signal.SIGTERM)
         timeout_sec = 30
         wait_until(lambda: self.redpanda.redpanda_pid(node) == None,
@@ -124,12 +128,12 @@ class FailureInjector:
 
     def _continue(self, node):
         self.redpanda.logger.info(
-            f"continuing execution on { self.redpanda.idx(node)}")
+            f"continuing execution on {node.account.hostname}")
         self.redpanda.signal_redpanda(node, signal=signal.SIGCONT)
 
     def _start(self, node):
         # make this idempotent
         if self.redpanda.redpanda_pid(node) == None:
             self.redpanda.logger.info(
-                f"starting redpanda on {self.redpanda.idx(node)}")
+                f"starting redpanda on {node.account.hostname}")
             self.redpanda.start_redpanda(node)

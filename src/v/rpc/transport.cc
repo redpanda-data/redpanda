@@ -112,6 +112,10 @@ ss::future<result<std::unique_ptr<streaming_context>>>
 transport::make_response_handler(netbuf& b, const rpc::client_opts& opts) {
     if (_correlations.find(_correlation_idx + 1) != _correlations.end()) {
         _probe.client_correlation_error();
+        vlog(
+          rpclog.error,
+          "Invalid transport state, reusing correlation id: {}",
+          _correlation_idx + 1);
         throw std::runtime_error("Invalid transport state. Doubly "
                                  "registered correlation_id");
     }
