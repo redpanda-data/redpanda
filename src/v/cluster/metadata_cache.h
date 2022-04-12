@@ -136,6 +136,8 @@ public:
     /// If present returns a leader of raft0 group
     std::optional<model::node_id> get_controller_leader_id();
 
+    void reset_leaders();
+
     model::compression get_default_compression() const;
     model::cleanup_policy_bitflags get_default_cleanup_policy_bitflags() const;
     model::compaction_strategy get_default_compaction_strategy() const;

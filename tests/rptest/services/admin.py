@@ -331,10 +331,11 @@ class Admin:
         path = f"partitions/{namespace}/{topic}/{partition}/transfer_leadership?target={target_id}"
         self._request("POST", path)
 
-    def get_partition_leader(self, *, namespace, topic, partition):
+    def get_partition_leader(self, *, namespace, topic, partition, node=None):
         partition_info = self.get_partitions(topic=topic,
                                              partition=partition,
-                                             namespace=namespace)
+                                             namespace=namespace,
+                                             node=node)
 
         return partition_info['leader_id']
 
@@ -408,3 +409,12 @@ class Admin:
         self.redpanda.logger.info(
             f"Getting maintenance status on node {node.name}/{id}")
         return self._request("get", "maintenance", node=node).json()
+
+    def reset_leaders_info(self, node):
+        """
+        Reset info for leaders on node
+        """
+        id = self.redpanda.idx(node)
+        self.redpanda.logger.info(f"Reset leaders info on {node.name}/{id}")
+        url = "debug/reset_leaders"
+        return self._request("post", url, node=node)
