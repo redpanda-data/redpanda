@@ -19,7 +19,7 @@
 # - Imported annotate_missing_msgs helper from kafka test suite
 
 from collections import namedtuple
-
+import os
 from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
 from rptest.services.redpanda import RedpandaService
@@ -82,6 +82,15 @@ class EndToEndTest(Test):
     def client(self):
         assert self._client is not None
         return self._client
+
+    @property
+    def debug_mode(self):
+        """
+        Useful for tests that want to change behaviour when running on
+        the much slower debug builds of redpanda, which generally cannot
+        keep up with significant quantities of data or partition counts.
+        """
+        return os.environ.get('BUILD_TYPE', None) == 'debug'
 
     def start_consumer(self, num_nodes=1, group_id="test_group"):
         assert self.redpanda
