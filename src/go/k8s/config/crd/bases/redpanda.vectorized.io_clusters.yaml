@@ -905,6 +905,9 @@ spec:
               upgrading:
                 description: Indicates cluster is upgrading
                 type: boolean
+              version:
+                description: Current version of the cluster.
+                type: string
             type: object
         type: object
     served: true

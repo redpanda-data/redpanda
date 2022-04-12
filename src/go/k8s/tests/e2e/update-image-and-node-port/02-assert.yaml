@@ -39,3 +39,12 @@ collectors:
 - type: pod
   selector: app.kubernetes.io/name=redpanda
   tail: -1
+
+---
+
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: update-image-cluster-and-node-port
+status:
+  version: "dev"

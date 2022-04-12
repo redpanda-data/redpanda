@@ -16,6 +16,7 @@ import (
 	"path"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/go-logr/logr"
 	cmetav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
@@ -871,4 +872,28 @@ func statefulSetKind() string {
 
 func (r *StatefulSetResource) fullConfiguratorImage() string {
 	return fmt.Sprintf("%s:%s", r.configuratorSettings.ConfiguratorBaseImage, r.configuratorSettings.ConfiguratorTag)
+}
+
+// Version returns the cluster version specified in the image tag.
+func (r *StatefulSetResource) Version() string {
+	lastObservedSts := r.LastObservedState
+	if lastObservedSts != nil {
+		cc := lastObservedSts.Spec.Template.Spec.Containers
+		for i := range cc {
+			c := cc[i]
+			if c.Name != redpandaContainerName {
+				continue
+			}
+			// Will always have tag even for latest because of pandaCluster.FullImageName().
+			if s := strings.Split(c.Image, ":"); len(s) > 1 {
+				version := s[len(s)-1]
+				// Image uses registry with port and no tag (e.g. localhost:5000/redpanda)
+				if strings.Contains(version, "/") {
+					version = ""
+				}
+				return version
+			}
+		}
+	}
+	return ""
 }
