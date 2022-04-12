@@ -31,6 +31,61 @@ BOOTSTRAP_CONFIG = {
 }
 
 
+def search_log(redpanda, pattern):
+    """
+    Test helper for grepping the redpanda log
+
+    :return:  true if any instances of `pattern` found
+    """
+    for node in redpanda.nodes:
+        for line in node.account.ssh_capture(
+                f"grep \"{pattern}\" {redpanda.STDOUT_STDERR_CAPTURE} || true"
+        ):
+            # We got a match
+            redpanda.logger.debug(
+                f"Found {pattern} on node {node.name}: {line}")
+            return True
+
+    # Fall through, no matches
+    return False
+
+
+class ClusterConfigUpgradeTest(RedpandaTest):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, extra_rp_conf={}, **kwargs)
+
+    def setUp(self):
+        # Skip starting redpanda, so that test can explicitly start
+        # it with some override_cfg_params
+        pass
+
+    @cluster(num_nodes=1)
+    def test_upgrade_redpanda_yaml(self):
+        """
+        Verify that on first start, values are imported from redpanda.yaml
+        to facilitate upgrades, but on subsequent startups we just emit
+        a log message to say we're ignoring them.
+        """
+
+        node = self.redpanda.nodes[0]
+        admin = Admin(self.redpanda)
+
+        self.redpanda.start_node(
+            node, override_cfg_params={'delete_retention_ms': '9876'})
+
+        # On first startup, redpanda should notice the value in
+        # redpanda.yaml and import it into central config store
+        assert admin.get_cluster_config()['delete_retention_ms'] == 9876
+
+        # On second startup, central config is already initialized,
+        # so the modified value in redpanda.yaml should be ignored.
+        self.redpanda.restart_nodes(
+            [node], override_cfg_params={'delete_retention_ms': '1234'})
+        assert admin.get_cluster_config()['delete_retention_ms'] == 9876
+        assert search_log(self.redpanda,
+                          "Ignoring value for 'delete_retention_ms'")
+
+
 class ClusterConfigTest(RedpandaTest):
     def __init__(self, *args, **kwargs):
         rp_conf = BOOTSTRAP_CONFIG.copy()
@@ -828,29 +883,16 @@ class ClusterConfigTest(RedpandaTest):
 
     @cluster(num_nodes=3)
     def test_secret_redaction(self):
-        def search_log(pattern):
-            for node in self.redpanda.nodes:
-                for line in node.account.ssh_capture(
-                        f"grep \"{pattern}\" {self.redpanda.STDOUT_STDERR_CAPTURE} || true"
-                ):
-                    # We got a match
-                    self.logger.debug(
-                        f"Found {pattern} on node {node.name}: {line}")
-                    return True
-
-            # Fall through, no matches
-            return False
-
         def set_and_search(key, value, expect_log):
             patch_result = self.admin.patch_cluster_config(upsert={key: value})
             self._wait_for_version_sync(patch_result['config_version'])
 
             # Check value was/was not printed to log while applying
-            assert search_log(value) is expect_log
+            assert search_log(self.redpanda, value) is expect_log
 
             # Check we do/don't print on next startup
             self.redpanda.restart_nodes(self.redpanda.nodes)
-            assert search_log(value) is expect_log
+            assert search_log(self.redpanda, value) is expect_log
 
         secret_key = "cloud_storage_secret_key"
         secret_value = "ThePandaFliesTonight"
