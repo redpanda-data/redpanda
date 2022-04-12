@@ -223,6 +223,8 @@ enum class error_code : int16_t {
     invalid_record = 87,
     // There are unstable offsets that need to be cleared.
     unstable_offset_commit = 88,
+    // Broker declined to process request due to exceeded resource quotas.
+    throttling_quota_exceeded = 89,
 };
 
 std::ostream& operator<<(std::ostream&, error_code);
