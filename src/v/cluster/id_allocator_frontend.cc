@@ -81,7 +81,8 @@ id_allocator_frontend::allocate_id(model::timeout_clock::duration timeout) {
         auto leader_opt = _leaders.local().get_leader(model::id_allocator_ntp);
         if (unlikely(!leader_opt)) {
             error = vformat(
-              "can't find {} in the leaders cache", model::id_allocator_ntp);
+              fmt::runtime("can't find {} in the leaders cache"),
+              model::id_allocator_ntp);
             vlog(
               clusterlog.trace,
               "waiting for {} to fill leaders cache, retries left: {}",
@@ -109,11 +110,11 @@ id_allocator_frontend::allocate_id(model::timeout_clock::duration timeout) {
         }
 
         if (likely(r.ec != errc::replication_error)) {
-            error = vformat("id allocation failed with {}", r.ec);
+            error = vformat(fmt::runtime("id allocation failed with {}"), r.ec);
             break;
         }
 
-        error = vformat("id allocation failed with {}", r.ec);
+        error = vformat(fmt::runtime("id allocation failed with {}"), r.ec);
         vlog(
           clusterlog.trace, "id allocation failed, retries left: {}", retries);
         co_await sleep_abortable(delay_ms, _as);

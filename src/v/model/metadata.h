@@ -351,6 +351,25 @@ struct broker_v0 {
 } // namespace internal
 } // namespace model
 
+template<>
+struct fmt::formatter<model::isolation_level> final
+  : fmt::formatter<std::string_view> {
+    using isolation_level = model::isolation_level;
+    template<typename FormatContext>
+    auto format(const isolation_level& s, FormatContext& ctx) const {
+        std::string_view str = "unknown";
+        switch (s) {
+        case isolation_level::read_uncommitted:
+            str = "read_uncommitted";
+            break;
+        case isolation_level::read_committed:
+            str = "read_committed";
+            break;
+        }
+        return formatter<string_view>::format(str, ctx);
+    }
+};
+
 namespace std {
 template<>
 struct hash<model::broker_shard> {

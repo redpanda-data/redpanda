@@ -107,7 +107,8 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
     std::optional<std::string> error;
     while (!aborted && 0 < retries--) {
         if (!leader_opt) {
-            error = vformat("can't find {} in the leaders cache", ntp);
+            error = vformat(
+              fmt::runtime("can't find {} in the leaders cache"), ntp);
             vlog(
               txlog.trace,
               "can't find {} in the leaders cache, retries left: {}",
@@ -127,8 +128,9 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
               ntp, pid, tx_seq, transaction_timeout_ms);
             if (result.ec == tx_errc::leader_not_found) {
                 error = vformat(
-                  "local execution of begin_tx({},...) failed with 'not a "
-                  "leader'",
+                  fmt::runtime(
+                    "local execution of begin_tx({},...) failed with 'not a "
+                    "leader'"),
                   ntp);
                 vlog(
                   txlog.trace,
@@ -171,8 +173,9 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
           result.etag);
         if (result.ec == tx_errc::leader_not_found) {
             error = vformat(
-              "remote execution of begin_tx({},...) on {} failed with 'not a "
-              "leader'",
+              fmt::runtime(
+                "remote execution of begin_tx({},...) on {} failed with 'not a "
+                "leader'"),
               ntp,
               leader);
             vlog(

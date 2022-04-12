@@ -162,12 +162,11 @@ std::ostream& operator<<(std::ostream& os, const principal_mapper& p) {
 // explicit instantiations so as to avoid bringing in <fmt/ranges.h> in the
 // header, whch breaks compilation in another part of the codebase.
 template<>
-std::back_insert_iterator<fmt::detail::buffer<char>>
-fmt::formatter<security::tls::rule>::format(
-  const security::tls::rule& r,
-  fmt::basic_format_context<
-    std::back_insert_iterator<fmt::detail::buffer<char>>,
-    char>& ctx) {
+typename fmt::basic_format_context<fmt::appender, char>::iterator
+fmt::formatter<security::tls::rule, char, void>::format<
+  fmt::basic_format_context<fmt::appender, char>>(
+  security::tls::rule const& r,
+  fmt::basic_format_context<fmt::appender, char>& ctx) const {
     if (r._is_default) {
         return format_to(ctx.out(), "DEFAULT");
     }
@@ -187,14 +186,10 @@ fmt::formatter<security::tls::rule>::format(
 }
 
 template<>
-std::back_insert_iterator<fmt::detail::buffer<char>>
-fmt::formatter<security::tls::principal_mapper>::format<
-  fmt::basic_format_context<
-    std::back_insert_iterator<fmt::detail::buffer<char>>,
-    char>>(
-  const security::tls::principal_mapper& r,
-  fmt::basic_format_context<
-    std::back_insert_iterator<fmt::detail::buffer<char>>,
-    char>& ctx) {
+typename fmt::basic_format_context<fmt::appender, char>::iterator
+fmt::formatter<security::tls::principal_mapper, char, void>::format<
+  fmt::basic_format_context<fmt::appender, char>>(
+  security::tls::principal_mapper const& r,
+  fmt::basic_format_context<fmt::appender, char>& ctx) const {
     return format_to(ctx.out(), "[{}]", fmt::join(r._rules, ", "));
 }

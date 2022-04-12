@@ -32,6 +32,26 @@ std::string_view to_string_view(feature f) {
     __builtin_unreachable();
 }
 
+std::string_view to_string_view(feature_state::state s) {
+    switch (s) {
+    case feature_state::state::unavailable:
+        return "unavailable";
+    case feature_state::state::available:
+        return "available";
+    case feature_state::state::preparing:
+        return "preparing";
+    case feature_state::state::active:
+        return "active";
+    case feature_state::state::disabled_active:
+        return "disabled_active";
+    case feature_state::state::disabled_preparing:
+        return "disabled_preparing";
+    case feature_state::state::disabled_clean:
+        return "disabled_clean";
+    }
+    __builtin_unreachable();
+};
+
 // The version that this redpanda node will report: increment this
 // on protocol changes to raft0 structures, like adding new services.
 static constexpr cluster_version latest_version = cluster_version{3};

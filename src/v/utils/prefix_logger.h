@@ -61,9 +61,8 @@ public:
     template<typename... Args>
     ss::sstring format(const char* format, Args&&... args) const {
         auto line_fmt = ss::sstring("{} - ") + format;
-        return ssx::sformat(
-          fmt::string_view(line_fmt.begin(), line_fmt.length()),
-          _prefix,
+        return fmt::format(
+          fmt::runtime(fmt::string_view(line_fmt.begin(), line_fmt.length())),
           std::forward<Args>(args)...);
     }
 

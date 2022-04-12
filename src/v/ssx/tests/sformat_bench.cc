@@ -17,7 +17,8 @@
 #include <boost/uuid/random_generator.hpp>
 #include <boost/uuid/uuid_io.hpp>
 
-const auto identifier = fmt::format("{}", boost::uuids::random_generator()());
+const auto identifier = fmt::format(
+  fmt::runtime("{}"), boost::uuids::random_generator()());
 
 struct fmt_format {
     template<typename... Args>
@@ -39,9 +40,10 @@ void run_test(Fun fun, size_t data_size) {
     vec.reserve(data_size);
     perf_tests::start_measuring_time();
     for (int i = 0; i < data_size; ++i) {
-        vec.emplace_back(fun("{}", identifier));
+        vec.emplace_back(fun(fmt::runtime("{}"), identifier));
     }
-    perf_tests::do_not_optimize(Ret{fun("{}", fmt::join(vec, ","))});
+    perf_tests::do_not_optimize(
+      Ret{fun(fmt::runtime("{}"), fmt::join(vec, ","))});
     perf_tests::stop_measuring_time();
 }
 

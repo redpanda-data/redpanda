@@ -21,7 +21,7 @@
 namespace compression::internal {
 [[noreturn]] [[gnu::cold]] static void
 throw_zstream_error(const char* fmt, int ret) {
-    throw std::runtime_error(fmt::format(fmt, ret, zError(ret)));
+    throw std::runtime_error(fmt::format(fmt::runtime(fmt), ret, zError(ret)));
 }
 
 inline void throw_if_zstream_error(const char* fmt, int code) {

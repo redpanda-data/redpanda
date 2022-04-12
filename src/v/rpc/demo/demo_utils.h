@@ -13,6 +13,7 @@
 #include "reflection/for_each_field.h"
 #include "rpc/demo/types.h"
 #include "seastarx.h"
+#include "ssx/sformat.h"
 #include "utils/hdr_hist.h"
 
 #include <seastar/core/fstream.hh>
