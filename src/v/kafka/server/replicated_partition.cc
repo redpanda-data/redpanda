@@ -146,12 +146,9 @@ replicated_partition::aborted_transactions(
 }
 
 ss::future<std::optional<storage::timequery_result>>
-replicated_partition::timequery(
-  model::timestamp ts,
-  model::offset offset_limit,
-  ss::io_priority_class io_pc) {
-    return _partition->timequery(ts, offset_limit, io_pc)
-      .then([this](std::optional<storage::timequery_result> r) {
+replicated_partition::timequery(storage::timequery_config cfg) {
+    return _partition->timequery(cfg).then(
+      [this](std::optional<storage::timequery_result> r) {
           if (r) {
               r->offset = _translator->from_log_offset(r->offset);
           }
