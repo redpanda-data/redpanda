@@ -71,6 +71,21 @@ class AlterTopicConfiguration(RedpandaTest):
             for _ in range(size))
 
     @cluster(num_nodes=3)
+    def test_configuration_properties_kafka_config_allowlist(self):
+        topic = self.topics[0].name
+        kafka_tools = KafkaCliTools(self.redpanda)
+        spec = kafka_tools.describe_topic(topic)
+        self.client().alter_topic_configs(
+            topic, {
+                "unclean.leader.election.enable": True,
+                TopicSpec.PROPERTY_SEGMENT_SIZE: spec.segment_bytes + 1,
+            })
+
+        spec.segment_bytes += 1
+        new_spec = kafka_tools.describe_topic(topic)
+        assert new_spec == spec
+
+    @cluster(num_nodes=3)
     def test_configuration_properties_name_validation(self):
         topic = self.topics[0].name
         kafka_tools = KafkaCliTools(self.redpanda)
