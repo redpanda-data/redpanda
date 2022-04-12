@@ -812,10 +812,20 @@ configuration::configuration()
   , kafka_connections_max_per_ip(
       *this,
       "kafka_connections_max_per_ip",
-      "Maximum number of Kafka client connections from each IP addreess, per "
+      "Maximum number of Kafka client connections from each IP address, per "
       "broker",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       std::nullopt)
+  , kafka_connections_max_overrides(
+      *this,
+      "kafka_connections_max_overrides",
+      "Per-IP overrides of kafka connection count limit, list of "
+      "<ip>:<count> strings",
+      {.needs_restart = needs_restart::no,
+       .example = R"(['127.0.0.1:90', '50.20.1.1:40'])",
+       .visibility = visibility::user},
+      {},
+      validate_connection_rate)
   , cloud_storage_enabled(
       *this,
       "cloud_storage_enabled",

@@ -29,6 +29,7 @@ class conn_quota;
 struct conn_quota_config {
     config::binding<std::optional<uint32_t>> max_connections;
     config::binding<std::optional<uint32_t>> max_connections_per_ip;
+    config::binding<std::vector<ss::sstring>> max_connections_overrides;
 };
 
 /**
@@ -199,6 +200,8 @@ private:
         return const_cast<conn_quota&>(*this).get_remote_allowance(addr);
     };
 
+    void apply_overrides();
+
     /**
      * A note on types:
      * - the home_allowance instances in the `ip_home` map need to
@@ -218,6 +221,9 @@ private:
     absl::flat_hash_map<inet_address_key, ss::lw_shared_ptr<home_allowance>>
       ip_home;
     absl::flat_hash_map<inet_address_key, remote_allowance> ip_remote;
+
+    // Parsed content of _cfg.max_connections_overrides.
+    absl::flat_hash_map<inet_address_key, uint32_t> overrides;
 
     // Apply a configuration change
     void

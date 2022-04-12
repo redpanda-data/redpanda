@@ -179,6 +179,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> members_backend_retry_ms;
     property<std::optional<uint32_t>> kafka_connections_max;
     property<std::optional<uint32_t>> kafka_connections_max_per_ip;
+    property<std::vector<ss::sstring>> kafka_connections_max_overrides;
 
     // Archival storage
     property<bool> cloud_storage_enabled;
