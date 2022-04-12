@@ -61,7 +61,7 @@ licenses           @senior7515 @dswang
 /src/v/rpc             @mmaslankaprv        @jcsp
 /src/v/s3              @lazin
 /src/v/security        @dotnwat
-/src/v/serde           @felixguendling      @benpope
+/src/v/serde           @benpope
 /src/v/ssx             @benpope
 /src/v/storage         @dotnwat             @lenaan      @vadimplh
 /src/v/syschecks       @mmaslankaprv
