@@ -1130,10 +1130,10 @@ class TopicRecoveryTest(RedpandaTest):
         elected.
         The method is time bound.
         """
-        deadline = datetime.datetime.now() + timeout
         expected_num_leaders = sum(
             [t.partition_count for t in recovered_topics])
-        while True:
+
+        def verify():
             num_leaders = 0
             try:
                 for topic in recovered_topics:
@@ -1145,12 +1145,10 @@ class TopicRecoveryTest(RedpandaTest):
                         if partition.leader in partition.replicas:
                             num_leaders += 1
             except:
-                pass
-            if num_leaders == expected_num_leaders:
-                break
-            ts = datetime.datetime.now()
-            assert ts < deadline
-            time.sleep(1)
+                return False
+            return num_leaders == expected_num_leaders
+
+        wait_until(verify, timeout_sec=timeout.total_seconds(), backoff_sec=1)
 
     def do_run(self, test_case: BaseCase):
         """Template method invoked by all tests."""
