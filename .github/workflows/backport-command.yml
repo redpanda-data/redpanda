@@ -55,7 +55,7 @@ jobs:
           BACKPORT_BRANCH: ${{ steps.branch.outputs.branch }}
           ORIG_TITLE: ${{ github.event.client_payload.github.payload.issue.title }}
           ORIG_ASSIGNEES: ${{ steps.assignees.outputs.assignees }}
-          ORIG_ISSUE_URL: ${{ github.event.client_payload.github.payload.comment.html_url }}
+          ORIG_ISSUE_URL: ${{ github.event.client_payload.github.payload.issue.html_url }}
         run: |
           gh issue create --title "[${BACKPORT_BRANCH}] ${ORIG_TITLE}" \
             --repo "${TARGET_ORG}/${TARGET_REPO}" \
