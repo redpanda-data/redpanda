@@ -186,7 +186,9 @@ class ResourceSettings:
             num_cpus = 3
 
         if memory_mb is None:
-            memory_mb = 6000
+            # Redpanda's default limit on memory per shard
+            # is 1GB
+            memory_mb = 3096
 
         self._num_cpus = num_cpus
         self._memory_mb = memory_mb
