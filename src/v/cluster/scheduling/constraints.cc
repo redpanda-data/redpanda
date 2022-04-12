@@ -168,13 +168,15 @@ soft_constraint_evaluator distinct_rack(
             for (auto [node_id, shard] : _replicas) {
                 auto rack = _state.get_rack_id(node_id);
                 if (!rack.has_value()) {
-                    return 1;
+                    return soft_constraint_evaluator::max_score
+                           / _state.available_nodes();
                 }
                 if (rack.value() == node.rack()) {
                     return 0;
                 }
             }
-            return 1;
+            return soft_constraint_evaluator::max_score
+                   / _state.available_nodes();
         }
 
         void print(std::ostream& o) const final {
