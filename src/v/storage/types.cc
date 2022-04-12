@@ -48,7 +48,15 @@ std::ostream& operator<<(std::ostream& o, const timequery_result& a) {
     return o << "{offset:" << a.offset << ", time:" << a.time << "}";
 }
 std::ostream& operator<<(std::ostream& o, const timequery_config& a) {
-    return o << "{max_offset:" << a.max_offset << ", time:" << a.time << "}";
+    o << "{max_offset:" << a.max_offset << ", time:" << a.time
+      << ", type_filter:";
+    if (a.type_filter) {
+        o << *a.type_filter;
+    } else {
+        o << "nullopt";
+    }
+    o << "}";
+    return o;
 }
 
 std::ostream&

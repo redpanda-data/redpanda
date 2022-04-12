@@ -106,7 +106,7 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
                                 : kafka_partition->high_watermark();
 
     auto res = co_await kafka_partition->timequery(storage::timequery_config{
-      timestamp, offset_limit, kafka_read_priority()});
+      timestamp, offset_limit, kafka_read_priority(), std::nullopt});
     auto id = ntp.tp.partition;
     if (res) {
         co_return list_offsets_response::make_partition(
