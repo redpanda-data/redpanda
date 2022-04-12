@@ -34,6 +34,7 @@ def cluster(log_allow_list=None, **kwargs):
             try:
                 r = f(self, *args, **kwargs)
             except:
+                self.redpanda.decode_backtraces()
                 self.redpanda.raise_on_crash()
                 raise
             else:

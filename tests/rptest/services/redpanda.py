@@ -267,6 +267,7 @@ class RedpandaService(Service):
     NODE_CONFIG_FILE = "/etc/redpanda/redpanda.yaml"
     CLUSTER_BOOTSTRAP_CONFIG_FILE = "/etc/redpanda/.bootstrap.yaml"
     STDOUT_STDERR_CAPTURE = os.path.join(PERSISTENT_ROOT, "redpanda.log")
+    BACKTRACE_CAPTURE = os.path.join(PERSISTENT_ROOT, "redpanda_backtrace.log")
     WASM_STDOUT_STDERR_CAPTURE = os.path.join(PERSISTENT_ROOT,
                                               "wasm_engine.log")
     COVERAGE_PROFRAW_CAPTURE = os.path.join(PERSISTENT_ROOT,
@@ -320,6 +321,10 @@ class RedpandaService(Service):
         "executable": {
             "path": EXECUTABLE_SAVE_PATH,
             "collect_default": False
+        },
+        "backtraces": {
+            "path": BACKTRACE_CAPTURE,
+            "collect_default": True
         }
     }
 
@@ -825,6 +830,22 @@ class RedpandaService(Service):
 
         if bad_lines:
             raise BadLogLines(bad_lines)
+
+    def decode_backtraces(self):
+        """
+        Decodes redpanda backtraces if any of them are present
+        :return: None
+        """
+
+        for node in self.nodes:
+            self.logger.info(
+                f"Decoding backtraces on {node.account.hostname}.")
+            cmd = '/opt/scripts/seastar-addr2line'
+            cmd += f" -e {self.find_raw_binary('redpanda')}"
+            cmd += f" -f {RedpandaService.STDOUT_STDERR_CAPTURE}"
+            cmd += f" > {RedpandaService.BACKTRACE_CAPTURE} 2>&1"
+            cmd += f" && find {RedpandaService.BACKTRACE_CAPTURE} -type f -size 0 -delete"
+            node.account.ssh(cmd)
 
     def find_wasm_root(self):
         rp_install_path_root = self._context.globals.get(
