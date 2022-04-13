@@ -8,9 +8,15 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-#include "cluster/scheduling/leader_balancer_strategy.h"
+#pragma once
 
+#include "cluster/scheduling/leader_balancer_strategy.h"
+#include "model/metadata.h"
+
+#include <absl/container/flat_hash_map.h>
 #include <boost/range/adaptor/reversed.hpp>
+
+#include <limits>
 
 /*
  * Greedy shard balancer strategy is to move leaders from the most loaded core
@@ -37,14 +43,17 @@ public:
         rebuild_load_index();
     }
 
+    double calc_target_load() const {
+        return static_cast<double>(_num_groups)
+               / static_cast<double>(_num_cores);
+    }
+
     double error() const final {
-        auto target_load = static_cast<double>(_num_groups)
-                           / static_cast<double>(_num_cores);
         return std::accumulate(
           _cores.cbegin(),
           _cores.cend(),
           double{0},
-          [target_load](auto acc, const auto& e) {
+          [target_load = calc_target_load()](auto acc, const auto& e) {
               double num_groups = e.second.size();
               return acc + pow(num_groups - target_load, 2);
           });
@@ -54,19 +63,19 @@ public:
      * Compute new error for the given reassignment.
      */
     double adjusted_error(
-      const model::broker_shard& from, const model::broker_shard& to) const {
-        auto target_load = static_cast<double>(_num_groups)
-                           / static_cast<double>(_num_cores);
-        auto e = error();
+      double current_error,
+      const model::broker_shard& from,
+      const model::broker_shard& to) const {
+        auto target_load = calc_target_load();
         const auto from_count = static_cast<double>(_cores.at(from).size());
         const auto to_count = static_cast<double>(_cores.at(to).size());
         // subtract original contribution
-        e -= pow(from_count - target_load, 2);
-        e -= pow(to_count - target_load, 2);
+        current_error -= pow(from_count - target_load, 2);
+        current_error -= pow(to_count - target_load, 2);
         // add back in the adjusted amount
-        e += pow(from_count - 1 - target_load, 2);
-        e += pow(to_count + 1 - target_load, 2);
-        return e;
+        current_error += pow(from_count - 1 - target_load, 2);
+        current_error += pow(to_count + 1 - target_load, 2);
+        return current_error;
     }
 
     /*
@@ -88,42 +97,51 @@ public:
     find_movement(const absl::flat_hash_set<raft::group_id>& skip) const final {
         const auto curr_error = error();
 
-        /*
-         * from: high load core
-         * to: less loaded core
-         */
+        // Consider each group from high load core, and record the reassignment
+        // involving the lowest load "to" core.
         for (const auto& from : boost::adaptors::reverse(_load)) {
             if (_muted_nodes.contains(from->first.node_id)) {
                 continue;
             }
-            for (const auto& to : _load) {
-                // skip cores on muted nodes
-                if (_muted_nodes.contains(to->first.node_id)) {
+
+            constexpr size_t load_unset = std::numeric_limits<size_t>::max();
+            size_t lowest_load = load_unset;
+            reassignment lowest_reassign{};
+
+            // Consider each group from high load core, and record the
+            // reassignment involving the lowest load "to" core.
+            for (const auto& group : from->second) {
+                if (skip.contains(group.first)) {
                     continue;
                 }
-                // consider group from high load core
-                for (const auto& group : from->second) {
-                    if (skip.contains(group.first)) {
+
+                // iterate over all the replicas and look for the lowest load
+                // shard in the replica list
+                for (const auto& to_shard : group.second) {
+                    auto load = _load_map.at(to_shard);
+                    if (likely(load >= lowest_load)) {
+                        // there is no point in evaluating this move, it is
+                        // worse than the best one we've found so far.
                         continue;
                     }
-                    /*
-                     * a valid move requires that the group's replica set
-                     * contain the less loaded `to` core.
-                     */
-                    const auto it = std::find(
-                      group.second.cbegin(), group.second.cend(), to->first);
-                    if (it == group.second.cend()) {
+
+                    if (_muted_nodes.contains(to_shard.node_id)) {
                         continue;
                     }
-                    /*
-                     * choose reassignment if error improves
-                     */
-                    if (
-                      (adjusted_error(from->first, to->first) + error_jitter)
-                      < curr_error) {
-                        return reassignment{
-                          group.first, from->first, to->first};
-                    }
+
+                    lowest_load = load;
+                    lowest_reassign = {group.first, from->first, to_shard};
+                }
+            }
+
+            if (lowest_load != load_unset) {
+                // We found a possible reassignment while looking at the current
+                // "from" shard, and while it is the best possible reassignment
+                // found it may not improve the error
+                auto new_error = adjusted_error(
+                  curr_error, lowest_reassign.from, lowest_reassign.to);
+                if (new_error + error_jitter < curr_error) {
+                    return lowest_reassign;
                 }
             }
         }
@@ -180,8 +198,10 @@ private:
     void rebuild_load_index() {
         _load.clear();
         _load.reserve(_cores.size());
+        _load_map.reserve(_cores.size());
         for (auto it = _cores.cbegin(); it != _cores.cend(); ++it) {
             _load.push_back(it);
+            _load_map.emplace(it->first, it->second.size());
         }
         std::sort(_load.begin(), _load.end(), [](const auto& a, const auto& b) {
             return a->second.size() < b->second.size();
@@ -193,6 +213,7 @@ private:
     size_t _num_cores;
     size_t _num_groups;
     std::vector<index_type::const_iterator> _load;
+    absl::flat_hash_map<model::broker_shard, size_t> _load_map;
 };
 
 } // namespace cluster
