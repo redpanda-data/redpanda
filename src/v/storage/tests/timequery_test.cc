@@ -47,7 +47,8 @@ FIXTURE_TEST(timequery, log_builder_fixture) {
         storage::timequery_config config(
           model::timestamp(ts),
           log.offsets().dirty_offset,
-          ss::default_priority_class());
+          ss::default_priority_class(),
+          std::nullopt);
 
         auto res = log.timequery(config).get0();
         BOOST_TEST(res);
@@ -68,7 +69,8 @@ FIXTURE_TEST(timequery, log_builder_fixture) {
         storage::timequery_config config(
           model::timestamp(ts),
           log.offsets().dirty_offset,
-          ss::default_priority_class());
+          ss::default_priority_class(),
+          std::nullopt);
 
         auto offset = (ts - 100) * 5 + 100;
 
@@ -100,7 +102,8 @@ FIXTURE_TEST(timequery_single_value, log_builder_fixture) {
     storage::timequery_config config(
       model::timestamp(1200),
       log.offsets().dirty_offset,
-      ss::default_priority_class());
+      ss::default_priority_class(),
+      std::nullopt);
 
     auto empty_res = log.timequery(config).get0();
     BOOST_TEST(!empty_res);

@@ -65,10 +65,8 @@ public:
         co_return r.error();
     }
 
-    ss::future<std::optional<storage::timequery_result>> timequery(
-      model::timestamp ts,
-      model::offset offset_limit,
-      ss::io_priority_class io_pc) final;
+    ss::future<std::optional<storage::timequery_result>>
+    timequery(storage::timequery_config cfg) final;
 
     ss::future<result<model::offset>>
       replicate(model::record_batch_reader, raft::replicate_options);

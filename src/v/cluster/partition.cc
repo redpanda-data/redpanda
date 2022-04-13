@@ -316,9 +316,8 @@ ss::future<> partition::stop() {
     return f;
 }
 
-ss::future<std::optional<storage::timequery_result>> partition::timequery(
-  model::timestamp t, model::offset offset_limit, ss::io_priority_class p) {
-    storage::timequery_config cfg(t, offset_limit, p);
+ss::future<std::optional<storage::timequery_result>>
+partition::timequery(storage::timequery_config cfg) {
     return _raft->timequery(cfg);
 }
 

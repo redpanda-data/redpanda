@@ -69,11 +69,8 @@ public:
           co_await _partition->make_reader(cfg));
     }
 
-    ss::future<std::optional<storage::timequery_result>> timequery(
-      model::timestamp ts,
-      model::offset offset_limit,
-      ss::io_priority_class io_pc) final {
-        storage::timequery_config cfg(ts, offset_limit, io_pc);
+    ss::future<std::optional<storage::timequery_result>>
+    timequery(storage::timequery_config cfg) final {
         return _partition->timequery(cfg);
     };
 

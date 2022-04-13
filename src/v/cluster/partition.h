@@ -135,7 +135,7 @@ public:
     const model::ntp& ntp() const { return _raft->ntp(); }
 
     ss::future<std::optional<storage::timequery_result>>
-      timequery(model::timestamp, model::offset, ss::io_priority_class);
+      timequery(storage::timequery_config);
 
     bool is_leader() const { return _raft->is_leader(); }
     bool has_followers() const { return _raft->has_followers(); }
