@@ -54,6 +54,12 @@ struct op_context {
     // decode request and initialize budgets
     op_context(request_context&& ctx, ss::smp_service_group ssg);
 
+    op_context(op_context&&) = delete;
+    op_context(const op_context&) = delete;
+    op_context& operator=(const op_context&) = delete;
+    op_context& operator=(op_context&&) = delete;
+    ~op_context() noexcept = default;
+
     // reserve space for a new topic in the response
     void start_response_topic(const fetch_request::topic& topic);
 
