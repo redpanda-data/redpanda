@@ -7,7 +7,7 @@
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
 
 from rptest.services.cluster import cluster
-from ducktape.mark import ok_to_fail
+from ducktape.utils.util import wait_until
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.archival.s3_client import S3Client
 from rptest.services.redpanda import RedpandaService
@@ -260,6 +260,11 @@ class BaseCase:
         """Return True if the nodes needs to be cleaned up before the test"""
         return False
 
+    @property
+    def verify_s3_content_after_produce(self):
+        """Return True if the test will produce any data that needs to be verified"""
+        return True
+
     def after_restart_validation(self):
         """Called after topic recovery and subsequent restart of the cluster.
         Is only invoked if 'second_restart_needed' is True.
@@ -401,6 +406,10 @@ class NoDataCase(BaseCase):
                 f"partition id: {partition.id} hw: {partition.high_watermark}")
             # Verify that we don't have any data
             assert partition.high_watermark == 0
+
+    @property
+    def verify_s3_content_after_produce(self):
+        return False
 
 
 class MissingTopicManifest(BaseCase):
@@ -1064,6 +1073,54 @@ class TopicRecoveryTest(RedpandaTest):
                 f"All data will be removed from node {node.account.hostname}")
             self.redpanda.remove_local_data(node)
 
+    def _wait_for_data_in_s3(self,
+                             expected_topics,
+                             timeout=datetime.timedelta(minutes=1)):
+        """Wait until all topics are uploaded to S3"""
+        def verify():
+            total_partitions = sum(
+                [t.partition_count for t in expected_topics])
+            manifests = []
+            topic_manifests = []
+            segments = []
+            lst = self.s3_client.list_objects(self.s3_bucket)
+            for obj in lst:
+                if obj.Key.endswith("/manifest.json"):
+                    manifests.append(obj)
+                elif obj.Key.endswith("/topic_manifest.json"):
+                    topic_manifests.append(obj)
+                else:
+                    segments.append(obj)
+            if len(expected_topics) != len(topic_manifests):
+                self.logger.info(
+                    f"can't find enough topic_manifest.json objects, expected: {len(expected_topicsi)}, actual: {len(topic_manifest)}"
+                )
+                return False
+            if total_partitions != len(manifests):
+                self.logger.info(
+                    f"can't find enough manifest.json objects, expected: {len(manifests)}, actual: {total_partitions}"
+                )
+                return False
+            size_on_disk = 0
+            for node, files in self._collect_file_checksums().items():
+                tmp_size = 0
+                for path, (_, size) in files.items():
+                    tmp_size += size
+                size_on_disk = max([tmp_size, size_on_disk])
+            size_in_cloud = 0
+            for obj in segments:
+                size_in_cloud += obj.ContentLength
+            max_delta = default_log_segment_size * 1.5 * total_partitions
+            if (size_on_disk - size_in_cloud) > max_delta:
+                self.logger.info(
+                    f"not enough data uploaded to S3, uploaded {size_in_cloud} bytes, with {size_on_disk} bytes on disk"
+                )
+                return False
+
+            return True
+
+        wait_until(verify, timeout_sec=timeout.total_seconds(), backoff_sec=1)
+
     def _wait_for_topic(self,
                         recovered_topics,
                         timeout=datetime.timedelta(minutes=1)):
@@ -1073,10 +1130,10 @@ class TopicRecoveryTest(RedpandaTest):
         elected.
         The method is time bound.
         """
-        deadline = datetime.datetime.now() + timeout
         expected_num_leaders = sum(
             [t.partition_count for t in recovered_topics])
-        while True:
+
+        def verify():
             num_leaders = 0
             try:
                 for topic in recovered_topics:
@@ -1088,12 +1145,10 @@ class TopicRecoveryTest(RedpandaTest):
                         if partition.leader in partition.replicas:
                             num_leaders += 1
             except:
-                pass
-            if num_leaders == expected_num_leaders:
-                break
-            ts = datetime.datetime.now()
-            assert ts < deadline
-            time.sleep(1)
+                return False
+            return num_leaders == expected_num_leaders
+
+        wait_until(verify, timeout_sec=timeout.total_seconds(), backoff_sec=1)
 
     def do_run(self, test_case: BaseCase):
         """Template method invoked by all tests."""
@@ -1117,6 +1172,9 @@ class TopicRecoveryTest(RedpandaTest):
 
         # Give time to finish all uploads
         time.sleep(10)
+        if test_case.verify_s3_content_after_produce:
+            self.logger.info("Wait for data in S3")
+            self._wait_for_data_in_s3(test_case.topics)
 
         self._stop_redpanda_nodes()
 
@@ -1196,7 +1254,6 @@ class TopicRecoveryTest(RedpandaTest):
                                    self.s3_bucket, self.logger)
         self.do_run(test_case)
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/4202
     @cluster(num_nodes=3, log_allow_list=TRANSIENT_ERRORS)
     def test_fast1(self):
         """Basic recovery test. This test stresses successful recovery
@@ -1210,7 +1267,6 @@ class TopicRecoveryTest(RedpandaTest):
                               self.s3_bucket, self.logger, topics)
         self.do_run(test_case)
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/4202
     @cluster(num_nodes=3, log_allow_list=TRANSIENT_ERRORS)
     def test_fast2(self):
         """Basic recovery test. This test stresses successful recovery
@@ -1227,7 +1283,6 @@ class TopicRecoveryTest(RedpandaTest):
                               self.s3_bucket, self.logger, topics)
         self.do_run(test_case)
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/4202
     @cluster(num_nodes=3, log_allow_list=TRANSIENT_ERRORS)
     def test_fast3(self):
         """Basic recovery test. This test stresses successful recovery
