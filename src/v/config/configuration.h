@@ -80,6 +80,7 @@ struct configuration final : public config_store {
     bounded_property<std::chrono::milliseconds> default_window_sec;
     property<std::chrono::milliseconds> quota_manager_gc_sec;
     bounded_property<uint32_t> target_quota_byte_rate;
+    bounded_property<std::optional<uint32_t>> kafka_admin_topic_api_rate;
     property<std::optional<ss::sstring>> cluster_id;
     property<bool> disable_metrics;
     property<bool> disable_public_metrics;
