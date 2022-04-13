@@ -13,6 +13,7 @@
 
 #include "model/record.h"
 #include "model/record_batch_reader.h"
+#include "model/timestamp.h"
 #include "random/generators.h"
 
 namespace storage::test {
@@ -29,6 +30,7 @@ struct record_batch_spec {
     int16_t producer_epoch{-1};
     int32_t base_sequence{-1};
     bool is_transactional{false};
+    std::optional<model::timestamp> timestamp;
 };
 
 /**

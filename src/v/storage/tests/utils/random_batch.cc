@@ -96,7 +96,10 @@ make_random_batch(model::offset o, int num_records, bool allow_compression) {
 }
 
 model::record_batch make_random_batch(record_batch_spec spec) {
-    auto ts = model::timestamp::now()() - (spec.count - 1);
+    auto ts = spec.timestamp.value_or(
+      model::timestamp(model::timestamp::now()() - (spec.count - 1)));
+    auto max_ts = spec.timestamp.value_or(
+      model::timestamp(ts.value() + spec.count - 1));
     auto header = model::record_batch_header{
       .size_bytes = 0, // computed later
       .base_offset = spec.offset,
@@ -105,8 +108,8 @@ model::record_batch make_random_batch(record_batch_spec spec) {
       .attrs = model::record_batch_attributes(
         get_int<int16_t>(0, spec.allow_compression ? 4 : 0)),
       .last_offset_delta = spec.count - 1,
-      .first_timestamp = model::timestamp(ts),
-      .max_timestamp = model::timestamp(ts + spec.count - 1),
+      .first_timestamp = ts,
+      .max_timestamp = max_ts,
       .producer_id = spec.producer_id,
       .producer_epoch = spec.producer_epoch,
       .base_sequence = 0,
