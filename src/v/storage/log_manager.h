@@ -64,8 +64,9 @@ struct log_config {
           config::mock_binding<std::optional<size_t>>(std::nullopt))
       , compaction_interval(config::mock_binding<std::chrono::milliseconds>(
           std::chrono::minutes(10)))
-      , delete_retention(config::mock_binding<std::chrono::milliseconds>(
-          std::chrono::minutes(10080))) {}
+      , delete_retention(
+          config::mock_binding<std::optional<std::chrono::milliseconds>>(
+            std::chrono::minutes(10080))) {}
 
     log_config(
       storage_type type,
@@ -88,7 +89,7 @@ struct log_config {
       ss::io_priority_class compaction_priority,
       config::binding<std::optional<size_t>> ret_bytes,
       config::binding<std::chrono::milliseconds> compaction_ival,
-      config::binding<std::chrono::milliseconds> del_ret,
+      config::binding<std::optional<std::chrono::milliseconds>> del_ret,
       with_cache c,
       batch_cache::reclaim_options recopts,
       std::chrono::milliseconds rdrs_cache_eviction_timeout,
@@ -130,7 +131,7 @@ struct log_config {
     config::binding<std::optional<size_t>> retention_bytes;
     config::binding<std::chrono::milliseconds> compaction_interval;
     // same as delete.retention.ms in kafka - default 1 week
-    config::binding<std::chrono::milliseconds> delete_retention;
+    config::binding<std::optional<std::chrono::milliseconds>> delete_retention;
     with_cache cache = with_cache::yes;
     batch_cache::reclaim_options reclaim_opts{
       .growth_window = std::chrono::seconds(3),
