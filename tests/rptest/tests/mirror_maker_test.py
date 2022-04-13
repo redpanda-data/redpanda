@@ -45,6 +45,25 @@ class TestMirrorMakerService(EndToEndTest):
     def setUp(self):
         self.zk.start()
 
+    def tearDown(self):
+        # ducktape handle service teardown automatically, but it is hard
+        # to tell what went wrong if one of the services hangs.  Do it
+        # explicitly here with some logging, to enable debugging issues
+        # like https://github.com/redpanda-data/redpanda/issues/4270
+
+        self.logger.info(
+            f"Stopping source broker ({self.source_broker.__class__.__name__})..."
+        )
+        self.source_broker.stop()
+        self.logger.info(
+            f"Awaiting source broker ({self.source_broker.__class__.__name__})..."
+        )
+        self.logger.info(f"tearDown complete")
+
+        self.logger.info("Stopping zookeeper...")
+        self.zk.stop()
+        self.logger.info("Awaiting zookeeper...")
+
     def start_brokers(self, source_type=kafka_source):
         if source_type == TestMirrorMakerService.redpanda_source:
             self.source_broker = RedpandaService(self.test_context,
