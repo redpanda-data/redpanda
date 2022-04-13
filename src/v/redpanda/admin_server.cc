@@ -338,9 +338,10 @@ void admin_server::log_request(
   const ss::httpd::request& req, const request_auth_result& auth_state) const {
     vlog(
       logger.debug,
-      "[{}] {}",
+      "[{}] {} {}",
       auth_state.get_username().size() > 0 ? auth_state.get_username()
                                            : "_anonymous",
+      req._method,
       req.get_url());
 }
 
