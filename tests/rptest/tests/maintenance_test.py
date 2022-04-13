@@ -32,7 +32,12 @@ class MaintenanceTest(RedpandaTest):
         """
         id = self.redpanda.idx(node)
         partitions = self.admin.get_partitions(node=node)
-        return len(list(filter(lambda p: p["leader"] == id, partitions))) > 0
+        has_leadership = False
+        for p in partitions:
+            if p["leader"] == id:
+                self.logger.debug(f"{node.name} has leadership for {p}")
+                has_leadership = True
+        return has_leadership
 
     def _in_maintenance_mode(self, node):
         status = self.admin.maintenance_status(node)
