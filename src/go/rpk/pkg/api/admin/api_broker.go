@@ -17,11 +17,20 @@ import (
 
 const brokersEndpoint = "/v1/brokers"
 
+type dSpace struct {
+	Path	string	`json:"path"`
+	Free	int64	`json:"free"`
+	Total	int64	`json:"total"`
+}
+
 // Broker is the information returned from the Redpanda admin broker endpoints.
 type Broker struct {
-	NodeID           int    `json:"node_id"`
-	NumCores         int    `json:"num_cores"`
-	MembershipStatus string `json:"membership_status"`
+	NodeID           int   		`json:"node_id"`
+	NumCores         int   		`json:"num_cores"`
+	MembershipStatus string		`json:"membership_status"`
+	IsAlive		 bool		`json:"is_alive"`
+	DiskSpaceItems	 []dSpace	`json:"disk_space"`
+	Version		 string		`json:"version"`
 }
 
 // Brokers queries one of the client's hosts and returns the list of brokers.

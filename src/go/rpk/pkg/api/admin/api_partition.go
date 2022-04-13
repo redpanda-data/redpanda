@@ -42,3 +42,41 @@ func (a *AdminAPI) GetPartition(
 		nil,
 		&pa)
 }
+
+// UpdateReplicas updates replicas for a partition
+func (a *AdminAPI) UpdateReplicas(
+	namespace, topic string, partition int, sourceBroker int, targetBroker int,
+) (Partition, error) {
+	var pa Partition
+        err := a.sendAny(
+                http.MethodGet,
+                fmt.Sprintf("/v1/partitions/%s/%s/%d", namespace, topic, partition),
+                nil,
+                &pa)
+        if err != nil {
+        	return pa, err
+        }
+        pa.Replicas = replaceNodeID(pa.Replicas, sourceBroker, targetBroker)
+        err = a.sendAny(
+                http.MethodPost,
+                fmt.Sprintf("/v1/partitions/%s/%s/%d/replicas", namespace, topic, partition),
+                pa.Replicas,
+                &pa)
+        return pa, err
+}
+
+
+func replaceNodeID(rs []Replica, sourceBroker int, targetBroker int) []Replica {
+	var newReplicas []Replica
+        for _, rep := range rs {        	
+        	if rep.NodeID == sourceBroker {
+        		var newRep Replica     		
+        		newRep.NodeID = targetBroker
+			newRep.Core = rep.Core
+			newReplicas = append(newReplicas, newRep)
+        	} else {
+        		newReplicas = append(newReplicas, rep)
+        	}
+        }
+	return newReplicas
+}
