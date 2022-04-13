@@ -838,6 +838,10 @@ class RedpandaService(Service):
         """
 
         for node in self.nodes:
+            if not node.account.exists(RedpandaService.STDOUT_STDERR_CAPTURE):
+                # Log many not exist if node never started
+                continue
+
             self.logger.info(
                 f"Decoding backtraces on {node.account.hostname}.")
             cmd = '/opt/scripts/seastar-addr2line'
@@ -845,7 +849,14 @@ class RedpandaService(Service):
             cmd += f" -f {RedpandaService.STDOUT_STDERR_CAPTURE}"
             cmd += f" > {RedpandaService.BACKTRACE_CAPTURE} 2>&1"
             cmd += f" && find {RedpandaService.BACKTRACE_CAPTURE} -type f -size 0 -delete"
-            node.account.ssh(cmd)
+
+            try:
+                node.account.ssh(cmd)
+            except:
+                # We run during teardown on failures, so if something
+                # goes wrong we must not raise, or we would usurp
+                # the original exception that caused the failure.
+                self.logger.exception("Failed to run seastar-addr2line")
 
     def find_wasm_root(self):
         rp_install_path_root = self._context.globals.get(
