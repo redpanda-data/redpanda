@@ -82,10 +82,18 @@ class MaintenanceTest(RedpandaTest):
                    timeout_sec=30,
                    backoff_sec=5)
 
+        def has_drained():
+            """
+            as we wait for leadership to drain, also print out maintenance mode
+            status. this is useful for debugging to detect if maintenance mode
+            has been lost or disabled for some unexpected reason.
+            """
+            status = self.admin.maintenance_status(node)
+            self.logger.debug(f"Maintenance status for {node.name}: {status}")
+            return not self._has_leadership_role(node),
+
         self.logger.debug(f"Waiting for node {node.name} leadership to drain")
-        wait_until(lambda: not self._has_leadership_role(node),
-                   timeout_sec=60,
-                   backoff_sec=10)
+        wait_until(has_drained, timeout_sec=60, backoff_sec=10)
 
         self.logger.debug(
             f"Waiting for node {node.name} maintenance mode to complete")
