@@ -30,6 +30,12 @@ type MaintenanceStatus struct {
 	Failed       int  `json:"failed"`
 }
 
+type dSpace struct {
+	Path	string	`json:"path"`
+	Free	int64	`json:"free"`
+	Total	int64	`json:"total"`
+}
+
 // Broker is the information returned from the Redpanda admin broker endpoints.
 type Broker struct {
 	NodeID           int                `json:"node_id"`
