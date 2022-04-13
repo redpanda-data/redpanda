@@ -20,6 +20,12 @@ class KafkaServiceAdapter:
     def start(self, add_principals=""):
         return self._kafka_service.start(add_principals)
 
+    def __getattribute__(self, name):
+        try:
+            return object.__getattribute__(self, name)
+        except AttributeError:
+            return getattr(self._kafka_service, name)
+
     # required for rpk
     def find_binary(self, name):
         rp_install_path_root = self._context.globals.get(

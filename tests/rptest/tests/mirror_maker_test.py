@@ -13,7 +13,7 @@ from ducktape.mark import parametrize
 
 from rptest.clients.default import DefaultClient
 from rptest.clients.types import TopicSpec
-from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk import RpkTool, RpkException
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.services.rpk_producer import RpkProducer
 from rptest.services.kafka import KafkaServiceAdapter
@@ -44,6 +44,25 @@ class TestMirrorMakerService(EndToEndTest):
 
     def setUp(self):
         self.zk.start()
+
+    def tearDown(self):
+        # ducktape handle service teardown automatically, but it is hard
+        # to tell what went wrong if one of the services hangs.  Do it
+        # explicitly here with some logging, to enable debugging issues
+        # like https://github.com/redpanda-data/redpanda/issues/4270
+
+        self.logger.info(
+            f"Stopping source broker ({self.source_broker.__class__.__name__})..."
+        )
+        self.source_broker.stop()
+        self.logger.info(
+            f"Awaiting source broker ({self.source_broker.__class__.__name__})..."
+        )
+        self.logger.info(f"tearDown complete")
+
+        self.logger.info("Stopping zookeeper...")
+        self.zk.stop()
+        self.logger.info("Awaiting zookeeper...")
 
     def start_brokers(self, source_type=kafka_source):
         if source_type == TestMirrorMakerService.redpanda_source:
@@ -174,7 +193,13 @@ class TestMirrorMakerService(EndToEndTest):
         target_rpk = RpkTool(self.redpanda)
 
         def target_group_equal():
-            target_group = target_rpk.group_describe(consumer_group)
+            try:
+                target_group = target_rpk.group_describe(consumer_group)
+            except RpkException as e:
+                # e.g. COORDINATOR_NOT_AVAILABLE
+                self.logger.info(f"Error describing target cluster group: {e}")
+                return False
+
             self.logger.info(
                 f"source {source_group}, target_group: {target_group}")
             return target_group.partitions == source_group.partitions and target_group.name == source_group.name
