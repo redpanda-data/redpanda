@@ -214,7 +214,7 @@ ss::future<read_result> read_from_ntp(
 static void fill_fetch_responses(
   op_context& octx,
   std::vector<read_result> results,
-  std::vector<op_context::response_iterator> responses,
+  std::vector<op_context::response_placeholder_ptr> responses,
   std::vector<std::unique_ptr<hdr_hist::measurement>> metrics) {
     auto range = boost::irange<size_t>(0, results.size());
     for (auto idx : range) {
@@ -224,16 +224,14 @@ static void fill_fetch_responses(
 
         // error case
         if (unlikely(res.error != error_code::none)) {
-            resp_it.set(
+            resp_it->set(
               make_partition_response_error(res.partition, res.error));
             metric->set_trace(false);
             continue;
         }
 
         model::ntp ntp(
-          model::kafka_namespace,
-          resp_it->partition->name,
-          resp_it->partition_response->partition_index);
+          model::kafka_namespace, resp_it->topic(), resp_it->partition_id());
         /**
          * Cache fetch metadata
          */
@@ -283,7 +281,7 @@ static void fill_fetch_responses(
             resp.records = batch_reader();
         }
 
-        resp_it.set(std::move(resp));
+        resp_it->set(std::move(resp));
         metric = nullptr;
     }
 }
@@ -419,13 +417,10 @@ class simple_fetch_planner final : public fetch_planner::impl {
               // if this is not an initial fetch we are allowed to skip
               // partions that aleready have an error or we have enough data
               if (!octx.initial_fetch) {
-                  bool has_enough_data
-                    = !resp_it->partition_response->records->empty()
-                      && octx.over_min_bytes();
+                  bool has_enough_data = !resp_it->empty()
+                                         && octx.over_min_bytes();
 
-                  if (
-                    resp_it->partition_response->error_code != error_code::none
-                    || has_enough_data) {
+                  if (resp_it->has_error() || has_enough_data) {
                       ++resp_it;
                       return;
                   }
@@ -435,7 +430,7 @@ class simple_fetch_planner final : public fetch_planner::impl {
                */
               if (!octx.rctx.authorized(
                     security::acl_operation::read, fp.topic)) {
-                  (resp_it).set(make_partition_response_error(
+                  resp_it->set(make_partition_response_error(
                     fp.partition, error_code::topic_authorization_failed));
                   ++resp_it;
                   return;
@@ -447,7 +442,7 @@ class simple_fetch_planner final : public fetch_planner::impl {
               // there is given partition in topic metadata, return
               // unknown_topic_or_partition error
               if (unlikely(!octx.rctx.metadata_cache().contains(ntp))) {
-                  (resp_it).set(make_partition_response_error(
+                  resp_it->set(make_partition_response_error(
                     fp.partition, error_code::unknown_topic_or_partition));
                   ++resp_it;
                   return;
@@ -461,7 +456,7 @@ class simple_fetch_planner final : public fetch_planner::impl {
                    * but consumer has not updated its metadata yet. we return
                    * not_leader_for_partition error to force metadata update.
                    */
-                  (resp_it).set(make_partition_response_error(
+                  resp_it->set(make_partition_response_error(
                     fp.partition, error_code::not_leader_for_partition));
                   ++resp_it;
                   return;
@@ -490,8 +485,9 @@ class simple_fetch_planner final : public fetch_planner::impl {
 
               plan.fetches_per_shard[*shard].push_back(
                 make_ntp_fetch_config(ntp, config),
-                resp_it++,
+                &(*resp_it),
                 octx.rctx.probe().auto_fetch_measurement());
+              ++resp_it;
           });
 
         return plan;
@@ -648,6 +644,10 @@ void op_context::create_response_placeholders() {
               response.data.topics.back().partitions.push_back(std::move(p));
           });
     }
+    for (auto it = response.begin(); it != response.end(); ++it) {
+        auto raw = new response_placeholder(it, this); // NOLINT
+        iteration_order.push_back(*raw);
+    }
 }
 
 bool update_fetch_partition(
@@ -720,12 +720,12 @@ ss::future<response_ptr> op_context::send_response() && {
     return rctx.respond(std::move(final_response));
 }
 
-op_context::response_iterator::response_iterator(
+op_context::response_placeholder::response_placeholder(
   fetch_response::iterator it, op_context* ctx)
   : _it(it)
   , _ctx(ctx) {}
 
-void op_context::response_iterator::set(
+void op_context::response_placeholder::set(
   fetch_response::partition_response&& response) {
     vassert(
       response.partition_index == _it->partition_response->partition_index,
@@ -776,33 +776,14 @@ void op_context::response_iterator::set(
             if (
               _it->partition_response->records
               && _it->partition_response->records->size_bytes() > 0) {
+                // move both session partition and response placeholder to the
+                // end of fetch queue
                 session_partitions.move_to_end(it);
+                move_to_end();
             }
             _it->partition_response->has_to_be_included = has_to_be_included;
         }
     }
-}
-
-op_context::response_iterator& op_context::response_iterator::operator++() {
-    _it++;
-    return *this;
-}
-
-const op_context::response_iterator
-op_context::response_iterator::operator++(int) {
-    response_iterator tmp = *this;
-    ++(*this);
-    return tmp;
-}
-
-bool op_context::response_iterator::operator==(
-  const response_iterator& o) const noexcept {
-    return _it == o._it;
-}
-
-bool op_context::response_iterator::operator!=(
-  const response_iterator& o) const noexcept {
-    return !(*this == o);
 }
 
 } // namespace kafka

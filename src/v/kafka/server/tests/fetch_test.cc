@@ -17,6 +17,8 @@
 
 #include <seastar/core/smp.hh>
 
+#include <fmt/ostream.h>
+
 #include <chrono>
 #include <limits>
 
@@ -311,11 +313,9 @@ FIXTURE_TEST(fetch_response_iterator_test, redpanda_thread_fixture) {
           make_partition_response(1));
         return response;
     };
-    kafka::op_context ctx(
-      make_request_context(), ss::default_smp_service_group());
+    auto fetch_request = make_request_context();
     auto response = make_test_fetch_response();
-    ctx.response = make_test_fetch_response();
-    auto wrapper_iterator = ctx.response_begin();
+
     int i = 0;
 
     for (auto it = response.begin(); it != response.end(); ++it) {
@@ -330,13 +330,7 @@ FIXTURE_TEST(fetch_response_iterator_test, redpanda_thread_fixture) {
             BOOST_REQUIRE_EQUAL(
               it->partition_response->partition_index(), i - 4);
         }
-        BOOST_REQUIRE_EQUAL(
-          it->partition->name, wrapper_iterator->partition->name);
-        BOOST_REQUIRE_EQUAL(
-          wrapper_iterator->partition_response->partition_index,
-          wrapper_iterator->partition_response->partition_index);
         ++i;
-        ++wrapper_iterator;
     }
 };
 
