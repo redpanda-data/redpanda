@@ -58,13 +58,13 @@ class MaintenanceTest(RedpandaTest):
         mode and all of the work associated with that has completed.
         """
         self.logger.debug(
-            "Checking that node {node.name} has a leadership role")
+            f"Checking that node {node.name} has a leadership role")
         wait_until(lambda: self._has_leadership_role(node),
                    timeout_sec=60,
                    backoff_sec=10)
 
         self.logger.debug(
-            "Checking that node {node.name} is not in maintenance mode")
+            f"Checking that node {node.name} is not in maintenance mode")
         status = self.admin.maintenance_status(node)
         assert status[
             "draining"] == False, f"Node {node.name} in maintenance mode"
@@ -72,18 +72,18 @@ class MaintenanceTest(RedpandaTest):
         self.admin.maintenance_start(node)
 
         self.logger.debug(
-            "Waiting for node {node.name} to enter maintenance mode")
+            f"Waiting for node {node.name} to enter maintenance mode")
         wait_until(lambda: self._in_maintenance_mode(node),
                    timeout_sec=30,
                    backoff_sec=5)
 
-        self.logger.debug("Waiting for node {node.name} leadership to drain")
+        self.logger.debug(f"Waiting for node {node.name} leadership to drain")
         wait_until(lambda: not self._has_leadership_role(node),
                    timeout_sec=60,
                    backoff_sec=10)
 
         self.logger.debug(
-            "Waiting for node {node.name} maintenance mode to complete")
+            f"Waiting for node {node.name} maintenance mode to complete")
         wait_until(lambda: self._in_maintenance_mode_fully(node),
                    timeout_sec=60,
                    backoff_sec=10)
