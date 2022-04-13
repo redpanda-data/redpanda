@@ -519,16 +519,23 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			configMapHash2 := annotationGetter(key, &sts, configMapHashKey)()
 			Consistently(annotationGetter(key, &sts, configMapHashKey), timeoutShort, intervalShort).Should(Equal(configMapHash2))
 
+			By("Start using the condition")
+			Eventually(clusterConfiguredConditionGetter(key), timeout, interval).ShouldNot(BeNil())
+
 			By("Accepting a change in both node and cluster properties")
 			testAdminAPI.RegisterPropertySchema("prop", admin.ConfigPropertyMetadata{NeedsRestart: false})
-			Expect(resourceGetter(key, redpandaCluster)()).To(Succeed())
-			redpandaCluster.Spec.Configuration.DeveloperMode = !redpandaCluster.Spec.Configuration.DeveloperMode
-			if redpandaCluster.Spec.AdditionalConfiguration == nil {
-				redpandaCluster.Spec.AdditionalConfiguration = make(map[string]string)
-			}
 			const propValue = "the-value"
-			redpandaCluster.Spec.AdditionalConfiguration["redpanda.prop"] = propValue
-			Expect(k8sClient.Update(context.Background(), redpandaCluster)).To(Succeed())
+			Eventually(func() error {
+				if err := resourceGetter(key, redpandaCluster)(); err != nil {
+					return err
+				}
+				redpandaCluster.Spec.Configuration.DeveloperMode = !redpandaCluster.Spec.Configuration.DeveloperMode
+				if redpandaCluster.Spec.AdditionalConfiguration == nil {
+					redpandaCluster.Spec.AdditionalConfiguration = make(map[string]string)
+				}
+				redpandaCluster.Spec.AdditionalConfiguration["redpanda.prop"] = propValue
+				return k8sClient.Update(context.Background(), redpandaCluster)
+			}, timeout, interval).Should(Succeed())
 
 			By("Redeploying the statefulset with the new changes")
 			Eventually(annotationGetter(key, &sts, configMapHashKey), timeout, interval).ShouldNot(Equal(configMapHash2))
