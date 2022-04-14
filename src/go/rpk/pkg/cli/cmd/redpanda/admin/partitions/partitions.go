@@ -13,7 +13,6 @@ package partitions
 
 import (
 	"fmt"
-//	"errors"
 	"context"
 	"strconv"
 	"sort"
@@ -186,11 +185,13 @@ func newDrainCommand(fs afero.Fs) *cobra.Command {
 
 			drainMap := make(map[string]int)
 			brokerSizeMap := make(map[int]int64)
+			var allocationMap []Allocation
 
 			nonDrainablePartitionCount := 0
 			for _, tp := range topicPartitionMap {
 				destinationBroker := getLeastUsedBrokerWithNoReplicas(sourceBrokerId, tp, diskUsageMap)
 				if destinationBroker.broker != -1 {
+					allocationMap = append(allocationMap, Allocation{tp, DiskUsage{destinationBroker.broker, destinationBroker.free, destinationBroker.total, rand.Intn(destinationBroker.cores)}})
 					uS := getUniqueTopicPartitionString(tp.topic, strconv.Itoa(int(tp.partition)))
 					drainMap[uS] = destinationBroker.broker
 					tw.Print(tp.topic, tp.partition, destinationBroker.broker)
@@ -228,8 +229,12 @@ func newDrainCommand(fs afero.Fs) *cobra.Command {
 			//6. Print all the movement information and final state of the cluster.
 			tw.Flush()			
 
-
-            reader := bufio.NewReader(os.Stdin)            
+			if len(allocationMap) == 0 {
+				out.Die("Nothing to drain. Aborting drain.")
+			}
+			
+            reader := bufio.NewReader(os.Stdin)  
+            fmt.Println()
 			fmt.Print("Are you sure you want to proceed with the drain?(y/n): ")
 			inp, _ := reader.ReadString('\n')
 			input := strings.TrimRight(inp, "\n")
@@ -237,22 +242,19 @@ func newDrainCommand(fs afero.Fs) *cobra.Command {
 			if !(input == "y" || input == "n") {
 				out.Die("Invalid input: %v", inp)
 			} else if input == "n" {
-				out.Die("Aborting the drain.")		
+				out.Die("Aborting the drain.")
 			}
 
-			fmt.Println("Continue with the drain.")
+			fmt.Println("Continuing with the drain.")			
 
-/*
-			for _, t := range replicaPartitions {
-				pa, err := cl.UpdateReplicas("kafka", t.topic, int(t.partition), sourceBrokerId, destinationBrokerId)
+			for _, tp := range allocationMap {
+				pa, err := cl.UpdateReplicas("kafka", tp.topicPartition.topic, int(tp.topicPartition.partition), sourceBrokerId, tp.destinationBroker.broker, tp.destinationBroker.cores)
 				if err != nil {
 					out.MaybeDie(err, "Not able to drain partition: %v", pa.Topic, err)
 				} else {
-					fmt.Println("Partition is drained out. ", t.topic, " - ", t.partition)
-				}				
-				break
+					fmt.Println(tp.topicPartition.topic, "-",tp.topicPartition.partition, " is successfully drained out. ")
+				}
 			}
-*/
 		},
 	}
 	
@@ -276,6 +278,11 @@ type DiskUsage struct {
 	free int64
 	total int64
 	cores int
+}
+
+type Allocation struct {
+	topicPartition TopicPartition
+	destinationBroker DiskUsage
 }
 
 func getTopicPartitionMap(m kadm.Metadata, kgocl *kgo.Client, brokerId int) ([]TopicPartition) {

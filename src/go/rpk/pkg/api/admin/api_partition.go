@@ -45,8 +45,7 @@ func (a *AdminAPI) GetPartition(
 
 // UpdateReplicas updates replicas for a partition
 func (a *AdminAPI) UpdateReplicas(
-	namespace, topic string, partition int, sourceBroker int, targetBroker int,
-) (Partition, error) {
+	namespace, topic string, partition int, sourceBroker int, targetBroker int, targetCore int) (Partition, error) {
 	var pa Partition
         err := a.sendAny(
                 http.MethodGet,
@@ -56,26 +55,31 @@ func (a *AdminAPI) UpdateReplicas(
         if err != nil {
         	return pa, err
         }
-        pa.Replicas = replaceNodeID(pa.Replicas, sourceBroker, targetBroker)
+        pa.Replicas = replaceNodeID(pa.Replicas, sourceBroker, targetBroker, targetCore)        
         err = a.sendAny(
                 http.MethodPost,
                 fmt.Sprintf("/v1/partitions/%s/%s/%d/replicas", namespace, topic, partition),
                 pa.Replicas,
-                &pa)
+                nil)
         return pa, err
 }
 
 
-func replaceNodeID(rs []Replica, sourceBroker int, targetBroker int) []Replica {
+func replaceNodeID(rs []Replica, sourceBroker int, targetBroker int, targetCore int) []Replica {
 	var newReplicas []Replica
         for _, rep := range rs {        	
         	if rep.NodeID == sourceBroker {
-        		var newRep Replica     		
-        		newRep.NodeID = targetBroker
-			newRep.Core = rep.Core
-			newReplicas = append(newReplicas, newRep)
+        		replica := Replica {
+        			NodeID: targetBroker,
+        			Core: 	targetCore,
+        		}        		
+			newReplicas = append(newReplicas, replica)
         	} else {
-        		newReplicas = append(newReplicas, rep)
+        		replica := Replica {
+        			NodeID: rep.NodeID,
+        			Core: 	rep.Core,
+        		}  
+        		newReplicas = append(newReplicas, replica)
         	}
         }
 	return newReplicas
