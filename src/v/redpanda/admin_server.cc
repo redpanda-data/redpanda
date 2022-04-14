@@ -2540,4 +2540,35 @@ void admin_server::register_debug_routes() {
 
           co_return ss::json::json_void();
       });
+
+    register_route<user>(
+      ss::httpd::debug_json::get_leaders_info,
+      [this](std::unique_ptr<ss::httpd::request>)
+        -> ss::future<ss::json::json_return_type> {
+          vlog(logger.info, "Request to get leaders info");
+          using result_t = ss::httpd::debug_json::leader_info;
+          std::vector<result_t> ans;
+
+          auto leaders_info = _metadata_cache.local().get_leaders();
+          ans.reserve(leaders_info.size());
+          for (const auto& leader_info : leaders_info) {
+              result_t info;
+              info.ns = leader_info.tp_ns.ns;
+              info.topic = leader_info.tp_ns.tp;
+              info.partition_id = leader_info.pid;
+              info.leader = leader_info.current_leader.has_value()
+                              ? leader_info.current_leader.value()
+                              : -1;
+              info.previous_leader = leader_info.previous_leader.has_value()
+                                       ? leader_info.previous_leader.value()
+                                       : -1;
+              info.last_stable_leader_term
+                = leader_info.last_stable_leader_term;
+              info.update_term = leader_info.update_term;
+              info.partition_revision = leader_info.partition_revision;
+              ans.push_back(std::move(info));
+          }
+
+          co_return ss::json::json_return_type(ans);
+      });
 }

@@ -21,6 +21,64 @@
                     "parameters": []
                 }
             ]
+        },
+        {
+            "path": "/v1/debug/partition_leaders_table",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get information about leaders from partition_leaders_table for node",
+                    "type": "array",
+                    "items": {
+                        "type": "leader_info"
+                    },
+                    "nickname": "get_leaders_info",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
         }
-    ]
+    ],
+    "models": {
+        "leader_info": {
+            "id": "leader_info",
+            "description": "Leader info",
+            "properties": {
+                "ns": {
+                    "type": "string",
+                    "description": "namespace"
+                },
+                "topic": {
+                    "type": "string",
+                    "description": "topic"
+                },
+                "partition_id": {
+                    "type": "long",
+                    "description": "partition"
+                },
+                "leader": {
+                    "type": "long",
+                    "description": "current leader"
+                },
+                "previous_leader": {
+                    "type": "long",
+                    "description": "previous leader"
+                },
+                "last_stable_leader_term": {
+                    "type": "long",
+                    "description": "last stable leader term"
+                },
+                "update_term": {
+                    "type": "long",
+                    "description": "update term"
+                },
+                "partition_revision": {
+                    "type": "long",
+                    "description": "partition revision"
+                }
+            }
+        }
+    }
 }

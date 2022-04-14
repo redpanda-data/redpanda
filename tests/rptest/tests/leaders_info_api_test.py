@@ -27,7 +27,7 @@ class LeadersInfoApiTest(RedpandaTest):
         self.admin = Admin(self.redpanda)
 
     @cluster(num_nodes=3)
-    def get_leaders_info_test(self):
+    def reset_leaders_info_test(self):
         def check_reset_leaders():
             node = self.redpanda.nodes[0]
             self.admin.reset_leaders_info(node)
@@ -66,6 +66,34 @@ class LeadersInfoApiTest(RedpandaTest):
 
         wait_until(check_get_leaders,
                    timeout_sec=30,
+                   backoff_sec=1,
+                   err_msg="Can not refresh leaders")
+
+    @cluster(num_nodes=3)
+    def get_leaders_info_test(self):
+        def check_reset_leaders():
+            node = self.redpanda.nodes[0]
+            self.admin.reset_leaders_info(node)
+            leaders = self.admin.get_leaders_info(node)
+            return len(leaders) == 0
+
+        wait_until(check_reset_leaders,
+                   timeout_sec=180,
+                   backoff_sec=1,
+                   err_msg="Can not reset leaders_table for nodes")
+
+        def check_get_leaders():
+            def compare_key(e):
+                return (e["ns"], e["topic"], e["partition_id"])
+
+            leaders_node1 = self.admin.get_leaders_info(self.redpanda.nodes[0])
+            leaders_node1.sort(key=compare_key)
+            leaders_node2 = self.admin.get_leaders_info(self.redpanda.nodes[1])
+            leaders_node2.sort(key=compare_key)
+            return leaders_node1 == leaders_node2
+
+        wait_until(check_get_leaders,
+                   timeout_sec=180,
                    backoff_sec=1,
                    err_msg="Can not refresh leaders")
 
