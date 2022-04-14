@@ -1,4 +1,5 @@
 set(srcs
+    retention_property_test.cc
     config_store_test.cc
     socket_address_convert_test.cc
     tls_config_convert_test.cc

@@ -536,7 +536,8 @@ FIXTURE_TEST(
       test_tp,
       "retention.ms",
       fmt::format(
-        "{}", config::shard_local_cfg().delete_retention_ms.value().count()),
+        "{}",
+        config::shard_local_cfg().delete_retention_ms().value_or(-1ms).count()),
       new_describe_resp);
     assert_property_value(
       test_tp, "retention.bytes", "4096", new_describe_resp);
@@ -632,7 +633,8 @@ FIXTURE_TEST(test_incremental_alter_config_remove, alter_config_test_fixture) {
       test_tp,
       "retention.ms",
       fmt::format(
-        "{}", config::shard_local_cfg().delete_retention_ms.value().count()),
+        "{}",
+        config::shard_local_cfg().delete_retention_ms().value_or(-1ms).count()),
       new_describe_resp);
 }
 
