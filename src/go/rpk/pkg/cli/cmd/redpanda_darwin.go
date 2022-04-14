@@ -1,4 +1,4 @@
-// Copyright 2021 Vectorized, Inc.
+// Copyright 2022 Vectorized, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -25,7 +25,7 @@ func NewRedpandaDarwinCommand(
 ) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "redpanda",
-		Short: "Interact with a local/remote Redpanda process",
+		Short: "Interact with a local or remote Redpanda process",
 	}
 
 	command.AddCommand(admin.NewCommand(fs))
