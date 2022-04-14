@@ -34,7 +34,6 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 		adminCertFile  string
 		adminKeyFile   string
 		adminCAFile    string
-		clusterBrokers []string
 	)
 
 	cmd.PersistentFlags().StringVar(
@@ -59,11 +58,6 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 		&adminCertFile,
 		&adminKeyFile,
 		&adminCAFile,
-	)
-
-	common.AddBrokersFlag(
-		cmd,
-		&clusterBrokers,
 	)
 
 	cmd.AddCommand(

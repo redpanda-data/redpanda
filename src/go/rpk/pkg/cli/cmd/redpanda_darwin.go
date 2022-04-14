@@ -14,15 +14,11 @@ package cmd
 
 import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/redpanda/admin"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
-	rp "github.com/redpanda-data/redpanda/src/go/rpk/pkg/redpanda"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func NewRedpandaDarwinCommand(
-	fs afero.Fs, mgr config.Manager, launcher rp.Launcher,
-) *cobra.Command {
+func NewRedpandaDarwinCommand(fs afero.Fs) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "redpanda",
 		Short: "Interact with a local or remote Redpanda process",
