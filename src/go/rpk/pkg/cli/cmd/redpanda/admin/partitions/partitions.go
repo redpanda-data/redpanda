@@ -12,15 +12,17 @@
 package partitions
 
 import (
-	"fmt"
-	"errors"
+//	"fmt"
+//	"errors"
 	"context"
 	"strconv"
 	"sort"
-	"bufio"
-	"os"
+//	"bufio"
+//	"os"
 	"strings"
-	"math"
+//	"math"
+//	"reflect"
+	"math/rand"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -30,6 +32,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kmsg"
+	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 // NewCommand returns the partitions admin command.
@@ -99,16 +102,13 @@ func newListCommand(fs afero.Fs) *cobra.Command {
 	return cmd
 }
 
-func newDrainCommand(fs afero.Fs) *cobra.Command {
-	var (
-		destinationBrokerId int
-	)
-        cmd :=  &cobra.Command{
-                Use:     "move-from [SOURCE BROKER ID] --destination-broker-id [DESTINATION BROKER ID]",
-                Aliases: []string{"mv-frm"},
-                Short:   "Move partitions from a source broker to a destination broker in a cluster.",
-                Args:    cobra.ExactArgs(1),
-                Run: func(cmd *cobra.Command, args []string) {
+func newDrainCommand(fs afero.Fs) *cobra.Command {	
+    cmd :=  &cobra.Command{
+        Use:     "drain [BROKER ID]",
+        Aliases: []string{"dr"},
+        Short:   "Move partitions from a source broker to all other brokers in a cluster based on disk usage.",
+        Args:    cobra.ExactArgs(1),
+        Run: func(cmd *cobra.Command, args []string) {
 
 			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
@@ -133,52 +133,44 @@ func newDrainCommand(fs afero.Fs) *cobra.Command {
 			bs, err := cl.Brokers()
             out.MaybeDie(err, "unable to request brokers: %v", err)            
 
-            // Checking if source and destination broker Ids are not same
-            if destinationBrokerId == sourceBrokerId {
-            	out.MaybeDie(errors.New(""),"",errors.New("Destination broker list cannot have source broker id in it."))
-            }
-
-            // Checking if source and destination broker Ids exist
-            sourceBrokerCheck := false
-            destinationBrokerCheck := false
+            // Checking if source broker Id exist
+            sourceBrokerCheck := false            
             for _, brokerId := range bs {
             	if brokerId.NodeID == sourceBrokerId && sourceBrokerCheck == false {
             		sourceBrokerCheck = true
-            	}
-            	if brokerId.NodeID == destinationBrokerId && destinationBrokerCheck == false {
-            		destinationBrokerCheck = true
+            		break
             	}
             }
-            if !(sourceBrokerCheck && destinationBrokerCheck) {
-            	out.Die("Source or Destination broker is invalid.")
+            if !(sourceBrokerCheck) {
+            	out.Die("Source broker is invalid.")
             }
+
+            /*
+            1. Get all topic-partition combinations from the source broker. DONE
+            2. Sort all topic-partitions by size first in decreasing order. DONE
+            3. Get all broker disk usage for all brokers except source broker. DONE
+            4. For each topic-partition, get the least used broker, that does not have a replica of this partition and allocate the topic-partition to it. DONE
+            5. Store all topic-partition-movement mapping in a data structure. DONE
+            6. Print all the movement information and final state of the cluster. DONE
+            7. Ask for confirmation and trigger the draining
+            */
 
 			// for storing disk usage for all brokers
-			allBrokerDiskUsageMap := getBrokerDiskUsageMap(bs)			
+			//allBrokerDiskUsageMap := getBrokerDiskUsageMap(bs)
 
-			// Get all the partitions on the source broker
-			leaderPartitions, replicaPartitions := getTopicPartitionMap(m, sourceBrokerId)
+			// 1. Get all the partitions on the source broker
+			topicPartitionMap := getTopicPartitionMap(m, kgocl, sourceBrokerId)
 
-			// For each partition, try to fix it on the destination brokers
-			for _, t := range leaderPartitions {
-				//tw.Print(t.topic, t.partition, remove(t.replicas, int32(brokerId)));
-				t.partition = t.partition + 1
-				// Verify that no leadership is present on the current broker before proceeding
-			}
+			// 2. Sort all topic-partitions by size first in decreasing order.
+			sort.Slice(topicPartitionMap, func(i, j int) bool {
+  				return topicPartitionMap[i].size > topicPartitionMap[j].size
+			})
 
-			// Fetching partition sizes
-			var req kmsg.DescribeLogDirsRequest
+			// 3. Get all broker disk usage for all brokers except source broker.
+			diskUsageMap := getBrokerDiskUsageMap(bs)
 
-			for _, t := range replicaPartitions {
-				var partitions []int32
-				partitions = append(partitions, t.partition)
-				req.Topics = append(req.Topics, kmsg.DescribeLogDirsRequestTopic{
-					Topic:      t.topic,
-					Partitions: partitions,
-				})
-			}
-
-			kresps := kgocl.RequestSharded(context.Background(), &req)
+			// 4. For each topic-partition, get the least used broker, that does not have a replica of this partition and allocate the topic-partition to it.
+			//5. Store all topic-partition-movement mapping in a data structure.
 
 			tw := out.NewTable()
 			header := func(name string) {				
@@ -187,36 +179,45 @@ func newDrainCommand(fs afero.Fs) *cobra.Command {
 				tw.Print()
 			}
 
-			header("DRAIN PLAN")			
-			
-			var totalPartitionSize int64
-			for _, kresp := range kresps {
-				resp := kresp.Resp.(*kmsg.DescribeLogDirsResponse)
-				sort.Slice(resp.Dirs, func(i, j int) bool { return resp.Dirs[i].Dir < resp.Dirs[j].Dir })
-				for _, dir := range resp.Dirs {
-					sort.Slice(dir.Topics, func(i, j int) bool { return dir.Topics[i].Topic < dir.Topics[j].Topic })
-					for _, topic := range dir.Topics {
-						sort.Slice(topic.Partitions, func(i, j int) bool { return topic.Partitions[i].Partition < topic.Partitions[j].Partition })
-						for _, partition := range topic.Partitions {							
-							totalPartitionSize = totalPartitionSize + partition.Size
-						}
-					}
-				}
-				break //TODO: REVISIT WHY DO WE NEED TO BREAK HERE
-			}
+			header("PROPOSED DRAIN PLAN")
+			header("PROPOSED DRAIN TOPICS")
 
+			tw.PrintColumn("TOPIC", "PARTITION", "DESTINATION BROKER")
+
+			drainMap := make(map[string]int)
+
+			nonDrainablePartitionCount := 0
+			for _, tp := range topicPartitionMap {
+				destinationBroker := getLeastUsedBrokerWithNoReplicas(sourceBrokerId, tp, diskUsageMap)
+				if destinationBroker != -1 {
+					uS := getUniqueTopicPartitionString(tp.topic, strconv.Itoa(int(tp.partition)))
+					drainMap[uS] = destinationBroker
+					tw.Print(tp.topic, tp.partition, destinationBroker)
+				} else {
+					nonDrainablePartitionCount = nonDrainablePartitionCount + 1
+				}
+			}
+			
+			tw.Print()
+			header("PROPOSED DRAIN SUMMARY")
+
+			tw.PrintColumn("DRAINABLE PARTITIONS", "NON DRAINABLE PARTITIONS", "TOTAL PARTITIONS")
+			tw.Print(len(topicPartitionMap) - nonDrainablePartitionCount, nonDrainablePartitionCount, len(topicPartitionMap))
+
+			//6. Print all the movement information and final state of the cluster.
+			tw.Flush()
+
+			/*
 			oldFDiskUsage := ((float64(allBrokerDiskUsageMap[destinationBrokerId].total) - float64(allBrokerDiskUsageMap[destinationBrokerId].free)) / float64(allBrokerDiskUsageMap[destinationBrokerId].total))*100
 			newDiskUsage := ((float64(allBrokerDiskUsageMap[destinationBrokerId].total) - float64(allBrokerDiskUsageMap[destinationBrokerId].free) - float64(totalPartitionSize)) / float64(allBrokerDiskUsageMap[destinationBrokerId].total))*100			
 
-			header("DESTINATION BROKER DETAILS")
+			
 			tw.PrintColumn("BROKER ID", "CURRENT DISK USAGE %", "PROPOSED DISK USAGE %", "PARTITIONS TO DRAIN", "DATA TO DRAIN")
 			tw.Print(destinationBrokerId, math.Round(oldFDiskUsage*100)/100, math.Round(newDiskUsage*100)/100, len(req.Topics), totalPartitionSize)
 			// If the new free disk is < 10% of total usage, we terminate the move of partitions
 			if newDiskUsage < 10 {
-            	out.Die("New Free Disk Space will be less than 10% of Total Disk Space. Aborting Move.")
-            }            
-            
-            tw.Flush()
+            	out.Die("New Free Disk Space will be less than 10%% of Total Disk Space. Aborting Move.")
+            }                      
 
             fmt.Println()
             reader := bufio.NewReader(os.Stdin)            
@@ -231,6 +232,7 @@ func newDrainCommand(fs afero.Fs) *cobra.Command {
 			}
 
 			fmt.Println("Continue with the drain.")
+			*/
 /*
 			for _, t := range replicaPartitions {
 				pa, err := cl.UpdateReplicas("kafka", t.topic, int(t.partition), sourceBrokerId, destinationBrokerId)
@@ -244,59 +246,93 @@ func newDrainCommand(fs afero.Fs) *cobra.Command {
 */
 		},
 	}
-
-	cmd.Flags().IntVar(&destinationBrokerId, "destination-broker-id", -1, "Destination Broker Id")
+	
 	return cmd
 }
 
-type NodePartitionCount struct {
+/*type NodePartitionCount struct {
 	leaderCount int
 	replicaCount int
-}
+}*/
 
 type TopicPartition struct {
 	topic 		string
 	partition 	int32
 	replicas 	[]int32
-	size	 	int64
+	size 		int64
 }
 
 type DiskUsage struct {
+	broker int
 	free int64
 	total int64
 }
 
-func getTopicPartitionMap(m kadm.Metadata, brokerId int) ([]TopicPartition, []TopicPartition) {
+func getTopicPartitionMap(m kadm.Metadata, kgocl *kgo.Client, brokerId int) ([]TopicPartition) {
+	
+	var partitions []TopicPartition
+	replicaMap := make(map[string][]int32)
 
-	var leaderPartitions []TopicPartition
-	var replicaPartitions []TopicPartition
-
+	// START - Fetching partition sizes
+   
+    // Creating the fetch request to get partition sizes
+    var req kmsg.DescribeLogDirsRequest
 	for _, t := range m.Topics.Sorted() {
-	        for _, pt := range t.Partitions.Sorted() {
-                	for _, rs := range pt.Replicas {
-                        	if int(rs) == brokerId {
-                                        if int(pt.Leader) == brokerId {
-                                        	leaderPartitions = append(leaderPartitions, TopicPartition{t.Topic, pt.Partition, pt.Replicas, 0})
-                                        } else {
-                                        	replicaPartitions = append(replicaPartitions, TopicPartition{t.Topic, pt.Partition, pt.Replicas, 0})
-					}
-                                }
-                        }
+	    for _, pt := range t.Partitions.Sorted() {
+            for _, rs := range pt.Replicas {
+                if int(rs) == brokerId {
+                	var pts []int32
+					pts = append(pts, pt.Partition)
+					req.Topics = append(req.Topics, kmsg.DescribeLogDirsRequestTopic {
+						Topic:      t.Topic,
+						Partitions: pts,
+					})
+					uniqueTPString := getUniqueTopicPartitionString(t.Topic,strconv.Itoa(int(pt.Partition)))
+					replicaMap[uniqueTPString] = pt.Replicas
                 }
+            }
         }
+    }
 
-	return leaderPartitions,replicaPartitions
+    // Sent the request to fetch partition sizes
+	kresps := kgocl.RequestSharded(context.Background(), &req)
+
+	// Creating TopicPartition objects to return
+	tpMap := map[string]bool{}
+
+	for _, kresp := range kresps {
+		resp := kresp.Resp.(*kmsg.DescribeLogDirsResponse)
+		sort.Slice(resp.Dirs, func(i, j int) bool { return resp.Dirs[i].Dir < resp.Dirs[j].Dir })
+		for _, dir := range resp.Dirs {
+			sort.Slice(dir.Topics, func(i, j int) bool { return dir.Topics[i].Topic < dir.Topics[j].Topic })
+			for _, topic := range dir.Topics {
+				sort.Slice(topic.Partitions, func(i, j int) bool { return topic.Partitions[i].Partition < topic.Partitions[j].Partition })
+				for _, pt := range topic.Partitions {					
+					//fmt.Println("Topic: %+v\n", topic.Topic)
+					//fmt.Println("Partition:", pt.Partition)
+					//fmt.Println("Partition Size:", pt.Size)
+					uniqueTPString := getUniqueTopicPartitionString(topic.Topic,strconv.Itoa(int(pt.Partition)))
+					//fmt.Println("Partition Replicas:", replicaMap[uniqueTPString])
+					_, hasTP := tpMap[uniqueTPString]
+					if !hasTP {
+						tpMap[uniqueTPString] = true
+						partitions = append(partitions, TopicPartition{topic.Topic, pt.Partition, replicaMap[uniqueTPString], pt.Size})
+					}
+				}
+			}
+		}		
+	}
+
+	// END - Fetched partition sizes
+	return partitions
 }
 
-func getBrokerDiskUsageMap(bs []admin.Broker) (map[int]DiskUsage) {
-
-	dBrokerDiskUsage := make(map[int]DiskUsage)
-
+func getBrokerDiskUsageMap(bs []admin.Broker) []DiskUsage {
+	var diskUsageMap []DiskUsage
         for _, b := range bs {
-        	dBrokerDiskUsage[b.NodeID] = DiskUsage{b.DiskSpaceItems[0].Free, b.DiskSpaceItems[0].Total}
+        	diskUsageMap = append(diskUsageMap, DiskUsage{b.NodeID, b.DiskSpaceItems[0].Free, b.DiskSpaceItems[0].Total})
         }
-	return dBrokerDiskUsage
-
+	return diskUsageMap
 }
 
 func remove(s []int32, r int32) []int32 {
@@ -308,12 +344,46 @@ func remove(s []int32, r int32) []int32 {
     return s
 }
 
-func getLeastUsedBroker(dBrokerDiskUsageMap map[int]DiskUsage) {
-	broker := dBrokerDiskUsageMap[0]
-	for i := 1; i < len(dBrokerDiskUsageMap); i++ {
-		if dBrokerDiskUsageMap[i].free > broker.free {
-			broker = dBrokerDiskUsageMap[i]
+func removeBroker(s []DiskUsage, r int) []DiskUsage {
+	for i, v := range s {
+        if v.broker == r {
+            return append(s[:i], s[i+1:]...)
+        }
+    }
+    return s
+}
+
+func contains(s []int32, r int32) bool {
+    for _, v := range s {
+        if v == r {
+            return true
+        }
+    }    
+    return false
+}
+
+func getLeastUsedBrokerWithNoReplicas(sourceBroker int, tp TopicPartition, diskUsageMap []DiskUsage) int {
+
+	sort.Slice(diskUsageMap, func(i, j int) bool {
+		return diskUsageMap[i].free > diskUsageMap[j].free
+	})
+
+	otherReplicas := remove(tp.replicas, int32(sourceBroker))
+	otherBrokers := removeBroker(diskUsageMap, sourceBroker)
+
+	if len(otherReplicas) == 0 {
+		return otherBrokers[rand.Intn(len(otherBrokers))].broker
+	}
+
+	for _, b := range otherBrokers {
+		if !contains(otherReplicas, int32(b.broker)) {			
+			return b.broker
 		}
 	}
-	fmt.Println(broker)
+	
+	return -1
+}
+
+func getUniqueTopicPartitionString(topic string, partition string) string {
+	return topic + "-" + partition
 }
