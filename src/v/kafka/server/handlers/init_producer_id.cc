@@ -112,7 +112,7 @@ ss::future<response_ptr> init_producer_id_handler::handle(
                     reply.data.producer_epoch);
               } else {
                   vlog(klog.warn, "failed to allocate pid, ec: {}", r.ec);
-                  reply.data.error_code = error_code::broker_not_available;
+                  reply.data.error_code = error_code::not_coordinator;
               }
 
               return ctx.respond(reply);
