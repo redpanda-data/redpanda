@@ -151,7 +151,7 @@ func newDrainCommand(fs afero.Fs) *cobra.Command {
             3. Get all broker disk usage for all brokers except source broker. DONE
             4. For each topic-partition, get the least used broker, that does not have a replica of this partition and allocate the topic-partition to it. DONE
             5. Store all topic-partition-movement mapping in a data structure. DONE
-            6. Print all the movement information and final state of the cluster. DONE
+            6. Print all the movement information and final state of the cluster.
             7. Ask for confirmation and trigger the draining
             */
 
@@ -180,24 +180,24 @@ func newDrainCommand(fs afero.Fs) *cobra.Command {
 			}
 
 			header("PROPOSED DRAIN PLAN")
-			header("PROPOSED DRAIN TOPICS")
+			header("PROPOSED DRAIN BROKER ALLOCATION")
 
-			tw.PrintColumn("TOPIC", "PARTITION", "DESTINATION BROKER")
+			tw.PrintColumn("TOPIC", "PARTITION", "DESTINATION BROKER", "CORE")
 
 			drainMap := make(map[string]int)
 
 			nonDrainablePartitionCount := 0
 			for _, tp := range topicPartitionMap {
 				destinationBroker := getLeastUsedBrokerWithNoReplicas(sourceBrokerId, tp, diskUsageMap)
-				if destinationBroker != -1 {
+				if destinationBroker.broker != -1 {
 					uS := getUniqueTopicPartitionString(tp.topic, strconv.Itoa(int(tp.partition)))
-					drainMap[uS] = destinationBroker
-					tw.Print(tp.topic, tp.partition, destinationBroker)
+					drainMap[uS] = destinationBroker.broker
+					tw.Print(tp.topic, tp.partition, destinationBroker.broker, rand.Intn(destinationBroker.cores))
 				} else {
 					nonDrainablePartitionCount = nonDrainablePartitionCount + 1
 				}
 			}
-			
+
 			tw.Print()
 			header("PROPOSED DRAIN SUMMARY")
 
@@ -266,6 +266,7 @@ type DiskUsage struct {
 	broker int
 	free int64
 	total int64
+	cores int
 }
 
 func getTopicPartitionMap(m kadm.Metadata, kgocl *kgo.Client, brokerId int) ([]TopicPartition) {
@@ -308,11 +309,7 @@ func getTopicPartitionMap(m kadm.Metadata, kgocl *kgo.Client, brokerId int) ([]T
 			for _, topic := range dir.Topics {
 				sort.Slice(topic.Partitions, func(i, j int) bool { return topic.Partitions[i].Partition < topic.Partitions[j].Partition })
 				for _, pt := range topic.Partitions {					
-					//fmt.Println("Topic: %+v\n", topic.Topic)
-					//fmt.Println("Partition:", pt.Partition)
-					//fmt.Println("Partition Size:", pt.Size)
 					uniqueTPString := getUniqueTopicPartitionString(topic.Topic,strconv.Itoa(int(pt.Partition)))
-					//fmt.Println("Partition Replicas:", replicaMap[uniqueTPString])
 					_, hasTP := tpMap[uniqueTPString]
 					if !hasTP {
 						tpMap[uniqueTPString] = true
@@ -330,7 +327,7 @@ func getTopicPartitionMap(m kadm.Metadata, kgocl *kgo.Client, brokerId int) ([]T
 func getBrokerDiskUsageMap(bs []admin.Broker) []DiskUsage {
 	var diskUsageMap []DiskUsage
         for _, b := range bs {
-        	diskUsageMap = append(diskUsageMap, DiskUsage{b.NodeID, b.DiskSpaceItems[0].Free, b.DiskSpaceItems[0].Total})
+        	diskUsageMap = append(diskUsageMap, DiskUsage{b.NodeID, b.DiskSpaceItems[0].Free, b.DiskSpaceItems[0].Total, b.NumCores})
         }
 	return diskUsageMap
 }
@@ -362,7 +359,7 @@ func contains(s []int32, r int32) bool {
     return false
 }
 
-func getLeastUsedBrokerWithNoReplicas(sourceBroker int, tp TopicPartition, diskUsageMap []DiskUsage) int {
+func getLeastUsedBrokerWithNoReplicas(sourceBroker int, tp TopicPartition, diskUsageMap []DiskUsage) DiskUsage {
 
 	sort.Slice(diskUsageMap, func(i, j int) bool {
 		return diskUsageMap[i].free > diskUsageMap[j].free
@@ -372,16 +369,16 @@ func getLeastUsedBrokerWithNoReplicas(sourceBroker int, tp TopicPartition, diskU
 	otherBrokers := removeBroker(diskUsageMap, sourceBroker)
 
 	if len(otherReplicas) == 0 {
-		return otherBrokers[rand.Intn(len(otherBrokers))].broker
+		return otherBrokers[rand.Intn(len(otherBrokers))]
 	}
 
 	for _, b := range otherBrokers {
 		if !contains(otherReplicas, int32(b.broker)) {			
-			return b.broker
+			return b
 		}
 	}
 	
-	return -1
+	return DiskUsage{-1, -1, -1, -1}
 }
 
 func getUniqueTopicPartitionString(topic string, partition string) string {
