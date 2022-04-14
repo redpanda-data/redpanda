@@ -244,10 +244,26 @@ ss::future<bool> persisted_stm::sync(model::timeout_clock::duration timeout) {
     }
     _is_catching_up = true;
 
-    auto dirty = _c->dirty_offset();
-    co_await _c->refresh_commit_index();
-
-    auto is_synced = co_await do_sync(timeout, dirty, term);
+    // To guarantee that we have caught up with all records written by previous
+    // leaders, we choose the last offset before the start of the current term
+    // as the sync offset. Because the leader replicates the configuration batch
+    // at the start of the term, this offset is guaranteed to be less than
+    // committed index, so we won't need any additional flushes even if the
+    // client produces with acks=1.
+    model::offset sync_offset;
+    auto log_offsets = _c->log().offsets();
+    if (log_offsets.dirty_offset_term == term) {
+        if (log_offsets.last_term_start_offset > model::offset{0}) {
+            sync_offset = log_offsets.last_term_start_offset - model::offset{1};
+        } else {
+            sync_offset = model::offset{};
+        }
+    } else {
+        // We haven't been able to append the configuration batch at the start
+        // of the term yet.
+        sync_offset = log_offsets.dirty_offset;
+    }
+    auto is_synced = co_await do_sync(timeout, sync_offset, term);
 
     _is_catching_up = false;
     for (auto& sync_waiter : _sync_waiters) {
