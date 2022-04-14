@@ -23,7 +23,12 @@
 
 #include <boost/intrusive/list.hpp>
 
+#include <chrono>
+#include <optional>
+
 namespace config {
+
+using namespace std::chrono_literals;
 
 template<class T>
 class binding;
@@ -593,6 +598,44 @@ private:
     }
 
     std::vector<T> _values;
+};
+
+class retention_duration_property final
+  : public property<std::optional<std::chrono::milliseconds>> {
+public:
+    using property::property;
+    void set_value(std::any v) final {
+        update_value(std::any_cast<std::chrono::milliseconds>(std::move(v)));
+    }
+    bool set_value(YAML::Node n) final {
+        return update_value(n.as<std::chrono::milliseconds>());
+    }
+
+    void print(std::ostream& o) const final {
+        o << name() << ":";
+
+        if (is_secret() && !is_default()) {
+            o << secret_placeholder;
+        } else {
+            o << _value.value_or(-1ms);
+        }
+    }
+
+    // serialize the value. the key is taken from the property name at the
+    // serialization point in config_store::to_json to avoid users from being
+    // forced to consume the property as a json object.
+    void to_json(json::Writer<json::StringBuffer>& w) const final {
+        json::rjson_serialize(w, _value.value_or(-1ms));
+    }
+
+private:
+    bool update_value(std::chrono::milliseconds value) {
+        if (value < 0ms) {
+            return property::update_value(std::nullopt);
+        } else {
+            return property::update_value(value);
+        }
+    }
 };
 
 }; // namespace config

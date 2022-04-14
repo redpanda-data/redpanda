@@ -333,8 +333,8 @@ static void report_broker_config(
       "log.retention.ms",
       config::shard_local_cfg().delete_retention_ms,
       include_synonyms,
-      [](const std::chrono::milliseconds& ms) {
-          return ssx::sformat("{}", ms.count());
+      [](const std::optional<std::chrono::milliseconds>& ret) {
+          return ssx::sformat("{}", ret.value_or(-1ms).count());
       });
 
     add_broker_config_if_requested(

@@ -103,8 +103,15 @@ static inline logs_type::iterator find_next_non_compacted_log(logs_type& logs) {
 }
 
 ss::future<> log_manager::housekeeping() {
-    auto collection_threshold = model::timestamp(
-      model::timestamp::now().value() - _config.delete_retention().count());
+    // files created before this threshold will be collected
+    model::timestamp collection_threshold;
+    if (!_config.delete_retention()) {
+        collection_threshold = model::timestamp(0);
+    } else {
+        collection_threshold = model::timestamp(
+          model::timestamp::now().value()
+          - _config.delete_retention()->count());
+    }
     /**
      * Note that this loop does a double find - which is not fast. This solution
      * is the tradeoff to *not* lock the segment during log_manager::remove(ntp)
@@ -358,9 +365,12 @@ std::ostream& operator<<(std::ostream& o, const log_config& c) {
         o << "nullopt";
     }
     return o << ", compaction_interval_ms:" << c.compaction_interval().count()
-             << ", delete_reteion_ms:" << c.delete_retention().count()
+             << ", delete_retention_ms:"
+             << c.delete_retention()
+                  .value_or(std::chrono::milliseconds(-1))
+                  .count()
              << ", with_cache:" << c.cache
-             << ", relcaim_opts:" << c.reclaim_opts << "}";
+             << ", reclaim_opts:" << c.reclaim_opts << "}";
 }
 std::ostream& operator<<(std::ostream& o, const log_manager& m) {
     return o << "{config:" << m._config << ", logs.size:" << m._logs.size()
