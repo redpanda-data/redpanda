@@ -97,7 +97,7 @@ scheduler_service_impl::get_archival_service_config(
       .bucket_name = s3::bucket_name(get_value_or_throw(
         config::shard_local_cfg().cloud_storage_bucket,
         "cloud_storage_bucket")),
-      .interval
+      .reconciliation_interval
       = config::shard_local_cfg().cloud_storage_reconciliation_ms.value(),
       .initial_backoff
       = config::shard_local_cfg().cloud_storage_initial_backoff_ms.value(),
@@ -126,7 +126,7 @@ scheduler_service_impl::scheduler_service_impl(
   : _conf(conf)
   , _partition_manager(pm)
   , _topic_table(tt)
-  , _jitter(conf.interval, 1ms)
+  , _jitter(conf.reconciliation_interval, 1ms)
   , _rtclog(archival_log, _rtcnode)
   , _probe(conf.svc_metrics_disabled)
   , _remote(remote)

@@ -879,7 +879,7 @@ configuration::configuration()
       "cloud_storage_reconciliation_interval_ms",
       "Interval at which the archival service runs reconciliation (ms)",
       {.visibility = visibility::tunable},
-      10s)
+      1s)
   , cloud_storage_max_connections(
       *this,
       "cloud_storage_max_connections",

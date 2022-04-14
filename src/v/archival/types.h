@@ -42,8 +42,8 @@ using segment_time_limit
 struct configuration {
     /// Bucket used to store all archived data
     s3::bucket_name bucket_name;
-    /// Time interval to run uploads & deletes
-    ss::lowres_clock::duration interval;
+    /// Time interval to reconcile the set of archivers
+    ss::lowres_clock::duration reconciliation_interval;
     /// Initial backoff for uploads
     ss::lowres_clock::duration initial_backoff;
     /// Long upload timeout
