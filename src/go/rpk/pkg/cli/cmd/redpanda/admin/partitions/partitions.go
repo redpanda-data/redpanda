@@ -12,16 +12,15 @@
 package partitions
 
 import (
-//	"fmt"
+	"fmt"
 //	"errors"
 	"context"
 	"strconv"
 	"sort"
-//	"bufio"
-//	"os"
+	"bufio"
+	"os"
 	"strings"
-//	"math"
-//	"reflect"
+	"math"
 	"math/rand"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
@@ -182,9 +181,11 @@ func newDrainCommand(fs afero.Fs) *cobra.Command {
 			header("PROPOSED DRAIN PLAN")
 			header("PROPOSED DRAIN BROKER ALLOCATION")
 
-			tw.PrintColumn("TOPIC", "PARTITION", "DESTINATION BROKER", "CORE")
+			tw.PrintColumn("TOPIC", "PARTITION", "DESTINATION BROKER")
+			//tw.PrintColumn("TOPIC", "PARTITION", "DESTINATION BROKER", "DESTINATION BROKER CORE")
 
 			drainMap := make(map[string]int)
+			brokerSizeMap := make(map[int]int64)
 
 			nonDrainablePartitionCount := 0
 			for _, tp := range topicPartitionMap {
@@ -192,34 +193,42 @@ func newDrainCommand(fs afero.Fs) *cobra.Command {
 				if destinationBroker.broker != -1 {
 					uS := getUniqueTopicPartitionString(tp.topic, strconv.Itoa(int(tp.partition)))
 					drainMap[uS] = destinationBroker.broker
-					tw.Print(tp.topic, tp.partition, destinationBroker.broker, rand.Intn(destinationBroker.cores))
+					tw.Print(tp.topic, tp.partition, destinationBroker.broker)
+					//tw.Print(tp.topic, tp.partition, destinationBroker.broker, rand.Intn(destinationBroker.cores))
+					if val, ok := brokerSizeMap[destinationBroker.broker]; ok {
+						brokerSizeMap[destinationBroker.broker] = val - tp.size
+					} else {
+						brokerSizeMap[destinationBroker.broker] = destinationBroker.free
+					}
 				} else {
 					nonDrainablePartitionCount = nonDrainablePartitionCount + 1
 				}
 			}
 
 			tw.Print()
-			header("PROPOSED DRAIN SUMMARY")
+			header("PROPOSED DRAIN SUMMARY - BROKERS")
+			tw.PrintColumn("BROKER", "CURRENT DISK USAGE %", "PROPOSED DISK USAGE %")
+			for k, v := range brokerSizeMap {
+				brokerInfo := getBrokerInfo(k, diskUsageMap)
+				oldDiskUsage := ((float64(brokerInfo.total) - float64(brokerInfo.free)) / float64(brokerInfo.total))*100
+				newDiskUsage := ((float64(brokerInfo.total) - float64(v)) / float64(brokerInfo.total))*100
+				tw.Print(k, math.Round(oldDiskUsage*100)/100, math.Round(newDiskUsage*100)/100)
+				// If the new disk usage is > 80% of total usage, we terminate the move of partitions
+				if newDiskUsage > 80 {
+            		out.Die("Propsed Free Disk Space will be less than 20%% of Total Disk Space. Aborting Move.")
+            	}
+			}
+
+			tw.Print()
+			header("PROPOSED DRAIN SUMMARY - PARTITIONS")
 
 			tw.PrintColumn("DRAINABLE PARTITIONS", "NON DRAINABLE PARTITIONS", "TOTAL PARTITIONS")
 			tw.Print(len(topicPartitionMap) - nonDrainablePartitionCount, nonDrainablePartitionCount, len(topicPartitionMap))
 
 			//6. Print all the movement information and final state of the cluster.
-			tw.Flush()
+			tw.Flush()			
 
-			/*
-			oldFDiskUsage := ((float64(allBrokerDiskUsageMap[destinationBrokerId].total) - float64(allBrokerDiskUsageMap[destinationBrokerId].free)) / float64(allBrokerDiskUsageMap[destinationBrokerId].total))*100
-			newDiskUsage := ((float64(allBrokerDiskUsageMap[destinationBrokerId].total) - float64(allBrokerDiskUsageMap[destinationBrokerId].free) - float64(totalPartitionSize)) / float64(allBrokerDiskUsageMap[destinationBrokerId].total))*100			
 
-			
-			tw.PrintColumn("BROKER ID", "CURRENT DISK USAGE %", "PROPOSED DISK USAGE %", "PARTITIONS TO DRAIN", "DATA TO DRAIN")
-			tw.Print(destinationBrokerId, math.Round(oldFDiskUsage*100)/100, math.Round(newDiskUsage*100)/100, len(req.Topics), totalPartitionSize)
-			// If the new free disk is < 10% of total usage, we terminate the move of partitions
-			if newDiskUsage < 10 {
-            	out.Die("New Free Disk Space will be less than 10%% of Total Disk Space. Aborting Move.")
-            }                      
-
-            fmt.Println()
             reader := bufio.NewReader(os.Stdin)            
 			fmt.Print("Are you sure you want to proceed with the drain?(y/n): ")
 			inp, _ := reader.ReadString('\n')
@@ -232,7 +241,7 @@ func newDrainCommand(fs afero.Fs) *cobra.Command {
 			}
 
 			fmt.Println("Continue with the drain.")
-			*/
+
 /*
 			for _, t := range replicaPartitions {
 				pa, err := cl.UpdateReplicas("kafka", t.topic, int(t.partition), sourceBrokerId, destinationBrokerId)
@@ -357,6 +366,16 @@ func contains(s []int32, r int32) bool {
         }
     }    
     return false
+}
+
+func getBrokerInfo(bkrId int, brokers []DiskUsage) DiskUsage {
+	var bkr DiskUsage
+	for _, b := range brokers {
+		if b.broker == bkrId {
+			bkr = b
+		}
+	}
+	return bkr
 }
 
 func getLeastUsedBrokerWithNoReplicas(sourceBroker int, tp TopicPartition, diskUsageMap []DiskUsage) DiskUsage {
