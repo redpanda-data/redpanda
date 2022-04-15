@@ -71,6 +71,9 @@ public:
     cluster::notification_id_type register_node_callback(health_node_cb_t cb);
     void unregister_node_callback(cluster::notification_id_type id);
 
+    ss::future<cluster_health_overview>
+      get_cluster_health_overview(model::timeout_clock::time_point);
+
 private:
     /**
      * Struct used to track pending refresh request, it gives ability
@@ -109,7 +112,8 @@ private:
     ss::future<> collect_cluster_health();
     ss::future<result<node_health_report>>
       collect_remote_node_health(model::node_id);
-
+    ss::future<std::error_code> maybe_refresh_cluster_health(
+      force_refresh, model::timeout_clock::time_point);
     ss::future<std::error_code> refresh_cluster_health_cache(force_refresh);
     ss::future<std::error_code>
       dispatch_refresh_cluster_health_request(model::node_id);
