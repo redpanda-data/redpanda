@@ -24,6 +24,8 @@ from rptest.util import (
     wait_for_segments_removal,
 )
 
+from ducktape.mark import matrix
+
 from collections import namedtuple, defaultdict
 import time
 import os
@@ -404,7 +406,8 @@ class ArchivalTest(RedpandaTest):
         validate(check_upload, self.logger, 90)
 
     @cluster(num_nodes=3)
-    def test_retention_archival_coordination(self):
+    @matrix(acks=[1, -1])
+    def test_retention_archival_coordination(self, acks):
         """
         Test that only archived segments can be evicted and that eviction
         restarts once the segments have been archived.
@@ -420,7 +423,8 @@ class ArchivalTest(RedpandaTest):
             produce_until_segments(redpanda=self.redpanda,
                                    topic=self.topic,
                                    partition_idx=0,
-                                   count=10)
+                                   count=10,
+                                   acks=acks)
 
             # Sleep some time sufficient for log eviction under normal conditions
             # and check that no segment has been evicted (because we can't upload
