@@ -104,6 +104,20 @@ struct cluster_health_report {
     operator<<(std::ostream&, const cluster_health_report&);
 };
 
+struct cluster_health_overview {
+    // is healthy is a main cluster indicator, it is intended as an simple flag
+    // that will allow all external cluster orchestrating processes to decide if
+    // they can proceed with next steps
+    bool is_healthy;
+
+    // additional human readable information that will make debugging cluster
+    // errors easier
+    std::optional<model::node_id> controller_id;
+    std::vector<model::node_id> all_nodes;
+    std::vector<model::node_id> nodes_down;
+    std::vector<model::ntp> leaderless_partitions;
+};
+
 using include_partitions_info = ss::bool_class<struct include_partitions_tag>;
 
 /**
