@@ -35,9 +35,22 @@ jobs:
         id: milestone
         run: |
           if [[ "${TARGET_MILESTONE}" == "auto" ]]; then
-            major=$(echo "${BACKPORT_BRANCH}" | grep -Eo '^(v[0-9][0-9].[0-9][0-9])')
+            major=$(echo "${BACKPORT_BRANCH}" | grep -Eo '^(v[0-9][0-9].[0-9]+)')
+            set +e
+            set -o pipefail
             latest_released=$(gh api "repos/${TARGET_ORG}/${TARGET_REPO}/releases" --jq '.[] | select(.draft==false).name'  | grep "${major}" | head -1)
-            assigne_milestone=$(echo ${latest_released} | awk -F. -v OFS=. '{$NF += 1 ; print}')
+            exit_code="$?"
+            set -e
+            if [[ "$exit_code" == "1" && "$latest_released" == "" ]]; then
+              # first milestone for the provided branch
+              assigne_milestone="$major.1"
+            elif [[ "$exit_code" == "0" ]]; then
+              # found latest release from this branch
+              assigne_milestone=$(echo ${latest_released} | awk -F. -v OFS=. '{$NF += 1 ; print}')
+            else
+              echo "Unexpected error"
+              exit $exit_code
+            fi
           else
             assigne_milestone="${TARGET_MILESTONE}"
           fi
