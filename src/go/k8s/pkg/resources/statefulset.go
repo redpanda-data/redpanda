@@ -71,6 +71,9 @@ var (
 	ConfigMapHashAnnotationKey = redpandav1alpha1.GroupVersion.Group + "/configmap-hash"
 	// CentralizedConfigurationHashAnnotationKey contains the hash of the centralized configuration properties that require a restart when changed
 	CentralizedConfigurationHashAnnotationKey = redpandav1alpha1.GroupVersion.Group + "/centralized-configuration-hash"
+
+	// terminationGracePeriodSeconds should account for additional delay introduced by hooks
+	terminationGracePeriodSeconds int64 = 120
 )
 
 // ConfiguratorSettings holds settings related to configurator container and deployment
@@ -345,6 +348,7 @@ func (r *StatefulSetResource) obj(
 							},
 						},
 					}, r.secretVolumes()...),
+					TerminationGracePeriodSeconds: &terminationGracePeriodSeconds,
 					InitContainers: []corev1.Container{
 						{
 							Name:            configuratorContainerName,
