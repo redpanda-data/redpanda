@@ -785,9 +785,11 @@ class RedpandaService(Service):
                 f"Scanning node {node.account.hostname} log for errors...")
 
             for line in node.account.ssh_capture(
-                    f"grep -e ERROR -e Segmentation\ fault -e [Aa]ssert {RedpandaService.STDOUT_STDERR_CAPTURE}"
+                    f"grep -e ERROR -e Segmentation\ fault -e [Aa]ssert {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
             ):
                 line = line.strip()
+
+                assert "No such file or directory" not in line
 
                 allowed = False
                 for a in allow_list:
