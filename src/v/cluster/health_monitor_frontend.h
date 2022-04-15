@@ -51,6 +51,19 @@ public:
     ss::future<result<std::vector<node_state>>>
       get_nodes_status(model::timeout_clock::time_point);
 
+    /**
+     *  Return cluster health overview
+     *
+     *  Health overview is based on the information available in health monitor.
+     *  Cluster is considered as healthy when follwing conditions are met:
+     *
+     * - all nodes that are are responding
+     * - all partitions have leaders
+     * - cluster controller is present (_raft0 leader)
+     */
+    ss::future<cluster_health_overview>
+      get_cluster_health_overview(model::timeout_clock::time_point);
+
 private:
     template<typename Func>
     auto dispatch_to_backend(Func&& f) {
