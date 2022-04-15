@@ -18,7 +18,10 @@
 namespace cloud_storage {
 
 offset_index::offset_index(
-  model::offset initial_rp, model::offset initial_kaf, int64_t initial_file_pos)
+  model::offset initial_rp,
+  model::offset initial_kaf,
+  int64_t initial_file_pos,
+  int64_t file_pos_step)
   : _rp_offsets{}
   , _kaf_offsets{}
   , _file_offsets{}
@@ -28,7 +31,8 @@ offset_index::offset_index(
   , _initial_file_pos(initial_file_pos)
   , _rp_index(initial_rp)
   , _kaf_index(initial_kaf)
-  , _file_index(initial_file_pos) {}
+  , _file_index(initial_file_pos, delta_delta_t(file_pos_step))
+  , _min_file_pos_step(file_pos_step) {}
 
 void offset_index::add(
   model::offset rp_offset, model::offset kaf_offset, int64_t file_offset) {
@@ -50,9 +54,10 @@ void offset_index::add(
         _rp_offsets = {};
         _kaf_offsets = {};
         _file_offsets = {};
-        _rp_index = deltafor_encoder<int64_t>(_initial_rp);
-        _kaf_index = deltafor_encoder<int64_t>(_initial_kaf);
-        _file_index = deltafor_encoder<int64_t>(_initial_file_pos);
+        _rp_index = encoder_t(_initial_rp);
+        _kaf_index = encoder_t(_initial_kaf);
+        _file_index = foffset_encoder_t(
+          _initial_file_pos, delta_delta_t(_min_file_pos_step));
         throw;
     }
 }
@@ -115,17 +120,18 @@ offset_index::find_rp_offset(model::offset upper_bound) {
     ix = maybe_ix.ix;
     res.rp_offset = model::offset(maybe_ix.value);
 
-    deltafor_decoder<int64_t> kaf_dec(
+    decoder_t kaf_dec(
       _kaf_index.get_initial_value(),
       _kaf_index.get_row_count(),
       _kaf_index.copy());
     auto kaf_offset = _fetch_ix(std::move(kaf_dec), ix);
     vassert(kaf_offset.has_value(), "Inconsistent index state");
     res.kaf_offset = model::offset(*kaf_offset);
-    deltafor_decoder<int64_t> file_dec(
+    foffset_decoder_t file_dec(
       _file_index.get_initial_value(),
       _file_index.get_row_count(),
-      _file_index.copy());
+      _file_index.copy(),
+      delta_delta_t(_min_file_pos_step));
     auto file_pos = _fetch_ix(std::move(file_dec), ix);
     res.file_pos = *file_pos;
     return res;
@@ -150,17 +156,18 @@ offset_index::find_kaf_offset(model::offset upper_bound) {
     ix = maybe_ix.ix;
     res.kaf_offset = model::offset(maybe_ix.value);
 
-    deltafor_decoder<int64_t> rp_dec(
+    decoder_t rp_dec(
       _rp_index.get_initial_value(),
       _rp_index.get_row_count(),
       _rp_index.copy());
     auto rp_offset = _fetch_ix(std::move(rp_dec), ix);
     vassert(rp_offset.has_value(), "Inconsistent index state");
     res.rp_offset = model::offset(*rp_offset);
-    deltafor_decoder<int64_t> file_dec(
+    foffset_decoder_t file_dec(
       _file_index.get_initial_value(),
       _file_index.get_row_count(),
-      _file_index.copy());
+      _file_index.copy(),
+      delta_delta_t(_min_file_pos_step));
     auto file_pos = _fetch_ix(std::move(file_dec), ix);
     res.file_pos = *file_pos;
     return res;
@@ -169,8 +176,9 @@ offset_index::find_kaf_offset(model::offset upper_bound) {
 struct offset_index_header
   : serde::envelope<
       offset_index_header,
-      serde::version<0>,
-      serde::compat_version<0>> {
+      serde::version<1>,
+      serde::compat_version<1>> {
+    int64_t min_file_pos_step;
     uint64_t num_elements;
     int64_t base_rp;
     int64_t last_rp;
@@ -188,6 +196,7 @@ struct offset_index_header
 
 iobuf offset_index::to_iobuf() {
     offset_index_header hdr{
+      .min_file_pos_step = _min_file_pos_step,
       .num_elements = _pos,
       .base_rp = _initial_rp,
       .last_rp = _rp_index.get_last_value(),
@@ -228,8 +237,13 @@ void offset_index::from_iobuf(iobuf b) {
       _initial_rp, num_rows, hdr.last_rp, std::move(hdr.rp_index));
     _kaf_index = encoder_t(
       _initial_kaf, num_rows, hdr.last_kaf, std::move(hdr.kaf_index));
-    _file_index = encoder_t(
-      _initial_file_pos, num_rows, hdr.last_file, std::move(hdr.file_index));
+    _file_index = foffset_encoder_t(
+      _initial_file_pos,
+      num_rows,
+      hdr.last_file,
+      std::move(hdr.file_index),
+      delta_delta_t(_min_file_pos_step));
+    _min_file_pos_step = hdr.min_file_pos_step;
 }
 
 std::optional<offset_index::index_value>
@@ -248,22 +262,6 @@ offset_index::_find_under(deltafor_decoder<int64_t> decoder, int64_t offset) {
         rp_buf = {};
     }
     return candidate;
-}
-
-std::optional<int64_t>
-offset_index::_fetch_ix(deltafor_decoder<int64_t> decoder, size_t target_ix) {
-    size_t ix = 0;
-    std::array<int64_t, buffer_depth> buffer{};
-    while (decoder.read(buffer)) {
-        for (auto o : buffer) {
-            if (ix == target_ix) {
-                return o;
-            }
-            ix++;
-        }
-        buffer = {};
-    }
-    return std::nullopt;
 }
 
 remote_segment_index_builder::remote_segment_index_builder(

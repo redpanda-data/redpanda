@@ -23,18 +23,103 @@
 
 namespace details {
 static constexpr uint32_t FOR_buffer_depth = 16;
-}
+
+/*
+ * The delta encoder for deltafor_encoder and deltafor_decoder.
+ *
+ * The encoder can work with any integer sequence with 64-bit values.
+ * It uses bitwise XOR operation to compute delta values.
+ */
+struct delta_xor {
+    template<class value_t, size_t row_width>
+    uint8_t encode(
+      value_t last,
+      const std::array<value_t, row_width>& row,
+      std::array<value_t, row_width>& buf) {
+        auto p = last;
+        uint64_t agg = 0;
+        for (uint32_t i = 0; i < row_width; ++i) {
+            buf[i] = row[i] ^ p;
+            agg |= buf[i];
+            p = row[i];
+        }
+        uint8_t nbits = 64 - (agg == 0 ? 64 : (uint8_t)__builtin_clzll(agg));
+        return nbits;
+    }
+
+    template<class value_t, size_t row_width>
+    value_t decode(value_t initial, std::array<value_t, row_width>& row) {
+        auto p = initial;
+        for (unsigned i = 0; i < row_width; i++) {
+            row[i] = row[i] ^ p;
+            p = row[i];
+        }
+        return p;
+    }
+};
+
+/*
+ * The delta encoder for deltafor_encoder and deltafor_decoder.
+ *
+ * The encoder can work only with non-decreasing integer sequences
+ * with 64-bit values. It uses delta-delta algorithm to compute delta values.
+ * The alg. computes delta values by subtacting consequtive values from
+ * each other and then it subtracts the pre-defined step value out of every
+ * delta. The step value is a minimal possible delta between two consequitive
+ * elements.
+ */
+template<class ValueT>
+struct delta_delta {
+    explicit delta_delta(ValueT step)
+      : _step_size(step) {}
+
+    template<class value_t, size_t row_width>
+    uint8_t encode(
+      value_t last,
+      const std::array<value_t, row_width>& row,
+      std::array<value_t, row_width>& buf) {
+        auto p = last;
+        uint64_t agg = 0;
+        for (uint32_t i = 0; i < row_width; ++i) {
+            vassert(
+              row[i] >= p,
+              "Value {} can't be larger than the previous one {}",
+              row[i],
+              p);
+            auto delta = row[i] - p;
+            vassert(
+              delta >= _step_size,
+              "Delta {} can't be larger than step size {}",
+              delta,
+              _step_size);
+            buf[i] = (row[i] - p) - _step_size;
+            agg |= buf[i];
+            p = row[i];
+        }
+        uint8_t nbits = 64 - (agg == 0 ? 64 : (uint8_t)__builtin_clzll(agg));
+        return nbits;
+    }
+
+    template<class value_t, size_t row_width>
+    value_t decode(value_t initial, std::array<value_t, row_width>& row) {
+        auto p = initial;
+        for (unsigned i = 0; i < row_width; i++) {
+            row[i] = row[i] + p + _step_size;
+            p = row[i];
+        }
+        return p;
+    }
+
+    ValueT _step_size;
+};
+
+} // namespace details
 
 /** \brief Delta-FOR encoder
  *
  * The algorithm uses differential encoding followed by the
  * frame of reference (FoR) encoding step. The differential step
- * is implemented using XOR to simplify dealing with negative deltas.
- * The encoder is supposed to deal with monotonically increasing
- * sequences (offsets in a segment) but it's not limited to that
- * and will work with any integer sequence with 64-bit values.
- * The compression ratio depends on data and for redpanda offsets
- * it's expected to be around 10% to 15%.
+ * is parametrized (two options are available: XOR and DeltaDelta).
  *
  * The encoder works with 16-element rows. This is needed to
  * enable easy loop unrolling (e.g. 4-bit values can be packed into
@@ -93,38 +178,41 @@ static constexpr uint32_t FOR_buffer_depth = 16;
  *
  * The compressed data is stored internally using an iobuf. This iobuf
  * can be copied and pushed to the decoder to decompress the values.
+ *
+ * The 'TVal' type parameter is a type of the encoded values.
+ * The 'DeltaStep' type parameter is a type of the delta encoding
+ * step (two implementations are provided, delta XOR and delta-delta).
  */
-template<class TVal>
+template<class TVal, class DeltaStep = details::delta_xor>
 class deltafor_encoder {
     static constexpr uint32_t row_width = details::FOR_buffer_depth;
 
 public:
-    explicit deltafor_encoder(TVal initial_value)
+    explicit deltafor_encoder(TVal initial_value, DeltaStep delta = {})
       : _initial(initial_value)
       , _last(initial_value)
-      , _cnt{0} {}
+      , _cnt{0}
+      , _delta(delta) {}
 
     deltafor_encoder(
-      TVal initial_value, uint32_t cnt, TVal last_value, iobuf data)
+      TVal initial_value,
+      uint32_t cnt,
+      TVal last_value,
+      iobuf data,
+      DeltaStep delta = {})
       : _initial(initial_value)
       , _last(last_value)
       , _data(std::move(data))
-      , _cnt(cnt) {}
+      , _cnt(cnt)
+      , _delta(delta) {}
 
     using row_t = std::array<TVal, row_width>;
 
     /// Encode single row
     void add(const row_t& row) {
         row_t buf;
-        auto p = _last;
-        uint64_t agg = 0;
-        for (uint32_t i = 0; i < row_width; ++i) {
-            buf[i] = row[i] ^ p;
-            agg |= buf[i];
-            p = row[i];
-        }
+        uint8_t nbits = _delta.encode(_last, row, buf);
         _last = row.back();
-        uint8_t nbits = 64 - (agg == 0 ? 64 : (uint8_t)__builtin_clzll(agg));
         _data.append(&nbits, 1);
         pack(buf, nbits);
         _cnt++;
@@ -568,6 +656,7 @@ private:
     TVal _last;
     iobuf _data;
     uint32_t _cnt;
+    DeltaStep _delta;
 };
 
 /** \brief Delta-FOR decoder
@@ -579,16 +668,18 @@ private:
  * The initial_value and number of rows should match the corresponding
  * encoder wich was used to compress the data.
  */
-template<class TVal>
+template<class TVal, class DeltaStep = details::delta_xor>
 class deltafor_decoder {
     static constexpr uint32_t row_width = details::FOR_buffer_depth;
 
 public:
-    explicit deltafor_decoder(TVal initial_value, uint32_t cnt, iobuf data)
+    explicit deltafor_decoder(
+      TVal initial_value, uint32_t cnt, iobuf data, DeltaStep delta = {})
       : _initial(initial_value)
       , _total{cnt}
       , _pos{0}
-      , _data(std::move(data)) {}
+      , _data(std::move(data))
+      , _delta(delta) {}
 
     using row_t = std::array<TVal, row_width>;
 
@@ -600,12 +691,7 @@ public:
         auto bytes = _data.read_bytes(1);
         uint8_t nbits = *bytes.data();
         unpack(row, nbits);
-        auto p = _initial;
-        for (unsigned i = 0; i < row_width; i++) {
-            row[i] = row[i] ^ p;
-            p = row[i];
-        }
-        _initial = p;
+        _initial = _delta.decode(_initial, row);
         _pos++;
         return true;
     }
@@ -1077,4 +1163,5 @@ private:
     uint32_t _total;
     uint32_t _pos;
     iobuf_parser _data;
+    DeltaStep _delta;
 };
