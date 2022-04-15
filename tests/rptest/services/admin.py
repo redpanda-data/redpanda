@@ -215,6 +215,11 @@ class Admin:
         """
         return self._request('get', "cluster_view", node=node).json()
 
+    def get_cluster_health_overview(self, node=None):
+
+        return self._request('get', "cluster/health_overview",
+                             node=node).json()
+
     def decommission_broker(self, id, node=None):
         """
         Decommission broker
