@@ -76,6 +76,9 @@ public:
     ss::future<result<std::optional<cluster::drain_manager::drain_status>>>
       get_node_drain_status(model::node_id, model::timeout_clock::time_point);
 
+    ss::future<cluster_health_overview>
+      get_cluster_health_overview(model::timeout_clock::time_point);
+
 private:
     /**
      * Struct used to track pending refresh request, it gives ability
