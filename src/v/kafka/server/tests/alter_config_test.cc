@@ -483,6 +483,22 @@ FIXTURE_TEST(test_alter_multiple_topics_config, alter_config_test_fixture) {
     assert_property_value(topic_2, "retention.bytes", "4096", describe_resp_2);
 }
 
+FIXTURE_TEST(
+  test_alter_topic_kafka_config_allowlist, alter_config_test_fixture) {
+    wait_for_controller_leadership().get();
+    model::topic test_tp{"topic-1"};
+    create_topic(test_tp, 6);
+
+    absl::flat_hash_map<ss::sstring, ss::sstring> properties;
+    properties.emplace("unclean.leader.election.enable", "true");
+
+    auto resp = alter_configs(
+      {make_alter_topic_config_resource(test_tp, properties)});
+
+    BOOST_REQUIRE_EQUAL(
+      resp.data.responses[0].error_code, kafka::error_code::none);
+}
+
 FIXTURE_TEST(test_alter_topic_error, alter_config_test_fixture) {
     wait_for_controller_leadership().get();
     model::topic test_tp{"topic-1"};
@@ -587,6 +603,28 @@ FIXTURE_TEST(test_incremental_alter_config, alter_config_test_fixture) {
       test_tp, "retention.ms", fmt::format("1234"), new_describe_resp);
     assert_property_value(
       test_tp, "retention.bytes", "4096", new_describe_resp);
+}
+
+FIXTURE_TEST(
+  test_incremental_alter_config_kafka_config_allowlist,
+  alter_config_test_fixture) {
+    wait_for_controller_leadership().get();
+    model::topic test_tp{"topic-1"};
+    create_topic(test_tp, 6);
+
+    absl::flat_hash_map<
+      ss::sstring,
+      std::pair<std::optional<ss::sstring>, kafka::config_resource_operation>>
+      properties;
+    properties.emplace(
+      "unclean.leader.election.enable",
+      std::pair{"true", kafka::config_resource_operation::set});
+
+    auto resp = incremental_alter_configs(
+      {make_incremental_alter_topic_config_resource(test_tp, properties)});
+
+    BOOST_REQUIRE_EQUAL(
+      resp.data.responses[0].error_code, kafka::error_code::none);
 }
 
 FIXTURE_TEST(test_incremental_alter_config_remove, alter_config_test_fixture) {

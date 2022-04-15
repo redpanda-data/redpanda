@@ -223,6 +223,15 @@ create_topic_properties_update(incremental_alter_configs_resource& resource) {
                   model::shadow_indexing_mode::fetch);
                 continue;
             }
+            if (
+              std::find(
+                std::begin(allowlist_topic_noop_confs),
+                std::end(allowlist_topic_noop_confs),
+                cfg.name)
+              != std::end(allowlist_topic_noop_confs)) {
+                // Skip unusupported Kafka config
+                continue;
+            }
             if (update_data_policy_parser(dp_parser, cfg.name, cfg.value, op)) {
                 continue;
             }
