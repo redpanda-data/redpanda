@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cluster/compat_backend.h"
 #include "cluster/config_manager.h"
 #include "cluster/data_policy_manager.h"
 #include "cluster/members_manager.h"
@@ -26,7 +27,8 @@ using controller_stm = raft::mux_state_machine<
   security_manager,
   members_manager,
   data_policy_manager,
-  config_manager>;
+  config_manager,
+  compat_backend>;
 
 static constexpr ss::shard_id controller_stm_shard = 0;
 

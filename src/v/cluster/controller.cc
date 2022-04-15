@@ -109,6 +109,7 @@ ss::future<> controller::start() {
             std::ref(_partition_leaders),
             std::ref(_as));
       })
+      .then([this] { return _compat_backend.start(); })
       .then([this] {
           return _stm.start_single(
             std::ref(clusterlog),
@@ -118,7 +119,8 @@ ss::future<> controller::start() {
             std::ref(_security_manager),
             std::ref(_members_manager),
             std::ref(_data_policy_manager),
-            std::ref(_config_manager));
+            std::ref(_config_manager),
+            std::ref(_compat_backend));
       })
       .then([this] {
           return _members_frontend.start(
@@ -305,6 +307,7 @@ ss::future<> controller::stop() {
           .then([this] { return _hm_backend.stop(); })
           .then([this] { return _health_manager.stop(); })
           .then([this] { return _members_backend.stop(); })
+          .then([this] { return _compat_backend.stop(); })
           .then([this] { return _config_manager.stop(); })
           .then([this] { return _api.stop(); })
           .then([this] { return _backend.stop(); })

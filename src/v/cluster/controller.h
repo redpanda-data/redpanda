@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cluster/compat_backend.h"
 #include "cluster/config_frontend.h"
 #include "cluster/config_manager.h"
 #include "cluster/controller_stm.h"
@@ -128,6 +129,7 @@ private:
     ss::sharded<health_monitor_backend> _hm_backend;   // single instance
     ss::sharded<health_manager> _health_manager;
     ss::sharded<metrics_reporter> _metrics_reporter;
+    ss::sharded<compat_backend> _compat_backend; // single instance
     std::unique_ptr<leader_balancer> _leader_balancer;
     consensus_ptr _raft0;
 };
