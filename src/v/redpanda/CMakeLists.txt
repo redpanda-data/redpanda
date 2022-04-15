@@ -75,6 +75,12 @@ seastar_generate_swagger(
   IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/admin/api-doc/debug.json
   OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/admin/api-doc/debug.json.h
 )
+seastar_generate_swagger(
+  TARGET cluster_swagger
+  VAR cluster_swagger_file
+  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/admin/api-doc/cluster.json
+  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/admin/api-doc/cluster.json.h
+)
 
 v_cc_library(
   NAME application
@@ -100,7 +106,7 @@ target_link_libraries(redpanda PUBLIC v::application v::raft v::kafka)
 set_property(TARGET redpanda PROPERTY POSITION_INDEPENDENT_CODE ON)
 add_dependencies(v_application config_swagger cluster_config_swagger raft_swagger
     security_swagger status_swagger broker_swagger partition_swagger hbadger_swagger
-    transaction_swagger features_swagger debug_swagger)
+    transaction_swagger features_swagger debug_swagger cluster_swagger)
 
 if(CMAKE_BUILD_TYPE MATCHES Release)
   include(CheckIPOSupported)
