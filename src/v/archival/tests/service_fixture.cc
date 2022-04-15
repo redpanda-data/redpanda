@@ -104,9 +104,11 @@ get_configurations() {
     aconf.bucket_name = s3::bucket_name("test-bucket");
     aconf.ntp_metrics_disabled = archival::per_ntp_metrics_disabled::yes;
     aconf.svc_metrics_disabled = archival::service_metrics_disabled::yes;
-    aconf.initial_backoff = 100ms;
+    aconf.cloud_storage_initial_backoff = 100ms;
     aconf.segment_upload_timeout = 1s;
     aconf.manifest_upload_timeout = 1s;
+    aconf.upload_loop_initial_backoff = 100ms;
+    aconf.upload_loop_max_backoff = 5s;
     aconf.time_limit = std::nullopt;
 
     cloud_storage::configuration cconf;

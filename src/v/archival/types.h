@@ -44,12 +44,16 @@ struct configuration {
     s3::bucket_name bucket_name;
     /// Time interval to reconcile the set of archivers
     ss::lowres_clock::duration reconciliation_interval;
-    /// Initial backoff for uploads
-    ss::lowres_clock::duration initial_backoff;
+    /// Initial backoff for requests to cloud storage
+    ss::lowres_clock::duration cloud_storage_initial_backoff;
     /// Long upload timeout
     ss::lowres_clock::duration segment_upload_timeout;
     /// Shor upload timeout
     ss::lowres_clock::duration manifest_upload_timeout;
+    /// Initial backoff for upload loop in case there is nothing to upload
+    ss::lowres_clock::duration upload_loop_initial_backoff;
+    /// Max backoff for upload loop in case there is nothing to upload
+    ss::lowres_clock::duration upload_loop_max_backoff;
     /// Flag that indicates that service level metrics are disabled
     service_metrics_disabled svc_metrics_disabled;
     /// Flag that indicates that ntp-archiver level metrics are disabled

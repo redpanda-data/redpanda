@@ -60,9 +60,11 @@ ntp_archiver::ntp_archiver(
   , _gate()
   , _rtcnode(_as)
   , _rtclog(archival_log, _rtcnode, _ntp.path())
-  , _initial_backoff(conf.initial_backoff)
+  , _cloud_storage_initial_backoff(conf.cloud_storage_initial_backoff)
   , _segment_upload_timeout(conf.segment_upload_timeout)
   , _manifest_upload_timeout(conf.manifest_upload_timeout)
+  , _upload_loop_initial_backoff(conf.upload_loop_initial_backoff)
+  , _upload_loop_max_backoff(conf.upload_loop_max_backoff)
   , _upload_sg(conf.upload_scheduling_group)
   , _io_priority(conf.upload_io_priority) {
     vassert(
@@ -101,9 +103,7 @@ void ntp_archiver::run_upload_loop() {
 }
 
 ss::future<> ntp_archiver::upload_loop() {
-    static constexpr ss::lowres_clock::duration initial_backoff = 100ms;
-    static constexpr ss::lowres_clock::duration max_backoff = 10s;
-    ss::lowres_clock::duration backoff = initial_backoff;
+    ss::lowres_clock::duration backoff = _upload_loop_initial_backoff;
 
     while (upload_loop_can_continue()) {
         auto result = co_await upload_next_candidates();
@@ -137,10 +137,10 @@ ss::future<> ntp_archiver::upload_loop() {
             vlog(
               _rtclog.trace, "Nothing to upload, applying backoff algorithm");
             co_await ss::sleep_abortable(
-              backoff + _backoff.next_jitter_duration(), _as);
-            backoff = std::min(backoff * 2, max_backoff);
+              backoff + _backoff_jitter.next_jitter_duration(), _as);
+            backoff = std::min(backoff * 2, _upload_loop_max_backoff);
         } else {
-            backoff = initial_backoff;
+            backoff = _upload_loop_initial_backoff;
         }
     }
 }
@@ -172,7 +172,8 @@ ntp_archiver::get_remote_manifest() const {
 
 ss::future<cloud_storage::download_result> ntp_archiver::download_manifest() {
     gate_guard guard{_gate};
-    retry_chain_node fib(_manifest_upload_timeout, _initial_backoff, &_rtcnode);
+    retry_chain_node fib(
+      _manifest_upload_timeout, _cloud_storage_initial_backoff, &_rtcnode);
     retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
     vlog(ctxlog.debug, "Downloading manifest for {}", _ntp);
     auto path = _manifest.get_manifest_path();
@@ -202,7 +203,8 @@ ss::future<cloud_storage::download_result> ntp_archiver::download_manifest() {
 
 ss::future<cloud_storage::upload_result> ntp_archiver::upload_manifest() {
     gate_guard guard{_gate};
-    retry_chain_node fib(_manifest_upload_timeout, _initial_backoff, &_rtcnode);
+    retry_chain_node fib(
+      _manifest_upload_timeout, _cloud_storage_initial_backoff, &_rtcnode);
     retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
     vlog(
       ctxlog.debug,
@@ -215,7 +217,8 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_manifest() {
 ss::future<cloud_storage::upload_result>
 ntp_archiver::upload_segment(upload_candidate candidate) {
     gate_guard guard{_gate};
-    retry_chain_node fib(_segment_upload_timeout, _initial_backoff, &_rtcnode);
+    retry_chain_node fib(
+      _segment_upload_timeout, _cloud_storage_initial_backoff, &_rtcnode);
     retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
 
     auto path = cloud_storage::generate_remote_segment_path(

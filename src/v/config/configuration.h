@@ -191,6 +191,10 @@ struct configuration final : public config_store {
     property<std::optional<ss::sstring>> cloud_storage_bucket;
     property<std::optional<ss::sstring>> cloud_storage_api_endpoint;
     property<std::chrono::milliseconds> cloud_storage_reconciliation_ms;
+    property<std::chrono::milliseconds>
+      cloud_storage_upload_loop_initial_backoff_ms;
+    property<std::chrono::milliseconds>
+      cloud_storage_upload_loop_max_backoff_ms;
     property<int16_t> cloud_storage_max_connections;
     property<bool> cloud_storage_disable_tls;
     property<int16_t> cloud_storage_api_endpoint_port;

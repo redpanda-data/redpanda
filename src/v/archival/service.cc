@@ -99,7 +99,7 @@ scheduler_service_impl::get_archival_service_config(
         "cloud_storage_bucket")),
       .reconciliation_interval
       = config::shard_local_cfg().cloud_storage_reconciliation_ms.value(),
-      .initial_backoff
+      .cloud_storage_initial_backoff
       = config::shard_local_cfg().cloud_storage_initial_backoff_ms.value(),
       .segment_upload_timeout
       = config::shard_local_cfg()
@@ -107,6 +107,12 @@ scheduler_service_impl::get_archival_service_config(
       .manifest_upload_timeout
       = config::shard_local_cfg()
           .cloud_storage_manifest_upload_timeout_ms.value(),
+      .upload_loop_initial_backoff
+      = config::shard_local_cfg()
+          .cloud_storage_upload_loop_initial_backoff_ms.value(),
+      .upload_loop_max_backoff
+      = config::shard_local_cfg()
+          .cloud_storage_upload_loop_max_backoff_ms.value(),
       .svc_metrics_disabled = service_metrics_disabled(
         static_cast<bool>(disable_metrics)),
       .ntp_metrics_disabled = per_ntp_metrics_disabled(
@@ -131,7 +137,7 @@ scheduler_service_impl::scheduler_service_impl(
   , _probe(conf.svc_metrics_disabled)
   , _remote(remote)
   , _topic_manifest_upload_timeout(conf.manifest_upload_timeout)
-  , _initial_backoff(conf.initial_backoff)
+  , _initial_backoff(conf.cloud_storage_initial_backoff)
   , _upload_sg(conf.upload_scheduling_group) {}
 
 scheduler_service_impl::scheduler_service_impl(

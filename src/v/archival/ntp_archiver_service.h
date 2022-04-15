@@ -180,11 +180,13 @@ private:
     ss::abort_source _as;
     retry_chain_node _rtcnode;
     retry_chain_logger _rtclog;
-    ss::lowres_clock::duration _initial_backoff;
+    ss::lowres_clock::duration _cloud_storage_initial_backoff;
     ss::lowres_clock::duration _segment_upload_timeout;
     ss::lowres_clock::duration _manifest_upload_timeout;
     ss::semaphore _mutex{1};
-    simple_time_jitter<ss::lowres_clock> _backoff{100ms};
+    ss::lowres_clock::duration _upload_loop_initial_backoff;
+    ss::lowres_clock::duration _upload_loop_max_backoff;
+    simple_time_jitter<ss::lowres_clock> _backoff_jitter{100ms};
     size_t _concurrency{4};
     ss::lowres_clock::time_point _last_upload_time;
     ss::scheduling_group _upload_sg;
