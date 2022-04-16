@@ -17,13 +17,24 @@ import (
 
 const brokersEndpoint = "/v1/brokers"
 
+type MaintenanceStatus struct {
+	Draining     bool `json:"draining"`
+	Finished     bool `json:"finished"`
+	Errors       bool `json:"errors"`
+	Partitions   int  `json:"partitions"`
+	Eligible     int  `json:"eligible"`
+	Transferring int  `json:"transferring"`
+	Failed       int  `json:"failed"`
+}
+
 // Broker is the information returned from the Redpanda admin broker endpoints.
 type Broker struct {
-	NodeID           int    `json:"node_id"`
-	NumCores         int    `json:"num_cores"`
-	MembershipStatus string `json:"membership_status"`
-	IsAlive          *bool  `json:"is_alive"`
-	Version          string `json:"version`
+	NodeID           int                `json:"node_id"`
+	NumCores         int                `json:"num_cores"`
+	MembershipStatus string             `json:"membership_status"`
+	IsAlive          *bool              `json:"is_alive"`
+	Version          string             `json:"version`
+	Maintenance      *MaintenanceStatus `json:"maintenance_status"`
 }
 
 // Brokers queries one of the client's hosts and returns the list of brokers.
