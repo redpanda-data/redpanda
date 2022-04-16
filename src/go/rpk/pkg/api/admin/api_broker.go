@@ -16,6 +16,7 @@ import (
 )
 
 const brokersEndpoint = "/v1/brokers"
+const brokerEndpoint = "/v1/brokers/%d"
 
 type MaintenanceStatus struct {
 	Draining     bool `json:"draining"`
@@ -44,6 +45,15 @@ func (a *AdminAPI) Brokers() ([]Broker, error) {
 		sort.Slice(bs, func(i, j int) bool { return bs[i].NodeID < bs[j].NodeID })
 	}()
 	return bs, a.sendAny(http.MethodGet, brokersEndpoint, nil, &bs)
+}
+
+// Broker queries one of the client's hosts and returns broker information.
+func (a *AdminAPI) Broker(node int) (Broker, error) {
+	var b Broker
+	err := a.sendAny(
+		http.MethodGet,
+		fmt.Sprintf(brokerEndpoint, node), nil, &b)
+	return b, err
 }
 
 // DecommissionBroker issues a decommission request for the given broker.
