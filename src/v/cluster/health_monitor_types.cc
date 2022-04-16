@@ -11,6 +11,7 @@
 #include "cluster/health_monitor_types.h"
 
 #include "cluster/errc.h"
+#include "cluster/feature_table.h"
 #include "cluster/node/types.h"
 #include "model/adl_serde.h"
 #include "utils/to_string.h"
@@ -61,13 +62,14 @@ std::ostream& operator<<(std::ostream& o, const node_health_report& r) {
     fmt::print(
       o,
       "{{id: {}, disks: {}, topics: {}, redpanda_version: {}, uptime: "
-      "{}, logical_version: {}}}",
+      "{}, logical_version: {}, drain_status: {}}}",
       r.id,
       r.local_state.disks,
       r.topics,
       r.local_state.redpanda_version,
       r.local_state.uptime,
-      r.local_state.logical_version);
+      r.local_state.logical_version,
+      r.drain_status);
     return o;
 }
 
@@ -228,15 +230,28 @@ cluster::topic_status adl<cluster::topic_status>::from(iobuf_parser& p) {
 
 void adl<cluster::node_health_report>::to(
   iobuf& out, cluster::node_health_report&& r) {
-    reflection::serialize(
-      out,
-      r.current_version,
-      r.id,
-      std::move(r.local_state.redpanda_version),
-      r.local_state.uptime,
-      std::move(r.local_state.disks),
-      std::move(r.topics),
-      std::move(r.local_state.logical_version));
+    if (r.include_drain_status) {
+        reflection::serialize(
+          out,
+          cluster::node_health_report::current_version,
+          r.id,
+          std::move(r.local_state.redpanda_version),
+          r.local_state.uptime,
+          std::move(r.local_state.disks),
+          std::move(r.topics),
+          std::move(r.local_state.logical_version),
+          std::move(r.drain_status));
+    } else {
+        reflection::serialize(
+          out,
+          static_cast<int8_t>(1), // version right before maintenance mode added
+          r.id,
+          std::move(r.local_state.redpanda_version),
+          r.local_state.uptime,
+          std::move(r.local_state.disks),
+          std::move(r.topics),
+          std::move(r.local_state.logical_version));
+    }
 }
 
 cluster::node_health_report
@@ -253,12 +268,18 @@ adl<cluster::node_health_report>::from(iobuf_parser& p) {
     if (version >= 1) {
         logical_version = adl<cluster::cluster_version>{}.from(p);
     }
+    std::optional<cluster::drain_manager::drain_status> drain_status;
+    if (version >= 2) {
+        drain_status
+          = adl<std::optional<cluster::drain_manager::drain_status>>{}.from(p);
+    }
 
     return cluster::node_health_report{
       .id = id,
       .local_state
       = {.redpanda_version = std::move(redpanda_version), .logical_version = std::move(logical_version), .uptime = uptime, .disks = std::move(disks)},
       .topics = std::move(topics),
+      .drain_status = drain_status,
     };
 }
 
