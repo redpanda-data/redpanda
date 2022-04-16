@@ -54,6 +54,7 @@ public:
       ss::sharded<raft::group_manager>&,
       ss::sharded<ss::abort_source>&,
       ss::sharded<storage::node_api>&,
+      ss::sharded<drain_manager>&,
       config::binding<size_t> storage_min_bytes_threshold,
       config::binding<unsigned> storage_min_percent_threshold);
 
@@ -141,6 +142,7 @@ private:
     ss::sharded<partition_manager>& _partition_manager;
     ss::sharded<raft::group_manager>& _raft_manager;
     ss::sharded<ss::abort_source>& _as;
+    ss::sharded<drain_manager>& _drain_manager;
 
     ss::lowres_clock::time_point _last_refresh;
     ss::lw_shared_ptr<abortable_refresh_request> _refresh_request;

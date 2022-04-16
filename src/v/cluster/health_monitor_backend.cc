@@ -47,6 +47,7 @@ health_monitor_backend::health_monitor_backend(
   ss::sharded<raft::group_manager>& raft_manager,
   ss::sharded<ss::abort_source>& as,
   ss::sharded<storage::node_api>& storage_api,
+  ss::sharded<drain_manager>& drain_manager,
   config::binding<size_t> storage_min_bytes_threshold,
   config::binding<unsigned> storage_min_percent_threshold)
   : _raft0(std::move(raft0))
@@ -55,6 +56,7 @@ health_monitor_backend::health_monitor_backend(
   , _partition_manager(partition_manager)
   , _raft_manager(raft_manager)
   , _as(as)
+  , _drain_manager(drain_manager)
   , _local_monitor(
       std::move(storage_min_bytes_threshold),
       std::move(storage_min_percent_threshold),
@@ -208,6 +210,8 @@ std::optional<node_health_report> health_monitor_backend::build_node_report(
     if (f.include_partitions) {
         report.topics = filter_topic_status(it->second.topics, f.ntp_filters);
     }
+
+    report.drain_status = it->second.drain_status;
 
     return report;
 }
@@ -585,6 +589,7 @@ health_monitor_backend::collect_current_node_health(node_report_filter filter) {
     ret.local_state = _local_monitor.get_state_cached();
     ret.local_state.logical_version
       = feature_table::get_latest_logical_version();
+    ret.drain_status = co_await _drain_manager.local().status();
 
     if (filter.include_partitions) {
         ret.topics = co_await collect_topic_status(

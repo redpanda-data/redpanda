@@ -10,6 +10,7 @@
  */
 #pragma once
 #include "bytes/iobuf_parser.h"
+#include "cluster/drain_manager.h"
 #include "cluster/errc.h"
 #include "cluster/node/types.h"
 #include "cluster/types.h"
@@ -80,11 +81,12 @@ struct topic_status {
  * instance of time
  */
 struct node_health_report {
-    static constexpr int8_t current_version = 1;
+    static constexpr int8_t current_version = 2;
 
     model::node_id id;
     node::local_state local_state;
     std::vector<topic_status> topics;
+    std::optional<drain_manager::drain_status> drain_status;
 
     friend std::ostream& operator<<(std::ostream&, const node_health_report&);
 };
