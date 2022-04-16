@@ -90,4 +90,6 @@ private:
     ss::abort_source _abort;
 };
 
+std::ostream& operator<<(std::ostream&, const drain_manager::drain_status&);
+
 } // namespace cluster
