@@ -689,4 +689,21 @@ std::chrono::milliseconds health_monitor_backend::max_metadata_age() {
     return config::shard_local_cfg().health_monitor_max_metadata_age();
 }
 
+ss::future<result<std::optional<cluster::drain_manager::drain_status>>>
+health_monitor_backend::get_node_drain_status(
+  model::node_id node_id, model::timeout_clock::time_point deadline) {
+    auto ec = co_await maybe_refresh_cluster_health(
+      force_refresh::no, deadline);
+    if (ec) {
+        co_return ec;
+    }
+
+    auto it = _reports.find(node_id);
+    if (it == _reports.end()) {
+        co_return errc::node_does_not_exists;
+    }
+
+    co_return it->second.drain_status;
+}
+
 } // namespace cluster

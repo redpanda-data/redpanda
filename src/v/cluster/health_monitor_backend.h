@@ -72,6 +72,9 @@ public:
     cluster::notification_id_type register_node_callback(health_node_cb_t cb);
     void unregister_node_callback(cluster::notification_id_type id);
 
+    ss::future<result<std::optional<cluster::drain_manager::drain_status>>>
+      get_node_drain_status(model::node_id, model::timeout_clock::time_point);
+
 private:
     /**
      * Struct used to track pending refresh request, it gives ability
