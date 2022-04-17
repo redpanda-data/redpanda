@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -22,6 +23,9 @@ import (
 )
 
 func newEnableCommand(fs afero.Fs) *cobra.Command {
+	var (
+		wait bool
+	)
 	cmd := &cobra.Command{
 		Use:   "enable <node-id>",
 		Short: "Enable maintenance mode for a node.",
@@ -66,7 +70,48 @@ node exists that is already in maintenance mode then an error will be returned.
 
 			out.MaybeDie(err, "error enabling maintenance mode for node %d: %v", nodeId, err)
 			fmt.Printf("Successfully enabled maintenance mode for node %d\n", nodeId)
+
+			if !wait {
+				return
+			}
+
+			fmt.Println("Waiting for node to drain...")
+
+			var table *out.TabWriter
+			retries := 3
+			for {
+				b, err := client.Broker(nodeId)
+				if err == nil && b.Maintenance == nil {
+					err = fmt.Errorf("maintenance mode not supported. upgrade in progress?")
+					// since admin api client uses `sendAny` it is possible that
+					// we enabled maintenance mode and then started querying a
+					// broker that hadn't been upgraded yet.  with the retry,
+					// this is unlikely. and won't occur at all once all nodes
+					// are upgraded to v22.1.x.
+					//
+					// [[fallthrough]].
+				}
+				if err != nil {
+					if retries <= 0 {
+						out.Die("Error retrieving broker status: %v", err)
+					}
+					retries--
+					time.Sleep(time.Second * 2)
+					continue
+				}
+				retries = 3
+				if table == nil {
+					table = newMaintenanceReportTable()
+				}
+				addBrokerMaintenanceReport(table, b)
+				table.Flush()
+				if b.Maintenance.Draining && b.Maintenance.Finished {
+					return
+				}
+				time.Sleep(time.Second * 2)
+			}
 		},
 	}
+	cmd.Flags().BoolVarP(&wait, "wait", "w", false, "Wait until node is drained")
 	return cmd
 }
