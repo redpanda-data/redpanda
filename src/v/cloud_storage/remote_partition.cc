@@ -119,7 +119,7 @@ public:
                   _ctxlog.error,
                   "partition_record_batch_reader_impl::~ exception while "
                   "releasing reader: {}",
-                  std::current_exception);
+                  std::current_exception());
             }
         }
     }
