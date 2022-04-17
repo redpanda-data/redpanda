@@ -109,7 +109,8 @@ private:
     ss::future<> collect_cluster_health();
     ss::future<result<node_health_report>>
       collect_remote_node_health(model::node_id);
-
+    ss::future<std::error_code> maybe_refresh_cluster_health(
+      force_refresh, model::timeout_clock::time_point);
     ss::future<std::error_code> refresh_cluster_health_cache(force_refresh);
     ss::future<std::error_code>
       dispatch_refresh_cluster_health_request(model::node_id);
