@@ -277,7 +277,8 @@ consensus::success_reply consensus::update_follower_index(
         // logic bug
         throw std::runtime_error(fmt::format(
           "Append entries response send to wrong group: {}, current group: {}",
-          reply.group));
+          reply.group,
+          _group));
     }
 
     update_node_hbeat_timestamp(node);
