@@ -1037,7 +1037,7 @@ void admin_server::register_cluster_config_routes() {
                           try {
                               n = val.as<int64_t>();
                               // It's a valid integer:
-                              message = fmt::format("out of range");
+                              message = fmt::format("out of range: '{}'", n);
                           } catch (...) {
                               // This was not an out-of-bounds case, use
                               // the type error message
