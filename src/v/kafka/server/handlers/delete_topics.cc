@@ -9,8 +9,10 @@
 
 #include "kafka/server/handlers/delete_topics.h"
 
+#include "cluster/metadata_cache.h"
 #include "cluster/topics_frontend.h"
 #include "kafka/server/errors.h"
+#include "kafka/server/quota_manager.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
 #include "model/metadata.h"
@@ -81,6 +83,31 @@ delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
 
     std::vector<cluster::topic_result> res;
 
+    // Measure the partition mutation rate
+    auto resp_delay = 0ms;
+    auto quota_exceeded_it = co_await ssx::partition(
+      request.data.topic_names.begin(),
+      request.data.topic_names.end(),
+      [&ctx, &resp_delay](const model::topic& t) -> ss::future<bool> {
+          const auto cfg = ctx.metadata_cache().get_topic_cfg(
+            model::topic_namespace_view(model::kafka_namespace, t));
+          const auto mutations = cfg ? cfg->partition_count : 0;
+          /// Capture before next scheduling point below
+          auto& resp_delay_ref = resp_delay;
+          const auto delay
+            = co_await ctx.quota_mgr().record_partition_mutations(
+              ctx.header().client_id, mutations);
+          resp_delay_ref = std::max(delay, resp_delay_ref);
+          co_return delay == 0ms;
+      });
+
+    std::vector<model::topic> quota_exceeded(
+      std::make_move_iterator(quota_exceeded_it),
+      std::make_move_iterator(request.data.topic_names.end()));
+
+    request.data.topic_names.erase(
+      quota_exceeded_it, request.data.topic_names.end());
+
     if (!request.data.topic_names.empty()) {
         auto tout = request.data.timeout_ms + model::timeout_clock::now();
         res = co_await ctx.topics_frontend().delete_topics(
@@ -88,14 +115,25 @@ delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
     }
 
     auto resp = create_response(std::move(res));
-    resp.data.throttle_time_ms = std::chrono::milliseconds(
-      ctx.throttle_delay_ms());
-
+    resp.data.throttle_time_ms = resp_delay;
     for (auto& topic : unauthorized) {
         resp.data.responses.push_back(deletable_topic_result{
           .name = std::move(topic),
           .error_code = error_code::topic_authorization_failed,
         });
+    }
+
+    for (auto& topic : quota_exceeded) {
+        /// The throttling_quota_exceeded code is only respected by newer
+        /// clients, older clients will observe a different failure and be
+        /// throttled at the connection layer
+        const auto ec = (ctx.header().version >= api_version(5))
+                          ? error_code::throttling_quota_exceeded
+                          : error_code::unknown_server_error;
+        resp.data.responses.push_back(deletable_topic_result{
+          .name = std::move(topic),
+          .error_code = ec,
+          .error_message = "Too many partition mutations requested"});
     }
 
     co_return co_await ctx.respond(std::move(resp));

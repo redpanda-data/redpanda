@@ -94,6 +94,8 @@ public:
         return _conn->server().topics_frontend();
     }
 
+    quota_manager& quota_mgr() { return _conn->server().quota_mgr(); }
+
     ss::sharded<cluster::config_frontend>& config_frontend() const {
         return _conn->server().config_frontend();
     }

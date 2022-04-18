@@ -17,6 +17,7 @@
 #include "kafka/protocol/timeout.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
 #include "kafka/server/handlers/topics/types.h"
+#include "kafka/server/quota_manager.h"
 #include "kafka/types.h"
 #include "model/metadata.h"
 #include "security/acl.h"
@@ -203,6 +204,40 @@ ss::future<response_ptr> create_topics_handler::handle(
           });
         co_return co_await ctx.respond(std::move(response));
     }
+
+    // Record the number of partition mutations in each requested topic,
+    // calulcating throttle delay if necessary
+    auto quota_exceeded_it = co_await ssx::partition(
+      begin,
+      valid_range_end,
+      [&ctx, &response](const creatable_topic& t) -> ss::future<bool> {
+          /// Capture before next scheduling point below
+          auto& response_ref = response;
+          const auto delay
+            = co_await ctx.quota_mgr().record_partition_mutations(
+              ctx.header().client_id, t.num_partitions);
+          response_ref.data.throttle_time_ms = std::max(
+            response_ref.data.throttle_time_ms, delay);
+          co_return delay == 0ms;
+      });
+
+    std::transform(
+      quota_exceeded_it,
+      valid_range_end,
+      std::back_inserter(response.data.topics),
+      [version = ctx.header().version](const creatable_topic& t) {
+          // For those create topic requests that exceeded a quota,
+          // return the appropriate error code, only for clients that
+          // made the create topics request at 6 or greater, as older
+          // clients will not expect this error code in the response
+          return generate_error(
+            t,
+            ((version >= api_version(6)) ? error_code::throttling_quota_exceeded
+                                         : error_code::unknown_server_error),
+            "Too many partition mutations requested");
+      });
+    valid_range_end = quota_exceeded_it;
+
     auto to_create = to_cluster_type(begin, valid_range_end);
     /**
      * We always override cleanup policy. i.e. topic cleanup policy will
