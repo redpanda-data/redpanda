@@ -13,6 +13,7 @@
 
 #include "model/record.h"
 #include "model/record_batch_reader.h"
+#include "model/timestamp.h"
 #include "random/generators.h"
 
 namespace storage::test {
@@ -25,11 +26,12 @@ struct record_batch_spec {
     std::optional<int> records{std::nullopt};
     model::record_batch_type bt{model::record_batch_type::raft_data};
     bool enable_idempotence{false};
-    int64_t producer_id{0};
-    int16_t producer_epoch{0};
-    int32_t base_sequence{0};
+    int64_t producer_id{-1};
+    int16_t producer_epoch{-1};
+    int32_t base_sequence{-1};
     bool is_transactional{false};
     std::optional<std::vector<size_t>> record_sizes;
+    std::optional<model::timestamp> timestamp;
 };
 
 /**
