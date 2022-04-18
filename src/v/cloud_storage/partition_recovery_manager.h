@@ -132,6 +132,9 @@ private:
     struct offset_range {
         model::offset min_offset;
         model::offset max_offset;
+
+        friend auto operator<=>(const offset_range&, const offset_range&)
+          = default;
     };
 
     /// Represents file path of the downloaded file with
@@ -144,6 +147,12 @@ private:
         offset_range range;
     };
 
+    /// Sort offsets and find out the useful offset range
+    /// without the gaps. Update download_part using this information.
+    void update_downloaded_offsets(
+      std::vector<partition_downloader::offset_range> dloffsets,
+      partition_downloader::download_part& dlpart);
+
     struct segment {
         partition_manifest::key manifest_key;
         partition_manifest::segment_meta meta;
@@ -154,7 +163,7 @@ private:
     /// The downloaded file will have a custom suffix
     /// which has to be changed. The downloaded file path
     /// is returned by the futue.
-    ss::future<offset_range>
+    ss::future<std::optional<offset_range>>
     download_segment_file(const segment& segm, const download_part& part);
 
     using offset_map_t = absl::btree_map<model::offset, segment>;
