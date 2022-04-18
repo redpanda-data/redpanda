@@ -159,6 +159,19 @@ ss::future<response_ptr> create_partitions_handler::handle(
             model::topic_namespace(model::kafka_namespace, tp.name));
       });
 
+    valid_range_end = validate_range(
+      request.data.topics.begin(),
+      valid_range_end,
+      std::back_inserter(resp.data.results),
+      error_code::invalid_request,
+      "Partition count must be greater then current number of partitions",
+      [&ctx](const create_partitions_topic& tp) {
+          return tp.count > ctx.metadata_cache()
+                              .get_topic_cfg(model::topic_namespace_view(
+                                model::kafka_namespace, tp.name))
+                              ->partition_count;
+      });
+
     // validate custom assignment
     valid_range_end = validate_range(
       request.data.topics.begin(),
