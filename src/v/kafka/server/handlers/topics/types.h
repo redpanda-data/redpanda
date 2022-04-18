@@ -59,7 +59,15 @@ static constexpr std::string_view topic_property_data_policy_script_name
   = "redpanda.datapolicy.script.name";
 
 // Kafka topic properties that is not relevant for Redpanda
-static constexpr std::string_view allowlist_topic_noop_confs[20] = {
+// Or cannot be altered with kafka alter handler
+static constexpr std::string_view allowlist_topic_noop_confs[23] = {
+  // Cannot be altered in handle
+  "partition_count",
+  "replication_factor",
+  // Invalid name from describe
+  "redpanda.datapolicy",
+
+  // Not used in Redpanda
   "unclean.leader.election.enable",
   "message.downconversion.enable",
   "segment.ms",
