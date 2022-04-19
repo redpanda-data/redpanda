@@ -415,7 +415,7 @@ configuration::configuration()
       "enable_idempotence",
       "Enable idempotent producer",
       {.visibility = visibility::user},
-      false)
+      true)
   , enable_transactions(
       *this,
       "enable_transactions",

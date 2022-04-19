@@ -46,6 +46,11 @@ resource_settings = ResourceSettings(
     # has nothing to do with verifying the correctness of the storage layer)
     bypass_fsync=True)
 
+# (with idempotency enabled by default) the first produce request creates a system
+# topic with a single partition (id_allocator) so when we want to test redpanda
+# at maximum capacity we should account for the extra partition
+MAX_NUM_PARTITIONS = NODE_MEMORY_MB - 1
+
 
 class ManyPartitionsTest(RedpandaTest):
     """
@@ -136,7 +141,7 @@ class ManyPartitionsTest(RedpandaTest):
                  n_topics=1)  # 100 partitions (baseline non-stressed test)
     @parametrize(n_partitions=int(NODE_MEMORY_MB / 10),
                  n_topics=10)  # 1 partition per MB spread across 10 topics
-    @parametrize(n_partitions=NODE_MEMORY_MB,
+    @parametrize(n_partitions=MAX_NUM_PARTITIONS,
                  n_topics=1)  # 1 partition per M in one topic
     def test_many_partitions(self, n_partitions: int, n_topics: int):
         """

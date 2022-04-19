@@ -581,14 +581,29 @@ class RedpandaService(Service):
         if self.coproc_enabled():
             self.start_wasm_engine(node)
 
+        def is_status_ready():
+            status = None
+            try:
+                status = Admin.ready(node).get("status")
+            except:
+                self.logger.exception(
+                    f"error on getting status from {node.account.hostname}")
+                raise
+            if status != "ready":
+                self.logger.debug(
+                    f"status of {node.account.hostname} isn't ready: {status}")
+                return False
+            return True
+
         def start_rp():
             self.start_redpanda(node)
 
             wait_until(
-                lambda: Admin.ready(node).get("status") == "ready",
+                is_status_ready,
                 timeout_sec=timeout,
+                backoff_sec=1,
                 err_msg=
-                f"Redpanda service {node.account.hostname} failed to start",
+                f"Redpanda service {node.account.hostname} failed to start within {timeout} sec",
                 retry_on_exc=True)
 
         self.logger.debug(f"Node status prior to redpanda startup:")
