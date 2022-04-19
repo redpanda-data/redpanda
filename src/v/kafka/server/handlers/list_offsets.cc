@@ -115,8 +115,7 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
         co_return list_offsets_response::make_partition(
           id, res->time, res->offset);
     }
-    co_return list_offsets_response::make_partition(
-      id, model::timestamp(-1), kafka_partition->last_stable_offset());
+    co_return list_offsets_response::make_partition(id, error_code::none);
 }
 
 static ss::future<list_offset_partition_response> list_offsets_partition(
