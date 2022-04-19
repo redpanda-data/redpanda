@@ -331,6 +331,33 @@ partition_downloader::download_log(const remote_manifest_path& manifest_key) {
     co_return result;
 }
 
+void partition_downloader::update_downloaded_offsets(
+  std::vector<partition_downloader::offset_range> dloffsets,
+  partition_downloader::download_part& dlpart) {
+    std::sort(dloffsets.begin(), dloffsets.end());
+    for (auto it = dloffsets.rbegin(); it != dloffsets.rend(); it++) {
+        auto offsets = *it;
+        if (dlpart.range.min_offset < dlpart.range.max_offset) {
+            // This will be triggered for every iteration except the first one
+            auto expected = offsets.max_offset + model::offset(1);
+            if (dlpart.range.min_offset != expected) {
+                vlog(
+                  _ctxlog.warn,
+                  "Gap detected at {}, restored offset range {}-{}",
+                  expected,
+                  dlpart.range.min_offset,
+                  dlpart.range.max_offset);
+                break;
+            }
+        }
+        dlpart.range.min_offset = std::min(
+          dlpart.range.min_offset, offsets.min_offset);
+        dlpart.range.max_offset = std::max(
+          dlpart.range.max_offset, offsets.max_offset);
+        ++dlpart.num_files;
+    }
+}
+
 ss::future<partition_downloader::download_part>
 partition_downloader::download_log_with_capped_size(
   const offset_map_t& offset_map,
@@ -372,6 +399,7 @@ partition_downloader::download_log_with_capped_size(
       start_offset,
       start_delta);
 
+    std::vector<offset_range> dloffsets;
     download_part dlpart{
       .part_prefix = std::filesystem::path(prefix.string() + "_part"),
       .dest_prefix = prefix,
@@ -384,7 +412,9 @@ partition_downloader::download_log_with_capped_size(
     co_await ss::max_concurrent_for_each(
       staged_downloads,
       max_concurrency,
-      [this, _dlpart{&dlpart}](const segment& s) -> ss::future<> {
+      [this, _dlpart{&dlpart}, _dloffsets{&dloffsets}](
+        const segment& s) -> ss::future<> {
+          auto& dloffsets{*_dloffsets};
           auto& dlpart{*_dlpart};
           retry_chain_node fib(&_rtcnode);
           retry_chain_logger dllog(cst_log, fib);
@@ -399,12 +429,11 @@ partition_downloader::download_log_with_capped_size(
             dlpart.part_prefix,
             dlpart.dest_prefix);
           auto offsets = co_await download_segment_file(s, dlpart);
-          dlpart.range.min_offset = std::min(
-            dlpart.range.min_offset, offsets.min_offset);
-          dlpart.range.max_offset = std::max(
-            dlpart.range.max_offset, offsets.max_offset);
-          ++dlpart.num_files;
+          if (offsets) {
+              dloffsets.push_back(offsets.value());
+          }
       });
+    update_downloaded_offsets(std::move(dloffsets), dlpart);
     co_return dlpart;
 }
 
@@ -458,6 +487,7 @@ partition_downloader::download_log_with_capped_time(
       "start_delta: {}",
       start_offset,
       start_delta);
+    std::vector<offset_range> dloffsets;
     download_part dlpart = {
       .part_prefix = std::filesystem::path(prefix.string() + "_part"),
       .dest_prefix = prefix,
@@ -470,8 +500,10 @@ partition_downloader::download_log_with_capped_time(
     co_await ss::max_concurrent_for_each(
       staged_downloads,
       max_concurrency,
-      [this, _dlpart{&dlpart}](const segment& s) -> ss::future<> {
+      [this, _dlpart{&dlpart}, _dloffsets{&dloffsets}](
+        const segment& s) -> ss::future<> {
           auto& dlpart{*_dlpart};
+          auto& dloffsets{*_dloffsets};
           retry_chain_node fib(&_rtcnode);
           retry_chain_logger dllog(cst_log, fib);
           vlog(
@@ -483,12 +515,11 @@ partition_downloader::download_log_with_capped_time(
             dlpart.part_prefix,
             dlpart.dest_prefix);
           auto offsets = co_await download_segment_file(s, dlpart);
-          dlpart.range.min_offset = std::min(
-            dlpart.range.min_offset, offsets.min_offset);
-          dlpart.range.max_offset = std::max(
-            dlpart.range.max_offset, offsets.max_offset);
-          ++dlpart.num_files;
+          if (offsets) {
+              dloffsets.push_back(offsets.value());
+          }
       });
+    update_downloaded_offsets(std::move(dloffsets), dlpart);
     co_return dlpart;
 }
 
@@ -532,7 +563,7 @@ open_output_file_stream(const std::filesystem::path& path) {
     co_return std::move(stream);
 }
 
-ss::future<partition_downloader::offset_range>
+ss::future<std::optional<partition_downloader::offset_range>>
 partition_downloader::download_segment_file(
   const segment& segm, const download_part& part) {
     auto name = generate_segment_name(
@@ -610,6 +641,7 @@ partition_downloader::download_segment_file(
         // The individual segment might be missing for varios reasons but
         // it shouldn't prevent us from restoring the remaining data
         vlog(_ctxlog.error, "Failed segment download for {}", remote_path);
+        co_return std::nullopt;
     }
 
     co_return offset_range{
