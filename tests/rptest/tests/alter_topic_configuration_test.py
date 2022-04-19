@@ -72,6 +72,13 @@ class AlterTopicConfiguration(RedpandaTest):
             for _ in range(size))
 
     @cluster(num_nodes=3)
+    def test_set_config_from_describe(self):
+        topic = self.topics[0].name
+        kafka_tools = KafkaCliTools(self.redpanda)
+        topic_config = kafka_tools.describe_topic_config(topic=topic)
+        kafka_tools.alter_topic_config(topic, topic_config)
+
+    @cluster(num_nodes=3)
     def test_configuration_properties_kafka_config_allowlist(self):
         topic = self.topics[0].name
         kafka_tools = KafkaCliTools(self.redpanda)

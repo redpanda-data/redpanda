@@ -127,6 +127,23 @@ sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule require
         self._redpanda.logger.debug("Describe topics result: %s", res)
         return res
 
+    def describe_topic_config(self, topic):
+        self._redpanda.logger.debug("Describing topic configs")
+        args = ["--describe", "--topic", topic, "--all"]
+        res = self._run("kafka-configs.sh", args).strip()
+        self._redpanda.logger.debug("Describe topic configs result: %s", res)
+        if res is None:
+            raise RuntimeError(f"Error describing topic {topic}")
+
+        # parse/extract the topic configuration
+        configs = {}
+        config_lines = res.split("\n")[1:]
+        for line in config_lines:
+            config = line.strip().split(" ")[0].split("=")
+            configs[config[0]] = config[1]
+
+        return configs
+
     def describe_topic(self, topic):
         self._redpanda.logger.debug("Describing topics")
         args = ["--describe", "--topic", topic]
