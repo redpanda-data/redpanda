@@ -164,7 +164,16 @@ ss::future<bool> prevote_stm::do_prevote() {
     _config->for_each_voter([this](vnode id) { (void)dispatch_prevote(id); });
 
     // process results
-    return process_replies().then([this]() { return _success; });
+    return process_replies().then([this]() {
+        if (_success && _ptr->_node_priority_override == zero_voter_priority) {
+            vlog(
+              _ctxlog.debug,
+              "Ignoring successful pre-vote. Node priority too low: {}",
+              _ptr->_node_priority_override.value());
+            _success = false;
+        }
+        return _success;
+    });
 }
 
 ss::future<> prevote_stm::process_replies() {

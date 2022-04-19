@@ -227,6 +227,15 @@ ss::future<> vote_stm::update_vote_state(ss::semaphore_units<> u) {
         return ss::now();
     }
 
+    if (_ptr->_node_priority_override == zero_voter_priority) {
+        vlog(
+          _ctxlog.debug,
+          "Ignoring successful vote. Node priority too low: {}",
+          _ptr->_node_priority_override.value());
+        _ptr->_vstate = consensus::vote_state::follower;
+        return ss::now();
+    }
+
     std::vector<vnode> acks;
     for (auto& [id, r] : _replies) {
         if (r.get_state() == vmeta::state::vote_granted) {

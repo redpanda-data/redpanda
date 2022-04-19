@@ -185,7 +185,7 @@ members_table::apply(model::offset version, maintenance_mode_cmd cmd) {
     }
 
     vlog(
-      clusterlog.info, "changing node {} to maintenance state", target->first);
+      clusterlog.info, "marking node {} in maintenance state", target->first);
 
     target->second->set_maintenance_state(model::maintenance_state::active);
 
