@@ -43,6 +43,31 @@ class MaintenanceTest(RedpandaTest):
         return status["finished"] and not status["errors"] and \
                 status["partitions"] > 0
 
+    def _verify_broker_metadata(self, maintenance_enabled, node):
+        """
+        check if both brokers interfaces in the admin server return
+        the same status for maintenance mode. further, check if the
+        mode is returning that draining has been enabled/disabled
+        """
+        node_id = self.redpanda.idx(node)
+        broker_target = self.admin.get_broker(node_id)
+        broker_filtered = None
+        for broker in self.admin.get_brokers():
+            if broker['node_id'] == node_id:
+                broker_filtered = broker
+                break
+        # both apis should return the same info
+        if broker_filtered is None:
+            return False
+        status = broker_target['maintenance_status']
+        if status != broker_filtered['maintenance_status']:
+            return False
+        # check status wanted
+        if maintenance_enabled:
+            return status['draining'] and status['finished']
+        else:
+            return not status['draining']
+
     def _enable_maintenance(self, node):
         """
         1. Verifies that node is leader for some partitions
@@ -88,6 +113,12 @@ class MaintenanceTest(RedpandaTest):
                    timeout_sec=60,
                    backoff_sec=10)
 
+        self.logger.debug("Verifying expected broker metadata reported "
+                          f"for enabled maintenance mode on node {node.name}")
+        wait_until(lambda: self._verify_broker_metadata(True, node),
+                   timeout_sec=60,
+                   backoff_sec=10)
+
     def _disable_maintenance(self, node):
         wait_until(lambda: not self._in_maintenance_mode(node),
                    timeout_sec=30,
@@ -95,6 +126,12 @@ class MaintenanceTest(RedpandaTest):
 
         wait_until(lambda: self._has_leadership_role(node),
                    timeout_sec=120,
+                   backoff_sec=10)
+
+        self.logger.debug("Verifying expected broker metadata reported "
+                          f"for disabled maintenance mode on node {node.name}")
+        wait_until(lambda: self._verify_broker_metadata(False, node),
+                   timeout_sec=60,
                    backoff_sec=10)
 
     def _verify_cluster(self, target, target_expect):
