@@ -109,12 +109,6 @@ model::topic_metadata topic_configuration_assignment::get_metadata() const {
           return pd.create_partition_metadata();
       });
 
-    std::sort(
-      ret.partitions.begin(),
-      ret.partitions.begin(),
-      [](
-        const model::partition_metadata& a,
-        const model::partition_metadata& b) { return a.id < b.id; });
     return ret;
 }
 
