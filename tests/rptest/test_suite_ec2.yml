@@ -1,7 +1,10 @@
 # TODO work in progress getting clustered mode issues worked out
 ec2:
   included:
-    - tests
+    - tests/simple_e2e_test.py
+    - tests/wait_for_local_consumer_test.py
+    - tests/topic_autocreate_test.py
+    - tests/partition_movement_test.py
 
   excluded:
     - tests/retention_policy_test.py # Redpanda node failed to stop in 30 second
