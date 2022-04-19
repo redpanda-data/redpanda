@@ -294,10 +294,18 @@ class BaseCase:
                 data = self._s3.get_object_data(self._bucket, partition_uri)
                 obj = json.loads(data)
                 last_offset = obj['last_offset']
+                num_segments = len(obj['segments'])
                 self.logger.info(
-                    f"validating partition: {ntp}, rev: {rev}, last offset: {last_offset}, hw: {hw}"
-                )
-                assert abs(last_offset - hw) < 10, \
+                    f"validating partition: {ntp}, rev: {rev}, last offset: {last_offset}"
+                    f", num segments: {num_segments}, hw: {hw}")
+                # Explanation: high watermark is a kafka offset equal to the last offset in the log + 1.
+                # last_offset in the manifest is the last uploaded redpanda offset. Difference between
+                # kafka and redpanda offsets is equal to the number of non-data records. There will be
+                # min 1 non-data records (a configuration record) and max (1 + num_segments) records
+                # (archival metadata records for each segment). Unfortunately the number of archival metadata
+                # records is non-deterministic as they can end up in the last open segment which is not
+                # uploaded. After bringing everything together we have the following bounds:
+                assert hw <= last_offset and hw >= last_offset - num_segments, \
                     f"High watermark has unexpected value {hw}, last offset: {last_offset}"
 
     def _produce_and_verify(self, topic_spec):
@@ -472,6 +480,7 @@ class MissingPartition(BaseCase):
 
     def __init__(self, s3_client, kafka_tools, rpk_client, s3_bucket, logger):
         self._part1_offset = 0
+        self._part1_num_segments = 0
         super(MissingPartition, self).__init__(s3_client, kafka_tools,
                                                rpk_client, s3_bucket, logger)
 
@@ -489,23 +498,21 @@ class MissingPartition(BaseCase):
         bucket to make sure that the data is deleted from Minio (deletes are eventually
         consistent in Minio S3 implementation)."""
         manifest = None
-        last_offset = None
         for key in self._list_objects():
             if key.endswith("/manifest.json"):
                 attr = _parse_s3_manifest_path(key)
                 if attr.ntp.partition == 0:
                     manifest = key
                 else:
+                    assert attr.ntp.partition == 1
                     data = self._s3.get_object_data(self._bucket, key)
                     obj = json.loads(data)
-                    last_offset = obj['last_offset']
+                    self._part1_offset = obj['last_offset']
+                    self._part1_num_segments = len(obj['segments'])
         assert manifest is not None
-        assert last_offset is not None
-        assert last_offset != 0
-        self._part1_offset = last_offset
         self._delete(manifest)
         self.logger.info(
-            f"manifest {manifest} is removed, partition-1 expected offset is {last_offset}"
+            f"manifest {manifest} is removed, partition-1 last offset is {self._part1_offset}"
         )
 
     def restore_redpanda(self, baseline, controller_checksums):
@@ -528,9 +535,19 @@ class MissingPartition(BaseCase):
                 # the manifest
                 assert partition.high_watermark == 0
             elif partition.id == 1:
-                expected = self._part1_offset
-                assert partition.high_watermark == expected, \
-                    f"High watermark {partition.high_watermark} is not equal to last_offset {expected}"
+                # Explanation: high watermark is a kafka offset equal to the last offset in the log + 1.
+                # last_offset in the manifest is the last uploaded redpanda offset. Difference between
+                # kafka and redpanda offsets is equal to the number of non-data records. There will be
+                # min 1 non-data records (a configuration record) and max (1 + num_segments) records
+                # (archival metadata records for each segment). Unfortunately the number of archival metadata
+                # records is non-deterministic as they can end up in the last open segment which is not
+                # uploaded. After bringing everything together we have the following bounds:
+                min_expected_hwm = self._part1_offset - self._part1_num_segments
+                max_expected_hwm = self._part1_offset
+                assert partition.high_watermark >= min_expected_hwm \
+                    and partition.high_watermark <= max_expected_hwm, \
+                    f"Unexpected high watermark {partition.high_watermark} "\
+                    f"(min expected: {min_expected_hwm}, max expected: {max_expected_hwm})"
             else:
                 assert False, "Unexpected partition id"
 

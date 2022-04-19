@@ -13,8 +13,6 @@
 #include "cluster/partition_manager.h"
 #include "model/fundamental.h"
 #include "s3/client.h"
-#include "storage/api.h"
-#include "storage/log_manager.h"
 #include "storage/ntp_config.h"
 #include "storage/segment.h"
 #include "storage/segment_set.h"
@@ -36,54 +34,6 @@ namespace internal {
 
 using namespace std::chrono_literals;
 
-class ntp_upload_queue {
-    struct upload_queue_item {
-        ss::lw_shared_ptr<ntp_archiver> archiver;
-        intrusive_list_hook _upl_hook;
-    };
-    using hash_map = absl::node_hash_map<model::ntp, upload_queue_item>;
-
-public:
-    using value = ss::lw_shared_ptr<ntp_archiver>;
-    using key = model::ntp;
-    using iterator = hash_map::iterator;
-
-    ntp_upload_queue() = default;
-
-    // Iteration
-    iterator begin();
-    iterator end();
-
-    /// Insert new item into the queue
-    void insert(value archiver);
-    void erase(const key& ntp);
-    bool contains(const key& ntp) const;
-    value operator[](const key& ntp) const;
-    /// Copy all archiver ntp into output iterator
-    template<class FwdIt, class Func>
-    void copy_if(FwdIt it, const Func& pred) const;
-
-    /// Return number of archivers that queue contains
-    size_t size() const noexcept;
-
-    /// Get next upload candidate
-    value get_upload_candidate();
-
-private:
-    hash_map _archivers;
-    intrusive_list<upload_queue_item, &upload_queue_item::_upl_hook>
-      _upload_queue;
-};
-
-template<class FwdIt, class Func>
-void ntp_upload_queue::copy_if(FwdIt out, const Func& pred) const {
-    for (const auto& [ntp, _] : _archivers) {
-        if (pred(ntp)) {
-            *out++ = ntp;
-        }
-    }
-}
-
 /// Shard-local archiver service.
 /// The service maintains a working set of archivers. Every archiver maintains a
 /// single partition. The working set get reconciled periodically. Unused
@@ -104,12 +54,10 @@ public:
     scheduler_service_impl(
       const configuration& conf,
       ss::sharded<cloud_storage::remote>& remote,
-      ss::sharded<storage::api>& api,
       ss::sharded<cluster::partition_manager>& pm,
       ss::sharded<cluster::topic_table>& tt);
     scheduler_service_impl(
       ss::sharded<cloud_storage::remote>& remote,
-      ss::sharded<storage::api>& api,
       ss::sharded<cluster::partition_manager>& pm,
       ss::sharded<cluster::topic_table>& tt,
       ss::sharded<archival::configuration>& configs);
@@ -138,12 +86,6 @@ public:
 
     void rearm_timer();
 
-    /// Get next upload or delete candidate
-    ss::lw_shared_ptr<ntp_archiver> get_upload_candidate();
-
-    /// Run next round of uploads
-    ss::future<> run_uploads();
-
     /// \brief Sync ntp-archivers with the content of the partition_manager
     ///
     /// This method can invoke asynchronous operations that can potentially
@@ -152,8 +94,10 @@ public:
     /// appers in partition_manager or got removed from it.
     ss::future<> reconcile_archivers();
 
-    /// Return range with all available ntps
-    bool contains(const model::ntp& ntp) const { return _queue.contains(ntp); }
+    /// Return true if there is an archiver for the given ntp.
+    bool contains(const model::ntp& ntp) const {
+        return _archivers.contains(ntp);
+    }
 
     /// Get remote that service uses
     cloud_storage::remote& get_remote();
@@ -171,20 +115,15 @@ private:
     ss::future<> upload_topic_manifest(
       model::topic_namespace topic_ns, model::initial_revision_id rev);
     /// Adds archiver to the reconciliation loop after fetching its manifest.
-    ss::future<ss::stop_iteration>
-    add_ntp_archiver(ss::lw_shared_ptr<ntp_archiver> archiver);
+    ss::future<> add_ntp_archiver(ss::lw_shared_ptr<ntp_archiver> archiver);
 
     configuration _conf;
     ss::sharded<cluster::partition_manager>& _partition_manager;
     ss::sharded<cluster::topic_table>& _topic_table;
-    ss::sharded<storage::api>& _storage_api;
     simple_time_jitter<ss::lowres_clock> _jitter;
     ss::timer<ss::lowres_clock> _timer;
     ss::gate _gate;
-    ss::abort_source _as;
-    ss::semaphore _stop_limit;
-    ntp_upload_queue _queue;
-    simple_time_jitter<ss::lowres_clock> _backoff{100ms};
+    absl::btree_map<model::ntp, ss::lw_shared_ptr<ntp_archiver>> _archivers;
     retry_chain_node _rtcnode;
     retry_chain_logger _rtclog;
     service_probe _probe;
@@ -202,7 +141,6 @@ public:
     /// \brief create scheduler service
     ///
     /// \param configuration is a archival cnfiguration
-    /// \param api is a storage api service instance
     /// \param pm is a partition_manager service instance
     using internal::scheduler_service_impl::scheduler_service_impl;
 

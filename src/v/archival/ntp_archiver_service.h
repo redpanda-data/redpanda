@@ -64,15 +64,22 @@ public:
     /// \param svc_probe is a service level probe (optional)
     ntp_archiver(
       const storage::ntp_config& ntp,
+      cluster::partition_manager&,
       const configuration& conf,
       cloud_storage::remote& remote,
       ss::lw_shared_ptr<cluster::partition> part);
+
+    /// Start the fiber that will upload the partition data to the cloud
+    /// storage. Can be started only once.
+    void run_upload_loop();
 
     /// Stop archiver.
     ///
     /// \return future that will become ready when all async operation will be
     /// completed
     ss::future<> stop();
+
+    bool upload_loop_stopped() const { return _upload_loop_stopped; }
 
     /// Get NTP
     const model::ntp& get_ntp() const;
@@ -86,12 +93,7 @@ public:
     /// Download manifest from pre-defined S3 locatnewion
     ///
     /// \return future that returns true if the manifest was found in S3
-    ss::future<cloud_storage::download_result>
-    download_manifest(retry_chain_node& parent);
-
-    /// Upload manifest to the pre-defined S3 location
-    ss::future<cloud_storage::upload_result>
-    upload_manifest(retry_chain_node& parent);
+    ss::future<cloud_storage::download_result> download_manifest();
 
     const cloud_storage::partition_manifest& get_remote_manifest() const;
 
@@ -105,16 +107,12 @@ public:
     /// will pick not more than '_concurrency' candidates and start
     /// uploading them.
     ///
-    /// \param lm is a log manager instance
-    /// \param parent is a retry chain node of the caller
     /// \param lso_override last stable offset override
     /// \return future that returns number of uploaded/failed segments
     ss::future<batch_result> upload_next_candidates(
-      storage::log_manager& lm,
-      retry_chain_node& parent,
       std::optional<model::offset> last_stable_offset_override = std::nullopt);
 
-    uint64_t estimate_backlog_size(cluster::partition_manager& pm);
+    uint64_t estimate_backlog_size();
 
 private:
     /// Information about started upload
@@ -140,33 +138,36 @@ private:
 
     /// Start upload without waiting for it to complete
     ss::future<scheduled_upload> schedule_single_upload(
-      storage::log_manager& lm,
-      model::offset last_uploaded_offset,
-      model::offset last_stable_offset,
-      retry_chain_node& parent);
+      model::offset last_uploaded_offset, model::offset last_stable_offset);
 
     /// Start all uploads
-    ss::future<std::vector<scheduled_upload>> schedule_uploads(
-      storage::log_manager& lm,
-      model::offset last_stable_offset,
-      retry_chain_node& parent);
+    ss::future<std::vector<scheduled_upload>>
+    schedule_uploads(model::offset last_stable_offset);
 
     /// Wait until all scheduled uploads will be completed
     ///
     /// Update the probe and manifest
     ss::future<ntp_archiver::batch_result> wait_all_scheduled_uploads(
-      std::vector<ntp_archiver::scheduled_upload> scheduled,
-      retry_chain_node& parent);
+      std::vector<ntp_archiver::scheduled_upload> scheduled);
 
     /// Upload individual segment to S3.
     ///
     /// \return true on success and false otherwise
     ss::future<cloud_storage::upload_result>
-    upload_segment(upload_candidate candidate, retry_chain_node& fib);
+    upload_segment(upload_candidate candidate);
+
+    /// Upload manifest to the pre-defined S3 location
+    ss::future<cloud_storage::upload_result> upload_manifest();
+
+    /// Launch the upload loop fiber.
+    ss::future<> upload_loop();
+
+    bool upload_loop_can_continue() const;
 
     ntp_level_probe _probe;
     model::ntp _ntp;
     model::initial_revision_id _rev;
+    cluster::partition_manager& _partition_manager;
     cloud_storage::remote& _remote;
     ss::lw_shared_ptr<cluster::partition> _partition;
     model::term_id _start_term;
@@ -177,14 +178,21 @@ private:
     cloud_storage::partition_manifest _manifest;
     ss::gate _gate;
     ss::abort_source _as;
-    ss::semaphore _mutex{1};
-    simple_time_jitter<ss::lowres_clock> _backoff{100ms};
-    size_t _concurrency{4};
-    ss::lowres_clock::time_point _last_upload_time;
-    ss::lowres_clock::duration _initial_backoff;
+    retry_chain_node _rtcnode;
+    retry_chain_logger _rtclog;
+    ss::lowres_clock::duration _cloud_storage_initial_backoff;
     ss::lowres_clock::duration _segment_upload_timeout;
     ss::lowres_clock::duration _manifest_upload_timeout;
+    ss::semaphore _mutex{1};
+    ss::lowres_clock::duration _upload_loop_initial_backoff;
+    ss::lowres_clock::duration _upload_loop_max_backoff;
+    simple_time_jitter<ss::lowres_clock> _backoff_jitter{100ms};
+    size_t _concurrency{4};
+    ss::lowres_clock::time_point _last_upload_time;
+    ss::scheduling_group _upload_sg;
     ss::io_priority_class _io_priority;
+    bool _upload_loop_started = false;
+    bool _upload_loop_stopped = false;
 };
 
 } // namespace archival

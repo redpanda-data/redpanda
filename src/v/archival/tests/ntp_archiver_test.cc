@@ -127,13 +127,12 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
       part->committed_offset(),
       *part);
 
-    archival::ntp_archiver archiver(get_ntp_conf(), arch_conf, remote, part);
+    archival::ntp_archiver archiver(
+      get_ntp_conf(), app.partition_manager.local(), arch_conf, remote, part);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
     retry_chain_node fib;
-    auto res = archiver
-                 .upload_next_candidates(get_local_storage_api().log_mgr(), fib)
-                 .get0();
+    auto res = archiver.upload_next_candidates().get();
     BOOST_REQUIRE_EQUAL(res.num_succeded, 2);
     BOOST_REQUIRE_EQUAL(res.num_failed, 0);
 
@@ -365,16 +364,15 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     auto [arch_conf, remote_conf] = get_configurations();
     cloud_storage::remote remote(
       remote_conf.connection_limit, remote_conf.client_config);
-    archival::ntp_archiver archiver(get_ntp_conf(), arch_conf, remote, part);
+    archival::ntp_archiver archiver(
+      get_ntp_conf(), app.partition_manager.local(), arch_conf, remote, part);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
     retry_chain_node fib;
 
-    archiver.download_manifest(fib).get();
+    archiver.download_manifest().get();
 
-    auto res = archiver
-                 .upload_next_candidates(get_local_storage_api().log_mgr(), fib)
-                 .get0();
+    auto res = archiver.upload_next_candidates().get();
     BOOST_REQUIRE_EQUAL(res.num_succeded, 2);
     BOOST_REQUIRE_EQUAL(res.num_failed, 0);
 
@@ -581,17 +579,15 @@ static void test_partial_upload_impl(
     auto [aconf, cconf] = get_configurations();
     cloud_storage::remote remote(cconf.connection_limit, cconf.client_config);
     aconf.time_limit = segment_time_limit(0s);
-    archival::ntp_archiver archiver(get_ntp_conf(), aconf, remote, part);
+    archival::ntp_archiver archiver(
+      get_ntp_conf(), test.app.partition_manager.local(), aconf, remote, part);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
     retry_chain_node fib;
 
-    archiver.download_manifest(fib).get();
+    archiver.download_manifest().get();
 
-    auto res = archiver
-                 .upload_next_candidates(
-                   test.get_local_storage_api().log_mgr(), fib, lso)
-                 .get0();
+    auto res = archiver.upload_next_candidates(lso).get();
     BOOST_REQUIRE_EQUAL(res.num_succeded, 1);
     BOOST_REQUIRE_EQUAL(res.num_failed, 0);
 
@@ -634,10 +630,7 @@ static void test_partial_upload_impl(
     }
 
     lso = last_upl2 + model::offset(1);
-    res = archiver
-            .upload_next_candidates(
-              test.get_local_storage_api().log_mgr(), fib, lso)
-            .get0();
+    res = archiver.upload_next_candidates(lso).get();
 
     BOOST_REQUIRE_EQUAL(res.num_succeded, 1);
     BOOST_REQUIRE_EQUAL(res.num_failed, 0);

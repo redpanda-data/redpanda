@@ -141,10 +141,8 @@ ss::future<consensus_ptr> partition_manager::manage(
         // data.
         auto timeout = config::shard_local_cfg()
                          .cloud_storage_segment_upload_timeout_ms.value();
-        auto backoff
-          = config::shard_local_cfg().cloud_storage_initial_backoff_ms.value();
-        retry_chain_node rtc(timeout, backoff);
-        co_await p->archival_meta_stm()->add_segments(manifest, rtc);
+        auto deadline = ss::lowres_clock::now() + timeout;
+        co_await p->archival_meta_stm()->add_segments(manifest, deadline);
     }
 
     co_return c;

@@ -32,8 +32,8 @@ std::ostream& operator<<(std::ostream& o, const configuration& cfg) {
       "segment_upload_timeout: {}, "
       "manifest_upload_timeout: {}, time_limit: {}}}",
       cfg.bucket_name,
-      std::chrono::milliseconds(cfg.interval),
-      std::chrono::milliseconds(cfg.initial_backoff),
+      std::chrono::milliseconds(cfg.reconciliation_interval),
+      std::chrono::milliseconds(cfg.cloud_storage_initial_backoff),
       std::chrono::milliseconds(cfg.segment_upload_timeout),
       std::chrono::milliseconds(cfg.manifest_upload_timeout),
       cfg.time_limit);

@@ -75,14 +75,13 @@ FIXTURE_TEST(test_reconciliation_manifest_download, archiver_fixture) {
 
     auto [arch_config, remote_config] = get_configurations();
     auto& pm = app.partition_manager;
-    auto& api = app.storage;
     auto& topics = app.controller->get_topics_state();
     ss::sharded<cloud_storage::remote> remote;
     remote
       .start_single(remote_config.connection_limit, remote_config.client_config)
       .get();
     archival::internal::scheduler_service_impl service(
-      arch_config, remote, api, pm, topics);
+      arch_config, remote, pm, topics);
     service.reconcile_archivers().get();
     BOOST_REQUIRE(service.contains(pid0));
     BOOST_REQUIRE(service.contains(pid1));
@@ -110,14 +109,13 @@ FIXTURE_TEST(test_reconciliation_drop_ntp, archiver_fixture) {
 
     auto [arch_config, remote_config] = get_configurations();
     auto& pm = app.partition_manager;
-    auto& api = app.storage;
     auto& topics = app.controller->get_topics_state();
     ss::sharded<cloud_storage::remote> remote;
     remote
       .start_single(remote_config.connection_limit, remote_config.client_config)
       .get();
     archival::internal::scheduler_service_impl service(
-      arch_config, remote, api, pm, topics);
+      arch_config, remote, pm, topics);
 
     service.reconcile_archivers().get();
     BOOST_REQUIRE(service.contains(ntp));
@@ -175,19 +173,16 @@ FIXTURE_TEST(test_segment_upload, archiver_fixture) {
 
     auto [arch_config, remote_config] = get_configurations();
     auto& pm = app.partition_manager;
-    auto& api = app.storage;
     auto& topics = app.controller->get_topics_state();
     ss::sharded<cloud_storage::remote> remote;
     remote
       .start_single(remote_config.connection_limit, remote_config.client_config)
       .get();
     archival::internal::scheduler_service_impl service(
-      arch_config, remote, api, pm, topics);
+      arch_config, remote, pm, topics);
 
     service.reconcile_archivers().get();
     BOOST_REQUIRE(service.contains(ntp));
-
-    (void)service.run_uploads();
 
     // 2 partition manifests, 1 topic manifest, 2 segments
     const size_t num_requests_expected = 5;

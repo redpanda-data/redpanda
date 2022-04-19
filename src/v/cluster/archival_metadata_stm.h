@@ -17,7 +17,6 @@
 #include "model/metadata.h"
 #include "utils/mutex.h"
 #include "utils/prefix_logger.h"
-#include "utils/retry_chain_node.h"
 
 #include <seastar/util/log.hh>
 
@@ -35,8 +34,10 @@ public:
 
     /// Add the difference between manifests to the raft log, replicate it and
     /// wait until it is applied to the STM.
-    ss::future<std::error_code>
-    add_segments(const cloud_storage::partition_manifest&, retry_chain_node&);
+    ss::future<std::error_code> add_segments(
+      const cloud_storage::partition_manifest&,
+      ss::lowres_clock::time_point deadline,
+      std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
 
     /// A set of archived segments. NOTE: manifest can be out-of-date if this
     /// node is not leader; or if the STM hasn't yet performed sync; or if the
@@ -50,7 +51,9 @@ public:
 
 private:
     ss::future<std::error_code> do_add_segments(
-      const cloud_storage::partition_manifest&, retry_chain_node&);
+      const cloud_storage::partition_manifest&,
+      ss::lowres_clock::time_point deadline,
+      std::optional<std::reference_wrapper<ss::abort_source>>);
 
     ss::future<> apply(model::record_batch batch) override;
     ss::future<> handle_eviction() override;
