@@ -137,6 +137,46 @@ FIXTURE_TEST(list_offsets_latest, redpanda_thread_fixture) {
     BOOST_CHECK(resp.data.topics[0].partitions[0].offset > model::offset(0));
 }
 
+FIXTURE_TEST(list_offsets_not_found, redpanda_thread_fixture) {
+    wait_for_controller_leadership().get();
+    auto ntp = make_data(get_next_partition_revision_id().get());
+    auto shard = app.shard_table.local().shard_for(ntp);
+    tests::cooperative_spin_wait_with_timeout(10s, [this, shard, ntp = ntp] {
+        return app.partition_manager.invoke_on(
+          *shard, [ntp](cluster::partition_manager& mgr) {
+              auto partition = mgr.get(ntp);
+              return partition
+                     && partition->committed_offset() >= model::offset(1);
+          });
+    }).get();
+
+    auto client = make_kafka_client().get();
+    client.connect().get();
+
+    kafka::list_offsets_request req;
+    req.data.topics = {{
+      .name = ntp.tp.topic,
+      .partitions = {{
+        .partition_index = ntp.tp.partition,
+        .timestamp = model::timestamp::now(),
+      }},
+    }};
+
+    auto resp = client.dispatch(req, kafka::api_version(4)).get();
+    client.stop().then([&client] { client.shutdown(); }).get();
+
+    // request is asking for messages with timestamp => timestamp::now(),
+    // doesn't find it and returns an empty response
+    BOOST_REQUIRE_EQUAL(resp.data.topics.size(), 1);
+    BOOST_REQUIRE_EQUAL(resp.data.topics[0].partitions.size(), 1);
+    BOOST_CHECK(
+      resp.data.topics[0].partitions[0].timestamp == model::timestamp(-1));
+    BOOST_CHECK(resp.data.topics[0].partitions[0].offset == model::offset(-1));
+    BOOST_CHECK(
+      resp.data.topics[0].partitions[0].leader_epoch
+      == kafka::leader_epoch(-1));
+}
+
 kafka::produce_request
 make_produce_request(model::topic_partition tp, model::record_batch&& batch) {
     std::vector<kafka::produce_request::partition> partitions;
