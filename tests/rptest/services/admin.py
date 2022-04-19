@@ -226,6 +226,14 @@ class Admin:
         path = f"partitions/{namespace}/{topic}/{partition}/transfer_leadership?target={target_id}"
         self._request("POST", path)
 
+    def get_partition_leader(self, *, namespace, topic, partition, node=None):
+        partition_info = self.get_partitions(topic=topic,
+                                             partition=partition,
+                                             namespace=namespace,
+                                             node=node)
+
+        return partition_info['leader_id']
+
     def transfer_leadership_to(self, *, namespace, topic, partition, target):
         """
         Looks up current ntp leader and transfer leadership to target node, 
@@ -260,3 +268,21 @@ class Admin:
         leader = self.redpanda.get_node(details['leader_id'])
         ret = self._request('post', path=path, node=leader)
         return ret.status_code == 200
+
+    def reset_leaders_info(self, node):
+        """
+        Reset info for leaders on node
+        """
+        id = self.redpanda.idx(node)
+        self.redpanda.logger.info(f"Reset leaders info on {node.name}/{id}")
+        url = "debug/reset_leaders"
+        return self._request("post", url, node=node)
+
+    def get_leaders_info(self, node):
+        """
+        Get info for leaders on node
+        """
+        id = self.redpanda.idx(node)
+        self.redpanda.logger.info(f"Get leaders info on {node.name}/{id}")
+        url = "debug/partition_leaders_table"
+        return self._request("get", url, node=node).json()

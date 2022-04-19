@@ -1,0 +1,80 @@
+{
+    "apiVersion": "0.0.1",
+    "swaggerVersion": "1.2",
+    "basePath": "/v1",
+    "resourcePath": "/debug",
+    "produces": [
+        "application/json"
+    ],
+    "apis": [
+        {
+            "path": "/v1/debug/reset_leaders",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Reset information about leaders for node",
+                    "type": "void",
+                    "nickname": "reset_leaders_info",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
+        },
+        {
+            "path": "/v1/debug/partition_leaders_table",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get information about leaders from partition_leaders_table for node",
+                    "type": "array",
+                    "items": {
+                        "type": "leader_info"
+                    },
+                    "nickname": "get_leaders_info",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
+        }
+    ],
+    "models": {
+        "leader_info": {
+            "id": "leader_info",
+            "description": "Leader info",
+            "properties": {
+                "ns": {
+                    "type": "string",
+                    "description": "namespace"
+                },
+                "topic": {
+                    "type": "string",
+                    "description": "topic"
+                },
+                "partition_id": {
+                    "type": "long",
+                    "description": "partition"
+                },
+                "leader": {
+                    "type": "long",
+                    "description": "current leader"
+                },
+                "previous_leader": {
+                    "type": "long",
+                    "description": "previous leader"
+                },
+                "update_term": {
+                    "type": "long",
+                    "description": "update term"
+                },
+                "partition_revision": {
+                    "type": "long",
+                    "description": "partition revision"
+                }
+            }
+        }
+    }
+}

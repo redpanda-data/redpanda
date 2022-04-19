@@ -32,6 +32,7 @@
 #include "redpanda/admin/api-doc/broker.json.h"
 #include "redpanda/admin/api-doc/cluster_config.json.h"
 #include "redpanda/admin/api-doc/config.json.h"
+#include "redpanda/admin/api-doc/debug.json.h"
 #include "redpanda/admin/api-doc/hbadger.json.h"
 #include "redpanda/admin/api-doc/partition.json.h"
 #include "redpanda/admin/api-doc/raft.json.h"
@@ -124,6 +125,8 @@ void admin_server::configure_admin_routes() {
     rb->register_api_file(_server._routes, "hbadger");
     rb->register_function(_server._routes, insert_comma);
     rb->register_api_file(_server._routes, "broker");
+    rb->register_function(_server._routes, insert_comma);
+    rb->register_api_file(_server._routes, "debug");
 
     register_config_routes();
     register_cluster_config_routes();
@@ -134,6 +137,7 @@ void admin_server::configure_admin_routes() {
     register_broker_routes();
     register_partition_routes();
     register_hbadger_routes();
+    register_debug_routes();
 }
 
 struct json_validator {
@@ -1419,5 +1423,47 @@ void admin_server::register_hbadger_routes() {
                    [m, p] { finjector::shard_local_badger().unset(m, p); })
             .then(
               [] { return ss::json::json_return_type(ss::json::json_void()); });
+      });
+}
+
+void admin_server::register_debug_routes() {
+    ss::httpd::debug_json::reset_leaders_info.set(
+      _server._routes,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          vlog(logger.info, "Request to reset leaders info");
+          co_await _metadata_cache.invoke_on_all(
+            [](auto& mc) { mc.reset_leaders(); });
+
+          co_return ss::json::json_void();
+      });
+
+    ss::httpd::debug_json::get_leaders_info.set(
+      _server._routes,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          vlog(logger.info, "Request to get leaders info");
+          using result_t = ss::httpd::debug_json::leader_info;
+          std::vector<result_t> ans;
+
+          auto leaders_info = _metadata_cache.local().get_leaders();
+          ans.reserve(leaders_info.size());
+          for (const auto& leader_info : leaders_info) {
+              result_t info;
+              info.ns = leader_info.tp_ns.ns;
+              info.topic = leader_info.tp_ns.tp;
+              info.partition_id = leader_info.pid;
+              info.leader = leader_info.current_leader.has_value()
+                              ? leader_info.current_leader.value()
+                              : -1;
+              info.previous_leader = leader_info.previous_leader.has_value()
+                                       ? leader_info.previous_leader.value()
+                                       : -1;
+              info.update_term = leader_info.update_term;
+              info.partition_revision = leader_info.partition_revision;
+              ans.push_back(std::move(info));
+          }
+
+          co_return ss::json::json_return_type(ans);
       });
 }
