@@ -90,7 +90,9 @@ class RpkConsumer(BackgroundThreadService):
                 raise
 
     def _consume(self, node):
-        cmd = '%s topic consume --offset %s --pretty-print=false --brokers %s %s' % (
+        # Important to use --read-committed, because otherwise the output parsing would have
+        # to somehow handle when rpk errors out on a rewind of the consumed offset
+        cmd = '%s topic consume --read-committed --offset %s --pretty-print=false --brokers %s %s' % (
             self._redpanda.find_binary('rpk'),
             self._offset,
             self._redpanda.brokers(),
