@@ -164,7 +164,7 @@ ExternalProject_Add(cryptopp
 
 ExternalProject_Add(seastar
   GIT_REPOSITORY https://github.com/redpanda-data/seastar.git
-  GIT_TAG f8ec733c36f0829d56a17103c916154a946128be
+  GIT_TAG 2a9504b3238cba4150be59353bf8d0b3a01fe39c
   INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
