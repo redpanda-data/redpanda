@@ -47,6 +47,13 @@ type BasicCredentials struct {
 	Password string
 }
 
+// GenericErrorBody is the JSON decodable body that is produced by generic error
+// handling in the admin server when a seastar http exception is thrown.
+type GenericErrorBody struct {
+	Message string `json:"message"`
+	Code    int    `json:"code"`
+}
+
 // AdminAPI is a client to interact with Redpanda's admin server.
 type AdminAPI struct {
 	urls                []string
@@ -546,6 +553,12 @@ func (a *AdminAPI) sendAndReceive(
 	}
 
 	return res, nil
+}
+
+func (he HttpError) DecodeGenericErrorBody() (GenericErrorBody, error) {
+	var resp GenericErrorBody
+	err := json.Unmarshal(he.Body, &resp)
+	return resp, err
 }
 
 func (he HttpError) Error() string {

@@ -12,6 +12,7 @@ package cmd
 import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cluster"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cluster/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cluster/maintenance"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/group"
 	"github.com/spf13/afero"
@@ -56,6 +57,7 @@ func NewClusterCommand(fs afero.Fs) *cobra.Command {
 	command.AddCommand(offsets)
 
 	command.AddCommand(config.NewConfigCommand(fs))
+	command.AddCommand(maintenance.NewMaintenanceCommand(fs))
 
 	return command
 }

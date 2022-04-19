@@ -14,7 +14,9 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
+from rptest.clients.rpk import RpkTool, RpkException
 from ducktape.utils.util import wait_until
+from ducktape.mark import matrix
 import requests
 
 
@@ -25,6 +27,8 @@ class MaintenanceTest(RedpandaTest):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.admin = Admin(self.redpanda)
+        self.rpk = RpkTool(self.redpanda)
+        self._use_rpk = True
 
     def _has_leadership_role(self, node):
         """
@@ -74,7 +78,10 @@ class MaintenanceTest(RedpandaTest):
         assert status[
             "draining"] == False, f"Node {node.name} in maintenance mode"
 
-        self.admin.maintenance_start(node)
+        if self._use_rpk:
+            self.rpk.cluster_maintenance_enable(node)
+        else:
+            self.admin.maintenance_start(node)
 
         self.logger.debug(
             f"Waiting for node {node.name} to enter maintenance mode")
@@ -119,15 +126,25 @@ class MaintenanceTest(RedpandaTest):
                 backoff_sec=5,
                 err_msg=f"expected {node.name} maintenance mode: {expect}")
 
+    def _maintenance_disable(self, node):
+        if self._use_rpk:
+            self.rpk.cluster_maintenance_disable(node)
+        else:
+            self.admin.maintenance_stop(node)
+
     @cluster(num_nodes=3)
-    def test_maintenance(self):
+    @matrix(use_rpk=[True, False])
+    def test_maintenance(self, use_rpk):
+        self._use_rpk = use_rpk
         target = random.choice(self.redpanda.nodes)
         self._enable_maintenance(target)
-        self.admin.maintenance_stop(target)
+        self._maintenance_disable(target)
         self._disable_maintenance(target)
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def test_maintenance_sticky(self):
+    @matrix(use_rpk=[True, False])
+    def test_maintenance_sticky(self, use_rpk):
+        self._use_rpk = use_rpk
         nodes = random.sample(self.redpanda.nodes, len(self.redpanda.nodes))
         for node in nodes:
             self._enable_maintenance(node)
@@ -136,7 +153,7 @@ class MaintenanceTest(RedpandaTest):
             self.redpanda.restart_nodes(node)
             self._verify_cluster(node, True)
 
-            self.admin.maintenance_stop(node)
+            self._maintenance_disable(node)
             self._disable_maintenance(node)
             self._verify_cluster(node, False)
 
@@ -144,13 +161,20 @@ class MaintenanceTest(RedpandaTest):
         self._verify_cluster(None, False)
 
     @cluster(num_nodes=3)
-    def test_exclusive_maintenance(self):
+    @matrix(use_rpk=[True, False])
+    def test_exclusive_maintenance(self, use_rpk):
+        self._use_rpk = use_rpk
         target, other = random.sample(self.redpanda.nodes, k=2)
         assert target is not other
         self._enable_maintenance(target)
         try:
             self._enable_maintenance(other)
+        except RpkException as e:
+            assert self._use_rpk
+            if "invalid state transition" in e.msg and "400" in e.msg:
+                return
         except requests.exceptions.HTTPError as e:
+            assert not self._use_rpk
             if "invalid state transition" in e.response.text and e.response.status_code == 400:
                 return
             raise
