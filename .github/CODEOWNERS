@@ -18,18 +18,18 @@ licenses           @senior7515 @dswang
 #
 # build
 #
-/.clang-format             @ivotron
-/.clang-tidy               @ivotron
-/.clang_complete           @ivotron
-/.github                   @ivotron
-/.gitignore                @ivotron
-/.gitorderfile             @ivotron
-/.style.yapf               @ivotron
-/build.sh                  @ivotron
-/cmake                     @ivotron        @benpope
-/install-dependencies.sh   @ivotron
-/.yapfignore               @ivotron
-/tools                     @ivotron
+/.clang-format             @redpanda-data/devprod
+/.clang-tidy               @redpanda-data/devprod
+/.clang_complete           @redpanda-data/devprod
+/.github                   @redpanda-data/devprod
+/.gitignore                @redpanda-data/devprod
+/.gitorderfile             @redpanda-data/devprod
+/.style.yapf               @redpanda-data/devprod
+/build.sh                  @redpanda-data/devprod
+/cmake                     @redpanda-data/devprod        @benpope
+/install-dependencies.sh   @redpanda-data/devprod
+/.yapfignore               @redpanda-data/devprod
+/tools                     @redpanda-data/devprod
 
 #
 # core
@@ -94,8 +94,8 @@ licenses           @senior7515 @dswang
 # testing
 #
 /tests                              @dotnwat        @nyalialui
-/tests/docker                       @ivotron
-/tests/run.sh                       @ivotron
+/tests/docker                       @redpanda-data/devprod
+/tests/run.sh                       @redpanda-data/devprod
 /src/consistency-testing            @rystsov
 /tests/java/tx-verifier             @rystsov
 /tests/rptest/tests/compatibility   @nyalialui
