@@ -270,4 +270,14 @@ feature_table::resolve_name(std::string_view feature_name) const {
     return std::nullopt;
 }
 
+ss::future<> feature_table::start() {
+    local_feature_table = *this;
+    return ss::now();
+}
+
+ss::future<> feature_table::stop() {
+    local_feature_table = std::nullopt;
+    return ss::now();
+}
+
 } // namespace cluster

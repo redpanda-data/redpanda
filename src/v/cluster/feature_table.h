@@ -212,6 +212,15 @@ private:
 
 std::string_view to_string_view(feature);
 
+/*
+ * used to provide access to the feature table in tight corners and dark places
+ * see feature_table::is_active_local(...) for more details. don't use this
+ * variable directly.
+ */
+class feature_table;
+inline thread_local std::optional<std::reference_wrapper<feature_table>>
+  local_feature_table;
+
 /**
  * To enable all shards to efficiently check enablement of features
  * in their hot paths, the cluster logical version and features
@@ -221,6 +230,9 @@ std::string_view to_string_view(feature);
  */
 class feature_table {
 public:
+    ss::future<> start();
+    ss::future<> stop();
+
     cluster_version get_active_version() const noexcept {
         return _active_version;
     }
@@ -267,6 +279,26 @@ public:
     }
 
     std::optional<feature> resolve_name(std::string_view feature_name) const;
+
+    /*
+     * proxy feature_table::is_active access to the core-local instance of the
+     * feature table. this is used to provide feature query access in places
+     * where the feature table sharded service isn't easily accessible such as
+     * adl<T> free functions.
+     *
+     * if the feature table isn't available (early startup, late shutdown) then
+     * nullopt is returned and handling must be context dependent.
+     *
+     * avoid expanding this pattern. it mostly pops up in the context of
+     * networking and RPC, and there will likely be a more holistic solution to
+     * this challenge introduced in a near term release.
+     */
+    static std::optional<bool> is_active_local(feature f) {
+        if (local_feature_table) {
+            return local_feature_table->get().is_active(f);
+        }
+        return std::nullopt;
+    }
 
 private:
     // Only for use by our friends feature backend & manager
