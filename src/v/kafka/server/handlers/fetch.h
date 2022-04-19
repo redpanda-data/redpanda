@@ -12,6 +12,7 @@
 #include "kafka/protocol/fetch.h"
 #include "kafka/server/handlers/handler.h"
 #include "kafka/types.h"
+#include "utils/intrusive_list_helpers.h"
 
 namespace kafka {
 
@@ -21,38 +22,51 @@ using fetch_handler = handler<fetch_api, 4, 11>;
  * Fetch operation context
  */
 struct op_context {
-    class response_iterator {
+    class response_placeholder {
     public:
-        using difference_type = void;
-        using pointer = fetch_response::iterator::pointer;
-        using reference = fetch_response::iterator::reference;
-        using iterator_category = std::forward_iterator_tag;
-
-        response_iterator(fetch_response::iterator, op_context* ctx);
-
-        reference operator*() noexcept { return *_it; }
-
-        pointer operator->() noexcept { return &(*_it); }
-
-        response_iterator& operator++();
-
-        const response_iterator operator++(int);
-
-        bool operator==(const response_iterator& o) const noexcept;
-
-        bool operator!=(const response_iterator& o) const noexcept;
+        response_placeholder(fetch_response::iterator, op_context* ctx);
 
         void set(fetch_response::partition_response&&);
+
+        const model::topic& topic() { return _it->partition->name; }
+        model::partition_id partition_id() {
+            return _it->partition_response->partition_index;
+        }
+
+        bool empty() { return _it->partition_response->records->empty(); }
+        bool has_error() {
+            return _it->partition_response->error_code != error_code::none;
+        }
+        void move_to_end() {
+            _ctx->iteration_order.erase(
+              _ctx->iteration_order.iterator_to(*this));
+            _ctx->iteration_order.push_back(*this);
+        }
+        intrusive_list_hook _hook;
 
     private:
         fetch_response::iterator _it;
         op_context* _ctx;
     };
 
+    using iteration_order_t
+      = intrusive_list<response_placeholder, &response_placeholder::_hook>;
+    using response_iterator = iteration_order_t::iterator;
+    using response_placeholder_ptr = response_placeholder*;
     void reset_context();
 
     // decode request and initialize budgets
     op_context(request_context&& ctx, ss::smp_service_group ssg);
+
+    op_context(op_context&&) = delete;
+    op_context(const op_context&) = delete;
+    op_context& operator=(const op_context&) = delete;
+    op_context& operator=(op_context&&) = delete;
+    ~op_context() {
+        iteration_order.clear_and_dispose([](response_placeholder* ph) {
+            delete ph; // NOLINT
+        });
+    }
 
     // reserve space for a new topic in the response
     void start_response_topic(const fetch_request::topic& topic);
@@ -91,16 +105,21 @@ struct op_context {
 
     ss::future<response_ptr> send_response() &&;
 
-    response_iterator response_begin(bool enable_filtering = false) {
-        return response_iterator(response.begin(enable_filtering), this);
-    }
+    response_iterator response_begin() { return iteration_order.begin(); }
 
-    response_iterator response_end() {
-        return response_iterator(response.end(), this);
-    }
+    response_iterator response_end() { return iteration_order.end(); }
     template<typename Func>
     void for_each_fetch_partition(Func&& f) const {
-        if (session_ctx.is_full_fetch() || session_ctx.is_sessionless()) {
+        /**
+         * Iterate over original request only if it is sessionless or initial
+         * full fetch request. For not initial full fetch requests we may
+         * leverage the fetch session stored partitions as session was populated
+         * during initial pass. Using session stored partitions will account for
+         * the partitions already read and move to the end of iteration order
+         */
+        if (
+          session_ctx.is_sessionless()
+          || (session_ctx.is_full_fetch() && initial_fetch)) {
             std::for_each(
               request.cbegin(),
               request.cend(),
@@ -137,6 +156,7 @@ struct op_context {
 
     bool initial_fetch = true;
     fetch_session_ctx session_ctx;
+    iteration_order_t iteration_order;
 };
 
 struct fetch_config {
@@ -256,10 +276,10 @@ struct read_result {
 struct shard_fetch {
     void push_back(
       ntp_fetch_config config,
-      op_context::response_iterator it,
+      op_context::response_placeholder_ptr r_ph,
       std::unique_ptr<hdr_hist::measurement> m) {
         requests.push_back(std::move(config));
-        responses.push_back(it);
+        responses.push_back(r_ph);
         metrics.push_back(std::move(m));
     }
 
@@ -275,7 +295,7 @@ struct shard_fetch {
     }
     ss::shard_id shard;
     std::vector<ntp_fetch_config> requests;
-    std::vector<op_context::response_iterator> responses;
+    std::vector<op_context::response_placeholder_ptr> responses;
     std::vector<std::unique_ptr<hdr_hist::measurement>> metrics;
 
     friend std::ostream& operator<<(std::ostream& o, const shard_fetch& sf) {
