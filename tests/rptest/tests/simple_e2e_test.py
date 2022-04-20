@@ -33,7 +33,7 @@ class SimpleEndToEndTest(EndToEndTest):
 
         self.start_producer(2, throughput=10000)
         self.start_consumer(1)
-        self.await_startup()
+        self.await_records_consumed()
 
         self.run_validation(min_records=100000,
                             producer_timeout_sec=300,

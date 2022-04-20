@@ -111,7 +111,7 @@ class LeadersInfoApiEndToEndTest(EndToEndTest):
 
         self.start_producer(1, throughput=100)
         self.start_consumer(1)
-        self.await_startup(min_records=100, timeout_sec=180)
+        self.await_records_consumed(min_records=100, timeout_sec=180)
 
         for node in self.redpanda.nodes:
             self.admin.reset_leaders_info(node)

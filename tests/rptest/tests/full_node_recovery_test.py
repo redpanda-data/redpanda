@@ -51,7 +51,7 @@ class FullNodeRecoveryTest(EndToEndTest):
 
         self.start_producer(1)
         self.start_consumer(2)
-        self.await_startup()
+        self.await_records_consumed()
 
         # chose another topic and populate it with data
         prepopulated_topic = random.choice(topics)

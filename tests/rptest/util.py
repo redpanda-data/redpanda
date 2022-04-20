@@ -166,3 +166,36 @@ def expect_http_error(status_code: int):
     """
     return expect_exception(HTTPError,
                             lambda e: e.response.status_code == status_code)
+
+
+def await_bucket_creation(redpanda, bucket_name):
+    """
+    Suspend execution until the given bucket is created
+    """
+    def check_bucket_name():
+        res = redpanda.list_buckets()
+        for bucket in res['Buckets']:
+            if bucket['Name'] == bucket_name:
+                return True
+        return False
+
+    wait_until(check_bucket_name,
+               timeout_sec=60,
+               backoff_sec=1,
+               err_msg=f'Failed to create bucket {bucket_name}')
+
+    # Put an object in the bucket and
+    # wait until the object is visible.
+    # This will make sure the bucket remains alive during
+    # the test
+    redpanda.put_object('sample/key', 'sample/data')
+
+    def check_object():
+        res = list(redpanda.get_objects_from_si())
+
+        for o in res:
+            if o.Key == 'sample/key':
+                return True
+        return False
+
+    wait_until(check_object, timeout_sec=30, backoff_sec=1)

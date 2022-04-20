@@ -249,7 +249,7 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
 
         self.start_producer(1, throughput=throughput)
         self.start_consumer(1)
-        self.await_startup()
+        self.await_records_consumed()
         for _ in range(moves):
             self._move_and_verify()
         self.run_validation(enable_idempotence=False,
@@ -272,7 +272,7 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         self.topic = spec.name
         self.start_producer(1, throughput=throughput)
         self.start_consumer(1)
-        self.await_startup()
+        self.await_records_consumed()
 
         admin = Admin(self.redpanda)
         topic = "__consumer_offsets"
@@ -303,7 +303,7 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         self.topic = spec.name
         self.start_producer(1)
         self.start_consumer(1)
-        self.await_startup()
+        self.await_records_consumed()
         # execute single move
         self._move_and_verify()
         self.run_validation(enable_idempotence=False, consumer_timeout_sec=45)

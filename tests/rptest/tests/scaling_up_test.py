@@ -45,7 +45,7 @@ class ScalingUpTest(EndToEndTest):
 
         self.start_producer(1)
         self.start_consumer(1)
-        self.await_startup()
+        self.await_records_consumed()
         # add second node
         self.redpanda.start_node(self.redpanda.nodes[1])
         kafkacat = KafkaCat(self.redpanda)

@@ -88,7 +88,7 @@ class ConsumerOffsetsMigrationTest(EndToEndTest):
 
         self.start_producer(1, throughput=5000)
         self.start_consumer(1)
-        self.await_startup()
+        self.await_records_consumed()
 
         def cluster_is_stable():
             admin = Admin(self.redpanda)

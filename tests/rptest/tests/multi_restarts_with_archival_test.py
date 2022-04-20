@@ -82,7 +82,7 @@ class MultiRestartTest(EndToEndTest):
 
         self.start_producer(1, throughput=100)
         self.start_consumer(1)
-        self.await_startup()
+        self.await_records_consumed()
 
         def no_under_replicated_partitions():
             metric_sample = self.redpanda.metrics_sample("under_replicated")
