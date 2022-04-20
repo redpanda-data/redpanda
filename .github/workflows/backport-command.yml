@@ -35,21 +35,15 @@ jobs:
         id: milestone
         run: |
           if [[ "${TARGET_MILESTONE}" == "auto" ]]; then
-            major=$(echo "${BACKPORT_BRANCH}" | grep -Eo '^(v[0-9][0-9].[0-9]+)')
-            set +e
-            set -o pipefail
-            latest_released=$(gh api "repos/${TARGET_ORG}/${TARGET_REPO}/releases" --jq '.[] | select(.draft==false).name'  | grep "${major}" | head -1)
-            exit_code="$?"
-            set -e
-            if [[ "$exit_code" == "1" && "$latest_released" == "" ]]; then
-              # first milestone for the provided branch
-              assigne_milestone="$major.1"
-            elif [[ "$exit_code" == "0" ]]; then
-              # found latest release from this branch
-              assigne_milestone=$(echo ${latest_released} | awk -F. -v OFS=. '{$NF += 1 ; print}')
+            major=$(echo "$BACKPORT_BRANCH" | grep -Eo '^v[0-9]{2}\.[0-9]{1,2}\.')
+            list_released=$(gh api "repos/${TARGET_ORG}/${TARGET_REPO}/releases" --jq '.[] | select(.draft==false).name')
+            latest_released=$(echo "$list_released" | grep -m1 -F "${major}" || true)
+            if [[ -z $latest_released ]]; then
+              echo "INFO no previous releases found with major prefix $major"
+              assigne_milestone="${major}1"
             else
-              echo "Unexpected error"
-              exit $exit_code
+              echo "INFO found previous releases with major prefix $major"
+              assigne_milestone=$(echo ${latest_released} | awk -F. -v OFS=. '{$NF += 1; print; exit}')
             fi
           else
             assigne_milestone="${TARGET_MILESTONE}"
