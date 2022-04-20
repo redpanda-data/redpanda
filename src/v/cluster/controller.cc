@@ -72,8 +72,6 @@ ss::future<> controller::wire_up() {
     return _as.start()
       .then([this] { return _members_table.start(); })
       .then([this] { return _feature_table.start(); })
-      .then(
-        [this] { return _feature_table.invoke_on_all(&feature_table::start); })
       .then([this] {
           return _partition_allocator.start_single(
             std::ref(_members_table),
@@ -105,6 +103,8 @@ ss::future<> controller::start() {
       .then([this] { return _partition_leaders.start(std::ref(_tp_state)); })
       .then(
         [this] { return _drain_manager.start(std::ref(_partition_manager)); })
+      .then(
+        [this] { return _feature_table.invoke_on_all(&feature_table::start); })
       .then([this] {
           return _members_manager.start_single(
             _raft0,
