@@ -11,6 +11,7 @@ from math import floor
 from time import time
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
+from ducktape.mark import ok_to_fail
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
@@ -78,6 +79,7 @@ class NodeMetricsTest(RedpandaTest):
         new_free = self._node_disk_free_bytes()
         return self._count_greater(orig_free, new_free) > 0
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/4318
     @cluster(num_nodes=3)
     def test_node_storage_metrics(self):
 
