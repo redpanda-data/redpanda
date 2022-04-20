@@ -62,13 +62,16 @@ func newListCommand(fs afero.Fs) *cobra.Command {
 			}
 			for _, b := range bs {
 				if b.IsAlive != nil {
-					headers = append(headers, "Is-Alive")
+					headers = append(headers, "Is-Alive", "Broker-Version")
 					orig := args
 					args = func(b *admin.Broker) []interface{} {
-						return append(orig(b), *b.IsAlive)
+						return append(orig(b), *b.IsAlive, b.Version)
 					}
 					break
 				}
+			}
+			if len(headers) == 3 {
+				headers = append(headers, "Broker-Version")
 			}
 			tw := out.NewTable(headers...)
 			defer tw.Flush()
