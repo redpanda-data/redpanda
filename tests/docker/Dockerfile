@@ -33,11 +33,12 @@ RUN git -C /opt clone --branch ducktape2 https://github.com/redpanda-data/kafka-
     cd /opt/kafka-streams-examples && mvn -DskipTests=true clean package
 
 # Install our in-tree Java test clientst
-COPY --chown=0:0 tests/java /tmp/java
-RUN mvn clean package --batch-mode --file /tmp/java/kafka-verifier --define buildDir=/opt/kafka-verifier/
-RUN mvn clean package --batch-mode --file /tmp/java/compacted-log-verifier --define buildDir=/opt/compacted-log-verifier
-RUN mvn clean package --batch-mode --file /tmp/java/tx-verifier --define buildDir=/opt/tx-verifier
-RUN mvn clean package --batch-mode --file /tmp/java/e2e-verifiers --define buildDir=/opt/e2e-verifiers
+RUN mkdir -p /opt/redpanda-tests
+COPY --chown=0:0 tests/java /opt/redpanda-tests/java
+RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/kafka-verifier --define buildDir=/opt/kafka-verifier/
+RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/compacted-log-verifier --define buildDir=/opt/compacted-log-verifier
+RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/tx-verifier --define buildDir=/opt/tx-verifier
+RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/e2e-verifiers --define buildDir=/opt/e2e-verifiers
 
 # - install distro-packaged depedencies
 # - allow user env variables in ssh sessions
@@ -111,8 +112,8 @@ RUN git -C /opt clone https://github.com/Shopify/sarama.git && \
     cd /opt/sarama/examples/sasl_scram_client && go mod tidy && go build
 
 # Install our in-tree go tests
-COPY --chown=0:0 tests/go /tmp/go
-RUN cd /tmp/go/sarama/produce_test && go mod tidy && go build
+COPY --chown=0:0 tests/go /opt/redpanda-tests/go
+RUN cd /opt/redpanda-tests/go/sarama/produce_test && go mod tidy && go build
 
 # Install franz-go
 RUN git -C /opt clone https://github.com/twmb/franz-go.git && cd /opt/franz-go && \
