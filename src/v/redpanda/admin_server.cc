@@ -1575,6 +1575,31 @@ model::node_id parse_broker_id(const ss::httpd::request& req) {
     }
 }
 
+static ss::httpd::broker_json::maintenance_status fill_maintenance_status(
+  const std::optional<cluster::drain_manager::drain_status>& status) {
+    ss::httpd::broker_json::maintenance_status ret;
+    if (status) {
+        const auto& s = status.value();
+        ret.draining = true;
+        ret.finished = s.finished;
+        ret.errors = s.errors;
+        ret.partitions = s.partitions.value_or(0);
+        ret.transferring = s.transferring.value_or(0);
+        ret.eligible = s.eligible.value_or(0);
+        ret.failed = s.failed.value_or(0);
+    } else {
+        ret.draining = false;
+        // ensure that the output json has all fields
+        ret.finished = false;
+        ret.errors = false;
+        ret.partitions = 0;
+        ret.transferring = 0;
+        ret.eligible = 0;
+        ret.failed = 0;
+    }
+    return ret;
+}
+
 void admin_server::register_broker_routes() {
     register_route<user>(
       ss::httpd::broker_json::get_cluster_view,
@@ -1683,6 +1708,12 @@ void admin_server::register_broker_routes() {
                       "{}", ns.membership_state);
                     b.is_alive = (bool)ns.is_alive;
 
+                    // ensure maintenance status is filled in even if it isn't
+                    // found in the report below. if it is found then this
+                    // filler/default value will be replaced.
+                    b.maintenance_status = fill_maintenance_status(
+                      std::nullopt);
+
                     auto r_it = std::find_if(
                       h_report.value().node_reports.begin(),
                       h_report.value().node_reports.end(),
@@ -1698,6 +1729,8 @@ void admin_server::register_broker_routes() {
                             dsi.total = ds.total;
                             b.disk_space.push(dsi);
                         }
+                        b.maintenance_status = fill_maintenance_status(
+                          r_it->drain_status);
                     }
                 }
 
@@ -1708,19 +1741,33 @@ void admin_server::register_broker_routes() {
 
     register_route<user>(
       ss::httpd::broker_json::get_broker,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
           model::node_id id = parse_broker_id(*req);
           auto broker = _metadata_cache.local().get_broker(id);
           if (!broker) {
               throw ss::httpd::not_found_exception(
                 fmt::format("broker with id: {} not found", id));
           }
+
+          auto maybe_drain_status = co_await _controller->get_health_monitor()
+                                      .local()
+                                      .get_node_drain_status(
+                                        id, model::time_from_now(5s));
+          if (maybe_drain_status.has_error()) {
+              co_await throw_on_error(
+                *req, maybe_drain_status.error(), model::controller_ntp, id);
+          }
+
           ss::httpd::broker_json::broker ret;
           ret.node_id = (*broker)->id();
           ret.num_cores = (*broker)->properties().cores;
           ret.membership_status = fmt::format(
             "{}", (*broker)->get_membership_state());
-          return ss::make_ready_future<ss::json::json_return_type>(ret);
+          ret.maintenance_status = fill_maintenance_status(
+            maybe_drain_status.value());
+
+          co_return ret;
       });
 
     register_route<superuser>(
