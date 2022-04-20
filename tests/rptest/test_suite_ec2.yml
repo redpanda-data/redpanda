@@ -4,17 +4,12 @@ ec2:
     - tests
 
   excluded:
-    - tests/retention_policy_test.py # Redpanda node failed to stop in 30 second
-    - tests/cluster_metadata_test.py # OK looks like iptable issues
-    - tests/compacted_topic_verifier_test.py # OK missing compacted verifier dependency
     - tests/librdkafka_test.py # normally disabled
+    - tests/metrics_reporter_test.py # num_nodes / feature
     - tests/archival_test.py # s3 setup
-    - tests/cluster_config_test.py # central config feature
     - tests/e2e_shadow_indexing_test.py # num_nodes / s3 setup
     - tests/shadow_indexing_tx_test.py # s3 setup
     - tests/topic_recovery_test.py # s3 setup
-    - tests/tx_admin_api_test.py # no in 21.11.3
-    - tests/metrics_reporter_test.py # num_nodes / feature
     - tests/wasm_filter_test.py # no wasm
     - tests/wasm_failure_recovery_test.py # no wasm
     - tests/wasm_identity_test.py # no wasm
