@@ -585,6 +585,10 @@ class RedpandaService(Service):
             status = None
             try:
                 status = Admin.ready(node).get("status")
+            except requests.exceptions.ConnectionError:
+                self.logger.debug(
+                    f"node {node.name} not yet accepting connections")
+                return False
             except:
                 self.logger.exception(
                     f"error on getting status from {node.account.hostname}")
