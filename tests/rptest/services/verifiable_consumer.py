@@ -321,7 +321,7 @@ class VerifiableConsumer(BackgroundThreadService):
             self.global_committed[tp] = offset
 
     def start_cmd(self, node):
-        cmd = "java -cp /tmp/java/e2e-verifiers/target/e2e-verifiers-1.0.jar"
+        cmd = "java -cp /opt/redpanda-tests/java/e2e-verifiers/target/e2e-verifiers-1.0.jar"
         cmd += " -Dlog4j.configuration=file:%s" % VerifiableConsumer.LOG4J_CONFIG
         cmd += " org.apache.kafka.tools.VerifiableConsumer"
         if self.on_record_consumed:

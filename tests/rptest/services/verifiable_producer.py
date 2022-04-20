@@ -259,7 +259,7 @@ class VerifiableProducer(BackgroundThreadService):
                         self.clean_shutdown_nodes.add(node)
 
     def start_cmd(self, idx):
-        cmd = "java -cp /tmp/java/e2e-verifiers/target/e2e-verifiers-1.0.jar"
+        cmd = "java -cp /opt/redpanda-tests/java/e2e-verifiers/target/e2e-verifiers-1.0.jar"
         cmd += " -Dlog4j.configuration=file:%s" % VerifiableProducer.LOG4J_CONFIG
         cmd += " org.apache.kafka.tools.VerifiableProducer "
         cmd += " --topic %s --broker-list %s" % (self.topic,
