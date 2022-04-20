@@ -270,6 +270,14 @@ feature_table::resolve_name(std::string_view feature_name) const {
     return std::nullopt;
 }
 
+/*
+ * used to provide access to the feature table in tight corners and dark places
+ * see feature_table::is_active_local(...) for more details. don't use this
+ * variable directly.
+ */
+static thread_local std::optional<std::reference_wrapper<feature_table>>
+  local_feature_table;
+
 ss::future<> feature_table::start() {
     local_feature_table = *this;
     return ss::now();
@@ -278,6 +286,13 @@ ss::future<> feature_table::start() {
 ss::future<> feature_table::stop() {
     local_feature_table = std::nullopt;
     return ss::now();
+}
+
+std::optional<bool> feature_table::is_active_local(feature f) {
+    if (local_feature_table.has_value()) {
+        return local_feature_table.value().get().is_active(f);
+    }
+    return std::nullopt;
 }
 
 } // namespace cluster

@@ -212,15 +212,6 @@ private:
 
 std::string_view to_string_view(feature);
 
-/*
- * used to provide access to the feature table in tight corners and dark places
- * see feature_table::is_active_local(...) for more details. don't use this
- * variable directly.
- */
-class feature_table;
-inline thread_local std::optional<std::reference_wrapper<feature_table>>
-  local_feature_table;
-
 /**
  * To enable all shards to efficiently check enablement of features
  * in their hot paths, the cluster logical version and features
@@ -293,12 +284,7 @@ public:
      * networking and RPC, and there will likely be a more holistic solution to
      * this challenge introduced in a near term release.
      */
-    static std::optional<bool> is_active_local(feature f) {
-        if (local_feature_table) {
-            return local_feature_table->get().is_active(f);
-        }
-        return std::nullopt;
-    }
+    static std::optional<bool> is_active_local(feature f);
 
 private:
     // Only for use by our friends feature backend & manager
