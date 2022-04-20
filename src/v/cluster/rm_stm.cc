@@ -199,6 +199,7 @@ rm_stm::rm_stm(
                          .abort_timed_out_transactions_interval_ms.value())
   , _abort_index_segment_size(
       config::shard_local_cfg().abort_index_segment_size.value())
+  , _seq_table_min_size(config::shard_local_cfg().seq_table_min_size.value())
   , _recovery_policy(
       config::shard_local_cfg().rm_violation_recovery_policy.value())
   , _transactional_id_expiration(
@@ -216,6 +217,18 @@ rm_stm::rm_stm(
         vassert(false, "Unknown recovery policy: {}", _recovery_policy);
     }
     auto_abort_timer.set_callback([this] { abort_old_txes(); });
+}
+
+bool rm_stm::check_tx_permitted() {
+    if (_c->log_config().is_compacted()) {
+        vlog(
+          clusterlog.error,
+          "Can't process a transactional request to {}. Compacted topic "
+          "doesn't support transactional processing.",
+          _c->ntp());
+        return false;
+    }
+    return true;
 }
 
 ss::future<checked<model::term_id, tx_errc>> rm_stm::begin_tx(
@@ -237,6 +250,10 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   std::chrono::milliseconds transaction_timeout_ms) {
+    if (!check_tx_permitted()) {
+        co_return tx_errc::request_rejected;
+    }
+
     if (!_c->is_leader()) {
         co_return tx_errc::leader_not_found;
     }
@@ -343,6 +360,10 @@ ss::future<tx_errc> rm_stm::do_prepare_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
+    if (!check_tx_permitted()) {
+        co_return tx_errc::request_rejected;
+    }
+
     if (!co_await sync(timeout)) {
         co_return tx_errc::stale;
     }
@@ -452,6 +473,10 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
+    if (!check_tx_permitted()) {
+        co_return tx_errc::request_rejected;
+    }
+
     // doesn't make sense to fence off a commit because transaction
     // manager has already decided to commit and acked to a client
     if (!co_await sync(timeout)) {
@@ -617,6 +642,10 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
   model::producer_identity pid,
   std::optional<model::tx_seq> tx_seq,
   model::timeout_clock::duration timeout) {
+    if (!check_tx_permitted()) {
+        co_return tx_errc::request_rejected;
+    }
+
     // doesn't make sense to fence off an abort because transaction
     // manager has already decided to abort and acked to a client
     if (!co_await sync(timeout)) {
@@ -767,6 +796,10 @@ void rm_stm::set_seq(model::batch_identity bid, model::offset last_offset) {
 
 ss::future<result<raft::replicate_result>>
 rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
+    if (!check_tx_permitted()) {
+        co_return errc::generic_tx_error;
+    }
+
     if (!co_await sync(_sync_timeout)) {
         co_return errc::not_leader;
     }
@@ -982,10 +1015,37 @@ void rm_stm::compact_snapshot() {
     if (cutoff_timestamp <= _oldest_session.value()) {
         return;
     }
+
+    if (_log_state.seq_table.size() <= _seq_table_min_size) {
+        return;
+    }
+
+    if (_log_state.seq_table.size() == 0) {
+        return;
+    }
+
+    std::vector<model::timestamp::type> lw_tss;
+    lw_tss.reserve(_log_state.seq_table.size());
+    for (auto it = _log_state.seq_table.cbegin();
+         it != _log_state.seq_table.cend();
+         it++) {
+        lw_tss.push_back(it->second.last_write_timestamp);
+    }
+    std::sort(lw_tss.begin(), lw_tss.end());
+    auto pivot = lw_tss[lw_tss.size() - 1 - _seq_table_min_size];
+
+    if (pivot < cutoff_timestamp) {
+        cutoff_timestamp = pivot;
+    }
+
     auto next_oldest_session = model::timestamp::now();
+    auto size = _log_state.seq_table.size();
     for (auto it = _log_state.seq_table.cbegin();
          it != _log_state.seq_table.cend();) {
-        if (it->second.last_write_timestamp < cutoff_timestamp) {
+        if (
+          size > _seq_table_min_size
+          && it->second.last_write_timestamp <= cutoff_timestamp) {
+            size--;
             _log_state.seq_table.erase(it++);
         } else {
             next_oldest_session = std::min(
@@ -1292,8 +1352,8 @@ void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
         } else {
             seq_it->second.update(bid.last_seq, last_offset);
         }
-        seq_it->second.last_write_timestamp = bid.max_timestamp.value();
-        _oldest_session = std::min(_oldest_session, bid.max_timestamp);
+        seq_it->second.last_write_timestamp = bid.first_timestamp.value();
+        _oldest_session = std::min(_oldest_session, bid.first_timestamp);
     }
 
     if (bid.is_transactional) {
