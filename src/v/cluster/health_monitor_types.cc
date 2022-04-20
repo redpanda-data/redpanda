@@ -236,7 +236,7 @@ void adl<cluster::node_health_report>::to(
     if (has_maintenance_mode) {
         reflection::serialize(
           out,
-          r.current_version,
+          cluster::node_health_report::current_version,
           r.id,
           std::move(r.local_state.redpanda_version),
           r.local_state.uptime,
@@ -256,7 +256,7 @@ void adl<cluster::node_health_report>::to(
          */
         reflection::serialize(
           out,
-          r.current_version - 1,
+          1, // version right before maintenance mode added
           r.id,
           std::move(r.local_state.redpanda_version),
           r.local_state.uptime,
