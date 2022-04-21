@@ -562,7 +562,7 @@ topic_table::get_topic_assignments(model::topic_namespace_view tp) const {
     if (auto it = _topics.find(tp); it != _topics.end()) {
         return it->second.configuration.assignments;
     }
-    return {};
+    return std::nullopt;
 }
 
 std::optional<model::timestamp_type>
