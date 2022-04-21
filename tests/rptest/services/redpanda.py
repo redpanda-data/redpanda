@@ -20,7 +20,7 @@ import threading
 import collections
 import re
 import uuid
-from typing import Mapping, Optional
+from typing import Mapping, Optional, Union, Any
 
 import yaml
 from ducktape.services.service import Service
@@ -224,39 +224,71 @@ class ResourceSettings:
 
 class SISettings:
     """
-    Settings for shadow indexing stuff
+    Settings for shadow indexing stuff.
+    The defaults are for use with the default minio docker container, these
+    settings are altered in RedpandaTest if running on AWS.
     """
-    def __init__(self,
-                 *,
-                 log_segment_size=16 * 1000000,
-                 cloud_storage_access_key="panda-user",
-                 cloud_storage_secret_key="panda-secret",
-                 cloud_storage_region="panda-region",
-                 cloud_storage_bucket=f"panda-bucket-{uuid.uuid1()}",
-                 cloud_storage_api_endpoint="minio-s3",
-                 cloud_storage_api_endpoint_port=9000,
-                 cloud_storage_cache_size=160 * 1000000):
+    def __init__(
+            self,
+            *,
+            log_segment_size: int = 16 * 1000000,
+            cloud_storage_access_key: str = 'panda-user',
+            cloud_storage_secret_key: str = 'panda-secret',
+            cloud_storage_region: str = 'panda-region',
+            cloud_storage_bucket: Optional[str] = None,
+            cloud_storage_api_endpoint: str = 'minio-s3',
+            cloud_storage_api_endpoint_port: int = 9000,
+            cloud_storage_cache_size: int = 160 * 1000000,
+            cloud_storage_enable_remote_read: bool = True,
+            cloud_storage_enable_remote_write: bool = True,
+            cloud_storage_reconciliation_interval_ms: Optional[int] = None,
+            cloud_storage_max_connections: Optional[int] = None,
+            cloud_storage_disable_tls: bool = True):
         self.log_segment_size = log_segment_size
         self.cloud_storage_access_key = cloud_storage_access_key
         self.cloud_storage_secret_key = cloud_storage_secret_key
         self.cloud_storage_region = cloud_storage_region
-        self.cloud_storage_bucket = cloud_storage_bucket
+        self.cloud_storage_bucket = f'panda-bucket-{uuid.uuid1()}' if cloud_storage_bucket is None else cloud_storage_bucket
         self.cloud_storage_api_endpoint = cloud_storage_api_endpoint
         self.cloud_storage_api_endpoint_port = cloud_storage_api_endpoint_port
         self.cloud_storage_cache_size = cloud_storage_cache_size
+        self.cloud_storage_enable_remote_read = cloud_storage_enable_remote_read
+        self.cloud_storage_enable_remote_write = cloud_storage_enable_remote_write
+        self.cloud_storage_reconciliation_interval_ms = cloud_storage_reconciliation_interval_ms
+        self.cloud_storage_max_connections = cloud_storage_max_connections
+        self.cloud_storage_disable_tls = cloud_storage_disable_tls
 
-    def update_rp_conf(self, conf):
+        self.endpoint_url = f'http://{self.cloud_storage_api_endpoint}:{self.cloud_storage_api_endpoint_port}'
+
+    # Call this to update the extra_rp_conf
+    def update_rp_conf(self, conf) -> dict[str, Any]:
         conf["log_segment_size"] = self.log_segment_size
         conf["cloud_storage_access_key"] = self.cloud_storage_access_key
         conf["cloud_storage_secret_key"] = self.cloud_storage_secret_key
         conf["cloud_storage_region"] = self.cloud_storage_region
         conf["cloud_storage_bucket"] = self.cloud_storage_bucket
-        conf["cloud_storage_api_endpoint"] = self.cloud_storage_api_endpoint
-        conf[
-            "cloud_storage_api_endpoint_port"] = self.cloud_storage_api_endpoint_port
-        conf["cloud_storage_cache_size"] = self.cloud_storage_cache_size
         conf["cloud_storage_enabled"] = True
-        conf['cloud_storage_disable_tls'] = True
+        conf["cloud_storage_cache_size"] = self.cloud_storage_cache_size
+        conf[
+            'cloud_storage_enable_remote_read'] = self.cloud_storage_enable_remote_read
+        conf[
+            'cloud_storage_enable_remote_write'] = self.cloud_storage_enable_remote_write
+
+        if self.endpoint_url is not None:
+            conf[
+                "cloud_storage_api_endpoint"] = self.cloud_storage_api_endpoint
+            conf[
+                "cloud_storage_api_endpoint_port"] = self.cloud_storage_api_endpoint_port
+
+        if self.cloud_storage_disable_tls:
+            conf['cloud_storage_disable_tls'] = self.cloud_storage_disable_tls
+
+        if self.cloud_storage_reconciliation_interval_ms:
+            conf[
+                'cloud_storage_reconciliation_interval_ms'] = self.cloud_storage_reconciliation_interval_ms
+        if self.cloud_storage_max_connections:
+            conf[
+                'cloud_storage_max_connections'] = self.cloud_storage_max_connections
 
         return conf
 
@@ -684,12 +716,15 @@ class RedpandaService(Service):
             region=self._si_settings.cloud_storage_region,
             access_key=self._si_settings.cloud_storage_access_key,
             secret_key=self._si_settings.cloud_storage_secret_key,
-            endpoint=
-            f"http://{self._si_settings.cloud_storage_api_endpoint}:{self._si_settings.cloud_storage_api_endpoint_port}",
+            endpoint=self._si_settings.endpoint_url,
             logger=self.logger,
         )
 
         self._s3client.create_bucket(self._si_settings.cloud_storage_bucket)
+
+    def list_buckets(self) -> dict[str, Union[list, dict]]:
+        assert self._s3client is not None
+        return self._s3client.list_buckets()
 
     def delete_bucket_from_si(self):
         if self._s3client:
