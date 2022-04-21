@@ -77,6 +77,32 @@ class MaintenanceTest(RedpandaTest):
         else:
             return not status['draining']
 
+    def _verify_maintenance_status(self, node, draining):
+        """
+        Check that cluster reports maintenance status as expected through
+        both rpk status tooling as well as raw admin interface.
+        """
+        # get status for this node via rpk
+        node_id = self.redpanda.idx(node)
+        statuses = self.rpk.cluster_maintenance_status()
+        self.logger.debug(f"finding node_id {node_id} in rpk "
+                          "maintenance status: {statuses}")
+        rpk_status = None
+        for status in statuses:
+            if status.node_id == node_id:
+                rpk_status = status
+                break
+        if rpk_status is None:
+            return False
+
+        # get status for this node via admin interface
+        admin_status = self.admin.maintenance_status(node)
+        self.logger.debug(f"maintenance status from admin for "
+                          "{node.name}: {admin_status}")
+
+        # ensure that both agree on expected outcome
+        return admin_status["draining"] == rpk_status.draining == draining
+
     def _enable_maintenance(self, node):
         """
         1. Verifies that node is leader for some partitions
@@ -99,9 +125,9 @@ class MaintenanceTest(RedpandaTest):
 
         self.logger.debug(
             f"Checking that node {node.name} is not in maintenance mode")
-        status = self.admin.maintenance_status(node)
-        assert status[
-            "draining"] == False, f"Node {node.name} in maintenance mode"
+        wait_until(lambda: self._verify_maintenance_status(node, False),
+                   timeout_sec=30,
+                   backoff_sec=5)
 
         if self._use_rpk:
             self.rpk.cluster_maintenance_enable(node)
@@ -158,7 +184,7 @@ class MaintenanceTest(RedpandaTest):
         for node in self.redpanda.nodes:
             expect = False if node != target else target_expect
             wait_until(
-                lambda: self._in_maintenance_mode(node) == expect,
+                lambda: self._verify_maintenance_status(node, expect),
                 timeout_sec=30,
                 backoff_sec=5,
                 err_msg=f"expected {node.name} maintenance mode: {expect}")
