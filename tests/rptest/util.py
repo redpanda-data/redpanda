@@ -71,8 +71,8 @@ def wait_until_result(condition, *args, **kwargs):
         cond = condition()
         if isinstance(cond, tuple):
             head, *tail = cond
-            if len(tail) == 0:
-                res == None
+            if not tail:
+                res = None
             elif len(tail) == 1:
                 res = tail[0]
             else:
