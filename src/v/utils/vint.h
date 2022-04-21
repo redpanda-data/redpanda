@@ -14,6 +14,86 @@
 
 #include <cstdint>
 
+namespace unsigned_vint {
+/// At most 5 bytes are needed to encode a 32 bit value
+inline constexpr size_t max_length = 5;
+
+namespace detail {
+
+/// \brief almost identical impl to leveldb, made generic for c++
+/// friendliness
+/// https://github.com/google/leveldb/blob/201f52201f/util/coding.cc#L116
+template<typename Range>
+inline std::pair<uint64_t, size_t>
+deserialize(Range&& r, uint8_t limit) noexcept {
+    uint64_t result = 0;
+    size_t bytes_read = 0;
+    uint64_t shift = 0;
+    for (auto src = r.begin(); shift <= limit && src != r.end(); ++src) {
+        uint64_t byte = *src;
+        bytes_read++;
+        if (byte & 128) {
+            result |= ((byte & 127) << shift);
+        } else {
+            result |= byte << shift;
+            break;
+        }
+        shift += 7;
+    }
+    return {result, bytes_read};
+}
+} // namespace detail
+
+inline size_t serialize(uint64_t value, uint8_t* out) noexcept {
+    size_t bytes_used = 0;
+    if (value < 0x80) {
+        out[bytes_used++] = static_cast<uint8_t>(value);
+        return bytes_used;
+    }
+    out[bytes_used++] = static_cast<uint8_t>(value | 0x80);
+    value >>= 7;
+    if (value < 0x80) {
+        out[bytes_used++] = static_cast<uint8_t>(value);
+        return bytes_used;
+    }
+    do {
+        out[bytes_used++] = static_cast<uint8_t>(value | 0x80);
+        value >>= 7;
+    } while (unlikely(value >= 0x80));
+    out[bytes_used++] = static_cast<uint8_t>(value);
+    return bytes_used;
+}
+
+template<typename Range>
+inline std::pair<uint32_t, size_t> deserialize(Range&& r) noexcept {
+    /// Consume up to 5 iterations (0-4) of reading 7 bits each time
+    constexpr auto limit = ((max_length - 1) * 7);
+    auto [result, bytes_read] = detail::deserialize(
+      std::forward<Range>(r), limit);
+    return {static_cast<uint32_t>(result), bytes_read};
+}
+
+inline constexpr size_t size(uint64_t v) noexcept {
+    size_t len = 1;
+    while (v >= 128) {
+        v >>= 7;
+        len++;
+    }
+    return len;
+}
+
+inline bytes to_bytes(uint32_t value) noexcept {
+    // our bytes uses a short-string optimization of 31 bytes, at most
+    // unsigned_vint::max_length bytes will be used to allocate the encoded size
+    // at the start of the returned buffer
+    auto sz = size(static_cast<uint64_t>(value));
+    auto out = ss::uninitialized_string<bytes>(sz);
+    serialize(value, out.begin());
+    return out;
+}
+
+} // namespace unsigned_vint
+
 // class is actually zigzag vint; always signed ints
 // matches exactly the kafka encoding which uses protobuf
 namespace vint {
@@ -37,42 +117,14 @@ inline constexpr uint64_t encode_zigzag(int64_t v) noexcept {
 inline constexpr int64_t decode_zigzag(uint64_t v) noexcept {
     return (int64_t)((v >> 1) ^ (~(v & 1) + 1));
 }
-inline size_t serialize(const int64_t x, uint8_t* out) noexcept {
-    // *must* be named differently from input
-    uint64_t value = encode_zigzag(x);
-    size_t bytes_used = 0;
-    if (value < 0x80) {
-        out[bytes_used++] = static_cast<uint8_t>(value);
-        return bytes_used;
-    }
-    out[bytes_used++] = static_cast<uint8_t>(value | 0x80);
-    value >>= 7;
-    if (value < 0x80) {
-        out[bytes_used++] = static_cast<uint8_t>(value);
-        return bytes_used;
-    }
-    do {
-        out[bytes_used++] = static_cast<uint8_t>(value | 0x80);
-        value >>= 7;
-    } while (unlikely(value >= 0x80));
-    out[bytes_used++] = static_cast<uint8_t>(value);
-    return bytes_used;
-}
 inline constexpr size_t vint_size(const int64_t value) noexcept {
     uint64_t v = encode_zigzag(value);
-    size_t len = 1;
-    while (v >= 128) {
-        v >>= 7;
-        len++;
-    }
-    return len;
+    return unsigned_vint::size(v);
 }
-inline bytes to_bytes(int64_t value) noexcept {
-    // our bytes uses a short-string optimization of 31 bytes
-    auto out = ss::uninitialized_string<bytes>(max_length);
-    auto sz = serialize(value, out.data());
-    out.resize(sz);
-    return out;
+
+inline size_t serialize(const int64_t x, uint8_t* out) noexcept {
+    uint64_t value = encode_zigzag(x);
+    return unsigned_vint::serialize(value, out);
 }
 
 /// \brief almost identical impl to leveldb, made generic for c++
@@ -80,21 +132,21 @@ inline bytes to_bytes(int64_t value) noexcept {
 /// https://github.com/google/leveldb/blob/201f52201f/util/coding.cc#L116
 template<typename Range>
 inline std::pair<int64_t, size_t> deserialize(Range&& r) noexcept {
-    uint64_t result = 0;
-    size_t bytes_read = 0;
-    uint64_t shift = 0;
-    for (auto src = r.begin(); shift <= 63 && src != r.end(); ++src) {
-        uint64_t byte = *src;
-        bytes_read++;
-        if (byte & 128) {
-            result |= ((byte & 127) << shift);
-        } else {
-            result |= byte << shift;
-            break;
-        }
-        shift += 7;
-    }
+    /// Consume up to 10 iterations (0-9) of reading 7 bits each time
+    constexpr auto limit = ((max_length - 1) * 7);
+    auto [result, bytes_read] = unsigned_vint::detail::deserialize(
+      std::forward<Range>(r), limit);
     return {decode_zigzag(result), bytes_read};
+}
+
+inline bytes to_bytes(int64_t value) noexcept {
+    // our bytes uses a short-string optimization of 31 bytes, at most
+    // vint::max_length bytes will be used to allocate the encoded size at the
+    // start of the returned buffer
+    auto sz = vint_size(value);
+    auto out = ss::uninitialized_string<bytes>(sz);
+    serialize(value, out.begin());
+    return out;
 }
 
 } // namespace vint

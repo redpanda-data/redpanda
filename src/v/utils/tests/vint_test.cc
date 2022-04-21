@@ -31,8 +31,21 @@ void check_roundtrip_sweep(int64_t count) {
     }
 }
 
+void check_roundtrip_sweep_unsigned(const uint64_t count) {
+    for (uint64_t i = 0; i < count; i += 100000) {
+        const auto b = unsigned_vint::to_bytes(i);
+        const auto view = bytes_view(b);
+        const auto [deserialized, _] = unsigned_vint::deserialize(view);
+        BOOST_REQUIRE_EQUAL(deserialized, i);
+    }
+}
+
 } // namespace
 
 SEASTAR_THREAD_TEST_CASE(sanity_signed_sweep_64) {
     check_roundtrip_sweep(100000000);
+}
+
+SEASTAR_THREAD_TEST_CASE(sanity_unsigned_sweep_32) {
+    check_roundtrip_sweep_unsigned(100000000);
 }
