@@ -70,9 +70,6 @@ func newListCommand(fs afero.Fs) *cobra.Command {
 					break
 				}
 			}
-			if len(headers) == 3 {
-				headers = append(headers, "Broker-Version")
-			}
 			tw := out.NewTable(headers...)
 			defer tw.Flush()
 			for _, b := range bs {
