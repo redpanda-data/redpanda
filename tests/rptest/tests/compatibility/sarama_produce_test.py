@@ -39,7 +39,7 @@ class SaramaProduceTest(RedpandaTest):
 
     @cluster(num_nodes=3, log_allow_list=TX_ERROR_LOGS)
     def test_produce(self):
-        verifier_bin = "/opt/redpanda-tests/sarama/produce_test/produce_test"
+        verifier_bin = "/opt/redpanda-tests/go/sarama/produce_test/produce_test"
 
         self.redpanda.logger.info("creating topics")
 
