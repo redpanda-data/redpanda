@@ -309,6 +309,8 @@ class RedpandaService(Service):
 
     DEDICATED_NODE_KEY = "dedicated_nodes"
 
+    RAISE_ON_ERRORS_KEY = "raise_on_errors"
+
     LOG_LEVEL_KEY = "redpanda_log_level"
     DEFAULT_LOG_LEVEL = "info"
 
@@ -394,6 +396,9 @@ class RedpandaService(Service):
                                   self.SUPERUSER_CREDENTIALS.password))
         self._started = []
         self._security_config = dict()
+
+        self._raise_on_errors = self._context.globals.get(
+            self.RAISE_ON_ERRORS_KEY, True)
 
         self._dedicated_nodes = self._context.globals.get(
             self.DEDICATED_NODE_KEY, False)
@@ -871,8 +876,9 @@ class RedpandaService(Service):
             self.logger.info(
                 f"Scanning node {node.account.hostname} log for errors...")
 
+            match_errors = "-e ERROR" if self._raise_on_errors else ""
             for line in node.account.ssh_capture(
-                    f"grep -e ERROR -e Segmentation\ fault -e [Aa]ssert {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
+                    f"grep {match_errors} -e Segmentation\ fault -e [Aa]ssert {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
             ):
                 line = line.strip()
 
