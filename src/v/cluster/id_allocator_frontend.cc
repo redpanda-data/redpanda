@@ -72,7 +72,7 @@ id_allocator_frontend::allocate_id(model::timeout_clock::duration timeout) {
 
     auto _self = _controller->self();
 
-    auto r = allocate_id_reply{0, errc::no_leader_controller};
+    auto r = allocate_id_reply{0, errc::not_leader};
 
     auto retries = _metadata_dissemination_retries;
     auto delay_ms = _metadata_dissemination_retry_delay_ms;
