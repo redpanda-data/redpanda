@@ -15,8 +15,8 @@ import (
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 )
 
-// On MacOS this is a no-op.
 func addPlatformDependentCmds(
 	fs afero.Fs, mgr config.Manager, cmd *cobra.Command,
 ) {
+	cmd.AddCommand(NewRedpandaDarwinCommand(fs))
 }
