@@ -41,6 +41,8 @@ constexpr error_code map_topic_error_code(cluster::errc code) {
         return error_code::invalid_topic_exception;
     case cluster::errc::no_eligible_allocation_nodes:
         return error_code::broker_not_available;
+    case cluster::errc::not_leader:
+        return error_code::not_coordinator;
     case cluster::errc::replication_error:
     case cluster::errc::shutting_down:
     case cluster::errc::join_request_dispatch_error:
@@ -48,7 +50,6 @@ constexpr error_code map_topic_error_code(cluster::errc code) {
     case cluster::errc::seed_servers_exhausted:
     case cluster::errc::auto_create_topics_exception:
     case cluster::errc::partition_not_exists:
-    case cluster::errc::not_leader:
     case cluster::errc::partition_already_exists:
     case cluster::errc::waiting_for_recovery:
     case cluster::errc::update_in_progress:
