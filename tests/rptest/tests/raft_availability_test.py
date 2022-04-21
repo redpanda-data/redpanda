@@ -477,6 +477,37 @@ class RaftAvailabilityTest(RedpandaTest):
             for i in range(0, 128):
                 self._ping_pong(ELECTION_TIMEOUT * 6)
 
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_id_allocator_leader_isolation(self):
+        """
+        Isolate id allocator leader. This test validates whether the cluster
+        is still available when `kafka_internal/id_allocator` leader has been isolated.
+        """
+        admin = Admin(self.redpanda)
+        self._expect_available()
+        # Find which node is the leader for id allocator partition
+        admin.wait_stable_configuration(namespace='kafka_internal',
+                                        topic='id_allocator',
+                                        replication=3)
+        initial_leader_id = admin.get_partition_leader(
+            namespace='kafka_internal', topic='id_allocator', partition=0)
+        leader_node = self.redpanda.get_node(initial_leader_id)
+        self.logger.info(
+            f"kafka_internal/id_allocator/0 leader: {initial_leader_id}, node: {leader_node.account.hostname}"
+        )
+
+        self._expect_available()
+
+        with FailureInjector(self.redpanda) as fi:
+            # isolate id_allocator
+            fi.inject_failure(
+                FailureSpec(FailureSpec.FAILURE_ISOLATE,
+                            self.redpanda.get_node(initial_leader_id)))
+
+            # expect messages to be produced and consumed without a timeout
+            for i in range(0, 128):
+                self._ping_pong(ELECTION_TIMEOUT * 6)
+
     @cluster(num_nodes=3)
     def test_initial_leader_stability(self):
         """
