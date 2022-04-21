@@ -71,7 +71,13 @@ class MultiRestartTest(EndToEndTest):
     @cluster(num_nodes=5, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_recovery_after_multiple_restarts(self):
         self.start_redpanda(3, extra_rp_conf=self._extra_rp_conf)
-        spec = TopicSpec(partition_count=60, replication_factor=3)
+
+        # If a debug build has to do a restart across a significant
+        # number of partitions, it gets slow.  Use fewer partitions
+        # on debug builds.
+        partition_count = 10 if self.debug_mode else 60
+
+        spec = TopicSpec(partition_count=partition_count, replication_factor=3)
 
         DefaultClient(self.redpanda).create_topic(spec)
         self.topic = spec.name
