@@ -165,7 +165,6 @@ class ManyPartitionsTest(RedpandaTest):
         * Run a general produce+consume workload to check that the system remains in
           a functional state.
         """
-
         replication_factor = 3
 
         # Do a phony allocation of all the non-redpanda nodes, so that we do not
@@ -192,9 +191,12 @@ class ManyPartitionsTest(RedpandaTest):
         # - Relies on our container environment telling us the host's real memory size,
         #   rather than just what's assigned to this container (which is the case with
         #   podman and docker at time of writing)
-        total_memory = psutil.virtual_memory().total
-        self.logger.info(f"Memory: {total_memory}")
-        if total_memory < resource_settings.memory_mb * 1024 * 1024 * 3:
+        if self.redpanda.dedicated_nodes:
+            total_memory = self.redpanda.get_node_memory_mb() * 3
+        else:
+            total_memory = psutil.virtual_memory().total
+        self.logger.info(f"Total memory: {total_memory}")
+        if resource_settings.memory_mb is not None and total_memory < resource_settings.memory_mb * 1024 * 1024 * 3:
             if self.ci_mode:
                 raise RuntimeError(
                     f"Too little memory {total_memory} on test machine")
