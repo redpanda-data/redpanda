@@ -54,6 +54,8 @@ public:
       ss::sharded<raft::group_manager>&,
       ss::sharded<ss::abort_source>&,
       ss::sharded<storage::node_api>&,
+      ss::sharded<drain_manager>&,
+      ss::sharded<feature_table>&,
       config::binding<size_t> storage_min_bytes_threshold,
       config::binding<unsigned> storage_min_percent_threshold);
 
@@ -70,6 +72,9 @@ public:
 
     cluster::notification_id_type register_node_callback(health_node_cb_t cb);
     void unregister_node_callback(cluster::notification_id_type id);
+
+    ss::future<result<std::optional<cluster::drain_manager::drain_status>>>
+      get_node_drain_status(model::node_id, model::timeout_clock::time_point);
 
 private:
     /**
@@ -109,7 +114,8 @@ private:
     ss::future<> collect_cluster_health();
     ss::future<result<node_health_report>>
       collect_remote_node_health(model::node_id);
-
+    ss::future<std::error_code> maybe_refresh_cluster_health(
+      force_refresh, model::timeout_clock::time_point);
     ss::future<std::error_code> refresh_cluster_health_cache(force_refresh);
     ss::future<std::error_code>
       dispatch_refresh_cluster_health_request(model::node_id);
@@ -140,6 +146,8 @@ private:
     ss::sharded<partition_manager>& _partition_manager;
     ss::sharded<raft::group_manager>& _raft_manager;
     ss::sharded<ss::abort_source>& _as;
+    ss::sharded<drain_manager>& _drain_manager;
+    ss::sharded<feature_table>& _feature_table;
 
     ss::lowres_clock::time_point _last_refresh;
     ss::lw_shared_ptr<abortable_refresh_request> _refresh_request;

@@ -47,6 +47,8 @@ health_monitor_backend::health_monitor_backend(
   ss::sharded<raft::group_manager>& raft_manager,
   ss::sharded<ss::abort_source>& as,
   ss::sharded<storage::node_api>& storage_api,
+  ss::sharded<drain_manager>& drain_manager,
+  ss::sharded<feature_table>& feature_table,
   config::binding<size_t> storage_min_bytes_threshold,
   config::binding<unsigned> storage_min_percent_threshold)
   : _raft0(std::move(raft0))
@@ -55,6 +57,8 @@ health_monitor_backend::health_monitor_backend(
   , _partition_manager(partition_manager)
   , _raft_manager(raft_manager)
   , _as(as)
+  , _drain_manager(drain_manager)
+  , _feature_table(feature_table)
   , _local_monitor(
       std::move(storage_min_bytes_threshold),
       std::move(storage_min_percent_threshold),
@@ -208,6 +212,10 @@ std::optional<node_health_report> health_monitor_backend::build_node_report(
     if (f.include_partitions) {
         report.topics = filter_topic_status(it->second.topics, f.ntp_filters);
     }
+
+    report.drain_status = it->second.drain_status;
+    report.include_drain_status = _feature_table.local().is_active(
+      cluster::feature::maintenance_mode);
 
     return report;
 }
@@ -386,6 +394,17 @@ health_monitor_backend::get_cluster_health(
       "requesing cluster state report with filter: {}, force refresh: {}",
       filter,
       refresh);
+    auto ec = co_await maybe_refresh_cluster_health(refresh, deadline);
+    if (ec) {
+        co_return ec;
+    }
+
+    co_return build_cluster_report(filter);
+}
+
+ss::future<std::error_code>
+health_monitor_backend::maybe_refresh_cluster_health(
+  force_refresh refresh, model::timeout_clock::time_point deadline) {
     auto const need_refresh = refresh
                               || _last_refresh + max_metadata_age()
                                    < ss::lowres_clock::now();
@@ -411,8 +430,7 @@ health_monitor_backend::get_cluster_health(
             co_return errc::timeout;
         }
     }
-
-    co_return build_cluster_report(filter);
+    co_return errc::success;
 }
 
 cluster_health_report
@@ -576,6 +594,10 @@ health_monitor_backend::collect_current_node_health(node_report_filter filter) {
     ret.local_state.logical_version
       = feature_table::get_latest_logical_version();
 
+    ret.drain_status = co_await _drain_manager.local().status();
+    ret.include_drain_status = _feature_table.local().is_active(
+      cluster::feature::maintenance_mode);
+
     if (filter.include_partitions) {
         ret.topics = co_await collect_topic_status(
           std::move(filter.ntp_filters));
@@ -672,6 +694,23 @@ std::chrono::milliseconds health_monitor_backend::tick_interval() {
 
 std::chrono::milliseconds health_monitor_backend::max_metadata_age() {
     return config::shard_local_cfg().health_monitor_max_metadata_age();
+}
+
+ss::future<result<std::optional<cluster::drain_manager::drain_status>>>
+health_monitor_backend::get_node_drain_status(
+  model::node_id node_id, model::timeout_clock::time_point deadline) {
+    auto ec = co_await maybe_refresh_cluster_health(
+      force_refresh::no, deadline);
+    if (ec) {
+        co_return ec;
+    }
+
+    auto it = _reports.find(node_id);
+    if (it == _reports.end()) {
+        co_return errc::node_does_not_exists;
+    }
+
+    co_return it->second.drain_status;
 }
 
 } // namespace cluster
