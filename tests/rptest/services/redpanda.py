@@ -807,6 +807,10 @@ class RedpandaService(Service):
         assert self._s3client is not None
         return self._s3client.list_buckets()
 
+    @property
+    def s3_client(self):
+        return self._s3client
+
     def delete_bucket_from_si(self):
         assert self._s3client is not None
 
