@@ -72,7 +72,7 @@ class RedpandaTest(Test):
                 self.si_settings.endpoint_url = None  # None so boto auto-gens the endpoint url
                 self.si_settings.cloud_storage_disable_tls = False  # SI will fail to create archivers if tls is disabled
                 self.si_settings.cloud_storage_region = cloud_storage_region
-                self.si_settings.port = 443
+                self.si_settings.cloud_storage_api_endpoint_port = 443
         else:
             self.logger.debug(
                 'No AWS credentials supplied, assuming minio defaults')
@@ -111,6 +111,10 @@ class RedpandaTest(Test):
         developer environments (e.g. laptops) but apply stricter checks in CI.
         """
         return os.environ.get('CI', None) != 'false'
+
+    @property
+    def s3_client(self):
+        return self.redpanda.s3_client
 
     def setUp(self):
         self.redpanda.start()

@@ -9,8 +9,7 @@
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.archival.s3_client import S3Client
-from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda import RedpandaService, SISettings
 
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
@@ -82,15 +81,15 @@ ManifestRecord = namedtuple('ManifestRecord', [
 class firewall_blocked:
     """Temporary firewall barrier that isolates set of redpanda
     nodes from the ip-address"""
-    def __init__(self, nodes, blocked_ip):
+    def __init__(self, nodes, blocked_port):
         self._nodes = nodes
-        self._ip = blocked_ip
+        self._port = blocked_port
 
     def __enter__(self):
         """Isolate certain ips from the nodes using firewall rules"""
         cmd = []
-        cmd.append(f"iptables -A INPUT -s {self._ip} -j DROP")
-        cmd.append(f"iptables -A OUTPUT -d {self._ip} -j DROP")
+        cmd.append(f"iptables -A INPUT -p tcp --sport {self._port} -j DROP")
+        cmd.append(f"iptables -A OUTPUT -p tcp --dport {self._port} -j DROP")
         cmd = " && ".join(cmd)
         for node in self._nodes:
             node.account.ssh_output(cmd, allow_fail=False)
@@ -98,8 +97,8 @@ class firewall_blocked:
     def __exit__(self, type, value, traceback):
         """Remove firewall rules that isolate ips from the nodes"""
         cmd = []
-        cmd.append(f"iptables -D INPUT -s {self._ip} -j DROP")
-        cmd.append(f"iptables -D OUTPUT -d {self._ip} -j DROP")
+        cmd.append(f"iptables -D INPUT -p tcp --sport {self._port} -j DROP")
+        cmd.append(f"iptables -D OUTPUT -p tcp --dport {self._port} -j DROP")
         cmd = " && ".join(cmd)
         for node in self._nodes:
             node.account.ssh_output(cmd, allow_fail=False)
@@ -162,55 +161,38 @@ class ArchivalTest(RedpandaTest):
     log_segment_size = 1048576  # 1MB
     log_compaction_interval_ms = 10000
 
-    s3_host_name = "minio-s3"
-    s3_access_key = "panda-user"
-    s3_secret_key = "panda-secret"
-    s3_region = "panda-region"
     s3_topic_name = "panda-topic"
-    topics = (TopicSpec(name='panda-topic',
+    topics = (TopicSpec(name=s3_topic_name,
                         partition_count=1,
                         replication_factor=3), )
 
     def __init__(self, test_context):
-        self.s3_bucket_name = f"panda-bucket-{uuid.uuid1()}"
-        self._extra_rp_conf = dict(
-            cloud_storage_enabled=True,
-            cloud_storage_access_key=ArchivalTest.s3_access_key,
-            cloud_storage_secret_key=ArchivalTest.s3_secret_key,
-            cloud_storage_region=ArchivalTest.s3_region,
-            cloud_storage_bucket=self.s3_bucket_name,
-            cloud_storage_disable_tls=True,
-            cloud_storage_api_endpoint=ArchivalTest.s3_host_name,
-            cloud_storage_api_endpoint_port=9000,
-            cloud_storage_reconciliation_interval_ms=500,
-            cloud_storage_max_connections=5,
+        si_settings = SISettings(cloud_storage_reconciliation_interval_ms=500,
+                                 cloud_storage_max_connections=5,
+                                 log_segment_size=self.log_segment_size)
+        self.s3_bucket_name = si_settings.cloud_storage_bucket
+
+        extra_rp_conf = dict(
             log_compaction_interval_ms=self.log_compaction_interval_ms,
-            log_segment_size=self.log_segment_size,
-        )
+            log_segment_size=self.log_segment_size)
+
         if test_context.function_name == "test_timeboxed_uploads":
-            self._extra_rp_conf.update(
-                log_segment_size=1024 * 1024 * 1024,
+            si_settings.log_segment_size = 1024 * 1024 * 1024
+            extra_rp_conf.update(
                 cloud_storage_segment_max_upload_interval_sec=1)
 
         super(ArchivalTest, self).__init__(test_context=test_context,
-                                           extra_rp_conf=self._extra_rp_conf)
+                                           extra_rp_conf=extra_rp_conf,
+                                           si_settings=si_settings)
+
+        self._s3_port = si_settings.cloud_storage_api_endpoint_port
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
         self.rpk = RpkTool(self.redpanda)
-        self.s3_client = S3Client(
-            region='panda-region',
-            access_key=u"panda-user",
-            secret_key=u"panda-secret",
-            endpoint=f'http://{ArchivalTest.s3_host_name}:9000',
-            logger=self.logger)
 
     def setUp(self):
-        self.s3_client.empty_bucket(self.s3_bucket_name)
-        self.s3_client.create_bucket(self.s3_bucket_name)
-        # Deletes in S3 are eventually consistent so we might still
-        # see previously removed objects for a while.
-        validate(self._check_bucket_is_emtpy, self.logger, 300)
         super().setUp()  # topic is created here
+
         # enable archival for topic
         for topic in self.topics:
             self.rpk.alter_topic_config(topic.name, 'redpanda.remote.write',
@@ -230,7 +212,7 @@ class ArchivalTest(RedpandaTest):
     @cluster(num_nodes=3, log_allow_list=CONNECTION_ERROR_LOGS)
     def test_isolate(self):
         """Verify that our isolate/rejoin facilities actually work"""
-        with firewall_blocked(self.redpanda.nodes, self._get_s3_endpoint_ip()):
+        with firewall_blocked(self.redpanda.nodes, self._s3_port):
             self.kafka_tools.produce(self.topic, 10000, 1024)
             time.sleep(10)  # can't busy wait here
 
@@ -251,7 +233,7 @@ class ArchivalTest(RedpandaTest):
     def test_reconnect(self):
         """Disconnect redpanda from S3, write data, connect redpanda to S3
         and check that the data is uploaded"""
-        with firewall_blocked(self.redpanda.nodes, self._get_s3_endpoint_ip()):
+        with firewall_blocked(self.redpanda.nodes, self._s3_port):
             self.kafka_tools.produce(self.topic, 10000, 1024)
             time.sleep(10)  # sleep is needed because we need to make sure that
             # reconciliation loop kicked in and started uploading
@@ -265,7 +247,7 @@ class ArchivalTest(RedpandaTest):
         and check that the data is uploaded"""
         self.kafka_tools.produce(self.topic, 1000, 1024)
         leaders = list(self._get_partition_leaders().values())
-        with firewall_blocked(leaders[0:1], self._get_s3_endpoint_ip()):
+        with firewall_blocked(leaders[0:1], self._s3_port):
             self.kafka_tools.produce(self.topic, 9000, 1024)
             time.sleep(10)  # sleep is needed because we need to make sure that
             # reconciliation loop kicked in and started uploading
@@ -278,7 +260,7 @@ class ArchivalTest(RedpandaTest):
         """Disconnect redpanda from S3 during the active upload, restore connection
         and check that everything is uploaded"""
         self.kafka_tools.produce(self.topic, 10000, 1024)
-        with firewall_blocked(self.redpanda.nodes, self._get_s3_endpoint_ip()):
+        with firewall_blocked(self.redpanda.nodes, self._s3_port):
             time.sleep(10)  # sleep is needed because we need to make sure that
             # reconciliation loop kicked in and started uploading
             # data, otherwse we can rejoin before archival storage
@@ -293,8 +275,7 @@ class ArchivalTest(RedpandaTest):
         for _ in range(0, 20):
             # upload data in batches
             if con_enabled:
-                with firewall_blocked(self.redpanda.nodes,
-                                      self._get_s3_endpoint_ip()):
+                with firewall_blocked(self.redpanda.nodes, self._s3_port):
                     self.kafka_tools.produce(self.topic, 500, 1024)
             else:
                 self.kafka_tools.produce(self.topic, 500, 1024)
@@ -425,7 +406,7 @@ class ArchivalTest(RedpandaTest):
             },
         )
 
-        with firewall_blocked(self.redpanda.nodes, self._get_s3_endpoint_ip()):
+        with firewall_blocked(self.redpanda.nodes, self._s3_port):
             produce_until_segments(redpanda=self.redpanda,
                                    topic=self.topic,
                                    partition_idx=0,
@@ -802,6 +783,13 @@ class ArchivalTest(RedpandaTest):
         def included(path):
             manifest_extension = ".json"
             return not path.endswith(manifest_extension)
+
+        objects = self.s3_client.list_objects(self.s3_bucket_name)
+        self.logger.info(
+            f"got {len(list(objects))} objects from bucket {self.s3_bucket_name}"
+        )
+        for o in objects:
+            self.logger.info(f"object: {o}")
 
         return {
             normalize(it.Key): (it.ETag, it.ContentLength)
