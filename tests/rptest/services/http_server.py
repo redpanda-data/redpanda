@@ -20,9 +20,7 @@ class HttpServer(BackgroundThreadService):
     Service wrapping simple HTTP server that logs requests to stdout
     """
 
-    ROOT_DIR = "/opt/python/simple_http_server"
     LOG_DIR = "/tmp/simple_http_server"
-    SCRIPT = os.path.join(ROOT_DIR, "simple_http_server.py")
     STDOUT_CAPTURE = os.path.join(LOG_DIR, "simple_http_server.stdout")
 
     logs = {
@@ -42,6 +40,11 @@ class HttpServer(BackgroundThreadService):
 
     def _worker(self, idx, node):
         node.account.ssh(f"mkdir -p {HttpServer.LOG_DIR}", allow_fail=False)
+
+        dir = os.path.dirname(os.path.realpath(__file__))
+        script_name = "simple_http_server.py"
+        src_path = os.path.join(dir, f"../../python/{script_name}")
+        node.account.copy_to(src_path, f"/tmp/{script_name}")
 
         cmd = f"python3 {HttpServer.SCRIPT} --port {self.port}"
         cmd += f" | tee -a {HttpServer.STDOUT_CAPTURE} &"
