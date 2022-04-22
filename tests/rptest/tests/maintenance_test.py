@@ -129,16 +129,20 @@ class MaintenanceTest(RedpandaTest):
                    timeout_sec=30,
                    backoff_sec=5)
 
-        if self._use_rpk:
-            self.rpk.cluster_maintenance_enable(node)
-        else:
-            self.admin.maintenance_start(node)
-
         self.logger.debug(
             f"Waiting for node {node.name} to enter maintenance mode")
-        wait_until(lambda: self._in_maintenance_mode(node),
-                   timeout_sec=30,
-                   backoff_sec=5)
+        if self._use_rpk:
+            self.rpk.cluster_maintenance_enable(node, wait=True)
+            # the node should now report itself in maintenance mode
+            assert self._in_maintenance_mode(node), \
+                    f"{node.name} not in expected maintenance mode"
+        else:
+            # when using the low-level admin interface the barrier is
+            # implemented using wait_until and query the node directly
+            self.admin.maintenance_start(node)
+            wait_until(lambda: self._in_maintenance_mode(node),
+                       timeout_sec=30,
+                       backoff_sec=5)
 
         def has_drained():
             """
