@@ -554,11 +554,9 @@ func (r *StatefulSetResource) getPreStopHook() *corev1.Handler {
 	curlCommand := r.composeCURLMaintenanceCommand(`-X PUT --silent -o /dev/null -w "%{http_code}"`, nil)
 	genericMaintenancePath := "/v1/maintenance"
 	curlGetCommand := r.composeCURLMaintenanceCommand(`--silent`, &genericMaintenancePath)
-	cmd := strings.Join(
-		[]string{
-			fmt.Sprintf(`until [ "${status:-}" = "200" ]; do status=$(%s); sleep 0.5; done`, curlCommand),
-			fmt.Sprintf(`until [ "${finished:-}" = "true" ]; do finished=$(%s | grep -o '\"finished\":[^,}]*' | grep -o '[^: ]*$'); sleep 0.5; done`, curlGetCommand),
-		}, " && ")
+	cmd := fmt.Sprintf(`until [ "${status:-}" = "200" ]; do status=$(%s); sleep 0.5; done`, curlCommand) +
+		" && " +
+		fmt.Sprintf(`until [ "${finished:-}" = "true" ]; do finished=$(%s | grep -o '\"finished\":[^,}]*' | grep -o '[^: ]*$'); sleep 0.5; done`, curlGetCommand)
 
 	return &corev1.Handler{
 		Exec: &corev1.ExecAction{

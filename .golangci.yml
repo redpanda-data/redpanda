@@ -48,7 +48,6 @@ linters:
     - gocritic
     - gocyclo
     - revive
-    - gomnd
     - goprintffuncname
     - gosec
     - gosimple
@@ -84,6 +83,7 @@ linters:
   # - gochecknoglobals
   # - gocognit
   # - godot
+  # - gomnd
   # - godox
   # - goerr113
   # - maligned

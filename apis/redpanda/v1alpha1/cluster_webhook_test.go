@@ -301,7 +301,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 	})
 
 	t.Run("scale up", func(t *testing.T) {
-		var scaleUp int32 = *redpandaCluster.Spec.Replicas + 1
+		scaleUp := *redpandaCluster.Spec.Replicas + 1
 		updatedScaleUp := redpandaCluster.DeepCopy()
 		updatedScaleUp.Spec.Replicas = &scaleUp
 		err := updatedScaleUp.ValidateUpdate(redpandaCluster)
