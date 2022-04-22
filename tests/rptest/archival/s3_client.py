@@ -4,8 +4,6 @@ from botocore.exceptions import ClientError
 from time import sleep
 from functools import wraps
 from collections import namedtuple
-import traceback
-import sys
 import time
 import datetime
 from typing import Union
@@ -95,17 +93,22 @@ class S3Client:
             self.logger.debug(f"empty_bucket error: {e}")
 
         failed_keys = []
-        for key in keys:
-            self.logger.debug(f"deleting key {key}")
+        while len(keys):
+            # S3 API supports up to 1000 keys per delete request
+            batch = keys[0:1000]
+            keys = keys[1000:]
+            self.logger.debug(f"deleting keys {batch[0]}..{batch[-1]}")
             try:
-                reply = self._delete_object(name, key)
+                reply = self._cli.delete_objects(
+                    Bucket=name,
+                    Delete={'Objects': [{
+                        'Key': k
+                    } for k in batch]})
                 self.logger.debug(f"delete request reply: {reply}")
             except:
-                e, v = sys.exc_info()[:2]
-                stacktrace = traceback.format_exc()
-                self.logger.debug(
-                    f"Delete request failed: {e} {v} {stacktrace}")
-                failed_keys.append(key)
+                self.logger.exception(
+                    f"Delete request failed for keys {batch[0]}..{batch[-1]}")
+                failed_keys.extend(batch)
         return failed_keys
 
     def delete_object(self, bucket, key, verify=False):
