@@ -165,21 +165,6 @@ class MaintenanceTest(RedpandaTest):
                    timeout_sec=60,
                    backoff_sec=10)
 
-    def _disable_maintenance(self, node):
-        wait_until(lambda: not self._in_maintenance_mode(node),
-                   timeout_sec=30,
-                   backoff_sec=5)
-
-        wait_until(lambda: self._has_leadership_role(node),
-                   timeout_sec=120,
-                   backoff_sec=10)
-
-        self.logger.debug("Verifying expected broker metadata reported "
-                          f"for disabled maintenance mode on node {node.name}")
-        wait_until(lambda: self._verify_broker_metadata(False, node),
-                   timeout_sec=60,
-                   backoff_sec=10)
-
     def _verify_cluster(self, target, target_expect):
         for node in self.redpanda.nodes:
             expect = False if node != target else target_expect
@@ -195,6 +180,20 @@ class MaintenanceTest(RedpandaTest):
         else:
             self.admin.maintenance_stop(node)
 
+        wait_until(lambda: not self._in_maintenance_mode(node),
+                   timeout_sec=30,
+                   backoff_sec=5)
+
+        wait_until(lambda: self._has_leadership_role(node),
+                   timeout_sec=120,
+                   backoff_sec=10)
+
+        self.logger.debug("Verifying expected broker metadata reported "
+                          f"for disabled maintenance mode on node {node.name}")
+        wait_until(lambda: self._verify_broker_metadata(False, node),
+                   timeout_sec=60,
+                   backoff_sec=10)
+
     @cluster(num_nodes=3)
     @matrix(use_rpk=[True, False])
     def test_maintenance(self, use_rpk):
@@ -202,7 +201,6 @@ class MaintenanceTest(RedpandaTest):
         target = random.choice(self.redpanda.nodes)
         self._enable_maintenance(target)
         self._maintenance_disable(target)
-        self._disable_maintenance(target)
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @matrix(use_rpk=[True, False])
@@ -217,7 +215,6 @@ class MaintenanceTest(RedpandaTest):
             self._verify_cluster(node, True)
 
             self._maintenance_disable(node)
-            self._disable_maintenance(node)
             self._verify_cluster(node, False)
 
         self.redpanda.restart_nodes(self.redpanda.nodes)
