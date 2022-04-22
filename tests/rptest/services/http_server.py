@@ -13,6 +13,7 @@ import signal
 
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.services.background_thread import BackgroundThreadService
+from rptest.util import inject_remote_script
 
 
 class HttpServer(BackgroundThreadService):
@@ -37,16 +38,14 @@ class HttpServer(BackgroundThreadService):
         self.requests = []
         # server is running on single node
         self.url = f"http://{self.nodes[0].account.hostname}:{self.port}"
+        self.remote_script_path = None
 
     def _worker(self, idx, node):
         node.account.ssh(f"mkdir -p {HttpServer.LOG_DIR}", allow_fail=False)
 
-        dir = os.path.dirname(os.path.realpath(__file__))
-        script_name = "simple_http_server.py"
-        src_path = os.path.join(dir, f"../../python/{script_name}")
-        node.account.copy_to(src_path, f"/tmp/{script_name}")
-
-        cmd = f"python3 {HttpServer.SCRIPT} --port {self.port}"
+        self.remote_script_path = inject_remote_script(
+            node, "simple_http_server.py")
+        cmd = f"python3 {self.remote_script_path} --port {self.port}"
         cmd += f" | tee -a {HttpServer.STDOUT_CAPTURE} &"
 
         self.logger.debug(f"Starting HTTP server {self.url}")
@@ -95,3 +94,5 @@ class HttpServer(BackgroundThreadService):
     def clean_node(self, node):
         self.kill_node(node, clean_shutdown=False)
         node.account.ssh(f"rm -rf {self.LOG_DIR}", allow_fail=False)
+        if self.remote_script_path:
+            node.account.ssh(f"rm -rf {self.remote_script_path}")
