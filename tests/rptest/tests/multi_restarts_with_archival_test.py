@@ -10,7 +10,7 @@
 import uuid
 
 from rptest.services.cluster import cluster
-from rptest.archival.s3_client import S3Client
+from rptest.services.redpanda import SISettings
 from ducktape.utils.util import wait_until
 from rptest.clients.types import TopicSpec
 from rptest.clients.default import DefaultClient
@@ -20,49 +20,15 @@ from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST
 
 
 class MultiRestartTest(EndToEndTest):
-
     log_segment_size = 5048576  # 5MB
     log_compaction_interval_ms = 25000
 
-    s3_host_name = "minio-s3"
-    s3_access_key = "panda-user"
-    s3_secret_key = "panda-secret"
-    s3_region = "panda-region"
-    s3_topic_name = "panda-topic"
-
     def __init__(self, test_context):
-        self.s3_bucket_name = f"panda-bucket-{uuid.uuid1()}"
-        self._extra_rp_conf = dict(
-            cloud_storage_enabled=True,
-            cloud_storage_access_key=MultiRestartTest.s3_access_key,
-            cloud_storage_secret_key=MultiRestartTest.s3_secret_key,
-            cloud_storage_region=MultiRestartTest.s3_region,
-            cloud_storage_bucket=self.s3_bucket_name,
-            cloud_storage_disable_tls=True,
-            cloud_storage_api_endpoint=MultiRestartTest.s3_host_name,
-            cloud_storage_api_endpoint_port=9000,
-            cloud_storage_reconciliation_interval_ms=500,
-            cloud_storage_max_connections=5,
-            log_compaction_interval_ms=self.log_compaction_interval_ms,
-            log_segment_size=self.log_segment_size,
-        )
+        extra_rp_conf = dict(
+            log_compaction_interval_ms=self.log_compaction_interval_ms, )
 
-        super(MultiRestartTest,
-              self).__init__(test_context=test_context,
-                             extra_rp_conf=self._extra_rp_conf)
-
-        self.s3_client = S3Client(
-            region='panda-region',
-            access_key=u"panda-user",
-            secret_key=u"panda-secret",
-            endpoint=f'http://{MultiRestartTest.s3_host_name}:9000',
-            logger=self.logger)
-
-    def setUp(self):
-        self.s3_client.empty_bucket(self.s3_bucket_name)
-        self.s3_client.create_bucket(self.s3_bucket_name)
-
-        super(MultiRestartTest, self).setUp()
+        super(MultiRestartTest, self).__init__(test_context=test_context,
+                                               extra_rp_conf=extra_rp_conf)
 
     def tearDown(self):
         self.s3_client.empty_bucket(self.s3_bucket_name)
@@ -70,13 +36,19 @@ class MultiRestartTest(EndToEndTest):
 
     @cluster(num_nodes=5, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_recovery_after_multiple_restarts(self):
-        self.start_redpanda(3, extra_rp_conf=self._extra_rp_conf)
-
         # If a debug build has to do a restart across a significant
         # number of partitions, it gets slow.  Use fewer partitions
         # on debug builds.
         partition_count = 10 if self.debug_mode else 60
 
+        si_settings = SISettings(cloud_storage_reconciliation_interval_ms=500,
+                                 cloud_storage_max_connections=5,
+                                 log_segment_size=self.log_segment_size)
+        self.s3_bucket_name = si_settings.cloud_storage_bucket
+
+        self.start_redpanda(3,
+                            extra_rp_conf=self._extra_rp_conf,
+                            si_settings=si_settings)
         spec = TopicSpec(partition_count=partition_count, replication_factor=3)
 
         DefaultClient(self.redpanda).create_topic(spec)
