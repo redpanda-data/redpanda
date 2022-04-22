@@ -808,17 +808,17 @@ class RedpandaService(Service):
         return self._s3client.list_buckets()
 
     def delete_bucket_from_si(self):
-        if self._s3client:
-            failed_deletions = self._s3client.empty_bucket(
-                self._si_settings.cloud_storage_bucket)
-            assert len(failed_deletions) == 0
-            self._s3client.delete_bucket(
-                self._si_settings.cloud_storage_bucket)
+        assert self._s3client is not None
+
+        failed_deletions = self._s3client.empty_bucket(
+            self._si_settings.cloud_storage_bucket)
+        assert len(failed_deletions) == 0
+        self._s3client.delete_bucket(self._si_settings.cloud_storage_bucket)
 
     def get_objects_from_si(self):
-        if self._s3client:
-            return self._s3client.list_objects(
-                self._si_settings.cloud_storage_bucket)
+        assert self._s3client is not None
+        return self._s3client.list_objects(
+            self._si_settings.cloud_storage_bucket)
 
     def set_cluster_config(self, values: dict, expect_restart: bool = False):
         """
@@ -1033,7 +1033,8 @@ class RedpandaService(Service):
 
     def clean(self, **kwargs):
         super().clean(**kwargs)
-        self.delete_bucket_from_si()
+        if self._s3client:
+            self.delete_bucket_from_si()
 
     def clean_node(self, node, preserve_logs=False):
         node.account.kill_process("redpanda", clean_shutdown=False)
