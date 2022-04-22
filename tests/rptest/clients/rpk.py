@@ -481,7 +481,7 @@ class RpkTool:
     def _rpk_binary(self):
         return self._redpanda.find_binary("rpk")
 
-    def cluster_maintenance_enable(self, node):
+    def cluster_maintenance_enable(self, node, wait=False):
         node_id = self._redpanda.idx(node) if isinstance(node,
                                                          ClusterNode) else node
         cmd = [
@@ -489,6 +489,8 @@ class RpkTool:
             self._admin_host(), "cluster", "maintenance", "enable",
             str(node_id)
         ]
+        if wait:
+            cmd.append("--wait")
         return self._execute(cmd)
 
     def cluster_maintenance_disable(self, node):
