@@ -36,7 +36,8 @@ class RandomNodeOp:
 
     def target_node(self) -> ClusterNode:
         available = set(self.redpanda.nodes) - self.nodes_affected
-        return random.choice(list(available))
+        if available:
+            return random.choice(list(available))
 
     def action(self):
         raise NotImplementedError
@@ -52,16 +53,17 @@ class RandomNodeDecommission(RandomNodeOp):
 
     def action(self):
         node = self.target_node()
-        broker_id = next((i for i, n in enumerate(self.redpanda.nodes) if n == node))
-        self.redpanda.stop_node(node)
-        self.admin.decommission_broker(id=broker_id)
-        wait_until(
-            lambda: broker_id not in {b['node_id'] for b in self.admin.get_brokers()},
-            timeout_sec=120,
-            backoff_sec=2,
-            err_msg=f'Failed to decommission broker id {broker_id}'
-        )
-        self.nodes_affected.add(node)
+        if node:
+            broker_id = next((i for i, n in enumerate(self.redpanda.nodes) if n == node))
+            self.redpanda.stop_node(node)
+            self.admin.decommission_broker(id=broker_id)
+            wait_until(
+                lambda: broker_id not in {b['node_id'] for b in self.admin.get_brokers()},
+                timeout_sec=120,
+                backoff_sec=2,
+                err_msg=f'Failed to decommission broker id {broker_id}'
+            )
+            self.nodes_affected.add(node)
 
 
 class RandomLeadershipTransfer(RandomNodeOp):
@@ -108,8 +110,9 @@ class RandomNodeProcessFailure(RandomNodeOp):
 
     def action(self):
         node = self.target_node()
-        self.failure_injector.inject_failure(FailureSpec(FailureSpec.FAILURE_KILL, node))
-        self.nodes_affected.add(node)
+        if node:
+            self.failure_injector.inject_failure(FailureSpec(FailureSpec.FAILURE_KILL, node))
+            self.nodes_affected.add(node)
 
 
 class ActionInjectorThread(Thread):
