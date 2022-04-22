@@ -169,7 +169,7 @@ func (balanceService *balanceService) GetBannedIRQs() ([]int, error) {
 		return nil, fmt.Errorf("invalid format in '%s' - more than one line with '%s' key",
 			serviceInfo.configFile, serviceInfo.optionsKey)
 	}
-	bannedIRQPattern := regexp.MustCompile("\\-\\-banirq\\=(\\d+)")
+	bannedIRQPattern := regexp.MustCompile(`\-\-banirq\=(\d+)`)
 
 	bannedIRQsMatches := bannedIRQPattern.FindAllStringSubmatch(optionLines[0], -1)
 

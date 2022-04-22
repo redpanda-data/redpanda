@@ -207,7 +207,7 @@ func (rowSet *RowSet) addRatioPanel(
 ) {
 	a := metricFamilies[m0]
 	b := metricFamilies[m1]
-	row, _ := rowSet.groupPanels[group]
+	row := rowSet.groupPanels[group]
 	panel := makeRatioPanel(a, b, help)
 	row.Panels = append(row.Panels, panel)
 	rowSet.groupPanels[group] = row

@@ -40,7 +40,7 @@ func (procFile *procFile) GetIRQProcFileLinesMap() (map[int]string, error) {
 		return nil, err
 	}
 	linesByIRQ := make(map[int]string)
-	irqPattern := regexp.MustCompile("^\\s*\\d+:.*$")
+	irqPattern := regexp.MustCompile(`^\s*\d+:.*$`)
 	for _, line := range lines {
 		if !irqPattern.MatchString(line) {
 			continue

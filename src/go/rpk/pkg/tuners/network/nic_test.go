@@ -71,7 +71,7 @@ func Test_nic_Slaves_ReturnAllSlavesOfAnInterface(t *testing.T) {
 	deviceInfo := &deviceInfoMock{}
 	nic := NewNic(fs, procFile, deviceInfo, &ethtoolMock{}, "test0")
 	afero.WriteFile(fs, "/sys/class/net/bond_masters", []byte(fmt.Sprintln("test0")), 0644)
-	afero.WriteFile(fs, "/sys/class/net/test0/bond/slaves", []byte(fmt.Sprint("sl0\nsl1\nsl2")), 0644)
+	afero.WriteFile(fs, "/sys/class/net/test0/bond/slaves", []byte("sl0\nsl1\nsl2"), 0644)
 	//when
 	slaves, err := nic.Slaves()
 	//then

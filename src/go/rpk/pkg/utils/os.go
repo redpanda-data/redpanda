@@ -37,8 +37,5 @@ func IsAWSi3MetalInstance() bool {
 	}
 	log.Debugf("Running on '%s' EC2 instance", instanceType)
 
-	if instanceType == "i3.metal" {
-		return true
-	}
-	return false
+	return instanceType == "i3.metal"
 }
