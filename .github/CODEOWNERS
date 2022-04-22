@@ -72,7 +72,7 @@ licenses           @senior7515 @dswang
 #
 # rpk
 #
-/src/go/rpk        @twmb @0x5d @lenaan
+/src/go/rpk        @twmb @0x5d @r-vasquez
 
 #
 # transactions and idempotent producer
