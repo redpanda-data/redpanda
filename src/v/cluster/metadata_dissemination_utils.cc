@@ -9,23 +9,29 @@
 
 #include "cluster/metadata_dissemination_utils.h"
 
+#include "cluster/types.h"
 #include "likely.h"
+#include "model/metadata.h"
 
 #include <fmt/core.h>
 
 namespace cluster {
 
 std::vector<model::node_id> calculate_non_overlapping_nodes(
-  const std::vector<model::node_id>& partition_members,
+  const partition_assignment& partition_members,
   const std::vector<model::node_id>& all_nodes) {
     std::vector<model::node_id> non_overlapping;
-    non_overlapping.reserve(all_nodes.size() - partition_members.size());
+    non_overlapping.reserve(
+      all_nodes.size() - partition_members.replicas.size());
     for (auto& n : all_nodes) {
-        const bool contains = std::find(
-                                std::cbegin(partition_members),
-                                std::cend(partition_members),
-                                n)
-                              != std::cend(partition_members);
+        const bool contains = std::find_if(
+                                partition_members.replicas.begin(),
+                                partition_members.replicas.end(),
+                                [n](const model::broker_shard& bs) {
+                                    return bs.node_id == n;
+                                })
+                              != partition_members.replicas.end();
+
         if (!contains) {
             // This node is not a partition member
             non_overlapping.push_back(n);
@@ -34,20 +40,4 @@ std::vector<model::node_id> calculate_non_overlapping_nodes(
     return non_overlapping;
 }
 
-std::vector<model::node_id> get_partition_members(
-  model::partition_id pid, const model::topic_metadata& tp_md) {
-    std::vector<model::node_id> members;
-    if (unlikely((size_t)pid() >= tp_md.partitions.size())) {
-        throw std::invalid_argument(fmt::format(
-          "Topic {} does not contain partion {}", tp_md.tp_ns, pid));
-    }
-    auto& replicas = tp_md.partitions[pid()].replicas;
-    std::transform(
-      std::cbegin(replicas),
-      std::cend(replicas),
-      std::back_inserter(members),
-      [](model::broker_shard bs) { return bs.node_id; });
-
-    return members;
-}
 } // namespace cluster

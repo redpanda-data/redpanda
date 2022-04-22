@@ -287,15 +287,15 @@ metadata_dissemination_service::dispatch_get_metadata_update(
 void metadata_dissemination_service::collect_pending_updates() {
     auto brokers = _members_table.local().all_broker_ids();
     for (auto& ntp_leader : _requests) {
-        auto tp_md = _topics.local().get_topic_metadata(
-          model::topic_namespace_view(ntp_leader.ntp));
+        auto assignment = _topics.local().get_partition_assignment(
+          ntp_leader.ntp);
 
-        if (!tp_md) {
-            // Topic metadata is not there anymore, partition was removed
+        if (!assignment) {
+            // Partition was removed, skip dissemination
             continue;
         }
         auto non_overlapping = calculate_non_overlapping_nodes(
-          get_partition_members(ntp_leader.ntp.tp.partition, *tp_md), brokers);
+          *assignment, brokers);
 
         /**
          * remove current node from non overlapping list, current node may be
