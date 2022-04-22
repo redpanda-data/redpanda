@@ -200,7 +200,7 @@ func NewStartCommand(
 				sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
-			if kafkaApi != nil && len(kafkaApi) > 0 {
+			if len(kafkaApi) > 0 {
 				conf.Redpanda.KafkaApi = kafkaApi
 			}
 
@@ -219,7 +219,7 @@ func NewStartCommand(
 				sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
-			if proxyApi != nil && len(proxyApi) > 0 {
+			if len(proxyApi) > 0 {
 				if conf.Pandaproxy == nil {
 					conf.Pandaproxy = config.Default().Pandaproxy
 				}
@@ -241,7 +241,7 @@ func NewStartCommand(
 				sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
-			if schemaRegApi != nil && len(schemaRegApi) > 0 {
+			if len(schemaRegApi) > 0 {
 				if conf.SchemaRegistry == nil {
 					conf.SchemaRegistry = config.Default().SchemaRegistry
 				}
@@ -972,7 +972,7 @@ func stringOr(a, b string) string {
 }
 
 func stringSliceOr(a, b []string) []string {
-	if a != nil && len(a) != 0 {
+	if len(a) != 0 {
 		return a
 	}
 	return b

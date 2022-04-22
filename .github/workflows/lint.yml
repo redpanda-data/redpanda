@@ -40,10 +40,16 @@ jobs:
         go mod download github.com/cockroachdb/crlfmt
         go install github.com/cockroachdb/crlfmt
 
-    - name: lint go files
+    - name: format go files
       run: |
         find . -name *.go -type f | xargs -n1 crlfmt -wrap=80 -ignore '_generated.deepcopy.go$$' -w
         git diff --exit-code
+
+    - name: lint rpk
+      uses: golangci/golangci-lint-action@v3
+      with:
+        version: v1.45.2
+        working-directory: src/go/rpk/
 
   js:
     name: Lint js files
