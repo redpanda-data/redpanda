@@ -175,20 +175,24 @@ class ResourceSettings:
     Control CPU+memory footprint of Redpanda instances.  Pass one
     of these into your RedpandaTest constructor if you want to e.g.
     create low-memory situations.
+
+    This class also contains defaults for redpanda CPU and memory
+    sizing in tests.  If `dedicated_node` is true, even these limits
+    are ignored, and Redpanda is allowed to behave in its default
+    way of taking all the CPU and memory on the machine.  The
+    `dedicated_node` mode is appropriate when using e.g. whole EC2 instances
+    as test nodes.
     """
+
+    DEFAULT_NUM_CPUS = 3
+    DEFAULT_MEMORY_MB = 3096
+
     def __init__(self,
                  *,
                  num_cpus: Optional[int] = None,
                  memory_mb: Optional[int] = None,
                  bypass_fsync: Optional[bool] = None,
                  nfiles: Optional[int] = None):
-        if num_cpus is None:
-            num_cpus = 3
-
-        if memory_mb is None:
-            # Redpanda's default limit on memory per shard
-            # is 1GB
-            memory_mb = 3096
 
         self._num_cpus = num_cpus
         self._memory_mb = memory_mb
@@ -204,22 +208,49 @@ class ResourceSettings:
     def memory_mb(self):
         return self._memory_mb
 
-    @property
-    def num_cpus(self):
-        return self._num_cpus
-
-    def to_cli(self):
+    def to_cli(self, *, dedicated_node):
         """
+
+        Generate Redpanda CLI flags based on the settings passed in at construction
+        time.
+
         :return: 2 tuple of strings, first goes before the binary, second goes after it
         """
         preamble = f"ulimit -Sn {self._nfiles}; " if self._nfiles else ""
-        args = ("--kernel-page-cache=true "
-                "--overprovisioned "
-                "--reserve-memory 0M "
-                f"--memory {self._memory_mb}M "
-                f"--smp {self._num_cpus} "
-                f"--unsafe-bypass-fsync={'1' if self._bypass_fsync else '0'}")
-        return preamble, args
+
+        if self._num_cpus is None and not dedicated_node:
+            num_cpus = self.DEFAULT_NUM_CPUS
+        else:
+            num_cpus = self._num_cpus
+
+        if self._memory_mb is None and not dedicated_node:
+            # Redpanda's default limit on memory per shard
+            # is 1GB
+            memory_mb = self.DEFAULT_MEMORY_MB
+        else:
+            memory_mb = self._memory_mb
+
+        if self._bypass_fsync is None and not dedicated_node:
+            bypass_fsync = False
+        else:
+            bypass_fsync = self._bypass_fsync
+
+        args = []
+        if not dedicated_node:
+            args.extend([
+                "--kernel-page-cache=true", "--overprovisioned ",
+                "--reserve-memory=0M"
+            ])
+
+        if num_cpus is not None:
+            args.append(f"--smp={num_cpus}")
+        if memory_mb is not None:
+            args.append(f"--memory={memory_mb}M")
+        if bypass_fsync is not None:
+            args.append(
+                f"--unsafe-bypass-fsync={'1' if bypass_fsync else '0'}")
+
+        return preamble, " ".join(args)
 
 
 class SISettings:
@@ -275,6 +306,10 @@ class RedpandaService(Service):
 
     CLUSTER_NAME = "my_cluster"
     READY_TIMEOUT_SEC = 10
+
+    DEDICATED_NODE_KEY = "dedicated_nodes"
+
+    RAISE_ON_ERRORS_KEY = "raise_on_errors"
 
     LOG_LEVEL_KEY = "redpanda_log_level"
     DEFAULT_LOG_LEVEL = "info"
@@ -362,9 +397,17 @@ class RedpandaService(Service):
         self._started = []
         self._security_config = dict()
 
+        self._raise_on_errors = self._context.globals.get(
+            self.RAISE_ON_ERRORS_KEY, True)
+
+        self._dedicated_nodes = self._context.globals.get(
+            self.DEDICATED_NODE_KEY, False)
+
         if resource_settings is None:
             resource_settings = ResourceSettings()
         self._resource_settings = resource_settings
+        self.logger.info(
+            f"ResourceSettings: dedicated_nodes={self._dedicated_nodes}")
 
         if si_settings is not None:
             self._extra_rp_conf = si_settings.update_rp_conf(
@@ -392,6 +435,35 @@ class RedpandaService(Service):
     def sasl_enabled(self):
         return self._extra_rp_conf and self._extra_rp_conf.get(
             "enable_sasl", False)
+
+    @property
+    def dedicated_nodes(self):
+        """
+        If true, the nodes are dedicated linux servers, e.g. EC2 instances.
+
+        If false, the nodes are containers that share CPUs and memory with
+        one another.
+        :return:
+        """
+        return self._dedicated_nodes
+
+    def get_node_memory_mb(self):
+        if self._resource_settings.memory_mb is not None:
+            self.logger.info(f"get_node_memory_mb: got from ResourceSettings")
+            return self._resource_settings.memory_mb
+        elif self._dedicated_nodes is False:
+            self.logger.info(
+                f"get_node_memory_mb: using ResourceSettings default")
+            return self._resource_settings.DEFAULT_MEMORY_MB
+        else:
+            self.logger.info(f"get_node_memory_mb: fetching from node")
+            # Assume nodes are symmetric, so we can just ask one
+            # how much memory it has.
+            node = self.nodes[0]
+            line = node.account.ssh_output("cat /proc/meminfo | grep MemTotal")
+            # Output line is like "MemTotal:       32552236 kB"
+            memory_kb = int(line.strip().split()[1])
+            return memory_kb / 1024
 
     def start(self, nodes=None, clean_nodes=True):
         """Start the service on all nodes."""
@@ -470,7 +542,8 @@ class RedpandaService(Service):
         return self._security_config
 
     def start_redpanda(self, node):
-        preamble, res_args = self._resource_settings.to_cli()
+        preamble, res_args = self._resource_settings.to_cli(
+            dedicated_node=self._dedicated_nodes)
 
         # Pass environment variables via FOO=BAR shell expressions
         env_preamble = " ".join(
@@ -803,8 +876,9 @@ class RedpandaService(Service):
             self.logger.info(
                 f"Scanning node {node.account.hostname} log for errors...")
 
+            match_errors = "-e ERROR" if self._raise_on_errors else ""
             for line in node.account.ssh_capture(
-                    f"grep -e ERROR -e Segmentation\ fault -e [Aa]ssert {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
+                    f"grep {match_errors} -e Segmentation\ fault -e [Aa]ssert {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
             ):
                 line = line.strip()
 
