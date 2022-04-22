@@ -2,11 +2,12 @@ import dataclasses
 import random
 import time
 from threading import Thread
-from typing import Optional
+from typing import Optional, List
 
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.utils.util import wait_until
 
+from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.failure_injector import FailureSpec, FailureInjector
 from rptest.services.redpanda import RedpandaService
@@ -15,12 +16,12 @@ from rptest.services.redpanda import RedpandaService
 @dataclasses.dataclass
 class ActionConfig:
     cluster_start_lead_time_sec: float
-    min_time_between_failures_sec: float
-    max_time_between_failures_sec: float
+    min_time_between_actions_sec: float
+    max_time_between_actions_sec: float
     max_affected_nodes: Optional[int] = None
 
     def random_time_in_range(self) -> float:
-        return random.uniform(self.min_time_between_failures_sec, self.max_time_between_failures_sec)
+        return random.uniform(self.min_time_between_actions_sec, self.max_time_between_actions_sec)
 
 
 class RandomNodeOp:
@@ -64,11 +65,37 @@ class RandomNodeDecommission(RandomNodeOp):
 
 
 class RandomLeadershipTransfer(RandomNodeOp):
+
+    def __init__(
+            self,
+            redpanda: RedpandaService,
+            config: ActionConfig,
+            admin: Admin,
+            topics: List[TopicSpec],
+    ):
+        super().__init__(redpanda, config, admin)
+        self.topics = topics
+
     def limit_reached(self):
         return False
 
     def action(self):
-        pass
+        for topic in self.topics:
+            for partition in range(topic.partition_count):
+                old_leader = self.admin.get_partition_leader(namespace='kafka', topic=topic, partition=partition)
+                self.admin.transfer_leadership_to(namespace='kafka',
+                                                  topic=topic,
+                                                  partition=partition,
+                                                  target=None)
+
+                def leader_is_changed():
+                    new_leader = self.admin.get_partition_leader(namespace='kafka', topic=topic, partition=partition)
+                    return new_leader != -1 and new_leader != old_leader
+
+                wait_until(leader_is_changed,
+                           timeout_sec=30,
+                           backoff_sec=2,
+                           err_msg='Leadership transfer failed')
 
 
 class RandomNodeProcessFailure(RandomNodeOp):
@@ -131,23 +158,23 @@ class ActionCtx:
         self.thread.stop()
 
 
-def create_context_with_defaults(redpanda: RedpandaService, op_type):
+def create_context_with_defaults(redpanda: RedpandaService, op_type, *args, **kwargs):
     admin = Admin(redpanda)
     config = ActionConfig(
-        cluster_start_lead_time_sec=20,
-        min_time_between_failures_sec=2,
-        max_time_between_failures_sec=5,
+        cluster_start_lead_time_sec=120,
+        min_time_between_actions_sec=10,
+        max_time_between_actions_sec=30,
     )
-    return ActionCtx(config, redpanda, op_type(redpanda, config, admin))
+    return ActionCtx(config, redpanda, op_type(redpanda, config, admin, *args, **kwargs))
 
 
-def random_process_kill(redpanda: RedpandaService):
+def random_process_kills(redpanda: RedpandaService):
     return create_context_with_defaults(redpanda, RandomNodeProcessFailure)
 
 
-def random_decommission(redpanda: RedpandaService):
+def random_decommissions(redpanda: RedpandaService):
     return create_context_with_defaults(redpanda, RandomNodeDecommission)
 
 
-def random_leadership_transfer(redpanda: RedpandaService):
-    return create_context_with_defaults(redpanda, RandomLeadershipTransfer)
+def random_leadership_transfers(redpanda: RedpandaService, topics):
+    return create_context_with_defaults(redpanda, RandomLeadershipTransfer, topics)
