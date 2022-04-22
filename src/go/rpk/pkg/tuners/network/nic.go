@@ -134,7 +134,7 @@ func (n *nic) GetIRQs() ([]int, error) {
 	if err != nil {
 		return nil, err
 	}
-	fastPathIRQsPattern := regexp.MustCompile("-TxRx-|-fp-|-Tx-Rx-|mlx\\d+-\\d+@")
+	fastPathIRQsPattern := regexp.MustCompile(`-TxRx-|-fp-|-Tx-Rx-|mlx\d+-\d+@`)
 	var fastPathIRQs []int
 	for _, irq := range IRQs {
 		if fastPathIRQsPattern.MatchString(procFileLines[irq]) {
@@ -152,8 +152,8 @@ func (n *nic) GetIRQs() ([]int, error) {
 }
 
 func intelIrqToQueueIdx(irq int, procFileLines map[int]string) int {
-	intelFastPathIrqPattern := regexp.MustCompile("-TxRx-(\\d+)")
-	fdirPattern := regexp.MustCompile("fdir-TxRx-\\d+")
+	intelFastPathIrqPattern := regexp.MustCompile(`-TxRx-(\d+)`)
+	fdirPattern := regexp.MustCompile(`fdir-TxRx-\d+`)
 	procLine := procFileLines[irq]
 
 	intelFastPathMatch := intelFastPathIrqPattern.FindStringSubmatch(procLine)

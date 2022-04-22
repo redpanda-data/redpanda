@@ -31,7 +31,7 @@ func ReadRuntineOptions(fs afero.Fs, path string) (*RuntimeOptions, error) {
 	if len(lines) != 1 {
 		return nil, fmt.Errorf("Unable to parse options file '%s'", path)
 	}
-	activeOptionPattern := regexp.MustCompile("^\\[(.*)\\]$")
+	activeOptionPattern := regexp.MustCompile(`^\[(.*)\]$`)
 	options := strings.Fields(lines[0])
 
 	for _, opt := range options {

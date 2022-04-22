@@ -275,7 +275,7 @@ func (b *blockDevices) isIRQNvmeFastPathIRQ(
 	irq, numberOfCpus int,
 ) (bool, error) {
 	nvmeFastPathQueuePattern := regexp.MustCompile(
-		"(\\s|^)nvme\\d+q(\\d+)(\\s|$)")
+		`(\s|^)nvme\d+q(\d+)(\s|$)`)
 	linesMap, err := b.irqProcFile.GetIRQProcFileLinesMap()
 	if err != nil {
 		return false, err

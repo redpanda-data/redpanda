@@ -43,7 +43,7 @@ func (c *ethtoolChangeCommand) RenderScript(w *bufio.Writer) error {
 	fmt.Fprintf(w, "ethtool -K %s ", c.intf)
 	for feature, state := range c.config {
 		stateString := "on"
-		if state == false {
+		if !state {
 			stateString = "off"
 		}
 		fmt.Fprintf(w, "%s %s", feature, stateString)

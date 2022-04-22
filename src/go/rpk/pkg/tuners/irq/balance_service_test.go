@@ -352,9 +352,7 @@ func TestAreIRQsStaticallyAssigned(t *testing.T) {
 func calcMd5(lines []string) string {
 	var data []byte
 	for _, line := range lines {
-		for _, dataByte := range []byte(line + "\n") {
-			data = append(data, dataByte)
-		}
+		data = append(data, []byte(line+"\n")...)
 	}
 	hash := md5.Sum(data)
 	return hex.EncodeToString(hash[:16])

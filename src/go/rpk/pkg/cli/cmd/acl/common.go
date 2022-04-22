@@ -201,9 +201,7 @@ func (a *acls) backcompatList() error {
 		{permDeny, a.listHosts, &a.denyHosts},
 	} {
 		if migrate.perm {
-			for _, value := range migrate.source {
-				*migrate.dest = append(*migrate.dest, value)
-			}
+			*migrate.dest = append(*migrate.dest, migrate.source...)
 		}
 	}
 

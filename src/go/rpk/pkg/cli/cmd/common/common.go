@@ -64,9 +64,7 @@ func AddKafkaFlags(
 		saslMechanism,
 		config.FlagSASLMechanism,
 		"",
-		fmt.Sprintf(
-			"The authentication mechanism to use. Supported values: SCRAM-SHA-256, SCRAM-SHA-512.",
-		),
+		"The authentication mechanism to use. Supported values: SCRAM-SHA-256, SCRAM-SHA-512.",
 	)
 
 	AddTLSFlags(command, enableTLS, certFile, keyFile, truststoreFile)
