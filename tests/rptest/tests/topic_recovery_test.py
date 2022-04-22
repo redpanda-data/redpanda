@@ -10,7 +10,7 @@ from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.archival.s3_client import S3Client
-from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda import RedpandaService, SISettings
 from rptest.clients.rpk import RpkTool
 
 from rptest.clients.types import TopicSpec
@@ -930,75 +930,26 @@ TRANSIENT_ERRORS = [
 
 
 class TopicRecoveryTest(RedpandaTest):
-    GLOBAL_S3_BUCKET = "s3_bucket"
-    GLOBAL_S3_REGION = "s3_region"
-    GLOBAL_S3_ACCESS_KEY = "s3_access_key"
-    GLOBAL_S3_SECRET_KEY = "s3_secret_key"
-
-    MINIO_HOST_NAME = "minio-s3"
-    MINIO_BUCKET_NAME = "panda-bucket"
-    MINIO_ACCESS_KEY = "panda-user"
-    MINIO_SECRET_KEY = "panda-secret"
-    MINIO_REGION = "panda-region"
-
     def __init__(self, test_context):
-        self.s3_bucket = test_context.globals.get(self.GLOBAL_S3_BUCKET, None)
-        self.s3_region = test_context.globals.get(self.GLOBAL_S3_REGION, None)
-        self.s3_access_key = test_context.globals.get(
-            self.GLOBAL_S3_ACCESS_KEY, None)
-        self.s3_secret_key = test_context.globals.get(
-            self.GLOBAL_S3_SECRET_KEY, None)
-        self.s3_endpoint = None
-        self.real_thing = self.s3_bucket and self.s3_region and self.s3_access_key and self.s3_secret_key
-        if self.real_thing:
-            extra_rp_conf = dict(
-                cloud_storage_enable_remote_write=True,
-                cloud_storage_enabled=True,
-                cloud_storage_access_key=self.s3_access_key,
-                cloud_storage_secret_key=self.s3_secret_key,
-                cloud_storage_region=self.s3_region,
-                cloud_storage_bucket=self.s3_bucket,
-                cloud_storage_reconciliation_interval_ms=500,
-                cloud_storage_max_connections=10,
-                cloud_storage_trust_file="/etc/ssl/certs/ca-certificates.crt",
-                log_segment_size=default_log_segment_size)
-        else:
-            self.s3_bucket = f"{TopicRecoveryTest.MINIO_BUCKET_NAME}-{uuid.uuid1()}"
-            self.s3_region = TopicRecoveryTest.MINIO_REGION
-            self.s3_access_key = TopicRecoveryTest.MINIO_ACCESS_KEY
-            self.s3_secret_key = TopicRecoveryTest.MINIO_SECRET_KEY
-            extra_rp_conf = dict(
-                cloud_storage_enabled=True,
-                cloud_storage_access_key=TopicRecoveryTest.MINIO_ACCESS_KEY,
-                cloud_storage_secret_key=TopicRecoveryTest.MINIO_SECRET_KEY,
-                cloud_storage_region=TopicRecoveryTest.MINIO_REGION,
-                cloud_storage_bucket=self.s3_bucket,
-                cloud_storage_disable_tls=True,
-                cloud_storage_api_endpoint=TopicRecoveryTest.MINIO_HOST_NAME,
-                cloud_storage_api_endpoint_port=9000,
-                cloud_storage_reconciliation_interval_ms=500,
-                cloud_storage_max_connections=5,
-                log_segment_size=default_log_segment_size)
-            self.s3_endpoint = f'http://{TopicRecoveryTest.MINIO_HOST_NAME}:9000'
+        si_settings = SISettings(cloud_storage_reconciliation_interval_ms=50,
+                                 cloud_storage_max_connections=5,
+                                 log_segment_size=default_log_segment_size)
+
+        self.s3_bucket = si_settings.cloud_storage_bucket
+
+        dedicated_nodes = test_context.globals.get(
+            RedpandaService.DEDICATED_NODE_KEY, False)
+        if dedicated_nodes:
+            # Open more connections when running on real servers.
+            si_settings.cloud_storage_max_connections = 10
 
         super(TopicRecoveryTest, self).__init__(test_context=test_context,
-                                                extra_rp_conf=extra_rp_conf)
+                                                si_settings=si_settings)
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
         self._started = True
 
-        self.s3_client = S3Client(region=self.s3_region,
-                                  access_key=self.s3_access_key,
-                                  secret_key=self.s3_secret_key,
-                                  endpoint=self.s3_endpoint,
-                                  logger=self.logger)
-
         self.rpk = RpkTool(self.redpanda)
-
-    def setUp(self):
-        self.s3_client.empty_bucket(self.s3_bucket)
-        self.s3_client.create_bucket(self.s3_bucket)
-        super().setUp()
 
     def tearDown(self):
         self.s3_client.empty_bucket(self.s3_bucket)
