@@ -37,7 +37,10 @@ class RandomNodeOp:
     def target_node(self) -> ClusterNode:
         available = set(self.redpanda.nodes) - self.nodes_affected
         if available:
-            return random.choice(list(available))
+            selected = random.choice(list(available))
+            names = {n.account.hostname for n in available}
+            self.redpanda.logger.info(f'selected {selected.account.hostname} of {names} for operation')
+            return selected
 
     def action(self):
         raise NotImplementedError
@@ -111,8 +114,11 @@ class RandomNodeProcessFailure(RandomNodeOp):
     def action(self):
         node = self.target_node()
         if node:
+            self.redpanda.logger.info(f'executing action on {node.account.hostname}')
             self.failure_injector.inject_failure(FailureSpec(FailureSpec.FAILURE_KILL, node))
             self.nodes_affected.add(node)
+        else:
+            self.redpanda.logger.warn(f'no usable node')
 
 
 class ActionInjectorThread(Thread):
@@ -155,29 +161,32 @@ class ActionCtx:
         self.thread = ActionInjectorThread(config, redpanda, random_op)
 
     def __enter__(self):
+        self.redpanda.logger.info(f'entering random failure ctx')
         self.thread.start()
 
     def __exit__(self, *args, **kwargs):
+        self.redpanda.logger.info(f'leaving random failure ctx')
         self.thread.stop()
+        self.thread.join()
 
 
-def create_context_with_defaults(redpanda: RedpandaService, op_type, *args, **kwargs):
+def create_context_with_defaults(redpanda: RedpandaService, op_type, config: ActionConfig = None, *args, **kwargs):
     admin = Admin(redpanda)
-    config = ActionConfig(
-        cluster_start_lead_time_sec=120,
+    config = config or ActionConfig(
+        cluster_start_lead_time_sec=20,
         min_time_between_actions_sec=10,
         max_time_between_actions_sec=30,
     )
     return ActionCtx(config, redpanda, op_type(redpanda, config, admin, *args, **kwargs))
 
 
-def random_process_kills(redpanda: RedpandaService):
-    return create_context_with_defaults(redpanda, RandomNodeProcessFailure)
+def random_process_kills(redpanda: RedpandaService, config: ActionConfig = None):
+    return create_context_with_defaults(redpanda, RandomNodeProcessFailure, config=config)
 
 
-def random_decommissions(redpanda: RedpandaService):
-    return create_context_with_defaults(redpanda, RandomNodeDecommission)
+def random_decommissions(redpanda: RedpandaService, config: ActionConfig = None):
+    return create_context_with_defaults(redpanda, RandomNodeDecommission, config=config)
 
 
-def random_leadership_transfers(redpanda: RedpandaService, topics):
-    return create_context_with_defaults(redpanda, RandomLeadershipTransfer, topics)
+def random_leadership_transfers(redpanda: RedpandaService, topics, config: ActionConfig = None):
+    return create_context_with_defaults(redpanda, RandomLeadershipTransfer, topics, config=config)
