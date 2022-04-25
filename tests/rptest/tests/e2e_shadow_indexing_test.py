@@ -29,6 +29,10 @@ class EndToEndShadowIndexingBase(EndToEndTest):
     s3_secret_key = "panda-secret"
     s3_region = "panda-region"
     s3_topic_name = "panda-topic"
+
+    num_brokers = 3
+    override_default_topic_replication = None
+
     topics = (TopicSpec(
         name=s3_topic_name,
         partition_count=1,
@@ -57,10 +61,14 @@ class EndToEndShadowIndexingBase(EndToEndTest):
             log_segment_size=EndToEndShadowIndexingTest.segment_size,  # 1MB
         )
 
+        if self.override_default_topic_replication:
+            self._extra_rp_conf[
+                'default_topic_replications'] = self.override_default_topic_replication
+
         self.scale = Scale(test_context)
         self.redpanda = RedpandaService(
             context=test_context,
-            num_brokers=3,
+            num_brokers=self.num_brokers,
             extra_rp_conf=self._extra_rp_conf,
         )
 
@@ -77,7 +85,7 @@ class EndToEndShadowIndexingBase(EndToEndTest):
         self.s3_client.empty_bucket(self.s3_bucket_name)
         self.s3_client.create_bucket(self.s3_bucket_name)
         self.redpanda.start()
-        for topic in EndToEndShadowIndexingTest.topics:
+        for topic in EndToEndShadowIndexingBase.topics:
             self.kafka_tools.create_topic(topic)
 
     def tearDown(self):
@@ -114,6 +122,8 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
 
 
 class EndToEndShadowIndexingTestWithFailures(EndToEndShadowIndexingBase):
+    override_default_topic_replication = EndToEndShadowIndexingBase.num_brokers
+
     @cluster(num_nodes=5,
              log_allow_list=RESTART_LOG_ALLOW_LIST,
              allow_missing_process=True)
@@ -143,6 +153,5 @@ class EndToEndShadowIndexingTestWithFailures(EndToEndShadowIndexingBase):
             self.run_validation()
 
             # at least one node should have had the redpanda process killed off
-            assert any(
-                self.redpanda.pids(node) is None
-                for node in self.redpanda.nodes)
+            assert any(not self.redpanda.pids(node)
+                       for node in self.redpanda.nodes)

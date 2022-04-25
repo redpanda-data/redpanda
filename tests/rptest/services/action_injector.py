@@ -126,6 +126,14 @@ class RandomNodeProcessFailure(RandomNodeOp):
             self.failure_injector.inject_failure(
                 FailureSpec(FailureSpec.FAILURE_KILL, node))
             self.nodes_affected.add(node)
+
+            # Update started_nodes so validations are run on the correct
+            # set of nodes later.
+            try:
+                self.redpanda.started_nodes().remove(node)
+            except ValueError:
+                self.redpanda.logger.warn(
+                    f'failed to remove {node} from rp node list')
         else:
             self.redpanda.logger.warn(f'no usable node')
 
