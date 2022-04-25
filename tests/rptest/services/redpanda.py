@@ -259,6 +259,10 @@ class SISettings:
     The defaults are for use with the default minio docker container, these
     settings are altered in RedpandaTest if running on AWS.
     """
+    GLOBAL_S3_ACCESS_KEY = "s3_access_key"
+    GLOBAL_S3_SECRET_KEY = "s3_secret_key"
+    GLOBAL_S3_REGION_KEY = "s3_region"
+
     def __init__(
             self,
             *,
@@ -290,6 +294,31 @@ class SISettings:
         self.cloud_storage_disable_tls = cloud_storage_disable_tls
 
         self.endpoint_url = f'http://{self.cloud_storage_api_endpoint}:{self.cloud_storage_api_endpoint_port}'
+
+    def load_context(self, logger, test_context):
+        """
+        Update based on the test context, to e.g. consume AWS access keys in
+        the globals dictionary.
+        """
+        cloud_storage_access_key = test_context.globals.get(
+            self.GLOBAL_S3_ACCESS_KEY, None)
+        cloud_storage_secret_key = test_context.globals.get(
+            self.GLOBAL_S3_SECRET_KEY, None)
+        cloud_storage_region = test_context.globals.get(
+            self.GLOBAL_S3_REGION_KEY, None)
+
+        # Enable S3 if AWS creds were given at globals
+        if cloud_storage_access_key and cloud_storage_secret_key:
+            logger.info("Running on AWS S3, setting credentials")
+            self.cloud_storage_access_key = cloud_storage_access_key
+            self.cloud_storage_secret_key = cloud_storage_secret_key
+            self.endpoint_url = None  # None so boto auto-gens the endpoint url
+            self.cloud_storage_disable_tls = False  # SI will fail to create archivers if tls is disabled
+            self.cloud_storage_region = cloud_storage_region
+            self.cloud_storage_api_endpoint_port = 443
+        else:
+            logger.debug(
+                'No AWS credentials supplied, assuming minio defaults')
 
     # Call this to update the extra_rp_conf
     def update_rp_conf(self, conf) -> dict[str, Any]:
