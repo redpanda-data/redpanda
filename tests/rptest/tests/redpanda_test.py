@@ -25,10 +25,6 @@ class RedpandaTest(Test):
     # topic is defined by an instance of a TopicSpec.
     topics = []
 
-    GLOBAL_S3_ACCESS_KEY = "s3_access_key"
-    GLOBAL_S3_SECRET_KEY = "s3_secret_key"
-    GLOBAL_S3_REGION_KEY = "s3_region"
-
     def __init__(self,
                  test_context,
                  num_brokers=None,
@@ -56,26 +52,8 @@ class RedpandaTest(Test):
             else:
                 num_brokers = 1
 
-        cloud_storage_access_key = test_context.globals.get(
-            self.GLOBAL_S3_ACCESS_KEY, None)
-        cloud_storage_secret_key = test_context.globals.get(
-            self.GLOBAL_S3_SECRET_KEY, None)
-        cloud_storage_region = test_context.globals.get(
-            self.GLOBAL_S3_REGION_KEY, None)
-
-        # Enable S3 if AWS creds were given at globals
-        if cloud_storage_access_key and cloud_storage_secret_key:
-            if self.si_settings is not None:
-                self.logger.info("Running on AWS S3, setting credentials")
-                self.si_settings.cloud_storage_access_key = cloud_storage_access_key
-                self.si_settings.cloud_storage_secret_key = cloud_storage_secret_key
-                self.si_settings.endpoint_url = None  # None so boto auto-gens the endpoint url
-                self.si_settings.cloud_storage_disable_tls = False  # SI will fail to create archivers if tls is disabled
-                self.si_settings.cloud_storage_region = cloud_storage_region
-                self.si_settings.cloud_storage_api_endpoint_port = 443
-        else:
-            self.logger.debug(
-                'No AWS credentials supplied, assuming minio defaults')
+        if self.si_settings:
+            self.si_settings.load_context(self.logger, test_context)
 
         self.redpanda = RedpandaService(test_context,
                                         num_brokers,
