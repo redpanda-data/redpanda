@@ -13,6 +13,7 @@
 #include "likely.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "rpc/logger.h"
+#include "rpc/service.h"
 #include "seastar/core/coroutine.hh"
 #include "ssx/future-util.h"
 #include "ssx/sformat.h"
@@ -107,13 +108,43 @@ static inline void print_exceptional_future(
         return;
     }
 
-    vlog(
-      rpc::rpclog.error,
-      "{} - Error[{}] remote address: {} - {}",
-      proto->name(),
-      ctx,
-      address,
-      f.get_exception());
+    bool is_error = true;
+    std::exception_ptr ex;
+    try {
+        std::rethrow_exception(f.get_exception());
+    } catch (const std::out_of_range&) {
+        // Happens on unclean client disconnect, when io_iterator_consumer
+        // gets fewer bytes than it wanted
+        ex = std::current_exception();
+        is_error = false;
+    } catch (const rpc::rpc_internal_body_parsing_exception&) {
+        // Happens on unclean client disconnect, typically wrapping
+        // an out_of_range
+        ex = std::current_exception();
+        is_error = false;
+    } catch (...) {
+        // An unexpected exception: this could be anything, including
+        // a bug: report as an error.
+        ex = std::current_exception();
+        is_error = true;
+    }
+    if (is_error) {
+        vlog(
+          rpc::rpclog.error,
+          "{} - Error[{}] remote address: {} - {}",
+          proto->name(),
+          ctx,
+          address,
+          ex);
+    } else {
+        vlog(
+          rpc::rpclog.warn,
+          "{} - Exception[{}] remote address: {} - {}",
+          proto->name(),
+          ctx,
+          address,
+          ex);
+    }
 }
 
 static ss::future<> apply_proto(
