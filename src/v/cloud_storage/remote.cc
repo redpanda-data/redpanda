@@ -104,7 +104,8 @@ static error_outcome categorize_error(
         // - any other network error (no memory, bad socket, etc)
         if (auto code = cerr.code();
             code.value() != ECONNREFUSED && code.value() != ENETUNREACH
-            && code.value() != ETIMEDOUT && code.value() != ECONNRESET) {
+            && code.value() != ETIMEDOUT && code.value() != ECONNRESET
+            && code.value() != EPIPE) {
             vlog(ctxlog.error, "System error {}", cerr);
             result = error_outcome::fail;
         } else {
