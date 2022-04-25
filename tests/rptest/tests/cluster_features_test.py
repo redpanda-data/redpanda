@@ -88,7 +88,7 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
         assert initial_version == self.admin.get_features()['cluster_version']
 
         self.redpanda.restart_nodes([self.redpanda.nodes[2]])
-        wait_until(lambda: initial_version == self.admin.get_features()[
+        wait_until(lambda: new_version == self.admin.get_features()[
             'cluster_version'],
                    timeout_sec=5,
                    backoff_sec=1)
