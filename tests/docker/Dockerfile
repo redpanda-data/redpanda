@@ -140,9 +140,6 @@ COPY --chown=0:0 tests/setup.py /root/tests/
 RUN python3 -m pip install --upgrade --force pip && \
     python3 -m pip install --force --no-cache-dir -e /root/tests/
 
-# copy python tools
-COPY --chown=0:0 tests/python /opt/python
-
 # Compile and install rust-based workload generator.
 # Install & remove compiler in the same step, to avoid bulking
 # out the resulting container image.
