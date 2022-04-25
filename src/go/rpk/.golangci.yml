@@ -1,7 +1,11 @@
 run:
   allow-parallel-runners: true
 
+# We opt out of all suggested linters and manually pick what we want.
+# Please do not use enable-all.
 linters:
   disable-all: true
   enable:
+  # Enabled by default linters:
     - gosimple
+    - ineffassign

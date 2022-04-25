@@ -272,6 +272,9 @@ func (c *consumer) parseOffset(
 	}
 
 	start, end, rel, atStart, atEnd, hasEnd, currentEnd, err := parseFromToOffset(offset)
+	if err != nil {
+		return fmt.Errorf("Unable to parse offset: %v", err)
+	}
 
 	if atStart {
 		c.resetOffset = kgo.NewOffset().AtStart().Relative(rel)

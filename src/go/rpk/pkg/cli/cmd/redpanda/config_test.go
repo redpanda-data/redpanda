@@ -247,6 +247,7 @@ func TestBootstrap(t *testing.T) {
 			}
 			require.NoError(t, err)
 			_, err = fs.Stat(configPath)
+			require.NoError(t, err)
 			conf, err := mgr.Read(configPath)
 			require.NoError(t, err)
 

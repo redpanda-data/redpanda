@@ -154,6 +154,10 @@ func discoverHosts(url string, port int) ([]string, error) {
 	}
 	var hosts []string
 	brokers, err := kadm.NewClient(cl).ListBrokers(context.Background())
+	if err != nil {
+		return nil, err
+	}
+
 	for _, b := range brokers {
 		hosts = append(
 			hosts,

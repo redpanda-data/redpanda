@@ -196,7 +196,7 @@ func addPluginWithExec(
 	// recursively below when there is more than one piece.
 	p0 := pieces[0]
 
-	childCmd, args, err := parentCmd.Find(pieces)
+	childCmd, _, err := parentCmd.Find(pieces)
 
 	// If the command does not exist, then err will be non-nil. If the
 	// command does not exist and the parent does not have subcommands,
@@ -211,7 +211,7 @@ func addPluginWithExec(
 	}
 
 	if len(pieces) > 1 { // recursive: we are not done yet adding our nested command
-		args = pieces[1:]
+		args := pieces[1:]
 		addPluginWithExec(childCmd, args, execPath)
 		return
 	}

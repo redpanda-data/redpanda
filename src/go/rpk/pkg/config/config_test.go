@@ -272,7 +272,6 @@ func TestSet(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			fs := afero.NewMemMapFs()
 			mgr := NewManager(fs)
-			conf := Default()
 			err := mgr.Set(tt.key, tt.value, tt.format)
 			if tt.expectErr {
 				require.Error(t, err)
@@ -280,7 +279,7 @@ func TestSet(t *testing.T) {
 			}
 			require.NoError(t, err)
 			if tt.check != nil {
-				conf, err = mgr.Get()
+				conf, err := mgr.Get()
 				require.NoError(t, err)
 				m, _ := mgr.(*manager)
 				tt.check(t, conf, m)
