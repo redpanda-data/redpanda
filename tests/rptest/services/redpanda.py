@@ -412,9 +412,12 @@ class RedpandaService(Service):
         self._context = context
         self._enable_rp = enable_rp
         self._extra_rp_conf = extra_rp_conf or dict()
-        self._extra_node_conf = extra_node_conf or dict()
         self._enable_pp = enable_pp
         self._enable_sr = enable_sr
+
+        self._extra_node_conf = {}
+        for node in self.nodes:
+            self._extra_node_conf[node] = extra_node_conf or dict()
 
         if log_level is None:
             self._log_level = self._context.globals.get(
@@ -463,6 +466,10 @@ class RedpandaService(Service):
 
     def set_extra_rp_conf(self, conf):
         self._extra_rp_conf = conf
+
+    def set_extra_node_conf(self, node, conf):
+        assert node in self.nodes
+        self._extra_node_conf[node] = conf
 
     def sasl_enabled(self):
         return self._extra_rp_conf and self._extra_rp_conf.get(
@@ -757,7 +764,8 @@ class RedpandaService(Service):
 
         # wait until the wasm engine has finished booting up
         wasm_port = 43189
-        conf_value = self._extra_node_conf.get('coproc_supervisor_server')
+        conf_value = self._extra_node_conf[node].get(
+            'coproc_supervisor_server')
         if conf_value is not None:
             wasm_port = conf_value['port']
 
@@ -1103,10 +1111,11 @@ class RedpandaService(Service):
                            superuser=self.SUPERUSER_CREDENTIALS,
                            sasl_enabled=self.sasl_enabled())
 
-        if override_cfg_params or self._extra_node_conf:
+        if override_cfg_params or self._extra_node_conf[node]:
             doc = yaml.full_load(conf)
-            doc["redpanda"].update(self._extra_node_conf)
-            self.logger.debug(f"extra_node_conf: {self._extra_node_conf}")
+            doc["redpanda"].update(self._extra_node_conf[node])
+            self.logger.debug(
+                f"extra_node_conf[{node.name}]: {self._extra_node_conf[node]}")
             if override_cfg_params:
                 self.logger.debug(
                     "Setting custom node configuration options: {}".format(

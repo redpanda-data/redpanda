@@ -17,7 +17,6 @@ from collections import defaultdict
 
 class RackAwarePlacementTest(RedpandaTest):
     def __init__(self, test_context):
-
         super(RackAwarePlacementTest,
               self).__init__(test_context=test_context,
                              num_brokers=6,
@@ -27,6 +26,8 @@ class RackAwarePlacementTest(RedpandaTest):
                              })
 
     def setUp(self):
+        # Delay startup, so that the test case can configure redpanda
+        # based on test parameters before starting it.
         pass
 
     def _get_partition_count(self, topic):
@@ -90,13 +91,13 @@ class RackAwarePlacementTest(RedpandaTest):
 
         The validation procedure checks that:
         - either every replica lives on a different rack;
-        - or every rack is used to place one or more replicas of the partition 
+        - or every rack is used to place one or more replicas of the partition
           (if replication factor is larger than number of racks)
 
         ----
         @param rack_layout_str is a 6-char string with all rack names combined into a signle string.
                                Every character of the string corresponds to one broker. Every
-                               rack id has single character. 
+                               rack id has single character.
         @param num_partitions defines number of partitions that needs to be created.
         @param replication_factor defines recplication factor of all partitions.
         """
@@ -105,7 +106,7 @@ class RackAwarePlacementTest(RedpandaTest):
         assert len(rack_layout) == 6
 
         for ix, node in enumerate(self.redpanda.nodes):
-            extra_rp_conf = {
+            extra_node_conf = {
                 # We're introducing two racks, small and large.
                 # The small rack has only one node and the
                 # large one has four nodes.
@@ -114,7 +115,9 @@ class RackAwarePlacementTest(RedpandaTest):
                 'enable_rack_awareness': True,
                 'segment_fallocation_step': 1024,
             }
-            self.redpanda.start_node(node, extra_rp_conf)
+            self.redpanda.set_extra_node_conf(node, extra_node_conf)
+
+        self.redpanda.start()
 
         if num_topics * num_partitions * replication_factor > 3000:
             # Combination of 2 topics, 5 replicas and 400 partitions can't be run
