@@ -1,7 +1,7 @@
 import dataclasses
 import random
 import time
-from threading import Thread
+from threading import Thread, Event
 from typing import Optional, List
 
 from ducktape.cluster.cluster import ClusterNode
@@ -133,7 +133,7 @@ class ActionInjectorThread(Thread):
         self.random_op = random_op
         self.redpanda = redpanda
         self.config = config
-        self._stop_requested = False
+        self._stop_requested = Event()
         super().__init__(*args, **kwargs)
 
     def run(self):
@@ -144,12 +144,12 @@ class ActionInjectorThread(Thread):
             err_msg=f'Cluster not ready to begin actions'
         )
 
-        while not self._stop_requested:
-            time.sleep(self.config.random_time_in_range())
+        while not self._stop_requested.is_set():
             self.random_op()
+            time.sleep(self.config.random_time_in_range())
 
     def stop(self):
-        self._stop_requested = True
+        self._stop_requested.set()
 
 
 class ActionCtx:

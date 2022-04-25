@@ -6,23 +6,23 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+import uuid
 
-from rptest.services.cluster import cluster
+from rptest.archival.s3_client import S3Client
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.types import TopicSpec
-from rptest.services.redpanda import RedpandaService
-from rptest.util import Scale
-from rptest.archival.s3_client import S3Client
+from rptest.services.action_injector import random_process_kills
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import RedpandaService, RESTART_LOG_ALLOW_LIST
 from rptest.tests.end_to_end import EndToEndTest
+from rptest.util import Scale
 from rptest.util import (
     produce_until_segments,
     wait_for_segments_removal,
 )
 
-import uuid
 
-
-class EndToEndShadowIndexingTest(EndToEndTest):
+class EndToEndShadowIndexingBase(EndToEndTest):
     segment_size = 1048576  # 1 Mb
     s3_host_name = "minio-s3"
     s3_access_key = "panda-user"
@@ -33,11 +33,10 @@ class EndToEndShadowIndexingTest(EndToEndTest):
         name=s3_topic_name,
         partition_count=1,
         replication_factor=3,
-    ), )
+    ),)
 
     def __init__(self, test_context):
-        super(EndToEndShadowIndexingTest,
-              self).__init__(test_context=test_context)
+        super(EndToEndShadowIndexingBase, self).__init__(test_context=test_context)
 
         self.s3_bucket_name = f"panda-bucket-{uuid.uuid1()}"
         self.topic = EndToEndShadowIndexingTest.s3_topic_name
@@ -83,6 +82,8 @@ class EndToEndShadowIndexingTest(EndToEndTest):
     def tearDown(self):
         self.s3_client.empty_bucket(self.s3_bucket_name)
 
+
+class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
     @cluster(num_nodes=5)
     def test_write(self):
         """Write at least 10 segments, set retention policy to leave only 5
@@ -100,13 +101,40 @@ class EndToEndShadowIndexingTest(EndToEndTest):
             self.topic,
             {
                 TopicSpec.PROPERTY_RETENTION_BYTES:
-                5 * EndToEndShadowIndexingTest.segment_size,
+                    5 * EndToEndShadowIndexingTest.segment_size,
             },
         )
         wait_for_segments_removal(redpanda=self.redpanda,
                                   topic=self.topic,
                                   partition_idx=0,
                                   count=6)
-
         self.start_consumer()
         self.run_validation()
+
+
+class EndToEndShadowIndexingTestWithFailures(EndToEndShadowIndexingBase):
+    @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST, allow_missing_process=True)
+    def test_write_with_node_failures(self):
+        self.start_producer()
+        produce_until_segments(
+            redpanda=self.redpanda,
+            topic=self.topic,
+            partition_idx=0,
+            count=10,
+        )
+
+        self.kafka_tools.alter_topic_config(
+            self.topic,
+            {TopicSpec.PROPERTY_RETENTION_BYTES: 5 * EndToEndShadowIndexingTest.segment_size},
+        )
+
+        with random_process_kills(self.redpanda):
+            wait_for_segments_removal(redpanda=self.redpanda,
+                                      topic=self.topic,
+                                      partition_idx=0,
+                                      count=6)
+            self.start_consumer()
+            self.run_validation()
+
+            # at least one node should have had the redpanda process killed off
+            assert any(self.redpanda.pids(node) is None for node in self.redpanda.nodes)
