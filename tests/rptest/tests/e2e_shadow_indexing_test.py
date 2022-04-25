@@ -33,10 +33,11 @@ class EndToEndShadowIndexingBase(EndToEndTest):
         name=s3_topic_name,
         partition_count=1,
         replication_factor=3,
-    ),)
+    ), )
 
     def __init__(self, test_context):
-        super(EndToEndShadowIndexingBase, self).__init__(test_context=test_context)
+        super(EndToEndShadowIndexingBase,
+              self).__init__(test_context=test_context)
 
         self.s3_bucket_name = f"panda-bucket-{uuid.uuid1()}"
         self.topic = EndToEndShadowIndexingTest.s3_topic_name
@@ -101,7 +102,7 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
             self.topic,
             {
                 TopicSpec.PROPERTY_RETENTION_BYTES:
-                    5 * EndToEndShadowIndexingTest.segment_size,
+                5 * EndToEndShadowIndexingTest.segment_size,
             },
         )
         wait_for_segments_removal(redpanda=self.redpanda,
@@ -113,7 +114,9 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
 
 
 class EndToEndShadowIndexingTestWithFailures(EndToEndShadowIndexingBase):
-    @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST, allow_missing_process=True)
+    @cluster(num_nodes=5,
+             log_allow_list=RESTART_LOG_ALLOW_LIST,
+             allow_missing_process=True)
     def test_write_with_node_failures(self):
         self.start_producer()
         produce_until_segments(
@@ -125,7 +128,10 @@ class EndToEndShadowIndexingTestWithFailures(EndToEndShadowIndexingBase):
 
         self.kafka_tools.alter_topic_config(
             self.topic,
-            {TopicSpec.PROPERTY_RETENTION_BYTES: 5 * EndToEndShadowIndexingTest.segment_size},
+            {
+                TopicSpec.PROPERTY_RETENTION_BYTES:
+                5 * EndToEndShadowIndexingTest.segment_size
+            },
         )
 
         with random_process_kills(self.redpanda):
@@ -137,4 +143,6 @@ class EndToEndShadowIndexingTestWithFailures(EndToEndShadowIndexingBase):
             self.run_validation()
 
             # at least one node should have had the redpanda process killed off
-            assert any(self.redpanda.pids(node) is None for node in self.redpanda.nodes)
+            assert any(
+                self.redpanda.pids(node) is None
+                for node in self.redpanda.nodes)
