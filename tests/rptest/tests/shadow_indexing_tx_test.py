@@ -8,8 +8,8 @@
 # by the Apache License, Version 2.0
 
 from rptest.services.cluster import cluster
+from rptest.services.redpanda import SISettings
 from ducktape.utils.util import wait_until
-from rptest.archival.s3_client import S3Client
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
@@ -28,46 +28,25 @@ from itertools import zip_longest
 
 class ShadowIndexingTxTest(RedpandaTest):
     segment_size = 1048576  # 1 Mb
-    s3_host_name = "minio-s3"
-    s3_access_key = "panda-user"
-    s3_secret_key = "panda-secret"
-    s3_region = "panda-region"
-    s3_topic_name = "panda-topic"
     topics = (TopicSpec(name='panda-topic',
                         partition_count=1,
                         replication_factor=3), )
 
     def __init__(self, test_context):
-        self.s3_bucket_name = f"panda-bucket-{uuid.uuid1()}"
         extra_rp_conf = dict(
-            log_segment_size=self.segment_size,
-            cloud_storage_enabled=True,
-            cloud_storage_access_key=self.s3_access_key,
-            cloud_storage_secret_key=self.s3_secret_key,
-            cloud_storage_region=self.s3_region,
-            cloud_storage_bucket=self.s3_bucket_name,
-            cloud_storage_disable_tls=True,
-            cloud_storage_api_endpoint=self.s3_host_name,
-            cloud_storage_api_endpoint_port=9000,
-            cloud_storage_reconciliation_interval_ms=500,
-            cloud_storage_max_connections=5,
             enable_idempotence=True,
             enable_transactions=True,
             enable_leader_balancer=False,
             enable_auto_rebalance_on_node_add=False,
         )
 
-        super(ShadowIndexingTxTest, self).__init__(test_context=test_context,
-                                                   extra_rp_conf=extra_rp_conf)
+        si_settings = SISettings(cloud_storage_reconciliation_interval_ms=500,
+                                 cloud_storage_max_connections=5,
+                                 log_segment_size=self.segment_size)
 
-        s3client = S3Client(
-            region=self.s3_region,
-            access_key=self.s3_access_key,
-            secret_key=self.s3_secret_key,
-            endpoint=f"http://{self.s3_host_name}:9000",
-            logger=self.logger,
-        )
-        s3client.create_bucket(self.s3_bucket_name)
+        super(ShadowIndexingTxTest, self).__init__(test_context=test_context,
+                                                   extra_rp_conf=extra_rp_conf,
+                                                   si_settings=si_settings)
 
     def setUp(self):
         rpk = RpkTool(self.redpanda)
