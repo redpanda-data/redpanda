@@ -116,7 +116,7 @@ group_recovery_consumer::operator()(model::record_batch batch) {
         group_it->second.try_set_fence(cmd.pid.get_id(), cmd.pid.get_epoch());
         co_return ss::stop_iteration::no;
     } else {
-        vlog(klog.trace, "ignoring batch with type {}", batch.header().type);
+        vlog(kgrouplog.trace, "ignoring batch with type {}", batch.header().type);
         co_return ss::stop_iteration::no;
     }
 }
@@ -140,14 +140,14 @@ void group_recovery_consumer::handle_record(model::record r) {
         __builtin_unreachable();
     } catch (...) {
         vlog(
-          klog.error,
+          kgrouplog.error,
           "error handling group metadata record - {}",
           std::current_exception());
     }
 }
 
 void group_recovery_consumer::handle_group_metadata(group_metadata_kv md) {
-    vlog(klog.trace, "Recovering group metadata {}", md.key.group_id);
+    vlog(kgrouplog.trace, "Recovering group metadata {}", md.key.group_id);
 
     if (md.value) {
         // until we switch over to a compacted topic or use raft snapshots,
@@ -166,7 +166,7 @@ void group_recovery_consumer::handle_offset_metadata(offset_metadata_kv md) {
     model::topic_partition tp(md.key.topic, md.key.partition);
     if (md.value) {
         vlog(
-          klog.trace,
+          kgrouplog.trace,
           "Recovering offset {}/{} with metadata {}",
           md.key.topic,
           md.key.partition,

@@ -247,7 +247,7 @@ list_offsets_handler::handle(request_context ctx, ss::smp_service_group ssg) {
     list_offsets_request request;
     request.decode(ctx.reader(), ctx.header().version);
     request.compute_duplicate_topics();
-    vlog(klog.trace, "Handling request {}", request);
+    vlog(kgrouplog.trace, "Handling request {}", request);
 
     auto unauthorized_it = std::partition(
       request.data.topics.begin(),

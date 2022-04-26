@@ -22,6 +22,7 @@
 #include "kafka/protocol/request_reader.h"
 #include "kafka/server/group_metadata.h"
 #include "kafka/server/group_recovery_consumer.h"
+#include "kafka/server/logger.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "model/record.h"
@@ -29,6 +30,7 @@
 #include "ssx/future-util.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/lowres_clock.hh>
 
 namespace kafka {
 
@@ -130,7 +132,7 @@ ss::future<> group_manager::stop() {
 }
 
 void group_manager::detach_partition(const model::ntp& ntp) {
-    klog.debug("detaching group metadata partition {}", ntp);
+    kgrouplog.debug("detaching group metadata partition {}", ntp);
     ssx::spawn_with_gate(_gate, [this, _ntp{ntp}]() -> ss::future<> {
         auto ntp(_ntp);
         auto it = _partitions.find(ntp);
@@ -154,7 +156,7 @@ void group_manager::detach_partition(const model::ntp& ntp) {
 }
 
 void group_manager::attach_partition(ss::lw_shared_ptr<cluster::partition> p) {
-    klog.debug("attaching group metadata partition {}", p->ntp());
+    kgrouplog.debug("attaching group metadata partition {}", p->ntp());
     auto attached = ss::make_lw_shared<attached_partition>(p);
     auto res = _partitions.try_emplace(p->ntp(), attached);
     // TODO: this is not a forever assertion. this should just generally never
@@ -191,7 +193,7 @@ ss::future<> group_manager::cleanup_removed_topic_partitions(
                     if (it->second != g) {
                         return ss::now();
                     }
-                    vlog(klog.trace, "Removed group {}", g);
+                    vlog(kgrouplog.trace, "Removed group {}", g);
                     _groups.erase(it);
                     _groups.rehash(0);
                     return ss::now();
@@ -228,7 +230,7 @@ void group_manager::handle_topic_delta(
                 });
           })
           .handle_exception([](std::exception_ptr e) {
-              vlog(klog.warn, "Topic clean-up encountered error: {}", e);
+              vlog(kgrouplog.warn, "Topic clean-up encountered error: {}", e);
           });
 }
 
@@ -324,14 +326,25 @@ ss::future<> group_manager::handle_partition_leader_change(
   ss::lw_shared_ptr<attached_partition> p,
   std::optional<model::node_id> leader_id) {
     if (leader_id != _self.id()) {
+        vlog(
+          kgrouplog.trace,
+          "handle_partition_leader_change not leader, leader: {} me: {}",
+          leader_id,
+          _self.id());
         p->loading = false;
         return gc_partition_state(p);
     }
 
     p->loading = true;
-    auto timeout
-      = ss::lowres_clock::now()
-        + config::shard_local_cfg().kafka_group_recovery_timeout_ms();
+    auto timeout_duration
+      = config::shard_local_cfg().kafka_group_recovery_timeout_ms();
+    auto timeout = ss::lowres_clock::now() + timeout_duration;
+
+    vlog(
+      kgrouplog.trace,
+      "handle_partition_leader_change became leader, id: {}, timeout: {}",
+      _self.id(),
+      timeout_duration);
     /*
      * we just became leader. make sure the log is up-to-date. see
      * struct old::group_log_record_key{} for more details. _catchup_lock
@@ -391,6 +404,13 @@ ss::future<> group_manager::recover_partition(
   model::term_id term,
   ss::lw_shared_ptr<attached_partition> p,
   group_recovery_consumer_state ctx) {
+    auto start_time = ss::lowres_clock::now();
+
+    vlog(
+      kgrouplog.info,
+      "recover_partition {} groups to recover",
+      ctx.groups.size());
+
     for (auto& [_, group] : _groups) {
         if (group->partition()->ntp() == p->partition->ntp()) {
             group->reset_tx_state(term);
@@ -402,8 +422,8 @@ ss::future<> group_manager::recover_partition(
         if (group_stm.has_data()) {
             auto group = get_group(group_id);
             vlog(
-              klog.info,
-              "Recovering {} - {}",
+              kgrouplog.info,
+              "recover_partition Recovering {} - {.1000}",
               group_id,
               group_stm.get_metadata());
             for (const auto& member : group_stm.get_metadata().members) {
@@ -475,7 +495,7 @@ ss::future<> group_manager::recover_partition(
     for (auto& [group_id, group_stm] : ctx.groups) {
         if (group_stm.is_removed()) {
             if (_groups.contains(group_id) && group_stm.offsets().size() > 0) {
-                klog.warn(
+                kgrouplog.warn(
                   "Unexpected active group unload {} loading {}",
                   group_id,
                   p->partition->ntp());
@@ -485,6 +505,11 @@ ss::future<> group_manager::recover_partition(
 
     _groups.rehash(0);
 
+    vlog(
+      kgrouplog.info,
+      "recover_partition recovered {} groups in {} ms",
+      ctx.groups.size(), ss::lowres_clock::now() - start_time);
+
     return ss::make_ready_future<>();
 }
 
@@ -492,6 +517,12 @@ group::join_group_stages group_manager::join_group(join_group_request&& r) {
     auto error = validate_group_status(
       r.ntp, r.data.group_id, join_group_api::key);
     if (error != error_code::none) {
+                vlog(
+          kgrouplog.trace,
+          "Join group {} failed for {}: {}",
+          r.data.group_id,
+          r.data.member_id,
+          error);
         return group::join_group_stages(
           make_join_error(r.data.member_id, error));
     }
@@ -500,7 +531,7 @@ group::join_group_stages group_manager::join_group(join_group_request&& r) {
       r.data.session_timeout_ms < _conf.group_min_session_timeout_ms()
       || r.data.session_timeout_ms > _conf.group_max_session_timeout_ms()) {
         vlog(
-          klog.trace,
+          kgrouplog.trace,
           "Join group {} rejected for invalid session timeout {} valid range "
           "[{},{}]. Request {}",
           r.data.group_id,
@@ -521,7 +552,7 @@ group::join_group_stages group_manager::join_group(join_group_request&& r) {
         // not exist we should reject the request.</kafka>
         if (r.data.member_id != unknown_member_id) {
             vlog(
-              klog.trace,
+              kgrouplog.trace,
               "Join group {} rejected for known member {} joining unknown "
               "group. Request {}",
               r.data.group_id,
@@ -538,7 +569,7 @@ group::join_group_stages group_manager::join_group(join_group_request&& r) {
             // gone. this is generally not going to be a scenario that can
             // happen until we have rebalancing / partition deletion feature.
             vlog(
-              klog.trace,
+              kgrouplog.trace,
               "Join group {} rejected for unavailable ntp {}",
               r.data.group_id,
               r.ntp);
@@ -557,7 +588,10 @@ group::join_group_stages group_manager::join_group(join_group_request&& r) {
         _groups.emplace(r.data.group_id, group);
         _groups.rehash(0);
         is_new_group = true;
-        vlog(klog.trace, "Created new group {} while joining", r.data.group_id);
+        vlog(
+          kgrouplog.trace,
+          "Created new group {} while joining",
+          r.data.group_id);
     }
 
     auto ret = group->handle_join_group(std::move(r), is_new_group);
@@ -569,6 +603,12 @@ group::sync_group_stages group_manager::sync_group(sync_group_request&& r) {
     auto error = validate_group_status(
       r.ntp, r.data.group_id, sync_group_api::key);
     if (error != error_code::none) {
+        vlog(
+          kgrouplog.trace,
+          "sync_group failed load_in_progress, err {} group {} member {}",
+          error,
+          r.data.group_id,
+          r.data.member_id);
         if (error == error_code::coordinator_load_in_progress) {
             // <kafka>The coordinator is loading, which means we've lost the
             // state of the active rebalance and the group will need to start
@@ -591,7 +631,7 @@ group::sync_group_stages group_manager::sync_group(sync_group_request&& r) {
           stages.result.finally([group] {}));
     } else {
         vlog(
-          klog.trace,
+          kgrouplog.trace,
           "Cannot handle sync group request for unknown group {}",
           r.data.group_id);
         return group::sync_group_stages(
@@ -617,7 +657,7 @@ ss::future<heartbeat_response> group_manager::heartbeat(heartbeat_request&& r) {
     }
 
     vlog(
-      klog.trace,
+      kgrouplog.trace,
       "Cannot handle heartbeat request for unknown group {}",
       r.data.group_id);
 
@@ -637,7 +677,7 @@ group_manager::leave_group(leave_group_request&& r) {
         return group->handle_leave_group(std::move(r)).finally([group] {});
     } else {
         vlog(
-          klog.trace,
+          kgrouplog.trace,
           "Cannot handle leave group request for unknown group {}",
           r.data.group_id);
         if (r.version < api_version(3)) {
@@ -1030,24 +1070,31 @@ error_code group_manager::validate_group_status(
   const model::ntp& ntp, const group_id& group, api_key api) {
     if (!valid_group_id(group, api)) {
         vlog(
-          klog.trace, "Group name {} is invalid for operation {}", group, api);
+          kgrouplog.trace,
+          "Group name {} is invalid for operation {}",
+          group,
+          api);
         return error_code::invalid_group_id;
     }
 
     if (const auto it = _partitions.find(ntp); it != _partitions.end()) {
         if (!it->second->partition->is_leader()) {
+            auto leader = it->second->partition->get_leader_id().value_or(
+              model::node_id(-1));
             vlog(
-              klog.trace,
-              "Group {} operation {} sent to non-leader coordinator {}",
+              kgrouplog.trace,
+              "Group {} operation {} sent to non-leader coordinator {} leader "
+              "is {}",
               group,
               api,
-              ntp);
+              ntp,
+              leader);
             return error_code::not_coordinator;
         }
 
         if (it->second->loading) {
             vlog(
-              klog.trace,
+              kgrouplog.trace,
               "Group {} operation {} sent to loading coordinator {}",
               group,
               api,
@@ -1072,7 +1119,7 @@ error_code group_manager::validate_group_status(
     }
 
     vlog(
-      klog.trace,
+      kgrouplog.trace,
       "Group {} operation {} misdirected to non-coordinator {}",
       group,
       api,

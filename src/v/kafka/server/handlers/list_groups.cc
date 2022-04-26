@@ -24,7 +24,7 @@ ss::future<response_ptr> list_groups_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
     list_groups_request request{};
     request.decode(ctx.reader(), ctx.header().version);
-    vlog(klog.trace, "Handling request {}", request);
+    vlog(kgrouplog.trace, "Handling request {}", request);
 
     auto&& [error, groups] = co_await ctx.groups().list_groups();
 

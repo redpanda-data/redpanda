@@ -11,4 +11,5 @@
 
 namespace kafka {
 ss::logger klog("kafka");
+ss::logger kgrouplog("k/groups");
 } // namespace kafka

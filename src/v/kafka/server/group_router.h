@@ -25,6 +25,7 @@
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/group_manager.h"
 #include "kafka/types.h"
+#include "logger.h"
 #include "seastarx.h"
 
 #include <seastar/core/reactor.hh>

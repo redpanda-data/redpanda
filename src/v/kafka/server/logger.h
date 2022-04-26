@@ -16,5 +16,8 @@
 #include <seastar/util/log.hh>
 
 namespace kafka {
+// logger for kafka requests other than group membership
 extern ss::logger klog;
+// the logger for group membership
+extern ss::logger kgrouplog;
 } // namespace kafka
