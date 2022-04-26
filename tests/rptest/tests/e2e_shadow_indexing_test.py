@@ -13,7 +13,7 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.types import TopicSpec
 from rptest.services.action_injector import random_process_kills
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import RedpandaService, RESTART_LOG_ALLOW_LIST
+from rptest.services.redpanda import RedpandaService, CHAOS_LOG_ALLOW_LIST
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.util import Scale
 from rptest.util import (
@@ -125,7 +125,7 @@ class EndToEndShadowIndexingTestWithDisruptions(EndToEndShadowIndexingBase):
     override_default_topic_replication = EndToEndShadowIndexingBase.num_brokers
 
     @cluster(num_nodes=5,
-             log_allow_list=RESTART_LOG_ALLOW_LIST,
+             log_allow_list=CHAOS_LOG_ALLOW_LIST,
              allow_missing_process=True)
     def test_write_with_node_failures(self):
         self.start_producer()
