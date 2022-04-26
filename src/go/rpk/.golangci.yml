@@ -1,11 +1,23 @@
 run:
   allow-parallel-runners: true
 
+# golangci-lint by default ignores some staticcheck and vet raised issues that
+# are actually important to catch. The following ensures that we do not ignore
+# those tools ever.
+issues:
+  exclude-use-default: false
+
 # We opt out of all suggested linters and manually pick what we want.
 # Please do not use enable-all.
 linters:
   disable-all: true
   enable:
   # Enabled by default linters:
+    - deadcode
     - gosimple
     - ineffassign
+    - staticcheck
+    - structcheck
+    - typecheck
+    - unused
+    - varcheck

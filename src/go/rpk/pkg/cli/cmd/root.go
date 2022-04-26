@@ -30,7 +30,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
-	"golang.org/x/crypto/ssh/terminal"
+	"golang.org/x/term"
 )
 
 func Execute() {
@@ -38,7 +38,7 @@ func Execute() {
 	fs := afero.NewOsFs()
 	mgr := config.NewManager(fs)
 
-	if !terminal.IsTerminal(int(os.Stdout.Fd())) {
+	if !term.IsTerminal(int(os.Stdout.Fd())) {
 		color.NoColor = true
 	}
 	log.SetFormatter(cli.NewRpkLogFormatter())
@@ -229,7 +229,7 @@ func addPluginWithExec(
 
 	out, err := (&exec.Cmd{
 		Path: execPath,
-		Args: append([]string{execPath, plugin.FlagAutoComplete}),
+		Args: []string{execPath, plugin.FlagAutoComplete},
 		Env:  os.Environ(),
 	}).Output()
 	if err != nil {

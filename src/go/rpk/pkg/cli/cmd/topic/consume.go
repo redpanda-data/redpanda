@@ -48,7 +48,6 @@ type consumer struct {
 	metaOnly bool // specific to -f json
 
 	resetOffset kgo.Offset // defaults to NoResetOffset, can be start or end
-	start       int64      // TODO doc
 
 	// If an end offset is specified, we immediately look up where we will
 	// end and quit rpk when we hit the end.
