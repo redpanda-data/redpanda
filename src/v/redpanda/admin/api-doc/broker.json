@@ -8,6 +8,21 @@
     ],
     "apis": [
         {
+            "path": "/v1/cluster_view",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get cluster view",
+                    "type": "cluster_view",
+                    "nickname": "get_cluster_view",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
+        },
+        {
             "path": "/v1/brokers",
             "operations": [
                 {
@@ -93,6 +108,22 @@
         }
     ],
     "models": {
+        "cluster_view": {
+            "id": "cluster_view",
+            "description": "Cluster view",
+            "properties": {
+                "version": {
+                    "type": "long",
+                    "description": "cluster view version"
+                },
+                "brokers": {
+                    "type": "array",
+                    "items": {
+                        "type": "broker"
+                    }
+                }
+            }
+        },
         "broker": {
             "id": "broker",
             "description": "Broker information",
