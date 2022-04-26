@@ -5,14 +5,10 @@ ec2:
 
   excluded:
     - tests/librdkafka_test.py # normally disabled
-    - tests/metrics_reporter_test.py # num_nodes / feature
-    - tests/archival_test.py # s3 setup
-    - tests/e2e_shadow_indexing_test.py # num_nodes / s3 setup
-    - tests/shadow_indexing_tx_test.py # s3 setup
-    - tests/topic_recovery_test.py # s3 setup
     - tests/wasm_filter_test.py # no wasm
     - tests/wasm_failure_recovery_test.py # no wasm
     - tests/wasm_identity_test.py # no wasm
     - tests/wasm_topics_test.py # no wasm
     - tests/wasm_redpanda_failure_recovery_test.py # no wasm
+    - tests/wasm_partition_movement_test.py # no wasm
 
