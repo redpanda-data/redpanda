@@ -326,8 +326,10 @@ class GroupMetricsTest(RedpandaTest):
                                          partition=0,
                                          target=self.redpanda.idx(new_leader))
             for _ in range(3):  # re-check a few times
-                leader = self.redpanda.get_node(get_group_leader())
-                if leader == new_leader:
+                leader = get_group_leader()
+                self.logger.debug(f"Current leader: {leader}")
+                if leader != -1 and self.redpanda.get_node(
+                        leader) == new_leader:
                     return True
                 time.sleep(1)
             return False
