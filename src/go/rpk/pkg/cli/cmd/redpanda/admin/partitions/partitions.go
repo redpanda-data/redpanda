@@ -64,7 +64,7 @@ func newListCommand(fs afero.Fs) *cobra.Command {
 			m, err = adm.Metadata(context.Background())
 			out.MaybeDie(err, "unable to request metadata: %v", err)
 
-			tw := out.NewTable("TOPIC", "PARTITION", "IS_LEADER")
+			tw := out.NewTable("TOPIC", "PARTITION", "IS-LEADER")
 			defer tw.Flush()
 
 			for _, t := range m.Topics.Sorted() {
