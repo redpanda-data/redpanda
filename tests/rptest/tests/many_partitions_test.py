@@ -11,6 +11,7 @@ import time
 import psutil
 
 from rptest.services.cluster import cluster
+from rptest.util import Scale
 from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
 from ducktape.cluster.cluster_spec import ClusterSpec
@@ -51,6 +52,12 @@ resource_settings = ResourceSettings(
 # at maximum capacity we should account for the extra partition
 MAX_NUM_PARTITIONS = NODE_MEMORY_MB - 1
 
+# Even on dedicate nodes, don't go above this partition count.  This limit reflects
+# issues (at time of writing in redpanda 22.1) around disk contention on node startup,
+# where ducktape's startup threshold is violated by the time it takes systems with
+# more partitions to replay recent content on startup.
+HARD_PARTITION_LIMIT = 5000
+
 
 class ManyPartitionsTest(RedpandaTest):
     """
@@ -86,7 +93,7 @@ class ManyPartitionsTest(RedpandaTest):
             resource_settings=resource_settings,
             # Usually tests run with debug or trace logs, but when testing resource
             # limits we want to test in a more production-like configuration.
-            #log_level='info',  # TODO: revert to info logging once we're confident in test
+            log_level='info',
             **kwargs)
         self.rpk = RpkTool(self.redpanda)
 
@@ -136,6 +143,11 @@ class ManyPartitionsTest(RedpandaTest):
             consumer.stop()
             consumer.free()
 
+    def setUp(self):
+        # defer redpanda startup to the test, it might want to tweak
+        # ResourceSettings based on its parameters.
+        pass
+
     @cluster(num_nodes=8, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @parametrize(n_partitions=100,
                  n_topics=1)  # 100 partitions (baseline non-stressed test)
@@ -166,6 +178,24 @@ class ManyPartitionsTest(RedpandaTest):
           a functional state.
         """
 
+        # For release testing, ramp up the max partition count to whatever
+        # the memory size of the nodes allows.
+        release_scale_test = n_partitions == MAX_NUM_PARTITIONS and self.scale.release
+        if release_scale_test:
+            self.logger.info(f"Running release scale test")
+            if self.redpanda.dedicated_nodes:
+                # Clear resource limits: run redpanda using all available
+                # resources on the test node.
+                self.redpanda.set_resource_settings(ResourceSettings())
+
+            n_partitions = min(
+                int(self.redpanda.get_node_memory_mb() * 0.9) - 1,
+                HARD_PARTITION_LIMIT)
+        self.logger.info(
+            f"Running partition scale test with {n_partitions} partitions")
+
+        self.redpanda.start()
+
         replication_factor = 3
 
         # Do a phony allocation of all the non-redpanda nodes, so that we do not
@@ -192,9 +222,12 @@ class ManyPartitionsTest(RedpandaTest):
         # - Relies on our container environment telling us the host's real memory size,
         #   rather than just what's assigned to this container (which is the case with
         #   podman and docker at time of writing)
-        total_memory = psutil.virtual_memory().total
-        self.logger.info(f"Memory: {total_memory}")
-        if total_memory < resource_settings.memory_mb * 1024 * 1024 * 3:
+        if self.redpanda.dedicated_nodes:
+            total_memory = self.redpanda.get_node_memory_mb() * 3 * 1024 * 1024
+        else:
+            total_memory = psutil.virtual_memory().total
+        self.logger.info(f"Total memory: {total_memory}")
+        if resource_settings.memory_mb is not None and total_memory < resource_settings.memory_mb * 1024 * 1024 * 3:
             if self.ci_mode:
                 raise RuntimeError(
                     f"Too little memory {total_memory} on test machine")
@@ -239,8 +272,13 @@ class ManyPartitionsTest(RedpandaTest):
         # to disk during consumption, not just enough data to hold it all in the batch
         # cache.
         write_bytes_per_topic = min(
-            int((resource_settings.memory_mb * 1024 * 1024) / n_topics),
+            int((self.redpanda.get_node_memory_mb() * 1024 * 1024) / n_topics),
             fetch_mb_per_partition * n_partitions) * 2
+
+        if release_scale_test:
+            # Release tests can be much longer running: 10x the amount of
+            # data we fire through the system
+            write_bytes_per_topic *= 5
 
         msg_size = 128 * 1024
         msg_count_per_topic = int((write_bytes_per_topic / msg_size))
@@ -249,6 +287,11 @@ class ManyPartitionsTest(RedpandaTest):
         # This bandwidth guess is very low to enable running on heavily contended
         # test nodes in buildkite.
         expect_bandwidth = 10 * 1024 * 1024
+        if release_scale_test:
+            # Release scale tests run on machines with dedicated drives,
+            # which we assume go at least at 100MB/s, roughly like a an EC2 i3.large
+            expect_bandwidth = 100 * 1024 * 1024
+
         expect_transmit_time = int(write_bytes_per_topic / expect_bandwidth)
 
         for tn in topic_names:

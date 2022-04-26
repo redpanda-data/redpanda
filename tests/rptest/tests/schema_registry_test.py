@@ -13,8 +13,8 @@ import uuid
 import requests
 import time
 import random
-import os
 
+from rptest.util import inject_remote_script
 from rptest.services.cluster import cluster
 from ducktape.services.background_thread import BackgroundThreadService
 
@@ -945,27 +945,25 @@ class SchemaRegistryTest(RedpandaTest):
         # Expose into StressTest
         logger = self.logger
         python = "python3"
-        script_name = "schema_registry_test_helper.py"
-
-        dir = os.path.dirname(os.path.realpath(__file__))
-        src_path = os.path.join(dir, script_name)
-        dest_path = os.path.join("/tmp", script_name)
 
         class StressTest(BackgroundThreadService):
             def __init__(self, context):
                 super(StressTest, self).__init__(context, num_nodes=1)
+                self.script_path = None
 
             def _worker(self, idx, node):
-                node.account.copy_to(src_path, dest_path)
+                self.script_path = inject_remote_script(
+                    node, "schema_registry_test_helper.py")
                 ssh_output = node.account.ssh_capture(
-                    f"{python} {dest_path} {' '.join(node_names)}")
+                    f"{python} {self.script_path} {' '.join(node_names)}")
                 for line in ssh_output:
                     logger.info(line)
 
             def clean_nodes(selfself, nodes):
                 # Remove our remote script
-                for n in nodes:
-                    n.account.remove(dest_path, True)
+                if self.script_path:
+                    for n in nodes:
+                        n.account.remove(self.script_path, True)
 
         svc = StressTest(self._ctx)
         svc.start()

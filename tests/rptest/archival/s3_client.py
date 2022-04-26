@@ -4,10 +4,9 @@ from botocore.exceptions import ClientError
 from time import sleep
 from functools import wraps
 from collections import namedtuple
-import traceback
-import sys
 import time
 import datetime
+from typing import Union
 
 
 class SlowDown(Exception):
@@ -45,8 +44,8 @@ class S3Client:
                  region,
                  access_key,
                  secret_key,
-                 endpoint,
                  logger,
+                 endpoint=None,
                  disable_ssl=True):
         cfg = Config(region_name=region, signature_version='s3v4')
         self._cli = boto3.client('s3',
@@ -61,9 +60,12 @@ class S3Client:
     def create_bucket(self, name):
         """Create bucket in S3"""
         try:
-            self._cli.create_bucket(
+            res = self._cli.create_bucket(
                 Bucket=name,
                 CreateBucketConfiguration={'LocationConstraint': self._region})
+
+            self.logger.debug(res)
+            assert res['ResponseMetadata']['HTTPStatusCode'] == 200
         except ClientError as err:
             if err.response['Error']['Code'] != 'BucketAlreadyOwnedByYou':
                 raise err
@@ -91,17 +93,22 @@ class S3Client:
             self.logger.debug(f"empty_bucket error: {e}")
 
         failed_keys = []
-        for key in keys:
-            self.logger.debug(f"deleting key {key}")
+        while len(keys):
+            # S3 API supports up to 1000 keys per delete request
+            batch = keys[0:1000]
+            keys = keys[1000:]
+            self.logger.debug(f"deleting keys {batch[0]}..{batch[-1]}")
             try:
-                reply = self._delete_object(name, key)
+                reply = self._cli.delete_objects(
+                    Bucket=name,
+                    Delete={'Objects': [{
+                        'Key': k
+                    } for k in batch]})
                 self.logger.debug(f"delete request reply: {reply}")
             except:
-                e, v = sys.exc_info()[:2]
-                stacktrace = traceback.format_exc()
-                self.logger.debug(
-                    f"Delete request failed: {e} {v} {stacktrace}")
-                failed_keys.append(key)
+                self.logger.exception(
+                    f"Delete request failed for keys {batch[0]}..{batch[-1]}")
+                failed_keys.extend(batch)
         return failed_keys
 
     def delete_object(self, bucket, key, verify=False):
@@ -292,3 +299,10 @@ class S3Client:
                                            Key=item['Key'],
                                            ETag=item['ETag'][1:-1],
                                            ContentLength=item['Size'])
+
+    def list_buckets(self) -> dict[str, Union[list, dict]]:
+        try:
+            return self._cli.list_buckets()
+        except Exception as ex:
+            self.logger.error(f'Error listing buckets: {ex}')
+            raise

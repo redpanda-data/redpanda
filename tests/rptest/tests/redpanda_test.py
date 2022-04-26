@@ -31,6 +31,7 @@ class RedpandaTest(Test):
                  extra_rp_conf=dict(),
                  enable_pp=False,
                  enable_sr=False,
+                 si_settings=None,
                  **kwargs):
         """
         Any trailing keyword arguments are passed through to the
@@ -38,6 +39,7 @@ class RedpandaTest(Test):
         """
         super(RedpandaTest, self).__init__(test_context)
         self.scale = Scale(test_context)
+        self.si_settings = si_settings
 
         if num_brokers is None:
             # Default to a 3 node cluster if sufficient nodes are available, else
@@ -50,11 +52,15 @@ class RedpandaTest(Test):
             else:
                 num_brokers = 1
 
+        if self.si_settings:
+            self.si_settings.load_context(self.logger, test_context)
+
         self.redpanda = RedpandaService(test_context,
                                         num_brokers,
                                         extra_rp_conf=extra_rp_conf,
                                         enable_pp=enable_pp,
                                         enable_sr=enable_sr,
+                                        si_settings=self.si_settings,
                                         **kwargs)
         self._client = DefaultClient(self.redpanda)
 
@@ -83,6 +89,10 @@ class RedpandaTest(Test):
         developer environments (e.g. laptops) but apply stricter checks in CI.
         """
         return os.environ.get('CI', None) != 'false'
+
+    @property
+    def s3_client(self):
+        return self.redpanda.s3_client
 
     def setUp(self):
         self.redpanda.start()

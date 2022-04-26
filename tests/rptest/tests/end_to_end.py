@@ -50,7 +50,11 @@ class EndToEndTest(Test):
       - Perform some action (e.g. partition movement)
       - Run validation
     """
-    def __init__(self, test_context, extra_rp_conf=None, extra_node_conf=None):
+    def __init__(self,
+                 test_context,
+                 extra_rp_conf=None,
+                 extra_node_conf=None,
+                 si_settings=None):
         super(EndToEndTest, self).__init__(test_context=test_context)
         if extra_rp_conf is None:
             self._extra_rp_conf = {}
@@ -65,7 +69,14 @@ class EndToEndTest(Test):
         self.topic = None
         self._client = None
 
-    def start_redpanda(self, num_nodes=1, extra_rp_conf=None):
+    def start_redpanda(self,
+                       num_nodes=1,
+                       extra_rp_conf=None,
+                       si_settings=None):
+        self.si_settings = si_settings
+        if self.si_settings:
+            self.si_settings.load_context(self.logger, self.test_context)
+
         if extra_rp_conf is not None:
             # merge both configurations, the extra_rp_conf passed in
             # paramter takes the precedence
@@ -78,6 +89,10 @@ class EndToEndTest(Test):
                                         extra_node_conf=self._extra_node_conf)
         self.redpanda.start()
         self._client = DefaultClient(self.redpanda)
+
+    @property
+    def s3_client(self):
+        return self.redpanda.s3_client
 
     def client(self):
         assert self._client is not None

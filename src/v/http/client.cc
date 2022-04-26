@@ -351,7 +351,7 @@ ss::future<iobuf> client::response_stream::recv_some() {
             [err] { return ss::make_exception_future<iobuf>(err); });
       })
       .handle_exception_type([this](const std::system_error& ec) {
-          vlog(_ctxlog.error, "receive error {}", ec);
+          vlog(_ctxlog.warn, "receive error {}", ec);
           _client->shutdown();
           return ss::make_exception_future<iobuf>(ec);
       });
@@ -429,7 +429,10 @@ ss::future<> client::request_stream::send_some(iobuf&& seq) {
                     [err] { return ss::make_exception_future<>(err); });
               })
             .handle_exception_type([this](const std::system_error& ec) {
-                vlog(_ctxlog.error, "send error {}", ec);
+                // Things like EPIPE, ERESET.  This happens routinely
+                // when talking to AWS S3, even if we are not doing
+                // anything wrong.
+                vlog(_ctxlog.warn, "send error {}", ec);
                 _client->shutdown();
                 return ss::make_exception_future<>(ec);
             });

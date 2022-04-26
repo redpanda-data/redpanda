@@ -41,6 +41,7 @@ class TestMirrorMakerService(EndToEndTest):
         self.zk = ZookeeperService(self.test_context,
                                    num_nodes=1,
                                    version=V_3_0_0)
+        self.source_broker = None
 
     def setUp(self):
         self.zk.start()
@@ -51,14 +52,14 @@ class TestMirrorMakerService(EndToEndTest):
         # explicitly here with some logging, to enable debugging issues
         # like https://github.com/redpanda-data/redpanda/issues/4270
 
-        self.logger.info(
-            f"Stopping source broker ({self.source_broker.__class__.__name__})..."
-        )
-        self.source_broker.stop()
-        self.logger.info(
-            f"Awaiting source broker ({self.source_broker.__class__.__name__})..."
-        )
-        self.logger.info(f"tearDown complete")
+        if self.source_broker is not None:
+            self.logger.info(
+                f"Stopping source broker ({self.source_broker.__class__.__name__})..."
+            )
+            self.source_broker.stop()
+            self.logger.info(
+                f"Awaiting source broker ({self.source_broker.__class__.__name__})..."
+            )
 
         self.logger.info("Stopping zookeeper...")
         self.zk.stop()
