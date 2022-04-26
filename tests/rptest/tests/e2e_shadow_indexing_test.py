@@ -89,7 +89,7 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
             self.topic,
             {
                 TopicSpec.PROPERTY_RETENTION_BYTES:
-                    5 * EndToEndShadowIndexingTest.segment_size,
+                5 * EndToEndShadowIndexingTest.segment_size,
             },
         )
         wait_for_segments_removal(redpanda=self.redpanda,
@@ -119,7 +119,7 @@ class EndToEndShadowIndexingTestWithDisruptions(EndToEndShadowIndexingBase):
             self.topic,
             {
                 TopicSpec.PROPERTY_RETENTION_BYTES:
-                    5 * EndToEndShadowIndexingTest.segment_size
+                5 * EndToEndShadowIndexingTest.segment_size
             },
         )
 
