@@ -44,7 +44,7 @@ func NewACLCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		Args:  cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
 			if helpOperations {
-				fmt.Println(helpACLOperations)
+				fmt.Print(helpACLOperations)
 				return
 			}
 			cmd.Help()

@@ -112,7 +112,7 @@ func NewProduceCommand(fs afero.Fs) *cobra.Command {
 			out.MaybeDie(err, "unable to parse input headers: %v", err)
 			headers := make([]kgo.RecordHeader, 0, len(kvs))
 			for k, v := range kvs {
-				headers = append(headers, kgo.RecordHeader{k, []byte(v)})
+				headers = append(headers, kgo.RecordHeader{Key: k, Value: []byte(v)})
 			}
 
 			// We are now ready to produce.

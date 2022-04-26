@@ -104,16 +104,16 @@ func TestParseSeeds(t *testing.T) {
 			arg:  []string{"127.0.0.1:1234", "domain.com:9892", "lonely-host", "192.168.34.1"},
 			expected: []config.SeedServer{
 				{
-					config.SocketAddress{"127.0.0.1", 1234},
+					Host: config.SocketAddress{Address: "127.0.0.1", Port: 1234},
 				},
 				{
-					config.SocketAddress{"domain.com", 9892},
+					Host: config.SocketAddress{Address: "domain.com", Port: 9892},
 				},
 				{
-					config.SocketAddress{"lonely-host", 33145},
+					Host: config.SocketAddress{Address: "lonely-host", Port: 33145},
 				},
 				{
-					config.SocketAddress{"192.168.34.1", 33145},
+					Host: config.SocketAddress{Address: "192.168.34.1", Port: 33145},
 				},
 			},
 		},

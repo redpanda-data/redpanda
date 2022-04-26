@@ -11,17 +11,17 @@ func TestListPlugins(t *testing.T) {
 	t.Parallel()
 
 	fs := testfs.FromMap(map[string]testfs.Fmode{
-		"/usr/local/sbin/.rpk-non_executable":    {0666, ""},
-		"/usr/local/sbin/.rpk-barely_executable": {0100, ""},
-		"/bin/.rpk-barely_executable":            {0100, "shadowed!"},
-		"/bin/.rpk.ac-barely_executable":         {0100, "also shadowed!"},
-		"/bin/.rpk.ac-auto_completed":            {0777, ""},
-		"/bin/has/dir/":                          {0777, ""},
-		"/bin/.rpk.ac-":                          {0777, "empty name ignored"},
-		"/bin/.rpk-":                             {0777, "empty name ignored"},
-		"/bin/.rpkunrelated":                     {0777, ""},
-		"/bin/rpk-nodot":                         {0777, ""},
-		"/unsearched/.rpk-valid_unused":          {0777, ""},
+		"/usr/local/sbin/.rpk-non_executable":    {Mode: 0666, Contents: ""},
+		"/usr/local/sbin/.rpk-barely_executable": {Mode: 0100, Contents: ""},
+		"/bin/.rpk-barely_executable":            {Mode: 0100, Contents: "shadowed!"},
+		"/bin/.rpk.ac-barely_executable":         {Mode: 0100, Contents: "also shadowed!"},
+		"/bin/.rpk.ac-auto_completed":            {Mode: 0777, Contents: ""},
+		"/bin/has/dir/":                          {Mode: 0777, Contents: ""},
+		"/bin/.rpk.ac-":                          {Mode: 0777, Contents: "empty name ignored"},
+		"/bin/.rpk-":                             {Mode: 0777, Contents: "empty name ignored"},
+		"/bin/.rpkunrelated":                     {Mode: 0777, Contents: ""},
+		"/bin/rpk-nodot":                         {Mode: 0777, Contents: ""},
+		"/unsearched/.rpk-valid_unused":          {Mode: 0777, Contents: ""},
 	})
 
 	got := ListPlugins(fs, []string{
@@ -102,7 +102,7 @@ func TestWriteBinary(t *testing.T) {
 	}
 
 	testfs.Expect(t, fs, map[string]testfs.Fmode{
-		"/bin/.rpk.ac-autocomplete": {0o755, "ac"},
-		"/usr/bin/.rpk-non-auto":    {0o755, "nonac"},
+		"/bin/.rpk.ac-autocomplete": {Mode: 0o755, Contents: "ac"},
+		"/usr/bin/.rpk-non-auto":    {Mode: 0o755, Contents: "nonac"},
 	})
 }

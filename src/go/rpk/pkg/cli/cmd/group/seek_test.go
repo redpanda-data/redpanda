@@ -108,7 +108,7 @@ func TestParseSeekFile(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fs := testfs.FromMap(map[string]testfs.Fmode{
-				test.name: {0o444, test.contents},
+				test.name: {Mode: 0o444, Contents: test.contents},
 			})
 
 			got, err := parseSeekFile(fs, test.name, keep)

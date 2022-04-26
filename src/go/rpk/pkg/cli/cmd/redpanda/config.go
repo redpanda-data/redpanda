@@ -147,8 +147,8 @@ func bootstrap(mgr config.Manager) *cobra.Command {
 			for _, ip := range ips {
 				seed := config.SeedServer{
 					Host: config.SocketAddress{
-						ip.String(),
-						defaultRpcPort,
+						Address: ip.String(),
+						Port:    defaultRpcPort,
 					},
 				}
 				seeds = append(seeds, seed)

@@ -15,6 +15,7 @@ linters:
   # Enabled by default linters:
     - deadcode
     - gosimple
+    - govet
     - ineffassign
     - staticcheck
     - structcheck
