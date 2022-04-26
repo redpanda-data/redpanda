@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "model/fundamental.h"
+#include "random/generators.h"
 
 #include <boost/test/tools/old/interface.hpp>
 
@@ -17,6 +18,19 @@
 #include "model/metadata.h"
 
 #include <boost/test/unit_test.hpp>
+
+cluster::partition_assignment
+make_assignment(const std::vector<model::node_id>& nodes) {
+    cluster::partition_assignment p_as{
+      .group = raft::group_id(1), .id = model::partition_id(1)};
+    p_as.replicas.reserve(nodes.size());
+    for (auto n : nodes) {
+        p_as.replicas.push_back(model::broker_shard{
+          .node_id = n, .shard = random_generators::get_int<uint32_t>(10)});
+    }
+
+    return p_as;
+}
 
 BOOST_AUTO_TEST_CASE(test_calculation_non_overlapping_nodes) {
     std::vector<model::node_id> cluster_nodes{
@@ -30,7 +44,7 @@ BOOST_AUTO_TEST_CASE(test_calculation_non_overlapping_nodes) {
       model::node_id{0}, model::node_id{3}, model::node_id{4}};
 
     auto non_overlapping_1 = cluster::calculate_non_overlapping_nodes(
-      single_node, cluster_nodes);
+      make_assignment(single_node), cluster_nodes);
     std::vector<model::node_id> expected_1{
       model::node_id{0},
       model::node_id{1},
@@ -40,7 +54,7 @@ BOOST_AUTO_TEST_CASE(test_calculation_non_overlapping_nodes) {
     BOOST_REQUIRE_EQUAL(non_overlapping_1, expected_1);
 
     auto non_overlapping_2 = cluster::calculate_non_overlapping_nodes(
-      three_nodes, cluster_nodes);
+      make_assignment(three_nodes), cluster_nodes);
     std::vector<model::node_id> expected_2{
       model::node_id{1},
       model::node_id{2},
@@ -49,33 +63,7 @@ BOOST_AUTO_TEST_CASE(test_calculation_non_overlapping_nodes) {
     BOOST_REQUIRE_EQUAL(non_overlapping_2, expected_2);
 
     auto non_overlapping_3 = cluster::calculate_non_overlapping_nodes(
-      cluster_nodes, cluster_nodes);
+      make_assignment(cluster_nodes), cluster_nodes);
 
     BOOST_REQUIRE_EQUAL(non_overlapping_3.size(), 0);
-};
-
-BOOST_AUTO_TEST_CASE(test_get_partition_members) {
-    model::topic_metadata tp_md(
-      model::topic_namespace(model::ns("test-ns"), model::topic("test_tp")));
-
-    auto p0 = model::partition_metadata(model::partition_id(0));
-    p0.replicas = {
-      model::broker_shard{model::node_id{0}, 1},
-      model::broker_shard{model::node_id{1}, 1},
-      model::broker_shard{model::node_id{2}, 1},
-    };
-    auto p1 = model::partition_metadata(model::partition_id(1));
-    p1.replicas = {
-      model::broker_shard{model::node_id{3}, 1},
-      model::broker_shard{model::node_id{4}, 1},
-      model::broker_shard{model::node_id{5}, 1},
-    };
-    tp_md.partitions = {p0, p1};
-
-    auto members = cluster::get_partition_members(
-      model::partition_id{1}, tp_md);
-    std::vector<model::node_id> expected = {
-      model::node_id{3}, model::node_id{4}, model::node_id{5}};
-
-    BOOST_REQUIRE_EQUAL(members, expected);
 };
