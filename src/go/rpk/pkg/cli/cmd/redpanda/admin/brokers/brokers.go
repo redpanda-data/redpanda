@@ -38,29 +38,29 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 }
 
 func newListCommand(fs afero.Fs) *cobra.Command {
-        return &cobra.Command{
-                Use:     "list",
-                Aliases: []string{"ls"},
-                Short:   "List the brokers in your cluster.",
-                Args:    cobra.ExactArgs(0),
-                Run: func(cmd *cobra.Command, _ []string) {
-                        p := config.ParamsFromCommand(cmd)
-                        cfg, err := p.Load(fs)
-                        out.MaybeDie(err, "unable to load config: %v", err)
+	return &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List the brokers in your cluster.",
+		Args:    cobra.ExactArgs(0),
+		Run: func(cmd *cobra.Command, _ []string) {
+			p := config.ParamsFromCommand(cmd)
+			cfg, err := p.Load(fs)
+			out.MaybeDie(err, "unable to load config: %v", err)
 
-                        cl, err := admin.NewClient(fs, cfg)
-                        out.MaybeDie(err, "unable to initialize admin client: %v", err)
+			cl, err := admin.NewClient(fs, cfg)
+			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-                        bs, err := cl.Brokers()
-                        out.MaybeDie(err, "unable to request brokers: %v", err)
+			bs, err := cl.Brokers()
+			out.MaybeDie(err, "unable to request brokers: %v", err)
 
-                        tw := out.NewTable("Node ID", "Num Cores", "Membership Status")
-                        defer tw.Flush()
-                        for _, b := range bs {
-                                tw.Print(b.NodeID, b.NumCores, b.MembershipStatus)
-                        }
-                },
-        }
+			tw := out.NewTable("Node ID", "Num Cores", "Membership Status")
+			defer tw.Flush()
+			for _, b := range bs {
+				tw.Print(b.NodeID, b.NumCores, b.MembershipStatus)
+			}
+		},
+	}
 }
 
 func newDecommissionBroker(fs afero.Fs) *cobra.Command {

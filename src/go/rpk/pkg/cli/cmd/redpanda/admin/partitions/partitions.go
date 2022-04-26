@@ -40,29 +40,29 @@ func newListCommand(fs afero.Fs) *cobra.Command {
 	var (
 		leaderOnly bool
 	)
-	cmd :=  &cobra.Command{
+	cmd := &cobra.Command{
 		Use:     "list [BROKER ID]",
 		Aliases: []string{"ls"},
 		Short:   "List the partitions in a broker in the cluster.",
 		Args:    cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			brokerId, err := strconv.Atoi(args[0])
-                        out.MaybeDie(err, "invalid broker %s: %v", args[0], err)
-                        if brokerId < 0 {
-                                out.Die("invalid negative broker id %v", brokerId)
-                        }
+			out.MaybeDie(err, "invalid broker %s: %v", args[0], err)
+			if brokerId < 0 {
+				out.Die("invalid negative broker id %v", brokerId)
+			}
 
 			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			adm, err := kafka.NewAdmin(fs, p, cfg)
-                        out.MaybeDie(err, "unable to initialize kafka client: %v", err)
-                        defer adm.Close()
+			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
+			defer adm.Close()
 
 			var m kadm.Metadata
-                        m, err = adm.Metadata(context.Background())
-                        out.MaybeDie(err, "unable to request metadata: %v", err)
+			m, err = adm.Metadata(context.Background())
+			out.MaybeDie(err, "unable to request metadata: %v", err)
 
 			tw := out.NewTable("TOPIC", "PARTITION", "IS_LEADER")
 			defer tw.Flush()
@@ -74,10 +74,10 @@ func newListCommand(fs afero.Fs) *cobra.Command {
 							var isLeader bool
 							if int(pt.Leader) == brokerId {
 								isLeader = true
-								tw.Print(t.Topic , pt.Partition, isLeader)
+								tw.Print(t.Topic, pt.Partition, isLeader)
 							}
 							if !leaderOnly && !isLeader {
-								tw.Print(t.Topic , pt.Partition, isLeader)
+								tw.Print(t.Topic, pt.Partition, isLeader)
 							}
 						}
 					}
