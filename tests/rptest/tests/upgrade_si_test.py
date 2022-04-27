@@ -1,4 +1,4 @@
-# Copyright 2022 Redpanda Data, Inc.
+git # Copyright 2022 Redpanda Data, Inc.
 #
 # Use of this software is governed by the Business Source License
 # included in the file licenses/BSL.md
@@ -12,6 +12,9 @@ from ducktape.utils.util import wait_until
 from ducktape.cluster.cluster_spec import ClusterSpec
 from rptest.services.kaf_producer import KafProducer
 from rptest.services.kaf_consumer import KafConsumer
+
+from rptest.services.rpk_consumer import RpkConsumer
+import time
 
 import os
 
@@ -111,7 +114,7 @@ class UpgradeFranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
             si_settings=si_settings,
             legacy_config_mode=True)
 
-    @cluster(num_nodes=7)
+    @cluster(num_nodes=8)
     def test_with_all_type_of_loads_and_si(self):
         self.logger.info(f"Environment: {os.environ}")
 
@@ -130,7 +133,7 @@ class UpgradeFranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
                    backoff_sec=5.0)
 
         # nce we've written a lot of data, check that some of it showed up in S3
-        wait_until(lambda: self._producer.produce_status.acked > 10000,
+        wait_until(lambda: self._producer.produce_status.acked > 1000,
                    timeout_sec=300,
                    backoff_sec=5)
         objects = list(self.redpanda.get_objects_from_si())
@@ -156,29 +159,19 @@ class UpgradeFranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
         assert self._seq_consumer.consumer_status.valid_reads >= wrote_at_least
         assert self._rand_consumer.consumer_status.total_reads == self.RANDOM_READ_COUNT * self.RANDOM_READ_PARALLEL
 
+        # Consume smth
+        rpk = RpkConsumer(context=self.test_context, redpanda=self.redpanda, topic=self.topic, group="foo")
+        rpk.start()
+        time.sleep(10)
+        rpk.stop()
+        rpk.wait()
+
         for node in self.redpanda.nodes:
+            self.redpanda.stop_node(node, timeout=300)
             node.account.ssh("curl -1sLf https://packages.vectorized.io/E4xN1tVe3Xy60GTx/redpanda-unstable/setup.deb.sh | sudo -E bash", allow_fail=False)
-            node.account.ssh("sudo apt reinstall redpanda -y", allow_fail=False)
-            self.redpanda.restart_nodes(node)
-
-            
-
-        self.consumer = KafConsumer(self.test_context, self.redpanda, self.topic, self.PRODUCE_COUNT, "oldest")
-        self.consumer.start()
-        self.old = -1
-
-        def consumed1():
-            self.logger.debug(
-                f"Offset for consumer: {self.consumer.offset}")
-            self.logger.debug(f"{sum(self.consumer.offset.values())}, {self.old}")
-            res = sum(self.consumer.offset.values())
-            ans = (res == self.old) and (res != 0)
-            self.old = res
-            return ans
-
-        wait_until(consumed1, timeout_sec=190, backoff_sec=2)
-
-        self.consumer.stop()
+            node.account.ssh('sudo apt -o  Dpkg::Options::="--force-confnew" install redpanda', allow_fail=False)
+            node.account.ssh("sudo systemctl stop redpanda")
+            self.redpanda.start_node(node, None, timeout=300)
 
         kaf_producer = KafProducer(self.test_context, self.redpanda, self.topic, 1000)
         kaf_producer.start()
@@ -191,7 +184,7 @@ class UpgradeFranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
             self.logger.debug(
                 f"Offset for consumer: {self.kaf_consumer.offset}")
             self.logger.debug(f"{sum(self.kaf_consumer.offset.values())}")
-            return sum(self.kaf_consumer.offset.values()) == self.old + 1000
+            return sum(self.kaf_consumer.offset.values()) + 100 >= self.PRODUCE_COUNT + 1000
 
         wait_until(consumed, timeout_sec=190, backoff_sec=2)
 
