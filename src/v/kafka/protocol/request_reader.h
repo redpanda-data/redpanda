@@ -173,6 +173,11 @@ public:
         return do_read_array(len - 1, std::forward<ElementParser>(parser));
     }
 
+    void consume_tags() {
+        /// Temporary stand-in for this commit to compile with new changes added
+        /// to our generator
+    }
+
 private:
     ss::sstring do_read_string(int16_t n) {
         if (unlikely(n < 0)) {

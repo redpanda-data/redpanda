@@ -325,6 +325,8 @@ public:
         return _out->size_bytes() - start_size;
     }
 
+    uint32_t write_tags() { return write_unsigned_varint(0); }
+
 private:
     iobuf* _out;
 };
