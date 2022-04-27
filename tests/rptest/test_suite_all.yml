@@ -9,4 +9,4 @@
 
 all:
     included:
-        - tests/
+        - tests/group_membership_test.py
