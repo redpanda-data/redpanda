@@ -24,7 +24,8 @@ namespace kafka {
 
 ss::future<bool> try_create_consumer_group_topic(
   kafka::coordinator_ntp_mapper& mapper,
-  cluster::topics_frontend& topics_frontend);
+  cluster::topics_frontend& topics_frontend,
+  int16_t node_count);
 
 class rm_group_frontend {
 public:

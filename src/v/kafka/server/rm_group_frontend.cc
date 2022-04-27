@@ -37,13 +37,21 @@ using namespace std::chrono_literals;
  */
 ss::future<bool> try_create_consumer_group_topic(
   kafka::coordinator_ntp_mapper& mapper,
-  cluster::topics_frontend& topics_frontend) {
+  cluster::topics_frontend& topics_frontend,
+  int16_t node_count) {
+    // Attempt to use internal topic replication factor, if enough nodes found.
+    auto replication_factor
+      = (int16_t)config::shard_local_cfg().internal_topic_replication_factor();
+    if (replication_factor > node_count) {
+        replication_factor = 1;
+    }
+
     // the new internal metadata topic for group membership
     cluster::topic_configuration topic{
       mapper.ns(),
       mapper.topic(),
       config::shard_local_cfg().group_topic_partitions(),
-      config::shard_local_cfg().default_topic_replication()};
+      replication_factor};
 
     topic.properties.cleanup_policy_bitflags
       = model::cleanup_policy_bitflags::compaction;
@@ -111,7 +119,11 @@ ss::future<cluster::begin_group_tx_reply> rm_group_frontend::begin_group_tx(
           group_id);
         auto has_created = co_await try_create_consumer_group_topic(
           _group_router.local().coordinator_mapper().local(),
-          _controller->get_topics_frontend().local());
+          _controller->get_topics_frontend().local(),
+          (int16_t)_controller->get_members_table()
+            .local()
+            .all_brokers()
+            .size());
         if (!has_created) {
             vlog(
               cluster::txlog.warn,
