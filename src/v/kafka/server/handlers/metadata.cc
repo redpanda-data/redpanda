@@ -400,7 +400,15 @@ ss::future<response_ptr> metadata_handler::handle(
         }
     }
 
-    reply.data.cluster_id = config::shard_local_cfg().cluster_id;
+    const auto cluster_id = config::shard_local_cfg().cluster_id();
+    if (cluster_id.has_value()) {
+        reply.data.cluster_id = ssx::sformat("redpanda.{}", cluster_id.value());
+    } else {
+        // Include a "redpanda." cluster ID even if we didn't initialize
+        // cluster_id yet, so that callers can identify which Kafka
+        // implementation they're talking to.
+        reply.data.cluster_id = "redpanda.initializing";
+    }
 
     auto leader_id = ctx.metadata_cache().get_controller_leader_id();
     reply.data.controller_id = leader_id.value_or(model::node_id(-1));
