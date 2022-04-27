@@ -46,8 +46,16 @@ public:
         auto [i, _] = _parser.read_varlong();
         return i;
     }
+    uint32_t read_unsigned_varint() {
+        auto [i, _] = _parser.read_unsigned_varint();
+        return i;
+    }
 
     ss::sstring read_string() { return do_read_string(read_int16()); }
+
+    ss::sstring read_flex_string() {
+        return do_read_flex_string(read_unsigned_varint());
+    }
 
     std::optional<ss::sstring> read_nullable_string() {
         auto n = read_int16();
@@ -57,7 +65,23 @@ public:
         return {do_read_string(n)};
     }
 
+    std::optional<ss::sstring> read_nullable_flex_string() {
+        auto n = read_unsigned_varint();
+        if (n == 0) {
+            return std::nullopt;
+        }
+        return {do_read_flex_string(n)};
+    }
+
     bytes read_bytes() { return _parser.read_bytes(read_int32()); }
+
+    bytes read_flex_bytes() {
+        auto n = read_unsigned_varint();
+        if (unlikely(n == 0)) {
+            throw std::out_of_range("Asked to read a negative byte string");
+        }
+        return _parser.read_bytes(n - 1);
+    }
 
     // Stronly suggested to use read_nullable_iobuf
     std::optional<iobuf> read_fragmented_nullable_bytes() {
@@ -67,6 +91,16 @@ public:
         }
         return std::move(io);
     }
+
+    std::optional<iobuf> read_fragmented_nullable_flex_bytes() {
+        auto len = read_unsigned_varint();
+        if (len == 0) {
+            return std::nullopt;
+        }
+        auto ret = _parser.share(len - 1);
+        return iobuf{std::move(ret)};
+    }
+
     std::pair<iobuf, int32_t> read_nullable_iobuf() {
         auto len = read_int32();
         if (len < 0) {
@@ -78,6 +112,14 @@ public:
 
     std::optional<batch_reader> read_nullable_batch_reader() {
         auto io = read_fragmented_nullable_bytes();
+        if (!io) {
+            return std::nullopt;
+        }
+        return batch_reader(std::move(*io));
+    }
+
+    std::optional<batch_reader> read_nullable_flex_batch_reader() {
+        auto io = read_fragmented_nullable_flex_bytes();
         if (!io) {
             return std::nullopt;
         }
@@ -99,12 +141,36 @@ public:
     template<
       typename ElementParser,
       typename T = std::invoke_result_t<ElementParser, request_reader&>>
+    std::vector<T> read_flex_array(ElementParser&& parser) {
+        auto len = read_unsigned_varint();
+        if (len == 0) {
+            throw std::out_of_range(
+              "Attempt to read non-null flex array with 0 length");
+        }
+        return do_read_array(len - 1, std::forward<ElementParser>(parser));
+    }
+
+    template<
+      typename ElementParser,
+      typename T = std::invoke_result_t<ElementParser, request_reader&>>
     std::optional<std::vector<T>> read_nullable_array(ElementParser&& parser) {
         auto len = read_int32();
         if (len < 0) {
             return std::nullopt;
         }
         return do_read_array(len, std::forward<ElementParser>(parser));
+    }
+
+    template<
+      typename ElementParser,
+      typename T = std::invoke_result_t<ElementParser, request_reader&>>
+    std::optional<std::vector<T>>
+    read_nullable_flex_array(ElementParser&& parser) {
+        auto len = read_unsigned_varint();
+        if (len == 0) {
+            return std::nullopt;
+        }
+        return do_read_array(len - 1, std::forward<ElementParser>(parser));
     }
 
 private:
@@ -115,6 +181,13 @@ private:
         return _parser.read_string(n);
     }
 
+    ss::sstring do_read_flex_string(uint32_t n) {
+        if (unlikely(n == 0)) {
+            throw std::out_of_range("Asked to read a 0 byte flex string");
+        }
+        return _parser.read_string(n - 1);
+    }
+
     template<
       typename ElementParser,
       typename T = std::invoke_result_t<ElementParser, request_reader&>>
@@ -122,8 +195,11 @@ private:
         { parser(rr) } -> std::same_as<T>;
     }
     std::vector<T> do_read_array(int32_t len, ElementParser&& parser) {
+        if (len < 0) {
+            throw std::out_of_range("Attempt to parse array w/ negative len");
+        }
         std::vector<T> res;
-        res.reserve(std::max(0, len));
+        res.reserve(len);
         while (len-- > 0) {
             res.push_back(parser(*this));
         }
