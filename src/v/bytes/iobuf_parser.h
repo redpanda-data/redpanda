@@ -51,6 +51,12 @@ public:
         return {val, length_size};
     }
 
+    std::pair<uint32_t, uint8_t> read_unsigned_varint() {
+        auto [val, length_size] = unsigned_vint::deserialize(_in);
+        _in.skip(length_size);
+        return {val, length_size};
+    }
+
     ss::sstring read_string(size_t len) {
         ss::sstring str = ss::uninitialized_string(len);
         _in.consume_to(str.size(), str.begin());
