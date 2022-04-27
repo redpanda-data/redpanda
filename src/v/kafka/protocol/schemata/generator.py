@@ -21,13 +21,6 @@
 #   path_type_map to override types, it would be more efficient to specify the
 #   same mapping using the field_name_type_map + a whitelist of request types.
 #
-#   - The current version does not handle flexible versions. It will be some
-#   time before we encounter clients requiring this, but in principle this
-#   generator should be extensible (see type maps below). Note that when the
-#   time comes to support flexible versions, there is a filter in the templates
-#   within this file that ignores such fields, and that filter should be
-#   removed.
-#
 #   - Handle ignorable fields. Currently we handle nullable fields properly. The
 #   ignorable flag on a field doesn't change the wire protocol, but gives
 #   instruction on how things should behave when there is missing data.
@@ -41,6 +34,7 @@ import sys
 import textwrap
 import jsonschema
 import jinja2
+import enum
 
 # Type overrides
 # ==============
@@ -298,15 +292,18 @@ field_name_type_map = {
 
 # primitive types
 basic_type_map = dict(
-    string=("ss::sstring", "read_string()", "read_nullable_string()"),
-    bytes=("bytes", "read_bytes()"),
+    string=("ss::sstring", "read_string()", "read_nullable_string()",
+            "read_flex_string()", "read_nullable_flex_string()"),
+    bytes=("bytes", "read_bytes()", None, "read_flex_bytes()", None),
     bool=("bool", "read_bool()"),
     int8=("int8_t", "read_int8()"),
     int16=("int16_t", "read_int16()"),
     int32=("int32_t", "read_int32()"),
     int64=("int64_t", "read_int64()"),
-    iobuf=("iobuf", None, "read_fragmented_nullable_bytes()"),
-    fetch_record_set=("batch_reader", None, "read_nullable_batch_reader()"),
+    iobuf=("iobuf", None, "read_fragmented_nullable_bytes()", None,
+           "read_fragmented_nullable_flex_bytes()"),
+    fetch_record_set=("batch_reader", None, "read_nullable_batch_reader()",
+                      None, "read_nullable_flex_batch_reader()"),
 )
 
 # apply a rename to a struct. this is useful when there is a type name conflict
@@ -455,7 +452,13 @@ class VersionRange:
             max = int(match.group("max"))
             return min, max
 
-    def guard(self):
+    guard_modes = enum.Enum('guard_modes', 'GUARD, NO_GUARD, NO_SOURCE')
+
+    @property
+    def guard_enum(self):
+        return VersionRange.guard_modes
+
+    def _guard(self):
         """
         Generate the C++ bounds check.
         """
@@ -468,7 +471,29 @@ class VersionRange:
             if self.max != None:
                 cond.append(f"version <= api_version({self.max})")
             cond = " && ".join(cond)
-        return cond
+
+        return (self.guard_enum.NO_GUARD,
+                None) if cond == "" else (self.guard_enum.GUARD, cond)
+
+    def guard(self, flex, first_flex):
+        """
+        Optimize generated code by either omitting a guard or source itself
+        """
+        if first_flex < 0:
+            return self._guard()
+        elif not flex:
+            if self.min >= first_flex:
+                return self.guard_enum.NO_SOURCE, None
+        else:
+            if self.max == None:
+                if self.min <= first_flex:
+                    return self.guard_enum.NO_GUARD, None
+            elif self.max < first_flex:
+                return self.guard_enum.NO_SOURCE, None
+            elif self.max == first_flex:
+                return self.guard_enum.NO_GUARD, None
+
+        return self._guard()
 
     def __repr__(self):
         max = "+inf)" if self.max is None else f"{self.max}]"
@@ -533,6 +558,12 @@ class FieldType:
 class ScalarType(FieldType):
     def __init__(self, name):
         super().__init__(name)
+
+    @property
+    def potentially_flexible_type(self):
+        """Evaluates to true if the scalar type would be parsed as flex
+        if the version is high enough"""
+        return self.name == "string" or self.name == "bytes" or self.name == "iobuf"
 
 
 class StructType(FieldType):
@@ -679,14 +710,15 @@ class Field:
 
         raise Exception(f"No decoder for {(tn, fn)}")
 
-    @property
-    def decoder(self):
+    def decoder(self, flex):
         """
         There are two cases:
 
             1a. plain native: read_int32()
             1b. nullable native: read_nullable_string()
             1c. named types: named_type(read_int32())
+            1d. flexible types: read_flex_string()
+            1e. flexible nullable native: read_nullable_flex_string()
 
             2a. optional named types:
                 auto tmp = read_nullable_string()
@@ -700,6 +732,14 @@ class Field:
             # field then choose the non-nullable decoder for its element type.
             assert plain_decoder[1]
             return plain_decoder[1], named_type
+        if self.potentially_flexible_type:
+            if flex is True:
+                if self.nullable():
+                    assert plain_decoder[4]
+                    return plain_decoder[4], named_type
+                else:
+                    assert plain_decoder[3]
+                    return plain_decoder[3], named_type
         if self.nullable():
             assert plain_decoder[2]
             return plain_decoder[2], named_type
@@ -709,6 +749,11 @@ class Field:
     @property
     def is_array(self):
         return isinstance(self._type, ArrayType)
+
+    @property
+    def potentially_flexible_type(self):
+        return isinstance(self._type,
+                          ScalarType) and self._type.potentially_flexible_type
 
     @property
     def type_name(self):
@@ -789,6 +834,18 @@ class response;
 {%- endif %}
 
     friend std::ostream& operator<<(std::ostream&, const {{ struct.name }}&);
+{%- if first_flex > 0 %}
+private:
+    void encode_flex(response_writer&, api_version);
+    void encode_standard(response_writer&, api_version);
+{%- if op_type == "request" %}
+    void decode_flex(request_reader&, api_version);
+    void decode_standard(request_reader&, api_version);
+{%- else %}
+    void decode_flex(iobuf, api_version);
+    void decode_standard(iobuf, api_version);
+{%- endif %}
+{%- endif %}
 };
 
 }
@@ -805,18 +862,22 @@ SOURCE_TEMPLATE = """
 #include <fmt/format.h>
 #include <fmt/ostream.h>
 
-{% macro version_guard(field) %}
-{%- set cond = field.versions().guard() %}
-{%- if cond %}
+{% macro version_guard(field, flex) %}
+{%- set guard_enum = field.versions().guard_enum %}
+{%- set e, cond = field.versions().guard(flex, first_flex) %}
+{%- if e == guard_enum.NO_GUARD %}
+{{- caller() }}
+{%- elif e == guard_enum.NO_SOURCE %}
+{%- elif e == guard_enum.GUARD %}
 if ({{ cond }}) {
 {{- caller() | indent }}
 }
 {%- else %}
-{{- caller() }}
+#error unexpected enumeration case encountered
 {%- endif %}
 {%- endmacro %}
 
-{% macro field_encoder(field, obj) %}
+{% macro field_encoder(field, obj, flex) %}
 {%- if obj %}
 {%- set fname = obj + "." + field.name %}
 {%- else %}
@@ -824,23 +885,33 @@ if ({{ cond }}) {
 {%- endif %}
 {%- if field.is_array %}
 {%- if field.nullable() %}
+{%- if flex %}
+writer.write_nullable_flex_array({{ fname }}, [version]({{ field.value_type }}& v, response_writer& writer) {
+{%- else %}
 writer.write_nullable_array({{ fname }}, [version]({{ field.value_type }}& v, response_writer& writer) {
+{%- endif %}
+{%- else %}
+{%- if flex %}
+writer.write_flex_array({{ fname }}, [version]({{ field.value_type }}& v, response_writer& writer) {
 {%- else %}
 writer.write_array({{ fname }}, [version]({{ field.value_type }}& v, response_writer& writer) {
 {%- endif %}
-(void)version;
+    (void)version;
+{%- endif %}
 {%- if field.type().value_type().is_struct %}
-{{- struct_serde(field.type().value_type(), field_encoder, "v") | indent }}
+{{- struct_serde(field.type().value_type(), field_encoder, flex, "v") | indent }}
 {%- else %}
     writer.write(v);
 {%- endif %}
 });
+{%- elif flex and field.type().potentially_flexible_type %}
+writer.write_flex({{ fname }});
 {%- else %}
 writer.write({{ fname }});
 {%- endif %}
 {%- endmacro %}
 
-{% macro field_decoder(field, obj) %}
+{% macro field_decoder(field, obj, flex) %}
 {%- if obj %}
 {%- set fname = obj + "." + field.name %}
 {%- else %}
@@ -848,17 +919,25 @@ writer.write({{ fname }});
 {%- endif %}
 {%- if field.is_array %}
 {%- if field.nullable() %}
+{%- if flex %}
+{{ fname }} = reader.read_nullable_flex_array([version](request_reader& reader) {
+{%- else %}
 {{ fname }} = reader.read_nullable_array([version](request_reader& reader) {
+{%- endif %}
+{%- else %}
+{%- if flex %}
+{{ fname }} = reader.read_flex_array([version](request_reader& reader) {
 {%- else %}
 {{ fname }} = reader.read_array([version](request_reader& reader) {
 {%- endif %}
-(void)version;
+    (void)version;
+{%- endif %}
 {%- if field.type().value_type().is_struct %}
     {{ field.type().value_type().name }} v;
-{{- struct_serde(field.type().value_type(), field_decoder, "v") | indent }}
+{{- struct_serde(field.type().value_type(), field_decoder, flex, "v") | indent }}
     return v;
 {%- else %}
-{%- set decoder, named_type = field.decoder %}
+{%- set decoder, named_type = field.decoder(flex) %}
 {%- if named_type == None %}
     return reader.{{ decoder }};
 {%- elif field.nullable() %}
@@ -875,7 +954,7 @@ writer.write({{ fname }});
 {%- endif %}
 });
 {%- else %}
-{%- set decoder, named_type = field.decoder %}
+{%- set decoder, named_type = field.decoder(flex) %}
 {%- if named_type == None %}
 {{ fname }} = reader.{{ decoder }};
 {%- elif field.nullable() %}
@@ -895,10 +974,10 @@ writer.write({{ fname }});
 {%- endif %}
 {%- endmacro %}
 
-{% macro struct_serde(struct, field_serde, obj = "") %}
+{% macro struct_serde(struct, field_serde, flex, obj = "") %}
 {%- for field in struct.fields %}
-{%- call version_guard(field) %}
-{{- field_serde(field, obj) }}
+{%- call version_guard(field, flex) %}
+{{- field_serde(field, obj, flex) }}
 {%- endcall %}
 {%- endfor %}
 {%- endmacro %}
@@ -906,20 +985,95 @@ writer.write({{ fname }});
 namespace kafka {
 
 {%- if struct.fields %}
-void {{ struct.name }}::encode(response_writer& writer, [[maybe_unused]] api_version version) {
-{{- struct_serde(struct, field_encoder) | indent }}
+{%- if first_flex > 0 %}
+void {{ struct.name }}::encode(response_writer& writer, api_version version) {
+    if (version >= api_version({{ first_flex }})) {
+        encode_flex(writer, version);
+    } else {
+        encode_standard(writer, version);
+    }
 }
 
+void {{ struct.name }}::encode_flex(response_writer& writer, [[maybe_unused]] api_version version) {
+{{- struct_serde(struct, field_encoder, True) | indent }}
+}
+
+void {{ struct.name }}::encode_standard([[maybe_unused]] response_writer& writer, [[maybe_unused]] api_version version) {
+{{- struct_serde(struct, field_encoder, False) | indent }}
+}
+
+{%- elif first_flex < 0 %}
+void {{ struct.name }}::encode(response_writer& writer, [[maybe_unused]] api_version version) {
+{{- struct_serde(struct, field_encoder, False) | indent }}
+}
+{%- else %}
+void {{ struct.name }}::encode(response_writer& writer, [[maybe_unused]] api_version version) {
+{{- struct_serde(struct, field_encoder, True) | indent }}
+}
+{%- endif %}
+
+
 {%- if op_type == "request" %}
+{%- if first_flex > 0 %}
+void {{ struct.name }}::decode(request_reader& reader, api_version version) {
+    if (version >= api_version({{ first_flex }})) {
+        decode_flex(reader, version);
+    } else {
+        decode_standard(reader, version);
+    }
+}
+void {{ struct.name }}::decode_flex(request_reader& reader, [[maybe_unused]] api_version version) {
+{{- struct_serde(struct, field_decoder, True) | indent }}
+}
+
+void {{ struct.name }}::decode_standard([[maybe_unused]] request_reader& reader, [[maybe_unused]] api_version version) {
+{{- struct_serde(struct, field_decoder, False) | indent }}
+}
+{%- elif first_flex < 0 %}
 void {{ struct.name }}::decode(request_reader& reader, [[maybe_unused]] api_version version) {
-{{- struct_serde(struct, field_decoder) | indent }}
+{{- struct_serde(struct, field_decoder, False) | indent }}
+}
+{% else %}
+void {{ struct.name }}::decode(request_reader& reader, [[maybe_unused]] api_version version) {
+{{- struct_serde(struct, field_decoder, True) | indent }}
+}
+{%- endif %}
+{%- else %}
+
+{%- if first_flex > 0 %}
+void {{ struct.name }}::decode(iobuf buf, api_version version) {
+    if (version >= api_version({{ first_flex }})) {
+        decode_flex(std::move(buf), version);
+    } else {
+        decode_standard(std::move(buf), version);
+    }
+}
+void {{ struct.name }}::decode_flex(iobuf buf, [[maybe_unused]] api_version version) {
+    request_reader reader(std::move(buf));
+
+{{- struct_serde(struct, field_decoder, True) | indent }}
+}
+void {{ struct.name }}::decode_standard(iobuf buf, [[maybe_unused]] api_version version) {
+    request_reader reader(std::move(buf));
+
+{{- struct_serde(struct, field_decoder, False) | indent }}
+}
+
+{%- elif first_flex < 0 %}
+void {{ struct.name }}::decode(iobuf buf, [[maybe_unused]] api_version version) {
+    request_reader reader(std::move(buf));
+
+{{- struct_serde(struct, field_decoder, False) | indent }}
 }
 {%- else %}
 void {{ struct.name }}::decode(iobuf buf, [[maybe_unused]] api_version version) {
     request_reader reader(std::move(buf));
 
-{{- struct_serde(struct, field_decoder) | indent }}
+{{- struct_serde(struct, field_decoder, True) | indent }}
 }
+{%- endif %}
+
+
 {%- endif %}
 {%- else %}
 {%- if op_type == "request" %}
@@ -1086,6 +1240,24 @@ def render_struct_comment(struct):
     return f"/*\n{comment} */"
 
 
+def parse_flexible_versions(flex_version):
+    # A first_flex value of 0 will produce code that is optimized to do no flex
+    # version branching, since all versions since inception were always flexible
+    #
+    # A first_flex value of -1 indicates the value of flexibleVersions was set to 'none'.
+    # These requests will always be interpreted as non-flex and produce no conditional to
+    # branch and parse a flex request.
+    #
+    # All other types of requests will produce code that checks for the flex version once
+    # (at the beginning of encode/decode) and will not add redundent checks i.e. check
+    # if its ok to serialize something at version 7 if it already branched due to flex and
+    # that flex version is already greater than 7.
+    if flex_version == "none":
+        return -1
+    r = VersionRange(flex_version)
+    return r.min
+
+
 if __name__ == "__main__":
     assert len(sys.argv) == 3
     outdir = pathlib.Path(sys.argv[1])
@@ -1115,15 +1287,20 @@ if __name__ == "__main__":
     # request or response
     op_type = msg["type"]
 
+    # either 'none' or 'VersionRange'
+    first_flex = parse_flexible_versions(msg["flexibleVersions"])
+
     with open(hdr, 'w') as f:
         f.write(
             jinja2.Template(HEADER_TEMPLATE).render(
                 struct=struct,
                 render_struct_comment=render_struct_comment,
-                op_type=op_type))
+                op_type=op_type,
+                first_flex=first_flex))
 
     with open(src, 'w') as f:
         f.write(
             jinja2.Template(SOURCE_TEMPLATE).render(struct=struct,
                                                     header=hdr.name,
-                                                    op_type=op_type))
+                                                    op_type=op_type,
+                                                    first_flex=first_flex))
