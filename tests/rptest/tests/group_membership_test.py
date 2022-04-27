@@ -224,6 +224,13 @@ class GroupMetricsTest(RedpandaTest):
         topic = topic_spec.name
         group = "g0"
 
+        wait_until(
+            lambda: self.redpanda.healthy(),
+            timeout_sec=20,
+            backoff_sec=2,
+            err_msg=f"Cluster did not become healthy"
+        )
+
         def check_metric():
             if topic_spec.name not in rpk.list_topics():
                 return False
