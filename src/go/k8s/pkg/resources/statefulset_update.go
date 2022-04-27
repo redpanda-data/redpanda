@@ -392,7 +392,7 @@ func (r *StatefulSetResource) queryRedpandaStatus(
 		adminURL.Scheme = "https"
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, adminURL.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, adminURL.String(), http.NoBody)
 	if err != nil {
 		return err
 	}
