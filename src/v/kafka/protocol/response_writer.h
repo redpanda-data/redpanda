@@ -53,6 +53,12 @@ class response_writer {
         return x.size();
     }
 
+    uint32_t serialize_unsigned_vint(uint32_t val) {
+        auto x = unsigned_vint::to_bytes(val);
+        _out->append(x.data(), x.size());
+        return x.size();
+    }
+
 public:
     explicit response_writer(iobuf& out) noexcept
       : _out(&out) {}
@@ -77,6 +83,10 @@ public:
 
     uint32_t write(const model::timestamp ts) { return write(ts()); }
 
+    uint32_t write_unsigned_varint(uint32_t v) {
+        return serialize_unsigned_vint(v);
+    }
+
     uint32_t write_varint(int32_t v) { return serialize_vint(v); }
 
     uint32_t write_varlong(int64_t v) { return serialize_vint(v); }
@@ -87,7 +97,31 @@ public:
         return size;
     }
 
+    uint32_t write_flex(std::string_view v) {
+        auto size = serialize_unsigned_vint(v.size() + 1) + v.size();
+        _out->append(v.data(), v.size());
+        return size;
+    }
+
     uint32_t write(const ss::sstring& v) { return write(std::string_view(v)); }
+
+    uint32_t write_flex(const ss::sstring& v) {
+        return write_flex(std::string_view(v));
+    }
+
+    uint32_t write_flex(std::optional<std::string_view> v) {
+        if (!v) {
+            return write_unsigned_varint(0);
+        }
+        return write_flex(*v);
+    }
+
+    uint32_t write_flex(const std::optional<ss::sstring>& v) {
+        if (!v) {
+            return write_unsigned_varint(0);
+        }
+        return write_flex(std::string_view(*v));
+    }
 
     uint32_t write(std::optional<std::string_view> v) {
         if (!v) {
@@ -109,6 +143,12 @@ public:
         return size;
     }
 
+    uint32_t write_flex(bytes_view bv) {
+        auto size = write_unsigned_varint(bv.size() + 1) + bv.size();
+        _out->append(reinterpret_cast<const char*>(bv.data()), bv.size());
+        return size;
+    }
+
     uint32_t write(const model::topic& topic) { return write(topic()); }
 
     uint32_t write(std::optional<iobuf>&& data) {
@@ -116,6 +156,16 @@ public:
             return serialize_int<int32_t>(-1);
         }
         auto size = serialize_int<int32_t>(data->size_bytes())
+                    + data->size_bytes();
+        _out->append(std::move(*data));
+        return size;
+    }
+
+    uint32_t write_flex(std::optional<iobuf>&& data) {
+        if (!data) {
+            return write_unsigned_varint(0);
+        }
+        auto size = write_unsigned_varint(data->size_bytes() + 1)
                     + data->size_bytes();
         _out->append(std::move(*data));
         return size;
@@ -135,6 +185,20 @@ public:
         return write(std::move(*rdr).release());
     }
 
+    uint32_t write_flex(std::optional<batch_reader>&& rdr) {
+        if (!rdr) {
+            return write_flex(std::optional<iobuf>());
+        }
+        return write_flex(std::move(*rdr).release());
+    }
+
+    uint32_t write_flex(std::optional<batch_reader>& rdr) {
+        if (!rdr) {
+            return write_flex(std::optional<iobuf>());
+        }
+        return write_flex(std::move(*rdr).release());
+    }
+
     // write bytes directly to output without a length prefix
     uint32_t write_direct(iobuf&& f) {
         auto size = f.size_bytes();
@@ -145,6 +209,11 @@ public:
     template<typename T, typename Tag>
     uint32_t write(const named_type<T, Tag>& t) {
         return write(t());
+    }
+
+    template<typename T, typename Tag>
+    uint32_t write_flex(const named_type<T, Tag>& t) {
+        return write_flex(t());
     }
 
     template<typename Rep, typename Period>
@@ -190,6 +259,31 @@ public:
         return write_array(*v, std::forward<ElementWriter>(writer));
     }
 
+    template<typename T, typename ElementWriter>
+    requires requires(ElementWriter writer, response_writer& rw, T& elem) {
+        { writer(elem, rw) } -> std::same_as<void>;
+    }
+    uint32_t write_flex_array(std::vector<T>& v, ElementWriter&& writer) {
+        auto start_size = uint32_t(_out->size_bytes());
+        write_unsigned_varint(v.size() + 1);
+        for (auto& elem : v) {
+            writer(elem, *this);
+        }
+        return _out->size_bytes() - start_size;
+    }
+
+    template<typename T, typename ElementWriter>
+    requires requires(ElementWriter writer, response_writer& rw, T& elem) {
+        { writer(elem, rw) } -> std::same_as<void>;
+    }
+    uint32_t write_nullable_flex_array(
+      std::optional<std::vector<T>>& v, ElementWriter&& writer) {
+        if (!v) {
+            return write_unsigned_varint(0);
+        }
+        return write_flex_array(*v, std::forward<ElementWriter>(writer));
+    }
+
     // wrap a writer in a kafka bytes array object. the writer should return
     // true if writing no bytes should result in the encoding as nullable bytes,
     // and false otherwise.
@@ -217,6 +311,16 @@ public:
         }
         auto start_size = uint32_t(_out->size_bytes());
         write(data->adapter.batch->size_bytes());
+        writer_serialize_batch(*this, std::move(data->adapter.batch.value()));
+        return _out->size_bytes() - start_size;
+    }
+
+    uint32_t write_flex(std::optional<produce_request_record_data>& data) {
+        if (!data) {
+            return write_unsigned_varint(0);
+        }
+        auto start_size = uint32_t(_out->size_bytes());
+        write_unsigned_varint(data->adapter.batch->size_bytes() + 1);
         writer_serialize_batch(*this, std::move(data->adapter.batch.value()));
         return _out->size_bytes() - start_size;
     }
