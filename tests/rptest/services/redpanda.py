@@ -436,13 +436,16 @@ class RedpandaService(Service):
                  resource_settings=None,
                  si_settings=None,
                  log_level: Optional[str] = None,
-                 environment: Optional[dict[str, str]] = None):
+                 environment: Optional[dict[str, str]] = None,
+                 legacy_config_mode = False):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
         self._context = context
         self._enable_rp = enable_rp
         self._extra_rp_conf = extra_rp_conf or dict()
         self._enable_pp = enable_pp
         self._enable_sr = enable_sr
+
+        self._legacy_config_mode = legacy_config_mode
 
         self._extra_node_conf = {}
         for node in self.nodes:
@@ -1131,12 +1134,24 @@ class RedpandaService(Service):
         # exercise code paths that deal with multiple listeners
         node_ip = socket.gethostbyname(node.account.hostname)
 
+        if self._legacy_config_mode:
+            node_conf_yaml = self._write_bootstrap_cluster_config_yaml()
+
+            # Hacky indentation to use this inside the "redpanda:" block
+            tmp = []
+            for line in node_conf_yaml.split("\n"):
+                tmp.append(f"  {line}")
+            node_conf_yaml = "\n".join(tmp)
+        else:
+            node_conf_yaml = ""
+
         conf = self.render("redpanda.yaml",
                            node=node,
                            data_dir=RedpandaService.DATA_DIR,
                            nodes=node_info,
                            node_id=self.idx(node),
                            node_ip=node_ip,
+                           legacy_config_yaml=node_conf_yaml,
                            kafka_alternate_port=self.KAFKA_ALTERNATE_PORT,
                            admin_alternate_port=self.ADMIN_ALTERNATE_PORT,
                            enable_rp=self._enable_rp,
@@ -1162,7 +1177,7 @@ class RedpandaService(Service):
         self.logger.debug(conf)
         node.account.create_file(RedpandaService.NODE_CONFIG_FILE, conf)
 
-    def write_bootstrap_cluster_config(self):
+    def _write_bootstrap_cluster_config_yaml(self):
         conf = copy.deepcopy(self.CLUSTER_CONFIG_DEFAULTS)
         if self._extra_rp_conf:
             self.logger.debug(
@@ -1170,7 +1185,10 @@ class RedpandaService(Service):
                     self._extra_rp_conf))
             conf.update(self._extra_rp_conf)
 
-        conf_yaml = yaml.dump(conf)
+        return yaml.dump(conf)
+
+    def write_bootstrap_cluster_config(self):
+        conf_yaml = self._write_bootstrap_cluster_config_yaml()
         for node in self.nodes:
             self.logger.info(
                 "Writing bootstrap cluster config file {}:{}".format(
