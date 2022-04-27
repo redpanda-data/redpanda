@@ -22,3 +22,16 @@ linters:
     - typecheck
     - unused
     - varcheck
+  # Disabled by default
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - contextcheck
+    - durationcheck
+    - errname
+    - errorlint
+
+linters-settings:
+  # We do not want to enforce every usage of fmt.Errorf to use %w.
+  errorlint:
+    errorf: false

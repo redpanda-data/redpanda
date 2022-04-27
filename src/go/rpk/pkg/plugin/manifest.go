@@ -65,6 +65,7 @@ func DownloadManifest(url string) (*Manifest, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unable to request manifest: %v", err)
 	}
+	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("unable to read manifest body: %v", err)
@@ -186,6 +187,8 @@ func (p *ManifestPlugin) Download(baseURL, os, host string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unable to issue request to %s: %v", u, err)
 	}
+	defer resp.Body.Close()
+
 	if resp.StatusCode/100 != 2 {
 		return nil, fmt.Errorf("unsuccessful plugin response from %s, status: %s", u, http.StatusText(resp.StatusCode))
 	}

@@ -11,6 +11,7 @@ package topic
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -134,7 +135,7 @@ func NewProduceCommand(fs afero.Fs) *cobra.Command {
 					r.Key = []byte(key)
 				}
 				if err := inf.ReadRecordInto(r); err != nil {
-					if err != io.EOF {
+					if !errors.Is(err, io.EOF) {
 						fmt.Fprintf(os.Stderr, "record read error: %v\n", err)
 					}
 					return

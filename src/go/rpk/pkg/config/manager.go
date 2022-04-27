@@ -76,7 +76,7 @@ func (m *manager) FindOrGenerate(path string) (*Config, error) {
 		addConfigPaths(m.v)
 		err := m.v.ReadInConfig()
 		if err != nil {
-			_, notFound := err.(viper.ConfigFileNotFoundError)
+			_, notFound := err.(viper.ConfigFileNotFoundError) //nolint:errorlint // Viper returns a non-pointer error https://github.com/spf13/viper/issues/1139
 			if !notFound {
 				return nil, err
 			}
@@ -107,7 +107,7 @@ func readOrGenerate(fs afero.Fs, v *viper.Viper, path string) (*Config, error) {
 		// The config file's there, there's nothing to do.
 		return unmarshal(v)
 	}
-	_, notFound := err.(viper.ConfigFileNotFoundError)
+	_, notFound := err.(viper.ConfigFileNotFoundError) //nolint:errorlint // Viper returns a non-pointer error https://github.com/spf13/viper/issues/1139
 	notExist := os.IsNotExist(err)
 	if err != nil && !notFound && !notExist {
 		return nil, fmt.Errorf(

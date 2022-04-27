@@ -157,5 +157,5 @@ func getFreeDiskSpaceMB(conf config.Config) (float64, error) {
 }
 
 func IsErrRedpandaDown(err error) bool {
-	return err == errRedpandaDown
+	return errors.Is(err, errRedpandaDown)
 }
