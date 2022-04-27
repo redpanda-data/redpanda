@@ -27,6 +27,7 @@
 #include "utils/expiring_promise.h"
 #include "utils/mutex.h"
 
+#include <absl/container/btree_set.h>
 #include <absl/container/flat_hash_map.h>
 
 #include <compare>
@@ -110,6 +111,10 @@ public:
     std::optional<tm_transaction> get_tx(kafka::transactional_id);
     checked<tm_transaction, tm_stm::op_status>
       mark_tx_ongoing(kafka::transactional_id);
+    // mark_xxx: updates a transaction if the term matches etag
+    // reset_xxx: updates a transaction and an etag
+    checked<tm_transaction, tm_stm::op_status>
+      reset_tx_ongoing(kafka::transactional_id, model::term_id);
     bool add_partitions(
       kafka::transactional_id, std::vector<tm_transaction::tx_partition>);
     bool add_group(kafka::transactional_id, kafka::group_id, model::term_id);
@@ -124,34 +129,36 @@ public:
         return r;
     }
 
-    std::optional<tm_transaction> get_tx_by_id(kafka::transactional_id id) {
-        auto tx_it = _tx_table.find(id);
-        std::optional<tm_transaction> r;
-        if (tx_it != _tx_table.end()) {
-            r = tx_it->second;
-        }
-        return r;
+    ss::future<checked<model::term_id, tm_stm::op_status>> barrier();
+    ss::future<checked<model::term_id, tm_stm::op_status>>
+      sync(model::timeout_clock::duration);
+    ss::future<checked<model::term_id, tm_stm::op_status>> sync() {
+        return sync(_sync_timeout);
     }
-
-    ss::future<bool> barrier();
 
     ss::future<ss::basic_rwlock<>::holder> read_lock() {
         return _state_lock.hold_read_lock();
     }
 
     ss::future<checked<tm_transaction, tm_stm::op_status>>
-      get_actual_tx(kafka::transactional_id);
+      reset_tx_ready(model::term_id, kafka::transactional_id);
     ss::future<checked<tm_transaction, tm_stm::op_status>>
-      mark_tx_ready(kafka::transactional_id);
+      reset_tx_ready(model::term_id, kafka::transactional_id, model::term_id);
     ss::future<checked<tm_transaction, tm_stm::op_status>>
-      mark_tx_ready(kafka::transactional_id, model::term_id);
+      mark_tx_preparing(model::term_id, kafka::transactional_id);
     ss::future<checked<tm_transaction, tm_stm::op_status>>
-      try_change_status(kafka::transactional_id, tm_transaction::tx_status);
+      mark_tx_aborting(model::term_id, kafka::transactional_id);
+    ss::future<checked<tm_transaction, tm_stm::op_status>>
+      mark_tx_prepared(model::term_id, kafka::transactional_id);
+    ss::future<checked<tm_transaction, tm_stm::op_status>>
+      mark_tx_killed(model::term_id, kafka::transactional_id);
     ss::future<tm_stm::op_status> re_register_producer(
+      model::term_id,
       kafka::transactional_id,
       std::chrono::milliseconds,
       model::producer_identity);
     ss::future<tm_stm::op_status> register_new_producer(
+      model::term_id,
       kafka::transactional_id,
       std::chrono::milliseconds,
       model::producer_identity);
@@ -169,7 +176,7 @@ public:
         return lock_it->second;
     }
 
-    std::vector<kafka::transactional_id> get_expired_txs();
+    absl::btree_set<kafka::transactional_id> get_expired_txs();
 
 protected:
     ss::future<> handle_eviction() override;
@@ -182,7 +189,8 @@ private:
     std::chrono::milliseconds _sync_timeout;
     std::chrono::milliseconds _transactional_id_expiration;
     model::violation_recovery_policy _recovery_policy;
-    absl::flat_hash_map<kafka::transactional_id, tm_transaction> _tx_table;
+    absl::flat_hash_map<kafka::transactional_id, tm_transaction> _log_txes;
+    absl::flat_hash_map<kafka::transactional_id, tm_transaction> _mem_txes;
     absl::flat_hash_map<model::producer_identity, kafka::transactional_id>
       _pid_tx_id;
     absl::flat_hash_map<kafka::transactional_id, ss::lw_shared_ptr<mutex>>
