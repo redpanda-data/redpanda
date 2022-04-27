@@ -648,6 +648,16 @@ spec:
                       to an implementation-defined value. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
                     type: object
                 type: object
+              restartConfig:
+                description: RestartConfig allows to control the behavior of the cluster
+                  when restarting
+                properties:
+                  disableMaintenanceModeHooks:
+                    description: DisableMaintenanceModeHooks deactivates the preStop
+                      and postStart hooks that force nodes to enter maintenance mode
+                      when stopping and exit maintenance mode when up again
+                    type: boolean
+                type: object
               sidecars:
                 description: Sidecars is list of sidecars run alongside redpanda container
                 properties:
@@ -902,8 +912,13 @@ spec:
                 description: Replicas show how many nodes are working in the cluster
                 format: int32
                 type: integer
+              restarting:
+                description: Indicates that a cluster is restarting due to an upgrade
+                  or a different reason
+                type: boolean
               upgrading:
-                description: Indicates cluster is upgrading
+                description: 'Indicates cluster is upgrading. Deprecated: replaced
+                  by "restarting"'
                 type: boolean
               version:
                 description: Current version of the cluster.

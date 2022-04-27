@@ -4,7 +4,7 @@ metadata:
   name: centralized-configuration-upgrade
 spec:
   image: "vectorized/redpanda"
-  version: "v21.11.10"
+  version: "v21.11.11"
   replicas: 2
   resources:
     requests:
