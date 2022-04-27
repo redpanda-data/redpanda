@@ -315,9 +315,6 @@ ss::future<> controller::start() {
             std::ref(_as));
       })
       .then([this] {
-          if (!config::shard_local_cfg().enable_metrics_reporter()) {
-              return ss::now();
-          }
           return _metrics_reporter.invoke_on(0, &metrics_reporter::start);
       });
 }

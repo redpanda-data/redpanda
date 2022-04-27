@@ -270,6 +270,9 @@ ss::future<> metrics_reporter::try_initialize_cluster_info() {
     boost::uuids::random_generator_mt19937 uuid_gen(mersenne_twister);
 
     _cluster_uuid = fmt::format("{}", uuid_gen());
+
+    if (config::shard_local_cfg().cluster_id() == "") {
+    }
 }
 
 iobuf serialize_metrics_snapshot(
@@ -327,6 +330,12 @@ ss::future<> metrics_reporter::do_report_metrics() {
     // try initializing cluster info, if it is already present this operation
     // does nothig
     co_await try_initialize_cluster_info();
+
+    // If reporting is disabled, drop out here: we've initialized cluster_id
+    // if needed but, will not send any reports home.
+    if (!config::shard_local_cfg().enable_metrics_reporter()) {
+        co_return;
+    }
 
     // if not initialized, wait until next tick
     if (_cluster_uuid == "") {
