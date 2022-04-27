@@ -12,6 +12,7 @@
 #include "cluster/metrics_reporter.h"
 
 #include "bytes/iobuf.h"
+#include "cluster/config_frontend.h"
 #include "cluster/fwd.h"
 #include "cluster/health_monitor_frontend.h"
 #include "cluster/health_monitor_types.h"
@@ -100,11 +101,13 @@ metrics_reporter::metrics_reporter(
   ss::sharded<members_table>& members_table,
   ss::sharded<topic_table>& topic_table,
   ss::sharded<health_monitor_frontend>& health_monitor,
+  ss::sharded<config_frontend>& config_frontend,
   ss::sharded<ss::abort_source>& as)
   : _raft0(std::move(raft0))
   , _members_table(members_table)
   , _topics(topic_table)
   , _health_monitor(health_monitor)
+  , _config_frontend(config_frontend)
   , _as(as)
   , _logger(logger, "metrics-reporter") {}
 
@@ -270,8 +273,35 @@ ss::future<> metrics_reporter::try_initialize_cluster_info() {
     boost::uuids::random_generator_mt19937 uuid_gen(mersenne_twister);
 
     _cluster_uuid = fmt::format("{}", uuid_gen());
+}
 
-    if (config::shard_local_cfg().cluster_id() == "") {
+/**
+ * Having synthesized a unique cluster ID in try_initialize_cluster_info,
+ * set it as the global cluster_id in the cluster configuration, if there
+ * is not already a cluster_id set there.
+ *
+ * If this fails to write the configuration, it will simply log a warning,
+ * in the expectation that this function is called again on next metrics
+ * reporter tick.
+ */
+ss::future<> metrics_reporter::propagate_cluster_id() {
+    if (config::shard_local_cfg().cluster_id().has_value()) {
+        // Don't override any existing cluster_id
+        co_return;
+    }
+
+    if (_cluster_uuid == "") {
+        co_return;
+    }
+
+    auto result = co_await _config_frontend.local().do_patch(
+      config_update_request{.upsert = {{"cluster_id", _cluster_uuid}}},
+      model::timeout_clock::now() + 5s);
+    if (result.errc) {
+        vlog(
+          clusterlog.warn, "Failed to initialize cluster_id: {}", result.errc);
+    } else {
+        vlog(clusterlog.info, "Initialized cluster_id to {}", _cluster_uuid);
     }
 }
 
@@ -317,19 +347,25 @@ ss::future<http::client> metrics_reporter::make_http_client() {
 }
 
 ss::future<> metrics_reporter::do_report_metrics() {
-    // skip reporting if current node is not raft0 leader, or we need to wait
-    // for next report
-    if (
-      !_raft0->is_leader()
-      || _last_success
-           > ss::lowres_clock::now()
-               - config::shard_local_cfg().metrics_reporter_report_interval()) {
+    // skip reporting if current node is not raft0 leader
+    if (!_raft0->is_leader()) {
         co_return;
     }
 
     // try initializing cluster info, if it is already present this operation
     // does nothig
     co_await try_initialize_cluster_info();
+
+    // Update cluster_id in configuration, if not already set.
+    co_await propagate_cluster_id();
+
+    // report interval has not elapsed
+    if (
+      _last_success
+      > ss::lowres_clock::now()
+          - config::shard_local_cfg().metrics_reporter_report_interval()) {
+        co_return;
+    }
 
     // If reporting is disabled, drop out here: we've initialized cluster_id
     // if needed but, will not send any reports home.

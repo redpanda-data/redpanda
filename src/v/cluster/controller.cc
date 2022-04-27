@@ -312,6 +312,7 @@ ss::future<> controller::start() {
             std::ref(_members_table),
             std::ref(_tp_state),
             std::ref(_hm_frontend),
+            std::ref(_config_frontend),
             std::ref(_as));
       })
       .then([this] {
