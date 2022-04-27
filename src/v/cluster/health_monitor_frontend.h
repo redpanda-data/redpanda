@@ -51,6 +51,13 @@ public:
     ss::future<result<std::vector<node_state>>>
       get_nodes_status(model::timeout_clock::time_point);
 
+    /**
+     * Return drain status for a given node.
+     */
+    ss::future<result<std::optional<cluster::drain_manager::drain_status>>>
+    get_node_drain_status(
+      model::node_id node_id, model::timeout_clock::time_point deadline);
+
 private:
     template<typename Func>
     auto dispatch_to_backend(Func&& f) {

@@ -396,6 +396,15 @@ class Admin:
         """
         return self._request('get', "brokers", node=node).json()
 
+    def get_broker(self, id, node=None):
+        """
+        Return metadata about a broker.
+
+        This differs from the `brokers/` endpoint in that it may contain
+        additional context beyond what is reported for through `brokers/`.
+        """
+        return self._request('get', f"brokers/{id}", node=node).json()
+
     def get_cluster_view(self, node):
         """
         Return cluster_view.

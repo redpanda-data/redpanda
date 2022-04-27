@@ -294,6 +294,8 @@ ss::future<> controller::start() {
             std::ref(_raft_manager),
             std::ref(_as),
             std::ref(_storage_node),
+            std::ref(_drain_manager),
+            std::ref(_feature_table),
             config::shard_local_cfg()
               .storage_space_alert_free_threshold_bytes.bind(),
             config::shard_local_cfg()

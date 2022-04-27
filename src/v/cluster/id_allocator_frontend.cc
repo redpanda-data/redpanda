@@ -72,13 +72,12 @@ id_allocator_frontend::allocate_id(model::timeout_clock::duration timeout) {
 
     auto _self = _controller->self();
 
-    auto r = allocate_id_reply{0, errc::no_leader_controller};
+    auto r = allocate_id_reply{0, errc::not_leader};
 
     auto retries = _metadata_dissemination_retries;
     auto delay_ms = _metadata_dissemination_retry_delay_ms;
-    auto aborted = false;
     std::optional<std::string> error;
-    while (!aborted && 0 < retries--) {
+    while (!_as.abort_requested() && 0 < retries--) {
         auto leader_opt = _leaders.local().get_leader(model::id_allocator_ntp);
         if (unlikely(!leader_opt)) {
             error = vformat(
@@ -88,7 +87,7 @@ id_allocator_frontend::allocate_id(model::timeout_clock::duration timeout) {
               "waiting for {} to fill leaders cache, retries left: {}",
               model::id_allocator_ntp,
               retries);
-            aborted = !co_await sleep_abortable(delay_ms, _as);
+            co_await sleep_abortable(delay_ms, _as);
             continue;
         }
         auto leader = leader_opt.value();
@@ -117,7 +116,7 @@ id_allocator_frontend::allocate_id(model::timeout_clock::duration timeout) {
         error = vformat("id allocation failed with {}", r.ec);
         vlog(
           clusterlog.trace, "id allocation failed, retries left: {}", retries);
-        aborted = !co_await sleep_abortable(delay_ms, _as);
+        co_await sleep_abortable(delay_ms, _as);
     }
 
     if (error) {

@@ -227,6 +227,10 @@
                 "version": {
                     "type": "string",
                     "description": "Redpanda version"
+                },
+                "maintenance_status": {
+                    "type": "maintenance_status",
+                    "description": "Node maintenance status"
                 }
             }
         },

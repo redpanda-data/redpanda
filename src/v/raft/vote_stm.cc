@@ -261,10 +261,11 @@ ss::future<> vote_stm::update_vote_state(ss::semaphore_units<> u) {
           if (ec) {
               vlog(
                 _ctxlog.info,
-                "unable to replicate configuration as a leader, stepping down");
-              return _ptr->step_down(_ptr->_term + model::term_id(1));
+                "unable to replicate configuration as a leader - error code: "
+                "{} - {} ",
+                ec.value(),
+                ec.message());
           }
-          return ss::now();
       });
 }
 
