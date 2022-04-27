@@ -357,13 +357,13 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 
 			By("Accepting a change to the properties")
 			testAdminAPI.RegisterPropertySchema("prop", admin.ConfigPropertyMetadata{NeedsRestart: false})
-			Expect(k8sClient.Get(context.Background(), key, redpandaCluster)).To(Succeed())
-			if redpandaCluster.Spec.AdditionalConfiguration == nil {
-				redpandaCluster.Spec.AdditionalConfiguration = make(map[string]string)
-			}
 			const propValue = "the-value"
-			redpandaCluster.Spec.AdditionalConfiguration["redpanda.prop"] = propValue
-			Expect(k8sClient.Update(context.Background(), redpandaCluster)).To(Succeed())
+			Eventually(clusterUpdater(key, func(cluster *v1alpha1.Cluster) {
+				if cluster.Spec.AdditionalConfiguration == nil {
+					cluster.Spec.AdditionalConfiguration = make(map[string]string)
+				}
+				cluster.Spec.AdditionalConfiguration["redpanda.prop"] = propValue
+			}), timeout, interval).Should(Succeed())
 
 			By("Maintaining the configured condition to false")
 			Eventually(clusterConfiguredConditionStatusGetter(key), timeout, interval).Should(BeFalse())
@@ -410,12 +410,12 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			Consistently(testAdminAPI.NumPatchesGetter(), timeoutShort, intervalShort).Should(Equal(0))
 
 			By("Accepting a change to any property")
-			Expect(k8sClient.Get(context.Background(), key, redpandaCluster)).To(Succeed())
-			if redpandaCluster.Spec.AdditionalConfiguration == nil {
-				redpandaCluster.Spec.AdditionalConfiguration = make(map[string]string)
-			}
-			redpandaCluster.Spec.AdditionalConfiguration["redpanda.x"] = "any-val"
-			Expect(k8sClient.Update(context.Background(), redpandaCluster)).To(Succeed())
+			Eventually(clusterUpdater(key, func(cluster *v1alpha1.Cluster) {
+				if cluster.Spec.AdditionalConfiguration == nil {
+					cluster.Spec.AdditionalConfiguration = make(map[string]string)
+				}
+				cluster.Spec.AdditionalConfiguration["redpanda.x"] = "any-val"
+			}), timeout, interval).Should(Succeed())
 
 			By("Changing the hash annotation again and not the other one")
 			Eventually(annotationGetter(key, &appsv1.StatefulSet{}, configMapHashKey), timeout, interval).ShouldNot(Equal(hash))
@@ -455,9 +455,9 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			initialImages := imageExtractor()
 
 			By("Accepting the upgrade")
-			Expect(resourceGetter(key, redpandaCluster)()).To(Succeed())
-			redpandaCluster.Spec.Version = versionWithCentralizedConfiguration
-			Expect(k8sClient.Update(context.Background(), redpandaCluster)).To(Succeed())
+			Eventually(clusterUpdater(key, func(cluster *v1alpha1.Cluster) {
+				cluster.Spec.Version = versionWithCentralizedConfiguration
+			}), timeout, interval).Should(Succeed())
 
 			By("Changing the Configmap and the statefulset accordingly in one shot")
 			var cm corev1.ConfigMap
@@ -505,9 +505,9 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			}), timeout, interval).ShouldNot(BeEmpty())
 
 			By("Accepting the upgrade")
-			Expect(resourceGetter(key, redpandaCluster)()).To(Succeed())
-			redpandaCluster.Spec.Version = versionWithCentralizedConfiguration
-			Expect(k8sClient.Update(context.Background(), redpandaCluster)).To(Succeed())
+			Eventually(clusterUpdater(key, func(cluster *v1alpha1.Cluster) {
+				cluster.Spec.Version = versionWithCentralizedConfiguration
+			}), timeout, interval).Should(Succeed())
 
 			By("Changing the Configmap and the statefulset accordingly")
 			var cm corev1.ConfigMap
@@ -525,17 +525,13 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			By("Accepting a change in both node and cluster properties")
 			testAdminAPI.RegisterPropertySchema("prop", admin.ConfigPropertyMetadata{NeedsRestart: false})
 			const propValue = "the-value"
-			Eventually(func() error {
-				if err := resourceGetter(key, redpandaCluster)(); err != nil {
-					return err
+			Eventually(clusterUpdater(key, func(cluster *v1alpha1.Cluster) {
+				cluster.Spec.Configuration.DeveloperMode = !cluster.Spec.Configuration.DeveloperMode
+				if cluster.Spec.AdditionalConfiguration == nil {
+					cluster.Spec.AdditionalConfiguration = make(map[string]string)
 				}
-				redpandaCluster.Spec.Configuration.DeveloperMode = !redpandaCluster.Spec.Configuration.DeveloperMode
-				if redpandaCluster.Spec.AdditionalConfiguration == nil {
-					redpandaCluster.Spec.AdditionalConfiguration = make(map[string]string)
-				}
-				redpandaCluster.Spec.AdditionalConfiguration["redpanda.prop"] = propValue
-				return k8sClient.Update(context.Background(), redpandaCluster)
-			}, timeout, interval).Should(Succeed())
+				cluster.Spec.AdditionalConfiguration["redpanda.prop"] = propValue
+			}), timeout, interval).Should(Succeed())
 
 			By("Redeploying the statefulset with the new changes")
 			Eventually(annotationGetter(key, &sts, configMapHashKey), timeout, interval).ShouldNot(Equal(configMapHash2))
@@ -578,12 +574,12 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			Eventually(clusterConfiguredConditionStatusGetter(key), timeout, interval).Should(BeTrue())
 
 			By("Accepting an unknown property")
-			Expect(k8sClient.Get(context.Background(), key, redpandaCluster)).To(Succeed())
-			if redpandaCluster.Spec.AdditionalConfiguration == nil {
-				redpandaCluster.Spec.AdditionalConfiguration = make(map[string]string)
-			}
-			redpandaCluster.Spec.AdditionalConfiguration["redpanda.unk"] = "nown"
-			Expect(k8sClient.Update(context.Background(), redpandaCluster)).To(Succeed())
+			Eventually(clusterUpdater(key, func(cluster *v1alpha1.Cluster) {
+				if cluster.Spec.AdditionalConfiguration == nil {
+					cluster.Spec.AdditionalConfiguration = make(map[string]string)
+				}
+				cluster.Spec.AdditionalConfiguration["redpanda.unk"] = "nown"
+			}), timeout, interval).Should(Succeed())
 
 			By("Reflecting the issue in the condition")
 			Eventually(resourceDataGetter(key, redpandaCluster, func() interface{} {
@@ -602,19 +598,19 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			}), timeout, interval).Should(ContainSubstring("Unknown"))
 
 			By("Restoring the state when fixing the property")
-			Expect(k8sClient.Get(context.Background(), key, redpandaCluster)).To(Succeed())
-			delete(redpandaCluster.Spec.AdditionalConfiguration, "redpanda.unk")
-			Expect(k8sClient.Update(context.Background(), redpandaCluster)).To(Succeed())
+			Eventually(clusterUpdater(key, func(cluster *v1alpha1.Cluster) {
+				delete(cluster.Spec.AdditionalConfiguration, "redpanda.unk")
+			}), timeout, interval).Should(Succeed())
 			Eventually(clusterConfiguredConditionStatusGetter(key), timeout, interval).Should(BeTrue())
 
 			By("Accepting an invalid property")
 			testAdminAPI.RegisterPropertySchema("inv", admin.ConfigPropertyMetadata{Description: "invalid"}) // triggers mock validation
-			Expect(k8sClient.Get(context.Background(), key, redpandaCluster)).To(Succeed())
-			if redpandaCluster.Spec.AdditionalConfiguration == nil {
-				redpandaCluster.Spec.AdditionalConfiguration = make(map[string]string)
-			}
-			redpandaCluster.Spec.AdditionalConfiguration["redpanda.inv"] = "alid"
-			Expect(k8sClient.Update(context.Background(), redpandaCluster)).To(Succeed())
+			Eventually(clusterUpdater(key, func(cluster *v1alpha1.Cluster) {
+				if cluster.Spec.AdditionalConfiguration == nil {
+					cluster.Spec.AdditionalConfiguration = make(map[string]string)
+				}
+				cluster.Spec.AdditionalConfiguration["redpanda.inv"] = "alid"
+			}), timeout, interval).Should(Succeed())
 
 			By("Reflecting the issue in the condition")
 			Eventually(resourceDataGetter(key, redpandaCluster, func() interface{} {
@@ -633,9 +629,9 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			}), timeout, interval).Should(ContainSubstring("Invalid"))
 
 			By("Restoring the state when fixing the property")
-			Expect(k8sClient.Get(context.Background(), key, redpandaCluster)).To(Succeed())
-			delete(redpandaCluster.Spec.AdditionalConfiguration, "redpanda.inv")
-			Expect(k8sClient.Update(context.Background(), redpandaCluster)).To(Succeed())
+			Eventually(clusterUpdater(key, func(cluster *v1alpha1.Cluster) {
+				delete(cluster.Spec.AdditionalConfiguration, "redpanda.inv")
+			}), timeout, interval).Should(Succeed())
 			Eventually(clusterConfiguredConditionStatusGetter(key), timeout, interval).Should(BeTrue())
 
 			By("None of the property used here should change the hash")
@@ -662,12 +658,12 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			Eventually(clusterConfiguredConditionStatusGetter(key), timeout, interval).Should(BeTrue())
 
 			By("Accepting an unknown property")
-			Expect(k8sClient.Get(context.Background(), key, redpandaCluster)).To(Succeed())
-			if redpandaCluster.Spec.AdditionalConfiguration == nil {
-				redpandaCluster.Spec.AdditionalConfiguration = make(map[string]string)
-			}
-			redpandaCluster.Spec.AdditionalConfiguration["redpanda.unk"] = "nown-value"
-			Expect(k8sClient.Update(context.Background(), redpandaCluster)).To(Succeed())
+			Eventually(clusterUpdater(key, func(cluster *v1alpha1.Cluster) {
+				if cluster.Spec.AdditionalConfiguration == nil {
+					cluster.Spec.AdditionalConfiguration = make(map[string]string)
+				}
+				cluster.Spec.AdditionalConfiguration["redpanda.unk"] = "nown-value"
+			}), timeout, interval).Should(Succeed())
 
 			By("Reflecting the issue in the condition")
 			Eventually(resourceDataGetter(key, redpandaCluster, func() interface{} {
@@ -679,9 +675,9 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			}), timeout, interval).Should(Equal("False/Error/Mock bad request message"))
 
 			By("Restoring the state when fixing the property")
-			Expect(k8sClient.Get(context.Background(), key, redpandaCluster)).To(Succeed())
-			delete(redpandaCluster.Spec.AdditionalConfiguration, "redpanda.unk")
-			Expect(k8sClient.Update(context.Background(), redpandaCluster)).To(Succeed())
+			Eventually(clusterUpdater(key, func(cluster *v1alpha1.Cluster) {
+				delete(cluster.Spec.AdditionalConfiguration, "redpanda.unk")
+			}), timeout, interval).Should(Succeed())
 			Eventually(clusterConfiguredConditionStatusGetter(key), timeout, interval).Should(BeTrue())
 
 			By("None of the property used here should change the hash")
@@ -720,9 +716,9 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			Consistently(clusterConfiguredConditionStatusGetter(key), timeoutShort, intervalShort).Should(BeFalse())
 
 			By("Restoring the state when fixing the property")
-			Expect(k8sClient.Get(context.Background(), key, redpandaCluster)).To(Succeed())
-			delete(redpandaCluster.Spec.AdditionalConfiguration, "redpanda.unk")
-			Expect(k8sClient.Update(context.Background(), redpandaCluster)).To(Succeed())
+			Eventually(clusterUpdater(key, func(cluster *v1alpha1.Cluster) {
+				delete(cluster.Spec.AdditionalConfiguration, "redpanda.unk")
+			}), timeout, interval).Should(Succeed())
 			Eventually(clusterConfiguredConditionStatusGetter(key), timeout, interval).Should(BeTrue())
 
 			By("None of the property used here should change the hash")
@@ -764,12 +760,12 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			Eventually(clusterConfiguredConditionStatusGetter(key), timeout, interval).Should(BeTrue())
 
 			By("Changing the configuration")
-			Expect(k8sClient.Get(context.Background(), key, redpandaCluster)).To(Succeed())
-			if redpandaCluster.Spec.AdditionalConfiguration == nil {
-				redpandaCluster.Spec.AdditionalConfiguration = make(map[string]string)
-			}
-			redpandaCluster.Spec.AdditionalConfiguration["redpanda."+managedProp] = desiredManagedPropValue
-			Expect(k8sClient.Update(context.Background(), redpandaCluster)).To(Succeed())
+			Eventually(clusterUpdater(key, func(cluster *v1alpha1.Cluster) {
+				if cluster.Spec.AdditionalConfiguration == nil {
+					cluster.Spec.AdditionalConfiguration = make(map[string]string)
+				}
+				cluster.Spec.AdditionalConfiguration["redpanda."+managedProp] = desiredManagedPropValue
+			}), timeout, interval).Should(Succeed())
 
 			By("Having it reflected in the configuration")
 			Eventually(testAdminAPI.PropertyGetter(managedProp), timeout, interval).Should(Equal(desiredManagedPropValue))
@@ -893,5 +889,18 @@ func clusterConfiguredConditionStatusGetter(key client.ObjectKey) func() bool {
 	return func() bool {
 		cond := clusterConfiguredConditionGetter(key)()
 		return cond != nil && cond.Status == corev1.ConditionTrue
+	}
+}
+
+func clusterUpdater(
+	clusterNamespacedName types.NamespacedName, upd func(*v1alpha1.Cluster),
+) func() error {
+	return func() error {
+		cl := &v1alpha1.Cluster{}
+		if err := k8sClient.Get(context.Background(), clusterNamespacedName, cl); err != nil {
+			return err
+		}
+		upd(cl)
+		return k8sClient.Update(context.Background(), cl)
 	}
 }
