@@ -164,12 +164,6 @@ class UpgradeFranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
         self.old = -1
         self.kaf_consumer.start()
 
-        rpk = RpkConsumer(context=self.test_context, redpanda=self.redpanda, topic=self.topic, group="foo")
-        rpk.start()
-        time.sleep(10)
-        rpk.stop()
-        rpk.wait()
-
         def consumed1():
             self.logger.debug(
                 f"Offset for consumer: {self.kaf_consumer.offset}")
@@ -180,6 +174,12 @@ class UpgradeFranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
             return res;
 
         wait_until(consumed1, timeout_sec=350, backoff_sec=2)
+
+        rpk = RpkConsumer(context=self.test_context, redpanda=self.redpanda, topic=self.topic, group="foo")
+        rpk.start()
+        time.sleep(10)
+        rpk.stop()
+        rpk.wait()
 
         for node in self.redpanda.nodes:
             self.redpanda.stop_node(node, timeout=300)
@@ -193,7 +193,7 @@ class UpgradeFranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
                                self.topic,
                                msg_size=self.MSG_SIZE,
                                msg_count=1000,
-                               acks="all",
+                               acks=-1,
                                produce_timeout=100)
 
         producer.start()
