@@ -188,16 +188,13 @@ class UpgradeFranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
             node.account.ssh("sudo systemctl stop redpanda")
             self.redpanda.start_node(node, None, timeout=300)
 
-        producer = RpkProducer(self.test_context,
-                               self.redpanda,
-                               self.topic,
-                               msg_size=self.MSG_SIZE,
-                               msg_count=1000,
-                               acks=-1,
-                               produce_timeout=100)
+        self._producer = FranzGoVerifiableProducer(self.test_context, self.redpanda,
+                                                   self.topic, self.MSG_SIZE,
+                                                   1000,
+                                                   self._node_for_franz_go)
 
-        producer.start()
-        producer.wait()
+        self._producer.start(clean=False)
+        self._producer.wait()
 
         self.kaf_consumer = KafConsumer(self.test_context, self.redpanda, self.topic, self.PRODUCE_COUNT + 1000, "oldest")
         self.kaf_consumer.start()
