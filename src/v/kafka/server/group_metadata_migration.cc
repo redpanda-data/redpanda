@@ -625,9 +625,7 @@ ss::future<> group_metadata_migration::migrate_metadata() {
         if (_controller.is_raft0_leader()) {
             vlog(mlog.info, "creating consumer offsets topic");
             co_await create_consumer_offsets_topic(
-              _controller,
-              *group_topic_assignment,
-              default_deadline());
+              _controller, *group_topic_assignment, default_deadline());
             if (topics.contains(
                   model::kafka_consumer_offsets_nt, model::partition_id{0})) {
                 break;
