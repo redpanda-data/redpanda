@@ -687,11 +687,10 @@ ss::future<> group_metadata_migration::start(ss::abort_source& as) {
           mlog.info,
           "kafka_internal/group topic does not exists, activating "
           "consumer_offsets feature");
-        try {
-            co_await activate_feature(as);
-        } catch (const ss::abort_requested_exception&) {
-            // ignore abort requested exception, we are shutting down
-        }
+
+        ssx::spawn_with_gate(_background_gate, [this, &as]() -> ss::future<> {
+            return activate_feature(as);
+        });
         co_return;
     }
     // otherwise wait for feature to be preparing and execute migration
