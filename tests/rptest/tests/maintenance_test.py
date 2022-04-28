@@ -77,6 +77,32 @@ class MaintenanceTest(RedpandaTest):
         else:
             return not status['draining']
 
+    def _verify_maintenance_status(self, node, draining):
+        """
+        Check that cluster reports maintenance status as expected through
+        both rpk status tooling as well as raw admin interface.
+        """
+        # get status for this node via rpk
+        node_id = self.redpanda.idx(node)
+        statuses = self.rpk.cluster_maintenance_status()
+        self.logger.debug(f"finding node_id {node_id} in rpk "
+                          "maintenance status: {statuses}")
+        rpk_status = None
+        for status in statuses:
+            if status.node_id == node_id:
+                rpk_status = status
+                break
+        if rpk_status is None:
+            return False
+
+        # get status for this node via admin interface
+        admin_status = self.admin.maintenance_status(node)
+        self.logger.debug(f"maintenance status from admin for "
+                          "{node.name}: {admin_status}")
+
+        # ensure that both agree on expected outcome
+        return admin_status["draining"] == rpk_status.draining == draining
+
     def _enable_maintenance(self, node):
         """
         1. Verifies that node is leader for some partitions
@@ -99,20 +125,24 @@ class MaintenanceTest(RedpandaTest):
 
         self.logger.debug(
             f"Checking that node {node.name} is not in maintenance mode")
-        status = self.admin.maintenance_status(node)
-        assert status[
-            "draining"] == False, f"Node {node.name} in maintenance mode"
-
-        if self._use_rpk:
-            self.rpk.cluster_maintenance_enable(node)
-        else:
-            self.admin.maintenance_start(node)
+        wait_until(lambda: self._verify_maintenance_status(node, False),
+                   timeout_sec=30,
+                   backoff_sec=5)
 
         self.logger.debug(
             f"Waiting for node {node.name} to enter maintenance mode")
-        wait_until(lambda: self._in_maintenance_mode(node),
-                   timeout_sec=30,
-                   backoff_sec=5)
+        if self._use_rpk:
+            self.rpk.cluster_maintenance_enable(node, wait=True)
+            # the node should now report itself in maintenance mode
+            assert self._in_maintenance_mode(node), \
+                    f"{node.name} not in expected maintenance mode"
+        else:
+            # when using the low-level admin interface the barrier is
+            # implemented using wait_until and query the node directly
+            self.admin.maintenance_start(node)
+            wait_until(lambda: self._in_maintenance_mode(node),
+                       timeout_sec=30,
+                       backoff_sec=5)
 
         def has_drained():
             """
@@ -139,7 +169,21 @@ class MaintenanceTest(RedpandaTest):
                    timeout_sec=60,
                    backoff_sec=10)
 
-    def _disable_maintenance(self, node):
+    def _verify_cluster(self, target, target_expect):
+        for node in self.redpanda.nodes:
+            expect = False if node != target else target_expect
+            wait_until(
+                lambda: self._verify_maintenance_status(node, expect),
+                timeout_sec=30,
+                backoff_sec=5,
+                err_msg=f"expected {node.name} maintenance mode: {expect}")
+
+    def _maintenance_disable(self, node):
+        if self._use_rpk:
+            self.rpk.cluster_maintenance_disable(node)
+        else:
+            self.admin.maintenance_stop(node)
+
         wait_until(lambda: not self._in_maintenance_mode(node),
                    timeout_sec=30,
                    backoff_sec=5)
@@ -154,21 +198,6 @@ class MaintenanceTest(RedpandaTest):
                    timeout_sec=60,
                    backoff_sec=10)
 
-    def _verify_cluster(self, target, target_expect):
-        for node in self.redpanda.nodes:
-            expect = False if node != target else target_expect
-            wait_until(
-                lambda: self._in_maintenance_mode(node) == expect,
-                timeout_sec=30,
-                backoff_sec=5,
-                err_msg=f"expected {node.name} maintenance mode: {expect}")
-
-    def _maintenance_disable(self, node):
-        if self._use_rpk:
-            self.rpk.cluster_maintenance_disable(node)
-        else:
-            self.admin.maintenance_stop(node)
-
     @cluster(num_nodes=3)
     @matrix(use_rpk=[True, False])
     def test_maintenance(self, use_rpk):
@@ -176,7 +205,6 @@ class MaintenanceTest(RedpandaTest):
         target = random.choice(self.redpanda.nodes)
         self._enable_maintenance(target)
         self._maintenance_disable(target)
-        self._disable_maintenance(target)
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @matrix(use_rpk=[True, False])
@@ -191,7 +219,6 @@ class MaintenanceTest(RedpandaTest):
             self._verify_cluster(node, True)
 
             self._maintenance_disable(node)
-            self._disable_maintenance(node)
             self._verify_cluster(node, False)
 
         self.redpanda.restart_nodes(self.redpanda.nodes)
