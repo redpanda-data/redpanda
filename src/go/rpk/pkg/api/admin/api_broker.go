@@ -34,7 +34,7 @@ type Broker struct {
 	NumCores         int                `json:"num_cores"`
 	MembershipStatus string             `json:"membership_status"`
 	IsAlive          *bool              `json:"is_alive"`
-	Version          string             `json:"version`
+	Version          string             `json:"version"`
 	Maintenance      *MaintenanceStatus `json:"maintenance_status"`
 }
 
