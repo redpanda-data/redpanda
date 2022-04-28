@@ -3,7 +3,7 @@ kind: Cluster
 metadata:
   name: centralized-configuration
 status:
-  replicas: 2
+  replicas: 1
   restarting: false
   conditions:
     - type: ClusterConfigured
