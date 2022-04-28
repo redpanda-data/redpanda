@@ -99,6 +99,9 @@ ss::future<bool> create_consumer_offsets_topic(
   cluster::controller& controller,
   std::vector<cluster::partition_assignment> assignments,
   model::timeout_clock::time_point timeout) {
+    vassert(
+      !assignments.empty(),
+      "cannot create consumer offsets topic with 0 partitions");
     cluster::custom_assignable_topic_configuration topic(
       cluster::topic_configuration{
         model::kafka_consumer_offsets_nt.ns,
@@ -608,7 +611,7 @@ ss::future<> group_metadata_migration::do_apply() {
 
 ss::future<> group_metadata_migration::migrate_metadata() {
     auto& topics = _controller.get_topics_state().local();
-    auto group_topic_assignment = topics.get_topic_assignments(
+    const auto group_topic_assignment = topics.get_topic_assignments(
       model::kafka_group_nt);
     // no group topic found, skip migration
     if (!group_topic_assignment) {
@@ -623,7 +626,7 @@ ss::future<> group_metadata_migration::migrate_metadata() {
             vlog(mlog.info, "creating consumer offsets topic");
             co_await create_consumer_offsets_topic(
               _controller,
-              std::move(*group_topic_assignment),
+              *group_topic_assignment,
               default_deadline());
             continue;
         }
