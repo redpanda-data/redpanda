@@ -87,6 +87,9 @@ ss::future<> vote_stm::dispatch_one(vnode n) {
               }
           });
     });
+
+    // added some other conesnsus stuff here
+    // ok here is that other stuff
 }
 
 ss::future<> vote_stm::vote(bool leadership_transfer) {

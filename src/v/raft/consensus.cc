@@ -118,6 +118,8 @@ void consensus::setup_metrics() {
         return;
     }
 
+    // ok i added some code here
+
     _probe.setup_metrics(_log.config().ntp());
     auto labels = probe::create_metric_labels(_log.config().ntp());
     namespace sm = ss::metrics;
