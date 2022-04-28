@@ -115,7 +115,7 @@ class UpgradeFranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
             si_settings=si_settings,
             legacy_config_mode=True)
 
-    @cluster(num_nodes=9)
+    @cluster(num_nodes=10)
     def test_with_all_type_of_loads_and_si(self):
         self.logger.info(f"Environment: {os.environ}")
 
