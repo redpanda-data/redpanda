@@ -1,0 +1,22 @@
+name: Redpanda
+driverClass: io.openmessaging.benchmark.driver.redpanda.RedpandaBenchmarkDriver
+
+replicationFactor: 3
+reset: true
+
+topicConfig: |
+
+commonConfig: |
+  bootstrap.servers={{redpanda_node}}:9092
+  request.timeout.ms=120000
+
+producerConfig: |
+  max.in.flight.requests.per.connection=1
+  acks=all
+  linger.ms=10
+  batch.size=1048576
+
+consumerConfig: |
+  auto.offset.reset=earliest
+  enable.auto.commit=false
+  max.partition.fetch.bytes=1048576

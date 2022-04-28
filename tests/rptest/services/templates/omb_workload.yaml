@@ -1,0 +1,13 @@
+name: Ducktape workload
+
+topics: {{topics}}
+partitionsPerTopic: {{partitions_per_topic}}
+messageSize: 1024
+payloadFile: "payload/payload-1Kb.data"
+subscriptionsPerTopic: {{subscriptions_per_topic}}
+producersPerTopic: {{producers_per_topic}}
+consumerPerSubscription: {{consumer_per_subscription}}
+producerRate: {{producer_rate}}
+consumerBacklogSizeGB: {{consumer_backlog_size_GB}}
+testDurationMinutes: {{test_duration_minutes}}
+warmupDurationMinutes: {{warmup_duration_minutes}}
