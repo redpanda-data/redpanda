@@ -186,7 +186,7 @@ class UpgradeFranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
             self.logger.debug(f"{sum(self.kaf_consumer.offset.values())}")
             return sum(self.kaf_consumer.offset.values()) + 100 >= self.PRODUCE_COUNT + 1000
 
-        wait_until(consumed, timeout_sec=500, backoff_sec=2)
+        wait_until(consumed, timeout_sec=350, backoff_sec=2)
 
         self.kaf_consumer.stop()
 
