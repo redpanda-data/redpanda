@@ -1,0 +1,70 @@
+# Copyright 2020 Vectorized, Inc.
+#
+# Use of this software is governed by the Business Source License
+# included in the file licenses/BSL.md
+#
+# As of the Change Date specified in that file, in accordance with
+# the Business Source License, use of this software will be governed
+# by the Apache License, Version 2.0
+
+name: build-test
+on: [push, pull_request]
+
+jobs:
+  build:
+    name: Build on ${{ matrix.container }}
+    runs-on: ubuntu-20.04
+    container: ${{ matrix.container }}
+    strategy:
+      matrix:
+        container: ['ubuntu:21.04']
+
+    steps:
+        - name: checkout
+          uses: actions/checkout@v2
+
+        - name: update container base
+          run: |
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -y
+            apt-get install -y git sudo pkg-config ccache
+
+        - name: install dependencies
+          run: ./install-dependencies.sh
+
+        - name: install g++-11
+          run: |
+            DEBIAN_FRONTEND=noninteractive apt install -y g++-11
+            sudo update-alternatives \
+              --install /usr/bin/gcc gcc /usr/bin/gcc-11 60 \
+              --slave /usr/bin/g++ g++ /usr/bin/g++-11
+            sudo update-alternatives --auto gcc
+
+        # there is no analog to ${{ github.workspace }} for the home directory
+        - name: prepare cache variables
+          id: prepare_cache_variables
+          run: |
+            echo ::set-output name=home::$HOME
+            echo ::set-output name=timestamp::$(date +'%Y-%m-%d-%H-%M-%S')
+
+        - name: ccache cache files
+          uses: actions/cache@v2
+          with:
+            path: ${{ steps.prepare_cache_variables.outputs.home }}/.ccache
+            key: ${{ matrix.container }}-ccache-${{ steps.prepare_cache_variables.outputs.timestamp }}
+            restore-keys: ${{ matrix.container }}-ccache-
+
+        # at the time of this writing the ccache for a full build is about
+        # 70MB (due to the compression) but it may grow if there are many
+        # commits with changes within 1 branch and thus the 200MB upper limit
+        - name: build & test
+          run: |
+            export CCACHE_COMPRESS=true
+            export CCACHE_COMPRESSLEVEL=6
+            export CCACHE_MAXSIZE=200M
+
+            ccache -p # print the config
+            ccache -s # print the stats before reusing
+            ccache -z # zero the stats
+            ./build.sh
+            ccache -s # print the stats after the build

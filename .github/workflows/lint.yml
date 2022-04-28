@@ -1,0 +1,118 @@
+# Copyright 2020 Vectorized, Inc.
+#
+# Use of this software is governed by the Business Source License
+# included in the file licenses/BSL.md
+#
+# As of the Change Date specified in that file, in accordance with
+# the Business Source License, use of this software will be governed
+# by the Apache License, Version 2.0
+
+name: Lint all codez
+on:
+  push:
+    tags: 'v2**'
+    branches:
+      - dev
+      - release
+  pull_request:
+    branches:
+      - main
+      - dev
+
+jobs:
+  go:
+    name: Lint go files
+    runs-on: ubuntu-20.04
+    steps:
+
+    - name: Check out code
+      uses: actions/checkout@v2
+
+    - name: Set up Go
+      uses: actions/setup-go@v2
+      with:
+        go-version: 1.13.6
+      id: go
+
+    - name: install crlfmt
+      working-directory: src/go/rpk
+      run: |
+        go mod download github.com/cockroachdb/crlfmt
+        go install github.com/cockroachdb/crlfmt
+
+    - name: lint go files
+      run: |
+        find . -name *.go -type f | xargs -n1 crlfmt -wrap=80 -ignore '_generated.deepcopy.go$$' -w
+        git diff --exit-code
+
+  js:
+    name: Lint js files
+    runs-on: ubuntu-20.04
+    steps:
+
+    - name: Check out code
+      uses: actions/checkout@v2
+
+    - name: Set up Node
+      uses: actions/setup-node@v2-beta
+      with:
+        node-version: '12.16.1'
+
+    - name: Set up prettier
+      run: npm install prettier@2.3.0
+
+    - name: Lint JS files
+      run: npx prettier --list-different src/**/*.{ts,js}
+
+  py:
+    name: Lint python files
+    runs-on: ubuntu-20.04
+    steps:
+
+    - name: Check out code
+      uses: actions/checkout@v2
+
+    - name: Set up python
+      run: |
+        sudo apt-get install -y python3 python3-pip
+        sudo pip install yapf==0.30.0
+
+    - name: lint python files
+      run: find . -name *.py -type f | xargs -n1 yapf -d
+
+  cpp:
+    name: Lint files with clang-format
+    runs-on: ubuntu-20.04
+    # Use ubuntu:hirsute explicitly as it is the first version to have
+    # clang-format 12 available
+    container: ubuntu:hirsute
+    steps:
+
+    - name: Fetch clang-format
+      run: apt-get update && apt-get install -y git clang-format
+      env:
+        DEBIAN_FRONTEND: noninteractive
+
+    - name: Check out code
+      uses: actions/checkout@v2
+
+    - name: Run clang fmt
+      run: |
+        find . -regex '.*\.\(cpp\|h\|hpp\|cc\|proto\|java\)' | xargs -n1 clang-format -i -style=file -fallback-style=none
+        git diff --exit-code
+
+  sh:
+    name: Lint shell scripts
+    runs-on: ubuntu-20.04
+    steps:
+
+    - name: Check out code
+      uses: actions/checkout@v2
+
+    - name: setup shfmt
+      run: |
+        wget "https://github.com/mvdan/sh/releases/download/v3.2.0/shfmt_v3.2.0_linux_amd64" -O shfmt
+        chmod +x shfmt
+
+    - name: Run shfmt
+      run: ./shfmt -i 2 -ci -s -d .

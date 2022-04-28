@@ -1,0 +1,95 @@
+name: consistency_testing
+on:
+  repository_dispatch:
+    types: [chaos-test-command]
+
+jobs:
+  run_consistency_tests:
+    runs-on: ubuntu-20.04
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      CI: 1
+      CI_INSTALL_INFRA: 1
+      AWS_EC2_METADATA_DISABLED: true
+
+    steps:
+      - name: Setup gcloud SDK
+        uses: google-github-actions/setup-gcloud@master
+        with:
+          version: '290.0.1'
+          project_id: 'redpandaci'
+          service_account_key: ${{ secrets.GCR_JSON}}
+          export_default_credentials: true
+
+      - name: setup env slash command
+        run: |
+          echo "Populating env from PR context"
+          commit=${{ github.event.client_payload.pull_request.head.sha }}
+          short=${commit:0:7}
+
+          # Make env available to next steps
+          echo "deb_pkg_url=gs://vectorizedio/rp_dev/release/clang/$short/redpanda_*.deb" >> $GITHUB_ENV
+          echo "upload_dir=redpanda/pr-${{ github.event.client_payload.pull_request.number }}" >> $GITHUB_ENV
+        if: ${{ github.event.action == 'chaos-test-command' }}
+
+      - name: fetch release from gcb
+        run: |
+          # check if the file exists
+          check=$(gsutil -q stat $deb_pkg_url || echo "NotFound")
+          if [[ $check == "NotFound" ]]; then
+            echo "Provided file $deb_pkg_url was not found"; exit 1
+          fi
+
+          gsutil cp $deb_pkg_url redpanda.deb
+
+      - name: Setup vtools
+        run: |
+          sudo apt-get install python3-pip unzip python3-setuptools python3-venv
+          python3 -m venv .chaosenv && source .chaosenv/bin/activate
+          pip install git+https://${{ secrets.VTOOLS_GITHUB_API_TOKEN }}@github.com/vectorizedio/vtools > vtools_out.log 2>&1
+
+          cat <<EOF >> .vtools.yml
+          ---
+          build:
+            root: ./vbuild
+            src: ./
+            gopath: ./vbuild
+            node_build_dir: ./vbuild
+            default_type: release
+          EOF
+
+          vtools install infra-deps >> vtools_out.log 2>&1
+
+      - name: Run chaos tests
+        id: run-tests
+        run: |
+          .chaosenv/bin/vtools test chaos \
+          --binary-path ${{ github.workspace }}/redpanda.deb \
+          --result-path ${{ github.workspace }}/ > vtools_out.log 2>&1
+
+      - name: Upload results
+        run: |
+          tar -xvf chaos_results.tar.gz
+          vbuild/infra/v2/current/bin/aws s3 cp results/ \
+          s3://${{ secrets.S3_CONSISTENCY_BUCKET }}/$upload_dir \
+          --recursive >> vtools_out.log 2>&1
+
+      - name: Destroy Test Resources
+        run: |
+          .chaosenv/bin/vtools deploy cluster --provider aws \
+          --destroy true || true >> vtools_out.log 2>&1
+
+          vbuild/infra/v2/current/bin/aws s3 cp vtools_out.log \
+          s3://${{ secrets.S3_CONSISTENCY_BUCKET }}/$upload_dir/
+        if: ${{ always() }}
+
+      - name: Notify PR
+        uses: peter-evans/create-or-update-comment@v1
+        with:
+          token: ${{ secrets.VTOOLS_GITHUB_API_TOKEN }}
+          issue-number: ${{ github.event.client_payload.pull_request.number }}
+          body: |
+            Chaos test status: ${{ steps.run-tests.conclusion }}
+            Run: https://github.com/vectorizedio/redpanda/actions/runs/${{ github.run_id }}
+        if: always() && github.event.action == 'chaos-test-command'
