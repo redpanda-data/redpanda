@@ -569,7 +569,15 @@ class ScalarType(FieldType):
 class StructType(FieldType):
     def __init__(self, name, fields, path=()):
         super().__init__(snake_case(name))
-        self.fields = [Field.create(f, path) for f in fields]
+        self.fields = []
+        self.tags = []
+        for f in fields:
+            new_field = Field.create(f, path)
+            if new_field.is_tag:
+                self.tags.append(new_field)
+            else:
+                self.fields.append(new_field)
+        self.tags.sort(key=lambda x: x._tag)
         self.context_field = make_context_field(path)
 
     @property
@@ -618,6 +626,7 @@ class Field:
         self._default_value = self._field.get("default", "")
         if self._default_value == "null":
             self._default_value = ""
+        self._tag = self._field.get("tag", None)
         assert len(self._path)
 
     @staticmethod
@@ -745,6 +754,10 @@ class Field:
             return plain_decoder[2], named_type
         assert plain_decoder[1]
         return plain_decoder[1], named_type
+
+    @property
+    def is_tag(self):
+        return self._tag is not None
 
     @property
     def is_array(self):
@@ -980,6 +993,13 @@ writer.write({{ fname }});
 {{- field_serde(field, obj, flex) }}
 {%- endcall %}
 {%- endfor %}
+{%- if flex %}
+{%- if field_serde.name == "field_decoder" %}
+reader.consume_tags();
+{%- elif field_serde.name == "field_encoder" %}
+writer.write_tags();
+{%- endif %}
+{%- endif %}
 {%- endmacro %}
 
 namespace kafka {

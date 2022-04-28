@@ -19,6 +19,52 @@
 
 #include <boost/iterator/counting_iterator.hpp>
 
+kafka::tagged_fields make_random_tags(size_t n) {
+    kafka::tagged_fields tags;
+    for (uint32_t i = 0; i < n; ++i) {
+        tags.emplace_back(n, bytes_to_iobuf(random_generators::get_bytes()));
+    }
+    return tags;
+}
+
+kafka::tagged_fields copy_tags(const kafka::tagged_fields& otags) {
+    kafka::tagged_fields tags;
+    std::transform(
+      otags.begin(), otags.end(), std::back_inserter(tags), [](auto& t) {
+          auto& [tag_id, tag] = t;
+          return std::make_tuple(tag_id, tag.copy());
+      });
+    return tags;
+}
+
+SEASTAR_THREAD_TEST_CASE(serde_tags) {
+    iobuf buf;
+    auto tags = make_random_tags(10);
+
+    /// Serialize the random tags into an iobuf
+    kafka::response_writer writer(buf);
+    writer.write_tags(std::move(copy_tags(tags)));
+
+    /// Copy the result to use for a later comparison
+    iobuf copy = buf.copy();
+
+    /// Deserialize the tags with the kafka::request_reader
+    kafka::request_reader reader(std::move(buf));
+    auto deser_tags = reader.read_tags();
+
+    /// Verify the inital values are equivalent
+    BOOST_REQUIRE(copy_tags(tags) == deser_tags);
+
+    /// Re-serialize these tags to compare against the previous
+    iobuf result;
+    kafka::response_writer end_writer(result);
+    end_writer.write_tags(std::move(deser_tags));
+
+    /// Perform checks against serialized copies
+    BOOST_REQUIRE_EQUAL(result.size_bytes(), copy.size_bytes());
+    BOOST_CHECK_EQUAL(iobuf_to_bytes(result), iobuf_to_bytes(copy));
+}
+
 struct test_struct {
     ss::sstring field_a;
     int32_t field_b;

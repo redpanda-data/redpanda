@@ -14,6 +14,7 @@
 #include "bytes/bytes.h"
 #include "bytes/iobuf_parser.h"
 #include "kafka/protocol/batch_reader.h"
+#include "kafka/protocol/types.h"
 #include "likely.h"
 #include "seastarx.h"
 #include "utils/utf8.h"
@@ -171,6 +172,29 @@ public:
             return std::nullopt;
         }
         return do_read_array(len - 1, std::forward<ElementParser>(parser));
+    }
+
+    // Only relevent when reading flex requests
+    tagged_fields read_tags() {
+        tagged_fields tags;
+        auto num_tags = read_unsigned_varint(); // consume total num of tags
+        while (num_tags-- > 0) {
+            auto tag_id = read_unsigned_varint(); // consume tag id
+            auto size = read_unsigned_varint();   // consume size in bytes
+            tags.emplace_back(tag_id, _parser.share(size)); // consume tag
+        }
+        return tags;
+    }
+
+    void consume_tags() {
+        // Reads tags only with the intention of moving ahead the parser read
+        // head to the next correct index
+        auto num_tags = read_unsigned_varint(); // consume total num of tags
+        while (num_tags-- > 0) {
+            (void)read_unsigned_varint();           // consume tag id
+            auto next_len = read_unsigned_varint(); // consume size in bytes
+            _parser.skip(next_len);                 // consume tag element
+        }
     }
 
 private:
