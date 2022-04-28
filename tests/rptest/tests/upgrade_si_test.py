@@ -160,9 +160,26 @@ class UpgradeFranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
         assert self._seq_consumer.consumer_status.valid_reads >= wrote_at_least
         assert self._rand_consumer.consumer_status.total_reads == self.RANDOM_READ_COUNT * self.RANDOM_READ_PARALLEL
 
-        rpk = RpkConsumer(context=self.test_context, redpanda=self.redpanda, topic=self.topic, group="foo", num_msgs=self.PRODUCE_COUNT)
+        self.kaf_consumer = KafConsumer(self.test_context, self.redpanda, self.topic, self.PRODUCE_COUNT, "oldest")
+        self.old = -1
+        self.kaf_consumer.start()
+
+        rpk = RpkConsumer(context=self.test_context, redpanda=self.redpanda, topic=self.topic, group="foo")
         rpk.start()
+        time.sleep(10)
+        rpk.stop()
         rpk.wait()
+
+        def consumed1():
+            self.logger.debug(
+                f"Offset for consumer: {self.kaf_consumer.offset}")
+            self.logger.debug(f"{sum(self.kaf_consumer.offset.values())}")
+            ssum = sum(self.kaf_consumer.offset.values())
+            res = (ssum == self.old) and (ssum != 0)
+            self.old = ssum
+            return res;
+
+        wait_until(consumed1, timeout_sec=350, backoff_sec=2)
 
         for node in self.redpanda.nodes:
             self.redpanda.stop_node(node, timeout=300)
@@ -179,6 +196,18 @@ class UpgradeFranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
                                acks="all",
                                produce_timeout=100)
 
-        rpk = RpkConsumer(context=self.test_context, redpanda=self.redpanda, topic=self.topic, num_msgs=self.PRODUCE_COUNT + 1000)
-        rpk.start()
-        rpk.wait()
+        producer.start()
+        producer.wait()
+
+        self.kaf_consumer = KafConsumer(self.test_context, self.redpanda, self.topic, self.PRODUCE_COUNT + 1000, "oldest")
+        self.kaf_consumer.start()
+
+        def consumed():
+            self.logger.debug(
+                f"Offset for consumer: {self.kaf_consumer.offset}")
+            self.logger.debug(f"{sum(self.kaf_consumer.offset.values())}")
+            return sum(self.kaf_consumer.offset.values()) >= self.old + 1000
+
+        wait_until(consumed, timeout_sec=350, backoff_sec=2)
+
+        self.kaf_consumer.stop()
