@@ -377,7 +377,7 @@ func decoderConfig() mapstructure.DecoderConfig {
 			// These 2 hooks are viper's default hooks.
 			// https://github.com/spf13/viper/blob/fb4eafdd9775508c450b90b1b72affeef4a68cf5/viper.go#L1004-L1005
 			// They're set here because when decoderConfigOptions' resulting
-			// viper.DecoderConfigOption is used, viper's hooks are overriden.
+			// viper.DecoderConfigOption is used, viper's hooks are overridden.
 			mapstructure.StringToTimeDurationHookFunc(),
 			mapstructure.StringToSliceHookFunc(","),
 			// This hook translates the pre-21.1.4 configuration format to the

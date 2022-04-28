@@ -21,6 +21,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const vectorizedOrg string = "vectorized.io"
+
 func makeKey(org string, exp time.Time, overrideHash uint32) (string, error) {
 	content := fmt.Sprintf(
 		"%s%d%d%d",
@@ -59,7 +61,7 @@ func TestCheckLicenseKey(t *testing.T) {
 		{
 			name: "key is valid if the hashes match and the expiration date hasn't passed",
 			key: func() (string, error) {
-				organization := "vectorized.io"
+				organization := vectorizedOrg
 				expiresAt := time.Now().Add(48 * time.Hour)
 				return makeKey(organization, expiresAt, 0)
 			},
@@ -68,7 +70,7 @@ func TestCheckLicenseKey(t *testing.T) {
 		{
 			name: "key is invalid if the hashes don't match",
 			key: func() (string, error) {
-				organization := "vectorized.io"
+				organization := vectorizedOrg
 				expiresAt := time.Now().Add(48 * time.Hour)
 				return makeKey(organization, expiresAt, 123)
 			},
@@ -77,7 +79,7 @@ func TestCheckLicenseKey(t *testing.T) {
 		{
 			name: "key is invalid if the expiration date has already passed",
 			key: func() (string, error) {
-				organization := "vectorized.io"
+				organization := vectorizedOrg
 				expiresAt := time.Now().Add(-48 * time.Hour)
 				return makeKey(organization, expiresAt, 0)
 			},

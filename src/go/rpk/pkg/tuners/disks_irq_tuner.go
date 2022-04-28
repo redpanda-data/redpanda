@@ -257,7 +257,7 @@ func GetDefaultMode(
 	}
 	numOfPUs, err := cpuMasks.GetNumberOfPUs(cpuMask)
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 	log.Debugf("Considering '%d' cores and '%d' PUs", numOfCores, numOfPUs)
 	if numOfPUs <= 4 {

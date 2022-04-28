@@ -20,9 +20,10 @@ import (
 	"github.com/spf13/afero"
 )
 
+const path string = "/usr/file"
+
 func TestWriteFileCmdExecute(t *testing.T) {
 	fs := afero.NewMemMapFs()
-	path := "/usr/file"
 	content := `some
 multiline 
 content
@@ -54,7 +55,6 @@ content
 
 func TestWriteFileModeCmdExecuteExistingFile(t *testing.T) {
 	fs := afero.NewMemMapFs()
-	path := "/usr/file"
 	mode := os.FileMode(0765)
 
 	err := afero.WriteFile(fs, path, []byte{}, mode)
@@ -83,7 +83,6 @@ func TestWriteFileModeCmdExecuteExistingFile(t *testing.T) {
 
 func TestWriteFileCmdRender(t *testing.T) {
 	fs := afero.NewMemMapFs()
-	path := "/usr/file"
 	content := `some
 multiline 
 content
@@ -112,7 +111,6 @@ chmod %o %s
 
 func TestWriteFileCmdRenderExistingFile(t *testing.T) {
 	fs := afero.NewMemMapFs()
-	path := "/usr/file"
 	content := "content"
 	mode := os.FileMode(0765)
 

@@ -354,7 +354,7 @@ func (c *consumer) setParts(
 // - currentEnd: consume until the *current* end offset
 //
 // - if !atStart && !atEnd, then we consume at the returned start number
-// - rel is used for relative offsets from atStart or atEnd
+// - rel is used for relative offsets from atStart or atEnd.
 //
 func parseFromToOffset(
 	o string,
@@ -367,7 +367,7 @@ func parseFromToOffset(
 	case o == "start" || o == "oldest":
 		atStart = true
 		return
-	case o == "end" || o == "newest":
+	case o == endStr || o == "newest":
 		atEnd = true
 		return
 	case o == ":end":
@@ -385,7 +385,7 @@ func parseFromToOffset(
 
 	// oo, oo:, and :oo
 	if start, err = strconv.ParseInt(o, 10, 64); err == nil {
-		return
+		return //nolint:nilerr // False positive with naked returns
 	} else if strings.HasSuffix(o, ":") {
 		start, err = strconv.ParseInt(o[:len(o)-1], 10, 64)
 		return
@@ -408,7 +408,7 @@ func parseFromToOffset(
 
 	hasEnd = true
 	if start, err = strconv.ParseInt(halves[0], 10, 64); err == nil {
-		if end, err = strconv.ParseInt(halves[1], 10, 64); err != nil && halves[1] == "end" {
+		if end, err = strconv.ParseInt(halves[1], 10, 64); err != nil && halves[1] == endStr {
 			hasEnd, currentEnd, err = false, true, nil
 			return
 		}
@@ -465,7 +465,7 @@ func parseConsumeTimestamp(
 		}
 		return
 
-	case half == "end": // t2
+	case half == endStr: // t2
 		length = 3
 		end = true
 		return
@@ -707,7 +707,8 @@ func (c *consumer) intoOptions(topics []string) ([]kgo.Opt, error) {
 	return opts, nil
 }
 
-const helpConsume = `Consume records from topics.
+const (
+	helpConsume = `Consume records from topics.
 
 Consuming records reads from any amount of input topics, formats each record
 according to --format, and prints them to STDOUT. The output formatter
@@ -914,3 +915,5 @@ For example,
     -o @-1m:end         consume from 1m ago until now
     -o @:-1hr           consume from the start until an hour ago
 `
+	endStr string = "end"
+)

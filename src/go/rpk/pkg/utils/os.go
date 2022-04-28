@@ -10,6 +10,7 @@
 package utils
 
 import (
+	"context"
 	"io/ioutil"
 	"net/http"
 	"time"
@@ -23,7 +24,17 @@ func IsAWSi3MetalInstance() bool {
 	client := http.Client{
 		Timeout: timeout,
 	}
-	resp, err := client.Get("http://169.254.169.254/latest/meta-data/instance-type")
+	req, err := http.NewRequestWithContext(
+		context.Background(),
+		http.MethodGet,
+		"http://169.254.169.254/latest/meta-data/instance-type",
+		nil,
+	)
+	if err != nil {
+		log.Debugf("error creating the request: %v", err)
+		return false
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		log.Debug("Can not contact AWS meta-data API, not running in EC2")
 		return false

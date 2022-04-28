@@ -45,13 +45,13 @@ func (c *dbusClient) StartUnit(name string) error {
 func (c *dbusClient) UnitState(name string) (LoadState, ActiveState, error) {
 	loadState, err := c.conn.GetUnitProperty(name, "LoadState")
 	if err != nil {
-		return LoadStateUnknown, ActiveStateUnknown, nil
+		return LoadStateUnknown, ActiveStateUnknown, err
 	}
 	activeState, err := c.conn.GetUnitProperty(name, "ActiveState")
 	if err != nil {
 		return toLoadState(loadState.Value.String()),
 			ActiveStateUnknown,
-			nil
+			err
 	}
 
 	return toLoadState(loadState.Value.String()),

@@ -19,6 +19,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const thpDir string = "/sys/kernel/mm/transparent_hugepage"
+
 func TestTHPTunerSupported(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -28,7 +30,7 @@ func TestTHPTunerSupported(t *testing.T) {
 	}{
 		{
 			name:     "should return true if the default dir exists",
-			thpDir:   "/sys/kernel/mm/transparent_hugepage",
+			thpDir:   thpDir,
 			expected: true,
 		},
 		{
@@ -72,7 +74,7 @@ echo 'always' > /sys/kernel/mm/transparent_hugepage/enabled
 	fs := afero.NewMemMapFs()
 	scriptFileName := "script.sh"
 	exec := executors.NewScriptRenderingExecutor(fs, scriptFileName)
-	dir := "/sys/kernel/mm/transparent_hugepage"
+	dir := thpDir
 	err := fs.MkdirAll(dir, 0755)
 	require.NoError(t, err)
 
@@ -102,7 +104,7 @@ func TestTHPTunerDirectExecutor(t *testing.T) {
 	expected := "always"
 	fs := afero.NewMemMapFs()
 	exec := executors.NewDirectExecutor()
-	dir := "/sys/kernel/mm/transparent_hugepage"
+	dir := thpDir
 	filePath := filepath.Join(dir, "enabled")
 	err := fs.MkdirAll(dir, 0755)
 	require.NoError(t, err)
@@ -152,7 +154,7 @@ func TestTHPCheck(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(st *testing.T) {
 			fs := afero.NewMemMapFs()
-			dir := "/sys/kernel/mm/transparent_hugepage"
+			dir := thpDir
 			err := fs.MkdirAll(dir, 0755)
 			require.NoError(t, err)
 

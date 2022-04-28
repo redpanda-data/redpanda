@@ -64,7 +64,7 @@ func getDefaultMode(
 		}
 		return defaultMode, nil
 	}
-	return "", fmt.Errorf("Virutal device %s is not supported", nic.Name())
+	return "", fmt.Errorf("Virtual device %s is not supported", nic.Name())
 }
 
 func GetRpsCPUMask(

@@ -70,7 +70,7 @@ If an empty string is given as the value, the property is reset to its default.`
 				// Non-string types that receive an empty string
 				// are reset to default
 				remove = append(remove, key)
-			} else if meta.Type == "array" {
+			} else if meta.Type == arrayType {
 				var a []interface{}
 				err = yaml.Unmarshal([]byte(value), &a)
 				out.MaybeDie(err, "invalid list syntax")

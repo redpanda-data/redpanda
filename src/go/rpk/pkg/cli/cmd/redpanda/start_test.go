@@ -26,6 +26,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	configPath string = "/arbitrary/path/redpanda.yaml"
+	setFlag    string = "--set"
+)
+
 type noopLauncher struct {
 	rpArgs *rp.RedpandaArgs
 }
@@ -203,7 +208,7 @@ func TestStartCommand(t *testing.T) {
 			return fs.MkdirAll("/arbitrary/path", 0755)
 		},
 		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
-			path := "/arbitrary/path/redpanda.yaml"
+			path := configPath
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(path)
 			require.NoError(st, err)
@@ -244,14 +249,14 @@ func TestStartCommand(t *testing.T) {
 		},
 		after: func() {
 			for i, a := range os.Args {
-				if a == "--set" {
+				if a == setFlag {
 					os.Args = os.Args[:i]
 					return
 				}
 			}
 		},
 		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
-			path := "/arbitrary/path/redpanda.yaml"
+			path := configPath
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(path)
 			require.NoError(st, err)
@@ -316,14 +321,14 @@ func TestStartCommand(t *testing.T) {
 		},
 		after: func() {
 			for i, a := range os.Args {
-				if a == "--set" {
+				if a == setFlag {
 					os.Args = os.Args[:i]
 					return
 				}
 			}
 		},
 		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
-			path := "/arbitrary/path/redpanda.yaml"
+			path := configPath
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(path)
 			require.NoError(st, err)
@@ -378,14 +383,14 @@ func TestStartCommand(t *testing.T) {
 		},
 		after: func() {
 			for i, a := range os.Args {
-				if a == "--set" {
+				if a == setFlag {
 					os.Args = os.Args[:i]
 					return
 				}
 			}
 		},
 		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
-			path := "/arbitrary/path/redpanda.yaml"
+			path := configPath
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(path)
 			require.NoError(st, err)

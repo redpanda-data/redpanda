@@ -145,7 +145,7 @@ func (tuner *tuner) checkIfPStateIsEnabled() (bool, error) {
 	lines, err := utils.ReadFileLines(tuner.fs,
 		"/sys/devices/system/cpu/cpu0/cpufreq/scaling_driver")
 	if err != nil {
-		return false, nil
+		return false, err
 	}
 
 	if len(lines) == 0 {

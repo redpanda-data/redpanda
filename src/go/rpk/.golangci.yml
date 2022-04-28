@@ -30,8 +30,23 @@ linters:
     - durationcheck
     - errname
     - errorlint
+    - exportloopref
+    - goconst
+    - godot
+    - goprintffuncname
+    - misspell
+    - nilerr
+    - noctx
+    - nolintlint
 
 linters-settings:
   # We do not want to enforce every usage of fmt.Errorf to use %w.
   errorlint:
     errorf: false
+
+  # If we want to opt out of a lint, we require an explanation.
+  nolintlint:
+    allow-leading-space: true
+    allow-unused: false
+    require-explanation: true
+    require-specific: true

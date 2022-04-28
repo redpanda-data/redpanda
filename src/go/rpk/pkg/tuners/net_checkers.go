@@ -80,7 +80,7 @@ func (f *netCheckersFactory) NewNicIRQAffinityStaticChecker(
 				nic := network.NewNic(f.fs, f.irqProcFile, f.irqDeviceInfo, f.ethtool, ifaceName)
 				nicIRQs, err := network.CollectIRQs(nic)
 				if err != nil {
-					return false, nil
+					return false, err
 				}
 				IRQs = append(IRQs, nicIRQs...)
 			}

@@ -555,7 +555,7 @@ func saveConfig(ps *stepParams, conf *config.Config) step {
 	}
 }
 
-// Saves the contents of /proc/cpuinfo
+// Saves the contents of '/proc/cpuinfo'.
 func saveCPUInfo(ps *stepParams) step {
 	return func() error {
 		bs, err := afero.ReadFile(ps.fs, "/proc/cpuinfo")
@@ -566,7 +566,7 @@ func saveCPUInfo(ps *stepParams) step {
 	}
 }
 
-// Saves the contents of /proc/interrupts
+// Saves the contents of '/proc/interrupts'.
 func saveInterrupts(ps *stepParams) step {
 	return func() error {
 		bs, err := afero.ReadFile(ps.fs, "/proc/interrupts")
@@ -682,7 +682,7 @@ func savePrometheusMetrics(ps *stepParams, admin *admin.AdminAPI) step {
 	}
 }
 
-// Saves the output of `dig`
+// Saves the output of `dig`.
 func saveDNSData(ps *stepParams) step {
 	return func() error {
 		return writeCommandOutputToZip(ps, "dig.txt", "dig")
@@ -721,14 +721,14 @@ func saveLogs(ps *stepParams, since, until string, logsLimitBytes int) step {
 	}
 }
 
-// Saves the output of `ss`
+// Saves the output of `ss`.
 func saveSocketData(ps *stepParams) step {
 	return func() error {
 		return writeCommandOutputToZip(ps, "ss.txt", "ss")
 	}
 }
 
-// Saves the output of `top`
+// Saves the output of `top`.
 func saveTopOutput(ps *stepParams) step {
 	return func() error {
 		return writeCommandOutputToZip(
@@ -739,7 +739,7 @@ func saveTopOutput(ps *stepParams) step {
 	}
 }
 
-// Saves the output of `vmstat`
+// Saves the output of `vmstat`.
 func saveVmstat(ps *stepParams) step {
 	return func() error {
 		return writeCommandOutputToZip(
@@ -750,7 +750,7 @@ func saveVmstat(ps *stepParams) step {
 	}
 }
 
-// Saves the output of `ip addr`
+// Saves the output of `ip addr`.
 func saveIp(ps *stepParams) step {
 	return func() error {
 		return writeCommandOutputToZip(
@@ -761,7 +761,7 @@ func saveIp(ps *stepParams) step {
 	}
 }
 
-// Saves the output of `lspci`
+// Saves the output of `lspci`.
 func saveLspci(ps *stepParams) step {
 	return func() error {
 		return writeCommandOutputToZip(
@@ -772,7 +772,7 @@ func saveLspci(ps *stepParams) step {
 	}
 }
 
-// Saves the output of `dmidecode`
+// Saves the output of `dmidecode`.
 func saveDmidecode(ps *stepParams) step {
 	return func() error {
 		return writeCommandOutputToZip(

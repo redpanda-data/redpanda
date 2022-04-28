@@ -11,6 +11,7 @@ package generate
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -411,7 +412,17 @@ func metricGroup(metric string) string {
 func fetchMetrics(
 	metricsEndpoint string,
 ) (map[string]*dto.MetricFamily, error) {
-	res, err := http.Get(metricsEndpoint)
+	req, err := http.NewRequestWithContext(
+		context.Background(),
+		http.MethodGet,
+		metricsEndpoint,
+		nil,
+	)
+	if err != nil {
+		return nil, err
+	}
+	client := &http.Client{}
+	res, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}

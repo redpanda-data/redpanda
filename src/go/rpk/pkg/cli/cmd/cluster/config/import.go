@@ -70,7 +70,7 @@ func importConfig(
 				case int:
 					v = float64(x)
 				}
-			} else if meta.Type == "array" && meta.Items.Type == "string" {
+			} else if meta.Type == arrayType && meta.Items.Type == "string" {
 				switch vArray := v.(type) {
 				case []interface{}:
 					// Normal case: user input is a yaml array

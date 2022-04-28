@@ -11,6 +11,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -26,7 +27,10 @@ import (
 	"github.com/spf13/afero"
 )
 
-const defaultUrl = "https://m.rp.vectorized.io"
+const (
+	defaultUrl = "https://m.rp.vectorized.io"
+	na         = "N/A"
+)
 
 type MetricsPayload struct {
 	FreeMemoryMB  float64 `json:"freeMemoryMB"`
@@ -106,8 +110,8 @@ func SendEnvironment(
 	if err != nil {
 		return err
 	}
-	cloudVendor := "N/A"
-	vmType := "N/A"
+	cloudVendor := na
+	vmType := na
 	if !skipCloudCheck {
 		v, err := cloud.AvailableVendor()
 		if err != nil {
@@ -126,11 +130,11 @@ func SendEnvironment(
 	osInfo, err := system.UnameAndDistro(2000 * time.Millisecond)
 	if err != nil {
 		log.Debug("Error querying OS info: ", err)
-		osInfo = "N/A"
+		osInfo = na
 	} else {
 		osInfo = stripCtlFromUTF8(osInfo)
 	}
-	cpuModel := "N/A"
+	cpuModel := na
 	cpuCores := 0
 	cpuInfo, err := system.CpuInfo(fs)
 	if err != nil {
@@ -195,7 +199,8 @@ func sendRequest(body []byte, method, url string, conf config.Config) error {
 		log.Debug("Sending usage stats is disabled.")
 		return nil
 	}
-	req, err := http.NewRequest(
+	req, err := http.NewRequestWithContext(
+		context.Background(),
 		http.MethodPost,
 		url,
 		bytes.NewBuffer(body),

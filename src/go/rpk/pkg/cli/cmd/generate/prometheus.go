@@ -150,7 +150,7 @@ func discoverHosts(url string, port int) ([]string, error) {
 	addr := net.JoinHostPort(url, strconv.Itoa(port))
 	cl, err := kgo.NewClient(kgo.SeedBrokers(addr))
 	if err != nil {
-		return nil, nil
+		return nil, err
 	}
 	var hosts []string
 	brokers, err := kadm.NewClient(cl).ListBrokers(context.Background())

@@ -33,7 +33,7 @@ import (
 	"github.com/spf13/afero"
 )
 
-// ErrNoAdminAPILeader happen when there's no leader for the Admin API
+// ErrNoAdminAPILeader happen when there's no leader for the Admin API.
 var ErrNoAdminAPILeader = errors.New("no Admin API leader found")
 
 type HttpError struct {
@@ -231,7 +231,7 @@ func (a *AdminAPI) mapBrokerIDsToURLs() {
 	}
 }
 
-// GetLeaderID returns the broker ID of the leader of the Admin API
+// GetLeaderID returns the broker ID of the leader of the Admin API.
 func (a *AdminAPI) GetLeaderID() (*int, error) {
 	pa, err := a.GetPartition("redpanda", "controller", 0)
 	if pa.LeaderID == -1 {
@@ -282,7 +282,7 @@ func (a *AdminAPI) sendAny(method, path string, body, into interface{}) error {
 }
 
 // sendToLeader sends a single request to the leader of the Admin API for Redpanda >= 21.11.1
-// otherwise, it broadcasts the request
+// otherwise, it broadcasts the request.
 func (a *AdminAPI) sendToLeader(
 	method, path string, body, into interface{},
 ) error {
@@ -453,7 +453,7 @@ func (a *AdminAPI) sendAll(method, path string, body, into interface{}) error {
 }
 
 // eachBroker creates a single host AdminAPI for each of the brokers and calls `fn`
-// for each of them in a go routine
+// for each of them in a go routine.
 func (a *AdminAPI) eachBroker(fn func(aa *AdminAPI) error) error {
 	var grp multierror.Group
 	for _, url := range a.urls {
