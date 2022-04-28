@@ -187,3 +187,29 @@ def inject_remote_script(node, script_name):
     node.account.copy_to(script_path, remote_path)
 
     return remote_path
+
+
+class firewall_blocked:
+    """Temporary firewall barrier that isolates set of redpanda
+    nodes from the ip-address"""
+    def __init__(self, nodes, blocked_port):
+        self._nodes = nodes
+        self._port = blocked_port
+
+    def __enter__(self):
+        """Isolate certain ips from the nodes using firewall rules"""
+        cmd = []
+        cmd.append(f"iptables -A INPUT -p tcp --sport {self._port} -j DROP")
+        cmd.append(f"iptables -A OUTPUT -p tcp --dport {self._port} -j DROP")
+        cmd = " && ".join(cmd)
+        for node in self._nodes:
+            node.account.ssh_output(cmd, allow_fail=False)
+
+    def __exit__(self, type, value, traceback):
+        """Remove firewall rules that isolate ips from the nodes"""
+        cmd = []
+        cmd.append(f"iptables -D INPUT -p tcp --sport {self._port} -j DROP")
+        cmd.append(f"iptables -D OUTPUT -p tcp --dport {self._port} -j DROP")
+        cmd = " && ".join(cmd)
+        for node in self._nodes:
+            node.account.ssh_output(cmd, allow_fail=False)
