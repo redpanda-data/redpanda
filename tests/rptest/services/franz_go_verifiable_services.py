@@ -249,11 +249,13 @@ class FranzGoVerifiableProducer(FranzGoVerifiableService):
                  topic,
                  msg_size,
                  msg_count,
-                 custom_node=None):
+                 custom_node=None,
+                 batch_max_bytes=None):
         super(FranzGoVerifiableProducer,
               self).__init__(context, redpanda, topic, msg_size, custom_node)
         self._msg_count = msg_count
         self._status = ProduceStatus(0, 0, 0, 0)
+        self._batch_max_bytes = batch_max_bytes
 
     @property
     def produce_status(self):
@@ -266,6 +268,9 @@ class FranzGoVerifiableProducer(FranzGoVerifiableService):
             cmd = 'echo $$ ; %s --brokers %s --topic %s --msg_size %s --produce_msgs %s --rand_read_msgs 0 --seq_read=0' % (
                 f"{TESTS_DIR}/kgo-verifier", self._redpanda.brokers(),
                 self._topic, self._msg_size, self._msg_count)
+
+            if self._batch_max_bytes is not None:
+                cmd = cmd + f' --batch_max_bytes {self._batch_max_bytes}'
 
             for line in self.execute_cmd(cmd, node):
                 if line.startswith("{"):
