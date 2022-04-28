@@ -51,6 +51,7 @@ private:
     ss::future<> do_apply();
     ss::future<> migrate_metadata();
     ss::future<> activate_feature(ss::abort_source&);
+    ss::future<> do_activate_feature(ss::abort_source&);
 
     void dispatch_ntp_migration(model::ntp);
 
@@ -62,6 +63,13 @@ private:
     ss::sharded<kafka::group_router>& _group_router;
     ss::gate _partitions_gate;
     ss::gate _background_gate;
+
+    // We need to subscribe on stop_signal as to stop
+    // loop inside activate_feature. Because stop_signal
+    // does not wait background fiber and will dbe deleted
+    // before fiber will be stopped.
+    ss::optimized_optional<ss::abort_source::subscription> _sub;
+    ss::abort_source _as;
 };
 
 } // namespace kafka
