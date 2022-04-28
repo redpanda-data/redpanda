@@ -14,6 +14,7 @@ from rptest.services.kaf_producer import KafProducer
 from rptest.services.kaf_consumer import KafConsumer
 
 from rptest.services.rpk_consumer import RpkConsumer
+from rptest.services.rpk_producer import RpkProducer
 import time
 
 import os
@@ -114,7 +115,7 @@ class UpgradeFranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
             si_settings=si_settings,
             legacy_config_mode=True)
 
-    @cluster(num_nodes=8)
+    @cluster(num_nodes=9)
     def test_with_all_type_of_loads_and_si(self):
         self.logger.info(f"Environment: {os.environ}")
 
@@ -159,11 +160,8 @@ class UpgradeFranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
         assert self._seq_consumer.consumer_status.valid_reads >= wrote_at_least
         assert self._rand_consumer.consumer_status.total_reads == self.RANDOM_READ_COUNT * self.RANDOM_READ_PARALLEL
 
-        # Consume smth
-        rpk = RpkConsumer(context=self.test_context, redpanda=self.redpanda, topic=self.topic, group="foo")
+        rpk = RpkConsumer(context=self.test_context, redpanda=self.redpanda, topic=self.topic, group="foo", num_msgs=self.PRODUCE_COUNT)
         rpk.start()
-        time.sleep(10)
-        rpk.stop()
         rpk.wait()
 
         for node in self.redpanda.nodes:
@@ -173,24 +171,14 @@ class UpgradeFranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
             node.account.ssh("sudo systemctl stop redpanda")
             self.redpanda.start_node(node, None, timeout=300)
 
-        kaf_producer = KafProducer(self.test_context, self.redpanda, self.topic, 1000)
-        kaf_producer.start()
-        kaf_producer.wait()
+        producer = RpkProducer(self.test_context,
+                               self.redpanda,
+                               self.topic,
+                               msg_size=self.MSG_SIZE,
+                               msg_count=1000,
+                               acks="all",
+                               produce_timeout=100)
 
-        self.kaf_consumer = KafConsumer(self.test_context, self.redpanda, self.topic, self.PRODUCE_COUNT + 1000, "oldest")
-        self.kaf_consumer.start()
-
-        def consumed():
-            self.logger.debug(
-                f"Offset for consumer: {self.kaf_consumer.offset}")
-            self.logger.debug(f"{sum(self.kaf_consumer.offset.values())}")
-            return sum(self.kaf_consumer.offset.values()) + 100 >= self.PRODUCE_COUNT + 1000
-
-        wait_until(consumed, timeout_sec=350, backoff_sec=2)
-
-        self.kaf_consumer.stop()
-
-
-
-
-
+        rpk = RpkConsumer(context=self.test_context, redpanda=self.redpanda, topic=self.topic, num_msgs=self.PRODUCE_COUNT + 1000)
+        rpk.start()
+        rpk.wait()
