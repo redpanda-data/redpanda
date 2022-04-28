@@ -89,6 +89,10 @@ coordinator_ntp_mapper& protocol::coordinator_mapper() {
 }
 
 ss::future<> protocol::apply(net::server::resources rs) {
+
+    // ok the other part of this feature is in the kafka server
+    // and here is that other stuff that noah asked for
+
     /*
      * if sasl authentication is not enabled then initialize the sasl state to
      * complete. this will cause auth to be skipped during request processing.
