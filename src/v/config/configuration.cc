@@ -1176,7 +1176,7 @@ configuration::configuration()
       *this,
       "enable_rack_awareness",
       "Enables rack-aware replica assignment",
-      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
       false) {}
 
 configuration::error_map_t configuration::load(const YAML::Node& root_node) {
