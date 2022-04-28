@@ -1070,7 +1070,8 @@ class RedpandaService(Service):
     def clean(self, **kwargs):
         super().clean(**kwargs)
         if self._s3client:
-            self.delete_bucket_from_si()
+            return
+            #self.delete_bucket_from_si()
 
     def clean_node(self, node, preserve_logs=False):
         node.account.kill_process("redpanda", clean_shutdown=False)
