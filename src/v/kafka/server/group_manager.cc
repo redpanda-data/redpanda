@@ -17,6 +17,7 @@
 #include "config/configuration.h"
 #include "kafka/protocol/delete_groups.h"
 #include "kafka/protocol/describe_groups.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/protocol/offset_commit.h"
 #include "kafka/protocol/offset_fetch.h"
 #include "kafka/protocol/request_reader.h"
@@ -423,7 +424,7 @@ ss::future<> group_manager::recover_partition(
             auto group = get_group(group_id);
             vlog(
               kgrouplog.info,
-              "recover_partition Recovering {} - {.1000}",
+              "recover_partition Recovering {} - {:.1000}",
               group_id,
               group_stm.get_metadata());
             for (const auto& member : group_stm.get_metadata().members) {
@@ -990,11 +991,13 @@ described_group
 group_manager::describe_group(const model::ntp& ntp, const kafka::group_id& g) {
     auto error = validate_group_status(ntp, g, describe_groups_api::key);
     if (error != error_code::none) {
+        vlog(kgrouplog.trace, "group_manager::describe_group failed for {} err: {}", g, error);
         return describe_groups_response::make_empty_described_group(g, error);
     }
 
     auto group = get_group(g);
     if (!group) {
+        vlog(kgrouplog.trace, "group_manager::describe_group deal for {}", g);
         return describe_groups_response::make_dead_described_group(g);
     }
 

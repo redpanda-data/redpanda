@@ -1108,7 +1108,7 @@ void group::complete_join() {
 
                   vlog(
                     _ctx_glog.trace,
-                    "Completing join for {} with reply {.1000}",
+                    "Completing join for {} with reply {:.1000}",
                     member->id(),
                     reply);
 
@@ -1161,7 +1161,7 @@ void group::try_finish_joining_member(
     if (member->is_joining()) {
         vlog(
           _ctx_glog.trace,
-          "Finishing joining member {} with reply {.1000}",
+          "Finishing joining member {} with reply {:.1000}",
           member->id(),
           response);
         member->set_join_response(std::move(response));
@@ -2430,7 +2430,9 @@ described_group group::describe() const {
       .protocol_type = protocol_type().value_or(kafka::protocol_type("")),
     };
 
+    auto mc = _members.size();
     if (in_state(group_state::stable)) {
+        vlog(kgrouplog.trace, "group::describe stable {} members for {}", mc, this->id());
         if (!_protocol) {
             throw std::runtime_error(
               fmt::format("Stable group {} has no protocol", _id));
@@ -2440,6 +2442,7 @@ described_group group::describe() const {
             desc.members.push_back(it.second->describe(*_protocol));
         }
     } else {
+        vlog(kgrouplog.trace, "group::describe unstable {} members for {}", mc, this->id());
         for (const auto& it : _members) {
             desc.members.push_back(it.second->describe_without_metadata());
         }

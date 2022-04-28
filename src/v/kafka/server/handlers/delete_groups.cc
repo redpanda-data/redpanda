@@ -28,7 +28,7 @@ ss::future<response_ptr> delete_groups_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
     delete_groups_request request;
     request.decode(ctx.reader(), ctx.header().version);
-    vlog(klog.debug, "Handling delete groups: {}", request);
+    vlog(kgrouplog.debug, "Handling delete groups: {}", request);
 
     auto unauthorized_it = std::partition(
       request.data.groups_names.begin(),
