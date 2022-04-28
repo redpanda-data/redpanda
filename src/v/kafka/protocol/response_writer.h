@@ -15,6 +15,7 @@
 #include "bytes/iobuf.h"
 #include "kafka/protocol/batch_reader.h"
 #include "kafka/protocol/errors.h"
+#include "kafka/protocol/types.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
@@ -325,6 +326,23 @@ public:
         return _out->size_bytes() - start_size;
     }
 
+    // Only relevent when writing flex responses
+    uint32_t write_tags(tagged_fields&& tags) {
+        auto start_size = uint32_t(_out->size_bytes());
+        auto n = tags.size();
+        write_unsigned_varint(n); // write total number of tags
+        for (auto& [id, tag] : tags) {
+            // write tag id +  size in bytes + tag itself
+            write_unsigned_varint(id);
+            write_unsigned_varint(tag.size_bytes());
+            write_direct(std::move(tag));
+        }
+        return _out->size_bytes() - start_size;
+    }
+
+    // Currently used within our generator where we don't support writing any
+    // custom tag fields but must encode at least a 0 byte to be protocol
+    // compliant
     uint32_t write_tags() { return write_unsigned_varint(0); }
 
 private:

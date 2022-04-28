@@ -9,11 +9,17 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "bytes/iobuf.h"
 #include "kafka/protocol/fwd.h"
 #include "kafka/types.h"
 #include "model/metadata.h"
 
+#include <tuple>
+#include <vector>
+
 namespace kafka {
+
+using tagged_fields = std::vector<std::tuple<uint32_t, iobuf>>;
 
 static constexpr model::node_id consumer_replica_id{-1};
 
