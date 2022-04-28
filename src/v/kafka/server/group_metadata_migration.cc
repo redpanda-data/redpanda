@@ -622,7 +622,10 @@ ss::future<> group_metadata_migration::migrate_metadata() {
               _controller,
               *group_topic_assignment,
               default_deadline());
-            continue;
+            if (topics.contains(
+                  model::kafka_consumer_offsets_nt, model::partition_id{0})) {
+                break;
+            }
         }
 
         co_await ss::sleep_abortable(
