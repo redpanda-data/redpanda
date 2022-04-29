@@ -17,6 +17,7 @@
 #include "kafka/server/logger.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
+#include "security/mtls.h"
 #include "security/scram_algorithm.h"
 #include "utils/utf8.h"
 #include "vlog.h"
@@ -25,6 +26,7 @@
 #include <seastar/core/loop.hh>
 #include <seastar/core/metrics.hh>
 #include <seastar/core/semaphore.hh>
+#include <seastar/net/api.hh>
 #include <seastar/net/socket_defs.hh>
 #include <seastar/util/log.hh>
 
@@ -33,6 +35,7 @@
 #include <chrono>
 #include <exception>
 #include <limits>
+#include <memory>
 
 namespace kafka {
 
@@ -106,7 +109,8 @@ ss::future<> protocol::apply(net::server::resources rs) {
       *this,
       std::move(rs),
       std::move(sasl),
-      config::shard_local_cfg().enable_sasl());
+      config::shard_local_cfg().enable_sasl(),
+      rs.conn->get_principal_mapping().has_value());
 
     return ss::do_until(
              [ctx] { return ctx->is_finished_parsing(); },
