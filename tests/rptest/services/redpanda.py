@@ -414,7 +414,6 @@ class RedpandaService(Service):
     COVERAGE_PROFRAW_CAPTURE = os.path.join(PERSISTENT_ROOT,
                                             "redpanda.profraw")
 
-    CLUSTER_NAME = "my_cluster"
     READY_TIMEOUT_SEC = 10
 
     DEDICATED_NODE_KEY = "dedicated_nodes"
@@ -446,8 +445,7 @@ class RedpandaService(Service):
         'default_topic_partitions': 4,
         'enable_metrics_reporter': False,
         'superusers': [SUPERUSER_CREDENTIALS[0]],
-        'enable_auto_rebalance_on_node_add': True,
-        'cluster_id': CLUSTER_NAME
+        'enable_auto_rebalance_on_node_add': True
     }
 
     logs = {
