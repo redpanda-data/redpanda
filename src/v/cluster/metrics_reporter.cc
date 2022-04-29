@@ -116,7 +116,13 @@ ss::future<> metrics_reporter::start() {
     _address = details::parse_url(
       config::shard_local_cfg().metrics_reporter_url());
     _tick_timer.set_callback([this] { report_metrics(); });
-    _tick_timer.arm(config::shard_local_cfg().metrics_reporter_tick_interval());
+
+    const auto initial_delay = 10s;
+
+    // A shorter initial wait than the tick interval, so that we
+    // give the cluster state a chance to stabilize, but also send
+    // a report reasonably promptly.
+    _tick_timer.arm(initial_delay);
     co_return;
 }
 
