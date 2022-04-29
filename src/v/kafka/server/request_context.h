@@ -158,7 +158,7 @@ public:
           ResponseType::api_type::key,
           ResponseType::api_type::name,
           r);
-        auto resp = std::make_unique<response>();
+        auto resp = std::make_unique<response>(header().is_flexible());
         r.encode(resp->writer(), header().version);
         return ss::make_ready_future<response_ptr>(std::move(resp));
     }

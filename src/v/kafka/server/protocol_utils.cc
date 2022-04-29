@@ -140,14 +140,28 @@ ss::scattered_message<char> response_as_scattered(response_ptr response) {
      * response header:
      *   - int32_t: size (correlation + response size)
      *   - int32_t: correlation
+     *   - std::vector<vint, optional<iobuf>>: tagged fields
      */
-    ss::temporary_buffer<char> b;
+    iobuf tags_header;
+    if (response->is_flexible()) {
+        response_writer writer(tags_header);
+        if (response->tags()) {
+            writer.write_tags(std::move(*response->tags()));
+        } else {
+            // Currently sending tags to client is an unused feature however if
+            // the request is flexible at least a single 0 byte must be written
+            // to be compliant with the protocol
+            writer.write_tags();
+        }
+    }
     const auto size = static_cast<int32_t>(
-      sizeof(response->correlation()) + response->buf().size_bytes());
+      sizeof(response->correlation()) + tags_header.size_bytes()
+      + response->buf().size_bytes());
     iobuf header;
     response_writer writer(header);
     writer.write(size);
     writer.write(response->correlation());
+    header.append(std::move(tags_header));
 
     auto& buf = response->buf();
     buf.prepend(std::move(header));
