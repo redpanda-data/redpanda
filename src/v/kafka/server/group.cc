@@ -2042,7 +2042,6 @@ group::handle_offset_commit(offset_commit_request&& r) {
           offset_commit_response(r, error_code::rebalance_in_progress));
     } else {
         return offset_commit_stages(
-          ss::now(),
           ss::make_exception_future<offset_commit_response>(std::runtime_error(
             fmt::format("Unexpected group state {} for {}", _state, *this))));
     }

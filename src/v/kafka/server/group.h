@@ -121,21 +121,26 @@ public:
     static constexpr int8_t commit_tx_record_version{0};
     static constexpr int8_t aborted_tx_record_version{0};
 
-    struct offset_commit_stages {
-        explicit offset_commit_stages(offset_commit_response resp)
-          : dispatched(ss::now())
-          , committed(
-              ss::make_ready_future<offset_commit_response>(std::move(resp))) {}
+    template<typename Result>
+    struct stages {
+        using value_type = Result;
 
-        offset_commit_stages(
-          ss::future<> dispatched, ss::future<offset_commit_response> resp)
+        explicit stages(Result res)
+          : dispatched(ss::now())
+          , result(ss::make_ready_future<Result>(std::move(res))) {}
+
+        explicit stages(ss::future<Result> res)
+          : dispatched(ss::now())
+          , result(std::move(res)) {}
+
+        stages(ss::future<> dispatched, ss::future<Result> res)
           : dispatched(std::move(dispatched))
-          , committed(std::move(resp)) {}
+          , result(std::move(res)) {}
 
         ss::future<> dispatched;
-        ss::future<offset_commit_response> committed;
+        ss::future<Result> result;
     };
-
+    using offset_commit_stages = stages<offset_commit_response>;
     struct offset_metadata {
         model::offset log_offset;
         model::offset offset;

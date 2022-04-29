@@ -102,6 +102,65 @@ class group_router final {
                 });
           });
     }
+    template<typename Request, typename FwdFunc>
+    auto route_stages(Request r, FwdFunc func) {
+        using return_type = std::invoke_result_t<
+          FwdFunc,
+          decltype(std::declval<group_manager>()),
+          Request&&>;
+        using resp_type = typename return_type::value_type;
+        auto m = shard_for(r.data.group_id);
+        if (!m || _disabled) {
+            return group::stages(resp_type(r, error_code::not_coordinator));
+        }
+        r.ntp = std::move(m->first);
+        auto dispatched = std::make_unique<ss::promise<>>();
+        auto dispatched_f = dispatched->get_future();
+        auto f = with_scheduling_group(
+          _sg,
+          [this,
+           shard = m->second,
+           r = std::move(r),
+           dispatched = std::move(dispatched),
+           func]() mutable {
+              return get_group_manager().invoke_on(
+                shard,
+                _ssg,
+                [r = std::move(r),
+                 dispatched = std::move(dispatched),
+                 source_shard = ss::this_shard_id(),
+                 func](group_manager& mgr) mutable {
+                    auto stages = std::invoke(func, mgr, std::move(r));
+                    /**
+                     * dispatched future is always ready before committed one,
+                     * we do not have to use gate in here
+                     */
+                    return stages.dispatched
+                      .then_wrapped([source_shard, d = std::move(dispatched)](
+                                      ss::future<> f) mutable {
+                          if (f.failed()) {
+                              (void)ss::smp::submit_to(
+                                source_shard,
+                                [d = std::move(d),
+                                 e = f.get_exception()]() mutable {
+                                    d->set_exception(e);
+                                    d.reset();
+                                });
+                              return;
+                          }
+                          (void)ss::smp::submit_to(
+                            source_shard, [d = std::move(d)]() mutable {
+                                d->set_value();
+                                d.reset();
+                            });
+                      })
+                      .then([f = std::move(stages.result)]() mutable {
+                          return std::move(f);
+                      });
+                });
+          });
+        return return_type(std::move(dispatched_f), std::move(f));
+    }
 
 public:
     group_router(
@@ -139,58 +198,7 @@ public:
     }
 
     group::offset_commit_stages offset_commit(offset_commit_request&& request) {
-        auto m = shard_for(request.data.group_id);
-        if (!m || _disabled) {
-            return group::offset_commit_stages(
-              offset_commit_response(request, error_code::not_coordinator));
-        }
-        request.ntp = std::move(m->first);
-        auto dispatched = std::make_unique<ss::promise<>>();
-        auto dispatched_f = dispatched->get_future();
-        auto f = with_scheduling_group(
-          _sg,
-          [this,
-           shard = m->second,
-           request = std::move(request),
-           dispatched = std::move(dispatched)]() mutable {
-              return get_group_manager().invoke_on(
-                shard,
-                _ssg,
-                [request = std::move(request),
-                 dispatched = std::move(dispatched),
-                 source_shard = ss::this_shard_id()](
-                  group_manager& mgr) mutable {
-                    auto stages = mgr.offset_commit(std::move(request));
-                    /**
-                     * dispatched future is always ready before committed one,
-                     * we do not have to use gate in here
-                     */
-                    return stages.dispatched
-                      .then_wrapped([source_shard, d = std::move(dispatched)](
-                                      ss::future<> f) mutable {
-                          if (f.failed()) {
-                              (void)ss::smp::submit_to(
-                                source_shard,
-                                [d = std::move(d),
-                                 e = f.get_exception()]() mutable {
-                                    d->set_exception(e);
-                                    d.reset();
-                                });
-                              return;
-                          }
-                          (void)ss::smp::submit_to(
-                            source_shard, [d = std::move(d)]() mutable {
-                                d->set_value();
-                                d.reset();
-                            });
-                      })
-                      .then([f = std::move(stages.committed)]() mutable {
-                          return std::move(f);
-                      });
-                });
-          });
-        return group::offset_commit_stages(
-          std::move(dispatched_f), std::move(f));
+        return route_stages(std::move(request), &group_manager::offset_commit);
     }
 
     auto txn_offset_commit(txn_offset_commit_request&& request) {

@@ -880,7 +880,7 @@ group_manager::offset_commit(offset_commit_request&& r) {
     }
 
     auto stages = group->handle_offset_commit(std::move(r));
-    stages.committed = stages.committed.finally([group] {});
+    stages.result = stages.result.finally([group] {});
     return stages;
 }
 
