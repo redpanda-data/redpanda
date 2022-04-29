@@ -997,6 +997,7 @@ void application::wire_up_redpanda_services() {
               auto& tls_config = config::node().kafka_api_tls.value();
               for (const auto& ep : config::node().kafka_api()) {
                   ss::shared_ptr<ss::tls::server_credentials> credentails;
+                  std::optional<security::tls::principal_mapper> tls_pm;
                   // find credentials for this endpoint
                   auto it = find_if(
                     tls_config.begin(),
@@ -1025,10 +1026,20 @@ void application::wire_up_redpanda_services() {
                                   })
                                 .get0()
                             : nullptr;
+
+                      auto tls_pm_rules
+                        = it->config.get_principal_mapping_rules();
+                      if (tls_pm_rules) {
+                          tls_pm = security::tls::principal_mapper(
+                            tls_pm_rules);
+                      }
                   }
 
                   c.addrs.emplace_back(
-                    ep.name, net::resolve_dns(ep.address).get0(), credentails);
+                    ep.name,
+                    net::resolve_dns(ep.address).get0(),
+                    credentails,
+                    std::move(tls_pm));
               }
 
               c.disable_metrics = net::metrics_disabled(
