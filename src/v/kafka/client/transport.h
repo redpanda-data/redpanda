@@ -12,6 +12,7 @@
 #pragma once
 
 #include "kafka/protocol/fwd.h"
+#include "kafka/server/flex_versions.h"
 #include "kafka/server/protocol_utils.h"
 #include "kafka/types.h"
 #include "net/transport.h"
@@ -154,6 +155,15 @@ private:
         wr.write(int16_t(version()));
         wr.write(int32_t(_correlation()));
         wr.write(std::string_view("test_client"));
+        vassert(
+          flex_versions::is_api_in_schema(key),
+          "Attempted to send request to non-existent API: {}",
+          key);
+        if (flex_versions::is_flexible_request(key, version)) {
+            /// Tags are unused by the client but to be protocol compliant
+            /// with flex versions at least a 0 byte must be written
+            wr.write_tags();
+        }
         _correlation = _correlation + correlation_id(1);
     }
 
