@@ -10,7 +10,9 @@
 import os
 import json
 import threading
+from rptest.services.redpanda import RedpandaService
 from ducktape.services.background_thread import BackgroundThreadService
+from ducktape.utils.util import wait_until
 
 # The franz-go root directory
 TESTS_DIR = os.path.join("/opt", "kgo-verifier")
@@ -284,3 +286,13 @@ class FranzGoVerifiableProducer(FranzGoVerifiableService):
             self.save_exception(ex)
         finally:
             self.status = ServiceStatus.FINISH
+
+
+# Block until the producer has
+# written a minimum amount of data.
+def await_minimum_produced_records(redpanda: RedpandaService,
+                                   producer: FranzGoVerifiableProducer,
+                                   min_acked: int = 0) -> None:
+    wait_until(lambda: producer.produce_status.acked > min_acked,
+               timeout_sec=300,
+               backoff_sec=5)
