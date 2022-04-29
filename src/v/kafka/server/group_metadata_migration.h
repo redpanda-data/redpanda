@@ -33,7 +33,7 @@ public:
       cluster::controller&, ss::sharded<kafka::group_router>&);
 
     // starts the migration process
-    ss::future<> start(ss::abort_source&);
+    ss::future<> start();
 
     // awaits for the migration to finish
     ss::future<> await();
@@ -50,7 +50,7 @@ private:
 
     ss::future<> do_apply();
     ss::future<> migrate_metadata();
-    ss::future<> activate_feature(ss::abort_source&);
+    ss::future<> activate_feature();
 
     void dispatch_ntp_migration(model::ntp);
 

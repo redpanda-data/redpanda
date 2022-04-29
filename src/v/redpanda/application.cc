@@ -1085,7 +1085,7 @@ application::set_proxy_client_config(ss::sstring name, std::any val) {
 
 void application::start(::stop_signal& app_signal) {
     if (_redpanda_enabled) {
-        start_redpanda(app_signal);
+        start_redpanda();
     }
 
     if (_proxy_config) {
@@ -1114,7 +1114,7 @@ void application::start(::stop_signal& app_signal) {
     syschecks::systemd_notify_ready().get();
 }
 
-void application::start_redpanda(::stop_signal& app_signal) {
+void application::start_redpanda() {
     syschecks::systemd_message("Staring storage services").get();
     // single instance
     storage_node.invoke_on_all(&storage::node_api::start).get0();
@@ -1243,7 +1243,7 @@ void application::start_redpanda(::stop_signal& app_signal) {
       .invoke_on_all(&archival::upload_controller::start)
       .get();
 
-    group_migration->start(app_signal.abort_source()).get();
+    group_migration->start().get();
 }
 
 /**

@@ -522,8 +522,8 @@ ss::abort_source& group_metadata_migration::abort_source() {
     return _controller.get_abort_source().local();
 }
 
-ss::future<> group_metadata_migration::activate_feature(ss::abort_source& as) {
-    vlog(mlog.info, "activating consumer offsets feature");
+ss::future<> group_metadata_migration::activate_feature() {
+    auto& as = abort_source();
     while (!feature_table().is_active(cluster::feature::consumer_offsets)
            && !as.abort_requested()) {
         if (_controller.is_raft0_leader()) {
@@ -587,7 +587,7 @@ ss::future<> group_metadata_migration::do_apply() {
     co_await feature_manager().barrier(active_barrier_tag);
     vlog(mlog.info, "finishing migration - enabling consumer offsets feature");
 
-    co_await activate_feature(_controller.get_abort_source().local());
+    co_await activate_feature();
 
     co_await feature_table().await_feature(
       cluster::feature::consumer_offsets, abort_source());
@@ -667,7 +667,7 @@ ss::future<> group_metadata_migration::migrate_metadata() {
     vlog(mlog.info, "finished migrating kafka_internal/group partitions");
 }
 
-ss::future<> group_metadata_migration::start(ss::abort_source& as) {
+ss::future<> group_metadata_migration::start() {
     // if version is overriden for test purposes - skip migration
     if (
       feature_table().get_latest_logical_version()
@@ -688,8 +688,8 @@ ss::future<> group_metadata_migration::start(ss::abort_source& as) {
           "kafka_internal/group topic does not exists, activating "
           "consumer_offsets feature");
 
-        ssx::spawn_with_gate(_background_gate, [this, &as]() -> ss::future<> {
-            return activate_feature(as);
+        ssx::spawn_with_gate(_background_gate, [this]() -> ss::future<> {
+            return activate_feature();
         });
         co_return;
     }
@@ -701,7 +701,7 @@ ss::future<> group_metadata_migration::start(ss::abort_source& as) {
 
 // awaits for the migration to finish
 ss::future<> group_metadata_migration::await() {
-    return _background_gate.close();
+    co_await _background_gate.close();
 }
 
 } // namespace kafka
