@@ -688,9 +688,20 @@ ss::future<> group_metadata_migration::start() {
           "kafka_internal/group topic does not exists, activating "
           "consumer_offsets feature");
 
-        ssx::spawn_with_gate(_background_gate, [this]() -> ss::future<> {
-            return activate_feature();
-        });
+        ssx::background = ssx::spawn_with_gate_then(
+                            _background_gate,
+                            [this]() -> ss::future<> {
+                                return activate_feature();
+                            })
+                            .handle_exception([](std::exception_ptr e) {
+                                // This can happen during shutdown in a unit
+                                // test, see discussion on #4474
+                                vlog(
+                                  mlog.warn,
+                                  "Unexpected exception activating "
+                                  "consumer_offsets feature: {}",
+                                  e);
+                            });
         co_return;
     }
     // otherwise wait for feature to be preparing and execute migration
