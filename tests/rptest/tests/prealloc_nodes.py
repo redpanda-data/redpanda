@@ -15,8 +15,8 @@ from ducktape.tests.test import TestContext
 
 class PreallocNodesTest(RedpandaTest):
     """
-    A mixin class that extends RedpandaTest to
-    preallocate ducktape nodes from the given test context.
+    Extends RedpandaTest to preallocate ducktape
+    nodes from the given test context.
     """
     def __init__(self, test_context: TestContext, node_prealloc_count: int,
                  *args, **kwargs):

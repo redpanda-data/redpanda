@@ -17,7 +17,7 @@ import time
 
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
-from rptest.tests.redpanda_test import RedpandaTest
+from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.services.redpanda import ResourceSettings
 from rptest.services.franz_go_verifiable_services import FranzGoVerifiableProducer
 from rptest.services.kaf_consumer import KafConsumer
@@ -26,7 +26,7 @@ from rptest.services.metrics_check import MetricCheck
 RATE_METRIC = "vectorized_kafka_rpc_connections_wait_rate_total"
 
 
-class ConnectionRateLimitTest(RedpandaTest):
+class ConnectionRateLimitTest(PreallocNodesTest):
     MSG_SIZE = 1000000
     PRODUCE_COUNT = 10
     READ_COUNT = 10
@@ -40,38 +40,15 @@ class ConnectionRateLimitTest(RedpandaTest):
         super(ConnectionRateLimitTest,
               self).__init__(test_context=test_context,
                              num_brokers=1,
+                             node_prealloc_count=1,
                              extra_rp_conf={"kafka_connection_rate_limit": 6},
                              resource_settings=resource_setting)
-
-        self._node_for_franz_go = test_context.cluster.alloc(
-            ClusterSpec.simple_linux(1))
-        self.logger.debug(
-            f"Allocated verifier node {self._node_for_franz_go[0].name}")
 
         self._producer = FranzGoVerifiableProducer(test_context, self.redpanda,
                                                    self.topics[0],
                                                    self.MSG_SIZE,
                                                    self.PRODUCE_COUNT,
-                                                   self._node_for_franz_go)
-
-    def free_nodes(self):
-        # Free the normally allocated nodes (e.g. RedpandaService)
-        super().free_nodes()
-
-        assert len(self._node_for_franz_go) == 1
-
-        # The verifier opens huge numbers of connections, which can interfere
-        # with subsequent tests' use of the node.  Clear them down first.
-        wait_until(
-            lambda: self.redpanda.sockets_clear(self._node_for_franz_go[0]),
-            timeout_sec=120,
-            backoff_sec=10)
-
-        # Free the hand-allocated node that we share between the various
-        # verifier services
-        self.logger.debug(
-            f"Freeing verifier node {self._node_for_franz_go[0].name}")
-        self.test_context.cluster.free_single(self._node_for_franz_go[0])
+                                                   self.preallocated_nodes)
 
     def start_consumer(self):
         return KafConsumer(self.test_context, self.redpanda, self.topics[0],
