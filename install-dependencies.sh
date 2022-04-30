@@ -90,7 +90,7 @@ case "$ID" in
   fedora)
     dnf install -y "${fedora_deps[@]}"
     ;;
-  arch)
+  arch | manjaro)
     pacman -Sy --needed --noconfirm "${arch_deps[@]}"
     ;;
   *)
