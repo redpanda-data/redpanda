@@ -843,7 +843,7 @@ ss::future<std::error_code> controller_backend::process_partition_update(
               previous_shard);
             co_await raft::details::move_persistent_state(
               requested.group, *previous_shard, ss::this_shard_id(), _storage);
-            co_await raft::details::move_persistent_state(
+            co_await raft::offset_translator::move_persistent_state(
               requested.group, *previous_shard, ss::this_shard_id(), _storage);
 
             auto ec = co_await create_partition(
