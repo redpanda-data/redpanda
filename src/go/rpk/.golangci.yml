@@ -38,6 +38,10 @@ linters:
     - nilerr
     - noctx
     - nolintlint
+    - revive
+    - tenv
+    - unconvert
+    - wastedassign
 
 linters-settings:
   # We do not want to enforce every usage of fmt.Errorf to use %w.
@@ -50,3 +54,44 @@ linters-settings:
     allow-unused: false
     require-explanation: true
     require-specific: true
+
+  # Revive is yet another metalinter with a lot of useful lints. 
+  # The below opts in to all of the ones we would like to use.
+  revive:
+    ignore-generated-header: true
+    severity: warning
+    confidence: 0.8
+    error-code: 0
+    warning-code: 0
+    rules:
+      - name: atomic
+      - name: blank-imports
+      - name: bool-literal-in-expr
+      - name: call-to-gc
+      - name: confusing-results
+      - name: constant-logical-expr
+      - name: context-as-argument
+      - name: context-keys-type
+      - name: defer
+      - name: dot-imports
+      - name: duplicated-imports
+      - name: early-return
+      - name: error-naming
+      - name: error-return
+      - name: errorf
+      - name: get-return
+      - name: identical-branches
+      - name: if-return
+      - name: modifies-value-receiver
+      - name: optimize-operands-order
+      - name: range
+      - name: range-val-in-closure
+      - name: string-of-int
+      - name: struct-tag
+      - name: superfluous-else
+      - name: time-equal
+      - name: time-naming
+      - name: unconditional-recursion
+      - name: unreachable-code
+      - name: useless-break
+      - name: waitgroup-by-value

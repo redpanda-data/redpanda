@@ -243,7 +243,7 @@ func (c *consumer) writeRecordJSON(r *kgo.Record) {
 
 	for _, h := range r.Headers {
 		m.Headers = append(m.Headers, Header{
-			Key:   string(h.Key),
+			Key:   h.Key,
 			Value: string(h.Value),
 		})
 	}

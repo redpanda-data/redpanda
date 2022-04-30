@@ -115,5 +115,5 @@ func ReadIntFromFile(fs afero.Fs, file string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	return strconv.Atoi(strings.TrimSpace(string(content)))
+	return strconv.Atoi(strings.TrimSpace(content))
 }

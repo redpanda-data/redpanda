@@ -31,7 +31,7 @@ func makeKey(org string, exp time.Time, overrideHash uint32) (string, error) {
 		exp.Month(),
 		exp.Day(),
 	)
-	checksum := uint32(0)
+	var checksum uint32
 	if overrideHash != 0 {
 		checksum = overrideHash
 	} else {

@@ -14,7 +14,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 	"time"
 
@@ -137,9 +136,9 @@ func TestSendEnvironment(t *testing.T) {
 	require.NoError(t, err)
 
 	env := "only-testing-nbd"
-	os.Setenv("REDPANDA_ENVIRONMENT", env)
+	t.Setenv("REDPANDA_ENVIRONMENT", env)
 	defer func() {
-		os.Setenv("REDPANDA_ENVIRONMENT", "")
+		t.Setenv("REDPANDA_ENVIRONMENT", "")
 	}()
 
 	expected.Environment = env

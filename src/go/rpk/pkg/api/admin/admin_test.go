@@ -94,12 +94,18 @@ func TestAdminAPI(t *testing.T) {
 			urls := []string{}
 			calls := []testCall{}
 			mutex := sync.Mutex{}
-
+			tServers := []*httptest.Server{}
 			for i := 0; i < tt.nNodes; i += 1 {
 				ts := httptest.NewServer(handlerForNode(t, i, tt, &calls, &mutex))
-				defer ts.Close()
+				tServers = append(tServers, ts)
 				urls = append(urls, ts.URL)
 			}
+
+			defer func() {
+				for _, ts := range tServers {
+					ts.Close()
+				}
+			}()
 
 			adminClient, err := NewAdminAPI(urls, BasicCredentials{}, nil)
 			require.NoError(t, err)

@@ -17,7 +17,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	fp "path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -75,13 +74,7 @@ func (m *manager) FindOrGenerate(path string) (*Config, error) {
 	if path == "" {
 		addConfigPaths(m.v)
 		err := m.v.ReadInConfig()
-		if err != nil {
-			_, notFound := err.(viper.ConfigFileNotFoundError) //nolint:errorlint // Viper returns a non-pointer error https://github.com/spf13/viper/issues/1139
-			if !notFound {
-				return nil, err
-			}
-			path = Default().ConfigFile
-		} else {
+		if err == nil {
 			conf, err := unmarshal(m.v)
 			if err != nil {
 				return nil, err
@@ -89,7 +82,11 @@ func (m *manager) FindOrGenerate(path string) (*Config, error) {
 			conf.ConfigFile, err = absPath(m.v.ConfigFileUsed())
 			return conf, err
 		}
-
+		_, notFound := err.(viper.ConfigFileNotFoundError) //nolint:errorlint // Viper returns a non-pointer error https://github.com/spf13/viper/issues/1139
+		if !notFound {
+			return nil, err
+		}
+		path = Default().ConfigFile
 	}
 	return readOrGenerate(m.fs, m.v, path)
 }
@@ -245,7 +242,7 @@ func (m *manager) ReadAsJSON(path string) (string, error) {
 
 func (m *manager) Read(path string) (*Config, error) {
 	// If the path was set, try reading only from there.
-	abs, err := fp.Abs(path)
+	abs, err := filepath.Abs(path)
 	if err != nil {
 		return nil, err
 	}
@@ -396,7 +393,7 @@ func checkAndWrite(fs afero.Fs, v *viper.Viper, path string) error {
 		}
 		return errors.New(strings.Join(reasons, ", "))
 	}
-	lastBackupFile, err := findBackup(fs, fp.Dir(path))
+	lastBackupFile, err := findBackup(fs, filepath.Dir(path))
 	if err != nil {
 		return err
 	}
@@ -426,7 +423,8 @@ func checkAndWrite(fs afero.Fs, v *viper.Viper, path string) error {
 	log.Debugf("Writing the new redpanda config to '%s'", path)
 	err = write(fs, v, path)
 	if err != nil {
-		return recover(fs, backup, path, err)
+		defer func() { recover(fs, backup, path, err) }()
+		return err
 	}
 	return nil
 }
@@ -553,7 +551,7 @@ func parse(val string) interface{} {
 }
 
 func absPath(path string) (string, error) {
-	absPath, err := fp.Abs(path)
+	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return "", fmt.Errorf(
 			"Couldn't convert the used config file path to"+

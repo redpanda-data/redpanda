@@ -44,21 +44,20 @@ func (q *ntpQuery) IsNtpSynced() (bool, error) {
 		log.Debug(err)
 	}
 	synced, err := q.checkWithTimedateCtl()
-	if err != nil {
-		log.Debug(err)
-	} else {
+	if err == nil {
 		return synced, nil
 	}
+	log.Debug(err)
+
 	_, err = exec.LookPath("ntpstat")
 	if err != nil {
 		log.Debug(err)
 	}
 	synced, err = q.checkWithNtpstat()
-	if err != nil {
-		log.Debug(err)
-	} else {
+	if err == nil {
 		return synced, nil
 	}
+	log.Debug(err)
 
 	return false, errors.New("couldn't check NTP with timedatectl or ntpstat")
 }

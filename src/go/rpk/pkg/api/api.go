@@ -141,7 +141,7 @@ func SendEnvironment(
 		log.Debug("Error querying CPU info: ", err)
 	} else if len(cpuInfo) > 0 {
 		cpuModel = cpuInfo[0].ModelName
-		cpuCores = int(cpuInfo[0].Cores) * len(cpuInfo)
+		cpuCores = cpuInfo[0].Cores * len(cpuInfo)
 	}
 
 	b := environmentBody{

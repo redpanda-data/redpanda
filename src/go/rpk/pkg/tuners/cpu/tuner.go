@@ -117,10 +117,14 @@ func (tuner *tuner) CheckIfSupported() (supported bool, reason string) {
 
 func (tuner *tuner) getMaxCState() (uint, error) {
 	log.Debugf("Getting max allowed CState")
+	// Possible errors while reading max_cstate:
+	// File doesn't exist or reading error.
 	lines, err := utils.ReadFileLines(tuner.fs,
 		"/sys/module/intel_idle/parameters/max_cstate")
+
+	// We return maxCstate = 0 when any of the above errors occurred.
 	if err != nil {
-		return 0, err
+		return 0, nil //nolint:nilerr //We don't want to interrupt tune execution if any of the above errors oc	curred
 	}
 	if len(lines) == 1 {
 		cState, err := strconv.Atoi(lines[0])
@@ -129,7 +133,8 @@ func (tuner *tuner) getMaxCState() (uint, error) {
 		}
 		return uint(cState), nil
 	}
-	return 0, fmt.Errorf("Unsuported length of 'max_cstate' file")
+	// Only stop tune execution (i.e return error) if max_cstate file length is unsupported.
+	return 0, fmt.Errorf("Unsupported length of 'max_cstate' file")
 }
 
 func (tuner *tuner) disableCStates() error {

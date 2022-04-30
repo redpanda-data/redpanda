@@ -168,7 +168,6 @@ func discoverHosts(url string, port int) ([]string, error) {
 }
 
 func splitAddress(address string) (string, int, error) {
-	host := ""
 	parts := strings.Split(address, ":")
 	if len(parts) == 0 {
 		return "", 0, fmt.Errorf(
@@ -179,7 +178,7 @@ func splitAddress(address string) (string, int, error) {
 	if len(parts) == 1 {
 		return parts[0], 0, nil
 	}
-	host = parts[0]
+	host := parts[0]
 	var err error
 	port, err := strconv.Atoi(parts[1])
 	if err != nil {

@@ -19,7 +19,6 @@ import (
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/redpanda"
-	rp "github.com/redpanda-data/redpanda/src/go/rpk/pkg/redpanda"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/pflag"
@@ -32,10 +31,10 @@ const (
 )
 
 type noopLauncher struct {
-	rpArgs *rp.RedpandaArgs
+	rpArgs *redpanda.RedpandaArgs
 }
 
-func (l *noopLauncher) Start(_ string, rpArgs *rp.RedpandaArgs) error {
+func (l *noopLauncher) Start(_ string, rpArgs *redpanda.RedpandaArgs) error {
 	l.rpArgs = rpArgs
 	return nil
 }
@@ -159,7 +158,7 @@ func TestStartCommand(t *testing.T) {
 		args           []string
 		before         func(afero.Fs) error
 		after          func()
-		postCheck      func(afero.Fs, *rp.RedpandaArgs, *testing.T)
+		postCheck      func(afero.Fs, *redpanda.RedpandaArgs, *testing.T)
 		expectedErrMsg string
 	}{{
 		name: "should fail if the config at the given path is corrupt",
@@ -179,7 +178,7 @@ func TestStartCommand(t *testing.T) {
 			"--config", config.Default().ConfigFile,
 			"--install-dir", "/var/lib/redpanda",
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			path := config.Default().ConfigFile
 			exists, err := afero.Exists(
 				fs,
@@ -207,7 +206,7 @@ func TestStartCommand(t *testing.T) {
 		before: func(fs afero.Fs) error {
 			return fs.MkdirAll("/arbitrary/path", 0755)
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			path := configPath
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(path)
@@ -255,7 +254,7 @@ func TestStartCommand(t *testing.T) {
 				}
 			}
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			path := configPath
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(path)
@@ -327,7 +326,7 @@ func TestStartCommand(t *testing.T) {
 				}
 			}
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			path := configPath
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(path)
@@ -389,7 +388,7 @@ func TestStartCommand(t *testing.T) {
 				}
 			}
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			path := configPath
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(path)
@@ -412,7 +411,7 @@ func TestStartCommand(t *testing.T) {
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			path := config.Default().ConfigFile
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(path)
@@ -429,7 +428,7 @@ func TestStartCommand(t *testing.T) {
 			conf := config.Default()
 			return mgr.Write(conf)
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
@@ -442,7 +441,7 @@ func TestStartCommand(t *testing.T) {
 			"--config", config.Default().ConfigFile,
 			"--install-dir", "/var/lib/redpanda",
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			path := config.Default().ConfigFile
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(path)
@@ -455,7 +454,7 @@ func TestStartCommand(t *testing.T) {
 			"--config", config.Default().ConfigFile,
 			"--install-dir", "/var/lib/redpanda",
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			path := config.Default().ConfigFile
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(path)
@@ -474,7 +473,7 @@ func TestStartCommand(t *testing.T) {
 			conf.Redpanda.Id = 98
 			return mgr.Write(conf)
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
@@ -491,7 +490,7 @@ func TestStartCommand(t *testing.T) {
 			"--config", config.Default().ConfigFile,
 			"--install-dir", "/var/lib/redpanda",
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			path := config.Default().ConfigFile
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(path)
@@ -510,7 +509,7 @@ func TestStartCommand(t *testing.T) {
 			conf.Rpk.WellKnownIo = "gcp:n2standard:ssd"
 			return mgr.Write(conf)
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
@@ -529,7 +528,7 @@ func TestStartCommand(t *testing.T) {
 			"--config", config.Default().ConfigFile,
 			"--install-dir", "/var/lib/redpanda",
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			path := config.Default().ConfigFile
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(path)
@@ -547,7 +546,7 @@ func TestStartCommand(t *testing.T) {
 			conf := config.Default()
 			return mgr.Write(conf)
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
@@ -565,7 +564,7 @@ func TestStartCommand(t *testing.T) {
 			"--config", config.Default().ConfigFile,
 			"--install-dir", "/var/lib/redpanda",
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			path := config.Default().ConfigFile
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(path)
@@ -585,7 +584,7 @@ func TestStartCommand(t *testing.T) {
 			conf.Rpk.EnableMemoryLocking = true
 			return mgr.Write(conf)
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
@@ -602,7 +601,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 			"--seeds", "192.168.34.32:33145,somehost:54321,justahostnoport",
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
@@ -636,7 +635,7 @@ func TestStartCommand(t *testing.T) {
 			"-s", "192.168.3.32:33145",
 			"-s", "192.168.123.32:33146,host",
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
@@ -675,7 +674,7 @@ func TestStartCommand(t *testing.T) {
 		after: func() {
 			os.Unsetenv("REDPANDA_SEEDS")
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
@@ -713,7 +712,7 @@ func TestStartCommand(t *testing.T) {
 			}}
 			return mgr.Write(conf)
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
@@ -748,7 +747,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 			"--rpc-addr", "192.168.34.32:33145",
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
@@ -769,7 +768,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 			"--rpc-addr", "192.168.34.32",
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
@@ -803,7 +802,7 @@ func TestStartCommand(t *testing.T) {
 		after: func() {
 			os.Unsetenv("REDPANDA_RPC_ADDRESS")
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
@@ -832,7 +831,7 @@ func TestStartCommand(t *testing.T) {
 			}
 			return mgr.Write(conf)
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
@@ -853,7 +852,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 			"--kafka-addr", "192.168.34.32:33145",
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
@@ -876,7 +875,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 			"--kafka-addr", "192.168.34.32",
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
@@ -899,7 +898,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 			"--kafka-addr", "nondefaultname://192.168.34.32",
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
@@ -923,7 +922,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 			"--kafka-addr", "nondefaultname://192.168.34.32,host:9092",
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
@@ -965,7 +964,7 @@ func TestStartCommand(t *testing.T) {
 		after: func() {
 			os.Unsetenv("REDPANDA_KAFKA_ADDRESS")
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
@@ -998,7 +997,7 @@ func TestStartCommand(t *testing.T) {
 			}}
 			return mgr.Write(conf)
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
@@ -1021,7 +1020,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 			"--advertise-kafka-addr", "192.168.34.32:33145",
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
@@ -1044,7 +1043,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 			"--advertise-kafka-addr", "192.168.34.32",
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
@@ -1080,7 +1079,7 @@ func TestStartCommand(t *testing.T) {
 		after: func() {
 			os.Unsetenv("REDPANDA_ADVERTISE_KAFKA_ADDRESS")
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
@@ -1113,7 +1112,7 @@ func TestStartCommand(t *testing.T) {
 			}}
 			return mgr.Write(conf)
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
@@ -1136,7 +1135,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 			"--advertise-pandaproxy-addr", "192.168.34.32:8083",
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
@@ -1165,7 +1164,7 @@ func TestStartCommand(t *testing.T) {
 		after: func() {
 			os.Unsetenv("REDPANDA_ADVERTISE_PANDAPROXY_ADDRESS")
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
@@ -1188,7 +1187,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 			"--advertise-rpc-addr", "192.168.34.32:33145",
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
@@ -1209,7 +1208,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 			"--advertise-rpc-addr", "192.168.34.32",
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
@@ -1243,7 +1242,7 @@ func TestStartCommand(t *testing.T) {
 		after: func() {
 			os.Unsetenv("REDPANDA_ADVERTISE_RPC_ADDRESS")
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
@@ -1272,7 +1271,7 @@ func TestStartCommand(t *testing.T) {
 			}
 			return mgr.Write(conf)
 		},
-		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
@@ -1338,7 +1337,7 @@ func TestStartCommand(t *testing.T) {
 		},
 		postCheck: func(
 			_ afero.Fs,
-			rpArgs *rp.RedpandaArgs,
+			rpArgs *redpanda.RedpandaArgs,
 			st *testing.T,
 		) {
 			require.Equal(st, "55", rpArgs.SeastarFlags["smp"])
@@ -1358,7 +1357,7 @@ func TestStartCommand(t *testing.T) {
 		},
 		postCheck: func(
 			_ afero.Fs,
-			rpArgs *rp.RedpandaArgs,
+			rpArgs *redpanda.RedpandaArgs,
 			st *testing.T,
 		) {
 			require.Equal(st, "archival=debug:cloud_storage=debug", rpArgs.SeastarFlags["logger-log-level"])
@@ -1371,7 +1370,7 @@ func TestStartCommand(t *testing.T) {
 		},
 		postCheck: func(
 			_ afero.Fs,
-			rpArgs *rp.RedpandaArgs,
+			rpArgs *redpanda.RedpandaArgs,
 			st *testing.T,
 		) {
 			require.Equal(st, "4G", rpArgs.SeastarFlags["memory"])
@@ -1393,7 +1392,7 @@ func TestStartCommand(t *testing.T) {
 		},
 		postCheck: func(
 			_ afero.Fs,
-			rpArgs *rp.RedpandaArgs,
+			rpArgs *redpanda.RedpandaArgs,
 			st *testing.T,
 		) {
 			expected := []string{
@@ -1410,7 +1409,7 @@ func TestStartCommand(t *testing.T) {
 			}
 			fs := afero.NewMemMapFs()
 			mgr := config.NewManager(fs)
-			var launcher rp.Launcher = &noopLauncher{}
+			var launcher redpanda.Launcher = &noopLauncher{}
 			if tt.launcher != nil {
 				launcher = tt.launcher
 			}

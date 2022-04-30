@@ -20,7 +20,7 @@ import (
 
 func IsAWSi3MetalInstance() bool {
 	log.Debug("Checking if we are running on i3.metal amazon instance type")
-	timeout := time.Duration(500 * time.Millisecond)
+	timeout := 500 * time.Millisecond
 	client := http.Client{
 		Timeout: timeout,
 	}

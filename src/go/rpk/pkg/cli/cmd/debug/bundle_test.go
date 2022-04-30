@@ -56,7 +56,7 @@ func TestLimitedWriter(t *testing.T) {
 				remaining--
 			}
 			var expected int
-			totalBytes := int(tt.blocksToWrite * block)
+			totalBytes := tt.blocksToWrite * block
 			if totalBytes > tt.limit {
 				require.EqualError(st, writeErr, "output size limit reached")
 				expected = tt.limit
