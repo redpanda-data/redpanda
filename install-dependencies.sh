@@ -40,6 +40,7 @@ deb_deps=(
   python3-venv
   rapidjson-dev
   zip
+  unzip
 )
 fedora_deps=(
   ccache
@@ -59,6 +60,7 @@ fedora_deps=(
   xxhash-devel
   xz
   zip
+  unzip
 )
 arch_deps=(
   ccache
@@ -77,6 +79,7 @@ arch_deps=(
   xxhash
   xz
   zip
+  unzip
 )
 
 case "$ID" in
