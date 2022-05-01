@@ -10,6 +10,7 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
 from rptest.clients.rpk import RpkTool, ClusterAuthorizationError
+from rptest.services.redpanda import SecurityConfig
 
 
 class AccessControlListTest(RedpandaTest):
@@ -17,11 +18,12 @@ class AccessControlListTest(RedpandaTest):
     algorithm = "SCRAM-SHA-256"
 
     def __init__(self, test_context):
-        extra_rp_conf = dict(enable_sasl=True, )
+        security = SecurityConfig()
+        security.enable_sasl = True
         super(AccessControlListTest,
               self).__init__(test_context,
                              num_brokers=3,
-                             extra_rp_conf=extra_rp_conf,
+                             security=security,
                              extra_node_conf={'developer_mode': True})
 
     def get_client(self, username):

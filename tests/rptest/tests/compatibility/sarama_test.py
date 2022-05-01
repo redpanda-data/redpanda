@@ -15,6 +15,7 @@ from rptest.services.rpk_producer import RpkProducer
 from rptest.services.compatibility.example_runner import ExampleRunner
 import rptest.services.compatibility.sarama_examples as SaramaExamples
 from rptest.tests.redpanda_test import RedpandaTest
+from rptest.services.redpanda import SecurityConfig
 from rptest.clients.types import TopicSpec
 
 
@@ -132,9 +133,9 @@ class SaramaScramTest(RedpandaTest):
     topics = (TopicSpec(), )
 
     def __init__(self, test_context):
-        extra_rp_conf = dict(enable_sasl=True, )
-        super(SaramaScramTest, self).__init__(test_context,
-                                              extra_rp_conf=extra_rp_conf)
+        security = SecurityConfig()
+        security.enable_sasl = True
+        super(SaramaScramTest, self).__init__(test_context, security=security)
 
     @cluster(num_nodes=3)
     def test_sarama_sasl_scram(self):
