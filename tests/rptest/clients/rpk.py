@@ -587,3 +587,20 @@ class RpkTool:
             raise ClusterAuthorizationError("acl list")
 
         return output
+
+    def acl_create_allow_cluster(self, username, op):
+        """
+        Add allow+describe+cluster ACL
+        """
+        cmd = [
+            self._rpk_binary(),
+            "acl",
+            "create",
+            "--allow-principal",
+            f"User:{username}",
+            "--operation",
+            op,
+            "--cluster",
+        ] + self._kafka_conn_settings()
+        output = self._execute(cmd)
+        return output
