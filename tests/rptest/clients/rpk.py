@@ -10,7 +10,9 @@
 import subprocess
 import re
 import typing
+from typing import Optional
 from ducktape.cluster.cluster import ClusterNode
+from rptest.services import tls
 
 DEFAULT_TIMEOUT = 30
 
@@ -107,11 +109,13 @@ class RpkTool:
                  redpanda,
                  username: str = None,
                  password: str = None,
-                 sasl_mechanism: str = None):
+                 sasl_mechanism: str = None,
+                 tls_cert: Optional[tls.Certificate] = None):
         self._redpanda = redpanda
         self._username = username
         self._password = password
         self._sasl_mechanism = sasl_mechanism
+        self._tls_cert = tls_cert
 
     def create_topic(self, topic, partitions=1, replicas=None, config=None):
         cmd = ["create", topic]
@@ -561,6 +565,15 @@ class RpkTool:
                 self._password,
                 "--sasl-mechanism",
                 self._sasl_mechanism,
+            ]
+        if self._tls_cert:
+            flags += [
+                "--tls-key",
+                self._tls_cert.key,
+                "--tls-cert",
+                self._tls_cert.crt,
+                "--tls-truststore",
+                self._tls_cert.ca.crt,
             ]
         return flags
 
