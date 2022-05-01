@@ -9,7 +9,7 @@
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
-from rptest.clients.kafka_cli_tools import KafkaCliTools, ClusterAuthorizationError
+from rptest.clients.rpk import RpkTool, ClusterAuthorizationError
 
 
 class AccessControlListTest(RedpandaTest):
@@ -24,12 +24,18 @@ class AccessControlListTest(RedpandaTest):
                              extra_rp_conf=extra_rp_conf,
                              extra_node_conf={'developer_mode': True})
 
-    def get_client(self, user):
-        return KafkaCliTools(self.redpanda, user=user, passwd=self.password)
+    def get_client(self, username):
+        return RpkTool(self.redpanda,
+                       username=username,
+                       password=self.password,
+                       sasl_mechanism=self.algorithm)
 
     def get_super_client(self):
-        user, password, _ = self.redpanda.SUPERUSER_CREDENTIALS
-        return KafkaCliTools(self.redpanda, user=user, passwd=password)
+        username, password, _ = self.redpanda.SUPERUSER_CREDENTIALS
+        return RpkTool(self.redpanda,
+                       username=username,
+                       password=password,
+                       sasl_mechanism=self.algorithm)
 
     def prepare_users(self):
         """
@@ -45,7 +51,7 @@ class AccessControlListTest(RedpandaTest):
         admin.create_user("base", self.password, self.algorithm)
 
         admin.create_user("cluster_describe", self.password, self.algorithm)
-        client.create_cluster_acls("cluster_describe", "describe")
+        client.acl_create_allow_cluster("cluster_describe", "describe")
 
     @cluster(num_nodes=3)
     def test_describe_acls(self):
@@ -55,10 +61,10 @@ class AccessControlListTest(RedpandaTest):
         self.prepare_users()
 
         try:
-            self.get_client("base").list_acls()
+            self.get_client("base").acl_list()
             assert False, "list acls should have failed"
         except ClusterAuthorizationError:
             pass
 
-        self.get_client("cluster_describe").list_acls()
-        self.get_super_client().list_acls()
+        self.get_client("cluster_describe").acl_list()
+        self.get_super_client().acl_list()
