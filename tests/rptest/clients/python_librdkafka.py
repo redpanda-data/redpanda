@@ -7,6 +7,8 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 from confluent_kafka.admin import AdminClient, NewTopic
+from typing import Optional
+from rptest.services import tls
 
 
 class PythonLibrdkafka:
@@ -18,11 +20,13 @@ class PythonLibrdkafka:
                  *,
                  username=None,
                  password=None,
-                 algorithm=None):
+                 algorithm=None,
+                 tls_cert: Optional[tls.Certificate] = None):
         self._redpanda = redpanda
         self._username = username
         self._password = password
         self._algorithm = algorithm
+        self._tls_cert = tls_cert
 
     def brokers(self):
         client = AdminClient(self._get_config())
@@ -67,5 +71,19 @@ class PythonLibrdkafka:
                 'sasl.username': c[0],
                 'sasl.password': c[1],
             })
+        if self._tls_cert:
+            conf.update({
+                'ssl.key.location': self._tls_cert.key,
+                'ssl.certificate.location': self._tls_cert.crt,
+                'ssl.ca.location': self._tls_cert.ca.crt,
+            })
+            if self._redpanda.sasl_enabled():
+                conf.update({
+                    'security.protocol': 'sasl_ssl',
+                })
+            else:
+                conf.update({
+                    'security.protocol': 'ssl',
+                })
         self._redpanda.logger.info(conf)
         return conf
