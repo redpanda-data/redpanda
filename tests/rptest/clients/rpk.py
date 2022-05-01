@@ -563,3 +563,27 @@ class RpkTool:
                 self._sasl_mechanism,
             ]
         return flags
+
+    def acl_list(self):
+        """
+        Run `rpk acl list` and return the results.
+
+        If this client is not authorized to list ACLs then
+        ClusterAuthorizationError will be raised.
+
+        TODO: parse output into acl structures. currently ducktape tests lack
+        any structured representation of acls. however at the time of writing we
+        are interested only in an authz success/fail signal.
+        """
+        cmd = [
+            self._rpk_binary(),
+            "acl",
+            "list",
+        ] + self._kafka_conn_settings()
+
+        output = self._execute(cmd)
+
+        if "CLUSTER_AUTHORIZATION_FAILED" in output:
+            raise ClusterAuthorizationError("acl list")
+
+        return output
