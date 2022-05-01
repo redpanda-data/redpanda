@@ -17,6 +17,14 @@ DEFAULT_TIMEOUT = 30
 DEFAULT_PRODUCE_TIMEOUT = 5
 
 
+class ClusterAuthorizationError(Exception):
+    def __init__(self, message):
+        self.message = message
+
+    def __str__(self):
+        return repr(self.message)
+
+
 class RpkException(Exception):
     def __init__(self, msg, stderr=""):
         self.msg = msg
@@ -95,8 +103,15 @@ class RpkTool:
     """
     Wrapper around rpk.
     """
-    def __init__(self, redpanda):
+    def __init__(self,
+                 redpanda,
+                 username: str = None,
+                 password: str = None,
+                 sasl_mechanism: str = None):
         self._redpanda = redpanda
+        self._username = username
+        self._password = password
+        self._sasl_mechanism = sasl_mechanism
 
     def create_topic(self, topic, partitions=1, replicas=None, config=None):
         cmd = ["create", topic]
@@ -349,17 +364,11 @@ class RpkTool:
         return self._execute(cmd)
 
     def _run_topic(self, cmd, stdin=None, timeout=None):
-        cmd = [
-            self._rpk_binary(), "topic", "--brokers",
-            self._redpanda.brokers()
-        ] + cmd
+        cmd = [self._rpk_binary(), "topic"] + self._kafka_conn_settings() + cmd
         return self._execute(cmd, stdin=stdin, timeout=timeout)
 
     def _run_group(self, cmd, stdin=None, timeout=None):
-        cmd = [
-            self._rpk_binary(), "group", "--brokers",
-            self._redpanda.brokers()
-        ] + cmd
+        cmd = [self._rpk_binary(), "group"] + self._kafka_conn_settings() + cmd
         return self._execute(cmd, stdin=stdin, timeout=timeout)
 
     def _run(self, cmd, stdin=None, timeout=None):
@@ -538,3 +547,19 @@ class RpkTool:
 
         output = self._execute(cmd)
         return list(filter(None, map(parse, output.splitlines())))
+
+    def _kafka_conn_settings(self):
+        flags = [
+            "--brokers",
+            self._redpanda.brokers(),
+        ]
+        if self._username:
+            flags += [
+                "--user",
+                self._username,
+                "--password",
+                self._password,
+                "--sasl-mechanism",
+                self._sasl_mechanism,
+            ]
+        return flags
