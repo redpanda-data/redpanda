@@ -315,6 +315,11 @@ class SISettings:
         return conf
 
 
+class SecurityConfig:
+    def __init__(self):
+        self.enable_sasl = False
+
+
 class RedpandaService(Service):
     PERSISTENT_ROOT = "/var/lib/redpanda"
     DATA_DIR = os.path.join(PERSISTENT_ROOT, "data")
@@ -398,13 +403,15 @@ class RedpandaService(Service):
                  resource_settings=None,
                  si_settings=None,
                  log_level: Optional[str] = None,
-                 environment: Optional[dict[str, str]] = None):
+                 environment: Optional[dict[str, str]] = None,
+                 security: SecurityConfig = SecurityConfig()):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
         self._context = context
         self._enable_rp = enable_rp
         self._extra_rp_conf = extra_rp_conf or dict()
         self._enable_pp = enable_pp
         self._enable_sr = enable_sr
+        self._security = security
 
         self._extra_node_conf = {}
         for node in self.nodes:
@@ -462,9 +469,11 @@ class RedpandaService(Service):
         assert node in self.nodes
         self._extra_node_conf[node] = conf
 
+    def set_security_settings(self, settings):
+        self._security = settings
+
     def sasl_enabled(self):
-        return self._extra_rp_conf and self._extra_rp_conf.get(
-            "enable_sasl", False)
+        return self._security.enable_sasl
 
     @property
     def dedicated_nodes(self):
@@ -1131,6 +1140,10 @@ class RedpandaService(Service):
                 "Setting custom cluster configuration options: {}".format(
                     self._extra_rp_conf))
             conf.update(self._extra_rp_conf)
+
+        if self._security.enable_sasl:
+            self.logger.debug("Enabling SASL in cluster configuration")
+            conf.update(dict(enable_sasl=True))
 
         conf_yaml = yaml.dump(conf)
         for node in self.nodes:
