@@ -18,7 +18,7 @@ services:
     - '9000'
     healthcheck:
       interval: 30s
-      retries: '3'
+      retries: 3
       test:
       - CMD
       - curl
@@ -28,7 +28,7 @@ services:
     image: minio/minio:RELEASE.2021-03-26T00-00-41Z
     networks:
     - redpanda-test
-  n:
+  rp:
     image: vectorized/redpanda-test-node
     privileged: true
     pids_limit: 32768
