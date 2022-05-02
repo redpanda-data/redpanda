@@ -158,8 +158,24 @@ public:
           ResponseType::api_type::key,
           ResponseType::api_type::name,
           r);
-        auto resp = std::make_unique<response>(header().is_flexible());
-        r.encode(resp->writer(), header().version);
+        /// KIP-511 bumps api_versions_request/response to 3, past the first
+        /// supported flex version for this API, and makes an exception
+        /// that there will be no tags in the response header.
+        bool is_flexible = header().is_flexible();
+        api_version version = header().version;
+        if constexpr (std::is_same_v<ResponseType, api_versions_response>) {
+            is_flexible = false;
+            if (r.data.error_code == kafka::error_code::unsupported_version) {
+                /// Furthermore if the client has made an api_versions_request
+                /// outside of the max supported version, any assumptions about
+                /// its ability to understand a response at a given version
+                /// cannot be made. In this case return api_versions_response at
+                /// version 0.
+                version = api_version(0);
+            }
+        }
+        auto resp = std::make_unique<response>(is_flexible);
+        r.encode(resp->writer(), version);
         return ss::make_ready_future<response_ptr>(std::move(resp));
     }
 

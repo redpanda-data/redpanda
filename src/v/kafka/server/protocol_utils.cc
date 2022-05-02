@@ -41,7 +41,8 @@ parse_header(ss::input_stream<char>& src) {
 
     // There is a contradiction here with the proposed flexible header
     // introduced in KIP-482. The KIP details how client_id will be a compact
-    // string, however this is not the case
+    // string, however this is not the case:
+    // https://github.com/apache/kafka/pull/7479
     auto client_id_size = reader.read_int16();
     if (client_id_size == 0) {
         header.client_id = std::string_view();

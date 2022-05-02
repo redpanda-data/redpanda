@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "kafka/protocol/api_versions.h"
 #include "kafka/protocol/fwd.h"
 #include "kafka/server/flex_versions.h"
 #include "kafka/server/protocol_utils.h"
@@ -57,8 +58,12 @@ private:
           "Attempted to send request to non-existent API: {}",
           key);
 
+        /// KIP-511 bumps api_versions_request/response to 3 the first flex
+        /// version for the API three however makes an exception that there will
+        /// be no tags in the response header.
         const auto is_flexible = flex_versions::is_flexible_request(
-          key, request_version);
+                                   key, request_version)
+                                 && key() != api_versions_api::key;
 
         // finalize by filling in the size prefix
         int32_t total_size = buf.size_bytes() - start_size;
