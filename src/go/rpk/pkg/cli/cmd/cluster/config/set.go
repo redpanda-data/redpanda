@@ -90,7 +90,7 @@ If an empty string is given as the value, the property is reset to its default.`
 			}
 
 			out.MaybeDie(err, "error setting property: %v", err)
-			fmt.Printf("Successfully updated config, new config version %d.\n", result.ConfigVersion)
+			fmt.Printf("Successfully updated configuration. New configuration version is %d.\n", result.ConfigVersion)
 		},
 	}
 
