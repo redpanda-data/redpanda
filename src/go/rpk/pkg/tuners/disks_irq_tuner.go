@@ -91,37 +91,23 @@ func (tuner *disksIRQsTuner) Tune() TuneResult {
 	for _, devices := range directoryDevices {
 		allDevices = append(allDevices, devices...)
 	}
-	balanceServiceTuner := NewDiskIRQsBalanceServiceTuner(
-		tuner.fs,
-		allDevices,
-		tuner.blockDevices,
-		tuner.irqBalanceService,
-		tuner.executor)
+	balanceServiceTuner := NewDiskIRQsBalanceServiceTuner(allDevices, tuner.blockDevices, tuner.irqBalanceService, tuner.executor)
 
 	if result := balanceServiceTuner.Tune(); result.IsFailed() {
 		return result
 	}
-	affinityTuner := NewDiskIRQsAffinityTuner(
-		tuner.fs,
-		allDevices,
-		tuner.baseCPUMask,
-		tuner.mode,
-		tuner.blockDevices,
-		tuner.cpuMasks,
-		tuner.executor,
-	)
+	affinityTuner := NewDiskIRQsAffinityTuner(allDevices, tuner.baseCPUMask, tuner.mode, tuner.blockDevices, tuner.cpuMasks, tuner.executor)
 	return affinityTuner.Tune()
 }
 
 func NewDiskIRQsBalanceServiceTuner(
-	fs afero.Fs,
 	devices []string,
 	blockDevices disk.BlockDevices,
 	balanceService irq.BalanceService,
 	executor executors.Executor,
 ) Tunable {
 	return NewCheckedTunable(
-		NewDisksIRQAffinityStaticChecker(fs, devices, blockDevices, balanceService),
+		NewDisksIRQAffinityStaticChecker(devices, blockDevices, balanceService),
 		func() TuneResult {
 			diskInfoByType, err := blockDevices.GetDiskInfoByType(devices)
 			if err != nil {
@@ -145,7 +131,6 @@ func NewDiskIRQsBalanceServiceTuner(
 }
 
 func NewDiskIRQsAffinityTuner(
-	fs afero.Fs,
 	devices []string,
 	cpuMask string,
 	mode irq.Mode,
@@ -154,7 +139,7 @@ func NewDiskIRQsAffinityTuner(
 	executor executors.Executor,
 ) Tunable {
 	return NewCheckedTunable(
-		NewDisksIRQAffinityChecker(fs, devices, cpuMask, mode, blockDevices, cpuMasks),
+		NewDisksIRQAffinityChecker(devices, cpuMask, mode, blockDevices, cpuMasks),
 		func() TuneResult {
 			distribution, err := GetExpectedIRQsDistribution(
 				devices,

@@ -11,7 +11,7 @@ package admin
 
 import "net/http"
 
-// Health overview data structure
+// Health overview data structure.
 type ClusterHealthOverview struct {
 	IsHealthy            bool     `json:"is_healthy"`
 	ControllerID         int      `json:"controller_id"`

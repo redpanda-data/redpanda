@@ -92,10 +92,10 @@ func executeStop(
 	if err != nil {
 		return err
 	}
-	return signalAndWait(fs, pid, timeout)
+	return signalAndWait(pid, timeout)
 }
 
-func signalAndWait(fs afero.Fs, pid int, timeout time.Duration) error {
+func signalAndWait(pid int, timeout time.Duration) error {
 	var f func(int, []syscall.Signal) error
 	f = func(pid int, signals []syscall.Signal) error {
 		if len(signals) == 0 {

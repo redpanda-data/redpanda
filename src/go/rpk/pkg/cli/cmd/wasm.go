@@ -12,12 +12,11 @@ package cmd
 import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/wasm"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func NewWasmCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
+func NewWasmCommand(fs afero.Fs) *cobra.Command {
 	var (
 		configFile     string
 		brokers        []string

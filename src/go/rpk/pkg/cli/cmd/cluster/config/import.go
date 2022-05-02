@@ -57,8 +57,7 @@ func importConfig(
 			// if it is given as the value for a floating point
 			// ('number') config property, and vice versa.
 			if meta.Type == "integer" {
-				switch vFloat := v.(type) {
-				case float64:
+				if vFloat, ok := v.(float64); ok {
 					v = int(vFloat)
 				}
 
@@ -66,11 +65,10 @@ func importConfig(
 					oldVal = int(oldVal.(float64))
 				}
 			} else if meta.Type == "number" {
-				switch x := v.(type) {
-				case int:
-					v = float64(x)
+				if vInt, ok := v.(int); ok {
+					v = float64(vInt)
 				}
-			} else if meta.Type == arrayType && meta.Items.Type == "string" {
+			} else if meta.Type == "array" && meta.Items.Type == "string" {
 				switch vArray := v.(type) {
 				case []interface{}:
 					// Normal case: user input is a yaml array

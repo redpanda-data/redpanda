@@ -41,10 +41,9 @@ type Broker struct {
 // Brokers queries one of the client's hosts and returns the list of brokers.
 func (a *AdminAPI) Brokers() ([]Broker, error) {
 	var bs []Broker
-	sort := func() {
-		sort.Slice(bs, func(i, j int) bool { return bs[i].NodeID < bs[j].NodeID })
-	}
-	defer sort()
+	defer func() {
+		sort.Slice(bs, func(i, j int) bool { return bs[i].NodeID < bs[j].NodeID }) //nolint:revive // return inside this deferred function is for the sort's less function
+	}()
 	return bs, a.sendAny(http.MethodGet, brokersEndpoint, nil, &bs)
 }
 

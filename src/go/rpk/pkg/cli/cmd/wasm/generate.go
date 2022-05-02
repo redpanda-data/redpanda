@@ -86,10 +86,10 @@ func getWasmAPIVersion(wasmAPI string) string {
 
 // latestClientApiVersion looks up the latest version of our client library using npm,
 // defaulting if anything fails.
-func latestClientApiVersion() string {
+func latestClientAPIVersion() string {
 	if _, err := exec.LookPath("npm"); err != nil {
-		fmt.Printf("npm not found, defaulting to client API version %s.\n", defApiVersion)
-		return defApiVersion
+		fmt.Printf("npm not found, defaulting to client API version %s.\n", defAPIVersion)
+		return defAPIVersion
 	}
 
 	proc := vos.NewProc()
@@ -125,11 +125,7 @@ func executeGenerate(fs afero.Fs, path string, skipVersion bool) error {
 		}
 	}
 	if len(preexisting) > 0 {
-<<<<<<< HEAD
 		return fmt.Errorf("files already exist; try using a new directory or removing the existing files, existing: %v", preexisting)
-=======
-		return fmt.Errorf("files %v already exist, avoiding generation", preexisting)
->>>>>>> e551408f5 (rpk: enable revive var-naming linter rule)
 	}
 
 	if err := fs.MkdirAll(path, 0o755); err != nil {

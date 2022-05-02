@@ -118,7 +118,7 @@ Would you like to continue with the default configuration?`,
 				tunerFactory = factory.NewDirectExecutorTunersFactory(
 					fs, *conf, timeout)
 			}
-			return tune(fs, conf, tuners, tunerFactory, &tunerParams)
+			return tune(conf, tuners, tunerFactory, &tunerParams)
 		},
 	}
 	command.Flags().StringVarP(&tunerParams.Mode,
@@ -203,7 +203,6 @@ func promptConfirmation(msg string, in io.Reader) (bool, error) {
 }
 
 func tune(
-	fs afero.Fs,
 	conf *config.Config,
 	tunerNames []string,
 	tunersFactory factory.TunersFactory,

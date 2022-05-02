@@ -13,7 +13,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/big"
 	"net"
 	"os"
 	"path/filepath"
@@ -423,8 +422,7 @@ func checkAndWrite(fs afero.Fs, v *viper.Viper, path string) error {
 	log.Debugf("Writing the new redpanda config to '%s'", path)
 	err = write(fs, v, path)
 	if err != nil {
-		defer func() { recover(fs, backup, path, err) }()
-		return err
+		return recover(fs, backup, path, err) //nolint:revive // false positive: this recover function is different from built-in recover
 	}
 	return nil
 }
@@ -469,15 +467,13 @@ func v21_1_4MapToNamedSocketAddressSlice(
 	from, to reflect.Type, data interface{},
 ) (interface{}, error) {
 	if to == reflect.TypeOf([]NamedSocketAddress{}) {
-		switch from.Kind() {
-		case reflect.Map:
+		if from.Kind() == reflect.Map {
 			sa := NamedSocketAddress{}
 			err := mapstructure.Decode(data, &sa)
 			if err != nil {
 				return nil, err
 			}
 			return []NamedSocketAddress{sa}, nil
-
 		}
 	}
 	return data, nil
@@ -486,13 +482,12 @@ func v21_1_4MapToNamedSocketAddressSlice(
 // Redpanda version <= 21.4.1 only supported a single TLS config. This custom
 // decode function translates a single TLS config-equivalent
 // map[string]interface{} into a []ServerTLS.
-//nolint:revive // Using underscore here is intended to denote Redpanda version
+//nolint:revive // using underscore here is intended
 func v21_4_1TlsMapToNamedTlsSlice(
 	from, to reflect.Type, data interface{},
 ) (interface{}, error) {
 	if to == reflect.TypeOf([]ServerTLS{}) {
-		switch from.Kind() {
-		case reflect.Map:
+		if from.Kind() == reflect.Map {
 			tls := ServerTLS{}
 			err := mapstructure.Decode(data, &tls)
 			if err != nil {
@@ -502,40 +497,6 @@ func v21_4_1TlsMapToNamedTlsSlice(
 		}
 	}
 	return data, nil
-}
-
-func base58Encode(s string) string {
-	b := []byte(s)
-
-	alphabet := "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-	alphabetIdx0 := byte('1')
-	bigRadix := big.NewInt(58)
-	bigZero := big.NewInt(0)
-	x := new(big.Int)
-	x.SetBytes(b)
-
-	answer := make([]byte, 0, len(b)*136/100)
-	for x.Cmp(bigZero) > 0 {
-		mod := new(big.Int)
-		x.DivMod(x, bigRadix, mod)
-		answer = append(answer, alphabet[mod.Int64()])
-	}
-
-	// leading zero bytes
-	for _, i := range b {
-		if i != 0 {
-			break
-		}
-		answer = append(answer, alphabetIdx0)
-	}
-
-	// reverse
-	alen := len(answer)
-	for i := 0; i < alen/2; i++ {
-		answer[i], answer[alen-1-i] = answer[alen-1-i], answer[i]
-	}
-
-	return string(answer)
 }
 
 func parse(val string) interface{} {
@@ -555,7 +516,7 @@ func absPath(path string) (string, error) {
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return "", fmt.Errorf(
-			"Couldn't convert the used config file path to"+
+			"couldn't convert the used config file path to"+
 				" absolute: %s",
 			path,
 		)
@@ -568,7 +529,7 @@ func createConfigDir(fs afero.Fs, configFile string) error {
 	err := fs.MkdirAll(dir, 0755)
 	if err != nil {
 		return fmt.Errorf(
-			"Couldn't create config dir %s: %v",
+			"couldn't create config dir %s: %v",
 			dir,
 			err,
 		)

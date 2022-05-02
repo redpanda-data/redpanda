@@ -25,19 +25,19 @@ type kernelVersionChecker struct {
 	getCurrent func() (string, error)
 }
 
-func (c kernelVersionChecker) ID() CheckerID {
+func (kernelVersionChecker) ID() CheckerID {
 	return KernelVersion
 }
 
-func (c kernelVersionChecker) GetDesc() string {
+func (kernelVersionChecker) GetDesc() string {
 	return "Kernel Version"
 }
 
-func (c kernelVersionChecker) GetSeverity() Severity {
+func (kernelVersionChecker) GetSeverity() Severity {
 	return Warning
 }
 
-func (c kernelVersionChecker) GetRequiredAsString() string {
+func (kernelVersionChecker) GetRequiredAsString() string {
 	return "4.19"
 }
 

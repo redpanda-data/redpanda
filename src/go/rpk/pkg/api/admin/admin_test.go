@@ -118,7 +118,7 @@ func TestAdminAPI(t *testing.T) {
 				checkCallToAnyNode(t, calls, path, tt.nNodes)
 			}
 			for _, path := range tt.leader {
-				checkCallToLeader(t, calls, path, tt.nNodes, tt.leaderID)
+				checkCallToLeader(t, calls, path, tt.leaderID)
 			}
 			for _, path := range tt.none {
 				checkCallNone(t, calls, path, tt.nNodes)
@@ -179,7 +179,7 @@ func checkCallToAnyNode(
 	require.Fail(t, fmt.Sprintf("path (%s) was expected to be called in any node but it wasn't called", path))
 }
 func checkCallToLeader(
-	t *testing.T, calls []testCall, path string, nNodes, leaderID int,
+	t *testing.T, calls []testCall, path string, leaderID int,
 ) {
 	if len(callsForPathAndNodeID(calls, path, leaderID)) == 0 {
 		require.Fail(t, fmt.Sprintf("path (%s) was expected to be called in the leader node but it wasn't", path))

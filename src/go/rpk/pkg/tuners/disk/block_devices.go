@@ -207,7 +207,7 @@ func (b *blockDevices) getDevicesIRQs(
 	return diskIRQs, nil
 }
 
-func (b *blockDevices) getDeviceControllerPath(
+func (*blockDevices) getDeviceControllerPath(
 	devSystemPath string,
 ) (string, error) {
 	log.Debugf("Getting controller path for '%s'", devSystemPath)

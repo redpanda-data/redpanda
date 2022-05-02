@@ -14,12 +14,11 @@ import (
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/acl"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/common"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func NewACLCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
+func NewACLCommand(fs afero.Fs) *cobra.Command {
 	var (
 		brokers                []string
 		configFile             string

@@ -64,12 +64,12 @@ func Execute() {
 
 	rootCmd.AddCommand(NewGenerateCommand(mgr))
 	rootCmd.AddCommand(NewVersionCommand())
-	rootCmd.AddCommand(NewWasmCommand(fs, mgr))
+	rootCmd.AddCommand(NewWasmCommand(fs))
 	rootCmd.AddCommand(NewContainerCommand())
-	rootCmd.AddCommand(NewTopicCommand(fs, mgr))
+	rootCmd.AddCommand(NewTopicCommand(fs))
 	rootCmd.AddCommand(NewClusterCommand(fs))
-	rootCmd.AddCommand(NewACLCommand(fs, mgr))
-	rootCmd.AddCommand(group.NewCommand(fs, mgr))
+	rootCmd.AddCommand(NewACLCommand(fs))
+	rootCmd.AddCommand(group.NewCommand(fs))
 
 	rootCmd.AddCommand(plugincmd.NewCommand(fs))
 

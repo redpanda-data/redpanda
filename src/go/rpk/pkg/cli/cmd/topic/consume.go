@@ -79,7 +79,7 @@ func NewConsumeCommand(fs afero.Fs) *cobra.Command {
 
 			err = c.parseOffset(offset, topics, adm)
 			out.MaybeDie(err, "invalid --offset %q: %v", offset, err)
-			if allEmpty := c.filterEmptyPartitions(adm); allEmpty {
+			if allEmpty := c.filterEmptyPartitions(); allEmpty {
 				return
 			}
 
@@ -367,7 +367,7 @@ func parseFromToOffset(
 	case o == "start" || o == "oldest":
 		atStart = true
 		return
-	case o == endStr || o == "newest":
+	case o == "end" || o == "newest":
 		atEnd = true
 		return
 	case o == ":end":
@@ -385,7 +385,7 @@ func parseFromToOffset(
 
 	// oo, oo:, and :oo
 	if start, err = strconv.ParseInt(o, 10, 64); err == nil {
-		return //nolint:nilerr // False positive with naked returns
+		return //nolint:nilerr // false positive with naked returns
 	} else if strings.HasSuffix(o, ":") {
 		start, err = strconv.ParseInt(o[:len(o)-1], 10, 64)
 		return
@@ -408,7 +408,7 @@ func parseFromToOffset(
 
 	hasEnd = true
 	if start, err = strconv.ParseInt(halves[0], 10, 64); err == nil {
-		if end, err = strconv.ParseInt(halves[1], 10, 64); err != nil && halves[1] == endStr {
+		if end, err = strconv.ParseInt(halves[1], 10, 64); err != nil && halves[1] == "end" {
 			hasEnd, currentEnd, err = false, true, nil
 			return
 		}
@@ -465,7 +465,7 @@ func parseConsumeTimestamp(
 		}
 		return
 
-	case half == endStr: // t2
+	case half == "end": // t2
 		length = 3
 		end = true
 		return
@@ -560,7 +560,7 @@ func (c *consumer) parseTimeOffset(
 //
 // Depending on our order of requests and pathological timing, end could
 // come before the start; in this case we also filter the partition.
-func (c *consumer) filterEmptyPartitions(adm *kadm.Client) (allEmpty bool) {
+func (c *consumer) filterEmptyPartitions() (allEmpty bool) {
 	if c.partEnds == nil {
 		return false
 	}
@@ -707,8 +707,7 @@ func (c *consumer) intoOptions(topics []string) ([]kgo.Opt, error) {
 	return opts, nil
 }
 
-const (
-	helpConsume = `Consume records from topics.
+const helpConsume = `Consume records from topics.
 
 Consuming records reads from any amount of input topics, formats each record
 according to --format, and prints them to STDOUT. The output formatter
@@ -915,5 +914,3 @@ For example,
     -o @-1m:end         consume from 1m ago until now
     -o @:-1hr           consume from the start until an hour ago
 `
-	endStr string = "end"
-)

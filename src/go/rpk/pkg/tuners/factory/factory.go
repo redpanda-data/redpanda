@@ -264,19 +264,19 @@ func (factory *tunersFactory) newCPUTuner(params *TunerParams) tuners.Tunable {
 }
 
 func (factory *tunersFactory) newMaxAIOEventsTuner(
-	params *TunerParams,
+	_ *TunerParams,
 ) tuners.Tunable {
 	return tuners.NewMaxAIOEventsTuner(factory.fs, factory.executor)
 }
 
 func (factory *tunersFactory) newClockSourceTuner(
-	params *TunerParams,
+	_ *TunerParams,
 ) tuners.Tunable {
 	return tuners.NewClockSourceTuner(factory.fs, factory.executor)
 }
 
 func (factory *tunersFactory) newSwappinessTuner(
-	params *TunerParams,
+	_ *TunerParams,
 ) tuners.Tunable {
 	return tuners.NewSwappinessTuner(factory.fs, factory.executor)
 }
@@ -285,14 +285,12 @@ func (factory *tunersFactory) newTHPTuner(_ *TunerParams) tuners.Tunable {
 	return tuners.NewEnableTHPTuner(factory.fs, factory.executor)
 }
 
-func (factory *tunersFactory) newCoredumpTuner(
-	params *TunerParams,
-) tuners.Tunable {
+func (factory *tunersFactory) newCoredumpTuner(_ *TunerParams) tuners.Tunable {
 	return coredump.NewCoredumpTuner(factory.fs, factory.conf, factory.executor)
 }
 
 func (factory *tunersFactory) newBallastFileTuner(
-	params *TunerParams,
+	_ *TunerParams,
 ) tuners.Tunable {
 	return ballast.NewBallastFileTuner(factory.conf, factory.executor)
 }

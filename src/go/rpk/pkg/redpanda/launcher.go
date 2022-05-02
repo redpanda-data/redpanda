@@ -38,7 +38,7 @@ func NewLauncher() Launcher {
 	return &launcher{}
 }
 
-func (l *launcher) Start(installDir string, args *RedpandaArgs) error {
+func (*launcher) Start(installDir string, args *RedpandaArgs) error {
 	binary, err := getBinary(installDir)
 	if err != nil {
 		return err

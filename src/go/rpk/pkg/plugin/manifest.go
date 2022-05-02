@@ -80,7 +80,7 @@ func DownloadManifest(url string) (*Manifest, error) {
 
 	const understand = "2021-07-27"
 	if m.Version != understand {
-		return nil, fmt.Errorf("plugin manifest indicates version %q, and we can only understand %q! Please update rpk", m.Version, understand)
+		return nil, fmt.Errorf("plugin manifest indicates version %q, and we can only understand %q; please update rpk", m.Version, understand)
 	}
 
 	sort.Slice(m.Plugins, func(i, j int) bool {

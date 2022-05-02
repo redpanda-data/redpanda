@@ -115,7 +115,7 @@ func describeReqResp(
 	}
 	if printAllFilters || printFailedFilters {
 		out.Section("filters")
-		printDescribeFilters(printAllFilters, results)
+		printDescribeFilters(results)
 		fmt.Println()
 		printMatchesHeader = true
 	}
@@ -125,7 +125,7 @@ func describeReqResp(
 	printDescribedACLs(results)
 }
 
-func printDescribeFilters(all bool, results kadm.DescribeACLsResults) {
+func printDescribeFilters(results kadm.DescribeACLsResults) {
 	tw := out.NewTable(headersWithError...)
 	defer tw.Flush()
 	for _, f := range results {

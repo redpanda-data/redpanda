@@ -88,12 +88,12 @@ func defaultMap() map[string]interface{} {
 		"address": "0.0.0.0",
 		"port":    9092,
 	}
-	var defaultListeners []interface{} = []interface{}{defaultListener}
+	var defaultListeners = []interface{}{defaultListener}
 	var defaultAdminListener interface{} = map[string]interface{}{
 		"address": "0.0.0.0",
 		"port":    9644,
 	}
-	var defaultAdminListeners []interface{} = []interface{}{defaultAdminListener}
+	var defaultAdminListeners = []interface{}{defaultAdminListener}
 	return map[string]interface{}{
 		"config_file":     "/etc/redpanda/redpanda.yaml",
 		"pandaproxy":      Pandaproxy{},

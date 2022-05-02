@@ -19,6 +19,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
@@ -28,23 +29,25 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var datasource string
-var jobName string
+var (
+	datasource   string
+	jobName      string
+	hClient      = http.Client{Timeout: 10 * time.Second}
+	metricGroups = []string{
+		"errors",
+		"storage",
+		"reactor",
+		"scheduler",
+		"io_queue",
+		"vectorized_internal_rpc",
+		"kafka_rpc",
+		"rpc_client",
+		"memory",
+		"raft",
+	}
+)
 
 const panelHeight = 6
-
-var metricGroups = []string{
-	"errors",
-	"storage",
-	"reactor",
-	"scheduler",
-	"io_queue",
-	"vectorized_internal_rpc",
-	"kafka_rpc",
-	"rpc_client",
-	"memory",
-	"raft",
-}
 
 type RowSet struct {
 	rowTitles   []string
@@ -421,8 +424,7 @@ func fetchMetrics(
 	if err != nil {
 		return nil, err
 	}
-	client := &http.Client{}
-	res, err := client.Do(req)
+	res, err := hClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

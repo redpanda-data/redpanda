@@ -28,6 +28,6 @@ func addPlatformDependentCmds(
 	cmd.AddCommand(NewStartCommand(fs, mgr, redpanda.NewLauncher()))
 	cmd.AddCommand(NewStopCommand(fs, mgr))
 	cmd.AddCommand(NewConfigCommand(fs, mgr))
-	cmd.AddCommand(NewStatusCommand(fs, mgr))
+	cmd.AddCommand(NewStatusCommand(fs))
 	cmd.AddCommand(NewModeCommand(mgr))
 }

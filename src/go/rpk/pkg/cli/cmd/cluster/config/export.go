@@ -24,8 +24,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const arrayType string = "array"
-
 func exportConfig(
 	file *os.File, schema admin.ConfigSchema, config admin.Config, all bool,
 ) (err error) {
@@ -78,7 +76,7 @@ func exportConfig(
 		// Compose a YAML representation of the property: this is
 		// done with simple prints rather than the yaml module, because
 		// in either case we have to carefully format values.
-		if meta.Type == arrayType {
+		if meta.Type == "array" {
 			switch x := curValue.(type) {
 			case nil:
 				fmt.Fprintf(&sb, "%s: []", name)

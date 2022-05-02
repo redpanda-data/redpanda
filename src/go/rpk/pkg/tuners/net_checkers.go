@@ -216,7 +216,7 @@ func (f *netCheckersFactory) NewNicNTupleCheckers(
 	return f.forNonVirtualInterfaces(interfaces, f.NewNicNTupleChecker)
 }
 
-func (f *netCheckersFactory) NewNicNTupleChecker(nic network.Nic) Checker {
+func (*netCheckersFactory) NewNicNTupleChecker(nic network.Nic) Checker {
 	return NewEqualityChecker(
 		NicNTupleChecker,
 		fmt.Sprintf("NIC %s NTuple set", nic.Name()),
@@ -279,7 +279,7 @@ func (f *netCheckersFactory) NewNicXpsChecker(nic network.Nic) Checker {
 	)
 }
 
-func (f *netCheckersFactory) NewRfsTableSizeChecker() Checker {
+func (*netCheckersFactory) NewRfsTableSizeChecker() Checker {
 	return NewIntChecker(
 		RfsTableEntriesChecker,
 		"RFS Table entries",

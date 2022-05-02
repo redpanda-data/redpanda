@@ -53,7 +53,7 @@ func NewFstrimTuner(fs afero.Fs, executor executors.Executor) Tunable {
 	return &fstrimTuner{fs: fs, executor: executor}
 }
 
-func (t *fstrimTuner) CheckIfSupported() (bool, string) {
+func (*fstrimTuner) CheckIfSupported() (bool, string) {
 	// Check that systemd is available
 	c, err := systemd.NewDbusClient()
 	if err != nil {

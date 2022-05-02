@@ -11,7 +11,7 @@ package admin
 
 import "net/http"
 
-// FeatureState enumerates the possible states of a feature
+// FeatureState enumerates the possible states of a feature.
 type FeatureState string
 
 const (
@@ -22,7 +22,7 @@ const (
 	FeatureStateDisabled    FeatureState = "disabled"
 )
 
-// Feature contains information on the state of a feature
+// Feature contains information on the state of a feature.
 type Feature struct {
 	Name      string       `json:"name"`
 	State     FeatureState `json:"state"`
@@ -35,7 +35,7 @@ type FeaturesResponse struct {
 	Features       []Feature `json:"features"`
 }
 
-// GetFeatures returns information about the available features
+// GetFeatures returns information about the available features.
 func (a *AdminAPI) GetFeatures() (FeaturesResponse, error) {
 	var features FeaturesResponse
 	return features, a.sendAny(

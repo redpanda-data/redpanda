@@ -31,7 +31,6 @@ linters:
     - errname
     - errorlint
     - exportloopref
-    - goconst
     - godot
     - goprintffuncname
     - misspell
@@ -56,7 +55,7 @@ linters-settings:
     require-specific: true
 
   # Revive is yet another metalinter with a lot of useful lints. 
-  # The below opts in to all of the ones we would like to use.
+  # The below opts in to all the ones we would like to use.
   revive:
     ignore-generated-header: true
     severity: warning
@@ -95,7 +94,11 @@ linters-settings:
       - name: time-equal
       - name: time-naming
       - name: unconditional-recursion
+      - name: unnecessary-stmt
       - name: unreachable-code
+      - name: unused-parameter
+      - name: unused-receiver
       - name: useless-break
+      - name: var-declaration
       - name: var-naming
       - name: waitgroup-by-value

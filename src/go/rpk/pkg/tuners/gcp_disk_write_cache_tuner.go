@@ -47,7 +47,7 @@ func NewDeviceGcpWriteCacheTuner(
 	executor executors.Executor,
 ) Tunable {
 	return NewCheckedTunable(
-		NewDeviceWriteCacheChecker(fs, device, deviceFeatures),
+		NewDeviceWriteCacheChecker(device, deviceFeatures),
 		func() TuneResult {
 			return tuneWriteCache(fs, device, deviceFeatures, executor)
 		},

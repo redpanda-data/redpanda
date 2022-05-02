@@ -21,7 +21,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
+func NewCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "group",
 		Aliases: []string{"g"},

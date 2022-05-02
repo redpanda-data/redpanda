@@ -23,7 +23,7 @@ func NewDeviceNomergesTuner(
 	executor executors.Executor,
 ) Tunable {
 	return NewCheckedTunable(
-		NewDeviceNomergesChecker(fs, device, deviceFeatures),
+		NewDeviceNomergesChecker(device, deviceFeatures),
 		func() TuneResult {
 			return tuneNomerges(fs, device, deviceFeatures, executor)
 		},

@@ -26,8 +26,8 @@ import (
 )
 
 const (
-	configPath string = "/arbitrary/path/redpanda.yaml"
-	setFlag    string = "--set"
+	testConfigPath string = "/arbitrary/path/redpanda.yaml"
+	setFlag        string = "--set"
 )
 
 type noopLauncher struct {
@@ -207,7 +207,7 @@ func TestStartCommand(t *testing.T) {
 			return fs.MkdirAll("/arbitrary/path", 0755)
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			path := configPath
+			path := testConfigPath
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(path)
 			require.NoError(st, err)
@@ -255,7 +255,7 @@ func TestStartCommand(t *testing.T) {
 			}
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			path := configPath
+			path := testConfigPath
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(path)
 			require.NoError(st, err)
@@ -327,7 +327,7 @@ func TestStartCommand(t *testing.T) {
 			}
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			path := configPath
+			path := testConfigPath
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(path)
 			require.NoError(st, err)
@@ -389,7 +389,7 @@ func TestStartCommand(t *testing.T) {
 			}
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			path := configPath
+			path := testConfigPath
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(path)
 			require.NoError(st, err)
