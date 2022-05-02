@@ -255,7 +255,7 @@ public:
     timequery(storage::timequery_config cfg);
 
     model::offset start_offset() const {
-        return details::next_offset(_last_snapshot_index);
+        return model::next_offset(_last_snapshot_index);
     }
 
     model::offset dirty_offset() const { return _log.offsets().dirty_offset; }

@@ -15,24 +15,6 @@
 
 namespace storage {
 
-namespace {
-
-inline constexpr model::offset next_offset(model::offset o) {
-    if (o < model::offset{0}) {
-        return model::offset{0};
-    }
-    return o + model::offset{1};
-}
-
-inline constexpr model::offset prev_offset(model::offset o) {
-    if (o <= model::offset{0}) {
-        return model::offset{};
-    }
-    return o - model::offset{1};
-}
-
-} // namespace
-
 int64_t offset_translator_state::delta(model::offset o) const {
     if (_last_offset2batch.empty()) {
         return 0;
@@ -45,7 +27,7 @@ int64_t offset_translator_state::delta(model::offset o) const {
           "{})",
           _ntp,
           o,
-          next_offset(_last_offset2batch.begin()->first))};
+          model::next_offset(_last_offset2batch.begin()->first))};
     }
 
     auto delta = std::prev(it)->second.next_delta;
@@ -73,7 +55,7 @@ model::offset offset_translator_state::to_log_offset(
         return data_offset;
     }
 
-    model::offset min_log_offset = next_offset(
+    model::offset min_log_offset = model::next_offset(
       _last_offset2batch.begin()->first);
 
     model::offset min_data_offset
@@ -105,7 +87,7 @@ model::offset offset_translator_state::to_log_offset(
 
     while (interval_end_it != _last_offset2batch.end()) {
         model::offset max_do_this_interval
-          = prev_offset(interval_end_it->second.base_offset)
+          = model::prev_offset(interval_end_it->second.base_offset)
             - model::offset{delta};
         if (max_do_this_interval >= data_offset) {
             break;
@@ -161,7 +143,7 @@ void offset_translator_state::add_gap(
 
 bool offset_translator_state::add_absolute_delta(
   model::offset offset, int64_t delta) {
-    auto prev = prev_offset(offset);
+    auto prev = model::prev_offset(offset);
 
     if (_last_offset2batch.empty()) {
         vassert(

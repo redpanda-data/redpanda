@@ -34,11 +34,11 @@ public:
     }
 
     model::offset high_watermark() const final {
-        return raft::details::next_offset(_partition->dirty_offset());
+        return model::next_offset(_partition->dirty_offset());
     }
 
     model::offset last_stable_offset() const final {
-        return raft::details::next_offset(_partition->dirty_offset());
+        return model::next_offset(_partition->dirty_offset());
     }
 
     bool is_leader() const final { return _partition->is_leader(); }

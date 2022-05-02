@@ -349,7 +349,7 @@ ss::future<> recovery_stm::handle_install_snapshot_reply(
 
     // snapshot received by the follower, continue with recovery
     (*meta)->match_index = _ptr->_last_snapshot_index;
-    (*meta)->next_index = details::next_offset(_ptr->_last_snapshot_index);
+    (*meta)->next_index = model::next_offset(_ptr->_last_snapshot_index);
     (*meta)->last_sent_offset = _ptr->_last_snapshot_index;
     return close_snapshot_reader();
 }
@@ -377,7 +377,7 @@ ss::future<> recovery_stm::replicate(
     // collect metadata for append entries request
     // last persisted offset is last_offset of batch before the first one in the
     // reader
-    auto prev_log_idx = details::prev_offset(_base_batch_offset);
+    auto prev_log_idx = model::prev_offset(_base_batch_offset);
     model::term_id prev_log_term;
 
     // get term for prev_log_idx batch
@@ -465,7 +465,7 @@ ss::future<> recovery_stm::replicate(
                   return;
               }
               meta.value()->next_index = std::max(
-                model::offset(0), details::prev_offset(_base_batch_offset));
+                model::offset(0), model::prev_offset(_base_batch_offset));
               meta.value()->last_sent_offset = model::offset{};
               vlog(
                 _ctxlog.trace,

@@ -218,7 +218,7 @@ ss::future<> archival_metadata_stm::handle_eviction() {
       rc_node);
 
     if (res == cloud_storage::download_result::notfound) {
-        _insync_offset = raft::details::prev_offset(_raft->start_offset());
+        _insync_offset = model::prev_offset(_raft->start_offset());
         set_next(_raft->start_offset());
         vlog(_logger.info, "handled log eviction, the manifest is absent");
         co_return;
@@ -246,7 +246,7 @@ ss::future<> archival_metadata_stm::handle_eviction() {
     // that in the skipped batches there won't be any new remote segments.
     _insync_offset = _last_offset;
     auto next_offset = std::max(
-      _raft->start_offset(), raft::details::next_offset(_insync_offset));
+      _raft->start_offset(), model::next_offset(_insync_offset));
     set_next(next_offset);
 
     vlog(
@@ -325,7 +325,7 @@ void archival_metadata_stm::apply_add_segment(const segment& segment) {
     }
 
     if (meta.committed_offset > _last_offset) {
-        if (meta.base_offset > raft::details::next_offset(_last_offset)) {
+        if (meta.base_offset > model::next_offset(_last_offset)) {
             // To ensure forward progress, we print a warning and skip over the
             // hole.
 
