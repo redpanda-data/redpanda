@@ -144,7 +144,7 @@ func importConfig(
 	// If we didn't handle a structured 400 error, check for other errors.
 	out.MaybeDie(err, "error setting config: %v", err)
 
-	fmt.Printf("Successfully updated config, new config version %d.\n", result.ConfigVersion)
+	fmt.Printf("Successfully updated configuration. New configuration version is %d.\n", result.ConfigVersion)
 
 	return nil
 }
