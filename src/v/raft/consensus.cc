@@ -343,7 +343,7 @@ consensus::success_reply consensus::update_follower_index(
           reply.last_flushed_log_index);
         idx.last_dirty_log_index = reply.last_dirty_log_index;
         idx.last_flushed_log_index = reply.last_flushed_log_index;
-        idx.next_index = details::next_offset(idx.last_dirty_log_index);
+        idx.next_index = model::next_offset(idx.last_dirty_log_index);
     }
 
     if (reply.result == append_entries_reply::status::success) {
@@ -361,7 +361,7 @@ consensus::success_reply consensus::update_follower_index(
             // missing entries
             idx.last_dirty_log_index = reply.last_dirty_log_index;
             idx.last_flushed_log_index = reply.last_flushed_log_index;
-            idx.next_index = details::next_offset(idx.last_dirty_log_index);
+            idx.next_index = model::next_offset(idx.last_dirty_log_index);
             idx.last_sent_offset = model::offset{};
         }
         return success_reply::no;
@@ -453,7 +453,7 @@ void consensus::successfull_append_entries_reply(
     idx.last_dirty_log_index = reply.last_dirty_log_index;
     idx.last_flushed_log_index = reply.last_flushed_log_index;
     idx.match_index = idx.last_dirty_log_index;
-    idx.next_index = details::next_offset(idx.last_dirty_log_index);
+    idx.next_index = model::next_offset(idx.last_dirty_log_index);
     idx.last_successful_received_seq = idx.last_received_seq;
     vlog(
       _ctxlog.trace,
@@ -708,7 +708,7 @@ ss::future<model::record_batch_reader> consensus::make_reader(
 
         return _consumable_offset_monitor
           .wait(
-            details::next_offset(_majority_replicated_index),
+            model::next_offset(_majority_replicated_index),
             *debounce_timeout,
             _as)
           .then([this, config]() mutable { return do_make_reader(config); });
@@ -1072,7 +1072,7 @@ ss::future<> consensus::do_start() {
                 _configuration_manager.get_highest_known_offset());
               return details::read_bootstrap_state(
                 _log,
-                details::next_offset(
+                model::next_offset(
                   _configuration_manager.get_highest_known_offset()),
                 _as);
           })
@@ -1107,7 +1107,7 @@ ss::future<> consensus::do_start() {
                 lstats.dirty_offset);
 
               auto f = _configuration_manager.truncate(
-                details::next_offset(lstats.dirty_offset));
+                model::next_offset(lstats.dirty_offset));
 
               /**
                * We read some batches from the log and have to update the
@@ -1623,7 +1623,7 @@ consensus::do_append_entries(append_entries_request&& r) {
             return ss::make_ready_future<append_entries_reply>(
               std::move(reply));
         }
-        auto truncate_at = details::next_offset(
+        auto truncate_at = model::next_offset(
           model::offset(r.meta.prev_log_index));
         vlog(
           _ctxlog.info,
@@ -1647,12 +1647,11 @@ consensus::do_append_entries(append_entries_request&& r) {
           })
           .then([this, truncate_at] {
               _last_quorum_replicated_index = std::min(
-                details::prev_offset(truncate_at),
-                _last_quorum_replicated_index);
+                model::prev_offset(truncate_at), _last_quorum_replicated_index);
               // update flushed offset since truncation may happen to already
               // flushed entries
               _flushed_offset = std::min(
-                details::prev_offset(truncate_at), _flushed_offset);
+                model::prev_offset(truncate_at), _flushed_offset);
 
               return _configuration_manager.truncate(truncate_at).then([this] {
                   _probe.configuration_update();
@@ -1742,7 +1741,7 @@ ss::future<> consensus::truncate_to_latest_snapshot() {
     // _last_snapshot_index and thus can still need offset translation info.
     return _log
       .truncate_prefix(storage::truncate_prefix_config(
-        details::next_offset(_last_snapshot_index), _scheduling.default_iopc))
+        model::next_offset(_last_snapshot_index), _scheduling.default_iopc))
       .then([this] {
           return _configuration_manager.prefix_truncate(_last_snapshot_index);
       })
@@ -1931,7 +1930,7 @@ ss::future<> consensus::write_snapshot(write_snapshot_cfg cfg) {
     // Release the lock when truncating the log because it can take some
     // time while we wait for readers to be evicted.
     co_await _log.truncate_prefix(storage::truncate_prefix_config(
-      details::next_offset(last_included_index), _scheduling.default_iopc));
+      model::next_offset(last_included_index), _scheduling.default_iopc));
 
     co_await _op_lock.with([this, last_included_index] {
         return _configuration_manager.prefix_truncate(last_included_index)
@@ -1977,7 +1976,7 @@ consensus::do_write_snapshot(model::offset last_included_index, iobuf&& data) {
       .cluster_time = clock_type::time_point::min(),
       .log_start_delta = offset_translator_delta(
         _offset_translator.state()->delta(
-          details::next_offset(last_included_index))),
+          model::next_offset(last_included_index))),
     };
 
     return details::persist_snapshot(

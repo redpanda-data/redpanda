@@ -334,7 +334,7 @@ partition::get_term_last_offset(model::term_id term) const {
     }
     // Kafka defines leader epoch last offset as a first offset of next leader
     // epoch
-    return raft::details::next_offset(*o);
+    return model::next_offset(*o);
 }
 
 std::optional<model::offset>
@@ -345,7 +345,7 @@ partition::get_cloud_term_last_offset(model::term_id term) const {
     }
     // Kafka defines leader epoch last offset as a first offset of next leader
     // epoch
-    return raft::details::next_offset(*o);
+    return model::next_offset(*o);
 }
 std::ostream& operator<<(std::ostream& o, const partition& x) {
     return o << x._raft;
