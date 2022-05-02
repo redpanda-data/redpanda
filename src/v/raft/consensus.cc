@@ -510,7 +510,7 @@ ss::future<result<model::offset>> consensus::linearizable_barrier() {
         model::term_id term;
     };
 
-    std::optional<ss::semaphore_units<>> u = co_await _op_lock.get_units();
+    ss::semaphore_units<> u = co_await _op_lock.get_units();
 
     if (_vstate != vote_state::leader) {
         co_return result<model::offset>(make_error_code(errc::not_leader));
@@ -562,7 +562,7 @@ ss::future<result<model::offset>> consensus::linearizable_barrier() {
     // snapshot taken under the semaphore
     state_snapshot snapshot{
       .linearizable_offset = _commit_index, .term = _term};
-    u.reset();
+    u.return_all();
 
     // wait for responsens in background
     ssx::spawn_with_gate(_bg, [futures = std::move(send_futures)]() mutable {
