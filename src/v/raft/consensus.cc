@@ -454,6 +454,7 @@ void consensus::successfull_append_entries_reply(
     idx.last_flushed_log_index = reply.last_flushed_log_index;
     idx.match_index = idx.last_dirty_log_index;
     idx.next_index = details::next_offset(idx.last_dirty_log_index);
+    idx.last_successful_received_seq = idx.last_received_seq;
     vlog(
       _ctxlog.trace,
       "Updated node {} match {} and next {} indices",
