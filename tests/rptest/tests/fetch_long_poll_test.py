@@ -49,6 +49,7 @@ class FetchTest(RedpandaTest):
                                     self.redpanda,
                                     topic=topic.name,
                                     group='test-gr-1',
+                                    from_beginning=True,
                                     consumer_properties={
                                         'fetch.min.bytes': 1024,
                                         'fetch.max.wait.ms': 1000,
