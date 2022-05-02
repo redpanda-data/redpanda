@@ -27,7 +27,7 @@ func (s Severity) String() string {
 }
 
 type CheckResult struct {
-	CheckerId CheckerID
+	CheckerID CheckerID
 	IsOk      bool
 	Err       error
 	Current   string
@@ -37,7 +37,7 @@ type CheckResult struct {
 }
 
 type Checker interface {
-	Id() CheckerID
+	ID() CheckerID
 	GetDesc() string
 	Check() *CheckResult
 	GetRequiredAsString() string

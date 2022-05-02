@@ -274,7 +274,7 @@ func (m *manager) WriteNodeUUID(conf *Config) error {
 	if err != nil {
 		return err
 	}
-	conf.NodeUuid = id.String()
+	conf.NodeUUID = id.String()
 	return m.Write(conf)
 }
 
@@ -486,6 +486,7 @@ func v21_1_4MapToNamedSocketAddressSlice(
 // Redpanda version <= 21.4.1 only supported a single TLS config. This custom
 // decode function translates a single TLS config-equivalent
 // map[string]interface{} into a []ServerTLS.
+//nolint:revive // Using underscore here is intended to denote Redpanda version
 func v21_4_1TlsMapToNamedTlsSlice(
 	from, to reflect.Type, data interface{},
 ) (interface{}, error) {

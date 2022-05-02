@@ -78,20 +78,20 @@ func (a *AdminAPI) RecommissionBroker(node int) error {
 }
 
 // EnableMaintenanceMode enables maintenance mode for a node.
-func (a *AdminAPI) EnableMaintenanceMode(nodeId int) error {
+func (a *AdminAPI) EnableMaintenanceMode(nodeID int) error {
 	return a.sendAny(
 		http.MethodPut,
-		fmt.Sprintf("%s/%d/maintenance", brokersEndpoint, nodeId),
+		fmt.Sprintf("%s/%d/maintenance", brokersEndpoint, nodeID),
 		nil,
 		nil,
 	)
 }
 
 // DisableMaintenanceMode disables maintenance mode for a node.
-func (a *AdminAPI) DisableMaintenanceMode(nodeId int) error {
+func (a *AdminAPI) DisableMaintenanceMode(nodeID int) error {
 	return a.sendAny(
 		http.MethodDelete,
-		fmt.Sprintf("%s/%d/maintenance", brokersEndpoint, nodeId),
+		fmt.Sprintf("%s/%d/maintenance", brokersEndpoint, nodeID),
 		nil,
 		nil,
 	)

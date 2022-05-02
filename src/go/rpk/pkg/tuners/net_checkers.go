@@ -45,7 +45,7 @@ type netCheckersFactory struct {
 	irqDeviceInfo  irq.DeviceInfo
 	ethtool        ethtool.EthtoolWrapper
 	balanceService irq.BalanceService
-	cpuMasks       irq.CpuMasks
+	cpuMasks       irq.CPUMasks
 }
 
 func NewNetCheckersFactory(
@@ -54,7 +54,7 @@ func NewNetCheckersFactory(
 	irqDeviceInfo irq.DeviceInfo,
 	ethtool ethtool.EthtoolWrapper,
 	balanceService irq.BalanceService,
-	cpuMasks irq.CpuMasks,
+	cpuMasks irq.CPUMasks,
 ) NetCheckersFactory {
 	return &netCheckersFactory{
 		fs:             fs,

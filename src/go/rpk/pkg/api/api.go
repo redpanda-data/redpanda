@@ -28,14 +28,14 @@ import (
 )
 
 const (
-	defaultUrl = "https://m.rp.vectorized.io"
+	defaultURL = "https://m.rp.vectorized.io"
 	na         = "N/A"
 )
 
 type MetricsPayload struct {
 	FreeMemoryMB  float64 `json:"freeMemoryMB"`
 	FreeSpaceMB   float64 `json:"freeSpaceMB"`
-	CpuPercentage float64 `json:"cpuPercentage"`
+	CPUPercentage float64 `json:"cpuPercentage"`
 	Partitions    *int    `json:"partitions"`
 	Topics        *int    `json:"topics"`
 }
@@ -63,20 +63,20 @@ type TunerPayload struct {
 type metricsBody struct {
 	MetricsPayload
 	SentAt       time.Time `json:"sentAt"`
-	NodeUuid     string    `json:"nodeUuid"`
+	NodeUUID     string    `json:"nodeUuid"`
 	Organization string    `json:"organization"`
-	ClusterId    string    `json:"clusterId"`
-	NodeId       int       `json:"nodeId"`
+	ClusterID    string    `json:"clusterId"`
+	NodeID       int       `json:"nodeId"`
 }
 
 type environmentBody struct {
 	Payload      EnvironmentPayload     `json:"payload"`
 	Config       map[string]interface{} `json:"config"`
 	SentAt       time.Time              `json:"sentAt"`
-	NodeUuid     string                 `json:"nodeUuid"`
+	NodeUUID     string                 `json:"nodeUuid"`
 	Organization string                 `json:"organization"`
-	ClusterId    string                 `json:"clusterId"`
-	NodeId       int                    `json:"nodeId"`
+	ClusterID    string                 `json:"clusterId"`
+	NodeID       int                    `json:"nodeId"`
 	CloudVendor  string                 `json:"cloudVendor"`
 	VMType       string                 `json:"vmType"`
 	OSInfo       string                 `json:"osInfo"`
@@ -90,12 +90,12 @@ func SendMetrics(p MetricsPayload, conf config.Config) error {
 	b := metricsBody{
 		p,
 		time.Now(),
-		conf.NodeUuid,
+		conf.NodeUUID,
 		conf.Organization,
-		conf.ClusterId,
-		conf.Redpanda.Id,
+		conf.ClusterID,
+		conf.Redpanda.ID,
 	}
-	return sendMetricsToUrl(b, defaultUrl, conf)
+	return sendMetricsToURL(b, defaultURL, conf)
 }
 
 func SendEnvironment(
@@ -118,7 +118,7 @@ func SendEnvironment(
 			log.Debug(err)
 		} else {
 			cloudVendor = v.Name()
-			vt, err := v.VmType()
+			vt, err := v.VMType()
 			if err != nil {
 				log.Debug("Error retrieving instance type: ", err)
 			} else {
@@ -136,7 +136,7 @@ func SendEnvironment(
 	}
 	cpuModel := na
 	cpuCores := 0
-	cpuInfo, err := system.CpuInfo(fs)
+	cpuInfo, err := system.GetCPUInfo(fs)
 	if err != nil {
 		log.Debug("Error querying CPU info: ", err)
 	} else if len(cpuInfo) > 0 {
@@ -148,10 +148,10 @@ func SendEnvironment(
 		Payload:      env,
 		Config:       confMap,
 		SentAt:       time.Now(),
-		NodeUuid:     conf.NodeUuid,
+		NodeUUID:     conf.NodeUUID,
 		Organization: conf.Organization,
-		ClusterId:    conf.ClusterId,
-		NodeId:       conf.Redpanda.Id,
+		ClusterID:    conf.ClusterID,
+		NodeID:       conf.Redpanda.ID,
 		CloudVendor:  cloudVendor,
 		VMType:       vmType,
 		OSInfo:       osInfo,
@@ -159,9 +159,9 @@ func SendEnvironment(
 		CPUCores:     cpuCores,
 		RPVersion:    version.Pretty(),
 	}
-	return sendEnvironmentToUrl(
+	return sendEnvironmentToURL(
 		b,
-		fmt.Sprintf("%s%s", defaultUrl, "/env"),
+		fmt.Sprintf("%s%s", defaultURL, "/env"),
 		conf,
 	)
 }
@@ -175,7 +175,7 @@ func stripCtlFromUTF8(str string) string {
 	}, str)
 }
 
-func sendMetricsToUrl(b metricsBody, url string, conf config.Config) error {
+func sendMetricsToURL(b metricsBody, url string, conf config.Config) error {
 	bs, err := json.Marshal(b)
 	if err != nil {
 		return err
@@ -183,7 +183,7 @@ func sendMetricsToUrl(b metricsBody, url string, conf config.Config) error {
 	return sendRequest(bs, http.MethodPost, url, conf)
 }
 
-func sendEnvironmentToUrl(
+func sendEnvironmentToURL(
 	body environmentBody, url string, conf config.Config,
 ) error {
 	body.Environment = os.Getenv("REDPANDA_ENVIRONMENT")

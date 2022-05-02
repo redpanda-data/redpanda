@@ -198,14 +198,14 @@ func TestBootstrap(t *testing.T) {
 			ips:         []string{"187.89.9", "192.168.34.5", "192.168.45.8"},
 			self:        "192.168.34.5",
 			id:          "1",
-			expectedErr: "187.89.9 is not a valid IP.",
+			expectedErr: "187.89.9 is not a valid IP",
 		},
 		{
 			name:        "it should fail if --self isn't a valid IP",
 			ips:         []string{"187.89.9.78", "192.168.34.5", "192.168.45.8"},
 			self:        "www.host.com",
 			id:          "1",
-			expectedErr: "www.host.com is not a valid IP.",
+			expectedErr: "www.host.com is not a valid IP",
 		},
 		{
 			name:        "it should fail if --id isn't passed",
@@ -252,8 +252,8 @@ func TestBootstrap(t *testing.T) {
 			require.NoError(t, err)
 
 			require.Equal(t, tt.self, conf.Redpanda.RPCServer.Address)
-			require.Equal(t, tt.self, conf.Redpanda.KafkaApi[0].Address)
-			require.Equal(t, tt.self, conf.Redpanda.AdminApi[0].Address)
+			require.Equal(t, tt.self, conf.Redpanda.KafkaAPI[0].Address)
+			require.Equal(t, tt.self, conf.Redpanda.AdminAPI[0].Address)
 			if len(tt.ips) == 1 {
 				require.Equal(
 					t,

@@ -375,7 +375,7 @@ func executeBundle(
 		saveSocketData(ps),
 		saveTopOutput(ps),
 		saveVmstat(ps),
-		saveIp(ps),
+		saveIP(ps),
 		saveLspci(ps),
 		saveDmidecode(ps),
 	}
@@ -538,9 +538,9 @@ func saveConfig(ps *stepParams, conf *config.Config) step {
 	return func() error {
 		// Redact SASL credentials
 		redacted := "(REDACTED)"
-		if conf.Rpk.KafkaApi.SASL != nil {
-			conf.Rpk.KafkaApi.SASL.User = redacted
-			conf.Rpk.KafkaApi.SASL.Password = redacted
+		if conf.Rpk.KafkaAPI.SASL != nil {
+			conf.Rpk.KafkaAPI.SASL.User = redacted
+			conf.Rpk.KafkaAPI.SASL.Password = redacted
 		}
 		if conf.Rpk.SASL != nil {
 			conf.Rpk.SASL.User = redacted
@@ -750,7 +750,7 @@ func saveVmstat(ps *stepParams) step {
 }
 
 // Saves the output of `ip addr`.
-func saveIp(ps *stepParams) step {
+func saveIP(ps *stepParams) step {
 	return func() error {
 		return writeCommandOutputToZip(
 			ps,

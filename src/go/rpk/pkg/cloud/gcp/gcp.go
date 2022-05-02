@@ -40,7 +40,7 @@ func (v *GcpVendor) Init() (vendor.InitializedVendor, error) {
 	return nil, errors.New("vendor GCP couldn't be initialized")
 }
 
-func (v *InitializedGcpVendor) VmType() (string, error) {
+func (v *InitializedGcpVendor) VMType() (string, error) {
 	t, err := v.client.Get("instance/machine-type")
 	if err != nil {
 		return "", err

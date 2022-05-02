@@ -22,7 +22,7 @@ type CPUInfo struct {
 	Cores     int
 }
 
-func CpuInfo(fs afero.Fs) ([]*CPUInfo, error) {
+func GetCPUInfo(fs afero.Fs) ([]*CPUInfo, error) {
 	bytes, err := afero.ReadFile(fs, "/proc/cpuinfo")
 	if err != nil {
 		return nil, err

@@ -48,12 +48,12 @@ is offline.`,
 
 			for _, node := range resp {
 				tw.PrintStructFields(struct {
-					Id      int64
+					ID      int64
 					Version int64
 					Restart bool
 					Invalid []string
 					Unknown []string
-				}{node.NodeId, node.ConfigVersion, node.Restart, node.Invalid, node.Unknown})
+				}{node.NodeID, node.ConfigVersion, node.Restart, node.Invalid, node.Unknown})
 			}
 		},
 	}

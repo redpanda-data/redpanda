@@ -23,14 +23,14 @@ import (
 
 func TestSendMetrics(t *testing.T) {
 	body := metricsBody{
-		NodeUuid:     "asdfas-asdf2w23sd-907asdf",
+		NodeUUID:     "asdfas-asdf2w23sd-907asdf",
 		Organization: "io.vectorized",
-		NodeId:       1,
+		NodeID:       1,
 		SentAt:       time.Now(),
 		MetricsPayload: MetricsPayload{
 			FreeMemoryMB:  100,
 			FreeSpaceMB:   200,
-			CpuPercentage: 89,
+			CPUPercentage: 89,
 		},
 	}
 	bs, err := json.Marshal(body)
@@ -47,7 +47,7 @@ func TestSendMetrics(t *testing.T) {
 
 	conf := config.Default()
 	conf.Rpk.EnableUsageStats = true
-	err = sendMetricsToUrl(body, ts.URL, *conf)
+	err = sendMetricsToURL(body, ts.URL, *conf)
 	require.NoError(t, err)
 }
 
@@ -64,7 +64,7 @@ func TestSkipSendMetrics(t *testing.T) {
 
 	conf := config.Default()
 	conf.Rpk.EnableUsageStats = false
-	err := sendMetricsToUrl(metricsBody{}, ts.URL, *conf)
+	err := sendMetricsToURL(metricsBody{}, ts.URL, *conf)
 	require.NoError(t, err)
 }
 
@@ -98,8 +98,8 @@ func TestSendEnvironment(t *testing.T) {
 			},
 			ErrorMsg: "tuner 2 failed",
 		},
-		NodeUuid:     "awe-1231-sdfasd-13-saddasdf-as123sdf",
-		NodeId:       1,
+		NodeUUID:     "awe-1231-sdfasd-13-saddasdf-as123sdf",
+		NodeID:       1,
 		Organization: "test.vectorized.io",
 		CPUCores:     12,
 		CPUModel:     "AMD Ryzen 9 3900X 12-Core Processor",
@@ -158,7 +158,7 @@ func TestSendEnvironment(t *testing.T) {
 
 	conf := config.Default()
 	conf.Rpk.EnableUsageStats = true
-	err = sendEnvironmentToUrl(body, ts.URL, *conf)
+	err = sendEnvironmentToURL(body, ts.URL, *conf)
 	require.NoError(t, err)
 }
 
@@ -175,6 +175,6 @@ func TestSkipSendEnvironment(t *testing.T) {
 
 	conf := config.Default()
 	conf.Rpk.EnableUsageStats = false
-	err := sendEnvironmentToUrl(environmentBody{}, ts.URL, *conf)
+	err := sendEnvironmentToURL(environmentBody{}, ts.URL, *conf)
 	require.NoError(t, err)
 }

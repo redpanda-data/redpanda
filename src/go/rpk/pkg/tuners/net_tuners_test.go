@@ -43,7 +43,7 @@ func mockNetTunersFactory(
 		irq.NewDeviceInfo(fs, procFile),
 		eth,
 		irq.NewBalanceService(fs, proc, exec, timeout),
-		irq.NewCpuMasks(fs, hwlocCmd, exec),
+		irq.NewCPUMasks(fs, hwlocCmd, exec),
 		exec,
 	), nil
 }

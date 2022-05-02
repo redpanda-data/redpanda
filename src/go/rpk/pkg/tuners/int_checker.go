@@ -38,7 +38,7 @@ type intChecker struct {
 	severity       Severity
 }
 
-func (c *intChecker) Id() CheckerID {
+func (c *intChecker) ID() CheckerID {
 	return c.id
 }
 
@@ -56,7 +56,7 @@ func (c *intChecker) GetRequiredAsString() string {
 
 func (c *intChecker) Check() *CheckResult {
 	res := &CheckResult{
-		CheckerId: c.Id(),
+		CheckerID: c.ID(),
 		Desc:      c.GetDesc(),
 		Severity:  c.GetSeverity(),
 		Required:  c.GetRequiredAsString(),

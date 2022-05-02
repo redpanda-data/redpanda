@@ -39,7 +39,7 @@ func (v *currentVendor) Name() string {
 	return v.name
 }
 
-func (v *currentVendor) VmType() (string, error) {
+func (v *currentVendor) VMType() (string, error) {
 	return "", nil
 }
 

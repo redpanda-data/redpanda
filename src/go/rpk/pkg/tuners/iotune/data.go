@@ -48,7 +48,7 @@ func DataFor(mountPoint, v, vm, storage string) (*IoProperties, error) {
 func DataForVendor(
 	mountpoint string, v vendor.InitializedVendor,
 ) (*IoProperties, error) {
-	vmType, err := v.VmType()
+	vmType, err := v.VMType()
 	if err != nil {
 		return nil, fmt.Errorf("Couldn't get the current VM type for vendor '%s'", v.Name())
 	}

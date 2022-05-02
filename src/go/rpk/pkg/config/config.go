@@ -164,8 +164,8 @@ func setDevelopment(conf *Config) *Config {
 	conf.Rpk = RpkConfig{
 		TLS:                  conf.Rpk.TLS,
 		SASL:                 conf.Rpk.SASL,
-		KafkaApi:             conf.Rpk.KafkaApi,
-		AdminApi:             conf.Rpk.AdminApi,
+		KafkaAPI:             conf.Rpk.KafkaAPI,
+		AdminAPI:             conf.Rpk.AdminAPI,
 		AdditionalStartFlags: conf.Rpk.AdditionalStartFlags,
 		EnableUsageStats:     conf.Rpk.EnableUsageStats,
 		CoredumpDir:          conf.Rpk.CoredumpDir,
@@ -184,7 +184,7 @@ func setProduction(conf *Config) *Config {
 	conf.Rpk.TuneNomerges = true
 	conf.Rpk.TuneDiskIrq = true
 	conf.Rpk.TuneFstrim = false
-	conf.Rpk.TuneCpu = true
+	conf.Rpk.TuneCPU = true
 	conf.Rpk.TuneAioEvents = true
 	conf.Rpk.TuneClocksource = true
 	conf.Rpk.TuneSwappiness = true
@@ -279,12 +279,12 @@ func checkRedpandaConfig(v *viper.Viper) []error {
 		}
 	}
 
-	kafkaApiKey := "redpanda.kafka_api"
-	exists = v.Get(kafkaApiKey) != nil
+	kafkaAPIKey := "redpanda.kafka_api"
+	exists = v.Get(kafkaAPIKey) != nil
 	if !exists {
 		errs = append(
 			errs,
-			fmt.Errorf("%s missing", kafkaApiKey),
+			fmt.Errorf("%s missing", kafkaAPIKey),
 		)
 	} else {
 		var kafkaListeners []NamedSocketAddress
@@ -293,7 +293,7 @@ func checkRedpandaConfig(v *viper.Viper) []error {
 			log.Error(err)
 			err = fmt.Errorf(
 				"%s doesn't have the expected structure",
-				kafkaApiKey,
+				kafkaAPIKey,
 			)
 			return append(
 				errs,
@@ -303,7 +303,7 @@ func checkRedpandaConfig(v *viper.Viper) []error {
 		for i, addr := range kafkaListeners {
 			configPath := fmt.Sprintf(
 				"%s.%d",
-				kafkaApiKey,
+				kafkaAPIKey,
 				i,
 			)
 			errs = append(

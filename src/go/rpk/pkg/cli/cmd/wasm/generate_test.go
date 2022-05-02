@@ -39,22 +39,22 @@ func TestGetWasmApiVersion(t *testing.T) {
 		{
 			name:   "should get default vectorized WASM API version if npm search returns random string",
 			input:  "Random string\n",
-			output: defApiVersion,
+			output: defAPIVersion,
 		},
 		{
 			name:   "should get default vectorized WASM API version if npm search returns null string",
 			input:  "",
-			output: defApiVersion,
+			output: defAPIVersion,
 		},
 		{
 			name:   "should get default vectorized WASM API version if npm search returns null JSON array",
 			input:  "[]",
-			output: defApiVersion,
+			output: defAPIVersion,
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			version := getWasmApiVersion(test.input)
+			version := getWasmAPIVersion(test.input)
 			require.Exactly(t, version, test.output)
 		})
 	}
@@ -77,7 +77,7 @@ func TestWasmCommand(t *testing.T) {
 			post: map[string]testfs.Fmode{
 				"new_folder/new_sub_folder/wasm/src/main.js":       {Mode: 0o600, Contents: template.WasmJs()},
 				"new_folder/new_sub_folder/wasm/test/main.test.js": {Mode: 0o600, Contents: template.WasmTestJs()},
-				"new_folder/new_sub_folder/wasm/package.json":      {Mode: 0o600, Contents: template.PackageJson(defApiVersion)},
+				"new_folder/new_sub_folder/wasm/package.json":      {Mode: 0o600, Contents: template.PackageJSON(defAPIVersion)},
 				"new_folder/new_sub_folder/wasm/webpack.js":        {Mode: 0o766, Contents: template.Webpack()},
 			},
 		},

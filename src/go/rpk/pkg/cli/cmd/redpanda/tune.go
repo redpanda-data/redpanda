@@ -86,11 +86,11 @@ func NewTuneCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 			} else {
 				tuners = strings.Split(args[0], ",")
 			}
-			cpuMask, err := hwloc.TranslateToHwLocCpuSet(cpuSet)
+			cpuMask, err := hwloc.TranslateToHwLocCPUSet(cpuSet)
 			if err != nil {
 				return err
 			}
-			tunerParams.CpuMask = cpuMask
+			tunerParams.CPUMask = cpuMask
 			conf, err := mgr.FindOrGenerate(configFile)
 			if err != nil {
 				if !interactive {

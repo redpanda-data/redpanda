@@ -78,14 +78,17 @@ linters-settings:
       - name: early-return
       - name: error-naming
       - name: error-return
+      - name: error-strings
       - name: errorf
       - name: get-return
       - name: identical-branches
       - name: if-return
       - name: modifies-value-receiver
       - name: optimize-operands-order
+      - name: package-comments
       - name: range
       - name: range-val-in-closure
+      - name: receiver-naming
       - name: string-of-int
       - name: struct-tag
       - name: superfluous-else
@@ -94,4 +97,5 @@ linters-settings:
       - name: unconditional-recursion
       - name: unreachable-code
       - name: useless-break
+      - name: var-naming
       - name: waitgroup-by-value

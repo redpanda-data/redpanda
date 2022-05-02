@@ -109,10 +109,10 @@ func NewDockerClient() (Client, error) {
 	return &dockerClient{c}, nil
 }
 
-func (_ *dockerClient) IsErrNotFound(err error) bool {
+func (*dockerClient) IsErrNotFound(err error) bool {
 	return client.IsErrNotFound(err)
 }
 
-func (_ *dockerClient) IsErrConnectionFailed(err error) bool {
+func (*dockerClient) IsErrConnectionFailed(err error) bool {
 	return client.IsErrConnectionFailed(err)
 }

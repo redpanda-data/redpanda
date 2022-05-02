@@ -25,7 +25,7 @@ type checkedTunerMock struct {
 	tune        func() TuneResult
 }
 
-func (c *checkedTunerMock) Id() CheckerID {
+func (c *checkedTunerMock) ID() CheckerID {
 	return 1
 }
 

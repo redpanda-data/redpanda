@@ -11,7 +11,7 @@ package template
 
 import "fmt"
 
-const packageJson = `{
+const packageJSON = `{
   "name": "wasm-panda",
   "version": "0.0.1",
   "description": "inline wasm transforms sdk",
@@ -35,6 +35,6 @@ const packageJson = `{
 }
 `
 
-func PackageJson(version string) string {
-	return fmt.Sprintf(packageJson, version)
+func PackageJSON(version string) string {
+	return fmt.Sprintf(packageJSON, version)
 }

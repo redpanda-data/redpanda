@@ -55,7 +55,7 @@ func (t *ballastTuner) Tune() tuners.TuneResult {
 	sizeBytes, err := units.FromHumanSize(size)
 	if err != nil {
 		return tuners.NewTuneError(fmt.Errorf(
-			"'%s' is not a valid size unit.",
+			"'%s' is not a valid size unit",
 			size,
 		))
 	}

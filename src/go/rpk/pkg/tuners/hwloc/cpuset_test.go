@@ -43,7 +43,7 @@ func TestTranslateToHwLocCpuSet(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := TranslateToHwLocCpuSet(tt.cpuset)
+			got, err := TranslateToHwLocCPUSet(tt.cpuset)
 			if tt.wantErr {
 				require.Error(t, err)
 				return

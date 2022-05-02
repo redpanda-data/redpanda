@@ -115,7 +115,7 @@ func (a *AdminAPI) PatchClusterConfig(
 }
 
 type ConfigStatus struct {
-	NodeId        int64    `json:"node_id"`
+	NodeID        int64    `json:"node_id"`
 	Restart       bool     `json:"restart"`
 	ConfigVersion int64    `json:"config_version"`
 	Invalid       []string `json:"invalid"`

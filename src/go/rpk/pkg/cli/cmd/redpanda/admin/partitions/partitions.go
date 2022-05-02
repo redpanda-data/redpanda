@@ -46,10 +46,10 @@ func newListCommand(fs afero.Fs) *cobra.Command {
 		Short:   "List the partitions in a broker in the cluster.",
 		Args:    cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			brokerId, err := strconv.Atoi(args[0])
+			brokerID, err := strconv.Atoi(args[0])
 			out.MaybeDie(err, "invalid broker %s: %v", args[0], err)
-			if brokerId < 0 {
-				out.Die("invalid negative broker id %v", brokerId)
+			if brokerID < 0 {
+				out.Die("invalid negative broker id %v", brokerID)
 			}
 
 			p := config.ParamsFromCommand(cmd)
@@ -70,9 +70,9 @@ func newListCommand(fs afero.Fs) *cobra.Command {
 			for _, t := range m.Topics.Sorted() {
 				for _, pt := range t.Partitions.Sorted() {
 					for _, rs := range pt.Replicas {
-						if int(rs) == brokerId {
+						if int(rs) == brokerID {
 							var isLeader bool
-							if int(pt.Leader) == brokerId {
+							if int(pt.Leader) == brokerID {
 								isLeader = true
 								tw.Print(t.Topic, pt.Partition, isLeader)
 							}

@@ -121,8 +121,8 @@ func NewMemoryChecker(fs afero.Fs) Checker {
 			if err != nil {
 				return 0, err
 			}
-			memPerCpu := availableMem / int(effCpus)
-			return memPerCpu, nil
+			memPerCPU := availableMem / int(effCpus)
+			return memPerCPU, nil
 		},
 	)
 }
@@ -210,7 +210,7 @@ func RedpandaCheckers(
 		blockDevices,
 	)
 	balanceService := irq.NewBalanceService(fs, proc, executor, timeout)
-	cpuMasks := irq.NewCpuMasks(fs, hwloc.NewHwLocCmd(proc, timeout), executor)
+	cpuMasks := irq.NewCPUMasks(fs, hwloc.NewHwLocCmd(proc, timeout), executor)
 	dirIRQAffinityChecker := NewDirectoryIRQAffinityChecker(
 		fs, config.Redpanda.Directory, "all", irq.Default, blockDevices, cpuMasks)
 	dirIRQAffinityStaticChecker := NewDirectoryIRQsAffinityStaticChecker(
@@ -219,11 +219,11 @@ func RedpandaCheckers(
 		blockDevices,
 		balanceService,
 	)
-	if len(config.Redpanda.KafkaApi) == 0 {
+	if len(config.Redpanda.KafkaAPI) == 0 {
 		return nil, errors.New("'redpanda.kafka_api' is empty")
 	}
 	interfaces, err := net.GetInterfacesByIps(
-		config.Redpanda.KafkaApi[0].Address,
+		config.Redpanda.KafkaAPI[0].Address,
 		config.Redpanda.RPCServer.Address,
 	)
 	if err != nil {

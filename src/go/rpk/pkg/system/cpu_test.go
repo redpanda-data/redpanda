@@ -109,7 +109,7 @@ power management:
 			if tt.before != nil {
 				require.NoError(st, tt.before(fs))
 			}
-			cpus, err := system.CpuInfo(fs)
+			cpus, err := system.GetCPUInfo(fs)
 			if tt.expectedErrMsg != "" {
 				require.Error(st, err)
 				require.Contains(st, err.Error(), tt.expectedErrMsg)

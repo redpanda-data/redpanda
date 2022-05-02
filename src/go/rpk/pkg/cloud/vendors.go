@@ -29,7 +29,7 @@ func vendors() map[string]vendor.Vendor {
 	return vendors
 }
 
-// Tries to initializes the vendors and returns the one available, or an error
+// AvailableVendor tries to initialize the vendors and returns the one available, or an error
 // if none could be initialized.
 func AvailableVendor() (vendor.InitializedVendor, error) {
 	return availableVendorFrom(vendors())

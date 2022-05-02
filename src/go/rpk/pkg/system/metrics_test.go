@@ -39,7 +39,7 @@ func TestGatherMetrics(t *testing.T) {
 		expectedErrMsg: "/proc/4194304/stat",
 	}, {
 		name:           "it should fail if the PID file doesn't exist",
-		expectedErrMsg: "the local redpanda process isn't running.",
+		expectedErrMsg: "the local redpanda process isn't running",
 	}, {
 		name: "it should fail if the CPU utime can't be parsed",
 		before: func(fs afero.Fs) error {

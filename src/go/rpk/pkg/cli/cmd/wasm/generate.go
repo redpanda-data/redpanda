@@ -56,30 +56,30 @@ func generateManifest(version string) map[string][]genFile {
 		"src":  {genFile{name: "main.js", content: template.WasmJs()}},
 		"test": {genFile{name: "main.test.js", content: template.WasmTestJs()}},
 		"": {
-			genFile{name: "package.json", content: template.PackageJson(version)},
+			genFile{name: "package.json", content: template.PackageJSON(version)},
 			genFile{name: "webpack.js", content: template.Webpack(), permission: 0o766},
 		},
 	}
 }
 
-const defApiVersion = "21.8.2"
+const defAPIVersion = "21.8.2"
 
-func getWasmApiVersion(wasmApi string) string {
+func getWasmAPIVersion(wasmAPI string) string {
 	var result []map[string]interface{}
-	if err := json.Unmarshal([]byte(wasmApi), &result); err != nil {
-		fmt.Printf("Can not parse json from npm search: '%s', Error: %s\n", wasmApi, err)
-		return defApiVersion
+	if err := json.Unmarshal([]byte(wasmAPI), &result); err != nil {
+		fmt.Printf("Can not parse json from npm search: '%s', Error: %s\n", wasmAPI, err)
+		return defAPIVersion
 	}
 
 	if len(result) != 1 {
 		fmt.Printf("Wrong npm search result: %v", result)
-		return defApiVersion
+		return defAPIVersion
 	}
 
 	version, ok := result[0]["version"].(string)
 	if !ok {
 		fmt.Printf("Can not get version from npm search result: %s\n", result)
-		return defApiVersion
+		return defAPIVersion
 	}
 	return version
 }
@@ -96,21 +96,21 @@ func latestClientApiVersion() string {
 	output, err := proc.RunWithSystemLdPath(2*time.Second, "npm", "search", "@vectorizedio/wasm-api", "--json")
 	if err != nil {
 		log.Error(err)
-		return defApiVersion
+		return defAPIVersion
 	}
 
-	wasmApi := strings.Join(output, "")
+	wasmAPI := strings.Join(output, "")
 
-	return getWasmApiVersion(wasmApi)
+	return getWasmAPIVersion(wasmAPI)
 }
 
 func executeGenerate(fs afero.Fs, path string, skipVersion bool) error {
 	var preexisting []string
 	var version string
 	if skipVersion {
-		version = defApiVersion
+		version = defAPIVersion
 	} else {
-		version = latestClientApiVersion()
+		version = latestClientAPIVersion()
 	}
 	for dir, templates := range generateManifest(version) {
 		for _, template := range templates {
@@ -125,7 +125,11 @@ func executeGenerate(fs afero.Fs, path string, skipVersion bool) error {
 		}
 	}
 	if len(preexisting) > 0 {
+<<<<<<< HEAD
 		return fmt.Errorf("files already exist; try using a new directory or removing the existing files, existing: %v", preexisting)
+=======
+		return fmt.Errorf("files %v already exist, avoiding generation", preexisting)
+>>>>>>> e551408f5 (rpk: enable revive var-naming linter rule)
 	}
 
 	if err := fs.MkdirAll(path, 0o755); err != nil {

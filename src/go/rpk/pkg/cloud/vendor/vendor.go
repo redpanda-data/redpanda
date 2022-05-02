@@ -16,5 +16,5 @@ type Vendor interface {
 
 type InitializedVendor interface {
 	Name() string
-	VmType() (string, error)
+	VMType() (string, error)
 }

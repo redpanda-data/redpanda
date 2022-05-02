@@ -257,7 +257,7 @@ func NewDisksIRQAffinityChecker(
 	cpuMask string,
 	mode irq.Mode,
 	blockDevices disk.BlockDevices,
-	cpuMasks irq.CpuMasks,
+	cpuMasks irq.CPUMasks,
 ) Checker {
 	return NewEqualityChecker(
 		DiskIRQsAffinityChecker,
@@ -282,7 +282,7 @@ func NewDirectoryIRQAffinityChecker(
 	cpuMask string,
 	mode irq.Mode,
 	blockDevices disk.BlockDevices,
-	cpuMasks irq.CpuMasks,
+	cpuMasks irq.CPUMasks,
 ) Checker {
 	return NewEqualityChecker(
 		DiskIRQsAffinityChecker,
@@ -310,7 +310,7 @@ func areDevicesIRQsDistributed(
 	cpuMask string,
 	mode irq.Mode,
 	blockDevices disk.BlockDevices,
-	cpuMasks irq.CpuMasks,
+	cpuMasks irq.CPUMasks,
 ) (bool, error) {
 	expectedDistribution, err := GetExpectedIRQsDistribution(
 		devices,

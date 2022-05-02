@@ -265,7 +265,7 @@ func TestStartCommand(t *testing.T) {
 					Port:    9643,
 				},
 			}}
-			expectedKafkaApi := []config.NamedSocketAddress{{
+			expectedKafkaAPI := []config.NamedSocketAddress{{
 				Name: "external",
 				SocketAddress: config.SocketAddress{
 					Address: "192.168.73.45",
@@ -278,9 +278,9 @@ func TestStartCommand(t *testing.T) {
 					Port:    9092,
 				},
 			}}
-			require.Exactly(st, 39, conf.Redpanda.Id)
-			require.Exactly(st, expectedAdmin, conf.Redpanda.AdminApi)
-			require.Exactly(st, expectedKafkaApi, conf.Redpanda.KafkaApi)
+			require.Exactly(st, 39, conf.Redpanda.ID)
+			require.Exactly(st, expectedAdmin, conf.Redpanda.AdminAPI)
+			require.Exactly(st, expectedKafkaAPI, conf.Redpanda.KafkaAPI)
 		},
 	}, {
 		name: "it should still save values passed through field-specific flags, and prioritize them if they overlap with values set with --set",
@@ -337,7 +337,7 @@ func TestStartCommand(t *testing.T) {
 					Port:    9643,
 				},
 			}}
-			expectedKafkaApi := []config.NamedSocketAddress{{
+			expectedKafkaAPI := []config.NamedSocketAddress{{
 				Name: "external",
 				SocketAddress: config.SocketAddress{
 					Address: "192.168.73.45",
@@ -350,7 +350,7 @@ func TestStartCommand(t *testing.T) {
 					Port:    9092,
 				},
 			}}
-			expectedAdvKafkaApi := []config.NamedSocketAddress{{
+			expectedAdvKafkaAPI := []config.NamedSocketAddress{{
 				Name: "plaintext",
 				SocketAddress: config.SocketAddress{
 					Address: "192.168.34.32",
@@ -358,10 +358,10 @@ func TestStartCommand(t *testing.T) {
 				},
 			}}
 			// The value set with --node-id should have been prioritized
-			require.Exactly(st, 42, conf.Redpanda.Id)
-			require.Exactly(st, expectedAdmin, conf.Redpanda.AdminApi)
-			require.Exactly(st, expectedKafkaApi, conf.Redpanda.KafkaApi)
-			require.Exactly(st, expectedAdvKafkaApi, conf.Redpanda.AdvertisedKafkaApi)
+			require.Exactly(st, 42, conf.Redpanda.ID)
+			require.Exactly(st, expectedAdmin, conf.Redpanda.AdminAPI)
+			require.Exactly(st, expectedKafkaAPI, conf.Redpanda.KafkaAPI)
+			require.Exactly(st, expectedAdvKafkaAPI, conf.Redpanda.AdvertisedKafkaAPI)
 		},
 	}, {
 		name: "it should evaluate config sources in this order: 1. config file, 2. key-value pairs passed with --set, 3. env vars, 4. specific flags",
@@ -395,7 +395,7 @@ func TestStartCommand(t *testing.T) {
 			require.NoError(st, err)
 			// The value set through the --kafka-addr flag should
 			// have been picked.
-			expectedKafkaApi := []config.NamedSocketAddress{{
+			expectedKafkaAPI := []config.NamedSocketAddress{{
 				Name: "flag",
 				SocketAddress: config.SocketAddress{
 					Address: "192.168.34.3",
@@ -403,7 +403,7 @@ func TestStartCommand(t *testing.T) {
 				},
 			}}
 			// The value set with --kafka-addr should have been prioritized
-			require.Exactly(st, expectedKafkaApi, conf.Redpanda.KafkaApi)
+			require.Exactly(st, expectedKafkaAPI, conf.Redpanda.KafkaAPI)
 		},
 	}, {
 		name: "it should write the default config file path if --config" +
@@ -446,7 +446,7 @@ func TestStartCommand(t *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(path)
 			require.NoError(st, err)
-			require.Exactly(st, 34, conf.Redpanda.Id)
+			require.Exactly(st, 34, conf.Redpanda.ID)
 		},
 	}, {
 		name: "it should write the default node ID if --node-id isn't passed and the config file doesn't exist",
@@ -460,7 +460,7 @@ func TestStartCommand(t *testing.T) {
 			conf, err := mgr.Read(path)
 			require.NoError(st, err)
 			// Check that the generated config is as expected.
-			require.Exactly(st, config.Default().Redpanda.Id, conf.Redpanda.Id)
+			require.Exactly(st, config.Default().Redpanda.ID, conf.Redpanda.ID)
 		},
 	}, {
 		name: "it should leave redpanda.node_id untouched if --node-id wasn't passed",
@@ -470,7 +470,7 @@ func TestStartCommand(t *testing.T) {
 		before: func(fs afero.Fs) error {
 			mgr := config.NewManager(fs)
 			conf := config.Default()
-			conf.Redpanda.Id = 98
+			conf.Redpanda.ID = 98
 			return mgr.Write(conf)
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
@@ -480,7 +480,7 @@ func TestStartCommand(t *testing.T) {
 			require.Exactly(
 				st,
 				98,
-				conf.Redpanda.Id,
+				conf.Redpanda.ID,
 			)
 		},
 	}, {
@@ -866,7 +866,7 @@ func TestStartCommand(t *testing.T) {
 			require.Exactly(
 				st,
 				expectedAddr,
-				conf.Redpanda.KafkaApi,
+				conf.Redpanda.KafkaAPI,
 			)
 		},
 	}, {
@@ -889,7 +889,7 @@ func TestStartCommand(t *testing.T) {
 			require.Exactly(
 				st,
 				expectedAddr,
-				conf.Redpanda.KafkaApi,
+				conf.Redpanda.KafkaAPI,
 			)
 		},
 	}, {
@@ -913,7 +913,7 @@ func TestStartCommand(t *testing.T) {
 			require.Exactly(
 				st,
 				expectedAddr,
-				conf.Redpanda.KafkaApi,
+				conf.Redpanda.KafkaAPI,
 			)
 		},
 	}, {
@@ -942,7 +942,7 @@ func TestStartCommand(t *testing.T) {
 			require.Exactly(
 				st,
 				expectedAddr,
-				conf.Redpanda.KafkaApi,
+				conf.Redpanda.KafkaAPI,
 			)
 		},
 	}, {
@@ -978,7 +978,7 @@ func TestStartCommand(t *testing.T) {
 			require.Exactly(
 				st,
 				expectedAddr,
-				conf.Redpanda.KafkaApi,
+				conf.Redpanda.KafkaAPI,
 			)
 		},
 	}, {
@@ -989,7 +989,7 @@ func TestStartCommand(t *testing.T) {
 		before: func(fs afero.Fs) error {
 			mgr := config.NewManager(fs)
 			conf := config.Default()
-			conf.Redpanda.KafkaApi = []config.NamedSocketAddress{{
+			conf.Redpanda.KafkaAPI = []config.NamedSocketAddress{{
 				SocketAddress: config.SocketAddress{
 					Address: "192.168.33.33",
 					Port:    9892,
@@ -1011,7 +1011,7 @@ func TestStartCommand(t *testing.T) {
 			require.Exactly(
 				st,
 				expectedAddr,
-				conf.Redpanda.KafkaApi,
+				conf.Redpanda.KafkaAPI,
 			)
 		},
 	}, {
@@ -1034,7 +1034,7 @@ func TestStartCommand(t *testing.T) {
 			require.Exactly(
 				st,
 				expectedAddr,
-				conf.Redpanda.AdvertisedKafkaApi,
+				conf.Redpanda.AdvertisedKafkaAPI,
 			)
 		},
 	}, {
@@ -1057,7 +1057,7 @@ func TestStartCommand(t *testing.T) {
 			require.Exactly(
 				st,
 				expectedAddr,
-				conf.Redpanda.AdvertisedKafkaApi,
+				conf.Redpanda.AdvertisedKafkaAPI,
 			)
 		},
 	}, {
@@ -1093,7 +1093,7 @@ func TestStartCommand(t *testing.T) {
 			require.Exactly(
 				st,
 				expectedAddr,
-				conf.Redpanda.AdvertisedKafkaApi,
+				conf.Redpanda.AdvertisedKafkaAPI,
 			)
 		},
 	}, {
@@ -1104,7 +1104,7 @@ func TestStartCommand(t *testing.T) {
 		before: func(fs afero.Fs) error {
 			mgr := config.NewManager(fs)
 			conf := config.Default()
-			conf.Redpanda.AdvertisedKafkaApi = []config.NamedSocketAddress{{
+			conf.Redpanda.AdvertisedKafkaAPI = []config.NamedSocketAddress{{
 				SocketAddress: config.SocketAddress{
 					Address: "192.168.33.33",
 					Port:    9892,
@@ -1126,7 +1126,7 @@ func TestStartCommand(t *testing.T) {
 			require.Exactly(
 				st,
 				expectedAddr,
-				conf.Redpanda.AdvertisedKafkaApi,
+				conf.Redpanda.AdvertisedKafkaAPI,
 			)
 		},
 	}, {

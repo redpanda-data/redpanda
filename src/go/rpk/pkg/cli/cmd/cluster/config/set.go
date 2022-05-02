@@ -80,7 +80,7 @@ If an empty string is given as the value, the property is reset to its default.`
 			}
 
 			result, err := client.PatchClusterConfig(upsert, remove)
-			if he := (*admin.HttpError)(nil); errors.As(err, &he) {
+			if he := (*admin.HTTPError)(nil); errors.As(err, &he) {
 				// Special case 400 (validation) errors with friendly output
 				// about which configuration properties were invalid.
 				if he.Response.StatusCode == 400 {

@@ -99,7 +99,7 @@ func signalAndWait(fs afero.Fs, pid int, timeout time.Duration) error {
 	var f func(int, []syscall.Signal) error
 	f = func(pid int, signals []syscall.Signal) error {
 		if len(signals) == 0 {
-			return errors.New("process couldn't be terminated.")
+			return errors.New("process couldn't be terminated")
 		}
 		signal := signals[0]
 		pending := signals[1:]

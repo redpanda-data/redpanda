@@ -126,7 +126,7 @@ func TestTHPTunerDirectExecutor(t *testing.T) {
 
 func TestTHPCheckID(t *testing.T) {
 	c := tuners.NewTransparentHugePagesChecker(afero.NewMemMapFs())
-	require.Equal(t, tuners.CheckerID(tuners.TransparentHugePagesChecker), c.Id())
+	require.Equal(t, tuners.CheckerID(tuners.TransparentHugePagesChecker), c.ID())
 }
 
 func TestTHPCheck(t *testing.T) {

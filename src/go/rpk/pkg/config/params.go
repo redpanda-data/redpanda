@@ -240,11 +240,11 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 				Address: "0.0.0.0",
 				Port:    33145,
 			},
-			KafkaApi: []NamedSocketAddress{{SocketAddress: SocketAddress{
+			KafkaAPI: []NamedSocketAddress{{SocketAddress: SocketAddress{
 				Address: "0.0.0.0",
 				Port:    9092,
 			}}},
-			AdminApi: []NamedSocketAddress{{SocketAddress: SocketAddress{
+			AdminAPI: []NamedSocketAddress{{SocketAddress: SocketAddress{
 				Address: "0.0.0.0",
 				Port:    9644,
 			}}},
@@ -321,14 +321,14 @@ func (p *Params) readConfig(fs afero.Fs, c *Config) error {
 // loaded file.
 func (c *Config) backcompat() {
 	r := &c.Rpk
-	if r.KafkaApi.TLS == nil {
-		r.KafkaApi.TLS = r.TLS
+	if r.KafkaAPI.TLS == nil {
+		r.KafkaAPI.TLS = r.TLS
 	}
-	if r.KafkaApi.SASL == nil {
-		r.KafkaApi.SASL = r.SASL
+	if r.KafkaAPI.SASL == nil {
+		r.KafkaAPI.SASL = r.SASL
 	}
-	if r.AdminApi.TLS == nil {
-		r.AdminApi.TLS = r.TLS
+	if r.AdminAPI.TLS == nil {
+		r.AdminAPI.TLS = r.TLS
 	}
 }
 
@@ -349,8 +349,8 @@ func splitCommaIntoStrings(in string, dst *[]string) error {
 // that we result in our priority order: flag, env, file).
 func (p *Params) processOverrides(c *Config) error {
 	r := &c.Rpk
-	k := &r.KafkaApi
-	a := &r.AdminApi
+	k := &r.KafkaAPI
+	a := &r.AdminAPI
 
 	// We have three "make" functions that initialize pointer values if
 	// necessary.
@@ -472,17 +472,17 @@ func (p *Params) processOverrides(c *Config) error {
 func (c *Config) addUnsetDefaults() {
 	r := &c.Rpk
 
-	brokers := r.KafkaApi.Brokers
-	defer func() { r.KafkaApi.Brokers = brokers }()
-	if len(brokers) == 0 && len(c.Redpanda.KafkaApi) > 0 {
-		b0 := c.Redpanda.KafkaApi[0]
+	brokers := r.KafkaAPI.Brokers
+	defer func() { r.KafkaAPI.Brokers = brokers }()
+	if len(brokers) == 0 && len(c.Redpanda.KafkaAPI) > 0 {
+		b0 := c.Redpanda.KafkaAPI[0]
 		brokers = []string{net.JoinHostPort(b0.Address, strconv.Itoa(b0.Port))}
 	}
 	if len(brokers) == 0 {
 		brokers = []string{"127.0.0.1:9092"}
 	}
 
-	if len(r.AdminApi.Addresses) == 0 {
-		r.AdminApi.Addresses = []string{"127.0.0.1:9644"}
+	if len(r.AdminAPI.Addresses) == 0 {
+		r.AdminAPI.Addresses = []string{"127.0.0.1:9644"}
 	}
 }

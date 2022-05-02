@@ -149,11 +149,11 @@ func TestPurge(t *testing.T) {
 						string,
 						types.ContainerRemoveOptions,
 					) error {
-						return errors.New("Not going anywhere!")
+						return errors.New("not going anywhere")
 					},
 				}, nil
 			},
-			expectedErrMsg: "Not going anywhere!",
+			expectedErrMsg: "not going anywhere",
 		},
 		{
 			name: "it should fail if it fails to delete the network",

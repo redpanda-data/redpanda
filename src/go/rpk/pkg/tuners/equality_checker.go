@@ -41,7 +41,7 @@ type equalityChecker struct {
 	getCurrent func() (interface{}, error)
 }
 
-func (c *equalityChecker) Id() CheckerID {
+func (c *equalityChecker) ID() CheckerID {
 	return c.id
 }
 
@@ -59,7 +59,7 @@ func (c *equalityChecker) GetRequiredAsString() string {
 
 func (c *equalityChecker) Check() *CheckResult {
 	res := &CheckResult{
-		CheckerId: c.Id(),
+		CheckerID: c.ID(),
 		Desc:      c.GetDesc(),
 		Severity:  c.GetSeverity(),
 		Required:  c.GetRequiredAsString(),

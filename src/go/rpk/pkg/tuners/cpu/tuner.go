@@ -24,7 +24,7 @@ import (
 )
 
 type tuner struct {
-	cpuMasks      irq.CpuMasks
+	cpuMasks      irq.CPUMasks
 	grub          system.Grub
 	rebootAllowed bool
 	cores         uint
@@ -33,8 +33,8 @@ type tuner struct {
 	executor      executors.Executor
 }
 
-func NewCpuTuner(
-	cpuMasks irq.CpuMasks,
+func NewCPUTuner(
+	cpuMasks irq.CPUMasks,
 	grub system.Grub,
 	fs afero.Fs,
 	rebootAllowed bool,
