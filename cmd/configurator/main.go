@@ -129,7 +129,7 @@ func main() {
 		}
 	}
 
-	cfg.Redpanda.Id = int(hostIndex)
+	cfg.Redpanda.ID = int(hostIndex)
 
 	// First Redpanda node need to have cleared seed servers in order
 	// to form raft group 0
@@ -154,12 +154,12 @@ func main() {
 var errInternalPortMissing = errors.New("port configration is missing internal port")
 
 func getInternalKafkaAPIPort(cfg *config.Config) (int, error) {
-	for _, l := range cfg.Redpanda.KafkaApi {
+	for _, l := range cfg.Redpanda.KafkaAPI {
 		if l.Name == "kafka" {
 			return l.Port, nil
 		}
 	}
-	return 0, fmt.Errorf("%w %v", errInternalPortMissing, cfg.Redpanda.KafkaApi)
+	return 0, fmt.Errorf("%w %v", errInternalPortMissing, cfg.Redpanda.KafkaAPI)
 }
 
 func getInternalProxyAPIPort(cfg *config.Config) int {
@@ -192,7 +192,7 @@ func getNode(nodeName string) (*corev1.Node, error) {
 func registerAdvertisedKafkaAPI(
 	c *configuratorConfig, cfg *config.Config, index brokerID, kafkaAPIPort int,
 ) error {
-	cfg.Redpanda.AdvertisedKafkaApi = []config.NamedSocketAddress{
+	cfg.Redpanda.AdvertisedKafkaAPI = []config.NamedSocketAddress{
 		{
 			SocketAddress: config.SocketAddress{
 				Address: c.hostName + "." + c.svcFQDN,
@@ -207,7 +207,7 @@ func registerAdvertisedKafkaAPI(
 	}
 
 	if len(c.subdomain) > 0 {
-		cfg.Redpanda.AdvertisedKafkaApi = append(cfg.Redpanda.AdvertisedKafkaApi, config.NamedSocketAddress{
+		cfg.Redpanda.AdvertisedKafkaAPI = append(cfg.Redpanda.AdvertisedKafkaAPI, config.NamedSocketAddress{
 			SocketAddress: config.SocketAddress{
 				Address: fmt.Sprintf("%d.%s", index, c.subdomain),
 				Port:    c.hostPort,
@@ -222,7 +222,7 @@ func registerAdvertisedKafkaAPI(
 		return fmt.Errorf("unable to retrieve node: %w", err)
 	}
 
-	cfg.Redpanda.AdvertisedKafkaApi = append(cfg.Redpanda.AdvertisedKafkaApi, config.NamedSocketAddress{
+	cfg.Redpanda.AdvertisedKafkaAPI = append(cfg.Redpanda.AdvertisedKafkaAPI, config.NamedSocketAddress{
 		SocketAddress: config.SocketAddress{
 			Address: networking.GetPreferredAddress(node, c.externalConnectivityAddressType),
 			Port:    c.hostPort,

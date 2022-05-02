@@ -237,8 +237,8 @@ func (r *ConfigMapResource) CreateConfiguration(
 	cr := &cfg.NodeConfiguration.Redpanda
 
 	internalListener := r.pandaCluster.InternalListener()
-	cr.KafkaApi = []config.NamedSocketAddress{} // we don't want to inherit default kafka port
-	cr.KafkaApi = append(cr.KafkaApi, config.NamedSocketAddress{
+	cr.KafkaAPI = []config.NamedSocketAddress{} // we don't want to inherit default kafka port
+	cr.KafkaAPI = append(cr.KafkaAPI, config.NamedSocketAddress{
 		SocketAddress: config.SocketAddress{
 			Address: "0.0.0.0",
 			Port:    internalListener.Port,
@@ -247,7 +247,7 @@ func (r *ConfigMapResource) CreateConfiguration(
 	})
 
 	if r.pandaCluster.ExternalListener() != nil {
-		cr.KafkaApi = append(cr.KafkaApi, config.NamedSocketAddress{
+		cr.KafkaAPI = append(cr.KafkaAPI, config.NamedSocketAddress{
 			SocketAddress: config.SocketAddress{
 				Address: "0.0.0.0",
 				Port:    calculateExternalPort(internalListener.Port, r.pandaCluster.ExternalListener().Port),
@@ -262,17 +262,17 @@ func (r *ConfigMapResource) CreateConfiguration(
 		Port:    clusterCRPortOrRPKDefault(c.RPCServer.Port, cr.RPCServer.Port),
 	}
 
-	cr.AdminApi[0].Port = clusterCRPortOrRPKDefault(r.pandaCluster.AdminAPIInternal().Port, cr.AdminApi[0].Port)
-	cr.AdminApi[0].Name = AdminPortName
+	cr.AdminAPI[0].Port = clusterCRPortOrRPKDefault(r.pandaCluster.AdminAPIInternal().Port, cr.AdminAPI[0].Port)
+	cr.AdminAPI[0].Name = AdminPortName
 	if r.pandaCluster.AdminAPIExternal() != nil {
 		externalAdminAPI := config.NamedSocketAddress{
 			SocketAddress: config.SocketAddress{
-				Address: cr.AdminApi[0].Address,
-				Port:    cr.AdminApi[0].Port + 1,
+				Address: cr.AdminAPI[0].Address,
+				Port:    cr.AdminAPI[0].Port + 1,
 			},
 			Name: AdminPortExternalName,
 		}
-		cr.AdminApi = append(cr.AdminApi, externalAdminAPI)
+		cr.AdminAPI = append(cr.AdminAPI, externalAdminAPI)
 	}
 
 	cr.DeveloperMode = c.DeveloperMode
@@ -295,7 +295,7 @@ func (r *ConfigMapResource) CreateConfiguration(
 		if tlsListener.TLS.RequireClientAuth {
 			tls.TruststoreFile = fmt.Sprintf("%s/%s", tlsKafkaAPIDirCA, cmetav1.TLSCAKey)
 		}
-		cr.KafkaApiTLS = []config.ServerTLS{
+		cr.KafkaAPITLS = []config.ServerTLS{
 			tls,
 		}
 	}
@@ -317,7 +317,7 @@ func (r *ConfigMapResource) CreateConfiguration(
 		if adminAPITLSListener.TLS.RequireClientAuth {
 			adminTLS.TruststoreFile = fmt.Sprintf("%s/%s", tlsAdminAPIDirCA, cmetav1.TLSCAKey)
 		}
-		cr.AdminApiTLS = append(cr.AdminApiTLS, adminTLS)
+		cr.AdminAPITLS = append(cr.AdminAPITLS, adminTLS)
 	}
 
 	if r.pandaCluster.Spec.CloudStorage.Enabled {

@@ -361,7 +361,7 @@ func mapStatusToCondition(
 				Type:    redpandav1alpha1.ClusterConfiguredConditionType,
 				Status:  corev1.ConditionFalse,
 				Reason:  redpandav1alpha1.ClusterConfiguredReasonUpdating,
-				Message: fmt.Sprintf("Node %d needs restart", nodeStatus.NodeId),
+				Message: fmt.Sprintf("Node %d needs restart", nodeStatus.NodeID),
 			}
 		} else if configVersion != 0 && nodeStatus.ConfigVersion != configVersion {
 			condition = &redpandav1alpha1.ClusterCondition{
@@ -399,7 +399,7 @@ func needsRestart(clusterStatus admin.ConfigStatusResponse) bool {
 func tryMapErrorToCondition(
 	err error,
 ) (*redpandav1alpha1.ClusterCondition, error) {
-	var httpErr *admin.HttpError
+	var httpErr *admin.HTTPError
 	if errors.As(err, &httpErr) {
 		if httpErr.Response != nil && httpErr.Response.StatusCode == http.StatusBadRequest {
 			return &redpandav1alpha1.ClusterCondition{
