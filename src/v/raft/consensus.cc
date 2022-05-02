@@ -504,16 +504,13 @@ void consensus::dispatch_recovery(follower_index_metadata& idx) {
 
 ss::future<result<model::offset>> consensus::linearizable_barrier() {
     using ret_t = result<model::offset>;
-    struct state_snapshot {
-        model::offset linearizable_offset;
-        model::term_id term;
-    };
 
     ss::semaphore_units<> u = co_await _op_lock.get_units();
 
     if (_vstate != vote_state::leader) {
         co_return result<model::offset>(make_error_code(errc::not_leader));
     }
+    co_await flush_log();
     // store current commit index
     auto cfg = config();
     auto dirty_offset = _log.offsets().dirty_offset;
@@ -537,7 +534,7 @@ ss::future<result<model::offset>> consensus::linearizable_barrier() {
           meta(),
           model::make_memory_record_batch_reader(
             ss::circular_buffer<model::record_batch>{}),
-          append_entries_request::flush_after_append::no);
+          append_entries_request::flush_after_append::yes);
         auto seq = next_follower_sequence(target);
         sequences.emplace(target, seq);
 
@@ -558,9 +555,9 @@ ss::future<result<model::offset>> consensus::linearizable_barrier() {
         send_futures.push_back(std::move(f));
     });
     // release semaphore
-    // snapshot taken under the semaphore
-    state_snapshot snapshot{
-      .linearizable_offset = _commit_index, .term = _term};
+    // term snapshot taken under the semaphore
+    auto term = _term;
+
     u.return_all();
 
     // wait for responsens in background
@@ -574,7 +571,7 @@ ss::future<result<model::offset>> consensus::linearizable_barrier() {
                 return true;
             }
             if (auto it = _fstats.find(id); it != _fstats.end()) {
-                return it->second.last_received_seq >= sequences[id];
+                return it->second.last_successful_received_seq >= sequences[id];
             }
             return false;
         });
@@ -583,18 +580,19 @@ ss::future<result<model::offset>> consensus::linearizable_barrier() {
     try {
         // we do not hold the lock while waiting
         co_await _follower_reply.wait(
-          [this, snapshot, &majority_sequences_updated] {
-              return majority_sequences_updated() || _term != snapshot.term;
+          [this, term, &majority_sequences_updated] {
+              return majority_sequences_updated() || _term != term;
           });
     } catch (const ss::broken_condition_variable& e) {
         co_return ret_t(make_error_code(errc::shutting_down));
     }
 
     // term have changed, not longer a leader
-    if (snapshot.term != _term) {
+    if (term != _term) {
         co_return ret_t(make_error_code(errc::not_leader));
     }
-    co_return ret_t(snapshot.linearizable_offset);
+    vlog(_ctxlog.trace, "Linearizble offset: {}", _commit_index);
+    co_return ret_t(_commit_index);
 }
 
 ss::future<result<replicate_result>> chain_stages(replicate_stages stages) {
@@ -2075,7 +2073,11 @@ append_entries_reply consensus::make_append_entries_reply(
 }
 
 ss::future<> consensus::flush_log() {
+    if (!_has_pending_flushes) {
+        return ss::now();
+    }
     _probe.log_flushed();
+    _has_pending_flushes = false;
     auto flushed_up_to = _log.offsets().dirty_offset;
     return _log.flush().then([this, flushed_up_to] {
         auto lstats = _log.offsets();
@@ -2099,7 +2101,6 @@ ss::future<> consensus::flush_log() {
           _flushed_offset,
           lstats,
           _log);
-        _has_pending_flushes = false;
     });
 }
 
