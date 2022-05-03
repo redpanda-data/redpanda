@@ -1023,8 +1023,15 @@ class RedpandaService(Service):
             lambda: len(self.pids(node)) == 0,
             timeout_sec=timeout,
             err_msg=f"Redpanda node failed to stop in {timeout} seconds")
+        self.remove_from_started_nodes(node)
+
+    def remove_from_started_nodes(self, node):
         if node in self._started:
             self._started.remove(node)
+
+    def add_to_started_nodes(self, node):
+        if node not in self._started:
+            self._started.append(node)
 
     def clean(self, **kwargs):
         super().clean(**kwargs)
