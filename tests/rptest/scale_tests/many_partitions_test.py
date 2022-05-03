@@ -8,13 +8,10 @@
 # by the Apache License, Version 2.0
 
 import time
-import psutil
 
 from rptest.services.cluster import cluster
-from rptest.util import Scale
 from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
-from ducktape.cluster.cluster_spec import ClusterSpec
 
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.tests.redpanda_test import RedpandaTest
@@ -22,41 +19,19 @@ from rptest.services.rpk_producer import RpkProducer
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.services.redpanda import ResourceSettings, RESTART_LOG_ALLOW_LIST
 
-# This parameter is low today, to constrain the resources required
-# for the test (not just memory, but how much IO we have to do to
-# fill it).  Current test infrastructure does not cope well with many
-# gigabytes of writes and thousands of partitions, so we test the per-MB
-# partition limits with tiny node memory instead.
-NODE_MEMORY_MB = 1024
-
 # An unreasonably large fetch request: we submit requests like this in the
 # expectation that the server will properly clamp the amount of data it
 # actually tries to marshal into a response.
 # franz-go default maxBrokerReadBytes -- --fetch-max-bytes may not exceed this
 BIG_FETCH = 104857600
 
-# This node size is selected to be big enough to have
-# many thousands of partitions, but small enough to
-# execute on a typical developer workstation with 32GB
-# of memory.
-resource_settings = ResourceSettings(
-    num_cpus=2,
-    memory_mb=NODE_MEMORY_MB,
-    # Test nodes and developer workstations may have slow fsync.  For this test
-    # we need things to be consistently fast, so disable fsync (this test
-    # has nothing to do with verifying the correctness of the storage layer)
-    bypass_fsync=True)
-
-# (with idempotency enabled by default) the first produce request creates a system
-# topic with a single partition (id_allocator) so when we want to test redpanda
-# at maximum capacity we should account for the extra partition
-MAX_NUM_PARTITIONS = NODE_MEMORY_MB - 1
-
-# Even on dedicate nodes, don't go above this partition count.  This limit reflects
+# The maximum partition count that's stable on a three node redpanda cluster
+# with replicas=3.
+# Don't go above this partition count.  This limit reflects
 # issues (at time of writing in redpanda 22.1) around disk contention on node startup,
 # where ducktape's startup threshold is violated by the time it takes systems with
 # more partitions to replay recent content on startup.
-HARD_PARTITION_LIMIT = 5000
+HARD_PARTITION_LIMIT = 10000
 
 
 class ManyPartitionsTest(RedpandaTest):
@@ -71,6 +46,7 @@ class ManyPartitionsTest(RedpandaTest):
         super(ManyPartitionsTest, self).__init__(
             test_ctx,
             *args,
+            num_brokers=6,
             extra_rp_conf={
                 # It's not ideal that the user would have to specify these tuning
                 # properties to run with many partitions, but it is the current situation.
@@ -90,7 +66,6 @@ class ManyPartitionsTest(RedpandaTest):
                 'replicate_append_timeout_ms': 9000,
                 'recovery_append_timeout_ms': 15000,
             },
-            resource_settings=resource_settings,
             # Usually tests run with debug or trace logs, but when testing resource
             # limits we want to test in a more production-like configuration.
             log_level='info',
@@ -148,13 +123,9 @@ class ManyPartitionsTest(RedpandaTest):
         # ResourceSettings based on its parameters.
         pass
 
-    @cluster(num_nodes=8, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    @parametrize(n_partitions=100,
-                 n_topics=1)  # 100 partitions (baseline non-stressed test)
-    @parametrize(n_partitions=int(NODE_MEMORY_MB / 10),
-                 n_topics=10)  # 1 partition per MB spread across 10 topics
-    @parametrize(n_partitions=MAX_NUM_PARTITIONS,
-                 n_topics=1)  # 1 partition per M in one topic
+    @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    @parametrize(n_topics=1)  # All in one topic
+    @parametrize(n_topics=10)  # Split up between several topics
     def test_many_partitions(self, n_partitions: int, n_topics: int):
         """
         Validate that redpanda works with partition counts close to its resource
@@ -170,7 +141,7 @@ class ManyPartitionsTest(RedpandaTest):
           would exhaust ram (check enforcement of kafka_max_bytes_per_fetch).
         * Consume all the data from the topic
 
-        * Restart nodes 10 times (check that recovery works, and that the additional
+        * Restart nodes several times (check that recovery works, and that the additional
           log segments created by rolling segments on restart do not cause us
           to exhaust resources.
 
@@ -178,67 +149,51 @@ class ManyPartitionsTest(RedpandaTest):
           a functional state.
         """
 
-        # For release testing, ramp up the max partition count to whatever
-        # the memory size of the nodes allows.
-        release_scale_test = n_partitions == MAX_NUM_PARTITIONS and self.scale.release
-        if release_scale_test:
-            self.logger.info(f"Running release scale test")
-            if self.redpanda.dedicated_nodes:
-                # Clear resource limits: run redpanda using all available
-                # resources on the test node.
-                self.redpanda.set_resource_settings(ResourceSettings())
+        # This test requires dedicated system resources to run reliably.
+        assert self.redpanda.dedicated_nodes
 
-            n_partitions = min(
-                int(self.redpanda.get_node_memory_mb() * 0.9) - 1,
-                HARD_PARTITION_LIMIT)
-        self.logger.info(
-            f"Running partition scale test with {n_partitions} partitions")
-
-        self.redpanda.start()
+        # Scale tests are not run on debug builds
+        assert not self.debug_mode
 
         replication_factor = 3
+        node_count = len(self.redpanda.nodes)
 
-        # Do a phony allocation of all the non-redpanda nodes, so that we do not
-        # fail the test in CI from having asked for nodes we didn't use.
-        #
-        # - We requested 8 nodes with @cluster but will only use 3.
-        # - We're asking for extra nodes to get a bigger share of the test
-        #   runner's resources, as it overcommits CPU and memory, but this test
-        #   really requires the CPUs+memory that it's asking for.
-        alloc_nodes = self._ctx.cluster.alloc(ClusterSpec.simple_linux(5))
-        self._ctx.cluster.free(alloc_nodes)
+        # If we run on nodes with more memory than our HARD_PARTITION_LIMIT, then
+        # artificially throttle the nodes' memory to avoid the test being too easy.
+        # We are validating that the system works up to the limit, and that it works
+        # up to the limit within the default per-partition memory footprint.
+        node_memory = self.redpanda.get_node_memory_mb()
 
-        # Only run on release mode builds.  Debug builds are far too slow to handle
-        # large partition counts.
-        if self.debug_mode:
-            self.logger.info(
-                "Skipping test in debug mode (requires release build)")
-            return
+        # HARD_PARTITION_LIMIT is for a 3 node cluster, adjust according to
+        # the number of nodes in this cluster.
+        partition_limit = HARD_PARTITION_LIMIT * (node_count / 3)
 
-        # Only run if the test node is large enough to accomodate us.
-        # - This currently assumes the test runner is on the same physical node
-        #   that will run the redpanda containers.  Will need revising when tests
-        #   are improved to run across multiple hosts.
-        # - Relies on our container environment telling us the host's real memory size,
-        #   rather than just what's assigned to this container (which is the case with
-        #   podman and docker at time of writing)
-        if self.redpanda.dedicated_nodes:
-            total_memory = self.redpanda.get_node_memory_mb() * 3 * 1024 * 1024
-        else:
-            total_memory = psutil.virtual_memory().total
-        self.logger.info(f"Total memory: {total_memory}")
-        if resource_settings.memory_mb is not None and total_memory < resource_settings.memory_mb * 1024 * 1024 * 3:
-            if self.ci_mode:
-                raise RuntimeError(
-                    f"Too little memory {total_memory} on test machine")
-            else:
-                self.logger.warn(
-                    f"Skipping resource intensive test, running on low-memory machine with {total_memory} bytes of RAM"
-                )
-                return
+        mb_per_partition = 1
 
-        disk_usage = psutil.disk_usage('/var')
-        self.logger.info(f"Disk: {disk_usage}")
+        # How much memory to reserve for internal partitions, such as
+        # id_allocator.  This is intentionally higher than needed, to
+        # avoid having to update this test each time a new internal topic
+        # is added.
+        internal_partition_slack = 10
+
+        # Clamp memory if nodes have more memory than should be required
+        # to exercise the partition limit.
+        if node_memory > HARD_PARTITION_LIMIT / mb_per_partition:
+            resource_settings = ResourceSettings(
+                memory_mb=mb_per_partition *
+                (HARD_PARTITION_LIMIT + internal_partition_slack))
+            self.redpanda.set_resource_settings(resource_settings)
+        elif node_memory < HARD_PARTITION_LIMIT / mb_per_partition:
+            raise RuntimeError(f"Node memory is too small ({node_memory}MB)")
+
+        # Partitions per topic
+        n_partitions = partition_limit / n_topics
+
+        self.logger.info(
+            f"Running partition scale test with {n_partitions} partitions on {n_topics} topics"
+        )
+
+        self.redpanda.start()
 
         topic_names = [f"scale_{i:06d}" for i in range(0, n_topics)]
         for tn in topic_names:
@@ -275,22 +230,17 @@ class ManyPartitionsTest(RedpandaTest):
             int((self.redpanda.get_node_memory_mb() * 1024 * 1024) / n_topics),
             fetch_mb_per_partition * n_partitions) * 2
 
-        if release_scale_test:
+        if self.scale.release:
             # Release tests can be much longer running: 10x the amount of
             # data we fire through the system
-            write_bytes_per_topic *= 5
+            write_bytes_per_topic *= 10
 
         msg_size = 128 * 1024
         msg_count_per_topic = int((write_bytes_per_topic / msg_size))
 
         # Approx time to write or read all messages, for timeouts
-        # This bandwidth guess is very low to enable running on heavily contended
-        # test nodes in buildkite.
-        expect_bandwidth = 10 * 1024 * 1024
-        if release_scale_test:
-            # Release scale tests run on machines with dedicated drives,
-            # which we assume go at least at 100MB/s, roughly like a an EC2 i3.large
-            expect_bandwidth = 100 * 1024 * 1024
+        # Pessimistic bandwidth guess, based on smallest i3en instance type.
+        expect_bandwidth = 100 * 1024 * 1024
 
         expect_transmit_time = int(write_bytes_per_topic / expect_bandwidth)
 
@@ -328,11 +278,10 @@ class ManyPartitionsTest(RedpandaTest):
             self.logger.info(
                 f"Open files before restarts on {node.name}: {file_count}")
 
-        disk_usage = psutil.disk_usage('/var')
-        self.logger.info(f"Disk before restarts: {disk_usage}")
-
-        # Higher than default timeout for node starts, because we're replaying a bunch.
-        expect_start_time = 30
+        # Over large partition counts, the startup time is linear with the
+        # amount of data we played in, because no one partition gets far
+        # enough to snapshot.
+        expect_start_time = expect_transmit_time
 
         # We know that after many restarts, the file handle count grows in a bad way.  Just
         # do a few restarts, so that we are confident that the replay memory footprint from
@@ -357,9 +306,6 @@ class ManyPartitionsTest(RedpandaTest):
                 self.logger.info(
                     f"Open files after {i} restarts on {node.name}: {file_count}"
                 )
-
-        disk_usage = psutil.disk_usage('/var')
-        self.logger.info(f"Disk after restarts: {disk_usage}")
 
         # With increased overhead from all those segment rolls during restart,
         # check that consume still works.
