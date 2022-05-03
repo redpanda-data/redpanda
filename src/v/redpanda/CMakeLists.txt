@@ -9,6 +9,7 @@ set(swags
   partition
   hbadger
   transaction
+  cluster
   debug)
 
 set(swag_files)

@@ -58,6 +58,7 @@ func NewClusterCommand(fs afero.Fs) *cobra.Command {
 
 	command.AddCommand(config.NewConfigCommand(fs))
 	command.AddCommand(maintenance.NewMaintenanceCommand(fs))
+	command.AddCommand(cluster.NewHealthOverviewCommand(fs))
 
 	return command
 }

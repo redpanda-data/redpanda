@@ -77,4 +77,11 @@ health_monitor_frontend::get_node_drain_status(
     });
 }
 
+ss::future<cluster_health_overview>
+health_monitor_frontend::get_cluster_health_overview(
+  model::timeout_clock::time_point deadline) {
+    return dispatch_to_backend([deadline](health_monitor_backend& be) {
+        return be.get_cluster_health_overview(deadline);
+    });
+}
 } // namespace cluster

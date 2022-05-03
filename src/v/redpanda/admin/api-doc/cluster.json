@@ -1,0 +1,63 @@
+{
+    "apiVersion": "0.0.1",
+    "swaggerVersion": "1.2",
+    "basePath": "/v1",
+    "resourcePath": "/brokers",
+    "produces": [
+        "application/json"
+    ],
+    "apis": [
+        {
+            "path": "/v1/cluster/health_overview",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get cluster health overview",
+                    "type": "get_cluster_health_overview",
+                    "nickname": "get_cluster_health_overview",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
+        }
+    ],
+    "models": {
+        "cluster_health_overview": {
+            "id": "cluster_health_overview",
+            "description": "Returns simple overview of cluster status",
+            "properties": {
+                "is_healthy": {
+                    "type": "boolean",
+                    "description": "basic cluster health indicator"
+                },
+                "controller_id": {
+                    "type": "int",
+                    "description": "node that is currently a leader or `-1` if leader is not elected"
+                },
+                "all_nodes": {
+                    "type": "array",
+                    "items": {
+                        "type": "int"
+                    },
+                    "description": "ids of all nodes registered in the cluster"
+                },
+                "nodes_down": {
+                    "type": "array",
+                    "items": {
+                        "type": "int"
+                    },
+                    "description": "ids of all nodes being recognized as down"
+                },
+                "leaderless_partitions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "list of partitions for which no leader is elected"
+                }
+            }
+        }
+    }
+}

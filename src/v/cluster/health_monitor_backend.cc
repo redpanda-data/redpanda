@@ -37,6 +37,10 @@
 #include <seastar/core/with_timeout.hh>
 #include <seastar/util/log.hh>
 
+#include <absl/container/node_hash_set.h>
+
+#include <iterator>
+
 namespace cluster {
 
 health_monitor_backend::health_monitor_backend(
@@ -713,4 +717,46 @@ health_monitor_backend::get_node_drain_status(
     co_return it->second.drain_status;
 }
 
+ss::future<cluster_health_overview>
+health_monitor_backend::get_cluster_health_overview(
+  model::timeout_clock::time_point deadline) {
+    auto ec = co_await maybe_refresh_cluster_health(
+      force_refresh::no, deadline);
+
+    cluster_health_overview ret;
+    const auto brokers = _members.local().all_brokers();
+    ret.all_nodes.reserve(brokers.size());
+
+    for (auto& broker : brokers) {
+        ret.all_nodes.push_back(broker->id());
+        if (broker->id() == _raft0->self().id()) {
+            continue;
+        }
+        auto it = _status.find(broker->id());
+        if (it == _status.end() || !it->second.is_alive) {
+            ret.nodes_down.push_back(broker->id());
+        }
+    }
+    absl::node_hash_set<model::ntp> leaderless;
+    for (const auto& [_, report] : _reports) {
+        for (const auto& [tp_ns, partitions] : report.topics) {
+            for (const auto& partition : partitions) {
+                if (!partition.leader_id.has_value()) {
+                    leaderless.emplace(tp_ns.ns, tp_ns.tp, partition.id);
+                }
+            }
+        }
+    }
+    ret.leaderless_partitions.reserve(leaderless.size());
+    std::move(
+      leaderless.begin(),
+      leaderless.end(),
+      std::back_inserter(ret.leaderless_partitions));
+    ret.controller_id = _raft0->get_leader_id();
+
+    ret.is_healthy = ret.nodes_down.empty() && ret.leaderless_partitions.empty()
+                     && ret.controller_id && !ec;
+
+    co_return ret;
+}
 } // namespace cluster
