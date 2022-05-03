@@ -131,6 +131,8 @@ struct follower_index_metadata {
 
     follower_req_seq last_sent_seq{0};
     follower_req_seq last_received_seq{0};
+    // sequence number of last received successfull append entries request
+    follower_req_seq last_successful_received_seq{0};
     bool is_learner = true;
     bool is_recovering = false;
 
