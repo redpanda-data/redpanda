@@ -35,7 +35,7 @@ func NewHealthOverviewCommand(fs afero.Fs) *cobra.Command {
 Queries cluster health overview. Health overview is created based on the health 
 reports collected periodically from all nodes in the cluster.
 
-Cluster is considered as healthy when follwing conditions are met:
+Cluster is considered as healthy when following conditions are met:
 
 - all cluster nodes are responding
 - all partitions have leaders
