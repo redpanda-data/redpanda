@@ -12,6 +12,7 @@ from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.rpk import RpkTool
+from rptest.services.redpanda import SecurityConfig
 from time import sleep
 
 from confluent_kafka import (Producer, KafkaException)
@@ -39,10 +40,13 @@ class ScramfulEosTest(RedpandaTest):
             "default_topic_partitions": 1,
             "enable_leader_balancer": False,
             "enable_auto_rebalance_on_node_add": False,
-            "enable_sasl": True
         }
 
+        security = SecurityConfig()
+        security.enable_sasl = True
+
         super(ScramfulEosTest, self).__init__(test_context=test_context,
+                                              security=security,
                                               extra_rp_conf=extra_rp_conf)
 
     def retry(self, func, retries, accepted_error_code):

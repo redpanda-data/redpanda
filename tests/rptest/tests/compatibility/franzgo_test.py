@@ -11,6 +11,7 @@ from rptest.services.cluster import cluster
 from rptest.services.compatibility.example_runner import ExampleRunner
 import rptest.services.compatibility.franzgo_examples as FranzGoExamples
 from rptest.tests.redpanda_test import RedpandaTest
+from rptest.services.redpanda import SecurityConfig
 from rptest.clients.types import TopicSpec
 import math
 
@@ -27,11 +28,14 @@ class FranzGoBase(RedpandaTest):
         # idempotence is necessary for bench example
         extra_rp_conf = {
             "enable_idempotence": True,
-            "enable_sasl": enable_sasl
         }
         self._ctx = test_context
 
+        security = SecurityConfig()
+        security.enable_sasl = enable_sasl
+
         super(FranzGoBase, self).__init__(test_context=test_context,
+                                          security=security,
                                           extra_rp_conf=extra_rp_conf)
 
         self._max_records = 1000 if self.scale.local else 1000000
