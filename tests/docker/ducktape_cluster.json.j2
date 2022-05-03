@@ -2,10 +2,10 @@
     "nodes": [
 {% for node_id in range(1, scale + 1) %}
         {
-            "externally_routable_ip": "docker_n_{{node_id}}",
+            "externally_routable_ip": "docker-rp-{{node_id}}",
             "ssh_config": {
-                "host": "docker_n_{{node_id}}",
-                "hostname": "docker_n_{{node_id}}",
+                "host": "docker-rp-{{node_id}}",
+                "hostname": "docker-rp-{{node_id}}",
                 "identityfile": "/root/.ssh/id_rsa",
                 "password": "UNUSED",
                 "port": 22,
