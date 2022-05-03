@@ -80,12 +80,14 @@ process_result_stages
   do_process(request_context&& ctx, ss::smp_service_group g) {
     vlog(
       klog.trace,
-      "[{}:{}] processing name:{}, key:{}, version:{} for {}",
+      "[{}:{}] processing name:{}, key:{}, version:{}, correlation_id:{} for "
+      "{}",
       ctx.connection()->client_host(),
       ctx.connection()->client_port(),
       Request::api::name,
       ctx.header().key,
       ctx.header().version,
+      ctx.header().correlation,
       ctx.header().client_id.value_or(std::string_view("unset-client-id")));
 
     return process_dispatch<Request>::process(std::move(ctx), g);
