@@ -28,6 +28,7 @@ import (
 )
 
 // reconcileConfiguration ensures that the cluster configuration is synchronized with expected data
+// nolint:funlen // splitting makes it difficult to follow
 func (r *ClusterReconciler) reconcileConfiguration(
 	ctx context.Context,
 	redpandaCluster *redpandav1alpha1.Cluster,
@@ -79,6 +80,19 @@ func (r *ClusterReconciler) reconcileConfiguration(
 	adminAPI, err := r.AdminAPIClientFactory(ctx, r, redpandaCluster, fqdn, pki.AdminAPINodeCert(), pki.AdminAPIClientCert())
 	if err != nil {
 		return errorWithContext(err, "error creating the admin API client")
+	}
+
+	// Checking if the feature is active because in the initial stages of cluster creation, it takes time for the feature to be activated
+	// and the API returns the same error (400) that is returned in case of malformed input, which causes a stop of the reconciliation
+	var centralConfigActive bool
+	if centralConfigActive, err = adminutils.IsFeatureActive(adminAPI, adminutils.CentralConfigFeatureName); err != nil {
+		return errorWithContext(err, "could not determine if central config is active in the cluster")
+	} else if !centralConfigActive {
+		log.Info("Waiting for the centralized configuration feature to be active in the cluster")
+		return &resources.RequeueAfterError{
+			RequeueAfter: resources.RequeueDuration,
+			Msg:          "centralized configuration feature not active",
+		}
 	}
 
 	schema, clusterConfig, status, err := r.retrieveClusterState(redpandaCluster, adminAPI)

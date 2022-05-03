@@ -291,6 +291,19 @@ func (m *mockAdminAPI) Clear() {
 	m.directValidation = false
 }
 
+func (m *mockAdminAPI) GetFeatures() (admin.FeaturesResponse, error) {
+	return admin.FeaturesResponse{
+		ClusterVersion: 0,
+		Features: []admin.Feature{
+			{
+				Name:      "central_config",
+				State:     admin.FeatureStateActive,
+				WasActive: true,
+			},
+		},
+	}, nil
+}
+
 // nolint:gocritic // It's test API
 func (m *mockAdminAPI) RegisterPropertySchema(
 	name string, metadata admin.ConfigPropertyMetadata,
