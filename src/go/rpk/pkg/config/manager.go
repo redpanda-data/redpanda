@@ -277,7 +277,7 @@ func (m *manager) WriteNodeUUID(conf *Config) error {
 	if err != nil {
 		return err
 	}
-	conf.NodeUuid = base58Encode(id.String())
+	conf.NodeUuid = id.String()
 	return m.Write(conf)
 }
 
