@@ -10,7 +10,7 @@ from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.archival.s3_client import S3Client
-from rptest.services.redpanda import RedpandaService, SISettings
+from rptest.services.redpanda import RedpandaService, SISettings, RESTART_LOG_ALLOW_LIST
 from rptest.clients.rpk import RpkTool
 
 from rptest.clients.types import TopicSpec
@@ -923,7 +923,7 @@ MISSING_DATA_ERRORS = [
     "Failed segment download",
 ]
 
-TRANSIENT_ERRORS = [
+TRANSIENT_ERRORS = RESTART_LOG_ALLOW_LIST + [
     "raft::offset_monitor::wait_aborted",
     "Upload loop error: seastar::timed_out_error"
 ]
