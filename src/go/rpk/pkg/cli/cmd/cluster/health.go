@@ -31,15 +31,15 @@ func NewHealthOverviewCommand(fs afero.Fs) *cobra.Command {
 	cmd := cobra.Command{
 		Use:   "health",
 		Short: "Queries cluster for health overview.",
-		Long: `
-Queries cluster health overview. Health overview is created based on the health 
-reports collected periodically from all nodes in the cluster.
+		Long: `Queries health overview.
 
-Cluster is considered as healthy when following conditions are met:
+Health overview is created based on the health reports collected periodically
+from all nodes in the cluster. A cluster is considered healthy when the
+following conditions are met:
 
-- all cluster nodes are responding
-- all partitions have leaders
-- cluster controller is present
+* all cluster nodes are responding
+* all partitions have leaders
+* cluster controller is present
 `,
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
