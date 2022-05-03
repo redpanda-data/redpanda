@@ -504,15 +504,34 @@ void consensus::dispatch_recovery(follower_index_metadata& idx) {
 }
 
 ss::future<result<model::offset>> consensus::linearizable_barrier() {
-    using ret_t = result<model::offset>;
-
     ss::semaphore_units<> u = co_await _op_lock.get_units();
 
     if (_vstate != vote_state::leader) {
         co_return result<model::offset>(make_error_code(errc::not_leader));
     }
     co_await flush_log();
-    // store current commit index
+    auto flushed_offset = _flushed_offset;
+    u.return_all();
+    auto ec = co_await do_liearizable_barrier();
+    if (ec) {
+        co_return ec;
+    }
+    while (_commit_index < flushed_offset) {
+        auto ec = co_await do_liearizable_barrier();
+        if (ec) {
+            co_return ec;
+        }
+    }
+    vlog(_ctxlog.trace, "Linearizable offset: {}", flushed_offset);
+    co_return flushed_offset;
+}
+
+ss::future<std::error_code> consensus::do_liearizable_barrier() {
+    ss::semaphore_units<> u = co_await _op_lock.get_units();
+
+    if (_vstate != vote_state::leader) {
+        co_return errc::not_leader;
+    }
     auto cfg = config();
     auto dirty_offset = _log.offsets().dirty_offset;
     /**
@@ -585,15 +604,15 @@ ss::future<result<model::offset>> consensus::linearizable_barrier() {
               return majority_sequences_updated() || _term != term;
           });
     } catch (const ss::broken_condition_variable& e) {
-        co_return ret_t(make_error_code(errc::shutting_down));
+        co_return errc::shutting_down;
     }
 
     // term have changed, not longer a leader
     if (term != _term) {
-        co_return ret_t(make_error_code(errc::not_leader));
+        co_return errc::not_leader;
     }
-    vlog(_ctxlog.trace, "Linearizble offset: {}", _commit_index);
-    co_return ret_t(_commit_index);
+
+    co_return errc::success;
 }
 
 ss::future<result<replicate_result>> chain_stages(replicate_stages stages) {

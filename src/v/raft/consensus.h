@@ -536,6 +536,8 @@ private:
         }
         return false;
     }
+    ss::future<std::error_code> do_liearizable_barrier();
+
     // args
     vnode _self;
     raft::group_id _group;
