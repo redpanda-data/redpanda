@@ -8,16 +8,16 @@
 # by the Apache License, Version 2.0
 
 import time
+import concurrent.futures
 
 from rptest.services.cluster import cluster
-from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
 
 from rptest.clients.rpk import RpkTool, RpkException
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.rpk_producer import RpkProducer
+from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.services.redpanda import ResourceSettings, RESTART_LOG_ALLOW_LIST
+from rptest.services.franz_go_verifiable_services import FranzGoVerifiableProducer, FranzGoVerifiableSeqConsumer, FranzGoVerifiableRandomConsumer
 
 # An unreasonably large fetch request: we submit requests like this in the
 # expectation that the server will properly clamp the amount of data it
@@ -34,7 +34,7 @@ BIG_FETCH = 104857600
 HARD_PARTITION_LIMIT = 10000
 
 
-class ManyPartitionsTest(RedpandaTest):
+class ManyPartitionsTest(PreallocNodesTest):
     """
     Validates basic functionality in the presence of larger numbers
     of partitions than most other tests.
@@ -47,24 +47,13 @@ class ManyPartitionsTest(RedpandaTest):
             test_ctx,
             *args,
             num_brokers=6,
+            node_prealloc_count=1,
             extra_rp_conf={
-                # It's not ideal that the user would have to specify these tuning
-                # properties to run with many partitions, but it is the current situation.
-                'storage_read_buffer_size': 32768,
-                'storage_read_readahead_count': 2,
-
-                # We will later try to validate that leadership was stable during under load,
-                # so do not want the leader balancer to interfere
+                # Disable leader balancer initially, to enable us to check for
+                # stable leadership during initial elections and post-restart
+                # elections.  We will switch it on later, to exercise it during
+                # the traffic stress test.
                 'enable_leader_balancer': False,
-
-                # Increasing raft timeouts to 3x their
-                # defaults.  Avoids spurious leader elections
-                # on weaker test nodes.
-                'raft_heartbeat_interval_ms': 450,
-                'raft_heartbeat_timeout_ms': 9000,
-                'election_timeout_ms': 7500,
-                'replicate_append_timeout_ms': 9000,
-                'recovery_append_timeout_ms': 15000,
             },
             # Usually tests run with debug or trace logs, but when testing resource
             # limits we want to test in a more production-like configuration.
@@ -124,9 +113,7 @@ class ManyPartitionsTest(RedpandaTest):
         pass
 
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    @parametrize(n_topics=1)  # All in one topic
-    @parametrize(n_topics=10)  # Split up between several topics
-    def test_many_partitions(self, n_partitions: int, n_topics: int):
+    def test_many_partitions(self):
         """
         Validate that redpanda works with partition counts close to its resource
         limits.
@@ -150,7 +137,7 @@ class ManyPartitionsTest(RedpandaTest):
         """
 
         # This test requires dedicated system resources to run reliably.
-        assert self.redpanda.dedicated_nodes
+        #assert self.redpanda.dedicated_nodes
 
         # Scale tests are not run on debug builds
         assert not self.debug_mode
@@ -176,18 +163,38 @@ class ManyPartitionsTest(RedpandaTest):
         # is added.
         internal_partition_slack = 10
 
+        # Emulate seastar's policy for default reserved memory
+        reserved_memory = max(1536, int(0.07 * node_memory) + 1)
+        effective_node_memory = node_memory - reserved_memory
+
+        # TODO: calculate an appropriate segment size for the disk space divided
+        # by the partition count, then set an appropriate retention.bytes and
+        # enable compaction, so that during the final stress period of the test,
+        # we are exercising compaction.
+
         # Clamp memory if nodes have more memory than should be required
         # to exercise the partition limit.
-        if node_memory > HARD_PARTITION_LIMIT / mb_per_partition:
-            resource_settings = ResourceSettings(
-                memory_mb=mb_per_partition *
-                (HARD_PARTITION_LIMIT + internal_partition_slack))
+        if effective_node_memory > HARD_PARTITION_LIMIT / mb_per_partition:
+            clamp_memory = mb_per_partition * (
+                (HARD_PARTITION_LIMIT + internal_partition_slack) +
+                reserved_memory)
+
+            # Handy if hacking HARD_PARTITION_LIMIT to something low to run on a workstation
+            clamp_memory = max(clamp_memory, 500)
+
+            resource_settings = ResourceSettings(memory_mb=clamp_memory)
             self.redpanda.set_resource_settings(resource_settings)
-        elif node_memory < HARD_PARTITION_LIMIT / mb_per_partition:
-            raise RuntimeError(f"Node memory is too small ({node_memory}MB)")
+        elif effective_node_memory < HARD_PARTITION_LIMIT / mb_per_partition:
+            raise RuntimeError(
+                f"Node memory is too small ({node_memory}MB - {reserved_memory}MB)"
+            )
+
+        # Run with one huge topic: this is the more stressful case for Redpanda, compared
+        # with multiple modestly-sized topics, so it's what we test to find the system's limits.
+        n_topics = 1
 
         # Partitions per topic
-        n_partitions = partition_limit / n_topics
+        n_partitions = int(partition_limit / n_topics)
 
         self.logger.info(
             f"Running partition scale test with {n_partitions} partitions on {n_topics} topics"
@@ -195,6 +202,7 @@ class ManyPartitionsTest(RedpandaTest):
 
         self.redpanda.start()
 
+        self.logger.info("Entering topic creation")
         topic_names = [f"scale_{i:06d}" for i in range(0, n_topics)]
         for tn in topic_names:
             self.logger.info(
@@ -239,75 +247,171 @@ class ManyPartitionsTest(RedpandaTest):
         msg_count_per_topic = int((write_bytes_per_topic / msg_size))
 
         # Approx time to write or read all messages, for timeouts
-        # Pessimistic bandwidth guess, based on smallest i3en instance type.
-        expect_bandwidth = 100 * 1024 * 1024
+        # Pessimistic bandwidth guess, accounting for the sub-disk bandwidth
+        # that a single-threaded consumer may see
+        expect_bandwidth = 50 * 1024 * 1024
 
         expect_transmit_time = int(write_bytes_per_topic / expect_bandwidth)
+        expect_transmit_time = max(expect_transmit_time, 30)
 
+        self.logger.info("Entering initial produce")
         for tn in topic_names:
-            producer = RpkProducer(
-                self._ctx,
+            t1 = time.time()
+            producer = FranzGoVerifiableProducer(
+                self.test_context,
                 self.redpanda,
                 tn,
-                msg_size=msg_size,
-                msg_count=msg_count_per_topic,
-                # Need acks=all, because otherwise leadership changes during the production
-                # can lead to truncation and dropping messages, and we later assert that we
-                # see all the messages we sent.
-                # This can be changed to acks=1 in future if we can maintain stable leadership
-                # through the test and add an assertion to that effect.
-                acks=-1,
-                quiet=True,
-                # Factor of two to allow for general timing noise
-                produce_timeout=expect_transmit_time * 2)
-            t1 = time.time()
+                msg_size,
+                msg_count_per_topic,
+                custom_node=self.preallocated_nodes)
             producer.start()
             producer.wait(timeout_sec=expect_transmit_time)
+            self.free_preallocated_nodes()
             duration = time.time() - t1
             self.logger.info(
                 f"Wrote {write_bytes_per_topic} bytes to {tn} in {duration}s, bandwidth {(write_bytes_per_topic / duration)/(1024 * 1024)}MB/s"
             )
-            producer.free()
 
-        self._consume_all(topic_names, msg_count_per_topic,
-                          expect_transmit_time)
+        def get_fd_counts():
+            counts = {}
+            with concurrent.futures.ThreadPoolExecutor(
+                    max_workers=node_count) as executor:
+                futs = {}
+                for node in self.redpanda.nodes:
+                    futs[node.name] = executor.submit(
+                        lambda: sum(1 for _ in self.redpanda.lsof_node(node)))
 
-        for node in self.redpanda.nodes:
-            files = self.redpanda.lsof_node(node)
-            file_count = sum(1 for _ in files)
+                for node_name, fut in futs.items():
+                    file_count = fut.result()
+                    counts[node_name] = file_count
+
+            return counts
+
+        for node_name, file_count in get_fd_counts().items():
             self.logger.info(
-                f"Open files before restarts on {node.name}: {file_count}")
+                f"Open files before restarts on {node_name}: {file_count}")
 
         # Over large partition counts, the startup time is linear with the
         # amount of data we played in, because no one partition gets far
         # enough to snapshot.
         expect_start_time = expect_transmit_time
 
-        # We know that after many restarts, the file handle count grows in a bad way.  Just
-        # do a few restarts, so that we are confident that the replay memory footprint from
-        # input buffers is not going to cause bad_allocs
-        restart_count = 3
+        # Measure the impact of restarts on resource utilization on an idle system:
+        # at time of writing we know that the used FD count will go up substantially
+        # on each restart (https://github.com/redpanda-data/redpanda/issues/4057)
+        restart_count = 2
 
+        self.logger.info("Entering restart stress test")
         for i in range(1, restart_count + 1):
-            self.logger.info(f"Cluster restart {i}/{restart_count}")
-            self.redpanda.restart_nodes(self.redpanda.nodes,
-                                        start_timeout=expect_start_time)
+            self.logger.info(f"Cluster restart {i}/{restart_count}...")
 
-            self.logger.info(f"Awaiting post-restart elections...")
+            # Normal restarts are rolling restarts, but because replay takes substantial time,
+            # on an idle system it is helpful to do a concurrent global restart rather than
+            # waiting for each node one by one.
+            with concurrent.futures.ThreadPoolExecutor(
+                    max_workers=node_count) as executor:
+                futs = []
+                for node in self.redpanda.nodes:
+                    futs.append(
+                        executor.submit(self.redpanda.restart_nodes,
+                                        nodes=[node],
+                                        start_timeout=expect_start_time))
+
+                for f in futs:
+                    # Raise on error
+                    f.result()
+            self.logger.info(
+                f"Restart {i}/{restart_count} complete.  Waiting for elections..."
+            )
+
             wait_until(
                 lambda: self._all_elections_done(topic_names, n_partitions),
                 timeout_sec=60,
                 backoff_sec=5)
             self.logger.info(f"Post-restart elections done.")
 
-            for node in self.redpanda.nodes:
-                files = self.redpanda.lsof_node(node)
-                file_count = sum(1 for _ in files)
+            for node_name, file_count in get_fd_counts().items():
                 self.logger.info(
-                    f"Open files after {i} restarts on {node.name}: {file_count}"
+                    f"Open files after {i} restarts on {node_name}: {file_count}"
                 )
 
         # With increased overhead from all those segment rolls during restart,
         # check that consume still works.
         self._consume_all(topic_names, msg_count_per_topic,
                           expect_transmit_time)
+
+        # Now that we've tested basic ability to form consensus and survive some
+        # restarts, move on to a more general stress test.
+
+        self.logger.info("Entering traffic stress test")
+        target_topic = topic_names[0]
+
+        stress_msg_size = 32768
+        stress_data_size = 1024 * 1024 * 1024 * 100
+        stress_msg_count = int(stress_data_size / stress_msg_size)
+        fast_producer = FranzGoVerifiableProducer(
+            self.test_context,
+            self.redpanda,
+            target_topic,
+            stress_msg_size,
+            stress_msg_count,
+            custom_node=self.preallocated_nodes)
+        fast_producer.start()
+
+        # Don't start consumers until the producer has written out its first
+        # checkpoint with valid ranges.
+        wait_until(lambda: fast_producer.produce_status.acked > 0,
+                   timeout_sec=30,
+                   backoff_sec=1.0)
+
+        rand_consumer = FranzGoVerifiableRandomConsumer(
+            self.test_context,
+            self.redpanda,
+            target_topic,
+            0,
+            100,
+            10,
+            nodes=self.preallocated_nodes)
+        rand_consumer.start(clean=False)
+        rand_consumer.shutdown()
+        rand_consumer.wait()
+
+        fast_producer.wait()
+
+        seq_consumer = FranzGoVerifiableSeqConsumer(self.test_context,
+                                                    self.redpanda,
+                                                    target_topic, 0,
+                                                    self.preallocated_nodes)
+        seq_consumer.start(clean=False)
+        seq_consumer.shutdown()
+        seq_consumer.wait()
+        assert seq_consumer.consumer_status.invalid_reads == 0
+        assert seq_consumer.consumer_status.valid_reads == stress_msg_count + msg_count_per_topic
+
+        self.logger.info("Entering leader balancer stress test")
+
+        # Enable the leader balancer and check that the system remains stable
+        # under load.  We do not leave the leader balancer on for most of the test, because
+        # it makes reads _much_ slower, because the consumer keeps stalling and waiting for
+        # elections: at any moment in a 10k partition topic, it's highly likely at least
+        # one partition is offline for a leadership migration.
+        self.redpanda.set_cluster_config({'enable_leader_balancer': True},
+                                         expect_restart=False)
+        lb_stress_period = 120
+        lb_stress_produce_bytes = expect_bandwidth * lb_stress_period
+        lb_stress_message_count = int(lb_stress_produce_bytes /
+                                      stress_msg_size)
+        fast_producer = FranzGoVerifiableProducer(
+            self.test_context,
+            self.redpanda,
+            target_topic,
+            stress_msg_size,
+            lb_stress_message_count,
+            custom_node=self.preallocated_nodes)
+        fast_producer.start()
+        rand_consumer.start()
+        time.sleep(lb_stress_period
+                   )  # Let the system receive traffic for a set time period
+        rand_consumer.shutdown()
+        rand_consumer.wait()
+        fast_producer.wait()
