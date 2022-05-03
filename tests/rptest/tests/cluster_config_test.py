@@ -580,7 +580,7 @@ class ClusterConfigTest(RedpandaTest):
             import_stdout = self.rpk.cluster_config_import(file.name, all)
 
         last_line = import_stdout.strip().split("\n")[-1]
-        m = re.match(r"^.+new config version (\d+).*$", last_line)
+        m = re.match(r"^.+New configuration version is (\d+).*$", last_line)
 
         self.logger.debug(f"_import status: {last_line}")
 
