@@ -591,7 +591,7 @@ ss::future<result<model::offset>> consensus::linearizable_barrier() {
     if (term != _term) {
         co_return ret_t(make_error_code(errc::not_leader));
     }
-    vlog(_ctxlog.trace, "Linearizble offset: {}", _commit_index);
+    vlog(_ctxlog.trace, "Linearizable offset: {}", _commit_index);
     co_return ret_t(_commit_index);
 }
 
