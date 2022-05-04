@@ -50,7 +50,7 @@ class AccessControlListTest(RedpandaTest):
 
     def _start_redpanda(self, use_tls):
         if use_tls:
-            self.tls = tls.TLSCertManager()
+            self.tls = tls.TLSCertManager(self.logger)
             self.cert = self.tls.create_cert(socket.gethostname(),
                                              name="client")
             self.security.tls_provider = MTLSProvider(self.tls)

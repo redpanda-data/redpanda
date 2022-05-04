@@ -88,7 +88,8 @@ class TLSCertManager:
     it is common for clients to take paths to these files, it is best to keep
     the instance alive for as long as the files are in use.
     """
-    def __init__(self):
+    def __init__(self, logger):
+        self._logger = logger
         self._dir = tempfile.TemporaryDirectory()
         self._ca = self._create_ca()
         self.certs = {}
@@ -97,7 +98,11 @@ class TLSCertManager:
         return os.path.join(self._dir.name, name)
 
     def _exec(self, cmd):
-        subprocess.check_output(cmd.split(), cwd=self._dir.name)
+        self._logger.info(f"Running command: {cmd}")
+        output = subprocess.check_output(cmd.split(),
+                                         cwd=self._dir.name,
+                                         stderr=subprocess.STDOUT)
+        self._logger.debug(output)
 
     def _create_ca(self):
         cfg = self._with_dir("ca.conf")
