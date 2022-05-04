@@ -24,6 +24,8 @@ std::string_view to_string_view(feature f) {
         return "consumer_offsets";
     case feature::maintenance_mode:
         return "maintenance_mode";
+    case feature::mtls_authentication:
+        return "mtls_authentication";
     case feature::test_alpha:
         return "__test_alpha";
     }
