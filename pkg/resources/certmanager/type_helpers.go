@@ -11,6 +11,10 @@ package certmanager
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"errors"
+	"fmt"
 
 	"github.com/go-logr/logr"
 	cmmetav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
@@ -23,6 +27,17 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+const (
+	redpandaCertVolName       = "tlscert"
+	redpandaCAVolName         = "tlsca"
+	adminAPICertVolName       = "tlsadmincert"
+	adminAPICAVolName         = "tlsadminca"
+	pandaProxyCertVolName     = "tlspandaproxycert"
+	pandaProxyCAVolName       = "tlspandaproxyca"
+	schemaRegistryCertVolName = "tlsschemaregistrycert"
+	schemaRegistryCAVolName   = "tlsschemaregistryca"
+)
+
 // Helper functions and types for Listeners
 
 var (
@@ -30,6 +45,8 @@ var (
 	_ APIListener = redpandav1alpha1.AdminAPI{}
 	_ APIListener = redpandav1alpha1.PandaproxyAPI{}
 	_ APIListener = redpandav1alpha1.SchemaRegistryAPI{}
+
+	errNoTLSError = errors.New("no TLS enabled for admin API")
 )
 
 // APIListener is a generic API Listener
@@ -387,4 +404,162 @@ func (ac *apiCertificates) clientCertificateNames() []types.NamespacedName {
 		names = append(names, c.Key())
 	}
 	return names
+}
+
+// Resources returns all resources that need to exist in the cluster to support
+// TLS on all redpanda APIs where TLS is enabled
+func (cc *ClusterCertificates) Resources(
+	ctx context.Context,
+) ([]resources.Resource, error) {
+	res := []resources.Resource{}
+	kafkaResources, err := cc.kafkaAPI.resources(ctx, cc.client, cc.logger)
+	if err != nil {
+		return nil, fmt.Errorf("retrieving kafkaapi resources %w", err)
+	}
+	adminResources, err := cc.adminAPI.resources(ctx, cc.client, cc.logger)
+	if err != nil {
+		return nil, fmt.Errorf("retrieving adminapi resources %w", err)
+	}
+	pandaProxyResources, err := cc.pandaProxyAPI.resources(ctx, cc.client, cc.logger)
+	if err != nil {
+		return nil, fmt.Errorf("retrieving pandaproxyapi resources %w", err)
+	}
+	schemaRegistryResources, err := cc.schemaRegistryAPI.resources(ctx, cc.client, cc.logger)
+	if err != nil {
+		return nil, fmt.Errorf("retrieving schemaRegistryapi resources %w", err)
+	}
+
+	res = append(res, kafkaResources...)
+	res = append(res, adminResources...)
+	res = append(res, pandaProxyResources...)
+	res = append(res, schemaRegistryResources...)
+	return res, nil
+}
+
+// Volumes returns volumes and mounts that statefulset has to define to have
+// access to all TLS certificates redpanda has enabled
+func (cc *ClusterCertificates) Volumes() (
+	[]corev1.Volume,
+	[]corev1.VolumeMount,
+) {
+	var vols []corev1.Volume
+	var mounts []corev1.VolumeMount
+	mountPoints := resources.GetTLSMountPoints()
+
+	vol, mount := secretVolumesForTLS(cc.kafkaAPI.nodeCertificateName(), cc.kafkaAPI.clientCertificates, redpandaCertVolName, redpandaCAVolName, mountPoints.KafkaAPI.NodeCertMountDir, mountPoints.KafkaAPI.ClientCAMountDir)
+	vols = append(vols, vol...)
+	mounts = append(mounts, mount...)
+
+	vol, mount = secretVolumesForTLS(cc.adminAPI.nodeCertificateName(), cc.adminAPI.clientCertificates, adminAPICertVolName, adminAPICAVolName, mountPoints.AdminAPI.NodeCertMountDir, mountPoints.AdminAPI.ClientCAMountDir)
+	vols = append(vols, vol...)
+	mounts = append(mounts, mount...)
+
+	vol, mount = secretVolumesForTLS(cc.pandaProxyAPI.nodeCertificateName(), cc.pandaProxyAPI.clientCertificates, pandaProxyCertVolName, pandaProxyCAVolName, mountPoints.PandaProxyAPI.NodeCertMountDir, mountPoints.PandaProxyAPI.ClientCAMountDir)
+	vols = append(vols, vol...)
+	mounts = append(mounts, mount...)
+
+	vol, mount = secretVolumesForTLS(cc.schemaRegistryAPI.nodeCertificateName(), cc.schemaRegistryAPI.clientCertificates, schemaRegistryCertVolName, schemaRegistryCAVolName, mountPoints.SchemaRegistryAPI.NodeCertMountDir, mountPoints.SchemaRegistryAPI.ClientCAMountDir)
+	vols = append(vols, vol...)
+	mounts = append(mounts, mount...)
+
+	return vols, mounts
+}
+
+func secretVolumesForTLS(
+	nodeCertificate *types.NamespacedName,
+	clientCertificates []resources.Resource,
+	volumeName, caVolumeName, mountDir, caMountDir string,
+) ([]corev1.Volume, []corev1.VolumeMount) {
+	var vols []corev1.Volume
+	var mounts []corev1.VolumeMount
+	if nodeCertificate == nil {
+		return vols, mounts
+	}
+
+	// mount node certificate's private key
+	vols = append(vols, corev1.Volume{
+		Name: volumeName,
+		VolumeSource: corev1.VolumeSource{
+			Secret: &corev1.SecretVolumeSource{
+				SecretName: nodeCertificate.Name,
+				Items: []corev1.KeyToPath{
+					{
+						Key:  corev1.TLSPrivateKeyKey,
+						Path: corev1.TLSPrivateKeyKey,
+					},
+					{
+						Key:  corev1.TLSCertKey,
+						Path: corev1.TLSCertKey,
+					},
+				},
+			},
+		},
+	})
+	mounts = append(mounts, corev1.VolumeMount{
+		Name:      volumeName,
+		MountPath: mountDir,
+	})
+
+	// if mutual TLS is enabled, mount also client cerificate CA to be able to
+	// verify client certificates
+	if len(clientCertificates) > 0 {
+		vols = append(vols, corev1.Volume{
+			Name: caVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: clientCertificates[0].Key().Name,
+					Items: []corev1.KeyToPath{
+						{
+							Key:  cmmetav1.TLSCAKey,
+							Path: cmmetav1.TLSCAKey,
+						},
+					},
+				},
+			},
+		})
+		mounts = append(mounts, corev1.VolumeMount{
+			Name:      caVolumeName,
+			MountPath: caMountDir,
+		})
+	}
+
+	return vols, mounts
+}
+
+// GetTLSConfig returns TLS config for adminAPI that can then be used to connect
+// to the admin API of the current cluster
+func (cc *ClusterCertificates) GetTLSConfig(
+	ctx context.Context, k8sClient client.Reader,
+) (*tls.Config, error) {
+	nodeCertificateName := cc.adminAPI.nodeCertificateName()
+	if nodeCertificateName == nil {
+		return nil, errNoTLSError
+	}
+	tlsConfig := tls.Config{MinVersion: tls.VersionTLS12} // TLS12 is min version allowed by gosec.
+
+	var nodeCertSecret corev1.Secret
+	err := k8sClient.Get(ctx, *nodeCertificateName, &nodeCertSecret)
+	if err != nil {
+		return nil, err
+	}
+
+	// Add root CA
+	caCertPool := x509.NewCertPool()
+	caCertPool.AppendCertsFromPEM(nodeCertSecret.Data[cmmetav1.TLSCAKey])
+	tlsConfig.RootCAs = caCertPool
+
+	if len(cc.adminAPI.clientCertificates) > 0 {
+		var clientCertSecret corev1.Secret
+		err := k8sClient.Get(ctx, cc.adminAPI.clientCertificateNames()[0], &clientCertSecret)
+		if err != nil {
+			return nil, err
+		}
+		cert, err := tls.X509KeyPair(clientCertSecret.Data[corev1.TLSCertKey], clientCertSecret.Data[corev1.TLSPrivateKeyKey])
+		if err != nil {
+			return nil, err
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
+	}
+
+	return &tlsConfig, nil
 }

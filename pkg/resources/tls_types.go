@@ -9,6 +9,26 @@
 
 package resources
 
+import (
+	"context"
+	"crypto/tls"
+
+	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+// StatefulsetTLSVolumeProvider returns volumes and volume mounts that
+// tatefulset needs to be able to support TLS config specified by cluster custom
+// resource
+type StatefulsetTLSVolumeProvider interface {
+	Volumes() ([]corev1.Volume, []corev1.VolumeMount)
+}
+
+// AdminTLSConfigProvider returns TLS config for admin API
+type AdminTLSConfigProvider interface {
+	GetTLSConfig(ctx context.Context, k8sClient client.Reader) (*tls.Config, error)
+}
+
 // TLSMountPoint defines paths to be mounted
 // We need 2 secrets and 2 mount points for each API endpoint that supports TLS and mTLS:
 // 1. The Node certs used by the API endpoint to sign requests

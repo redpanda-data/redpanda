@@ -15,11 +15,8 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
-	cmmetav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -42,6 +39,8 @@ type PkiReconciler struct {
 	internalFQDN string
 	clusterFQDN  string
 	logger       logr.Logger
+
+	clusterCertificates *ClusterCertificates
 }
 
 // NewPki creates PkiReconciler
@@ -55,84 +54,26 @@ func NewPki(
 ) *PkiReconciler {
 	return &PkiReconciler{
 		client, scheme, pandaCluster, fqdn, clusterFQDN, logger.WithValues("Reconciler", "pki"),
+		NewClusterCertificates(pandaCluster, keyStoreKey(pandaCluster), client, fqdn, clusterFQDN, scheme, logger),
 	}
 }
 
-func (r *PkiReconciler) prepareRoot(
-	prefix string,
-) ([]resources.Resource, *cmmetav1.ObjectReference) {
-	toApply := []resources.Resource{}
-	selfSignedIssuer := NewIssuer(r.Client,
-		r.scheme,
-		r.pandaCluster,
-		r.issuerNamespacedName(prefix+"-"+"selfsigned-issuer"),
-		"",
-		r.logger)
-
-	rootCn := NewCommonName(r.pandaCluster.Name, prefix+"-root-certificate")
-	rootKey := types.NamespacedName{Name: string(rootCn), Namespace: r.pandaCluster.Namespace}
-	rootCertificate := NewCACertificate(r.Client,
-		r.scheme,
-		r.pandaCluster,
-		rootKey,
-		selfSignedIssuer.objRef(),
-		rootCn,
-		nil,
-		r.logger)
-
-	leafIssuer := NewIssuer(r.Client,
-		r.scheme,
-		r.pandaCluster,
-		r.issuerNamespacedName(prefix+"-"+"root-issuer"),
-		rootCertificate.Key().Name,
-		r.logger)
-
-	leafIssuerRef := leafIssuer.objRef()
-
-	toApply = append(toApply, selfSignedIssuer, rootCertificate, leafIssuer)
-	return toApply, leafIssuerRef
+func keyStoreKey(pandaCluster *redpandav1alpha1.Cluster) types.NamespacedName {
+	return types.NamespacedName{Name: keystoreName(pandaCluster.Name), Namespace: pandaCluster.Namespace}
 }
 
 // Ensure will manage PKI for redpanda.vectorized.io custom resource
 func (r *PkiReconciler) Ensure(ctx context.Context) error {
 	toApply := []resources.Resource{}
 
-	keystoreKey := types.NamespacedName{Name: keystoreName(r.pandaCluster.Name), Namespace: r.pandaCluster.Namespace}
-	keystoreSecret := NewKeystoreSecretResource(r.Client, r.scheme, r.pandaCluster, keystoreKey, r.logger)
+	keystoreSecret := NewKeystoreSecretResource(r.Client, r.scheme, r.pandaCluster, keyStoreKey(r.pandaCluster), r.logger)
 
 	toApply = append(toApply, keystoreSecret)
-
-	if kafkaListeners := kafkaAPIListeners(r.pandaCluster); len(kafkaListeners) > 0 {
-		toApplyAPI, err := r.prepareAPI(ctx, kafkaAPI, RedpandaNodeCert, []string{OperatorClientCert, UserClientCert, AdminClientCert}, kafkaListeners, &keystoreKey)
-		if err != nil {
-			return err
-		}
-		toApply = append(toApply, toApplyAPI...)
+	res, err := r.clusterCertificates.Resources(ctx)
+	if err != nil {
+		return fmt.Errorf("creating resources %w", err)
 	}
-
-	if adminListeners := adminAPIListeners(r.pandaCluster); len(adminListeners) > 0 {
-		toApplyAPI, err := r.prepareAPI(ctx, adminAPI, adminAPINodeCert, []string{adminAPIClientCert}, adminListeners, &keystoreKey)
-		if err != nil {
-			return err
-		}
-		toApply = append(toApply, toApplyAPI...)
-	}
-
-	if pandaProxyListeners := pandaProxyAPIListeners(r.pandaCluster); len(pandaProxyListeners) > 0 {
-		toApplyAPI, err := r.prepareAPI(ctx, pandaproxyAPI, pandaproxyAPINodeCert, []string{pandaproxyAPIClientCert}, pandaProxyListeners, &keystoreKey)
-		if err != nil {
-			return err
-		}
-		toApply = append(toApply, toApplyAPI...)
-	}
-
-	if schemaRegistryListeners := schemaRegistryAPIListeners(r.pandaCluster); len(schemaRegistryListeners) > 0 {
-		toApplyAPI, err := r.prepareAPI(ctx, schemaRegistryAPI, schemaRegistryAPINodeCert, []string{schemaRegistryAPIClientCert}, schemaRegistryListeners, &keystoreKey)
-		if err != nil {
-			return err
-		}
-		toApply = append(toApply, toApplyAPI...)
-	}
+	toApply = append(toApply, res...)
 
 	for _, res := range toApply {
 		err := res.Ensure(ctx)
