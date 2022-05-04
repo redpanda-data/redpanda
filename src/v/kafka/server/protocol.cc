@@ -105,12 +105,17 @@ ss::future<> protocol::apply(net::server::resources rs) {
         ? security::sasl_server::sasl_state::initial
         : security::sasl_server::sasl_state::complete);
 
+    const auto enable_mtls_authentication
+      = rs.conn->get_principal_mapping().has_value()
+        && feature_table().local().is_active(
+          cluster::feature::mtls_authentication);
+
     auto ctx = ss::make_lw_shared<connection_context>(
       *this,
       std::move(rs),
       std::move(sasl),
       config::shard_local_cfg().enable_sasl(),
-      rs.conn->get_principal_mapping().has_value());
+      enable_mtls_authentication);
 
     return ss::do_until(
              [ctx] { return ctx->is_finished_parsing(); },
