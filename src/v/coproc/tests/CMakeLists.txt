@@ -34,12 +34,3 @@ rp_test(
   LIBRARIES v::seastar_testing_main ${fixture_deps}
   LABELS coproc
   )
-
-rp_test(
-  UNIT_TEST
-  BINARY_NAME coproc_unstable_fixture
-  SOURCES ${fixture_srcs} pacemaker_unstable_tests.cc
-  DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES v::seastar_testing_main ${fixture_deps}
-  LABELS coproc disable_on_ci
-  )
