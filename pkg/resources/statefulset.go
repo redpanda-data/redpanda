@@ -78,15 +78,16 @@ type ConfiguratorSettings struct {
 // focusing on the management of redpanda cluster
 type StatefulSetResource struct {
 	k8sclient.Client
-	scheme               *runtime.Scheme
-	pandaCluster         *redpandav1alpha1.Cluster
-	serviceFQDN          string
-	serviceName          string
-	nodePortName         types.NamespacedName
-	nodePortSvc          corev1.Service
-	volumeProvider       StatefulsetTLSVolumeProvider
-	serviceAccountName   string
-	configuratorSettings ConfiguratorSettings
+	scheme                 *runtime.Scheme
+	pandaCluster           *redpandav1alpha1.Cluster
+	serviceFQDN            string
+	serviceName            string
+	nodePortName           types.NamespacedName
+	nodePortSvc            corev1.Service
+	volumeProvider         StatefulsetTLSVolumeProvider
+	adminTLSConfigProvider AdminTLSConfigProvider
+	serviceAccountName     string
+	configuratorSettings   ConfiguratorSettings
 	// hash of configmap containing configuration for redpanda (node config only), it's injected to
 	// annotation to ensure the pods get restarted when configuration changes
 	// this has to be retrieved lazily to achieve the correct order of resources
@@ -106,6 +107,7 @@ func NewStatefulSet(
 	serviceName string,
 	nodePortName types.NamespacedName,
 	volumeProvider StatefulsetTLSVolumeProvider,
+	adminTLSConfigProvider AdminTLSConfigProvider,
 	serviceAccountName string,
 	configuratorSettings ConfiguratorSettings,
 	nodeConfigMapHashGetter func(context.Context) (string, error),
@@ -120,6 +122,7 @@ func NewStatefulSet(
 		nodePortName,
 		corev1.Service{},
 		volumeProvider,
+		adminTLSConfigProvider,
 		serviceAccountName,
 		configuratorSettings,
 		nodeConfigMapHashGetter,

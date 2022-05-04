@@ -23,8 +23,7 @@ import (
 )
 
 var (
-	_             resources.Reconciler = &PkiReconciler{}
-	errNoDNSNames                      = fmt.Errorf("failed to generate node TLS certificate")
+	_ resources.Reconciler = &PkiReconciler{}
 )
 
 // RootCert cert name
@@ -90,108 +89,7 @@ func (r *PkiReconciler) StatefulSetVolumeProvider() resources.StatefulsetTLSVolu
 	return r.clusterCertificates
 }
 
-func (r *PkiReconciler) prepareAPI(
-	ctx context.Context,
-	rootCertSuffix string,
-	nodeCertSuffix string,
-	clientCerts []string,
-	listeners []APIListener,
-	keystoreSecret *types.NamespacedName,
-) ([]resources.Resource, error) {
-	var (
-		tlsListener         = getTLSListener(listeners)
-		toApply             = []resources.Resource{}
-		externalTLSListener = getExternalTLSListener(listeners)
-		internalTLSListener = getInternalTLSListener(listeners)
-		// Issuer for the nodes
-		nodeIssuerRef *cmmetav1.ObjectReference
-	)
-
-	if tlsListener == nil || tlsListener.GetTLS() == nil || !tlsListener.GetTLS().Enabled {
-		return []resources.Resource{}, nil
-	}
-
-	// TODO(#3550): Do not create rootIssuer if nodeSecretRef is passed and mTLS is disabled
-	toApplyRoot, rootIssuerRef := r.prepareRoot(rootCertSuffix)
-	toApply = append(toApply, toApplyRoot...)
-	nodeIssuerRef = rootIssuerRef
-
-	if tlsListener.GetTLS().IssuerRef != nil {
-		// if external issuer is provided, we will use it to generate node certificates
-		nodeIssuerRef = tlsListener.GetTLS().IssuerRef
-	}
-
-	nodeSecretRef := tlsListener.GetTLS().NodeSecretRef
-	if nodeSecretRef == nil || nodeSecretRef.Name == "" {
-		certName := NewCertName(r.pandaCluster.Name, nodeCertSuffix)
-		certsKey := types.NamespacedName{Name: string(certName), Namespace: r.pandaCluster.Namespace}
-		dnsNames := []string{}
-
-		if internalTLSListener != nil {
-			dnsNames = append(dnsNames, r.clusterFQDN, r.internalFQDN)
-		}
-		// TODO(#2256): Add support for external listener + TLS certs for IPs
-		if externalTLSListener != nil && externalTLSListener.GetExternal().Subdomain != "" {
-			dnsNames = append(dnsNames, externalTLSListener.GetExternal().Subdomain)
-		}
-
-		if len(dnsNames) == 0 {
-			return nil, fmt.Errorf("failed to generate node TLS certificate %s. If external is enabled, please add a subdomain: %w", certName, errNoDNSNames)
-		}
-
-		nodeCert := NewNodeCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, nodeIssuerRef, dnsNames, EmptyCommonName, keystoreSecret, r.logger)
-		toApply = append(toApply, nodeCert)
-	}
-
-	if nodeSecretRef != nil && nodeSecretRef.Name != "" && nodeSecretRef.Namespace != r.pandaCluster.Namespace {
-		if err := r.copyNodeSecretToLocalNamespace(ctx, nodeSecretRef); err != nil {
-			return nil, fmt.Errorf("copy node secret for %s cert group to namespace %s: %w", rootCertSuffix, nodeSecretRef.Namespace, err)
-		}
-	}
-
-	if tlsListener.GetTLS().RequireClientAuth {
-		for _, clientCertName := range clientCerts {
-			clientCn := NewCommonName(r.pandaCluster.Name, clientCertName)
-			clientKey := types.NamespacedName{Name: string(clientCn), Namespace: r.pandaCluster.Namespace}
-			clientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, clientKey, rootIssuerRef, clientCn, false, keystoreSecret, r.logger)
-			toApply = append(toApply, clientCert)
-		}
-	}
-
-	return toApply, nil
-}
-
-// Creates copy of secret in Redpanda cluster's namespace
-func (r *PkiReconciler) copyNodeSecretToLocalNamespace(
-	ctx context.Context, secretRef *corev1.ObjectReference,
-) error {
-	var secret corev1.Secret
-	err := r.Get(ctx, types.NamespacedName{Name: secretRef.Name, Namespace: secretRef.Namespace}, &secret)
-	if err != nil {
-		return err
-	}
-
-	tlsKey := secret.Data[corev1.TLSPrivateKeyKey]
-	tlsCrt := secret.Data[corev1.TLSCertKey]
-	caCrt := secret.Data[cmmetav1.TLSCAKey]
-
-	caSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      secret.Name,
-			Namespace: r.pandaCluster.Namespace,
-			Labels:    secret.Labels,
-		},
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Secret",
-			APIVersion: "v1",
-		},
-		Type: secret.Type,
-		Data: map[string][]byte{
-			cmmetav1.TLSCAKey:       caCrt,
-			corev1.TLSCertKey:       tlsCrt,
-			corev1.TLSPrivateKeyKey: tlsKey,
-		},
-	}
-	_, err = resources.CreateIfNotExists(ctx, r, caSecret, r.logger)
-	return err
+// AdminAPIConfigProvider returns provider of admin TLS configuration
+func (r *PkiReconciler) AdminAPIConfigProvider() resources.AdminTLSConfigProvider {
+	return r.clusterCertificates
 }

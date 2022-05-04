@@ -11,6 +11,7 @@ package resources_test
 
 import (
 	"context"
+	"crypto/tls"
 	"log"
 	"os"
 	"path/filepath"
@@ -84,6 +85,7 @@ func TestEnsure_StatefulSet(t *testing.T) {
 		"servicename",
 		types.NamespacedName{Name: "test", Namespace: "test"},
 		TestStatefulsetTLSVolumeProvider{},
+		TestAdminTLSConfigProvider{},
 		"",
 		res.ConfiguratorSettings{
 			ConfiguratorBaseImage: "vectorized/configurator",
@@ -437,3 +439,10 @@ func (TestStatefulsetTLSVolumeProvider) Volumes() (
 	return []corev1.Volume{}, []corev1.VolumeMount{}
 }
 
+type TestAdminTLSConfigProvider struct{}
+
+func (TestAdminTLSConfigProvider) GetTLSConfig(
+	ctx context.Context, k8sClient client.Reader,
+) (*tls.Config, error) {
+	return nil, nil
+}
