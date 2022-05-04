@@ -83,15 +83,7 @@ func TestEnsure_StatefulSet(t *testing.T) {
 		"cluster.local",
 		"servicename",
 		types.NamespacedName{Name: "test", Namespace: "test"},
-		types.NamespacedName{},
-		types.NamespacedName{},
-		types.NamespacedName{},
-		types.NamespacedName{},
-		types.NamespacedName{},
-		types.NamespacedName{},
-		types.NamespacedName{},
-		types.NamespacedName{},
-		types.NamespacedName{},
+		TestStatefulsetTLSVolumeProvider{},
 		"",
 		res.ConfiguratorSettings{
 			ConfiguratorBaseImage: "vectorized/configurator",
@@ -435,3 +427,13 @@ func TestEnsure_LoadbalancerService(t *testing.T) {
 		assert.Equal(t, "kafka-external-bootstrap", actual.Spec.Ports[0].Name)
 	})
 }
+
+type TestStatefulsetTLSVolumeProvider struct{}
+
+func (TestStatefulsetTLSVolumeProvider) Volumes() (
+	[]corev1.Volume,
+	[]corev1.VolumeMount,
+) {
+	return []corev1.Volume{}, []corev1.VolumeMount{}
+}
+
