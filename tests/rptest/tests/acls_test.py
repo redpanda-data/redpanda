@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 import socket
 from ducktape.mark import matrix
+from ducktape.utils.util import wait_until
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
@@ -90,6 +91,15 @@ class AccessControlListTest(RedpandaTest):
         admin.create_user("cluster_describe", self.password, self.algorithm)
         client.acl_create_allow_cluster("cluster_describe", "describe")
 
+        def users_propogated():
+            for node in self.redpanda.nodes:
+                users = admin.list_users(node=node)
+                if "base" not in users or "cluster_describe" not in users:
+                    return False
+            return True
+
+        wait_until(users_propogated, timeout_sec=10, backoff_sec=1)
+
     @cluster(num_nodes=3)
     @matrix(use_tls=[True, False])
     def test_describe_acls(self, use_tls):
@@ -99,11 +109,13 @@ class AccessControlListTest(RedpandaTest):
         self._start_redpanda(use_tls)
         self.prepare_users()
 
-        try:
-            self.get_client("base").acl_list()
-            assert False, "list acls should have failed"
-        except ClusterAuthorizationError:
-            pass
+        # run a few times for good health
+        for _ in range(5):
+            try:
+                self.get_client("base").acl_list()
+                assert False, "list acls should have failed"
+            except ClusterAuthorizationError:
+                pass
 
-        self.get_client("cluster_describe").acl_list()
-        self.get_super_client().acl_list()
+            self.get_client("cluster_describe").acl_list()
+            self.get_super_client().acl_list()
