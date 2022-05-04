@@ -511,7 +511,6 @@ ss::future<result<model::offset>> consensus::linearizable_barrier() {
     if (_vstate != vote_state::leader) {
         co_return result<model::offset>(make_error_code(errc::not_leader));
     }
-    co_await flush_log();
     // store current commit index
     auto cfg = config();
     auto dirty_offset = _log.offsets().dirty_offset;
@@ -535,7 +534,7 @@ ss::future<result<model::offset>> consensus::linearizable_barrier() {
           meta(),
           model::make_memory_record_batch_reader(
             ss::circular_buffer<model::record_batch>{}),
-          append_entries_request::flush_after_append::yes);
+          append_entries_request::flush_after_append::no);
         auto seq = next_follower_sequence(target);
         sequences.emplace(target, seq);
 
@@ -592,7 +591,7 @@ ss::future<result<model::offset>> consensus::linearizable_barrier() {
     if (term != _term) {
         co_return ret_t(make_error_code(errc::not_leader));
     }
-    vlog(_ctxlog.trace, "Linearizble offset: {}", _commit_index);
+    vlog(_ctxlog.trace, "Linearizable offset: {}", _commit_index);
     co_return ret_t(_commit_index);
 }
 
