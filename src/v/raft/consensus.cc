@@ -511,7 +511,6 @@ ss::future<result<model::offset>> consensus::linearizable_barrier() {
     if (_vstate != vote_state::leader) {
         co_return result<model::offset>(make_error_code(errc::not_leader));
     }
-    co_await flush_log();
     // store current commit index
     auto cfg = config();
     auto dirty_offset = _log.offsets().dirty_offset;
