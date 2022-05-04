@@ -27,6 +27,10 @@ public:
     ~stop_signal() {
         ss::engine().handle_signal(SIGINT, [] {});
         ss::engine().handle_signal(SIGTERM, [] {});
+
+        // We should signal for unit tests, because some background tasks does
+        // not finish without it
+        signaled();
     }
     ss::future<> wait() {
         return _cond.wait([this] { return _as.abort_requested(); });

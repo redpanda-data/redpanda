@@ -30,8 +30,10 @@
 #include "storage/utils/transforming_reader.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/sleep.hh>
 
 #include <algorithm>
+#include <exception>
 
 namespace kafka {
 static ss::logger mlog("group-metadata-migration");
@@ -529,36 +531,40 @@ ss::future<> group_metadata_migration::activate_feature(ss::abort_source& as) {
     vlog(mlog.info, "activating consumer offsets feature");
     while (!feature_table().is_active(cluster::feature::consumer_offsets)
            && !as.abort_requested()) {
-        if (_controller.is_raft0_leader()) {
-            co_await feature_table().await_feature_preparing(
-              cluster::feature::consumer_offsets, as);
+        co_await do_activate_feature(as);
+    }
+}
 
-            auto err = co_await feature_manager().write_action(
-              cluster::feature_update_action{
-                .feature_name = ss::sstring(
-                  _controller.get_feature_table()
-                    .local()
-                    .get_state(cluster::feature::consumer_offsets)
-                    .spec.name),
-                .action
-                = cluster::feature_update_action::action_t::complete_preparing,
-              });
+ss::future<>
+group_metadata_migration::do_activate_feature(ss::abort_source& as) {
+    if (_controller.is_raft0_leader()) {
+        co_await feature_table().await_feature_preparing(
+          cluster::feature::consumer_offsets, as);
 
-            if (
-              err
-              || !feature_table().is_active(
-                cluster::feature::consumer_offsets)) {
-                if (err) {
-                    vlog(
-                      mlog.info,
-                      "error activating consumer offsets feature: {}",
-                      err.message());
-                }
-                co_await ss::sleep_abortable(default_timeout, as);
+        auto err = co_await feature_manager().write_action(
+          cluster::feature_update_action{
+            .feature_name = ss::sstring(
+              _controller.get_feature_table()
+                .local()
+                .get_state(cluster::feature::consumer_offsets)
+                .spec.name),
+            .action
+            = cluster::feature_update_action::action_t::complete_preparing,
+          });
+
+        if (
+          err
+          || !feature_table().is_active(cluster::feature::consumer_offsets)) {
+            if (err) {
+                vlog(
+                  mlog.info,
+                  "error activating consumer offsets feature: {}",
+                  err.message());
             }
-        } else {
             co_await ss::sleep_abortable(default_timeout, as);
         }
+    } else {
+        co_await ss::sleep_abortable(default_timeout, as);
     }
 }
 
@@ -684,23 +690,42 @@ ss::future<> group_metadata_migration::start(ss::abort_source& as) {
         co_return;
     }
 
-    // if no group topic is present just make feature active
-    if (!_controller.get_topics_state().local().contains(
-          model::kafka_group_nt, model::partition_id{0})) {
-        vlog(
-          mlog.info,
-          "kafka_internal/group topic does not exists, activating "
-          "consumer_offsets feature");
-        try {
-            co_await activate_feature(as);
-        } catch (const ss::abort_requested_exception&) {
-            // ignore abort requested exception, we are shutting down
-        }
+    _sub = as.subscribe([this]() noexcept { _as.request_abort(); });
+    if (!_sub) {
+        // Smbd finished redpanda
         co_return;
     }
-    // otherwise wait for feature to be preparing and execute migration
-    ssx::spawn_with_gate(
-      _background_gate, [this]() -> ss::future<> { return do_apply(); });
+
+    // Wait for feature to be preparing and execute migration
+    ssx::background
+      = ssx::spawn_with_gate_then(_background_gate, [this]() -> ss::future<> {
+            while (
+              !feature_table().is_active(cluster::feature::consumer_offsets)
+              && !_as.abort_requested()) {
+                if (!_controller.get_topics_state().local().contains(
+                      model::kafka_group_nt, model::partition_id{0})) {
+                    vlog(
+                      mlog.info,
+                      "kafka_internal/group topic does not exists, activating "
+                      "consumer_offsets feature");
+                    try {
+                        co_await do_activate_feature(_as);
+                        continue;
+                    } catch (const std::exception& e) {
+                        vlog(
+                          mlog.warn,
+                          "Got exception during activate consumer_offset "
+                          "feature "
+                          "{}",
+                          e);
+                    }
+                    co_await ss::sleep_abortable(default_timeout, _as);
+                } else {
+                    co_return co_await do_apply();
+                }
+            }
+        }).handle_exception_type([](ss::sleep_aborted&) {});
+
     co_return;
 }
 
