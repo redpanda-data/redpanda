@@ -184,8 +184,9 @@ class ResourceSettings:
     as test nodes.
     """
 
-    DEFAULT_NUM_CPUS = 3
-    DEFAULT_MEMORY_MB = 3096
+    DEFAULT_NUM_CPUS = 2
+    # Redpanda's default limit on memory per shard is 1GB
+    DEFAULT_MEMORY_MB = 2048
 
     def __init__(self,
                  *,
@@ -193,7 +194,6 @@ class ResourceSettings:
                  memory_mb: Optional[int] = None,
                  bypass_fsync: Optional[bool] = None,
                  nfiles: Optional[int] = None):
-
         self._num_cpus = num_cpus
         self._memory_mb = memory_mb
 
@@ -224,8 +224,6 @@ class ResourceSettings:
             num_cpus = self._num_cpus
 
         if self._memory_mb is None and not dedicated_node:
-            # Redpanda's default limit on memory per shard
-            # is 1GB
             memory_mb = self.DEFAULT_MEMORY_MB
         else:
             memory_mb = self._memory_mb
