@@ -376,9 +376,23 @@ class TLSProvider:
 
 
 class SecurityConfig:
+    # the system currently has a single principal mapping rule. this is
+    # sufficient to get our first mTLS tests put together, but isn't general
+    # enough to cover all the cases. one awkward thing that came up was: admin
+    # clients used by the service and clients used by tests both may need to
+    # have mappings. the internal admin client can use something fixed, but
+    # tests may want to use a variety of rules. currently it is hard to combine
+    # the rules, so instead we use a fixed mapping and arrange for certs to use
+    # a similar format. this will change when we get closer to GA and the
+    # configuration becomes more general.
+    PRINCIPAL_MAPPING_RULES = "RULE:^O=Redpanda,CN=(.*?)$/$1/L, DEFAULT"
+
     def __init__(self):
         self.enable_sasl = False
         self.tls_provider: Optional[TLSProvider] = None
+
+        # extract principal from mtls distinguished name
+        self.enable_mtls_identity = False
 
 
 class RedpandaService(Service):
@@ -1241,6 +1255,10 @@ class RedpandaService(Service):
                 cert_file=RedpandaService.TLS_SERVER_CRT_FILE,
                 truststore_file=RedpandaService.TLS_CA_CRT_FILE,
             )
+            if self._security.enable_mtls_identity:
+                tls_config.update(
+                    dict(principal_mapping_rules=SecurityConfig.
+                         PRINCIPAL_MAPPING_RULES, ))
             doc = yaml.full_load(conf)
             doc["redpanda"].update(dict(kafka_api_tls=tls_config))
             conf = yaml.dump(doc)
