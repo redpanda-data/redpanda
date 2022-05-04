@@ -349,10 +349,12 @@ func listStartEndOffsets(
 	shards := cl.RequestSharded(context.Background(), req)
 	allFailed := kafka.EachShard(req, shards, func(shard kgo.ResponseShard) {
 		resp := shard.Resp.(*kmsg.ListOffsetsResponse)
-		for _, partition := range resp.Topics[0].Partitions {
-			o := &offsets[partition.Partition]
-			o.start = partition.Offset
-			o.startErr = kerr.ErrorForCode(partition.ErrorCode)
+		if len(resp.Topics) > 0 {
+			for _, partition := range resp.Topics[0].Partitions {
+				o := &offsets[partition.Partition]
+				o.start = partition.Offset
+				o.startErr = kerr.ErrorForCode(partition.ErrorCode)
+			}
 		}
 	})
 
@@ -371,10 +373,12 @@ func listStartEndOffsets(
 	shards = cl.RequestSharded(context.Background(), req)
 	allFailed = kafka.EachShard(req, shards, func(shard kgo.ResponseShard) {
 		resp := shard.Resp.(*kmsg.ListOffsetsResponse)
-		for _, partition := range resp.Topics[0].Partitions {
-			o := &offsets[partition.Partition]
-			o.end = partition.Offset
-			o.endErr = kerr.ErrorForCode(partition.ErrorCode)
+		if len(resp.Topics) > 0 {
+			for _, partition := range resp.Topics[0].Partitions {
+				o := &offsets[partition.Partition]
+				o.end = partition.Offset
+				o.endErr = kerr.ErrorForCode(partition.ErrorCode)
+			}
 		}
 	})
 	// It is less likely to succeed on the first attempt and fail the second,
@@ -388,10 +392,12 @@ func listStartEndOffsets(
 	shards = cl.RequestSharded(context.Background(), req)
 	kafka.EachShard(req, shards, func(shard kgo.ResponseShard) {
 		resp := shard.Resp.(*kmsg.ListOffsetsResponse)
-		for _, partition := range resp.Topics[0].Partitions {
-			o := &offsets[partition.Partition]
-			o.stable = partition.Offset
-			o.stableErr = kerr.ErrorForCode(partition.ErrorCode)
+		if len(resp.Topics) > 0 {
+			for _, partition := range resp.Topics[0].Partitions {
+				o := &offsets[partition.Partition]
+				o.stable = partition.Offset
+				o.stableErr = kerr.ErrorForCode(partition.ErrorCode)
+			}
 		}
 	})
 
