@@ -7,7 +7,8 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 import socket
-from ducktape.mark import matrix
+import time
+from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
@@ -37,60 +38,62 @@ class AccessControlListTest(RedpandaTest):
     password = "password"
     algorithm = "SCRAM-SHA-256"
 
-    def __init__(self, test_context):
-        self.security = SecurityConfig()
-        self.security.enable_sasl = True
-        super(AccessControlListTest, self).__init__(test_context,
-                                                    num_brokers=3,
-                                                    security=self.security)
-
     def setUp(self):
         # Skip starting redpanda, so that test can explicitly start
         # it with custom security settings
         return
 
-    def _start_redpanda(self, use_tls):
+    def prepare_cluster(self, use_tls, use_sasl):
+        self.security = SecurityConfig()
+        self.security.enable_sasl = use_sasl
+        self.security.enable_mtls_identity = use_tls and not use_sasl
+
         if use_tls:
             self.tls = tls.TLSCertManager(self.logger)
-            self.cert = self.tls.create_cert(socket.gethostname(),
-                                             name="client")
+
+            # cert for principal with no explicitly granted permissions
+            self.base_user_cert = self.tls.create_cert(socket.gethostname(),
+                                                       common_name="morty",
+                                                       name="base_client")
+
+            # cert for principal with cluster describe permissions
+            self.cluster_describe_user_cert = self.tls.create_cert(
+                socket.gethostname(),
+                common_name="cluster_describe",
+                name="cluster_describe_client")
+
+            # cert for admin user used to bootstrap
+            self.admin_user_cert = self.tls.create_cert(
+                socket.gethostname(),
+                common_name="admin",
+                name="test_admin_client")
+
             self.security.tls_provider = MTLSProvider(self.tls)
-            self.redpanda.set_security_settings(self.security)
-        else:
-            self.cert = None
+
+        self.redpanda.set_security_settings(self.security)
         self.redpanda.start()
 
-    def get_client(self, username):
-        return RpkTool(self.redpanda,
-                       username=username,
-                       password=self.password,
-                       sasl_mechanism=self.algorithm,
-                       tls_cert=self.cert)
-
-    def get_super_client(self):
-        username, password, _ = self.redpanda.SUPERUSER_CREDENTIALS
-        return RpkTool(self.redpanda,
-                       username=username,
-                       password=password,
-                       sasl_mechanism=self.algorithm,
-                       tls_cert=self.cert)
-
-    def prepare_users(self):
-        """
-        Create users and ACLs
-
-        TODO:
-          - wait for users to propogate
-        """
         admin = Admin(self.redpanda)
         client = self.get_super_client()
 
         # base case user is not a superuser and has no configured ACLs
-        admin.create_user("base", self.password, self.algorithm)
+        if use_sasl:
+            admin.create_user("base", self.password, self.algorithm)
 
-        admin.create_user("cluster_describe", self.password, self.algorithm)
+        # only grant cluster describe permission to user cluster_describe
+        if use_sasl:
+            admin.create_user("cluster_describe", self.password,
+                              self.algorithm)
         client.acl_create_allow_cluster("cluster_describe", "describe")
 
+        # there is not a convenient interface for waiting for acls to propogate
+        # to all nodes so when we are using mtls only for identity we inject a
+        # sleep here to try to avoid any acl propogation races.
+        if self.security.enable_mtls_identity:
+            time.sleep(5)
+            return
+
+        # wait for users to proogate to nodes
         def users_propogated():
             for node in self.redpanda.nodes:
                 users = admin.list_users(node=node)
@@ -100,14 +103,51 @@ class AccessControlListTest(RedpandaTest):
 
         wait_until(users_propogated, timeout_sec=10, backoff_sec=1)
 
+    def get_client(self, username):
+        if self.security.enable_mtls_identity:
+            if username == "base":
+                cert = self.base_user_cert
+            elif username == "cluster_describe":
+                cert = self.cluster_describe_user_cert
+            else:
+                assert False, f"unknown user {username}"
+
+            return RpkTool(self.redpanda, tls_cert=cert)
+
+        # uses base user cert with no explicit permissions. the cert should only
+        # participate in tls handshake and not principal extraction.
+        cert = None if not self.security.tls_provider else self.base_user_cert
+        return RpkTool(self.redpanda,
+                       username=username,
+                       password=self.password,
+                       sasl_mechanism=self.algorithm,
+                       tls_cert=cert)
+
+    def get_super_client(self):
+        if self.security.enable_mtls_identity:
+            return RpkTool(self.redpanda, tls_cert=self.admin_user_cert)
+
+        username, password, _ = self.redpanda.SUPERUSER_CREDENTIALS
+
+        # uses base user cert with no explicit permissions. the cert should only
+        # participate in tls handshake and not principal extraction.
+        cert = None if not self.security.tls_provider else self.base_user_cert
+        return RpkTool(self.redpanda,
+                       username=username,
+                       password=password,
+                       sasl_mechanism=self.algorithm,
+                       tls_cert=cert)
+
     @cluster(num_nodes=3)
-    @matrix(use_tls=[True, False])
-    def test_describe_acls(self, use_tls):
+    @parametrize(use_tls=False,
+                 use_sasl=True)  # plaintext conn + sasl for authn
+    @parametrize(use_tls=True, use_sasl=True)  # ssl/tls conn + sasl for authn
+    @parametrize(use_tls=True, use_sasl=False)  # ssl/tls conn + mtls for authn
+    def test_describe_acls(self, use_tls, use_sasl):
         """
         security::acl_operation::describe, security::default_cluster_name
         """
-        self._start_redpanda(use_tls)
-        self.prepare_users()
+        self.prepare_cluster(use_tls, use_sasl)
 
         # run a few times for good health
         for _ in range(5):
