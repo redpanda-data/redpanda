@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg width="24px" height="24px" viewBox="0 0 24 24" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
-    <g id="Artboard" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd" stroke-linecap="round" stroke-linejoin="round">
-        <g id="revert" transform="translate(11.910707, 12.000000) rotate(-20.000000) translate(-11.910707, -12.000000) translate(0.410707, 0.000000)" stroke="#000000" stroke-width="2">
-            <polyline id="Path" transform="translate(8.000000, 4.000000) rotate(200.000000) translate(-8.000000, -4.000000) " points="5 1 11 1 11 7"></polyline>
-            <path d="M11.5,22 C16.7467051,22 21,17.7467051 21,12.5 C21,7.25329488 16.7467051,3 11.5,3 C10.2417899,3 9.04070943,3.24460117 7.94171611,3.68884604 C5.80966548,4.55068254 4.06183124,6.1639006 3.02646673,8.2002469 C2.3700403,9.49130096 2,10.9524367 2,12.5 C2,14.0864756 2.38888299,15.5821226 3.07652457,16.8968168 C3.75690814,18.1976345 4.72977683,19.321299 5.90782998,20.1805096" id="Oval" transform="translate(11.500000, 12.500000) rotate(101.000000) translate(-11.500000, -12.500000) "></path>
-        </g>
-    </g>
-</svg>
