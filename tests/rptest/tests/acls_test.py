@@ -38,6 +38,9 @@ class AccessControlListTest(RedpandaTest):
     password = "password"
     algorithm = "SCRAM-SHA-256"
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, num_brokers=3, **kwargs)
+
     def setUp(self):
         # Skip starting redpanda, so that test can explicitly start
         # it with custom security settings
