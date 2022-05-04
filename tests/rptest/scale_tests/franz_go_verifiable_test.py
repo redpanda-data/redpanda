@@ -7,23 +7,27 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.services.cluster import cluster
-from ducktape.utils.util import wait_until
-from ducktape.cluster.cluster_spec import ClusterSpec
-from ducktape.mark import matrix
-
+import functools
 import os
+
+from ducktape.mark import matrix
+from ducktape.utils.util import wait_until
 
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
-from rptest.tests.prealloc_nodes import PreallocNodesTest
-from rptest.services.redpanda import SISettings, RESTART_LOG_ALLOW_LIST
+from rptest.services.action_injector import random_process_kills, ActionConfig, random_leadership_transfers, \
+    random_decommissions
+from rptest.services.cluster import cluster
 from rptest.services.franz_go_verifiable_services import (
     FranzGoVerifiableProducer,
     FranzGoVerifiableSeqConsumer,
     FranzGoVerifiableRandomConsumer,
     FranzGoVerifiableConsumerGroupConsumer,
 )
+from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST
+from rptest.services.redpanda import SISettings, RESTART_LOG_ALLOW_LIST
+from rptest.tests.prealloc_nodes import PreallocNodesTest
+from rptest.tests.topic_recovery_test import TRANSIENT_ERRORS
 
 
 class FranzGoVerifiableBase(PreallocNodesTest):
@@ -217,3 +221,102 @@ class FranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
         self.redpanda.set_cluster_config(configs, expect_restart=True)
 
         self._workload(segment_size)
+
+
+class FranzGoVerifiableWithSiAndDisruptions(FranzGoVerifiableBase):
+    MSG_SIZE = 100000
+    PRODUCE_COUNT = 20000
+    RANDOM_READ_COUNT = 1000
+    RANDOM_READ_PARALLEL = 20
+    NUM_BROKERS = 5
+    segment_size = 5 * 1000000
+
+    def __init__(self, ctx):
+        si_settings = SISettings(log_segment_size=self.segment_size,
+                                 cloud_storage_cache_size=5 *
+                                 self.segment_size)
+
+        super(FranzGoVerifiableWithSiAndDisruptions, self).__init__(
+            test_context=ctx,
+            num_brokers=self.NUM_BROKERS,
+            extra_rp_conf={
+                # We will run relatively large number of partitions
+                # and want it to work with slow debug builds and
+                # on noisy developer workstations: relax the raft
+                # intervals
+                'election_timeout_ms': 5000,
+                'raft_heartbeat_interval_ms': 500,
+                'default_topic_replications': self.NUM_BROKERS,
+            },
+            si_settings=si_settings)
+
+    def _test_action(self, action, config):
+        assert not self.debug_mode
+        with action(config) as ctx:
+            rpk = RpkTool(self.redpanda)
+            rpk.alter_topic_config(self.topic, 'redpanda.remote.write', 'true')
+            rpk.alter_topic_config(self.topic, 'redpanda.remote.read', 'true')
+            rpk.alter_topic_config(self.topic, 'retention.bytes',
+                                   str(self.segment_size))
+
+            self._producer.start(clean=False)
+            wait_until(lambda: self._producer.produce_status.acked > 0,
+                       timeout_sec=60,
+                       backoff_sec=5.0,
+                       err_msg='Failed to ack any messages')
+            wait_until(
+                lambda: self._producer.produce_status.acked > self.
+                PRODUCE_COUNT // 2,
+                timeout_sec=300,
+                backoff_sec=5,
+                err_msg=f'Failed to ack {self.PRODUCE_COUNT // 2} messages')
+            objects = list(self.redpanda.get_objects_from_si())
+            assert len(objects) > 0
+
+            wrote_at_least = self._producer.produce_status.acked
+            self._seq_consumer.start(clean=False)
+            self._rand_consumer.start(clean=False)
+            self._producer.wait()
+            assert self._producer.produce_status.acked >= self.PRODUCE_COUNT
+            self._seq_consumer.shutdown()
+            self._rand_consumer.shutdown()
+            self._seq_consumer.wait(timeout_sec=900)
+            self._rand_consumer.wait(timeout_sec=900)
+
+        ctx.assert_actions_triggered()
+        assert self._seq_consumer.consumer_status.valid_reads >= wrote_at_least
+        assert self._rand_consumer.consumer_status.total_reads == self.RANDOM_READ_COUNT * self.RANDOM_READ_PARALLEL
+
+    @cluster(num_nodes=6,
+             log_allow_list=CHAOS_LOG_ALLOW_LIST + TRANSIENT_ERRORS)
+    def test_with_random_process_kills(self):
+        self._test_action(
+            functools.partial(random_process_kills, self.redpanda),
+            ActionConfig(
+                cluster_start_lead_time_sec=10,
+                min_time_between_actions_sec=10,
+                max_time_between_actions_sec=20,
+            ))
+
+    @cluster(num_nodes=6,
+             log_allow_list=CHAOS_LOG_ALLOW_LIST + TRANSIENT_ERRORS)
+    def test_with_random_leadership_transfer(self):
+        self._test_action(
+            functools.partial(random_leadership_transfers, self.redpanda,
+                              self.topics[0]),
+            ActionConfig(
+                cluster_start_lead_time_sec=10,
+                min_time_between_actions_sec=10,
+                max_time_between_actions_sec=20,
+            ))
+
+    @cluster(num_nodes=6,
+             log_allow_list=CHAOS_LOG_ALLOW_LIST + TRANSIENT_ERRORS)
+    def test_with_random_node_decommission(self):
+        self._test_action(
+            functools.partial(random_decommissions, self.redpanda),
+            ActionConfig(
+                cluster_start_lead_time_sec=10,
+                min_time_between_actions_sec=10,
+                max_time_between_actions_sec=20,
+            ))

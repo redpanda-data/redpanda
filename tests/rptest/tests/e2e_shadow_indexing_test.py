@@ -16,12 +16,12 @@ from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
-from rptest.services.action_injector import random_process_kills
+from rptest.services.action_injector import random_process_kills, random_decommissions, ActionConfig, \
+    random_leadership_transfers
 from rptest.services.cluster import cluster
 from rptest.services.franz_go_verifiable_services import FranzGoVerifiableProducer, FranzGoVerifiableRandomConsumer
 from rptest.services.franz_go_verifiable_services import ServiceStatus, await_minimum_produced_records
-from rptest.services.redpanda import RedpandaService, CHAOS_LOG_ALLOW_LIST
-from rptest.services.redpanda import SISettings
+from rptest.services.redpanda import RedpandaService, SISettings, CHAOS_LOG_ALLOW_LIST
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.util import Scale
@@ -53,7 +53,7 @@ class EndToEndShadowIndexingBase(EndToEndTest):
         self.si_settings = SISettings(
             cloud_storage_reconciliation_interval_ms=500,
             cloud_storage_max_connections=5,
-            log_segment_size=EndToEndShadowIndexingTest.segment_size,  # 1MB
+            log_segment_size=EndToEndShadowIndexingBase.segment_size,  # 1MB
         )
         self.s3_bucket_name = self.si_settings.cloud_storage_bucket
         self.si_settings.load_context(self.logger, test_context)
@@ -104,13 +104,21 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
 
 
 class EndToEndShadowIndexingTestWithDisruptions(EndToEndShadowIndexingBase):
+    """
+    The tests added here are a small scale version of longer running tests
+    run via scale_tests. These tests make assertions that shadow indexing
+    works with some disruptive operations and are fast enough to run as part
+    of CI
+    """
+    num_brokers = 4
+
     def __init__(self, test_context):
         super().__init__(test_context,
                          extra_rp_conf={
                              'default_topic_replications': self.num_brokers,
                          })
 
-    @cluster(num_nodes=5, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    @cluster(num_nodes=6, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_write_with_node_failures(self):
         self.start_producer()
         produce_until_segments(
@@ -133,6 +141,78 @@ class EndToEndShadowIndexingTestWithDisruptions(EndToEndShadowIndexingBase):
                                       topic=self.topic,
                                       partition_idx=0,
                                       count=6)
+            self.start_consumer()
+            self.run_validation()
+        ctx.assert_actions_triggered()
+
+    @cluster(num_nodes=6, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    def test_write_with_node_decommissions(self):
+        self.start_producer()
+        produce_until_segments(
+            redpanda=self.redpanda,
+            topic=self.topic,
+            partition_idx=0,
+            count=20,
+        )
+
+        self.kafka_tools.alter_topic_config(
+            self.topic,
+            {
+                TopicSpec.PROPERTY_RETENTION_BYTES:
+                5 * EndToEndShadowIndexingTest.segment_size
+            },
+        )
+
+        with random_decommissions(
+                self.redpanda,
+                ActionConfig(
+                    cluster_start_lead_time_sec=20,
+                    min_time_between_actions_sec=5,
+                    max_time_between_actions_sec=10,
+                )) as ctx:
+            wait_for_segments_removal(redpanda=self.redpanda,
+                                      topic=self.topic,
+                                      partition_idx=0,
+                                      count=6)
+            objects = self.s3_client.list_objects(self.s3_bucket_name)
+            assert objects
+
+            self.start_consumer()
+            self.run_validation()
+        ctx.assert_actions_triggered()
+
+    @cluster(num_nodes=6)
+    def test_write_with_leadership_transfers(self):
+        self.start_producer()
+        produce_until_segments(
+            redpanda=self.redpanda,
+            topic=self.topic,
+            partition_idx=0,
+            count=20,
+        )
+
+        self.kafka_tools.alter_topic_config(
+            self.topic,
+            {
+                TopicSpec.PROPERTY_RETENTION_BYTES:
+                5 * EndToEndShadowIndexingTest.segment_size
+            },
+        )
+
+        with random_leadership_transfers(
+                self.redpanda, self.topics[0],
+                ActionConfig(
+                    cluster_start_lead_time_sec=20,
+                    min_time_between_actions_sec=5,
+                    max_time_between_actions_sec=10,
+                )) as ctx:
+            wait_for_segments_removal(redpanda=self.redpanda,
+                                      topic=self.topic,
+                                      partition_idx=0,
+                                      count=6)
+            objects = self.s3_client.list_objects(self.s3_bucket_name)
+            assert objects
+
             self.start_consumer()
             self.run_validation()
         ctx.assert_actions_triggered()
@@ -201,7 +281,7 @@ class ShadowIndexingWhileBusyTest(PreallocNodesTest):
         # Block until a subset of records are produced
         await_minimum_produced_records(self.redpanda,
                                        producer,
-                                       min_acked=msg_count / 100)
+                                       min_acked=msg_count // 100)
 
         rand_consumer = FranzGoVerifiableRandomConsumer(
             self.test_context, self.redpanda, self.topic, msg_size, 100, 10,

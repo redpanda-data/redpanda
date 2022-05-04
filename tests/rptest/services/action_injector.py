@@ -401,6 +401,7 @@ class ActionCtx:
         self.config = config
         if config.max_affected_nodes is None:
             config.max_affected_nodes = len(redpanda.nodes) // 2
+        self.disruptive_action = disruptive_action
         self.thread = ActionInjectorThread(config, redpanda, disruptive_action)
 
     def __enter__(self):
@@ -418,8 +419,9 @@ class ActionCtx:
         Helper to allow tests to assert that the forward and reverse
         actions were triggered by the thread
         """
-        assert (self.thread.action_triggered
-                and self.thread.reverse_action_triggered)
+        assert self.thread.action_triggered
+        if self.disruptive_action.is_reversible:
+            assert self.thread.reverse_action_triggered
 
 
 def create_context_with_defaults(redpanda: RedpandaService,
