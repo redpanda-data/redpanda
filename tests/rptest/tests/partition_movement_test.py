@@ -1,4 +1,4 @@
-# Copyright 2020 Redpanda Data, Inc.
+# Copyright 2022 Redpanda Data, Inc.
 #
 # Use of this software is governed by the Business Source License
 # included in the file licenses/BSL.md
@@ -25,7 +25,7 @@ from rptest.services.honey_badger import HoneyBadger
 from rptest.services.rpk_producer import RpkProducer
 from rptest.services.kaf_producer import KafProducer
 from rptest.services.rpk_consumer import RpkConsumer
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, SISettings
 
 # Errors we should tolerate when moving partitions around
 PARTITION_MOVEMENT_LOG_ERRORS = [
@@ -560,3 +560,99 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         # create topic again
         rpk.create_topic(topic, 1, 1)
         wait_until(lambda: get_status() == 'done', 10, 1)
+
+
+class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
+    """
+    Run partition movement tests with shadow indexing enabled
+    """
+    def __init__(self, ctx, *args, **kwargs):
+        # Force shadow indexing to be used by most reads
+        # in one test
+        si_settings = SISettings(
+            cloud_storage_reconciliation_interval_ms=500,
+            cloud_storage_max_connections=5,
+            log_segment_size=10240,  # 10KiB
+        )
+        super(SIPartitionMovementTest, self).__init__(
+            ctx,
+            *args,
+            extra_rp_conf={
+                # Disable leader balancer, as this test is doing its own
+                # partition movement and the balancer would interfere
+                'enable_leader_balancer': False,
+                'delete_retention_ms': 1000,
+            },
+            si_settings=si_settings,
+            **kwargs)
+        self._ctx = ctx
+
+    def _get_scale_params(self):
+        """
+        Helper for reducing traffic generation parameters
+        when running on a slower debug build of redpanda.
+        """
+        throughput = 100 if self.debug_mode else 1000
+        records = 500 if self.debug_mode else 5000
+        moves = 5 if self.debug_mode else 25
+        partitions = 1 if self.debug_mode else 10
+        return throughput, records, moves, partitions
+
+    @cluster(num_nodes=5)
+    def test_shadow_indexing(self):
+        """
+        Test interaction between the shadow indexing and the partition movement.
+        Partition movement generate partitions with different revision-ids and the
+        archival/shadow-indexing subsystem is using revision to generate unique object
+        keys inside the remote storage.
+        """
+        throughput, records, moves, partitions = self._get_scale_params()
+
+        self.start_redpanda(num_nodes=3)
+        spec = TopicSpec(name="topic",
+                         partition_count=partitions,
+                         replication_factor=3)
+        self.client().create_topic(spec)
+        self.topic = spec.name
+        self.start_producer(1, throughput=throughput)
+        self.start_consumer(1)
+        self.await_startup()
+        for _ in range(moves):
+            self._move_and_verify()
+        self.run_validation(enable_idempotence=False,
+                            consumer_timeout_sec=45,
+                            min_records=records)
+
+    @cluster(num_nodes=5)
+    def test_cross_shard(self):
+        """
+        Test interaction between the shadow indexing and the partition movement.
+        Move partitions with SI enabled between shards.
+        """
+        throughput, records, moves, partitions = self._get_scale_params()
+
+        self.start_redpanda(num_nodes=3)
+        spec = TopicSpec(name="topic",
+                         partition_count=partitions,
+                         replication_factor=3)
+        self.client().create_topic(spec)
+        self.topic = spec.name
+        self.start_producer(1, throughput=throughput)
+        self.start_consumer(1)
+        self.await_startup()
+
+        admin = Admin(self.redpanda)
+        topic = self.topic
+        partition = 0
+
+        for _ in range(moves):
+            assignments = self._get_assignments(admin, topic, partition)
+            for a in assignments:
+                # Bounce between core 0 and 1
+                a['core'] = (a['core'] + 1) % 2
+            admin.set_partition_replicas(topic, partition, assignments)
+            self._wait_post_move(topic, partition, assignments, 360)
+
+        self.run_validation(enable_idempotence=False,
+                            consumer_timeout_sec=45,
+                            min_records=records)
