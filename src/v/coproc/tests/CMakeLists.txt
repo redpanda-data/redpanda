@@ -15,7 +15,7 @@ set(fixture_deps
 
 rp_test(
   UNIT_TEST
-  BINARY_NAME coproc_fixture
+  BINARY_NAME coproc_fixture_unstable
   SOURCES
     ${fixture_srcs}
     retry_logic_tests.cc
@@ -32,5 +32,5 @@ rp_test(
     kafka_api_materialized_tests.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES v::seastar_testing_main ${fixture_deps}
-  LABELS coproc
+  LABELS coproc disable_on_ci
   )
