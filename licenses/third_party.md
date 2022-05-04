@@ -149,21 +149,3 @@ please keep this up to date with every new library use.
 | fast-crc32c                          | MIT              |
 | xxhash                               | BSD              |
 
-## src/v/dashboard/package.json
-| software                             | license          |
-| :----------                          | :------------:   |
-| @types/jest                          | MIT              |
-| @types/node                          | MIT              |             
-| @types/react                         | MIT              |
-| @types/react-dom                     | MIT              |
-| bootstrap                            | MIT              |
-| node-sass                            | MIT              |
-| parse-prometheus-text-format         | Apache-2.0       |
-| plotly.js                            | MIT              |
-| react-plotly.js                      | MIT              |
-| react                                | MIT              |
-| react-charts                         | MIT              |
-| react-dom                            | MIT              |
-| react-scripts                        | MIT              |
-| typescript                           | Apache-2.0       |
-| web-vitals                           | Apache-2.0       |

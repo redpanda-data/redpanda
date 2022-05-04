@@ -42,7 +42,6 @@ licenses           @senior7515 @dswang
 /src/v/compression     @dotnwat
 /src/v/config          @mmaslankaprv
 /src/v/coproc          @graphcareful        @vadimplh
-/src/v/dashboard       @yougotashovel
 /src/v/finjector       @rystsov
 /src/v/hashing         @dotnwat
 /src/v/http            @lazin

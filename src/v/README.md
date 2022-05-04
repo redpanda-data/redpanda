@@ -27,7 +27,6 @@ syschecks       | system sanity checks |
 rpc             | remote procedure call protocol for machine-to-machine communication |
 pandaproxy      | HTTP Gateway module | 
 reflection      | C++ static reflection and type traversal utils |
-dashboard       | Javascript code to render a node local HTTP dashboard |
 s3              | Amazon S3 object storage integration |
 
 
