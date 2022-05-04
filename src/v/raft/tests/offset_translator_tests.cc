@@ -274,14 +274,6 @@ FIXTURE_TEST(immutability_test, offset_translator_fixture) {
     validate_offsets_immutable(truncate_at + 1);
 }
 
-static model::offset next_offset(model::offset o) {
-    if (o() < 0) {
-        return model::offset{0};
-    } else {
-        return o + model::offset{1};
-    }
-}
-
 static ss::future<std::vector<model::offset>>
 collect_base_offsets(storage::log log) {
     struct consumer {
@@ -488,7 +480,7 @@ struct fuzz_checker {
             BOOST_REQUIRE_EQUAL(hwm_lo, _tr->state()->to_log_offset(hwm_ko));
         }
 
-        int64_t start_log_offset = next_offset(_snapshot_offset)();
+        int64_t start_log_offset = model::next_offset(_snapshot_offset)();
         if (start_log_offset >= _kafka_offsets.size()) {
             // empty log
             return;

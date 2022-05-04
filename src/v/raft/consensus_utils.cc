@@ -463,7 +463,7 @@ ss::future<> create_offset_translator_state_for_pre_existing_partition(
   model::offset max_rp_offset) {
     // Prepare offset_translator state in kvstore
     storage::offset_translator_state ot_state(
-      ntp_cfg.ntp(), raft::details::prev_offset(min_rp_offset), 0);
+      ntp_cfg.ntp(), model::prev_offset(min_rp_offset), 0);
     co_await api.kvs().put(
       storage::kvstore::key_space::offset_translator,
       raft::offset_translator::kvstore_offsetmap_key(group),
@@ -471,7 +471,7 @@ ss::future<> create_offset_translator_state_for_pre_existing_partition(
     co_await api.kvs().put(
       storage::kvstore::key_space::offset_translator,
       raft::offset_translator::kvstore_highest_known_offset_key(group),
-      reflection::to_iobuf(raft::details::prev_offset(max_rp_offset)));
+      reflection::to_iobuf(model::prev_offset(max_rp_offset)));
 }
 
 ss::future<> create_raft_state_for_pre_existing_partition(

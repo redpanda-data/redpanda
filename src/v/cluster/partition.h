@@ -123,7 +123,7 @@ public:
      * consumers. Named high_watermark to be consistent with Kafka nomenclature.
      */
     model::offset high_watermark() const {
-        return raft::details::next_offset(_raft->last_visible_index());
+        return model::next_offset(_raft->last_visible_index());
     }
 
     model::term_id term() { return _raft->term(); }

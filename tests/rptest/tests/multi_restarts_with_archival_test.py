@@ -30,10 +30,6 @@ class MultiRestartTest(EndToEndTest):
         super(MultiRestartTest, self).__init__(test_context=test_context,
                                                extra_rp_conf=extra_rp_conf)
 
-    def tearDown(self):
-        self.s3_client.empty_bucket(self.s3_bucket_name)
-        super().tearDown()
-
     @cluster(num_nodes=5, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_recovery_after_multiple_restarts(self):
         # If a debug build has to do a restart across a significant
