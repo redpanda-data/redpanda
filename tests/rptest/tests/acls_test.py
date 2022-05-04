@@ -74,7 +74,19 @@ class AccessControlListTest(RedpandaTest):
         self.redpanda.start()
 
         admin = Admin(self.redpanda)
-        client = self.get_super_client()
+
+        if self.security.enable_mtls_identity:
+            feature_name = "mtls_authentication"
+            admin.put_feature(feature_name, {"state": "active"})
+
+            # wait for feature to be active so that tests don't have to retry
+            def check_feature_active():
+                for f in admin.get_features()["features"]:
+                    if f["name"] == feature_name and f["state"] == "active":
+                        return True
+                return False
+
+            wait_until(check_feature_active, timeout_sec=10, backoff_sec=1)
 
         # base case user is not a superuser and has no configured ACLs
         if use_sasl:
@@ -84,6 +96,7 @@ class AccessControlListTest(RedpandaTest):
         if use_sasl:
             admin.create_user("cluster_describe", self.password,
                               self.algorithm)
+        client = self.get_super_client()
         client.acl_create_allow_cluster("cluster_describe", "describe")
 
         # there is not a convenient interface for waiting for acls to propogate
