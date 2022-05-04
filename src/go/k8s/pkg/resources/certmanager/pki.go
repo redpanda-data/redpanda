@@ -85,8 +85,9 @@ func (r *PkiReconciler) Ensure(ctx context.Context) error {
 	return nil
 }
 
-func (r *PkiReconciler) issuerNamespacedName(name string) types.NamespacedName {
-	return types.NamespacedName{Name: r.pandaCluster.Name + "-" + name, Namespace: r.pandaCluster.Namespace}
+// StatefulSetVolumeProvider returns volume provider for all TLS certificates
+func (r *PkiReconciler) StatefulSetVolumeProvider() resources.StatefulsetTLSVolumeProvider {
+	return r.clusterCertificates
 }
 
 func (r *PkiReconciler) prepareAPI(

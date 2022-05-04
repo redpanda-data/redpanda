@@ -19,7 +19,6 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
-	cmetav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
@@ -55,15 +54,6 @@ const (
 	datadirName                  = "datadir"
 	archivalCacheIndexAnchorName = "shadow-index-cache"
 	defaultDatadirCapacity       = "100Gi"
-
-	redpandaCertVolName       = "tlscert"
-	redpandaCAVolName         = "tlsca"
-	adminAPICertVolName       = "tlsadmincert"
-	adminAPICAVolName         = "tlsadminca"
-	pandaProxyCertVolName     = "tlspandaproxycert"
-	pandaProxyCAVolName       = "tlspandaproxyca"
-	schemaRegistryCertVolName = "tlsschemaregistrycert"
-	schemaRegistryCAVolName   = "tlsschemaregistryca"
 )
 
 var (
@@ -88,23 +78,15 @@ type ConfiguratorSettings struct {
 // focusing on the management of redpanda cluster
 type StatefulSetResource struct {
 	k8sclient.Client
-	scheme                             *runtime.Scheme
-	pandaCluster                       *redpandav1alpha1.Cluster
-	serviceFQDN                        string
-	serviceName                        string
-	nodePortName                       types.NamespacedName
-	nodePortSvc                        corev1.Service
-	redpandaCertSecretKey              types.NamespacedName
-	internalClientCertSecretKey        types.NamespacedName
-	adminCertSecretKey                 types.NamespacedName
-	adminAPINodeCertSecretKey          types.NamespacedName
-	adminAPIClientCertSecretKey        types.NamespacedName
-	pandaproxyAPINodeCertSecretKey     types.NamespacedName
-	pandaproxyClientCertSecretKey      types.NamespacedName
-	schemaRegistryAPINodeCertSecretKey types.NamespacedName
-	schemaRegistryClientCertSecretKey  types.NamespacedName
-	serviceAccountName                 string
-	configuratorSettings               ConfiguratorSettings
+	scheme               *runtime.Scheme
+	pandaCluster         *redpandav1alpha1.Cluster
+	serviceFQDN          string
+	serviceName          string
+	nodePortName         types.NamespacedName
+	nodePortSvc          corev1.Service
+	volumeProvider       StatefulsetTLSVolumeProvider
+	serviceAccountName   string
+	configuratorSettings ConfiguratorSettings
 	// hash of configmap containing configuration for redpanda (node config only), it's injected to
 	// annotation to ensure the pods get restarted when configuration changes
 	// this has to be retrieved lazily to achieve the correct order of resources
@@ -123,15 +105,7 @@ func NewStatefulSet(
 	serviceFQDN string,
 	serviceName string,
 	nodePortName types.NamespacedName,
-	redpandaCertSecretKey types.NamespacedName,
-	internalClientCertSecretKey types.NamespacedName,
-	adminCertSecretKey types.NamespacedName,
-	adminAPINodeCertSecretKey types.NamespacedName,
-	adminAPIClientCertSecretKey types.NamespacedName,
-	pandaproxyAPINodeCertSecretKey types.NamespacedName,
-	pandaproxyClientCertSecretKey types.NamespacedName,
-	schemaRegistryAPINodeCertSecretKey types.NamespacedName,
-	schemaRegistryClientCertSecretKey types.NamespacedName,
+	volumeProvider StatefulsetTLSVolumeProvider,
 	serviceAccountName string,
 	configuratorSettings ConfiguratorSettings,
 	nodeConfigMapHashGetter func(context.Context) (string, error),
@@ -145,15 +119,7 @@ func NewStatefulSet(
 		serviceName,
 		nodePortName,
 		corev1.Service{},
-		redpandaCertSecretKey,
-		internalClientCertSecretKey,
-		adminCertSecretKey,
-		adminAPINodeCertSecretKey,
-		adminAPIClientCertSecretKey,
-		pandaproxyAPINodeCertSecretKey,
-		pandaproxyClientCertSecretKey,
-		schemaRegistryAPINodeCertSecretKey,
-		schemaRegistryClientCertSecretKey,
+		volumeProvider,
 		serviceAccountName,
 		configuratorSettings,
 		nodeConfigMapHashGetter,
@@ -299,7 +265,7 @@ func (r *StatefulSetResource) obj(
 		externalSubdomain = externalListener.External.Subdomain
 		externalAddressType = externalListener.External.PreferredAddressType
 	}
-
+	tlsVolumes, tlsVolumeMounts := r.volumeProvider.Volumes()
 	ss := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: r.Key().Namespace,
@@ -347,7 +313,7 @@ func (r *StatefulSetResource) obj(
 								EmptyDir: &corev1.EmptyDirVolumeSource{},
 							},
 						},
-					}, r.secretVolumes()...),
+					}, tlsVolumes...),
 					TerminationGracePeriodSeconds: &terminationGracePeriodSeconds,
 					InitContainers: []corev1.Container{
 						{
@@ -478,7 +444,7 @@ func (r *StatefulSetResource) obj(
 									Name:      "config-dir",
 									MountPath: configDestinationDir,
 								},
-							}, r.secretVolumeMounts()...),
+							}, tlsVolumeMounts...),
 						},
 					},
 					Tolerations:  tolerations,
@@ -535,7 +501,7 @@ func (r *StatefulSetResource) obj(
 
 	setCloudStorage(ss, r.pandaCluster)
 
-	rpkStatusContainer := r.rpkStatusContainer()
+	rpkStatusContainer := r.rpkStatusContainer(tlsVolumeMounts)
 	if rpkStatusContainer != nil {
 		ss.Spec.Template.Spec.Containers = append(ss.Spec.Template.Spec.Containers, *rpkStatusContainer)
 	}
@@ -669,7 +635,9 @@ func setCloudStorage(
 	}
 }
 
-func (r *StatefulSetResource) rpkStatusContainer() *corev1.Container {
+func (r *StatefulSetResource) rpkStatusContainer(
+	tlsVolumeMounts []corev1.VolumeMount,
+) *corev1.Container {
 	if r.pandaCluster.Spec.Sidecars.RpkStatus == nil || !r.pandaCluster.Spec.Sidecars.RpkStatus.Enabled {
 		return nil
 	}
@@ -689,7 +657,7 @@ func (r *StatefulSetResource) rpkStatusContainer() *corev1.Container {
 				Name:      "config-dir",
 				MountPath: configDestinationDir,
 			},
-		}, r.secretVolumeMounts()...),
+		}, tlsVolumeMounts...),
 	}
 }
 
@@ -754,120 +722,6 @@ func (r *StatefulSetResource) pandaproxyEnvVars() []corev1.EnvVar {
 		})
 	}
 	return envs
-}
-
-func (r *StatefulSetResource) secretVolumeMounts() []corev1.VolumeMount {
-	var mounts []corev1.VolumeMount
-	if kafkaListener := r.pandaCluster.KafkaTLSListener(); kafkaListener != nil {
-		mounts = append(mounts, r.secretVolumeMountForTLS(kafkaListener.GetTLS(), redpandaCertVolName, tlsKafkaAPIDir, redpandaCAVolName, tlsKafkaAPIDirCA)...)
-	}
-	if adminAPI := r.pandaCluster.AdminAPITLS(); adminAPI != nil {
-		mounts = append(mounts, r.secretVolumeMountForTLS(adminAPI.GetTLS(), adminAPICertVolName, tlsAdminAPIDir, adminAPICAVolName, tlsAdminAPIDirCA)...)
-	}
-	if pandaProxy := r.pandaCluster.PandaproxyAPITLS(); pandaProxy != nil {
-		mounts = append(mounts, r.secretVolumeMountForTLS(pandaProxy.GetTLS(), pandaProxyCertVolName, tlsPandaproxyAPIDir, pandaProxyCAVolName, tlsPandaproxyAPIDirCA)...)
-	}
-	if schemaRegistry := r.pandaCluster.SchemaRegistryAPITLS(); schemaRegistry != nil {
-		mounts = append(mounts, r.secretVolumeMountForTLS(schemaRegistry.GetTLS(), schemaRegistryCertVolName, tlsSchemaRegistryDir, schemaRegistryCAVolName, tlsSchemaRegistryDirCA)...)
-	}
-
-	return mounts
-}
-
-func (r *StatefulSetResource) secretVolumeMountForTLS(
-	tlsConfig *redpandav1alpha1.TLSConfig,
-	tlsVolName, tlsMoundDir, caVolName, caMountDir string,
-) []corev1.VolumeMount {
-	var mounts []corev1.VolumeMount
-	if tlsConfig == nil || !tlsConfig.Enabled {
-		return mounts
-	}
-	mounts = append(mounts, corev1.VolumeMount{
-		Name:      tlsVolName,
-		MountPath: tlsMoundDir,
-	})
-
-	if tlsConfig.RequireClientAuth {
-		mounts = append(mounts, corev1.VolumeMount{
-			Name:      caVolName,
-			MountPath: caMountDir,
-		})
-	}
-
-	return mounts
-}
-
-// The controller should have more focused feature
-// oriented functions. E.g. each TLS volume could be managed by
-// one function along side with root certificate, issuer, certificate and
-// volumesMount in statefulset.
-func (r *StatefulSetResource) secretVolumes() []corev1.Volume {
-	var vols []corev1.Volume
-	if kafkaListener := r.pandaCluster.KafkaTLSListener(); kafkaListener != nil {
-		vols = append(vols, r.secretVolumesForTLS(kafkaListener.GetTLS(), redpandaCertVolName, r.redpandaCertSecretKey, redpandaCAVolName, r.internalClientCertSecretKey)...)
-	}
-	if adminAPI := r.pandaCluster.AdminAPITLS(); adminAPI != nil {
-		vols = append(vols, r.secretVolumesForTLS(adminAPI.GetTLS(), adminAPICertVolName, r.adminAPINodeCertSecretKey, adminAPICAVolName, r.adminAPIClientCertSecretKey)...)
-	}
-	if pandaProxy := r.pandaCluster.PandaproxyAPITLS(); pandaProxy != nil {
-		vols = append(vols, r.secretVolumesForTLS(pandaProxy.GetTLS(), pandaProxyCertVolName, r.pandaproxyAPINodeCertSecretKey, pandaProxyCAVolName, r.pandaproxyClientCertSecretKey)...)
-	}
-	if schemaRegistry := r.pandaCluster.SchemaRegistryAPITLS(); schemaRegistry != nil {
-		vols = append(vols, r.secretVolumesForTLS(schemaRegistry.GetTLS(), schemaRegistryCertVolName, r.schemaRegistryAPINodeCertSecretKey, schemaRegistryCAVolName, r.schemaRegistryClientCertSecretKey)...)
-	}
-
-	return vols
-}
-
-func (r *StatefulSetResource) secretVolumesForTLS(
-	tlsConfig *redpandav1alpha1.TLSConfig,
-	tlsVolName string,
-	tlsSecretRef types.NamespacedName,
-	caVolName string,
-	mutualTLSSecretRef types.NamespacedName,
-) []corev1.Volume {
-	var vols []corev1.Volume
-	if tlsConfig == nil || !tlsConfig.Enabled {
-		return vols
-	}
-
-	vols = append(vols, corev1.Volume{
-		Name: tlsVolName,
-		VolumeSource: corev1.VolumeSource{
-			Secret: &corev1.SecretVolumeSource{
-				SecretName: tlsSecretRef.Name,
-				Items: []corev1.KeyToPath{
-					{
-						Key:  corev1.TLSPrivateKeyKey,
-						Path: corev1.TLSPrivateKeyKey,
-					},
-					{
-						Key:  corev1.TLSCertKey,
-						Path: corev1.TLSCertKey,
-					},
-				},
-			},
-		},
-	})
-
-	if tlsConfig.RequireClientAuth {
-		vols = append(vols, corev1.Volume{
-			Name: caVolName,
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName: mutualTLSSecretRef.Name,
-					Items: []corev1.KeyToPath{
-						{
-							Key:  cmetav1.TLSCAKey,
-							Path: cmetav1.TLSCAKey,
-						},
-					},
-				},
-			},
-		})
-	}
-
-	return vols
 }
 
 func (r *StatefulSetResource) getNodePort(name string) string {
