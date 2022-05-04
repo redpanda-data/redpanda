@@ -847,6 +847,15 @@ class RedpandaService(Service):
             nsr = node.account.ssh_capture("netstat -ant")
             return any([is_up(line) for line in nsr])
 
+        if wasm_service_up() is True:
+            self.logger.warn(f"Waiting for {wasm_port} to be available")
+            wait_until(
+                lambda: not wasm_service_up(),
+                timeout_sec=RedpandaService.READY_TIMEOUT_SEC,
+                err_msg=
+                f"Wasm engine server shutdown within {RedpandaService.READY_TIMEOUT_SEC}s timeout",
+                retry_on_exc=True)
+
         def start_wasm_service():
             node.account.ssh(wcmd)
 
