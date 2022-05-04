@@ -431,7 +431,7 @@ ss::future<> recovery_stm::replicate(
       .then([this, seq, dirty_offset = lstats.dirty_offset](auto r) {
           if (!r) {
               vlog(
-                _ctxlog.error,
+                _ctxlog.warn,
                 "recovery append entries error: {}",
                 r.error().message());
               _stop_requested = true;
