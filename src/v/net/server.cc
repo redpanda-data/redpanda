@@ -78,7 +78,9 @@ void server::start() {
                 ss = ss::engine().listen(endpoint.addr, lo);
             } else {
                 ss = ss::tls::listen(
-                  endpoint.credentials, ss::engine().listen(endpoint.addr, lo));
+                  endpoint.credentials,
+                  ss::engine().listen(endpoint.addr, lo),
+                  endpoint.principal_mapper.has_value());
             }
         } catch (...) {
             throw std::runtime_error(fmt::format(
@@ -194,12 +196,22 @@ ss::future<> server::accept(listener& s) {
                   }
               }
 
+              std::optional<security::tls::principal_mapper> tls_pm;
+              auto se_it = std::find_if(
+                cfg.addrs.begin(), cfg.addrs.end(), [&name](const auto& a) {
+                    return a.name == name;
+                });
+              if (se_it != cfg.addrs.end()) {
+                  tls_pm = se_it->principal_mapper;
+              }
+
               auto conn = ss::make_lw_shared<net::connection>(
                 _connections,
                 name,
                 std::move(ar.connection),
                 ar.remote_address,
-                _probe);
+                _probe,
+                tls_pm);
               vlog(
                 rpc::rpclog.trace,
                 "{} - Incoming connection from {} on \"{}\"",

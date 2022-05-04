@@ -19,6 +19,7 @@ from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.tests.redpanda_test import RedpandaTest
+from rptest.services.redpanda import SecurityConfig
 
 
 def create_topic_names(count):
@@ -826,14 +827,15 @@ class PandaProxySASLTest(RedpandaTest):
     Test pandaproxy can connect using SASL.
     """
     def __init__(self, context):
-        extra_rp_conf = dict(
-            auto_create_topics_enabled=False,
-            enable_sasl=True,
-        )
+        extra_rp_conf = dict(auto_create_topics_enabled=False, )
+
+        security = SecurityConfig()
+        security.enable_sasl = True
 
         super(PandaProxySASLTest, self).__init__(context,
                                                  num_brokers=3,
                                                  enable_pp=True,
+                                                 security=security,
                                                  extra_rp_conf=extra_rp_conf)
 
         http.client.HTTPConnection.debuglevel = 1

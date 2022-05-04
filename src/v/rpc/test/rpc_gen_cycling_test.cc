@@ -57,7 +57,8 @@ FIXTURE_TEST(rpcgen_tls_integration, rpc_integration_fixture) {
                            true,
                            config::key_cert{"redpanda.key", "redpanda.crt"},
                            "root_certificate_authority.chain_cert",
-                           false)
+                           false,
+                           std::nullopt)
                            .get_credentials_builder()
                            .get0();
     configure_server(creds_builder);
@@ -133,7 +134,8 @@ FIXTURE_TEST(rpcgen_reload_credentials_integration, rpc_integration_fixture) {
                                   config::key_cert{
                                     client_key.native(), client_crt.native()},
                                   client_ca.native(),
-                                  true)
+                                  true,
+                                  std::nullopt)
                                   .get_credentials_builder()
                                   .get0();
     // server credentials
@@ -146,7 +148,8 @@ FIXTURE_TEST(rpcgen_reload_credentials_integration, rpc_integration_fixture) {
                                   config::key_cert{
                                     server_key.native(), server_crt.native()},
                                   server_ca.native(),
-                                  true)
+                                  true,
+                                  std::nullopt)
                                   .get_credentials_builder()
                                   .get0();
 

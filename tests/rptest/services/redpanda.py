@@ -34,6 +34,7 @@ from rptest.clients.kafka_cat import KafkaCat
 from rptest.services.storage import ClusterStorage, NodeStorage
 from rptest.services.admin import Admin
 from rptest.clients.python_librdkafka import PythonLibrdkafka
+from rptest.services import tls
 
 Partition = collections.namedtuple('Partition',
                                    ['index', 'leader', 'replicas'])
@@ -351,11 +352,57 @@ class SISettings:
         return conf
 
 
+class TLSProvider:
+    """
+    Interface that RedpandaService uses to obtain TLS certificates.
+    """
+    @property
+    def ca(self) -> tls.CertificateAuthority:
+        raise NotImplementedError("ca")
+
+    def create_broker_cert(self, service: Service,
+                           node: ClusterNode) -> tls.Certificate:
+        """
+        Create a certificate for a broker.
+        """
+        raise NotImplementedError("create_broker_cert")
+
+    def create_service_client_cert(self, service: Service,
+                                   name: str) -> tls.Certificate:
+        """
+        Create a certificate for an internal service client.
+        """
+        raise NotImplementedError("create_service_client_cert")
+
+
+class SecurityConfig:
+    # the system currently has a single principal mapping rule. this is
+    # sufficient to get our first mTLS tests put together, but isn't general
+    # enough to cover all the cases. one awkward thing that came up was: admin
+    # clients used by the service and clients used by tests both may need to
+    # have mappings. the internal admin client can use something fixed, but
+    # tests may want to use a variety of rules. currently it is hard to combine
+    # the rules, so instead we use a fixed mapping and arrange for certs to use
+    # a similar format. this will change when we get closer to GA and the
+    # configuration becomes more general.
+    PRINCIPAL_MAPPING_RULES = "RULE:^O=Redpanda,CN=(.*?)$/$1/L, DEFAULT"
+
+    def __init__(self):
+        self.enable_sasl = False
+        self.tls_provider: Optional[TLSProvider] = None
+
+        # extract principal from mtls distinguished name
+        self.enable_mtls_identity = False
+
+
 class RedpandaService(Service):
     PERSISTENT_ROOT = "/var/lib/redpanda"
     DATA_DIR = os.path.join(PERSISTENT_ROOT, "data")
     NODE_CONFIG_FILE = "/etc/redpanda/redpanda.yaml"
     CLUSTER_BOOTSTRAP_CONFIG_FILE = "/etc/redpanda/.bootstrap.yaml"
+    TLS_SERVER_KEY_FILE = "/etc/redpanda/server.key"
+    TLS_SERVER_CRT_FILE = "/etc/redpanda/server.crt"
+    TLS_CA_CRT_FILE = "/etc/redpanda/ca.crt"
     STDOUT_STDERR_CAPTURE = os.path.join(PERSISTENT_ROOT, "redpanda.log")
     BACKTRACE_CAPTURE = os.path.join(PERSISTENT_ROOT, "redpanda_backtrace.log")
     WASM_STDOUT_STDERR_CAPTURE = os.path.join(PERSISTENT_ROOT,
@@ -434,13 +481,15 @@ class RedpandaService(Service):
                  resource_settings=None,
                  si_settings=None,
                  log_level: Optional[str] = None,
-                 environment: Optional[dict[str, str]] = None):
+                 environment: Optional[dict[str, str]] = None,
+                 security: SecurityConfig = SecurityConfig()):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
         self._context = context
         self._enable_rp = enable_rp
         self._extra_rp_conf = extra_rp_conf or dict()
         self._enable_pp = enable_pp
         self._enable_sr = enable_sr
+        self._security = security
 
         self._extra_node_conf = {}
         for node in self.nodes:
@@ -485,6 +534,9 @@ class RedpandaService(Service):
 
         self._saved_executable = False
 
+        self._tls_cert = None
+        self._init_tls()
+
     def set_environment(self, environment: dict[str, str]):
         self._environment = environment
 
@@ -498,9 +550,21 @@ class RedpandaService(Service):
         assert node in self.nodes
         self._extra_node_conf[node] = conf
 
+    def set_security_settings(self, settings):
+        self._security = settings
+        self._init_tls()
+
+    def _init_tls(self):
+        """
+        Call this if tls setting may have changed.
+        """
+        if self._security.tls_provider:
+            # build a cert for clients used internally to the service
+            self._tls_cert = self._security.tls_provider.create_service_client_cert(
+                self, "redpanda.service.admin")
+
     def sasl_enabled(self):
-        return self._extra_rp_conf and self._extra_rp_conf.get(
-            "enable_sasl", False)
+        return self._security.enable_sasl
 
     @property
     def dedicated_nodes(self):
@@ -562,6 +626,7 @@ class RedpandaService(Service):
                 raise
 
         if first_start:
+            self.write_tls_certs()
             self.write_bootstrap_cluster_config()
 
         for node in to_start:
@@ -603,6 +668,32 @@ class RedpandaService(Service):
 
         if self._si_settings is not None:
             self.start_si()
+
+    def write_tls_certs(self):
+        if not self._security.tls_provider:
+            return
+
+        ca = self._security.tls_provider.ca
+        for node in self.nodes:
+            cert = self._security.tls_provider.create_broker_cert(self, node)
+
+            self.logger.info(
+                f"Writing Redpanda node tls key file: {RedpandaService.TLS_SERVER_KEY_FILE}"
+            )
+            self.logger.debug(open(cert.key, "r").read())
+            node.account.copy_to(cert.key, RedpandaService.TLS_SERVER_KEY_FILE)
+
+            self.logger.info(
+                f"Writing Redpanda node tls cert file: {RedpandaService.TLS_SERVER_CRT_FILE}"
+            )
+            self.logger.debug(open(cert.crt, "r").read())
+            node.account.copy_to(cert.crt, RedpandaService.TLS_SERVER_CRT_FILE)
+
+            self.logger.info(
+                f"Writing Redpanda node tls ca cert file: {RedpandaService.TLS_CA_CRT_FILE}"
+            )
+            self.logger.debug(open(ca.crt, "r").read())
+            node.account.copy_to(ca.crt, RedpandaService.TLS_CA_CRT_FILE)
 
     def security_config(self):
         return self._security_config
@@ -1155,6 +1246,23 @@ class RedpandaService(Service):
                 doc["redpanda"].update(override_cfg_params)
             conf = yaml.dump(doc)
 
+        if self._security.tls_provider:
+            tls_config = dict(
+                enabled=True,
+                require_client_auth=True,
+                name="dnslistener",
+                key_file=RedpandaService.TLS_SERVER_KEY_FILE,
+                cert_file=RedpandaService.TLS_SERVER_CRT_FILE,
+                truststore_file=RedpandaService.TLS_CA_CRT_FILE,
+            )
+            if self._security.enable_mtls_identity:
+                tls_config.update(
+                    dict(principal_mapping_rules=SecurityConfig.
+                         PRINCIPAL_MAPPING_RULES, ))
+            doc = yaml.full_load(conf)
+            doc["redpanda"].update(dict(kafka_api_tls=tls_config))
+            conf = yaml.dump(doc)
+
         self.logger.info("Writing Redpanda node config file: {}".format(
             RedpandaService.NODE_CONFIG_FILE))
         self.logger.debug(conf)
@@ -1167,6 +1275,10 @@ class RedpandaService(Service):
                 "Setting custom cluster configuration options: {}".format(
                     self._extra_rp_conf))
             conf.update(self._extra_rp_conf)
+
+        if self._security.enable_sasl:
+            self.logger.debug("Enabling SASL in cluster configuration")
+            conf.update(dict(enable_sasl=True))
 
         conf_yaml = yaml.dump(conf)
         for node in self.nodes:
@@ -1239,7 +1351,7 @@ class RedpandaService(Service):
                     f"registered: node {node.name} now visible in peer {peer.name}'s broker list ({admin_brokers})"
                 )
 
-        client = PythonLibrdkafka(self)
+        client = PythonLibrdkafka(self, tls_cert=self._tls_cert)
         brokers = client.brokers()
         broker = brokers.get(idx, None)
         if broker is None:

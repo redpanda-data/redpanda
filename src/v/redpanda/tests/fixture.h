@@ -403,6 +403,7 @@ public:
           *proto,
           net::server::resources(nullptr, nullptr),
           std::move(sasl),
+          false,
           false);
 
         kafka::request_header header;
