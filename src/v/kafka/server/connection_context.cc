@@ -113,7 +113,9 @@ ss::future<> connection_context::handle_mtls_auth() {
           if (!_mtls_principal) {
               throw security::exception(
                 security::errc::invalid_credentials,
-                "failed to extract principal from distinguished name");
+                fmt::format(
+                  "failed to extract principal from distinguished name: {}",
+                  dn->subject));
           }
 
           vlog(
