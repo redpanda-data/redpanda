@@ -108,6 +108,7 @@ func TestEnsure(t *testing.T) {
 				"servicename",
 				types.NamespacedName{Name: "test", Namespace: "test"},
 				TestStatefulsetTLSVolumeProvider{},
+				TestAdminTLSConfigProvider{},
 				"",
 				res.ConfiguratorSettings{
 					ConfiguratorBaseImage: "vectorized/configurator",

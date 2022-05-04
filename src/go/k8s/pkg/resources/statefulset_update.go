@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/banzaicloud/k8s-objectmatcher/patch"
-	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
 	appsv1 "k8s.io/api/apps/v1"
@@ -381,7 +380,7 @@ func (r *StatefulSetResource) queryRedpandaStatus(
 	// will be fixed by https://github.com/redpanda-data/redpanda/issues/1084
 	if r.pandaCluster.AdminAPITLS() != nil &&
 		r.pandaCluster.AdminAPIExternal() == nil {
-		tlsConfig, err := adminutils.GetTLSConfig(ctx, r, r.pandaCluster, r.adminAPINodeCertSecretKey, r.adminAPIClientCertSecretKey)
+		tlsConfig, err := r.adminTLSConfigProvider.GetTLSConfig(ctx, r)
 		if err != nil {
 			return err
 		}

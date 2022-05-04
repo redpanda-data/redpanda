@@ -16,6 +16,7 @@ import (
 	"fmt"
 
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -34,8 +35,7 @@ func NewInternalAdminAPI(
 	k8sClient client.Reader,
 	redpandaCluster *redpandav1alpha1.Cluster,
 	fqdn string,
-	adminAPINodeCertSecretKey client.ObjectKey,
-	adminAPIClientCertSecretKey client.ObjectKey,
+	adminTLSProvider resources.AdminTLSConfigProvider,
 ) (AdminAPIClient, error) {
 	adminInternal := redpandaCluster.AdminAPIInternal()
 	if adminInternal == nil {
@@ -45,7 +45,7 @@ func NewInternalAdminAPI(
 	var tlsConfig *tls.Config
 	if adminInternal.TLS.Enabled {
 		var err error
-		tlsConfig, err = GetTLSConfig(ctx, k8sClient, redpandaCluster, adminAPINodeCertSecretKey, adminAPIClientCertSecretKey)
+		tlsConfig, err = adminTLSProvider.GetTLSConfig(ctx, k8sClient)
 		if err != nil {
 			return nil, fmt.Errorf("could not create tls configuration for internal admin API: %w", err)
 		}
@@ -89,8 +89,7 @@ type AdminAPIClientFactory func(
 	k8sClient client.Reader,
 	redpandaCluster *redpandav1alpha1.Cluster,
 	fqdn string,
-	adminAPINodeCertSecretKey client.ObjectKey,
-	adminAPIClientCertSecretKey client.ObjectKey,
+	adminTLSProvider resources.AdminTLSConfigProvider,
 ) (AdminAPIClient, error)
 
 var _ AdminAPIClientFactory = NewInternalAdminAPI

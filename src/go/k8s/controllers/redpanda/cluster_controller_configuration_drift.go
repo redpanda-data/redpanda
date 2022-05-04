@@ -123,7 +123,7 @@ func (r *ClusterConfigurationDriftReconciler) Reconcile(
 		return ctrl.Result{RequeueAfter: r.getDriftCheckPeriod()}, nil
 	}
 
-	adminAPI, err := r.AdminAPIClientFactory(ctx, r, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), pki.AdminAPINodeCert(), pki.AdminAPIClientCert())
+	adminAPI, err := r.AdminAPIClientFactory(ctx, r, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), pki.AdminAPIConfigProvider())
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("could not get admin API to check drifts on the cluster: %w", err)
 	}
