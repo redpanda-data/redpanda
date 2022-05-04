@@ -9,6 +9,7 @@
 
 package resources
 
+// TLSMountPoint defines paths to be mounted
 // We need 2 secrets and 2 mount points for each API endpoint that supports TLS and mTLS:
 // 1. The Node certs used by the API endpoint to sign requests
 // 2. The CA used to sign mTLS client certs which will be use by the endpoint to validate mTLS client certs
@@ -21,6 +22,7 @@ type TLSMountPoint struct {
 	ClientCAMountDir string
 }
 
+// TLSMountPoints are mount points per API
 type TLSMountPoints struct {
 	KafkaAPI          *TLSMountPoint
 	AdminAPI          *TLSMountPoint
@@ -28,6 +30,8 @@ type TLSMountPoints struct {
 	SchemaRegistryAPI *TLSMountPoint
 }
 
+// GetTLSMountPoints returns configuration for all TLS mount paths for all
+// redpanda APIs
 func GetTLSMountPoints() *TLSMountPoints {
 	return &TLSMountPoints{
 		KafkaAPI: &TLSMountPoint{

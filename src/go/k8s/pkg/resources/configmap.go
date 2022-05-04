@@ -547,7 +547,9 @@ func (r *ConfigMapResource) prepareSchemaRegistryClient(
 	return cfg.AppendToAdditionalRedpandaProperty(superusersConfigurationKey, username)
 }
 
-func (r *ConfigMapResource) preparePandaproxyTLS(cfgRpk *config.Config, mountPoints *TLSMountPoints) {
+func (r *ConfigMapResource) preparePandaproxyTLS(
+	cfgRpk *config.Config, mountPoints *TLSMountPoints,
+) {
 	tlsListener := r.pandaCluster.PandaproxyAPITLS()
 	if tlsListener != nil {
 		// Only one TLS listener is supported (restricted by the webhook).
@@ -570,7 +572,9 @@ func (r *ConfigMapResource) preparePandaproxyTLS(cfgRpk *config.Config, mountPoi
 	}
 }
 
-func (r *ConfigMapResource) prepareSchemaRegistryTLS(cfgRpk *config.Config, mountPoints *TLSMountPoints) {
+func (r *ConfigMapResource) prepareSchemaRegistryTLS(
+	cfgRpk *config.Config, mountPoints *TLSMountPoints,
+) {
 	if r.pandaCluster.Spec.Configuration.SchemaRegistry != nil &&
 		r.pandaCluster.Spec.Configuration.SchemaRegistry.TLS != nil {
 		name := SchemaRegistryPortName
