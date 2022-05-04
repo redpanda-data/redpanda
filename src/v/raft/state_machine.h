@@ -100,7 +100,7 @@ public:
      * details see paragraph 6.4 of Raft protocol dissertation.
      */
     ss::future<result<model::offset>>
-      instert_linerizable_barrier(model::timeout_clock::time_point);
+      instert_linearizable_barrier(model::timeout_clock::time_point);
 
 protected:
     void set_next(model::offset offset);
