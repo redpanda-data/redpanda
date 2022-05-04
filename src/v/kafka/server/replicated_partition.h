@@ -57,8 +57,9 @@ public:
 
     bool is_leader() const final { return _partition->is_leader(); }
 
-    ss::future<std::error_code> linearizable_barrier() final {
-        auto r = co_await _partition->linearizable_barrier();
+    ss::future<std::error_code>
+    linearizable_barrier(model::timeout_clock::time_point timeout) final {
+        auto r = co_await _partition->linearizable_barrier(timeout);
         if (r) {
             co_return raft::errc::success;
         }

@@ -141,7 +141,8 @@ public:
      * updated their commit indices to at least reaturned offset). For more
      * details see paragraph 6.4 of Raft protocol dissertation.
      */
-    ss::future<result<model::offset>> linearizable_barrier();
+    ss::future<result<model::offset>>
+      linearizable_barrier(model::timeout_clock::time_point);
 
     vnode self() const { return _self; }
     protocol_metadata meta() const;
@@ -536,7 +537,7 @@ private:
         }
         return false;
     }
-    ss::future<std::error_code> do_liearizable_barrier();
+    ss::future<std::error_code> do_liearizable_barrier(clock_type::time_point);
 
     // args
     vnode _self;

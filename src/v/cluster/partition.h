@@ -143,8 +143,9 @@ public:
     void block_new_leadership() const { _raft->block_new_leadership(); }
     void unblock_new_leadership() const { _raft->unblock_new_leadership(); }
 
-    ss::future<result<model::offset>> linearizable_barrier() {
-        return _raft->linearizable_barrier();
+    ss::future<result<model::offset>>
+    linearizable_barrier(model::timeout_clock::time_point deadline) {
+        return _raft->linearizable_barrier(deadline);
     }
 
     ss::future<std::error_code>

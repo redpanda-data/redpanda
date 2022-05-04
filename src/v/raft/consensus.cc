@@ -37,6 +37,8 @@
 #include <seastar/core/fstream.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/core/timed_out_error.hh>
+#include <seastar/core/with_timeout.hh>
 #include <seastar/util/defer.hh>
 
 #include <fmt/ostream.h>
@@ -503,7 +505,8 @@ void consensus::dispatch_recovery(follower_index_metadata& idx) {
         });
 }
 
-ss::future<result<model::offset>> consensus::linearizable_barrier() {
+ss::future<result<model::offset>>
+consensus::linearizable_barrier(model::timeout_clock::time_point deadline) {
     ss::semaphore_units<> u = co_await _op_lock.get_units();
 
     if (_vstate != vote_state::leader) {
@@ -512,12 +515,15 @@ ss::future<result<model::offset>> consensus::linearizable_barrier() {
     co_await flush_log();
     auto flushed_offset = _flushed_offset;
     u.return_all();
-    auto ec = co_await do_liearizable_barrier();
+    auto ec = co_await do_liearizable_barrier(deadline);
     if (ec) {
         co_return ec;
     }
     while (_commit_index < flushed_offset) {
-        auto ec = co_await do_liearizable_barrier();
+        if (model::timeout_clock::now() > deadline) {
+            co_return errc::timeout;
+        }
+        auto ec = co_await do_liearizable_barrier(deadline);
         if (ec) {
             co_return ec;
         }
@@ -526,7 +532,8 @@ ss::future<result<model::offset>> consensus::linearizable_barrier() {
     co_return flushed_offset;
 }
 
-ss::future<std::error_code> consensus::do_liearizable_barrier() {
+ss::future<std::error_code>
+consensus::do_liearizable_barrier(model::timeout_clock::time_point deadline) {
     ss::semaphore_units<> u = co_await _op_lock.get_units();
 
     if (_vstate != vote_state::leader) {
@@ -599,10 +606,13 @@ ss::future<std::error_code> consensus::do_liearizable_barrier() {
 
     try {
         // we do not hold the lock while waiting
-        co_await _follower_reply.wait(
-          [this, term, &majority_sequences_updated] {
+        co_await ss::with_timeout(
+          deadline,
+          _follower_reply.wait([this, term, &majority_sequences_updated] {
               return majority_sequences_updated() || _term != term;
-          });
+          }));
+    } catch (const ss::timed_out_error&) {
+        co_return errc::timeout;
     } catch (const ss::broken_condition_variable& e) {
         co_return errc::shutting_down;
     }

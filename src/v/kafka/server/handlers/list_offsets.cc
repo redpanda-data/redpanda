@@ -12,6 +12,7 @@
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
+#include "config/configuration.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/server/handlers/details/leader_epoch.h"
 #include "kafka/server/materialized_partition.h"
@@ -77,7 +78,9 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
     // using linearizable_barrier instead of is_leader to check that
     // current node is/was a leader at the moment it received the request
     // since the former uses cache and may return stale data
-    auto err = co_await kafka_partition->linearizable_barrier();
+    auto err = co_await kafka_partition->linearizable_barrier(
+      model::timeout_clock::now()
+      + config::shard_local_cfg().replicate_append_timeout_ms());
     if (err) {
         co_return list_offsets_response::make_partition(
           ntp.tp.partition, error_code::not_leader_for_partition);

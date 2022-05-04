@@ -216,7 +216,8 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
      * after a short delay to account for transient issues on startup.
      */
     if (_need_controller_refresh) {
-        auto res = co_await _raft0->linearizable_barrier();
+        auto res = co_await _raft0->linearizable_barrier(
+          leader_transfer_rpc_timeout + model::timeout_clock::now());
         if (!res) {
             vlog(
               clusterlog.debug,

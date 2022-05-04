@@ -38,7 +38,8 @@ public:
         virtual std::optional<model::offset>
           get_leader_epoch_last_offset(kafka::leader_epoch) const = 0;
         virtual bool is_leader() const = 0;
-        virtual ss::future<std::error_code> linearizable_barrier() = 0;
+        virtual ss::future<std::error_code>
+          linearizable_barrier(model::timeout_clock::time_point) = 0;
         virtual ss::future<storage::translating_reader> make_reader(
           storage::log_reader_config,
           std::optional<model::timeout_clock::time_point>)
@@ -66,8 +67,9 @@ public:
         return _impl->last_stable_offset();
     }
 
-    ss::future<std::error_code> linearizable_barrier() {
-        return _impl->linearizable_barrier();
+    ss::future<std::error_code>
+    linearizable_barrier(model::timeout_clock::time_point deadline) {
+        return _impl->linearizable_barrier(deadline);
     }
 
     bool is_leader() const { return _impl->is_leader(); }

@@ -738,7 +738,9 @@ FIXTURE_TEST(test_linarizable_barrier, raft_test_fixture) {
 
     leader_id = wait_for_group_leader(gr);
     leader_raft = gr.get_member(leader_id).consensus;
-    auto r = leader_raft->linearizable_barrier().get();
+    auto r = leader_raft
+               ->linearizable_barrier(model::timeout_clock::now() + 30s)
+               .get();
     BOOST_REQUIRE(leader_raft->committed_offset() >= r.value());
     BOOST_REQUIRE_EQUAL(
       leader_raft->committed_offset(), leader_raft->dirty_offset());
@@ -757,7 +759,9 @@ FIXTURE_TEST(test_linarizable_barrier_leader_ack, raft_test_fixture) {
 
     leader_id = wait_for_group_leader(gr);
     leader_raft = gr.get_member(leader_id).consensus;
-    auto r = leader_raft->linearizable_barrier().get();
+    auto r = leader_raft
+               ->linearizable_barrier(model::timeout_clock::now() + 30s)
+               .get();
 
     BOOST_REQUIRE(leader_raft->committed_offset() >= r.value());
     BOOST_REQUIRE_EQUAL(
@@ -775,7 +779,9 @@ FIXTURE_TEST(test_linarizable_barrier_single_node, raft_test_fixture) {
 
     leader_id = wait_for_group_leader(gr);
     leader_raft = gr.get_member(leader_id).consensus;
-    auto r = leader_raft->linearizable_barrier().get();
+    auto r = leader_raft
+               ->linearizable_barrier(model::timeout_clock::now() + 30s)
+               .get();
 
     if (r) {
         auto logs = gr.read_all_logs();

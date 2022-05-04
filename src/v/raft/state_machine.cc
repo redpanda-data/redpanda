@@ -146,10 +146,7 @@ ss::future<> state_machine::write_last_applied(model::offset o) {
 
 ss::future<result<model::offset>> state_machine::instert_linearizable_barrier(
   model::timeout_clock::time_point timeout) {
-    return ss::with_timeout(timeout, _raft->linearizable_barrier())
-      .handle_exception_type([](const ss::timed_out_error&) {
-          return result<model::offset>(errc::timeout);
-      });
+    return _raft->linearizable_barrier(timeout);
 }
 
 } // namespace raft

@@ -270,12 +270,12 @@ ss::future<> group_manager::inject_noop(
   ss::lw_shared_ptr<cluster::partition> p,
   [[maybe_unused]] ss::lowres_clock::time_point timeout) {
     auto dirty_offset = p->dirty_offset();
-    auto barrier_offset = co_await p->linearizable_barrier();
+    auto barrier_offset = co_await p->linearizable_barrier(timeout);
     // synchronization provided by raft after future resolves is sufficient to
     // get an up-to-date commit offset as an upperbound for our reader.
     while (barrier_offset.has_value()
            && barrier_offset.value() < dirty_offset) {
-        barrier_offset = co_await p->linearizable_barrier();
+        barrier_offset = co_await p->linearizable_barrier(timeout);
     }
 }
 

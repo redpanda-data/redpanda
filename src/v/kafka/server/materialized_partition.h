@@ -52,9 +52,11 @@ public:
         return _partition->get_term_last_offset(model::term_id(epoch()));
     }
 
-    ss::future<std::error_code> linearizable_barrier() final {
-        return _partition->source_partition()->linearizable_barrier().then(
-          [](result<model::offset> r) {
+    ss::future<std::error_code>
+    linearizable_barrier(model::timeout_clock::time_point deadline) final {
+        return _partition->source_partition()
+          ->linearizable_barrier(deadline)
+          .then([](result<model::offset> r) {
               if (r) {
                   return raft::make_error_code(raft::errc::success);
               }

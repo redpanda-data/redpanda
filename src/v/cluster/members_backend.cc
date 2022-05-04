@@ -323,7 +323,8 @@ ss::future<> members_backend::reconcile() {
 
     // use linearizable barrier to make sure leader is up to date and all
     // changes are applied
-    auto barrier_result = co_await _raft0->linearizable_barrier();
+    auto barrier_result = co_await _raft0->linearizable_barrier(
+      model::timeout_clock::now() + _retry_timeout);
     if (
       barrier_result.has_error()
       || barrier_result.value() < _raft0->dirty_offset()) {
