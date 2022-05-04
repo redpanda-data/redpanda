@@ -1119,6 +1119,7 @@ class RedpandaService(Service):
 
     def clean_node(self, node, preserve_logs=False):
         node.account.kill_process("redpanda", clean_shutdown=False)
+        node.account.kill_process("bin/node", clean_shutdown=False)
         if node.account.exists(RedpandaService.PERSISTENT_ROOT):
             if node.account.sftp_client.listdir(
                     RedpandaService.PERSISTENT_ROOT):
