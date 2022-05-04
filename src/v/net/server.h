@@ -16,6 +16,7 @@
 #include "net/connection.h"
 #include "net/connection_rate.h"
 #include "net/types.h"
+#include "security/mtls.h"
 #include "utils/hdr_hist.h"
 
 #include <seastar/core/abort_source.hh>
@@ -42,6 +43,7 @@ struct server_endpoint {
     ss::sstring name;
     ss::socket_address addr;
     ss::shared_ptr<ss::tls::server_credentials> credentials;
+    std::optional<security::tls::principal_mapper> principal_mapper;
 
     server_endpoint(ss::sstring name, ss::socket_address addr)
       : name(std::move(name))
@@ -56,9 +58,26 @@ struct server_endpoint {
       , credentials(std::move(creds)) {}
 
     server_endpoint(
+      ss::sstring name,
+      ss::socket_address addr,
+      ss::shared_ptr<ss::tls::server_credentials> creds,
+      std::optional<security::tls::principal_mapper> principal_mapper)
+      : name(std::move(name))
+      , addr(addr)
+      , credentials(std::move(creds))
+      , principal_mapper(std::move(principal_mapper)) {}
+
+    server_endpoint(
       ss::socket_address addr,
       ss::shared_ptr<ss::tls::server_credentials> creds)
       : server_endpoint("", addr, std::move(creds)) {}
+
+    server_endpoint(
+      ss::socket_address addr,
+      ss::shared_ptr<ss::tls::server_credentials> creds,
+      security::tls::principal_mapper principal_mapper)
+      : server_endpoint(
+        "", addr, std::move(creds), std::move(principal_mapper)) {}
 
     explicit server_endpoint(ss::socket_address addr)
       : server_endpoint("", addr) {}

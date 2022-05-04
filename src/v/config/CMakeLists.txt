@@ -9,6 +9,7 @@ v_cc_library(
   DEPS
     v::json
     v::model
+    v::security
    boost_filesystem
    absl::node_hash_set
 )

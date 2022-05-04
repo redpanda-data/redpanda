@@ -5,6 +5,7 @@ v_cc_library(
     scram_credential.cc
     scram_authenticator.cc
     acl_store.cc
+    mtls.cc
   DEPS
     v::bytes
     absl::flat_hash_map

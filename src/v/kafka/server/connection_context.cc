@@ -17,14 +17,18 @@
 #include "kafka/server/protocol_utils.h"
 #include "kafka/server/quota_manager.h"
 #include "kafka/server/request_context.h"
+#include "security/exceptions.h"
 #include "units.h"
+#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/scattered_message.hh>
 #include <seastar/core/sleep.hh>
+#include <seastar/core/with_timeout.hh>
 
 #include <chrono>
 #include <memory>
+
 using namespace std::chrono_literals;
 
 namespace kafka {
@@ -64,8 +68,61 @@ ss::future<> connection_context::process_one_request() {
                       _rs.probe().header_corrupted();
                       return ss::make_ready_future<>();
                   }
-                  return dispatch_method_once(std::move(h.value()), s);
+                  return handle_mtls_auth().then(
+                    [this, h = std::move(h.value()), s]() mutable {
+                        return dispatch_method_once(std::move(h), s);
+                    });
               });
+      });
+}
+
+/*
+ * handle mtls authentication. this should only happen once when the connection
+ * is setup. even though this is called in the normal request handling path,
+ * this property should hold becuase:
+ *
+ * 1. is a noop if a mtls principal has been extracted
+ * 2. all code paths that don't set the principal throw and drop the connection
+ *
+ * NOTE: handle_mtls_auth is called after reading header off the wire. this is
+ * odd because we would expect that tls negotation etc... all happens before we
+ * here to the application layer. however, it appears that the way seastar works
+ * that we need to read some data off the wire to drive this process within the
+ * internal connection handling.
+ */
+ss::future<> connection_context::handle_mtls_auth() {
+    if (!_use_mtls || _mtls_principal.has_value()) {
+        return ss::now();
+    }
+    return ss::with_timeout(
+             model::timeout_clock::now() + 5s,
+             _rs.conn->get_distinguished_name())
+      .then([this](std::optional<ss::session_dn> dn) {
+          if (!dn.has_value()) {
+              throw security::exception(
+                security::errc::invalid_credentials,
+                "failed to fetch distinguished name");
+          }
+          /*
+           * for now it probably is fine to store the mapping per connection.
+           * but it seems like we could also share this across all connections
+           * with the same tls configuration.
+           */
+          _mtls_principal = _rs.conn->get_principal_mapping()->apply(
+            dn->subject);
+          if (!_mtls_principal) {
+              throw security::exception(
+                security::errc::invalid_credentials,
+                fmt::format(
+                  "failed to extract principal from distinguished name: {}",
+                  dn->subject));
+          }
+
+          vlog(
+            _authlog.debug,
+            "got principal: {}, from distinguished name: {}",
+            *_mtls_principal,
+            dn->subject);
       });
 }
 

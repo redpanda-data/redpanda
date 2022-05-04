@@ -18,14 +18,16 @@ connection::connection(
   ss::sstring name,
   ss::connected_socket f,
   ss::socket_address a,
-  server_probe& p)
-  : addr(std::move(a))
+  server_probe& p,
+  std::optional<security::tls::principal_mapper> tls_pm)
+  : addr(a)
   , _hook(hook)
   , _name(std::move(name))
   , _fd(std::move(f))
   , _in(_fd.input())
   , _out(_fd.output())
-  , _probe(p) {
+  , _probe(p)
+  , _tls_pm(std::move(tls_pm)) {
     _hook.push_back(*this);
     _probe.connection_established();
 }

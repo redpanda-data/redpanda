@@ -23,6 +23,7 @@ enum class feature : std::uint64_t {
     central_config = 0x1,
     consumer_offsets = 0x2,
     maintenance_mode = 0x4,
+    mtls_authentication = 0x8,
 
     // Dummy features for testing only
     test_alpha = uint64_t(1) << 63,
@@ -92,6 +93,12 @@ constexpr static std::array feature_schema{
     "maintenance_mode",
     feature::maintenance_mode,
     feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+  feature_spec{
+    cluster_version{3},
+    "mtls_authentication",
+    feature::mtls_authentication,
+    feature_spec::available_policy::explicit_only,
     feature_spec::prepare_policy::always},
   feature_spec{
     cluster_version{2001},

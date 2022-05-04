@@ -44,14 +44,16 @@ public:
       protocol& p,
       net::server::resources&& r,
       security::sasl_server sasl,
-      bool enable_authorizer) noexcept
+      bool enable_authorizer,
+      bool use_mtls) noexcept
       : _proto(p)
       , _rs(std::move(r))
       , _sasl(std::move(sasl))
       // tests may build a context without a live connection
       , _client_addr(_rs.conn ? _rs.conn->addr.addr() : ss::net::inet_address{})
       , _enable_authorizer(enable_authorizer)
-      , _authlog(_client_addr, client_port()) {}
+      , _authlog(_client_addr, client_port())
+      , _use_mtls(use_mtls) {}
 
     ~connection_context() noexcept = default;
     connection_context(const connection_context&) = delete;
@@ -66,10 +68,28 @@ public:
     template<typename T>
     bool authorized(
       security::acl_operation operation, const T& name, authz_quiet quiet) {
+        // mtls configured?
+        if (_use_mtls) {
+            if (_mtls_principal.has_value()) {
+                return authorized_user(
+                  _mtls_principal.value(), operation, name, quiet);
+            }
+            return false;
+        }
+        // sasl configured?
         if (!_enable_authorizer) {
             return true;
         }
         auto user = sasl().principal();
+        return authorized_user(std::move(user), operation, name, quiet);
+    }
+
+    template<typename T>
+    bool authorized_user(
+      ss::sstring user,
+      security::acl_operation operation,
+      const T& name,
+      authz_quiet quiet) {
         security::acl_principal principal(
           security::principal_type::user, std::move(user));
 
@@ -144,6 +164,7 @@ private:
     ss::future<session_resources>
     throttle_request(const request_header&, size_t sz);
 
+    ss::future<> handle_mtls_auth();
     ss::future<> dispatch_method_once(request_header, size_t sz);
     ss::future<> process_next_response();
     ss::future<> do_process(request_context);
@@ -213,6 +234,8 @@ private:
     const ss::net::inet_address _client_addr;
     const bool _enable_authorizer;
     ctx_log _authlog;
+    bool _use_mtls{false};
+    std::optional<ss::sstring> _mtls_principal;
 };
 
 } // namespace kafka
