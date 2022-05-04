@@ -100,7 +100,6 @@ admin_server::admin_server(
 
 ss::future<> admin_server::start() {
     configure_metrics_route();
-    configure_dashboard();
     configure_admin_routes();
 
     co_await configure_listeners();
@@ -257,16 +256,6 @@ get_boolean_query_param(const ss::httpd::request& req, std::string_view name) {
     const ss::sstring& str_param = req.query_parameters.at(key);
     return ss::httpd::request::case_insensitive_cmp()(str_param, "true")
            || str_param == "1";
-}
-
-void admin_server::configure_dashboard() {
-    if (_cfg.dashboard_dir) {
-        auto handler = std::make_unique<dashboard_handler>(*_cfg.dashboard_dir);
-        _server._routes.add(
-          ss::httpd::operation_type::GET,
-          ss::httpd::url("/dashboard").remainder("path"),
-          handler.release());
-    }
 }
 
 void admin_server::configure_metrics_route() {
