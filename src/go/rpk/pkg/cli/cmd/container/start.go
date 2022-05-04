@@ -175,28 +175,22 @@ func startCluster(
 		return err
 	}
 
+	reqPorts := n * 5 // we need 5 ports per node
+	ports, err := vnet.GetFreePortPool(int(reqPorts))
+	if err != nil {
+		return err
+	}
+
 	// Start a seed node.
-	seedID := uint(0)
-	seedKafkaPort, err := vnet.GetFreePort()
-	if err != nil {
-		return err
-	}
-	seedProxyPort, err := vnet.GetFreePort()
-	if err != nil {
-		return err
-	}
-	seedSchemaRegPort, err := vnet.GetFreePort()
-	if err != nil {
-		return err
-	}
-	seedRPCPort, err := vnet.GetFreePort()
-	if err != nil {
-		return err
-	}
-	seedMetricsPort, err := vnet.GetFreePort()
-	if err != nil {
-		return err
-	}
+	var (
+		seedID            uint
+		seedKafkaPort     = ports[0]
+		seedProxyPort     = ports[1]
+		seedSchemaRegPort = ports[2]
+		seedRPCPort       = ports[3]
+		seedMetricsPort   = ports[4]
+	)
+
 	seedState, err := common.CreateNode(
 		c,
 		seedID,
@@ -236,26 +230,14 @@ func startCluster(
 	for nodeID := uint(1); nodeID < n; nodeID++ {
 		id := nodeID
 		grp.Go(func() error {
-			kafkaPort, err := vnet.GetFreePort()
-			if err != nil {
-				return err
-			}
-			proxyPort, err := vnet.GetFreePort()
-			if err != nil {
-				return err
-			}
-			schemaRegPort, err := vnet.GetFreePort()
-			if err != nil {
-				return err
-			}
-			rpcPort, err := vnet.GetFreePort()
-			if err != nil {
-				return err
-			}
-			metricsPort, err := vnet.GetFreePort()
-			if err != nil {
-				return err
-			}
+			var (
+				kafkaPort     = ports[0+5*id]
+				proxyPort     = ports[1+5*id]
+				schemaRegPort = ports[2+5*id]
+				rpcPort       = ports[3+5*id]
+				metricsPort   = ports[4+5*id]
+			)
+
 			args := []string{
 				"--seeds",
 				net.JoinHostPort(

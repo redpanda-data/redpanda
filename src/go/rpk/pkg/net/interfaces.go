@@ -45,7 +45,7 @@ func GetInterfacesByIps(addresses ...string) ([]string, error) {
 	return utils.GetKeys(nics), nil
 }
 
-func GetFreePort() (uint, error) {
+func getFreePort() (uint, error) {
 	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
 	if err != nil {
 		return 0, err
@@ -57,4 +57,16 @@ func GetFreePort() (uint, error) {
 	}
 	defer l.Close()
 	return uint(l.Addr().(*net.TCPAddr).Port), nil
+}
+
+func GetFreePortPool(n int) ([]uint, error) {
+	var ports []uint
+	for i := 0; i < n; i++ {
+		p, err := getFreePort()
+		if err != nil {
+			return nil, err
+		}
+		ports = append(ports, p)
+	}
+	return ports, nil
 }
