@@ -95,8 +95,9 @@ class OffsetForLeaderEpochTest(RedpandaTest):
             assert initial_offsets[(o.topic,
                                     o.partition)] == o.epoch_end_offset
 
-        # restart all the nodes to force leader election
-        self.redpanda.restart_nodes(self.redpanda.nodes)
+        # restart all the nodes to force leader election,
+        # increase start timeout as partition count may get large
+        self.redpanda.restart_nodes(self.redpanda.nodes, start_timeout=30)
         # produce more data
         for t in topics:
             self._produce(t.name, 20)
