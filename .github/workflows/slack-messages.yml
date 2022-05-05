@@ -29,3 +29,13 @@ jobs:
         slack-message: ${{ env.MESSAGE }}
       env:
         SLACK_BOT_TOKEN: ${{ secrets.VBOTBUILDOVICH_SLACK_BOT_TOKEN }}
+
+    - name: "Post to community #releases channel"
+      id: community_releases
+      uses: slackapi/slack-github-action@v1.18.0
+      with:
+        channel-id: C034RDJLC31
+        slack-message: ${{ env.MESSAGE }}
+      env:
+        SLACK_BOT_TOKEN: ${{ secrets.BUILDERBOT_COMMUNITY_SLACK_BOT_TOKEN }}
+
