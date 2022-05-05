@@ -28,6 +28,7 @@
 #include "raft/errc.h"
 #include "ssx/future-util.h"
 #include "storage/record_batch_builder.h"
+#include "utils/periodic.h"
 #include "utils/to_string.h"
 #include "vassert.h"
 
@@ -45,6 +46,10 @@ namespace kafka {
 using member_config = join_group_response_member;
 
 using violation_recovery_policy = model::violation_recovery_policy;
+
+struct group_stats {};
+
+static thread_local group_stats stats_tls;
 
 group::group(
   kafka::group_id id,
@@ -118,6 +123,16 @@ group::group(
     }
 }
 
+group_stats& group::stats() { return stats_tls; }
+
+ss::sstring group::extra_context() const {
+    return ssx::sformat(
+      "M:{} J:{} P:{}",
+      _members.size(),
+      _num_members_joining,
+      _pending_members.size());
+}
+
 bool group::valid_previous_state(group_state s) const {
     using g = group_state;
 
@@ -166,8 +181,14 @@ group_state group::set_state(group_state s) {
       _id,
       _state,
       s);
-    vlog(_ctx_glog.trace, "Changing state from {} to {}", _state, s);
-    _state_timestamp = model::timestamp::now();
+    auto now = model::timestamp::now();
+    vlog(
+      _ctx_glog.debug,
+      "Changing state from {} to {} after {} ms",
+      _state,
+      s,
+      now.value() - _state_timestamp.value());
+    _state_timestamp = now;
     return std::exchange(_state, s);
 }
 
@@ -226,7 +247,7 @@ void group::add_member_no_join(member_ptr member) {
     auto res = _members.emplace(member->id(), member);
     if (!res.second) {
         vlog(
-          _ctx_glog.trace,
+          _ctx_glog.debug,
           "Cannot add member with duplicate id {}",
           member->id());
         throw std::runtime_error(
@@ -365,7 +386,7 @@ void group::advance_generation() {
         _protocol = select_protocol();
         set_state(group_state::completing_rebalance);
     }
-    vlog(_ctx_glog.trace, "Advanced generation with protocol {}", _protocol);
+    vlog(_ctx_glog.debug, "Advanced generation with protocol {}", _protocol);
 }
 
 /*
@@ -980,13 +1001,13 @@ void group::try_prepare_rebalance() {
         _join_timer.arm(initial);
 
     } else if (all_members_joined()) {
-        vlog(_ctx_glog.trace, "All members have joined");
+        vlog(_ctx_glog.trace, "All members have joined, group: {}", *this);
         complete_join();
 
     } else {
         auto timeout = rebalance_timeout();
         vlog(
-          _ctx_glog.trace,
+          _ctx_glog.debug,
           "Join completion scheduled in {} ms. Current members {} waiting {} "
           "pending {}",
           timeout,
@@ -1012,6 +1033,7 @@ void group::complete_join() {
     // <kafka>remove dynamic members who haven't joined the group yet</kafka>
     // this is the old group->remove_unjoined_members();
     const auto prev_leader = _leader;
+    size_t unjoined_count = 0;
     for (auto it = _members.begin(); it != _members.end();) {
         if (!it->second->is_joining() && !it->second->is_static()) {
             vlog(_ctx_glog.trace, "Removing unjoined member {}", it->first);
@@ -1041,6 +1063,8 @@ void group::complete_join() {
                 }
             }
 
+            unjoined_count++;
+
         } else {
             ++it;
         }
@@ -1048,10 +1072,20 @@ void group::complete_join() {
 
     if (_leader != prev_leader) {
         vlog(
-          _ctx_glog.trace,
-          "Leadership changed to {} from {}",
+          _ctx_glog.debug,
+          "Completing join for group {}, unjoined count: {} (leader changed to "
+          "{} from {})",
+          *this,
+          unjoined_count,
           _leader,
           prev_leader);
+    } else {
+        vlog(
+          _ctx_glog.debug,
+          "Completing join for group {}, unjoined count: {}, leader: {}",
+          *this,
+          unjoined_count,
+          _leader);
     }
 
     if (in_state(group_state::dead)) {
@@ -1067,7 +1101,7 @@ void group::complete_join() {
         // the initial delayed callback which implements debouncing.
         auto timeout = rebalance_timeout();
         vlog(
-          _ctx_glog.trace,
+          _ctx_glog.debug,
           "No members re-joined. Scheduling completion for {} ms",
           timeout);
         _join_timer.cancel();
@@ -1172,7 +1206,23 @@ void group::try_finish_joining_member(
     }
 }
 
-void group::schedule_next_heartbeat_expiration(member_ptr member) {
+struct heartbeat_summary {
+    int32_t _count = 0;
+    int32_t _from_offset = 0;
+    int32_t _lowest_buffer = INT_MAX;
+
+    void add(bool from_offset, int32_t buffer) {
+        _count++;
+        _from_offset += from_offset;
+        _lowest_buffer = std::min(_lowest_buffer, buffer);
+    }
+};
+
+static thread_local heartbeat_summary hsum;
+static thread_local periodic_ms hsum_period{1000ms};
+
+void group::schedule_next_heartbeat_expiration(
+  member_ptr member, bool from_offset_commit) {
     auto old_timeout = member->expire_timer().get_timeout();
     member->expire_timer().cancel();
     auto now = clock_type::now();
@@ -1182,18 +1232,32 @@ void group::schedule_next_heartbeat_expiration(member_ptr member) {
       [this, deadline, member_id = member->id()]() {
           heartbeat_expire(member_id, deadline);
       });
+    auto buffer = old_timeout - now;
     vlog(
       _ctx_glog.trace,
       "Scheduling new heartbeat expiration {} ms for {}, buffer {} ms",
       member->session_timeout(),
       member->id(),
-      old_timeout - now);
+      buffer,
+      from_offset_commit);
+
+    hsum.add(from_offset_commit, buffer.count());
+    if (hsum_period.check()) {
+        vlog(
+          _ctx_glog.debug,
+          "Heartbeat summary: count {}, fo: {}, lb: {} ms",
+          hsum._count,
+          hsum._from_offset,
+          hsum._lowest_buffer);
+        hsum = decltype(hsum){};
+    }
+
     member->expire_timer().arm(deadline);
 }
 
 void group::remove_pending_member(kafka::member_id member_id) {
-    _pending_members.erase(member_id);
     vlog(_ctx_glog.trace, "Removing pending member {}", member_id);
+    _pending_members.erase(member_id);
     if (in_state(group_state::preparing_rebalance)) {
         if (_join_timer.armed() && all_members_joined()) {
             _join_timer.cancel();
@@ -1525,7 +1589,7 @@ ss::future<heartbeat_response> group::handle_heartbeat(heartbeat_request&& r) {
 
 ss::future<leave_group_response>
 group::handle_leave_group(leave_group_request&& r) {
-    vlog(_ctx_glog.trace, "Handling leave group request {}", r);
+    vlog(_ctx_glog.debug, "Handling leave group request {}", r);
 
     if (in_state(group_state::dead)) {
         vlog(_ctx_glog.trace, "Leave rejected for group state {}", _state);

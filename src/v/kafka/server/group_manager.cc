@@ -33,7 +33,37 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/lowres_clock.hh>
 
+#include <fmt/chrono.h>
+
+#include <chrono>
+
 namespace kafka {
+
+constexpr auto lag_debug_limit = 1000ms;
+
+template<typename L, typename D>
+static void log_lag(L&& what, kafka::request_ts_type start_ts, const D& data) {
+    auto lag = std::chrono::duration_cast<std::chrono::microseconds>(
+      kafka::request_ts_clock::now() - start_ts);
+
+    if (lag < lag_debug_limit) {
+        vlog(
+          kgrouplog.trace,
+          "{} being handled with lag {} for member {}, group {}",
+          what,
+          lag,
+          data.member_id,
+          data.group_id);
+    } else {
+        vlog(
+          kgrouplog.debug,
+          "{} being handled with lag {} for member {}, group {}",
+          what,
+          lag,
+          data.member_id,
+          data.group_id);
+    }
+}
 
 group_manager::group_manager(
   model::topic_namespace tp_ns,
@@ -343,7 +373,9 @@ ss::future<> group_manager::handle_partition_leader_change(
 
     vlog(
       kgrouplog.trace,
-      "handle_partition_leader_change became leader, id: {}, timeout: {}",
+      "handle_partition_leader_change became leader for {}, id: {}, timeout: "
+      "{}",
+      p->partition->ntp(),
       _self.id(),
       timeout_duration);
     /*
@@ -424,7 +456,7 @@ ss::future<> group_manager::recover_partition(
             auto group = get_group(group_id);
             vlog(
               kgrouplog.info,
-              "recover_partition Recovering {} - {:.1000}",
+              "group recover_partition Recovering {} - {:.1000}",
               group_id,
               group_stm.get_metadata());
             for (const auto& member : group_stm.get_metadata().members) {
@@ -509,12 +541,15 @@ ss::future<> group_manager::recover_partition(
     vlog(
       kgrouplog.info,
       "recover_partition recovered {} groups in {} ms",
-      ctx.groups.size(), ss::lowres_clock::now() - start_time);
+      ctx.groups.size(),
+      ss::lowres_clock::now() - start_time);
 
     return ss::make_ready_future<>();
 }
 
 group::join_group_stages group_manager::join_group(join_group_request&& r) {
+
+    log_lag("join_group", r.first_byte_ts, r.data);
     auto error = validate_group_status(
       r.ntp, r.data.group_id, join_group_api::key);
     if (error != error_code::none) {
@@ -641,6 +676,8 @@ group::sync_group_stages group_manager::sync_group(sync_group_request&& r) {
 }
 
 ss::future<heartbeat_response> group_manager::heartbeat(heartbeat_request&& r) {
+    log_lag("heartbeat", r.first_byte_ts, r.data);
+
     auto error = validate_group_status(
       r.ntp, r.data.group_id, heartbeat_api::key);
     if (error != error_code::none) {
@@ -991,7 +1028,11 @@ described_group
 group_manager::describe_group(const model::ntp& ntp, const kafka::group_id& g) {
     auto error = validate_group_status(ntp, g, describe_groups_api::key);
     if (error != error_code::none) {
-        vlog(kgrouplog.trace, "group_manager::describe_group failed for {} err: {}", g, error);
+        vlog(
+          kgrouplog.trace,
+          "group_manager::describe_group failed for {} err: {}",
+          g,
+          error);
         return describe_groups_response::make_empty_described_group(g, error);
     }
 

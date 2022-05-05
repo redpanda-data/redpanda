@@ -11,6 +11,7 @@
 
 #include "kafka/server/group_manager.h"
 #include "kafka/server/group_router.h"
+#include "kafka/server/logger.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
 #include "utils/remote.h"
@@ -26,6 +27,7 @@ std::ostream& operator<<(std::ostream& o, const member_protocol& p) {
 }
 
 static void decode_request(request_context& ctx, join_group_request& req) {
+    req.first_byte_ts = ctx.header().first_byte_ts;
     req.decode(ctx.reader(), ctx.header().version);
     req.version = ctx.header().version;
     if (ctx.header().client_id) {
@@ -56,6 +58,12 @@ process_result_stages join_group_handler::handle(
       });
 
     return process_result_stages(std::move(stages.dispatched), std::move(res));
+}
+
+join_group_response
+make_join_error(kafka::member_id member_id, error_code error) {
+    return join_group_response(
+      error, no_generation, no_protocol, no_leader, std::move(member_id));
 }
 
 } // namespace kafka

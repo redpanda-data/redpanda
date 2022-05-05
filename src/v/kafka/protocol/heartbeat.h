@@ -26,6 +26,8 @@ struct heartbeat_request final {
 
     heartbeat_request_data data;
 
+    request_ts_type first_byte_ts;
+
     // set during request processing after mapping group to ntp
     model::ntp ntp;
 

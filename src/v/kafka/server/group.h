@@ -26,6 +26,7 @@
 #include "model/namespace.h"
 #include "model/record.h"
 #include "seastarx.h"
+#include "ssx/sformat.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/future.hh>
@@ -103,12 +104,30 @@ using enable_group_metrics = ss::bool_class<struct enable_gr_metrics_tag>;
 
 std::ostream& operator<<(std::ostream&, group_state gs);
 
+inline const char* abbrev(group_state gs) {
+    switch (gs) {
+    case group_state::empty:
+        return "Em";
+    case group_state::preparing_rebalance:
+        return "PR";
+    case group_state::completing_rebalance:
+        return "CR";
+    case group_state::stable:
+        return "St";
+    case group_state::dead:
+        return "De";
+    }
+    __builtin_unreachable();
+}
+
 ss::sstring group_state_to_kafka_name(group_state);
 cluster::begin_group_tx_reply make_begin_tx_reply(cluster::tx_errc);
 cluster::prepare_group_tx_reply make_prepare_tx_reply(cluster::tx_errc);
 cluster::commit_group_tx_reply make_commit_tx_reply(cluster::tx_errc);
 cluster::abort_group_tx_reply make_abort_tx_reply(cluster::tx_errc);
 kafka::error_code map_store_offset_error_code(std::error_code);
+
+struct group_stats;
 
 /// \brief A Kafka group.
 ///
@@ -233,6 +252,11 @@ public:
     bool has_members() const { return !_members.empty(); }
 
     /// Check if all members have joined.
+    /// This is true when the number of joining members (members who have
+    /// issued a JoinGroup with an ID and have a pending join future) is
+    /// equal to the number of members in the group, and there are no pending
+    /// members (members who have JoinGroup without an ID and have been assigned
+    /// an ID an should try their JoinGroup again).
     bool all_members_joined() const {
         vassert(
           _num_members_joining >= 0,
@@ -450,7 +474,8 @@ public:
       member_ptr member, join_group_response&& response);
 
     /// Restart the member heartbeat timer.
-    void schedule_next_heartbeat_expiration(member_ptr member);
+    void schedule_next_heartbeat_expiration(
+      member_ptr member, bool from_offset_commit = false);
 
     /// Removes a full member and may rebalance.
     void remove_member(member_ptr member);
@@ -558,6 +583,16 @@ public:
 
     void insert_prepared(prepared_tx);
 
+    /**
+     * @brief return a reference to the stats object for this group.
+     */
+    group_stats& stats();
+
+    /**
+     * @brief Get extra logging context for the context logger.
+     */
+    ss::sstring extra_context() const;
+
     void try_set_fence(model::producer_id id, model::producer_epoch epoch) {
         auto [fence_it, _] = _fence_pid_epoch.try_emplace(id, epoch);
         if (fence_it->second < epoch) {
@@ -631,13 +666,14 @@ private:
         template<typename... Args>
         void log(ss::log_level lvl, const char* format, Args&&... args) const {
             if (unlikely(_logger.is_enabled(lvl))) {
-                auto line_fmt = ss::sstring("[N:{} S:{} G:{}] ") + format;
+                auto line_fmt = ss::sstring("[N:{} S:{} G:{} {}] ") + format;
                 _logger.log(
                   lvl,
                   line_fmt.c_str(),
                   _group.id()(),
-                  _group.state(),
+                  abbrev(_group.state()),
                   _group.generation(),
+                  _group.extra_context(),
                   std::forward<Args>(args)...);
             }
         }
@@ -752,9 +788,17 @@ private:
     model::timestamp _state_timestamp;
     kafka::generation_id _generation;
     protocol_support _supported_protocols;
+    // All members that have joined or tried to join with a group ID (members
+    // that tried to join without an ID go into _pending_members instead until
+    // they try again with their assigned ID).
     member_map _members;
     absl::node_hash_map<group_instance_id, member_id> _static_members;
     int _num_members_joining;
+    // Pending members are those who sent a join group request without a group
+    // ID and we've responded with a new server-assigned ID. The map value is
+    // a pointer to a timer which times out the pending member after
+    // session.timeout.ms. This list is mutually exclusive with the _members
+    // list.
     absl::node_hash_map<kafka::member_id, ss::timer<clock_type>>
       _pending_members;
     std::optional<kafka::protocol_type> _protocol_type;

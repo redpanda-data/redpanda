@@ -45,6 +45,7 @@ struct request_header {
     correlation_id correlation;
     ss::temporary_buffer<char> client_id_buffer;
     std::optional<std::string_view> client_id;
+    kafka::request_ts_type first_byte_ts;
 
     // value of std::nullopt indicates v0 request was parsed, 0 tag bytes will
     // be parsed. If this is non-null a v1 (flex) request header is parsed in

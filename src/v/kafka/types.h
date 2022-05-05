@@ -20,6 +20,7 @@
 
 #include <seastar/core/sstring.hh>
 
+#include <chrono>
 #include <unordered_map>
 
 namespace kafka {
@@ -60,6 +61,9 @@ using protocol_name = named_type<ss::sstring, struct kafka_protocol>;
 
 using client_id = named_type<ss::sstring, struct kafka_client_id_type>;
 using client_host = named_type<ss::sstring, struct kafka_client_host_type>;
+
+using request_ts_clock = std::chrono::high_resolution_clock;
+using request_ts_type = request_ts_clock::time_point;
 
 /// An unknown / missing member id (Kafka protocol specific)
 static inline const member_id unknown_member_id("");

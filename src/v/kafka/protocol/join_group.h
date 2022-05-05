@@ -38,6 +38,7 @@ struct join_group_request final {
     api_version version;
     std::optional<kafka::client_id> client_id;
     kafka::client_host client_host;
+    request_ts_type first_byte_ts;
 
     // set during request processing after mapping group to ntp
     model::ntp ntp;
@@ -126,11 +127,8 @@ struct join_group_response final {
     }
 };
 
-inline join_group_response
-make_join_error(kafka::member_id member_id, error_code error) {
-    return join_group_response(
-      error, no_generation, no_protocol, no_leader, std::move(member_id));
-}
+join_group_response
+make_join_error(kafka::member_id member_id, error_code error);
 
 // group membership helper to compare a protocol set from the wire with our
 // internal type without doing a full type conversion.
