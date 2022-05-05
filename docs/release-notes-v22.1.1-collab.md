@@ -18,6 +18,7 @@
 * [#3705](https://github.com/redpanda-data/redpanda/issues/3705) [#3706](https://github.com/redpanda-data/redpanda/issues/3706) Support for placing node into a draining state in which all leadership is relinquished. by @dotnwat in https://github.com/redpanda-data/redpanda/pull/3932
 * [#4435](https://github.com/redpanda-data/redpanda/issues/4435) rpk: add cluster maintenance status and enable barrier. by @dotnwat in https://github.com/redpanda-data/redpanda/pull/4480
 * Report maintenance mode status for brokers. by @dotnwat in https://github.com/redpanda-data/redpanda/pull/4319
+* [#4527](https://github.com/redpanda-data/redpanda/issues/4527) Added rpk cluster health command. by @mmaslankaprv in https://github.com/redpanda-data/redpanda/pull/4528
 
 ### Rack awareness
 
@@ -133,6 +134,7 @@
 * [#4494](https://github.com/redpanda-data/redpanda/issues/4494) storage: assertion failure in offset_translator_state.cc. by @ztlpn in https://github.com/redpanda-data/redpanda/pull/4497
 * [#4352](https://github.com/redpanda-data/redpanda/issues/4352) vote_stm: do not step down when replicating configuration failed. by @mmaslankaprv in https://github.com/redpanda-data/redpanda/pull/4342
 * [#4266](https://github.com/redpanda-data/redpanda/issues/4266) dissemination: do not query topic metadata for ntp. by @mmaslankaprv in https://github.com/redpanda-data/redpanda/pull/4389
+* [#4181](https://github.com/redpanda-data/redpanda/issues/4181) k/fetch: validate fetch offset against high watermark. by @mmaslankaprv in https://github.com/redpanda-data/redpanda/pull/4567
 * Do not update connections with old config. by @mmaslankaprv in https://github.com/redpanda-data/redpanda/pull/4225
 * Fix bug in topic recovery. by @Lazin in https://github.com/redpanda-data/redpanda/pull/4312
 * Fix consumer group recovery. by @mmaslankaprv in https://github.com/redpanda-data/redpanda/pull/3732
@@ -172,6 +174,7 @@
 * [#4187](https://github.com/redpanda-data/redpanda/issues/4187) Faster leader election during partition moves. by @mmaslankaprv in https://github.com/redpanda-data/redpanda/pull/4157
 * [#4210](https://github.com/redpanda-data/redpanda/issues/4210) Make debugging raft issues easier. by @mmaslankaprv in https://github.com/redpanda-data/redpanda/pull/4206
 * [#4376](https://github.com/redpanda-data/redpanda/issues/4375) rpk: improve output on configuration updates. by @dotnwat in https://github.com/redpanda-data/redpanda/pull/4515
+* [#3939](https://github.com/redpanda-data/redpanda/issues/3939) Support mTLS principal propagation. by @BenPope in https://github.com/redpanda-data/redpanda/pull/4549
 * k8s/operator: Reserve 10% of memory for the OS by default, to avoid `OOMKill`. by @BenPope in https://github.com/redpanda-data/redpanda/pull/3831
 * rpk: try to send write requests to Leader but fallback to broadcast to all brokers. by @simon0191 in https://github.com/redpanda-data/redpanda/pull/3565
 * Ability to monitor bytes read/written to the partition. by @mmaslankaprv in https://github.com/redpanda-data/redpanda/pull/3530
@@ -194,4 +197,4 @@
 * coproc: New abstraction for safe shutdown of materialized logs by @graphcareful in https://github.com/redpanda-data/redpanda/pull/2940
 * coproc: Yield if inputs haven't been hydrated by @graphcareful in https://github.com/redpanda-data/redpanda/pull/3576
 
-**Full Changelog**: https://github.com/redpanda-data/redpanda/compare/v21.11.15...885b2ba4517fa11c504090d7b1551e15e57177d2
+**Full Changelog**: https://github.com/redpanda-data/redpanda/compare/v21.11.15...d72c61921ab57b66a84abb4cd0cdc9dcf15b0083
