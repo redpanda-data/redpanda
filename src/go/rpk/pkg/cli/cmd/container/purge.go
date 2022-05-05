@@ -58,7 +58,7 @@ You may start a new local cluster with 'rpk container start'`,
 		grp.Go(func() error {
 			ctx, _ := common.DefaultCtx()
 			name := common.Name(id)
-			err = c.ContainerRemove(
+			err := c.ContainerRemove(
 				ctx,
 				name,
 				types.ContainerRemoveOptions{
