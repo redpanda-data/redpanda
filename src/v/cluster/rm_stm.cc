@@ -1060,7 +1060,7 @@ model::offset rm_stm::last_stable_offset() {
         return first_tx_start;
     }
 
-    return raft::details::next_offset(last_visible_index);
+    return model::next_offset(last_visible_index);
 }
 
 static void filter_intersecting(

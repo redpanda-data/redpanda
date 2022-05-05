@@ -166,7 +166,7 @@ ss::future<> offset_translator::sync_with_log(
 
     // Trim the offset2delta map to log dirty_offset (discrepancy can
     // happen if the offsets map was persisted, but the log wasn't flushed).
-    if (_state->truncate(details::next_offset(log_offsets.dirty_offset))) {
+    if (_state->truncate(model::next_offset(log_offsets.dirty_offset))) {
         ++_map_version;
     }
 
@@ -176,7 +176,7 @@ ss::future<> offset_translator::sync_with_log(
     }
 
     // read the log to insert the remaining entries into map
-    model::offset start_offset = details::next_offset(_highest_known_offset);
+    model::offset start_offset = model::next_offset(_highest_known_offset);
     auto reader_cfg = storage::log_reader_config(
       start_offset, log_offsets.dirty_offset, ss::default_priority_class(), as);
     auto reader = co_await log.make_reader(reader_cfg);
@@ -224,7 +224,7 @@ ss::future<> offset_translator::truncate(model::offset offset) {
         ++_map_version;
     }
 
-    model::offset prev = details::prev_offset(offset);
+    model::offset prev = model::prev_offset(offset);
     _highest_known_offset = std::min(prev, _highest_known_offset);
 
     vlog(_logger.info, "truncate at offset: {}, new state: {}", offset, _state);

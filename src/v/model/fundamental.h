@@ -99,6 +99,20 @@ using ns = named_type<ss::sstring, struct model_ns_type>;
 
 using offset = named_type<int64_t, struct model_offset_type>;
 
+inline constexpr model::offset next_offset(model::offset o) {
+    if (o < model::offset{0}) {
+        return model::offset{0};
+    }
+    return o + model::offset{1};
+}
+
+inline constexpr model::offset prev_offset(model::offset o) {
+    if (o <= model::offset{0}) {
+        return model::offset{};
+    }
+    return o - model::offset{1};
+}
+
 struct topic_partition_view {
     topic_partition_view(model::topic_view tp, model::partition_id p)
       : topic(tp)

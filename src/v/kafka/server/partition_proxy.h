@@ -51,6 +51,9 @@ public:
             model::offset,
             ss::lw_shared_ptr<const storage::offset_translator_state>)
           = 0;
+        virtual ss::future<bool>
+          is_fetch_offset_valid(model::offset, model::timeout_clock::time_point)
+          = 0;
         virtual cluster::partition_probe& probe() = 0;
         virtual ~impl() noexcept = default;
     };
@@ -99,6 +102,11 @@ public:
     std::optional<model::offset>
     get_leader_epoch_last_offset(kafka::leader_epoch epoch) const {
         return _impl->get_leader_epoch_last_offset(epoch);
+    }
+
+    ss::future<bool> is_fetch_offset_valid(
+      model::offset o, model::timeout_clock::time_point deadline) {
+        return _impl->is_fetch_offset_valid(o, deadline);
     }
 
 private:

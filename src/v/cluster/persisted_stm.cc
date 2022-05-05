@@ -304,7 +304,7 @@ ss::future<> persisted_stm::start() {
     if (maybe_snapshot) {
         stm_snapshot& snapshot = *maybe_snapshot;
 
-        auto next_offset = raft::details::next_offset(snapshot.header.offset);
+        auto next_offset = model::next_offset(snapshot.header.offset);
         if (next_offset >= _c->start_offset()) {
             co_await apply_snapshot(snapshot.header, std::move(snapshot.data));
         } else {

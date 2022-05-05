@@ -66,7 +66,7 @@ BOOST_AUTO_TEST_CASE(test_filling_gaps) {
 
     for (auto& b : without_gaps) {
         BOOST_REQUIRE_EQUAL(b.base_offset(), first_expected);
-        first_expected = raft::details::next_offset(b.last_offset());
+        first_expected = model::next_offset(b.last_offset());
     }
 }
 
@@ -88,7 +88,7 @@ BOOST_AUTO_TEST_CASE(test_filling_first_gap) {
 
     for (auto& b : without_gaps) {
         BOOST_REQUIRE_EQUAL(b.base_offset(), first_expected);
-        first_expected = raft::details::next_offset(b.last_offset());
+        first_expected = model::next_offset(b.last_offset());
     }
 }
 
@@ -121,6 +121,6 @@ BOOST_AUTO_TEST_CASE(test_filling_gaps_larger_than_batch_size) {
 
     for (auto& b : without_gaps) {
         BOOST_REQUIRE_EQUAL(b.base_offset(), first_expected);
-        first_expected = raft::details::next_offset(b.last_offset());
+        first_expected = model::next_offset(b.last_offset());
     }
 }

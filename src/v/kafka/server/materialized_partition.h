@@ -34,11 +34,11 @@ public:
     }
 
     model::offset high_watermark() const final {
-        return raft::details::next_offset(_partition->dirty_offset());
+        return model::next_offset(_partition->dirty_offset());
     }
 
     model::offset last_stable_offset() const final {
-        return raft::details::next_offset(_partition->dirty_offset());
+        return model::next_offset(_partition->dirty_offset());
     }
 
     bool is_leader() const final { return _partition->is_leader(); }
@@ -83,6 +83,11 @@ public:
     }
 
     cluster::partition_probe& probe() final { return _probe; }
+
+    ss::future<bool> is_fetch_offset_valid(
+      model::offset fetch_offset, model::timeout_clock::time_point) final {
+        co_return fetch_offset >= start_offset();
+    }
 
 private:
     static model::offset offset_or_zero(model::offset o) {
