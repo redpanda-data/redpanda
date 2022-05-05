@@ -266,7 +266,8 @@ TEXT
 Reading text values can have the following modifiers:
 
     hex       read text then hex decode it
-    base64    read text then std-encoding base64 it
+    base64    read text then std-encoding base64 decode it
+    re        read text matching a regular expression
 
 HEADERS
 
@@ -290,6 +291,8 @@ A value to a specific partition, if using a non-negative --partition flag:
     -f '%p %v\n'
 A big-endian uint16 key size, the text " foo ", and then that key:
     -f '%K{big16} foo %k'
+A value that can be two or three characters followed by a newline:
+    -f '%v{re#...?#}\n'
 
 MISC
 
