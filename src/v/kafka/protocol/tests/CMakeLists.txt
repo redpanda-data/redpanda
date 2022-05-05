@@ -22,6 +22,7 @@ rp_test(
   BINARY_NAME
     test_kafka_protocol_single_thread
   SOURCES
+    field_parser_test.cc
     batch_reader_test.cc
   DEFINITIONS
     BOOST_TEST_DYN_LINK
