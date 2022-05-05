@@ -30,7 +30,6 @@
 struct admin_server_cfg {
     std::vector<model::broker_endpoint> endpoints;
     std::vector<config::endpoint_tls_config> endpoints_tls;
-    std::optional<ss::sstring> dashboard_dir;
     ss::sstring admin_api_docs_dir;
     ss::scheduling_group sg;
 };
@@ -57,27 +56,6 @@ public:
     void set_ready() { _ready = true; }
 
 private:
-    /**
-     * Prepend a / to the path component. This handles the case where path is an
-     * empty string (e.g. url/) or when the path omits the root file path
-     * directory (e.g. url/index.html vs url//index.html). The directory handler
-     * in seastar is opininated and not very forgiving here so we help it a bit.
-     */
-    class dashboard_handler final : public ss::httpd::directory_handler {
-    public:
-        explicit dashboard_handler(const ss::sstring& dashboard_dir)
-          : directory_handler(dashboard_dir) {}
-
-        ss::future<std::unique_ptr<ss::httpd::reply>> handle(
-          const ss::sstring& path,
-          std::unique_ptr<ss::httpd::request> req,
-          std::unique_ptr<ss::httpd::reply> rep) override {
-            req->param.set("path", "/" + req->param.at("path"));
-            return directory_handler::handle(
-              path, std::move(req), std::move(rep));
-        }
-    };
-
     enum class auth_level {
         // Unauthenticated endpoint (not a typo, 'public' is a keyword)
         publik = 0,
@@ -169,7 +147,6 @@ private:
       const request_auth_result& auth_state) const;
 
     ss::future<> configure_listeners();
-    void configure_dashboard();
     void configure_metrics_route();
     void configure_admin_routes();
     void register_config_routes();

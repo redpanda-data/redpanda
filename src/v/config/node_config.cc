@@ -96,12 +96,7 @@ node_config::node_config() noexcept
       "Admin API doc directory",
       {.visibility = visibility::user},
       "/usr/share/redpanda/admin-api-doc")
-  , dashboard_dir(
-      *this,
-      "dashboard_dir",
-      "serve http dashboard on / url",
-      {.visibility = visibility::user},
-      std::nullopt)
+  , dashboard_dir(*this, "dashboard_dir")
   , cloud_storage_cache_directory(
       *this,
       "cloud_storage_cache_directory",

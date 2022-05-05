@@ -1,8 +1,0 @@
-@import "../constants/colors";
-$font-size-base: 1rem;
-
-@media (min-width: 576px) {
-  $font-size-base: 22rem;
-}
-
-@import "node_modules/bootstrap/scss/bootstrap";
