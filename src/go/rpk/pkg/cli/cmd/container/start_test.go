@@ -129,7 +129,8 @@ Please check your internet connection and try again.`,
 			expectedErrMsg: "Network create go boom",
 		},
 		{
-			name: "it should fail if inspecting the network fails",
+			name:  "it should fail if inspecting the network fails",
+			nodes: 1,
 			client: func(_ *testing.T) (common.Client, error) {
 				return &common.MockClient{
 					MockNetworkInspect: func(
@@ -147,7 +148,8 @@ Please check your internet connection and try again.`,
 			expectedErrMsg: "Can't inspect the network",
 		},
 		{
-			name: "it should fail if the network config is corrupted",
+			name:  "it should fail if the network config is corrupted",
+			nodes: 1,
 			client: func(_ *testing.T) (common.Client, error) {
 				return &common.MockClient{
 					MockNetworkInspect: func(
@@ -211,7 +213,8 @@ Please check your internet connection and try again.`,
 			expectedErrMsg: "Can't inspect",
 		},
 		{
-			name: "it should fail if creating the container fails",
+			name:  "it should fail if creating the container fails",
+			nodes: 1,
 			client: func(_ *testing.T) (common.Client, error) {
 				return &common.MockClient{
 					// NetworkInspect succeeds returning the
