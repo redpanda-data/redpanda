@@ -681,18 +681,24 @@ class RedpandaService(Service):
                 f"Writing Redpanda node tls key file: {RedpandaService.TLS_SERVER_KEY_FILE}"
             )
             self.logger.debug(open(cert.key, "r").read())
+            node.account.mkdirs(
+                os.path.dirname(RedpandaService.TLS_SERVER_KEY_FILE))
             node.account.copy_to(cert.key, RedpandaService.TLS_SERVER_KEY_FILE)
 
             self.logger.info(
                 f"Writing Redpanda node tls cert file: {RedpandaService.TLS_SERVER_CRT_FILE}"
             )
             self.logger.debug(open(cert.crt, "r").read())
+            node.account.mkdirs(
+                os.path.dirname(RedpandaService.TLS_SERVER_CRT_FILE))
             node.account.copy_to(cert.crt, RedpandaService.TLS_SERVER_CRT_FILE)
 
             self.logger.info(
                 f"Writing Redpanda node tls ca cert file: {RedpandaService.TLS_CA_CRT_FILE}"
             )
             self.logger.debug(open(ca.crt, "r").read())
+            node.account.mkdirs(
+                os.path.dirname(RedpandaService.TLS_CA_CRT_FILE))
             node.account.copy_to(ca.crt, RedpandaService.TLS_CA_CRT_FILE)
 
     def security_config(self):
