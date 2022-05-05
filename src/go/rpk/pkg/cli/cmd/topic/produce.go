@@ -35,6 +35,8 @@ func NewProduceCommand(fs afero.Fs) *cobra.Command {
 		compression string
 		acks        int
 
+		tombstone bool
+
 		timeout time.Duration
 	)
 
@@ -140,6 +142,9 @@ func NewProduceCommand(fs afero.Fs) *cobra.Command {
 				if r.Topic == "" && defaultTopic == "" {
 					out.Die("topic to produce to is missing, check --help for produce syntax")
 				}
+				if tombstone && len(r.Value) == 0 {
+					r.Value = nil
+				}
 				cl.Produce(context.Background(), r, func(r *kgo.Record, err error) {
 					out.MaybeDie(err, "unable to produce record: %v", err)
 					if outf != nil {
@@ -167,6 +172,7 @@ func NewProduceCommand(fs afero.Fs) *cobra.Command {
 	)
 	cmd.Flags().StringArrayVarP(&recHeaders, "header", "H", nil, "Headers in format key:value to add to each record (repeatable)")
 	cmd.Flags().StringVarP(&key, "key", "k", "", "A fixed key to use for each record (parsed input keys take precedence)")
+	cmd.Flags().BoolVarP(&tombstone, "tombstone", "Z", false, "produce empty values as tombstones")
 
 	// Deprecated
 	cmd.Flags().IntVarP(new(int), "num", "n", 1, "")
@@ -260,7 +266,8 @@ TEXT
 Reading text values can have the following modifiers:
 
     hex       read text then hex decode it
-    base64    read text then std-encoding base64 it
+    base64    read text then std-encoding base64 decode it
+    re        read text matching a regular expression
 
 HEADERS
 
@@ -284,6 +291,8 @@ A value to a specific partition, if using a non-negative --partition flag:
     -f '%p %v\n'
 A big-endian uint16 key size, the text " foo ", and then that key:
     -f '%K{big16} foo %k'
+A value that can be two or three characters followed by a newline:
+    -f '%v{re#...?#}\n'
 
 MISC
 
