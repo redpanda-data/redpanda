@@ -32,7 +32,7 @@ func NewGenerateCommand(fs afero.Fs) *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "generate [PROJECT DIRECTORY]",
-		Short: "Create an npm template project for inline WASM engine.",
+		Short: "Create a npm template project for inline WASM engine.",
 		Args:  cobra.ExactArgs(1),
 		Run: func(_ *cobra.Command, args []string) {
 			path, err := filepath.Abs(args[0])
@@ -41,7 +41,7 @@ func NewGenerateCommand(fs afero.Fs) *cobra.Command {
 			out.MaybeDie(err, "unable to generate all manifest files: %v", err)
 		},
 	}
-	cmd.Flags().BoolVar(&skipVersion, "skip-version", false, "Omit version check from npm, use default instead")
+	cmd.Flags().BoolVar(&skipVersion, "skip-version", false, "omit wasm-api version check from npm, use default instead")
 	return cmd
 }
 
@@ -84,11 +84,11 @@ func getWasmApiVersion(wasmApi string) string {
 	return version
 }
 
-// Looks up the latest version of our client library using npm, defaulting
-// if anything fails.
+// latestClientApiVersion looks up the latest version of our client library using npm,
+// defaulting if anything fails.
 func latestClientApiVersion() string {
 	if _, err := exec.LookPath("npm"); err != nil {
-		fmt.Printf("npm not found, defaulting to client API verision %s.\n", defApiVersion)
+		fmt.Printf("npm not found, defaulting to client API version %s.\n", defApiVersion)
 		return defApiVersion
 	}
 
@@ -115,7 +115,7 @@ func executeGenerate(fs afero.Fs, path string, skipVersion bool) error {
 	for dir, templates := range generateManifest(version) {
 		for _, template := range templates {
 			file := filepath.Join(path, dir, template.name)
-			exist, err := afero.Exists(fs, path)
+			exist, err := afero.Exists(fs, file)
 			if err != nil {
 				return fmt.Errorf("unable to determine if file %q exists: %v", file, err)
 			}
@@ -125,7 +125,7 @@ func executeGenerate(fs afero.Fs, path string, skipVersion bool) error {
 		}
 	}
 	if len(preexisting) > 0 {
-		return fmt.Errorf("Files %v already exist, avoiding generation.", preexisting)
+		return fmt.Errorf("files already exist; try using a new directory or removing the existing files, existing: %v", preexisting)
 	}
 
 	if err := fs.MkdirAll(path, 0o755); err != nil {
