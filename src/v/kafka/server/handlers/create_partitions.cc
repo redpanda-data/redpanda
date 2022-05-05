@@ -155,10 +155,8 @@ ss::future<response_ptr> create_partitions_handler::handle(
       error_code::invalid_topic_exception,
       "Topic does not exist",
       [&ctx](const create_partitions_topic& tp) {
-          return ctx.metadata_cache()
-            .get_topic_metadata(
-              model::topic_namespace(model::kafka_namespace, tp.name))
-            .has_value();
+          return ctx.metadata_cache().contains(
+            model::topic_namespace(model::kafka_namespace, tp.name));
       });
 
     // validate custom assignment

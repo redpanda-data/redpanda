@@ -162,8 +162,7 @@ ss::future<std::optional<model::node_id>> tx_gateway_frontend::get_tx_broker() {
               std::nullopt);
         }
 
-        auto md = _metadata_cache.local().get_topic_metadata(
-          model::tx_manager_nt);
+        auto md = _metadata_cache.local().contains(model::tx_manager_nt);
         if (!md) {
             return ss::make_ready_future<std::optional<model::node_id>>(
               std::nullopt);

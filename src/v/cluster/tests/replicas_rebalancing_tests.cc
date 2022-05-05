@@ -16,11 +16,11 @@ absl::node_hash_map<model::node_id, size_t>
 calculate_replicas_per_node(const cluster::metadata_cache& cache) {
     absl::node_hash_map<model::node_id, size_t> ret;
 
-    for (auto& tp_md : cache.all_topics_metadata()) {
-        if (tp_md.tp_ns.ns == model::redpanda_ns) {
+    for (auto& [tp_ns, tp_md] : cache.all_topics_metadata()) {
+        if (tp_ns.ns == model::redpanda_ns) {
             continue;
         }
-        for (auto& p_md : tp_md.partitions) {
+        for (auto& p_md : tp_md.get_assignments()) {
             for (auto replica : p_md.replicas) {
                 ret[replica.node_id]++;
             }

@@ -39,7 +39,8 @@ void validate_topic_metadata(cluster::metadata_cache& cache) {
     for (auto& t_cfg : expected_topics) {
         auto tp_md = cache.get_topic_metadata(t_cfg.tp_ns);
         BOOST_REQUIRE_EQUAL(tp_md.has_value(), true);
-        BOOST_REQUIRE_EQUAL(tp_md->partitions.size(), t_cfg.partition_count);
+        BOOST_REQUIRE_EQUAL(
+          tp_md->get_assignments().size(), t_cfg.partition_count);
         auto cfg = cache.get_topic_cfg(t_cfg.tp_ns);
         BOOST_REQUIRE_EQUAL(cfg->tp_ns, t_cfg.tp_ns);
         BOOST_REQUIRE_EQUAL(cfg->partition_count, t_cfg.partition_count);
@@ -54,11 +55,14 @@ void validate_topic_metadata(cluster::metadata_cache& cache) {
 
 void wait_for_leaders(
   cluster::partition_leaders_table& leader_table,
-  const model::topic_metadata md) {
+  const cluster::topic_metadata md) {
     std::vector<ss::future<>> f;
-    f.reserve(md.partitions.size());
-    for (const auto& p : md.partitions) {
-        model::ntp ntp(md.tp_ns.ns, md.tp_ns.tp, p.id);
+    f.reserve(md.get_assignments().size());
+    for (const auto& p : md.get_assignments()) {
+        model::ntp ntp(
+          md.get_configuration().tp_ns.ns,
+          md.get_configuration().tp_ns.tp,
+          p.id);
 
         f.push_back(leader_table
                       .wait_for_leader(
@@ -109,7 +113,7 @@ FIXTURE_TEST(create_single_topic_test_at_current_broker, cluster_test_fixture) {
 
         BOOST_REQUIRE_EQUAL(md.has_value(), true);
         wait_for_leaders(app->controller->get_partition_leaders().local(), *md);
-        BOOST_REQUIRE_EQUAL(md.value().tp_ns, r.tp_ns);
+        BOOST_REQUIRE_EQUAL(md->get_configuration().tp_ns, r.tp_ns);
     }
 }
 
@@ -151,7 +155,7 @@ FIXTURE_TEST(test_autocreate_on_non_leader, cluster_test_fixture) {
         BOOST_REQUIRE_EQUAL(md.has_value(), true);
         wait_for_leaders(
           app_0->controller->get_partition_leaders().local(), *md);
-        BOOST_REQUIRE_EQUAL(md.value().tp_ns, r.tp_ns);
+        BOOST_REQUIRE_EQUAL(md->get_configuration().tp_ns, r.tp_ns);
     }
     // Make sure caches are the same
     validate_topic_metadata(get_local_cache(n_1));

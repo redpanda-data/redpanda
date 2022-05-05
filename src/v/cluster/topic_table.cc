@@ -22,9 +22,9 @@
 namespace cluster {
 
 template<typename Func>
-std::vector<std::invoke_result_t<Func, topic_configuration_assignment>>
+std::vector<std::invoke_result_t<Func, const topic_metadata&>>
 topic_table::transform_topics(Func&& f) const {
-    std::vector<std::invoke_result_t<Func, topic_configuration_assignment>> ret;
+    std::vector<std::invoke_result_t<Func, const topic_metadata>> ret;
     ret.reserve(_topics.size());
     std::transform(
       std::cbegin(_topics),
@@ -32,44 +32,9 @@ topic_table::transform_topics(Func&& f) const {
       std::back_inserter(ret),
       [f = std::forward<Func>(f)](
         const std::pair<model::topic_namespace, topic_metadata>& p) {
-          return f(p.second.configuration);
+          return f(p.second);
       });
     return ret;
-}
-
-topic_table::topic_metadata::topic_metadata(
-  topic_configuration_assignment c, model::revision_id rid) noexcept
-  : configuration(std::move(c))
-  , _source_topic(std::nullopt)
-  , _revision(rid) {}
-
-topic_table::topic_metadata::topic_metadata(
-  topic_configuration_assignment c,
-  model::revision_id rid,
-  model::topic st) noexcept
-  : configuration(std::move(c))
-  , _source_topic(st)
-  , _revision(rid) {}
-
-bool topic_table::topic_metadata::is_topic_replicable() const {
-    return _source_topic.has_value() == false;
-}
-
-model::revision_id topic_table::topic_metadata::get_revision() const {
-    vassert(
-      is_topic_replicable(), "Query for revision_id on a non-replicable topic");
-    return _revision;
-}
-
-const model::topic& topic_table::topic_metadata::get_source_topic() const {
-    vassert(
-      !is_topic_replicable(), "Query for source_topic on a replicable topic");
-    return _source_topic.value();
-}
-
-const topic_configuration_assignment&
-topic_table::topic_metadata::get_configuration() const {
-    return configuration;
 }
 
 ss::future<std::error_code>
@@ -128,11 +93,11 @@ topic_table::apply(delete_topic_cmd cmd, model::offset offset) {
             }
         }
 
-        for (auto& p : tp->second.configuration.assignments) {
-            auto ntp = model::ntp(cmd.key.ns, cmd.key.tp, p.id);
+        for (auto& p_as : tp->second.get_assignments()) {
+            auto ntp = model::ntp(cmd.key.ns, cmd.key.tp, p_as.id);
             _update_in_progress.erase(ntp);
             _pending_deltas.emplace_back(
-              std::move(ntp), std::move(p), offset, delete_type);
+              std::move(ntp), p_as, offset, delete_type);
         }
         _topics.erase(tp);
         notify_waiters();
@@ -148,14 +113,14 @@ topic_table::apply(create_partition_cmd cmd, model::offset offset) {
     }
 
     // add partitions
-    auto prev_partition_count = tp->second.configuration.cfg.partition_count;
+    auto prev_partition_count = tp->second.get_configuration().partition_count;
     // update partitions count
-    tp->second.configuration.cfg.partition_count
+    tp->second.get_configuration().partition_count
       = cmd.value.cfg.new_total_partition_count;
     // add assignments of newly created partitions
     for (auto& p_as : cmd.value.assignments) {
         p_as.id += model::partition_id(prev_partition_count);
-        tp->second.configuration.assignments.push_back(p_as);
+        tp->second.get_assignments().emplace(p_as);
         // propagate deltas
         auto ntp = model::ntp(cmd.key.ns, cmd.key.tp, p_as.id);
         _pending_deltas.emplace_back(
@@ -176,19 +141,11 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
         return ss::make_ready_future<std::error_code>(
           errc::topic_operation_error);
     }
-    auto find_partition = [](
-                            std::vector<partition_assignment>& assignments,
-                            model::partition_id p_id) {
-        return std::find_if(
-          assignments.begin(),
-          assignments.end(),
-          [p_id](const partition_assignment& p_as) { return p_id == p_as.id; });
-    };
 
-    auto current_assignment_it = find_partition(
-      tp->second.configuration.assignments, cmd.key.tp.partition);
+    auto current_assignment_it = tp->second.get_assignments().find(
+      cmd.key.tp.partition);
 
-    if (current_assignment_it == tp->second.configuration.assignments.end()) {
+    if (current_assignment_it == tp->second.get_assignments().end()) {
         return ss::make_ready_future<std::error_code>(
           errc::partition_not_exists);
     }
@@ -228,11 +185,10 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
               sfound != _topics.end(),
               "Non replicable topic must exist: {}",
               cs);
-            auto assignment_it = find_partition(
-              sfound->second.configuration.assignments,
+            auto assignment_it = sfound->second.get_assignments().find(
               current_assignment_it->id);
             vassert(
-              assignment_it != sfound->second.configuration.assignments.end(),
+              assignment_it != sfound->second.get_assignments().end(),
               "Non replicable partition doesn't exist: {}-{}",
               cs,
               current_assignment_it->id);
@@ -268,14 +224,10 @@ topic_table::apply(finish_moving_partition_replicas_cmd cmd, model::offset o) {
     }
 
     // calculate deleta for backend
-    auto current_assignment_it = std::find_if(
-      tp->second.configuration.assignments.begin(),
-      tp->second.configuration.assignments.end(),
-      [p_id = cmd.key.tp.partition](partition_assignment& p_as) {
-          return p_id == p_as.id;
-      });
+    auto current_assignment_it = tp->second.get_assignments().find(
+      cmd.key.tp.partition);
 
-    if (current_assignment_it == tp->second.configuration.assignments.end()) {
+    if (current_assignment_it == tp->second.get_assignments().end()) {
         return ss::make_ready_future<std::error_code>(
           errc::partition_not_exists);
     }
@@ -394,7 +346,7 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
     if (tp == _topics.end() || !tp->second.is_topic_replicable()) {
         co_return make_error_code(errc::topic_not_exists);
     }
-    auto& properties = tp->second.configuration.cfg.properties;
+    auto& properties = tp->second.get_configuration().properties;
     auto& overrides = cmd.value;
     /**
      * Update topic properties
@@ -414,8 +366,8 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
 
     // generate deltas for controller backend
     std::vector<topic_table_delta> deltas;
-    deltas.reserve(tp->second.configuration.assignments.size());
-    for (const auto& p_as : tp->second.configuration.assignments) {
+    deltas.reserve(tp->second.get_assignments().size());
+    for (const auto& p_as : tp->second.get_assignments()) {
         deltas.emplace_back(
           model::ntp(cmd.key.ns, cmd.key.tp, p_as.id),
           p_as,
@@ -445,7 +397,7 @@ topic_table::apply(create_non_replicable_topic_cmd cmd, model::offset o) {
     vassert(
       tp->second.is_topic_replicable(), "Source topic must be replicable");
 
-    for (const auto& pas : tp->second.configuration.assignments) {
+    for (const auto& pas : tp->second.get_assignments()) {
         _pending_deltas.emplace_back(
           model::ntp(new_non_rep_topic.ns, new_non_rep_topic.tp, pas.id),
           pas,
@@ -453,8 +405,9 @@ topic_table::apply(create_non_replicable_topic_cmd cmd, model::offset o) {
           delta::op_type::add_non_replicable);
     }
 
-    auto ca = tp->second.configuration;
-    ca.cfg.tp_ns = new_non_rep_topic;
+    auto cfg = tp->second.get_configuration();
+    auto p_as = tp->second.get_assignments();
+    cfg.tp_ns = new_non_rep_topic;
 
     auto [itr, success] = _topics_hierarchy.try_emplace(
       source,
@@ -469,7 +422,8 @@ topic_table::apply(create_non_replicable_topic_cmd cmd, model::offset o) {
     }
     _topics.insert(
       {new_non_rep_topic,
-       topic_metadata(std::move(ca), model::revision_id(o()), source.tp)});
+       topic_metadata(
+         std::move(cfg), std::move(p_as), model::revision_id(o()), source.tp)});
     notify_waiters();
     co_return make_error_code(errc::success);
 }
@@ -538,13 +492,13 @@ topic_table::wait_for_changes(ss::abort_source& as) {
 
 std::vector<model::topic_namespace> topic_table::all_topics() const {
     return transform_topics(
-      [](const topic_configuration_assignment& td) { return td.cfg.tp_ns; });
+      [](const topic_metadata& tp) { return tp.get_configuration().tp_ns; });
 }
 
-std::optional<model::topic_metadata>
+std::optional<topic_metadata>
 topic_table::get_topic_metadata(model::topic_namespace_view tp) const {
     if (auto it = _topics.find(tp); it != _topics.end()) {
-        return it->second.configuration.get_metadata();
+        return it->second;
     }
     return {};
 }
@@ -552,41 +506,35 @@ topic_table::get_topic_metadata(model::topic_namespace_view tp) const {
 std::optional<topic_configuration>
 topic_table::get_topic_cfg(model::topic_namespace_view tp) const {
     if (auto it = _topics.find(tp); it != _topics.end()) {
-        return it->second.configuration.cfg;
+        return it->second.get_configuration();
     }
     return {};
 }
 
-std::optional<std::vector<partition_assignment>>
+std::optional<assignments_set>
 topic_table::get_topic_assignments(model::topic_namespace_view tp) const {
     if (auto it = _topics.find(tp); it != _topics.end()) {
-        return it->second.configuration.assignments;
+        return it->second.get_assignments();
     }
-    return {};
+    return std::nullopt;
 }
 
 std::optional<model::timestamp_type>
 topic_table::get_topic_timestamp_type(model::topic_namespace_view tp) const {
     if (auto it = _topics.find(tp); it != _topics.end()) {
-        return it->second.configuration.cfg.properties.timestamp_type;
+        return it->second.get_configuration().properties.timestamp_type;
     }
     return {};
 }
 
-std::vector<model::topic_metadata> topic_table::all_topics_metadata() const {
-    return transform_topics([](const topic_configuration_assignment& td) {
-        return td.get_metadata();
-    });
+const topic_table::underlying_t& topic_table::all_topics_metadata() const {
+    return _topics;
 }
 
 bool topic_table::contains(
   model::topic_namespace_view topic, model::partition_id pid) const {
     if (auto it = _topics.find(topic); it != _topics.end()) {
-        const auto& partitions = it->second.configuration.assignments;
-        return std::any_of(
-          partitions.cbegin(),
-          partitions.cend(),
-          [&pid](const partition_assignment& pas) { return pas.id == pid; });
+        return it->second.get_assignments().contains(pid);
     }
     return false;
 }
@@ -598,14 +546,9 @@ topic_table::get_partition_assignment(const model::ntp& ntp) const {
         return {};
     }
 
-    auto p_it = std::find_if(
-      it->second.configuration.assignments.cbegin(),
-      it->second.configuration.assignments.cend(),
-      [&ntp](const partition_assignment& pas) {
-          return pas.id == ntp.tp.partition;
-      });
+    auto p_it = it->second.get_assignments().find(ntp.tp.partition);
 
-    if (p_it == it->second.configuration.assignments.cend()) {
+    if (p_it == it->second.get_assignments().cend()) {
         return {};
     }
 

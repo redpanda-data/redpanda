@@ -48,7 +48,7 @@ ss::future<std::vector<model::node_id>> wait_for_leaders(
             continue;
         }
         // for each partition ask for leader
-        for (auto& pmd : md->partitions) {
+        for (auto& pmd : md->get_assignments()) {
             futures.push_back(md_cache.get_leader(
               model::ntp(r.tp_ns.ns, r.tp_ns.tp, pmd.id), timeout));
         }

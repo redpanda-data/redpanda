@@ -93,7 +93,7 @@ public:
                     .local()
                     .get_topic_metadata(model::topic_namespace_view(ntp));
 
-        return md->partitions.begin()->replicas;
+        return md->get_assignments().begin()->replicas;
     }
 
     void create_topic(cluster::topic_configuration cfg) {
@@ -204,10 +204,9 @@ public:
 
     void populate_all_topics_with_data() {
         auto md = get_local_cache(model::node_id(0)).all_topics_metadata();
-        for (auto& topic_metadata : md) {
-            for (auto& p : topic_metadata.partitions) {
-                model::ntp ntp(
-                  topic_metadata.tp_ns.ns, topic_metadata.tp_ns.tp, p.id);
+        for (auto& [tp_ns, topic_metadata] : md) {
+            for (auto& p : topic_metadata.get_assignments()) {
+                model::ntp ntp(tp_ns.ns, tp_ns.tp, p.id);
                 replicate_data(ntp, 10);
             }
         }

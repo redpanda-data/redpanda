@@ -68,14 +68,14 @@ controller_api::get_reconciliation_state(model::topic_namespace_view tp_ns) {
         co_return ret_t(errc::topic_not_exists);
     }
     std::vector<model::ntp> ntps;
-    ntps.reserve(metadata->partitions.size());
+    ntps.reserve(metadata->get_assignments().size());
 
     std::transform(
-      metadata->partitions.cbegin(),
-      metadata->partitions.cend(),
+      metadata->get_assignments().cbegin(),
+      metadata->get_assignments().cend(),
       std::back_inserter(ntps),
-      [tp_ns](const model::partition_metadata& p_md) {
-          return model::ntp(tp_ns.ns, tp_ns.tp, p_md.id);
+      [tp_ns](const partition_assignment& p_as) {
+          return model::ntp(tp_ns.ns, tp_ns.tp, p_as.id);
       });
 
     co_return co_await get_reconciliation_state(std::move(ntps));
@@ -219,9 +219,9 @@ ss::future<std::error_code> controller_api::wait_for_topic(
 
     absl::node_hash_map<model::node_id, std::vector<model::ntp>> requests;
     // collect ntps per node
-    for (const auto& p_md : metadata->partitions) {
-        for (const auto& bs : p_md.replicas) {
-            requests[bs.node_id].emplace_back(tp_ns.ns, tp_ns.tp, p_md.id);
+    for (const auto& p_as : metadata->get_assignments()) {
+        for (const auto& bs : p_as.replicas) {
+            requests[bs.node_id].emplace_back(tp_ns.ns, tp_ns.tp, p_as.id);
         }
     }
     bool ready = false;

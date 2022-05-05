@@ -284,9 +284,10 @@ public:
                       r.tp_ns);
                     return md
                            && std::all_of(
-                             md->partitions.begin(),
-                             md->partitions.end(),
-                             [this, &r](const model::partition_metadata& p) {
+                             md->get_assignments().begin(),
+                             md->get_assignments().end(),
+                             [this,
+                              &r](const cluster::partition_assignment& p) {
                                  return app.shard_table.local().shard_for(
                                    model::ntp(r.tp_ns.ns, r.tp_ns.tp, p.id));
                              });

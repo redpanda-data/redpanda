@@ -38,26 +38,6 @@ class topic_table {
 public:
     using delta = topic_table_delta;
 
-    class topic_metadata {
-    public:
-        topic_metadata(
-          topic_configuration_assignment, model::revision_id) noexcept;
-        topic_metadata(
-          topic_configuration_assignment,
-          model::revision_id,
-          model::topic) noexcept;
-
-        bool is_topic_replicable() const;
-        model::revision_id get_revision() const;
-        const model::topic& get_source_topic() const;
-        const topic_configuration_assignment& get_configuration() const;
-
-    private:
-        friend class topic_table;
-        topic_configuration_assignment configuration;
-        std::optional<model::topic> _source_topic;
-        model::revision_id _revision;
-    };
     using underlying_t = absl::flat_hash_map<
       model::topic_namespace,
       topic_metadata,
@@ -135,7 +115,7 @@ public:
     ///\brief Returns metadata of single topic.
     ///
     /// If topic does not exists it returns an empty optional
-    std::optional<model::topic_metadata>
+    std::optional<topic_metadata>
       get_topic_metadata(model::topic_namespace_view) const;
 
     ///\brief Returns configuration of single topic.
@@ -147,7 +127,7 @@ public:
     ///\brief Returns partition assignments of single topic.
     ///
     /// If topic does not exists it returns an empty optional
-    std::optional<std::vector<partition_assignment>>
+    std::optional<assignments_set>
       get_topic_assignments(model::topic_namespace_view) const;
 
     ///\brief Returns topics timestamp type
@@ -157,10 +137,14 @@ public:
       get_topic_timestamp_type(model::topic_namespace_view) const;
 
     /// Returns metadata of all topics.
-    std::vector<model::topic_metadata> all_topics_metadata() const;
+    const underlying_t& all_topics_metadata() const;
 
     /// Checks if it has given partition
     bool contains(model::topic_namespace_view, model::partition_id) const;
+    /// Checks if it has given topic
+    bool contains(model::topic_namespace_view tp) const {
+        return _topics.contains(tp);
+    }
 
     std::optional<partition_assignment>
     get_partition_assignment(const model::ntp&) const;
@@ -196,7 +180,7 @@ private:
     void notify_waiters();
 
     template<typename Func>
-    std::vector<std::invoke_result_t<Func, topic_configuration_assignment>>
+    std::vector<std::invoke_result_t<Func, const topic_metadata&>>
     transform_topics(Func&&) const;
 
     underlying_t _topics;

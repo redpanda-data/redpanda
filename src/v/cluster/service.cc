@@ -148,7 +148,7 @@ service::fetch_metadata_and_cfg(const std::vector<topic_result>& res) {
     md.reserve(res.size());
     for (const auto& r : res) {
         if (r.ec == errc::success) {
-            auto topic_md = _md_cache.local().get_topic_metadata(r.tp_ns);
+            auto topic_md = _md_cache.local().get_model_topic_metadata(r.tp_ns);
             auto topic_cfg = _md_cache.local().get_topic_cfg(r.tp_ns);
             if (topic_md && topic_cfg) {
                 md.push_back(std::move(topic_md.value()));

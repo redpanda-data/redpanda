@@ -21,19 +21,17 @@ FIXTURE_TEST(test_happy_path_create, topic_table_fixture) {
     auto md = table.local().all_topics_metadata();
 
     BOOST_REQUIRE_EQUAL(md.size(), 3);
-    std::sort(
-      md.begin(),
-      md.end(),
-      [](const model::topic_metadata& a, const model::topic_metadata& b) {
-          return a.tp_ns.tp < b.tp_ns.tp;
-      });
-    BOOST_REQUIRE_EQUAL(md[0].tp_ns, make_tp_ns("test_tp_1"));
-    BOOST_REQUIRE_EQUAL(md[1].tp_ns, make_tp_ns("test_tp_2"));
-    BOOST_REQUIRE_EQUAL(md[2].tp_ns, make_tp_ns("test_tp_3"));
 
-    BOOST_REQUIRE_EQUAL(md[0].partitions.size(), 1);
-    BOOST_REQUIRE_EQUAL(md[1].partitions.size(), 12);
-    BOOST_REQUIRE_EQUAL(md[2].partitions.size(), 8);
+    BOOST_REQUIRE(md.contains(make_tp_ns("test_tp_1")));
+    BOOST_REQUIRE(md.contains(make_tp_ns("test_tp_2")));
+    BOOST_REQUIRE(md.contains(make_tp_ns("test_tp_3")));
+
+    BOOST_REQUIRE_EQUAL(
+      md.find(make_tp_ns("test_tp_1"))->second.get_assignments().size(), 1);
+    BOOST_REQUIRE_EQUAL(
+      md.find(make_tp_ns("test_tp_2"))->second.get_assignments().size(), 12);
+    BOOST_REQUIRE_EQUAL(
+      md.find(make_tp_ns("test_tp_3"))->second.get_assignments().size(), 8);
 
     // check delta
     auto d = table.local().wait_for_changes(as).get0();
@@ -60,9 +58,10 @@ FIXTURE_TEST(test_happy_path_delete, topic_table_fixture) {
 
     auto md = table.local().all_topics_metadata();
     BOOST_REQUIRE_EQUAL(md.size(), 1);
-    BOOST_REQUIRE_EQUAL(md[0].tp_ns, make_tp_ns("test_tp_1"));
+    BOOST_REQUIRE(md.contains(make_tp_ns("test_tp_1")));
 
-    BOOST_REQUIRE_EQUAL(md[0].partitions.size(), 1);
+    BOOST_REQUIRE_EQUAL(
+      md.find(make_tp_ns("test_tp_1"))->second.get_assignments().size(), 1);
     // check delta
     auto d = table.local().wait_for_changes(as).get0();
 
@@ -156,7 +155,7 @@ FIXTURE_TEST(test_adding_partition, topic_table_fixture) {
 
     auto md = table.local().get_topic_metadata(make_tp_ns("test_tp_2"));
 
-    BOOST_REQUIRE_EQUAL(md->partitions.size(), 15);
+    BOOST_REQUIRE_EQUAL(md->get_assignments().size(), 15);
     // check delta
     auto d = table.local().wait_for_changes(as).get0();
     // require 3 partition additions
