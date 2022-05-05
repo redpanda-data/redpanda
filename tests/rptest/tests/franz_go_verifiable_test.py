@@ -10,13 +10,14 @@
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 from ducktape.cluster.cluster_spec import ClusterSpec
+from ducktape.mark import matrix
 
 import os
 
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.tests.prealloc_nodes import PreallocNodesTest
-from rptest.services.redpanda import SISettings
+from rptest.services.redpanda import SISettings, RESTART_LOG_ALLOW_LIST
 from rptest.services.franz_go_verifiable_services import FranzGoVerifiableProducer, FranzGoVerifiableSeqConsumer, FranzGoVerifiableRandomConsumer
 
 
@@ -91,21 +92,24 @@ class FranzGoVerifiableTest(FranzGoVerifiableBase):
         assert self._rand_consumer.consumer_status.total_reads == self.RANDOM_READ_COUNT * self.RANDOM_READ_PARALLEL
 
 
+# archival - [fiber63 kafka/topic-vmumdxkmeg/33] - ntp_archiver_service.cc:96 - upload loop error: seastar::timed_out_error (timedout)
+KGO_LOG_ALLOW_LIST = [
+    r'archival - .*upload loop error: seastar::timed_out_error \(timedout\)'
+]
+
+KGO_RESTART_LOG_ALLOW_LIST = KGO_LOG_ALLOW_LIST + RESTART_LOG_ALLOW_LIST
+
+
 class FranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
     MSG_SIZE = 1000000
     PRODUCE_COUNT = 20000
     RANDOM_READ_COUNT = 1000
     RANDOM_READ_PARALLEL = 20
 
-    segment_size = 5 * 1000000
-
     topics = (TopicSpec(partition_count=100, replication_factor=3), )
 
     def __init__(self, ctx):
-        si_settings = SISettings(
-            log_segment_size=FranzGoVerifiableWithSiTest.segment_size,
-            cloud_storage_cache_size=5 *
-            FranzGoVerifiableWithSiTest.segment_size)
+        si_settings = SISettings(cloud_storage_cache_size=5 * 2**20)
 
         super(FranzGoVerifiableWithSiTest, self).__init__(
             test_context=ctx,
@@ -126,19 +130,12 @@ class FranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
             },
             si_settings=si_settings)
 
-    @cluster(num_nodes=4)
-    def test_with_all_type_of_loads_and_si(self):
-        self.logger.info(f"Environment: {os.environ}")
-        if os.environ.get('BUILD_TYPE', None) == 'debug':
-            self.logger.info(
-                "Skipping test in debug mode (requires release build)")
-            return
-
+    def _workload(self, segment_size):
         rpk = RpkTool(self.redpanda)
         rpk.alter_topic_config(self.topic, 'redpanda.remote.write', 'true')
         rpk.alter_topic_config(self.topic, 'redpanda.remote.read', 'true')
         rpk.alter_topic_config(self.topic, 'retention.bytes',
-                               str(self.segment_size))
+                               str(segment_size))
 
         self._producer.start(clean=False)
 
@@ -174,3 +171,33 @@ class FranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
 
         assert self._seq_consumer.consumer_status.valid_reads >= wrote_at_least
         assert self._rand_consumer.consumer_status.total_reads == self.RANDOM_READ_COUNT * self.RANDOM_READ_PARALLEL
+
+    @cluster(num_nodes=4, log_allow_list=KGO_LOG_ALLOW_LIST)
+    @matrix(segment_size=[100 * 2**20, 20 * 2**20])
+    def test_si_without_timeboxed(self, segment_size: int):
+        if self.debug_mode:
+            self.logger.info(
+                "Skipping test in debug mode (requires release build)")
+            return
+
+        configs = {'log_segment_size': segment_size}
+        self.redpanda.set_cluster_config(configs)
+
+        self._workload(segment_size)
+
+    @cluster(num_nodes=4, log_allow_list=KGO_RESTART_LOG_ALLOW_LIST)
+    @matrix(segment_size=[100 * 2**20, 20 * 2**20])
+    def test_si_with_timeboxed(self, segment_size: int):
+        if self.debug_mode:
+            self.logger.info(
+                "Skipping test in debug mode (requires release build)")
+            return
+
+        # Enabling timeboxed uploads causes a restart
+        configs = {
+            'log_segment_size': segment_size,
+            'cloud_storage_segment_max_upload_interval_sec': 30
+        }
+        self.redpanda.set_cluster_config(configs, expect_restart=True)
+
+        self._workload(segment_size)
