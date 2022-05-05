@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
@@ -27,8 +28,14 @@ func NewHealthOverviewCommand(fs afero.Fs) *cobra.Command {
 	var (
 		wait bool
 		exit bool
+
+		adminURL       string
+		adminEnableTLS bool
+		adminCertFile  string
+		adminKeyFile   string
+		adminCAFile    string
 	)
-	cmd := cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "health",
 		Short: "Queries cluster for health overview.",
 		Long: `Queries health overview.
@@ -39,7 +46,7 @@ following conditions are met:
 
 * all cluster nodes are responding
 * all partitions have leaders
-* cluster controller is present
+* the cluster controller is present
 `,
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
@@ -65,9 +72,23 @@ following conditions are met:
 			}
 		},
 	}
+
+	cmd.PersistentFlags().StringVar(
+		&adminURL,
+		config.FlagAdminHosts2,
+		"",
+		"Comma-separated list of admin API addresses (<IP>:<port>")
+
+	common.AddAdminAPITLSFlags(cmd,
+		&adminEnableTLS,
+		&adminCertFile,
+		&adminKeyFile,
+		&adminCAFile,
+	)
+
 	cmd.Flags().BoolVarP(&wait, "watch", "w", false, "blocks and writes out all cluster health changes")
 	cmd.Flags().BoolVarP(&exit, "exit-when-healthy", "e", false, "when used with wait, exits after cluster is back in healthy state")
-	return &cmd
+	return cmd
 }
 
 func printHealthOverview(hov *admin.ClusterHealthOverview) {
