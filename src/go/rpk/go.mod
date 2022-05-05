@@ -34,14 +34,14 @@ require (
 	github.com/spf13/viper v1.7.0
 	github.com/stretchr/testify v1.7.0
 	github.com/tklauser/go-sysconf v0.1.0
-	github.com/twmb/franz-go v1.5.1
+	github.com/twmb/franz-go v1.5.2
 	github.com/twmb/franz-go/pkg/kadm v0.0.0-20220106030238-d62f1bef74f9
 	github.com/twmb/franz-go/pkg/kmsg v1.0.0
 	github.com/twmb/tlscfg v1.2.0
 	github.com/twmb/types v1.1.6
 	golang.org/x/crypto v0.0.0-20220427172511-eb4f295cb31f
 	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
-	golang.org/x/sys v0.0.0-20211101204403-39c9dd37992c
+	golang.org/x/sys v0.0.0-20211216021012-1d35b9e2eb4e
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 	mvdan.cc/sh/v3 v3.2.1
@@ -87,7 +87,7 @@ require (
 	github.com/tklauser/numcpus v0.1.0 // indirect
 	github.com/twmb/go-rbtree v1.0.0 // indirect
 	golang.org/x/mod v0.4.1 // indirect
-	golang.org/x/net v0.0.0-20211123203042-d83791d6bcd9 // indirect
+	golang.org/x/net v0.0.0-20220225172249-27dd8689420f // indirect
 	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211 // indirect
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/tools v0.0.0-20210114065538-d78b04bdf963 // indirect
