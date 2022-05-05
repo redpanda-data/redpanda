@@ -502,6 +502,13 @@ topic_table::get_topic_metadata(model::topic_namespace_view tp) const {
     }
     return {};
 }
+std::optional<std::reference_wrapper<const topic_metadata>>
+topic_table::get_topic_metadata_ref(model::topic_namespace_view tp) const {
+    if (auto it = _topics.find(tp); it != _topics.end()) {
+        return it->second;
+    }
+    return {};
+}
 
 std::optional<topic_configuration>
 topic_table::get_topic_cfg(model::topic_namespace_view tp) const {

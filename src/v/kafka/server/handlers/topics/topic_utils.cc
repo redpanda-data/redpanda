@@ -42,13 +42,13 @@ ss::future<std::vector<model::node_id>> wait_for_leaders(
             continue;
         }
         // collect partitions
-        auto md = md_cache.get_topic_metadata(r.tp_ns);
+        auto md = md_cache.get_topic_metadata_ref(r.tp_ns);
         if (!md) {
             // topic already deleted
             continue;
         }
         // for each partition ask for leader
-        for (auto& pmd : md->get_assignments()) {
+        for (auto& pmd : md->get().get_assignments()) {
             futures.push_back(md_cache.get_leader(
               model::ntp(r.tp_ns.ns, r.tp_ns.tp, pmd.id), timeout));
         }

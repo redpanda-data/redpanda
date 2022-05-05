@@ -68,6 +68,11 @@ metadata_cache::get_topic_metadata(model::topic_namespace_view tp) const {
     return _topics_state.local().get_topic_metadata(tp);
 }
 
+std::optional<std::reference_wrapper<const cluster::topic_metadata>>
+metadata_cache::get_topic_metadata_ref(model::topic_namespace_view tn) const {
+    return _topics_state.local().get_topic_metadata_ref(tn);
+}
+
 std::optional<model::topic_metadata> metadata_cache::get_model_topic_metadata(
   model::topic_namespace_view tp, metadata_cache::with_leaders leaders) const {
     auto md = _topics_state.local().get_topic_metadata(tp);

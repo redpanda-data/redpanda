@@ -63,16 +63,16 @@ bool has_node_local_replicas(
 ss::future<result<std::vector<ntp_reconciliation_state>>>
 controller_api::get_reconciliation_state(model::topic_namespace_view tp_ns) {
     using ret_t = result<std::vector<ntp_reconciliation_state>>;
-    auto metadata = _topics.local().get_topic_metadata(tp_ns);
+    auto metadata = _topics.local().get_topic_metadata_ref(tp_ns);
     if (!metadata) {
         co_return ret_t(errc::topic_not_exists);
     }
     std::vector<model::ntp> ntps;
-    ntps.reserve(metadata->get_assignments().size());
+    ntps.reserve(metadata->get().get_assignments().size());
 
     std::transform(
-      metadata->get_assignments().cbegin(),
-      metadata->get_assignments().cend(),
+      metadata->get().get_assignments().cbegin(),
+      metadata->get().get_assignments().cend(),
       std::back_inserter(ntps),
       [tp_ns](const partition_assignment& p_as) {
           return model::ntp(tp_ns.ns, tp_ns.tp, p_as.id);
@@ -211,7 +211,7 @@ controller_api::get_reconciliation_state(
 // high level APIs
 ss::future<std::error_code> controller_api::wait_for_topic(
   model::topic_namespace_view tp_ns, model::timeout_clock::time_point timeout) {
-    auto metadata = _topics.local().get_topic_metadata(tp_ns);
+    auto metadata = _topics.local().get_topic_metadata_ref(tp_ns);
     if (!metadata) {
         vlog(clusterlog.trace, "topic {} does not exists", tp_ns);
         co_return make_error_code(errc::topic_not_exists);
@@ -219,7 +219,7 @@ ss::future<std::error_code> controller_api::wait_for_topic(
 
     absl::node_hash_map<model::node_id, std::vector<model::ntp>> requests;
     // collect ntps per node
-    for (const auto& p_as : metadata->get_assignments()) {
+    for (const auto& p_as : metadata->get().get_assignments()) {
         for (const auto& bs : p_as.replicas) {
             requests[bs.node_id].emplace_back(tp_ns.ns, tp_ns.tp, p_as.id);
         }

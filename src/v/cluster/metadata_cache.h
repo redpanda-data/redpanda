@@ -81,6 +81,17 @@ public:
     std::optional<cluster::topic_metadata>
       get_topic_metadata(model::topic_namespace_view) const;
 
+    ///\brief Returns reference to metadata of single topic.
+    ///
+    /// If topic does not exists it returns an empty optional
+    ///
+    /// IMPORTANT: remember not to use the reference when its lifetime has to
+    /// span across multiple scheduling point. Reference returning method is
+    /// provided not to copy metadata object when used by synchronous parts of
+    /// code
+    std::optional<std::reference_wrapper<const cluster::topic_metadata>>
+      get_topic_metadata_ref(model::topic_namespace_view) const;
+
     ///\brief Returns configuration of single topic.
     ///
     /// If topic does not exists it returns an empty optional
