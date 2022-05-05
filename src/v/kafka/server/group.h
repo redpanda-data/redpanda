@@ -660,6 +660,13 @@ private:
     ctx_log _ctxlog;
     ctx_log _ctx_txlog;
     group_metadata_serializer _md_serializer;
+    /**
+     * flag indicating that the group rebalance is a result of initial join i.e.
+     * the group was in Empty state before it went into PreparingRebalance
+     * state. Initial join in progress flag will prevent completing join when
+     * all members joined but initial delay is still in progress
+     */
+    bool _initial_join_in_progress = false;
 
     absl::flat_hash_map<model::producer_id, ss::lw_shared_ptr<mutex>> _tx_locks;
     model::term_id _term;

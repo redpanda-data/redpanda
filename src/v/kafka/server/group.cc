@@ -463,7 +463,9 @@ group::handle_join_group(join_group_request&& r, bool is_new_group) {
     // TODO: move the logic in this method up to group manager to make the
     // handling of is_new_group etc.. clearner rather than passing these flags
     // down into the group-level handler.
-    if (!is_new_group && in_state(group_state::preparing_rebalance)) {
+    if (
+      !is_new_group && !_initial_join_in_progress
+      && in_state(group_state::preparing_rebalance)) {
         /*
          * - after join_group completes the group may be in a state where the
          * join phase can complete immediately rather than waiting on the join
@@ -725,8 +727,8 @@ void group::try_prepare_rebalance() {
     }
 
     auto prev_state = set_state(group_state::preparing_rebalance);
-
-    if (prev_state == group_state::empty) {
+    _initial_join_in_progress = prev_state == group_state::empty;
+    if (_initial_join_in_progress) {
         // debounce joins to an empty group. for a bounded delay, we'll avoid
         // competing the join phase as long as new members are arriving.
         auto rebalance = rebalance_timeout();
@@ -788,6 +790,7 @@ void group::try_prepare_rebalance() {
  */
 void group::complete_join() {
     vlog(_ctxlog.trace, "Completing join for group {}", *this);
+    _initial_join_in_progress = false;
 
     // <kafka>remove dynamic members who haven't joined the group yet</kafka>
     // this is the old group->remove_unjoined_members();
