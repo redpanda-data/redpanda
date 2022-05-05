@@ -196,5 +196,6 @@
 * coproc: Move materialized partitions by @graphcareful in https://github.com/redpanda-data/redpanda/pull/3212
 * coproc: New abstraction for safe shutdown of materialized logs by @graphcareful in https://github.com/redpanda-data/redpanda/pull/2940
 * coproc: Yield if inputs haven't been hydrated by @graphcareful in https://github.com/redpanda-data/redpanda/pull/3576
+* rpk: Various improvements to CLI and upgraded base franz-go. by @twmb in https://github.com/redpanda-data/redpanda/pull/4576
 
-**Full Changelog**: https://github.com/redpanda-data/redpanda/compare/v21.11.15...d72c61921ab57b66a84abb4cd0cdc9dcf15b0083
+**Full Changelog**: https://github.com/redpanda-data/redpanda/compare/v21.11.15..d6bc057df1050d138cff92b9ee38b9cb38c0e50c
