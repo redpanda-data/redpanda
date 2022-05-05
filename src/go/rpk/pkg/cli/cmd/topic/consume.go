@@ -177,11 +177,13 @@ func (c *consumer) consume() {
 			}
 
 			for _, r := range p.Records {
-				if c.f == nil {
-					c.writeRecordJSON(r)
-				} else {
-					buf = c.f.AppendPartitionRecord(buf[:0], &p.FetchPartition, r)
-					os.Stdout.Write(buf)
+				if !r.Attrs.IsControl() {
+					if c.f == nil {
+						c.writeRecordJSON(r)
+					} else {
+						buf = c.f.AppendPartitionRecord(buf[:0], &p.FetchPartition, r)
+						os.Stdout.Write(buf)
+					}
 				}
 
 				// Track this record to be "marked" once this loop
@@ -495,9 +497,8 @@ func parseConsumeTimestamp(
 func (c *consumer) parseTimeOffset(
 	offset string, topics []string, adm *kadm.Client,
 ) error {
-	if strings.HasPrefix(offset, ":") {
-		c.resetOffset = kgo.NewOffset().AtStart() // no start, we start from beginning; e.g, @:-1m
-	} else {
+	c.resetOffset = kgo.NewOffset().AtStart() // default to start; likely overridden below
+	if !strings.HasPrefix(offset, ":") {
 		length, startAt, end, err := parseConsumeTimestamp(offset)
 		if err != nil {
 			return err
@@ -505,6 +506,9 @@ func (c *consumer) parseTimeOffset(
 			return errors.New("invalid offset @end")
 		}
 
+		// If there are no offsets after the requested milli, we get
+		// the default offset -1, which below in NewOffset().At(-1)
+		// actually coincidentally maps to AtEnd(). So it all works.
 		lstart, err := adm.ListOffsetsAfterMilli(context.Background(), unixMilli(startAt.UnixNano()), topics...)
 		if err != nil {
 			return fmt.Errorf("unable to list offsets after milli %d: %v", unixMilli(startAt.UnixNano()), err)
@@ -551,6 +555,9 @@ func (c *consumer) parseTimeOffset(
 
 // If we have defined end offsets, we load start offsets and filter empty
 // partitions. If all partitions are empty, we avoid consuming.
+//
+// Depending on our order of requests and pathological timing, end could
+// come before the start; in this case we also filter the partition.
 func (c *consumer) filterEmptyPartitions(adm *kadm.Client) (allEmpty bool) {
 	if c.partEnds == nil {
 		return false
@@ -561,7 +568,7 @@ func (c *consumer) filterEmptyPartitions(adm *kadm.Client) (allEmpty bool) {
 		if exists {
 			for lp, lat := range lps {
 				rat, exists := rps[lp]
-				if exists && rat == lat {
+				if exists && rat <= lat {
 					delete(rps, lp)
 					delete(lps, lp)
 				}
@@ -581,14 +588,14 @@ func (c *consumer) filterEmptyPartitions(adm *kadm.Client) (allEmpty bool) {
 // we consume. If the topic or partition no longer exists, we reached the end
 // of the partition and are still draining what was buffered in the client.
 func (c *consumer) getPartitionEnd(t string, p int32) (pend int64, has bool) {
-	defer func() {
-		if has && pend == -1 {
-			c.markPartitionEnded(t, p) // just in case this was not paused
-		}
-	}()
 	if c.partEnds == nil {
 		return -1, false
 	}
+	defer func() {
+		if pend == -1 {
+			c.markPartitionEnded(t, p) // just in case this was not paused
+		}
+	}()
 	tends := c.partEnds[t]
 	if tends == nil {
 		return -1, true
@@ -625,6 +632,12 @@ func (c *consumer) intoOptions(topics []string) ([]kgo.Opt, error) {
 		}
 		opts = append(opts, kgo.ConsumerGroup(c.group))
 		opts = append(opts, kgo.AutoCommitMarks())
+	}
+
+	// If we have ends, we have to consume control records because a
+	// control record might be the end.
+	if c.partEnds != nil {
+		opts = append(opts, kgo.KeepControlRecords())
 	}
 
 	switch {
