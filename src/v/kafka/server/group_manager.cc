@@ -481,12 +481,12 @@ ss::future<> group_manager::recover_partition(
     return ss::make_ready_future<>();
 }
 
-ss::future<join_group_response>
-group_manager::join_group(join_group_request&& r) {
+group::join_group_stages group_manager::join_group(join_group_request&& r) {
     auto error = validate_group_status(
       r.ntp, r.data.group_id, join_group_api::key);
     if (error != error_code::none) {
-        return make_join_error(r.data.member_id, error);
+        return group::join_group_stages(
+          make_join_error(r.data.member_id, error));
     }
 
     if (
@@ -501,8 +501,9 @@ group_manager::join_group(join_group_request&& r) {
           r.data.session_timeout_ms,
           _conf.group_max_session_timeout_ms(),
           r);
-        return make_join_error(
-          r.data.member_id, error_code::invalid_session_timeout);
+
+        return group::join_group_stages(make_join_error(
+          r.data.member_id, error_code::invalid_session_timeout));
     }
 
     bool is_new_group = false;
@@ -519,8 +520,9 @@ group_manager::join_group(join_group_request&& r) {
               r.data.group_id,
               r.data.member_id,
               r);
-            return make_join_error(
-              r.data.member_id, error_code::unknown_member_id);
+
+            return group::join_group_stages(
+              make_join_error(r.data.member_id, error_code::unknown_member_id));
         }
         auto it = _partitions.find(r.ntp);
         if (it == _partitions.end()) {
@@ -533,8 +535,8 @@ group_manager::join_group(join_group_request&& r) {
               "Join group {} rejected for unavailable ntp {}",
               r.data.group_id,
               r.ntp);
-            return make_join_error(
-              r.data.member_id, error_code::not_coordinator);
+            return group::join_group_stages(
+              make_join_error(r.data.member_id, error_code::not_coordinator));
         }
         auto p = it->second->partition;
         group = ss::make_lw_shared<kafka::group>(
@@ -551,15 +553,16 @@ group_manager::join_group(join_group_request&& r) {
         vlog(klog.trace, "Created new group {} while joining", r.data.group_id);
     }
 
-    return group->handle_join_group(std::move(r), is_new_group)
-      .finally([group] {});
+    auto ret = group->handle_join_group(std::move(r), is_new_group);
+    return group::join_group_stages(
+      std::move(ret.dispatched), ret.result.finally([group] {}));
 }
 
-ss::future<sync_group_response>
-group_manager::sync_group(sync_group_request&& r) {
+group::sync_group_stages group_manager::sync_group(sync_group_request&& r) {
     if (r.data.group_instance_id) {
         vlog(klog.trace, "Static group membership is not supported");
-        return make_sync_error(error_code::unsupported_version);
+        return group::sync_group_stages(
+          sync_group_response(error_code::unsupported_version));
     }
 
     auto error = validate_group_status(
@@ -573,20 +576,24 @@ group_manager::sync_group(sync_group_request&& r) {
             // coordinator. Note that we cannot return
             // COORDINATOR_LOAD_IN_PROGRESS since older clients do not expect
             // the error.</kafka>
-            return make_sync_error(error_code::rebalance_in_progress);
+            return group::sync_group_stages(
+              sync_group_response(error_code::rebalance_in_progress));
         }
-        return make_sync_error(error);
+        return group::sync_group_stages(sync_group_response(error));
     }
 
     auto group = get_group(r.data.group_id);
     if (group) {
-        return group->handle_sync_group(std::move(r)).finally([group] {});
+        auto stages = group->handle_sync_group(std::move(r));
+        return group::sync_group_stages(
+          std::move(stages.dispatched), stages.result.finally([group] {}));
     } else {
         vlog(
           klog.trace,
           "Cannot handle sync group request for unknown group {}",
           r.data.group_id);
-        return make_sync_error(error_code::unknown_member_id);
+        return group::sync_group_stages(
+          sync_group_response(error_code::unknown_member_id));
     }
 }
 

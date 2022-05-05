@@ -126,10 +126,10 @@ public:
 
 public:
     /// \brief Handle a JoinGroup request
-    ss::future<join_group_response> join_group(join_group_request&& request);
+    group::join_group_stages join_group(join_group_request&& request);
 
     /// \brief Handle a SyncGroup request
-    ss::future<sync_group_response> sync_group(sync_group_request&& request);
+    group::sync_group_stages sync_group(sync_group_request&& request);
 
     /// \brief Handle a Heartbeat request
     ss::future<heartbeat_response> heartbeat(heartbeat_request&& request);

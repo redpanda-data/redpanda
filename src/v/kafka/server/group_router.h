@@ -182,11 +182,11 @@ public:
       , _feature_table(feature_table) {}
 
     auto join_group(join_group_request&& request) {
-        return route(std::move(request), &group_manager::join_group);
+        return route_stages(std::move(request), &group_manager::join_group);
     }
 
     auto sync_group(sync_group_request&& request) {
-        return route(std::move(request), &group_manager::sync_group);
+        return route_stages(std::move(request), &group_manager::sync_group);
     }
 
     auto heartbeat(heartbeat_request&& request) {

@@ -141,6 +141,9 @@ public:
         ss::future<Result> result;
     };
     using offset_commit_stages = stages<offset_commit_response>;
+    using join_group_stages = stages<join_group_response>;
+    using sync_group_stages = stages<sync_group_response>;
+
     struct offset_metadata {
         model::offset log_offset;
         model::offset offset;
@@ -388,23 +391,21 @@ public:
     static kafka::member_id generate_member_id(const join_group_request& r);
 
     /// Handle join entry point.
-    ss::future<join_group_response>
+    join_group_stages
     handle_join_group(join_group_request&& r, bool is_new_group);
 
     /// Handle join of an unknown member.
-    ss::future<join_group_response>
-    join_group_unknown_member(join_group_request&& request);
+    join_group_stages join_group_unknown_member(join_group_request&& request);
 
     /// Handle join of a known member.
-    ss::future<join_group_response>
-    join_group_known_member(join_group_request&& request);
+    join_group_stages join_group_known_member(join_group_request&& request);
 
     /// Add a new member and initiate a rebalance.
-    ss::future<join_group_response> add_member_and_rebalance(
+    join_group_stages add_member_and_rebalance(
       kafka::member_id member_id, join_group_request&& request);
 
     /// Update an existing member and rebalance.
-    ss::future<join_group_response> update_member_and_rebalance(
+    join_group_stages update_member_and_rebalance(
       member_ptr member, join_group_request&& request);
 
     /// Transition to preparing rebalance if possible.
@@ -428,10 +429,10 @@ public:
     void remove_member(member_ptr member);
 
     /// Handle a group sync request.
-    ss::future<sync_group_response> handle_sync_group(sync_group_request&& r);
+    sync_group_stages handle_sync_group(sync_group_request&& r);
 
     /// Handle sync group in completing rebalance state.
-    ss::future<sync_group_response> sync_group_completing_rebalance(
+    sync_group_stages sync_group_completing_rebalance(
       member_ptr member, sync_group_request&& request);
 
     /// Complete syncing for members.
