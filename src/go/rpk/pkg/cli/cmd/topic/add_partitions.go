@@ -11,6 +11,7 @@ package topic
 
 import (
 	"context"
+	"os"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
@@ -42,6 +43,13 @@ func NewAddPartitionsCommand(fs afero.Fs) *cobra.Command {
 			resps, err := adm.CreatePartitions(context.Background(), num, topics...)
 			out.MaybeDie(err, "create partitions request failed: %v", err)
 
+			var exit1 bool
+			defer func() {
+				if exit1 {
+					os.Exit(1)
+				}
+			}()
+
 			tw := out.NewTable("topic", "error")
 			defer tw.Flush()
 
@@ -49,6 +57,7 @@ func NewAddPartitionsCommand(fs afero.Fs) *cobra.Command {
 				msg := "OK"
 				if e := resp.Err; e != nil {
 					msg = e.Error()
+					exit1 = true
 				}
 				tw.Print(resp.Topic, msg)
 			}
