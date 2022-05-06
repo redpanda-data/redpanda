@@ -867,6 +867,15 @@ class RedpandaService(Service):
             nsr = node.account.ssh_capture("netstat -ant")
             return any([is_up(line) for line in nsr])
 
+        if wasm_service_up() is True:
+            self.logger.warn(f"Waiting for {wasm_port} to be available")
+            wait_until(
+                lambda: not wasm_service_up(),
+                timeout_sec=RedpandaService.READY_TIMEOUT_SEC,
+                err_msg=
+                f"Wasm engine server shutdown within {RedpandaService.READY_TIMEOUT_SEC}s timeout",
+                retry_on_exc=True)
+
         def start_wasm_service():
             node.account.ssh(wcmd)
 
@@ -1130,6 +1139,7 @@ class RedpandaService(Service):
 
     def clean_node(self, node, preserve_logs=False):
         node.account.kill_process("redpanda", clean_shutdown=False)
+        node.account.kill_process("bin/node", clean_shutdown=False)
         if node.account.exists(RedpandaService.PERSISTENT_ROOT):
             if node.account.sftp_client.listdir(
                     RedpandaService.PERSISTENT_ROOT):
