@@ -928,6 +928,7 @@ schema_registry: {}
 					CertFile:          "/etc/certs/cert.crt",
 					Enabled:           true,
 					RequireClientAuth: true,
+					Other:             map[string]interface{}{"principal_mapping_rules": "DEFAULT"},
 				}}
 				return c
 			},
@@ -949,6 +950,7 @@ redpanda:
     enabled: true
     key_file: /etc/certs/cert.key
     name: outside
+    principal_mapping_rules: DEFAULT
     require_client_auth: true
     truststore_file: /etc/certs/ca.crt
   node_id: 0
