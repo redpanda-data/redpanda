@@ -735,7 +735,7 @@ class ClusterConfigTest(RedpandaTest):
         try:
             _, out = self._export_import_modify(
                 [("kafka_qdc_enable: false", "kafka_qdc_enable: rhubarb"),
-                 ("topic_fds_per_partition: 10",
+                 ("topic_fds_per_partition: 5",
                   "topic_fds_per_partition: 9999"),
                  ("default_num_windows: 10", "default_num_windows: 32768")],
                 all=True)
