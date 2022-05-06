@@ -74,9 +74,13 @@ class Partition:
             segment.delete_indices(allow_fail)
 
     def recovered(self):
-        return all(
-            map(lambda s: s.recovered(),
-                (kv[1] for kv in self.segments.items())))
+        n_recovered = sum(1 for s in map(lambda s: s.recovered(), (
+            kv[1] for kv in self.segments.items())) if s is True)
+
+        # All but one should have index files: the one that doesn't is
+        # the currently open segment (segments don't get indices on disk
+        # until they're sealed)
+        return n_recovered >= len(self.segments) - 1
 
     def __repr__(self):
         return "part-{}-{}-{}".format(self.node.name, self.num, self.segments)
