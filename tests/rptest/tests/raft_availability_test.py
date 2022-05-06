@@ -20,6 +20,7 @@ from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.clients.types import TopicSpec
+from rptest.clients.ping_pong import PingPong
 from rptest.services.failure_injector import FailureInjector, FailureSpec
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.rpk_producer import RpkProducer
@@ -95,26 +96,15 @@ class RaftAvailabilityTest(RedpandaTest):
         assert result[0] is not None
         return result[0]
 
-    def _ping_pong(self, timeout=5):
-        kc = KafkaCat(self.redpanda)
-        rpk = RpkTool(self.redpanda)
+    def ping_pong(self):
+        return PingPong(self.redpanda.brokers_list(), self.topic, 0,
+                        self.logger)
 
-        payload = str(random.randint(0, 1000))
-        start = time.time()
-        offset = rpk.produce(self.topic, "tkey", payload, timeout=timeout)
-        consumed = kc.consume_one(self.topic, 0, offset)
-        latency = time.time() - start
-        self.logger.info(
-            f"_ping_pong produced '{payload}' consumed '{consumed}' in {(latency)*1000.0:.2f} ms"
-        )
-        if consumed['payload'] != payload:
-            raise RuntimeError(f"expected '{payload}' got '{consumed}'")
-
-    def _is_available(self, timeout=5):
+    def _is_available(self, timeout_s=5):
         try:
             # Should fail
-            self._ping_pong(timeout)
-        except RpkException:
+            self.ping_pong().ping_pong(timeout_s)
+        except:
             return False
         else:
             return True
@@ -122,14 +112,14 @@ class RaftAvailabilityTest(RedpandaTest):
     def _expect_unavailable(self):
         try:
             # Should fail
-            self._ping_pong()
-        except RpkException:
-            self.logger.info("Cluster is unavailable as expected")
+            self.ping_pong().ping_pong()
+        except:
+            self.logger.exception("Cluster is unavailable as expected")
         else:
             assert False, "ping_pong should not have worked "
 
     def _expect_available(self):
-        self._ping_pong()
+        self.ping_pong().ping_pong()
         self.logger.info("Cluster is available as expected")
 
     def _transfer_leadership(self, admin: Admin, namespace: str, topic: str,
@@ -276,7 +266,7 @@ class RaftAvailabilityTest(RedpandaTest):
         # Find which node is the leader
         initial_leader_id, replicas = self._wait_for_leader()
 
-        self._ping_pong()
+        self.ping_pong().ping_pong()
 
         leader_node = self.redpanda.get_node(initial_leader_id)
         other_node_id = (set(replicas) - {initial_leader_id}).pop()
@@ -474,8 +464,10 @@ class RaftAvailabilityTest(RedpandaTest):
                             self.redpanda.get_node(follower)))
 
             # expect messages to be produced and consumed without a timeout
-            for i in range(0, 128):
-                self._ping_pong(ELECTION_TIMEOUT * 6)
+            connection = self.ping_pong()
+            connection.ping_pong(timeout_s=10, retries=10)
+            for i in range(0, 127):
+                connection.ping_pong()
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_id_allocator_leader_isolation(self):
@@ -505,8 +497,10 @@ class RaftAvailabilityTest(RedpandaTest):
                             self.redpanda.get_node(initial_leader_id)))
 
             # expect messages to be produced and consumed without a timeout
-            for i in range(0, 128):
-                self._ping_pong(ELECTION_TIMEOUT * 6)
+            connection = self.ping_pong()
+            connection.ping_pong(timeout_s=10, retries=10)
+            for i in range(0, 127):
+                connection.ping_pong()
 
     @cluster(num_nodes=3)
     def test_initial_leader_stability(self):
@@ -580,5 +574,7 @@ class RaftAvailabilityTest(RedpandaTest):
                     hosts=hosts,
                     check=lambda node_id: node_id != controller_id)
 
-        for i in range(0, 128):
-            self._ping_pong()
+        connection = self.ping_pong()
+        connection.ping_pong(timeout_s=10, retries=10)
+        for i in range(0, 127):
+            connection.ping_pong()
