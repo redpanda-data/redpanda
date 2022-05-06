@@ -1,6 +1,11 @@
 from math import floor
 
+from ducktape.utils.util import wait_until
 from rptest.services.redpanda import RedpandaService
+
+
+def all_greater_than_zero(l1: list[float]):
+    return all([x > 0 for x in l1])
 
 
 class NodeMetrics:
@@ -21,3 +26,10 @@ class NodeMetrics:
 
     def disk_space_alert(self) -> list[float]:
         return self._get_metrics_vals("storage_disk_free_space_alert")
+
+    def wait_until_ready(self, timeout_sec=15):
+        """ Wait until we have metrics for all nodes. """
+        # disk metrics are updated via health monitor's periodic tick().
+        wait_until(lambda: all_greater_than_zero(self.disk_total_bytes()),
+                   timeout_sec=15,
+                   err_msg="Disk metrics not populated before timeout.")

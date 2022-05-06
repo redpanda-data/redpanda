@@ -20,10 +20,6 @@ from rptest.clients.types import TopicSpec
 from rptest.utils.node_metrics import NodeMetrics
 
 
-def all_greater_than_zero(l1: list[float]):
-    return all([x > 0 for x in l1])
-
-
 def assert_lists_equal(l1: list[float], l2: list[float]):
     assert l1 == l2
 
@@ -72,10 +68,7 @@ class NodeMetricsTest(RedpandaTest):
 
         # disk metrics are updated via health monitor's periodic tick().
         t0 = time()
-        wait_until(lambda: all_greater_than_zero(self.node_metrics.
-                                                 disk_total_bytes()),
-                   timeout_sec=15,
-                   err_msg="Disk metrics not populated before timeout.")
+        self.node_metrics.wait_until_ready()
         t1 = time()
 
         # check that metrics exist and remember the values
