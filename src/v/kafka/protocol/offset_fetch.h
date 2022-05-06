@@ -48,9 +48,9 @@ struct offset_fetch_request final {
     void decode(request_reader& reader, api_version version) {
         data.decode(reader, version);
     }
-};
 
-std::ostream& operator<<(std::ostream&, const offset_fetch_request&);
+    friend std::ostream& operator<<(std::ostream&, const offset_fetch_request&);
+};
 
 struct offset_fetch_response final {
     using api_type = offset_fetch_api;
@@ -95,8 +95,9 @@ struct offset_fetch_response final {
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);
     }
-};
 
-std::ostream& operator<<(std::ostream&, const offset_fetch_response&);
+    friend std::ostream&
+    operator<<(std::ostream&, const offset_fetch_response&);
+};
 
 } // namespace kafka

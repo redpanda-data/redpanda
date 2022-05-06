@@ -117,6 +117,10 @@ public:
         return base_named_type(std::numeric_limits<type>::max());
     }
 
+    friend std::ostream& operator<<(std::ostream& o, const base_named_type& t) {
+        return o << "{" << t() << "}";
+    };
+
 protected:
     type _value = std::numeric_limits<T>::min();
 };
@@ -176,14 +180,12 @@ public:
     operator const type&() const& { return _value; }
     operator type() && { return std::move(_value); }
 
+    friend std::ostream& operator<<(std::ostream& o, const base_named_type& t) {
+        return o << "{" << t() << "}";
+    };
+
 protected:
     type _value;
-};
-
-template<typename T, typename Tag, typename IsConstexpr>
-inline std::ostream&
-operator<<(std::ostream& o, const base_named_type<T, Tag, IsConstexpr>& t) {
-    return o << "{" << t() << "}";
 };
 
 } // namespace detail

@@ -45,6 +45,4 @@ private:
     friend std::ostream& operator<<(std::ostream&, const checkpoint&);
 };
 
-std::ostream& operator<<(std::ostream&, const log_replayer::checkpoint&);
-
 } // namespace storage

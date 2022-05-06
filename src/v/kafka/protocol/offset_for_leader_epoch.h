@@ -37,12 +37,12 @@ struct offset_for_leader_epoch_request final {
     void decode(request_reader& reader, api_version version) {
         data.decode(reader, version);
     }
-};
 
-inline std::ostream&
-operator<<(std::ostream& os, const offset_for_leader_epoch_request& r) {
-    return os << r.data;
-}
+    friend std::ostream&
+    operator<<(std::ostream& os, const offset_for_leader_epoch_request& r) {
+        return os << r.data;
+    }
+};
 
 struct offset_for_leader_epoch_response final {
     using api_type = offset_for_leader_epoch_api;
@@ -83,11 +83,11 @@ struct offset_for_leader_epoch_response final {
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);
     }
-};
 
-inline std::ostream&
-operator<<(std::ostream& os, const offset_for_leader_epoch_response& r) {
-    return os << r.data;
-}
+    friend std::ostream&
+    operator<<(std::ostream& os, const offset_for_leader_epoch_response& r) {
+        return os << r.data;
+    }
+};
 
 } // namespace kafka

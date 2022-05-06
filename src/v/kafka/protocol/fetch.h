@@ -182,11 +182,11 @@ struct fetch_request final {
     const_iterator cend() const {
         return const_iterator(data.topics.cend(), data.topics.cend());
     }
-};
 
-inline std::ostream& operator<<(std::ostream& os, const fetch_request& r) {
-    return os << r.data;
-}
+    friend std::ostream& operator<<(std::ostream& os, const fetch_request& r) {
+        return os << r.data;
+    }
+};
 
 struct fetch_response final {
     using api_type = fetch_api;
@@ -316,10 +316,10 @@ struct fetch_response final {
     }
 
     iterator end() { return iterator(data.topics.end(), data.topics.end()); }
-};
 
-inline std::ostream& operator<<(std::ostream& os, const fetch_response& r) {
-    return os << r.data;
-}
+    friend std::ostream& operator<<(std::ostream& os, const fetch_response& r) {
+        return os << r.data;
+    }
+};
 
 } // namespace kafka

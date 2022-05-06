@@ -46,6 +46,13 @@ struct compacted_index {
         uint32_t crc{0}; // crc32
         // version *must* be the last value
         int8_t version{0};
+
+        friend std::ostream&
+        operator<<(std::ostream& o, const compacted_index::footer& f) {
+            return o << "{size:" << f.size << ", keys:" << f.keys
+                     << ", flags:" << (uint32_t)f.flags << ", crc:" << f.crc
+                     << ", version: " << (int)f.version << "}";
+        }
     };
     enum class recovery_state {
         // happens during a crash
@@ -104,13 +111,6 @@ operator&(compacted_index::footer_flags a, compacted_index::footer_flags b) {
 [[gnu::always_inline]] inline void
 operator&=(compacted_index::footer_flags& a, compacted_index::footer_flags b) {
     a = (a & b);
-}
-
-inline std::ostream&
-operator<<(std::ostream& o, const compacted_index::footer& f) {
-    return o << "{size:" << f.size << ", keys:" << f.keys
-             << ", flags:" << (uint32_t)f.flags << ", crc:" << f.crc
-             << ", version: " << (int)f.version << "}";
 }
 
 } // namespace storage

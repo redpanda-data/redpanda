@@ -30,14 +30,14 @@ struct data_directory_path {
     friend bool
     operator==(const data_directory_path&, const data_directory_path&)
       = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const config::data_directory_path& p) {
+        return o << "{data_directory=" << p.path << "}";
+    }
 };
 
 } // namespace config
-
-inline std::ostream&
-operator<<(std::ostream& o, const config::data_directory_path& p) {
-    return o << "{data_directory=" << p.path << "}";
-}
 
 namespace YAML {
 template<>

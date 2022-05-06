@@ -144,6 +144,14 @@ public:
         return result;
     }
 
+    friend std::ostream&
+    operator<<(std::ostream& o, const config::config_store& c) {
+        o << "{ ";
+        c.for_each([&o](const auto& property) { o << property << " "; });
+        o << "}";
+        return o;
+    }
+
     virtual ~config_store() noexcept = default;
 
 private:
@@ -158,13 +166,3 @@ inline YAML::Node to_yaml(const config_store& cfg) {
     return YAML::Load(buf.GetString());
 }
 }; // namespace config
-
-namespace std {
-template<typename... Types>
-static inline ostream& operator<<(ostream& o, const config::config_store& c) {
-    o << "{ ";
-    c.for_each([&o](const auto& property) { o << property << " "; });
-    o << "}";
-    return o;
-}
-} // namespace std

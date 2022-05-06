@@ -43,17 +43,16 @@ public:
     bool operator==(const unresolved_address& other) const = default;
 
 private:
-    friend std::ostream& operator<<(std::ostream&, const unresolved_address&);
+    friend std::ostream&
+    operator<<(std::ostream& o, const unresolved_address& s) {
+        fmt::print(o, "{{host: {}, port: {}}}", s.host(), s.port());
+        return o;
+    }
 
     ss::sstring _host;
     uint16_t _port{0};
     inet_family _family;
 };
-
-inline std::ostream& operator<<(std::ostream& o, const unresolved_address& s) {
-    fmt::print(o, "{{host: {}, port: {}}}", s.host(), s.port());
-    return o;
-}
 
 } // namespace net
 

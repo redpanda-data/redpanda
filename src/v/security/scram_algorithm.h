@@ -190,11 +190,6 @@ private:
     bytes _signature;
 };
 
-std::ostream& operator<<(std::ostream&, const client_first_message&);
-std::ostream& operator<<(std::ostream&, const server_first_message&);
-std::ostream& operator<<(std::ostream&, const client_final_message&);
-std::ostream& operator<<(std::ostream&, const server_final_message&);
-
 template<
   typename MacType,
   typename HashType,

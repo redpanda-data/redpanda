@@ -75,9 +75,9 @@ struct configuration {
     /// The bucket to use
     s3::bucket_name bucket_name;
 
+    friend std::ostream& operator<<(std::ostream& o, const configuration& cfg);
+
     static ss::future<configuration> get_config();
 };
-
-std::ostream& operator<<(std::ostream& o, const configuration& cfg);
 
 } // namespace cloud_storage

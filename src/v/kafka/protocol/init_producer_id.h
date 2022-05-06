@@ -45,12 +45,12 @@ struct init_producer_id_request final {
     void decode(request_reader& reader, api_version version) {
         data.decode(reader, version);
     }
-};
 
-inline std::ostream&
-operator<<(std::ostream& os, const init_producer_id_request& r) {
-    return os << r.data;
-}
+    friend std::ostream&
+    operator<<(std::ostream& os, const init_producer_id_request& r) {
+        return os << r.data;
+    }
+};
 
 struct init_producer_id_response final {
     using api_type = init_producer_id_api;
@@ -64,11 +64,11 @@ struct init_producer_id_response final {
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);
     }
-};
 
-inline std::ostream&
-operator<<(std::ostream& os, const init_producer_id_response& r) {
-    return os << r.data;
-}
+    friend std::ostream&
+    operator<<(std::ostream& os, const init_producer_id_response& r) {
+        return os << r.data;
+    }
+};
 
 } // namespace kafka

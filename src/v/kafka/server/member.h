@@ -217,8 +217,6 @@ private:
 /// \brief Shared pointer to a group member.
 using member_ptr = ss::lw_shared_ptr<group_member>;
 
-std::ostream& operator<<(std::ostream&, const group_member&);
-
 /// @}
 
 } // namespace kafka

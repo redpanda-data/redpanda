@@ -36,6 +36,8 @@ public:
     bool operator==(const vnode& other) const = default;
     bool operator!=(const vnode& other) const = default;
 
+    friend std::ostream& operator<<(std::ostream& o, const vnode& r);
+
     template<typename H>
     friend H AbslHashValue(H h, const vnode& node) {
         return H::combine(std::move(h), node._node_id, node._revision);

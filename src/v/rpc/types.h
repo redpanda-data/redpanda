@@ -88,6 +88,8 @@ struct header {
     uint32_t correlation_id{0};
     /// \brief xxhash64
     uint64_t payload_checksum{0};
+
+    friend std::ostream& operator<<(std::ostream&, const header&);
 };
 
 static constexpr size_t size_of_rpc_header
@@ -263,6 +265,5 @@ struct transport_configuration {
     net::metrics_disabled disable_metrics = net::metrics_disabled::no;
 };
 
-std::ostream& operator<<(std::ostream&, const header&);
 std::ostream& operator<<(std::ostream&, const status&);
 } // namespace rpc

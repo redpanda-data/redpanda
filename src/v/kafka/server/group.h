@@ -692,8 +692,6 @@ private:
 
 using group_ptr = ss::lw_shared_ptr<group>;
 
-std::ostream& operator<<(std::ostream&, const group&);
-
 /// @}
 
 } // namespace kafka

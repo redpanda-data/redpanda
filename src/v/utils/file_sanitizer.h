@@ -38,13 +38,11 @@ struct sanitizer_op
       : name_op(std::move(operation))
       , bt(ss::current_backtrace()) {}
 
-    friend std::ostream& operator<<(std::ostream& o, const sanitizer_op& s);
+    friend std::ostream& operator<<(std::ostream& o, const sanitizer_op& s) {
+        return o << "{sanitizer_op: " << s.name_op << ", backtrace:\n"
+                 << s.bt << "\n}";
+    }
 };
-
-inline std::ostream& operator<<(std::ostream& o, const sanitizer_op& s) {
-    return o << "{sanitizer_op: " << s.name_op << ", backtrace:\n"
-             << s.bt << "\n}";
-}
 
 /// Classed used to debug bad file accesses, by wrapping the file handle:
 /// auto fd = file(make_shared(file_io_sanitizer(original_fd)));

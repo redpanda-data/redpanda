@@ -102,13 +102,10 @@ private:
     size_t _flushed_pos{0};
     std::unique_ptr<char[], ss::free_deleter> _buf;
     friend std::ostream&
-    operator<<(std::ostream&, const segment_appender_chunk&);
+    operator<<(std::ostream& o, const segment_appender_chunk& c) {
+        return o << "{_alignment:" << c._alignment << ", _pos:" << c._pos
+                 << ", _flushed_pos:" << c._flushed_pos << "}";
+    }
 };
-
-inline std::ostream&
-operator<<(std::ostream& o, const segment_appender_chunk& c) {
-    return o << "{_alignment:" << c._alignment << ", _pos:" << c._pos
-             << ", _flushed_pos:" << c._flushed_pos << "}";
-}
 
 } // namespace storage

@@ -43,8 +43,6 @@ private:
     int _iterations{0};
 };
 
-std::ostream& operator<<(std::ostream&, const security::scram_credential&);
-
 } // namespace security
 
 // TODO: avoid bytes-to-iobuf conersion. either add bytes specialization to

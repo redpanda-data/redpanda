@@ -98,6 +98,4 @@ ss::future<segment_set> recover_segments(
   size_t read_buf_size,
   unsigned read_readahead_count);
 
-std::ostream& operator<<(std::ostream&, const segment_set&);
-
 } // namespace storage

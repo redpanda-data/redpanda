@@ -49,6 +49,8 @@ public:
         std::optional<size_t> eligible;
         std::optional<size_t> transferring;
         std::optional<size_t> failed;
+
+        friend std::ostream& operator<<(std::ostream&, const drain_status&);
     };
 
     explicit drain_manager(ss::sharded<cluster::partition_manager>&);
@@ -89,7 +91,5 @@ private:
     drain_status _status;
     ss::abort_source _abort;
 };
-
-std::ostream& operator<<(std::ostream&, const drain_manager::drain_status&);
 
 } // namespace cluster

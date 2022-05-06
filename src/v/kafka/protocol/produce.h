@@ -67,6 +67,11 @@ struct produce_request final {
         data.decode(reader, version);
     }
 
+    friend std::ostream&
+    operator<<(std::ostream& os, const produce_request& r) {
+        return os << r.data;
+    }
+
     /**
      * Build a generic error response for a given request.
      */
@@ -78,10 +83,6 @@ struct produce_request final {
     /// True if the request contains a batch with a producer id.
     bool has_idempotent = false;
 };
-
-inline std::ostream& operator<<(std::ostream& os, const produce_request& r) {
-    return os << r.data;
-}
 
 struct produce_response final {
     using api_type = produce_api;
@@ -107,10 +108,11 @@ struct produce_response final {
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);
     }
-};
 
-inline std::ostream& operator<<(std::ostream& os, const produce_response& r) {
-    return os << r.data;
-}
+    friend std::ostream&
+    operator<<(std::ostream& os, const produce_response& r) {
+        return os << r.data;
+    }
+};
 
 } // namespace kafka

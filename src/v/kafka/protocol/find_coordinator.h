@@ -51,12 +51,12 @@ struct find_coordinator_request final {
     void decode(request_reader& reader, api_version version) {
         data.decode(reader, version);
     }
-};
 
-inline std::ostream&
-operator<<(std::ostream& os, const find_coordinator_request& r) {
-    return os << r.data;
-}
+    friend std::ostream&
+    operator<<(std::ostream& os, const find_coordinator_request& r) {
+        return os << r.data;
+    }
+};
 
 struct find_coordinator_response final {
     using api_type = find_coordinator_api;
@@ -89,11 +89,11 @@ struct find_coordinator_response final {
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);
     }
-};
 
-inline std::ostream&
-operator<<(std::ostream& os, const find_coordinator_response& r) {
-    return os << r.data;
-}
+    friend std::ostream&
+    operator<<(std::ostream& os, const find_coordinator_response& r) {
+        return os << r.data;
+    }
+};
 
 } // namespace kafka

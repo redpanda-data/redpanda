@@ -203,12 +203,10 @@ public:
 private:
     ss::shared_ptr<impl> _impl;
 
-    friend std::ostream& operator<<(std::ostream& o, const log& lg);
+    friend std::ostream& operator<<(std::ostream& o, const log& lg) {
+        return lg.print(o);
+    }
 };
-
-inline std::ostream& operator<<(std::ostream& o, const storage::log& lg) {
-    return lg.print(o);
-}
 
 class log_manager;
 class segment_set;

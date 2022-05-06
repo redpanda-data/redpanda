@@ -80,6 +80,5 @@ private:
 
 using segment_reader_ptr = ss::lw_shared_ptr<segment_reader>;
 
-std::ostream& operator<<(std::ostream&, const segment_reader&);
 std::ostream& operator<<(std::ostream&, segment_reader_ptr);
 } // namespace storage

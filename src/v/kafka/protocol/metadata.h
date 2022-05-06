@@ -56,11 +56,12 @@ struct metadata_request {
             list_all_topics = data.topics->empty();
         }
     }
-};
 
-inline std::ostream& operator<<(std::ostream& os, const metadata_request& r) {
-    return os << r.data;
-}
+    friend std::ostream&
+    operator<<(std::ostream& os, const metadata_request& r) {
+        return os << r.data;
+    }
+};
 
 struct metadata_response {
     using api_type = metadata_api;
@@ -77,10 +78,11 @@ struct metadata_response {
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);
     }
-};
 
-inline std::ostream& operator<<(std::ostream& os, const metadata_response& r) {
-    return os << r.data;
-}
+    friend std::ostream&
+    operator<<(std::ostream& os, const metadata_response& r) {
+        return os << r.data;
+    }
+};
 
 } // namespace kafka

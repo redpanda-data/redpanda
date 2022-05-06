@@ -150,9 +150,9 @@ struct member_protocol {
     bool operator==(const member_protocol& o) const {
         return name == o.name && metadata == o.metadata;
     }
-};
 
-std::ostream& operator<<(std::ostream&, const member_protocol&);
+    friend std::ostream& operator<<(std::ostream&, const member_protocol&);
+};
 
 using assignments_type = std::unordered_map<member_id, bytes>;
 

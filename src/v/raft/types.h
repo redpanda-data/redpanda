@@ -51,6 +51,9 @@ struct protocol_metadata {
     model::offset prev_log_index;
     model::term_id prev_log_term;
     model::offset last_visible_index;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const protocol_metadata& m);
 };
 
 // The sequence used to track the order of follower append entries request
@@ -155,6 +158,9 @@ struct follower_index_metadata {
      */
     heartbeats_suppressed suppress_heartbeats = heartbeats_suppressed::no;
     follower_req_seq last_suppress_heartbeats_seq{0};
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const follower_index_metadata& i);
 };
 /**
  * class containing follower statistics, this may be helpful for debugging,
@@ -245,6 +251,9 @@ struct append_entries_reply {
     model::offset last_term_base_offset;
     /// \brief did the rpc succeed or not
     status result = status::failure;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const append_entries_reply& r);
 };
 
 struct heartbeat_metadata {
@@ -261,9 +270,12 @@ struct heartbeat_metadata {
 /// log at some offset
 struct heartbeat_request {
     std::vector<heartbeat_metadata> heartbeats;
+    friend std::ostream&
+    operator<<(std::ostream& o, const heartbeat_request& r);
 };
 struct heartbeat_reply {
     std::vector<append_entries_reply> meta;
+    friend std::ostream& operator<<(std::ostream& o, const heartbeat_reply& r);
 };
 
 struct vote_request {
@@ -281,6 +293,8 @@ struct vote_request {
     bool leadership_transfer;
     raft::group_id target_group() const { return group; }
     vnode target_node() const { return target_node_id; }
+
+    friend std::ostream& operator<<(std::ostream& o, const vote_request& r);
 };
 
 struct vote_reply {
@@ -296,6 +310,8 @@ struct vote_reply {
     /// - extension on raft. see Diego's phd dissertation, section 9.6
     /// - "Preventing disruptions when a server rejoins the cluster"
     bool log_ok = false;
+
+    friend std::ostream& operator<<(std::ostream& o, const vote_reply& r);
 };
 
 /// This structure is used by consensus to notify other systems about group
@@ -522,16 +538,8 @@ struct scheduling_config {
     ss::io_priority_class learner_recovery_iopc;
 };
 
-std::ostream& operator<<(std::ostream& o, const vnode& r);
 std::ostream& operator<<(std::ostream& o, const consistency_level& l);
-std::ostream& operator<<(std::ostream& o, const protocol_metadata& m);
-std::ostream& operator<<(std::ostream& o, const vote_reply& r);
 std::ostream& operator<<(std::ostream& o, const append_entries_reply::status&);
-std::ostream& operator<<(std::ostream& o, const append_entries_reply& r);
-std::ostream& operator<<(std::ostream& o, const vote_request& r);
-std::ostream& operator<<(std::ostream& o, const follower_index_metadata& i);
-std::ostream& operator<<(std::ostream& o, const heartbeat_request& r);
-std::ostream& operator<<(std::ostream& o, const heartbeat_reply& r);
 } // namespace raft
 
 namespace reflection {

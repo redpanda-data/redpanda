@@ -72,5 +72,4 @@ private:
     friend std::ostream& operator<<(std::ostream& o, const server_probe& p);
 };
 
-std::ostream& operator<<(std::ostream& o, const server_probe& p);
 }; // namespace net
