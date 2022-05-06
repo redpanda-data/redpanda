@@ -2,6 +2,7 @@
 ec2:
   included:
     - tests
+    - scale_tests
 
   excluded:
     - tests/librdkafka_test.py # normally disabled

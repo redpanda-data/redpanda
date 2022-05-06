@@ -168,8 +168,9 @@ class FranzGoVerifiableSeqConsumer(FranzGoVerifiableService):
         self.status = ServiceStatus.RUNNING
         self._stopping.clear()
         try:
-            while not self._stopping.is_set(
-            ) and not self._shutting_down.is_set():
+            # Scan the topic at least once, and then indefinitely until
+            # we are asked to shut down
+            while True:
                 cmd = 'echo $$ ; %s --brokers %s --topic %s --msg_size %s --produce_msgs 0 --rand_read_msgs 0 --seq_read=1' % (
                     f"{TESTS_DIR}/kgo-verifier", self._redpanda.brokers(),
                     self._topic, self._msg_size)
@@ -181,6 +182,9 @@ class FranzGoVerifiableSeqConsumer(FranzGoVerifiableService):
                         data['ValidReads'], data['InvalidReads'],
                         data['OutOfScopeInvalidReads'])
                     self.logger.info(f"SeqConsumer {self._consumer_status}")
+
+                if self._stopping.is_set() or self._shutting_down.is_set():
+                    break
 
         except Exception as ex:
             self.save_exception(ex)

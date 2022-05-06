@@ -140,7 +140,11 @@ class ShadowIndexingWhileBusyTest(PreallocNodesTest):
     @cluster(num_nodes=8)
     def test_create_or_delete_topics_while_busy(self):
         self.logger.info(f"Environment: {os.environ}")
-        if os.environ.get('BUILD_TYPE', None) == 'debug':
+        if self.debug_mode:
+            # Trigger node allocation to avoid test failure on asking for
+            # more nodes than it used.
+            _ = self.preallocated_nodes
+
             self.logger.info(
                 "Skipping test in debug mode (requires release build)")
             return

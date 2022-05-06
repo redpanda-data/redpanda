@@ -14,7 +14,6 @@ from rptest.services.cluster import cluster
 from rptest.services.rpk_consumer import RpkConsumer
 
 from ducktape.utils.util import wait_until
-from ducktape.cluster.cluster_spec import ClusterSpec
 
 from rptest.services.producer_swarm import ProducerSwarm
 
@@ -46,14 +45,11 @@ class ManyClientsTest(RedpandaTest):
         than usual.
         """
 
-        if self.debug_mode:
-            self.logger.info("Skipping test, not suitable for debug mode")
-            # A phony allocation to satisfy the check that we used all
-            # the nodes in our `num_nodes` value.
-            alloc_nodes = self.test_context.cluster.alloc(
-                ClusterSpec.simple_linux(3))
-            self.test_context.cluster.free(alloc_nodes)
-            return
+        # This test requires dedicated system resources to run reliably.
+        assert self.redpanda.dedicated_nodes
+
+        # Scale tests are not run on debug builds
+        assert not self.debug_mode
 
         PARTITION_COUNT = 100
         PRODUCER_COUNT = 4000
