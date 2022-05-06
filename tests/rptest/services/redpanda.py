@@ -730,15 +730,20 @@ class RedpandaService(Service):
         # Fall through: no problematic lines found
         return True
 
-    def lsof_node(self, node: ClusterNode):
+    def lsof_node(self, node: ClusterNode, filter: Optional[str] = None):
         """
         Get the list of open files for a running node
+
+        :param filter: If given, this is a grep regex that will filter the files we list
+
         :return: yields strings
         """
         first = True
-        for line in node.account.ssh_capture(
-                f"lsof -nP -p {self.redpanda_pid(node)}"):
-            if first:
+        cmd = f"lsof -nP -p {self.redpanda_pid(node)}"
+        if filter is not None:
+            cmd += f" | grep {filter}"
+        for line in node.account.ssh_capture(cmd):
+            if first and not filter:
                 # First line is a header, skip it
                 first = False
                 continue
