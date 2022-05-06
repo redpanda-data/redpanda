@@ -55,7 +55,7 @@ func newPrintCommand(fs afero.Fs) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&host, "host", "", "either an index into admin_api hosts to issue the request to, or a hostname")
+	cmd.Flags().StringVar(&host, "host", "", "either a hostname or an index into rpk.admin_api.addresses config section to select the hosts to issue the request to")
 	cobra.MarkFlagRequired(cmd.Flags(), "host")
 
 	return cmd
