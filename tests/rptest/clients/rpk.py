@@ -67,9 +67,9 @@ class RpkPartition:
 class RpkGroupPartition(typing.NamedTuple):
     topic: str
     partition: int
-    current_offset: int
-    log_end_offset: int
-    lag: int
+    current_offset: Optional[int]
+    log_end_offset: Optional[int]
+    lag: Optional[int]
     member_id: str
     client_id: str
     host: str
@@ -306,17 +306,25 @@ class RpkTool:
             return m['value']
 
         partition_pattern = re.compile(
-            "(?P<topic>.+) +(?P<partition>\d+) +(?P<offset>\d+) +(?P<log_end>\d+) +(?P<lag>\d+) *(?P<member_id>.*)? *(?P<client_id>.*)? *(?P<host>.*)?"
+            "(?P<topic>.+) +(?P<partition>\d+) +(?P<offset>\d+|-) +(?P<log_end>\d+|-) +(?P<lag>-?\d+|-) *(?P<member_id>.*)? *(?P<client_id>.*)? *(?P<host>.*)?"
         )
 
         def parse_partition(string):
             m = partition_pattern.match(string)
             assert m is not None, f"Partition string '{string}' does not match the pattern"
+
+            # Account for negative numbers and '-' value
+            all_digits = lambda x: x.lstrip('-').isdigit()
+
+            offset = int(m['offset']) if all_digits(m['offset']) else None
+            log_end = int(m['log_end']) if all_digits(m['log_end']) else None
+            lag = int(m['lag']) if all_digits(m['lag']) else None
+
             return RpkGroupPartition(topic=m['topic'],
                                      partition=int(m['partition']),
-                                     current_offset=int(m['offset']),
-                                     log_end_offset=int(m['log_end']),
-                                     lag=int(m['lag']),
+                                     current_offset=offset,
+                                     log_end_offset=log_end,
+                                     lag=lag,
                                      member_id=m['member_id'],
                                      client_id=m['client_id'],
                                      host=m['host'])
