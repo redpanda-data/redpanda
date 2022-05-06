@@ -16,7 +16,7 @@ import (
 )
 
 const brokersEndpoint = "/v1/brokers"
-const brokerEndpoint = "/v1/brokers/%d"
+const clusterViewEndpoint = "v1/cluster_view"
 
 type MaintenanceStatus struct {
 	Draining     bool `json:"draining"`
@@ -26,6 +26,11 @@ type MaintenanceStatus struct {
 	Eligible     int  `json:"eligible"`
 	Transferring int  `json:"transferring"`
 	Failed       int  `json:"failed"`
+}
+
+type ClusterView struct {
+	Version int      `json:"version"`
+	Brokers []Broker `json:"brokers"`
 }
 
 // Broker is the information returned from the Redpanda admin broker endpoints.
@@ -40,11 +45,12 @@ type Broker struct {
 
 // Brokers queries one of the client's hosts and returns the list of brokers.
 func (a *AdminAPI) Brokers() ([]Broker, error) {
-	var bs []Broker
+	var cv ClusterView
 	defer func() {
-		sort.Slice(bs, func(i, j int) bool { return bs[i].NodeID < bs[j].NodeID }) //nolint:revive // return inside this deferred function is for the sort's less function
+		sort.Slice(cv.Brokers, func(i, j int) bool { return cv.Brokers[i].NodeID < cv.Brokers[j].NodeID }) //nolint:revive // return inside this deferred function is for the sort's less function
 	}()
-	return bs, a.sendAny(http.MethodGet, brokersEndpoint, nil, &bs)
+	err := a.sendAny(http.MethodGet, clusterViewEndpoint, nil, &cv)
+	return cv.Brokers, err
 }
 
 // Broker queries one of the client's hosts and returns broker information.
@@ -52,7 +58,7 @@ func (a *AdminAPI) Broker(node int) (Broker, error) {
 	var b Broker
 	err := a.sendAny(
 		http.MethodGet,
-		fmt.Sprintf(brokerEndpoint, node), nil, &b)
+		fmt.Sprintf("%s/%d", brokersEndpoint, node), nil, &b)
 	return b, err
 }
 
