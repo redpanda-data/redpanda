@@ -127,12 +127,13 @@ func (t *TLS) Config(fs afero.Fs) (*tls.Config, error) {
 }
 
 type ServerTLS struct {
-	Name              string `yaml:"name,omitempty" mapstructure:"name,omitempty" json:"name"`
-	KeyFile           string `yaml:"key_file,omitempty" mapstructure:"key_file,omitempty" json:"keyFile"`
-	CertFile          string `yaml:"cert_file,omitempty" mapstructure:"cert_file,omitempty" json:"certFile"`
-	TruststoreFile    string `yaml:"truststore_file,omitempty" mapstructure:"truststore_file,omitempty" json:"truststoreFile"`
-	Enabled           bool   `yaml:"enabled,omitempty" mapstructure:"enabled,omitempty" json:"enabled"`
-	RequireClientAuth bool   `yaml:"require_client_auth,omitempty" mapstructure:"require_client_auth,omitempty" json:"requireClientAuth"`
+	Name              string                 `yaml:"name,omitempty" mapstructure:"name,omitempty" json:"name"`
+	KeyFile           string                 `yaml:"key_file,omitempty" mapstructure:"key_file,omitempty" json:"keyFile"`
+	CertFile          string                 `yaml:"cert_file,omitempty" mapstructure:"cert_file,omitempty" json:"certFile"`
+	TruststoreFile    string                 `yaml:"truststore_file,omitempty" mapstructure:"truststore_file,omitempty" json:"truststoreFile"`
+	Enabled           bool                   `yaml:"enabled,omitempty" mapstructure:"enabled,omitempty" json:"enabled"`
+	RequireClientAuth bool                   `yaml:"require_client_auth,omitempty" mapstructure:"require_client_auth,omitempty" json:"requireClientAuth"`
+	Other             map[string]interface{} `yaml:",inline" mapstructure:",remain"`
 }
 
 type RpkConfig struct {
