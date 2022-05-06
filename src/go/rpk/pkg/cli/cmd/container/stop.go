@@ -65,7 +65,7 @@ You may start a new cluster with 'rpk container start'`,
 			// Redpanda sometimes takes a while to stop, so 20
 			// seconds is a safe estimate
 			timeout := 20 * time.Second
-			err = c.ContainerStop(
+			err := c.ContainerStop(
 				ctx,
 				common.Name(state.ID),
 				&timeout,
