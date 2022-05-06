@@ -317,12 +317,16 @@ ss::app_template::config application::setup_app_config() {
 void application::hydrate_config(const po::variables_map& cfg) {
     std::filesystem::path cfg_path(cfg["redpanda-cfg"].as<std::string>());
     const YAML::Node config = YAML::Load(read_fully_to_string(cfg_path).get0());
-    auto config_printer = [this](std::string_view service) {
-        return [this, service](const config::base_property& item) {
-            std::stringstream val;
-            item.print(val);
-            vlog(_log.info, "{}.{}\t- {}", service, val.str(), item.desc());
-        };
+    auto config_printer = [this](std::string_view service, const auto& cfg) {
+        std::vector<ss::sstring> items;
+        cfg.for_each([&items, &service](const auto& item) {
+            items.push_back(
+              ssx::sformat("{}.{}\t- {}", service, item, item.desc()));
+        });
+        std::sort(items.begin(), items.end());
+        for (const auto& item : items) {
+            vlog(_log.info, "{}", item);
+        }
     };
 
     _redpanda_enabled = config["redpanda"].IsDefined();
@@ -349,11 +353,11 @@ void application::hydrate_config(const po::variables_map& cfg) {
 
         vlog(_log.info, "Cluster configuration properties:");
         vlog(_log.info, "(use `rpk cluster config edit` to change)");
-        config::shard_local_cfg().for_each(config_printer("redpanda"));
+        config_printer("redpanda", config::shard_local_cfg());
 
         vlog(_log.info, "Node configuration properties:");
         vlog(_log.info, "(use `rpk config set <cfg> <value>` to change)");
-        config::node().for_each(config_printer("redpanda"));
+        config_printer("redpanda", config::node());
     }
     if (config["pandaproxy"]) {
         _proxy_config.emplace(config["pandaproxy"]);
@@ -366,8 +370,8 @@ void application::hydrate_config(const po::variables_map& cfg) {
         // pandaproxy.consumer_instance_timeout_ms
         _proxy_client_config->consumer_session_timeout.set_value(
           _proxy_config->consumer_instance_timeout.value());
-        _proxy_config->for_each(config_printer("pandaproxy"));
-        _proxy_client_config->for_each(config_printer("pandaproxy_client"));
+        config_printer("pandaproxy", *_proxy_config);
+        config_printer("pandaproxy_client", *_proxy_client_config);
     }
     if (config["schema_registry"]) {
         _schema_reg_config.emplace(config["schema_registry"]);
@@ -377,9 +381,8 @@ void application::hydrate_config(const po::variables_map& cfg) {
             set_sr_local_kafka_client_config(
               _schema_reg_client_config, config::node());
         }
-        _schema_reg_config->for_each(config_printer("schema_registry"));
-        _schema_reg_client_config->for_each(
-          config_printer("schema_registry_client"));
+        config_printer("schema_registry", *_schema_reg_config);
+        config_printer("schema_registry_client", *_schema_reg_client_config);
     }
 }
 
