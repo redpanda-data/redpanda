@@ -150,10 +150,12 @@ public:
           << "enabled: " << c.is_enabled() << " "
           << "key/cert files: " << c.get_key_cert_files() << " "
           << "ca file: " << c.get_truststore_file() << " "
-          << "client_auth_required: " << c.get_require_client_auth() << " "
-          << "principal_mapping_rules: " << c.get_principal_mapping_rules()
-          << " }";
-        return o;
+          << "client_auth_required: " << c.get_require_client_auth();
+        if (c.get_principal_mapping_rules()) {
+            o << " principal_mapping_rules: "
+              << c.get_principal_mapping_rules();
+        }
+        return o << " }";
     }
 
 private:
