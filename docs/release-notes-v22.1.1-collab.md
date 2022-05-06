@@ -198,4 +198,4 @@
 * coproc: Yield if inputs haven't been hydrated by @graphcareful in https://github.com/redpanda-data/redpanda/pull/3576
 * rpk: Various improvements to CLI and upgraded base franz-go. by @twmb in https://github.com/redpanda-data/redpanda/pull/4576
 
-**Full Changelog**: https://github.com/redpanda-data/redpanda/compare/v21.11.15..d6bc057df1050d138cff92b9ee38b9cb38c0e50c
+**Full Changelog**: https://github.com/redpanda-data/redpanda/compare/v21.11.15..v22.1.1
