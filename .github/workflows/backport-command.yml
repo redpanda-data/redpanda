@@ -20,17 +20,30 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.ACTIONS_BOT_TOKEN }}
           ARG1: ${{ github.event.client_payload.slash_command.args.unnamed.arg1 }}
           CLIENT_PAYLOAD: ${{ toJson(github.event.client_payload) }}
+          PR_NUMBER: ${{ github.event.client_payload.pull_request.number }}
+          ORIG_ISSUE_URL: ${{ github.event.client_payload.github.payload.issue.html_url }}
         id: type
         run: |
-          branches=$(gh api "/repos/${TARGET_ORG}/${TARGET_REPO}/branches" --jq '.[] | select(.name=='\"$ARG1\"')')
-          if [[ $branches == "" ]]; then
-            echo "Branch name not found"
-            exit 1
-          fi
           if [[ $(echo $CLIENT_PAYLOAD | jq 'has("pull_request")') == true ]]; then
             commented_on=pr
           else
             commented_on=issue
+          fi
+          branches=$(gh api "/repos/${TARGET_ORG}/${TARGET_REPO}/branches" --jq '.[] | select(.name=='\"$ARG1\"')')
+          if [[ $branches == "" ]]; then
+            msg="Branch name \"$ARG1\" not found"
+            echo $msg
+            if [[ $commented_on == "issue" ]]; then
+              gh issue comment "$ORIG_ISSUE_URL" \
+                --body "$msg" \
+                --repo "$TARGET_ORG/$TARGET_REPO"
+              exit 1
+            else
+              gh pr comment "$PR_NUMBER" \
+                --body "$msg" \
+                --repo "$TARGET_ORG/$TARGET_REPO"
+              exit 1
+            fi
           fi
           echo "::set-output name=commented_on::$commented_on"
 
