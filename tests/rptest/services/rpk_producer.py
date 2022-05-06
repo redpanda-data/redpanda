@@ -16,7 +16,7 @@ class RpkProducer(BackgroundThreadService):
                  topic: str,
                  msg_size: int,
                  msg_count: int,
-                 acks: Optional[bool] = None,
+                 acks: Optional[int] = None,
                  printable=False,
                  quiet: bool = False,
                  produce_timeout: Optional[int] = None):
