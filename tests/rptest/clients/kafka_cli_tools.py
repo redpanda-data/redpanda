@@ -69,6 +69,8 @@ sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule require
             args += [
                 "--config", "cleanup.policy={}".format(spec.cleanup_policy)
             ]
+        if spec.segment_bytes is not None:
+            args += ["--config", f"segment.bytes={spec.segment_bytes}"]
         return self._run("kafka-topics.sh", args)
 
     def create_topic_partitions(self, topic, partitions):
