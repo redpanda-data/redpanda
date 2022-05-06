@@ -220,33 +220,34 @@ func seek(
 			tps[topic] = map[int32]struct{}{} // ensure exists
 		}
 		topics := tps.Topics()
-
 		var listed kadm.ListedOffsets
-		var err error
-		switch to {
-		case "start":
-			listed, err = adm.ListStartOffsets(context.Background(), topics...)
-		case "end":
-			listed, err = adm.ListEndOffsets(context.Background(), topics...)
-		default:
-			var milli int64
-			milli, err = strconv.ParseInt(to, 10, 64)
-			out.MaybeDie(err, "unable to parse millisecond %q: %v", to, err)
-			switch len(to) {
-			case 10: // e.g. "1622505600"; sec to milli
-				milli *= 1000
-			case 13: // e.g. "1622505600000", already in milli
-			case 19: // e.g. "1622505600000000000"; nano to milli
-				milli /= 1e6
+		if len(topics) > 0 {
+			var err error
+			switch to {
+			case "start":
+				listed, err = adm.ListStartOffsets(context.Background(), topics...)
+			case "end":
+				listed, err = adm.ListEndOffsets(context.Background(), topics...)
 			default:
-				out.Die("--to timestamp %q is not a second, nor a millisecond, nor a nanosecond", to)
+				var milli int64
+				milli, err = strconv.ParseInt(to, 10, 64)
+				out.MaybeDie(err, "unable to parse millisecond %q: %v", to, err)
+				switch len(to) {
+				case 10: // e.g. "1622505600"; sec to milli
+					milli *= 1000
+				case 13: // e.g. "1622505600000", already in milli
+				case 19: // e.g. "1622505600000000000"; nano to milli
+					milli /= 1e6
+				default:
+					out.Die("--to timestamp %q is not a second, nor a millisecond, nor a nanosecond", to)
+				}
+				listed, err = adm.ListOffsetsAfterMilli(context.Background(), milli, topics...)
 			}
-			listed, err = adm.ListOffsetsAfterMilli(context.Background(), milli, topics...)
+			if err == nil { // ListOffsets can return ShardErrors, but we want to be entirely successful
+				err = listed.Error()
+			}
+			out.MaybeDie(err, "unable to list all offsets successfully: %v", err)
 		}
-		if err == nil { // ListOffsets can return ShardErrors, but we want to be entirely successful
-			err = listed.Error()
-		}
-		out.MaybeDie(err, "unable to list all offsets successfully: %v", err)
 		commitTo = listed.Offsets()
 	}
 
