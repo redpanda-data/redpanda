@@ -38,6 +38,13 @@ struct key_cert {
     bool operator==(const key_cert& rhs) const {
         return key_file == rhs.key_file && cert_file == rhs.cert_file;
     }
+
+    friend std::ostream& operator<<(std::ostream& o, const key_cert& c) {
+        o << "{ "
+          << "key_file: " << c.key_file << " "
+          << "cert_file: " << c.cert_file << " }";
+        return o;
+    }
 };
 
 class tls_config {
@@ -137,6 +144,20 @@ public:
 
     bool operator==(const tls_config& rhs) const = default;
 
+    friend std::ostream&
+    operator<<(std::ostream& o, const config::tls_config& c) {
+        o << "{ "
+          << "enabled: " << c.is_enabled() << " "
+          << "key/cert files: " << c.get_key_cert_files() << " "
+          << "ca file: " << c.get_truststore_file() << " "
+          << "client_auth_required: " << c.get_require_client_auth();
+        if (c.get_principal_mapping_rules()) {
+            o << " principal_mapping_rules: "
+              << c.get_principal_mapping_rules();
+        }
+        return o << " }";
+    }
+
 private:
     bool _enabled{false};
     std::optional<key_cert> _key_cert;
@@ -146,23 +167,6 @@ private:
 };
 
 } // namespace config
-namespace std {
-static inline ostream& operator<<(ostream& o, const config::key_cert& c) {
-    o << "{ "
-      << "key_file: " << c.key_file << " "
-      << "cert_file: " << c.cert_file << " }";
-    return o;
-}
-static inline ostream& operator<<(ostream& o, const config::tls_config& c) {
-    o << "{ "
-      << "enabled: " << c.is_enabled() << " "
-      << "key/cert files: " << c.get_key_cert_files() << " "
-      << "ca file: " << c.get_truststore_file() << " "
-      << "client_auth_required: " << c.get_require_client_auth() << " "
-      << "principal_mapping_rules: " << c.get_principal_mapping_rules() << " }";
-    return o;
-}
-} // namespace std
 
 namespace YAML {
 
