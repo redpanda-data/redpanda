@@ -183,7 +183,7 @@ ss::future<> cache::start() {
     if (ss::this_shard_id() == 0) {
         co_await clean_up_at_start();
 
-        _timer.set_callback([this] { return clean_up_cache(); });
+        _timer.set_callback([this] { ssx::background = clean_up_cache(); });
         _timer.arm_periodic(_check_period);
     }
 }

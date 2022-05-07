@@ -98,7 +98,7 @@ consumer::consumer(
   , _coordinator(std::move(coordinator))
   , _inactive_timer([me{shared_from_this()}]() {
       vlog(kclog.info, "Consumer: {}: inactive", *me);
-      return me->leave().discard_result().finally([me]() {});
+      ssx::background = me->leave().discard_result().finally([me]() {});
   })
   , _group_id(std::move(group_id))
   , _name(std::move(name))
