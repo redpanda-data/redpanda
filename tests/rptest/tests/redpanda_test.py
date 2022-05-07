@@ -8,12 +8,14 @@
 # by the Apache License, Version 2.0
 
 import os
+from typing import Sequence
 
 from ducktape.tests.test import Test
 from rptest.services.redpanda import RedpandaService
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.default import DefaultClient
 from rptest.util import Scale
+from rptest.clients.types import TopicSpec
 
 
 class RedpandaTest(Test):
@@ -23,7 +25,7 @@ class RedpandaTest(Test):
 
     # List of topics to be created automatically when the cluster starts. Each
     # topic is defined by an instance of a TopicSpec.
-    topics = []
+    topics: Sequence[TopicSpec] = []
 
     def __init__(self,
                  test_context,
