@@ -135,16 +135,12 @@ var _ = BeforeEach(func() {
 	// Register some known properties for all tests
 	testAdminAPI.RegisterPropertySchema("auto_create_topics_enabled", admin.ConfigPropertyMetadata{NeedsRestart: false})
 	testAdminAPI.RegisterPropertySchema("cloud_storage_segment_max_upload_interval_sec", admin.ConfigPropertyMetadata{NeedsRestart: true})
-	testAdminAPI.RegisterPropertySchema("enable_idempotence", admin.ConfigPropertyMetadata{NeedsRestart: true})
-	testAdminAPI.RegisterPropertySchema("enable_transactions", admin.ConfigPropertyMetadata{NeedsRestart: true})
 	testAdminAPI.RegisterPropertySchema("log_segment_size", admin.ConfigPropertyMetadata{NeedsRestart: true})
 
 	// By default we set the following properties and they'll be loaded by redpanda from the .bootstrap.yaml
 	// So we initialize the test admin API with those
 	testAdminAPI.SetProperty("auto_create_topics_enabled", false)
 	testAdminAPI.SetProperty("cloud_storage_segment_max_upload_interval_sec", 1800)
-	testAdminAPI.SetProperty("enable_idempotence", false)
-	testAdminAPI.SetProperty("enable_transactions", false)
 	testAdminAPI.SetProperty("log_segment_size", 536870912)
 })
 
