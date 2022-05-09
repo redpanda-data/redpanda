@@ -100,6 +100,16 @@ class ClusterConfigTest(RedpandaTest):
         self.admin = Admin(self.redpanda)
         self.rpk = RpkTool(self.redpanda)
 
+    def setUp(self):
+        super().setUp()
+
+        # wait for the two config versions:
+        # 1. The initial bootstrap where we "import" any cluster properties
+        #    that were in bootstrap.yaml
+        # 2. The metrics reporter's first tick, where it initializes
+        #    the cluster_id property.
+        self._wait_for_version_sync(2)
+
     @cluster(num_nodes=3)
     @parametrize(legacy=False)
     @parametrize(legacy=True)
