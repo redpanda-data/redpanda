@@ -511,7 +511,10 @@ class ClusterConfigTest(RedpandaTest):
                 else:
                     valid_value = 1000.0
             elif p['type'] == 'string':
-                valid_value = "rhubarb"
+                if name.endswith("_url"):
+                    valid_value = "http://example.com"
+                else:
+                    valid_value = "rhubarb"
             elif p['type'] == 'boolean':
                 valid_value = not initial_config[name]
             elif p['type'] == "array" and p['items']['type'] == 'string':
