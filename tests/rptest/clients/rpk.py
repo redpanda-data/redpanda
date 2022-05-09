@@ -529,10 +529,16 @@ class RpkTool:
         Run `rpk cluster maintenance status` and return the parsed results.
         """
         def parse(line):
+            if line.startswith("Request error"):
+                # RPK may print messages about request errors, which it internally
+                # retries.  Drop these lines.
+                return None
+
             # jerry@garcia:~/src/redpanda$ rpk cluster maintenance status
             # NODE-ID  DRAINING  FINISHED  ERRORS  PARTITIONS  ELIGIBLE  TRANSFERRING  FAILED
             # 1        false     false     false   0           0         0             0
             line = line.split()
+
             assert len(
                 line
             ) == 8, f"`rpk cluster maintenance status` has changed: {line}"
