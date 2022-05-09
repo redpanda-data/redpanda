@@ -27,11 +27,11 @@ type InitializedGcpVendor struct {
 	client *metadata.Client
 }
 
-func (v *GcpVendor) Name() string {
+func (*GcpVendor) Name() string {
 	return name
 }
 
-func (v *GcpVendor) Init() (vendor.InitializedVendor, error) {
+func (*GcpVendor) Init() (vendor.InitializedVendor, error) {
 	timeout := 500 * time.Millisecond
 	client := metadata.NewClient(&http.Client{Timeout: timeout})
 	if available(client, timeout) {
@@ -40,7 +40,7 @@ func (v *GcpVendor) Init() (vendor.InitializedVendor, error) {
 	return nil, errors.New("vendor GCP couldn't be initialized")
 }
 
-func (v *InitializedGcpVendor) VmType() (string, error) {
+func (v *InitializedGcpVendor) VMType() (string, error) {
 	t, err := v.client.Get("instance/machine-type")
 	if err != nil {
 		return "", err
@@ -52,7 +52,7 @@ func (v *InitializedGcpVendor) VmType() (string, error) {
 	return filepath.Base(t), nil
 }
 
-func (v *InitializedGcpVendor) Name() string {
+func (*InitializedGcpVendor) Name() string {
 	return name
 }
 

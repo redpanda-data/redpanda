@@ -57,8 +57,7 @@ func importConfig(
 			// if it is given as the value for a floating point
 			// ('number') config property, and vice versa.
 			if meta.Type == "integer" {
-				switch vFloat := v.(type) {
-				case float64:
+				if vFloat, ok := v.(float64); ok {
 					v = int(vFloat)
 				}
 
@@ -66,9 +65,8 @@ func importConfig(
 					oldVal = int(oldVal.(float64))
 				}
 			} else if meta.Type == "number" {
-				switch x := v.(type) {
-				case int:
-					v = float64(x)
+				if vInt, ok := v.(int); ok {
+					v = float64(vInt)
 				}
 			} else if meta.Type == "array" && meta.Items.Type == "string" {
 				switch vArray := v.(type) {
@@ -132,7 +130,7 @@ func importConfig(
 
 	// PUT to admin API
 	result, err := client.PatchClusterConfig(upsert, remove)
-	if he := (*admin.HttpError)(nil); errors.As(err, &he) {
+	if he := (*admin.HTTPError)(nil); errors.As(err, &he) {
 		// Special case 400 (validation) errors with friendly output
 		// about which configuration properties were invalid.
 		if he.Response.StatusCode == 400 {
@@ -149,10 +147,10 @@ func importConfig(
 	return nil
 }
 
-func formatValidationError(err error, http_err *admin.HttpError) string {
+func formatValidationError(err error, httpErr *admin.HTTPError) string {
 	// Output structured validation errors from server
 	var validationErrs map[string]string
-	bodyErr := json.Unmarshal(http_err.Body, &validationErrs)
+	bodyErr := json.Unmarshal(httpErr.Body, &validationErrs)
 	// If no proper JSON body, fall back to generic HTTP error report
 	if bodyErr != nil {
 		out.MaybeDie(err, "error setting config: %v", err)

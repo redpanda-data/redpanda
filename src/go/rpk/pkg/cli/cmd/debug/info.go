@@ -67,7 +67,7 @@ func NewInfoCommand(fs afero.Fs) *cobra.Command {
 				} else {
 					payload.FreeMemoryMB = m.FreeMemoryMB
 					payload.FreeSpaceMB = m.FreeSpaceMB
-					payload.CpuPercentage = m.CpuPercentage
+					payload.CPUPercentage = m.CPUPercentage
 				}
 			}()
 

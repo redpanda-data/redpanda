@@ -39,7 +39,7 @@ func getValidConfig() *Config {
 		TuneNomerges:             true,
 		TuneDiskIrq:              true,
 		TuneFstrim:               true,
-		TuneCpu:                  true,
+		TuneCPU:                  true,
 		TuneAioEvents:            true,
 		TuneClocksource:          true,
 		TuneSwappiness:           true,
@@ -68,7 +68,7 @@ func TestSet(t *testing.T) {
 			value:  "1",
 			format: "single",
 			check: func(st *testing.T, c *Config, _ *manager) {
-				require.Exactly(st, 1, c.Redpanda.Id)
+				require.Exactly(st, 1, c.Redpanda.ID)
 			},
 		},
 		{
@@ -77,7 +77,7 @@ func TestSet(t *testing.T) {
 			value:  "54312",
 			format: "single",
 			check: func(st *testing.T, c *Config, _ *manager) {
-				require.Exactly(st, 54312, c.Redpanda.Id)
+				require.Exactly(st, 54312, c.Redpanda.ID)
 			},
 		},
 		{
@@ -85,7 +85,7 @@ func TestSet(t *testing.T) {
 			key:   "redpanda.node_id",
 			value: "54312",
 			check: func(st *testing.T, c *Config, _ *manager) {
-				require.Exactly(st, 54312, c.Redpanda.Id)
+				require.Exactly(st, 54312, c.Redpanda.ID)
 			},
 		},
 		{
@@ -154,7 +154,7 @@ func TestSet(t *testing.T) {
 					TuneDiskScheduler:        false,
 					TuneNomerges:             false,
 					TuneDiskIrq:              true,
-					TuneCpu:                  false,
+					TuneCPU:                  false,
 					TuneAioEvents:            false,
 					TuneClocksource:          false,
 					TuneSwappiness:           false,
@@ -200,7 +200,7 @@ func TestSet(t *testing.T) {
 						Port:    9092,
 					},
 				}}
-				require.Exactly(st, expected, c.Redpanda.KafkaApi)
+				require.Exactly(st, expected, c.Redpanda.KafkaAPI)
 			},
 		},
 		{
@@ -218,7 +218,7 @@ func TestSet(t *testing.T) {
 						Address: "192.168.54.2",
 					},
 				}}
-				require.Exactly(st, expected, c.Redpanda.KafkaApi)
+				require.Exactly(st, expected, c.Redpanda.KafkaAPI)
 			},
 		},
 		{
@@ -235,7 +235,7 @@ func TestSet(t *testing.T) {
 						Address: "192.168.54.2",
 					},
 				}}
-				require.Exactly(st, expected, c.Redpanda.AdvertisedKafkaApi)
+				require.Exactly(st, expected, c.Redpanda.AdvertisedKafkaAPI)
 			},
 		},
 		{
@@ -272,7 +272,6 @@ func TestSet(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			fs := afero.NewMemMapFs()
 			mgr := NewManager(fs)
-			conf := Default()
 			err := mgr.Set(tt.key, tt.value, tt.format)
 			if tt.expectErr {
 				require.Error(t, err)
@@ -280,7 +279,7 @@ func TestSet(t *testing.T) {
 			}
 			require.NoError(t, err)
 			if tt.check != nil {
-				conf, err = mgr.Get()
+				conf, err := mgr.Get()
 				require.NoError(t, err)
 				m, _ := mgr.(*manager)
 				tt.check(t, conf, m)
@@ -300,7 +299,7 @@ func TestMerge(t *testing.T) {
 			name: "it should merge Kafka API spec",
 			config: Config{
 				Redpanda: RedpandaConfig{
-					KafkaApi: []NamedSocketAddress{{
+					KafkaAPI: []NamedSocketAddress{{
 						Name: "kafka-api-name",
 						SocketAddress: SocketAddress{
 							"1.2.3.4",
@@ -310,9 +309,9 @@ func TestMerge(t *testing.T) {
 				},
 			},
 			check: func(st *testing.T, c *Config, _ *manager) {
-				require.Exactly(st, "kafka-api-name", c.Redpanda.KafkaApi[0].Name)
-				require.Exactly(st, "1.2.3.4", c.Redpanda.KafkaApi[0].Address)
-				require.Exactly(st, 9123, c.Redpanda.KafkaApi[0].Port)
+				require.Exactly(st, "kafka-api-name", c.Redpanda.KafkaAPI[0].Name)
+				require.Exactly(st, "1.2.3.4", c.Redpanda.KafkaAPI[0].Address)
+				require.Exactly(st, 9123, c.Redpanda.KafkaAPI[0].Port)
 			},
 		},
 		{
@@ -364,19 +363,19 @@ func TestDefault(t *testing.T) {
 		Redpanda: RedpandaConfig{
 			Directory: "/var/lib/redpanda/data",
 			RPCServer: SocketAddress{"0.0.0.0", 33145},
-			KafkaApi: []NamedSocketAddress{{
+			KafkaAPI: []NamedSocketAddress{{
 				SocketAddress: SocketAddress{
 					"0.0.0.0",
 					9092,
 				},
 			}},
-			AdminApi: []NamedSocketAddress{{
+			AdminAPI: []NamedSocketAddress{{
 				SocketAddress: SocketAddress{
 					"0.0.0.0",
 					9644,
 				},
 			}},
-			Id:            0,
+			ID:            0,
 			SeedServers:   []SeedServer{},
 			DeveloperMode: true,
 		},
@@ -600,7 +599,7 @@ schema_registry: {}
 			name: "shall write a valid config file without advertised_rpc_api",
 			conf: func() *Config {
 				c := getValidConfig()
-				c.Redpanda.AdvertisedKafkaApi = []NamedSocketAddress{{
+				c.Redpanda.AdvertisedKafkaAPI = []NamedSocketAddress{{
 					SocketAddress: SocketAddress{
 						"174.32.64.2",
 						9092,
@@ -920,8 +919,8 @@ schema_registry: {}
 			name: "shall write config with tls configuration",
 			conf: func() *Config {
 				c := getValidConfig()
-				c.Redpanda.KafkaApi[0].Name = "outside"
-				c.Redpanda.KafkaApiTLS = []ServerTLS{{
+				c.Redpanda.KafkaAPI[0].Name = "outside"
+				c.Redpanda.KafkaAPITLS = []ServerTLS{{
 					Name:              "outside",
 					KeyFile:           "/etc/certs/cert.key",
 					TruststoreFile:    "/etc/certs/ca.crt",
@@ -990,7 +989,7 @@ schema_registry: {}
 			name: "shall write config with admin tls configuration",
 			conf: func() *Config {
 				c := getValidConfig()
-				c.Redpanda.AdminApiTLS = []ServerTLS{{
+				c.Redpanda.AdminAPITLS = []ServerTLS{{
 					KeyFile:           "/etc/certs/admin/cert.key",
 					TruststoreFile:    "/etc/certs/admin/ca.crt",
 					CertFile:          "/etc/certs/admin/cert.crt",
@@ -1408,7 +1407,7 @@ schema_registry: {}
 			name: "shall write a valid config file with scram configured",
 			conf: func() *Config {
 				c := getValidConfig()
-				c.Rpk.KafkaApi.SASL = &SASL{
+				c.Rpk.KafkaAPI.SASL = &SASL{
 					User:      "scram_user",
 					Password:  "scram_password",
 					Mechanism: "SCRAM-SHA-256",
@@ -1670,7 +1669,7 @@ func TestSetMode(t *testing.T) {
 				TuneDiskWriteCache: val,
 				TuneDiskIrq:        val,
 				TuneFstrim:         false,
-				TuneCpu:            val,
+				TuneCPU:            val,
 				TuneAioEvents:      val,
 				TuneClocksource:    val,
 				TuneSwappiness:     val,
@@ -1723,10 +1722,10 @@ func TestSetMode(t *testing.T) {
 			name: "it should preserve all the values that shouldn't be reset",
 			startingConf: func() *Config {
 				conf := Default()
-				conf.Rpk.AdminApi = RpkAdminApi{
+				conf.Rpk.AdminAPI = RpkAdminAPI{
 					Addresses: []string{"some.addr.com:33145"},
 				}
-				conf.Rpk.KafkaApi = RpkKafkaApi{
+				conf.Rpk.KafkaAPI = RpkKafkaAPI{
 					Brokers: []string{"192.168.76.54:9092"},
 					TLS: &TLS{
 						KeyFile:  "some-key.pem",
@@ -1739,10 +1738,10 @@ func TestSetMode(t *testing.T) {
 			mode: ModeProd,
 			expectedConfig: func() *Config {
 				conf := fillRpkConfig(ModeProd)()
-				conf.Rpk.AdminApi = RpkAdminApi{
+				conf.Rpk.AdminAPI = RpkAdminAPI{
 					Addresses: []string{"some.addr.com:33145"},
 				}
-				conf.Rpk.KafkaApi = RpkKafkaApi{
+				conf.Rpk.KafkaAPI = RpkKafkaAPI{
 					Brokers: []string{"192.168.76.54:9092"},
 					TLS: &TLS{
 						KeyFile:  "some-key.pem",
@@ -1796,7 +1795,7 @@ func TestCheckConfig(t *testing.T) {
 			name: "shall return an error when id of server is negative",
 			conf: func() *Config {
 				c := getValidConfig()
-				c.Redpanda.Id = -100
+				c.Redpanda.ID = -100
 				return c
 			},
 			expected: []string{"redpanda.node_id can't be a negative integer"},
@@ -1823,7 +1822,7 @@ func TestCheckConfig(t *testing.T) {
 			name: "shall return an error when the Kafka API port is 0",
 			conf: func() *Config {
 				c := getValidConfig()
-				c.Redpanda.KafkaApi[0].Port = 0
+				c.Redpanda.KafkaAPI[0].Port = 0
 				return c
 			},
 			expected: []string{"redpanda.kafka_api.0.port can't be 0"},
@@ -1832,7 +1831,7 @@ func TestCheckConfig(t *testing.T) {
 			name: "shall return an error when the Kafka API address is empty",
 			conf: func() *Config {
 				c := getValidConfig()
-				c.Redpanda.KafkaApi[0].Address = ""
+				c.Redpanda.KafkaAPI[0].Address = ""
 				return c
 			},
 			expected: []string{"redpanda.kafka_api.0.address can't be empty"},
@@ -1912,7 +1911,7 @@ func TestReadAsJSON(t *testing.T) {
 			name: "it should load the config as JSON",
 			before: func(fs afero.Fs) error {
 				conf := Default()
-				conf.Redpanda.KafkaApi[0].Name = "internal"
+				conf.Redpanda.KafkaAPI[0].Name = "internal"
 				mgr := NewManager(fs)
 				return mgr.Write(conf)
 			},
@@ -2006,7 +2005,7 @@ func TestReadFlat(t *testing.T) {
 			SocketAddress{"192.168.167.1", 1337},
 		},
 	}
-	conf.Redpanda.AdvertisedKafkaApi = []NamedSocketAddress{{
+	conf.Redpanda.AdvertisedKafkaAPI = []NamedSocketAddress{{
 		SocketAddress: SocketAddress{
 			Address: "127.0.0.1",
 			Port:    9092,
@@ -2019,7 +2018,7 @@ func TestReadFlat(t *testing.T) {
 		},
 	}}
 
-	conf.Redpanda.KafkaApi = []NamedSocketAddress{{
+	conf.Redpanda.KafkaAPI = []NamedSocketAddress{{
 		SocketAddress: SocketAddress{
 			Address: "192.168.92.34",
 			Port:    9092,
@@ -2032,7 +2031,7 @@ func TestReadFlat(t *testing.T) {
 		},
 	}}
 
-	conf.Redpanda.KafkaApiTLS = []ServerTLS{{
+	conf.Redpanda.KafkaAPITLS = []ServerTLS{{
 		Name:     "internal",
 		KeyFile:  "/some/key/file.pem",
 		CertFile: "some/cert/file.crt",
@@ -2045,7 +2044,7 @@ func TestReadFlat(t *testing.T) {
 		RequireClientAuth: true,
 	}}
 
-	conf.Redpanda.AdminApi = []NamedSocketAddress{{
+	conf.Redpanda.AdminAPI = []NamedSocketAddress{{
 		SocketAddress: SocketAddress{
 			Address: "192.168.92.34",
 			Port:    9644,
@@ -2058,7 +2057,7 @@ func TestReadFlat(t *testing.T) {
 		},
 	}}
 
-	conf.Redpanda.AdminApiTLS = []ServerTLS{{
+	conf.Redpanda.AdminAPITLS = []ServerTLS{{
 		Name:     "internal",
 		KeyFile:  "/some/key/file.pem",
 		CertFile: "some/cert/file.crt",
@@ -2095,7 +2094,7 @@ func TestWriteAndGenerateNodeUuid(t *testing.T) {
 	require.NoError(t, err)
 	err = mgr.WriteNodeUUID(conf)
 	require.NoError(t, err)
-	require.NotEqual(t, "", conf.NodeUuid)
+	require.NotEqual(t, "", conf.NodeUUID)
 	readConf, err := mgr.Read(path)
 	require.NoError(t, err)
 	require.Exactly(t, conf, readConf)

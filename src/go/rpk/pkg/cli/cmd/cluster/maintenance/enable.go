@@ -36,13 +36,13 @@ node exists that is already in maintenance mode then an error will be returned.
 `,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			nodeId, err := strconv.Atoi(args[0])
+			nodeID, err := strconv.Atoi(args[0])
 			if err != nil {
 				out.MaybeDie(err, "could not parse node id: %s: %v", args[0], err)
 			}
 
-			if nodeId < 0 {
-				out.Die("invalid node id: %d", nodeId)
+			if nodeID < 0 {
+				out.Die("invalid node id: %d", nodeID)
 			}
 
 			p := config.ParamsFromCommand(cmd)
@@ -52,8 +52,8 @@ node exists that is already in maintenance mode then an error will be returned.
 			client, err := admin.NewClient(fs, cfg)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-			err = client.EnableMaintenanceMode(nodeId)
-			var he *admin.HttpError
+			err = client.EnableMaintenanceMode(nodeID)
+			var he *admin.HTTPError
 			if errors.As(err, &he) {
 				if he.Response.StatusCode == 404 {
 					body, bodyErr := he.DecodeGenericErrorBody()
@@ -68,8 +68,8 @@ node exists that is already in maintenance mode then an error will be returned.
 				}
 			}
 
-			out.MaybeDie(err, "error enabling maintenance mode for node %d: %v", nodeId, err)
-			fmt.Printf("Successfully enabled maintenance mode for node %d\n", nodeId)
+			out.MaybeDie(err, "error enabling maintenance mode for node %d: %v", nodeID, err)
+			fmt.Printf("Successfully enabled maintenance mode for node %d\n", nodeID)
 
 			if !wait {
 				return
@@ -80,7 +80,7 @@ node exists that is already in maintenance mode then an error will be returned.
 			var table *out.TabWriter
 			retries := 3
 			for {
-				b, err := client.Broker(nodeId)
+				b, err := client.Broker(nodeID)
 				if err == nil && b.Maintenance == nil {
 					err = fmt.Errorf("maintenance mode not supported. upgrade in progress?")
 					// since admin api client uses `sendAny` it is possible that

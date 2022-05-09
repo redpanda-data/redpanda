@@ -1,7 +1,104 @@
 run:
   allow-parallel-runners: true
 
+# golangci-lint by default ignores some staticcheck and vet raised issues that
+# are actually important to catch. The following ensures that we do not ignore
+# those tools ever.
+issues:
+  exclude-use-default: false
+
+# We opt out of all suggested linters and manually pick what we want.
+# Please do not use enable-all.
 linters:
   disable-all: true
   enable:
+  # Enabled by default linters:
+    - deadcode
     - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - structcheck
+    - typecheck
+    - unused
+    - varcheck
+  # Disabled by default
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - contextcheck
+    - durationcheck
+    - errname
+    - errorlint
+    - exportloopref
+    - godot
+    - goprintffuncname
+    - misspell
+    - nilerr
+    - noctx
+    - nolintlint
+    - revive
+    - tenv
+    - unconvert
+    - wastedassign
+
+linters-settings:
+  # We do not want to enforce every usage of fmt.Errorf to use %w.
+  errorlint:
+    errorf: false
+
+  # If we want to opt out of a lint, we require an explanation.
+  nolintlint:
+    allow-leading-space: true
+    allow-unused: false
+    require-explanation: true
+    require-specific: true
+
+  # Revive is yet another metalinter with a lot of useful lints. 
+  # The below opts in to all the ones we would like to use.
+  revive:
+    ignore-generated-header: true
+    severity: warning
+    confidence: 0.8
+    error-code: 0
+    warning-code: 0
+    rules:
+      - name: atomic
+      - name: blank-imports
+      - name: bool-literal-in-expr
+      - name: call-to-gc
+      - name: confusing-results
+      - name: constant-logical-expr
+      - name: context-as-argument
+      - name: context-keys-type
+      - name: defer
+      - name: dot-imports
+      - name: duplicated-imports
+      - name: early-return
+      - name: error-naming
+      - name: error-return
+      - name: error-strings
+      - name: errorf
+      - name: get-return
+      - name: identical-branches
+      - name: if-return
+      - name: modifies-value-receiver
+      - name: optimize-operands-order
+      - name: package-comments
+      - name: range
+      - name: range-val-in-closure
+      - name: receiver-naming
+      - name: string-of-int
+      - name: struct-tag
+      - name: superfluous-else
+      - name: time-equal
+      - name: time-naming
+      - name: unconditional-recursion
+      - name: unnecessary-stmt
+      - name: unreachable-code
+      - name: unused-parameter
+      - name: unused-receiver
+      - name: useless-break
+      - name: var-declaration
+      - name: var-naming
+      - name: waitgroup-by-value

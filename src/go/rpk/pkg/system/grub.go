@@ -152,7 +152,7 @@ func matchAndSplitCmdOptions(optLine string) []string {
 	return nil
 }
 
-func splitGrubOption(opt string) (string, string) {
+func splitGrubOption(opt string) (key, val string) {
 	splitted := strings.Split(opt, "=")
 	if len(splitted) == 1 {
 		return splitted[0], ""

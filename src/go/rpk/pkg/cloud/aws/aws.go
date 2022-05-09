@@ -26,11 +26,11 @@ type InitializedAwsVendor struct {
 	client *ec2metadata.EC2Metadata
 }
 
-func (v *AwsVendor) Name() string {
+func (*AwsVendor) Name() string {
 	return name
 }
 
-func (v *AwsVendor) Init() (vendor.InitializedVendor, error) {
+func (*AwsVendor) Init() (vendor.InitializedVendor, error) {
 	s, err := session.NewSession()
 	if err != nil {
 		return nil, err
@@ -42,11 +42,11 @@ func (v *AwsVendor) Init() (vendor.InitializedVendor, error) {
 	return nil, errors.New("vendor AWS couldn't be initialized")
 }
 
-func (v *InitializedAwsVendor) VmType() (string, error) {
+func (v *InitializedAwsVendor) VMType() (string, error) {
 	return v.client.GetMetadata("instance-type")
 }
 
-func (v *InitializedAwsVendor) Name() string {
+func (*InitializedAwsVendor) Name() string {
 	return name
 }
 

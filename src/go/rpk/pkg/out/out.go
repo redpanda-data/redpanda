@@ -78,7 +78,7 @@ func Exit(msg string, args ...interface{}) {
 
 // HandleShardError prints a message and potentially exits depending on the
 // inner error. If the error is a shard error and not everything failed, this
-// allows the cli to continue
+// allows the cli to continue.
 func HandleShardError(name string, err error) {
 	var se *kadm.ShardErrors
 	var ae *kadm.AuthError

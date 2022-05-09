@@ -11,6 +11,7 @@ package topic
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -112,7 +113,7 @@ func NewProduceCommand(fs afero.Fs) *cobra.Command {
 			out.MaybeDie(err, "unable to parse input headers: %v", err)
 			headers := make([]kgo.RecordHeader, 0, len(kvs))
 			for k, v := range kvs {
-				headers = append(headers, kgo.RecordHeader{k, []byte(v)})
+				headers = append(headers, kgo.RecordHeader{Key: k, Value: []byte(v)})
 			}
 
 			// We are now ready to produce.
@@ -134,7 +135,7 @@ func NewProduceCommand(fs afero.Fs) *cobra.Command {
 					r.Key = []byte(key)
 				}
 				if err := inf.ReadRecordInto(r); err != nil {
-					if err != io.EOF {
+					if !errors.Is(err, io.EOF) {
 						fmt.Fprintf(os.Stderr, "record read error: %v\n", err)
 					}
 					return

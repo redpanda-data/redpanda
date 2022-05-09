@@ -14,7 +14,7 @@ import (
 	"net/http"
 )
 
-// Replica contains the information of a partition replica
+// Replica contains the information of a partition replica.
 type Replica struct {
 	NodeID int `json:"node_id"`
 	Core   int `json:"core"`
@@ -31,7 +31,7 @@ type Partition struct {
 	Replicas    []Replica `json:"replicas"`
 }
 
-// GetPartition returns detailed partition information
+// GetPartition returns detailed partition information.
 func (a *AdminAPI) GetPartition(
 	namespace, topic string, partition int,
 ) (Partition, error) {

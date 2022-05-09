@@ -21,13 +21,13 @@ func DirectoryIsWriteable(fs afero.Fs, path string) (bool, error) {
 	if exists, _ := afero.Exists(fs, path); !exists {
 		err := fs.MkdirAll(path, 0755)
 		if err != nil {
-			return false, nil
+			return false, err
 		}
 	}
 	testFile := filepath.Join(path, "test_file")
 	err := afero.WriteFile(fs, testFile, []byte{0}, 0644)
 	if err != nil {
-		return false, nil
+		return false, err
 	}
 	err = fs.Remove(testFile)
 	if err != nil {

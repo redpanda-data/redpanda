@@ -114,9 +114,7 @@ func (b *blockDevices) GetDirectoryDevices(path string) ([]string, error) {
 			}
 			devices = append(devices, directoryDevices...)
 		} else {
-			log.Error("Failed to create device"+
-				" while 'df -P %s' returns a '%s'",
-				path, devicePath)
+			log.Errorf("Failed to create device while 'df -P %s' returns a '%s'", path, devicePath)
 		}
 	}
 	if len(devices) == 0 {
@@ -209,7 +207,7 @@ func (b *blockDevices) getDevicesIRQs(
 	return diskIRQs, nil
 }
 
-func (b *blockDevices) getDeviceControllerPath(
+func (*blockDevices) getDeviceControllerPath(
 	devSystemPath string,
 ) (string, error) {
 	log.Debugf("Getting controller path for '%s'", devSystemPath)

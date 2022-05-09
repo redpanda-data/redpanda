@@ -23,7 +23,7 @@ import (
 func getValidTunerParams() *factory.TunerParams {
 	return &factory.TunerParams{
 		Mode:          "",
-		CpuMask:       "00000000000000000000000000000001",
+		CPUMask:       "00000000000000000000000000000001",
 		RebootAllowed: true,
 		Disks:         []string{"dev1"},
 		Directories:   []string{"/var/lib/redpanda"},

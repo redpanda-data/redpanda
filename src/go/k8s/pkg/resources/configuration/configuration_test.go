@@ -47,20 +47,20 @@ func TestFlatProperties(t *testing.T) {
 	err := config.SetAdditionalFlatProperties(map[string]string{"redpanda.a": "b", "node_uuid": "uuid"})
 	require.NoError(t, err)
 	assert.Equal(t, "b", config.ClusterConfiguration["a"])
-	assert.Equal(t, "uuid", config.NodeConfiguration.NodeUuid)
+	assert.Equal(t, "uuid", config.NodeConfiguration.NodeUUID)
 	assert.NotContains(t, config.NodeConfiguration.Redpanda.Other, "a")
 
 	config = configuration.GlobalConfiguration{Mode: configuration.GlobalConfigurationModeClassic}
 	err = config.SetAdditionalFlatProperties(map[string]string{"redpanda.a": "b", "node_uuid": "uuid"})
 	require.NoError(t, err)
-	assert.Equal(t, "uuid", config.NodeConfiguration.NodeUuid)
+	assert.Equal(t, "uuid", config.NodeConfiguration.NodeUUID)
 	assert.Equal(t, "b", config.NodeConfiguration.Redpanda.Other["a"])
 	assert.NotContains(t, config.ClusterConfiguration, "a")
 
 	config = configuration.GlobalConfiguration{Mode: configuration.GlobalConfigurationModeMixed}
 	err = config.SetAdditionalFlatProperties(map[string]string{"redpanda.a": "b", "node_uuid": "uuid"})
 	require.NoError(t, err)
-	assert.Equal(t, "uuid", config.NodeConfiguration.NodeUuid)
+	assert.Equal(t, "uuid", config.NodeConfiguration.NodeUUID)
 	assert.Equal(t, "b", config.NodeConfiguration.Redpanda.Other["a"])
 	assert.Equal(t, "b", config.ClusterConfiguration["a"])
 }

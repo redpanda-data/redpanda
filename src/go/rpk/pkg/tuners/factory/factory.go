@@ -42,7 +42,7 @@ var (
 		"disk_write_cache":      (*tunersFactory).newGcpWriteCacheTuner,
 		"fstrim":                (*tunersFactory).newFstrimTuner,
 		"net":                   (*tunersFactory).newNetworkTuner,
-		"cpu":                   (*tunersFactory).newCpuTuner,
+		"cpu":                   (*tunersFactory).newCPUTuner,
 		"aio_events":            (*tunersFactory).newMaxAIOEventsTuner,
 		"clocksource":           (*tunersFactory).newClockSourceTuner,
 		"swappiness":            (*tunersFactory).newSwappinessTuner,
@@ -54,7 +54,7 @@ var (
 
 type TunerParams struct {
 	Mode          string
-	CpuMask       string
+	CPUMask       string
 	RebootAllowed bool
 	Disks         []string
 	Directories   []string
@@ -69,7 +69,7 @@ type tunersFactory struct {
 	fs                afero.Fs
 	conf              config.Config
 	irqDeviceInfo     irq.DeviceInfo
-	cpuMasks          irq.CpuMasks
+	cpuMasks          irq.CPUMasks
 	irqBalanceService irq.BalanceService
 	irqProcFile       irq.ProcFile
 	blockDevices      disk.BlockDevices
@@ -112,7 +112,7 @@ func newTunersFactory(
 		conf:              conf,
 		irqProcFile:       irqProcFile,
 		irqDeviceInfo:     irqDeviceInfo,
-		cpuMasks:          irq.NewCpuMasks(fs, hwloc.NewHwLocCmd(proc, timeout), executor),
+		cpuMasks:          irq.NewCPUMasks(fs, hwloc.NewHwLocCmd(proc, timeout), executor),
 		irqBalanceService: irq.NewBalanceService(fs, proc, executor, timeout),
 		blockDevices:      disk.NewBlockDevices(fs, irqDeviceInfo, irqProcFile, proc, timeout),
 		grub:              system.NewGrub(os.NewCommands(proc), proc, fs, executor, timeout),
@@ -148,7 +148,7 @@ func IsTunerEnabled(tuner string, rpkConfig config.RpkConfig) bool {
 	case "net":
 		return rpkConfig.TuneNetwork
 	case "cpu":
-		return rpkConfig.TuneCpu
+		return rpkConfig.TuneCPU
 	case "aio_events":
 		return rpkConfig.TuneAioEvents
 	case "clocksource":
@@ -178,7 +178,7 @@ func (factory *tunersFactory) newDiskIRQTuner(
 	return tuners.NewDiskIRQTuner(
 		factory.fs,
 		irq.ModeFromString(params.Mode),
-		params.CpuMask,
+		params.CPUMask,
 		params.Directories,
 		params.Disks,
 		factory.irqDeviceInfo,
@@ -241,7 +241,7 @@ func (factory *tunersFactory) newNetworkTuner(
 	}
 	return tuners.NewNetTuner(
 		irq.ModeFromString(params.Mode),
-		params.CpuMask,
+		params.CPUMask,
 		params.Nics,
 		factory.fs,
 		factory.irqDeviceInfo,
@@ -253,8 +253,8 @@ func (factory *tunersFactory) newNetworkTuner(
 	)
 }
 
-func (factory *tunersFactory) newCpuTuner(params *TunerParams) tuners.Tunable {
-	return cpu.NewCpuTuner(
+func (factory *tunersFactory) newCPUTuner(params *TunerParams) tuners.Tunable {
+	return cpu.NewCPUTuner(
 		factory.cpuMasks,
 		factory.grub,
 		factory.fs,
@@ -264,19 +264,19 @@ func (factory *tunersFactory) newCpuTuner(params *TunerParams) tuners.Tunable {
 }
 
 func (factory *tunersFactory) newMaxAIOEventsTuner(
-	params *TunerParams,
+	_ *TunerParams,
 ) tuners.Tunable {
 	return tuners.NewMaxAIOEventsTuner(factory.fs, factory.executor)
 }
 
 func (factory *tunersFactory) newClockSourceTuner(
-	params *TunerParams,
+	_ *TunerParams,
 ) tuners.Tunable {
 	return tuners.NewClockSourceTuner(factory.fs, factory.executor)
 }
 
 func (factory *tunersFactory) newSwappinessTuner(
-	params *TunerParams,
+	_ *TunerParams,
 ) tuners.Tunable {
 	return tuners.NewSwappinessTuner(factory.fs, factory.executor)
 }
@@ -285,14 +285,12 @@ func (factory *tunersFactory) newTHPTuner(_ *TunerParams) tuners.Tunable {
 	return tuners.NewEnableTHPTuner(factory.fs, factory.executor)
 }
 
-func (factory *tunersFactory) newCoredumpTuner(
-	params *TunerParams,
-) tuners.Tunable {
+func (factory *tunersFactory) newCoredumpTuner(_ *TunerParams) tuners.Tunable {
 	return coredump.NewCoredumpTuner(factory.fs, factory.conf, factory.executor)
 }
 
 func (factory *tunersFactory) newBallastFileTuner(
-	params *TunerParams,
+	_ *TunerParams,
 ) tuners.Tunable {
 	return ballast.NewBallastFileTuner(factory.conf, factory.executor)
 }
@@ -302,8 +300,8 @@ func MergeTunerParamsConfig(
 ) (*TunerParams, error) {
 	if len(params.Nics) == 0 {
 		addrs := []string{conf.Redpanda.RPCServer.Address}
-		if len(conf.Redpanda.KafkaApi) > 0 {
-			addrs = append(addrs, conf.Redpanda.KafkaApi[0].Address)
+		if len(conf.Redpanda.KafkaAPI) > 0 {
+			addrs = append(addrs, conf.Redpanda.KafkaAPI[0].Address)
 		}
 		nics, err := net.GetInterfacesByIps(
 			addrs...,
@@ -323,8 +321,8 @@ func FillTunerParamsWithValuesFromConfig(
 	params *TunerParams, conf *config.Config,
 ) error {
 	addrs := []string{conf.Redpanda.RPCServer.Address}
-	if len(conf.Redpanda.KafkaApi) > 0 {
-		addrs = append(addrs, conf.Redpanda.KafkaApi[0].Address)
+	if len(conf.Redpanda.KafkaAPI) > 0 {
+		addrs = append(addrs, conf.Redpanda.KafkaAPI[0].Address)
 	}
 	nics, err := net.GetInterfacesByIps(
 		addrs...,

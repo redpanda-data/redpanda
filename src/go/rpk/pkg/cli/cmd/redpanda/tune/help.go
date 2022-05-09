@@ -74,7 +74,7 @@ This tuner performs the following operations:
 - Disable Hyper Threading
 - Sets the ACPI-cpufreq governor to ‘performance’
 
-Additionaly if system reboot is allowed:
+Additionally if system reboot is allowed:
 - Disable Hyper Threading via Kernel boot parameter
 - Disable Intel P-States
 - Disable Intel C-States

@@ -57,6 +57,6 @@ func (e *scriptRenderingExecutor) Execute(cmd commands.Command) error {
 	return e.writer.Flush()
 }
 
-func (e *scriptRenderingExecutor) IsLazy() bool {
+func (*scriptRenderingExecutor) IsLazy() bool {
 	return true
 }

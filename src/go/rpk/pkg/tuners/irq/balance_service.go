@@ -83,10 +83,12 @@ func (balanceService *balanceService) BanIRQsAndRestart(
 		return err
 	}
 
-	var optionLines []string
-	newOptions := ""
+	var (
+		optionLines []string
+		newOptions  string
+		newLines    []string
+	)
 	optionsKeyPattern := regexp.MustCompile(fmt.Sprintf("^\\s*%s", serviceInfo.optionsKey))
-	var newLines []string
 	for _, line := range configLines {
 		if optionsKeyPattern.MatchString(line) {
 			optionLines = append(optionLines, line)
@@ -94,12 +96,14 @@ func (balanceService *balanceService) BanIRQsAndRestart(
 			newLines = append(newLines, line)
 		}
 	}
-	if len(optionLines) == 0 {
+
+	switch len(optionLines) {
+	case 0:
 		newOptions = fmt.Sprintf("%s=\"", serviceInfo.optionsKey)
-	} else if len(optionLines) == 1 {
+	case 1:
 		newOptions = regexp.MustCompile("\"\\s*$").ReplaceAllString(
 			strings.TrimRight(optionLines[0], " "), "")
-	} else {
+	default:
 		return fmt.Errorf("invalid format in '%s' - more than one line with '%s' key",
 			serviceInfo.configFile, serviceInfo.optionsKey)
 	}
@@ -202,7 +206,10 @@ func (balanceService *balanceService) getBalanceServiceInfo() (
 			configFile = "/etc/sysconfig/irqbalance"
 			optionsKey = "IRQBALANCE_ARGS"
 			systemd = true
-		} else if exists, _ := afero.Exists(fs, "/etc/conf.d/irqbalance"); exists {
+		} else if exists, _ := afero.Exists(fs, "/etc/conf.d/irqbalance"); !exists {
+			log.Error("Unknown system configuration - not restarting irqbalance!")
+			return nil, errors.New("Unsupported irqbalance service configuration")
+		} else {
 			configFile = "/etc/conf.d/irqbalance"
 			optionsKey = "IRQBALANCE_OPTS"
 			lines, err := utils.ReadFileLines(fs, "/proc/1/comm")
@@ -210,9 +217,6 @@ func (balanceService *balanceService) getBalanceServiceInfo() (
 				return nil, err
 			}
 			systemd = strings.Contains(lines[0], "systemd")
-		} else {
-			log.Error("Unknown system configuration - not restarting irqbalance!")
-			return nil, errors.New("Unsupported irqbalance service configuration")
 		}
 	}
 	return &balanceServiceInfo{

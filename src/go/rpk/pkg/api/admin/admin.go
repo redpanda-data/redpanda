@@ -33,12 +33,12 @@ import (
 	"github.com/spf13/afero"
 )
 
-// ErrNoAdminAPILeader happen when there's no leader for the Admin API
+// ErrNoAdminAPILeader happen when there's no leader for the Admin API.
 var ErrNoAdminAPILeader = errors.New("no Admin API leader found")
 
-type HttpError struct {
+type HTTPError struct {
 	Method   string
-	Url      string
+	URL      string
 	Response *http.Response
 	Body     []byte
 }
@@ -57,8 +57,8 @@ type GenericErrorBody struct {
 // AdminAPI is a client to interact with Redpanda's admin server.
 type AdminAPI struct {
 	urls                []string
-	brokerIdToUrlsMutex sync.Mutex
-	brokerIdToUrls      map[int]string
+	brokerIDToUrlsMutex sync.Mutex
+	brokerIDToUrls      map[int]string
 	retryClient         *pester.Client
 	oneshotClient       *http.Client
 	basicCredentials    BasicCredentials
@@ -66,8 +66,8 @@ type AdminAPI struct {
 }
 
 func getBasicCredentials(cfg *config.Config) BasicCredentials {
-	if cfg.Rpk.KafkaApi.SASL != nil {
-		return BasicCredentials{Username: cfg.Rpk.KafkaApi.SASL.User, Password: cfg.Rpk.KafkaApi.SASL.Password}
+	if cfg.Rpk.KafkaAPI.SASL != nil {
+		return BasicCredentials{Username: cfg.Rpk.KafkaAPI.SASL.User, Password: cfg.Rpk.KafkaAPI.SASL.Password}
 	} else {
 		return BasicCredentials{Username: "", Password: ""}
 	}
@@ -76,7 +76,7 @@ func getBasicCredentials(cfg *config.Config) BasicCredentials {
 // NewClient returns an AdminAPI client that talks to each of the addresses in
 // the rpk.admin_api section of the config.
 func NewClient(fs afero.Fs, cfg *config.Config) (*AdminAPI, error) {
-	a := &cfg.Rpk.AdminApi
+	a := &cfg.Rpk.AdminAPI
 	addrs := a.Addresses
 	tc, err := a.TLS.Config(fs)
 	if err != nil {
@@ -95,7 +95,7 @@ func NewHostClient(
 		return nil, errors.New("invalid empty admin host")
 	}
 
-	a := &cfg.Rpk.AdminApi
+	a := &cfg.Rpk.AdminAPI
 	addrs := a.Addresses
 	tc, err := a.TLS.Config(fs)
 	if err != nil {
@@ -164,7 +164,7 @@ func newAdminAPI(
 		oneshotClient:    &http.Client{Timeout: 10 * time.Second},
 		basicCredentials: creds,
 		tlsConfig:        tlsConfig,
-		brokerIdToUrls:   make(map[int]string),
+		brokerIDToUrls:   make(map[int]string),
 	}
 	if tlsConfig != nil {
 		a.retryClient.Transport = &http.Transport{TLSClientConfig: tlsConfig}
@@ -221,9 +221,9 @@ func (a *AdminAPI) mapBrokerIDsToURLs() {
 		if err != nil {
 			return err
 		}
-		a.brokerIdToUrlsMutex.Lock()
-		a.brokerIdToUrls[nc.NodeID] = aa.urls[0]
-		a.brokerIdToUrlsMutex.Unlock()
+		a.brokerIDToUrlsMutex.Lock()
+		a.brokerIDToUrls[nc.NodeID] = aa.urls[0]
+		a.brokerIDToUrlsMutex.Unlock()
 		return nil
 	})
 	if err != nil {
@@ -231,7 +231,7 @@ func (a *AdminAPI) mapBrokerIDsToURLs() {
 	}
 }
 
-// GetLeaderID returns the broker ID of the leader of the Admin API
+// GetLeaderID returns the broker ID of the leader of the Admin API.
 func (a *AdminAPI) GetLeaderID() (*int, error) {
 	pa, err := a.GetPartition("redpanda", "controller", 0)
 	if pa.LeaderID == -1 {
@@ -282,7 +282,7 @@ func (a *AdminAPI) sendAny(method, path string, body, into interface{}) error {
 }
 
 // sendToLeader sends a single request to the leader of the Admin API for Redpanda >= 21.11.1
-// otherwise, it broadcasts the request
+// otherwise, it broadcasts the request.
 func (a *AdminAPI) sendToLeader(
 	method, path string, body, into interface{},
 ) error {
@@ -321,7 +321,7 @@ func (a *AdminAPI) sendToLeader(
 		} else {
 			// Got a leader ID, check if it's resolvable
 			leaderURL, err = a.brokerIDToURL(*leaderID)
-			if err != nil && len(a.brokerIdToUrls) == 0 {
+			if err != nil && len(a.brokerIDToUrls) == 0 {
 				// Could not map any IDs: probably this is an old redpanda
 				// with no node_config endpoint.  Fall back to broadcast.
 				return a.sendAll(method, path, body, into)
@@ -365,9 +365,9 @@ func (a *AdminAPI) brokerIDToURL(brokerID int) (string, error) {
 }
 
 func (a *AdminAPI) getURLFromBrokerID(brokerID int) (string, bool) {
-	a.brokerIdToUrlsMutex.Lock()
-	url, ok := a.brokerIdToUrls[brokerID]
-	a.brokerIdToUrlsMutex.Unlock()
+	a.brokerIDToUrlsMutex.Lock()
+	url, ok := a.brokerIDToUrls[brokerID]
+	a.brokerIDToUrlsMutex.Unlock()
 	return url, ok
 }
 
@@ -453,7 +453,7 @@ func (a *AdminAPI) sendAll(method, path string, body, into interface{}) error {
 }
 
 // eachBroker creates a single host AdminAPI for each of the brokers and calls `fn`
-// for each of them in a go routine
+// for each of them in a go routine.
 func (a *AdminAPI) eachBroker(fn func(aa *AdminAPI) error) error {
 	var grp multierror.Group
 	for _, url := range a.urls {
@@ -520,9 +520,9 @@ func (a *AdminAPI) sendAndReceive(
 		req.SetBasicAuth(a.basicCredentials.Username, a.basicCredentials.Password)
 	}
 
-	const applicationJson = "application/json"
-	req.Header.Set("Content-Type", applicationJson)
-	req.Header.Set("Accept", applicationJson)
+	const applicationJSON = "application/json"
+	req.Header.Set("Content-Type", applicationJSON)
+	req.Header.Set("Accept", applicationJSON)
 
 	// Issue request to the appropriate client, depending on retry behaviour
 	var res *http.Response
@@ -549,19 +549,19 @@ func (a *AdminAPI) sendAndReceive(
 		if err != nil {
 			return nil, fmt.Errorf("request %s %s failed: %s, unable to read body: %w", method, url, status, err)
 		}
-		return nil, &HttpError{Response: res, Body: resBody}
+		return nil, &HTTPError{Response: res, Body: resBody}
 	}
 
 	return res, nil
 }
 
-func (he HttpError) DecodeGenericErrorBody() (GenericErrorBody, error) {
+func (he HTTPError) DecodeGenericErrorBody() (GenericErrorBody, error) {
 	var resp GenericErrorBody
 	err := json.Unmarshal(he.Body, &resp)
 	return resp, err
 }
 
-func (he HttpError) Error() string {
+func (he HTTPError) Error() string {
 	return fmt.Sprintf("request %s %s failed: %s, body: %q",
-		he.Method, he.Url, http.StatusText(he.Response.StatusCode), he.Body)
+		he.Method, he.URL, http.StatusText(he.Response.StatusCode), he.Body)
 }

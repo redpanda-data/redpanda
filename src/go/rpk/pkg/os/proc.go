@@ -35,7 +35,7 @@ func NewProc() Proc {
 
 type proc struct{}
 
-func (proc *proc) RunWithSystemLdPath(
+func (*proc) RunWithSystemLdPath(
 	timeout time.Duration, command string, args ...string,
 ) ([]string, error) {
 

@@ -86,11 +86,11 @@ func NewTuneCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 			} else {
 				tuners = strings.Split(args[0], ",")
 			}
-			cpuMask, err := hwloc.TranslateToHwLocCpuSet(cpuSet)
+			cpuMask, err := hwloc.TranslateToHwLocCPUSet(cpuSet)
 			if err != nil {
 				return err
 			}
-			tunerParams.CpuMask = cpuMask
+			tunerParams.CPUMask = cpuMask
 			conf, err := mgr.FindOrGenerate(configFile)
 			if err != nil {
 				if !interactive {
@@ -118,7 +118,7 @@ Would you like to continue with the default configuration?`,
 				tunerFactory = factory.NewDirectExecutorTunersFactory(
 					fs, *conf, timeout)
 			}
-			return tune(fs, conf, tuners, tunerFactory, &tunerParams)
+			return tune(conf, tuners, tunerFactory, &tunerParams)
 		},
 	}
 	command.Flags().StringVarP(&tunerParams.Mode,
@@ -203,7 +203,6 @@ func promptConfirmation(msg string, in io.Reader) (bool, error) {
 }
 
 func tune(
-	fs afero.Fs,
 	conf *config.Config,
 	tunerNames []string,
 	tunersFactory factory.TunersFactory,

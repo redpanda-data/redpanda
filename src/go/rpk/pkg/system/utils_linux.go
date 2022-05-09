@@ -18,9 +18,9 @@ func uname() (string, error) {
 		return "", err
 	}
 	str := ""
-	str += string(int8ToString(uname.Machine)) + " "
-	str += string(int8ToString(uname.Release)) + " "
-	str += string(int8ToString(uname.Version))
+	str += int8ToString(uname.Machine) + " "
+	str += int8ToString(uname.Release) + " "
+	str += int8ToString(uname.Version)
 	return str, nil
 
 }

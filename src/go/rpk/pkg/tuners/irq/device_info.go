@@ -98,7 +98,7 @@ func (deviceInfo *deviceInfo) GetIRQs(
 	return irqs, nil
 }
 
-func (deviceInfo *deviceInfo) getIRQsForLinesMatching(
+func (*deviceInfo) getIRQsForLinesMatching(
 	pattern string, irqToProcLineMap map[int]string,
 ) []int {
 	var irqs []int

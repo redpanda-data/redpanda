@@ -45,7 +45,7 @@ type netCheckersFactory struct {
 	irqDeviceInfo  irq.DeviceInfo
 	ethtool        ethtool.EthtoolWrapper
 	balanceService irq.BalanceService
-	cpuMasks       irq.CpuMasks
+	cpuMasks       irq.CPUMasks
 }
 
 func NewNetCheckersFactory(
@@ -54,7 +54,7 @@ func NewNetCheckersFactory(
 	irqDeviceInfo irq.DeviceInfo,
 	ethtool ethtool.EthtoolWrapper,
 	balanceService irq.BalanceService,
-	cpuMasks irq.CpuMasks,
+	cpuMasks irq.CPUMasks,
 ) NetCheckersFactory {
 	return &netCheckersFactory{
 		fs:             fs,
@@ -80,7 +80,7 @@ func (f *netCheckersFactory) NewNicIRQAffinityStaticChecker(
 				nic := network.NewNic(f.fs, f.irqProcFile, f.irqDeviceInfo, f.ethtool, ifaceName)
 				nicIRQs, err := network.CollectIRQs(nic)
 				if err != nil {
-					return false, nil
+					return false, err
 				}
 				IRQs = append(IRQs, nicIRQs...)
 			}
@@ -216,7 +216,7 @@ func (f *netCheckersFactory) NewNicNTupleCheckers(
 	return f.forNonVirtualInterfaces(interfaces, f.NewNicNTupleChecker)
 }
 
-func (f *netCheckersFactory) NewNicNTupleChecker(nic network.Nic) Checker {
+func (*netCheckersFactory) NewNicNTupleChecker(nic network.Nic) Checker {
 	return NewEqualityChecker(
 		NicNTupleChecker,
 		fmt.Sprintf("NIC %s NTuple set", nic.Name()),
@@ -279,7 +279,7 @@ func (f *netCheckersFactory) NewNicXpsChecker(nic network.Nic) Checker {
 	)
 }
 
-func (f *netCheckersFactory) NewRfsTableSizeChecker() Checker {
+func (*netCheckersFactory) NewRfsTableSizeChecker() Checker {
 	return NewIntChecker(
 		RfsTableEntriesChecker,
 		"RFS Table entries",

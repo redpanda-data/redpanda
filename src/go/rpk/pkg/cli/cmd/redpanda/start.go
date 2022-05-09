@@ -95,7 +95,7 @@ func updateConfigWithFlags(conf *config.Config, flags *pflag.FlagSet) {
 		conf.Rpk.Overprovisioned, _ = flags.GetBool(overprovisionedFlag)
 	}
 	if flags.Changed(nodeIDFlag) {
-		conf.Redpanda.Id, _ = flags.GetInt(nodeIDFlag)
+		conf.Redpanda.ID, _ = flags.GetInt(nodeIDFlag)
 	}
 }
 
@@ -192,7 +192,7 @@ func NewStartCommand(
 					",",
 				),
 			)
-			kafkaApi, err := parseNamedAddresses(
+			kafkaAPI, err := parseNamedAddresses(
 				kafkaAddr,
 				config.DefaultKafkaPort,
 			)
@@ -200,8 +200,8 @@ func NewStartCommand(
 				sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
-			if len(kafkaApi) > 0 {
-				conf.Redpanda.KafkaApi = kafkaApi
+			if len(kafkaAPI) > 0 {
+				conf.Redpanda.KafkaAPI = kafkaAPI
 			}
 
 			proxyAddr = stringSliceOr(
@@ -211,7 +211,7 @@ func NewStartCommand(
 					",",
 				),
 			)
-			proxyApi, err := parseNamedAddresses(
+			proxyAPI, err := parseNamedAddresses(
 				proxyAddr,
 				config.DefaultProxyPort,
 			)
@@ -219,11 +219,11 @@ func NewStartCommand(
 				sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
-			if len(proxyApi) > 0 {
+			if len(proxyAPI) > 0 {
 				if conf.Pandaproxy == nil {
 					conf.Pandaproxy = config.Default().Pandaproxy
 				}
-				conf.Pandaproxy.PandaproxyAPI = proxyApi
+				conf.Pandaproxy.PandaproxyAPI = proxyAPI
 			}
 
 			schemaRegAddr = stringSliceOr(
@@ -233,7 +233,7 @@ func NewStartCommand(
 					",",
 				),
 			)
-			schemaRegApi, err := parseNamedAddresses(
+			schemaRegAPI, err := parseNamedAddresses(
 				schemaRegAddr,
 				config.DefaultSchemaRegPort,
 			)
@@ -241,11 +241,11 @@ func NewStartCommand(
 				sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
-			if len(schemaRegApi) > 0 {
+			if len(schemaRegAPI) > 0 {
 				if conf.SchemaRegistry == nil {
 					conf.SchemaRegistry = config.Default().SchemaRegistry
 				}
-				conf.SchemaRegistry.SchemaRegistryAPI = schemaRegApi
+				conf.SchemaRegistry.SchemaRegistryAPI = schemaRegAPI
 			}
 
 			rpcAddr = stringOr(
@@ -271,7 +271,7 @@ func NewStartCommand(
 					",",
 				),
 			)
-			advKafkaApi, err := parseNamedAddresses(
+			advKafkaAPI, err := parseNamedAddresses(
 				advertisedKafka,
 				config.DefaultKafkaPort,
 			)
@@ -279,8 +279,8 @@ func NewStartCommand(
 				sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
-			if advKafkaApi != nil {
-				conf.Redpanda.AdvertisedKafkaApi = advKafkaApi
+			if advKafkaAPI != nil {
+				conf.Redpanda.AdvertisedKafkaAPI = advKafkaAPI
 			}
 
 			advertisedProxy = stringSliceOr(
@@ -290,7 +290,7 @@ func NewStartCommand(
 					",",
 				),
 			)
-			advProxyApi, err := parseNamedAddresses(
+			advProxyAPI, err := parseNamedAddresses(
 				advertisedProxy,
 				config.DefaultProxyPort,
 			)
@@ -298,11 +298,11 @@ func NewStartCommand(
 				sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
-			if advProxyApi != nil {
+			if advProxyAPI != nil {
 				if conf.Pandaproxy == nil {
 					conf.Pandaproxy = config.Default().Pandaproxy
 				}
-				conf.Pandaproxy.AdvertisedPandaproxyAPI = advProxyApi
+				conf.Pandaproxy.AdvertisedPandaproxyAPI = advProxyAPI
 			}
 
 			advertisedRPC = stringOr(
@@ -710,13 +710,13 @@ func tuneAll(
 		if err != nil {
 			return []api.TunerPayload{}, err
 		}
-		params.CpuMask = cpuMask
+		params.CPUMask = cpuMask
 	} else {
-		cpuMask, err := hwloc.TranslateToHwLocCpuSet(cpuSet)
+		cpuMask, err := hwloc.TranslateToHwLocCPUSet(cpuSet)
 		if err != nil {
 			return []api.TunerPayload{}, err
 		}
-		params.CpuMask = cpuMask
+		params.CPUMask = cpuMask
 	}
 
 	err := factory.FillTunerParamsWithValuesFromConfig(params, conf)
@@ -792,7 +792,7 @@ func check(
 		}
 		payloads = append(payloads, payload)
 		if !result.IsOk {
-			if action, exists := checkFailedActions[result.CheckerId]; exists {
+			if action, exists := checkFailedActions[result.CheckerID]; exists {
 				action(&result)
 			}
 			msg := fmt.Sprintf("System check '%s' failed. Required: %v, Current %v",

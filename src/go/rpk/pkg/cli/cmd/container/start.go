@@ -285,7 +285,7 @@ func startCluster(
 
 	err = grp.Wait()
 	if err != nil {
-		return fmt.Errorf("Error restarting the cluster: %v", err)
+		return fmt.Errorf("error restarting the cluster: %v", err)
 	}
 	err = waitForCluster(check(nodes), retries)
 	if err != nil {
@@ -348,7 +348,7 @@ func restartCluster(
 	}
 	err = grp.Wait()
 	if err != nil {
-		return nil, fmt.Errorf("Error restarting the cluster: %v", err)
+		return nil, fmt.Errorf("error restarting the cluster: %v", err)
 	}
 	err = waitForCluster(check(nodes), retries)
 	if err != nil {
@@ -379,7 +379,7 @@ func checkBrokers(nodes []node) func() error {
 		}
 		if len(brokers) != len(nodes) {
 			return fmt.Errorf(
-				"Expected %d nodes, got %d.",
+				"expected %d nodes, got %d",
 				len(nodes),
 				len(brokers),
 			)

@@ -53,7 +53,7 @@ func NewFstrimTuner(fs afero.Fs, executor executors.Executor) Tunable {
 	return &fstrimTuner{fs: fs, executor: executor}
 }
 
-func (t *fstrimTuner) CheckIfSupported() (bool, string) {
+func (*fstrimTuner) CheckIfSupported() (bool, string) {
 	// Check that systemd is available
 	c, err := systemd.NewDbusClient()
 	if err != nil {
@@ -80,7 +80,7 @@ func (t *fstrimTuner) Tune() TuneResult {
 func tuneFstrim(
 	fs afero.Fs, exe executors.Executor, c systemd.Client, proc os.Proc,
 ) TuneResult {
-	// Check if the default timer (fstrim.timer) is available
+	// Check if the default timer (fstrim.timer) is available.
 	defaultAvailable, err := startIfAvailable(exe, c, timerName)
 	if err != nil {
 		return NewTuneError(err)
@@ -97,7 +97,7 @@ func tuneFstrim(
 	if customAvailable {
 		return NewTuneResult(false)
 	}
-	// Other wise, install an rpk-provided fstrim service
+	// Other wise, install an rpk-provided fstrim service.
 	fstrimBinPath, err := whichFstrim(proc, timeout)
 	if err != nil {
 		return NewTuneError(err)
@@ -107,7 +107,7 @@ func tuneFstrim(
 	if err != nil {
 		return NewTuneError(err)
 	}
-	// Install the rpk-provided fstrim timer
+	// Install the rpk-provided fstrim timer.
 	err = installSystemdUnit(fs, exe, c, fstrimTimer, customTimerName)
 	if err != nil {
 		// If the timer can't be created, try removing the service too.
@@ -117,7 +117,7 @@ func tuneFstrim(
 		}
 		return NewTuneError(err)
 	}
-	// Start the timer
+	// Start the timer.
 	err = startSystemdUnit(exe, c, customTimerName)
 	if err != nil {
 		return NewTuneError(err)
@@ -137,7 +137,7 @@ func NewFstrimChecker() Checker {
 				return false, err
 			}
 			defer c.Shutdown()
-			// Check if the distro fstrim timer is available & active
+			// Check if the distro fstrim timer is available & active.
 			defLoadState, defActiveState, err := c.UnitState(timerName)
 			if err != nil {
 				return false, err
@@ -147,7 +147,7 @@ func NewFstrimChecker() Checker {
 			}
 			// Otherwise, check if the rpk-provided timer is available
 			// & active (i.e. if the tuner was run previously and
-			// installed it)
+			// installed it).
 			_, customActiveState, err := c.UnitState(customTimerName)
 			if err != nil {
 				return false, err
@@ -157,9 +157,7 @@ func NewFstrimChecker() Checker {
 	)
 }
 
-/*
- * Returns true if the unit is available, and an error if it couldn't be started
- */
+// Returns true if the unit is available, and an error if it couldn't be started.
 func startIfAvailable(
 	executor executors.Executor, c systemd.Client, name string,
 ) (bool, error) {

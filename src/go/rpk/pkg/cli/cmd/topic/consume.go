@@ -48,7 +48,6 @@ type consumer struct {
 	metaOnly bool // specific to -f json
 
 	resetOffset kgo.Offset // defaults to NoResetOffset, can be start or end
-	start       int64      // TODO doc
 
 	// If an end offset is specified, we immediately look up where we will
 	// end and quit rpk when we hit the end.
@@ -80,7 +79,7 @@ func NewConsumeCommand(fs afero.Fs) *cobra.Command {
 
 			err = c.parseOffset(offset, topics, adm)
 			out.MaybeDie(err, "invalid --offset %q: %v", offset, err)
-			if allEmpty := c.filterEmptyPartitions(adm); allEmpty {
+			if allEmpty := c.filterEmptyPartitions(); allEmpty {
 				return
 			}
 
@@ -244,7 +243,7 @@ func (c *consumer) writeRecordJSON(r *kgo.Record) {
 
 	for _, h := range r.Headers {
 		m.Headers = append(m.Headers, Header{
-			Key:   string(h.Key),
+			Key:   h.Key,
 			Value: string(h.Value),
 		})
 	}
@@ -272,6 +271,9 @@ func (c *consumer) parseOffset(
 	}
 
 	start, end, rel, atStart, atEnd, hasEnd, currentEnd, err := parseFromToOffset(offset)
+	if err != nil {
+		return fmt.Errorf("unable to parse offset: %v", err)
+	}
 
 	if atStart {
 		c.resetOffset = kgo.NewOffset().AtStart().Relative(rel)
@@ -352,7 +354,7 @@ func (c *consumer) setParts(
 // - currentEnd: consume until the *current* end offset
 //
 // - if !atStart && !atEnd, then we consume at the returned start number
-// - rel is used for relative offsets from atStart or atEnd
+// - rel is used for relative offsets from atStart or atEnd.
 //
 func parseFromToOffset(
 	o string,
@@ -383,7 +385,7 @@ func parseFromToOffset(
 
 	// oo, oo:, and :oo
 	if start, err = strconv.ParseInt(o, 10, 64); err == nil {
-		return
+		return //nolint:nilerr // false positive with naked returns
 	} else if strings.HasSuffix(o, ":") {
 		start, err = strconv.ParseInt(o[:len(o)-1], 10, 64)
 		return
@@ -558,7 +560,7 @@ func (c *consumer) parseTimeOffset(
 //
 // Depending on our order of requests and pathological timing, end could
 // come before the start; in this case we also filter the partition.
-func (c *consumer) filterEmptyPartitions(adm *kadm.Client) (allEmpty bool) {
+func (c *consumer) filterEmptyPartitions() (allEmpty bool) {
 	if c.partEnds == nil {
 		return false
 	}

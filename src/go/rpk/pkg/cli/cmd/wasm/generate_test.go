@@ -39,22 +39,22 @@ func TestGetWasmApiVersion(t *testing.T) {
 		{
 			name:   "should get default vectorized WASM API version if npm search returns random string",
 			input:  "Random string\n",
-			output: defApiVersion,
+			output: defAPIVersion,
 		},
 		{
 			name:   "should get default vectorized WASM API version if npm search returns null string",
 			input:  "",
-			output: defApiVersion,
+			output: defAPIVersion,
 		},
 		{
 			name:   "should get default vectorized WASM API version if npm search returns null JSON array",
 			input:  "[]",
-			output: defApiVersion,
+			output: defAPIVersion,
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			version := getWasmApiVersion(test.input)
+			version := getWasmAPIVersion(test.input)
 			require.Exactly(t, version, test.output)
 		})
 	}
@@ -75,17 +75,17 @@ func TestWasmCommand(t *testing.T) {
 			path: "new_folder/new_sub_folder/wasm",
 			pre:  nil,
 			post: map[string]testfs.Fmode{
-				"new_folder/new_sub_folder/wasm/src/main.js":       {0o600, template.WasmJs()},
-				"new_folder/new_sub_folder/wasm/test/main.test.js": {0o600, template.WasmTestJs()},
-				"new_folder/new_sub_folder/wasm/package.json":      {0o600, template.PackageJson(defApiVersion)},
-				"new_folder/new_sub_folder/wasm/webpack.js":        {0o766, template.Webpack()},
+				"new_folder/new_sub_folder/wasm/src/main.js":       {Mode: 0o600, Contents: template.WasmJs()},
+				"new_folder/new_sub_folder/wasm/test/main.test.js": {Mode: 0o600, Contents: template.WasmTestJs()},
+				"new_folder/new_sub_folder/wasm/package.json":      {Mode: 0o600, Contents: template.PackageJSON(defAPIVersion)},
+				"new_folder/new_sub_folder/wasm/webpack.js":        {Mode: 0o766, Contents: template.Webpack()},
 			},
 		},
 		{
 			name:   "should fail if the given dir contains files created by this command*",
 			path:   "wasm",
-			pre:    map[string]testfs.Fmode{"wasm/package.json": {0o300, "foo"}},
-			post:   map[string]testfs.Fmode{"wasm/package.json": {0o300, "foo"}},
+			pre:    map[string]testfs.Fmode{"wasm/package.json": {Mode: 0o300, Contents: "foo"}},
+			post:   map[string]testfs.Fmode{"wasm/package.json": {Mode: 0o300, Contents: "foo"}},
 			expNot: []string{"wasm/src/main.js", "wasm/test/main.test.js", "wasm/webpack.js"},
 			expErr: true,
 		},

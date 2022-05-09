@@ -11,7 +11,7 @@ package graf
 
 import "encoding/json"
 
-var id uint = 0
+var id uint
 
 func nextID() uint {
 	id++

@@ -54,7 +54,7 @@ func (f rpkLogFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-func (f rpkLogFormatter) getPrinter(
+func (rpkLogFormatter) getPrinter(
 	lvl logrus.Level,
 ) func(io.Writer, ...interface{}) (int, error) {
 	if color, exists := logLevelColorMap[lvl]; exists {

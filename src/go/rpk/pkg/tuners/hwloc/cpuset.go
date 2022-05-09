@@ -15,7 +15,7 @@ import (
 	"strings"
 )
 
-func TranslateToHwLocCpuSet(cpuset string) (string, error) {
+func TranslateToHwLocCPUSet(cpuset string) (string, error) {
 
 	cpuSetPattern := regexp.MustCompile(`^(\d+-)?(\d+)(,(\d+-)?(\d+))*$`)
 	if cpuset == "all" {

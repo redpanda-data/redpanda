@@ -18,8 +18,8 @@ import (
 )
 
 type cpuMasksMock struct {
-	irq.CpuMasks
-	baseCpuMask              func(string) (string, error)
+	irq.CPUMasks
+	baseCPUMask              func(string) (string, error)
 	cpuMaskForIRQs           func(irq.Mode, string) (string, error)
 	getIRQsDistributionMasks func([]int, string) (map[int]string, error)
 }
@@ -32,11 +32,11 @@ type blockDevicesMock struct {
 	getDiskInfoByType        func([]string) (map[disk.DiskType]disk.DevicesIRQs, error)
 }
 
-func (m *cpuMasksMock) BaseCpuMask(cpuMask string) (string, error) {
-	return m.baseCpuMask(cpuMask)
+func (m *cpuMasksMock) BaseCPUMask(cpuMask string) (string, error) {
+	return m.baseCPUMask(cpuMask)
 }
 
-func (m *cpuMasksMock) CpuMaskForIRQs(
+func (m *cpuMasksMock) CPUMaskForIRQs(
 	mode irq.Mode, cpuMask string,
 ) (string, error) {
 	return m.cpuMaskForIRQs(mode, cpuMask)
@@ -80,7 +80,7 @@ func TestGetExpectedIRQsDistribution(t *testing.T) {
 		mode         irq.Mode
 		cpuMask      string
 		blockDevices disk.BlockDevices
-		cpuMasks     irq.CpuMasks
+		cpuMasks     irq.CPUMasks
 	}
 	tests := []struct {
 		name    string
@@ -108,7 +108,7 @@ func TestGetExpectedIRQsDistribution(t *testing.T) {
 					},
 				},
 				cpuMasks: &cpuMasksMock{
-					baseCpuMask: func(string) (string, error) {
+					baseCPUMask: func(string) (string, error) {
 						return "0x0000000f", nil
 					},
 					cpuMaskForIRQs: func(mode irq.Mode, cpuMask string) (string, error) {

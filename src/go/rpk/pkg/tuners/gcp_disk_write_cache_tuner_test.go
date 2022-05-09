@@ -31,7 +31,7 @@ func (v *vendorMock) Init() (vendor.InitializedVendor, error) {
 	return v.init()
 }
 
-func (v *vendorMock) Name() string {
+func (*vendorMock) Name() string {
 	return "none"
 }
 
@@ -39,7 +39,7 @@ func (v *currentVendor) Name() string {
 	return v.name
 }
 
-func (v *currentVendor) VmType() (string, error) {
+func (*currentVendor) VMType() (string, error) {
 	return "", nil
 }
 

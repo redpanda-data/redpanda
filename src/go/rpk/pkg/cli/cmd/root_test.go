@@ -126,7 +126,7 @@ func (t testPluginHandler) exec(path string, args []string) error {
 	}
 	file := strings.TrimPrefix(path, testPluginPathPrefix)
 	if file == testPluginFileExecError {
-		return errors.New("error!")
+		return errors.New("error")
 	}
 	argHits := t[file]
 	if argHits == nil {

@@ -21,10 +21,10 @@ import (
 	"github.com/spf13/afero"
 )
 
-type CpuMasks interface {
-	BaseCpuMask(cpuMask string) (string, error)
-	CpuMaskForComputations(mode Mode, cpuMask string) (string, error)
-	CpuMaskForIRQs(mode Mode, cpuMask string) (string, error)
+type CPUMasks interface {
+	BaseCPUMask(cpuMask string) (string, error)
+	CPUMaskForComputations(mode Mode, cpuMask string) (string, error)
+	CPUMaskForIRQs(mode Mode, cpuMask string) (string, error)
 	SetMask(path string, mask string) error
 	ReadMask(path string) (string, error)
 	ReadIRQMask(IRQ int) (string, error)
@@ -38,9 +38,9 @@ type CpuMasks interface {
 	IsSupported() bool
 }
 
-func NewCpuMasks(
+func NewCPUMasks(
 	fs afero.Fs, hwloc hwloc.HwLoc, executor executors.Executor,
-) CpuMasks {
+) CPUMasks {
 	return &cpuMasks{
 		fs:       fs,
 		hwloc:    hwloc,
@@ -54,7 +54,7 @@ type cpuMasks struct {
 	executor executors.Executor
 }
 
-func (masks *cpuMasks) BaseCpuMask(cpuMask string) (string, error) {
+func (masks *cpuMasks) BaseCPUMask(cpuMask string) (string, error) {
 	if cpuMask == "all" {
 		return masks.hwloc.All()
 	}
@@ -66,7 +66,7 @@ func (masks *cpuMasks) IsSupported() bool {
 	return masks.hwloc.IsSupported()
 }
 
-func (masks *cpuMasks) CpuMaskForComputations(
+func (masks *cpuMasks) CPUMaskForComputations(
 	mode Mode, cpuMask string,
 ) (string, error) {
 	log.Debugf("Computing CPU mask for '%s' mode and input CPU mask '%s'", mode, cpuMask)
@@ -86,14 +86,14 @@ func (masks *cpuMasks) CpuMaskForComputations(
 	}
 
 	if masks.hwloc.CheckIfMaskIsEmpty(computationsMask) {
-		err = fmt.Errorf("Bad configuration mode '%s' and cpu-mask value '%s':"+
+		err = fmt.Errorf("bad configuration mode '%s' and cpu-mask value '%s':"+
 			" this results in a zero-mask for 'computations'", mode, cpuMask)
 	}
 	log.Debugf("Computations CPU mask '%s'", computationsMask)
 	return computationsMask, err
 }
 
-func (masks *cpuMasks) CpuMaskForIRQs(
+func (masks *cpuMasks) CPUMaskForIRQs(
 	mode Mode, cpuMask string,
 ) (string, error) {
 	log.Debugf("Computing IRQ CPU mask for '%s' mode and input CPU mask '%s'",
@@ -101,7 +101,7 @@ func (masks *cpuMasks) CpuMaskForIRQs(
 	var err error
 	var maskForIRQs string
 	if mode != Mq {
-		maskForComputations, err := masks.CpuMaskForComputations(mode, cpuMask)
+		maskForComputations, err := masks.CPUMaskForComputations(mode, cpuMask)
 		if err != nil {
 			return "", err
 		}

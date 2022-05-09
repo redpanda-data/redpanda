@@ -18,7 +18,6 @@ import (
 )
 
 func CreateDirectoryCheckers(
-	fs afero.Fs,
 	dir string,
 	blockDevices disk.BlockDevices,
 	newDeviceChecker func(string) Checker,
@@ -35,7 +34,7 @@ func CreateDirectoryCheckers(
 }
 
 func NewDeviceNomergesChecker(
-	fs afero.Fs, device string, deviceFeatures disk.DeviceFeatures,
+	device string, deviceFeatures disk.DeviceFeatures,
 ) Checker {
 	return NewEqualityChecker(
 		NomergesChecker,
@@ -49,7 +48,6 @@ func NewDeviceNomergesChecker(
 }
 
 func NewDirectoryNomergesChecker(
-	fs afero.Fs,
 	dir string,
 	deviceFeatures disk.DeviceFeatures,
 	blockDevices disk.BlockDevices,
@@ -88,7 +86,7 @@ func checkDeviceNomerges(
 }
 
 func NewDeviceSchedulerChecker(
-	fs afero.Fs, device string, deviceFeatures disk.DeviceFeatures,
+	_ afero.Fs, device string, deviceFeatures disk.DeviceFeatures,
 ) Checker {
 	return NewEqualityChecker(
 		SchedulerChecker,
@@ -102,7 +100,6 @@ func NewDeviceSchedulerChecker(
 }
 
 func NewDirectorySchedulerChecker(
-	fs afero.Fs,
 	dir string,
 	deviceFeatures disk.DeviceFeatures,
 	blockDevices disk.BlockDevices,
@@ -141,7 +138,7 @@ func checkScheduler(
 }
 
 func NewDeviceWriteCacheChecker(
-	fs afero.Fs, device string, deviceFeatures disk.DeviceFeatures,
+	device string, deviceFeatures disk.DeviceFeatures,
 ) Checker {
 	return NewEqualityChecker(
 		SchedulerChecker,
@@ -155,7 +152,6 @@ func NewDeviceWriteCacheChecker(
 }
 
 func NewDirectoryWriteCacheChecker(
-	fs afero.Fs,
 	dir string,
 	deviceFeatures disk.DeviceFeatures,
 	blockDevices disk.BlockDevices,
@@ -194,7 +190,6 @@ func checkDeviceWriteCache(
 }
 
 func NewDisksIRQAffinityStaticChecker(
-	fs afero.Fs,
 	devices []string,
 	blockDevices disk.BlockDevices,
 	balanceService irq.BalanceService,
@@ -211,10 +206,7 @@ func NewDisksIRQAffinityStaticChecker(
 }
 
 func NewDirectoryIRQsAffinityStaticChecker(
-	fs afero.Fs,
-	dir string,
-	blockDevices disk.BlockDevices,
-	balanceService irq.BalanceService,
+	dir string, blockDevices disk.BlockDevices, balanceService irq.BalanceService,
 ) Checker {
 	return NewEqualityChecker(
 		DiskIRQsAffinityStaticChecker,
@@ -252,12 +244,11 @@ func checkDisksIRQsAffinity(
 }
 
 func NewDisksIRQAffinityChecker(
-	fs afero.Fs,
 	devices []string,
 	cpuMask string,
 	mode irq.Mode,
 	blockDevices disk.BlockDevices,
-	cpuMasks irq.CpuMasks,
+	cpuMasks irq.CPUMasks,
 ) Checker {
 	return NewEqualityChecker(
 		DiskIRQsAffinityChecker,
@@ -277,12 +268,11 @@ func NewDisksIRQAffinityChecker(
 }
 
 func NewDirectoryIRQAffinityChecker(
-	fs afero.Fs,
 	dir string,
 	cpuMask string,
 	mode irq.Mode,
 	blockDevices disk.BlockDevices,
-	cpuMasks irq.CpuMasks,
+	cpuMasks irq.CPUMasks,
 ) Checker {
 	return NewEqualityChecker(
 		DiskIRQsAffinityChecker,
@@ -310,7 +300,7 @@ func areDevicesIRQsDistributed(
 	cpuMask string,
 	mode irq.Mode,
 	blockDevices disk.BlockDevices,
-	cpuMasks irq.CpuMasks,
+	cpuMasks irq.CPUMasks,
 ) (bool, error) {
 	expectedDistribution, err := GetExpectedIRQsDistribution(
 		devices,

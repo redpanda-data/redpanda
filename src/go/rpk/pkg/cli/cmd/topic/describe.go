@@ -276,7 +276,7 @@ func describePartitionsRows(
 		} else if errors.Is(o.startErr, errUnlisted) {
 			row = append(row, "-")
 		} else {
-			row = append(row, o.startErr.(*kerr.Error).Message)
+			row = append(row, o.startErr.(*kerr.Error).Message) //nolint:errorlint // This error must be kerr.Error, and we want the message
 		}
 		if stable {
 			if o.stableErr == nil {
@@ -284,7 +284,7 @@ func describePartitionsRows(
 			} else if errors.Is(o.stableErr, errUnlisted) {
 				row = append(row, "-")
 			} else {
-				row = append(row, o.stableErr.(*kerr.Error).Message)
+				row = append(row, o.stableErr.(*kerr.Error).Message) //nolint:errorlint // This error must be kerr.Error, and we want the message
 			}
 		}
 		if o.endErr == nil {
@@ -292,7 +292,7 @@ func describePartitionsRows(
 		} else if errors.Is(o.endErr, errUnlisted) {
 			row = append(row, "-")
 		} else {
-			row = append(row, o.endErr.(*kerr.Error).Message)
+			row = append(row, o.endErr.(*kerr.Error).Message) //nolint:errorlint // This error must be kerr.Error, and we want the message
 		}
 		rows = append(rows, row)
 	}

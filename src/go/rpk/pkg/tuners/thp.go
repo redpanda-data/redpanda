@@ -53,9 +53,7 @@ func getTHPDir(fs afero.Fs) (string, error) {
 	)
 }
 
-/*
-/ Create a new tuner to enable Transparent Huge Pages
-*/
+// Create a new tuner to enable Transparent Huge Pages.
 func NewEnableTHPTuner(fs afero.Fs, executor executors.Executor) Tunable {
 	return &thpTuner{fs: fs, executor: executor}
 }

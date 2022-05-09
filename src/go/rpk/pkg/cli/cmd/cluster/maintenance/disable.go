@@ -28,13 +28,13 @@ func newDisableCommand(fs afero.Fs) *cobra.Command {
 		Long:  `Disable maintenance mode for a node.`,
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			nodeId, err := strconv.Atoi(args[0])
+			nodeID, err := strconv.Atoi(args[0])
 			if err != nil {
 				out.MaybeDie(err, "could not parse node id: %s: %v", args[0], err)
 			}
 
-			if nodeId < 0 {
-				out.Die("invalid node id: %d", nodeId)
+			if nodeID < 0 {
+				out.Die("invalid node id: %d", nodeID)
 			}
 
 			p := config.ParamsFromCommand(cmd)
@@ -44,8 +44,8 @@ func newDisableCommand(fs afero.Fs) *cobra.Command {
 			client, err := admin.NewClient(fs, cfg)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-			err = client.DisableMaintenanceMode(nodeId)
-			if he := (*admin.HttpError)(nil); errors.As(err, &he) {
+			err = client.DisableMaintenanceMode(nodeID)
+			if he := (*admin.HTTPError)(nil); errors.As(err, &he) {
 				if he.Response.StatusCode == 404 {
 					body, bodyErr := he.DecodeGenericErrorBody()
 					if bodyErr == nil {
@@ -55,7 +55,7 @@ func newDisableCommand(fs afero.Fs) *cobra.Command {
 			}
 
 			out.MaybeDie(err, "error disabling maintenance mode: %v", err)
-			fmt.Printf("Successfully disabled maintenance mode for node %d\n", nodeId)
+			fmt.Printf("Successfully disabled maintenance mode for node %d\n", nodeID)
 		},
 	}
 	return cmd

@@ -92,6 +92,9 @@ func (hwLocCmd *hwLocCmd) getNumberOf(
 ) (uint, error) {
 	output, err := hwLocCmd.runCalc("--number-of", resource, "machine:0",
 		"--restrict", mask)
+	if err != nil {
+		return 0, err
+	}
 	count, err := strconv.Atoi(output)
 	return uint(count), err
 }

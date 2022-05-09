@@ -45,7 +45,7 @@ type balanceServiceMock struct {
 	isRunning     bool
 }
 
-func (m *balanceServiceMock) BanIRQsAndRestart(bannedIRQs []int) error {
+func (*balanceServiceMock) BanIRQsAndRestart([]int) error {
 	panic("not implemented")
 }
 

@@ -16,7 +16,7 @@ import (
 
 // NewEqualityChecker creates a checker that will return valid result if value
 // returned by getCurrent function is equal to required value. This checker uses
-// reflect.DeepEqual to compare the values
+// reflect.DeepEqual to compare the values.
 func NewEqualityChecker(
 	id CheckerID,
 	desc string,
@@ -41,7 +41,7 @@ type equalityChecker struct {
 	getCurrent func() (interface{}, error)
 }
 
-func (c *equalityChecker) Id() CheckerID {
+func (c *equalityChecker) ID() CheckerID {
 	return c.id
 }
 
@@ -59,7 +59,7 @@ func (c *equalityChecker) GetRequiredAsString() string {
 
 func (c *equalityChecker) Check() *CheckResult {
 	res := &CheckResult{
-		CheckerId: c.Id(),
+		CheckerID: c.ID(),
 		Desc:      c.GetDesc(),
 		Severity:  c.GetSeverity(),
 		Required:  c.GetRequiredAsString(),

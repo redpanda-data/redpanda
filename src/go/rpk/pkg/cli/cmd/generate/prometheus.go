@@ -129,8 +129,8 @@ func executePrometheusConfig(
 		return []byte(""), err
 	}
 	hosts, err := discoverHosts(
-		conf.Redpanda.KafkaApi[0].Address,
-		conf.Redpanda.KafkaApi[0].Port,
+		conf.Redpanda.KafkaAPI[0].Address,
+		conf.Redpanda.KafkaAPI[0].Port,
 	)
 	if err != nil {
 		return []byte(""), err
@@ -150,10 +150,14 @@ func discoverHosts(url string, port int) ([]string, error) {
 	addr := net.JoinHostPort(url, strconv.Itoa(port))
 	cl, err := kgo.NewClient(kgo.SeedBrokers(addr))
 	if err != nil {
-		return nil, nil
+		return nil, err
 	}
 	var hosts []string
 	brokers, err := kadm.NewClient(cl).ListBrokers(context.Background())
+	if err != nil {
+		return nil, err
+	}
+
 	for _, b := range brokers {
 		hosts = append(
 			hosts,
@@ -164,7 +168,6 @@ func discoverHosts(url string, port int) ([]string, error) {
 }
 
 func splitAddress(address string) (string, int, error) {
-	host := ""
 	parts := strings.Split(address, ":")
 	if len(parts) == 0 {
 		return "", 0, fmt.Errorf(
@@ -175,7 +178,7 @@ func splitAddress(address string) (string, int, error) {
 	if len(parts) == 1 {
 		return parts[0], 0, nil
 	}
-	host = parts[0]
+	host := parts[0]
 	var err error
 	port, err := strconv.Atoi(parts[1])
 	if err != nil {

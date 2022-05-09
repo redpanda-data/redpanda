@@ -106,7 +106,7 @@ func bootstrap(mgr config.Manager) *cobra.Command {
 			" ones can join later.",
 		Args: cobra.OnlyValidArgs,
 		RunE: func(c *cobra.Command, args []string) error {
-			defaultRpcPort := config.Default().Redpanda.RPCServer.Port
+			defaultRPCPort := config.Default().Redpanda.RPCServer.Port
 			conf, err := mgr.FindOrGenerate(configPath)
 			if err != nil {
 				return err
@@ -115,30 +115,30 @@ func bootstrap(mgr config.Manager) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			var ownIp net.IP
+			var ownIP net.IP
 			if self != "" {
-				ownIp = net.ParseIP(self)
-				if ownIp == nil {
-					return fmt.Errorf("%s is not a valid IP.", self)
+				ownIP = net.ParseIP(self)
+				if ownIP == nil {
+					return fmt.Errorf("%s is not a valid IP", self)
 				}
 			} else {
-				ownIp, err = ownIP()
+				ownIP, err = getOwnIP()
 				if err != nil {
 					return err
 				}
 			}
-			conf.Redpanda.Id = id
-			conf.Redpanda.RPCServer.Address = ownIp.String()
-			conf.Redpanda.KafkaApi = []config.NamedSocketAddress{{
+			conf.Redpanda.ID = id
+			conf.Redpanda.RPCServer.Address = ownIP.String()
+			conf.Redpanda.KafkaAPI = []config.NamedSocketAddress{{
 				SocketAddress: config.SocketAddress{
-					Address: ownIp.String(),
+					Address: ownIP.String(),
 					Port:    config.DefaultKafkaPort,
 				},
 			}}
 
-			conf.Redpanda.AdminApi = []config.NamedSocketAddress{{
+			conf.Redpanda.AdminAPI = []config.NamedSocketAddress{{
 				SocketAddress: config.SocketAddress{
-					Address: ownIp.String(),
+					Address: ownIP.String(),
 					Port:    config.DefaultAdminPort,
 				},
 			}}
@@ -147,8 +147,8 @@ func bootstrap(mgr config.Manager) *cobra.Command {
 			for _, ip := range ips {
 				seed := config.SeedServer{
 					Host: config.SocketAddress{
-						ip.String(),
-						defaultRpcPort,
+						Address: ip.String(),
+						Port:    defaultRPCPort,
 					},
 				}
 				seeds = append(seeds, seed)
@@ -200,7 +200,7 @@ func initNode(mgr config.Manager) *cobra.Command {
 				return err
 			}
 			// Don't reset the node's UUID if it has already been set.
-			if conf.NodeUuid == "" {
+			if conf.NodeUUID == "" {
 				return mgr.WriteNodeUUID(conf)
 			}
 			return nil
@@ -221,14 +221,14 @@ func parseIPs(ips []string) ([]net.IP, error) {
 	for _, i := range ips {
 		p := net.ParseIP(i)
 		if p == nil {
-			return []net.IP{}, fmt.Errorf("%s is not a valid IP.", i)
+			return []net.IP{}, fmt.Errorf("%s is not a valid IP", i)
 		}
 		parsed = append(parsed, p)
 	}
 	return parsed, nil
 }
 
-func ownIP() (net.IP, error) {
+func getOwnIP() (net.IP, error) {
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {
 		return nil, err
@@ -253,12 +253,12 @@ func ownIP() (net.IP, error) {
 	if len(filtered) > 1 {
 		return nil, errors.New(
 			"found multiple private non-loopback v4 IPs for the" +
-				" current node. Please set one with --self.",
+				" current node. Please set one with --self",
 		)
 	}
 	if len(filtered) == 0 {
 		return nil, errors.New(
-			"couldn't find any non-loopback IPs for the current node.",
+			"couldn't find any non-loopback IPs for the current node",
 		)
 	}
 	return filtered[0], nil

@@ -17,7 +17,7 @@ import (
 )
 
 func getDefaultMode(
-	nic Nic, cpuMask string, cpuMasks irq.CpuMasks,
+	nic Nic, cpuMask string, cpuMasks irq.CPUMasks,
 ) (irq.Mode, error) {
 
 	if nic.IsHwInterface() {
@@ -64,13 +64,13 @@ func getDefaultMode(
 		}
 		return defaultMode, nil
 	}
-	return "", fmt.Errorf("Virutal device %s is not supported", nic.Name())
+	return "", fmt.Errorf("Virtual device %s is not supported", nic.Name())
 }
 
 func GetRpsCPUMask(
-	nic Nic, mode irq.Mode, cpuMask string, cpuMasks irq.CpuMasks,
+	nic Nic, mode irq.Mode, cpuMask string, cpuMasks irq.CPUMasks,
 ) (string, error) {
-	effectiveCPUMask, err := cpuMasks.BaseCpuMask(cpuMask)
+	effectiveCPUMask, err := cpuMasks.BaseCPUMask(cpuMask)
 	if err != nil {
 		return "", err
 	}
@@ -81,7 +81,7 @@ func GetRpsCPUMask(
 			return "", err
 		}
 	}
-	computationsCPUMask, err := cpuMasks.CpuMaskForComputations(
+	computationsCPUMask, err := cpuMasks.CPUMaskForComputations(
 		effectiveMode, effectiveCPUMask)
 	if err != nil {
 		return "", err
@@ -90,9 +90,9 @@ func GetRpsCPUMask(
 }
 
 func GetHwInterfaceIRQsDistribution(
-	nic Nic, mode irq.Mode, cpuMask string, cpuMasks irq.CpuMasks,
+	nic Nic, mode irq.Mode, cpuMask string, cpuMasks irq.CPUMasks,
 ) (map[int]string, error) {
-	effectiveCPUMask, err := cpuMasks.BaseCpuMask(cpuMask)
+	effectiveCPUMask, err := cpuMasks.BaseCPUMask(cpuMask)
 	if err != nil {
 		return nil, err
 	}
@@ -113,7 +113,7 @@ func GetHwInterfaceIRQsDistribution(
 		return nil, err
 	}
 
-	irqCPUMask, err := cpuMasks.CpuMaskForIRQs(effectiveMode, effectiveCPUMask)
+	irqCPUMask, err := cpuMasks.CPUMaskForIRQs(effectiveMode, effectiveCPUMask)
 	if err != nil {
 		return nil, err
 	}

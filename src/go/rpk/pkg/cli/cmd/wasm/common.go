@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
+	"errors"
 	"fmt"
 
 	"github.com/cespare/xxhash"
@@ -54,12 +55,10 @@ func ensureCoprocTopic(cl *kgo.Client) error {
 		return err
 	}
 	err = kerr.ErrorForCode(resp.Topics[0].ErrorCode)
-	switch err {
-	case nil:
-		// topic did not exist
-	case kerr.TopicAlreadyExists:
-		// topic exists, fine
-	default:
+
+	// nil error = topic did not exist
+	// and it's fine that the topic exists
+	if err != nil && !errors.Is(err, kerr.TopicAlreadyExists) {
 		return err
 	}
 	return nil

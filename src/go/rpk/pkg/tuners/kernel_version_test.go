@@ -32,7 +32,7 @@ func Test_kernelVersionChecker_Check(t *testing.T) {
 			renderRequired: func() string { return "0" },
 			getCurrent:     func() (string, error) { return "4.19.0", nil },
 			want: &CheckResult{
-				CheckerId: KernelVersion,
+				CheckerID: KernelVersion,
 				IsOk:      true,
 				Current:   "4.19.0",
 				Desc:      "Kernel Version",
@@ -46,7 +46,7 @@ func Test_kernelVersionChecker_Check(t *testing.T) {
 			renderRequired: func() string { return "0" },
 			getCurrent:     func() (string, error) { return "4.20.0", nil },
 			want: &CheckResult{
-				CheckerId: KernelVersion,
+				CheckerID: KernelVersion,
 				IsOk:      true,
 				Current:   "4.20.0",
 				Desc:      "Kernel Version",
@@ -60,7 +60,7 @@ func Test_kernelVersionChecker_Check(t *testing.T) {
 			renderRequired: func() string { return "0" },
 			getCurrent:     func() (string, error) { return "5.1.0", nil },
 			want: &CheckResult{
-				CheckerId: KernelVersion,
+				CheckerID: KernelVersion,
 				IsOk:      true,
 				Current:   "5.1.0",
 				Desc:      "Kernel Version",
@@ -74,7 +74,7 @@ func Test_kernelVersionChecker_Check(t *testing.T) {
 			renderRequired: func() string { return "0" },
 			getCurrent:     func() (string, error) { return "4.18.0", nil },
 			want: &CheckResult{
-				CheckerId: KernelVersion,
+				CheckerID: KernelVersion,
 				IsOk:      false,
 				Current:   "4.18.0",
 				Desc:      "Kernel Version",
@@ -89,7 +89,7 @@ func Test_kernelVersionChecker_Check(t *testing.T) {
 			renderRequired: func() string { return "0" },
 			getCurrent:     func() (string, error) { return "3.19.0", nil },
 			want: &CheckResult{
-				CheckerId: KernelVersion,
+				CheckerID: KernelVersion,
 				IsOk:      false,
 				Current:   "3.19.0",
 				Desc:      "Kernel Version",
@@ -104,7 +104,7 @@ func Test_kernelVersionChecker_Check(t *testing.T) {
 			renderRequired: func() string { return "0" },
 			getCurrent:     func() (string, error) { return "4.19", nil },
 			want: &CheckResult{
-				CheckerId: KernelVersion,
+				CheckerID: KernelVersion,
 				IsOk:      false,
 				Current:   "4.19",
 				Desc:      "Kernel Version",
@@ -119,7 +119,7 @@ func Test_kernelVersionChecker_Check(t *testing.T) {
 			renderRequired: func() string { return "0" },
 			getCurrent:     func() (string, error) { return "5.8.0-19-generic", nil },
 			want: &CheckResult{
-				CheckerId: KernelVersion,
+				CheckerID: KernelVersion,
 				IsOk:      true,
 				Current:   "5.8.0-19-generic",
 				Desc:      "Kernel Version",

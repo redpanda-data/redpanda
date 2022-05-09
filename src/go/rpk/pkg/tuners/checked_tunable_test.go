@@ -25,11 +25,11 @@ type checkedTunerMock struct {
 	tune        func() TuneResult
 }
 
-func (c *checkedTunerMock) Id() CheckerID {
+func (*checkedTunerMock) ID() CheckerID {
 	return 1
 }
 
-func (c *checkedTunerMock) GetDesc() string {
+func (*checkedTunerMock) GetDesc() string {
 	return "mocked check"
 }
 
@@ -42,7 +42,7 @@ func (c *checkedTunerMock) GetSeverity() Severity {
 	return c.severity
 }
 
-func (c *checkedTunerMock) GetRequiredAsString() string {
+func (*checkedTunerMock) GetRequiredAsString() string {
 	return "r"
 }
 

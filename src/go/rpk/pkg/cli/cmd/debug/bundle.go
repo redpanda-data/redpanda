@@ -155,16 +155,15 @@ func writeCommandOutputToZipLimit(
 
 	err = cmd.Wait()
 	if err != nil {
-		if strings.Contains(err.Error(), "broken pipe") {
-			log.Debugf(
-				"Got '%v' while running '%s'. This is probably due to the"+
-					" command's output exceeding its limit in bytes.",
-				err,
-				cmd,
-			)
-		} else {
+		if !strings.Contains(err.Error(), "broken pipe") {
 			return fmt.Errorf("couldn't save '%s': %w", filename, err)
 		}
+		log.Debugf(
+			"Got '%v' while running '%s'. This is probably due to the"+
+				" command's output exceeding its limit in bytes.",
+			err,
+			cmd,
+		)
 	}
 	return nil
 }
@@ -376,7 +375,7 @@ func executeBundle(
 		saveSocketData(ps),
 		saveTopOutput(ps),
 		saveVmstat(ps),
-		saveIp(ps),
+		saveIP(ps),
 		saveLspci(ps),
 		saveDmidecode(ps),
 	}
@@ -539,9 +538,9 @@ func saveConfig(ps *stepParams, conf *config.Config) step {
 	return func() error {
 		// Redact SASL credentials
 		redacted := "(REDACTED)"
-		if conf.Rpk.KafkaApi.SASL != nil {
-			conf.Rpk.KafkaApi.SASL.User = redacted
-			conf.Rpk.KafkaApi.SASL.Password = redacted
+		if conf.Rpk.KafkaAPI.SASL != nil {
+			conf.Rpk.KafkaAPI.SASL.User = redacted
+			conf.Rpk.KafkaAPI.SASL.Password = redacted
 		}
 		if conf.Rpk.SASL != nil {
 			conf.Rpk.SASL.User = redacted
@@ -555,7 +554,7 @@ func saveConfig(ps *stepParams, conf *config.Config) step {
 	}
 }
 
-// Saves the contents of /proc/cpuinfo
+// Saves the contents of '/proc/cpuinfo'.
 func saveCPUInfo(ps *stepParams) step {
 	return func() error {
 		bs, err := afero.ReadFile(ps.fs, "/proc/cpuinfo")
@@ -566,7 +565,7 @@ func saveCPUInfo(ps *stepParams) step {
 	}
 }
 
-// Saves the contents of /proc/interrupts
+// Saves the contents of '/proc/interrupts'.
 func saveInterrupts(ps *stepParams) step {
 	return func() error {
 		bs, err := afero.ReadFile(ps.fs, "/proc/interrupts")
@@ -682,7 +681,7 @@ func savePrometheusMetrics(ps *stepParams, admin *admin.AdminAPI) step {
 	}
 }
 
-// Saves the output of `dig`
+// Saves the output of `dig`.
 func saveDNSData(ps *stepParams) step {
 	return func() error {
 		return writeCommandOutputToZip(ps, "dig.txt", "dig")
@@ -721,14 +720,14 @@ func saveLogs(ps *stepParams, since, until string, logsLimitBytes int) step {
 	}
 }
 
-// Saves the output of `ss`
+// Saves the output of `ss`.
 func saveSocketData(ps *stepParams) step {
 	return func() error {
 		return writeCommandOutputToZip(ps, "ss.txt", "ss")
 	}
 }
 
-// Saves the output of `top`
+// Saves the output of `top`.
 func saveTopOutput(ps *stepParams) step {
 	return func() error {
 		return writeCommandOutputToZip(
@@ -739,7 +738,7 @@ func saveTopOutput(ps *stepParams) step {
 	}
 }
 
-// Saves the output of `vmstat`
+// Saves the output of `vmstat`.
 func saveVmstat(ps *stepParams) step {
 	return func() error {
 		return writeCommandOutputToZip(
@@ -750,8 +749,8 @@ func saveVmstat(ps *stepParams) step {
 	}
 }
 
-// Saves the output of `ip addr`
-func saveIp(ps *stepParams) step {
+// Saves the output of `ip addr`.
+func saveIP(ps *stepParams) step {
 	return func() error {
 		return writeCommandOutputToZip(
 			ps,
@@ -761,7 +760,7 @@ func saveIp(ps *stepParams) step {
 	}
 }
 
-// Saves the output of `lspci`
+// Saves the output of `lspci`.
 func saveLspci(ps *stepParams) step {
 	return func() error {
 		return writeCommandOutputToZip(
@@ -772,7 +771,7 @@ func saveLspci(ps *stepParams) step {
 	}
 }
 
-// Saves the output of `dmidecode`
+// Saves the output of `dmidecode`.
 func saveDmidecode(ps *stepParams) step {
 	return func() error {
 		return writeCommandOutputToZip(

@@ -11,6 +11,7 @@ package generate
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -18,6 +19,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
@@ -27,23 +29,25 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var datasource string
-var jobName string
+var (
+	datasource   string
+	jobName      string
+	hClient      = http.Client{Timeout: 10 * time.Second}
+	metricGroups = []string{
+		"errors",
+		"storage",
+		"reactor",
+		"scheduler",
+		"io_queue",
+		"vectorized_internal_rpc",
+		"kafka_rpc",
+		"rpc_client",
+		"memory",
+		"raft",
+	}
+)
 
 const panelHeight = 6
-
-var metricGroups = []string{
-	"errors",
-	"storage",
-	"reactor",
-	"scheduler",
-	"io_queue",
-	"vectorized_internal_rpc",
-	"kafka_rpc",
-	"rpc_client",
-	"memory",
-	"raft",
-}
 
 type RowSet struct {
 	rowTitles   []string
@@ -411,7 +415,16 @@ func metricGroup(metric string) string {
 func fetchMetrics(
 	metricsEndpoint string,
 ) (map[string]*dto.MetricFamily, error) {
-	res, err := http.Get(metricsEndpoint)
+	req, err := http.NewRequestWithContext(
+		context.Background(),
+		http.MethodGet,
+		metricsEndpoint,
+		nil,
+	)
+	if err != nil {
+		return nil, err
+	}
+	res, err := hClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

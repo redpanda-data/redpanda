@@ -31,7 +31,7 @@ import (
 func NewFranzClient(
 	fs afero.Fs, p *config.Params, cfg *config.Config, extraOpts ...kgo.Opt,
 ) (*kgo.Client, error) {
-	k := &cfg.Rpk.KafkaApi
+	k := &cfg.Rpk.KafkaAPI
 
 	opts := []kgo.Opt{
 		kgo.SeedBrokers(k.Brokers...),

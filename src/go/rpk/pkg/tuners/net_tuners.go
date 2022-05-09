@@ -27,7 +27,7 @@ func NewNetTuner(
 	interfaces []string,
 	fs afero.Fs,
 	irqDeviceInfo irq.DeviceInfo,
-	cpuMasks irq.CpuMasks,
+	cpuMasks irq.CPUMasks,
 	irqBalanceService irq.BalanceService,
 	irqProcFile irq.ProcFile,
 	ethtool ethtool.EthtoolWrapper,
@@ -67,7 +67,7 @@ type netTunersFactory struct {
 	irqDeviceInfo   irq.DeviceInfo
 	ethtool         ethtool.EthtoolWrapper
 	balanceService  irq.BalanceService
-	cpuMasks        irq.CpuMasks
+	cpuMasks        irq.CPUMasks
 	checkersFactory NetCheckersFactory
 	executor        executors.Executor
 }
@@ -78,7 +78,7 @@ func NewNetTunersFactory(
 	irqDeviceInfo irq.DeviceInfo,
 	ethtool ethtool.EthtoolWrapper,
 	balanceService irq.BalanceService,
-	cpuMasks irq.CpuMasks,
+	cpuMasks irq.CPUMasks,
 	executor executors.Executor,
 ) NetTunersFactory {
 	return &netTunersFactory{

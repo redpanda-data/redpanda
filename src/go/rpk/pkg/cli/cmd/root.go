@@ -30,7 +30,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
-	"golang.org/x/crypto/ssh/terminal"
+	"golang.org/x/term"
 )
 
 func Execute() {
@@ -38,7 +38,7 @@ func Execute() {
 	fs := afero.NewOsFs()
 	mgr := config.NewManager(fs)
 
-	if !terminal.IsTerminal(int(os.Stdout.Fd())) {
+	if !term.IsTerminal(int(os.Stdout.Fd())) {
 		color.NoColor = true
 	}
 	log.SetFormatter(cli.NewRpkLogFormatter())
@@ -64,12 +64,12 @@ func Execute() {
 
 	rootCmd.AddCommand(NewGenerateCommand(mgr))
 	rootCmd.AddCommand(NewVersionCommand())
-	rootCmd.AddCommand(NewWasmCommand(fs, mgr))
+	rootCmd.AddCommand(NewWasmCommand(fs))
 	rootCmd.AddCommand(NewContainerCommand())
-	rootCmd.AddCommand(NewTopicCommand(fs, mgr))
+	rootCmd.AddCommand(NewTopicCommand(fs))
 	rootCmd.AddCommand(NewClusterCommand(fs))
-	rootCmd.AddCommand(NewACLCommand(fs, mgr))
-	rootCmd.AddCommand(group.NewCommand(fs, mgr))
+	rootCmd.AddCommand(NewACLCommand(fs))
+	rootCmd.AddCommand(group.NewCommand(fs))
 
 	rootCmd.AddCommand(plugincmd.NewCommand(fs))
 
@@ -196,7 +196,7 @@ func addPluginWithExec(
 	// recursively below when there is more than one piece.
 	p0 := pieces[0]
 
-	childCmd, args, err := parentCmd.Find(pieces)
+	childCmd, _, err := parentCmd.Find(pieces)
 
 	// If the command does not exist, then err will be non-nil. If the
 	// command does not exist and the parent does not have subcommands,
@@ -211,7 +211,7 @@ func addPluginWithExec(
 	}
 
 	if len(pieces) > 1 { // recursive: we are not done yet adding our nested command
-		args = pieces[1:]
+		args := pieces[1:]
 		addPluginWithExec(childCmd, args, execPath)
 		return
 	}
@@ -229,7 +229,7 @@ func addPluginWithExec(
 
 	out, err := (&exec.Cmd{
 		Path: execPath,
-		Args: append([]string{execPath, plugin.FlagAutoComplete}),
+		Args: []string{execPath, plugin.FlagAutoComplete},
 		Env:  os.Environ(),
 	}).Output()
 	if err != nil {

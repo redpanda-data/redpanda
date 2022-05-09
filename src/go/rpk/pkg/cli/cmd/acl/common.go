@@ -39,19 +39,6 @@ const (
 )
 
 var (
-	allIndividualFlags = []string{
-		topicFlag,
-		groupFlag,
-		clusterFlag,
-		txnIDFlag,
-		patternFlag,
-		allowPrincipalFlag,
-		allowHostFlag,
-		denyPrincipalFlag,
-		denyHostFlag,
-		operationFlag,
-	}
-
 	// For all outputs, we either have the following headers, or the
 	// following headers and an additional "Error" message column.
 	headers = []string{

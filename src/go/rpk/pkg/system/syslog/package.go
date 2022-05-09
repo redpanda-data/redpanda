@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-// Declares the 'syslog' package. Necessary for non-linux build, since all
+// Package syslog is necessary for non-linux build, since all
 // other files in this package are only built for linux, would which cause
 // darwin builds to fail.
 package syslog

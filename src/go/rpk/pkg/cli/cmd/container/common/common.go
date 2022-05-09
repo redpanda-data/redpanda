@@ -230,7 +230,7 @@ func CreateNode(
 	if err != nil {
 		return nil, err
 	}
-	kPort, err := nat.NewPort(
+	kPort, err := nat.NewPort( //nolint:revive // var-naming diff here is intended kPort = kafkaPort.
 		"tcp",
 		strconv.Itoa(int(externalKafkaPort)),
 	)
@@ -351,7 +351,8 @@ func CreateNode(
 
 func PullImage(c Client, image string) error {
 	log.Debugf("Pulling image: %s", image)
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
 	res, err := c.ImagePull(ctx, image, types.ImagePullOptions{})
 	if res != nil {
 		defer res.Close()

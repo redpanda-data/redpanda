@@ -53,7 +53,7 @@ func CheckLicenseKey(key string) error {
 		return invalidErr
 	}
 	lk := &LicenseKey{}
-	err = json.Unmarshal([]byte(decoded), lk)
+	err = json.Unmarshal(decoded, lk)
 	if err != nil {
 		return invalidErr
 	}

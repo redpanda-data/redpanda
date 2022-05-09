@@ -19,10 +19,10 @@ func NewDirectExecutor() Executor {
 	return &directExecutor{}
 }
 
-func (e *directExecutor) Execute(cmd commands.Command) error {
+func (*directExecutor) Execute(cmd commands.Command) error {
 	return cmd.Execute()
 }
 
-func (e *directExecutor) IsLazy() bool {
+func (*directExecutor) IsLazy() bool {
 	return false
 }
