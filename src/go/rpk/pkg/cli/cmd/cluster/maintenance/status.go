@@ -10,6 +10,8 @@
 package maintenance
 
 import (
+	"fmt"
+
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -76,20 +78,21 @@ Notes:
 			client, err := admin.NewClient(fs, cfg)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-			brokers, err := client.Brokers()
-			out.MaybeDie(err, "unable to request brokers: %v", err)
+			cv, err := client.ClusterView()
+			out.MaybeDie(err, "unable to request cluster view: %v", err)
 
-			if len(brokers) == 0 {
+			if len(cv.Brokers) == 0 {
 				out.Die("No brokers found. Check broker address configuration.")
 			}
 
-			if brokers[0].Maintenance == nil {
+			if cv.Brokers[0].Maintenance == nil {
 				out.Die("Maintenance mode is not supported in this cluster")
 			}
 
+			fmt.Printf("Cluster view version of the broker handling this request: %d\n", cv.Version)
 			table := newMaintenanceReportTable()
 			defer table.Flush()
-			for _, broker := range brokers {
+			for _, broker := range cv.Brokers {
 				addBrokerMaintenanceReport(table, broker)
 			}
 		},

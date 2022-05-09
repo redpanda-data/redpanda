@@ -9,7 +9,17 @@
 
 package admin
 
-import "net/http"
+import (
+	"net/http"
+	"sort"
+)
+
+// ClusterView contains the broker list of a cluster and a cluster view version
+// which it's monotonically increasing per each cluster view change.
+type ClusterView struct {
+	Version int      `json:"version"`
+	Brokers []Broker `json:"brokers"`
+}
 
 // Health overview data structure.
 type ClusterHealthOverview struct {
@@ -23,4 +33,15 @@ type ClusterHealthOverview struct {
 func (a *AdminAPI) GetHealthOverview() (ClusterHealthOverview, error) {
 	var response ClusterHealthOverview
 	return response, a.sendAny(http.MethodGet, "/v1/cluster/health_overview", nil, &response)
+}
+
+// ClusterView queries one of the client's hosts and returns the list of brokers
+// and cluster view version.
+func (a *AdminAPI) ClusterView() (ClusterView, error) {
+	var cv ClusterView
+	defer func() {
+		sort.Slice(cv.Brokers, func(i, j int) bool { return cv.Brokers[i].NodeID < cv.Brokers[j].NodeID }) //nolint:revive // return inside this deferred function is for the sort's less function
+	}()
+	err := a.sendAny(http.MethodGet, "/v1/cluster_view", nil, &cv)
+	return cv, err
 }
