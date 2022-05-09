@@ -89,6 +89,10 @@ public:
       typename T = std::invoke_result_t<ElementParser, request_reader&>>
     std::vector<T> read_array(ElementParser&& parser) {
         auto len = read_int32();
+        if (len < 0) {
+            throw std::out_of_range(
+              "Attempt to read array with negative length");
+        }
         return do_read_array(len, std::forward<ElementParser>(parser));
     }
 
@@ -106,7 +110,6 @@ public:
 private:
     ss::sstring do_read_string(int16_t n) {
         if (unlikely(n < 0)) {
-            /// FIXME: maybe return empty string?
             throw std::out_of_range("Asked to read a negative byte string");
         }
         return _parser.read_string(n);
