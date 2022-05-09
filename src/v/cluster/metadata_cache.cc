@@ -9,6 +9,7 @@
 
 #include "cluster/metadata_cache.h"
 
+#include "cluster/fwd.h"
 #include "cluster/health_monitor_frontend.h"
 #include "cluster/members_table.h"
 #include "cluster/partition_leaders_table.h"
@@ -62,17 +63,34 @@ metadata_cache::get_source_topic(model::topic_namespace_view tp) const {
     return mt->second.get_source_topic();
 }
 
-std::optional<model::topic_metadata> metadata_cache::get_topic_metadata(
+std::optional<cluster::topic_metadata>
+metadata_cache::get_topic_metadata(model::topic_namespace_view tp) const {
+    return _topics_state.local().get_topic_metadata(tp);
+}
+
+std::optional<std::reference_wrapper<const cluster::topic_metadata>>
+metadata_cache::get_topic_metadata_ref(model::topic_namespace_view tn) const {
+    return _topics_state.local().get_topic_metadata_ref(tn);
+}
+
+std::optional<model::topic_metadata> metadata_cache::get_model_topic_metadata(
   model::topic_namespace_view tp, metadata_cache::with_leaders leaders) const {
     auto md = _topics_state.local().get_topic_metadata(tp);
     if (!md) {
-        return md;
-    }
-    if (leaders) {
-        fill_partition_leaders(_leaders.local(), *md);
+        return std::nullopt;
     }
 
-    return md;
+    model::topic_metadata metadata(md->get_configuration().tp_ns);
+    metadata.partitions.reserve(md->get_assignments().size());
+    for (const auto& p_as : md->get_assignments()) {
+        metadata.partitions.push_back(p_as.create_partition_metadata());
+    }
+
+    if (leaders) {
+        fill_partition_leaders(_leaders.local(), metadata);
+    }
+
+    return metadata;
 }
 std::optional<topic_configuration>
 metadata_cache::get_topic_cfg(model::topic_namespace_view tp) const {
@@ -84,15 +102,8 @@ metadata_cache::get_topic_timestamp_type(model::topic_namespace_view tp) const {
     return _topics_state.local().get_topic_timestamp_type(tp);
 }
 
-std::vector<model::topic_metadata> metadata_cache::all_topics_metadata(
-  metadata_cache::with_leaders leaders) const {
-    auto all_md = _topics_state.local().all_topics_metadata();
-    if (leaders) {
-        for (auto& md : all_md) {
-            fill_partition_leaders(_leaders.local(), md);
-        }
-    }
-    return all_md;
+const topic_table::underlying_t& metadata_cache::all_topics_metadata() const {
+    return _topics_state.local().all_topics_metadata();
 }
 
 std::optional<broker_ptr> metadata_cache::get_broker(model::node_id nid) const {
@@ -146,6 +157,10 @@ std::vector<model::node_id> metadata_cache::all_broker_ids() const {
 bool metadata_cache::contains(
   model::topic_namespace_view tp, const model::partition_id pid) const {
     return _topics_state.local().contains(tp, pid);
+}
+
+bool metadata_cache::contains(model::topic_namespace_view tp) const {
+    return _topics_state.local().contains(tp);
 }
 
 ss::future<model::node_id> metadata_cache::get_leader(

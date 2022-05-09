@@ -35,19 +35,22 @@ wait_for_leaders_updates(int id, cluster::metadata_cache& cache) {
       std::chrono::seconds(10),
       [&cache, &leaders, id] {
           leaders.clear();
-          auto tp_md = cache.get_topic_metadata(model::topic_namespace(
-            model::ns("default"), model::topic("test_1")));
+          const model::topic_namespace tn(
+            model::ns("default"), model::topic("test_1"));
+          auto tp_md = cache.get_topic_metadata(tn);
+
           if (!tp_md) {
               return false;
           }
-          if (tp_md->partitions.size() != 3) {
+          if (tp_md->get_assignments().size() != 3) {
               return false;
           }
-          for (auto& p_md : tp_md->partitions) {
-              if (!p_md.leader_node) {
+          for (auto& p_md : tp_md->get_assignments()) {
+              auto leader_id = cache.get_leader_id(tn, p_md.id);
+              if (!leader_id) {
                   return false;
               }
-              leaders.push_back(*p_md.leader_node);
+              leaders.push_back(*leader_id);
           }
           return true;
       })

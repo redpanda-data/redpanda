@@ -27,6 +27,7 @@
 #include "utils/to_string.h"
 #include "v8_engine/data_policy.h"
 
+#include <absl/container/btree_set.h>
 #include <fmt/format.h>
 
 namespace cluster {
@@ -924,6 +925,57 @@ struct leader_term {
     std::optional<model::node_id> leader;
     model::term_id term;
     friend std::ostream& operator<<(std::ostream&, const leader_term&);
+};
+
+struct partition_assignment_cmp {
+    using is_transparent = void;
+    constexpr bool operator()(
+      const partition_assignment& lhs, const partition_assignment& rhs) const {
+        return lhs.id < rhs.id;
+    }
+
+    constexpr bool operator()(
+      const model::partition_id& id, const partition_assignment& rhs) const {
+        return id < rhs.id;
+    }
+    constexpr bool operator()(
+      const partition_assignment& lhs, const model::partition_id& id) const {
+        return lhs.id < id;
+    }
+    constexpr bool operator()(
+      const model::partition_id& lhs, const model::partition_id& rhs) const {
+        return lhs < rhs;
+    }
+};
+
+using assignments_set
+  = absl::btree_set<partition_assignment, partition_assignment_cmp>;
+
+class topic_metadata {
+public:
+    topic_metadata(topic_configuration_assignment, model::revision_id) noexcept;
+
+    topic_metadata(
+      topic_configuration,
+      assignments_set,
+      model::revision_id,
+      model::topic) noexcept;
+
+    bool is_topic_replicable() const;
+    model::revision_id get_revision() const;
+    const model::topic& get_source_topic() const;
+
+    const topic_configuration& get_configuration() const;
+    topic_configuration& get_configuration();
+
+    const assignments_set& get_assignments() const;
+    assignments_set& get_assignments();
+
+private:
+    topic_configuration _configuration;
+    assignments_set _assignments;
+    std::optional<model::topic> _source_topic;
+    model::revision_id _revision;
 };
 
 } // namespace cluster

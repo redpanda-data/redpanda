@@ -219,7 +219,7 @@ metrics_reporter::build_metrics_snapshot() {
         }
 
         snapshot.topic_count++;
-        snapshot.partition_count += md.get_configuration().cfg.partition_count;
+        snapshot.partition_count += md.get_configuration().partition_count;
     }
 
     snapshot.nodes.reserve(metrics_map.size());

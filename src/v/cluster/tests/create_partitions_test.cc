@@ -45,15 +45,17 @@ FIXTURE_TEST(test_creating_partitions, rebalancing_tests_fixture) {
     auto tp_2_md = topics.local().get_topic_metadata(make_tp_ns("test-2"));
 
     // total 6 partitions
-    BOOST_REQUIRE_EQUAL(tp_1_md->partitions.size(), 6);
+    BOOST_REQUIRE_EQUAL(tp_1_md->get_assignments().size(), 6);
     for (auto i = 0; i < 6; ++i) {
-        BOOST_REQUIRE_EQUAL(tp_1_md->partitions[i].id, model::partition_id(i));
+        BOOST_REQUIRE(
+          tp_1_md->get_assignments().contains(model::partition_id(i)));
     }
 
     // total 9 partitions
-    BOOST_REQUIRE_EQUAL(tp_2_md->partitions.size(), 9);
+    BOOST_REQUIRE_EQUAL(tp_2_md->get_assignments().size(), 9);
     for (auto i = 0; i < 9; ++i) {
-        BOOST_REQUIRE_EQUAL(tp_2_md->partitions[i].id, model::partition_id(i));
+        BOOST_REQUIRE(
+          tp_2_md->get_assignments().contains(model::partition_id(i)));
     }
 }
 

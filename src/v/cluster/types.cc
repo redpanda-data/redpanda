@@ -285,6 +285,64 @@ bool config_status::operator==(const config_status& rhs) const {
              rhs.node, rhs.version, rhs.restart, rhs.unknown, rhs.invalid);
 }
 
+namespace {
+cluster::assignments_set to_assignments_map(
+  std::vector<cluster::partition_assignment> assignment_vector) {
+    cluster::assignments_set ret;
+    for (auto& p_as : assignment_vector) {
+        ret.emplace(std::move(p_as));
+    }
+    return ret;
+}
+} // namespace
+
+topic_metadata::topic_metadata(
+  topic_configuration_assignment c, model::revision_id rid) noexcept
+  : _configuration(std::move(c.cfg))
+  , _assignments(to_assignments_map(std::move(c.assignments)))
+  , _source_topic(std::nullopt)
+  , _revision(rid) {}
+
+topic_metadata::topic_metadata(
+  topic_configuration cfg,
+  assignments_set assignments,
+  model::revision_id rid,
+  model::topic st) noexcept
+  : _configuration(std::move(cfg))
+  , _assignments(std::move(assignments))
+  , _source_topic(st)
+  , _revision(rid) {}
+
+bool topic_metadata::is_topic_replicable() const {
+    return _source_topic.has_value() == false;
+}
+
+model::revision_id topic_metadata::get_revision() const {
+    vassert(
+      is_topic_replicable(), "Query for revision_id on a non-replicable topic");
+    return _revision;
+}
+
+const model::topic& topic_metadata::get_source_topic() const {
+    vassert(
+      !is_topic_replicable(), "Query for source_topic on a replicable topic");
+    return _source_topic.value();
+}
+
+const topic_configuration& topic_metadata::get_configuration() const {
+    return _configuration;
+}
+
+const assignments_set& topic_metadata::get_assignments() const {
+    return _assignments;
+}
+
+topic_configuration& topic_metadata::get_configuration() {
+    return _configuration;
+}
+
+assignments_set& topic_metadata::get_assignments() { return _assignments; }
+
 std::ostream& operator<<(std::ostream& o, const non_replicable_topic& d) {
     fmt::print(
       o, "{{Source topic: {}, non replicable topic: {}}}", d.source, d.name);

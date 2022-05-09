@@ -201,12 +201,11 @@ public:
 
     std::vector<model::broker_shard>
     get_replicas(int source_node, const model::ntp& ntp) {
-        auto md = controller(source_node)
-                    ->get_topics_state()
-                    .local()
-                    .get_topic_metadata(model::topic_namespace_view(ntp));
-
-        return md->partitions.begin()->replicas;
+        return controller(source_node)
+          ->get_topics_state()
+          .local()
+          .get_partition_assignment(ntp)
+          ->replicas;
     }
 
     void wait_for_replica_set_partitions(

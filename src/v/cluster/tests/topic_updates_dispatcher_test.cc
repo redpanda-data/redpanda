@@ -84,20 +84,17 @@ FIXTURE_TEST(
     auto md = table.local().all_topics_metadata();
 
     BOOST_REQUIRE_EQUAL(md.size(), 3);
-    std::sort(
-      md.begin(),
-      md.end(),
-      [](const model::topic_metadata& a, const model::topic_metadata& b) {
-          return a.tp_ns.tp < b.tp_ns.tp;
-      });
-    BOOST_REQUIRE_EQUAL(md[0].tp_ns, make_tp_ns("test_tp_1"));
-    BOOST_REQUIRE_EQUAL(md[1].tp_ns, make_tp_ns("test_tp_2"));
-    BOOST_REQUIRE_EQUAL(md[2].tp_ns, make_tp_ns("test_tp_3"));
 
-    BOOST_REQUIRE_EQUAL(md[0].partitions.size(), 1);
-    BOOST_REQUIRE_EQUAL(md[1].partitions.size(), 12);
-    BOOST_REQUIRE_EQUAL(md[2].partitions.size(), 8);
+    BOOST_REQUIRE_EQUAL(md.contains(make_tp_ns("test_tp_1")), true);
+    BOOST_REQUIRE_EQUAL(md.contains(make_tp_ns("test_tp_2")), true);
+    BOOST_REQUIRE_EQUAL(md.contains(make_tp_ns("test_tp_3")), true);
 
+    BOOST_REQUIRE_EQUAL(
+      md.find(make_tp_ns("test_tp_1"))->second.get_assignments().size(), 1);
+    BOOST_REQUIRE_EQUAL(
+      md.find(make_tp_ns("test_tp_2"))->second.get_assignments().size(), 12);
+    BOOST_REQUIRE_EQUAL(
+      md.find(make_tp_ns("test_tp_3"))->second.get_assignments().size(), 8);
     // Initial capacity
     // (cpus * max_allocations_per_core) - core0_extra_weight;
     // node 1, 8 cores
@@ -133,8 +130,10 @@ FIXTURE_TEST(
 
     auto md = table.local().all_topics_metadata();
     BOOST_REQUIRE_EQUAL(md.size(), 1);
-    BOOST_REQUIRE_EQUAL(md[0].tp_ns, make_tp_ns("test_tp_1"));
-    BOOST_REQUIRE_EQUAL(md[0].partitions.size(), 1);
+
+    BOOST_REQUIRE_EQUAL(md.contains(make_tp_ns("test_tp_1")), true);
+    BOOST_REQUIRE_EQUAL(
+      md.find(make_tp_ns("test_tp_1"))->second.get_assignments().size(), 1);
 
     BOOST_REQUIRE_EQUAL(
       current_cluster_capacity(allocator.local().state().allocation_nodes()),

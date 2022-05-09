@@ -160,7 +160,7 @@ health_manager::ensure_topic_replication(model::topic_namespace_view topic) {
         co_return true;
     }
 
-    for (const auto& partition : metadata->partitions) {
+    for (const auto& partition : metadata->get_assignments()) {
         model::ntp ntp(topic.ns, topic.tp, partition.id);
         if (!co_await ensure_partition_replication(std::move(ntp))) {
             co_return false;

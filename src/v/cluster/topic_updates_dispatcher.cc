@@ -40,7 +40,7 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                 auto tp_md = _topic_table.local().get_topic_metadata(
                   del_cmd.value);
                 return dispatch_updates_to_cores(del_cmd, base_offset)
-                  .then([this, tp_md](std::error_code ec) {
+                  .then([this, tp_md = std::move(tp_md)](std::error_code ec) {
                       if (ec == errc::success) {
                           vassert(
                             tp_md.has_value(),
@@ -81,27 +81,23 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                 auto tp_md = _topic_table.local().get_topic_metadata(
                   model::topic_namespace_view(cmd.key));
                 return dispatch_updates_to_cores(cmd, base_offset)
-                  .then([this, tp_md, cmd](std::error_code ec) {
-                      if (!ec) {
-                          vassert(
-                            tp_md.has_value(),
-                            "Topic had to exist before successful partition "
-                            "reallocation");
-                          auto it = std::find_if(
-                            std::cbegin(tp_md->partitions),
-                            std::cend(tp_md->partitions),
-                            [p_id = cmd.key.tp.partition](
-                              const model::partition_metadata& pmd) {
-                                return pmd.id == p_id;
-                            });
-                          vassert(
-                            it != tp_md->partitions.cend(),
-                            "Reassigned partition must exist");
+                  .then(
+                    [this, tp_md = std::move(tp_md), cmd](std::error_code ec) {
+                        if (!ec) {
+                            vassert(
+                              tp_md.has_value(),
+                              "Topic had to exist before successful partition "
+                              "reallocation");
+                            auto it = tp_md->get_assignments().find(
+                              cmd.key.tp.partition);
+                            vassert(
+                              it != tp_md->get_assignments().cend(),
+                              "Reassigned partition must exist");
 
-                          reallocate_partition(it->replicas, cmd.value);
-                      }
-                      return ec;
-                  });
+                            reallocate_partition(it->replicas, cmd.value);
+                        }
+                        return ec;
+                    });
             },
             [this, base_offset](finish_moving_partition_replicas_cmd cmd) {
                 return dispatch_updates_to_cores(std::move(cmd), base_offset);
@@ -127,7 +123,13 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                       if (ec == errc::success) {
                           vassert(
                             assignments.has_value(), "null topic_metadata");
-                          update_allocations(*assignments);
+                          std::vector<partition_assignment> p_as;
+                          p_as.reserve(assignments->size());
+                          std::move(
+                            assignments->begin(),
+                            assignments->end(),
+                            std::back_inserter(p_as));
+                          update_allocations(std::move(p_as));
                       }
                       return ec;
                   });
@@ -197,10 +199,9 @@ topic_updates_dispatcher::dispatch_updates_to_cores(Cmd cmd, model::offset o) {
       });
 }
 
-void topic_updates_dispatcher::deallocate_topic(
-  const model::topic_metadata& tp_md) {
+void topic_updates_dispatcher::deallocate_topic(const topic_metadata& tp_md) {
     // we have to deallocate topics
-    for (auto& p : tp_md.partitions) {
+    for (auto& p : tp_md.get_assignments()) {
         _partition_allocator.local().deallocate(p.replicas);
     }
 }

@@ -97,18 +97,19 @@ bool is_internal(const model::topic_namespace& tp_ns) {
 } // namespace
 
 metadata_response::topic make_topic_response_from_topic_metadata(
-  const cluster::metadata_cache& md_cache, model::topic_metadata&& tp_md) {
+  const cluster::metadata_cache& md_cache, cluster::topic_metadata&& tp_md) {
     metadata_response::topic tp;
     tp.error_code = error_code::none;
-    auto tp_ns = tp_md.tp_ns;
-    tp.name = std::move(tp_md.tp_ns.tp);
+    auto tp_ns = tp_md.get_configuration().tp_ns;
+    tp.name = std::move(tp_md.get_configuration().tp_ns.tp);
 
     tp.is_internal = is_internal(tp_ns);
     std::transform(
-      tp_md.partitions.begin(),
-      tp_md.partitions.end(),
+      tp_md.get_assignments().begin(),
+      tp_md.get_assignments().end(),
       std::back_inserter(tp.partitions),
-      [tp_ns = std::move(tp_ns), &md_cache](model::partition_metadata& p_md) {
+      [tp_ns = std::move(tp_ns),
+       &md_cache](cluster::partition_assignment& p_md) {
           std::vector<model::node_id> replicas{};
           replicas.reserve(p_md.replicas.size());
           std::transform(
@@ -189,14 +190,14 @@ make_error_topic_response(model::topic tp, error_code ec) {
 }
 
 static metadata_response::topic make_topic_response(
-  request_context& ctx, metadata_request& rq, model::topic_metadata md) {
+  request_context& ctx, metadata_request& rq, cluster::topic_metadata md) {
     int32_t auth_operations = 0;
     /**
      * if requested include topic authorized operations
      */
     if (rq.data.include_topic_authorized_operations) {
         auth_operations = details::to_bit_field(
-          details::authorized_operations(ctx, md.tp_ns.tp));
+          details::authorized_operations(ctx, md.get_configuration().tp_ns.tp));
     }
 
     auto res = make_topic_response_from_topic_metadata(
@@ -211,33 +212,26 @@ get_topic_metadata(request_context& ctx, metadata_request& request) {
 
     // request can be served from whatever happens to be in the cache
     if (request.list_all_topics) {
-        auto topics = ctx.metadata_cache().all_topics_metadata(
-          cluster::metadata_cache::with_leaders::no);
-        // only serve topics from the kafka namespace
-        std::erase_if(topics, [](model::topic_metadata& t_md) {
-            return t_md.tp_ns.ns != model::kafka_namespace;
-        });
+        auto& topics_md = ctx.metadata_cache().all_topics_metadata();
 
-        auto unauthorized_it = std::partition(
-          topics.begin(),
-          topics.end(),
-          [&ctx](const model::topic_metadata& t_md) {
-              /*
-               * quiet authz failures. this isn't checking for a specifically
-               * requested topic, but rather checking visibility of all topics.
-               */
-              return ctx.authorized(
-                security::acl_operation::describe,
-                t_md.tp_ns.tp,
-                authz_quiet{true});
-          });
-        std::transform(
-          topics.begin(),
-          unauthorized_it,
-          std::back_inserter(res),
-          [&ctx, &request](model::topic_metadata& t_md) {
-              return make_topic_response(ctx, request, std::move(t_md));
-          });
+        for (const auto& [tp_ns, md] : topics_md) {
+            // only serve topics from the kafka namespace
+            if (tp_ns.ns != model::kafka_namespace) {
+                continue;
+            }
+            /*
+             * quiet authz failures. this isn't checking for a specifically
+             * requested topic, but rather checking visibility of all topics.
+             */
+            if (!ctx.authorized(
+                  security::acl_operation::describe,
+                  tp_ns.tp,
+                  authz_quiet{true})) {
+                continue;
+            }
+            res.push_back(make_topic_response(ctx, request, md));
+        }
+
         return ss::make_ready_future<std::vector<metadata_response::topic>>(
           std::move(res));
     }
@@ -255,8 +249,7 @@ get_topic_metadata(request_context& ctx, metadata_request& request) {
             continue;
         }
         if (auto md = ctx.metadata_cache().get_topic_metadata(
-              model::topic_namespace_view(model::kafka_namespace, topic.name),
-              cluster::metadata_cache::with_leaders::no);
+              model::topic_namespace_view(model::kafka_namespace, topic.name));
             md) {
             auto src_topic_response = make_topic_response(
               ctx, request, std::move(*md));

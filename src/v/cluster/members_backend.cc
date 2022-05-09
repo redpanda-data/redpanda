@@ -167,7 +167,7 @@ void members_backend::calculate_reallocations(update_meta& meta) {
             if (!cfg.is_topic_replicable()) {
                 continue;
             }
-            for (auto& pas : cfg.get_configuration().assignments) {
+            for (const auto& pas : cfg.get_assignments()) {
                 if (is_in_replica_set(pas.replicas, meta.update.id)) {
                     partition_reallocation reallocation(
                       model::ntp(tp_ns.ns, tp_ns.tp, pas.id),
@@ -284,7 +284,7 @@ void members_backend::calculate_reallocations_after_node_added(
               meta.update.offset);
             continue;
         }
-        for (auto& p : metadata.get_configuration().assignments) {
+        for (const auto& p : metadata.get_assignments()) {
             std::erase_if(to_move_from_node, [](const replicas_to_move& v) {
                 return v.left_to_move == 0;
             });

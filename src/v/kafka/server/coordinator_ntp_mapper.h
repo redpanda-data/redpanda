@@ -50,14 +50,14 @@ public:
       , _tp_ns(std::move(group_topic)) {}
 
     std::optional<model::ntp> ntp_for(const kafka::group_id& group) const {
-        auto md = _md.local().get_topic_metadata(_tp_ns);
-        if (!md) {
+        auto cfg = _md.local().get_topic_cfg(_tp_ns);
+        if (!cfg) {
             return std::nullopt;
         }
         incremental_xxhash64 inc;
         inc.update(group);
         auto p = static_cast<model::partition_id::type>(
-          jump_consistent_hash(inc.digest(), md->partitions.size()));
+          jump_consistent_hash(inc.digest(), cfg->partition_count));
         return model::ntp(_tp_ns.ns, _tp_ns.tp, model::partition_id{p});
     }
 

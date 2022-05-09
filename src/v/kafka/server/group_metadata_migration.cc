@@ -97,7 +97,7 @@ transform_batch(model::record_batch batch) {
 
 ss::future<bool> create_consumer_offsets_topic(
   cluster::controller& controller,
-  std::vector<cluster::partition_assignment> assignments,
+  const cluster::assignments_set& assignments,
   model::timeout_clock::time_point timeout) {
     vassert(
       !assignments.empty(),
@@ -107,7 +107,7 @@ ss::future<bool> create_consumer_offsets_topic(
         model::kafka_consumer_offsets_nt.ns,
         model::kafka_consumer_offsets_nt.tp,
         static_cast<int32_t>(assignments.size()),
-        static_cast<int16_t>(assignments.front().replicas.size())});
+        static_cast<int16_t>(assignments.begin()->replicas.size())});
     topic.cfg.properties.cleanup_policy_bitflags
       = model::cleanup_policy_bitflags::compaction;
     for (auto& p_as : assignments) {

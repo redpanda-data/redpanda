@@ -314,8 +314,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
         if (!topic.second.is_topic_replicable()) {
             continue;
         }
-        for (const auto& partition :
-             topic.second.get_configuration().assignments) {
+        for (const auto& partition : topic.second.get_assignments()) {
             if (partition.group == transfer->group) {
                 ntp = model::ntp(topic.first.ns, topic.first.tp, partition.id);
                 break;
@@ -438,8 +437,7 @@ leader_balancer::find_leader_shard(const model::ntp& ntp) {
 
     // If the inital query was for a non_replicable ntp, the get_leader() call
     // would have returned its source topic
-    for (const auto& partition :
-         config_it->second.get_configuration().assignments) {
+    for (const auto& partition : config_it->second.get_assignments()) {
         if (partition.id != ntp.tp.partition) {
             continue;
         }
@@ -474,8 +472,7 @@ leader_balancer::index_type leader_balancer::build_index() {
         if (!topic.second.is_topic_replicable()) {
             continue;
         }
-        for (const auto& partition :
-             topic.second.get_configuration().assignments) {
+        for (const auto& partition : topic.second.get_assignments()) {
             if (partition.replicas.empty()) {
                 vlog(
                   clusterlog.warn,

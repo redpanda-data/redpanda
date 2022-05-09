@@ -63,19 +63,19 @@ bool has_node_local_replicas(
 ss::future<result<std::vector<ntp_reconciliation_state>>>
 controller_api::get_reconciliation_state(model::topic_namespace_view tp_ns) {
     using ret_t = result<std::vector<ntp_reconciliation_state>>;
-    auto metadata = _topics.local().get_topic_metadata(tp_ns);
+    auto metadata = _topics.local().get_topic_metadata_ref(tp_ns);
     if (!metadata) {
         co_return ret_t(errc::topic_not_exists);
     }
     std::vector<model::ntp> ntps;
-    ntps.reserve(metadata->partitions.size());
+    ntps.reserve(metadata->get().get_assignments().size());
 
     std::transform(
-      metadata->partitions.cbegin(),
-      metadata->partitions.cend(),
+      metadata->get().get_assignments().cbegin(),
+      metadata->get().get_assignments().cend(),
       std::back_inserter(ntps),
-      [tp_ns](const model::partition_metadata& p_md) {
-          return model::ntp(tp_ns.ns, tp_ns.tp, p_md.id);
+      [tp_ns](const partition_assignment& p_as) {
+          return model::ntp(tp_ns.ns, tp_ns.tp, p_as.id);
       });
 
     co_return co_await get_reconciliation_state(std::move(ntps));
@@ -211,7 +211,7 @@ controller_api::get_reconciliation_state(
 // high level APIs
 ss::future<std::error_code> controller_api::wait_for_topic(
   model::topic_namespace_view tp_ns, model::timeout_clock::time_point timeout) {
-    auto metadata = _topics.local().get_topic_metadata(tp_ns);
+    auto metadata = _topics.local().get_topic_metadata_ref(tp_ns);
     if (!metadata) {
         vlog(clusterlog.trace, "topic {} does not exists", tp_ns);
         co_return make_error_code(errc::topic_not_exists);
@@ -219,9 +219,9 @@ ss::future<std::error_code> controller_api::wait_for_topic(
 
     absl::node_hash_map<model::node_id, std::vector<model::ntp>> requests;
     // collect ntps per node
-    for (const auto& p_md : metadata->partitions) {
-        for (const auto& bs : p_md.replicas) {
-            requests[bs.node_id].emplace_back(tp_ns.ns, tp_ns.tp, p_md.id);
+    for (const auto& p_as : metadata->get().get_assignments()) {
+        for (const auto& bs : p_as.replicas) {
+            requests[bs.node_id].emplace_back(tp_ns.ns, tp_ns.tp, p_as.id);
         }
     }
     bool ready = false;
