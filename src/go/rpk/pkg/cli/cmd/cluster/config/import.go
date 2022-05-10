@@ -26,6 +26,14 @@ import (
 	yaml "gopkg.in/yaml.v3"
 )
 
+type formattedError struct {
+	s string
+}
+
+func (fe *formattedError) Error() string {
+	return fe.s
+}
+
 func importConfig(
 	client *admin.AdminAPI,
 	filename string,
@@ -34,10 +42,14 @@ func importConfig(
 	all bool,
 ) (err error) {
 	readbackBytes, err := os.ReadFile(filename)
-	out.MaybeDie(err, "error reading file %s: %v", filename, err)
+	if err != nil {
+		return fmt.Errorf("error reading file %s: %v", filename, err)
+	}
 	var readbackConfig admin.Config
 	err = yaml.Unmarshal(readbackBytes, &readbackConfig)
-	out.MaybeDie(err, "error parsing edited config: %v", err)
+	if err != nil {
+		return fmt.Errorf("error parsing edited config: %v", err)
+	}
 
 	type propertyDelta struct {
 		Property string
@@ -84,6 +96,12 @@ func importConfig(
 			// For types that aren't numeric or array, pass them through as-is
 		}
 
+		// We exclude cluster_id from upsert here and remove below to avoid any
+		// accidental duplication of the ID from one cluster to another
+		if k == "cluster_id" {
+			continue
+		}
+
 		if haveOldVal {
 			// If value changed, add it to list of updates
 			// DeepEqual because values can be slices
@@ -100,6 +118,11 @@ func importConfig(
 
 	for k := range oldConfig {
 		if _, found := readbackConfig[k]; !found {
+			if k == "cluster_id" {
+				// see above
+				continue
+			}
+
 			meta, inSchema := schema[k]
 			if !inSchema {
 				continue
@@ -134,26 +157,33 @@ func importConfig(
 		// Special case 400 (validation) errors with friendly output
 		// about which configuration properties were invalid.
 		if he.Response.StatusCode == 400 {
-			fmt.Fprint(os.Stderr, formatValidationError(err, he))
-			out.Die("No changes were made.")
+			ve, err := formatValidationError(err, he)
+			if err != nil {
+				return fmt.Errorf("error setting config: %v", err)
+			}
+			return &formattedError{ve}
 		}
 	}
 
 	// If we didn't handle a structured 400 error, check for other errors.
-	out.MaybeDie(err, "error setting config: %v", err)
+	if err != nil {
+		return fmt.Errorf("error setting config: %v", err)
+	}
 
 	fmt.Printf("Successfully updated configuration. New configuration version is %d.\n", result.ConfigVersion)
 
 	return nil
 }
 
-func formatValidationError(err error, httpErr *admin.HTTPError) string {
+func formatValidationError(
+	err error, httpErr *admin.HTTPError,
+) (string, error) {
 	// Output structured validation errors from server
 	var validationErrs map[string]string
 	bodyErr := json.Unmarshal(httpErr.Body, &validationErrs)
 	// If no proper JSON body, fall back to generic HTTP error report
 	if bodyErr != nil {
-		out.MaybeDie(err, "error setting config: %v", err)
+		return "", err
 	}
 
 	type kv struct{ k, v string }
@@ -170,7 +200,7 @@ func formatValidationError(err error, httpErr *admin.HTTPError) string {
 	}
 	fmt.Fprintf(&buf, "\n")
 
-	return buf.String()
+	return buf.String(), nil
 }
 
 func newImportCommand(fs afero.Fs, all *bool) *cobra.Command {
@@ -203,13 +233,18 @@ from the YAML file, it is reset to its default value.  `,
 
 			// Read back template & parse
 			err = importConfig(client, filename, currentConfig, schema, *all)
+			if fe := (*formattedError)(nil); errors.As(err, &fe) {
+				fmt.Fprint(os.Stderr, err)
+				out.Die("No changes were made")
+			}
 			out.MaybeDie(err, "error updating config: %v", err)
 		},
 	}
 
-	cmd.Flags().StringVar(
+	cmd.Flags().StringVarP(
 		&filename,
 		"filename",
+		"f",
 		"",
 		"full path to file to import, e.g. '/tmp/config.yml'",
 	)
