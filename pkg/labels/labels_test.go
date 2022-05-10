@@ -39,21 +39,23 @@ func TestLabels(t *testing.T) {
 		pandaCluster *redpandav1alpha1.Cluster
 		expected     map[string]string
 	}{
-		{"empty inherited labels", testCluster, map[string]string{
-			"app.kubernetes.io/name":       "redpanda",
-			"app.kubernetes.io/instance":   "testcluster",
-			"app.kubernetes.io/component":  "redpanda",
-			"app.kubernetes.io/part-of":    "redpanda",
-			"app.kubernetes.io/managed-by": "redpanda-operator",
+		{
+			"empty inherited labels", testCluster, map[string]string{
+				"app.kubernetes.io/name":       "redpanda",
+				"app.kubernetes.io/instance":   "testcluster",
+				"app.kubernetes.io/component":  "redpanda",
+				"app.kubernetes.io/part-of":    "redpanda",
+				"app.kubernetes.io/managed-by": "redpanda-operator",
+			},
 		},
-		},
-		{"some inherited labels", withPartOfDefined, map[string]string{
-			"app.kubernetes.io/name":       "redpanda",
-			"app.kubernetes.io/instance":   "testcluster",
-			"app.kubernetes.io/component":  "redpanda",
-			"app.kubernetes.io/part-of":    "part-of-something-else",
-			"app.kubernetes.io/managed-by": "redpanda-operator",
-		},
+		{
+			"some inherited labels", withPartOfDefined, map[string]string{
+				"app.kubernetes.io/name":       "redpanda",
+				"app.kubernetes.io/instance":   "testcluster",
+				"app.kubernetes.io/component":  "redpanda",
+				"app.kubernetes.io/part-of":    "part-of-something-else",
+				"app.kubernetes.io/managed-by": "redpanda-operator",
+			},
 		},
 	}
 

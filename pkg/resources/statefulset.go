@@ -242,7 +242,7 @@ func preparePVCResource(
 func (r *StatefulSetResource) obj(
 	ctx context.Context,
 ) (k8sclient.Object, error) {
-	var clusterLabels = labels.ForCluster(r.pandaCluster)
+	clusterLabels := labels.ForCluster(r.pandaCluster)
 
 	annotations := r.pandaCluster.Spec.Annotations
 	if annotations == nil {
@@ -458,7 +458,8 @@ func (r *StatefulSetResource) obj(
 								{
 									LabelSelector: clusterLabels.AsAPISelector(),
 									Namespaces:    []string{r.pandaCluster.Namespace},
-									TopologyKey:   corev1.LabelHostname},
+									TopologyKey:   corev1.LabelHostname,
+								},
 							},
 							PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{
 								{

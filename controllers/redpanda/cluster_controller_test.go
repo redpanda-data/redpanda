@@ -34,7 +34,6 @@ import (
 )
 
 var _ = Describe("RedPandaCluster controller", func() {
-
 	const (
 		timeout  = time.Second * 30
 		interval = time.Second * 1
@@ -152,14 +151,16 @@ var _ = Describe("RedPandaCluster controller", func() {
 				},
 				Spec: corev1.NodeSpec{},
 				Status: corev1.NodeStatus{
-					Addresses: []corev1.NodeAddress{{
-						Type:    corev1.NodeExternalIP,
-						Address: "9.8.7.6",
-					},
+					Addresses: []corev1.NodeAddress{
+						{
+							Type:    corev1.NodeExternalIP,
+							Address: "9.8.7.6",
+						},
 						{
 							Type:    corev1.NodeInternalIP,
 							Address: "11.11.11.11",
-						}},
+						},
+					},
 				},
 			}
 			Expect(k8sClient.Create(context.Background(), node)).Should(Succeed())
@@ -255,7 +256,6 @@ var _ = Describe("RedPandaCluster controller", func() {
 					len(rc.Status.Nodes.SchemaRegistry.ExternalNodeIPs) == 1 &&
 					len(rc.Status.Nodes.SchemaRegistry.Internal) > 0 &&
 					rc.Status.Nodes.SchemaRegistry.External == "" // Without subdomain the external address is empty
-
 			}, timeout, interval).Should(BeTrue())
 		})
 		It("creates redpanda cluster with tls enabled", func() {
@@ -329,7 +329,9 @@ var _ = Describe("RedPandaCluster controller", func() {
 									},
 								},
 								DefaultMode: &defaultMode,
-							}}},
+							},
+						},
+					},
 					corev1.Volume{
 						Name: "tlsca",
 						VolumeSource: corev1.VolumeSource{
@@ -342,7 +344,9 @@ var _ = Describe("RedPandaCluster controller", func() {
 									},
 								},
 								DefaultMode: &defaultMode,
-							}}}))
+							},
+						},
+					}))
 		})
 		It("creates redpanda cluster without external connectivity", func() {
 			resources := corev1.ResourceList{
@@ -494,7 +498,6 @@ var _ = Describe("RedPandaCluster controller", func() {
 				return err == nil &&
 					*sts.Spec.Replicas == replicas
 			}, timeout, interval).Should(BeTrue())
-
 		})
 		It("creates redpanda cluster with preferred address type", func() {
 			resources := corev1.ResourceList{
@@ -706,7 +709,6 @@ var _ = Describe("RedPandaCluster controller", func() {
 				Name:      "nonexisting",
 			}})
 			Expect(err).To(Succeed())
-
 		})
 	})
 
@@ -727,7 +729,6 @@ var _ = Describe("RedPandaCluster controller", func() {
 		Expect(r.WithConfiguratorSettings(res.ConfiguratorSettings{
 			ImagePullPolicy: corev1.PullPolicy(imagePullPolicy),
 		}).SetupWithManager(k8sManager)).To(matcher)
-
 	},
 		Entry("Always image pull policy", "Always", Succeed()),
 		Entry("IfNotPresent image pull policy", "IfNotPresent", Succeed()),
