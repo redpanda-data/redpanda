@@ -10,6 +10,7 @@
 package config
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -57,37 +58,66 @@ to edit all properties including these tunables.
 			currentConfig, err := client.Config()
 			out.MaybeDie(err, "unable to get current config: %v", err)
 
-			// Generate a yaml template for editing
-			file, err := ioutil.TempFile("/tmp", "config_*.yaml")
-			out.MaybeDie(err, "unable to create temporary file %q: %v", file.Name(), err)
-			err = exportConfig(file, schema, currentConfig, *all)
-			out.MaybeDie(err, "failed to write out config file %q: %v", file.Name(), err)
-			err = file.Close()
-			filename := file.Name()
-			out.MaybeDie(err, "error closing temporary file %q: %v", filename, err)
-
-			// Launch editor
-			editor := os.Getenv("EDITOR")
-			if editor == "" {
-				const fallbackEditor = "/usr/bin/nano"
-				if _, err := os.Stat(fallbackEditor); err != nil {
-					out.Die("Please set $EDITOR to use this command")
-				} else {
-					editor = fallbackEditor
-				}
-			}
-
-			child := exec.Command(editor, filename)
-			child.Stdout = os.Stdout
-			child.Stderr = os.Stderr
-			child.Stdin = os.Stdin
-			err = child.Run()
-			out.MaybeDie(err, "Error running editor: %v", err)
-
-			// Read back template & parse
-			err = importConfig(client, filename, currentConfig, schema, *all)
-			out.MaybeDie(err, "Error updating config: %v", err)
+			err = executeEdit(client, schema, currentConfig, all)
+			out.MaybeDie(err, "unable to edit: %v", err)
 		},
 	}
 	return cmd
+}
+
+func executeEdit(
+	client *admin.AdminAPI,
+	schema admin.ConfigSchema,
+	currentConfig admin.Config,
+	all *bool,
+) error {
+	// Generate a yaml template for editing
+	file, err := ioutil.TempFile("/tmp", "config_*.yaml")
+	filename := file.Name()
+	defer func() {
+		err := os.Remove(filename)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "unable to remove temporary file %q\n", filename)
+		}
+	}()
+	if err != nil {
+		return fmt.Errorf("unable to create temporary file %q: %v", filename, err)
+	}
+
+	err = exportConfig(file, schema, currentConfig, *all)
+	if err != nil {
+		return fmt.Errorf("failed to write out config file %q: %v", filename, err)
+	}
+
+	err = file.Close()
+	if err != nil {
+		return fmt.Errorf("error closing temporary file %q: %v", filename, err)
+	}
+
+	// Launch editor
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		const fallbackEditor = "/usr/bin/nano"
+		if _, err := os.Stat(fallbackEditor); err != nil {
+			return fmt.Errorf("please set $EDITOR to use this command")
+		} else {
+			editor = fallbackEditor
+		}
+	}
+
+	child := exec.Command(editor, filename)
+	child.Stdout = os.Stdout
+	child.Stderr = os.Stderr
+	child.Stdin = os.Stdin
+	err = child.Run()
+	if err != nil {
+		return fmt.Errorf("error running editor: %v", err)
+	}
+
+	// Read back template & parse
+	err = importConfig(client, filename, currentConfig, schema, *all)
+	if err != nil {
+		return fmt.Errorf("error updating config: %v", err)
+	}
+	return nil
 }
