@@ -48,7 +48,7 @@ func TestEnsure_PDB(t *testing.T) {
 	clusterTwo.Spec.PodDisruptionBudget.MinAvailable = &two
 	pdbTwo := pdb.DeepCopy()
 	pdbTwo.Spec.MinAvailable = &two
-	var tests = []struct {
+	tests := []struct {
 		name           string
 		existingObject client.Object
 		pandaCluster   *redpandav1alpha1.Cluster

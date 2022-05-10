@@ -43,11 +43,13 @@ import (
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to
 // http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
 
-var k8sClient client.Client
-var testEnv *envtest.Environment
-var cfg *rest.Config
-var testAdminAPI *mockAdminAPI
-var testAdminAPIFactory adminutils.AdminAPIClientFactory
+var (
+	k8sClient           client.Client
+	testEnv             *envtest.Environment
+	cfg                 *rest.Config
+	testAdminAPI        *mockAdminAPI
+	testAdminAPIFactory adminutils.AdminAPIClientFactory
+)
 
 func TestAPIs(t *testing.T) {
 	RegisterFailHandler(Fail)
