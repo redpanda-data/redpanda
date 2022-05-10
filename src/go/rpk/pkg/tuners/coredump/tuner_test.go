@@ -63,7 +63,7 @@ func TestTune(t *testing.T) {
 			info, err := script.Stat()
 			require.NoError(t, err)
 			// Check that the script is world-readable, writable and executable
-			expectedMode := os.FileMode(int(0777))
+			expectedMode := os.FileMode(int(0o777))
 			require.Equal(t, expectedMode, info.Mode())
 			expectedScript, err := renderTemplate(coredumpScriptTmpl, conf.Rpk)
 			require.NoError(t, err)

@@ -23,7 +23,6 @@ import (
 )
 
 func TestStop(t *testing.T) {
-
 	tests := []struct {
 		name           string
 		client         func() (common.Client, error)
@@ -178,7 +177,6 @@ func TestStop(t *testing.T) {
 					)
 				}
 			}
-
 		})
 	}
 }

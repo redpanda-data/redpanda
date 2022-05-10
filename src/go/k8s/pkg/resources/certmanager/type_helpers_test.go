@@ -203,50 +203,46 @@ func TestClusterCertificates(t *testing.T) {
 				},
 			},
 		}, []string{}, 0},
-		{"schematregistry api tls", &v1alpha1.Cluster{
-			ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
-			Spec: v1alpha1.ClusterSpec{
-				Configuration: v1alpha1.RedpandaConfig{
-					SchemaRegistry: &v1alpha1.SchemaRegistryAPI{
-						TLS: &v1alpha1.SchemaRegistryAPITLS{
-							Enabled: true,
-						},
-					},
-				},
-			},
-		},
-			[]string{"test-schema-registry-selfsigned-issuer", "test-schema-registry-root-certificate", "test-schema-registry-root-issuer", "test-schema-registry-node"}, 1},
-		{"schematregistry api mutual tls", &v1alpha1.Cluster{
-			ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
-			Spec: v1alpha1.ClusterSpec{
-				Configuration: v1alpha1.RedpandaConfig{
-					SchemaRegistry: &v1alpha1.SchemaRegistryAPI{
-						TLS: &v1alpha1.SchemaRegistryAPITLS{
-							Enabled:           true,
-							RequireClientAuth: true,
-						},
-					},
-				},
-			},
-		},
-			[]string{"test-schema-registry-selfsigned-issuer", "test-schema-registry-root-certificate", "test-schema-registry-root-issuer", "test-schema-registry-node", "test-schema-registry-client"}, 2},
-		{"kafka and schematregistry with nodesecretref", &v1alpha1.Cluster{
-			ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
-			Spec: v1alpha1.ClusterSpec{
-				Configuration: v1alpha1.RedpandaConfig{
-					SchemaRegistry: &v1alpha1.SchemaRegistryAPI{
-						TLS: &v1alpha1.SchemaRegistryAPITLS{
-							Enabled:           true,
-							RequireClientAuth: true,
-							NodeSecretRef: &corev1.ObjectReference{
-								Name:      secret.Name,
-								Namespace: secret.Namespace,
+		{
+			"schematregistry api tls", &v1alpha1.Cluster{
+				ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
+				Spec: v1alpha1.ClusterSpec{
+					Configuration: v1alpha1.RedpandaConfig{
+						SchemaRegistry: &v1alpha1.SchemaRegistryAPI{
+							TLS: &v1alpha1.SchemaRegistryAPITLS{
+								Enabled: true,
 							},
 						},
 					},
-					KafkaAPI: []v1alpha1.KafkaAPI{
-						{
-							TLS: v1alpha1.KafkaAPITLS{
+				},
+			},
+			[]string{"test-schema-registry-selfsigned-issuer", "test-schema-registry-root-certificate", "test-schema-registry-root-issuer", "test-schema-registry-node"},
+			1,
+		},
+		{
+			"schematregistry api mutual tls", &v1alpha1.Cluster{
+				ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
+				Spec: v1alpha1.ClusterSpec{
+					Configuration: v1alpha1.RedpandaConfig{
+						SchemaRegistry: &v1alpha1.SchemaRegistryAPI{
+							TLS: &v1alpha1.SchemaRegistryAPITLS{
+								Enabled:           true,
+								RequireClientAuth: true,
+							},
+						},
+					},
+				},
+			},
+			[]string{"test-schema-registry-selfsigned-issuer", "test-schema-registry-root-certificate", "test-schema-registry-root-issuer", "test-schema-registry-node", "test-schema-registry-client"},
+			2,
+		},
+		{
+			"kafka and schematregistry with nodesecretref", &v1alpha1.Cluster{
+				ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
+				Spec: v1alpha1.ClusterSpec{
+					Configuration: v1alpha1.RedpandaConfig{
+						SchemaRegistry: &v1alpha1.SchemaRegistryAPI{
+							TLS: &v1alpha1.SchemaRegistryAPITLS{
 								Enabled:           true,
 								RequireClientAuth: true,
 								NodeSecretRef: &corev1.ObjectReference{
@@ -255,11 +251,24 @@ func TestClusterCertificates(t *testing.T) {
 								},
 							},
 						},
+						KafkaAPI: []v1alpha1.KafkaAPI{
+							{
+								TLS: v1alpha1.KafkaAPITLS{
+									Enabled:           true,
+									RequireClientAuth: true,
+									NodeSecretRef: &corev1.ObjectReference{
+										Name:      secret.Name,
+										Namespace: secret.Namespace,
+									},
+								},
+							},
+						},
 					},
 				},
 			},
+			[]string{"test-kafka-selfsigned-issuer", "test-kafka-root-certificate", "test-kafka-root-issuer", "test-operator-client", "test-user-client", "test-admin-client", "test-schema-registry-selfsigned-issuer", "test-schema-registry-root-certificate", "test-schema-registry-root-issuer", "test-schema-registry-client"},
+			4,
 		},
-			[]string{"test-kafka-selfsigned-issuer", "test-kafka-root-certificate", "test-kafka-root-issuer", "test-operator-client", "test-user-client", "test-admin-client", "test-schema-registry-selfsigned-issuer", "test-schema-registry-root-certificate", "test-schema-registry-root-issuer", "test-schema-registry-client"}, 4},
 	}
 	for _, tt := range tests {
 		cc := certmanager.NewClusterCertificates(tt.pandaCluster,

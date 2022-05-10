@@ -34,7 +34,6 @@ func TestDirectoryIsWriteable(t *testing.T) {
 				path: "/redpanda/data",
 			},
 			before: func(fs afero.Fs) {
-
 			},
 			wantErr: false,
 			want:    true,

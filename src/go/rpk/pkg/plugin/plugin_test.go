@@ -11,17 +11,17 @@ func TestListPlugins(t *testing.T) {
 	t.Parallel()
 
 	fs := testfs.FromMap(map[string]testfs.Fmode{
-		"/usr/local/sbin/.rpk-non_executable":    {Mode: 0666, Contents: ""},
-		"/usr/local/sbin/.rpk-barely_executable": {Mode: 0100, Contents: ""},
-		"/bin/.rpk-barely_executable":            {Mode: 0100, Contents: "shadowed!"},
-		"/bin/.rpk.ac-barely_executable":         {Mode: 0100, Contents: "also shadowed!"},
-		"/bin/.rpk.ac-auto_completed":            {Mode: 0777, Contents: ""},
-		"/bin/has/dir/":                          {Mode: 0777, Contents: ""},
-		"/bin/.rpk.ac-":                          {Mode: 0777, Contents: "empty name ignored"},
-		"/bin/.rpk-":                             {Mode: 0777, Contents: "empty name ignored"},
-		"/bin/.rpkunrelated":                     {Mode: 0777, Contents: ""},
-		"/bin/rpk-nodot":                         {Mode: 0777, Contents: ""},
-		"/unsearched/.rpk-valid_unused":          {Mode: 0777, Contents: ""},
+		"/usr/local/sbin/.rpk-non_executable":    {Mode: 0o666, Contents: ""},
+		"/usr/local/sbin/.rpk-barely_executable": {Mode: 0o100, Contents: ""},
+		"/bin/.rpk-barely_executable":            {Mode: 0o100, Contents: "shadowed!"},
+		"/bin/.rpk.ac-barely_executable":         {Mode: 0o100, Contents: "also shadowed!"},
+		"/bin/.rpk.ac-auto_completed":            {Mode: 0o777, Contents: ""},
+		"/bin/has/dir/":                          {Mode: 0o777, Contents: ""},
+		"/bin/.rpk.ac-":                          {Mode: 0o777, Contents: "empty name ignored"},
+		"/bin/.rpk-":                             {Mode: 0o777, Contents: "empty name ignored"},
+		"/bin/.rpkunrelated":                     {Mode: 0o777, Contents: ""},
+		"/bin/rpk-nodot":                         {Mode: 0o777, Contents: ""},
+		"/unsearched/.rpk-valid_unused":          {Mode: 0o777, Contents: ""},
 	})
 
 	got := ListPlugins(fs, []string{

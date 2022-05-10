@@ -64,9 +64,9 @@ func TestReadRuntineOptions(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fs := afero.NewMemMapFs()
-			err := fs.MkdirAll(filepath.Dir(path), 0755)
+			err := fs.MkdirAll(filepath.Dir(path), 0o755)
 			require.NoError(t, err)
-			err = afero.WriteFile(fs, path, tt.opts, 0644)
+			err = afero.WriteFile(fs, path, tt.opts, 0o644)
 			require.NoError(t, err)
 			got, err := ReadRuntineOptions(fs, path)
 			if tt.wantErr {

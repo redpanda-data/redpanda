@@ -28,7 +28,7 @@ func TestDeviceNomergesTuner_Tune(t *testing.T) {
 		},
 	}
 	fs := afero.NewMemMapFs()
-	fs.MkdirAll("/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue", 0644)
+	fs.MkdirAll("/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue", 0o644)
 	tuner := NewDeviceNomergesTuner(fs, "fake", deviceFeatures, executors.NewDirectExecutor())
 	// when
 	tuner.Tune()

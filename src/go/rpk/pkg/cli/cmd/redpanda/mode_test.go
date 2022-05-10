@@ -71,7 +71,7 @@ func TestModeCommand(t *testing.T) {
 				if err != nil {
 					return "", err
 				}
-				return configPath, afero.WriteFile(fs, configPath, bs, 0644)
+				return configPath, afero.WriteFile(fs, configPath, bs, 0o644)
 			},
 			expectedConfig: fillRpkConfig(configPath, config.ModeDev),
 			expectedOutput: fmt.Sprintf("Writing 'development' mode defaults to '%s'", configPath),
@@ -85,7 +85,7 @@ func TestModeCommand(t *testing.T) {
 				if err != nil {
 					return "", err
 				}
-				return configPath, afero.WriteFile(fs, configPath, bs, 0644)
+				return configPath, afero.WriteFile(fs, configPath, bs, 0o644)
 			},
 			expectedConfig: fillRpkConfig(configPath, config.ModeProd),
 			expectedOutput: fmt.Sprintf("Writing 'production' mode defaults to '%s'", configPath),
@@ -99,7 +99,7 @@ func TestModeCommand(t *testing.T) {
 				if err != nil {
 					return "", err
 				}
-				return configPath, afero.WriteFile(fs, configPath, bs, 0644)
+				return configPath, afero.WriteFile(fs, configPath, bs, 0o644)
 			},
 			expectedConfig: fillRpkConfig(configPath, config.ModeDev),
 			expectedOutput: fmt.Sprintf("Writing 'dev' mode defaults to '%s'", configPath),
@@ -113,7 +113,7 @@ func TestModeCommand(t *testing.T) {
 				if err != nil {
 					return "", err
 				}
-				return configPath, afero.WriteFile(fs, configPath, bs, 0644)
+				return configPath, afero.WriteFile(fs, configPath, bs, 0o644)
 			},
 			expectedConfig: fillRpkConfig(configPath, config.ModeProd),
 			expectedOutput: fmt.Sprintf("Writing 'prod' mode defaults to '%s'", configPath),
@@ -127,7 +127,7 @@ func TestModeCommand(t *testing.T) {
 				if err != nil {
 					return "", err
 				}
-				return configPath, afero.WriteFile(fs, configPath, bs, 0644)
+				return configPath, afero.WriteFile(fs, configPath, bs, 0o644)
 			},
 			expectedConfig: fillRpkConfig(configPath, config.ModeProd),
 			expectedOutput: fmt.Sprintf("Writing 'prod' mode defaults to '%s'", configPath),
@@ -141,7 +141,7 @@ func TestModeCommand(t *testing.T) {
 				if err != nil {
 					return "", err
 				}
-				return wdConfigPath, afero.WriteFile(fs, wdConfigPath, bs, 0644)
+				return wdConfigPath, afero.WriteFile(fs, wdConfigPath, bs, 0o644)
 			},
 			expectedOutput: "",
 			expectedErrMsg: "'invalidmode' is not a supported mode. Available modes: dev, development, prod, production",

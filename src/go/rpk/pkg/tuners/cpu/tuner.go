@@ -121,7 +121,6 @@ func (tuner *tuner) getMaxCState() (uint, error) {
 	// File doesn't exist or reading error.
 	lines, err := utils.ReadFileLines(tuner.fs,
 		"/sys/module/intel_idle/parameters/max_cstate")
-
 	// We return maxCstate = 0 when any of the above errors occurred.
 	if err != nil {
 		return 0, nil //nolint:nilerr //We don't want to interrupt tune execution if any of the above errors oc	curred
@@ -140,7 +139,8 @@ func (tuner *tuner) getMaxCState() (uint, error) {
 func (tuner *tuner) disableCStates() error {
 	log.Info("Disabling CPU C-States ")
 	return tuner.grub.AddCommandLineOptions(
-		[]string{"intel_idle.max_cstate=0",
+		[]string{
+			"intel_idle.max_cstate=0",
 			"processor.max_cstate=1",
 		})
 }

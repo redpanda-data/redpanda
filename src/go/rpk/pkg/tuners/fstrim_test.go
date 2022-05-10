@@ -37,6 +37,7 @@ func (p *mockProc) RunWithSystemLdPath(
 	}
 	return []string{fstrimBinPath}, nil
 }
+
 func (*mockProc) IsRunning(_ time.Duration, _ string) bool {
 	return true
 }

@@ -23,9 +23,7 @@ import (
 )
 
 func newEnableCommand(fs afero.Fs) *cobra.Command {
-	var (
-		wait bool
-	)
+	var wait bool
 	cmd := &cobra.Command{
 		Use:   "enable <node-id>",
 		Short: "Enable maintenance mode for a node.",

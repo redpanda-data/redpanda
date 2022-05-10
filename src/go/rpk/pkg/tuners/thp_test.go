@@ -50,7 +50,7 @@ func TestTHPTunerSupported(t *testing.T) {
 			fs := afero.NewMemMapFs()
 
 			if tt.thpDir != "" {
-				err := fs.MkdirAll(tt.thpDir, 0755)
+				err := fs.MkdirAll(tt.thpDir, 0o755)
 				require.NoError(st, err)
 			}
 			exec := executors.NewDirectExecutor()
@@ -75,7 +75,7 @@ echo 'always' > /sys/kernel/mm/transparent_hugepage/enabled
 	scriptFileName := "script.sh"
 	exec := executors.NewScriptRenderingExecutor(fs, scriptFileName)
 	dir := thpDir
-	err := fs.MkdirAll(dir, 0755)
+	err := fs.MkdirAll(dir, 0o755)
 	require.NoError(t, err)
 
 	_, err = fs.Create(filepath.Join(dir, "enabled"))
@@ -106,7 +106,7 @@ func TestTHPTunerDirectExecutor(t *testing.T) {
 	exec := executors.NewDirectExecutor()
 	dir := thpDir
 	filePath := filepath.Join(dir, "enabled")
-	err := fs.MkdirAll(dir, 0755)
+	err := fs.MkdirAll(dir, 0o755)
 	require.NoError(t, err)
 
 	_, err = fs.Create(filePath)
@@ -155,7 +155,7 @@ func TestTHPCheck(t *testing.T) {
 		t.Run(tt.name, func(st *testing.T) {
 			fs := afero.NewMemMapFs()
 			dir := thpDir
-			err := fs.MkdirAll(dir, 0755)
+			err := fs.MkdirAll(dir, 0o755)
 			require.NoError(t, err)
 
 			f, err := fs.Create(filepath.Join(dir, "enabled"))

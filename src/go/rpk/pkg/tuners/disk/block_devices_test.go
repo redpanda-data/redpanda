@@ -46,7 +46,8 @@ func Test_blockDevices_getDeviceControllerPath(t *testing.T) {
 		fs:            fs,
 		irqDeviceInfo: irqDeviceInfo,
 		irqProcFile:   irqProcFile,
-		proc:          proc}
+		proc:          proc,
+	}
 	devSystemPath := "/sys/devices/pci0000:00/0000:00:1f.2/ata1/host0" +
 		"/target0:0:0/0:0:0:0/block/sda/sda1"
 	// when
@@ -70,7 +71,7 @@ func Test_blockDevices_getDeviceControllerPath(t *testing.T) {
 }
 
 func Test_blockDevices_isIRQNvmeFastPathIRQ(t *testing.T) {
-	//given
+	// given
 	fields := []struct {
 		name     string
 		procFile irq.ProcFile
@@ -116,7 +117,8 @@ func Test_blockDevices_isIRQNvmeFastPathIRQ(t *testing.T) {
 			},
 			expected: false,
 			numCpus:  8,
-		}}
+		},
+	}
 	for _, test := range fields {
 		t.Run(test.name, func(t *testing.T) {
 			// given
@@ -127,7 +129,8 @@ func Test_blockDevices_isIRQNvmeFastPathIRQ(t *testing.T) {
 				fs:            fs,
 				irqDeviceInfo: irqDeviceInfo,
 				irqProcFile:   test.procFile,
-				proc:          proc}
+				proc:          proc,
+			}
 			// when
 			isNvmeIRQ, err := blockDevices.isIRQNvmeFastPathIRQ(18, test.numCpus)
 			// then

@@ -36,7 +36,6 @@ const (
 )
 
 var _ = Describe("RedPandaCluster configuration controller", func() {
-
 	const (
 		timeout  = time.Second * 30
 		interval = time.Millisecond * 100
@@ -52,9 +51,7 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 	)
 
 	Context("When managing a RedpandaCluster with centralized config", func() {
-
 		It("Can initialize a cluster with centralized configuration", func() {
-
 			By("Allowing creation of a new cluster")
 			key, baseKey, redpandaCluster := getInitialTestCluster("central-initialize")
 			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
@@ -90,7 +87,6 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 		})
 
 		It("Should interact with the admin API when doing changes", func() {
-
 			By("Allowing creation of a new cluster")
 			key, baseKey, redpandaCluster := getInitialTestCluster("central-changes")
 			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
@@ -148,7 +144,6 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 		})
 
 		It("Should remove properties from the admin API when needed", func() {
-
 			By("Allowing creation of a new cluster")
 			key, baseKey, redpandaCluster := getInitialTestCluster("central-removal")
 			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
@@ -238,7 +233,6 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 		})
 
 		It("Should restart the cluster only when strictly required", func() {
-
 			By("Allowing creation of a new cluster")
 			key, baseKey, redpandaCluster := getInitialTestCluster("central-restart")
 			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
@@ -340,7 +334,6 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 		})
 
 		It("Should defer updating the centralized configuration when admin API is unavailable", func() {
-
 			testAdminAPI.SetUnavailable(true)
 
 			By("Allowing creation of a new cluster")
@@ -377,13 +370,10 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			By("Deleting the cluster")
 			Expect(k8sClient.Delete(context.Background(), redpandaCluster)).Should(Succeed())
 		})
-
 	})
 
 	Context("When reconciling a cluster without centralized configuration", func() {
-
 		It("Should behave like before", func() {
-
 			By("Allowing creation of a cluster with an old version")
 			key, baseKey, redpandaCluster := getInitialTestCluster("no-central")
 			redpandaCluster.Spec.Version = versionWithoutCentralizedConfiguration
@@ -427,13 +417,10 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			By("Deleting the cluster")
 			Expect(k8sClient.Delete(context.Background(), redpandaCluster)).Should(Succeed())
 		})
-
 	})
 
 	Context("When upgrading a cluster from a version without centralized configuration", func() {
-
 		It("Should do a single rolling upgrade", func() {
-
 			By("Allowing creation of a cluster with an old version")
 			key, baseKey, redpandaCluster := getInitialTestCluster("upgrading")
 			redpandaCluster.Spec.Version = versionWithoutCentralizedConfiguration
@@ -480,7 +467,6 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 		})
 
 		It("Should be able to upgrade and change a cluster even if the admin API is unavailable", func() {
-
 			testAdminAPI.SetUnavailable(true)
 
 			By("Allowing creation of a cluster with an old version")
@@ -555,13 +541,10 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			By("Deleting the cluster")
 			Expect(k8sClient.Delete(context.Background(), redpandaCluster)).Should(Succeed())
 		})
-
 	})
 
 	Context("When setting invalid configuration on the cluster", func() {
-
 		It("Should reflect any invalid status in the condition", func() {
-
 			By("Allowing creation of a new cluster")
 			key, baseKey, redpandaCluster := getInitialTestCluster("condition-check")
 			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
@@ -642,7 +625,6 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 		})
 
 		It("Should report direct validation errors in the condition", func() {
-
 			// admin API will return 400 bad request on invalid configuration (default behavior)
 			testAdminAPI.SetDirectValidationEnabled(true)
 
@@ -688,7 +670,6 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 		})
 
 		It("Should report configuration errors present in the .bootstrap.yaml file", func() {
-
 			// Inject property before creating the cluster, simulating .bootstrap.yaml
 			const val = "nown"
 			_, err := testAdminAPI.PatchClusterConfig(map[string]interface{}{
@@ -730,7 +711,6 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 	})
 
 	Context("When external factors change configuration of a cluster", func() {
-
 		It("The drift detector restore all managed properties", func() {
 			// Registering two properties, one of them managed by the operator
 			const (

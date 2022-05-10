@@ -19,7 +19,7 @@ func Persist(fs afero.Fs, in interface{}, file string) error {
 	if err != nil {
 		return err
 	}
-	err = afero.WriteFile(fs, file, bytes, 0644)
+	err = afero.WriteFile(fs, file, bytes, 0o644)
 	return err
 }
 

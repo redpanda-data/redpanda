@@ -26,7 +26,7 @@ type scriptRenderingExecutor struct {
 // FIXME: @david
 // This should also return an error.
 func NewScriptRenderingExecutor(fs afero.Fs, filename string) Executor {
-	file, err := fs.OpenFile(filename, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0755)
+	file, err := fs.OpenFile(filename, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0o755)
 	if err != nil {
 		return &scriptRenderingExecutor{
 			deffered: err,

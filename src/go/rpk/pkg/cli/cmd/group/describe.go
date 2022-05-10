@@ -193,7 +193,6 @@ func printDescribedGroup(
 		args = func(r *describeRow) []interface{} {
 			return append(orig(r), r.clientID, r.host)
 		}
-
 	}
 
 	if useErr {

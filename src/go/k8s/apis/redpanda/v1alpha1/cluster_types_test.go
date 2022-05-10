@@ -37,7 +37,8 @@ func TestRedpandaResourceRequirements(t *testing.T) {
 				Requests: corev1.ResourceList{
 					corev1.ResourceMemory: t.setRequestsMem,
 					corev1.ResourceCPU:    t.setRequestsCPU,
-				}},
+				},
+			},
 			Redpanda: corev1.ResourceList{
 				corev1.ResourceMemory: t.setRedpandaMem,
 				corev1.ResourceCPU:    t.setRedpandaCPU,

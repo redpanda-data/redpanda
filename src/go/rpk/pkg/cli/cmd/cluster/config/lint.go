@@ -92,11 +92,11 @@ central configuration store (and via 'rpk cluster config edit').
 
 			backupFileName := filepath.Base(configFile) + ".bak"
 			backupFile := filepath.Join(filepath.Dir(configFile), backupFileName)
-			err = afero.WriteFile(fs, backupFile, configIn, 0755)
+			err = afero.WriteFile(fs, backupFile, configIn, 0o755)
 			out.MaybeDie(err, "error writing backup config %q: %v", backupFile, err)
 			log.Infof("Backed up configuration file to %q", backupFileName)
 
-			err = afero.WriteFile(fs, configFile, configOut, 0755)
+			err = afero.WriteFile(fs, configFile, configOut, 0o755)
 			out.MaybeDie(err, "error writing config: %v", err)
 			log.Infof("Rewrote configuration file %q", configFile)
 		},

@@ -92,7 +92,6 @@ func exportConfig(
 			default:
 				out.Die("Unexpected property value type: %s: %T", name, curValue)
 			}
-
 		} else {
 			scalarVal := ""
 			switch x := curValue.(type) {
@@ -115,7 +114,6 @@ func exportConfig(
 			} else {
 				fmt.Fprintf(&sb, "%s:\n", name)
 			}
-
 		}
 
 		_, err := file.Write([]byte(sb.String()))

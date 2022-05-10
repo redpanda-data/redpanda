@@ -43,7 +43,7 @@ func (c *writeSizedFileCommand) Execute() error {
 	// handles returned by afero don't have a way to get their file descriptor
 	// (i.e. an Fd() method):
 	// https://github.com/spf13/afero/issues/234
-	f, err := os.OpenFile(c.path, os.O_WRONLY|os.O_CREATE, 0666)
+	f, err := os.OpenFile(c.path, os.O_WRONLY|os.O_CREATE, 0o666)
 	if err != nil {
 		return err
 	}

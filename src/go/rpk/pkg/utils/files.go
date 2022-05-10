@@ -69,7 +69,7 @@ func CopyFile(fs afero.Fs, src string, dst string) error {
 	if err != nil {
 		return err
 	}
-	err = afero.WriteFile(fs, dst, input, 0644)
+	err = afero.WriteFile(fs, dst, input, 0o644)
 	return err
 }
 
