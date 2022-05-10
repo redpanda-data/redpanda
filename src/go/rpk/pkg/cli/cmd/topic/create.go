@@ -11,6 +11,7 @@ package topic
 
 import (
 	"context"
+	"os"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
@@ -85,6 +86,13 @@ the cleanup.policy=compact config option set.
 			resp, err := req.RequestWith(context.Background(), cl)
 			out.MaybeDie(err, "unable to create topics %v: %v", topics, err)
 
+			var exit1 bool
+			defer func() {
+				if exit1 {
+					os.Exit(1)
+				}
+			}()
+
 			tw := out.NewTable("topic", "status")
 			defer tw.Flush()
 
@@ -92,6 +100,7 @@ the cleanup.policy=compact config option set.
 				msg := "OK"
 				if err := kerr.ErrorForCode(topic.ErrorCode); err != nil {
 					msg = err.Error()
+					exit1 = true
 				}
 				tw.Print(topic.Topic, msg)
 			}
