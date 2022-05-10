@@ -18,6 +18,7 @@
 #include "vassert.h"
 #include "vlog.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/file.hh>
 #include <seastar/core/future-util.hh>
 
@@ -167,8 +168,7 @@ ss::future<> spill_key_index::spill(
       "Entries cannot be bigger than uint16_t::max(): {}",
       payload);
     // Append to the file
-    return ss::do_with(
-      std::move(payload), [this](iobuf& buf) { return _appender.append(buf); });
+    co_await _appender.append(payload);
 }
 
 ss::future<> spill_key_index::append(compacted_index::entry e) {
@@ -214,23 +214,22 @@ ss::future<> spill_key_index::truncate(model::offset o) {
 }
 
 ss::future<> spill_key_index::close() {
-    return drain_all_keys().then([this] {
-        vassert(
-          _keys_mem_usage == 0,
-          "Failed to drain all keys, {} bytes left",
-          _keys_mem_usage);
-        _footer.crc = _crc.value();
-        return ss::do_with(
-                 reflection::to_iobuf(_footer),
-                 [this](iobuf& b) {
-                     vassert(
-                       b.size_bytes() == compacted_index::footer_size,
-                       "Footer is bigger than expected: {}",
-                       b);
-                     return _appender.append(b);
-                 })
-          .then([this] { return _appender.close(); });
-    });
+    co_await drain_all_keys();
+
+    vassert(
+      _keys_mem_usage == 0,
+      "Failed to drain all keys, {} bytes left",
+      _keys_mem_usage);
+    _footer.crc = _crc.value();
+
+    auto footer_buf = reflection::to_iobuf(_footer);
+    vassert(
+      footer_buf.size_bytes() == compacted_index::footer_size,
+      "Footer is bigger than expected: {}",
+      footer_buf);
+
+    co_await _appender.append(footer_buf);
+    co_await _appender.close();
 }
 
 void spill_key_index::print(std::ostream& o) const { o << *this; }
