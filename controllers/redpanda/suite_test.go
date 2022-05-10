@@ -90,8 +90,7 @@ var _ = BeforeSuite(func(done Done) {
 		_ client.Reader,
 		_ *redpandav1alpha1.Cluster,
 		_ string,
-		_ client.ObjectKey,
-		_ client.ObjectKey,
+		_ resources.AdminTLSConfigProvider,
 	) (adminutils.AdminAPIClient, error) {
 		return testAdminAPI, nil
 	}
