@@ -150,15 +150,8 @@ func (r *ClusterReconciler) Reconcile(
 		headlessSvc.HeadlessServiceFQDN(r.clusterDomain),
 		headlessSvc.Key().Name,
 		nodeportSvc.Key(),
-		pki.RedpandaNodeCert(),
-		pki.RedpandaOperatorClientCert(),
-		pki.RedpandaAdminCert(),
-		pki.AdminAPINodeCert(),
-		pki.AdminAPIClientCert(),
-		pki.PandaproxyAPINodeCert(),
-		pki.PandaproxyAPIClientCert(),
-		pki.SchemaRegistryAPINodeCert(),
-		pki.SchemaRegistryAPIClientCert(),
+		pki.StatefulSetVolumeProvider(),
+		pki.AdminAPIConfigProvider(),
 		sa.Key().Name,
 		r.configuratorSettings,
 		configMapResource.GetNodeConfigHash,
@@ -204,7 +197,7 @@ func (r *ClusterReconciler) Reconcile(
 		secrets = append(secrets, schemaRegistrySu.Key())
 	}
 
-	err := r.setInitialSuperUserPassword(ctx, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), pki.AdminAPINodeCert(), pki.AdminAPIClientCert(), secrets)
+	err := r.setInitialSuperUserPassword(ctx, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), pki.AdminAPIConfigProvider(), secrets)
 
 	var e *resources.RequeueAfterError
 	if errors.As(err, &e) {
@@ -502,11 +495,10 @@ func (r *ClusterReconciler) setInitialSuperUserPassword(
 	ctx context.Context,
 	redpandaCluster *redpandav1alpha1.Cluster,
 	fqdn string,
-	adminAPINodeCertSecretKey client.ObjectKey,
-	adminAPIClientCertSecretKey client.ObjectKey,
+	adminTLSConfigProvider resources.AdminTLSConfigProvider,
 	objs []types.NamespacedName,
 ) error {
-	adminAPI, err := r.AdminAPIClientFactory(ctx, r, redpandaCluster, fqdn, adminAPINodeCertSecretKey, adminAPIClientCertSecretKey)
+	adminAPI, err := r.AdminAPIClientFactory(ctx, r, redpandaCluster, fqdn, adminTLSConfigProvider)
 	if err != nil && errors.Is(err, &adminutils.NoInternalAdminAPI{}) {
 		return nil
 	} else if err != nil {
