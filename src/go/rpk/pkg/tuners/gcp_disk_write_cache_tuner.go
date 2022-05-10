@@ -69,7 +69,6 @@ func tuneWriteCache(
 	deviceFeatures disk.DeviceFeatures,
 	executor executors.Executor,
 ) TuneResult {
-
 	featureFile, err := deviceFeatures.GetWriteCacheFeatureFile(device)
 	if err != nil {
 		return NewTuneError(err)

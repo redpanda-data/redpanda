@@ -20,7 +20,7 @@ import (
 
 func FindConfigFile(fs afero.Fs) (string, error) {
 	log.Debugf("Looking for the redpanda config file")
-	var configPathProviders = []func() ([]string, error){
+	configPathProviders := []func() ([]string, error){
 		currentDirectory,
 		sysConfDirectory,
 		homeDirectory,

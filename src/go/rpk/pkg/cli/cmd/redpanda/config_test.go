@@ -221,7 +221,7 @@ func TestBootstrap(t *testing.T) {
 			mgr := config.NewManager(fs)
 			err = fs.MkdirAll(
 				filepath.Dir(configPath),
-				0644,
+				0o644,
 			)
 			require.NoError(t, err)
 			c := cmd.NewConfigCommand(fs, mgr)

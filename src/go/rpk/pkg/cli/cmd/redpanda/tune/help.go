@@ -185,6 +185,7 @@ to write the new data.
 
 For more information see 'man fstrim'.
 `
+
 const aioEventsTunerHelp = `
 Increases the maximum number of outstanding asynchronous IO operations if the
 current value is below a certain threshold. This allows redpanda to make as many

@@ -34,23 +34,21 @@ import (
 	"github.com/spf13/afero"
 )
 
-var (
-	allTuners = map[string]func(*tunersFactory, *TunerParams) tuners.Tunable{
-		"disk_irq":              (*tunersFactory).newDiskIRQTuner,
-		"disk_scheduler":        (*tunersFactory).newDiskSchedulerTuner,
-		"disk_nomerges":         (*tunersFactory).newDiskNomergesTuner,
-		"disk_write_cache":      (*tunersFactory).newGcpWriteCacheTuner,
-		"fstrim":                (*tunersFactory).newFstrimTuner,
-		"net":                   (*tunersFactory).newNetworkTuner,
-		"cpu":                   (*tunersFactory).newCPUTuner,
-		"aio_events":            (*tunersFactory).newMaxAIOEventsTuner,
-		"clocksource":           (*tunersFactory).newClockSourceTuner,
-		"swappiness":            (*tunersFactory).newSwappinessTuner,
-		"transparent_hugepages": (*tunersFactory).newTHPTuner,
-		"coredump":              (*tunersFactory).newCoredumpTuner,
-		"ballast_file":          (*tunersFactory).newBallastFileTuner,
-	}
-)
+var allTuners = map[string]func(*tunersFactory, *TunerParams) tuners.Tunable{
+	"disk_irq":              (*tunersFactory).newDiskIRQTuner,
+	"disk_scheduler":        (*tunersFactory).newDiskSchedulerTuner,
+	"disk_nomerges":         (*tunersFactory).newDiskNomergesTuner,
+	"disk_write_cache":      (*tunersFactory).newGcpWriteCacheTuner,
+	"fstrim":                (*tunersFactory).newFstrimTuner,
+	"net":                   (*tunersFactory).newNetworkTuner,
+	"cpu":                   (*tunersFactory).newCPUTuner,
+	"aio_events":            (*tunersFactory).newMaxAIOEventsTuner,
+	"clocksource":           (*tunersFactory).newClockSourceTuner,
+	"swappiness":            (*tunersFactory).newSwappinessTuner,
+	"transparent_hugepages": (*tunersFactory).newTHPTuner,
+	"coredump":              (*tunersFactory).newCoredumpTuner,
+	"ballast_file":          (*tunersFactory).newBallastFileTuner,
+}
 
 type TunerParams struct {
 	Mode          string
@@ -174,7 +172,6 @@ func (factory *tunersFactory) CreateTuner(
 func (factory *tunersFactory) newDiskIRQTuner(
 	params *TunerParams,
 ) tuners.Tunable {
-
 	return tuners.NewDiskIRQTuner(
 		factory.fs,
 		irq.ModeFromString(params.Mode),

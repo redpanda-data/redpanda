@@ -22,9 +22,7 @@ import (
 	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var (
-	_ resources.Reconciler = &PkiReconciler{}
-)
+var _ resources.Reconciler = &PkiReconciler{}
 
 // RootCert cert name
 const RootCert = "rootcert"

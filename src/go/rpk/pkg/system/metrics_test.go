@@ -33,7 +33,7 @@ func TestGatherMetrics(t *testing.T) {
 				config.Default().PIDFile(),
 				// Usual /proc/sys/kernel/pid_max value
 				[]byte("4194304"),
-				0755,
+				0o755,
 			)
 		},
 		expectedErrMsg: "/proc/4194304/stat",
@@ -48,7 +48,7 @@ func TestGatherMetrics(t *testing.T) {
 				config.Default().PIDFile(),
 				// Usual /proc/sys/kernel/pid_max value
 				[]byte("4194304"),
-				0755,
+				0o755,
 			)
 			if err != nil {
 				return err
@@ -58,7 +58,7 @@ func TestGatherMetrics(t *testing.T) {
 				fs,
 				"/proc/4194304/stat",
 				[]byte(content),
-				0755,
+				0o755,
 			)
 		},
 		expectedErrMsg: `parsing "invalid-utime": invalid syntax`,
@@ -70,7 +70,7 @@ func TestGatherMetrics(t *testing.T) {
 				config.Default().PIDFile(),
 				// Usual /proc/sys/kernel/pid_max value
 				[]byte("4194304"),
-				0755,
+				0o755,
 			)
 			if err != nil {
 				return err
@@ -80,7 +80,7 @@ func TestGatherMetrics(t *testing.T) {
 				fs,
 				"/proc/4194304/stat",
 				[]byte(content),
-				0755,
+				0o755,
 			)
 		},
 		expectedErrMsg: `parsing "invalid-stime": invalid syntax`,

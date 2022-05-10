@@ -56,7 +56,7 @@ func (t *tuner) Tune() tuners.TuneResult {
 	if err != nil {
 		return tuners.NewTuneError(err)
 	}
-	err = t.executor.Execute(commands.NewWriteFileModeCmd(t.fs, scriptFilePath, script, 0777))
+	err = t.executor.Execute(commands.NewWriteFileModeCmd(t.fs, scriptFilePath, script, 0o777))
 	if err != nil {
 		return tuners.NewTuneError(err)
 	}

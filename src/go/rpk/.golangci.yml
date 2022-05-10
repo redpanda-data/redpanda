@@ -32,6 +32,9 @@ linters:
     - errorlint
     - exportloopref
     - godot
+    - gofmt
+    - gofumpt
+    - goimports
     - goprintffuncname
     - misspell
     - nilerr
@@ -41,6 +44,7 @@ linters:
     - tenv
     - unconvert
     - wastedassign
+    - whitespace
 
 linters-settings:
   # We do not want to enforce every usage of fmt.Errorf to use %w.

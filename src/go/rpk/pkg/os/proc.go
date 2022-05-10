@@ -38,7 +38,6 @@ type proc struct{}
 func (*proc) RunWithSystemLdPath(
 	timeout time.Duration, command string, args ...string,
 ) ([]string, error) {
-
 	return run(timeout, command, SystemLdPathEnv(), args...)
 }
 

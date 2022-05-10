@@ -94,7 +94,8 @@ func TestDefault(t *testing.T) {
 					ResourceRequirements: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
 							corev1.ResourceMemory: resource.MustParse("1Gi"),
-						}},
+						},
+					},
 					Redpanda: nil,
 				},
 			},
@@ -118,7 +119,8 @@ func TestDefault(t *testing.T) {
 					ResourceRequirements: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
 							corev1.ResourceMemory: resource.MustParse("1Gi"),
-						}},
+						},
+					},
 					Redpanda: nil,
 				},
 			},
@@ -144,7 +146,8 @@ func TestDefault(t *testing.T) {
 					ResourceRequirements: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
 							corev1.ResourceMemory: resource.MustParse("1Gi"),
-						}},
+						},
+					},
 					Redpanda: nil,
 				},
 			},
@@ -170,7 +173,8 @@ func TestDefault(t *testing.T) {
 					ResourceRequirements: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
 							corev1.ResourceMemory: resource.MustParse("1Gi"),
-						}},
+						},
+					},
 					Redpanda: nil,
 				},
 			},
@@ -212,7 +216,8 @@ func TestValidateUpdate(t *testing.T) {
 					Requests: corev1.ResourceList{
 						corev1.ResourceCPU:    resource.MustParse("1"),
 						corev1.ResourceMemory: resource.MustParse("0.9Gi"),
-					}},
+					},
+				},
 				Redpanda: nil,
 			},
 		},
@@ -222,7 +227,8 @@ func TestValidateUpdate(t *testing.T) {
 	updatedCluster.Spec.Replicas = &replicas1
 	updatedCluster.Spec.Configuration = v1alpha1.RedpandaConfig{
 		KafkaAPI: []v1alpha1.KafkaAPI{
-			{Port: 123,
+			{
+				Port: 123,
 				TLS: v1alpha1.KafkaAPITLS{
 					RequireClientAuth: true,
 					IssuerRef: &cmmeta.ObjectReference{
@@ -289,7 +295,8 @@ func TestValidateUpdate_NoError(t *testing.T) {
 					Requests: corev1.ResourceList{
 						corev1.ResourceMemory: resource.MustParse("2Gi"),
 						corev1.ResourceCPU:    resource.MustParse("1"),
-					}},
+					},
+				},
 				Redpanda: nil,
 			},
 		},
@@ -718,7 +725,8 @@ func TestCreation(t *testing.T) {
 				Requests: corev1.ResourceList{
 					corev1.ResourceMemory: resource.MustParse("1Gi"),
 					corev1.ResourceCPU:    resource.MustParse("2"),
-				}},
+				},
+			},
 			Redpanda: nil,
 		}
 
@@ -733,7 +741,8 @@ func TestCreation(t *testing.T) {
 				Requests: corev1.ResourceList{
 					corev1.ResourceMemory: resource.MustParse("1Gi"),
 					corev1.ResourceCPU:    resource.MustParse("2"),
-				}},
+				},
+			},
 			Redpanda: nil,
 		}
 		memory.Spec.Configuration.DeveloperMode = true
@@ -749,7 +758,8 @@ func TestCreation(t *testing.T) {
 				Requests: corev1.ResourceList{
 					corev1.ResourceMemory: resource.MustParse("2Gi"),
 					corev1.ResourceCPU:    resource.MustParse("1"),
-				}},
+				},
+			},
 			Redpanda: corev1.ResourceList{
 				corev1.ResourceMemory: resource.MustParse("4Gi"),
 				corev1.ResourceCPU:    resource.MustParse("1"),
@@ -772,7 +782,8 @@ func TestCreation(t *testing.T) {
 				Limits: corev1.ResourceList{
 					corev1.ResourceMemory: resource.MustParse("3Gi"),
 					corev1.ResourceCPU:    resource.MustParse("1"),
-				}},
+				},
+			},
 			Redpanda: corev1.ResourceList{
 				corev1.ResourceMemory: resource.MustParse("4Gi"),
 				corev1.ResourceCPU:    resource.MustParse("1"),
@@ -795,7 +806,8 @@ func TestCreation(t *testing.T) {
 				Limits: corev1.ResourceList{
 					corev1.ResourceMemory: resource.MustParse("2.223Gi"),
 					corev1.ResourceCPU:    resource.MustParse("1"),
-				}},
+				},
+			},
 			Redpanda: corev1.ResourceList{
 				corev1.ResourceMemory: resource.MustParse("2Gi"),
 				corev1.ResourceCPU:    resource.MustParse("1"),
@@ -818,7 +830,8 @@ func TestCreation(t *testing.T) {
 				Limits: corev1.ResourceList{
 					corev1.ResourceMemory: resource.MustParse("2Gi"),
 					corev1.ResourceCPU:    resource.MustParse("1"),
-				}},
+				},
+			},
 			Redpanda: corev1.ResourceList{
 				corev1.ResourceMemory: resource.MustParse("2Gi"),
 				corev1.ResourceCPU:    resource.MustParse("1"),
@@ -961,7 +974,8 @@ func TestCreation(t *testing.T) {
 				TLS: v1alpha1.KafkaAPITLS{
 					Enabled: true,
 				},
-				Port: 123, External: v1alpha1.ExternalConnectivityConfig{Enabled: true, PreferredAddressType: "InternalIP"}})
+				Port: 123, External: v1alpha1.ExternalConnectivityConfig{Enabled: true, PreferredAddressType: "InternalIP"},
+			})
 		err := rp.ValidateCreate()
 		assert.Error(t, err)
 	})
@@ -1095,7 +1109,8 @@ func validRedpandaCluster() *v1alpha1.Cluster {
 					Requests: corev1.ResourceList{
 						corev1.ResourceMemory: resource.MustParse("2Gi"),
 						corev1.ResourceCPU:    resource.MustParse("1"),
-					}},
+					},
+				},
 				Redpanda: nil,
 			},
 		},

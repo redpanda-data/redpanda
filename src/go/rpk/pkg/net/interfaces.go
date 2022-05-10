@@ -17,7 +17,6 @@ import (
 )
 
 func GetInterfacesByIps(addresses ...string) ([]string, error) {
-
 	log.Debugf("Looking for interface with '%v' addresses", addresses)
 
 	ifaces, err := net.Interfaces()

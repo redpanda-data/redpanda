@@ -23,13 +23,12 @@ import (
 	"github.com/spf13/afero"
 )
 
-var (
-	driverMaxRssQueues = map[string]int{
-		"ixgbe":   16,
-		"ixgbevf": 4,
-		"i40e":    64,
-		"i40evf":  16}
-)
+var driverMaxRssQueues = map[string]int{
+	"ixgbe":   16,
+	"ixgbevf": 4,
+	"i40e":    64,
+	"i40evf":  16,
+}
 
 type NTupleStatus int
 
@@ -97,7 +96,7 @@ func (n *nic) IsBondIface() bool {
 }
 
 func (n *nic) Slaves() ([]Nic, error) {
-	var slaves = []Nic{}
+	slaves := []Nic{}
 	if n.IsBondIface() {
 		var slaveNames []string
 		log.Debugf("Reading slaves of '%s'", n.name)
@@ -185,7 +184,6 @@ func (n *nic) GetMaxRxQueueCount() (int, error) {
 	}
 
 	return MaxInt, nil
-
 }
 
 func (n *nic) GetRxQueueCount() (int, error) {

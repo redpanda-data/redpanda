@@ -19,8 +19,10 @@ import (
 	"github.com/spf13/afero"
 )
 
-const maxAIOEvents = 1048576
-const maxAIOEventsFile = "/proc/sys/fs/aio-max-nr"
+const (
+	maxAIOEvents     = 1048576
+	maxAIOEventsFile = "/proc/sys/fs/aio-max-nr"
+)
 
 func NewMaxAIOEventsChecker(fs afero.Fs) Checker {
 	return NewIntChecker(

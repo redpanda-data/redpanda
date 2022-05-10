@@ -37,9 +37,7 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 }
 
 func newListCommand(fs afero.Fs) *cobra.Command {
-	var (
-		leaderOnly bool
-	)
+	var leaderOnly bool
 	cmd := &cobra.Command{
 		Use:     "list [BROKER ID]",
 		Aliases: []string{"ls"},

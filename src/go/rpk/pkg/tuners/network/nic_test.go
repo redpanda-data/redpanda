@@ -52,29 +52,29 @@ func (m *ethtoolMock) Features(iface string) (map[string]bool, error) {
 }
 
 func Test_nic_IsBondIface(t *testing.T) {
-	//given
+	// given
 	fs := afero.NewMemMapFs()
 	procFile := &procFileMock{}
 	deviceInfo := &deviceInfoMock{}
 	nic := NewNic(fs, procFile, deviceInfo, &ethtoolMock{}, "test0")
-	afero.WriteFile(fs, "/sys/class/net/bond_masters", []byte(fmt.Sprintln("test0")), 0644)
-	//when
+	afero.WriteFile(fs, "/sys/class/net/bond_masters", []byte(fmt.Sprintln("test0")), 0o644)
+	// when
 	bond := nic.IsBondIface()
-	//then
+	// then
 	require.True(t, bond)
 }
 
 func Test_nic_Slaves_ReturnAllSlavesOfAnInterface(t *testing.T) {
-	//given
+	// given
 	fs := afero.NewMemMapFs()
 	procFile := &procFileMock{}
 	deviceInfo := &deviceInfoMock{}
 	nic := NewNic(fs, procFile, deviceInfo, &ethtoolMock{}, "test0")
-	afero.WriteFile(fs, "/sys/class/net/bond_masters", []byte(fmt.Sprintln("test0")), 0644)
-	afero.WriteFile(fs, "/sys/class/net/test0/bond/slaves", []byte("sl0\nsl1\nsl2"), 0644)
-	//when
+	afero.WriteFile(fs, "/sys/class/net/bond_masters", []byte(fmt.Sprintln("test0")), 0o644)
+	afero.WriteFile(fs, "/sys/class/net/test0/bond/slaves", []byte("sl0\nsl1\nsl2"), 0o644)
+	// when
 	slaves, err := nic.Slaves()
-	//then
+	// then
 	require.NoError(t, err)
 	require.Len(t, slaves, 3)
 	require.Equal(t, slaves[0].Name(), "sl0")
@@ -83,14 +83,14 @@ func Test_nic_Slaves_ReturnAllSlavesOfAnInterface(t *testing.T) {
 }
 
 func Test_nic_Slaves_ReturnEmptyForNotBondInterface(t *testing.T) {
-	//given
+	// given
 	fs := afero.NewMemMapFs()
 	procFile := &procFileMock{}
 	deviceInfo := &deviceInfoMock{}
 	nic := NewNic(fs, procFile, deviceInfo, &ethtoolMock{}, "test0")
-	//when
+	// when
 	slaves, err := nic.Slaves()
-	//then
+	// then
 	require.NoError(t, err)
 	require.Empty(t, slaves)
 }
@@ -268,7 +268,7 @@ func Test_nic_GetRxQueueCount(t *testing.T) {
 			},
 			before: func(fs afero.Fs) {
 				for i := 0; i < 8; i++ {
-					afero.WriteFile(fs, fmt.Sprintf("/sys/class/net/test0/queues/rx-%d/rps_cpus", i), []byte{}, 0644)
+					afero.WriteFile(fs, fmt.Sprintf("/sys/class/net/test0/queues/rx-%d/rps_cpus", i), []byte{}, 0o644)
 				}
 			},
 			want: 8,
@@ -284,7 +284,7 @@ func Test_nic_GetRxQueueCount(t *testing.T) {
 			},
 			before: func(fs afero.Fs) {
 				for i := 0; i < 8; i++ {
-					afero.WriteFile(fs, fmt.Sprintf("/sys/class/net/test0/queues/rx-%d/rps_cpus", i), []byte{}, 0644)
+					afero.WriteFile(fs, fmt.Sprintf("/sys/class/net/test0/queues/rx-%d/rps_cpus", i), []byte{}, 0o644)
 				}
 			},
 			want: 4,

@@ -168,7 +168,7 @@ func TestStartCommand(t *testing.T) {
 				fs,
 				config.Default().ConfigFile,
 				[]byte("^&notyaml"),
-				0755,
+				0o755,
 			)
 		},
 		expectedErrMsg: "An error happened while trying to read /etc/redpanda/redpanda.yaml: While parsing config: yaml: unmarshal errors:\n  line 1: cannot unmarshal !!str `^&notyaml` into map[string]interface {}",
@@ -204,7 +204,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 		},
 		before: func(fs afero.Fs) error {
-			return fs.MkdirAll("/arbitrary/path", 0755)
+			return fs.MkdirAll("/arbitrary/path", 0o755)
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			path := testConfigPath
@@ -244,7 +244,7 @@ func TestStartCommand(t *testing.T) {
   port: 9092
 `,
 			)
-			return fs.MkdirAll("/arbitrary/path", 0755)
+			return fs.MkdirAll("/arbitrary/path", 0o755)
 		},
 		after: func() {
 			for i, a := range os.Args {
@@ -316,7 +316,7 @@ func TestStartCommand(t *testing.T) {
   port: 9092
 `,
 			)
-			return fs.MkdirAll("/arbitrary/path", 0755)
+			return fs.MkdirAll("/arbitrary/path", 0o755)
 		},
 		after: func() {
 			for i, a := range os.Args {

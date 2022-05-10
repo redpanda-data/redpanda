@@ -18,8 +18,10 @@ import (
 )
 
 func newMaintenanceReportTable() *out.TabWriter {
-	headers := []string{"Node-ID", "Draining", "Finished", "Errors",
-		"Partitions", "Eligible", "Transferring", "Failed"}
+	headers := []string{
+		"Node-ID", "Draining", "Finished", "Errors",
+		"Partitions", "Eligible", "Transferring", "Failed",
+	}
 	return out.NewTable(headers...)
 }
 

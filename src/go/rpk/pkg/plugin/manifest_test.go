@@ -24,7 +24,6 @@ func TestDownloadManifest(t *testing.T) {
 		exp    *Manifest
 		expErr bool
 	}{
-
 		// This first test is our golden test; we ensure we can decode
 		// every field properly, invalid fields are ignored, and things
 		// are returned in alphabetical order.

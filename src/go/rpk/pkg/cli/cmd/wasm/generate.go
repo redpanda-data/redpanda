@@ -27,9 +27,7 @@ import (
 )
 
 func NewGenerateCommand(fs afero.Fs) *cobra.Command {
-	var (
-		skipVersion bool
-	)
+	var skipVersion bool
 	cmd := &cobra.Command{
 		Use:   "generate [PROJECT DIRECTORY]",
 		Short: "Create a npm template project for inline WASM engine.",

@@ -22,11 +22,11 @@ func Test_cpuMasks_ReadMask(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	cpuMasks := NewCPUMasks(fs, nil, executors.NewDirectExecutor())
 	setMask := "0xff0,,0x13"
-	afero.WriteFile(fs, "/test/cpu/0/smp_affinity", []byte{0}, 0644)
+	afero.WriteFile(fs, "/test/cpu/0/smp_affinity", []byte{0}, 0o644)
 	cpuMasks.SetMask("/test/cpu/0/smp_affinity", setMask)
-	//when
+	// when
 	readMask, err := cpuMasks.ReadMask("/test/cpu/0/smp_affinity")
-	//then
+	// then
 	require.Equal(t, setMask, readMask, "Set and Read masks must be equal")
 	require.NoError(t, err)
 }

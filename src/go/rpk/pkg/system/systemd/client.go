@@ -68,7 +68,6 @@ func toActiveState(s string) ActiveState {
 		return ActiveStateMaintenance
 	}
 	return ActiveStateUnknown
-
 }
 
 type LoadState int

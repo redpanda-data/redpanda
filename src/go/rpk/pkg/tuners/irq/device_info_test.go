@@ -66,7 +66,8 @@ func Test_DeviceInfo_GetIRQs(t *testing.T) {
 					return map[int]string{
 						1: "1:     184233          0          0       7985   IO-APIC   1-edge      i8042",
 						5: "5:          0          0          0          0   IO-APIC   5-edge      drv-virtio-1",
-						8: "8:          1          0          0          0   IO-APIC   8-edge      rtc0"}, nil
+						8: "8:          1          0          0          0   IO-APIC   8-edge      rtc0",
+					}, nil
 				},
 			},
 			before: func(fs afero.Fs) {
@@ -88,7 +89,8 @@ func Test_DeviceInfo_GetIRQs(t *testing.T) {
 					return map[int]string{
 						1: "1:     184233          0          0       7985   IO-APIC   1-edge      xen-dev1",
 						5: "5:          0          0          0          0   IO-APIC   5-edge      drv-virtio-1",
-						8: "8:          1          0          0          0   IO-APIC   8-edge      rtc0"}, nil
+						8: "8:          1          0          0          0   IO-APIC   8-edge      rtc0",
+					}, nil
 				},
 			},
 			before: func(fs afero.Fs) {

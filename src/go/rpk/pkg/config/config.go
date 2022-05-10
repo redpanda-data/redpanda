@@ -88,12 +88,12 @@ func defaultMap() map[string]interface{} {
 		"address": "0.0.0.0",
 		"port":    9092,
 	}
-	var defaultListeners = []interface{}{defaultListener}
+	defaultListeners := []interface{}{defaultListener}
 	var defaultAdminListener interface{} = map[string]interface{}{
 		"address": "0.0.0.0",
 		"port":    9644,
 	}
-	var defaultAdminListeners = []interface{}{defaultAdminListener}
+	defaultAdminListeners := []interface{}{defaultAdminListener}
 	return map[string]interface{}{
 		"config_file":     "/etc/redpanda/redpanda.yaml",
 		"pandaproxy":      Pandaproxy{},
@@ -316,7 +316,7 @@ func checkRedpandaConfig(v *viper.Viper) []error {
 		}
 	}
 
-	var seedServersSlice []*SeedServer //map[string]interface{}
+	var seedServersSlice []*SeedServer // map[string]interface{}
 	err := unmarshalKey(v, "redpanda.seed_servers", &seedServersSlice)
 	if err != nil {
 		log.Error(err)

@@ -70,7 +70,7 @@ func (masks *cpuMasks) CPUMaskForComputations(
 	mode Mode, cpuMask string,
 ) (string, error) {
 	log.Debugf("Computing CPU mask for '%s' mode and input CPU mask '%s'", mode, cpuMask)
-	var computationsMask = ""
+	computationsMask := ""
 	var err error
 	if mode == Sq {
 		// all but CPU0
@@ -124,14 +124,14 @@ func (masks *cpuMasks) SetMask(path string, mask string) error {
 	if _, err := masks.fs.Stat(path); err != nil {
 		return fmt.Errorf("SMP affinity file '%s' not exist", path)
 	}
-	var formattedMask = strings.Replace(mask, "0x", "", -1)
+	formattedMask := strings.Replace(mask, "0x", "", -1)
 	for strings.Contains(formattedMask, ",,") {
 		formattedMask = strings.Replace(formattedMask, ",,", ",0,", -1)
 	}
 
 	log.Debugf("Setting mask '%s' in '%s'", formattedMask, path)
 	err := masks.executor.Execute(
-		commands.NewWriteFileModeCmd(masks.fs, path, formattedMask, 0555))
+		commands.NewWriteFileModeCmd(masks.fs, path, formattedMask, 0o555))
 	if err != nil {
 		return err
 	}

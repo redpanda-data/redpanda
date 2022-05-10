@@ -63,7 +63,7 @@ func TestDeviceWriteCacheTuner_Tune(t *testing.T) {
 		},
 	}
 	fs := afero.NewMemMapFs()
-	fs.MkdirAll(devicePath+"/queue", 0644)
+	fs.MkdirAll(devicePath+"/queue", 0o644)
 	tuner := NewDeviceGcpWriteCacheTuner(fs, "fake", deviceFeatures, v, executors.NewDirectExecutor())
 	// when
 	tuner.Tune()

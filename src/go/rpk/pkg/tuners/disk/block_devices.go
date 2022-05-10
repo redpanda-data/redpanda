@@ -262,10 +262,14 @@ func (b *blockDevices) GetDiskInfoByType(
 			}
 		}
 	}
-	diskInfoByType[Nvme] = DevicesIRQs{utils.GetKeys(nvmeDisks),
-		utils.GetIntKeys(nvmeIRQs)}
-	diskInfoByType[NonNvme] = DevicesIRQs{utils.GetKeys(nonNvmeDisks),
-		utils.GetIntKeys(nonNvmeIRQs)}
+	diskInfoByType[Nvme] = DevicesIRQs{
+		utils.GetKeys(nvmeDisks),
+		utils.GetIntKeys(nvmeIRQs),
+	}
+	diskInfoByType[NonNvme] = DevicesIRQs{
+		utils.GetKeys(nonNvmeDisks),
+		utils.GetIntKeys(nonNvmeIRQs),
+	}
 	return diskInfoByType, nil
 }
 

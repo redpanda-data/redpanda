@@ -198,7 +198,6 @@ func promptConfirmation(msg string, in io.Reader) (bool, error) {
 			log.Infof("Unrecognized option '%s'", text)
 			continue
 		}
-
 	}
 }
 

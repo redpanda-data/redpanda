@@ -103,7 +103,8 @@ func TestGetExpectedIRQsDistribution(t *testing.T) {
 							},
 							disk.Nvme: {
 								Devices: []string{"dev1"},
-								Irqs:    []int{12, 15, 18, 24}},
+								Irqs:    []int{12, 15, 18, 24},
+							},
 						}, nil
 					},
 				},

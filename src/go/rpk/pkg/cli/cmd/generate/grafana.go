@@ -220,7 +220,6 @@ func (rowSet *RowSet) addRatioPanel(
 func (rowSet *RowSet) addCachePerformancePanels(
 	metricFamilies map[string]*dto.MetricFamily,
 ) {
-
 	// are we generating for a broker that has these stats?
 	if _, ok := metricFamilies["vectorized_storage_log_cached_batches_read"]; !ok {
 		return

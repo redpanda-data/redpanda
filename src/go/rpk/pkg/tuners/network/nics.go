@@ -19,7 +19,6 @@ import (
 func getDefaultMode(
 	nic Nic, cpuMask string, cpuMasks irq.CPUMasks,
 ) (irq.Mode, error) {
-
 	if nic.IsHwInterface() {
 		rxQueuesCount, err := nic.GetRxQueueCount()
 		if err != nil {
@@ -74,7 +73,7 @@ func GetRpsCPUMask(
 	if err != nil {
 		return "", err
 	}
-	var effectiveMode = mode
+	effectiveMode := mode
 	if mode == irq.Default {
 		effectiveMode, err = getDefaultMode(nic, effectiveCPUMask, cpuMasks)
 		if err != nil {
@@ -96,7 +95,7 @@ func GetHwInterfaceIRQsDistribution(
 	if err != nil {
 		return nil, err
 	}
-	var effectiveMode = mode
+	effectiveMode := mode
 	if mode == irq.Default {
 		effectiveMode, err = getDefaultMode(nic, effectiveCPUMask, cpuMasks)
 		if err != nil {
@@ -171,7 +170,6 @@ func CollectIRQs(nic Nic) ([]int, error) {
 				return nil, err
 			}
 			IRQs = append(IRQs, slaveIRQs...)
-
 		}
 	}
 	return IRQs, nil
