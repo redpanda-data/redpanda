@@ -30,7 +30,7 @@ func Test_deviceFromSystemPath(t *testing.T) {
 			syspath: "/sys/devices/pci0000:00/0000:00:1d.0/nvme/nvme0",
 			before: func(fs afero.Fs, syspath string) {
 				ueventFileLines := []string{"DEVNAME=node-name"}
-				fs.MkdirAll(syspath, 0755)
+				fs.MkdirAll(syspath, 0o755)
 				utils.WriteFileLines(fs, ueventFileLines,
 					filepath.Join(syspath, "uevent"))
 			},
@@ -45,7 +45,7 @@ func Test_deviceFromSystemPath(t *testing.T) {
 			syspath: "/sys/devices/pci0000:00/0000:00:1d.0/nvme/nvme0/nvme0n1",
 			before: func(fs afero.Fs, syspath string) {
 				ueventFileLines := []string{"DEVNAME=child"}
-				fs.MkdirAll(syspath, 0755)
+				fs.MkdirAll(syspath, 0o755)
 				utils.WriteFileLines(fs, ueventFileLines,
 					filepath.Join(syspath, "uevent"))
 				parentPath := "/sys/devices/pci0000:00/0000:00:1d.0/nvme/nvme0"

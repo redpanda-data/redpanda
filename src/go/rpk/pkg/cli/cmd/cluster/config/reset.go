@@ -70,7 +70,7 @@ the setting as if it was set to the default.
 			out.MaybeDie(err, "Serialization error: %v", configCacheFile, err)
 
 			// Write back output
-			err = afero.WriteFile(fs, configCacheFile, outBytes, 0755)
+			err = afero.WriteFile(fs, configCacheFile, outBytes, 0o755)
 			out.MaybeDie(err, "Couldn't write %q: %v", configCacheFile, err)
 		},
 	}

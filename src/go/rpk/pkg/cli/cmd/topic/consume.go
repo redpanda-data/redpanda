@@ -199,7 +199,6 @@ func (c *consumer) consume() {
 					done = c.markPartitionEnded(p.Topic, p.Partition)
 					return
 				}
-
 			}
 		})
 

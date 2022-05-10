@@ -17,7 +17,6 @@ import (
 )
 
 func Test_collectRedpandaArgs(t *testing.T) {
-
 	tests := []struct {
 		name string
 		args RedpandaArgs

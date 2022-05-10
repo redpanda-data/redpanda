@@ -101,7 +101,6 @@ func MetaString(meta kgo.BrokerMetadata) string {
 func EachShard(
 	req kmsg.Request, shards []kgo.ResponseShard, fn func(kgo.ResponseShard),
 ) (allFailed bool) {
-
 	if len(shards) == 1 && shards[0].Err != nil {
 		shard := shards[0]
 		meta := ""

@@ -186,18 +186,14 @@ type Gauge struct {
 	ThresholdLabels  bool `json:"thresholdLabels"`
 }
 
-type Link struct {
-}
+type Link struct{}
 
-type Threshold struct {
-}
+type Threshold struct{}
 
-type AliasColors struct {
-}
+type AliasColors struct{}
 
 type Annotations struct {
 	List []Annotation `json:"list"`
 }
 
-type Annotation struct {
-}
+type Annotation struct{}

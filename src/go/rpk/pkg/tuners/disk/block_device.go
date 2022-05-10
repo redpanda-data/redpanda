@@ -56,10 +56,9 @@ func deviceFromSystemPath(syspath string, fs afero.Fs) (BlockDevice, error) {
 		return nil, err
 	}
 
-	var parentPath = filepath.Dir(syspath)
+	parentPath := filepath.Dir(syspath)
 	var parent BlockDevice
 	if exists, _ := afero.Exists(fs, filepath.Join(parentPath, "uevent")); exists {
-
 		parent, err = deviceFromSystemPath(parentPath, fs)
 		if err != nil {
 			return nil, err

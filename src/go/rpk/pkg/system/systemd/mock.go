@@ -35,6 +35,7 @@ func NewMockClient(
 func (c *mockClient) Shutdown() error {
 	return c.shutdown()
 }
+
 func (c *mockClient) StartUnit(name string) error {
 	return c.startUnit(name)
 }

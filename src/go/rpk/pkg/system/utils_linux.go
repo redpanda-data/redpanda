@@ -22,5 +22,4 @@ func uname() (string, error) {
 	str += string(int8ToString(uname.Release)) + " "
 	str += string(int8ToString(uname.Version))
 	return str, nil
-
 }

@@ -79,7 +79,7 @@ func TestDeviceSchedulerTuner_Tune(t *testing.T) {
 		},
 	}
 	fs := afero.NewMemMapFs()
-	fs.MkdirAll("/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue", 0644)
+	fs.MkdirAll("/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue", 0o644)
 	tuner := NewDeviceSchedulerTuner(fs, "fake", deviceFeatures, executors.NewDirectExecutor())
 	// when
 	tuner.Tune()
@@ -102,7 +102,7 @@ func TestDeviceSchedulerTuner_IsSupported_Should_return_true(t *testing.T) {
 		},
 	}
 	fs := afero.NewMemMapFs()
-	fs.MkdirAll("/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue", 0644)
+	fs.MkdirAll("/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue", 0o644)
 	tuner := NewDeviceSchedulerTuner(fs, "fake", deviceFeatures, executors.NewDirectExecutor())
 	// when
 	supported, _ := tuner.CheckIfSupported()
@@ -124,7 +124,7 @@ func TestDeviceSchedulerTuner_IsSupported_should_return_false(t *testing.T) {
 		},
 	}
 	fs := afero.NewMemMapFs()
-	fs.MkdirAll("/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue", 0644)
+	fs.MkdirAll("/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue", 0o644)
 	tuner := NewDeviceSchedulerTuner(fs, "fake", deviceFeatures, executors.NewDirectExecutor())
 	// when
 	supported, _ := tuner.CheckIfSupported()
@@ -146,7 +146,7 @@ func TestDeviceSchedulerTuner_Tune_should_prefer_none_over_noop(t *testing.T) {
 		},
 	}
 	fs := afero.NewMemMapFs()
-	fs.MkdirAll("/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue", 0644)
+	fs.MkdirAll("/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue", 0o644)
 	tuner := NewDeviceSchedulerTuner(fs, "fake", deviceFeatures, executors.NewDirectExecutor())
 	// when
 	tuner.Tune()

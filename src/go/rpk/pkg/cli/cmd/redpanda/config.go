@@ -187,9 +187,7 @@ func bootstrap(mgr config.Manager) *cobra.Command {
 }
 
 func initNode(mgr config.Manager) *cobra.Command {
-	var (
-		configPath string
-	)
+	var configPath string
 	c := &cobra.Command{
 		Use:   "init",
 		Short: "Init the node after install, by setting the node's UUID.",
@@ -266,7 +264,7 @@ func ownIP() (net.IP, error) {
 
 func isPrivate(ip net.IP) (bool, error) {
 	// The standard private subnet CIDRS
-	var privateCIDRs = []string{
+	privateCIDRs := []string{
 		"10.0.0.0/8",
 		"172.16.0.0/12",
 		"192.168.0.0/16",

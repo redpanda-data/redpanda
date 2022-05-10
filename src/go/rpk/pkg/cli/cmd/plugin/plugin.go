@@ -199,7 +199,6 @@ Remote sha256: %s
 					}
 					fmt.Println(msg + "Downloading and validating updated plugin...")
 					userAlreadyHas = true
-
 				}
 			}
 			if !userAlreadyHas {

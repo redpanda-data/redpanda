@@ -142,7 +142,6 @@ func deleteReqResp(
 		printDeleteFilters(printAllFilters, results)
 		fmt.Println()
 		printDeletionsHeader = true
-
 	}
 	if printDeletionsHeader {
 		out.Section("deletions")

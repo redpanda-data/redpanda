@@ -24,60 +24,65 @@ func TestGetPreferredAddress(t *testing.T) {
 		inputPreferredType corev1.NodeAddressType
 		expectedOutput     string
 	}{
-		{"missing node - no preference", nil,
+		{
+			"missing node - no preference", nil,
 			"", "",
 		},
-		{"missing node - with preference", nil,
+		{
+			"missing node - with preference", nil,
 			"some-preference", "",
 		},
-		{"node with external ip - no preference", &corev1.Node{
-			Status: corev1.NodeStatus{
-				Addresses: []corev1.NodeAddress{
-					{
-						Type:    corev1.NodeExternalIP,
-						Address: "ip-external",
-					},
-					{
-						Type:    corev1.NodeInternalIP,
-						Address: "ip-internal",
+		{
+			"node with external ip - no preference", &corev1.Node{
+				Status: corev1.NodeStatus{
+					Addresses: []corev1.NodeAddress{
+						{
+							Type:    corev1.NodeExternalIP,
+							Address: "ip-external",
+						},
+						{
+							Type:    corev1.NodeInternalIP,
+							Address: "ip-internal",
+						},
 					},
 				},
-			},
-		}, "", "ip-external",
+			}, "", "ip-external",
 		},
-		{"node without external ip - no preference", &corev1.Node{
-			Status: corev1.NodeStatus{
-				Addresses: []corev1.NodeAddress{
-					{
-						Type:    corev1.NodeInternalIP,
-						Address: "ip-internal",
-					},
-					{
-						Type:    corev1.NodeInternalDNS,
-						Address: "dns-internal",
+		{
+			"node without external ip - no preference", &corev1.Node{
+				Status: corev1.NodeStatus{
+					Addresses: []corev1.NodeAddress{
+						{
+							Type:    corev1.NodeInternalIP,
+							Address: "ip-internal",
+						},
+						{
+							Type:    corev1.NodeInternalDNS,
+							Address: "dns-internal",
+						},
 					},
 				},
-			},
-		}, "", "",
+			}, "", "",
 		},
-		{"node with internal and external ip - prefer internal", &corev1.Node{
-			Status: corev1.NodeStatus{
-				Addresses: []corev1.NodeAddress{
-					{
-						Type:    corev1.NodeInternalDNS,
-						Address: "dns-internal",
-					},
-					{
-						Type:    corev1.NodeExternalIP,
-						Address: "ip-external",
-					},
-					{
-						Type:    corev1.NodeInternalIP,
-						Address: "ip-internal",
+		{
+			"node with internal and external ip - prefer internal", &corev1.Node{
+				Status: corev1.NodeStatus{
+					Addresses: []corev1.NodeAddress{
+						{
+							Type:    corev1.NodeInternalDNS,
+							Address: "dns-internal",
+						},
+						{
+							Type:    corev1.NodeExternalIP,
+							Address: "ip-external",
+						},
+						{
+							Type:    corev1.NodeInternalIP,
+							Address: "ip-internal",
+						},
 					},
 				},
-			},
-		}, corev1.NodeInternalIP, "ip-internal",
+			}, corev1.NodeInternalIP, "ip-internal",
 		},
 	}
 	for _, tt := range tests {

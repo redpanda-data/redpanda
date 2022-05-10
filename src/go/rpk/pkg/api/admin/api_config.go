@@ -99,7 +99,6 @@ type ClusterConfigWriteResult struct {
 func (a *AdminAPI) PatchClusterConfig(
 	upsert map[string]interface{}, remove []string,
 ) (ClusterConfigWriteResult, error) {
-
 	body := map[string]interface{}{
 		"upsert": upsert,
 		"remove": remove,

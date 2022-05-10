@@ -33,7 +33,8 @@ func TestRedpandaPorts(t *testing.T) {
 					PandaproxyAPI:  []redpandav1alpha1.PandaproxyAPI{{Port: 333}, {External: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true}}},
 					SchemaRegistry: &redpandav1alpha1.SchemaRegistryAPI{Port: 444, External: &redpandav1alpha1.ExternalConnectivityConfig{Enabled: true}},
 				},
-			}}, &networking.RedpandaPorts{
+			},
+		}, &networking.RedpandaPorts{
 			KafkaAPI: networking.PortsDefinition{
 				Internal: &resources.NamedServicePort{
 					Name: resources.InternalListenerName,
@@ -83,7 +84,8 @@ func TestRedpandaPorts(t *testing.T) {
 					PandaproxyAPI:  []redpandav1alpha1.PandaproxyAPI{{Port: 333}},
 					SchemaRegistry: &redpandav1alpha1.SchemaRegistryAPI{Port: 444},
 				},
-			}}, &networking.RedpandaPorts{
+			},
+		}, &networking.RedpandaPorts{
 			KafkaAPI: networking.PortsDefinition{
 				Internal: &resources.NamedServicePort{
 					Name: resources.InternalListenerName,
@@ -114,7 +116,8 @@ func TestRedpandaPorts(t *testing.T) {
 				Configuration: redpandav1alpha1.RedpandaConfig{
 					KafkaAPI: []redpandav1alpha1.KafkaAPI{{Port: 123}, {Port: 30001, External: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true}}},
 				},
-			}}, &networking.RedpandaPorts{
+			},
+		}, &networking.RedpandaPorts{
 			KafkaAPI: networking.PortsDefinition{
 				Internal: &resources.NamedServicePort{
 					Name: resources.InternalListenerName,
@@ -126,7 +129,8 @@ func TestRedpandaPorts(t *testing.T) {
 				},
 			},
 		}},
-		{"kafka api external has bootstrap loadbalancer",
+		{
+			"kafka api external has bootstrap loadbalancer",
 			&redpandav1alpha1.Cluster{
 				Spec: redpandav1alpha1.ClusterSpec{
 					Configuration: redpandav1alpha1.RedpandaConfig{
@@ -144,7 +148,8 @@ func TestRedpandaPorts(t *testing.T) {
 							},
 						},
 					},
-				}},
+				},
+			},
 			&networking.RedpandaPorts{
 				KafkaAPI: networking.PortsDefinition{
 					Internal: &resources.NamedServicePort{
@@ -161,7 +166,8 @@ func TestRedpandaPorts(t *testing.T) {
 						Port:       1234,
 						TargetPort: 123 + 1,
 					},
-				}},
+				},
+			},
 		},
 	}
 	for _, tt := range tests {

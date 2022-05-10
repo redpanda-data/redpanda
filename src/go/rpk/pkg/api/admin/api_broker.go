@@ -15,8 +15,10 @@ import (
 	"sort"
 )
 
-const brokersEndpoint = "/v1/brokers"
-const brokerEndpoint = "/v1/brokers/%d"
+const (
+	brokersEndpoint = "/v1/brokers"
+	brokerEndpoint  = "/v1/brokers/%d"
+)
 
 type MaintenanceStatus struct {
 	Draining     bool `json:"draining"`

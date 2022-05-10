@@ -24,10 +24,10 @@ type DeviceInfo interface {
 }
 
 func NewDeviceInfo(fs afero.Fs, procFile ProcFile) DeviceInfo {
-
 	return &deviceInfo{
 		procFile: procFile,
-		fs:       fs}
+		fs:       fs,
+	}
 }
 
 type deviceInfo struct {

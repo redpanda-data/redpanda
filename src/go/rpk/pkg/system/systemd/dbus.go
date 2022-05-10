@@ -36,7 +36,6 @@ func (c *dbusClient) Shutdown() error {
 func (c *dbusClient) StartUnit(name string) error {
 	_, err := c.conn.StartUnit(name, "replace", nil)
 	if err != nil {
-
 		logrus.Error("ERROR Starting unit ", err)
 	}
 	return err

@@ -90,7 +90,6 @@ func TestAdminAPI(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-
 			urls := []string{}
 			calls := []testCall{}
 			mutex := sync.Mutex{}
@@ -162,6 +161,7 @@ func checkCallToAllNodes(
 		}
 	}
 }
+
 func checkCallToAnyNode(
 	t *testing.T, calls []testCall, path string, nNodes int,
 ) {
@@ -172,6 +172,7 @@ func checkCallToAnyNode(
 	}
 	require.Fail(t, fmt.Sprintf("path (%s) was expected to be called in any node but it wasn't called", path))
 }
+
 func checkCallToLeader(
 	t *testing.T, calls []testCall, path string, nNodes, leaderID int,
 ) {

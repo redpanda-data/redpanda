@@ -120,7 +120,7 @@ func ListPlugins(fs afero.Fs, searchDirs []string) Plugins {
 			if len(name) == 0 { // e.g., ".rpk-"
 				continue
 			}
-			if info.Mode()&0111 == 0 {
+			if info.Mode()&0o111 == 0 {
 				continue // not executable; skip
 			}
 
@@ -140,7 +140,6 @@ func ListPlugins(fs afero.Fs, searchDirs []string) Plugins {
 				Path:      fullPath,
 				Arguments: arguments,
 			})
-
 		}
 	}
 

@@ -82,7 +82,7 @@ func TestTimeoutDuration(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			fs := afero.NewMemMapFs()
 			mgr := config.NewManager(fs)
-			err := afero.WriteFile(fs, configPath, []byte(validConfig), 0644)
+			err := afero.WriteFile(fs, configPath, []byte(validConfig), 0o644)
 			require.NoError(t, err)
 			cmd := cmd.NewIoTuneCmd(fs, mgr)
 			args := []string{"--config", configPath}

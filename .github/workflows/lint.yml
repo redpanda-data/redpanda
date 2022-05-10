@@ -34,15 +34,15 @@ jobs:
         go-version: 1.17.8
       id: go
 
-    - name: install crlfmt
+    - name: install gofumpt
       working-directory: src/go/rpk
       run: |
-        go mod download github.com/cockroachdb/crlfmt
-        go install github.com/cockroachdb/crlfmt
+        go install mvdan.cc/gofumpt@v0.3.0
 
     - name: lint go files
+      working-directory: src/go
       run: |
-        find . -name *.go -type f | xargs -n1 crlfmt -wrap=80 -ignore '_generated.deepcopy.go$$' -w
+        find . -name *.go -type f | xargs -n1 gofumpt -w -lang=1.17
         git diff --exit-code
 
   js:

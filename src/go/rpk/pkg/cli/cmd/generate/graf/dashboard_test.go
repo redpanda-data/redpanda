@@ -79,7 +79,6 @@ func defaultDashboard() graf.Dashboard {
 }
 
 func TestDashboardMarshalJSON(t *testing.T) {
-
 	tests := []struct {
 		name      string
 		dashboard func() graf.Dashboard

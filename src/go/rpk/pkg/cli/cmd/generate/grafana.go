@@ -27,8 +27,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var datasource string
-var jobName string
+var (
+	datasource string
+	jobName    string
+)
 
 const panelHeight = 6
 
@@ -216,7 +218,6 @@ func (rowSet *RowSet) addRatioPanel(
 func (rowSet *RowSet) addCachePerformancePanels(
 	metricFamilies map[string]*dto.MetricFamily,
 ) {
-
 	// are we generating for a broker that has these stats?
 	if _, ok := metricFamilies["vectorized_storage_log_cached_batches_read"]; !ok {
 		return

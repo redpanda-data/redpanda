@@ -21,7 +21,6 @@ func TestDescribePartitions(t *testing.T) {
 		expHeaders []string
 		expRows    [][]interface{}
 	}{
-
 		{
 			name: "all ok, no optional columns, one partition",
 
