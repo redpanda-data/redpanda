@@ -28,7 +28,7 @@ func (t *aggregatedTunable) CheckIfSupported() (supported bool, reason string) {
 }
 
 func (t *aggregatedTunable) Tune() TuneResult {
-	var needReboot = false
+	needReboot := false
 	for _, tunable := range t.tunables {
 		result := tunable.Tune()
 		if result.IsFailed() {

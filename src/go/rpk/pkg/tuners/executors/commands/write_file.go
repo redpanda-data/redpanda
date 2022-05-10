@@ -18,7 +18,7 @@ import (
 	"github.com/spf13/afero"
 )
 
-const defaultMode os.FileMode = 0644
+const defaultMode os.FileMode = 0o644
 
 type writeFileCommand struct {
 	fs      afero.Fs

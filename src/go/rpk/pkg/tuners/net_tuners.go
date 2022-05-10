@@ -330,7 +330,6 @@ func (f *netTunersFactory) tuneNonVirtualInterfaces(
 	tuneAction func(network.Nic) TuneResult,
 	supportedAction func() (bool, string),
 ) Tunable {
-
 	var tunables []Tunable
 	for _, iface := range interfaces {
 		nic := network.NewNic(f.fs, f.irqProcFile, f.irqDeviceInfo, f.ethtool, iface)

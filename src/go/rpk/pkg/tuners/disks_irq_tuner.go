@@ -245,7 +245,6 @@ func GetDefaultMode(
 	diskInfoByType map[disk.DiskType]disk.DevicesIRQs,
 	cpuMasks irq.CpuMasks,
 ) (irq.Mode, error) {
-
 	log.Debug("Calculating default mode for Disk IRQs")
 	nonNvmeDiskIRQs := diskInfoByType[disk.NonNvme]
 	if len(nonNvmeDiskIRQs.Devices) == 0 {

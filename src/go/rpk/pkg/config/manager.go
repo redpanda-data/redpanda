@@ -89,7 +89,6 @@ func (m *manager) FindOrGenerate(path string) (*Config, error) {
 			conf.ConfigFile, err = absPath(m.v.ConfigFileUsed())
 			return conf, err
 		}
-
 	}
 	return readOrGenerate(m.fs, m.v, path)
 }
@@ -479,7 +478,6 @@ func v21_1_4MapToNamedSocketAddressSlice(
 				return nil, err
 			}
 			return []NamedSocketAddress{sa}, nil
-
 		}
 	}
 	return data, nil
@@ -566,7 +564,7 @@ func absPath(path string) (string, error) {
 
 func createConfigDir(fs afero.Fs, configFile string) error {
 	dir := filepath.Dir(configFile)
-	err := fs.MkdirAll(dir, 0755)
+	err := fs.MkdirAll(dir, 0o755)
 	if err != nil {
 		return fmt.Errorf(
 			"Couldn't create config dir %s: %v",

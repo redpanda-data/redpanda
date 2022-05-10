@@ -147,8 +147,10 @@ func (r *StatefulSetResource) rollingUpdate(
 		}
 
 		if !utils.IsPodReady(&pod) {
-			return &RequeueAfterError{RequeueAfter: RequeueDuration,
-				Msg: fmt.Sprintf("wait for %s pod to become ready", pod.Name)}
+			return &RequeueAfterError{
+				RequeueAfter: RequeueDuration,
+				Msg:          fmt.Sprintf("wait for %s pod to become ready", pod.Name),
+			}
 		}
 
 		headlessServiceWithPort := fmt.Sprintf("%s:%d", r.serviceFQDN,

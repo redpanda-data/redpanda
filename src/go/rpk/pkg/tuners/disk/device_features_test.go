@@ -65,10 +65,10 @@ func TestDeviceFeatures_GetScheduler(t *testing.T) {
 		},
 	}
 	fs := afero.NewMemMapFs()
-	fs.MkdirAll(testDevicePath+"/queue", 0644)
+	fs.MkdirAll(testDevicePath+"/queue", 0o644)
 	afero.WriteFile(fs,
 		testDevicePath+"/queue/scheduler",
-		[]byte(noopSchedulerEnabled), 0644)
+		[]byte(noopSchedulerEnabled), 0o644)
 	deviceFeatures := NewDeviceFeatures(fs, blockDevices)
 	// when
 	scheduler, err := deviceFeatures.GetScheduler("fake")
@@ -88,10 +88,10 @@ func TestDeviceFeatures_GetSupportedScheduler(t *testing.T) {
 		},
 	}
 	fs := afero.NewMemMapFs()
-	fs.MkdirAll(testDevicePath+"/queue", 0644)
+	fs.MkdirAll(testDevicePath+"/queue", 0o644)
 	afero.WriteFile(fs,
 		testDevicePath+"/queue/scheduler",
-		[]byte(noopSchedulerEnabled), 0644)
+		[]byte(noopSchedulerEnabled), 0o644)
 	deviceFeatures := NewDeviceFeatures(fs, blockDevices)
 	// when
 	schedulers, err := deviceFeatures.GetSupportedSchedulers("fake")
@@ -114,10 +114,10 @@ func TestDeviceFeatures_GetNoMerges(t *testing.T) {
 		},
 	}
 	fs := afero.NewMemMapFs()
-	fs.MkdirAll(testDevicePath+"/queue", 0644)
+	fs.MkdirAll(testDevicePath+"/queue", 0o644)
 	afero.WriteFile(fs,
 		testDevicePath+"/queue/nomerges",
-		[]byte("2"), 0644)
+		[]byte("2"), 0o644)
 	deviceFeatures := NewDeviceFeatures(fs, blockDevices)
 	// when
 	nomerges, err := deviceFeatures.GetNomerges("fake")
@@ -137,10 +137,10 @@ func TestDeviceFeatures_GetWriteCache(t *testing.T) {
 		},
 	}
 	fs := afero.NewMemMapFs()
-	fs.MkdirAll(testDevicePath+"/queue", 0644)
+	fs.MkdirAll(testDevicePath+"/queue", 0o644)
 	afero.WriteFile(fs,
 		testDevicePath+"/queue/write_cache",
-		[]byte(CachePolicyWriteBack), 0644)
+		[]byte(CachePolicyWriteBack), 0o644)
 	deviceFeatures := NewDeviceFeatures(fs, blockDevices)
 	// when
 	cache, err := deviceFeatures.GetWriteCache("fake")

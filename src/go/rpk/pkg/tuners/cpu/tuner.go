@@ -135,7 +135,8 @@ func (tuner *tuner) getMaxCState() (uint, error) {
 func (tuner *tuner) disableCStates() error {
 	log.Info("Disabling CPU C-States ")
 	return tuner.grub.AddCommandLineOptions(
-		[]string{"intel_idle.max_cstate=0",
+		[]string{
+			"intel_idle.max_cstate=0",
 			"processor.max_cstate=1",
 		})
 }

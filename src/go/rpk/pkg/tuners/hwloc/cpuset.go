@@ -16,7 +16,6 @@ import (
 )
 
 func TranslateToHwLocCpuSet(cpuset string) (string, error) {
-
 	cpuSetPattern := regexp.MustCompile("^(\\d+-)?(\\d+)(,(\\d+-)?(\\d+))*$")
 	if cpuset == "all" {
 		return cpuset, nil

@@ -13,7 +13,7 @@ import "net/http"
 
 type NodeConfig struct {
 	NodeID int `json:"node_id"`
-	//TODO: add the rest of the fields
+	// TODO: add the rest of the fields
 }
 
 // NodeConfig returns a single node configuration.

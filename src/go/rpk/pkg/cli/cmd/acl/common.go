@@ -149,7 +149,6 @@ func (a *acls) backcompatList() error {
 		len(a.allowHosts) > 0 ||
 		len(a.denyPrincipals) > 0 ||
 		len(a.denyHosts) > 0 {
-
 		if len(a.listPermissions) > 0 ||
 			len(a.listPrincipals) > 0 ||
 			len(a.listHosts) > 0 {

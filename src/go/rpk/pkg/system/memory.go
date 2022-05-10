@@ -30,10 +30,8 @@ type MemInfo struct {
 }
 
 func GetTransparentHugePagesActive(fs afero.Fs) (bool, error) {
-
 	options, err := ReadRuntineOptions(fs,
 		"/sys/kernel/mm/transparent_hugepage/enabled")
-
 	if err != nil {
 		return false, err
 	}

@@ -94,7 +94,7 @@ func TestSet(t *testing.T) {
 			value:  "42.3",
 			format: "single",
 			check: func(st *testing.T, _ *Config, mgr *manager) {
-				//require.True(st, ok, "Config map is of the wrong type")
+				// require.True(st, ok, "Config map is of the wrong type")
 				require.Exactly(st, 42.3, mgr.v.Get("redpanda.float_field"))
 			},
 		},
@@ -103,7 +103,7 @@ func TestSet(t *testing.T) {
 			key:   "redpanda.float_field",
 			value: "42.3",
 			check: func(st *testing.T, _ *Config, mgr *manager) {
-				//require.True(st, ok, "Config map is of the wrong type")
+				// require.True(st, ok, "Config map is of the wrong type")
 				require.Exactly(st, 42.3, mgr.v.Get("redpanda.float_field"))
 			},
 		},
@@ -403,7 +403,7 @@ func TestRead(t *testing.T) {
 				if err != nil {
 					return err
 				}
-				if err = fs.MkdirAll(baseDir, 0755); err != nil {
+				if err = fs.MkdirAll(baseDir, 0o755); err != nil {
 					return err
 				}
 				_, err = utils.WriteBytes(fs, bs, path)
@@ -2089,7 +2089,7 @@ func TestWriteAndGenerateNodeUuid(t *testing.T) {
 	conf.ConfigFile = path
 	bs, err := yaml.Marshal(conf)
 	require.NoError(t, err)
-	err = fs.MkdirAll(baseDir, 0755)
+	err = fs.MkdirAll(baseDir, 0o755)
 	require.NoError(t, err)
 	_, err = utils.WriteBytes(fs, bs, path)
 	require.NoError(t, err)

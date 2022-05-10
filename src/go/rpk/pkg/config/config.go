@@ -316,7 +316,7 @@ func checkRedpandaConfig(v *viper.Viper) []error {
 		}
 	}
 
-	var seedServersSlice []*SeedServer //map[string]interface{}
+	var seedServersSlice []*SeedServer // map[string]interface{}
 	err := unmarshalKey(v, "redpanda.seed_servers", &seedServersSlice)
 	if err != nil {
 		log.Error(err)

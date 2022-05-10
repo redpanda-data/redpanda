@@ -21,7 +21,8 @@ var procFileLines = []string{
 	"       CPU0            CPU1       CPU2    CPU3                              ",
 	"1:     184233          0          0       7985   IO-APIC   1-edge      i8042",
 	"5:          0          0          0          0   IO-APIC   5-edge      parport0",
-	"8:          1          0          0          0   IO-APIC   8-edge      rtc0"}
+	"8:          1          0          0          0   IO-APIC   8-edge      rtc0",
+}
 
 var awsMiniProcFile = `
 CPU0       
@@ -66,7 +67,7 @@ PIW:          0   Posted-interrupt wakeup event
 
 func TestProcFile_GetIRQProcFileLinesMap(t *testing.T) {
 	// given
-	var fs = afero.NewMemMapFs()
+	fs := afero.NewMemMapFs()
 	_ = utils.WriteFileLines(fs, procFileLines, "/proc/interrupts")
 	procFile := NewProcFile(fs)
 	// when
@@ -81,8 +82,8 @@ func TestProcFile_GetIRQProcFileLinesMap(t *testing.T) {
 
 func TestProcFile_GetIRQProcFileLinesMap_AWS(t *testing.T) {
 	// given
-	var fs = afero.NewMemMapFs()
-	_ = afero.WriteFile(fs, "/proc/interrupts", []byte(awsMiniProcFile), 0644)
+	fs := afero.NewMemMapFs()
+	_ = afero.WriteFile(fs, "/proc/interrupts", []byte(awsMiniProcFile), 0o644)
 	procFile := NewProcFile(fs)
 	// when
 	procFileLinesMap, err := procFile.GetIRQProcFileLinesMap()

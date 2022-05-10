@@ -69,7 +69,7 @@ power management:
 			fs,
 			"/proc/cpuinfo",
 			[]byte(contents),
-			0755,
+			0o755,
 		)
 	}
 	tests := []struct {
@@ -88,7 +88,7 @@ power management:
 				fs,
 				"/proc/cpuinfo",
 				[]byte(""),
-				0755,
+				0o755,
 			)
 		},
 	}, {

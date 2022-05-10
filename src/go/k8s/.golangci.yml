@@ -36,6 +36,7 @@ linters:
   # inverted configuration with `enable-all` and `disable` is not scalable during updates of golangci-lint
   disable-all: true
   enable:
+    - asciicheck
     - bodyclose
     - deadcode
     - depguard
@@ -43,37 +44,39 @@ linters:
     - dupl
     - errcheck
     - exhaustive
+    - exportloopref
     - funlen
     - goconst
     - gocritic
     - gocyclo
-    - revive
+    - goerr113
+    - gofmt
+    - gofumpt
+    - goimports
     - goprintffuncname
     - gosec
     - gosimple
     - govet
-    - vet
     - ineffassign
     - misspell
     - nakedret
+    - nestif
     - noctx
     - nolintlint
+    - prealloc
+    - revive
     - rowserrcheck
-    - exportloopref
     - staticcheck
     - structcheck
     - stylecheck
+    - testpackage
     - typecheck
     - unconvert
     - unparam
     - unused
     - varcheck
+    - vet
     - whitespace
-    - asciicheck
-    - goerr113
-    - nestif
-    - prealloc
-    - testpackage
 
   # don't enable:
   # - gochecknoinits # the kubebuilder and kubernetes library enforce using init functions

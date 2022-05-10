@@ -110,9 +110,11 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 					return nil, nil
 				},
 			},
-			configFile: []string{"ONE_SHOT=true",
+			configFile: []string{
+				"ONE_SHOT=true",
 				"#IRQBALANCE_BANNED_CPUS=",
-				"IRQBALANCE_ARGS=\" --banirq=5\""},
+				"IRQBALANCE_ARGS=\" --banirq=5\"",
+			},
 			bannedIRQs: []int{12, 15},
 			dir:        "/etc/sysconfig",
 			before: func(fs afero.Fs, dir string, configFile []string) {
@@ -137,10 +139,12 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 					return nil, nil
 				},
 			},
-			configFile: []string{"ONE_SHOT=true",
+			configFile: []string{
+				"ONE_SHOT=true",
 				"#IRQBALANCE_BANNED_CPUS=",
 				// IRQ 5 is already banned
-				"IRQBALANCE_ARGS=\" --banirq=5\""},
+				"IRQBALANCE_ARGS=\" --banirq=5\"",
+			},
 			bannedIRQs: []int{5, 12, 15},
 			dir:        "/etc/sysconfig",
 			before: func(fs afero.Fs, dir string, configFile []string) {
@@ -209,7 +213,6 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 				_ = utils.WriteFileLines(fs,
 					[]string{"init"},
 					"/proc/1/comm")
-
 			},
 			assert: func(fs afero.Fs, dir string, configFile, backupContent []string) {
 				require.Equal(t, 2, len(backupContent))
@@ -243,7 +246,6 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 			)
 			require.NoError(t, err)
 			tt.assert(fs, tt.dir, tt.configFile, backupFileContent)
-
 		})
 	}
 }
@@ -258,10 +260,12 @@ func Test_balanceService_GetBannedIRQs(t *testing.T) {
 			name: "Shall return all banned irq",
 			before: func(fs afero.Fs) {
 				_ = utils.WriteFileLines(fs,
-					[]string{"ONE_SHOT=true",
+					[]string{
+						"ONE_SHOT=true",
 						"#IRQBALANCE_BANNED_CPUS=",
 						"IRQBALANCE_ARGS=\"--other --banirq=123 --else=12" +
-							"--banirq=34 --banirq=48 --banirq=16\""},
+							"--banirq=34 --banirq=48 --banirq=16\"",
+					},
 					"/etc/sysconfig/irqbalance")
 			},
 			want: []int{123, 34, 48, 16},
@@ -270,9 +274,11 @@ func Test_balanceService_GetBannedIRQs(t *testing.T) {
 			name: "Shall return empty list as there are none banned IRQs",
 			before: func(fs afero.Fs) {
 				_ = utils.WriteFileLines(fs,
-					[]string{"ONE_SHOT=true",
+					[]string{
+						"ONE_SHOT=true",
 						"#IRQBALANCE_BANNED_CPUS=",
-						"IRQBALANCE_ARGS=\"--other --else --third\""},
+						"IRQBALANCE_ARGS=\"--other --else --third\"",
+					},
 					"/etc/sysconfig/irqbalance")
 			},
 		},
@@ -280,8 +286,10 @@ func Test_balanceService_GetBannedIRQs(t *testing.T) {
 			name: "Shall return empty list as there are no custom options line",
 			before: func(fs afero.Fs) {
 				_ = utils.WriteFileLines(fs,
-					[]string{"ONE_SHOT=true",
-						"#IRQBALANCE_BANNED_CPUS="},
+					[]string{
+						"ONE_SHOT=true",
+						"#IRQBALANCE_BANNED_CPUS=",
+					},
 					"/etc/sysconfig/irqbalance")
 			},
 		},

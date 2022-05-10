@@ -82,6 +82,7 @@ func (d *deviceFeatures) GetNomerges(device string) (int, error) {
 func (d *deviceFeatures) GetNomergesFeatureFile(device string) (string, error) {
 	return d.getQueueFeatureFile(deviceNode(device), "nomerges")
 }
+
 func (d *deviceFeatures) GetSchedulerFeatureFile(
 	device string,
 ) (string, error) {

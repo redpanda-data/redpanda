@@ -46,7 +46,7 @@ content
 	if err != nil {
 		t.Errorf("an error happened while running stat: %v", err)
 	}
-	expectedMode := os.FileMode(0644)
+	expectedMode := os.FileMode(0o644)
 	if expectedMode != info.Mode() {
 		t.Errorf("expected the file to have mode %v, got %v", expectedMode, info.Mode())
 	}
@@ -55,7 +55,7 @@ content
 func TestWriteFileModeCmdExecuteExistingFile(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	path := "/usr/file"
-	mode := os.FileMode(0765)
+	mode := os.FileMode(0o765)
 
 	err := afero.WriteFile(fs, path, []byte{}, mode)
 	if err != nil {
@@ -64,7 +64,7 @@ func TestWriteFileModeCmdExecuteExistingFile(t *testing.T) {
 
 	// Execute it with a different mode to check that it preserves
 	// the original mode
-	cmd := commands.NewWriteFileModeCmd(fs, path, "", 0644)
+	cmd := commands.NewWriteFileModeCmd(fs, path, "", 0o644)
 	if err := cmd.Execute(); err != nil {
 		t.Errorf("an error happened while executing: %v", err)
 	}
@@ -101,7 +101,7 @@ chmod %o %s
 `,
 		content,
 		path,
-		0644,
+		0o644,
 		path,
 	)
 
@@ -114,7 +114,7 @@ func TestWriteFileCmdRenderExistingFile(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	path := "/usr/file"
 	content := "content"
-	mode := os.FileMode(0765)
+	mode := os.FileMode(0o765)
 
 	// Create the file previously to check that the rendered
 	// script doesn't include a chmod command, preserving
@@ -124,7 +124,7 @@ func TestWriteFileCmdRenderExistingFile(t *testing.T) {
 		t.Errorf("got an error writing the file: %v", err)
 	}
 
-	cmd := commands.NewWriteFileModeCmd(fs, path, content, 0777)
+	cmd := commands.NewWriteFileModeCmd(fs, path, content, 0o777)
 
 	var buf bytes.Buffer
 	writer := bufio.NewWriter(&buf)

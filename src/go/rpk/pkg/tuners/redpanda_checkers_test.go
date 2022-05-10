@@ -28,7 +28,7 @@ func setUpCgroup(fs afero.Fs, file, val string, v2 bool) error {
 	}
 	fullPath := "/sys/fs/cgroup" + file
 	dir := filepath.Dir(fullPath)
-	if err := fs.MkdirAll("/proc/self/", 0755); err != nil {
+	if err := fs.MkdirAll("/proc/self/", 0o755); err != nil {
 		return err
 	}
 	var contents string
@@ -45,15 +45,15 @@ func setUpCgroup(fs afero.Fs, file, val string, v2 bool) error {
 		fs,
 		"/proc/self/cgroup",
 		[]byte(contents),
-		0644,
+		0o644,
 	)
 	if err != nil {
 		return err
 	}
-	if err = fs.MkdirAll(dir, 0755); err != nil {
+	if err = fs.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	return afero.WriteFile(fs, fullPath, []byte(val), 0644)
+	return afero.WriteFile(fs, fullPath, []byte(val), 0o644)
 }
 
 func TestNtpCheckTimeout(t *testing.T) {
