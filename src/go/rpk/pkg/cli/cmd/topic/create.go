@@ -11,6 +11,8 @@ package topic
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -99,7 +101,11 @@ the cleanup.policy=compact config option set.
 			for _, topic := range resp.Topics {
 				msg := "OK"
 				if err := kerr.ErrorForCode(topic.ErrorCode); err != nil {
-					msg = err.Error()
+					if errors.Is(err, kerr.InvalidPartitions) && partitions > 0 {
+						msg = fmt.Sprintf("INVALID_PARTITIONS: unable to create topic with %d partitions due to hardware constraints", partitions)
+					} else {
+						msg = err.Error()
+					}
 					exit1 = true
 				}
 				tw.Print(topic.Topic, msg)

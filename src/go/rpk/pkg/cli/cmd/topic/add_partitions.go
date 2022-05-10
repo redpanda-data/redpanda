@@ -11,6 +11,8 @@ package topic
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -18,6 +20,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"github.com/twmb/franz-go/pkg/kerr"
 )
 
 func NewAddPartitionsCommand(fs afero.Fs) *cobra.Command {
@@ -56,7 +59,11 @@ func NewAddPartitionsCommand(fs afero.Fs) *cobra.Command {
 			for _, resp := range resps.Sorted() {
 				msg := "OK"
 				if e := resp.Err; e != nil {
-					msg = e.Error()
+					if errors.Is(e, kerr.InvalidPartitions) && num > 0 {
+						msg = fmt.Sprintf("INVALID_PARTITIONS: unable to add %d partitions due to hardware constraints", num)
+					} else {
+						msg = err.Error()
+					}
 					exit1 = true
 				}
 				tw.Print(resp.Topic, msg)
