@@ -285,20 +285,8 @@ func (r *Cluster) validateKafkaListeners() field.ErrorList {
 		}
 	}
 
-	// for now only one listener can have TLS to be backward compatible with v1alpha1 API
-	foundListenerWithTLS := false
 	for i, p := range r.Spec.Configuration.KafkaAPI {
-		if p.TLS.Enabled {
-			if foundListenerWithTLS {
-				allErrs = append(allErrs,
-					field.Invalid(field.NewPath("spec").Child("configuration").Child("kafkaApi").Index(i).Child("tls"),
-						r.Spec.Configuration.KafkaAPI[i].TLS,
-						"only one listener can have TLS enabled"))
-			}
-			foundListenerWithTLS = true
-		}
-		// we need to run the validation on all listeners to also catch errors like !Enabled && RequireClientAuth
-		tlsErrs := validateTLS(
+		tlsErrs := validateListener(
 			p.TLS.Enabled,
 			p.TLS.RequireClientAuth,
 			p.TLS.IssuerRef,
@@ -441,7 +429,7 @@ func (r *Cluster) validateSchemaRegistryListener() field.ErrorList {
 		return allErrs
 	}
 	if schemaRegistry.TLS != nil {
-		tlsErrs := validateTLS(
+		tlsErrs := validateListener(
 			schemaRegistry.TLS.Enabled,
 			schemaRegistry.TLS.RequireClientAuth,
 			schemaRegistry.TLS.IssuerRef,
@@ -608,7 +596,7 @@ func validateAdminTLS(tlsConfig AdminAPITLS, path *field.Path) field.ErrorList {
 	return allErrs
 }
 
-func validateTLS(
+func validateListener(
 	tlsEnabled, requireClientAuth bool,
 	issuerRef *cmmeta.ObjectReference,
 	nodeSecretRef *corev1.ObjectReference,
