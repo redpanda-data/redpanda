@@ -5,6 +5,7 @@ v_cc_library(
   SRCS
     errors.cc
   DEPS
-    v::kafka_request_schemata)
+    v::kafka_request_schemata
+    v::pandaproxy_common)
 
 add_subdirectory(tests)
