@@ -13,6 +13,7 @@ import string
 from rptest.services.cluster import cluster
 from ducktape.mark import parametrize
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.rpk import RpkTool
 
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
@@ -79,18 +80,18 @@ class AlterTopicConfiguration(RedpandaTest):
 
     @cluster(num_nodes=3)
     def test_configuration_properties_kafka_config_allowlist(self):
-        topic = self.topics[0].name
-        kafka_tools = KafkaCliTools(self.redpanda)
-        spec = kafka_tools.describe_topic(topic)
+        rpk = RpkTool(self.redpanda)
+        config = rpk.describe_topic_configs(self.topic)
+
+        new_segment_bytes = int(config['segment.bytes'][0]) + 1
         self.client().alter_topic_configs(
-            topic, {
+            self.topic, {
                 "unclean.leader.election.enable": True,
-                TopicSpec.PROPERTY_SEGMENT_SIZE: spec.segment_bytes + 1,
+                TopicSpec.PROPERTY_SEGMENT_SIZE: new_segment_bytes
             })
 
-        spec.segment_bytes += 1
-        new_spec = kafka_tools.describe_topic(topic)
-        assert new_spec == spec
+        new_config = rpk.describe_topic_configs(self.topic)
+        assert int(new_config['segment.bytes'][0]) == new_segment_bytes
 
     @cluster(num_nodes=3)
     def test_configuration_properties_name_validation(self):
