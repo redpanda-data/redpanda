@@ -145,9 +145,14 @@ static inline ss::file_open_options writer_opts() {
 
 /// make file handle with default opts
 ss::future<ss::file> make_writer_handle(
-  const std::filesystem::path& path, storage::debug_sanitize_files debug) {
-    return make_handle(
-      path, ss::open_flags::rw | ss::open_flags::create, writer_opts(), debug);
+  const std::filesystem::path& path,
+  storage::debug_sanitize_files debug,
+  bool truncate) {
+    auto flags = ss::open_flags::rw | ss::open_flags::create;
+    if (truncate) {
+        flags |= ss::open_flags::truncate;
+    }
+    return make_handle(path, flags, writer_opts(), debug);
 }
 /// make file handle with default opts
 ss::future<ss::file> make_reader_handle(
@@ -163,26 +168,15 @@ ss::future<compacted_index_writer> make_compacted_index_writer(
   const std::filesystem::path& path,
   debug_sanitize_files debug,
   ss::io_priority_class iopc) {
-    return internal::make_writer_handle(path, debug)
-      .then([iopc, path](ss::file writer) {
-          try {
-              // NOTE: This try-catch is needed to not uncover the real
-              // exception during an OOM condition, since the appender allocates
-              // 1MB of memory aligned buffers
-              return ss::make_ready_future<compacted_index_writer>(
-                make_file_backed_compacted_index(
-                  path.string(),
-                  writer,
-                  iopc,
-                  segment_appender::write_behind_memory / 2));
-          } catch (...) {
-              auto e = std::current_exception();
-              vlog(stlog.error, "could not allocate compacted-index: {}", e);
-              return writer.close().then_wrapped([writer, e = e](ss::future<>) {
-                  return ss::make_exception_future<compacted_index_writer>(e);
-              });
-          }
-      });
+    return ss::make_ready_future<compacted_index_writer>(
+      make_file_backed_compacted_index(
+        path.string(),
+        iopc,
+        debug,
+        false,
+        // TODO: replace hardcoded max_mem
+        // https://github.com/redpanda-data/redpanda/issues/4645
+        segment_appender::write_behind_memory / 2));
 }
 
 ss::future<segment_appender_ptr> make_segment_appender(
@@ -256,35 +250,28 @@ ss::future<> copy_filtered_entries(
 
 static ss::future<> do_write_clean_compacted_index(
   compacted_index_reader reader, compaction_config cfg) {
-    return natural_index_of_entries_to_keep(reader).then([reader,
-                                                          cfg](Roaring bitmap) {
-        const auto tmpname = std::filesystem::path(
-          fmt::format("{}.staging", reader.filename()));
-        return make_handle(
-                 tmpname,
-                 ss::open_flags::rw | ss::open_flags::truncate
-                   | ss::open_flags::create,
-                 writer_opts(),
-                 cfg.sanitize)
-          .then(
-            [tmpname, cfg, reader, bm = std::move(bitmap)](ss::file f) mutable {
-                auto writer = make_file_backed_compacted_index(
-                  tmpname.string(),
-                  std::move(f),
-                  cfg.iopc,
-                  // TODO: pass this memory from the cfg
-                  segment_appender::write_behind_memory / 2);
-                return copy_filtered_entries(
-                  reader, std::move(bm), std::move(writer));
-            })
-          .then([old_name = tmpname.string(), new_name = reader.filename()] {
-              // from glibc: If oldname is not a directory, then any
-              // existing file named newname is removed during the
-              // renaming operation
-              return ss::rename_file(old_name, new_name);
-          });
-    });
-}
+    const auto tmpname = std::filesystem::path(
+      fmt::format("{}.staging", reader.filename()));
+    return natural_index_of_entries_to_keep(reader)
+      .then([reader, cfg, tmpname](Roaring bitmap) -> ss::future<> {
+          auto truncating_writer = make_file_backed_compacted_index(
+            tmpname.string(),
+            cfg.iopc,
+            cfg.sanitize,
+            true,
+            segment_appender::write_behind_memory / 2);
+
+          return copy_filtered_entries(
+            reader, std::move(bitmap), std::move(truncating_writer));
+      })
+      .then(
+        [old_name = tmpname, new_name = reader.filename()]() -> ss::future<> {
+            // from glibc: If oldname is not a directory, then any
+            // existing file named newname is removed during the
+            // renaming operation
+            return ss::rename_file(std::string(old_name), new_name);
+        });
+};
 
 ss::future<> write_clean_compacted_index(
   compacted_index_reader reader, compaction_config cfg) {

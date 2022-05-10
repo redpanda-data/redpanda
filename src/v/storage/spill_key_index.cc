@@ -14,6 +14,7 @@
 #include "reflection/adl.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/logger.h"
+#include "storage/segment_utils.h"
 #include "utils/vint.h"
 #include "vassert.h"
 #include "vlog.h"
@@ -23,6 +24,7 @@
 #include <seastar/core/future-util.hh>
 
 #include <fmt/ostream.h>
+using namespace std::chrono_literals;
 
 namespace storage::internal {
 using namespace storage; // NOLINT
@@ -32,14 +34,28 @@ using namespace storage; // NOLINT
 //
 spill_key_index::spill_key_index(
   ss::sstring name,
-  ss::file index_file,
   ss::io_priority_class p,
-  size_t max_memory)
+  size_t max_memory,
+  bool truncate,
+  storage::debug_sanitize_files debug)
   : compacted_index_writer::impl(std::move(name))
-  , _appender(
-      std::move(index_file),
+  , _debug(debug)
+  , _pc(p)
+  , _truncate(truncate)
+  , _max_mem(max_memory) {}
+
+/**
+ * This constructor is only for unit tests, which pre-construct a ss::file
+ * rather than relying on spill_key_index to open it on-demand.
+ */
+spill_key_index::spill_key_index(
+  ss::sstring name, ss::file dummy_file, size_t max_memory)
+  : compacted_index_writer::impl(std::move(name))
+  , _pc(ss::default_priority_class())
+  , _appender(storage::segment_appender(
+      std::move(dummy_file),
       segment_appender::options(
-        p, 1, config::shard_local_cfg().segment_fallocation_step.bind()))
+        _pc, 1, config::shard_local_cfg().segment_fallocation_step.bind())))
   , _max_mem(max_memory) {}
 
 spill_key_index::~spill_key_index() {
@@ -168,7 +184,8 @@ ss::future<> spill_key_index::spill(
       "Entries cannot be bigger than uint16_t::max(): {}",
       payload);
     // Append to the file
-    co_await _appender.append(payload);
+    co_await maybe_open();
+    co_await _appender->append(payload);
 }
 
 ss::future<> spill_key_index::append(compacted_index::entry e) {
@@ -213,23 +230,66 @@ ss::future<> spill_key_index::truncate(model::offset o) {
     });
 }
 
+ss::future<> spill_key_index::maybe_open() {
+    if (!_appender.has_value()) {
+        co_await open();
+    }
+}
+
+/**
+ * Open file and initialize _appender
+ */
+ss::future<> spill_key_index::open() {
+    auto index_file = co_await make_writer_handle(
+      std::filesystem::path(filename()), _debug, _truncate);
+
+    _appender.emplace(storage::segment_appender(
+      std::move(index_file),
+      segment_appender::options(
+        _pc, 1, config::shard_local_cfg().segment_fallocation_step.bind())));
+}
+
 ss::future<> spill_key_index::close() {
-    co_await drain_all_keys();
+    // ::close includes a flush, which can fail, but we must catch the
+    // exception to avoid potentially leaving an open handle in _appender
+    std::exception_ptr ex;
+    try {
+        co_await maybe_open();
 
-    vassert(
-      _keys_mem_usage == 0,
-      "Failed to drain all keys, {} bytes left",
-      _keys_mem_usage);
-    _footer.crc = _crc.value();
+        co_await drain_all_keys();
 
-    auto footer_buf = reflection::to_iobuf(_footer);
-    vassert(
-      footer_buf.size_bytes() == compacted_index::footer_size,
-      "Footer is bigger than expected: {}",
-      footer_buf);
+        vassert(
+          _keys_mem_usage == 0,
+          "Failed to drain all keys, {} bytes left",
+          _keys_mem_usage);
 
-    co_await _appender.append(footer_buf);
-    co_await _appender.close();
+        _footer.crc = _crc.value();
+        auto footer_buf = reflection::to_iobuf(_footer);
+        vassert(
+          footer_buf.size_bytes() == compacted_index::footer_size,
+          "Footer is bigger than expected: {}",
+          footer_buf);
+
+        co_await _appender->append(footer_buf);
+    } catch (...) {
+        ex = std::current_exception();
+    }
+
+    // Even if the flush failed, make sure we are closing any open file handle.
+    if (_appender.has_value()) {
+        co_await _appender->close();
+    }
+
+    if (ex) {
+        vlog(stlog.error, "error flushing index during close: {} ", ex);
+
+        // Drop any dirty state that we couldn't flush: otherwise our destructor
+        // will assert out.  This is valid because future reads of a compaction
+        // index can detect invalid content and regenerate.
+        _midx.clear();
+
+        throw ex;
+    }
 }
 
 void spill_key_index::print(std::ostream& o) const { o << *this; }
@@ -252,8 +312,12 @@ std::ostream& operator<<(std::ostream& o, const spill_key_index& k) {
 
 namespace storage {
 compacted_index_writer make_file_backed_compacted_index(
-  ss::sstring name, ss::file f, ss::io_priority_class p, size_t max_memory) {
+  ss::sstring name,
+  ss::io_priority_class p,
+  debug_sanitize_files debug,
+  bool truncate,
+  size_t max_memory) {
     return compacted_index_writer(std::make_unique<internal::spill_key_index>(
-      std::move(name), std::move(f), p, max_memory));
+      std::move(name), p, max_memory, truncate, debug));
 }
 } // namespace storage

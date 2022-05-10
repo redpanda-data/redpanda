@@ -84,8 +84,10 @@ ss::future<std::vector<ss::rwlock::holder>> write_lock_segments(
   int retries);
 
 /// make file handle with default opts
-ss::future<ss::file>
-make_writer_handle(const std::filesystem::path&, storage::debug_sanitize_files);
+ss::future<ss::file> make_writer_handle(
+  const std::filesystem::path&,
+  storage::debug_sanitize_files,
+  bool truncate = false);
 /// make file handle with default opts
 ss::future<ss::file>
 make_reader_handle(const std::filesystem::path&, storage::debug_sanitize_files);
