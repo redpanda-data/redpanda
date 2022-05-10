@@ -337,8 +337,6 @@ func (r *ConfigMapResource) CreateConfiguration(
 	}
 
 	cfg.SetAdditionalRedpandaProperty("auto_create_topics_enabled", r.pandaCluster.Spec.Configuration.AutoCreateTopics)
-	cfg.SetAdditionalRedpandaProperty("enable_idempotence", false)
-	cfg.SetAdditionalRedpandaProperty("enable_transactions", false)
 
 	if featuregates.ShadowIndex(r.pandaCluster.Spec.Version) {
 		intervalSec := 60 * 30 // 60s * 30 = 30 minutes
