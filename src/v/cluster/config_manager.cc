@@ -137,18 +137,18 @@ void config_manager::start_bootstrap() {
 ss::future<> config_manager::do_bootstrap() {
     config_update update;
 
-    config::shard_local_cfg().for_each([&update](
-                                         const config::base_property& p) {
-        if (!p.is_default()) {
-            rapidjson::StringBuffer buf;
-            rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
-            p.to_json(writer);
-            ss::sstring key_str(p.name());
-            ss::sstring val_str = buf.GetString();
-            vlog(clusterlog.info, "Importing property {}={}", key_str, val_str);
-            update.upsert.push_back({key_str, val_str});
-        }
-    });
+    config::shard_local_cfg().for_each(
+      [&update](const config::base_property& p) {
+          if (!p.is_default()) {
+              rapidjson::StringBuffer buf;
+              rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
+              p.to_json(writer);
+              ss::sstring key_str(p.name());
+              ss::sstring val_str = buf.GetString();
+              vlog(clusterlog.info, "Importing property {}", p);
+              update.upsert.push_back({key_str, val_str});
+          }
+      });
 
     // Version of the first write
     _frontend.local().set_next_version(config_version{1});
