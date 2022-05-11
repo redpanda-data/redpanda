@@ -71,6 +71,9 @@ RESTART_LOG_ALLOW_LIST = [
     # cluster - rm_stm.cc:550 - Error "raft::errc:19" on replicating pid:{producer_identity: id=1, epoch=0} commit batch
     # raft::errc:19 is the shutdown error code, the transaction subsystem encounters this and logs at error level
     re.compile("Error \"raft::errc:19\" on replicating"),
+
+    # cluster - persisted_stm.cc:199 - sync error: wait_offset_committed failed with seastar::broken_condition_variable (Condition variable is broken); offsets: dirty=692, committed=689; ntp={kafka/topic7/0
+    re.compile("cluster - .*broken_condition_variable"),
 ]
 
 # Log errors that are expected in chaos-style tests that e.g.
@@ -80,6 +83,9 @@ CHAOS_LOG_ALLOW_LIST = [
     re.compile(
         "(raft|rpc) - .*(client_request_timeout|disconnected_endpoint|Broken pipe|Connection reset by peer)"
     ),
+
+    # cluster - persisted_stm.cc:199 - sync error: wait_offset_committed failed with seastar::broken_condition_variable (Condition variable is broken); offsets: dirty=692, committed=689; ntp={kafka/topic7/0
+    re.compile("cluster - .*broken_condition_variable"),
 
     # Torn disk writes
     re.compile("storage - Could not parse header"),
