@@ -129,7 +129,7 @@ func TestString(t *testing.T) {
 		Upsert: map[string]interface{}{"c": "d", "a": "b"},
 		Remove: []string{"x", "e", "f"},
 	}
-	assert.Equal(t, "a=b c=d -e -f -x", p.String())
+	assert.Equal(t, "+a +c -e -f -x", p.String())
 }
 
 // nolint:funlen // it's a table test
