@@ -76,6 +76,8 @@ type AdminAPIClient interface {
 	PatchClusterConfig(upsert map[string]interface{}, remove []string) (admin.ClusterConfigWriteResult, error)
 
 	CreateUser(username, password, mechanism string) error
+
+	GetFeatures() (admin.FeaturesResponse, error)
 }
 
 var _ AdminAPIClient = &admin.AdminAPI{}
