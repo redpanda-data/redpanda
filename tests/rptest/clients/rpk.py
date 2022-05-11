@@ -72,6 +72,7 @@ class RpkGroupPartition(typing.NamedTuple):
     log_end_offset: Optional[int]
     lag: Optional[int]
     member_id: str
+    instance_id: str
     client_id: str
     host: str
 
@@ -306,20 +307,27 @@ class RpkTool:
             assert m is not None, f"Field string '{string}' does not match the pattern"
             return m['value']
 
-        partition_pattern = re.compile(
-            "(?P<topic>.+) +(?P<partition>\d+) +(?P<offset>\d+|-) +(?P<log_end>\d+|-) +(?P<lag>-?\d+|-) *(?P<member_id>.*)? *(?P<client_id>.*)? *(?P<host>.*)?"
+        static_member_pattern = re.compile("^([^\s]+\s+){8}[^\s]+$")
+
+        partition_pattern_static_member = re.compile(
+            "(?P<topic>.+) +(?P<partition>\d+) +(?P<offset>\d+|-) +(?P<log_end>\d+|-) +(?P<lag>-?\d+|-) *(?P<member_id>[^\s]*)? *(?P<instance_id>[^\s]*) *(?P<client_id>[^\s]*)? *(?P<host>[^\s]*)?"
+        )
+        partition_pattern_dynamic_member = re.compile(
+            "(?P<topic>.+) +(?P<partition>\d+) +(?P<offset>\d+|-) +(?P<log_end>\d+|-) +(?P<lag>-?\d+|-) *(?P<member_id>[^\s]*)? *(?P<client_id>[^\s]*)? *(?P<host>[^\s]*)?"
         )
 
         def parse_partition(string):
-            m = partition_pattern.match(string)
+
+            pattern = partition_pattern_dynamic_member
+            if static_member_pattern.match(string):
+                pattern = partition_pattern_static_member
+            m = pattern.match(string)
 
             # Check to see if info for the partition was queried during a change in leadership.
             # if it was we'd expect to see a partition string ending in;
             # NOT_LEADER_FOR_PARTITION: This server is not the leader for that topic-partition.
             if m is None and string.find('NOT_LEADER_FOR_PARTITION') != -1:
                 return None
-
-            assert m is not None, f"Partition string '{string}' does not match the pattern"
 
             # Account for negative numbers and '-' value
             all_digits = lambda x: x.lstrip('-').isdigit()
@@ -334,6 +342,8 @@ class RpkTool:
                                      log_end_offset=log_end,
                                      lag=lag,
                                      member_id=m['member_id'],
+                                     instance_id=m.groupdict().get(
+                                         'instance_id', None),
                                      client_id=m['client_id'],
                                      host=m['host'])
 
