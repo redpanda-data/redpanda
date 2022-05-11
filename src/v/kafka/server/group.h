@@ -575,6 +575,11 @@ private:
         }
 
         template<typename... Args>
+        void warn(const char* format, Args&&... args) const {
+            log(ss::log_level::warn, format, std::forward<Args>(args)...);
+        }
+
+        template<typename... Args>
         void debug(const char* format, Args&&... args) const {
             log(ss::log_level::debug, format, std::forward<Args>(args)...);
         }
