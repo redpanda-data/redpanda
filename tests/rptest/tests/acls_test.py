@@ -13,7 +13,7 @@ from ducktape.utils.util import wait_until
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
-from rptest.clients.rpk import RpkTool, ClusterAuthorizationError
+from rptest.clients.rpk import RpkTool, ClusterAuthorizationError, RpkException
 
 from rptest.services.redpanda import SecurityConfig, TLSProvider
 from rptest.services import tls
@@ -207,5 +207,5 @@ class AccessControlListTest(RedpandaTest):
             try:
                 self.get_client("cluster_describe").acl_list()
                 assert not fail, "list acls should have failed"
-            except ClusterAuthorizationError:
+            except (ClusterAuthorizationError, RpkException):
                 assert fail, "list acls should have succeeded"
