@@ -448,7 +448,8 @@ class RedpandaService(Service):
                  si_settings=None,
                  log_level: Optional[str] = None,
                  environment: Optional[dict[str, str]] = None,
-                 security: SecurityConfig = SecurityConfig()):
+                 security: SecurityConfig = SecurityConfig(),
+                 node_ready_timeout_s=None):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
         self._context = context
         self._enable_rp = enable_rp
@@ -456,6 +457,10 @@ class RedpandaService(Service):
         self._enable_pp = enable_pp
         self._enable_sr = enable_sr
         self._security = security
+
+        if node_ready_timeout_s is None:
+            node_ready_timeout_s = RedpandaService.DEFAULT_NODE_READY_TIMEOUT_SEC
+        self.node_ready_timeout_s = node_ready_timeout_s
 
         self._extra_node_conf = {}
         for node in self.nodes:
@@ -778,7 +783,7 @@ class RedpandaService(Service):
             self.write_node_conf_file(node, override_cfg_params)
 
         if timeout is None:
-            timeout = self.DEFAULT_NODE_READY_TIMEOUT_SEC
+            timeout = self.node_ready_timeout_s
 
         if self.coproc_enabled():
             self.start_wasm_engine(node)
