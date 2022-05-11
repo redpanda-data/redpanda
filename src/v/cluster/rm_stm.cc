@@ -741,7 +741,12 @@ ss::future<result<raft::replicate_result>> rm_stm::replicate(
                 })
                 .finally([u = std::move(unit)] {});
           } else if (bid.has_idempotent() && bid.first_seq <= bid.last_seq) {
-              return replicate_seq(bid, std::move(b), opts)
+              request_id rid{.pid = bid.pid, .seq = bid.first_seq};
+              return with_request_lock(
+                       rid,
+                       [this, bid, opts, b = std::move(b)]() mutable {
+                           return replicate_seq(bid, std::move(b), opts);
+                       })
                 .finally([u = std::move(unit)] {});
           }
 
