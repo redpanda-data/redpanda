@@ -167,7 +167,13 @@ ss::future<std::error_code> archival_metadata_stm::do_add_segments(
     } else {
         fut = ss::with_timeout(deadline, std::move(fut));
     }
-    auto result = co_await std::move(fut);
+
+    result<raft::replicate_result> result{{}};
+    try {
+        result = co_await std::move(fut);
+    } catch (const ss::timed_out_error&) {
+        result = errc::timeout;
+    }
 
     if (!result) {
         vlog(
