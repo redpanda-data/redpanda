@@ -156,6 +156,7 @@ void leader_balancer::trigger_balance() {
         vlog(
           clusterlog.info, "Cannot start rebalance until previous fiber exits");
         _timer.arm(_idle_timeout());
+        return;
     }
 
     if (!_enabled()) {
@@ -187,6 +188,10 @@ void leader_balancer::trigger_balance() {
 }
 
 ss::future<ss::stop_iteration> leader_balancer::balance() {
+    if (!_enabled()) {
+        co_return ss::stop_iteration::yes;
+    }
+
     /*
      * GC the muted and last leader indices
      */
