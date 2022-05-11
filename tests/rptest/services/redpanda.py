@@ -349,7 +349,7 @@ class SecurityConfig:
     # the rules, so instead we use a fixed mapping and arrange for certs to use
     # a similar format. this will change when we get closer to GA and the
     # configuration becomes more general.
-    PRINCIPAL_MAPPING_RULES = "RULE:^O=Redpanda,CN=(.*?)$/$1/L, DEFAULT"
+    __DEFAULT_PRINCIPAL_MAPPING_RULES = "RULE:^O=Redpanda,CN=(.*?)$/$1/L, DEFAULT"
 
     def __init__(self):
         self.enable_sasl = False
@@ -357,6 +357,9 @@ class SecurityConfig:
 
         # extract principal from mtls distinguished name
         self.enable_mtls_identity = False
+
+        # The rules to extract principal from mtls
+        self.principal_mapping_rules = self.__DEFAULT_PRINCIPAL_MAPPING_RULES
 
 
 class RedpandaService(Service):
@@ -1244,8 +1247,8 @@ class RedpandaService(Service):
             )
             if self._security.enable_mtls_identity:
                 tls_config.update(
-                    dict(principal_mapping_rules=SecurityConfig.
-                         PRINCIPAL_MAPPING_RULES, ))
+                    dict(principal_mapping_rules=self._security.
+                         principal_mapping_rules, ))
             doc = yaml.full_load(conf)
             doc["redpanda"].update(dict(kafka_api_tls=tls_config))
             conf = yaml.dump(doc)

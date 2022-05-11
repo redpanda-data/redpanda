@@ -46,7 +46,7 @@ class AccessControlListTest(RedpandaTest):
         # it with custom security settings
         return
 
-    def prepare_cluster(self, use_tls, use_sasl):
+    def prepare_cluster(self, use_tls, use_sasl, principal_mapping_rules=None):
         self.security = SecurityConfig()
         self.security.enable_sasl = use_sasl
         self.security.enable_mtls_identity = use_tls and not use_sasl
@@ -72,6 +72,9 @@ class AccessControlListTest(RedpandaTest):
                 name="test_admin_client")
 
             self.security.tls_provider = MTLSProvider(self.tls)
+
+        if self.security.enable_mtls_identity and principal_mapping_rules is not None:
+            self.security.principal_mapping_rules = principal_mapping_rules
 
         self.redpanda.set_security_settings(self.security)
         self.redpanda.start()
