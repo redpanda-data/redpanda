@@ -25,7 +25,8 @@ class KafkaCliConsumer(BackgroundThreadService):
                  partitions=None,
                  isolation_level=None,
                  from_beginning=False,
-                 consumer_properties={}):
+                 consumer_properties={},
+                 formatter_properties={}):
         super(KafkaCliConsumer, self).__init__(context, num_nodes=1)
         self._redpanda = redpanda
         self._topic = topic
@@ -35,6 +36,7 @@ class KafkaCliConsumer(BackgroundThreadService):
         self._isolation_level = isolation_level
         self._from_beginning = from_beginning
         self._consumer_properties = consumer_properties
+        self._formatter_properties = formatter_properties
         self._stopping = threading.Event()
         assert self._partitions is not None or self._group is not None, "either partitions or group have to be set"
 
@@ -62,6 +64,8 @@ class KafkaCliConsumer(BackgroundThreadService):
                 cmd += ["--from-beginning"]
             for k, v in self._consumer_properties.items():
                 cmd += ['--consumer-property', f"{k}={v}"]
+            for k, v in self._formatter_properties.items():
+                cmd += ['--property', f"{k}={v}"]
 
             cmd += ["--bootstrap-server", self._redpanda.brokers()]
 
