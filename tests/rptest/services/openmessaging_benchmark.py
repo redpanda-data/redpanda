@@ -55,7 +55,7 @@ class OpenMessagingBenchmarkWorkers(Service):
             node.account.ssh(start_cmd)
             monitor.wait_until(
                 "Javalin has started",
-                timeout_sec=20,
+                timeout_sec=60,
                 backoff_sec=4,
                 err_msg=
                 "Open Messaging Benchmark worker service didn't finish startup"
@@ -216,7 +216,7 @@ class OpenMessagingBenchmark(Service):
             node.account.ssh(start_cmd)
             monitor.wait_until(
                 "Starting warm-up traffic",
-                timeout_sec=20,
+                timeout_sec=60,
                 backoff_sec=4,
                 err_msg="Open Messaging Benchmark service didn't start")
 
