@@ -72,10 +72,14 @@ static error_outcome categorize_error(
         if (err.code() == s3::s3_error_code::no_such_key) {
             vlog(ctxlog.info, "NoSuchKey response received {}", path);
             result = error_outcome::notfound;
-        } else if (err.code() == s3::s3_error_code::slow_down) {
+        } else if (
+          err.code() == s3::s3_error_code::slow_down
+          || err.code() == s3::s3_error_code::internal_error) {
             // This can happen when we're dealing with high request rate to
             // the manifest's prefix. Backoff algorithm should be applied.
-            vlog(ctxlog.warn, "SlowDown response received {}", path);
+            // In principle only slow_down should occur, but in practice
+            // AWS S3 does return internal_error as well sometimes.
+            vlog(ctxlog.warn, "{} response received {}", err.code(), path);
             result = error_outcome::retry_slowdown;
         } else {
             // Unexpected REST API error, we can't recover from this
