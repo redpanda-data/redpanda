@@ -77,15 +77,29 @@ class WasmBuildTool():
 
     def _run_npm_cmd(self, artifact_dir, cmd):
         with DirectoryContext(artifact_dir) as _:
-            output = subprocess.run(['npm'] + cmd,
-                                    capture_output=True,
-                                    text=True,
-                                    check=False)
-            if output.returncode != 0:
-                raise WasmBuildToolException(
-                    f"Encountered error building wasm script: {output.stderr}")
-            self._redpanda.logger.info(f"npm - stdout: {output.stdout}")
-            self._redpanda.logger.info(f"npm - stderr: {output.stderr}")
+            retries = 2
+            while True:
+                output = subprocess.run(['npm'] + cmd,
+                                        capture_output=True,
+                                        text=True,
+                                        check=False)
+                if output.returncode != 0:
+                    # Retry on network errors, as npm requires external repositories to be available
+                    if retries > 0 and "ERR_SOCKET" in output.stderr:
+                        self._redpanda.logger.warn(
+                            f"Retrying npm command on error: {output.stderr}")
+                        retries -= 1
+                    else:
+                        raise WasmBuildToolException(
+                            f"Encountered error building wasm script: {output.stderr}"
+                        )
+                else:
+                    # Success
+                    self._redpanda.logger.info(
+                        f"npm - stdout: {output.stdout}")
+                    self._redpanda.logger.info(
+                        f"npm - stderr: {output.stderr}")
+                    break
 
     def build_test_artifacts(self, script):
         artifact_dir = os.path.join(self.work_dir, script.dir_name)
