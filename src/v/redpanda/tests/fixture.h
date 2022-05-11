@@ -66,7 +66,8 @@ public:
       , proxy_port(proxy_port)
       , schema_reg_port(schema_reg_port)
       , data_dir(std::move(base_dir))
-      , remove_on_shutdown(remove_on_shutdown) {
+      , remove_on_shutdown(remove_on_shutdown)
+      , app_signal(std::make_unique<::stop_signal>()) {
         configure(
           node_id,
           kafka_port,
@@ -82,8 +83,7 @@ public:
         app.check_environment();
         app.configure_admin_server();
         app.wire_up_services();
-        ::stop_signal app_signal;
-        app.start(app_signal);
+        app.start(*app_signal);
 
         // used by request context builder
         proto = std::make_unique<kafka::protocol>(
@@ -137,10 +137,17 @@ public:
         true) {}
 
     ~redpanda_thread_fixture() {
-        app.shutdown();
+        shutdown();
         if (remove_on_shutdown) {
             std::filesystem::remove_all(data_dir);
         }
+    }
+
+    void shutdown() {
+        if (!app_signal->abort_source().abort_requested()) {
+            app_signal->abort_source().request_abort();
+        }
+        app.shutdown();
     }
 
     config::configuration& lconf() { return config::shard_local_cfg(); }
@@ -431,4 +438,5 @@ public:
     std::filesystem::path data_dir;
     std::unique_ptr<kafka::protocol> proto;
     bool remove_on_shutdown;
+    std::unique_ptr<::stop_signal> app_signal;
 };

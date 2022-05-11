@@ -122,7 +122,8 @@ public:
     }
 
     void restart() {
-        app.shutdown();
+        shutdown();
+        app_signal = std::make_unique<::stop_signal>();
         ss::smp::invoke_on_all([this] {
             auto& config = config::shard_local_cfg();
             config.get("disable_metrics").set_value(false);
@@ -131,8 +132,7 @@ public:
         app.check_environment();
         app.configure_admin_server();
         app.wire_up_services();
-        ::stop_signal app_signal;
-        app.start(app_signal);
+        app.start(*app_signal);
     }
 };
 
