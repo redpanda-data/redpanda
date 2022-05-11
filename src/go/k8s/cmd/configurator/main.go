@@ -13,7 +13,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"path"
@@ -138,9 +137,7 @@ func main() {
 		log.Fatalf("%s", fmt.Errorf("unable to marshal the configuration: %w", err))
 	}
 
-	log.Printf("Config: %s", string(cfgBytes))
-
-	if err := ioutil.WriteFile(c.configDestination, cfgBytes, 0600); err != nil {
+	if err := os.WriteFile(c.configDestination, cfgBytes, 0o600); err != nil {
 		log.Fatalf("%s", fmt.Errorf("unable to write the destination configuration file: %w", err))
 	}
 
