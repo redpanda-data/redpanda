@@ -559,12 +559,6 @@ group::join_group_stages group_manager::join_group(join_group_request&& r) {
 }
 
 group::sync_group_stages group_manager::sync_group(sync_group_request&& r) {
-    if (r.data.group_instance_id) {
-        vlog(klog.trace, "Static group membership is not supported");
-        return group::sync_group_stages(
-          sync_group_response(error_code::unsupported_version));
-    }
-
     auto error = validate_group_status(
       r.ntp, r.data.group_id, sync_group_api::key);
     if (error != error_code::none) {
@@ -598,11 +592,6 @@ group::sync_group_stages group_manager::sync_group(sync_group_request&& r) {
 }
 
 ss::future<heartbeat_response> group_manager::heartbeat(heartbeat_request&& r) {
-    if (r.data.group_instance_id) {
-        vlog(klog.trace, "Static group membership is not supported");
-        return make_heartbeat_error(error_code::unsupported_version);
-    }
-
     auto error = validate_group_status(
       r.ntp, r.data.group_id, heartbeat_api::key);
     if (error != error_code::none) {
