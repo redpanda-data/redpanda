@@ -14,6 +14,7 @@ rp_test(
 )
 
 set(srcs
+  consumer_groups_test.cc
   member_test.cc
   group_test.cc
   read_write_roundtrip_test.cc
