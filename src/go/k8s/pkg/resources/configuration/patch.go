@@ -36,8 +36,8 @@ type CentralConfigurationPatch struct {
 // String gives a concise representation of the patch
 func (p CentralConfigurationPatch) String() string {
 	upsert := make([]string, 0, len(p.Upsert))
-	for k, v := range p.Upsert {
-		upsert = append(upsert, fmt.Sprintf("%s=%v", k, v))
+	for k := range p.Upsert {
+		upsert = append(upsert, fmt.Sprintf("+%s", k))
 	}
 	remove := make([]string, 0, len(p.Remove))
 	for _, r := range p.Remove {
