@@ -14,6 +14,7 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
 from rptest.clients.rpk import RpkTool, ClusterAuthorizationError
+
 from rptest.services.redpanda import SecurityConfig, TLSProvider
 from rptest.services import tls
 
@@ -178,3 +179,33 @@ class AccessControlListTest(RedpandaTest):
 
             self.get_client("cluster_describe").acl_list()
             self.get_super_client().acl_list()
+
+    @cluster(num_nodes=3)
+    @parametrize(rules="DEFAULT", fail=True)  # The whole SAN
+    @parametrize(
+        rules="RULE:^O=Redpanda,CN=(admin)$/$1/, RULE:^O=([^,]+),CN=(.*?)$/$1/",
+        fail=True)  # Match admin, or O (Redpanda)
+    @parametrize(
+        rules="RULE:^O=Redpanda,CN=(admin)$/$1/, RULE:^O=Redpanda,CN=()$/$1/L",
+        fail=True)  # Match admin or empty
+    @parametrize(rules="RULE:^O=Redpanda,CN=(.*?)$/$1/U",
+                 fail=True)  # Wrong Case
+    @parametrize(rules="RULE:^O=Redpanda,CN=(.*?)$/$1/L",
+                 fail=False)  # Match CN
+    @parametrize(rules="RULE:^O=Redpanda,CN=(cluster_describe|admin)$/$1/",
+                 fail=False)  # Full Match
+    def test_mtls_principle(self, rules, fail):
+        """
+        security::acl_operation::describe, security::default_cluster_name
+        """
+        use_tls = True
+        use_sasl = False
+        self.prepare_cluster(use_tls, use_sasl, principal_mapping_rules=rules)
+
+        # run a few times for good health
+        for _ in range(5):
+            try:
+                self.get_client("cluster_describe").acl_list()
+                assert not fail, "list acls should have failed"
+            except ClusterAuthorizationError:
+                assert fail, "list acls should have succeeded"
