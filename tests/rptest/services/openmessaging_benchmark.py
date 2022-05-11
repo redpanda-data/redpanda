@@ -111,7 +111,7 @@ class OpenMessagingBenchmarkWorkers(Service):
 # Benchmark process service
 class OpenMessagingBenchmark(Service):
     PERSISTENT_ROOT = "/var/lib/openmessaging"
-    STDOUT_STDERR_CAPTURE = os.path.join(PERSISTENT_ROOT, "becnhmark.log")
+    STDOUT_STDERR_CAPTURE = os.path.join(PERSISTENT_ROOT, "benchmark.log")
     OPENMESSAGING_DIR = "/opt/openmessaging-benchmark"
     DRIVER_FILE = os.path.join(OPENMESSAGING_DIR,
                                "driver-redpanda/redpanda-ducktape.yaml")
@@ -161,7 +161,7 @@ class OpenMessagingBenchmark(Service):
         conf = self.render("omb_workload.yaml", **self.configuration)
 
         self.logger.debug(
-            "Open Messaging Bechmark: Workload configuration: \n %s", conf)
+            "Open Messaging Benchmark: Workload configuration: \n %s", conf)
         node.account.create_file(OpenMessagingBenchmark.WORKLOAD_FILE, conf)
 
     def _create_benchmark_driver_file(self, node):
@@ -169,7 +169,7 @@ class OpenMessagingBenchmark(Service):
         conf = self.render("omb_driver.yaml", redpanda_node=rp_node)
 
         self.logger.debug(
-            "Open Messaging Bechmark: Driver configuration: \n %s", conf)
+            "Open Messaging Benchmark: Driver configuration: \n %s", conf)
         node.account.create_file(OpenMessagingBenchmark.DRIVER_FILE, conf)
 
     def _create_workers(self):
@@ -186,7 +186,7 @@ class OpenMessagingBenchmark(Service):
 
     def start_node(self, node):
         idx = self.idx(node)
-        self.logger.info("Open Messaging Bechmark: benchmark node - %d on %s",
+        self.logger.info("Open Messaging Benchmark: benchmark node - %d on %s",
                          idx, node.account.hostname)
 
         self.clean_node(node)
@@ -199,7 +199,7 @@ class OpenMessagingBenchmark(Service):
         worker_nodes = self.workers.get_adresses()
 
         self.logger.info(
-            f"Starting Open Messaging Bechmark with workers: {worker_nodes}")
+            f"Starting Open Messaging Benchmark with workers: {worker_nodes}")
 
         start_cmd = f"cd {OpenMessagingBenchmark.OPENMESSAGING_DIR}; \
                     bin/benchmark \
@@ -266,7 +266,7 @@ class OpenMessagingBenchmark(Service):
         self.workers.stop()
         idx = self.idx(node)
         self.logger.info(
-            f"Stopping Open Messaging Bechmark node on {node.account.hostname}"
+            f"Stopping Open Messaging Benchmark node on {node.account.hostname}"
         )
         node.account.kill_process("openmessaging-benchmark", allow_fail=False)
 
