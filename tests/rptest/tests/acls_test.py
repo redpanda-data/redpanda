@@ -31,7 +31,9 @@ class MTLSProvider(TLSProvider):
         return self.tls.create_cert(node.name)
 
     def create_service_client_cert(self, _, name):
-        return self.tls.create_cert(socket.gethostname(), name=name)
+        return self.tls.create_cert(socket.gethostname(),
+                                    name=name,
+                                    common_name=name)
 
 
 class AccessControlListTest(RedpandaTest):
@@ -229,3 +231,43 @@ class AccessControlListTest(RedpandaTest):
 
             self.get_client("cluster_describe").acl_list()
             self.get_super_client().acl_list()
+
+    # Test mtls identity
+    # Principals in use:
+    # * redpanda.service.admin: the default admin client
+    # * admin: used for acl bootstrap
+    # * cluster_describe: the principal under test
+    @cluster(num_nodes=3)
+    # DEFAULT: The whole SAN
+    @parametrize(rules="DEFAULT", fail=True)
+    #  Match admin, or O (Redpanda)
+    @parametrize(
+        rules=
+        "RULE:^O=Redpanda,CN=(redpanda.service.admin|admin)$/$1/, RULE:^O=([^,]+),CN=(.*?)$/$1/",
+        fail=True)
+    # Wrong Case
+    @parametrize(rules="RULE:^O=Redpanda,CN=(.*?)$/$1/U", fail=True)
+    # Match CN
+    @parametrize(rules="RULE:^O=Redpanda,CN=(.*?)$/$1/L", fail=False)
+    # Full Match
+    @parametrize(
+        rules=
+        "RULE:^O=Redpanda,CN=(cluster_describe|redpanda.service.admin|admin)$/$1/",
+        fail=False)
+    def test_mtls_principal(self, rules=None, fail=False):
+        """
+        security::acl_operation::describe, security::default_cluster_name
+        """
+        self.prepare_cluster(use_tls=True,
+                             use_sasl=False,
+                             enable_authz=True,
+                             authn_method="mtls_identity",
+                             principal_mapping_rules=rules)
+
+        # run a few times for good health
+        for _ in range(5):
+            try:
+                self.get_client("cluster_describe").acl_list()
+                assert not fail, "list acls should have failed"
+            except ClusterAuthorizationError:
+                assert fail, "list acls should have succeeded"
