@@ -1155,35 +1155,8 @@ group::sync_group_stages group::handle_sync_group(sync_group_request&& r) {
 }
 
 model::record_batch group::checkpoint(const assignments_type& assignments) {
-    group_metadata_key key;
-    key.group_id = _id;
-    group_metadata_value metadata;
-
-    metadata.protocol_type = protocol_type().value_or(kafka::protocol_type(""));
-    metadata.generation = generation();
-    metadata.protocol = protocol();
-    metadata.leader = leader();
-    metadata.state_timestamp = _state_timestamp;
-
-    for (const auto& it : _members) {
-        auto& member = it.second;
-        auto state = it.second->state().copy();
-        // this is not coming from the member itself because the checkpoint
-        // occurs right before the members go live and get their assignments.
-        state.assignment = bytes_to_iobuf(assignments.at(member->id()));
-        state.subscription = bytes_to_iobuf(
-          it.second->get_protocol_metadata(_protocol.value()));
-        metadata.members.push_back(std::move(state));
-    }
-
-    cluster::simple_batch_builder builder(
-      model::record_batch_type::raft_data, model::offset(0));
-
-    auto kv = _md_serializer.to_kv(
-      group_metadata_kv{.key = std::move(key), .value = std::move(metadata)});
-    builder.add_raw_kv(std::move(kv.key), std::move(kv.value));
-
-    return std::move(builder).build();
+    return do_checkpoint(
+      [&assignments](const member_id& id) { return assignments.at(id); });
 }
 
 group::sync_group_stages group::sync_group_completing_rebalance(

@@ -637,6 +637,39 @@ private:
     }
 
     model::record_batch checkpoint(const assignments_type& assignments);
+    template<typename Func>
+    model::record_batch do_checkpoint(Func&& assignments_provider) {
+        kafka::group_metadata_key key;
+        key.group_id = _id;
+        kafka::group_metadata_value metadata;
+
+        metadata.protocol_type = protocol_type().value_or(
+          kafka::protocol_type(""));
+        metadata.generation = generation();
+        metadata.protocol = protocol();
+        metadata.leader = leader();
+        metadata.state_timestamp = _state_timestamp;
+
+        for (const auto& [id, member] : _members) {
+            auto state = member->state().copy();
+            // this is not coming from the member itself because the checkpoint
+            // occurs right before the members go live and get their
+            // assignments.
+            state.assignment = bytes_to_iobuf(assignments_provider(id));
+            state.subscription = bytes_to_iobuf(
+              member->get_protocol_metadata(_protocol.value()));
+            metadata.members.push_back(std::move(state));
+        }
+
+        cluster::simple_batch_builder builder(
+          model::record_batch_type::raft_data, model::offset(0));
+
+        auto kv = _md_serializer.to_kv(group_metadata_kv{
+          .key = std::move(key), .value = std::move(metadata)});
+        builder.add_raw_kv(std::move(kv.key), std::move(kv.value));
+
+        return std::move(builder).build();
+    }
 
     cluster::abort_origin
     get_abort_origin(const model::producer_identity&, model::tx_seq) const;
