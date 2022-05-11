@@ -25,7 +25,6 @@ set(srcs
   create_topics_test.cc
   find_coordinator_test.cc
   list_offsets_test.cc
-  offset_commit_test.cc
   topic_recreate_test.cc
   fetch_session_test.cc
   alter_config_test.cc

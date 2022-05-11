@@ -643,7 +643,24 @@ group_manager::leave_group(leave_group_request&& r) {
           klog.trace,
           "Cannot handle leave group request for unknown group {}",
           r.data.group_id);
-        return make_leave_error(error_code::unknown_member_id);
+        if (r.version < api_version(3)) {
+            return make_leave_error(error_code::unknown_member_id);
+        }
+        // since version 3 we need to fill each member error code
+        leave_group_response response;
+        response.data.members.reserve(r.data.members.size());
+        std::transform(
+          r.data.members.begin(),
+          r.data.members.end(),
+          std::back_inserter(response.data.members),
+          [](member_identity& mid) {
+              return member_response{
+                .member_id = std::move(mid.member_id),
+                .group_instance_id = std::move(mid.group_instance_id),
+                .error_code = error_code::unknown_member_id,
+              };
+          });
+        return ss::make_ready_future<leave_group_response>(std::move(response));
     }
 }
 

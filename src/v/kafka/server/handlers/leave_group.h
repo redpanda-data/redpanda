@@ -14,6 +14,6 @@
 
 namespace kafka {
 
-using leave_group_handler = handler<leave_group_api, 0, 2>;
+using leave_group_handler = handler<leave_group_api, 0, 3>;
 
 }

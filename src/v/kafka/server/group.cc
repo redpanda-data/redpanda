@@ -25,6 +25,7 @@
 #include "likely.h"
 #include "model/fundamental.h"
 #include "raft/errc.h"
+#include "ssx/future-util.h"
 #include "storage/record_batch_builder.h"
 #include "utils/to_string.h"
 #include "vassert.h"
@@ -190,6 +191,17 @@ bool group::supports_protocols(const join_group_request& r) const {
 }
 
 void group::add_member_no_join(member_ptr member) {
+    if (member->group_instance_id()) {
+        auto [_, success] = _static_members.emplace(
+          *member->group_instance_id(), member->id());
+        if (!success) {
+            throw std::runtime_error(fmt::format(
+              "group already contains member with group instance id: {}, group "
+              "state: {}",
+              member,
+              *this));
+        }
+    }
     if (_members.empty()) {
         _protocol_type = member->protocol_type();
     }
@@ -219,7 +231,7 @@ ss::future<join_group_response> group::add_member(member_ptr member) {
     return member->get_join_response();
 }
 
-ss::future<join_group_response> group::update_member(
+void group::update_member_no_join(
   member_ptr member, std::vector<member_protocol>&& new_protocols) {
     vlog(
       _ctxlog.trace,
@@ -246,6 +258,11 @@ ss::future<join_group_response> group::update_member(
     for (auto& p : member->protocols()) {
         _supported_protocols[p.name]++;
     }
+}
+
+ss::future<join_group_response> group::update_member(
+  member_ptr member, std::vector<member_protocol>&& new_protocols) {
+    update_member_no_join(member, std::move(new_protocols));
 
     if (!member->is_joining()) {
         _num_members_joining++;
@@ -509,10 +526,187 @@ group::join_group_unknown_member(join_group_request&& r) {
     }
 
     auto new_member_id = group::generate_member_id(r);
+    if (r.data.group_instance_id) {
+        return add_new_static_member(std::move(new_member_id), std::move(r));
+    }
+    return add_new_dynamic_member(std::move(new_member_id), std::move(r));
+}
 
+group::join_group_stages
+group::add_new_static_member(member_id new_member_id, join_group_request&& r) {
+    auto it = _static_members.find(r.data.group_instance_id.value());
+
+    if (it != _static_members.end()) {
+        vlog(
+          _ctxlog.debug,
+          "Static member with unknown member id and instance id {} joins the "
+          "group, replacing previously mapped {} member id with new member_id "
+          "{}",
+          r.data.group_instance_id.value(),
+          it->second,
+          new_member_id);
+        return update_static_member_and_rebalance(
+          it->second, std::move(new_member_id), std::move(r));
+    }
+    vlog(
+      _ctxlog.debug,
+      "Static member with unknown member id and instance id {} joins the "
+      "group new member id: {}",
+      r.data.group_instance_id.value(),
+      new_member_id);
+    return add_member_and_rebalance(std::move(new_member_id), std::move(r));
+}
+
+group::join_group_stages group::update_static_member_and_rebalance(
+  member_id old_member_id, member_id new_member_id, join_group_request&& r) {
+    auto member = replace_static_member(
+      *r.data.group_instance_id, old_member_id, new_member_id);
+    /*
+     * <kafka> Heartbeat of old member id will expire without effect since the
+     * group no longer contains that member id. New heartbeat shall be scheduled
+     * with new member id.</kafka>
+     */
+    schedule_next_heartbeat_expiration(member);
+    auto f = update_member(member, r.native_member_protocols());
+    auto old_protocols = _members.at(new_member_id)->protocols();
+    switch (state()) {
+    case group_state::stable: {
+        auto next_gen_protocol = select_protocol();
+        if (_protocol == next_gen_protocol) {
+            vlog(
+              _ctxlog.trace,
+              "static member {} joins in stable state with the protocol that "
+              "does not require group protocol update, will not trigger "
+              "rebalance",
+              r.data.group_instance_id);
+            ssx::background
+              = store_group(checkpoint())
+                  .then([this,
+                         member,
+                         instance_id = *r.data.group_instance_id,
+                         new_member_id = std::move(new_member_id),
+                         old_member_id = std::move(old_member_id),
+                         old_protocols = std::move(old_protocols)](
+                          result<raft::replicate_result> result) mutable {
+                      if (!result) {
+                          vlog(
+                            _ctxlog.warn,
+                            "unable to store group checkpoint - {}",
+                            result.error());
+                          // <kafka>Failed to persist member.id of the
+                          // given static member, revert the update of
+                          // the static member in the group.</kafka>
+                          auto member = replace_static_member(
+                            instance_id, new_member_id, old_member_id);
+                          update_member_no_join(
+                            member, std::move(old_protocols));
+                          schedule_next_heartbeat_expiration(member);
+                          try_finish_joining_member(
+                            member,
+                            make_join_error(
+                              unknown_member_id,
+                              map_store_offset_error_code(result.error())));
+                          return;
+                      }
+                      // leader    -> member metadata
+                      // followers -> []
+                      std::vector<member_config> md;
+                      if (is_leader(new_member_id)) {
+                          md = member_metadata();
+                      }
+
+                      auto reply = join_group_response(
+                        error_code::none,
+                        generation(),
+                        protocol().value_or(kafka::protocol_name()),
+                        leader().value_or(kafka::member_id()),
+                        new_member_id,
+                        std::move(md));
+                      try_finish_joining_member(member, std::move(reply));
+                  });
+            return join_group_stages(std::move(f));
+        } else {
+            vlog(
+              _ctxlog.trace,
+              "static member {} joins in stable state with the protocol that "
+              "requires group protocol update, trying to trigger rebalance",
+              r.data.group_instance_id);
+            try_prepare_rebalance();
+        }
+        return join_group_stages(std::move(f));
+    }
+    case group_state::preparing_rebalance:
+        return join_group_stages(std::move(f));
+    case group_state::completing_rebalance:
+        vlog(
+          _ctxlog.trace,
+          "updating static member {} (member_id: {}) metadata",
+          member->group_instance_id().value(),
+          member->id());
+        try_prepare_rebalance();
+        return join_group_stages(std::move(f));
+    case group_state::empty:
+        [[fallthrough]];
+    case group_state::dead:
+        throw std::runtime_error(fmt::format(
+          "group was not supposed to be in {} state when the unknown static "
+          "member {} rejoins, group state: {}",
+          state(),
+          r.data.group_instance_id,
+          *this));
+    }
+}
+
+member_ptr group::replace_static_member(
+  const group_instance_id& instance_id,
+  const member_id& old_member_id,
+  const member_id& new_member_id) {
+    auto it = _members.find(old_member_id);
+    if (it == _members.end()) {
+        throw std::runtime_error(fmt::format(
+          "can not replace not existing member with id {}, group state: {}",
+          old_member_id,
+          *this));
+    }
+    auto member = it->second;
+    _members.erase(it);
+    member->replace_id(new_member_id);
+    _members.emplace(new_member_id, member);
+
+    if (member->is_joining()) {
+        try_finish_joining_member(
+          member,
+          make_join_error(old_member_id, error_code::fenced_instance_id));
+    }
+    if (member->is_syncing()) {
+        member->set_sync_response(
+          sync_group_response(error_code::fenced_instance_id));
+    }
+    if (is_leader(old_member_id)) {
+        _leader = member->id();
+    }
+
+    auto static_it = _static_members.find(instance_id);
+    vassert(
+      static_it != _static_members.end(),
+      "Static member that is going to be replaced must existing in group "
+      "static members map. instance_id: {}, group_state: {}",
+      instance_id,
+      *this);
+    static_it->second = new_member_id;
+
+    return member;
+}
+
+group::join_group_stages
+group::add_new_dynamic_member(member_id new_member_id, join_group_request&& r) {
+    vassert(
+      !r.data.group_instance_id,
+      "Group instance id must be empty for dynamic members, request: {}",
+      r.data);
     // <kafka>Only return MEMBER_ID_REQUIRED error if joinGroupRequest version
     // is >= 4 and groupInstanceId is configured to unknown.</kafka>
-    if (r.version >= api_version(4) && !r.data.group_instance_id) {
+    if (r.version >= api_version(4)) {
         // <kafka>If member id required (dynamic membership), register the
         // member in the pending member list and send back a response to
         // call for another join group request with allocated member id.
@@ -548,13 +742,15 @@ group::join_group_known_member(join_group_request&& r) {
         kafka::member_id new_member_id = std::move(r.data.member_id);
         return add_member_and_rebalance(std::move(new_member_id), std::move(r));
 
-    } else if (!contains_member(r.data.member_id)) {
+    } else if (auto ec = validate_existing_member(
+                 r.data.member_id, r.data.group_instance_id, "join");
+               ec != error_code::none) {
         vlog(
           _ctxlog.trace,
-          "Join rejected for unregistered member {}",
-          r.data.member_id);
-        return join_group_stages(
-          make_join_error(r.data.member_id, error_code::unknown_member_id));
+          "Join rejected for invalid member {} - {}",
+          r.data.member_id,
+          ec);
+        return join_group_stages(make_join_error(r.data.member_id, ec));
     }
 
     auto member = get_member(r.data.member_id);
@@ -796,7 +992,7 @@ void group::complete_join() {
     // this is the old group->remove_unjoined_members();
     const auto prev_leader = _leader;
     for (auto it = _members.begin(); it != _members.end();) {
-        if (!it->second->is_joining()) {
+        if (!it->second->is_joining() && !it->second->is_static()) {
             vlog(_ctxlog.trace, "Removing unjoined member {}", it->first);
 
             // cancel the heartbeat timer
@@ -862,14 +1058,10 @@ void group::complete_join() {
 
         if (in_state(group_state::empty)) {
             vlog(_ctxlog.trace, "Checkpointing empty group {}", *this);
-            auto batch = checkpoint(assignments_type{});
-            auto reader = model::make_memory_record_batch_reader(
-              std::move(batch));
-            (void)_partition
-              ->replicate(
-                std::move(reader),
-                raft::replicate_options(raft::consistency_level::quorum_ack))
-              .then([]([[maybe_unused]] result<raft::replicate_result> r) {});
+            ssx::background
+              = store_group(checkpoint(assignments_type{}))
+                  .then(
+                    []([[maybe_unused]] result<raft::replicate_result> r) {});
         } else {
             std::for_each(
               std::cbegin(_members),
@@ -1028,6 +1220,9 @@ void group::remove_member(member_ptr member) {
                 vassert(_num_members_joining >= 0, "negative members joining");
             }
         }
+        if (it->second->group_instance_id()) {
+            _static_members.erase(it->second->group_instance_id().value());
+        }
         _members.erase(it);
     }
 
@@ -1083,13 +1278,15 @@ group::sync_group_stages group::handle_sync_group(sync_group_request&& r) {
         return sync_group_stages(
           sync_group_response(error_code::coordinator_not_available));
 
-    } else if (!contains_member(r.data.member_id)) {
+    } else if (auto ec = validate_existing_member(
+                 r.data.member_id, r.data.group_instance_id, "sync");
+               ec != error_code::none) {
         vlog(
           _ctxlog.trace,
-          "Sync rejected for unregistered member {}",
-          r.data.member_id);
-        return sync_group_stages(
-          sync_group_response(error_code::unknown_member_id));
+          "Sync rejected for invalid member {} - {}",
+          r.data.member_id,
+          ec);
+        return sync_group_stages(sync_group_response(ec));
 
     } else if (r.data.generation_id != generation()) {
         vlog(
@@ -1159,6 +1356,18 @@ model::record_batch group::checkpoint(const assignments_type& assignments) {
       [&assignments](const member_id& id) { return assignments.at(id); });
 }
 
+model::record_batch group::checkpoint() {
+    return do_checkpoint([this](const member_id& id) {
+        auto it = _members.find(id);
+        vassert(
+          it != _members.end(),
+          "Checkpointed member {} must be part of the group {}",
+          id,
+          *this);
+        return it->second->assignment();
+    });
+}
+
 group::sync_group_stages group::sync_group_completing_rebalance(
   member_ptr member, sync_group_request&& r) {
     // this response will be set by the leader when it arrives. the leader also
@@ -1185,13 +1394,7 @@ group::sync_group_stages group::sync_group_completing_rebalance(
     auto assignments = std::move(r).member_assignments();
     add_missing_assignments(assignments);
 
-    auto batch = checkpoint(assignments);
-    auto reader = model::make_memory_record_batch_reader(std::move(batch));
-
-    auto f = _partition
-               ->replicate(
-                 std::move(reader),
-                 raft::replicate_options(raft::consistency_level::quorum_ack))
+    auto f = store_group(checkpoint(assignments))
                .then([this,
                       response = std::move(response),
                       expected_generation = generation(),
@@ -1246,12 +1449,15 @@ ss::future<heartbeat_response> group::handle_heartbeat(heartbeat_request&& r) {
         vlog(_ctxlog.trace, "Heartbeat rejected for group state {}", _state);
         return make_heartbeat_error(error_code::coordinator_not_available);
 
-    } else if (!contains_member(r.data.member_id)) {
+    } else if (auto ec = validate_existing_member(
+                 r.data.member_id, r.data.group_instance_id, "heartbeat");
+               ec != error_code::none) {
         vlog(
           _ctxlog.trace,
-          "Heartbeat rejected for unregistered member {}",
-          r.data.member_id);
-        return make_heartbeat_error(error_code::unknown_member_id);
+          "Heartbeat rejected for invalid member {} - {}",
+          r.data.member_id,
+          ec);
+        return make_heartbeat_error(ec);
 
     } else if (r.data.generation_id != generation()) {
         vlog(
@@ -1294,30 +1500,72 @@ ss::future<heartbeat_response> group::handle_heartbeat(heartbeat_request&& r) {
 ss::future<leave_group_response>
 group::handle_leave_group(leave_group_request&& r) {
     vlog(_ctxlog.trace, "Handling leave group request {}", r);
-
     if (in_state(group_state::dead)) {
         vlog(_ctxlog.trace, "Leave rejected for group state {}", _state);
         return make_leave_error(error_code::coordinator_not_available);
+    }
+    /**
+     * Leave group prior to version 3 were requesting only a single member
+     * leave.
+     */
+    if (r.version < api_version(3)) {
+        auto err = member_leave_group(r.data.member_id, std::nullopt);
+        return make_leave_error(err);
+    }
 
-    } else if (contains_pending_member(r.data.member_id)) {
+    leave_group_response response(error_code::none);
+
+    response.data.members.reserve(r.data.members.size());
+    for (auto& m : r.data.members) {
+        auto ec = member_leave_group(m.member_id, m.group_instance_id);
+        response.data.members.push_back(member_response{
+          .member_id = m.member_id,
+          .group_instance_id = m.group_instance_id,
+          .error_code = ec});
+    }
+    return ss::make_ready_future<leave_group_response>(std::move(response));
+}
+
+kafka::error_code group::member_leave_group(
+  const member_id& member_id,
+  const std::optional<group_instance_id>& group_instance_id) {
+    // <kafka>The LeaveGroup API allows administrative removal of members by
+    // GroupInstanceId in which case we expect the MemberId to be
+    // undefined.</kafka>
+    if (member_id == unknown_member_id) {
+        if (!group_instance_id) {
+            return error_code::unknown_member_id;
+        }
+
+        auto it = _static_members.find(*group_instance_id);
+        if (it == _static_members.end()) {
+            return error_code::unknown_member_id;
+        }
+        // recurse with found mapping
+        return member_leave_group(it->second, group_instance_id);
+    }
+
+    if (contains_pending_member(member_id)) {
         // <kafka>if a pending member is leaving, it needs to be removed
         // from the pending list, heartbeat cancelled and if necessary,
         // prompt a JoinGroup completion.</kafka>
-        remove_pending_member(r.data.member_id);
-        return make_leave_error(error_code::none);
+        remove_pending_member(member_id);
+        return error_code::none;
 
-    } else if (!contains_member(r.data.member_id)) {
+    } else if (auto ec = validate_existing_member(
+                 member_id, group_instance_id, "leave");
+               ec != error_code::none) {
         vlog(
           _ctxlog.trace,
-          "Leave rejected for unregistered member {}",
-          r.data.member_id);
-        return make_leave_error(error_code::unknown_member_id);
-
+          "Leave rejected for invalid member {} - {}",
+          member_id,
+          ec);
+        return ec;
     } else {
-        auto member = get_member(r.data.member_id);
+        auto member = get_member(member_id);
         member->expire_timer().cancel();
         remove_member(member);
-        return make_leave_error(error_code::none);
+        return error_code::none;
     }
 }
 
@@ -2007,9 +2255,10 @@ group::handle_offset_commit(offset_commit_request&& r) {
         // <kafka>The group is only using Kafka to store offsets.</kafka>
         return store_offsets(std::move(r));
 
-    } else if (!contains_member(r.data.member_id)) {
-        return offset_commit_stages(
-          offset_commit_response(r, error_code::unknown_member_id));
+    } else if (auto ec = validate_existing_member(
+                 r.data.member_id, r.data.group_instance_id, "offset-commit");
+               ec != error_code::none) {
+        return offset_commit_stages(offset_commit_response(r, ec));
 
     } else if (r.data.generation_id != generation()) {
         return offset_commit_stages(
@@ -2290,6 +2539,40 @@ group::remove_topic_partitions(const std::vector<model::topic_partition>& tps) {
           _id,
           e);
     }
+}
+
+ss::future<result<raft::replicate_result>>
+group::store_group(model::record_batch batch) {
+    return _partition->replicate(
+      model::make_memory_record_batch_reader(std::move(batch)),
+      raft::replicate_options(raft::consistency_level::quorum_ack));
+}
+
+error_code group::validate_existing_member(
+  const member_id& member_id,
+  const std::optional<group_instance_id>& instance_id,
+  const ss::sstring& ctx) const {
+    if (instance_id) {
+        auto it = _static_members.find(*instance_id);
+        if (it == _static_members.end()) {
+            return error_code::unknown_member_id;
+        } else if (it->second != member_id) {
+            vlog(
+              _ctxlog.info,
+              "operation: {} - static member with instance id {} has different "
+              "member_id assigned, current: {}, requested: {}",
+              ctx,
+              *instance_id,
+              it->second,
+              member_id);
+            return error_code::fenced_instance_id;
+        }
+    } else {
+        if (!_members.contains(member_id)) {
+            return error_code::unknown_member_id;
+        }
+    }
+    return error_code::none;
 }
 
 std::ostream& operator<<(std::ostream& o, const group& g) {

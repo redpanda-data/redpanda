@@ -13,6 +13,7 @@
 #include "cluster/fwd.h"
 #include "cluster/logger.h"
 #include "cluster/partition.h"
+#include "cluster/simple_batch_builder.h"
 #include "cluster/tx_utils.h"
 #include "kafka/group_probe.h"
 #include "kafka/protocol/fwd.h"
@@ -309,6 +310,12 @@ public:
      */
     ss::future<join_group_response> update_member(
       member_ptr member, std::vector<member_protocol>&& new_protocols);
+    /**
+     * Same as update_member but without returning the join promise. Used when
+     * reverting member state after failed group checkpoint
+     */
+    void update_member_no_join(
+      member_ptr member, std::vector<member_protocol>&& new_protocols);
 
     /**
      * \brief Get the timeout duration for rebalancing.
@@ -408,6 +415,22 @@ public:
     join_group_stages update_member_and_rebalance(
       member_ptr member, join_group_request&& request);
 
+    /// Add new member with dynamic membership
+    group::join_group_stages
+    add_new_dynamic_member(member_id, join_group_request&&);
+
+    /// Add new member with static membership
+    group::join_group_stages
+    add_new_static_member(member_id, join_group_request&&);
+
+    /// Replaces existing static member with the new one
+    member_ptr replace_static_member(
+      const group_instance_id&, const member_id&, const member_id&);
+
+    /// Updates existing static member and initiate rebalance if needed
+    group::join_group_stages update_static_member_and_rebalance(
+      member_id, member_id, join_group_request&&);
+
     /// Transition to preparing rebalance if possible.
     void try_prepare_rebalance();
 
@@ -444,6 +467,10 @@ public:
     /// Handle a leave group request.
     ss::future<leave_group_response>
     handle_leave_group(leave_group_request&& r);
+
+    /// Handle leave group for single member
+    kafka::error_code member_leave_group(
+      const member_id&, const std::optional<group_instance_id>&);
 
     std::optional<offset_metadata>
     offset(const model::topic_partition& tp) const {
@@ -549,6 +576,14 @@ public:
         return _partition;
     }
 
+    ss::future<result<raft::replicate_result>> store_group(model::record_batch);
+
+    // validates state of a member existing in a group
+    error_code validate_existing_member(
+      const member_id&,
+      const std::optional<group_instance_id>&,
+      const ss::sstring&) const;
+
     // shutdown group. cancel all pending operations
     void shutdown();
 
@@ -637,6 +672,8 @@ private:
     }
 
     model::record_batch checkpoint(const assignments_type& assignments);
+    model::record_batch checkpoint();
+
     template<typename Func>
     model::record_batch do_checkpoint(Func&& assignments_provider) {
         kafka::group_metadata_key key;
@@ -680,6 +717,7 @@ private:
     kafka::generation_id _generation;
     protocol_support _supported_protocols;
     member_map _members;
+    absl::node_hash_map<group_instance_id, member_id> _static_members;
     int _num_members_joining;
     absl::node_hash_map<kafka::member_id, ss::timer<clock_type>>
       _pending_members;

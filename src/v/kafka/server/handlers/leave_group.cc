@@ -9,10 +9,12 @@
 
 #include "kafka/server/handlers/leave_group.h"
 
+#include "kafka/protocol/schemata/leave_group_request.h"
 #include "kafka/server/group_manager.h"
 #include "kafka/server/group_router.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
+#include "kafka/types.h"
 #include "utils/remote.h"
 #include "utils/to_string.h"
 
@@ -21,11 +23,19 @@
 
 namespace kafka {
 
+namespace {
+leave_group_request decode_request(request_context& ctx) {
+    leave_group_request request;
+    request.decode(ctx.reader(), ctx.header().version);
+    request.version = ctx.header().version;
+    return request;
+}
+} // namespace
+
 template<>
 ss::future<response_ptr> leave_group_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
-    leave_group_request request;
-    request.decode(ctx.reader(), ctx.header().version);
+    leave_group_request request = decode_request(ctx);
 
     if (!ctx.authorized(security::acl_operation::read, request.data.group_id)) {
         co_return co_await ctx.respond(

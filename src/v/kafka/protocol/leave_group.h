@@ -37,6 +37,8 @@ struct leave_group_request final {
 
     // set during request processing after mapping group to ntp
     model::ntp ntp;
+    // additional context, set in decode
+    api_version version;
 
     void encode(response_writer& writer, api_version version) {
         data.encode(writer, version);
