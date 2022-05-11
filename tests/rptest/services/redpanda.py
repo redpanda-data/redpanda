@@ -380,7 +380,7 @@ class RedpandaService(Service):
     COVERAGE_PROFRAW_CAPTURE = os.path.join(PERSISTENT_ROOT,
                                             "redpanda.profraw")
 
-    DEFAULT_NODE_READY_TIMEOUT_SEC = 10
+    DEFAULT_NODE_READY_TIMEOUT_SEC = 20
     WASM_READY_TIMEOUT_SEC = 10
 
     DEDICATED_NODE_KEY = "dedicated_nodes"
