@@ -93,4 +93,4 @@ class KafkaCliConsumer(BackgroundThreadService):
 
     def stop_node(self, node):
         self._stopping.set()
-        node.account.kill_process("java", clean_shutdown=False)
+        node.account.kill_process("java", clean_shutdown=True)
