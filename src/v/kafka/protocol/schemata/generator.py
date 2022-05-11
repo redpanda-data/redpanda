@@ -81,6 +81,7 @@ path_type_map = {
             },
         },
         "MemberId": ("kafka::member_id", "string"),
+        "GroupInstanceId": ("kafka::group_instance_id", "string"),
     },
     "AddPartitionsToTxnRequestData": {
         "Topics": {
