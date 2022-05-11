@@ -40,11 +40,6 @@ process_result_stages join_group_handler::handle(
     join_group_request request;
     decode_request(ctx, request);
 
-    if (request.data.group_instance_id) {
-        return process_result_stages::single_stage(
-          ctx.respond(join_group_response(error_code::unsupported_version)));
-    }
-
     if (!ctx.authorized(security::acl_operation::read, request.data.group_id)) {
         return process_result_stages::single_stage(ctx.respond(
           join_group_response(error_code::group_authorization_failed)));
