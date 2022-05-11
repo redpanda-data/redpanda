@@ -52,8 +52,18 @@ class NodesDecommissioningTest(EndToEndTest):
         self.logger.info(f"decommissioning node: {to_decommission}", )
         admin.decommission_broker(to_decommission['node_id'])
 
+        # A node which isn't being decommed, to use when calling into
+        # the admin API from this point onwards.
+        survivor_node = [
+            n for n in self.redpanda.nodes
+            if self.redpanda.idx(n) != to_decommission['node_id']
+        ][0]
+        self.logger.info(
+            f"Using survivor node {survivor_node.name} {self.redpanda.idx(survivor_node)}"
+        )
+
         def node_removed():
-            brokers = admin.get_brokers()
+            brokers = admin.get_brokers(node=survivor_node)
             for b in brokers:
                 if b['node_id'] == to_decommission['node_id']:
                     return False
@@ -85,14 +95,15 @@ class NodesDecommissioningTest(EndToEndTest):
         self.await_startup()
         admin = Admin(self.redpanda)
 
+        survivor_node = self.redpanda.nodes[0]
         to_decommission = self.redpanda.nodes[1]
-        node_id = 2
+        node_id = self.redpanda.idx(to_decommission)
         self.redpanda.stop_node(node=to_decommission)
         self.logger.info(f"decommissioning node: {node_id}", )
         admin.decommission_broker(id=node_id)
 
         def node_removed():
-            brokers = admin.get_brokers()
+            brokers = admin.get_brokers(node=survivor_node)
             for b in brokers:
                 if b['node_id'] == node_id:
                     return False
