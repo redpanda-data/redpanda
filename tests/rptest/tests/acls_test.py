@@ -50,7 +50,8 @@ class AccessControlListTest(RedpandaTest):
                         use_tls,
                         use_sasl,
                         enable_authz=None,
-                        authn_method=None):
+                        authn_method=None,
+                        principal_mapping_rules=None):
         self.security = SecurityConfig()
         self.security.enable_sasl = use_sasl
         self.security.kafka_enable_authorization = enable_authz
@@ -77,6 +78,10 @@ class AccessControlListTest(RedpandaTest):
                 name="test_admin_client")
 
             self.security.tls_provider = MTLSProvider(self.tls)
+
+        if self.security.mtls_identity_enabled(
+        ) and principal_mapping_rules is not None:
+            self.security.principal_mapping_rules = principal_mapping_rules
 
         self.redpanda.set_security_settings(self.security)
         self.redpanda.start()
