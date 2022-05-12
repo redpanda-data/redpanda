@@ -88,16 +88,18 @@ class OpenMessagingBenchmarkWorkers(Service):
         for node in self.nodes:
             self.raise_on_bad_log_lines(node)
 
-    def stop_node(self, node):
+    def stop_node(self, node, allow_fail=False):
         self.logger.info(
             f"Stopping Open Messaging Benchmark worker node on {node.account.hostname}"
         )
-        node.account.kill_process("openmessaging-benchmark", allow_fail=False)
+        node.account.kill_process("openmessaging-benchmark",
+                                  allow_fail=allow_fail)
 
     def clean_node(self, node):
         self.logger.info(
             f"Cleaning Open Messaging Benchmark worker node on {node.account.hostname}"
         )
+        self.stop_node(node, allow_fail=True)
         node.account.remove(OpenMessagingBenchmarkWorkers.PERSISTENT_ROOT,
                             allow_fail=True)
 
@@ -134,6 +136,7 @@ class OpenMessagingBenchmark(Service):
         self._ctx = ctx
         self.redpanda = redpanda
         self.set_default_configuration()
+        self.workers = None
 
     def set_default_configuration(self):
         self.configuration = {
@@ -262,18 +265,20 @@ class OpenMessagingBenchmark(Service):
         except Exception:
             return False
 
-    def stop_node(self, node):
-        self.workers.stop()
-        idx = self.idx(node)
+    def stop_node(self, node, allow_fail=False):
+        if self.workers is not None:
+            self.workers.stop()
         self.logger.info(
             f"Stopping Open Messaging Benchmark node on {node.account.hostname}"
         )
-        node.account.kill_process("openmessaging-benchmark", allow_fail=False)
+        node.account.kill_process("openmessaging-benchmark",
+                                  allow_fail=allow_fail)
 
     def clean_node(self, node):
         self.logger.info(
             f"Cleaning Open Messaging Benchmark node on {node.account.hostname}"
         )
+        self.stop_node(node, allow_fail=True)
         node.account.remove(OpenMessagingBenchmark.PERSISTENT_ROOT,
                             allow_fail=True)
 
