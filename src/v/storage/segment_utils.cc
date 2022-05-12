@@ -92,8 +92,8 @@ data_segment_staging_name(const ss::lw_shared_ptr<segment>& s) {
 /// is not useful for logs and can cause issues.
 static ss::future<>
 maybe_disable_cow(const std::filesystem::path& path, ss::file& file) {
-    if (co_await ss::file_system_at(path.string()) == ss::fs_type::btrfs) {
-        try {
+    try {
+        if (co_await ss::file_system_at(path.string()) == ss::fs_type::btrfs) {
             int flags = -1;
             // ss::syscall_result throws on errors, so not checking returns.
             co_await file.ioctl(FS_IOC_GETFLAGS, (void*)&flags);
@@ -102,11 +102,14 @@ maybe_disable_cow(const std::filesystem::path& path, ss::file& file) {
                 co_await file.ioctl(FS_IOC_SETFLAGS, (void*)&flags);
                 vlog(stlog.trace, "Disabled COW on BTRFS segment {}", path);
             }
-        } catch (std::system_error& e) {
-            // Non-fatal, user will just get degraded behaviour
-            // when btrfs tries to COW on a journal.
-            vlog(stlog.info, "Error disabling COW on {}: {}", path, e);
         }
+    } catch (std::system_error& e) {
+        // Non-fatal, user will just get degraded behaviour
+        // when btrfs tries to COW on a journal.
+        vlog(stlog.info, "System error disabling COW on {}: {}", path, e);
+    } catch (std::filesystem::filesystem_error& e) {
+        // This can happen if e.g. our file open races with an unlink
+        vlog(stlog.info, "Filesystem error disabling COW on {}: {}", path, e);
     }
 }
 
