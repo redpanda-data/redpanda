@@ -237,6 +237,55 @@ class FranzGoVerifiableRandomConsumer(FranzGoVerifiableService):
             self.status = ServiceStatus.FINISH
 
 
+class FranzGoVerifiableConsumerGroupConsumer(FranzGoVerifiableService):
+    def __init__(self,
+                 context,
+                 redpanda,
+                 topic,
+                 msg_size,
+                 readers,
+                 nodes=None):
+        super(FranzGoVerifiableConsumerGroupConsumer,
+              self).__init__(context, redpanda, topic, msg_size, nodes)
+
+        self._readers = readers
+        self._shutting_down = threading.Event()
+        self._consumer_status = ConsumerStatus(0, 0, 0)
+
+    @property
+    def consumer_status(self):
+        return self._consumer_status
+
+    def _worker(self, idx, node):
+        self.status = ServiceStatus.RUNNING
+        self._stopping.clear()
+        try:
+            while True:
+                cmd = (
+                    "echo $$ ; "
+                    f"{TESTS_DIR}/kgo-verifier --produce_msgs=0 --rand_read_msgs=0 --seq_read=0 "
+                    f"--brokers={self._redpanda.brokers()} "
+                    f"--topic={self._topic} "
+                    f"--consumer_group_readers={self._readers} ")
+                for line in self.execute_cmd(cmd, node):
+                    if not line.startswith("{"):
+                        continue
+                    data = json.loads(line)
+                    self._consumer_status = ConsumerStatus(
+                        data['ValidReads'], data['InvalidReads'],
+                        data['OutOfScopeInvalidReads'])
+                    self.logger.info(
+                        f"ConsumerGroupConsumer {self._consumer_status}")
+
+                if self._stopping.is_set() or self._shutting_down.is_set():
+                    break
+
+        except Exception as ex:
+            self.save_exception(ex)
+        finally:
+            self.status = ServiceStatus.FINISH
+
+
 class ProduceStatus:
     def __init__(self, sent, acked, bad_offsets, restarts):
         self.sent = sent
