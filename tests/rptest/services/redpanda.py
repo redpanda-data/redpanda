@@ -379,7 +379,7 @@ class RedpandaService(Service):
 
     DEDICATED_NODE_KEY = "dedicated_nodes"
 
-    RAISE_ON_ERRORS_KEY = "raise_on_errors"
+    RAISE_ON_ERRORS_KEY = "raise_on_error"
 
     LOG_LEVEL_KEY = "redpanda_log_level"
     DEFAULT_LOG_LEVEL = "info"

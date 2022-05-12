@@ -26,9 +26,9 @@ class OpenBenchmarkTest(RedpandaTest):
     def test_default_omb_configuration(self):
         benchmark = OpenMessagingBenchmark(self._ctx, self.redpanda)
         benchmark.start()
-        becnhmark_time_min = benchmark.benchmark_time(
+        benchmark_time_min = benchmark.benchmark_time(
         ) + OpenBenchmarkTest.BENCHMARK_WAIT_TIME_MIN
-        benchmark.wait(timeout_sec=becnhmark_time_min * 60)
+        benchmark.wait(timeout_sec=benchmark_time_min * 60)
         benchmark.check_succeed()
 
     @cluster(num_nodes=8)
@@ -36,9 +36,9 @@ class OpenBenchmarkTest(RedpandaTest):
         benchmark = OpenMessagingBenchmark(self._ctx, self.redpanda)
         benchmark.set_configuration({"topics": 2})
         benchmark.start()
-        becnhmark_time_min = benchmark.benchmark_time(
+        benchmark_time_min = benchmark.benchmark_time(
         ) + OpenBenchmarkTest.BENCHMARK_WAIT_TIME_MIN
-        benchmark.wait(timeout_sec=becnhmark_time_min * 60)
+        benchmark.wait(timeout_sec=benchmark_time_min * 60)
         benchmark.check_succeed()
 
     @cluster(num_nodes=8)
@@ -49,9 +49,9 @@ class OpenBenchmarkTest(RedpandaTest):
             "consumer_per_subscription": 2
         })
         benchmark.start()
-        becnhmark_time_min = benchmark.benchmark_time(
+        benchmark_time_min = benchmark.benchmark_time(
         ) + OpenBenchmarkTest.BENCHMARK_WAIT_TIME_MIN
-        benchmark.wait(timeout_sec=becnhmark_time_min * 60)
+        benchmark.wait(timeout_sec=benchmark_time_min * 60)
         benchmark.check_succeed()
 
     @cluster(num_nodes=7)
@@ -59,7 +59,7 @@ class OpenBenchmarkTest(RedpandaTest):
         benchmark = OpenMessagingBenchmark(self._ctx, self.redpanda)
         benchmark.set_configuration({"subscriptions_per_topic": 2})
         benchmark.start()
-        becnhmark_time_min = benchmark.benchmark_time(
+        benchmark_time_min = benchmark.benchmark_time(
         ) + OpenBenchmarkTest.BENCHMARK_WAIT_TIME_MIN
-        benchmark.wait(timeout_sec=becnhmark_time_min * 60)
+        benchmark.wait(timeout_sec=benchmark_time_min * 60)
         benchmark.check_succeed()
