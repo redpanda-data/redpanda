@@ -114,6 +114,7 @@ ss::future<> health_monitor_backend::stop() {
     auto f = _gate.close();
     abort_current_refresh();
     _tick_timer.cancel();
+    _tick_cv.broken();
 
     if (_refresh_request) {
         _refresh_request.release();
@@ -413,10 +414,66 @@ health_monitor_backend::maybe_refresh_cluster_health(
                               || _last_refresh + max_metadata_age()
                                    < ss::lowres_clock::now();
 
-    // if current node is not the controller leader and we need a refresh we
-    // refresh metadata cache
-    if (!_raft0->is_leader() && need_refresh) {
-        try {
+    if (!need_refresh) {
+        co_return errc::success;
+    }
+
+    try {
+        if (_raft0->is_leader()) {
+            /*
+             * if we are the leader it is not sufficient to assume that we don't
+             * need a refresh. the refresh happens asynchronous via a timer
+             * which fires frequently which means there is a window of
+             * vulnerability. one such scenario is: a node boots up and doesn't
+             * yet have any health reports. controller leadership is then
+             * transferred to this node. and then health is queried on this
+             * node.
+             *
+             * the solution is to trigger a refresh if needed or wait for an
+             * on-going refresh if one is active.
+             */
+            const bool was_armed = _tick_timer.cancel();
+            if (was_armed) {
+                tick();
+            }
+            /*
+             * duration_cast model::no_timeout to the cv's internal clock type
+             * results in what looks like an overflow and an immediate timeout.
+             * therefore here we adapt to the semantic meaning of the input
+             * timeout and adjust accordingly. though we do assume that a
+             * non-model::no_timeout will be reasonably sized that the casts are
+             * ok.
+             */
+            std::optional<ss::semaphore::clock::duration> timeout;
+            if (deadline != model::no_timeout) {
+                timeout = std::chrono::duration_cast<ss::semaphore::duration>(
+                  deadline - model::timeout_clock::now());
+            }
+            try {
+                if (timeout.has_value()) {
+                    co_await _tick_cv.wait(timeout.value());
+                } else {
+                    co_await _tick_cv.wait();
+                }
+            } catch (const ss::condition_variable_timed_out&) {
+                vlog(
+                  clusterlog.info,
+                  "timeout refreshing cluster health as leader. falling back "
+                  "to previous state. timeout duration {} ms",
+                  (timeout.has_value()
+                     ? std::chrono::duration_cast<std::chrono::milliseconds>(
+                         timeout.value())
+                         .count()
+                     : -1));
+                co_return errc::timeout;
+            } catch (const ss::broken_condition_variable&) {
+                // shutting down, but handle like a timeout
+                vlog(
+                  clusterlog.debug,
+                  "health monitor shutting down while refreshing state");
+                co_return errc::timeout;
+            }
+        } else {
             auto f = refresh_cluster_health_cache(refresh);
             auto err = co_await ss::with_timeout(deadline, std::move(f));
             if (err) {
@@ -426,14 +483,15 @@ health_monitor_backend::maybe_refresh_cluster_health(
                   err.message());
                 co_return err;
             }
-        } catch (const ss::timed_out_error&) {
-            vlog(
-              clusterlog.info,
-              "timed out when refreshing cluster health state, falling back to "
-              "previous cluster health snapshot");
-            co_return errc::timeout;
         }
+    } catch (const ss::timed_out_error&) {
+        vlog(
+          clusterlog.info,
+          "timed out when refreshing cluster health state, falling back to "
+          "previous cluster health snapshot");
+        co_return errc::timeout;
     }
+
     co_return errc::success;
 }
 
@@ -454,6 +512,7 @@ ss::future<> health_monitor_backend::tick_cluster_health() {
     if (!_raft0->is_leader()) {
         vlog(clusterlog.trace, "skipping tick, not leader");
         _tick_timer.arm(tick_interval());
+        _tick_cv.signal();
         co_return;
     }
 
@@ -463,6 +522,7 @@ ss::future<> health_monitor_backend::tick_cluster_health() {
         if (!_as.local().abort_requested()) {
             _tick_timer.arm(next_tick);
         }
+        _tick_cv.signal();
     });
 }
 
@@ -585,6 +645,8 @@ ss::future<> health_monitor_backend::collect_cluster_health() {
             _reports.emplace(id, std::move(r.value()));
         }
     }
+
+    _last_refresh = ss::lowres_clock::now();
 }
 
 ss::future<result<node_health_report>>

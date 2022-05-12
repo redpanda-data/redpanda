@@ -168,5 +168,6 @@ private:
     std::vector<std::pair<cluster::notification_id_type, health_node_cb_t>>
       _node_callbacks;
     cluster::notification_id_type _next_callback_id{0};
+    ss::condition_variable _tick_cv;
 };
 } // namespace cluster
