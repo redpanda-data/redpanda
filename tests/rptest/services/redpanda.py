@@ -1128,7 +1128,9 @@ class RedpandaService(Service):
         wait_until(
             lambda: len(self.pids(node)) == 0,
             timeout_sec=timeout,
-            err_msg=f"Redpanda node failed to stop in {timeout} seconds")
+            err_msg=
+            f"Redpanda node {node.account.hostname} failed to stop in {timeout} seconds"
+        )
         self.remove_from_started_nodes(node)
 
     def remove_from_started_nodes(self, node):
