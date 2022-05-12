@@ -28,7 +28,9 @@ class SaramaTest(RedpandaTest):
     topics = (TopicSpec(), )
 
     def __init__(self, test_context):
-        super(SaramaTest, self).__init__(test_context=test_context)
+        super(SaramaTest, self).__init__(
+            test_context=test_context,
+            extra_rp_conf={'auto_create_topics_enabled': True})
 
         self._ctx = test_context
 
