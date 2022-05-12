@@ -297,6 +297,9 @@ func (r *Cluster) validateKafkaListeners() field.ErrorList {
 		allErrs = append(allErrs, tlsErrs...)
 	}
 
+	allErrs = append(allErrs,
+		validateTLSRules(r.KafkaTLSListeners(), field.NewPath("spec").Child("configuration").Child("kafkaApi"))...)
+
 	if !((len(r.Spec.Configuration.KafkaAPI) == 2 && external != nil) || (external == nil && len(r.Spec.Configuration.KafkaAPI) == 1)) {
 		allErrs = append(allErrs,
 			field.Invalid(field.NewPath("spec").Child("configuration").Child("kafkaApi"),
@@ -594,6 +597,58 @@ func validateAdminTLS(tlsConfig AdminAPITLS, path *field.Path) field.ErrorList {
 				"Enabled has to be set to true for RequireClientAuth to be allowed to be true"))
 	}
 	return allErrs
+}
+
+func validateTLSRules(
+	tlsListeners []ListenerWithName, path *field.Path,
+) field.ErrorList {
+	var allErrs field.ErrorList
+	if len(tlsListeners) < 2 {
+		return allErrs
+	}
+	if hasDifferentIssuers(tlsListeners[0].TLS, tlsListeners[1].TLS) {
+		allErrs = append(allErrs,
+			field.Invalid(
+				path.Child("TLS").Child("IssuerRef"),
+				tlsListeners[0].TLS.IssuerRef,
+				"If two listeners have TLS enabled and issuerRef specified, this issuer must be the same for both"))
+	}
+	if hasDifferentNodeSecret(tlsListeners[0].TLS, tlsListeners[1].TLS) {
+		allErrs = append(allErrs,
+			field.Invalid(
+				path.Child("TLS").Child("NodeSecretRef"),
+				tlsListeners[0].TLS.IssuerRef,
+				"If two listeners have TLS enabled and NodeSecretRef specified, it must be the same for both"))
+	}
+	return allErrs
+}
+
+func hasDifferentIssuers(listener1, listener2 KafkaAPITLS) bool {
+	if listener1.IssuerRef == nil && listener2.IssuerRef == nil {
+		// no issuer provided
+		return false
+	}
+	if listener1.IssuerRef == nil || listener2.IssuerRef == nil {
+		// one issuer set and another not set
+		return true
+	}
+	return listener1.IssuerRef.Group != listener2.IssuerRef.Group ||
+		listener1.IssuerRef.Kind != listener2.IssuerRef.Kind ||
+		listener1.IssuerRef.Name != listener2.IssuerRef.Name
+}
+
+func hasDifferentNodeSecret(listener1, listener2 KafkaAPITLS) bool {
+	if listener1.NodeSecretRef == nil && listener2.NodeSecretRef == nil {
+		// no issuer provided
+		return false
+	}
+	if listener1.NodeSecretRef == nil || listener2.NodeSecretRef == nil {
+		// one issuer set and another not set
+		return true
+	}
+	return listener1.NodeSecretRef.Namespace != listener2.NodeSecretRef.Namespace ||
+		listener1.NodeSecretRef.Kind != listener2.NodeSecretRef.Kind ||
+		listener1.NodeSecretRef.Name != listener2.NodeSecretRef.Name
 }
 
 func validateListener(

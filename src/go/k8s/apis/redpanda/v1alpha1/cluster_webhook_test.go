@@ -1218,3 +1218,99 @@ func TestExternalKafkaPortSpecified(t *testing.T) {
 		assert.Error(t, err)
 	})
 }
+
+func TestKafkaTLSRules(t *testing.T) {
+	rpCluster := validRedpandaCluster()
+
+	// nolint:dupl // the tests are not duplicates
+	t.Run("different issuer for two tls listeners", func(t *testing.T) {
+		newRp := rpCluster.DeepCopy()
+		newRp.Spec.Configuration.KafkaAPI[0].TLS = v1alpha1.KafkaAPITLS{
+			Enabled: true,
+			IssuerRef: &cmmeta.ObjectReference{
+				Name: "issuer",
+				Kind: "ClusterIssuer",
+			},
+		}
+		newRp.Spec.Configuration.KafkaAPI = append(newRp.Spec.Configuration.KafkaAPI,
+			v1alpha1.KafkaAPI{Port: 30001, External: v1alpha1.ExternalConnectivityConfig{Enabled: true, Subdomain: "redpanda.com"}, TLS: v1alpha1.KafkaAPITLS{
+				Enabled: true,
+				IssuerRef: &cmmeta.ObjectReference{
+					Name: "other",
+					Kind: "ClusterIssuer",
+				},
+			}})
+
+		err := newRp.ValidateUpdate(rpCluster)
+		assert.Error(t, err)
+	})
+
+	// nolint:dupl // the tests are not duplicates
+	t.Run("same issuer for two tls listeners is allowed", func(t *testing.T) {
+		newRp := rpCluster.DeepCopy()
+		newRp.Spec.Configuration.KafkaAPI[0].TLS = v1alpha1.KafkaAPITLS{
+			Enabled: true,
+			IssuerRef: &cmmeta.ObjectReference{
+				Name: "issuer",
+				Kind: "ClusterIssuer",
+			},
+		}
+		newRp.Spec.Configuration.KafkaAPI = append(newRp.Spec.Configuration.KafkaAPI,
+			v1alpha1.KafkaAPI{Port: 30001, External: v1alpha1.ExternalConnectivityConfig{Enabled: true, Subdomain: "redpanda.com"}, TLS: v1alpha1.KafkaAPITLS{
+				Enabled: true,
+				IssuerRef: &cmmeta.ObjectReference{
+					Name: "issuer",
+					Kind: "ClusterIssuer",
+				},
+			}})
+
+		err := newRp.ValidateUpdate(rpCluster)
+		assert.NoError(t, err)
+	})
+
+	// nolint:dupl // the tests are not duplicates
+	t.Run("different nodeSecretRef for two tls listeners", func(t *testing.T) {
+		newRp := rpCluster.DeepCopy()
+		newRp.Spec.Configuration.KafkaAPI[0].TLS = v1alpha1.KafkaAPITLS{
+			Enabled: true,
+			NodeSecretRef: &corev1.ObjectReference{
+				Name:      "node",
+				Namespace: "default",
+			},
+		}
+		newRp.Spec.Configuration.KafkaAPI = append(newRp.Spec.Configuration.KafkaAPI,
+			v1alpha1.KafkaAPI{Port: 30001, External: v1alpha1.ExternalConnectivityConfig{Enabled: true, Subdomain: "redpanda.com"}, TLS: v1alpha1.KafkaAPITLS{
+				Enabled: true,
+				NodeSecretRef: &corev1.ObjectReference{
+					Name:      "other-node",
+					Namespace: "default",
+				},
+			}})
+
+		err := newRp.ValidateUpdate(rpCluster)
+		assert.Error(t, err)
+	})
+
+	// nolint:dupl // the tests are not duplicates
+	t.Run("same nodesecretref for two tls listeners is allowed", func(t *testing.T) {
+		newRp := rpCluster.DeepCopy()
+		newRp.Spec.Configuration.KafkaAPI[0].TLS = v1alpha1.KafkaAPITLS{
+			Enabled: true,
+			NodeSecretRef: &corev1.ObjectReference{
+				Name:      "node",
+				Namespace: "default",
+			},
+		}
+		newRp.Spec.Configuration.KafkaAPI = append(newRp.Spec.Configuration.KafkaAPI,
+			v1alpha1.KafkaAPI{Port: 30001, External: v1alpha1.ExternalConnectivityConfig{Enabled: true, Subdomain: "redpanda.com"}, TLS: v1alpha1.KafkaAPITLS{
+				Enabled: true,
+				NodeSecretRef: &corev1.ObjectReference{
+					Name:      "node",
+					Namespace: "default",
+				},
+			}})
+
+		err := newRp.ValidateUpdate(rpCluster)
+		assert.NoError(t, err)
+	})
+}
