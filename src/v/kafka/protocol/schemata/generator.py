@@ -624,7 +624,8 @@ class StructType(FieldType):
         Return all struct types reachable from this struct.
         """
         res = []
-        for field in self.fields:
+        all_fields = self.fields + self.tags
+        for field in all_fields:
             t = field.type()
             if isinstance(t, ArrayType):
                 t = t.value_type()  # unwrap value type
@@ -657,6 +658,9 @@ class Field:
         if self._default_value == "null":
             self._default_value = ""
         self._tag = self._field.get("tag", None)
+        self._tagged_versions = self._field.get("taggedVersions", None)
+        if self._tagged_versions is not None:
+            self._tagged_versions = VersionRange(self._tagged_versions)
         assert len(self._path)
 
     @staticmethod
@@ -667,11 +671,17 @@ class Field:
     def type(self):
         return self._type
 
+    def tag(self):
+        return self._tag
+
     def nullable(self):
         return self._nullable_versions is not None
 
     def versions(self):
         return self._versions
+
+    def tagged_versions(self):
+        return self._tagged_versions
 
     def default_value(self):
         return self._default_value
@@ -865,8 +875,21 @@ struct {{ struct.name }} {
     {{ info[0] }} {{ field.name }}{ {{- field.default_value() -}} };
     {%- endif %}
 {%- endfor %}
-{%- if struct.context_field %}
 
+{%- if struct.tags|length > 0 %}
+
+    // Tagged fields
+{%- for tag in struct.tags %}
+    {%- set info = tag.type_name %}
+    {%- if info[1] != None %}
+    {{ info[0] }} {{ tag.name }}{{'{'}}{{info[1]}}{{'}'}};
+    {%- else %}
+    {{ info[0] }} {{ tag.name }}{ {{- tag.default_value() -}} };
+    {%- endif %}
+{%- endfor %}
+{%- endif %}
+
+{%- if struct.context_field %}
     // extra context not part of kafka protocol.
     // added by redpanda. see generator.py:make_context_field.
     {{ struct.context_field[0] }} {{ struct.context_field[1] -}};
@@ -950,7 +973,22 @@ if ({{ cond }}) {
 {%- endif %}
 {%- endmacro %}
 
-{% macro field_encoder(field, obj, flex) %}
+{% macro tag_version_guard(tag) %}
+{%- set guard_enum = tag.versions().guard_enum %}
+{%- set e, cond = tag.tagged_versions()._guard() %}
+{%- if e == guard_enum.GUARD %}
+if ({{ cond }}) {
+{{- caller() | indent }}
+}
+{%- elif e == guard_enum.NO_GUARD %}
+{{- caller() }}
+{%- else %}
+{{ fail("Unexpected condition reached NO_SOURCE, in tag_version_guard()") }}
+{%- endif %}
+{% endmacro %}
+
+{% macro field_encoder(field, methods, obj, writer = "writer") %}
+{%- set flex = methods|length > 1 %}
 {%- if obj %}
 {%- set fname = obj + "." + field.name %}
 {%- else %}
@@ -959,32 +997,33 @@ if ({{ cond }}) {
 {%- if field.is_array %}
 {%- if field.nullable() %}
 {%- if flex %}
-writer.write_nullable_flex_array({{ fname }}, [version]({{ field.value_type }}& v, response_writer& writer) {
+{{ writer }}.write_nullable_flex_array({{ fname }}, [version]({{ field.value_type }}& v, response_writer& writer) {
 {%- else %}
-writer.write_nullable_array({{ fname }}, [version]({{ field.value_type }}& v, response_writer& writer) {
+{{ writer }}.write_nullable_array({{ fname }}, [version]({{ field.value_type }}& v, response_writer& writer) {
 {%- endif %}
 {%- else %}
 {%- if flex %}
-writer.write_flex_array({{ fname }}, [version]({{ field.value_type }}& v, response_writer& writer) {
+{{ writer }}.write_flex_array({{ fname }}, [version]({{ field.value_type }}& v, response_writer& writer) {
 {%- else %}
-writer.write_array({{ fname }}, [version]({{ field.value_type }}& v, response_writer& writer) {
+{{ writer }}.write_array({{ fname }}, [version]({{ field.value_type }}& v, response_writer& writer) {
 {%- endif %}
     (void)version;
 {%- endif %}
 {%- if field.type().value_type().is_struct %}
-{{- struct_serde(field.type().value_type(), field_encoder, flex, "v") | indent }}
+{{- struct_serde(field.type().value_type(), methods, "v") | indent }}
 {%- else %}
-    writer.write(v);
+    {{ writer }}.write(v);
 {%- endif %}
 });
 {%- elif flex and field.type().potentially_flexible_type %}
-writer.write_flex({{ fname }});
+{{ writer }}.write_flex({{ fname }});
 {%- else %}
-writer.write({{ fname }});
+{{ writer }}.write({{ fname }});
 {%- endif %}
 {%- endmacro %}
 
-{% macro field_decoder(field, obj, flex) %}
+{% macro field_decoder(field, methods, obj) %}
+{%- set flex = methods|length > 1 %}
 {%- if obj %}
 {%- set fname = obj + "." + field.name %}
 {%- else %}
@@ -1007,7 +1046,7 @@ writer.write({{ fname }});
 {%- endif %}
 {%- if field.type().value_type().is_struct %}
     {{ field.type().value_type().name }} v;
-{{- struct_serde(field.type().value_type(), field_decoder, flex, "v") | indent }}
+{{- struct_serde(field.type().value_type(), methods, "v") | indent }}
     return v;
 {%- else %}
 {%- set decoder, named_type = field.decoder(flex) %}
@@ -1047,18 +1086,115 @@ writer.write({{ fname }});
 {%- endif %}
 {%- endmacro %}
 
-{% macro struct_serde(struct, field_serde, flex, obj = "") %}
+{% macro blind_decode() %}
+reader.consume_tags();
+{%- endmacro %}
+
+{% macro encode_zero() %}
+writer.write_tags();
+{%- endmacro %}
+
+{% macro tag_decoder_impl(tag_definitions, obj = "") %}
+/// Tags decoding section
+auto num_tags = reader.read_unsigned_varint();
+while(num_tags-- > 0) {
+    auto tag = reader.read_unsigned_varint();
+    auto sz = reader.read_unsigned_varint(); // size
+    switch(tag){
+{%- for tdef in tag_definitions %}
+    case {{ tdef.tag() }}:
+{{- field_decoder(tdef, (field_decoder, tag_decoder), obj) | indent | indent }}
+        break;
+{%- endfor %}
+    default:
+        /// Read unknown tag
+        reader.consume_unknown_tag(sz);
+    }
+}
+{%- endmacro %}
+
+{% macro tag_decoder(tag_definitions, obj = "") %}
+{%- if tag_definitions|length == 0 %}
+{{- blind_decode() }}
+{%- else %}
+{
+{{- tag_decoder_impl(tag_definitions, obj) | indent }}
+}
+{%- endif %}
+{%- endmacro %}
+
+{% macro conditional_tag_encode(tdef, vec) %}
+{%- if tdef.is_array %}
+{%- if tdef.nullable() %}
+{%- call tag_version_guard(tdef) %}
+if ({{ tdef.name }}) {
+    {{ vec }}.push_back({{ tdef.tag() }});
+}
+{%- endcall %}
+{%- else %}
+{%- call tag_version_guard(tdef) %}
+if (!{{ tdef.name }}.empty()) {
+    {{ vec }}.push_back({{ tdef.tag() }});
+}
+{%- endcall %}
+{%- endif %}
+{%- elif tdef.default_value() != "" %}
+{%- call tag_version_guard(tdef) %}
+if ({{ tdef.name }} != {{ tdef.default_value() }}) {
+    {{ vec }}.push_back({{ tdef.tag() }});
+}
+{%- endcall %}
+{%- endif %}
+{%- endmacro %}
+
+{% macro tag_encoder_impl(tag_definitions, obj = "") %}
+/// Tags encoding section
+std::vector<uint32_t> to_encode;
+{%- for tdef in tag_definitions -%}
+{{- conditional_tag_encode(tdef, "to_encode") }}
+{%- endfor %}
+writer.write_unsigned_varint(to_encode.size());
+for(size_t tag : to_encode) {
+    writer.write_unsigned_varint(tag);
+    iobuf b;
+    response_writer rw(b);
+    switch(tag){
+{%- for tdef in tag_definitions %}
+    case {{ tdef.tag() }}:
+{{- field_encoder(tdef, (field_encoder, tag_encoder), obj, "rw") | indent | indent }}
+        break;
+{%- endfor %}
+    default:
+        __builtin_unreachable();
+    }
+    writer.write_size_prepended(std::move(b));
+}
+{%- endmacro %}
+
+{% macro tag_encoder(tag_definitions, obj = "") %}
+{%- if tag_definitions|length == 0 %}
+{{- encode_zero() }}
+{%- else %}
+{
+{{- tag_encoder_impl(tag_definitions, obj) | indent }}
+}
+{%- endif %}
+{%- endmacro %}
+
+{% set encoder = (field_encoder,) %}
+{% set decoder = (field_decoder,) %}
+{% set flex_encoder = (field_encoder, tag_encoder) %}
+{% set flex_decoder = (field_decoder, tag_decoder) %}
+
+{% macro struct_serde(struct, serde_methods, obj = "") %}
+{%- set flex = serde_methods|length > 1 %}
 {%- for field in struct.fields %}
 {%- call version_guard(field, flex) %}
-{{- field_serde(field, obj, flex) }}
+{{- serde_methods[0](field, serde_methods, obj) }}
 {%- endcall %}
 {%- endfor %}
 {%- if flex %}
-{%- if field_serde.name == "field_decoder" %}
-reader.consume_tags();
-{%- elif field_serde.name == "field_encoder" %}
-writer.write_tags();
-{%- endif %}
+{{- serde_methods[1](struct.tags, obj) }}
 {%- endif %}
 {%- endmacro %}
 
@@ -1075,20 +1211,20 @@ void {{ struct.name }}::encode(response_writer& writer, api_version version) {
 }
 
 void {{ struct.name }}::encode_flex(response_writer& writer, [[maybe_unused]] api_version version) {
-{{- struct_serde(struct, field_encoder, True) | indent }}
+{{- struct_serde(struct, flex_encoder) | indent }}
 }
 
 void {{ struct.name }}::encode_standard([[maybe_unused]] response_writer& writer, [[maybe_unused]] api_version version) {
-{{- struct_serde(struct, field_encoder, False) | indent }}
+{{- struct_serde(struct, encoder) | indent }}
 }
 
 {%- elif first_flex < 0 %}
 void {{ struct.name }}::encode(response_writer& writer, [[maybe_unused]] api_version version) {
-{{- struct_serde(struct, field_encoder, False) | indent }}
+{{- struct_serde(struct, encoder) | indent }}
 }
 {%- else %}
 void {{ struct.name }}::encode(response_writer& writer, [[maybe_unused]] api_version version) {
-{{- struct_serde(struct, field_encoder, True) | indent }}
+{{- struct_serde(struct, flex_encoder) | indent }}
 }
 {%- endif %}
 
@@ -1103,19 +1239,19 @@ void {{ struct.name }}::decode(request_reader& reader, api_version version) {
     }
 }
 void {{ struct.name }}::decode_flex(request_reader& reader, [[maybe_unused]] api_version version) {
-{{- struct_serde(struct, field_decoder, True) | indent }}
+{{- struct_serde(struct, flex_decoder) | indent }}
 }
 
 void {{ struct.name }}::decode_standard([[maybe_unused]] request_reader& reader, [[maybe_unused]] api_version version) {
-{{- struct_serde(struct, field_decoder, False) | indent }}
+{{- struct_serde(struct, decoder) | indent }}
 }
 {%- elif first_flex < 0 %}
 void {{ struct.name }}::decode(request_reader& reader, [[maybe_unused]] api_version version) {
-{{- struct_serde(struct, field_decoder, False) | indent }}
+{{- struct_serde(struct, decoder) | indent }}
 }
 {% else %}
 void {{ struct.name }}::decode(request_reader& reader, [[maybe_unused]] api_version version) {
-{{- struct_serde(struct, field_decoder, True) | indent }}
+{{- struct_serde(struct, flex_decoder) | indent }}
 }
 {%- endif %}
 {%- else %}
@@ -1131,25 +1267,25 @@ void {{ struct.name }}::decode(iobuf buf, api_version version) {
 void {{ struct.name }}::decode_flex(iobuf buf, [[maybe_unused]] api_version version) {
     request_reader reader(std::move(buf));
 
-{{- struct_serde(struct, field_decoder, True) | indent }}
+{{- struct_serde(struct, flex_decoder) | indent }}
 }
 void {{ struct.name }}::decode_standard(iobuf buf, [[maybe_unused]] api_version version) {
     request_reader reader(std::move(buf));
 
-{{- struct_serde(struct, field_decoder, False) | indent }}
+{{- struct_serde(struct, decoder) | indent }}
 }
 
 {%- elif first_flex < 0 %}
 void {{ struct.name }}::decode(iobuf buf, [[maybe_unused]] api_version version) {
     request_reader reader(std::move(buf));
 
-{{- struct_serde(struct, field_decoder, False) | indent }}
+{{- struct_serde(struct, decoder) | indent }}
 }
 {%- else %}
 void {{ struct.name }}::decode(iobuf buf, [[maybe_unused]] api_version version) {
     request_reader reader(std::move(buf));
 
-{{- struct_serde(struct, field_decoder, True) | indent }}
+{{- struct_serde(struct, flex_decoder) | indent }}
 }
 {%- endif %}
 
