@@ -24,8 +24,8 @@ import (
 
 func NewHealthOverviewCommand(fs afero.Fs) *cobra.Command {
 	var (
-		wait bool
-		exit bool
+		watch bool
+		exit  bool
 
 		adminURL       string
 		adminEnableTLS bool
@@ -63,7 +63,7 @@ following conditions are met:
 					printHealthOverview(&ret)
 				}
 				lastOverview = ret
-				if !wait || exit && lastOverview.IsHealthy {
+				if !watch || exit && lastOverview.IsHealthy {
 					break
 				}
 				time.Sleep(2 * time.Second)
@@ -84,8 +84,8 @@ following conditions are met:
 		&adminCAFile,
 	)
 
-	cmd.Flags().BoolVarP(&wait, "watch", "w", false, "blocks and writes out all cluster health changes")
-	cmd.Flags().BoolVarP(&exit, "exit-when-healthy", "e", false, "when used with wait, exits after cluster is back in healthy state")
+	cmd.Flags().BoolVarP(&watch, "watch", "w", false, "blocks and writes out all cluster health changes")
+	cmd.Flags().BoolVarP(&exit, "exit-when-healthy", "e", false, "when used with watch, exits after cluster is back in healthy state")
 	return cmd
 }
 
