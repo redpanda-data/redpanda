@@ -433,6 +433,9 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
     bool stop = false;
     auto it = deltas.begin();
     while (!(stop || it == deltas.end())) {
+        // start_topics_reconcilation_loop will catch this during shutdown
+        _as.local().check();
+
         if (has_non_replicable_op_type(*it)) {
             /// This if statement has nothing to do with correctness and is only
             /// here to reduce the amount of uncessecary logging emitted by the
