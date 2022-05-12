@@ -100,12 +100,11 @@ make_get_leadership_reply(const partition_leaders_table& leaders) {
 }
 
 ss::future<get_leadership_reply> metadata_dissemination_handler::get_leadership(
-  get_leadership_request&& req, rpc::streaming_context&) {
-    return ss::with_scheduling_group(
-      get_scheduling_group(), [this, req = std::move(req)]() mutable {
-          return ss::make_ready_future<get_leadership_reply>(
-            make_get_leadership_reply(_leaders.local()));
-      });
+  get_leadership_request&&, rpc::streaming_context&) {
+    return ss::with_scheduling_group(get_scheduling_group(), [this]() mutable {
+        return ss::make_ready_future<get_leadership_reply>(
+          make_get_leadership_reply(_leaders.local()));
+    });
 }
 
 } // namespace cluster
