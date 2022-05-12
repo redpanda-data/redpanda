@@ -149,6 +149,18 @@ ExternalProject_Add(boost
     hardcode-dll-paths=true
     dll-path=@REDPANDA_DEPS_INSTALL_DIR@/lib)
 
+ExternalProject_Add(fmt
+  URL https://github.com/fmtlib/fmt/releases/download/8.1.1/fmt-8.1.1.zip
+  URL_MD5 16dcd48ecc166f10162450bb28aabc87
+  INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
+  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  DEPENDS ${default_depends}
+  CMAKE_ARGS
+    ${common_cmake_args}
+    -DFMT_INSTALL=ON
+    -DFMT_DOC=OFF
+    -DFMT_TEST=OFF)
+
 ExternalProject_Add(cryptopp
   URL https://github.com/weidai11/cryptopp/archive/refs/tags/CRYPTOPP_8_5_0.tar.gz
   URL_MD5 5968e6014dc6ae5199e3987fb39cf8d3
