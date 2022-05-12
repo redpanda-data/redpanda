@@ -35,13 +35,26 @@ func (a *AdminAPI) GetHealthOverview() (ClusterHealthOverview, error) {
 	return response, a.sendAny(http.MethodGet, "/v1/cluster/health_overview", nil, &response)
 }
 
-// ClusterView queries one of the client's hosts and returns the list of brokers
-// and cluster view version.
-func (a *AdminAPI) ClusterView() (ClusterView, error) {
+// ClusterView queries one of the client's hosts and returns the list of brokers,
+// cluster view version and the host that was queried.
+func (a *AdminAPI) ClusterView() (ClusterView, int, error) {
 	var cv ClusterView
 	defer func() {
 		sort.Slice(cv.Brokers, func(i, j int) bool { return cv.Brokers[i].NodeID < cv.Brokers[j].NodeID }) //nolint:revive // return inside this deferred function is for the sort's less function
 	}()
-	err := a.sendAny(http.MethodGet, "/v1/cluster_view", nil, &cv)
-	return cv, err
+
+	hostname, err := a.sendAnyWithHost(http.MethodGet, "/v1/cluster_view", nil, &cv)
+	if err != nil {
+		return cv, 0, err
+	}
+
+	a.mapBrokerIDsToURLs()
+	var nodeId int
+	// reverse map to find the ID of our given URL
+	for k, v := range a.brokerIDToUrls {
+		if v == hostname {
+			nodeId = k
+		}
+	}
+	return cv, nodeId, err
 }

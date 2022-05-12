@@ -51,7 +51,7 @@ func newListCommand(fs afero.Fs) *cobra.Command {
 			cl, err := admin.NewClient(fs, cfg)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-			cv, err := cl.ClusterView()
+			cv, host, err := cl.ClusterView()
 			out.MaybeDie(err, "unable to request cluster view: %v", err)
 
 			headers := []string{"Node-ID", "Num-Cores", "Membership-Status"}
@@ -70,7 +70,7 @@ func newListCommand(fs afero.Fs) *cobra.Command {
 					break
 				}
 			}
-			fmt.Printf("Cluster view version of the broker handling this request: %d\n", cv.Version)
+			fmt.Printf("From broker %d on cluster view version %d:\n", host, cv.Version)
 			tw := out.NewTable(headers...)
 			defer tw.Flush()
 			for _, b := range cv.Brokers {

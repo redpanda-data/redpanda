@@ -281,6 +281,39 @@ func (a *AdminAPI) sendAny(method, path string, body, into interface{}) error {
 	return err
 }
 
+// sendAnywithHost is the same as sendAny but returns the queried host.
+func (a *AdminAPI) sendAnyWithHost(method, path string, body, into interface{}) (string, error) {
+	// Shuffle the list of URLs
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	shuffled := make([]string, len(a.urls))
+	copy(shuffled, a.urls)
+	rng.Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
+
+	var err error
+	for i := range shuffled {
+		url := shuffled[i] + path
+
+		// If err is set, we are retrying after a failure on the previous node
+		if err != nil {
+			log.Infof("Request error, trying another node: %s", err.Error())
+		}
+
+		// Where there are multiple nodes, disable the HTTP request retry in favour of our
+		// own retry across the available nodes
+		retryable := len(shuffled) == 1
+
+		var res *http.Response
+		res, err = a.sendAndReceive(context.Background(), method, url, body, retryable)
+		if err == nil {
+			// Success, return the result from this node.
+			return shuffled[i], maybeUnmarshalRespInto(method, url, res, into)
+		}
+	}
+
+	// Fall through: all nodes failed.
+	return "", err
+}
+
 // sendToLeader sends a single request to the leader of the Admin API for Redpanda >= 21.11.1
 // otherwise, it broadcasts the request.
 func (a *AdminAPI) sendToLeader(

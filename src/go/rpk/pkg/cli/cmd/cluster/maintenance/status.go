@@ -78,7 +78,7 @@ Notes:
 			client, err := admin.NewClient(fs, cfg)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-			cv, err := client.ClusterView()
+			cv, host, err := client.ClusterView()
 			out.MaybeDie(err, "unable to request cluster view: %v", err)
 
 			if len(cv.Brokers) == 0 {
@@ -89,7 +89,7 @@ Notes:
 				out.Die("Maintenance mode is not supported in this cluster")
 			}
 
-			fmt.Printf("Cluster view version of the broker handling this request: %d\n", cv.Version)
+			fmt.Printf("From broker %d on cluster view version %d:\n", host, cv.Version)
 			table := newMaintenanceReportTable()
 			defer table.Flush()
 			for _, broker := range cv.Brokers {
