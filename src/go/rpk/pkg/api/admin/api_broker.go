@@ -43,6 +43,7 @@ type Broker struct {
 	MembershipStatus string             `json:"membership_status"`
 	IsAlive          *bool              `json:"is_alive"`
 	Version          string             `json:"version"`
+	DiskSpaceItems	 []dSpace	    `json:"disk_space"`
 	Maintenance      *MaintenanceStatus `json:"maintenance_status"`
 }
 
