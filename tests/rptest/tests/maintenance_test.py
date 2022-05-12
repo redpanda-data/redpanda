@@ -86,7 +86,7 @@ class MaintenanceTest(RedpandaTest):
         node_id = self.redpanda.idx(node)
         statuses = self.rpk.cluster_maintenance_status()
         self.logger.debug(f"finding node_id {node_id} in rpk "
-                          "maintenance status: {statuses}")
+                          f"maintenance status: {statuses}")
         rpk_status = None
         for status in statuses:
             if status.node_id == node_id:
@@ -98,7 +98,7 @@ class MaintenanceTest(RedpandaTest):
         # get status for this node via admin interface
         admin_status = self.admin.maintenance_status(node)
         self.logger.debug(f"maintenance status from admin for "
-                          "{node.name}: {admin_status}")
+                          f"{node.name}: {admin_status}")
 
         # ensure that both agree on expected outcome
         return admin_status["draining"] == rpk_status.draining == draining
