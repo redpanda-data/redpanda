@@ -92,9 +92,11 @@ class FranzGoVerifiableTest(FranzGoVerifiableBase):
         assert self._rand_consumer.consumer_status.total_reads == self.RANDOM_READ_COUNT * self.RANDOM_READ_PARALLEL
 
 
-# archival - [fiber63 kafka/topic-vmumdxkmeg/33] - ntp_archiver_service.cc:96 - upload loop error: seastar::timed_out_error (timedout)
 KGO_LOG_ALLOW_LIST = [
-    r'archival - .*upload loop error: seastar::timed_out_error \(timedout\)'
+    # archival - [fiber63 kafka/topic-vmumdxkmeg/33] - ntp_archiver_service.cc:96 - upload loop error: seastar::timed_out_error (timedout)
+    r'archival - .*upload loop error: seastar::timed_out_error \(timedout\)',
+    # rpc - server.cc:116 - kafka rpc protocol - Error[applying protocol] remote address: 172.18.0.31:56896 - std::out_of_range (Invalid skip(n). Expected:1000097, but skipped:524404)
+    r'rpc - .* - std::out_of_range'
 ]
 
 KGO_RESTART_LOG_ALLOW_LIST = KGO_LOG_ALLOW_LIST + RESTART_LOG_ALLOW_LIST
