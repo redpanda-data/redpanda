@@ -93,8 +93,6 @@ class FranzGoVerifiableTest(FranzGoVerifiableBase):
 
 
 KGO_LOG_ALLOW_LIST = [
-    # archival - [fiber63 kafka/topic-vmumdxkmeg/33] - ntp_archiver_service.cc:96 - upload loop error: seastar::timed_out_error (timedout)
-    r'archival - .*upload loop error: seastar::timed_out_error \(timedout\)',
     # rpc - server.cc:116 - kafka rpc protocol - Error[applying protocol] remote address: 172.18.0.31:56896 - std::out_of_range (Invalid skip(n). Expected:1000097, but skipped:524404)
     r'rpc - .* - std::out_of_range'
 ]
