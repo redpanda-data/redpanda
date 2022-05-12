@@ -121,13 +121,13 @@ class MaintenanceTest(RedpandaTest):
             f"Checking that node {node.name} has a leadership role")
         wait_until(lambda: self._has_leadership_role(node),
                    timeout_sec=60,
-                   backoff_sec=10)
+                   backoff_sec=1)
 
         self.logger.debug(
             f"Checking that node {node.name} is not in maintenance mode")
         wait_until(lambda: self._verify_maintenance_status(node, False),
                    timeout_sec=30,
-                   backoff_sec=5)
+                   backoff_sec=1)
 
         self.logger.debug(
             f"Waiting for node {node.name} to enter maintenance mode")
@@ -142,7 +142,7 @@ class MaintenanceTest(RedpandaTest):
             self.admin.maintenance_start(node)
             wait_until(lambda: self._in_maintenance_mode(node),
                        timeout_sec=30,
-                       backoff_sec=5)
+                       backoff_sec=1)
 
         def has_drained():
             """
@@ -155,19 +155,19 @@ class MaintenanceTest(RedpandaTest):
             return not self._has_leadership_role(node),
 
         self.logger.debug(f"Waiting for node {node.name} leadership to drain")
-        wait_until(has_drained, timeout_sec=60, backoff_sec=10)
+        wait_until(has_drained, timeout_sec=60, backoff_sec=1)
 
         self.logger.debug(
             f"Waiting for node {node.name} maintenance mode to complete")
         wait_until(lambda: self._in_maintenance_mode_fully(node),
                    timeout_sec=60,
-                   backoff_sec=10)
+                   backoff_sec=1)
 
         self.logger.debug("Verifying expected broker metadata reported "
                           f"for enabled maintenance mode on node {node.name}")
         wait_until(lambda: self._verify_broker_metadata(True, node),
                    timeout_sec=60,
-                   backoff_sec=10)
+                   backoff_sec=1)
 
     def _verify_cluster(self, target, target_expect):
         for node in self.redpanda.nodes:
@@ -175,7 +175,7 @@ class MaintenanceTest(RedpandaTest):
             wait_until(
                 lambda: self._verify_maintenance_status(node, expect),
                 timeout_sec=30,
-                backoff_sec=5,
+                backoff_sec=1,
                 err_msg=f"expected {node.name} maintenance mode: {expect}")
 
     def _maintenance_disable(self, node):
@@ -186,17 +186,17 @@ class MaintenanceTest(RedpandaTest):
 
         wait_until(lambda: not self._in_maintenance_mode(node),
                    timeout_sec=30,
-                   backoff_sec=5)
+                   backoff_sec=1)
 
         wait_until(lambda: self._has_leadership_role(node),
                    timeout_sec=120,
-                   backoff_sec=10)
+                   backoff_sec=1)
 
         self.logger.debug("Verifying expected broker metadata reported "
                           f"for disabled maintenance mode on node {node.name}")
         wait_until(lambda: self._verify_broker_metadata(False, node),
                    timeout_sec=60,
-                   backoff_sec=10)
+                   backoff_sec=1)
 
     @cluster(num_nodes=3)
     @matrix(use_rpk=[True, False])
