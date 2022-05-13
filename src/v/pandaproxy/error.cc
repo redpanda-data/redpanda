@@ -78,6 +78,10 @@ struct reply_error_category final : std::error_category {
         }
         return "(unrecognized error)";
     }
+    bool
+    equivalent(const std::error_code& ec, int cond) const noexcept override {
+        return make_error_condition(ec).value() == cond;
+    }
 };
 
 const reply_error_category reply_error_category{};
@@ -196,6 +200,10 @@ struct kafka_error_category final : std::error_category {
 const kafka_error_category kafka_error_category{};
 
 }; // namespace
+
+std::error_condition make_error_condition(std::error_code ec) {
+    return ec.default_error_condition();
+}
 
 std::error_condition make_error_condition(reply_error_code ec) {
     return {static_cast<int>(ec), reply_error_category};

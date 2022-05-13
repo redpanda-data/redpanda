@@ -51,7 +51,7 @@ static const std::array<ec_cond, 5> conversion_data{
 BOOST_DATA_TEST_CASE(
   test_error_condition_conversion, bdata::make(conversion_data), sample) {
     auto ec = sample.ec;
-    auto cond = ec.default_error_condition();
+    auto cond = pp::make_error_condition(ec);
     BOOST_REQUIRE(sample.cond == cond);
 }
 
