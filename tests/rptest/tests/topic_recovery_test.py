@@ -571,6 +571,7 @@ class MissingSegment(BaseCase):
     def __init__(self, s3_client, kafka_tools, rpk_client, s3_bucket, logger):
         self._part1_offset = 0
         self._smaller_ntp = None
+        self._deleted_segment_size = None
         super(MissingSegment, self).__init__(s3_client, kafka_tools,
                                              rpk_client, s3_bucket, logger)
 
@@ -580,7 +581,11 @@ class MissingSegment(BaseCase):
             self._kafka_tools.produce(topic.name, 10000, 1024)
 
     def _delete(self, key):
-        self.logger.info(f"deleting segment file {key}")
+        self._deleted_segment_size = self._s3.get_object_meta(
+            self._bucket, key).ContentLength
+        self.logger.info(
+            f"deleting segment file {key} of size {self._deleted_segment_size}"
+        )
         self._s3.delete_object(self._bucket, key, True)
 
     def _find_and_remove_segment(self):
@@ -616,7 +621,7 @@ class MissingSegment(BaseCase):
             restored,
             expected_topics,
             self.logger,
-            size_overrides={self._smaller_ntp: default_log_segment_size})
+            size_overrides={self._smaller_ntp: self._deleted_segment_size})
         for topic in self.topics:
             self._produce_and_verify(topic)
 
