@@ -35,23 +35,23 @@ public:
     // ...     x=int(((x*3)+1)/2)
     // ...     x=int(min(1024*128,x))
     // print(1024*128)
-    static constexpr std::array<uint32_t, 15> alloc_table =
+    static constexpr auto alloc_table = std::to_array<uint32_t>(
       // computed from a python script above
-      {{512,
-        768,
-        1152,
-        1728,
-        2592,
-        3888,
-        5832,
-        8748,
-        13122,
-        19683,
-        29525,
-        44288,
-        66432,
-        99648,
-        131072}};
+      {512,
+       768,
+       1152,
+       1728,
+       2592,
+       3888,
+       5832,
+       8748,
+       13122,
+       19683,
+       29525,
+       44288,
+       66432,
+       99648,
+       131072});
     static size_t next_allocation_size(size_t data_size);
 
     // Pick next allocation size for when the total remaining data size is
