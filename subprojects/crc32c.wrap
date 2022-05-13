@@ -1,0 +1,7 @@
+[wrap-git]
+url = https://github.com/dotnwat/crc32c
+revision = meson
+depth = 1
+
+[provide]
+crc32c = crc32c_dep

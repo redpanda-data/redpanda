@@ -1,0 +1,4 @@
+[wrap-git]
+url = git@github.com:dotnwat/redpanda-subprojects.git
+revision = main
+depth = 1

@@ -1,0 +1,7 @@
+[wrap-git]
+url = https://github.com/dotnwat/rapidjson.git
+revision = meson
+depth = 1
+
+[provide]
+rapidjson = rapidjson_dep
