@@ -130,15 +130,9 @@ struct join_group_response final {
 };
 
 inline join_group_response
-_make_join_error(kafka::member_id member_id, error_code error) {
+make_join_error(kafka::member_id member_id, error_code error) {
     return join_group_response(
       error, no_generation, no_protocol, no_leader, std::move(member_id));
-}
-
-inline ss::future<join_group_response>
-make_join_error(kafka::member_id member_id, error_code error) {
-    return ss::make_ready_future<join_group_response>(
-      _make_join_error(std::move(member_id), error));
 }
 
 inline std::ostream&

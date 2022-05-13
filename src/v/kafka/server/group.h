@@ -121,20 +121,28 @@ public:
     static constexpr int8_t commit_tx_record_version{0};
     static constexpr int8_t aborted_tx_record_version{0};
 
-    struct offset_commit_stages {
-        explicit offset_commit_stages(offset_commit_response resp)
-          : dispatched(ss::now())
-          , committed(
-              ss::make_ready_future<offset_commit_response>(std::move(resp))) {}
+    template<typename Result>
+    struct stages {
+        using value_type = Result;
 
-        offset_commit_stages(
-          ss::future<> dispatched, ss::future<offset_commit_response> resp)
+        explicit stages(Result res)
+          : dispatched(ss::now())
+          , result(ss::make_ready_future<Result>(std::move(res))) {}
+
+        explicit stages(ss::future<Result> res)
+          : dispatched(ss::now())
+          , result(std::move(res)) {}
+
+        stages(ss::future<> dispatched, ss::future<Result> res)
           : dispatched(std::move(dispatched))
-          , committed(std::move(resp)) {}
+          , result(std::move(res)) {}
 
         ss::future<> dispatched;
-        ss::future<offset_commit_response> committed;
+        ss::future<Result> result;
     };
+    using offset_commit_stages = stages<offset_commit_response>;
+    using join_group_stages = stages<join_group_response>;
+    using sync_group_stages = stages<sync_group_response>;
 
     struct offset_metadata {
         model::offset log_offset;
@@ -383,23 +391,21 @@ public:
     static kafka::member_id generate_member_id(const join_group_request& r);
 
     /// Handle join entry point.
-    ss::future<join_group_response>
+    join_group_stages
     handle_join_group(join_group_request&& r, bool is_new_group);
 
     /// Handle join of an unknown member.
-    ss::future<join_group_response>
-    join_group_unknown_member(join_group_request&& request);
+    join_group_stages join_group_unknown_member(join_group_request&& request);
 
     /// Handle join of a known member.
-    ss::future<join_group_response>
-    join_group_known_member(join_group_request&& request);
+    join_group_stages join_group_known_member(join_group_request&& request);
 
     /// Add a new member and initiate a rebalance.
-    ss::future<join_group_response> add_member_and_rebalance(
+    join_group_stages add_member_and_rebalance(
       kafka::member_id member_id, join_group_request&& request);
 
     /// Update an existing member and rebalance.
-    ss::future<join_group_response> update_member_and_rebalance(
+    join_group_stages update_member_and_rebalance(
       member_ptr member, join_group_request&& request);
 
     /// Transition to preparing rebalance if possible.
@@ -423,10 +429,10 @@ public:
     void remove_member(member_ptr member);
 
     /// Handle a group sync request.
-    ss::future<sync_group_response> handle_sync_group(sync_group_request&& r);
+    sync_group_stages handle_sync_group(sync_group_request&& r);
 
     /// Handle sync group in completing rebalance state.
-    ss::future<sync_group_response> sync_group_completing_rebalance(
+    sync_group_stages sync_group_completing_rebalance(
       member_ptr member, sync_group_request&& request);
 
     /// Complete syncing for members.
@@ -654,6 +660,13 @@ private:
     ctx_log _ctxlog;
     ctx_log _ctx_txlog;
     group_metadata_serializer _md_serializer;
+    /**
+     * flag indicating that the group rebalance is a result of initial join i.e.
+     * the group was in Empty state before it went into PreparingRebalance
+     * state. Initial join in progress flag will prevent completing join when
+     * all members joined but initial delay is still in progress
+     */
+    bool _initial_join_in_progress = false;
 
     absl::flat_hash_map<model::producer_id, ss::lw_shared_ptr<mutex>> _tx_locks;
     model::term_id _term;

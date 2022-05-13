@@ -191,7 +191,7 @@ offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
           auto stages = octx.rctx.groups().offset_commit(
             std::move(octx.request));
           stages.dispatched.forward_to(std::move(dispatch));
-          return stages.committed.then([&octx](offset_commit_response resp) {
+          return stages.result.then([&octx](offset_commit_response resp) {
               if (unlikely(!octx.nonexistent_tps.empty())) {
                   /*
                    * copy over partitions for topics that had some partitions

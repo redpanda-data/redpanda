@@ -73,6 +73,20 @@ struct process_dispatch<offset_commit_handler> {
         return offset_commit_handler::handle(std::move(ctx), g);
     }
 };
+template<>
+struct process_dispatch<join_group_handler> {
+    static process_result_stages
+    process(request_context&& ctx, ss::smp_service_group g) {
+        return join_group_handler::handle(std::move(ctx), g);
+    }
+};
+template<>
+struct process_dispatch<sync_group_handler> {
+    static process_result_stages
+    process(request_context&& ctx, ss::smp_service_group g) {
+        return sync_group_handler::handle(std::move(ctx), g);
+    }
+};
 
 template<typename Request>
 CONCEPT(requires(KafkaApiHandler<Request> || KafkaApiTwoPhaseHandler<Request>))

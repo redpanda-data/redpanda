@@ -102,65 +102,35 @@ class group_router final {
                 });
           });
     }
-
-public:
-    group_router(
-      ss::scheduling_group sched_group,
-      ss::smp_service_group smp_group,
-      ss::sharded<group_manager>& gr_manager,
-      ss::sharded<group_manager>& consumer_offsets_gr_manager,
-      ss::sharded<cluster::shard_table>& shards,
-      ss::sharded<coordinator_ntp_mapper>& coordinators,
-      ss::sharded<coordinator_ntp_mapper>& consumer_offsets_coordinators,
-      ss::sharded<cluster::feature_table>& feature_table)
-      : _sg(sched_group)
-      , _ssg(smp_group)
-      , _group_manager(gr_manager)
-      , _consumer_offsets_group_manager(consumer_offsets_gr_manager)
-      , _shards(shards)
-      , _coordinators(coordinators)
-      , _consumer_offsets_coordinators(consumer_offsets_coordinators)
-      , _feature_table(feature_table) {}
-
-    auto join_group(join_group_request&& request) {
-        return route(std::move(request), &group_manager::join_group);
-    }
-
-    auto sync_group(sync_group_request&& request) {
-        return route(std::move(request), &group_manager::sync_group);
-    }
-
-    auto heartbeat(heartbeat_request&& request) {
-        return route(std::move(request), &group_manager::heartbeat);
-    }
-
-    auto leave_group(leave_group_request&& request) {
-        return route(std::move(request), &group_manager::leave_group);
-    }
-
-    group::offset_commit_stages offset_commit(offset_commit_request&& request) {
-        auto m = shard_for(request.data.group_id);
+    template<typename Request, typename FwdFunc>
+    auto route_stages(Request r, FwdFunc func) {
+        using return_type = std::invoke_result_t<
+          FwdFunc,
+          decltype(std::declval<group_manager>()),
+          Request&&>;
+        using resp_type = typename return_type::value_type;
+        auto m = shard_for(r.data.group_id);
         if (!m || _disabled) {
-            return group::offset_commit_stages(
-              offset_commit_response(request, error_code::not_coordinator));
+            return group::stages(resp_type(r, error_code::not_coordinator));
         }
-        request.ntp = std::move(m->first);
+        r.ntp = std::move(m->first);
         auto dispatched = std::make_unique<ss::promise<>>();
         auto dispatched_f = dispatched->get_future();
         auto f = with_scheduling_group(
           _sg,
           [this,
            shard = m->second,
-           request = std::move(request),
-           dispatched = std::move(dispatched)]() mutable {
+           r = std::move(r),
+           dispatched = std::move(dispatched),
+           func]() mutable {
               return get_group_manager().invoke_on(
                 shard,
                 _ssg,
-                [request = std::move(request),
+                [r = std::move(r),
                  dispatched = std::move(dispatched),
-                 source_shard = ss::this_shard_id()](
-                  group_manager& mgr) mutable {
-                    auto stages = mgr.offset_commit(std::move(request));
+                 source_shard = ss::this_shard_id(),
+                 func](group_manager& mgr) mutable {
+                    auto stages = std::invoke(func, mgr, std::move(r));
                     /**
                      * dispatched future is always ready before committed one,
                      * we do not have to use gate in here
@@ -184,13 +154,51 @@ public:
                                 d.reset();
                             });
                       })
-                      .then([f = std::move(stages.committed)]() mutable {
+                      .then([f = std::move(stages.result)]() mutable {
                           return std::move(f);
                       });
                 });
           });
-        return group::offset_commit_stages(
-          std::move(dispatched_f), std::move(f));
+        return return_type(std::move(dispatched_f), std::move(f));
+    }
+
+public:
+    group_router(
+      ss::scheduling_group sched_group,
+      ss::smp_service_group smp_group,
+      ss::sharded<group_manager>& gr_manager,
+      ss::sharded<group_manager>& consumer_offsets_gr_manager,
+      ss::sharded<cluster::shard_table>& shards,
+      ss::sharded<coordinator_ntp_mapper>& coordinators,
+      ss::sharded<coordinator_ntp_mapper>& consumer_offsets_coordinators,
+      ss::sharded<cluster::feature_table>& feature_table)
+      : _sg(sched_group)
+      , _ssg(smp_group)
+      , _group_manager(gr_manager)
+      , _consumer_offsets_group_manager(consumer_offsets_gr_manager)
+      , _shards(shards)
+      , _coordinators(coordinators)
+      , _consumer_offsets_coordinators(consumer_offsets_coordinators)
+      , _feature_table(feature_table) {}
+
+    auto join_group(join_group_request&& request) {
+        return route_stages(std::move(request), &group_manager::join_group);
+    }
+
+    auto sync_group(sync_group_request&& request) {
+        return route_stages(std::move(request), &group_manager::sync_group);
+    }
+
+    auto heartbeat(heartbeat_request&& request) {
+        return route(std::move(request), &group_manager::heartbeat);
+    }
+
+    auto leave_group(leave_group_request&& request) {
+        return route(std::move(request), &group_manager::leave_group);
+    }
+
+    group::offset_commit_stages offset_commit(offset_commit_request&& request) {
+        return route_stages(std::move(request), &group_manager::offset_commit);
     }
 
     auto txn_offset_commit(txn_offset_commit_request&& request) {

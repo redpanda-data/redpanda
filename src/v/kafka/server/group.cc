@@ -443,7 +443,7 @@ bool group::leader_rejoined() {
     }
 }
 
-ss::future<join_group_response>
+group::join_group_stages
 group::handle_join_group(join_group_request&& r, bool is_new_group) {
     vlog(
       _ctxlog.trace,
@@ -452,8 +452,7 @@ group::handle_join_group(join_group_request&& r, bool is_new_group) {
       (is_new_group ? "new" : "existing"),
       *this);
 
-    auto ret = ss::make_ready_future<join_group_response>(
-      join_group_response(error_code::none));
+    auto ret = join_group_stages(join_group_response(error_code::none));
 
     if (r.data.member_id == unknown_member_id) {
         ret = join_group_unknown_member(std::move(r));
@@ -464,7 +463,9 @@ group::handle_join_group(join_group_request&& r, bool is_new_group) {
     // TODO: move the logic in this method up to group manager to make the
     // handling of is_new_group etc.. clearner rather than passing these flags
     // down into the group-level handler.
-    if (!is_new_group && in_state(group_state::preparing_rebalance)) {
+    if (
+      !is_new_group && !_initial_join_in_progress
+      && in_state(group_state::preparing_rebalance)) {
         /*
          * - after join_group completes the group may be in a state where the
          * join phase can complete immediately rather than waiting on the join
@@ -494,16 +495,17 @@ group::handle_join_group(join_group_request&& r, bool is_new_group) {
 }
 
 // DONE
-ss::future<join_group_response>
+
+group::join_group_stages
 group::join_group_unknown_member(join_group_request&& r) {
     if (in_state(group_state::dead)) {
         vlog(_ctxlog.trace, "Join rejected in state {}", _state);
-        return make_join_error(
-          unknown_member_id, error_code::coordinator_not_available);
+        return join_group_stages(make_join_error(
+          unknown_member_id, error_code::coordinator_not_available));
 
     } else if (!supports_protocols(r)) {
-        return make_join_error(
-          unknown_member_id, error_code::inconsistent_group_protocol);
+        return join_group_stages(make_join_error(
+          unknown_member_id, error_code::inconsistent_group_protocol));
     }
 
     auto new_member_id = group::generate_member_id(r);
@@ -520,13 +522,14 @@ group::join_group_unknown_member(join_group_request&& r) {
           "Requesting rejoin for unknown member with new id {}",
           new_member_id);
         add_pending_member(new_member_id, r.data.session_timeout_ms);
-        return make_join_error(new_member_id, error_code::member_id_required);
+        return join_group_stages(
+          make_join_error(new_member_id, error_code::member_id_required));
     } else {
         return add_member_and_rebalance(std::move(new_member_id), std::move(r));
     }
 }
 
-ss::future<join_group_response>
+group::join_group_stages
 group::join_group_known_member(join_group_request&& r) {
     if (in_state(group_state::dead)) {
         vlog(
@@ -534,12 +537,12 @@ group::join_group_known_member(join_group_request&& r) {
           "Join rejected in state {} for {}",
           _state,
           r.data.member_id);
-        return make_join_error(
-          r.data.member_id, error_code::coordinator_not_available);
+        return join_group_stages(make_join_error(
+          r.data.member_id, error_code::coordinator_not_available));
 
     } else if (!supports_protocols(r)) {
-        return make_join_error(
-          r.data.member_id, error_code::inconsistent_group_protocol);
+        return join_group_stages(make_join_error(
+          r.data.member_id, error_code::inconsistent_group_protocol));
 
     } else if (contains_pending_member(r.data.member_id)) {
         kafka::member_id new_member_id = std::move(r.data.member_id);
@@ -550,7 +553,8 @@ group::join_group_known_member(join_group_request&& r) {
           _ctxlog.trace,
           "Join rejected for unregistered member {}",
           r.data.member_id);
-        return make_join_error(r.data.member_id, error_code::unknown_member_id);
+        return join_group_stages(
+          make_join_error(r.data.member_id, error_code::unknown_member_id));
     }
 
     auto member = get_member(r.data.member_id);
@@ -592,8 +596,7 @@ group::join_group_known_member(join_group_request&& r) {
               member->id(),
               response);
 
-            return ss::make_ready_future<join_group_response>(
-              std::move(response));
+            return join_group_stages(std::move(response));
 
         } else {
             // <kafka>member has changed metadata, so force a rebalance</kafka>
@@ -626,21 +629,21 @@ group::join_group_known_member(join_group_request&& r) {
 
             vlog(_ctxlog.trace, "Handling idemponent group join {}", response);
 
-            return ss::make_ready_future<join_group_response>(
-              std::move(response));
+            return join_group_stages(std::move(response));
         }
 
     case group_state::empty:
         [[fallthrough]];
 
     case group_state::dead:
-        return make_join_error(r.data.member_id, error_code::unknown_member_id);
+        return join_group_stages(
+          make_join_error(r.data.member_id, error_code::unknown_member_id));
     }
 
     __builtin_unreachable();
 }
 
-ss::future<join_group_response> group::add_member_and_rebalance(
+group::join_group_stages group::add_member_and_rebalance(
   kafka::member_id member_id, join_group_request&& r) {
     auto member = ss::make_lw_shared<group_member>(
       std::move(member_id),
@@ -699,15 +702,15 @@ ss::future<join_group_response> group::add_member_and_rebalance(
       *this);
 
     try_prepare_rebalance();
-    return response;
+    return join_group_stages(std::move(response));
 }
 
-ss::future<join_group_response>
+group::join_group_stages
 group::update_member_and_rebalance(member_ptr member, join_group_request&& r) {
     auto response = update_member(
       std::move(member), r.native_member_protocols());
     try_prepare_rebalance();
-    return response;
+    return join_group_stages(std::move(response));
 }
 
 void group::try_prepare_rebalance() {
@@ -724,8 +727,8 @@ void group::try_prepare_rebalance() {
     }
 
     auto prev_state = set_state(group_state::preparing_rebalance);
-
-    if (prev_state == group_state::empty) {
+    _initial_join_in_progress = prev_state == group_state::empty;
+    if (_initial_join_in_progress) {
         // debounce joins to an empty group. for a bounded delay, we'll avoid
         // competing the join phase as long as new members are arriving.
         auto rebalance = rebalance_timeout();
@@ -787,6 +790,7 @@ void group::try_prepare_rebalance() {
  */
 void group::complete_join() {
     vlog(_ctxlog.trace, "Completing join for group {}", *this);
+    _initial_join_in_progress = false;
 
     // <kafka>remove dynamic members who haven't joined the group yet</kafka>
     // this is the old group->remove_unjoined_members();
@@ -995,7 +999,7 @@ void group::shutdown() {
               error_code::not_coordinator, member->assignment()));
         } else if (member->is_joining()) {
             try_finish_joining_member(
-              member, _make_join_error(member_id, error_code::not_coordinator));
+              member, make_join_error(member_id, error_code::not_coordinator));
         }
     }
 }
@@ -1008,7 +1012,7 @@ void group::remove_member(member_ptr member) {
     // the member. We return UNKNOWN_MEMBER_ID so that the consumer will retry
     // the JoinGroup request if is still active.</kafka>
     try_finish_joining_member(
-      member, _make_join_error(no_member, error_code::unknown_member_id));
+      member, make_join_error(no_member, error_code::unknown_member_id));
 
     // TODO: (not blocker) avoid the double look-up. we could do the removal
     // from the index in the caller and then pass in the shared_ptr.
@@ -1071,20 +1075,21 @@ void group::remove_member(member_ptr member) {
     }
 }
 
-ss::future<sync_group_response>
-group::handle_sync_group(sync_group_request&& r) {
+group::sync_group_stages group::handle_sync_group(sync_group_request&& r) {
     vlog(_ctxlog.trace, "Handling sync group request {}", r);
 
     if (in_state(group_state::dead)) {
         vlog(_ctxlog.trace, "Sync rejected for group state {}", _state);
-        return make_sync_error(error_code::coordinator_not_available);
+        return sync_group_stages(
+          sync_group_response(error_code::coordinator_not_available));
 
     } else if (!contains_member(r.data.member_id)) {
         vlog(
           _ctxlog.trace,
           "Sync rejected for unregistered member {}",
           r.data.member_id);
-        return make_sync_error(error_code::unknown_member_id);
+        return sync_group_stages(
+          sync_group_response(error_code::unknown_member_id));
 
     } else if (r.data.generation_id != generation()) {
         vlog(
@@ -1092,7 +1097,8 @@ group::handle_sync_group(sync_group_request&& r) {
           "Sync rejected with out-of-date generation {} != {}",
           r.data.generation_id,
           generation());
-        return make_sync_error(error_code::illegal_generation);
+        return sync_group_stages(
+          sync_group_response(error_code::illegal_generation));
     }
 
     // the two states of interest are `completing rebalance` and `stable`.
@@ -1113,11 +1119,13 @@ group::handle_sync_group(sync_group_request&& r) {
     switch (state()) {
     case group_state::empty:
         vlog(_ctxlog.trace, "Sync rejected for group state {}", _state);
-        return make_sync_error(error_code::unknown_member_id);
+        return sync_group_stages(
+          sync_group_response(error_code::unknown_member_id));
 
     case group_state::preparing_rebalance:
         vlog(_ctxlog.trace, "Sync rejected for group state {}", _state);
-        return make_sync_error(error_code::rebalance_in_progress);
+        return sync_group_stages(
+          sync_group_response(error_code::rebalance_in_progress));
 
     case group_state::completing_rebalance: {
         auto member = get_member(r.data.member_id);
@@ -1135,7 +1143,7 @@ group::handle_sync_group(sync_group_request&& r) {
           "Handling idemponent group sync for member {} with reply {}",
           member,
           reply);
-        return ss::make_ready_future<sync_group_response>(std::move(reply));
+        return sync_group_stages(sync_group_response(std::move(reply)));
     }
 
     case group_state::dead:
@@ -1178,7 +1186,7 @@ model::record_batch group::checkpoint(const assignments_type& assignments) {
     return std::move(builder).build();
 }
 
-ss::future<sync_group_response> group::sync_group_completing_rebalance(
+group::sync_group_stages group::sync_group_completing_rebalance(
   member_ptr member, sync_group_request&& r) {
     // this response will be set by the leader when it arrives. the leader also
     // sets its own response which reduces the special cases in the code, but we
@@ -1192,7 +1200,7 @@ ss::future<sync_group_response> group::sync_group_completing_rebalance(
           _ctxlog.trace,
           "Non-leader member waiting for assignment {}",
           member->id());
-        return response;
+        return sync_group_stages(std::move(response));
     }
 
     vlog(_ctxlog.trace, "Completing group sync with leader {}", member->id());
@@ -1207,50 +1215,55 @@ ss::future<sync_group_response> group::sync_group_completing_rebalance(
     auto batch = checkpoint(assignments);
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
-    return _partition
-      ->replicate(
-        std::move(reader),
-        raft::replicate_options(raft::consistency_level::quorum_ack))
-      .then([this,
-             response = std::move(response),
-             expected_generation = generation(),
-             assignments = std::move(assignments)](
-              result<raft::replicate_result> r) mutable {
-          /*
-           * the group's state has changed (e.g. another member joined). there's
-           * nothing to do now except have the client wait for an update.
-           */
-          if (
-            !in_state(group_state::completing_rebalance)
-            || expected_generation != generation()) {
-              vlog(_ctxlog.trace, "Group state changed while completing sync");
-              return std::move(response);
-          }
+    auto f = _partition
+               ->replicate(
+                 std::move(reader),
+                 raft::replicate_options(raft::consistency_level::quorum_ack))
+               .then([this,
+                      response = std::move(response),
+                      expected_generation = generation(),
+                      assignments = std::move(assignments)](
+                       result<raft::replicate_result> r) mutable {
+                   /*
+                    * the group's state has changed (e.g. another member
+                    * joined). there's nothing to do now except have the client
+                    * wait for an update.
+                    */
+                   if (
+                     !in_state(group_state::completing_rebalance)
+                     || expected_generation != generation()) {
+                       vlog(
+                         _ctxlog.trace,
+                         "Group state changed while completing sync");
+                       return std::move(response);
+                   }
 
-          if (r) {
-              // the group state was successfully persisted:
-              //   - save the member assignments; clients may re-request
-              //   - unblock any clients waiting on their assignment
-              //   - transition the group to the stable state
-              set_assignments(std::move(assignments));
-              finish_syncing_members(error_code::none);
-              set_state(group_state::stable);
-              vlog(_ctxlog.trace, "Successfully completed group sync");
-          } else {
-              vlog(
-                _ctxlog.trace,
-                "An error occurred completing group sync {}",
-                r.error());
-              // an error was encountered persisting the group state:
-              //   - clear all the member assignments
-              //   - propogate error back to waiting clients
-              clear_assignments();
-              finish_syncing_members(error_code::not_coordinator);
-              try_prepare_rebalance();
-          }
+                   if (r) {
+                       // the group state was successfully persisted:
+                       //   - save the member assignments; clients may
+                       //   re-request
+                       //   - unblock any clients waiting on their assignment
+                       //   - transition the group to the stable state
+                       set_assignments(std::move(assignments));
+                       finish_syncing_members(error_code::none);
+                       set_state(group_state::stable);
+                       vlog(_ctxlog.trace, "Successfully completed group sync");
+                   } else {
+                       vlog(
+                         _ctxlog.trace,
+                         "An error occurred completing group sync {}",
+                         r.error());
+                       // an error was encountered persisting the group state:
+                       //   - clear all the member assignments
+                       //   - propogate error back to waiting clients
+                       clear_assignments();
+                       finish_syncing_members(error_code::not_coordinator);
+                       try_prepare_rebalance();
+                   }
 
-          return std::move(response);
-      });
+                   return std::move(response);
+               });
+    return sync_group_stages(std::move(f));
 }
 
 ss::future<heartbeat_response> group::handle_heartbeat(heartbeat_request&& r) {
@@ -2042,7 +2055,6 @@ group::handle_offset_commit(offset_commit_request&& r) {
           offset_commit_response(r, error_code::rebalance_in_progress));
     } else {
         return offset_commit_stages(
-          ss::now(),
           ss::make_exception_future<offset_commit_response>(std::runtime_error(
             fmt::format("Unexpected group state {} for {}", _state, *this))));
     }
