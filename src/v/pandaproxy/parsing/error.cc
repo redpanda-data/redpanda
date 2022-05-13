@@ -11,8 +11,6 @@
 
 #include "error.h"
 
-#include "pandaproxy/error.h"
-
 namespace pandaproxy::parse {
 
 namespace {
@@ -31,20 +29,6 @@ struct error_category final : std::error_category {
             return "unsupported_media_type";
         }
         return "(unrecognized error)";
-    }
-
-    std::error_condition
-    default_error_condition(int ec) const noexcept override {
-        switch (static_cast<error_code>(ec)) {
-        case error_code::empty_param:
-        case error_code::invalid_param:
-            return reply_error_code::kafka_bad_request;
-        case error_code::not_acceptable:
-            return reply_error_code::not_acceptable;
-        case error_code::unsupported_media_type:
-            return reply_error_code::unsupported_media_type;
-        }
-        return {};
     }
 };
 

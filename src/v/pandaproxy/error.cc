@@ -91,6 +91,7 @@ const reply_error_category reply_error_category{};
 std::error_condition make_error_condition(std::error_code ec) {
     using rec = reply_error_code;
     using kec = kafka::error_code;
+    using pec = pandaproxy::parse::error_code;
 
     if (ec.category() == make_error_code(kec::none).category()) {
         switch (static_cast<kec>(ec.value())) {
@@ -190,6 +191,17 @@ std::error_condition make_error_condition(std::error_code ec) {
             return rec::kafka_authentication_error;
         }
         return {}; // keep gcc happy
+    } else if (ec.category() == make_error_code(pec::empty_param).category()) {
+        switch (static_cast<pec>(ec.value())) {
+        case pec::empty_param:
+        case pec::invalid_param:
+            return rec::kafka_bad_request;
+        case pec::not_acceptable:
+            return rec::not_acceptable;
+        case pec::unsupported_media_type:
+            return rec::unsupported_media_type;
+        }
+        return {};
     }
     return ec.default_error_condition();
 }
