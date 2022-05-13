@@ -15,7 +15,7 @@ v_cc_library(
     v::utils
   )
 
-
+add_subdirectory(test)
 add_subdirectory(rest)
 add_subdirectory(schema_registry)
 add_subdirectory(json)
