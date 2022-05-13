@@ -202,4 +202,18 @@ std::ostream& operator<<(std::ostream& o, error_code code) {
     return o;
 }
 
+struct error_category final : std::error_category {
+    const char* name() const noexcept override { return "kafka"; }
+    std::string message(int ec) const override {
+        return std::string(
+          kafka::error_code_to_str(static_cast<kafka::error_code>(ec)));
+    }
+};
+
+const error_category error_category{};
+
+std::error_code make_error_code(kafka::error_code ec) {
+    return {static_cast<int>(ec), error_category};
+}
+
 } // namespace kafka

@@ -86,18 +86,14 @@ struct reply_error_category final : std::error_category {
 
 const reply_error_category reply_error_category{};
 
-struct kafka_error_category final : std::error_category {
-    const char* name() const noexcept override { return "kafka"; }
-    std::string message(int ec) const override {
-        return std::string(
-          kafka::error_code_to_str(static_cast<kafka::error_code>(ec)));
-    }
-    std::error_condition
-    default_error_condition(int ec) const noexcept override {
-        using rec = reply_error_code;
-        using kec = kafka::error_code;
+}; // namespace
 
-        switch (static_cast<kec>(ec)) {
+std::error_condition make_error_condition(std::error_code ec) {
+    using rec = reply_error_code;
+    using kec = kafka::error_code;
+
+    if (ec.category() == make_error_code(kec::none).category()) {
+        switch (static_cast<kec>(ec.value())) {
         case kec::none:
             return {};
         case kec::offset_out_of_range:
@@ -195,13 +191,6 @@ struct kafka_error_category final : std::error_category {
         }
         return {}; // keep gcc happy
     }
-};
-
-const kafka_error_category kafka_error_category{};
-
-}; // namespace
-
-std::error_condition make_error_condition(std::error_code ec) {
     return ec.default_error_condition();
 }
 
@@ -214,10 +203,3 @@ const std::error_category& reply_category() noexcept {
 }
 
 } // namespace pandaproxy
-
-namespace kafka {
-std::error_code make_error_code(kafka::error_code ec) {
-    return {static_cast<int>(ec), pandaproxy::kafka_error_category};
-}
-
-} // namespace kafka

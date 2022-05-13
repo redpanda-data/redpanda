@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <iosfwd>
 #include <string_view>
+#include <system_error>
 
 namespace kafka {
 
@@ -224,5 +225,13 @@ enum class error_code : int16_t {
 
 std::ostream& operator<<(std::ostream&, error_code);
 std::string_view error_code_to_str(error_code error);
+std::error_code make_error_code(error_code);
 
 } // namespace kafka
+
+namespace std {
+
+template<>
+struct is_error_code_enum<kafka::error_code> : true_type {};
+
+} // namespace std

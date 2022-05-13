@@ -59,18 +59,9 @@ const std::error_category& reply_category() noexcept;
 
 } // namespace pandaproxy
 
-namespace kafka {
-
-std::error_code make_error_code(error_code);
-
-}
-
 namespace std {
 
 template<>
 struct is_error_condition_enum<pandaproxy::reply_error_code> : true_type {};
-
-template<>
-struct is_error_code_enum<kafka::error_code> : true_type {};
 
 } // namespace std
