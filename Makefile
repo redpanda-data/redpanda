@@ -113,6 +113,11 @@ e2e-tests: kuttl test docker-build docker-build-configurator
 	echo "~~~ Running kuttl tests :k8s:"
 	$(KUTTL) test $(TEST_ONLY_FLAG) $(KUTTL_TEST_FLAGS)
 
+# Execute end to end unstable tests
+e2e-unstable-tests: kuttl test docker-build docker-build-configurator
+	echo "~~~ Running kuttl unstable tests :k8s:"
+	$(KUTTL) test --config kuttl-unstable-test.yaml --kind-context=${PR_NR:-kind} $(TEST_ONLY_FLAG) $(KUTTL_TEST_FLAGS)
+
 # Execute end to end tests using helm as an installation
 helm-e2e-tests: kuttl test docker-build docker-build-configurator
 	echo "~~~ Running kuttl tests :k8s:"
