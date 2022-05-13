@@ -18,7 +18,12 @@ from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.services.redpanda import SISettings, RESTART_LOG_ALLOW_LIST
-from rptest.services.franz_go_verifiable_services import FranzGoVerifiableProducer, FranzGoVerifiableSeqConsumer, FranzGoVerifiableRandomConsumer
+from rptest.services.franz_go_verifiable_services import (
+    FranzGoVerifiableProducer,
+    FranzGoVerifiableSeqConsumer,
+    FranzGoVerifiableRandomConsumer,
+    FranzGoVerifiableConsumerGroupConsumer,
+)
 
 
 class FranzGoVerifiableBase(PreallocNodesTest):
@@ -31,6 +36,7 @@ class FranzGoVerifiableBase(PreallocNodesTest):
     PRODUCE_COUNT = None
     RANDOM_READ_COUNT = None
     RANDOM_READ_PARALLEL = None
+    CONSUMER_GROUP_READERS = None
 
     def __init__(self, test_context, *args, **kwargs):
         super().__init__(test_context=test_context,
@@ -49,6 +55,13 @@ class FranzGoVerifiableBase(PreallocNodesTest):
             test_context, self.redpanda, self.topic, self.MSG_SIZE,
             self.RANDOM_READ_COUNT, self.RANDOM_READ_PARALLEL,
             self.preallocated_nodes)
+        self._cg_consumer = FranzGoVerifiableConsumerGroupConsumer(
+            test_context, self.redpanda, self.topic, self.MSG_SIZE,
+            self.CONSUMER_GROUP_READERS, self.preallocated_nodes)
+
+        self._consumers = [
+            self._seq_consumer, self._rand_consumer, self._cg_consumer
+        ]
 
 
 class FranzGoVerifiableTest(FranzGoVerifiableBase):
@@ -56,6 +69,7 @@ class FranzGoVerifiableTest(FranzGoVerifiableBase):
     PRODUCE_COUNT = 100000
     RANDOM_READ_COUNT = 1000
     RANDOM_READ_PARALLEL = 20
+    CONSUMER_GROUP_READERS = 8
 
     topics = (TopicSpec(partition_count=100, replication_factor=3), )
 
@@ -76,20 +90,20 @@ class FranzGoVerifiableTest(FranzGoVerifiableBase):
                    backoff_sec=0.1)
         wrote_at_least = self._producer.produce_status.acked
 
-        self._seq_consumer.start(clean=False)
-        self._rand_consumer.start(clean=False)
+        for consumer in self._consumers:
+            consumer.start(clean=False)
 
         self._producer.wait()
         assert self._producer.produce_status.acked == self.PRODUCE_COUNT
 
-        self._seq_consumer.shutdown()
-        self._rand_consumer.shutdown()
-
-        self._seq_consumer.wait()
-        self._rand_consumer.wait()
+        for consumer in self._consumers:
+            consumer.shutdown()
+        for consumer in self._consumers:
+            consumer.wait()
 
         assert self._seq_consumer.consumer_status.valid_reads >= wrote_at_least
         assert self._rand_consumer.consumer_status.total_reads == self.RANDOM_READ_COUNT * self.RANDOM_READ_PARALLEL
+        assert self._cg_consumer.consumer_status.valid_reads >= wrote_at_least
 
 
 KGO_LOG_ALLOW_LIST = [
@@ -105,6 +119,7 @@ class FranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
     PRODUCE_COUNT = 20000
     RANDOM_READ_COUNT = 1000
     RANDOM_READ_PARALLEL = 20
+    CONSUMER_GROUP_READERS = 8
 
     topics = (TopicSpec(partition_count=100, replication_factor=3), )
 
@@ -155,8 +170,8 @@ class FranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
             self.logger.info(f"S3 object: {o.Key}, {o.ContentLength}")
 
         wrote_at_least = self._producer.produce_status.acked
-        self._seq_consumer.start(clean=False)
-        self._rand_consumer.start(clean=False)
+        for consumer in self._consumers:
+            consumer.start(clean=False)
 
         # Wait until we have written all the data we expected to write
         self._producer.wait()
@@ -164,13 +179,14 @@ class FranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
 
         # Wait for last iteration of consumers to finish: if they are currently
         # mid-run, they'll run to completion.
-        self._seq_consumer.shutdown()
-        self._rand_consumer.shutdown()
-        self._seq_consumer.wait()
-        self._rand_consumer.wait()
+        for consumer in self._consumers:
+            consumer.shutdown()
+        for consumer in self._consumers:
+            consumer.wait()
 
         assert self._seq_consumer.consumer_status.valid_reads >= wrote_at_least
         assert self._rand_consumer.consumer_status.total_reads == self.RANDOM_READ_COUNT * self.RANDOM_READ_PARALLEL
+        assert self._cg_consumer.consumer_status.valid_reads >= wrote_at_least
 
     @cluster(num_nodes=4, log_allow_list=KGO_LOG_ALLOW_LIST)
     @matrix(segment_size=[100 * 2**20, 20 * 2**20])
