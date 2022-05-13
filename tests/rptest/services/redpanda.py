@@ -400,9 +400,6 @@ class RedpandaService(Service):
 
     CLUSTER_CONFIG_DEFAULTS = {
         'join_retry_timeout_ms': 200,
-
-        # For librdkafka
-        'auto_create_topics_enabled': True,
         'default_topic_partitions': 4,
         'enable_metrics_reporter': False,
         'superusers': [SUPERUSER_CREDENTIALS[0]],
