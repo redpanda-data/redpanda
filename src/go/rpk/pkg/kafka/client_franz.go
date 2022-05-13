@@ -10,8 +10,10 @@
 package kafka
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strconv"
@@ -85,6 +87,10 @@ func NewAdmin(
 	cl, err := NewFranzClient(fs, p, cfg, extraOpts...)
 	if err != nil {
 		return nil, err
+	}
+	_, err = cl.Request(context.Background(), &kmsg.MetadataRequest{})
+	if errors.Is(err, io.EOF) && cfg.Rpk.KafkaAPI.SASL == nil {
+		return nil, fmt.Errorf("brokers keep immediately closing connections, which happens when SASL is required but not provided: is SASL expected?")
 	}
 	adm := kadm.NewClient(cl)
 	adm.SetTimeoutMillis(5000) // 5s timeout default for any timeout based request
