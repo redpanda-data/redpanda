@@ -28,7 +28,9 @@ class iobuf_istreambuf final : public std::streambuf {
 public:
     explicit iobuf_istreambuf(iobuf& buf) noexcept
       : _curr(buf.begin())
-      , _end(buf.end()) {}
+      , _end(buf.end()) {
+        std::ignore = underflow();
+    }
     iobuf_istreambuf(iobuf_istreambuf&&) noexcept = default;
     iobuf_istreambuf& operator=(iobuf_istreambuf&&) noexcept = default;
     iobuf_istreambuf(const iobuf_istreambuf&) = delete;
