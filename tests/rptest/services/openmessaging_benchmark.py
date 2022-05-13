@@ -144,7 +144,12 @@ class OpenMessagingBenchmark(Service):
             "consumer_per_subscription": 1,
             "consumer_backlog_size_GB": 0,
         }
-        if os.environ.get('CI', None) == 'true':
+        if self.redpanda.dedicated_nodes:
+            self.configuration["producer_rate"] = 0
+            self.configuration["test_duration_minutes"] = 10
+            self.configuration["warmup_duration_minutes"] = 5
+
+        elif os.environ.get('CI', None) == 'true':
             self.configuration["producer_rate"] = 10
             self.configuration["test_duration_minutes"] = 5
             self.configuration["warmup_duration_minutes"] = 5
