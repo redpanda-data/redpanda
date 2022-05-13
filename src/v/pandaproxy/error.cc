@@ -12,6 +12,7 @@
 #include "error.h"
 
 #include "kafka/protocol/errors.h"
+#include "pandaproxy/json/error.h"
 #include "pandaproxy/parsing/error.h"
 
 namespace pandaproxy {
@@ -92,6 +93,7 @@ std::error_condition make_error_condition(std::error_code ec) {
     using rec = reply_error_code;
     using kec = kafka::error_code;
     using pec = pandaproxy::parse::error_code;
+    using jec = pandaproxy::json::error_code;
 
     if (ec.category() == make_error_code(kec::none).category()) {
         switch (static_cast<kec>(ec.value())) {
@@ -200,6 +202,12 @@ std::error_condition make_error_condition(std::error_code ec) {
             return rec::not_acceptable;
         case pec::unsupported_media_type:
             return rec::unsupported_media_type;
+        }
+        return {};
+    } else if (ec.category() == make_error_code(jec::invalid_json).category()) {
+        switch (static_cast<jec>(ec.value())) {
+        case jec::invalid_json:
+            return rec::unprocessable_entity;
         }
         return {};
     }

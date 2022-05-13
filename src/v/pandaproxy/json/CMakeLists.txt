@@ -4,7 +4,6 @@ v_cc_library(
     error.cc
   DEPS
     Seastar::seastar
-    v::pandaproxy_common
 )
 
 add_subdirectory(test)
