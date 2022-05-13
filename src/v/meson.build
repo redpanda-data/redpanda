@@ -89,3 +89,10 @@ add_test_setup('redpanda',
   timeout_multiplier: get_option('buildtype').startswith('debug') ? 5 : 2)
 
 subdir('test_utils')
+subdir('bytes')
+
+# some tests have circular or forward dependencies if added along with their
+# normal containing directory. a common example are tests that depend on the
+# application fixture that isn't added until the end with subdir('redpanda').
+# setup these tests here after all dependencies have been introduced above.
+subdir('bytes/tests')
