@@ -25,6 +25,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/configuration"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -614,7 +615,7 @@ func (r *ConfigMapResource) Key() types.NamespacedName {
 
 // ConfigMapKey provides config map name that derived from redpanda.vectorized.io CR
 func ConfigMapKey(pandaCluster *redpandav1alpha1.Cluster) types.NamespacedName {
-	return types.NamespacedName{Name: resourceNameTrim(pandaCluster.Name, baseSuffix), Namespace: pandaCluster.Namespace}
+	return types.NamespacedName{Name: utils.ResourceNameTrim(pandaCluster.Name, baseSuffix), Namespace: pandaCluster.Namespace}
 }
 
 func configMapKind() string {

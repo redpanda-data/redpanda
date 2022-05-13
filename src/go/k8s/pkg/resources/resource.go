@@ -24,7 +24,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -47,8 +46,6 @@ const (
 	SchemaRegistryPortName = "schema-registry"
 
 	scramPasswordLength = 16
-
-	separator = "-"
 )
 
 // NamedServicePort allows to pass name ports, e.g., to service resources
@@ -196,13 +193,4 @@ func prepareResourceForUpdate(current runtime.Object, modified client.Object) {
 			cm.Annotations[LastAppliedConfigurationAnnotationKey] = ann
 		}
 	}
-}
-
-func resourceNameTrim(clusterName, suffix string) string {
-	suffixLength := len(suffix)
-	maxClusterNameLength := validation.DNS1123SubdomainMaxLength - suffixLength - len(separator)
-	if len(clusterName) > maxClusterNameLength {
-		clusterName = clusterName[:maxClusterNameLength]
-	}
-	return fmt.Sprintf("%s%s%s", clusterName, separator, suffix)
 }

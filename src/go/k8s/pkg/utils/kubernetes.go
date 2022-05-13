@@ -9,7 +9,16 @@
 
 package utils
 
-import corev1 "k8s.io/api/core/v1"
+import (
+	"fmt"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
+)
+
+const (
+	separator = "-"
+)
 
 // IsPodReady tells if a given pod is ready looking at its status.
 func IsPodReady(pod *corev1.Pod) bool {
@@ -20,4 +29,14 @@ func IsPodReady(pod *corev1.Pod) bool {
 	}
 
 	return false
+}
+
+// ResourceNameTrim builds a resource name out of a base name and a suffix, respecting k8s length constraints
+func ResourceNameTrim(baseName, suffix string) string {
+	suffixLength := len(suffix)
+	maxNameLength := validation.DNS1123SubdomainMaxLength - suffixLength - len(separator)
+	if len(baseName) > maxNameLength {
+		baseName = baseName[:maxNameLength]
+	}
+	return fmt.Sprintf("%s%s%s", baseName, separator, suffix)
 }

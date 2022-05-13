@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -120,5 +121,5 @@ func (r *SuperUsersResource) obj() (k8sclient.Object, error) {
 
 // Key returns namespace/name object that is used to identify object.
 func (r *SuperUsersResource) Key() types.NamespacedName {
-	return types.NamespacedName{Name: resourceNameTrim(r.pandaCluster.Name, r.suffix), Namespace: r.pandaCluster.Namespace}
+	return types.NamespacedName{Name: utils.ResourceNameTrim(r.pandaCluster.Name, r.suffix), Namespace: r.pandaCluster.Namespace}
 }
