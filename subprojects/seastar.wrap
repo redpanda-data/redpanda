@@ -1,0 +1,10 @@
+[wrap-git]
+url = https://github.com/dotnwat/seastar.git
+revision = meson
+depth = 1
+
+[provide]
+seastar = seastar_dep
+seastar_testing = seastar_testing_dep
+seastar_perf_testing = seastar_perf_testing_dep
+program_names = seastar-json2code

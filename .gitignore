@@ -247,3 +247,6 @@ vbuild/
 .classpath
 .factorypath
 .settings/
+
+# meson
+/subprojects

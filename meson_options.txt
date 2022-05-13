@@ -1,0 +1,2 @@
+option('redpanda_build', type: 'boolean', value: false,
+  description: 'Configure for Redpanda production build')

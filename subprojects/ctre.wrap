@@ -1,0 +1,7 @@
+[wrap-git]
+url = https://github.com/dotnwat/compile-time-regular-expressions.git
+revision = meson
+depth = 1
+
+[provide]
+ctre = ctre_dep

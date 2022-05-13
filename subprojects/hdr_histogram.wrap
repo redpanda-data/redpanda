@@ -1,0 +1,7 @@
+[wrap-git]
+url = https://github.com/dotnwat/HdrHistogram_c.git
+revision = meson
+depth = 1
+
+[provide]
+hdr_histogram = hdr_histogram_dep
