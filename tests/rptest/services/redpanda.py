@@ -1029,8 +1029,6 @@ class RedpandaService(Service):
             ):
                 line = line.strip()
 
-                assert "No such file or directory" not in line
-
                 allowed = False
                 for a in allow_list:
                     if a.search(line) is not None:
