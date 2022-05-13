@@ -12,6 +12,7 @@
 
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_istreambuf.h"
+#include "bytes/iobuf_parser.h"
 #include "hashing/secure.h"
 #include "http/client.h"
 #include "net/tls.h"
@@ -36,6 +37,7 @@
 #include <seastar/net/dns.hh>
 #include <seastar/net/inet_address.hh>
 #include <seastar/net/tls.hh>
+#include <seastar/util/log.hh>
 
 #include <boost/beast/core/error.hpp>
 #include <boost/beast/http/field.hpp>
@@ -339,6 +341,21 @@ request_creator::make_delete_object_request(
 
 // client //
 
+static void log_buffer_with_rate_limiting(const char* msg, iobuf& buf) {
+    static constexpr int buffer_size = 0x100;
+    static constexpr auto rate_limit = std::chrono::seconds(1);
+    thread_local static ss::logger::rate_limit rate(rate_limit);
+    auto log_with_rate_limit = [](ss::logger::format_info fmt, auto... args) {
+        s3_log.log(ss::log_level::warn, rate, fmt, args...);
+    };
+    iobuf_istreambuf strbuf(buf);
+    std::istream stream(&strbuf);
+    std::array<char, buffer_size> str{};
+    auto sz = stream.readsome(str.data(), buffer_size);
+    auto sview = std::string_view(str.data(), sz);
+    vlog(log_with_rate_limit, "{}: {}", msg, sview);
+}
+
 /// Convert iobuf that contains xml data to boost::property_tree
 static boost::property_tree::ptree iobuf_to_ptree(iobuf&& buf) {
     namespace pt = boost::property_tree;
@@ -349,6 +366,7 @@ static boost::property_tree::ptree iobuf_to_ptree(iobuf&& buf) {
         pt::read_xml(stream, res);
         return res;
     } catch (...) {
+        log_buffer_with_rate_limiting("unexpected reply", buf);
         vlog(s3_log.error, "!!parsing error {}", std::current_exception());
         throw;
     }
@@ -500,6 +518,10 @@ ss::future<http::client::response_stream_ref> client::get_object(
                 ref->get_headers().result() != boost::beast::http::status::ok) {
                   // Got error response, consume the response body and produce
                   // rest api error
+                  vlog(
+                    s3_log.warn,
+                    "S3 replied with error: {}",
+                    ref->get_headers());
                   return drain_response_stream(std::move(ref))
                     .then([](iobuf&& res) {
                         return parse_rest_error_response<
@@ -530,6 +552,10 @@ ss::future<client::head_object_result> client::head_object(
               [ref, key]() -> ss::future<head_object_result> {
                   auto status = ref->get_headers().result();
                   if (status != boost::beast::http::status::ok) {
+                      vlog(
+                        s3_log.warn,
+                        "S3 replied with error: {}",
+                        ref->get_headers());
                       return parse_head_error_response<head_object_result>(
                         ref->get_headers(), key);
                   }
@@ -574,6 +600,10 @@ ss::future<> client::put_object(
                 return drain_response_stream(ref).then([ref](iobuf&& res) {
                     auto status = ref->get_headers().result();
                     if (status != boost::beast::http::status::ok) {
+                        vlog(
+                          s3_log.warn,
+                          "S3 replied with error: {}",
+                          ref->get_headers());
                         return parse_rest_error_response<>(std::move(res));
                     }
                     return ss::now();
@@ -623,6 +653,8 @@ ss::future<client::list_bucket_result> client::list_objects_v2(
                       if (header.result() != boost::beast::http::status::ok) {
                           // We received error response so the outbuf contains
                           // error digest instead of the result of the query
+                          vlog(
+                            s3_log.warn, "S3 replied with error: {}", header);
                           return parse_rest_error_response<
                             client::list_bucket_result>(std::move(outbuf));
                       }
@@ -651,6 +683,10 @@ ss::future<> client::delete_object(
                 status != boost::beast::http::status::ok
                 && status
                      != boost::beast::http::status::no_content) { // expect 204
+                  vlog(
+                    s3_log.warn,
+                    "S3 replied with error: {}",
+                    ref->get_headers());
                   return parse_rest_error_response<>(std::move(res));
               }
               return ss::now();
