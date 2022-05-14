@@ -32,7 +32,6 @@
 #include <boost/beast/core/buffer_traits.hpp>
 #include <boost/beast/core/error.hpp>
 #include <boost/beast/core/impl/error.hpp>
-#include <boost/system/detail/error_code.hpp>
 
 #include <chrono>
 #include <exception>
