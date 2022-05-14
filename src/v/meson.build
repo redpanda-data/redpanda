@@ -95,6 +95,7 @@ subdir('hashing')
 subdir('serde')
 subdir('finjector')
 subdir('compression')
+subdir('model')
 
 # some tests have circular or forward dependencies if added along with their
 # normal containing directory. a common example are tests that depend on the
