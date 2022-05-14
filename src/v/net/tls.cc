@@ -14,6 +14,8 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/seastar.hh>
 
+#include <array>
+
 namespace net {
 ss::future<std::optional<ss::sstring>> find_ca_file() {
     // list of all possible ca-cert file locations on different linux distros
