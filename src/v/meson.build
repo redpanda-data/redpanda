@@ -75,6 +75,11 @@ add_project_arguments(
   '-Wno-deprecated-experimental-coroutine',
   language: 'cpp')
 
+version_h = vcs_tag(
+  input: 'version.h.in',
+  output: 'version.h',
+)
+
 subdir('test_utils')
 subdir('ssx')
 subdir('bytes')
