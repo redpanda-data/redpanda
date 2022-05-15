@@ -3,7 +3,7 @@ function(rpcgen)
   set(multi_value_args INCLUDES LIBRARIES DEFINITIONS COMPILE_OPTIONS)
   cmake_parse_arguments(args "" "${one_value_args}" "${multi_value_args}" ${ARGN})
   get_filename_component(out_dir ${args_OUT_FILE} DIRECTORY)
-  set(generator "${PROJECT_SOURCE_DIR}/tools/rpcgen.py")
+  set(generator "${PROJECT_SOURCE_DIR}/src/v/rpc/rpc_compiler.py")
   add_custom_command(
     DEPENDS
       ${args_IN_FILE}
