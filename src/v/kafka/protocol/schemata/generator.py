@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+#
 # Copyright 2020 Redpanda Data, Inc.
 #
 # Use of this software is governed by the Business Source License
@@ -1501,11 +1503,10 @@ def parse_flexible_versions(flex_version):
 
 
 if __name__ == "__main__":
-    assert len(sys.argv) == 3
-    outdir = pathlib.Path(sys.argv[1])
-    schema_path = pathlib.Path(sys.argv[2])
-    src = (outdir / schema_path.name).with_suffix(".cc")
-    hdr = (outdir / schema_path.name).with_suffix(".h")
+    assert len(sys.argv) == 4
+    schema_path = pathlib.Path(sys.argv[1])
+    hdr = pathlib.Path(sys.argv[2])
+    src = pathlib.Path(sys.argv[3])
 
     # remove comments from the json file. comments are a non-standard json
     # extension that is not supported by the python json parser.
