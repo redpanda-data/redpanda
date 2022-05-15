@@ -118,6 +118,7 @@ subdir('cloud_roles')
 subdir('cloud_storage_clients')
 subdir('resource_mgmt')
 subdir('storage')
+subdir('rpc')
 
 # some tests have circular or forward dependencies if added along with their
 # normal containing directory. a common example are tests that depend on the
