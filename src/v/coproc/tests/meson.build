@@ -1,0 +1,27 @@
+f = library('coproc_test_fixture',
+  'utils/event_publisher_utils.cc',
+  'utils/supervisor.cc',
+  'utils/wasm_event_generator.cc',
+  'utils/batch_utils.cc',
+  'fixtures/coproc_cluster_fixture.cc',
+  'fixtures/coproc_test_fixture.cc',
+  'fixtures/coproc_bench_fixture.cc',
+  'fixtures/fiber_mock_fixture.cc',
+  dependencies: [coproc, model_test_utils, redpanda_app])
+
+t = executable('test_coproc_fixture',
+  'retry_logic_tests.cc',
+  'partition_movement_tests.cc',
+  'topic_ingestion_policy_tests.cc',
+  'failure_recovery_tests.cc',
+  'pacemaker_tests.cc',
+  'autocreate_topic_tests.cc',
+  'coproc_bench_tests.cc',
+  'offset_storage_utils_tests.cc',
+  'wasm_event_tests.cc',
+  'event_handler_tests.cc',
+  'event_listener_tests.cc',
+  'kafka_api_materialized_tests.cc',
+  dependencies: [seastar_testing_main, coproc, redpanda_app, model_test_utils],
+  link_with: f)
+test('coproc fixture', t)
