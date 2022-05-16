@@ -710,10 +710,35 @@ private:
         return std::move(builder).build();
     }
 
-    error_code check_group_before_commit_offset(const txn_offset_commit_request& r);
+    error_code
+    check_group_before_commit_offset(const txn_offset_commit_request& r);
 
     cluster::abort_origin
     get_abort_origin(const model::producer_identity&, model::tx_seq) const;
+
+    bool check_pending_transaction(const model::topic_partition& tp) {
+        if (_pending_offset_commits.contains(tp)) {
+            return false;
+        }
+
+        for (auto& [_, info] : _volatile_txs) {
+            for (auto& [volatile_txs_tp, _] : info.offsets) {
+                if (volatile_txs_tp == tp) {
+                    return false;
+                }
+            }
+        }
+
+        for (auto& [_, info] : _prepared_txs) {
+            for (auto& [prepared_txs_tp, _] : info.offsets) {
+                if (prepared_txs_tp == tp) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
 
     kafka::group_id _id;
     group_state _state;
