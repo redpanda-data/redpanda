@@ -138,6 +138,7 @@ public:
       timequery(storage::timequery_config);
 
     bool is_becoming_leader() const { return _raft->is_becoming_leader(); }
+    bool is_confirmed_leader() const { return _raft->is_confirmed_leader(); }
     bool has_followers() const { return _raft->has_followers(); }
 
     void block_new_leadership() const { _raft->block_new_leadership(); }

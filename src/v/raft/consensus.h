@@ -130,6 +130,9 @@ public:
     // data loss
     ss::future<std::error_code> revert_configuration_change(model::revision_id);
     bool is_becoming_leader() const { return _vstate == vote_state::leader; }
+    bool is_confirmed_leader() const {
+        return is_becoming_leader() && _term == _confirmed_term;
+    }
     bool is_candidate() const { return _vstate == vote_state::candidate; }
     std::optional<model::node_id> get_leader_id() const {
         return _leader_id ? std::make_optional(_leader_id->id()) : std::nullopt;
@@ -550,6 +553,7 @@ private:
     // consensus state
     model::offset _commit_index;
     model::term_id _term;
+    model::term_id _confirmed_term;
     model::offset _flushed_offset{};
 
     // read at `ss::future<> start()`

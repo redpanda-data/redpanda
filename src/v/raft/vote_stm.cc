@@ -258,14 +258,12 @@ ss::future<> vote_stm::update_vote_state(ss::semaphore_units<> u) {
     return replicate_config_as_new_leader(std::move(u))
       .then([this](std::error_code ec) {
           // if we didn't replicated configuration, step down
-          if (ec) {
-              vlog(
-                _ctxlog.info,
-                "unable to replicate configuration as a leader - error code: "
-                "{} - {} ",
-                ec.value(),
-                ec.message());
-          }
+          vlog(
+            _ctxlog.info,
+            "unable to replicate configuration as a leader - error code: "
+            "{} - {} ",
+            ec.value(),
+            ec.message());
       });
 }
 
