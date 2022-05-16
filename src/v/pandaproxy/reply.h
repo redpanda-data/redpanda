@@ -78,7 +78,7 @@ errored_body(std::error_condition ec, ss::sstring msg) {
 
 inline std::unique_ptr<ss::httpd::reply>
 errored_body(std::error_code ec, ss::sstring msg) {
-    return errored_body(ec.default_error_condition(), std::move(msg));
+    return errored_body(make_error_condition(ec), std::move(msg));
 }
 
 inline std::unique_ptr<ss::httpd::reply> unprocessable_entity(ss::sstring msg) {
