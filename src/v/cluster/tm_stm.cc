@@ -69,7 +69,7 @@ std::optional<tm_transaction> tm_stm::get_tx(kafka::transactional_id tx_id) {
 }
 
 ss::future<checked<model::term_id, tm_stm::op_status>> tm_stm::barrier() {
-    if (!_c->is_becoming_leader()) {
+    if (!_c->is_confirmed_leader()) {
         return ss::make_ready_future<
           checked<model::term_id, tm_stm::op_status>>(
           tm_stm::op_status::not_leader);
@@ -104,7 +104,7 @@ ss::future<checked<model::term_id, tm_stm::op_status>> tm_stm::barrier() {
 
 ss::future<checked<model::term_id, tm_stm::op_status>>
 tm_stm::sync(model::timeout_clock::duration timeout) {
-    if (!_c->is_becoming_leader()) {
+    if (!_c->is_confirmed_leader()) {
         co_return tm_stm::op_status::not_leader;
     }
 
@@ -508,7 +508,7 @@ absl::btree_set<kafka::transactional_id> tm_stm::get_expired_txs() {
 }
 
 ss::future<tm_stm::get_txs_result> tm_stm::get_all_transactions() {
-    if (!_c->is_becoming_leader()) {
+    if (!_c->is_confirmed_leader()) {
         co_return tm_stm::op_status::not_leader;
     }
 
@@ -537,7 +537,7 @@ tm_stm::delete_partition_from_tx(
   model::term_id term,
   kafka::transactional_id tid,
   tm_transaction::tx_partition ntp) {
-    if (!_c->is_becoming_leader()) {
+    if (!_c->is_confirmed_leader()) {
         co_return tm_stm::op_status::not_leader;
     }
 

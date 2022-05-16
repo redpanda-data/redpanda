@@ -1021,7 +1021,7 @@ error_code group_manager::validate_group_status(
     }
 
     if (const auto it = _partitions.find(ntp); it != _partitions.end()) {
-        if (!it->second->partition->is_becoming_leader()) {
+        if (!it->second->partition->is_confirmed_leader()) {
             vlog(
               klog.trace,
               "Group {} operation {} sent to non-leader coordinator {}",
