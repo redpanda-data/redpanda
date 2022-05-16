@@ -59,13 +59,17 @@ func getFreePort() (uint, error) {
 }
 
 func GetFreePortPool(n int) ([]uint, error) {
-	var ports []uint
-	for i := 0; i < n; i++ {
+	m := make(map[uint]struct{})
+	for len(m) != n {
 		p, err := getFreePort()
 		if err != nil {
 			return nil, err
 		}
-		ports = append(ports, p)
+		m[p] = struct{}{}
+	}
+	var ports []uint
+	for port := range m {
+		ports = append(ports, port)
 	}
 	return ports, nil
 }
