@@ -21,6 +21,7 @@
 #include "kafka/server/group_manager.h"
 #include "kafka/server/group_metadata.h"
 #include "kafka/server/logger.h"
+#include "kafka/server/member.h"
 #include "kafka/types.h"
 #include "likely.h"
 #include "model/fundamental.h"
@@ -2149,6 +2150,32 @@ group::handle_commit_tx(cluster::commit_group_tx_request r) {
     }
 }
 
+error_code
+group::check_group_before_commit_offset(const txn_offset_commit_request& r) {
+    kafka::member_id mid(r.data.member_id);
+    if (r.data.group_instance_id.has_value()) {
+        auto static_member_it = _static_members.find(
+          kafka::group_instance_id(r.data.group_instance_id.value()));
+        if (
+          static_member_it != _static_members.end()
+          || static_member_it->second != mid) {
+            return error_code::fenced_instance_id;
+        }
+    }
+
+    if (
+      r.data.member_id != unknown_member_id
+      && !_members.contains(kafka::member_id(r.data.member_id))) {
+        return error_code::unknown_member_id;
+    }
+
+    if (r.data.generation_id >= 0 && r.data.generation_id != _generation) {
+        return error_code::illegal_generation;
+    }
+
+    return error_code::none;
+}
+
 ss::future<txn_offset_commit_response>
 group::handle_txn_offset_commit(txn_offset_commit_request r) {
     if (in_state(group_state::dead)) {
@@ -2157,6 +2184,11 @@ group::handle_txn_offset_commit(txn_offset_commit_request r) {
     } else if (
       in_state(group_state::empty) || in_state(group_state::stable)
       || in_state(group_state::preparing_rebalance)) {
+        auto check_res = check_group_before_commit_offset(r);
+        if (check_res != error_code::none) {
+            co_return txn_offset_commit_response(r, check_res);
+        }
+
         auto id = model::producer_id(r.data.producer_id());
         co_return co_await with_pid_lock(
           id, [this, r = std::move(r)]() mutable {
