@@ -509,7 +509,7 @@ bool recovery_stm::is_recovery_finished() {
      */
     if (
       _ptr->_as.abort_requested() || _ptr->_bg.is_closed() || _stop_requested
-      || _term != _ptr->term() || !_ptr->is_leader()) {
+      || _term != _ptr->term() || !_ptr->is_elected_leader()) {
         return true;
     }
 

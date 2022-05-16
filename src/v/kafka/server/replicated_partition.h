@@ -55,7 +55,9 @@ public:
         return _translator->from_log_offset(_partition->last_stable_offset());
     }
 
-    bool is_leader() const final { return _partition->is_leader(); }
+    bool is_elected_leader() const final {
+        return _partition->is_elected_leader();
+    }
 
     ss::future<std::error_code> linearizable_barrier() final {
         auto r = co_await _partition->linearizable_barrier();

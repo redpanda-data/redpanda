@@ -354,7 +354,7 @@ ss::future<http::client> metrics_reporter::make_http_client() {
 
 ss::future<> metrics_reporter::do_report_metrics() {
     // skip reporting if current node is not raft0 leader
-    if (!_raft0->is_leader()) {
+    if (!_raft0->is_elected_leader()) {
         co_return;
     }
 
