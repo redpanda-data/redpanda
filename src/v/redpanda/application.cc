@@ -174,10 +174,17 @@ int application::run(int ac, char** av) {
       po::value<std::string>(),
       ".yaml file config for redpanda");
 
+    app.add_positional_options(
+      {{"unexpected",
+        po::value<std::vector<seastar::sstring>>()->default_value({}),
+        "",
+        -1}});
+
     return app.run(ac, av, [this, &app] {
         auto& cfg = app.configuration();
         log_system_resources(_log, cfg);
         validate_arguments(cfg);
+        validate_positional_arguments(cfg);
         return ss::async([this, &cfg] {
             try {
                 ::stop_signal app_signal;
@@ -300,6 +307,14 @@ void application::setup_metrics() {
 void application::validate_arguments(const po::variables_map& cfg) {
     if (!cfg.count("redpanda-cfg")) {
         throw std::invalid_argument("Missing redpanda-cfg flag");
+    }
+}
+
+void application::validate_positional_arguments(const po::variables_map& cfg) {
+    auto unexpected_args = cfg["unexpected"].as<std::vector<ss::sstring>>();
+    if (!unexpected_args.empty()) {
+        throw std::invalid_argument(ssx::sformat(
+          "Unexpected arguments: {}", fmt::join(unexpected_args, ", ")));
     }
 }
 

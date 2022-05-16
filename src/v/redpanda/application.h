@@ -114,7 +114,8 @@ private:
     // All methods are calleds from Seastar thread
     void init_env();
     ss::app_template::config setup_app_config();
-    void validate_arguments(const po::variables_map&);
+    static void validate_arguments(const po::variables_map&);
+    static void validate_positional_arguments(const po::variables_map&);
     void hydrate_config(const po::variables_map&);
 
     bool coproc_enabled() {
