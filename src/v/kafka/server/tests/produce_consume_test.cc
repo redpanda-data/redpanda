@@ -41,7 +41,7 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
             }
             return app.partition_manager.invoke_on(
               *shard, [ntp](cluster::partition_manager& pm) {
-                  return pm.get(ntp)->is_leader();
+                  return pm.get(ntp)->is_becoming_leader();
               });
         }).get0();
     }

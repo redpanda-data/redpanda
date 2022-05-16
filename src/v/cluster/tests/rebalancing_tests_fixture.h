@@ -77,7 +77,7 @@ public:
         auto it = std::find_if(apps.begin(), apps.end(), [](auto& app) {
             auto partition = app.second->partition_manager.local().get(
               model::controller_ntp);
-            return partition && partition->is_leader();
+            return partition && partition->is_becoming_leader();
         });
 
         if (it != apps.end()) {
@@ -144,7 +144,7 @@ public:
                   auto& pm = get_partition_manager(leader_id);
                   return pm.invoke_on(
                     *shard, [ntp](cluster::partition_manager& pm) {
-                        return pm.get(ntp)->is_leader();
+                        return pm.get(ntp)->is_becoming_leader();
                     });
               })
               .handle_exception([](std::exception_ptr) { return false; });

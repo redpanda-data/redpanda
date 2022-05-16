@@ -109,7 +109,7 @@ public:
         vassert(
           ss::this_shard_id() == ss::shard_id(0),
           "Raft 0 API can only be called from shard 0");
-        return _raft0->is_leader();
+        return _raft0->is_becoming_leader();
     }
 
     ss::future<> wire_up();

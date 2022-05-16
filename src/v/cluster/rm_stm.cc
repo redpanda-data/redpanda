@@ -254,7 +254,7 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
         co_return tx_errc::request_rejected;
     }
 
-    if (!_c->is_leader()) {
+    if (!_c->is_becoming_leader()) {
         co_return tx_errc::leader_not_found;
     }
 

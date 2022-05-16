@@ -276,7 +276,7 @@ static partition_produce_stages produce_topic_partition(
                         .partition_index = ntp.tp.partition,
                         .error_code = error_code::unknown_topic_or_partition});
                 }
-                if (unlikely(!partition->is_leader())) {
+                if (unlikely(!partition->is_becoming_leader())) {
                     // submit back to promise source shard
                     (void)ss::smp::submit_to(
                       source_shard, [dispatch = std::move(dispatch)]() mutable {

@@ -116,7 +116,7 @@ std::error_code check_configuration_update(
      * if replica set is a leader it must have configuration committed i.e. it
      * was successfully replicated to majority of followers.
      */
-    if (partition->is_leader() && !configuration_committed) {
+    if (partition->is_becoming_leader() && !configuration_committed) {
         vlog(
           clusterlog.trace,
           "current node is partition {} leader, waiting for configuration to "
@@ -969,7 +969,7 @@ ss::future<std::error_code> controller_backend::update_partition_replica_set(
         return ss::make_ready_future<std::error_code>(errc::success);
     }
     // we are the leader, update configuration
-    if (partition->is_leader()) {
+    if (partition->is_becoming_leader()) {
         auto brokers = create_brokers_set(replicas, _members_table.local());
         vlog(
           clusterlog.debug,

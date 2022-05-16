@@ -303,7 +303,7 @@ public:
                   auto& pm = get_partition_manager(leader_id);
                   return pm.invoke_on(
                     *shard, [ntp](cluster::partition_manager& pm) {
-                        return pm.get(ntp)->is_leader();
+                        return pm.get(ntp)->is_becoming_leader();
                     });
               })
               .handle_exception([](std::exception_ptr) { return false; });

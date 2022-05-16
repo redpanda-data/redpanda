@@ -284,7 +284,7 @@ scheduler_service_impl::create_archivers(std::vector<model::ntp> to_create) {
       std::move(to_create), concurrency, [this](const model::ntp& ntp) {
           auto log = _partition_manager.local().log(ntp);
           auto part = _partition_manager.local().get(ntp);
-          if (log.has_value() && part && part->is_leader()
+          if (log.has_value() && part && part->is_becoming_leader()
               && (part->get_ntp_config().is_archival_enabled()
                   || config::shard_local_cfg().cloud_storage_enable_remote_read())) {
               auto archiver = ss::make_lw_shared<ntp_archiver>(
@@ -335,7 +335,7 @@ ss::future<> scheduler_service_impl::reconcile_archivers() {
     for (const auto& [ntp, p] : pm.partitions()) {
         if (
           ntp.ns != model::redpanda_ns && !_archivers.contains(ntp)
-          && p->is_leader()) {
+          && p->is_becoming_leader()) {
             to_create.push_back(ntp);
         }
     }

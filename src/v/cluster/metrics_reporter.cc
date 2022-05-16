@@ -317,7 +317,7 @@ ss::future<> metrics_reporter::do_report_metrics() {
     // skip reporting if current node is not raft0 leader, or we need to wait
     // for next report
     if (
-      !_raft0->is_leader()
+      !_raft0->is_becoming_leader()
       || _last_success
            > ss::lowres_clock::now()
                - config::shard_local_cfg().metrics_reporter_report_interval()) {

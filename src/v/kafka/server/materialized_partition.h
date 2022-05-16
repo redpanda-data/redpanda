@@ -41,7 +41,9 @@ public:
         return model::next_offset(_partition->dirty_offset());
     }
 
-    bool is_leader() const final { return _partition->is_leader(); }
+    bool is_becoming_leader() const final {
+        return _partition->is_becoming_leader();
+    }
 
     kafka::leader_epoch leader_epoch() const final {
         return leader_epoch_from_term(_partition->term());

@@ -316,7 +316,7 @@ ss::future<> members_backend::reconcile() {
     std::erase_if(
       _updates, [](const update_meta& meta) { return meta.finished; });
 
-    if (!_raft0->is_leader() || _updates.empty()) {
+    if (!_raft0->is_becoming_leader() || _updates.empty()) {
         co_return;
     }
 
