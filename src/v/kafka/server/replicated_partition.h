@@ -59,6 +59,8 @@ public:
         return _partition->is_elected_leader();
     }
 
+    bool is_leader() const final { return _partition->is_leader(); }
+
     ss::future<std::error_code> linearizable_barrier() final {
         auto r = co_await _partition->linearizable_barrier();
         if (r) {
