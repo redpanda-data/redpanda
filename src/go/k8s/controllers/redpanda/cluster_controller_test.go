@@ -743,7 +743,6 @@ var _ = Describe("RedPandaCluster controller", func() {
 		Entry("Random image pull policy", "asdvasd", Not(Succeed())))
 
 	Context("Populating stable condition", func() {
-
 		It("Marks the cluster as unstable until it gets enough instances", func() {
 			By("Allowing creation of a new cluster")
 			key, _, redpandaCluster := getInitialTestCluster("initial")
@@ -753,7 +752,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 			Eventually(clusterStableConditionStatusGetter(key), timeout, interval).Should(Equal(corev1.ConditionFalse))
 
 			By("Allowing creation of pods")
-			Expect(createClusterPod(redpandaCluster, "initial-0", true)).To(Succeed())
+			Expect(createReadyClusterPod(redpandaCluster, "initial-0")).To(Succeed())
 
 			By("Setting the unstable condition to true")
 			Eventually(clusterStableConditionStatusGetter(key), timeout, interval).Should(Equal(corev1.ConditionTrue))
@@ -773,9 +772,9 @@ var _ = Describe("RedPandaCluster controller", func() {
 			Eventually(clusterStableConditionStatusGetter(key), timeout, interval).Should(Equal(corev1.ConditionFalse))
 
 			By("Allowing creation of pods")
-			Expect(createClusterPod(redpandaCluster, "multi-instance-0", true)).To(Succeed())
-			Expect(createClusterPod(redpandaCluster, "multi-instance-1", true)).To(Succeed())
-			Expect(createClusterPod(redpandaCluster, "multi-instance-2", true)).To(Succeed())
+			Expect(createReadyClusterPod(redpandaCluster, "multi-instance-0")).To(Succeed())
+			Expect(createReadyClusterPod(redpandaCluster, "multi-instance-1")).To(Succeed())
+			Expect(createReadyClusterPod(redpandaCluster, "multi-instance-2")).To(Succeed())
 
 			By("Setting the unstable condition to true")
 			Eventually(clusterStableConditionStatusGetter(key), timeout, interval).Should(Equal(corev1.ConditionTrue))
@@ -799,7 +798,6 @@ var _ = Describe("RedPandaCluster controller", func() {
 			By("Deleting the cluster")
 			Expect(k8sClient.Delete(context.Background(), redpandaCluster)).Should(Succeed())
 		})
-
 	})
 })
 
@@ -848,10 +846,8 @@ func clusterStableConditionStatusGetter(
 	}
 }
 
-func createClusterPod(
-	cluster *v1alpha1.Cluster,
-	name string,
-	ready bool,
+func createReadyClusterPod(
+	cluster *v1alpha1.Cluster, name string,
 ) error {
 	pod := corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -868,28 +864,23 @@ func createClusterPod(
 			},
 		},
 	}
-	println("create", cluster.Namespace, name)
 	err := k8sClient.Create(context.Background(), &pod)
 	if err != nil {
 		return err
 	}
-	if ready {
-		pod.Status.Conditions = append(pod.Status.Conditions, corev1.PodCondition{
-			Type:   corev1.PodReady,
-			Status: corev1.ConditionTrue,
-		})
-		err = k8sClient.Status().Update(context.Background(), &pod)
-		if err != nil {
-			return err
-		}
+	pod.Status.Conditions = append(pod.Status.Conditions, corev1.PodCondition{
+		Type:   corev1.PodReady,
+		Status: corev1.ConditionTrue,
+	})
+	err = k8sClient.Status().Update(context.Background(), &pod)
+	if err != nil {
+		return err
 	}
 	return forceReconciliation(cluster)
 }
 
 func setClusterPodReadiness(
-	cluster *v1alpha1.Cluster,
-	name string,
-	ready bool,
+	cluster *v1alpha1.Cluster, name string, ready bool,
 ) error {
 	var pod corev1.Pod
 	err := k8sClient.Get(context.Background(), types.NamespacedName{Namespace: cluster.Namespace, Name: name}, &pod)
@@ -902,7 +893,7 @@ func setClusterPodReadiness(
 		newStatus = corev1.ConditionTrue
 	}
 
-	var existing = false
+	existing := false
 	for i := range pod.Status.Conditions {
 		if pod.Status.Conditions[i].Type == corev1.PodReady {
 			existing = true
@@ -934,7 +925,7 @@ func forceReconciliation(cluster *v1alpha1.Cluster) error {
 			return err
 		}
 		// Change just to trigger reconciliation, but unrelated to the use case
-		cluster.Spec.CloudStorage.APIEndpointPort = cluster.Spec.CloudStorage.APIEndpointPort + 1
+		cluster.Spec.CloudStorage.APIEndpointPort++
 		return k8sClient.Update(context.Background(), cluster)
 	})
 }

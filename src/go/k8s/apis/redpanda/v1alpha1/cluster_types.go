@@ -158,6 +158,12 @@ type ClusterSpec struct {
 type RestartConfig struct {
 	// DisableMaintenanceModeHooks deactivates the preStop and postStart hooks that force nodes to enter maintenance mode when stopping and exit maintenance mode when up again
 	DisableMaintenanceModeHooks *bool `json:"disableMaintenanceModeHooks,omitempty"`
+	// DisableReadinessProbe deactivates the readiness probe that verifies the state of each node by querying the Redpanda admin API
+	DisableReadinessProbe *bool `json:"disableReadinessProbe,omitempty"`
+	// DisableClusterHealthCheck deactivates the wait for cluster health when restarting
+	DisableClusterHealthCheck *bool `json:"disableClusterHealthCheck,omitempty"`
+	// HealthCheckTimeoutSeconds configures the maximum time to wait for the cluster to become healthy before giving up
+	HealthCheckTimeoutSeconds *int32 `json:"healthCheckTimeoutSeconds,omitempty"`
 }
 
 // PDBConfig specifies how the PodDisruptionBudget should be created for the
@@ -840,6 +846,24 @@ func (r *Cluster) IsUsingMaintenanceModeHooks() bool {
 	// enabled unless explicitly stated
 	if r.Spec.RestartConfig != nil && r.Spec.RestartConfig.DisableMaintenanceModeHooks != nil {
 		return !*r.Spec.RestartConfig.DisableMaintenanceModeHooks
+	}
+	return true
+}
+
+// IsUsingReadinessProbe tells if the cluster is configured to use the readiness probe on the pods.
+func (r *Cluster) IsUsingReadinessProbe() bool {
+	// enabled unless explicitly stated
+	if r.Spec.RestartConfig != nil && r.Spec.RestartConfig.DisableReadinessProbe != nil {
+		return !*r.Spec.RestartConfig.DisableReadinessProbe
+	}
+	return true
+}
+
+// IsUsingClusterHealthCheck tells if the cluster is configured to use wait for cluster health when restarting.
+func (r *Cluster) IsUsingClusterHealthCheck() bool {
+	// enabled unless explicitly stated
+	if r.Spec.RestartConfig != nil && r.Spec.RestartConfig.DisableClusterHealthCheck != nil {
+		return !*r.Spec.RestartConfig.DisableClusterHealthCheck
 	}
 	return true
 }

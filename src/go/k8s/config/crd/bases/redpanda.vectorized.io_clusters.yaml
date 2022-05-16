@@ -652,11 +652,26 @@ spec:
                 description: RestartConfig allows to control the behavior of the cluster
                   when restarting
                 properties:
+                  disableClusterHealthCheck:
+                    description: DisableClusterHealthCheck deactivates the wait for
+                      cluster health when restarting
+                    type: boolean
                   disableMaintenanceModeHooks:
                     description: DisableMaintenanceModeHooks deactivates the preStop
                       and postStart hooks that force nodes to enter maintenance mode
                       when stopping and exit maintenance mode when up again
                     type: boolean
+                  disableReadinessProbe:
+                    description: DisableReadinessProbe deactivates the readiness probe
+                      that verifies the state of each node by querying the Redpanda
+                      admin API
+                    type: boolean
+                  healthCheckTimeoutSeconds:
+                    description: HealthCheckTimeoutSeconds configures the maximum
+                      time to wait for the cluster to become healthy before giving
+                      up
+                    format: int32
+                    type: integer
                 type: object
               sidecars:
                 description: Sidecars is list of sidecars run alongside redpanda container

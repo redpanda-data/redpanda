@@ -145,6 +145,8 @@ func (r *ClusterReconciler) Reconcile(
 	sa := resources.NewServiceAccount(r.Client, &redpandaCluster, r.Scheme, log)
 	configMapResource := resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), proxySuKey, schemaRegistrySuKey, log)
 
+	hooks := resources.NewHooksConfigMap(r.Client, &redpandaCluster, r.Scheme, log)
+
 	sts := resources.NewStatefulSet(
 		r.Client,
 		&redpandaCluster,
@@ -173,6 +175,7 @@ func (r *ClusterReconciler) Reconcile(
 		resources.NewClusterRole(r.Client, &redpandaCluster, r.Scheme, log),
 		crb,
 		resources.NewPDB(r.Client, &redpandaCluster, r.Scheme, log),
+		hooks,
 		sts,
 	}
 

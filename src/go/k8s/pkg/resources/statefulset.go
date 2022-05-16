@@ -54,6 +54,8 @@ const (
 	datadirName                  = "datadir"
 	archivalCacheIndexAnchorName = "shadow-index-cache"
 	defaultDatadirCapacity       = "100Gi"
+
+	hooksMountDir = "/etc/hooks"
 )
 
 var (
@@ -62,8 +64,8 @@ var (
 	// CentralizedConfigurationHashAnnotationKey contains the hash of the centralized configuration properties that require a restart when changed
 	CentralizedConfigurationHashAnnotationKey = redpandav1alpha1.GroupVersion.Group + "/centralized-configuration-hash"
 
-	// terminationGracePeriodSeconds should account for additional delay introduced by hooks
-	terminationGracePeriodSeconds int64 = 120
+	// terminationGracePeriodSeconds should account for additional delay introduced by hooks (health + maintenance mode)
+	terminationGracePeriodSeconds int64 = 420
 )
 
 // ConfiguratorSettings holds settings related to configurator container and deployment
@@ -269,6 +271,7 @@ func (r *StatefulSetResource) obj(
 		externalAddressType = externalListener.External.PreferredAddressType
 	}
 	tlsVolumes, tlsVolumeMounts := r.volumeProvider.Volumes()
+	var readExecMode int32 = 0o555
 	ss := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: r.Key().Namespace,
@@ -314,6 +317,17 @@ func (r *StatefulSetResource) obj(
 							Name: "config-dir",
 							VolumeSource: corev1.VolumeSource{
 								EmptyDir: &corev1.EmptyDirVolumeSource{},
+							},
+						},
+						{
+							Name: "hooks-dir",
+							VolumeSource: corev1.VolumeSource{
+								ConfigMap: &corev1.ConfigMapVolumeSource{
+									LocalObjectReference: corev1.LocalObjectReference{
+										Name: HooksConfigMapKey(r.pandaCluster).Name,
+									},
+									DefaultMode: &readExecMode,
+								},
 							},
 						},
 					}, tlsVolumes...),
@@ -447,7 +461,16 @@ func (r *StatefulSetResource) obj(
 									Name:      "config-dir",
 									MountPath: configDestinationDir,
 								},
+								{
+									Name:      "hooks-dir",
+									MountPath: hooksMountDir,
+								},
 							}, tlsVolumeMounts...),
+							Lifecycle: &corev1.Lifecycle{
+								PostStart: r.getPostStartHook(),
+								PreStop:   r.getPreStopHook(),
+							},
+							ReadinessProbe: r.getReadinessProbe(),
 						},
 					},
 					Tolerations:  tolerations,
@@ -486,15 +509,6 @@ func (r *StatefulSetResource) obj(
 		},
 	}
 
-	// Only multi-replica clusters should use maintenance mode. See: https://github.com/redpanda-data/redpanda/issues/4338
-	multiReplica := r.pandaCluster.Spec.Replicas != nil && *r.pandaCluster.Spec.Replicas > 1
-	if featuregates.MaintenanceMode(r.pandaCluster.Spec.Version) && r.pandaCluster.IsUsingMaintenanceModeHooks() && multiReplica {
-		ss.Spec.Template.Spec.Containers[0].Lifecycle = &corev1.Lifecycle{
-			PreStop:   r.getPreStopHook(),
-			PostStart: r.getPostStartHook(),
-		}
-	}
-
 	if featuregates.CentralizedConfiguration(r.pandaCluster.Spec.Version) {
 		ss.Spec.Template.Spec.Containers[0].VolumeMounts = append(ss.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
 			Name:      "configmap-dir",
@@ -518,72 +532,38 @@ func (r *StatefulSetResource) obj(
 	return ss, nil
 }
 
-// getPrestopHook creates a hook that drains the node before shutting down.
+// getPrestopHook creates a handler that executes the pre-stop.sh script in the hooks configmap
 func (r *StatefulSetResource) getPreStopHook() *corev1.Handler {
-	// TODO replace scripts with proper RPK calls
-	curlCommand := r.composeCURLMaintenanceCommand(`-X PUT --silent -o /dev/null -w "%{http_code}"`, nil)
-	genericMaintenancePath := "/v1/maintenance"
-	curlGetCommand := r.composeCURLMaintenanceCommand(`--silent`, &genericMaintenancePath)
-	cmd := fmt.Sprintf(`until [ "${status:-}" = "200" ]; do status=$(%s); sleep 0.5; done`, curlCommand) +
-		" && " +
-		fmt.Sprintf(`until [ "${finished:-}" = "true" ]; do finished=$(%s | grep -o '\"finished\":[^,}]*' | grep -o '[^: ]*$'); sleep 0.5; done`, curlGetCommand)
-
 	return &corev1.Handler{
 		Exec: &corev1.ExecAction{
-			Command: []string{
-				"/bin/bash",
-				"-c",
-				cmd,
-			},
+			Command: []string{path.Join(hooksMountDir, preStopHookEntryName)},
 		},
 	}
 }
 
-// getPostStartHook creates a hook that removes maintenance mode after startup.
+// getPostStartHook creates a handler that executes the post-start.sh script in the hooks configmap
 func (r *StatefulSetResource) getPostStartHook() *corev1.Handler {
-	// TODO replace scripts with proper RPK calls
-	curlCommand := r.composeCURLMaintenanceCommand(`-X DELETE --silent -o /dev/null -w "%{http_code}"`, nil)
-	// HTTP code 400 is returned by v22 nodes during an upgrade from v21 until the new version reaches quorum and the maintenance mode feature is enabled
-	cmd := fmt.Sprintf(`until [ "${status:-}" = "200" ] || [ "${status:-}" = "400" ]; do status=$(%s); sleep 0.5; done`, curlCommand)
-
 	return &corev1.Handler{
 		Exec: &corev1.ExecAction{
-			Command: []string{
-				"/bin/bash",
-				"-c",
-				cmd,
-			},
+			Command: []string{path.Join(hooksMountDir, postStartHookEntryName)},
 		},
 	}
 }
 
-// nolint:goconst // no need
-func (r *StatefulSetResource) composeCURLMaintenanceCommand(
-	options string, urlOverwrite *string,
-) string {
-	adminAPI := r.pandaCluster.AdminAPIInternal()
-
-	cmd := fmt.Sprintf(`curl %s `, options)
-
-	tlsConfig := adminAPI.GetTLS()
-	proto := "http"
-	if tlsConfig != nil && tlsConfig.Enabled {
-		proto = "https"
-		if tlsConfig.RequireClientAuth {
-			cmd += "--cacert /etc/tls/certs/admin/ca/ca.crt --cert /etc/tls/certs/admin/tls.crt --key /etc/tls/certs/admin/tls.key "
-		} else {
-			cmd += "--cacert /etc/tls/certs/admin/tls.crt "
-		}
+// getReadinessProbe creates a probe that executes the readiness.sh script in the hooks configmap
+func (r *StatefulSetResource) getReadinessProbe() *corev1.Probe {
+	return &corev1.Probe{
+		Handler: corev1.Handler{
+			Exec: &corev1.ExecAction{
+				Command: []string{path.Join(hooksMountDir, readinessProbeEntryName)},
+			},
+		},
+		InitialDelaySeconds: 1,
+		TimeoutSeconds:      5,
+		PeriodSeconds:       1,
+		SuccessThreshold:    1,
+		FailureThreshold:    1200,
 	}
-	cmd += fmt.Sprintf("%s://${POD_NAME}.%s.%s.svc.cluster.local:%d", proto, r.pandaCluster.Name, r.pandaCluster.Namespace, adminAPI.Port)
-
-	if urlOverwrite == nil {
-		prefixLen := len(r.pandaCluster.Name) + 1
-		cmd += fmt.Sprintf("/v1/brokers/${POD_NAME:%d}/maintenance", prefixLen)
-	} else {
-		cmd += *urlOverwrite
-	}
-	return cmd
 }
 
 // setCloudStorage manipulates v1.StatefulSet object in order to add cloud storage specific
