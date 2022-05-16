@@ -44,7 +44,7 @@ void replicated_partition_probe::setup_metrics(const model::ntp& ntp) {
       {
         sm::make_gauge(
           "leader",
-          [this] { return _partition.is_leader() ? 1 : 0; },
+          [this] { return _partition.is_elected_leader() ? 1 : 0; },
           sm::description(
             "Flag indicating if this partition instance is a leader"),
           labels),

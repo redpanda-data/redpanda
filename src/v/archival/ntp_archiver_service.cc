@@ -68,7 +68,7 @@ ntp_archiver::ntp_archiver(
   , _upload_sg(conf.upload_scheduling_group)
   , _io_priority(conf.upload_io_priority) {
     vassert(
-      _partition && _partition->is_leader(),
+      _partition && _partition->is_elected_leader(),
       "must be the leader to launch ntp_archiver {}",
       _ntp);
     _start_term = _partition->term();
@@ -150,7 +150,8 @@ ss::future<> ntp_archiver::upload_loop() {
 
 bool ntp_archiver::upload_loop_can_continue() const {
     return !_as.abort_requested() && !_gate.is_closed()
-           && _partition->is_leader() && _partition->term() == _start_term;
+           && _partition->is_elected_leader()
+           && _partition->term() == _start_term;
 }
 
 ss::future<> ntp_archiver::stop() {

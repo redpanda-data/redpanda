@@ -148,7 +148,7 @@ static ss::future<read_result> do_read_from_ntp(
     if (unlikely(!kafka_partition)) {
         co_return read_result(error_code::unknown_topic_or_partition);
     }
-    if (unlikely(!kafka_partition->is_leader())) {
+    if (unlikely(!kafka_partition->is_elected_leader())) {
         co_return read_result(error_code::not_leader_for_partition);
     }
 
