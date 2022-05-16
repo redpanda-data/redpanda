@@ -221,6 +221,8 @@ enum class error_code : int16_t {
     fenced_instance_id = 82,
     // This record has failed the validation on broker and hence be rejected.
     invalid_record = 87,
+    // There are unstable offsets that need to be cleared.
+    unstable_offset_commit = 88,
 };
 
 std::ostream& operator<<(std::ostream&, error_code);
