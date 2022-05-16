@@ -93,7 +93,7 @@ func splitSchemeHostPort(h string) (scheme, host, port string, err error) {
 // We then validate the host against isDomain / net.ParseIP.
 //
 // For schemes, we relax RFC3986 section 3.1 by also allowing underscores after
-// the furst alphabetic character. This allows us to parse "PLAINTEXT_HOST",
+// the first alphabetic character. This allows us to parse "PLAINTEXT_HOST",
 // which is technically invalid, but which Kafka uses.
 // https://datatracker.ietf.org/doc/html/rfc3986#section-3.1
 var schemeHostPortRe = regexp.MustCompile(`^(?:([a-zA-Z][a-zA-Z0-9+._-]*)://)?(.*?)(?::(\d+))?(?:/)?$`)
@@ -108,9 +108,8 @@ var schemeHostPortRe = regexp.MustCompile(`^(?:([a-zA-Z][a-zA-Z0-9+._-]*)://)?(.
 //   - the full domain must not exceed 255 characters
 //
 // In support of docker / docker-compose and local setups, we allow single
-// labels and we do not validate the tld is strictly alphanumeric. We also
-// allow underscores, which are technically only valid in DNS names, not
-// hostnames ("docker_n_1").
+// labels. We also allow underscores, which are technically only valid in
+// DNS names, not hostnames ("docker_n_1").
 func isDomain(d string) bool {
 	if len(d) > 255 {
 		return false
@@ -120,9 +119,18 @@ func isDomain(d string) bool {
 	d = strings.TrimSuffix(d, ".")
 
 	labels := strings.Split(d, ".")
-	if len(labels) == 0 {
+
+	l := len(labels)
+	if l == 0 {
 		return false
 	}
+
+	if l > 1 {
+		if tld := labels[l-1]; !tldRe.MatchString(tld) {
+			return false
+		}
+	}
+
 	for _, label := range labels {
 		if l := len(label); l == 0 || l > 63 {
 			return false
@@ -137,6 +145,14 @@ func isDomain(d string) bool {
 // labels must begin or end with alphanum, but can include dashes or
 // underscores in the middle.
 var labelRe = regexp.MustCompile(`^[a-zA-Z0-9](?:[a-zA-Z0-9_-]*[a-zA-Z0-9])?$`)
+
+// https://stackoverflow.com/questions/9071279/number-in-the-top-level-domain
+// https://www.icann.org/en/system/files/files/ua-factsheet-a4-17dec15-en.pdf
+//
+// - top level domain should be entirely alphabetic or xn--<alphanumeric>
+//   to match IDN tld.
+// - top level domain can be anywhere from two to 63 characters long.
+var tldRe = regexp.MustCompile(`^(?:[a-zA-Z]{2,63}|xn--[a-zA-Z0-9]{1,59})$`)
 
 // Returns whether the input is an ip address.
 //

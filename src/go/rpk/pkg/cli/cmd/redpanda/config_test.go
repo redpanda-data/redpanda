@@ -10,14 +10,13 @@
 //go:build linux
 // +build linux
 
-package redpanda_test
+package redpanda
 
 import (
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"github.com/spf13/viper"
@@ -147,7 +146,7 @@ func TestSetCmd(t *testing.T) {
 			err := mgr.Write(conf)
 			require.NoError(t, err)
 
-			c := cmd.NewConfigCommand(fs, mgr)
+			c := NewConfigCommand(fs, mgr)
 			args := []string{"set"}
 			if tt.key != "" {
 				args = append(args, tt.key)
@@ -175,12 +174,14 @@ func TestSetCmd(t *testing.T) {
 }
 
 func TestBootstrap(t *testing.T) {
+	defaultRPCPort := config.Default().Redpanda.RPCServer.Port
 	tests := []struct {
-		name        string
-		ips         []string
-		self        string
-		id          string
-		expectedErr string
+		name           string
+		ips            []string
+		expSeedServers []config.SeedServer
+		self           string
+		id             string
+		expectedErr    string
 	}{
 		{
 			name: "it should set the root node config for a single node",
@@ -190,6 +191,64 @@ func TestBootstrap(t *testing.T) {
 		{
 			name: "it should fill the seed servers",
 			ips:  []string{"187.89.76.3", "192.168.34.5", "192.168.45.8"},
+			expSeedServers: []config.SeedServer{
+				{
+					Host: config.SocketAddress{
+						Address: "187.89.76.3",
+						Port:    defaultRPCPort,
+					},
+				},
+				{
+					Host: config.SocketAddress{
+						Address: "192.168.34.5",
+						Port:    defaultRPCPort,
+					},
+				},
+				{
+					Host: config.SocketAddress{
+						Address: "192.168.45.8",
+						Port:    defaultRPCPort,
+					},
+				},
+			},
+			self: "192.168.34.5",
+			id:   "1",
+		},
+		{
+			name: "it should fill the seed servers with hostnames",
+			ips:  []string{"187.89.76.3", "localhost", "redpanda.com", "test-url.net", "187.89.76.3:80"},
+			expSeedServers: []config.SeedServer{
+				{
+					Host: config.SocketAddress{
+						Address: "187.89.76.3",
+						Port:    defaultRPCPort,
+					},
+				},
+				{
+					Host: config.SocketAddress{
+						Address: "localhost",
+						Port:    defaultRPCPort,
+					},
+				},
+				{
+					Host: config.SocketAddress{
+						Address: "redpanda.com",
+						Port:    defaultRPCPort,
+					},
+				},
+				{
+					Host: config.SocketAddress{
+						Address: "test-url.net",
+						Port:    defaultRPCPort,
+					},
+				},
+				{
+					Host: config.SocketAddress{
+						Address: "187.89.76.3",
+						Port:    80,
+					},
+				},
+			},
 			self: "192.168.34.5",
 			id:   "1",
 		},
@@ -198,7 +257,7 @@ func TestBootstrap(t *testing.T) {
 			ips:         []string{"187.89.9", "192.168.34.5", "192.168.45.8"},
 			self:        "192.168.34.5",
 			id:          "1",
-			expectedErr: "187.89.9 is not a valid IP",
+			expectedErr: `invalid host "187.89.9" does not match "host", nor "host:port", nor "scheme://host:port"`,
 		},
 		{
 			name:        "it should fail if --self isn't a valid IP",
@@ -224,7 +283,7 @@ func TestBootstrap(t *testing.T) {
 				0o644,
 			)
 			require.NoError(t, err)
-			c := cmd.NewConfigCommand(fs, mgr)
+			c := NewConfigCommand(fs, mgr)
 			args := []string{"bootstrap", "--config", configPath}
 			if len(tt.ips) != 0 {
 				args = append(
@@ -262,11 +321,7 @@ func TestBootstrap(t *testing.T) {
 				)
 				return
 			}
-			seedAddrs := []string{}
-			for _, seed := range conf.Redpanda.SeedServers {
-				seedAddrs = append(seedAddrs, seed.Host.Address)
-			}
-			require.ElementsMatch(t, tt.ips, seedAddrs)
+			require.ElementsMatch(t, tt.expSeedServers, conf.Redpanda.SeedServers)
 		})
 	}
 }
@@ -277,7 +332,7 @@ func TestInitNode(t *testing.T) {
 	conf := config.Default()
 	err := mgr.Write(conf)
 	require.NoError(t, err)
-	c := cmd.NewConfigCommand(fs, mgr)
+	c := NewConfigCommand(fs, mgr)
 	args := []string{"init"}
 	c.SetArgs(args)
 

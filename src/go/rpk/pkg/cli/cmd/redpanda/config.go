@@ -18,6 +18,7 @@ import (
 	"net"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	vnet "github.com/redpanda-data/redpanda/src/go/rpk/pkg/net"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
@@ -93,25 +94,14 @@ func bootstrap(mgr config.Manager) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "bootstrap --id <id> [--self <ip>] [--ips <ip1,ip2,...>]",
 		Short: "Initialize the configuration to bootstrap a cluster.",
-		Long: "Initialize the configuration to bootstrap a cluster." +
-			" --id is mandatory. bootstrap will expect the machine" +
-			" it's running on to have only one private non-" +
-			"loopback IP address associated to it, and use it in the" +
-			" configuration as the node's address. If it has multiple" +
-			" IPs, --self must be specified. In that case, the given" +
-			" IP will be used without checking whether it's among the" +
-			" machine's addresses or not. The elements in --ips must" +
-			" be separated by a comma, no spaces. If omitted, the" +
-			" node will be configured as a root node, that other" +
-			" ones can join later.",
-		Args: cobra.OnlyValidArgs,
+		Long:  helpBootstrap,
+		Args:  cobra.OnlyValidArgs,
 		RunE: func(c *cobra.Command, args []string) error {
-			defaultRPCPort := config.Default().Redpanda.RPCServer.Port
 			conf, err := mgr.FindOrGenerate(configPath)
 			if err != nil {
 				return err
 			}
-			ips, err := parseIPs(ips)
+			seeds, err := parseSeedIPs(ips)
 			if err != nil {
 				return err
 			}
@@ -143,16 +133,6 @@ func bootstrap(mgr config.Manager) *cobra.Command {
 				},
 			}}
 			conf.Redpanda.SeedServers = []config.SeedServer{}
-			seeds := []config.SeedServer{}
-			for _, ip := range ips {
-				seed := config.SeedServer{
-					Host: config.SocketAddress{
-						Address: ip.String(),
-						Port:    defaultRPCPort,
-					},
-				}
-				seeds = append(seeds, seed)
-			}
 			conf.Redpanda.SeedServers = seeds
 			return mgr.Write(conf)
 		},
@@ -214,16 +194,26 @@ func initNode(mgr config.Manager) *cobra.Command {
 	return c
 }
 
-func parseIPs(ips []string) ([]net.IP, error) {
-	parsed := []net.IP{}
+func parseSeedIPs(ips []string) ([]config.SeedServer, error) {
+	defaultRPCPort := config.Default().Redpanda.RPCServer.Port
+	var seeds []config.SeedServer
+
 	for _, i := range ips {
-		p := net.ParseIP(i)
-		if p == nil {
-			return []net.IP{}, fmt.Errorf("%s is not a valid IP", i)
+		_, hostport, err := vnet.ParseHostMaybeScheme(i)
+		if err != nil {
+			return nil, err
 		}
-		parsed = append(parsed, p)
+
+		host, port := vnet.SplitHostPortDefault(hostport, defaultRPCPort)
+		seed := config.SeedServer{
+			Host: config.SocketAddress{
+				Address: host,
+				Port:    port,
+			},
+		}
+		seeds = append(seeds, seed)
 	}
-	return parsed, nil
+	return seeds, nil
 }
 
 func getOwnIP() (net.IP, error) {
@@ -280,3 +270,19 @@ func isPrivate(ip net.IP) (bool, error) {
 	}
 	return false, nil
 }
+
+const helpBootstrap = `Initialize the configuration to bootstrap a cluster.
+
+--id is mandatory. bootstrap will expect the machine it's running on
+to have only one private non-loopback IP address associated to it,
+and use it in the configuration as the node's address.
+
+If it has multiple IPs, --self must be specified.
+In that case, the given IP will be used without checking whether it's
+among the machine's addresses or not.
+
+The elements in --ips must be separated by a comma, no spaces.
+
+If omitted, the node will be configured as a root node, that other
+ones can join later.
+`
