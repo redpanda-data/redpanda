@@ -185,6 +185,8 @@ std::string_view error_code_to_str(error_code error) {
         return "unknown_server_error";
     case error_code::invalid_record:
         return "invalid_record";
+    case error_code::unstable_offset_commit:
+        return "unstable_offset_commit";
     default:
         std::terminate(); // make gcc happy
     }
