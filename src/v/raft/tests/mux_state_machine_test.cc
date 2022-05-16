@@ -187,7 +187,7 @@ FIXTURE_TEST(
       kvlog, _raft.get(), raft::persistent_last_applied::yes, state);
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
-    wait_for_leader();
+    wait_for_becoming_leader();
     ss::abort_source as;
 
     // success set
@@ -257,7 +257,7 @@ FIXTURE_TEST(test_concurrent_sets, mux_state_machine_fixture) {
     raft::mux_state_machine stm(
       kvlog, _raft.get(), raft::persistent_last_applied::yes, state);
     stm.start().get0();
-    wait_for_leader();
+    wait_for_becoming_leader();
     ss::abort_source as;
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
     auto range = boost::irange(0, 50);
@@ -346,7 +346,7 @@ FIXTURE_TEST(test_stm_recovery, mux_state_machine_fixture) {
       kvlog, _raft.get(), raft::persistent_last_applied::yes, state);
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
-    wait_for_leader();
+    wait_for_becoming_leader();
     auto offset = _storage.local().log_mgr().get(_ntp)->offsets().dirty_offset;
     stm.wait(offset, model::timeout_clock::now() + 1s).get0();
     BOOST_REQUIRE_EQUAL(state.kv_map.size(), 2);
@@ -363,7 +363,7 @@ FIXTURE_TEST(test_mulitple_states, mux_state_machine_fixture) {
       kvlog, _raft.get(), raft::persistent_last_applied::yes, state_1, state_2);
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
-    wait_for_leader();
+    wait_for_becoming_leader();
     ss::abort_source as;
 
     // set in state 1
@@ -435,7 +435,7 @@ FIXTURE_TEST(timeout_test, mux_state_machine_fixture) {
       kvlog, _raft.get(), raft::persistent_last_applied::yes, state_1);
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
-    wait_for_leader();
+    wait_for_becoming_leader();
     ss::abort_source as;
 
     // timeout
