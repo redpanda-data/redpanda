@@ -10,6 +10,7 @@
 import subprocess
 import re
 import typing
+import time
 from typing import Optional
 from ducktape.cluster.cluster import ClusterNode
 from rptest.services import tls
@@ -311,6 +312,13 @@ class RpkTool:
 
         def parse_partition(string):
             m = partition_pattern.match(string)
+
+            # Check to see if info for the partition was queried during a change in leadership.
+            # if it was we'd expect to see a partition string ending in;
+            # NOT_LEADER_FOR_PARTITION: This server is not the leader for that topic-partition.
+            if m is None and string.find('NOT_LEADER_FOR_PARTITION') != -1:
+                return None
+
             assert m is not None, f"Partition string '{string}' does not match the pattern"
 
             # Account for negative numbers and '-' value
@@ -329,29 +337,48 @@ class RpkTool:
                                      client_id=m['client_id'],
                                      host=m['host'])
 
-        cmd = ["describe", group]
-        out = self._run_group(cmd)
-        lines = out.splitlines()
+        def try_describe_group(group):
+            cmd = ["describe", group]
+            out = self._run_group(cmd)
+            lines = out.splitlines()
 
-        group_name = parse_field("GROUP", lines[0])
-        coordinator = parse_field("COORDINATOR", lines[1])
-        state = parse_field("STATE", lines[2])
-        balancer = parse_field("BALANCER", lines[3])
-        members = parse_field("MEMBERS", lines[4])
-        partitions = []
-        for l in lines[5:]:
-            #skip header line
-            if l.startswith("TOPIC") or len(l) < 2:
-                continue
-            p = parse_partition(l)
-            partitions.append(p)
+            group_name = parse_field("GROUP", lines[0])
+            coordinator = parse_field("COORDINATOR", lines[1])
+            state = parse_field("STATE", lines[2])
+            balancer = parse_field("BALANCER", lines[3])
+            members = parse_field("MEMBERS", lines[4])
+            partitions = []
+            for l in lines[5:]:
+                #skip header line
+                if l.startswith("TOPIC") or len(l) < 2:
+                    continue
+                p = parse_partition(l)
+                # p is None if the leader of the partition has changed.
+                if p is None:
+                    return None
 
-        return RpkGroup(name=group_name,
-                        coordinator=int(coordinator),
-                        state=state,
-                        balancer=balancer,
-                        members=int(members),
-                        partitions=partitions)
+                partitions.append(p)
+
+            return RpkGroup(name=group_name,
+                            coordinator=int(coordinator),
+                            state=state,
+                            balancer=balancer,
+                            members=int(members),
+                            partitions=partitions)
+
+        attempts = 10
+        rpk_group = None
+        # try to wait for leadership to stabilize.
+        while rpk_group is None and attempts != 0:
+            rpk_group = try_describe_group(group)
+            attempts = attempts - 1
+            # give time for redpanda to end its election
+            if rpk_group is None:
+                time.sleep(0.5)
+
+        assert rpk_group is not None, "Unable to determine group within set number of attempts"
+
+        return rpk_group
 
     def group_seek_to_group(self, group, to_group):
         cmd = ["seek", group, "--to-group", to_group]
