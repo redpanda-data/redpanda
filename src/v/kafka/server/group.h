@@ -710,6 +710,9 @@ private:
         return std::move(builder).build();
     }
 
+    error_code
+    validate_expected_group(const txn_offset_commit_request& r) const;
+
     cluster::abort_origin
     get_abort_origin(const model::producer_identity&, model::tx_seq) const;
 
