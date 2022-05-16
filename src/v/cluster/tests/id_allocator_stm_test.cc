@@ -50,7 +50,7 @@ FIXTURE_TEST(stm_monotonicity_test, mux_state_machine_fixture) {
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
 
-    wait_for_leader();
+    wait_for_confirmed_leader();
 
     int64_t last_id = -1;
 
@@ -73,7 +73,7 @@ FIXTURE_TEST(stm_restart_test, mux_state_machine_fixture) {
 
     cluster::id_allocator_stm stm1(idstmlog, _raft.get(), cfg);
     stm1.start().get0();
-    wait_for_leader();
+    wait_for_confirmed_leader();
 
     int64_t last_id = -1;
 

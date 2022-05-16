@@ -52,7 +52,7 @@ FIXTURE_TEST(test_tm_stm_new_tx, mux_state_machine_fixture) {
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
 
-    wait_for_leader();
+    wait_for_confirmed_leader();
     wait_for_meta_initialized();
 
     auto tx_id = kafka::transactional_id("app-id-1");
@@ -111,7 +111,7 @@ FIXTURE_TEST(test_tm_stm_seq_tx, mux_state_machine_fixture) {
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
 
-    wait_for_leader();
+    wait_for_confirmed_leader();
     wait_for_meta_initialized();
 
     auto tx_id = kafka::transactional_id("app-id-1");
@@ -150,7 +150,7 @@ FIXTURE_TEST(test_tm_stm_re_tx, mux_state_machine_fixture) {
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
 
-    wait_for_leader();
+    wait_for_confirmed_leader();
     wait_for_meta_initialized();
 
     auto tx_id = kafka::transactional_id("app-id-1");
