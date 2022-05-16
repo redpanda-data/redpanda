@@ -233,7 +233,8 @@ ss::future<> vote_stm::update_vote_state(ss::semaphore_units<> u) {
             acks.emplace_back(id);
         }
     }
-    vlog(_ctxlog.trace, "vote acks in term {} from: {}", _ptr->term(), acks);
+    auto term = _ptr->term();
+    vlog(_ctxlog.trace, "vote acks in term {} from: {}", term, acks);
     // section vote:5.2.2
     _ptr->_vstate = consensus::vote_state::leader;
     _ptr->_leader_id = _ptr->self();
@@ -242,12 +243,12 @@ ss::future<> vote_stm::update_vote_state(ss::semaphore_units<> u) {
     _ptr->_became_leader_at = clock_type::now();
     // Set last heartbeat timestamp to max as we are the leader
     _ptr->_hbeat = clock_type::time_point::max();
-    vlog(_ctxlog.info, "became the leader term:{}", _ptr->term());
+    vlog(_ctxlog.info, "becoming the leader term:{}", term);
     _ptr->_last_quorum_replicated_index = _ptr->_flushed_offset;
     _ptr->trigger_leadership_notification();
 
     return replicate_config_as_new_leader(std::move(u))
-      .then([this](std::error_code ec) {
+      .then([this, term](std::error_code ec) {
           // if we didn't replicated configuration, step down
           if (ec) {
               vlog(
@@ -256,6 +257,16 @@ ss::future<> vote_stm::update_vote_state(ss::semaphore_units<> u) {
                 "{} - {} ",
                 ec.value(),
                 ec.message());
+          } else {
+              vlog(_ctxlog.info, "became the leader term:{}", term);
+              if (term == _ptr->_term) {
+                  vassert(
+                    _ptr->_confirmed_term == _ptr->_term,
+                    "successfully replicated configuration should update "
+                    "_confirmed_term={} to be equal to _term={}",
+                    _ptr->_confirmed_term,
+                    _ptr->_term);
+              }
           }
       });
 }

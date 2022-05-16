@@ -2377,6 +2377,9 @@ consensus::do_maybe_update_leader_commit_idx(ss::semaphore_units<> u) {
 
         return model::offset{};
     });
+    if (get_term(majority_match) == _term) {
+        _confirmed_term = _term;
+    }
     /**
      * we have to make sure that we do not advance committed_index beyond the
      * point which is readable in log. Since we are not waiting for flush to
@@ -2393,6 +2396,7 @@ consensus::do_maybe_update_leader_commit_idx(ss::semaphore_units<> u) {
     if (majority_match > _commit_index && get_term(majority_match) == _term) {
         vlog(_ctxlog.trace, "Leader commit index updated {}", majority_match);
         auto old_commit_idx = _commit_index;
+        _confirmed_term = _term;
         _commit_index = majority_match;
         auto range_start = details::next_offset(model::offset(old_commit_idx));
         vlog(

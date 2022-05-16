@@ -43,6 +43,8 @@ public:
         return _partition->is_elected_leader();
     }
 
+    bool is_leader() const final { return _partition->is_leader(); }
+
     ss::future<std::error_code> linearizable_barrier() final {
         return _partition->linearizable_barrier().then(
           [](result<model::offset> r) {

@@ -124,6 +124,11 @@ public:
       replace_configuration(std::vector<model::broker>, model::revision_id);
 
     bool is_elected_leader() const { return _vstate == vote_state::leader; }
+    // The node won the elections and made sure that the records written in
+    // previous term are behind committed index
+    bool is_leader() const {
+        return is_elected_leader() && _term == _confirmed_term;
+    }
     bool is_candidate() const { return _vstate == vote_state::candidate; }
     std::optional<model::node_id> get_leader_id() const {
         return _leader_id ? std::make_optional(_leader_id->id()) : std::nullopt;
@@ -530,6 +535,18 @@ private:
     // consensus state
     model::offset _commit_index;
     model::term_id _term;
+    // It's common to use raft log as a foundation for state machines:
+    // when a node becomes a leader it replays the log, reconstructs
+    // the state and becomes ready to serve the requests. However it is
+    // not enough for a node to become a leader, it should successfully
+    // replicate a new record to be sure that older records stored in
+    // the local log were actually replicated and do not constitute an
+    // artifact of the previously crashed leader. Redpanda uses a confi-
+    // guration batch for the initial replication to gain certainty. When
+    // commit index moves past the configuration batch _confirmed_term
+    // gets updated. So when _term==_confirmed_term it's safe to use
+    // local log to reconstruct the state.
+    model::term_id _confirmed_term;
     model::offset _flushed_offset{};
 
     // read at `ss::future<> start()`

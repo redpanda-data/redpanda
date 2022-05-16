@@ -138,6 +138,7 @@ public:
       timequery(storage::timequery_config);
 
     bool is_elected_leader() const { return _raft->is_elected_leader(); }
+    bool is_leader() const { return _raft->is_leader(); }
 
     ss::future<result<model::offset>> linearizable_barrier() {
         return _raft->linearizable_barrier();
