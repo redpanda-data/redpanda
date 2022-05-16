@@ -2337,14 +2337,22 @@ group::handle_offset_fetch(offset_fetch_request&& r) {
         for (const auto& e : _offsets) {
             offset_fetch_response_partition p = {
               .partition_index = e.first.partition,
-              .committed_offset = e.second->metadata.offset,
-              .committed_leader_epoch
-              = e.second->metadata.committed_leader_epoch,
-              .metadata = e.second->metadata.metadata,
+              .committed_offset = model::offset(-1),
+              .metadata = "",
               .error_code = error_code::none,
             };
+
+            if (r.data.require_stable && has_pending_transaction(e.first)) {
+                p.error_code = error_code::unstable_offset_commit;
+            } else {
+                p.committed_offset = e.second->metadata.offset;
+                p.committed_leader_epoch
+                  = e.second->metadata.committed_leader_epoch;
+                p.metadata = e.second->metadata.metadata;
+            }
             tmp[e.first.topic].push_back(std::move(p));
         }
+
         for (auto& e : tmp) {
             resp.data.topics.push_back(
               {.name = e.first, .partitions = std::move(e.second)});
@@ -2359,24 +2367,26 @@ group::handle_offset_fetch(offset_fetch_request&& r) {
         t.name = topic.name;
         for (auto id : topic.partition_indexes) {
             model::topic_partition tp(topic.name, id);
-            auto res = offset(tp);
-            if (res) {
-                offset_fetch_response_partition p = {
-                  .partition_index = id,
-                  .committed_offset = res->offset,
-                  .metadata = res->metadata,
-                  .error_code = error_code::none,
-                };
-                t.partitions.push_back(std::move(p));
+
+            offset_fetch_response_partition p = {
+              .partition_index = id,
+              .committed_offset = model::offset(-1),
+              .metadata = "",
+              .error_code = error_code::none,
+            };
+
+            if (r.data.require_stable && has_pending_transaction(tp)) {
+                p.error_code = error_code::unstable_offset_commit;
             } else {
-                offset_fetch_response_partition p = {
-                  .partition_index = id,
-                  .committed_offset = model::offset(-1),
-                  .metadata = "",
-                  .error_code = error_code::none,
-                };
-                t.partitions.push_back(std::move(p));
+                auto res = offset(tp);
+                if (res) {
+                    p.partition_index = id;
+                    p.committed_offset = res->offset;
+                    p.metadata = res->metadata;
+                    p.error_code = error_code::none;
+                }
             }
+            t.partitions.push_back(std::move(p));
         }
         resp.data.topics.push_back(std::move(t));
     }
