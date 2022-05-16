@@ -76,11 +76,12 @@ struct join_group_request final {
     void decode(request_reader& reader, api_version version) {
         data.decode(reader, version);
     }
-};
 
-inline std::ostream& operator<<(std::ostream& os, const join_group_request& r) {
-    return os << r.data;
-}
+    friend std::ostream&
+    operator<<(std::ostream& os, const join_group_request& r) {
+        return os << r.data;
+    }
+};
 
 static inline const kafka::member_id no_member("");
 static inline const kafka::member_id no_leader("");
@@ -127,17 +128,17 @@ struct join_group_response final {
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);
     }
+
+    friend std::ostream&
+    operator<<(std::ostream& os, const join_group_response& r) {
+        return os << r.data;
+    }
 };
 
 inline join_group_response
 make_join_error(kafka::member_id member_id, error_code error) {
     return join_group_response(
       error, no_generation, no_protocol, no_leader, std::move(member_id));
-}
-
-inline std::ostream&
-operator<<(std::ostream& os, const join_group_response& r) {
-    return os << r.data;
 }
 
 // group membership helper to compare a protocol set from the wire with our

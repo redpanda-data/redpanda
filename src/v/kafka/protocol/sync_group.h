@@ -59,11 +59,12 @@ struct sync_group_request final {
           });
         return res;
     }
-};
 
-inline std::ostream& operator<<(std::ostream& os, const sync_group_request& r) {
-    return os << r.data;
-}
+    friend std::ostream&
+    operator<<(std::ostream& os, const sync_group_request& r) {
+        return os << r.data;
+    }
+};
 
 struct sync_group_response final {
     using api_type = sync_group_api;
@@ -91,11 +92,11 @@ struct sync_group_response final {
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);
     }
-};
 
-inline std::ostream&
-operator<<(std::ostream& os, const sync_group_response& r) {
-    return os << r.data;
-}
+    friend std::ostream&
+    operator<<(std::ostream& os, const sync_group_response& r) {
+        return os << r.data;
+    }
+};
 
 } // namespace kafka

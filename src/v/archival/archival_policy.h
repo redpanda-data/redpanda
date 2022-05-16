@@ -32,9 +32,9 @@ struct upload_candidate {
     size_t final_file_offset;
     model::timestamp base_timestamp;
     model::timestamp max_timestamp;
-};
 
-std::ostream& operator<<(std::ostream& s, const upload_candidate& c);
+    friend std::ostream& operator<<(std::ostream& s, const upload_candidate& c);
+};
 
 /// Archival policy is responsible for extracting segments from
 /// log_manager in right order.

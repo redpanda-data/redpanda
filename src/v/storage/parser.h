@@ -83,13 +83,11 @@ public:
     virtual void print(std::ostream&) const = 0;
 
 private:
-    friend std::ostream& operator<<(std::ostream&, const batch_consumer&);
+    friend std::ostream& operator<<(std::ostream& os, const batch_consumer& c) {
+        c.print(os);
+        return os;
+    }
 };
-
-inline std::ostream& operator<<(std::ostream& os, const batch_consumer& c) {
-    c.print(os);
-    return os;
-}
 
 class continuous_batch_parser {
 public:

@@ -81,8 +81,6 @@ struct broker_endpoint final {
     friend std::ostream& operator<<(std::ostream&, const broker_endpoint&);
 };
 
-std::ostream& operator<<(std::ostream&, const broker_endpoint&);
-
 enum class violation_recovery_policy { crash = 0, best_effort };
 
 /**
@@ -194,8 +192,6 @@ private:
     friend std::ostream& operator<<(std::ostream&, const broker&);
 };
 
-std::ostream& operator<<(std::ostream&, const broker&);
-
 /// type representing single replica assignment it contains the id of a broker
 /// and id of this broker shard.
 struct broker_shard {
@@ -280,9 +276,6 @@ struct topic_namespace {
 
     friend std::ostream& operator<<(std::ostream&, const topic_namespace&);
 };
-
-std::ostream& operator<<(std::ostream&, const topic_namespace&);
-std::ostream& operator<<(std::ostream&, const topic_namespace_view&);
 
 struct topic_namespace_hash {
     using is_transparent = void;

@@ -81,9 +81,9 @@ struct server_endpoint {
 
     explicit server_endpoint(ss::socket_address addr)
       : server_endpoint("", addr) {}
-};
 
-std::ostream& operator<<(std::ostream&, const server_endpoint&);
+    friend std::ostream& operator<<(std::ostream&, const server_endpoint&);
+};
 
 struct config_connection_rate_bindings {
     config::binding<std::optional<int64_t>> config_general_rate;
@@ -107,9 +107,9 @@ struct server_configuration {
 
     explicit server_configuration(ss::sstring n)
       : name(std::move(n)) {}
-};
 
-std::ostream& operator<<(std::ostream&, const server_configuration&);
+    friend std::ostream& operator<<(std::ostream&, const server_configuration&);
+};
 
 class server {
 public:

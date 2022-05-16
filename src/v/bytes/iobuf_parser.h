@@ -138,9 +138,9 @@ public:
     iobuf share_no_consume(size_t len) {
         return ref().share(bytes_consumed(), len);
     }
-};
 
-inline std::ostream& operator<<(std::ostream& o, const iobuf_parser& p) {
-    return o << "{bytes_left:" << p.bytes_left()
-             << ", bytes_consumed:" << p.bytes_consumed() << "}";
-}
+    friend std::ostream& operator<<(std::ostream& o, const iobuf_parser& p) {
+        return o << "{bytes_left:" << p.bytes_left()
+                 << ", bytes_consumed:" << p.bytes_consumed() << "}";
+    }
+};

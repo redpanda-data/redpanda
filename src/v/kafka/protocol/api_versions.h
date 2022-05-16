@@ -40,12 +40,12 @@ struct api_versions_request final {
     void encode(response_writer& writer, api_version version) {
         data.encode(writer, version);
     }
-};
 
-inline std::ostream&
-operator<<(std::ostream& os, const api_versions_request& r) {
-    return os << r.data;
-}
+    friend std::ostream&
+    operator<<(std::ostream& os, const api_versions_request& r) {
+        return os << r.data;
+    }
+};
 
 struct api_versions_response final {
     using api_type = api_versions_api;
@@ -59,12 +59,12 @@ struct api_versions_response final {
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);
     }
-};
 
-inline std::ostream&
-operator<<(std::ostream& os, const api_versions_response& r) {
-    return os << r.data;
-}
+    friend std::ostream&
+    operator<<(std::ostream& os, const api_versions_response& r) {
+        return os << r.data;
+    }
+};
 
 inline bool operator==(
   const api_versions_response_key& a, const api_versions_response_key& b) {

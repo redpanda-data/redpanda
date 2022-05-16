@@ -129,6 +129,12 @@ public:
         return _impl->consume(std::move(consumer), timeout);
     }
 
+    friend std::ostream&
+    operator<<(std::ostream& o, const compacted_index_reader& r) {
+        r.print(o);
+        return o;
+    }
+
 private:
     ss::shared_ptr<impl> _impl;
 };
@@ -154,9 +160,5 @@ compaction_index_reader_to_memory(compacted_index_reader rdr) {
         return rdr.consume(consumer{}, model::no_timeout).finally([rdr] {});
     });
 }
-inline std::ostream&
-operator<<(std::ostream& o, const compacted_index_reader& r) {
-    r.print(o);
-    return o;
-}
+
 } // namespace storage

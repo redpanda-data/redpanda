@@ -23,10 +23,10 @@ struct partition_manifest_path_components {
     model::topic _topic;
     model::partition_id _part;
     model::initial_revision_id _rev;
-};
 
-std::ostream&
-operator<<(std::ostream& s, const partition_manifest_path_components& c);
+    friend std::ostream&
+    operator<<(std::ostream& s, const partition_manifest_path_components& c);
+};
 
 /// Parse partition manifest path and return components
 std::optional<partition_manifest_path_components>
@@ -37,6 +37,9 @@ struct segment_name_components {
     model::term_id term;
 
     auto operator<=>(const segment_name_components&) const = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const segment_name_components& k);
 };
 
 std::optional<segment_name_components>
@@ -173,5 +176,4 @@ private:
     model::offset _last_offset;
 };
 
-std::ostream& operator<<(std::ostream& o, const partition_manifest::key& k);
 } // namespace cloud_storage

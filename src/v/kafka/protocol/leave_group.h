@@ -45,12 +45,12 @@ struct leave_group_request final {
     void decode(request_reader& reader, api_version version) {
         data.decode(reader, version);
     }
-};
 
-inline std::ostream&
-operator<<(std::ostream& os, const leave_group_request& r) {
-    return os << r.data;
-}
+    friend std::ostream&
+    operator<<(std::ostream& os, const leave_group_request& r) {
+        return os << r.data;
+    }
+};
 
 struct leave_group_response final {
     using api_type = leave_group_api;
@@ -74,15 +74,15 @@ struct leave_group_response final {
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);
     }
+
+    friend std::ostream&
+    operator<<(std::ostream& os, const leave_group_response& r) {
+        return os << r.data;
+    }
 };
 
 inline ss::future<leave_group_response> make_leave_error(error_code error) {
     return ss::make_ready_future<leave_group_response>(error);
-}
-
-inline std::ostream&
-operator<<(std::ostream& os, const leave_group_response& r) {
-    return os << r.data;
 }
 
 } // namespace kafka

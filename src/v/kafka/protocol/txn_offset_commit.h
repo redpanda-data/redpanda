@@ -48,12 +48,12 @@ struct txn_offset_commit_request final {
     void decode(request_reader& reader, api_version version) {
         data.decode(reader, version);
     }
-};
 
-inline std::ostream&
-operator<<(std::ostream& os, const txn_offset_commit_request& r) {
-    return os << r.data;
-}
+    friend std::ostream&
+    operator<<(std::ostream& os, const txn_offset_commit_request& r) {
+        return os << r.data;
+    }
+};
 
 struct txn_offset_commit_response final {
     using api_type = txn_offset_commit_api;
@@ -83,11 +83,11 @@ struct txn_offset_commit_response final {
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);
     }
-};
 
-inline std::ostream&
-operator<<(std::ostream& os, const txn_offset_commit_response& r) {
-    return os << r.data;
-}
+    friend std::ostream&
+    operator<<(std::ostream& os, const txn_offset_commit_response& r) {
+        return os << r.data;
+    }
+};
 
 } // namespace kafka

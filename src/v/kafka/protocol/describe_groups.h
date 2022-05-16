@@ -42,12 +42,12 @@ struct describe_groups_request final {
     void decode(request_reader& reader, api_version version) {
         data.decode(reader, version);
     }
-};
 
-inline std::ostream&
-operator<<(std::ostream& os, const describe_groups_request& r) {
-    return os << r.data;
-}
+    friend std::ostream&
+    operator<<(std::ostream& os, const describe_groups_request& r) {
+        return os << r.data;
+    }
+};
 
 struct describe_groups_response final {
     using api_type = describe_groups_api;
@@ -82,11 +82,11 @@ struct describe_groups_response final {
           .protocol_data = "",
         };
     }
-};
 
-inline std::ostream&
-operator<<(std::ostream& os, const describe_groups_response& r) {
-    return os << r.data;
-}
+    friend std::ostream&
+    operator<<(std::ostream& os, const describe_groups_response& r) {
+        return os << r.data;
+    }
+};
 
 } // namespace kafka

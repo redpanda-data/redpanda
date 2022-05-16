@@ -87,9 +87,9 @@ struct configuration : net::base_transport::configuration {
       const aws_region_name& region,
       const default_overrides& overrides = {},
       net::metrics_disabled disable_metrics = net::metrics_disabled::yes);
-};
 
-std::ostream& operator<<(std::ostream& o, const configuration& c);
+    friend std::ostream& operator<<(std::ostream& o, const configuration& c);
+};
 
 /// Request formatter for AWS S3
 class request_creator {

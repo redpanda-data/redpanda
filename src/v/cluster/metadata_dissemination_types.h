@@ -25,6 +25,13 @@ struct ntp_leader {
     model::ntp ntp;
     model::term_id term;
     std::optional<model::node_id> leader_id;
+
+    friend std::ostream& operator<<(std::ostream& o, const ntp_leader& l) {
+        o << "{ " << l.ntp << ", term: " << l.term
+          << ", leader_id: " << (l.leader_id ? l.leader_id.value()() : -1)
+          << " }";
+        return o;
+    }
 };
 
 struct ntp_leader_revision {
@@ -63,12 +70,6 @@ struct get_leadership_request {};
 struct get_leadership_reply {
     ntp_leaders leaders;
 };
-
-inline std::ostream& operator<<(std::ostream& o, const ntp_leader& l) {
-    o << "{ " << l.ntp << ", term: " << l.term
-      << ", leader_id: " << (l.leader_id ? l.leader_id.value()() : -1) << " }";
-    return o;
-}
 
 } // namespace cluster
 

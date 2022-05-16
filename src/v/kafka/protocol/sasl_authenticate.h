@@ -43,12 +43,12 @@ struct sasl_authenticate_request final {
     void decode(request_reader& reader, api_version version) {
         data.decode(reader, version);
     }
-};
 
-inline std::ostream&
-operator<<(std::ostream& os, const sasl_authenticate_request& r) {
-    return os << r.data;
-}
+    friend std::ostream&
+    operator<<(std::ostream& os, const sasl_authenticate_request& r) {
+        return os << r.data;
+    }
+};
 
 struct sasl_authenticate_response final {
     using api_type = sasl_authenticate_api;
@@ -67,11 +67,11 @@ struct sasl_authenticate_response final {
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);
     }
-};
 
-inline std::ostream&
-operator<<(std::ostream& os, const sasl_authenticate_response& r) {
-    return os << r.data;
-}
+    friend std::ostream&
+    operator<<(std::ostream& os, const sasl_authenticate_response& r) {
+        return os << r.data;
+    }
+};
 
 } // namespace kafka

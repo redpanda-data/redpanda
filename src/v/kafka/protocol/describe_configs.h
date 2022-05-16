@@ -45,12 +45,12 @@ struct describe_configs_request final {
     void decode(request_reader& reader, api_version version) {
         data.decode(reader, version);
     }
-};
 
-inline std::ostream&
-operator<<(std::ostream& os, const describe_configs_request& r) {
-    return os << r.data;
-}
+    friend std::ostream&
+    operator<<(std::ostream& os, const describe_configs_request& r) {
+        return os << r.data;
+    }
+};
 
 struct describe_configs_response final {
     using api_type = describe_configs_api;
@@ -64,11 +64,11 @@ struct describe_configs_response final {
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);
     }
-};
 
-inline std::ostream&
-operator<<(std::ostream& os, const describe_configs_response& r) {
-    return os << r.data;
-}
+    friend std::ostream&
+    operator<<(std::ostream& os, const describe_configs_response& r) {
+        return os << r.data;
+    }
+};
 
 } // namespace kafka

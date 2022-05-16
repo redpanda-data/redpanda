@@ -228,7 +228,11 @@ public:
         return H::combine(std::move(h), e._type, e._name);
     }
 
-    friend std::ostream& operator<<(std::ostream&, const acl_principal&);
+    friend std::ostream&
+    operator<<(std::ostream& os, const acl_principal& principal) {
+        fmt::print(os, "{{type {} name {}}}", principal._type, principal._name);
+        return os;
+    }
 
     const ss::sstring& name() const { return _name; }
     principal_type type() const { return _type; }
@@ -238,12 +242,6 @@ private:
     principal_type _type;
     ss::sstring _name;
 };
-
-inline std::ostream&
-operator<<(std::ostream& os, const acl_principal& principal) {
-    fmt::print(os, "{{type {} name {}}}", principal._type, principal._name);
-    return os;
-}
 
 inline const acl_principal acl_wildcard_user(principal_type::user, "*");
 
@@ -268,7 +266,16 @@ public:
         return H::combine(std::move(h), e._resource, e._name, e._pattern);
     }
 
-    friend std::ostream& operator<<(std::ostream&, const resource_pattern&);
+    friend std::ostream&
+    operator<<(std::ostream& os, const resource_pattern& r) {
+        fmt::print(
+          os,
+          "type {{{}}} name {{{}}} pattern {{{}}}",
+          r._resource,
+          r._name,
+          r._pattern);
+        return os;
+    }
 
     resource_type resource() const { return _resource; }
     const ss::sstring& name() const { return _name; }
@@ -279,16 +286,6 @@ private:
     ss::sstring _name;
     pattern_type _pattern;
 };
-
-inline std::ostream& operator<<(std::ostream& os, const resource_pattern& r) {
-    fmt::print(
-      os,
-      "type {{{}}} name {{{}}} pattern {{{}}}",
-      r._resource,
-      r._name,
-      r._pattern);
-    return os;
-}
 
 /*
  * A host (or wildcard) in an ACL rule.
@@ -314,7 +311,16 @@ public:
         }
     }
 
-    friend std::ostream& operator<<(std::ostream&, const acl_host&);
+    friend std::ostream& operator<<(std::ostream& os, const acl_host& host) {
+        if (host._addr) {
+            fmt::print(os, "{{{}}}", *host._addr);
+        } else {
+            // we can log whatever representation we want for a wildcard host,
+            // but kafka expects "*" as the wildcard representation.
+            os << "{{any_host}}";
+        }
+        return os;
+    }
 
     std::optional<ss::net::inet_address> address() const { return _addr; }
 
@@ -323,17 +329,6 @@ private:
 
     std::optional<ss::net::inet_address> _addr;
 };
-
-inline std::ostream& operator<<(std::ostream& os, const acl_host& host) {
-    if (host._addr) {
-        fmt::print(os, "{{{}}}", *host._addr);
-    } else {
-        // we can log whatever representation we want for a wildcard host, but
-        // kafka expects "*" as the wildcard representation.
-        os << "{{any_host}}";
-    }
-    return os;
-}
 
 inline const acl_host acl_wildcard_host = acl_host::wildcard_host();
 
@@ -362,7 +357,16 @@ public:
           std::move(h), e._principal, e._host, e._operation, e._permission);
     }
 
-    friend std::ostream& operator<<(std::ostream&, const acl_entry&);
+    friend std::ostream& operator<<(std::ostream& os, const acl_entry& entry) {
+        fmt::print(
+          os,
+          "{{principal {} host {} op {} perm {}}}",
+          entry._principal,
+          entry._host,
+          entry._operation,
+          entry._permission);
+        return os;
+    }
 
     const acl_principal& principal() const { return _principal; }
     const acl_host& host() const { return _host; }
@@ -375,17 +379,6 @@ private:
     acl_operation _operation;
     acl_permission _permission;
 };
-
-inline std::ostream& operator<<(std::ostream& os, const acl_entry& entry) {
-    fmt::print(
-      os,
-      "{{principal {} host {} op {} perm {}}}",
-      entry._principal,
-      entry._host,
-      entry._operation,
-      entry._permission);
-    return os;
-}
 
 /*
  * An ACL binding is an association of resource(s) and an ACL entry. An ACL
@@ -404,7 +397,12 @@ public:
         return H::combine(std::move(h), e._pattern, e._entry);
     }
 
-    friend std::ostream& operator<<(std::ostream&, const acl_binding&);
+    friend std::ostream&
+    operator<<(std::ostream& os, const acl_binding& binding) {
+        fmt::print(
+          os, "{{pattern {} entry {}}}", binding._pattern, binding._entry);
+        return os;
+    }
 
     const resource_pattern& pattern() const { return _pattern; }
     const acl_entry& entry() const { return _entry; }
@@ -413,11 +411,6 @@ private:
     resource_pattern _pattern;
     acl_entry _entry;
 };
-
-inline std::ostream& operator<<(std::ostream& os, const acl_binding& binding) {
-    fmt::print(os, "{{pattern {} entry {}}}", binding._pattern, binding._entry);
-    return os;
-}
 
 /*
  * A filter for matching resources.

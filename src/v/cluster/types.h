@@ -711,8 +711,8 @@ struct non_replicable_topic {
     static constexpr int8_t current_version = 1;
     model::topic_namespace source;
     model::topic_namespace name;
+    friend std::ostream& operator<<(std::ostream&, const non_replicable_topic&);
 };
-std::ostream& operator<<(std::ostream&, const non_replicable_topic&);
 
 using config_version = named_type<int64_t, struct config_version_type>;
 constexpr config_version config_version_unset = config_version{-1};
@@ -732,8 +732,10 @@ struct cluster_config_delta_cmd_data {
     static constexpr int8_t current_version = 0;
     std::vector<std::pair<ss::sstring, ss::sstring>> upsert;
     std::vector<ss::sstring> remove;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const cluster_config_delta_cmd_data&);
 };
-std::ostream& operator<<(std::ostream&, const cluster_config_delta_cmd_data&);
 
 struct cluster_config_status_cmd_data {
     static constexpr int8_t current_version = 0;
@@ -756,8 +758,10 @@ struct feature_update_action {
     // meant to be stable for use on the wire, so we refer to features by name
     ss::sstring feature_name;
     action_t action;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const feature_update_action&);
 };
-std::ostream& operator<<(std::ostream&, const feature_update_action&);
 
 struct feature_update_cmd_data {
     // To avoid ambiguity on 'versions' here: `current_version`
@@ -767,8 +771,10 @@ struct feature_update_cmd_data {
 
     cluster_version logical_version;
     std::vector<feature_update_action> actions;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const feature_update_cmd_data&);
 };
-std::ostream& operator<<(std::ostream&, const feature_update_cmd_data&);
 
 enum class reconciliation_status : int8_t {
     done,

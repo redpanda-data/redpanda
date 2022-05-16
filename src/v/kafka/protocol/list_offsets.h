@@ -60,12 +60,12 @@ struct list_offsets_request final {
         model::topic_partition tp(t, id);
         return tp_dups.find(tp) != tp_dups.end();
     }
-};
 
-inline std::ostream&
-operator<<(std::ostream& os, const list_offsets_request& r) {
-    return os << r.data;
-}
+    friend std::ostream&
+    operator<<(std::ostream& os, const list_offsets_request& r) {
+        return os << r.data;
+    }
+};
 
 struct list_offsets_response final {
     using api_type = list_offsets_api;
@@ -122,11 +122,11 @@ struct list_offsets_response final {
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);
     }
-};
 
-inline std::ostream&
-operator<<(std::ostream& os, const list_offsets_response& r) {
-    return os << r.data;
-}
+    friend std::ostream&
+    operator<<(std::ostream& os, const list_offsets_response& r) {
+        return os << r.data;
+    }
+};
 
 } // namespace kafka

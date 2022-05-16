@@ -323,6 +323,5 @@ ss::future<record_batch_reader::data_t> consume_reader_to_memory(
 
 /// \brief wraps a reader into a foreign_ptr<unique_ptr>
 record_batch_reader make_foreign_record_batch_reader(record_batch_reader&&);
-std::ostream& operator<<(std::ostream& os, const record_batch_reader& r);
 
 } // namespace model

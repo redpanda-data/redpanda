@@ -94,18 +94,17 @@ struct produce_request_record_data {
         adapter.batch = std::move(batch);
     }
 
+    friend std::ostream&
+    operator<<(std::ostream& os, const produce_request_record_data& data) {
+        fmt::print(
+          os,
+          "batch {} v2_format {} valid_crc {}",
+          data.adapter.batch ? data.adapter.batch->size_bytes() : -1,
+          data.adapter.v2_format,
+          data.adapter.valid_crc);
+        return os;
+    }
     kafka_batch_adapter adapter;
 };
-
-inline std::ostream&
-operator<<(std::ostream& os, const produce_request_record_data& data) {
-    fmt::print(
-      os,
-      "batch {} v2_format {} valid_crc {}",
-      data.adapter.batch ? data.adapter.batch->size_bytes() : -1,
-      data.adapter.v2_format,
-      data.adapter.valid_crc);
-    return os;
-}
 
 } // namespace kafka

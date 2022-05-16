@@ -45,11 +45,12 @@ struct heartbeat_request final {
     void decode(request_reader& reader, api_version version) {
         data.decode(reader, version);
     }
-};
 
-inline std::ostream& operator<<(std::ostream& os, const heartbeat_request& r) {
-    return os << r.data;
-}
+    friend std::ostream&
+    operator<<(std::ostream& os, const heartbeat_request& r) {
+        return os << r.data;
+    }
+};
 
 struct heartbeat_response final {
     using api_type = heartbeat_api;
@@ -73,14 +74,15 @@ struct heartbeat_response final {
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);
     }
+
+    friend std::ostream&
+    operator<<(std::ostream& os, const heartbeat_response& r) {
+        return os << r.data;
+    }
 };
 
 inline ss::future<heartbeat_response> make_heartbeat_error(error_code error) {
     return ss::make_ready_future<heartbeat_response>(error);
-}
-
-inline std::ostream& operator<<(std::ostream& os, const heartbeat_response& r) {
-    return os << r.data;
 }
 
 } // namespace kafka

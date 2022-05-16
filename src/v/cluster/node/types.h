@@ -47,7 +47,6 @@ struct local_state {
     friend std::ostream& operator<<(std::ostream&, const local_state&);
 };
 
-std::ostream& operator<<(std::ostream& o, const local_state& s);
 } // namespace cluster::node
 
 namespace reflection {

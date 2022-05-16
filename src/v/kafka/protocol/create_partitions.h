@@ -41,12 +41,12 @@ struct create_partitions_request final {
     void decode(request_reader& reader, api_version version) {
         data.decode(reader, version);
     }
-};
 
-inline std::ostream&
-operator<<(std::ostream& os, const create_partitions_request& r) {
-    return os << r.data;
-}
+    friend std::ostream&
+    operator<<(std::ostream& os, const create_partitions_request& r) {
+        return os << r.data;
+    }
+};
 
 struct create_partitions_response final {
     using api_type = create_partitions_api;
@@ -60,11 +60,11 @@ struct create_partitions_response final {
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);
     }
-};
 
-inline std::ostream&
-operator<<(std::ostream& os, const create_partitions_response& r) {
-    return os << r.data;
-}
+    friend std::ostream&
+    operator<<(std::ostream& os, const create_partitions_response& r) {
+        return os << r.data;
+    }
+};
 
 } // namespace kafka

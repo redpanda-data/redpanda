@@ -56,8 +56,6 @@ private:
     operator<<(std::ostream& os, const data_policy& datapolicy);
 };
 
-std::ostream& operator<<(std::ostream& os, const data_policy& datapolicy);
-
 } // namespace v8_engine
 
 namespace reflection {

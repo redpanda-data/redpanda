@@ -166,8 +166,6 @@ struct topic_partition {
     }
 };
 
-std::ostream& operator<<(std::ostream&, const topic_partition&);
-
 struct ntp {
     ntp() = default;
     ntp(model::ns::type n, model::topic::type t, model::partition_id::type i)

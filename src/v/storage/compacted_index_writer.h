@@ -103,13 +103,13 @@ public:
     std::unique_ptr<impl> release() &&;
 
 private:
+    friend std::ostream&
+    operator<<(std::ostream& o, const compacted_index_writer& c) {
+        c.print(o);
+        return o;
+    }
     std::unique_ptr<impl> _impl;
 };
-inline std::ostream&
-operator<<(std::ostream& o, const compacted_index_writer& c) {
-    c.print(o);
-    return o;
-}
 inline void compacted_index_writer::set_flag(compacted_index::footer_flags f) {
     _impl->set_flag(f);
 }
