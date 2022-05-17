@@ -23,7 +23,9 @@ func ParseHostMaybeScheme(h string) (scheme, host string, err error) {
 		return "", "", err
 	}
 	if port != "" {
-		return scheme, net.JoinHostPort(host, port), nil
+		// We can return host + port since splitSchemeHostPort already
+		// ensures an IPV6 host is wrapped in brackets.
+		return scheme, host + ":" + port, nil
 	}
 	return scheme, host, nil
 }
