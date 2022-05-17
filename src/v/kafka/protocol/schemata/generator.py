@@ -828,6 +828,7 @@ writer.write_nullable_array({{ fname }}, [version]({{ field.value_type }}& v, re
 {%- else %}
 writer.write_array({{ fname }}, [version]({{ field.value_type }}& v, response_writer& writer) {
 {%- endif %}
+(void)version;
 {%- if field.type().value_type().is_struct %}
 {{- struct_serde(field.type().value_type(), field_encoder, "v") | indent }}
 {%- else %}
@@ -851,6 +852,7 @@ writer.write({{ fname }});
 {%- else %}
 {{ fname }} = reader.read_array([version](request_reader& reader) {
 {%- endif %}
+(void)version;
 {%- if field.type().value_type().is_struct %}
     {{ field.type().value_type().name }} v;
 {{- struct_serde(field.type().value_type(), field_decoder, "v") | indent }}
