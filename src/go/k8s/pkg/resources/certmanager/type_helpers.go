@@ -93,35 +93,34 @@ func pandaProxyAPIListeners(r *redpandav1alpha1.Cluster) []APIListener {
 }
 
 func getExternalTLSListener(listeners []APIListener) APIListener {
-	tlsListener := getTLSListener(listeners)
-	if tlsListener == nil {
-		return nil
-	}
-	if ext := tlsListener.GetExternal(); ext != nil && ext.Enabled {
-		return tlsListener
+	tlsListeners := getTLSListeners(listeners)
+	for _, l := range tlsListeners {
+		if ext := l.GetExternal(); ext != nil && ext.Enabled {
+			return l
+		}
 	}
 	return nil
 }
 
 func getInternalTLSListener(listeners []APIListener) APIListener {
-	tlsListener := getTLSListener(listeners)
-	if tlsListener == nil {
-		return nil
-	}
-	if ext := tlsListener.GetExternal(); ext == nil || !ext.Enabled {
-		return tlsListener
+	tlsListeners := getTLSListeners(listeners)
+	for _, l := range tlsListeners {
+		if ext := l.GetExternal(); ext == nil || !ext.Enabled {
+			return l
+		}
 	}
 	return nil
 }
 
-func getTLSListener(listeners []APIListener) APIListener {
-	for _, el := range listeners {
+func getTLSListeners(listeners []APIListener) []APIListener {
+	res := []APIListener{}
+	for i, el := range listeners {
 		tlsConfig := el.GetTLS()
 		if tlsConfig != nil && tlsConfig.Enabled {
-			return el
+			res = append(res, listeners[i])
 		}
 	}
-	return nil
+	return res
 }
 
 // apiCertificates is a collection of certificate resources per single API. It
@@ -219,11 +218,11 @@ func (cc *ClusterCertificates) prepareAPI(
 	listeners []APIListener,
 	keystoreSecret *types.NamespacedName,
 ) *apiCertificates {
-	tlsListener := getTLSListener(listeners)
+	tlsListeners := getTLSListeners(listeners)
 	externalTLSListener := getExternalTLSListener(listeners)
 	internalTLSListener := getInternalTLSListener(listeners)
 
-	if tlsListener == nil || tlsListener.GetTLS() == nil || !tlsListener.GetTLS().Enabled {
+	if len(tlsListeners) == 0 {
 		return tlsDisabledAPICertificates()
 	}
 	result := tlsEnabledAPICertificates(cc.pandaCluster.Namespace)
@@ -233,12 +232,16 @@ func (cc *ClusterCertificates) prepareAPI(
 	result.rootResources = toApplyRoot
 	nodeIssuerRef := rootIssuerRef
 
-	if tlsListener.GetTLS().IssuerRef != nil {
+	// for now we disallow having different issuer for each listener so that
+	// every time both listeners share the same set of certificates
+	if tlsListeners[0].GetTLS().IssuerRef != nil {
 		// if external issuer is provided, we will use it to generate node certificates
-		nodeIssuerRef = tlsListener.GetTLS().IssuerRef
+		nodeIssuerRef = tlsListeners[0].GetTLS().IssuerRef
 	}
 
-	nodeSecretRef := tlsListener.GetTLS().NodeSecretRef
+	// for now we disallow having different issuer for each listener so that
+	// every time both listeners share the same set of certificates
+	nodeSecretRef := tlsListeners[0].GetTLS().NodeSecretRef
 	result.externalNodeCertificate = nodeSecretRef
 	if nodeSecretRef == nil || nodeSecretRef.Name == "" {
 		certName := NewCertName(cc.pandaCluster.Name, nodeCertSuffix)
@@ -266,7 +269,15 @@ func (cc *ClusterCertificates) prepareAPI(
 		result.nodeCertificate = nodeCert
 	}
 
-	if tlsListener.GetTLS().RequireClientAuth {
+	anyListenerWithMutualTLS := false
+	for _, l := range tlsListeners {
+		if l.GetTLS().RequireClientAuth {
+			anyListenerWithMutualTLS = true
+		}
+	}
+	if anyListenerWithMutualTLS {
+		// if there is at least one listener with mutual tls, we are going to
+		// generate the client certificates
 		for _, clientCertName := range clientCerts {
 			clientCn := NewCommonName(cc.pandaCluster.Name, clientCertName)
 			clientKey := types.NamespacedName{Name: string(clientCn), Namespace: cc.pandaCluster.Namespace}

@@ -285,20 +285,8 @@ func (r *Cluster) validateKafkaListeners() field.ErrorList {
 		}
 	}
 
-	// for now only one listener can have TLS to be backward compatible with v1alpha1 API
-	foundListenerWithTLS := false
 	for i, p := range r.Spec.Configuration.KafkaAPI {
-		if p.TLS.Enabled {
-			if foundListenerWithTLS {
-				allErrs = append(allErrs,
-					field.Invalid(field.NewPath("spec").Child("configuration").Child("kafkaApi").Index(i).Child("tls"),
-						r.Spec.Configuration.KafkaAPI[i].TLS,
-						"only one listener can have TLS enabled"))
-			}
-			foundListenerWithTLS = true
-		}
-		// we need to run the validation on all listeners to also catch errors like !Enabled && RequireClientAuth
-		tlsErrs := validateTLS(
+		tlsErrs := validateListener(
 			p.TLS.Enabled,
 			p.TLS.RequireClientAuth,
 			p.TLS.IssuerRef,
@@ -308,6 +296,9 @@ func (r *Cluster) validateKafkaListeners() field.ErrorList {
 			field.NewPath("spec").Child("configuration").Child("kafkaApi").Index(i).Child("external"))
 		allErrs = append(allErrs, tlsErrs...)
 	}
+
+	allErrs = append(allErrs,
+		validateTLSRules(r.KafkaTLSListeners(), field.NewPath("spec").Child("configuration").Child("kafkaApi"))...)
 
 	if !((len(r.Spec.Configuration.KafkaAPI) == 2 && external != nil) || (external == nil && len(r.Spec.Configuration.KafkaAPI) == 1)) {
 		allErrs = append(allErrs,
@@ -441,7 +432,7 @@ func (r *Cluster) validateSchemaRegistryListener() field.ErrorList {
 		return allErrs
 	}
 	if schemaRegistry.TLS != nil {
-		tlsErrs := validateTLS(
+		tlsErrs := validateListener(
 			schemaRegistry.TLS.Enabled,
 			schemaRegistry.TLS.RequireClientAuth,
 			schemaRegistry.TLS.IssuerRef,
@@ -608,7 +599,59 @@ func validateAdminTLS(tlsConfig AdminAPITLS, path *field.Path) field.ErrorList {
 	return allErrs
 }
 
-func validateTLS(
+func validateTLSRules(
+	tlsListeners []ListenerWithName, path *field.Path,
+) field.ErrorList {
+	var allErrs field.ErrorList
+	if len(tlsListeners) < 2 {
+		return allErrs
+	}
+	if hasDifferentIssuers(tlsListeners[0].TLS, tlsListeners[1].TLS) {
+		allErrs = append(allErrs,
+			field.Invalid(
+				path.Child("TLS").Child("IssuerRef"),
+				tlsListeners[0].TLS.IssuerRef,
+				"If two listeners have TLS enabled and issuerRef specified, this issuer must be the same for both"))
+	}
+	if hasDifferentNodeSecret(tlsListeners[0].TLS, tlsListeners[1].TLS) {
+		allErrs = append(allErrs,
+			field.Invalid(
+				path.Child("TLS").Child("NodeSecretRef"),
+				tlsListeners[0].TLS.IssuerRef,
+				"If two listeners have TLS enabled and NodeSecretRef specified, it must be the same for both"))
+	}
+	return allErrs
+}
+
+func hasDifferentIssuers(listener1, listener2 KafkaAPITLS) bool {
+	if listener1.IssuerRef == nil && listener2.IssuerRef == nil {
+		// no issuer provided
+		return false
+	}
+	if listener1.IssuerRef == nil || listener2.IssuerRef == nil {
+		// one issuer set and another not set
+		return true
+	}
+	return listener1.IssuerRef.Group != listener2.IssuerRef.Group ||
+		listener1.IssuerRef.Kind != listener2.IssuerRef.Kind ||
+		listener1.IssuerRef.Name != listener2.IssuerRef.Name
+}
+
+func hasDifferentNodeSecret(listener1, listener2 KafkaAPITLS) bool {
+	if listener1.NodeSecretRef == nil && listener2.NodeSecretRef == nil {
+		// no issuer provided
+		return false
+	}
+	if listener1.NodeSecretRef == nil || listener2.NodeSecretRef == nil {
+		// one issuer set and another not set
+		return true
+	}
+	return listener1.NodeSecretRef.Namespace != listener2.NodeSecretRef.Namespace ||
+		listener1.NodeSecretRef.Kind != listener2.NodeSecretRef.Kind ||
+		listener1.NodeSecretRef.Name != listener2.NodeSecretRef.Name
+}
+
+func validateListener(
 	tlsEnabled, requireClientAuth bool,
 	issuerRef *cmmeta.ObjectReference,
 	nodeSecretRef *corev1.ObjectReference,
