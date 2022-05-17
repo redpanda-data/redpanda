@@ -30,6 +30,9 @@ func TestEnsureConfigMap(t *testing.T) {
 	require.NoError(t, redpandav1alpha1.AddToScheme(scheme.Scheme))
 	clusterWithExternal := pandaCluster().DeepCopy()
 	clusterWithExternal.Spec.Configuration.KafkaAPI = append(clusterWithExternal.Spec.Configuration.KafkaAPI, redpandav1alpha1.KafkaAPI{Port: 30001, External: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true}})
+	clusterWithMultipleKafkaTLS := pandaCluster().DeepCopy()
+	clusterWithMultipleKafkaTLS.Spec.Configuration.KafkaAPI[0].TLS = redpandav1alpha1.KafkaAPITLS{Enabled: true}
+	clusterWithMultipleKafkaTLS.Spec.Configuration.KafkaAPI = append(clusterWithMultipleKafkaTLS.Spec.Configuration.KafkaAPI, redpandav1alpha1.KafkaAPI{Port: 30001, TLS: redpandav1alpha1.KafkaAPITLS{Enabled: true}, External: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true}})
 
 	testcases := []struct {
 		name           string
@@ -42,6 +45,18 @@ func TestEnsureConfigMap(t *testing.T) {
 			expectedString: `- address: 0.0.0.0
           port: 30001
           name: kafka-external`,
+		},
+		{
+			name:    "Multiple Kafka TLS",
+			cluster: *clusterWithMultipleKafkaTLS,
+			expectedString: `- name: kafka
+          key_file: /etc/tls/certs/tls.key
+          cert_file: /etc/tls/certs/tls.crt
+          enabled: true
+        - name: kafka-external
+          key_file: /etc/tls/certs/tls.key
+          cert_file: /etc/tls/certs/tls.crt
+          enabled: true`,
 		},
 	}
 	for _, tc := range testcases {

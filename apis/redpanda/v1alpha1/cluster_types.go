@@ -20,6 +20,13 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
+const (
+	// InternalListenerName is name of internal listener
+	InternalListenerName = "kafka"
+	// ExternalListenerName is name of external listener
+	ExternalListenerName = "kafka-external"
+)
+
 // RedpandaResourceRequirements extends corev1.ResourceRequirements
 // to allow specification of resources directly passed to Redpanda that
 // are different to Requests or Limits.
@@ -695,16 +702,29 @@ func (r *Cluster) InternalListener() *KafkaAPI {
 	return nil
 }
 
-// KafkaTLSListener returns kafka listener that has tls enabled. Returns nil if
-// no tls is configured. Until v1alpha1 API is deprecated, we support only
-// single listener with TLS
-func (r *Cluster) KafkaTLSListener() *KafkaAPI {
+// ListenerWithName contains listener definition with name. For now, we have
+// only two names, internal and external
+type ListenerWithName struct {
+	Name string
+	KafkaAPI
+}
+
+// KafkaTLSListeners returns kafka listeners that have tls enabled
+func (r *Cluster) KafkaTLSListeners() []ListenerWithName {
+	res := []ListenerWithName{}
 	for i, el := range r.Spec.Configuration.KafkaAPI {
 		if el.TLS.Enabled {
-			return &r.Spec.Configuration.KafkaAPI[i]
+			name := InternalListenerName
+			if el.External.Enabled {
+				name = ExternalListenerName
+			}
+			res = append(res, ListenerWithName{
+				KafkaAPI: r.Spec.Configuration.KafkaAPI[i],
+				Name:     name,
+			})
 		}
 	}
-	return nil
+	return res
 }
 
 // AdminAPIInternal returns internal admin listener

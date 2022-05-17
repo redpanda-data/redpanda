@@ -73,6 +73,28 @@ func TestClusterCertificates(t *testing.T) {
 				},
 			},
 		}, []string{"test-kafka-selfsigned-issuer", "test-kafka-root-certificate", "test-kafka-root-issuer", "test-redpanda"}, 1},
+		{"kafka tls with two tls listeners", &v1alpha1.Cluster{
+			ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
+			Spec: v1alpha1.ClusterSpec{
+				Configuration: v1alpha1.RedpandaConfig{
+					KafkaAPI: []v1alpha1.KafkaAPI{
+						{
+							TLS: v1alpha1.KafkaAPITLS{
+								Enabled: true,
+							},
+						},
+						{
+							External: v1alpha1.ExternalConnectivityConfig{
+								Enabled: true,
+							},
+							TLS: v1alpha1.KafkaAPITLS{
+								Enabled: true,
+							},
+						},
+					},
+				},
+			},
+		}, []string{"test-kafka-selfsigned-issuer", "test-kafka-root-certificate", "test-kafka-root-issuer", "test-redpanda"}, 1},
 		{"kafka tls with external node issuer", &v1alpha1.Cluster{
 			ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
 			Spec: v1alpha1.ClusterSpec{
@@ -91,6 +113,29 @@ func TestClusterCertificates(t *testing.T) {
 			},
 		}, []string{"test-kafka-selfsigned-issuer", "test-kafka-root-certificate", "test-kafka-root-issuer", "test-redpanda"}, 1},
 		{"kafka mutual tls", &v1alpha1.Cluster{
+			ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
+			Spec: v1alpha1.ClusterSpec{
+				Configuration: v1alpha1.RedpandaConfig{
+					KafkaAPI: []v1alpha1.KafkaAPI{
+						{
+							TLS: v1alpha1.KafkaAPITLS{
+								Enabled:           true,
+								RequireClientAuth: true,
+							},
+						},
+						{
+							External: v1alpha1.ExternalConnectivityConfig{
+								Enabled: true,
+							},
+							TLS: v1alpha1.KafkaAPITLS{
+								Enabled: true,
+							},
+						},
+					},
+				},
+			},
+		}, []string{"test-kafka-selfsigned-issuer", "test-kafka-root-certificate", "test-kafka-root-issuer", "test-redpanda", "test-operator-client", "test-user-client", "test-admin-client"}, 2},
+		{"kafka mutual tls with two tls listeners", &v1alpha1.Cluster{
 			ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
 			Spec: v1alpha1.ClusterSpec{
 				Configuration: v1alpha1.RedpandaConfig{

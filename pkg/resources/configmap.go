@@ -262,27 +262,18 @@ func (r *ConfigMapResource) CreateConfiguration(
 
 	cr.DeveloperMode = c.DeveloperMode
 	cr.Directory = dataDirectory
-	tlsListener := r.pandaCluster.KafkaTLSListener()
-	if tlsListener != nil {
-		// Only one TLS listener is supported (restricted by the webhook).
-		// Determine the listener name based on being internal or external.
-		name := InternalListenerName
-		if tlsListener.External.Enabled {
-			name = ExternalListenerName
-		}
+	for _, tl := range r.pandaCluster.KafkaTLSListeners() {
 		tls := config.ServerTLS{
-			Name:              name,
+			Name:              tl.Name,
 			KeyFile:           fmt.Sprintf("%s/%s", mountPoints.KafkaAPI.NodeCertMountDir, corev1.TLSPrivateKeyKey), // tls.key
 			CertFile:          fmt.Sprintf("%s/%s", mountPoints.KafkaAPI.NodeCertMountDir, corev1.TLSCertKey),       // tls.crt
 			Enabled:           true,
-			RequireClientAuth: tlsListener.TLS.RequireClientAuth,
+			RequireClientAuth: tl.TLS.RequireClientAuth,
 		}
-		if tlsListener.TLS.RequireClientAuth {
+		if tl.TLS.RequireClientAuth {
 			tls.TruststoreFile = fmt.Sprintf("%s/%s", mountPoints.KafkaAPI.ClientCAMountDir, cmetav1.TLSCAKey)
 		}
-		cr.KafkaAPITLS = []config.ServerTLS{
-			tls,
-		}
+		cr.KafkaAPITLS = append(cr.KafkaAPITLS, tls)
 	}
 	adminAPITLSListener := r.pandaCluster.AdminAPITLS()
 	if adminAPITLSListener != nil {
