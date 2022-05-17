@@ -20,6 +20,7 @@ import (
 	types2 "github.com/onsi/gomega/types"
 	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/controllers/redpanda"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	res "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -28,8 +29,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -37,6 +40,9 @@ var _ = Describe("RedPandaCluster controller", func() {
 	const (
 		timeout  = time.Second * 30
 		interval = time.Second * 1
+
+		timeoutShort  = time.Millisecond * 100
+		intervalShort = time.Millisecond * 20
 
 		adminPort                 = 9644
 		kafkaPort                 = 9092
@@ -735,6 +741,66 @@ var _ = Describe("RedPandaCluster controller", func() {
 		Entry("Never image pull policy", "Never", Succeed()),
 		Entry("Empty image pull policy", "", Not(Succeed())),
 		Entry("Random image pull policy", "asdvasd", Not(Succeed())))
+
+	Context("Populating stable condition", func() {
+
+		It("Marks the cluster as unstable until it gets enough instances", func() {
+			By("Allowing creation of a new cluster")
+			key, _, redpandaCluster := getInitialTestCluster("initial")
+			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
+
+			By("Setting the unstable condition to false")
+			Eventually(clusterStableConditionStatusGetter(key), timeout, interval).Should(Equal(corev1.ConditionFalse))
+
+			By("Allowing creation of pods")
+			Expect(createClusterPod(redpandaCluster, "initial-0", true)).To(Succeed())
+
+			By("Setting the unstable condition to true")
+			Eventually(clusterStableConditionStatusGetter(key), timeout, interval).Should(Equal(corev1.ConditionTrue))
+
+			By("Deleting the cluster")
+			Expect(k8sClient.Delete(context.Background(), redpandaCluster)).Should(Succeed())
+		})
+
+		It("Exits the unstable conditions only after all instances are ready", func() {
+			By("Allowing creation of a new cluster")
+			key, _, redpandaCluster := getInitialTestCluster("multi-instance")
+			var replicas int32 = 3
+			redpandaCluster.Spec.Replicas = &replicas
+			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
+
+			By("Setting the unstable condition to false")
+			Eventually(clusterStableConditionStatusGetter(key), timeout, interval).Should(Equal(corev1.ConditionFalse))
+
+			By("Allowing creation of pods")
+			Expect(createClusterPod(redpandaCluster, "multi-instance-0", true)).To(Succeed())
+			Expect(createClusterPod(redpandaCluster, "multi-instance-1", true)).To(Succeed())
+			Expect(createClusterPod(redpandaCluster, "multi-instance-2", true)).To(Succeed())
+
+			By("Setting the unstable condition to true")
+			Eventually(clusterStableConditionStatusGetter(key), timeout, interval).Should(Equal(corev1.ConditionTrue))
+
+			By("Accepting one pod not ready")
+			Expect(setClusterPodReadiness(redpandaCluster, "multi-instance-0", false)).To(Succeed())
+			Consistently(clusterStableConditionStatusGetter(key), timeoutShort, intervalShort).Should(Equal(corev1.ConditionTrue))
+
+			By("Not accepting a second pod not ready")
+			Expect(setClusterPodReadiness(redpandaCluster, "multi-instance-1", false)).To(Succeed())
+			Eventually(clusterStableConditionStatusGetter(key), timeout, interval).Should(Equal(corev1.ConditionFalse))
+
+			By("Not recovering with a single pod ready")
+			Expect(setClusterPodReadiness(redpandaCluster, "multi-instance-1", true)).To(Succeed())
+			Consistently(clusterStableConditionStatusGetter(key), timeoutShort, intervalShort).Should(Equal(corev1.ConditionFalse))
+
+			By("Recovering only when all pods are ready")
+			Expect(setClusterPodReadiness(redpandaCluster, "multi-instance-0", true)).To(Succeed())
+			Eventually(clusterStableConditionStatusGetter(key), timeout, interval).Should(Equal(corev1.ConditionTrue))
+
+			By("Deleting the cluster")
+			Expect(k8sClient.Delete(context.Background(), redpandaCluster)).Should(Succeed())
+		})
+
+	})
 })
 
 func findPort(ports []corev1.ServicePort, name string) int32 {
@@ -756,4 +822,119 @@ func validOwner(
 	owner := owners[0]
 
 	return owner.Name == cluster.Name && owner.Controller != nil && *owner.Controller
+}
+
+func clusterStableConditionGetter(
+	key client.ObjectKey,
+) func() *v1alpha1.ClusterCondition {
+	return func() *v1alpha1.ClusterCondition {
+		var cluster v1alpha1.Cluster
+		if err := k8sClient.Get(context.Background(), key, &cluster); err != nil {
+			return nil
+		}
+		return cluster.Status.GetCondition(v1alpha1.ClusterStableConditionType)
+	}
+}
+
+func clusterStableConditionStatusGetter(
+	key client.ObjectKey,
+) func() corev1.ConditionStatus {
+	return func() corev1.ConditionStatus {
+		cond := clusterStableConditionGetter(key)()
+		if cond == nil {
+			return corev1.ConditionUnknown
+		}
+		return cond.Status
+	}
+}
+
+func createClusterPod(
+	cluster *v1alpha1.Cluster,
+	name string,
+	ready bool,
+) error {
+	pod := corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: cluster.Namespace,
+			Labels:    labels.ForCluster(cluster),
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name:  "example",
+					Image: "example",
+				},
+			},
+		},
+	}
+	println("create", cluster.Namespace, name)
+	err := k8sClient.Create(context.Background(), &pod)
+	if err != nil {
+		return err
+	}
+	if ready {
+		pod.Status.Conditions = append(pod.Status.Conditions, corev1.PodCondition{
+			Type:   corev1.PodReady,
+			Status: corev1.ConditionTrue,
+		})
+		err = k8sClient.Status().Update(context.Background(), &pod)
+		if err != nil {
+			return err
+		}
+	}
+	return forceReconciliation(cluster)
+}
+
+func setClusterPodReadiness(
+	cluster *v1alpha1.Cluster,
+	name string,
+	ready bool,
+) error {
+	var pod corev1.Pod
+	err := k8sClient.Get(context.Background(), types.NamespacedName{Namespace: cluster.Namespace, Name: name}, &pod)
+	if err != nil {
+		return err
+	}
+
+	newStatus := corev1.ConditionFalse
+	if ready {
+		newStatus = corev1.ConditionTrue
+	}
+
+	var existing = false
+	for i := range pod.Status.Conditions {
+		if pod.Status.Conditions[i].Type == corev1.PodReady {
+			existing = true
+			pod.Status.Conditions[i].Status = newStatus
+		}
+	}
+
+	if !existing {
+		pod.Status.Conditions = append(pod.Status.Conditions, corev1.PodCondition{
+			Type:   corev1.PodReady,
+			Status: newStatus,
+		})
+	}
+	err = k8sClient.Status().Update(context.Background(), &pod)
+	if err != nil {
+		return err
+	}
+	return forceReconciliation(cluster)
+}
+
+func forceReconciliation(cluster *v1alpha1.Cluster) error {
+	// Cluster is not directly receiving events from the pods but from the statefulset, so we force reconciliation
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		err := k8sClient.Get(context.Background(), types.NamespacedName{
+			Name:      cluster.Name,
+			Namespace: cluster.Namespace,
+		}, cluster)
+		if err != nil {
+			return err
+		}
+		// Change just to trigger reconciliation, but unrelated to the use case
+		cluster.Spec.CloudStorage.APIEndpointPort = cluster.Spec.CloudStorage.APIEndpointPort + 1
+		return k8sClient.Update(context.Background(), cluster)
+	})
 }

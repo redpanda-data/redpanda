@@ -800,6 +800,7 @@ spec:
                       description: Type is the type of the condition
                       enum:
                       - ClusterConfigured
+                      - ClusterStable
                       type: string
                   required:
                   - status

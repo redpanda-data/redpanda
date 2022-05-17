@@ -332,13 +332,15 @@ type ClusterCondition struct {
 }
 
 // ClusterConditionType is a valid value for ClusterCondition.Type
-// +kubebuilder:validation:Enum=ClusterConfigured
+// +kubebuilder:validation:Enum=ClusterConfigured;ClusterStable
 type ClusterConditionType string
 
 // These are valid conditions of the cluster.
 const (
 	// ClusterConfiguredConditionType indicates whether the Redpanda cluster configuration is in sync with the desired one
 	ClusterConfiguredConditionType ClusterConditionType = "ClusterConfigured"
+	// ClusterStableConditionType is a stability indicator for the cluster that estimates if the cluster can reach quorum in its current configuration
+	ClusterStableConditionType ClusterConditionType = "ClusterStable"
 )
 
 // GetCondition return the condition of the given type
@@ -414,6 +416,16 @@ const (
 	ClusterConfiguredReasonDrift = "Drift"
 	// ClusterConfiguredReasonError signals an error when applying the configuration to the Redpanda cluster
 	ClusterConfiguredReasonError = "Error"
+)
+
+// These are valid reasons for ClusterStable
+const (
+	// ClusterStableNotEnoughInstances indicates that the cluster is running with less ready instances than the minimum for reaching a quorum
+	ClusterStableNotEnoughInstances = "NotEnoughInstances"
+	// ClusterStableRecovering indicates that the cluster has been in an unstable state and is getting to normal.
+	// A cluster will get to this state when the minimum number of instances for having a quorum will be ready, while
+	// transition to full stability will happen only once all nodes will reach the ready state.
+	ClusterStableRecovering = "Recovering"
 )
 
 // NodesList shows where client of Cluster custom resource can reach

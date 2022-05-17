@@ -24,11 +24,13 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/networking"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/certmanager"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
@@ -312,7 +314,10 @@ func (r *ClusterReconciler) reportStatus(
 	nodeList.Internal = observedNodesInternal
 	nodeList.SchemaRegistry.Internal = fmt.Sprintf("%s:%d", clusterFQDN, schemaRegistryPort)
 
-	if statusShouldBeUpdated(&redpandaCluster.Status, nodeList, sts) {
+	stableCondition := computeStableCondition(redpandaCluster, observedPods.Items)
+	conditionChanged := redpandaCluster.Status.SetCondition(stableCondition.Type, stableCondition.Status, stableCondition.Reason, stableCondition.Message)
+
+	if conditionChanged || statusShouldBeUpdated(&redpandaCluster.Status, nodeList, sts) {
 		err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 			var cluster redpandav1alpha1.Cluster
 			err := r.Get(ctx, types.NamespacedName{
@@ -326,6 +331,7 @@ func (r *ClusterReconciler) reportStatus(
 			cluster.Status.Nodes = *nodeList
 			cluster.Status.Replicas = sts.LastObservedState.Status.ReadyReplicas
 			cluster.Status.Version = sts.Version()
+			cluster.Status.SetCondition(stableCondition.Type, stableCondition.Status, stableCondition.Reason, stableCondition.Message)
 
 			err = r.Status().Update(ctx, &cluster)
 			if err == nil {
@@ -339,6 +345,54 @@ func (r *ClusterReconciler) reportStatus(
 		}
 	}
 	return nil
+}
+
+func computeStableCondition(
+	cluster *redpandav1alpha1.Cluster, observedPods []corev1.Pod,
+) redpandav1alpha1.ClusterCondition {
+	var requestedInstances int
+	if cluster.Spec.Replicas != nil {
+		requestedInstances = int(*cluster.Spec.Replicas)
+	} else {
+		requestedInstances = 1
+	}
+
+	quorum := (requestedInstances / 2) + 1
+
+	readyPods := 0
+	for i := range observedPods {
+		if utils.IsPodReady(&observedPods[i]) {
+			readyPods++
+		}
+	}
+
+	isStable := readyPods >= quorum
+	isFullyAvailable := readyPods >= requestedInstances
+	wasStable := cluster.Status.GetConditionStatus(redpandav1alpha1.ClusterStableConditionType) == corev1.ConditionTrue
+	if (wasStable && isStable) || (!wasStable && isFullyAvailable) {
+		return redpandav1alpha1.ClusterCondition{
+			Type:               redpandav1alpha1.ClusterStableConditionType,
+			Status:             corev1.ConditionTrue,
+			LastTransitionTime: metav1.Time{},
+			Reason:             "",
+			Message:            "",
+		}
+	} else if !wasStable && isStable {
+		return redpandav1alpha1.ClusterCondition{
+			Type:               redpandav1alpha1.ClusterStableConditionType,
+			Status:             corev1.ConditionFalse,
+			LastTransitionTime: metav1.Time{},
+			Reason:             redpandav1alpha1.ClusterStableRecovering,
+			Message:            fmt.Sprintf("Currently %d out of %d instances ready", readyPods, requestedInstances),
+		}
+	}
+	return redpandav1alpha1.ClusterCondition{
+		Type:               redpandav1alpha1.ClusterStableConditionType,
+		Status:             corev1.ConditionFalse,
+		LastTransitionTime: metav1.Time{},
+		Reason:             redpandav1alpha1.ClusterStableNotEnoughInstances,
+		Message:            fmt.Sprintf("Needed %d to reach quorum but only %d are ready", quorum, readyPods),
+	}
 }
 
 func statusShouldBeUpdated(
