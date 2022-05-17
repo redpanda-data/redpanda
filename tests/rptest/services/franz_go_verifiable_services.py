@@ -334,6 +334,8 @@ class FranzGoVerifiableProducer(FranzGoVerifiableService):
                                                  data['BadOffsets'],
                                                  data['Restarts'])
                     self.logger.info(str(self._status))
+                else:
+                    self.logger.debug(line)
 
         except Exception as ex:
             self.save_exception(ex)

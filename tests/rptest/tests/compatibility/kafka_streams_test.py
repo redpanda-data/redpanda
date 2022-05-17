@@ -201,24 +201,25 @@ class KafkaStreamsJsonToAvro(KafkaStreamsDriverBase):
                                                      enable_sr=True)
 
 
-class KafkaStreamsPageView(KafkaStreamsDriverBase):
-    """
-    Test KafkaStreams PageView example which performs a join between a 
-    KStream and a KTable
-    """
-    topics = (
-        TopicSpec(name="PageViews"),
-        TopicSpec(name="UserProfiles"),
-        TopicSpec(name="PageViewsByRegion"),
-    )
+# Disabled for https://github.com/redpanda-data/redpanda/issues/4637
+# class KafkaStreamsPageView(KafkaStreamsDriverBase):
+#     """
+#     Test KafkaStreams PageView example which performs a join between a
+#     KStream and a KTable
+#     """
+#     topics = (
+#         TopicSpec(name="PageViews"),
+#         TopicSpec(name="UserProfiles"),
+#         TopicSpec(name="PageViewsByRegion"),
+#     )
 
-    Example = KafkaStreamExamples.KafkaStreamsPageView
-    Driver = KafkaStreamExamples.KafkaStreamsPageView
+#     Example = KafkaStreamExamples.KafkaStreamsPageView
+#     Driver = KafkaStreamExamples.KafkaStreamsPageView
 
-    def __init__(self, test_context):
-        super(KafkaStreamsPageView, self).__init__(test_context=test_context,
-                                                   enable_pp=True,
-                                                   enable_sr=True)
+#     def __init__(self, test_context):
+#         super(KafkaStreamsPageView, self).__init__(test_context=test_context,
+#                                                    enable_pp=True,
+#                                                    enable_sr=True)
 
 
 class KafkaStreamsSumLambda(KafkaStreamsDriverBase):
