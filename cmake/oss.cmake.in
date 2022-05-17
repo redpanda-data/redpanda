@@ -77,6 +77,10 @@ set(base_env
   CXX=@CMAKE_CXX_COMPILER@
   AR=${AR}
   PKG_CONFIG_PATH=@PKG_CONFIG_PATH@
+  # Workaround for https://savannah.gnu.org/support/?110503
+  # Starting with autoconf 2.70, it is expected that gtkdocize is installed.
+  # Since we don't build with thirdparty with docs, point gtkdocize elsewhere.
+  GTKDOCIZE=/bin/true
 )
 set(configure_env
   ${base_env}
