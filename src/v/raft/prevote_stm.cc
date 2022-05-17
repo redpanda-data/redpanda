@@ -61,6 +61,7 @@ prevote_stm::process_reply(vnode n, ss::future<result<vote_reply>> f) {
     try {
         if (_prevote_timeout < clock_type::now()) {
             vlog(_ctxlog.trace, "prevote ack from {} timed out", n);
+            (void)f.get0(); // rethrow if exceptional, so we handle it below
             voter_reply->second._is_failed = true;
             voter_reply->second._is_pending = false;
         } else {
