@@ -167,6 +167,32 @@ class AlterTopicConfiguration(RedpandaTest):
         assert altered_output["redpanda.remote.read"] == "false"
         assert altered_output["redpanda.remote.write"] == "false"
 
+    @cluster(num_nodes=3)
+    def test_set_remote_read_and_write_in_one_command(self):
+        topic = self.topics[0].name
+        original_output = self.client().describe_topic_configs(topic)
+        self.logger.info(f"original_output={original_output}")
+        assert original_output["redpanda.remote.read"] == "false"
+        assert original_output["redpanda.remote.write"] == "false"
+
+        self.client().alter_topic_configs(topic, {
+            "redpanda.remote.read": "true",
+            "redpanda.remote.write": "true",
+        })
+        altered_output = self.client().describe_topic_configs(topic)
+        self.logger.info(f"altered_output={altered_output}")
+        assert altered_output["redpanda.remote.read"] == "true"
+        assert altered_output["redpanda.remote.write"] == "true"
+
+        self.client().alter_topic_configs(topic, {
+            "redpanda.remote.read": "false",
+            "redpanda.remote.write": "false",
+        })
+        altered_output = self.client().describe_topic_configs(topic)
+        self.logger.info(f"altered_output={altered_output}")
+        assert altered_output["redpanda.remote.read"] == "false"
+        assert altered_output["redpanda.remote.write"] == "false"
+
 
 class ShadowIndexingGlobalConfig(RedpandaTest):
     topics = (TopicSpec(partition_count=1, replication_factor=3), )
