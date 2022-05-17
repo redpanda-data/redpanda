@@ -44,7 +44,10 @@
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 
+#include <chrono>
 #include <iterator>
+#include <ratio>
+#include <thread>
 
 namespace cluster {
 
@@ -236,6 +239,7 @@ std::optional<node_health_report> health_monitor_backend::build_node_report(
 }
 
 void health_monitor_backend::abortable_refresh_request::abort() {
+    vlog(clusterlog.info, "HMB abortable_refresh_request::abort");
     if (finished) {
         return;
     }
@@ -269,9 +273,18 @@ health_monitor_backend::abortable_refresh_request::abortable_await(
          * return units but keep the gate holder until we finish
          * background request
          */
+        vlog(clusterlog.info, "HMB returning units");
         self->units.return_all();
     });
 }
+
+template<typename T>
+static long to_micros(T duration) {
+    return std::chrono::duration_cast<std::chrono::microseconds>(duration)
+      .count();
+}
+
+static thread_local int wait_count;
 
 ss::future<std::error_code>
 health_monitor_backend::refresh_cluster_health_cache(force_refresh force) {
@@ -291,15 +304,26 @@ health_monitor_backend::refresh_cluster_health_cache(force_refresh force) {
     // no leader controller
     if (!leader_id) {
         vlog(
-          clusterlog.debug,
+          clusterlog.info,
           "unable to refresh health metadata, no leader controller");
         // TODO: maybe we should try to ping other members in this case ?
         co_return errc::no_leader_controller;
     }
 
+    auto mutex_ts = std::chrono::high_resolution_clock::now();
+    wait_count++;
     auto units = co_await _refresh_mutex.get_units();
+    wait_count--;
+
     // refresh leader_id after acquiring mutex
     leader_id = _raft0->get_leader_id();
+
+    vlog(
+      clusterlog.info,
+      "HMB waited {} us for refresh mutex wait_count {} leader {}",
+      to_micros(std::chrono::high_resolution_clock::now() - mutex_ts),
+      wait_count,
+      leader_id.value_or(model::node_id(-1)));
 
     // recheck if the leader exists, since this might have changed
     // while we were waiting
@@ -326,10 +350,11 @@ health_monitor_backend::refresh_cluster_health_cache(force_refresh force) {
         co_return errc::success;
     }
 
-    vlog(clusterlog.debug, "refreshing health cache, leader id: {}", leader_id);
+    vlog(
+      clusterlog.info, "HMB refreshing health cache, leader id: {}", leader_id);
 
     _refresh_request = ss::make_lw_shared<abortable_refresh_request>(
-      *leader_id, std::move(holder), std ::move(units));
+      *leader_id, std::move(holder), std::move(units));
 
     co_return co_await _refresh_request->abortable_await(
       dispatch_refresh_cluster_health_request(*leader_id));
@@ -339,6 +364,7 @@ ss::future<std::error_code>
 health_monitor_backend::dispatch_refresh_cluster_health_request(
   model::node_id node_id) {
     const auto timeout = model::timeout_clock::now() + max_metadata_age();
+    vlog(clusterlog.info, "HMB dispatch_refresh_cluster_health_request");
     auto reply = co_await _connections.local()
                    .with_node_client<controller_client_protocol>(
                      _raft0->self().id(),
@@ -346,6 +372,9 @@ health_monitor_backend::dispatch_refresh_cluster_health_request(
                      node_id,
                      max_metadata_age(),
                      [timeout](controller_client_protocol client) mutable {
+                         vlog(
+                           clusterlog.info,
+                           "HMB get_cluster_health_report");
                          get_cluster_health_request req{
                            .filter = cluster_report_filter{}};
                          return client.get_cluster_health_report(
@@ -370,6 +399,8 @@ health_monitor_backend::dispatch_refresh_cluster_health_request(
           reply.value().error);
         co_return make_error_code(reply.value().error);
     }
+
+    vlog(clusterlog.info, "HMB dispatch_refresh_cluster_health_request SUCCESS");
 
     _status.clear();
     for (auto& n_status : reply.value().report->node_states) {
@@ -403,7 +434,7 @@ health_monitor_backend::dispatch_refresh_cluster_health_request(
 void health_monitor_backend::abort_current_refresh() {
     if (_refresh_request) {
         vlog(
-          clusterlog.debug,
+          clusterlog.info,
           "aborting current refresh request to {}",
           _refresh_request->leader_id);
         _refresh_request->abort();
