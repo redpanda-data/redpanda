@@ -47,6 +47,8 @@ std::ostream& operator<<(std::ostream& o, const storage::disk_space_alert d);
 
 class snapshotable_stm {
 public:
+    virtual ~snapshotable_stm() = default;
+
     // create a snapshot at given offset unless a snapshot with given or newer
     // offset already exists
     virtual ss::future<> ensure_snapshot_exists(model::offset) = 0;

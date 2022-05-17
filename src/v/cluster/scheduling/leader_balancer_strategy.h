@@ -35,6 +35,8 @@ public:
       model::broker_shard,
       absl::btree_map<raft::group_id, std::vector<model::broker_shard>>>;
 
+    virtual ~leader_balancer_strategy() = default;
+
     /*
      * Represent leadership transfer for a group.
      */

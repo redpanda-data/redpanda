@@ -105,6 +105,8 @@ public:
       , _self(self)
       , _rpc_hook(std::move(fn)) {}
 
+    virtual ~feature_barrier_state_base() = default;
+
     ss::future<> barrier(feature_barrier_tag tag);
 
     void exit_barrier(feature_barrier_tag tag) {
@@ -151,7 +153,7 @@ protected:
  * for unit testing.
  */
 template<typename Clock = ss::lowres_clock>
-class feature_barrier_state : public feature_barrier_state_base {
+class feature_barrier_state final : public feature_barrier_state_base {
 public:
     feature_barrier_state(
       model::node_id self,
