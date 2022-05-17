@@ -144,7 +144,10 @@ func TestIsDomain(t *testing.T) {
 		{"underscores and dashes can be anywhere in middle of label", "a.0-_-0.foo.com", true},
 		{"labels can be just numbers", "0.com", true},
 
-		{"relaxed restrictions allows non-alphabet tld", "foo.a0", true},
+		{"tld should be entirely alphabetical", "foo.a0", false},
+		{"tld cannot be numeric", "foo.120", false},
+		{"tld length should be > 1", "foo.a", false},
+		{"IDN tld are supported", "foo.xn--45brj9c", true},
 		{"relaxed restrictions allows just tld", "foo", true},
 		{"common docker naming test", "docker_n_1", true},
 		{"invalid duplicate dots", "foo..com", false},
