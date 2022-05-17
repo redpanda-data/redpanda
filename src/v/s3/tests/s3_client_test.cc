@@ -39,6 +39,7 @@
 
 #include <boost/algorithm/string.hpp>
 #include <boost/beast/http/field.hpp>
+#include <boost/property_tree/ptree_fwd.hpp>
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
 
@@ -143,6 +144,12 @@ void set_routes(ss::httpd::routes& r) {
           return "";
       },
       "txt");
+    auto unexpected_error_response = new function_handler(
+      []([[maybe_unused]] const_req req, reply& reply) {
+          reply.set_status(reply::status_type::internal_server_error);
+          return "unexpected!";
+      },
+      "txt");
     r.add(operation_type::PUT, url("/test"), empty_put_response);
     r.add(operation_type::PUT, url("/test-error"), erroneous_put_response);
     r.add(operation_type::GET, url("/test"), get_response);
@@ -150,6 +157,8 @@ void set_routes(ss::httpd::routes& r) {
     r.add(operation_type::DELETE, url("/test"), empty_delete_response);
     r.add(
       operation_type::DELETE, url("/test-error"), erroneous_delete_response);
+    r.add(
+      operation_type::GET, url("/test-unexpected"), unexpected_error_response);
     r.add(operation_type::GET, url("/"), list_objects_response);
 }
 
@@ -315,6 +324,26 @@ SEASTAR_TEST_CASE(test_delete_object_failure) {
             BOOST_REQUIRE_EQUAL(err.message(), "Error.Message");
             BOOST_REQUIRE_EQUAL(err.request_id(), "Error.RequestId");
             BOOST_REQUIRE_EQUAL(err.resource(), "Error.Resource");
+            error_triggered = true;
+        }
+        BOOST_REQUIRE(error_triggered);
+        server->stop().get();
+    });
+}
+
+SEASTAR_TEST_CASE(test_unexpected_error_message) {
+    return ss::async([] {
+        bool error_triggered = false;
+        auto conf = transport_configuration();
+        auto [server, client] = started_client_and_server(conf);
+        try {
+            auto http_response = client
+                                   ->get_object(
+                                     s3::bucket_name("test-bucket"),
+                                     s3::object_key("test-unexpected"),
+                                     100ms)
+                                   .get0();
+        } catch (...) {
             error_triggered = true;
         }
         BOOST_REQUIRE(error_triggered);
