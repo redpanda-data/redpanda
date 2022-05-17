@@ -555,7 +555,7 @@ group::join_group_stages group_manager::join_group(join_group_request&& r) {
 
     auto ret = group->handle_join_group(std::move(r), is_new_group);
     return group::join_group_stages(
-      std::move(ret.dispatched), ret.result.finally([group] {}));
+      ret.dispatched.finally([group] {}), ret.result.finally([group] {}));
 }
 
 group::sync_group_stages group_manager::sync_group(sync_group_request&& r) {
@@ -586,7 +586,8 @@ group::sync_group_stages group_manager::sync_group(sync_group_request&& r) {
     if (group) {
         auto stages = group->handle_sync_group(std::move(r));
         return group::sync_group_stages(
-          std::move(stages.dispatched), stages.result.finally([group] {}));
+          stages.dispatched.finally([group] {}),
+          stages.result.finally([group] {}));
     } else {
         vlog(
           klog.trace,
