@@ -10,7 +10,7 @@
 #include "storage/index_state.h"
 
 #include "bytes/iobuf_parser.h"
-#include "bytes/utils.h"
+#include "hashing/crc32c.h"
 #include "likely.h"
 #include "model/timestamp.h"
 #include "reflection/adl.h"

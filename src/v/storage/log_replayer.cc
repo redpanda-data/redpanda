@@ -9,7 +9,6 @@
 
 #include "storage/log_replayer.h"
 
-#include "bytes/utils.h"
 #include "hashing/crc32c.h"
 #include "likely.h"
 #include "model/record.h"

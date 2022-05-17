@@ -9,7 +9,7 @@
 
 #include "model/record_utils.h"
 
-#include "bytes/utils.h"
+#include "hashing/crc32c.h"
 #include "model/record.h"
 #include "reflection/adl.h"
 #include "utils/vint.h"
