@@ -36,6 +36,8 @@
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/core/lowres_clock.hh>
+#include <seastar/core/semaphore.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/util/later.hh>
@@ -701,10 +703,14 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
 
 // caller must hold _topics_sem lock
 ss::future<> controller_backend::reconcile_topics() {
+    auto start_ts = ss::lowres_clock::now();
     return ss::with_semaphore(_topics_sem, 1, [this] {
         if (_topic_deltas.empty()) {
             return ss::now();
         }
+
+        vlog(clusterlog.info, "Reconciling {} topic deltas", _topic_deltas.size());
+
         // reconcile NTPs in parallel
         return ss::parallel_for_each(
                  _topic_deltas.begin(),
@@ -723,6 +729,8 @@ ss::future<> controller_backend::reconcile_topics() {
                   }
               }
           });
+    }).then([start_ts = start_ts](){
+        vlog(clusterlog.info, "Completed reconciling topics in {} ms", ss::lowres_clock::now() - start_ts);
     });
 }
 
