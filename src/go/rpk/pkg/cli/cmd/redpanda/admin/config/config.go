@@ -163,7 +163,7 @@ failure of enabling each logger is individually printed.
 	cmd.Flags().StringVarP(&level, "level", "l", "debug", "log level to set (error, warn, info, debug, trace)")
 	cmd.Flags().IntVarP(&expirySeconds, "expiry-seconds", "e", 300, "seconds to persist this log level override before redpanda reverts to its previous settings (if 0, persist until shutdown)")
 
-	cmd.Flags().StringVar(&host, "host", "", "either an index into admin_api hosts to issue the request to, or a hostname")
+	cmd.Flags().StringVar(&host, "host", "", "either a hostname or an index into rpk.admin_api.addresses config section to select the hosts to issue the request to")
 	cobra.MarkFlagRequired(cmd.Flags(), "host")
 
 	return cmd
