@@ -359,7 +359,8 @@ ss::future<upload_result> remote::upload_segment(
   const remote_segment_path& segment_path,
   uint64_t content_length,
   const reset_input_stream& reset_str,
-  retry_chain_node& parent) {
+  retry_chain_node& parent,
+  lazy_abort_source& lazy_abort_source) {
     gate_guard guard{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
@@ -373,6 +374,20 @@ ss::future<upload_result> remote::upload_segment(
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         auto [client, deleter] = co_await _pool.acquire();
+
+        // Client acquisition can take some time. Do a check before starting
+        // the upload if we can still continue.
+        if (lazy_abort_source.abort_requested()) {
+            vlog(
+              ctxlog.warn,
+              "{}: cancelled uploading {} to {}",
+              lazy_abort_source.abort_reason(),
+              segment_path,
+              bucket);
+            _probe.failed_upload();
+            co_return upload_result::failed;
+        }
+
         auto reader_handle = co_await reset_str();
         auto path = s3::object_key(segment_path());
         vlog(ctxlog.debug, "Uploading segment to path {}", segment_path);
@@ -422,7 +437,9 @@ ss::future<upload_result> remote::upload_segment(
             break;
         }
     }
+
     _probe.failed_upload();
+
     if (!result) {
         vlog(
           ctxlog.warn,
@@ -581,6 +598,13 @@ ss::future<download_result> remote::segment_exists(
           path);
     }
     co_return *result;
+}
+
+ss::sstring lazy_abort_source::abort_reason() const { return _abort_reason; }
+
+bool lazy_abort_source::abort_requested() { return _predicate(*this); }
+void lazy_abort_source::abort_reason(ss::sstring reason) {
+    _abort_reason = std::move(reason);
 }
 
 ss::future<>

@@ -324,8 +324,34 @@ ntp_archiver::upload_segment(upload_candidate candidate) {
         return candidate.source->reader().data_stream(
           candidate.file_offset, candidate.final_file_offset, _io_priority);
     };
+
+    auto original_term = _partition->term();
+    auto lazy_abort_source = cloud_storage::lazy_abort_source{
+      "lost leadership or term changed during upload, "
+      "current leadership status: {}, "
+      "current term: {}, "
+      "original term: {}",
+      [this, original_term](cloud_storage::lazy_abort_source& las) {
+          auto lost_leadership = !_partition->is_leader()
+                                 || _partition->term() != original_term;
+          if (unlikely(lost_leadership)) {
+              std::string reason{las.abort_reason()};
+              las.abort_reason(fmt::format(
+                fmt::runtime(reason),
+                _partition->is_leader(),
+                _partition->term(),
+                original_term));
+          }
+          return lost_leadership;
+      },
+    };
     co_return co_await _remote.upload_segment(
-      _bucket, path, candidate.content_length, reset_func, fib);
+      _bucket,
+      path,
+      candidate.content_length,
+      reset_func,
+      fib,
+      lazy_abort_source);
 }
 
 ss::future<cloud_storage::upload_result>
@@ -385,6 +411,7 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
           .name = std::nullopt,
           .delta = std::nullopt,
           .stop = ss::stop_iteration::yes,
+          .segment_read_lock = std::nullopt,
         };
     }
     if (_manifest.contains(upload.exposed_name)) {
@@ -436,6 +463,7 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
               .name = std::nullopt,
               .delta = std::nullopt,
               .stop = ss::stop_iteration::no,
+              .segment_read_lock = std::nullopt,
             };
         }
     }
@@ -444,6 +472,9 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
     start_upload_offset = offset + model::offset(1);
     auto delta
       = base - _partition->get_offset_translator_state()->from_log_offset(base);
+
+    auto segment_lock_deadline = std::chrono::steady_clock::now()
+                                 + _segment_upload_timeout;
     // The upload is successful only if both segment and tx_range are uploaded.
     auto upl_fut
       = ss::when_all(upload_segment(upload), upload_tx(upload))
@@ -476,6 +507,7 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
       },
       .name = upload.exposed_name, .delta = offset - base,
       .stop = ss::stop_iteration::no,
+      .segment_read_lock = co_await upload.source->read_lock(segment_lock_deadline),
     };
 }
 

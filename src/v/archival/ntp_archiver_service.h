@@ -145,6 +145,9 @@ private:
         /// case the upload is not started but the method might be called
         /// again anyway.
         ss::stop_iteration stop;
+        /// Protects the underlying segment from being deleted while the upload
+        /// is in flight.
+        std::optional<ss::rwlock::holder> segment_read_lock;
     };
 
     /// Start upload without waiting for it to complete

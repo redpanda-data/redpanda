@@ -23,7 +23,35 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/loop.hh>
 
+#include <utility>
+
 namespace cloud_storage {
+
+/// \brief Predicate required to continue operation
+///
+/// Describes a predicate to be evaluated before starting an expensive
+/// operation, or to be evaluated when an operation has failed, to find
+/// the reason for failure
+struct lazy_abort_source {
+    /// Predicate to be evaluated before an operation. Evaluates to true when
+    /// the operation should be aborted, false otherwise.
+    using predicate_t = ss::noncopyable_function<bool(lazy_abort_source&)>;
+
+    lazy_abort_source(ss::sstring abort_reason, predicate_t predicate)
+      : _abort_reason{std::move(abort_reason)}
+      , _predicate{std::move(predicate)} {}
+
+    bool abort_requested();
+
+    ss::sstring abort_reason() const;
+
+    void abort_reason(ss::sstring reason);
+
+private:
+    ss::sstring _abort_reason;
+
+    predicate_t _predicate;
+};
 
 static constexpr ss::shard_id auth_refresh_shard_id = 0;
 
@@ -156,7 +184,8 @@ public:
       const remote_segment_path& segment_path,
       uint64_t content_length,
       const reset_input_stream& reset_str,
-      retry_chain_node& parent);
+      retry_chain_node& parent,
+      lazy_abort_source& lazy_abort_source);
 
     /// \brief Download segment from S3
     ///
