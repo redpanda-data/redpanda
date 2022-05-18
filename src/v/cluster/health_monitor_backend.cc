@@ -318,6 +318,13 @@ health_monitor_backend::refresh_cluster_health_cache(force_refresh force) {
     // refresh leader_id after acquiring mutex
     leader_id = _raft0->get_leader_id();
 
+    if (!leader_id) {
+        vlog(
+          clusterlog.info,
+          "unable to refresh health metadata, no leader controller");
+        co_return errc::no_leader_controller;
+    }
+
     vlog(
       clusterlog.info,
       "HMB waited {} us for refresh mutex wait_count {} leader {}",
