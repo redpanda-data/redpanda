@@ -23,7 +23,8 @@ class ExampleBase:
     # Calls the internal condition and
     # automatically stores the result
     def condition(self, line):
-        self._condition_met = self._condition(line)
+        if not self._condition_met:
+            self._condition_met = self._condition(line)
 
     # Was the internal condition met?
     def condition_met(self):
