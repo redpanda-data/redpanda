@@ -380,7 +380,8 @@ class RedpandaService(Service):
     COVERAGE_PROFRAW_CAPTURE = os.path.join(PERSISTENT_ROOT,
                                             "redpanda.profraw")
 
-    READY_TIMEOUT_SEC = 10
+    DEFAULT_NODE_READY_TIMEOUT_SEC = 20
+    WASM_READY_TIMEOUT_SEC = 10
 
     DEDICATED_NODE_KEY = "dedicated_nodes"
 
@@ -447,7 +448,8 @@ class RedpandaService(Service):
                  si_settings=None,
                  log_level: Optional[str] = None,
                  environment: Optional[dict[str, str]] = None,
-                 security: SecurityConfig = SecurityConfig()):
+                 security: SecurityConfig = SecurityConfig(),
+                 node_ready_timeout_s=None):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
         self._context = context
         self._enable_rp = enable_rp
@@ -455,6 +457,10 @@ class RedpandaService(Service):
         self._enable_pp = enable_pp
         self._enable_sr = enable_sr
         self._security = security
+
+        if node_ready_timeout_s is None:
+            node_ready_timeout_s = RedpandaService.DEFAULT_NODE_READY_TIMEOUT_SEC
+        self.node_ready_timeout_s = node_ready_timeout_s
 
         self._extra_node_conf = {}
         for node in self.nodes:
@@ -777,7 +783,7 @@ class RedpandaService(Service):
             self.write_node_conf_file(node, override_cfg_params)
 
         if timeout is None:
-            timeout = self.READY_TIMEOUT_SEC
+            timeout = self.node_ready_timeout_s
 
         if self.coproc_enabled():
             self.start_wasm_engine(node)
@@ -872,9 +878,9 @@ class RedpandaService(Service):
             self.logger.warn(f"Waiting for {wasm_port} to be available")
             wait_until(
                 lambda: not wasm_service_up(),
-                timeout_sec=RedpandaService.READY_TIMEOUT_SEC,
+                timeout_sec=RedpandaService.WASM_READY_TIMEOUT_SEC,
                 err_msg=
-                f"Wasm engine server shutdown within {RedpandaService.READY_TIMEOUT_SEC}s timeout",
+                f"Wasm engine server shutdown within {RedpandaService.WASM_READY_TIMEOUT_SEC}s timeout",
                 retry_on_exc=True)
 
         def start_wasm_service():
@@ -882,9 +888,9 @@ class RedpandaService(Service):
 
             wait_until(
                 wasm_service_up,
-                timeout_sec=RedpandaService.READY_TIMEOUT_SEC,
+                timeout_sec=RedpandaService.WASM_READY_TIMEOUT_SEC,
                 err_msg=
-                f"Wasm engine server startup within {RedpandaService.READY_TIMEOUT_SEC}s timeout",
+                f"Wasm engine server startup within {RedpandaService.WASM_READY_TIMEOUT_SEC}s timeout",
                 retry_on_exc=True)
 
         self.logger.debug(f"Node status prior to wasm_engine startup:")
