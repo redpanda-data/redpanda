@@ -11,9 +11,9 @@
 #include "kafka/protocol/list_offsets.h"
 #include "kafka/protocol/produce.h"
 #include "model/metadata.h"
+#include "model/tests/random_batch.h"
 #include "redpanda/tests/fixture.h"
 #include "resource_mgmt/io_priority.h"
-#include "storage/tests/utils/random_batch.h"
 #include "test_utils/async.h"
 
 #include <seastar/core/smp.hh>
@@ -211,7 +211,7 @@ FIXTURE_TEST(list_offsets_by_time, redpanda_thread_fixture) {
     std::vector<model::record_batch> batches;
     batches.reserve(batch_count);
     for (long i = 0; i < batch_count; ++i) {
-        batches.push_back(make_random_batch(storage::test::record_batch_spec{
+        batches.push_back(make_random_batch(model::test::record_batch_spec{
           .count = record_count, .timestamp{i}}));
         auto req = make_produce_request(ntp.tp, batches.back().share());
         auto res = client.dispatch(std::move(req), kafka::api_version(7)).get();

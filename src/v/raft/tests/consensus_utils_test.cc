@@ -12,9 +12,9 @@
 #include <iterator>
 #include <limits>
 #define BOOST_TEST_MODULE raft
+#include "model/tests/random_batch.h"
 #include "raft/consensus_utils.h"
 #include "storage/tests/utils/disk_log_builder.h"
-#include "storage/tests/utils/random_batch.h"
 
 #include <seastar/core/circular_buffer.hh>
 
@@ -49,7 +49,7 @@ BOOST_AUTO_TEST_CASE(test_lookup_non_existing) {
 }
 
 BOOST_AUTO_TEST_CASE(test_filling_gaps) {
-    auto batches = storage::test::make_random_batches(
+    auto batches = model::test::make_random_batches(
       model::offset(20), 50, true);
 
     // cut some holes in log
@@ -71,8 +71,7 @@ BOOST_AUTO_TEST_CASE(test_filling_gaps) {
 }
 
 BOOST_AUTO_TEST_CASE(test_filling_first_gap) {
-    auto batches = storage::test::make_random_batches(
-      model::offset(1), 50, true);
+    auto batches = model::test::make_random_batches(model::offset(1), 50, true);
 
     // cut some holes in log
     for (size_t i = 0; i < 10; ++i) {
@@ -93,7 +92,7 @@ BOOST_AUTO_TEST_CASE(test_filling_first_gap) {
 }
 
 BOOST_AUTO_TEST_CASE(test_filling_gaps_larger_than_batch_size) {
-    auto batches = storage::test::make_random_batches(
+    auto batches = model::test::make_random_batches(
       model::offset(20), 50, true);
 
     // cut some holes in log
@@ -103,7 +102,7 @@ BOOST_AUTO_TEST_CASE(test_filling_gaps_larger_than_batch_size) {
         batches.erase(it, std::next(it));
     }
 
-    auto batches_after = storage::test::make_random_batches(
+    auto batches_after = model::test::make_random_batches(
       model::offset(
         3 * static_cast<int64_t>(std::numeric_limits<int32_t>::max())
         + random_generators::get_int<int64_t>(

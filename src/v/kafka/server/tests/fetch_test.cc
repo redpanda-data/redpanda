@@ -414,7 +414,7 @@ FIXTURE_TEST(fetch_multi_partitions_debounce, redpanda_thread_fixture) {
                      *shard,
                      [ntp](cluster::partition_manager& mgr) {
                          auto partition = mgr.get(ntp);
-                         auto batches = storage::test::make_random_batches(
+                         auto batches = model::test::make_random_batches(
                            model::offset(0), 5);
                          auto rdr = model::make_memory_record_batch_reader(
                            std::move(batches));
@@ -479,7 +479,7 @@ FIXTURE_TEST(fetch_one_debounce, redpanda_thread_fixture) {
                  *shard,
                  [ntp](cluster::partition_manager& mgr) {
                      auto partition = mgr.get(ntp);
-                     auto batches = storage::test::make_random_batches(
+                     auto batches = model::test::make_random_batches(
                        model::offset(0), 5);
                      auto rdr = model::make_memory_record_batch_reader(
                        std::move(batches));
@@ -559,7 +559,7 @@ FIXTURE_TEST(fetch_multi_topics, redpanda_thread_fixture) {
                      *shard,
                      [ntp](cluster::partition_manager& mgr) {
                          auto partition = mgr.get(ntp);
-                         auto batches = storage::test::make_random_batches(
+                         auto batches = model::test::make_random_batches(
                            model::offset(0), 5);
                          auto rdr = model::make_memory_record_batch_reader(
                            std::move(batches));
@@ -611,7 +611,7 @@ FIXTURE_TEST(fetch_request_max_bytes, redpanda_thread_fixture) {
         *shard,
         [ntp](cluster::partition_manager& mgr) {
             auto partition = mgr.get(ntp);
-            auto batches = storage::test::make_random_batches(
+            auto batches = model::test::make_random_batches(
               model::offset(0), 20);
             auto rdr = model::make_memory_record_batch_reader(
               std::move(batches));

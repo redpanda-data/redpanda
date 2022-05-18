@@ -17,7 +17,6 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/find_coordinator.h"
 #include "kafka/protocol/metadata.h"
-#include "storage/tests/utils/random_batch.h"
 
 #include <seastar/core/coroutine.hh>
 

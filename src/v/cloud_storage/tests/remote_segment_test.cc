@@ -26,7 +26,6 @@
 #include "storage/segment.h"
 #include "storage/segment_appender_utils.h"
 #include "storage/tests/utils/disk_log_builder.h"
-#include "storage/tests/utils/random_batch.h"
 #include "storage/types.h"
 #include "test_utils/async.h"
 #include "test_utils/fixture.h"

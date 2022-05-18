@@ -13,10 +13,10 @@
 #include "cloud_storage/tests/s3_imposter.h"
 #include "model/fundamental.h"
 #include "model/record_batch_types.h"
+#include "model/tests/random_batch.h"
 #include "storage/parser.h"
 #include "storage/segment_appender_utils.h"
 #include "storage/tests/utils/disk_log_builder.h"
-#include "storage/tests/utils/random_batch.h"
 
 #include <boost/test/tools/interface.hpp>
 
@@ -44,7 +44,7 @@ inline iobuf iobuf_deep_copy(const iobuf& i) {
 };
 
 inline iobuf generate_segment(model::offset base_offset, int count) {
-    auto buff = storage::test::make_random_batches(base_offset, count, false);
+    auto buff = model::test::make_random_batches(base_offset, count, false);
     iobuf result;
     for (auto&& batch : buff) {
         auto hdr = storage::disk_header_to_iobuf(batch.header());
@@ -65,7 +65,7 @@ make_random_batches(model::offset o, const std::vector<batch_t>& batches) {
     ss::circular_buffer<model::record_batch> ret;
     ret.reserve(batches.size());
     for (auto batch : batches) {
-        auto b = storage::test::make_random_batch(
+        auto b = model::test::make_random_batch(
           o,
           batch.num_records,
           false,

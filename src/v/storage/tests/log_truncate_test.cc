@@ -107,8 +107,10 @@ FIXTURE_TEST(test_truncate_in_the_middle_of_batch, storage_test_fixture) {
     auto log
       = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
 
-    append_batch(log, test::make_random_batch(model::offset{0}, 10, true));
-    append_batch(log, test::make_random_batch(model::offset{0}, 5, true));
+    append_batch(
+      log, model::test::make_random_batch(model::offset{0}, 10, true));
+    append_batch(
+      log, model::test::make_random_batch(model::offset{0}, 5, true));
 
     auto truncate_at = [log](model::offset o) mutable {
         log.truncate(storage::truncate_config(o, ss::default_priority_class()))
@@ -294,7 +296,7 @@ FIXTURE_TEST(test_truncate_last_single_record_batch, storage_test_fixture) {
     auto headers = append_random_batches(log, 15, model::term_id(0), [] {
         ss::circular_buffer<model::record_batch> ret;
         ret.push_back(
-          storage::test::make_random_batch(model::offset(0), 1, true));
+          model::test::make_random_batch(model::offset(0), 1, true));
         return ret;
     });
     log.flush().get0();
@@ -550,8 +552,10 @@ FIXTURE_TEST(
     auto log
       = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
 
-    append_batch(log, test::make_random_batch(model::offset{0}, 10, true));
-    append_batch(log, test::make_random_batch(model::offset{0}, 5, true));
+    append_batch(
+      log, model::test::make_random_batch(model::offset{0}, 10, true));
+    append_batch(
+      log, model::test::make_random_batch(model::offset{0}, 5, true));
 
     auto truncate_at = [log](model::offset o) mutable {
         log
@@ -591,8 +595,10 @@ FIXTURE_TEST(test_prefix_truncate_then_truncate_all, storage_test_fixture) {
     auto log
       = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
 
-    append_batch(log, test::make_random_batch(model::offset{0}, 10, true));
-    append_batch(log, test::make_random_batch(model::offset{0}, 5, true));
+    append_batch(
+      log, model::test::make_random_batch(model::offset{0}, 10, true));
+    append_batch(
+      log, model::test::make_random_batch(model::offset{0}, 5, true));
 
     log
       .truncate_prefix(storage::truncate_prefix_config(
@@ -608,7 +614,8 @@ FIXTURE_TEST(test_prefix_truncate_then_truncate_all, storage_test_fixture) {
     BOOST_CHECK_EQUAL(log.offsets().start_offset, model::offset{10});
     BOOST_CHECK_EQUAL(read_and_validate_all_batches(log).size(), 0);
 
-    append_batch(log, test::make_random_batch(model::offset{0}, 3, true));
+    append_batch(
+      log, model::test::make_random_batch(model::offset{0}, 3, true));
     BOOST_CHECK_EQUAL(log.offsets().start_offset, model::offset{10});
     auto read_batches = read_and_validate_all_batches(log);
     BOOST_REQUIRE_EQUAL(read_batches.size(), 1);

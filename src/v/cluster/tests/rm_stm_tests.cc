@@ -13,6 +13,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
+#include "model/tests/random_batch.h"
 #include "model/timestamp.h"
 #include "raft/consensus_utils.h"
 #include "raft/tests/mux_state_machine_fixture.h"
@@ -21,7 +22,6 @@
 #include "random/generators.h"
 #include "storage/record_batch_builder.h"
 #include "storage/tests/utils/disk_log_builder.h"
-#include "storage/tests/utils/random_batch.h"
 #include "test_utils/async.h"
 
 #include <seastar/util/defer.hh>
@@ -48,7 +48,7 @@ static rich_reader make_rreader(
     return rich_reader{
       .id = model::
         batch_identity{.pid = pid, .first_seq = first_seq, .last_seq = first_seq + count - 1, .record_count = count, .is_transactional = is_transactional},
-      .reader = random_batch_reader(storage::test::record_batch_spec{
+      .reader = random_batch_reader(model::test::record_batch_spec{
         .offset = model::offset(0),
         .allow_compression = true,
         .count = count,

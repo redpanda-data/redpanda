@@ -9,6 +9,7 @@
 
 #include "model/fundamental.h"
 #include "model/record_utils.h"
+#include "model/tests/random_batch.h"
 #include "random/generators.h"
 #include "storage/api.h"
 #include "storage/directories.h"
@@ -16,7 +17,6 @@
 #include "storage/segment_appender.h"
 #include "storage/segment_appender_utils.h"
 #include "storage/segment_reader.h"
-#include "storage/tests/utils/random_batch.h"
 #include "utils/file_sanitizer.h"
 
 #include <seastar/core/thread.hh>
@@ -34,7 +34,7 @@ void write_garbage(segment_appender& ptr) {
 }
 
 void write_batches(ss::lw_shared_ptr<segment> seg) {
-    auto batches = test::make_random_batches(
+    auto batches = model::test::make_random_batches(
       seg->offsets().base_offset + model::offset(1), 1);
     for (auto& b : batches) {
         b.header().header_crc = model::internal_header_only_crc(b.header());

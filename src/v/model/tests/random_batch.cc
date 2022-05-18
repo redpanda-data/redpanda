@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "storage/tests/utils/random_batch.h"
+#include "model/tests/random_batch.h"
 
 #include "bytes/iobuf.h"
 #include "compression/compression.h"
@@ -16,7 +16,6 @@
 #include "model/record_batch_reader.h"
 #include "model/record_utils.h"
 #include "random/generators.h"
-#include "storage/parser_utils.h"
 #include "utils/vint.h"
 
 #include <seastar/core/future.hh>
@@ -25,7 +24,7 @@
 #include <random>
 #include <vector>
 
-namespace storage::test {
+namespace model::test {
 using namespace random_generators; // NOLINT
 
 iobuf make_iobuf(size_t n = 128) {
@@ -152,7 +151,7 @@ model::record_batch make_random_batch(record_batch_spec spec) {
             model::append_record_to_buffer(body, r);
         }
         rs.clear();
-        records = compression::compressor::compress(
+        records = ::compression::compressor::compress(
           body, header.attrs.compression());
         size += std::get<iobuf>(records).size_bytes();
     } else {
@@ -249,4 +248,4 @@ make_random_memory_record_batch_reader(record_batch_spec spec, int n_batches) {
       });
 }
 
-} // namespace storage::test
+} // namespace model::test

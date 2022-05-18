@@ -8,8 +8,8 @@
 // by the Apache License, Version 2.0
 
 #include "config/configuration.h"
+#include "model/tests/random_batch.h"
 #include "storage/tests/disk_log_builder_fixture.h"
-#include "storage/tests/utils/random_batch.h"
 #include "test_utils/fixture.h"
 
 #include <seastar/core/file.hh>
@@ -22,7 +22,8 @@ FIXTURE_TEST(timequery, log_builder_fixture) {
     // seg0: timestamps 0..99, offset = timestamp
     b | add_segment(0);
     for (auto ts = 0; ts < 100; ts++) {
-        auto batch = test::make_random_batch(model::offset(ts), 1, false);
+        auto batch = model::test::make_random_batch(
+          model::offset(ts), 1, false);
         batch.header().first_timestamp = model::timestamp(ts);
         batch.header().max_timestamp = model::timestamp(ts);
         b | add_batch(std::move(batch));
@@ -34,7 +35,8 @@ FIXTURE_TEST(timequery, log_builder_fixture) {
     b | add_segment(100);
     for (auto offset = 100; offset <= 200; offset++) {
         auto ts = 100 + (offset - 100) / 5;
-        auto batch = test::make_random_batch(model::offset(offset), 1, false);
+        auto batch = model::test::make_random_batch(
+          model::offset(offset), 1, false);
         batch.header().first_timestamp = model::timestamp(ts);
         batch.header().max_timestamp = model::timestamp(ts);
         b | add_batch(std::move(batch));
@@ -91,7 +93,8 @@ FIXTURE_TEST(timequery_single_value, log_builder_fixture) {
     // seg0: timestamps [1000...1099], offsets = [0...99]
     b | add_segment(0);
     for (auto offset = 0; offset < 100; ++offset) {
-        auto batch = test::make_random_batch(model::offset(offset), 1, false);
+        auto batch = model::test::make_random_batch(
+          model::offset(offset), 1, false);
         batch.header().first_timestamp = model::timestamp(offset + 1000);
         batch.header().max_timestamp = model::timestamp(offset + 1000);
         b | add_batch(std::move(batch));

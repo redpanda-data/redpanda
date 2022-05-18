@@ -12,7 +12,6 @@
 #include "coproc/tests/utils/coprocessor.h"
 #include "coproc/types.h"
 #include "model/fundamental.h"
-#include "storage/tests/utils/random_batch.h"
 
 #include <seastar/core/when_all.hh>
 

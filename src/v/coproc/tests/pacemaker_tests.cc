@@ -16,7 +16,6 @@
 #include "coproc/types.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
-#include "storage/tests/utils/random_batch.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/when_all.hh>

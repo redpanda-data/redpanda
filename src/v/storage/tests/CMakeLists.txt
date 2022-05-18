@@ -2,13 +2,11 @@ v_cc_library(
   NAME
     storage_test_utils
   HDRS
-    "utils/random_batch.h"
     "utils/disk_log_builder.h"
   SRCS
-    "utils/random_batch.cc"
     "utils/disk_log_builder.cc"
   DEPS
-    v::storage
+    v::storage v::model_test_utils
 )
 
 rp_test(
@@ -32,7 +30,7 @@ rp_test(
     timequery_test.cc
     kvstore_test.cc
     backlog_controller_test.cc
-  LIBRARIES v::seastar_testing_main v::storage_test_utils
+  LIBRARIES v::seastar_testing_main v::storage_test_utils v::model_test_utils
   LABELS storage
   ARGS "-- -c 1"
 )
@@ -46,7 +44,7 @@ rp_test(
   BINARY_NAME storage_log_replayer_single_thread
   SOURCES
     log_replayer_test.cc
-  LIBRARIES v::seastar_testing_main v::storage_test_utils
+  LIBRARIES v::seastar_testing_main v::storage_test_utils v::model_test_utils
   LABELS storage
   ARGS "-- -c 1"
 )

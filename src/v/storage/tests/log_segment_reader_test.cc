@@ -10,6 +10,7 @@
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/record_utils.h"
+#include "model/tests/random_batch.h"
 #include "model/timeout_clock.h"
 #include "random/generators.h"
 #include "storage/disk_log_appender.h"
@@ -18,7 +19,6 @@
 #include "storage/segment_appender.h"
 #include "storage/segment_appender_utils.h"
 #include "storage/segment_reader.h"
-#include "storage/tests/utils/random_batch.h"
 #include "utils/disk_log_builder.h"
 #include "utils/file_sanitizer.h"
 
@@ -56,7 +56,7 @@ void write(
 SEASTAR_THREAD_TEST_CASE(test_can_read_single_batch_smaller_offset) {
     disk_log_builder b;
     b | start() | add_segment(1);
-    auto buf = test::make_random_batches(model::offset(1), 1);
+    auto buf = model::test::make_random_batches(model::offset(1), 1);
     write(std::move(buf), b);
     // To-do Kostas Add support for pipe consume!
     auto res = b.consume().get0();
@@ -76,7 +76,7 @@ SEASTAR_THREAD_TEST_CASE(test_can_read_single_batch_same_offset) {
       std::nullopt);
     disk_log_builder b;
     b | start() | add_segment(1);
-    auto batches = test::make_random_batches(model::offset(1), 1);
+    auto batches = model::test::make_random_batches(model::offset(1), 1);
     write(copy(batches), b);
     auto res = b.consume(reader_config).get0();
     b | stop();
@@ -84,7 +84,7 @@ SEASTAR_THREAD_TEST_CASE(test_can_read_single_batch_same_offset) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_can_read_multiple_batches) {
-    auto batches = test::make_random_batches(model::offset(1));
+    auto batches = model::test::make_random_batches(model::offset(1));
     storage::log_reader_config reader_config(
       batches.front().base_offset(),
       batches.back().last_offset(),
@@ -103,7 +103,7 @@ SEASTAR_THREAD_TEST_CASE(test_can_read_multiple_batches) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_does_not_read_past_committed_offset_one_segment) {
-    auto batches = test::make_random_batches(model::offset(2));
+    auto batches = model::test::make_random_batches(model::offset(2));
     storage::log_reader_config reader_config(
       batches.back().last_offset() + model::offset(1),
       batches.back().last_offset() + model::offset(1),
@@ -123,7 +123,7 @@ SEASTAR_THREAD_TEST_CASE(test_does_not_read_past_committed_offset_one_segment) {
 
 SEASTAR_THREAD_TEST_CASE(
   test_does_not_read_past_committed_offset_multiple_segments) {
-    auto batches = test::make_random_batches(model::offset(1), 2);
+    auto batches = model::test::make_random_batches(model::offset(1), 2);
     storage::log_reader_config reader_config(
       batches.back().last_offset(),
       batches.back().last_offset(),
@@ -144,7 +144,7 @@ SEASTAR_THREAD_TEST_CASE(
 }
 
 SEASTAR_THREAD_TEST_CASE(test_does_not_read_past_max_bytes) {
-    auto batches = test::make_random_batches(model::offset(1), 2);
+    auto batches = model::test::make_random_batches(model::offset(1), 2);
     storage::log_reader_config reader_config(
       batches.front().base_offset(),
       batches.front().last_offset(),
@@ -165,7 +165,7 @@ SEASTAR_THREAD_TEST_CASE(test_does_not_read_past_max_bytes) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_reads_at_least_one_batch) {
-    auto batches = test::make_random_batches(model::offset(1), 2);
+    auto batches = model::test::make_random_batches(model::offset(1), 2);
     storage::log_reader_config reader_config(
       batches.front().base_offset(),
       batches.front().last_offset(),
@@ -186,7 +186,7 @@ SEASTAR_THREAD_TEST_CASE(test_reads_at_least_one_batch) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_read_batch_range) {
-    auto batches = test::make_random_batches(model::offset(0), 10);
+    auto batches = model::test::make_random_batches(model::offset(0), 10);
     storage::log_reader_config reader_config(
       batches.front().base_offset(),
       batches.back().last_offset(),
@@ -210,7 +210,7 @@ SEASTAR_THREAD_TEST_CASE(test_read_batch_range) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_batch_type_filter) {
-    auto batches = test::make_random_batches(model::offset(0), 5);
+    auto batches = model::test::make_random_batches(model::offset(0), 5);
     for (auto i = 0u; i < batches.size(); i++) {
         batches[i].header().type = model::record_batch_type(i);
     }
@@ -274,7 +274,7 @@ SEASTAR_THREAD_TEST_CASE(test_batch_type_filter) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_does_not_read_past_max_offset) {
-    auto batches = test::make_random_batches(model::offset(1), 3);
+    auto batches = model::test::make_random_batches(model::offset(1), 3);
     storage::log_reader_config reader_config(
       batches.front().base_offset(),
       batches.back().last_offset(),

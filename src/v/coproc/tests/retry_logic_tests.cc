@@ -11,7 +11,7 @@
 #include "coproc/logger.h"
 #include "coproc/tests/fixtures/fiber_mock_fixture.h"
 #include "coproc/tests/utils/batch_utils.h"
-#include "storage/tests/utils/random_batch.h"
+#include "model/tests/random_batch.h"
 
 #include <seastar/core/coroutine.hh>
 
@@ -91,8 +91,8 @@ FIXTURE_TEST(lagging_topic_test, fiber_mock_fixture) {
                     /// Push a single record
                     r.emplace(
                       output_a(),
-                      storage::test::make_random_batches(
-                        storage::test::record_batch_spec{
+                      model::test::make_random_batches(
+                        model::test::record_batch_spec{
                           .count = 1, .records = 1}));
                 }
             } else {

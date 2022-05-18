@@ -16,7 +16,7 @@
 #include "model/timestamp.h"
 #include "random/generators.h"
 
-namespace storage::test {
+namespace model::test {
 using namespace random_generators; // NOLINT
 
 struct record_batch_spec {
@@ -69,4 +69,4 @@ model::record_batch_reader make_random_memory_record_batch_reader(
 model::record_batch_reader
 make_random_memory_record_batch_reader(record_batch_spec, int);
 
-} // namespace storage::test
+} // namespace model::test

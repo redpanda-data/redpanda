@@ -13,6 +13,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
+#include "model/tests/random_batch.h"
 #include "model/timestamp.h"
 #include "raft/consensus_utils.h"
 #include "raft/tests/mux_state_machine_fixture.h"
@@ -21,7 +22,6 @@
 #include "random/generators.h"
 #include "storage/record_batch_builder.h"
 #include "storage/tests/utils/disk_log_builder.h"
-#include "storage/tests/utils/random_batch.h"
 #include "test_utils/async.h"
 
 #include <seastar/util/defer.hh>
@@ -46,7 +46,7 @@ FIXTURE_TEST(
     wait_for_meta_initialized();
 
     auto count = 5;
-    auto rdr1 = random_batch_reader(storage::test::record_batch_spec{
+    auto rdr1 = random_batch_reader(model::test::record_batch_spec{
       .offset = model::offset(0),
       .allow_compression = true,
       .count = count,
@@ -64,7 +64,7 @@ FIXTURE_TEST(
                 .get0();
     BOOST_REQUIRE((bool)r1);
 
-    auto rdr2 = random_batch_reader(storage::test::record_batch_spec{
+    auto rdr2 = random_batch_reader(model::test::record_batch_spec{
       .offset = model::offset(count),
       .allow_compression = true,
       .count = count,
@@ -98,7 +98,7 @@ FIXTURE_TEST(
     wait_for_meta_initialized();
 
     auto count = 5;
-    auto rdr1 = random_batch_reader(storage::test::record_batch_spec{
+    auto rdr1 = random_batch_reader(model::test::record_batch_spec{
       .offset = model::offset(0),
       .allow_compression = true,
       .count = count,
@@ -116,7 +116,7 @@ FIXTURE_TEST(
                 .get0();
     BOOST_REQUIRE((bool)r1);
 
-    auto rdr2 = random_batch_reader(storage::test::record_batch_spec{
+    auto rdr2 = random_batch_reader(model::test::record_batch_spec{
       .offset = model::offset(count),
       .allow_compression = true,
       .count = count,
@@ -155,7 +155,7 @@ FIXTURE_TEST(test_rm_stm_caches_last_5_offsets, mux_state_machine_fixture) {
     auto count = 5;
 
     for (int i = 0; i < 10; i++) {
-        auto rdr = random_batch_reader(storage::test::record_batch_spec{
+        auto rdr = random_batch_reader(model::test::record_batch_spec{
           .offset = model::offset(i * count),
           .allow_compression = true,
           .count = count,
@@ -180,7 +180,7 @@ FIXTURE_TEST(test_rm_stm_caches_last_5_offsets, mux_state_machine_fixture) {
     // pid and seq numbers the duplicated request should yield the same
     // offsets
     for (int i = 5; i < 10; i++) {
-        auto rdr = random_batch_reader(storage::test::record_batch_spec{
+        auto rdr = random_batch_reader(model::test::record_batch_spec{
           .offset = model::offset(i * count),
           .allow_compression = true,
           .count = count,
@@ -218,7 +218,7 @@ FIXTURE_TEST(test_rm_stm_doesnt_cache_6th_offset, mux_state_machine_fixture) {
     auto count = 5;
 
     for (int i = 0; i < 6; i++) {
-        auto rdr = random_batch_reader(storage::test::record_batch_spec{
+        auto rdr = random_batch_reader(model::test::record_batch_spec{
           .offset = model::offset(i * count),
           .allow_compression = true,
           .count = count,
@@ -239,7 +239,7 @@ FIXTURE_TEST(test_rm_stm_doesnt_cache_6th_offset, mux_state_machine_fixture) {
     }
 
     {
-        auto rdr = random_batch_reader(storage::test::record_batch_spec{
+        auto rdr = random_batch_reader(model::test::record_batch_spec{
           .offset = model::offset(0),
           .allow_compression = true,
           .count = count,
@@ -276,7 +276,7 @@ FIXTURE_TEST(test_rm_stm_prevents_gaps, mux_state_machine_fixture) {
     wait_for_meta_initialized();
 
     auto count = 5;
-    auto rdr1 = random_batch_reader(storage::test::record_batch_spec{
+    auto rdr1 = random_batch_reader(model::test::record_batch_spec{
       .offset = model::offset(0),
       .allow_compression = true,
       .count = count,
@@ -294,7 +294,7 @@ FIXTURE_TEST(test_rm_stm_prevents_gaps, mux_state_machine_fixture) {
                 .get0();
     BOOST_REQUIRE((bool)r1);
 
-    auto rdr2 = random_batch_reader(storage::test::record_batch_spec{
+    auto rdr2 = random_batch_reader(model::test::record_batch_spec{
       .offset = model::offset(count),
       .allow_compression = true,
       .count = count,
@@ -329,7 +329,7 @@ FIXTURE_TEST(
     wait_for_meta_initialized();
 
     auto count = 5;
-    auto rdr = random_batches_reader(storage::test::record_batch_spec{
+    auto rdr = random_batches_reader(model::test::record_batch_spec{
       .offset = model::offset(0),
       .allow_compression = true,
       .count = count,
@@ -365,7 +365,7 @@ FIXTURE_TEST(test_rm_stm_passes_immediate_retry, mux_state_machine_fixture) {
     wait_for_meta_initialized();
 
     auto count = 5;
-    auto rdr1 = random_batch_reader(storage::test::record_batch_spec{
+    auto rdr1 = random_batch_reader(model::test::record_batch_spec{
       .offset = model::offset(0),
       .allow_compression = true,
       .count = count,
@@ -379,7 +379,7 @@ FIXTURE_TEST(test_rm_stm_passes_immediate_retry, mux_state_machine_fixture) {
     // replicate caches only metadata so as long as batches have the same
     // pid and seq numbers the duplicated request should yield the same
     // offsets
-    auto rdr2 = random_batch_reader(storage::test::record_batch_spec{
+    auto rdr2 = random_batch_reader(model::test::record_batch_spec{
       .offset = model::offset(0),
       .allow_compression = true,
       .count = count,

@@ -17,10 +17,10 @@
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
+#include "model/tests/random_batch.h"
 #include "model/timeout_clock.h"
 #include "redpanda/application.h"
 #include "redpanda/tests/fixture.h"
-#include "storage/tests/utils/random_batch.h"
 #include "test_utils/async.h"
 
 #include <seastar/core/do_with.hh>
@@ -261,7 +261,7 @@ FIXTURE_TEST(test_recreated_topic_does_not_lose_data, recreate_test_fixture) {
           .invoke_on(
             *shard_id,
             [ntp](cluster::partition_manager& pm) {
-                auto batches = storage::test::make_random_batches(
+                auto batches = model::test::make_random_batches(
                   model::offset(0), 5);
                 auto rdr = model::make_memory_record_batch_reader(
                   std::move(batches));
