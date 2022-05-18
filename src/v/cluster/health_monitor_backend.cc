@@ -290,6 +290,15 @@ health_monitor_backend::refresh_cluster_health_cache(force_refresh force) {
     // refresh leader_id after acquiring mutex
     leader_id = _raft0->get_leader_id();
 
+    // recheck if the leader exists, since this might have changed
+    // while we were waiting
+    if (!leader_id) {
+        vlog(
+          clusterlog.info,
+          "unable to refresh health metadata, no leader controller");
+        co_return errc::no_leader_controller;
+    }
+
     if (leader_id == _raft0->self().id()) {
         co_return errc::success;
     }
