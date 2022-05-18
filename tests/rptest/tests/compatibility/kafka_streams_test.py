@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 from rptest.services.cluster import cluster
+from ducktape.mark import ok_to_fail
 from ducktape.utils.util import wait_until
 
 from rptest.services.compatibility.example_runner import ExampleRunner
@@ -77,14 +78,15 @@ class KafkaStreamsDriverBase(KafkaStreamsTest):
 
         # Start the example
         example.start()
-        example.wait()
+        wait_until(example.condition_met,
+                   timeout_sec=self._timeout,
+                   backoff_sec=1)
 
         # Start the driver
         driver.start()
-        driver.wait()
-
-        driver.stop()
-        example.stop()
+        wait_until(driver.condition_met,
+                   timeout_sec=self._timeout,
+                   backoff_sec=1)
 
 
 class KafkaStreamsProdConsBase(KafkaStreamsTest):
@@ -139,7 +141,6 @@ class KafkaStreamsProdConsBase(KafkaStreamsTest):
 
         consumer.stop()
         producer.stop()
-        example.stop()
 
 
 class KafkaStreamsTopArticles(KafkaStreamsDriverBase):
@@ -201,25 +202,50 @@ class KafkaStreamsJsonToAvro(KafkaStreamsDriverBase):
                                                      enable_sr=True)
 
 
-# Disabled for https://github.com/redpanda-data/redpanda/issues/4637
-# class KafkaStreamsPageView(KafkaStreamsDriverBase):
-#     """
-#     Test KafkaStreams PageView example which performs a join between a
-#     KStream and a KTable
-#     """
-#     topics = (
-#         TopicSpec(name="PageViews"),
-#         TopicSpec(name="UserProfiles"),
-#         TopicSpec(name="PageViewsByRegion"),
-#     )
+class KafkaStreamsPageView(RedpandaTest):
+    """
+    Test KafkaStreams PageView example which performs a join between a 
+    KStream and a KTable
+    """
+    topics = (
+        TopicSpec(name="PageViews"),
+        TopicSpec(name="UserProfiles"),
+        TopicSpec(name="PageViewsByRegion"),
+    )
 
-#     Example = KafkaStreamExamples.KafkaStreamsPageView
-#     Driver = KafkaStreamExamples.KafkaStreamsPageView
+    def __init__(self, test_context):
+        super(KafkaStreamsPageView, self).__init__(test_context=test_context,
+                                                   enable_pp=True,
+                                                   enable_sr=True)
 
-#     def __init__(self, test_context):
-#         super(KafkaStreamsPageView, self).__init__(test_context=test_context,
-#                                                    enable_pp=True,
-#                                                    enable_sr=True)
+        self._timeout = 300
+
+    @ok_to_fail  # For https://github.com/redpanda-data/redpanda/issues/4637
+    @cluster(num_nodes=5)
+    def test_kafka_streams_page_view(self):
+        example_jar = KafkaStreamExamples.KafkaStreamsPageView(self.redpanda,
+                                                               is_driver=False)
+        example = ExampleRunner(self.test_context,
+                                example_jar,
+                                timeout_sec=self._timeout)
+
+        driver_jar = KafkaStreamExamples.KafkaStreamsPageView(self.redpanda,
+                                                              is_driver=True)
+        driver = ExampleRunner(self.test_context,
+                               driver_jar,
+                               timeout_sec=self._timeout)
+
+        # Start the example
+        example.start()
+        wait_until(example.condition_met,
+                   timeout_sec=self._timeout,
+                   backoff_sec=1)
+
+        # Start the driver
+        driver.start()
+        wait_until(driver.condition_met,
+                   timeout_sec=self._timeout,
+                   backoff_sec=1)
 
 
 class KafkaStreamsSumLambda(KafkaStreamsDriverBase):
