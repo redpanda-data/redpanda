@@ -143,6 +143,8 @@ to_cluster_type(const creatable_topic& t) {
       config_entries, topic_property_read_replica);
     cfg.properties.read_replica_bucket = get_string_value(
       config_entries, topic_property_read_replica_bucket);
+    /// Final topic_property not decoded here is \ref remote_topic_properties,
+    /// is more of an implementation detail no need to ever show user
 
     auto ret = cluster::custom_assignable_topic_configuration(cfg);
     /**
@@ -162,6 +164,86 @@ to_cluster_type(const creatable_topic& t) {
         }
     }
     return ret;
+}
+
+template<typename T>
+static ss::sstring from_config_type(const T& v) {
+    if constexpr (std::is_enum_v<T>) {
+        return ss::to_sstring(static_cast<std::underlying_type_t<T>>(v));
+    } else if constexpr (std::is_same_v<bool, T>) {
+        return v ? "true" : "false";
+    } else if constexpr (std::is_same_v<T, std::chrono::milliseconds>) {
+        return ss::to_sstring(
+          std::chrono::duration_cast<std::chrono::milliseconds>(v).count());
+    } else {
+        return ss::to_sstring(v);
+    }
+}
+
+config_map_t from_cluster_type(const cluster::topic_properties& properties) {
+    config_map_t config_entries;
+    if (properties.compression) {
+        config_entries[topic_property_compression] = from_config_type(
+          *properties.compression);
+    }
+    if (properties.cleanup_policy_bitflags) {
+        config_entries[topic_property_cleanup_policy] = from_config_type(
+          *properties.cleanup_policy_bitflags);
+    }
+    if (properties.compaction_strategy) {
+        config_entries[topic_property_compaction_strategy] = from_config_type(
+          *properties.compaction_strategy);
+    }
+    if (properties.timestamp_type) {
+        config_entries[topic_property_timestamp_type] = from_config_type(
+          *properties.timestamp_type);
+    }
+    if (properties.segment_size) {
+        config_entries[topic_property_segment_size] = from_config_type(
+          *properties.segment_size);
+    }
+    if (properties.retention_bytes.has_value()) {
+        config_entries[topic_property_retention_bytes] = from_config_type(
+          properties.retention_bytes.value());
+    }
+    if (properties.retention_duration.has_value()) {
+        config_entries[topic_property_retention_duration] = from_config_type(
+          *properties.retention_duration);
+    }
+    if (properties.recovery) {
+        config_entries[topic_property_recovery] = from_config_type(
+          *properties.recovery);
+    }
+    if (properties.shadow_indexing) {
+        config_entries[topic_property_remote_write] = "false";
+        config_entries[topic_property_remote_read] = "false";
+
+        switch (*properties.shadow_indexing) {
+        case model::shadow_indexing_mode::archival:
+            config_entries[topic_property_remote_write] = "true";
+            break;
+        case model::shadow_indexing_mode::fetch:
+            config_entries[topic_property_remote_read] = "true";
+            break;
+        case model::shadow_indexing_mode::full:
+            config_entries[topic_property_remote_write] = "true";
+            config_entries[topic_property_remote_read] = "true";
+            break;
+        default:
+            break;
+        }
+    }
+    if (properties.read_replica) {
+        config_entries[topic_property_read_replica] = from_config_type(
+          *properties.read_replica);
+    }
+    if (properties.read_replica_bucket) {
+        config_entries[topic_property_read_replica_bucket] = from_config_type(
+          *properties.read_replica_bucket);
+    }
+    /// Final topic_property not encoded here is \ref remote_topic_properties,
+    /// is more of an implementation detail no need to ever show user
+    return config_entries;
 }
 
 } // namespace kafka
