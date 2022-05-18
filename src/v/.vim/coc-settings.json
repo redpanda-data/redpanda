@@ -1,0 +1,3 @@
+{
+  "clangd.path": "../../vbuild/llvm/install/bin/clangd"
+}
