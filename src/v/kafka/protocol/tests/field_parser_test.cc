@@ -12,6 +12,7 @@
 #include "kafka/protocol/request_reader.h"
 #include "kafka/protocol/response_writer.h"
 #include "kafka/protocol/types.h"
+#include "kafka/types.h"
 #include "random/generators.h"
 
 #include <seastar/core/thread.hh>
@@ -105,6 +106,8 @@ void write_flex(T& type, iobuf& buf) {
               writer.write(ts.field_b);
               writer.write_tags();
           });
+    } else if constexpr (std::is_same_v<T, kafka::uuid>) {
+        writer.write(type);
     } else {
         writer.write_flex(type);
     }
@@ -115,6 +118,8 @@ T read_flex(iobuf buf) {
     kafka::request_reader reader(std::move(buf));
     if constexpr (std::is_same_v<T, ss::sstring>) {
         return reader.read_flex_string();
+    } else if constexpr (std::is_same_v<T, kafka::uuid>) {
+        return reader.read_uuid();
     } else if constexpr (std::is_same_v<T, std::optional<ss::sstring>>) {
         return reader.read_nullable_flex_string();
     } else if constexpr (std::is_same_v<T, bytes>) {
@@ -153,6 +158,15 @@ SEASTAR_THREAD_TEST_CASE(serde_flex_types) {
         const auto str_len = random_generators::get_int(0, 20);
         return random_generators::gen_alphanum_string(15);
     };
+    {
+        /// uuid
+        auto bytes = random_generators::get_bytes(16);
+        auto encoded = bytes_to_base64(bytes);
+        auto uuid = kafka::uuid::from_string(encoded);
+        auto rt = serde_flex(uuid);
+        BOOST_CHECK_EQUAL(uuid.view(), rt.view());
+        BOOST_CHECK_EQUAL(encoded, rt.to_string());
+    }
     {
         /// flex strings
         auto str = gen_random_string();

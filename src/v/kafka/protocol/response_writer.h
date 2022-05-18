@@ -138,6 +138,12 @@ public:
         return write(std::string_view(*v));
     }
 
+    uint32_t write(uuid uuid) {
+        /// This type is not prepended with its size
+        _out->append(uuid.view().data(), uuid::length);
+        return uuid::length;
+    }
+
     uint32_t write(bytes_view bv) {
         auto size = serialize_int<int32_t>(bv.size()) + bv.size();
         _out->append(reinterpret_cast<const char*>(bv.data()), bv.size());

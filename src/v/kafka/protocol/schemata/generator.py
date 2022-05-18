@@ -284,6 +284,7 @@ entity_type_map = dict(
     groupId=("kafka::group_id", "string"),
     transactionalId=("kafka::transactional_id", "string"),
     topicName=("model::topic", "string"),
+    uuid=("kafka::uuid", "uuid"),
     brokerId=("model::node_id", "int32"),
     producerId=("kafka::producer_id", "int64"),
 )
@@ -306,6 +307,7 @@ basic_type_map = dict(
     int16=("int16_t", "read_int16()"),
     int32=("int32_t", "read_int32()"),
     int64=("int64_t", "read_int64()"),
+    uuid=("uuid", "read_uuid()"),
     iobuf=("iobuf", None, "read_fragmented_nullable_bytes()", None,
            "read_fragmented_nullable_flex_bytes()"),
     fetch_record_set=("batch_reader", None, "read_nullable_batch_reader()",

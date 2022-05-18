@@ -11,9 +11,11 @@
 
 #pragma once
 #include "bytes/bytes.h"
+#include "bytes/details/out_of_range.h"
 #include "model/fundamental.h"
 #include "reflection/adl.h"
 #include "seastarx.h"
+#include "utils/base64.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/sstring.hh>
@@ -90,6 +92,51 @@ using leader_epoch = named_type<int32_t, struct leader_epoch_tag>;
  * specific)
  */
 static constexpr leader_epoch invalid_leader_epoch(-1);
+
+/**
+ * Immutable UUID, represents a 128 bit value of the variant 2 (Leach-Salz)
+ * version 4 UUID type. Conversions to/from string will expect or perform a b64
+ * encoding/decoding
+ */
+class uuid {
+public:
+    static constexpr auto length = 16;
+    using underlying_t = std::array<uint8_t, length>;
+
+    static uuid from_string(std::string_view encoded) {
+        if (encoded.size() > 24) {
+            details::throw_out_of_range(
+              "Input size of {} too long to be decoded as b64-UUID, expected "
+              "{} bytes or less",
+              encoded.size(),
+              24);
+        }
+        auto decoded = base64_to_bytes(encoded);
+        if (decoded.size() != length) {
+            details::throw_out_of_range(
+              "Expected {} byte value post b64decoding the input: {} bytes",
+              length,
+              decoded.size());
+        }
+        underlying_t ul;
+        std::copy_n(decoded.begin(), length, ul.begin());
+        return uuid(ul);
+    }
+
+    explicit uuid(const underlying_t& uuid)
+      : _uuid(uuid) {}
+
+    bytes_view view() const { return {_uuid.data(), _uuid.size()}; }
+
+    ss::sstring to_string() const { return bytes_to_base64(view()); }
+
+    friend std::ostream& operator<<(std::ostream& os, const uuid& u) {
+        return os << u.to_string();
+    }
+
+private:
+    underlying_t _uuid{};
+};
 
 // TODO Ben: Why is this an undefined reference for pandaproxy when defined in
 // kafka/requests.cc
