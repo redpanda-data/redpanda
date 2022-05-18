@@ -378,6 +378,35 @@ private:
         }
     };
 
+    struct request_id {
+        model::producer_identity pid;
+        int32_t seq;
+
+        auto operator<=>(const request_id&) const = default;
+
+        template<typename H>
+        friend H AbslHashValue(H h, const request_id& bid) {
+            return H::combine(std::move(h), bid.pid, bid.seq);
+        }
+    };
+
+    template<typename Func>
+    auto with_request_lock(request_id rid, Func&& f) {
+        auto lock_it = _request_locks.find(rid);
+        if (lock_it == _request_locks.end()) {
+            lock_it
+              = _request_locks.emplace(rid, ss::make_lw_shared<mutex>()).first;
+        }
+        auto r_lock = lock_it->second;
+        return r_lock->with(std::forward<Func>(f))
+          .finally([this, r_lock, rid]() {
+              if (r_lock->waiters() == 0) {
+                  // this fiber is the last holder of the lock
+                  _request_locks.erase(rid);
+              }
+          });
+    }
+
     ss::lw_shared_ptr<mutex> get_tx_lock(model::producer_id pid) {
         auto lock_it = _tx_locks.find(pid);
         if (lock_it == _tx_locks.end()) {
@@ -395,6 +424,7 @@ private:
 
     ss::basic_rwlock<> _state_lock;
     absl::flat_hash_map<model::producer_id, ss::lw_shared_ptr<mutex>> _tx_locks;
+    absl::flat_hash_map<request_id, ss::lw_shared_ptr<mutex>> _request_locks;
     log_state _log_state;
     mem_state _mem_state;
     ss::timer<clock_type> auto_abort_timer;
