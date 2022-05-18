@@ -380,7 +380,6 @@ class RedpandaService(Service):
     COVERAGE_PROFRAW_CAPTURE = os.path.join(PERSISTENT_ROOT,
                                             "redpanda.profraw")
 
-    CLUSTER_NAME = "my_cluster"
     READY_TIMEOUT_SEC = 10
 
     DEDICATED_NODE_KEY = "dedicated_nodes"
@@ -409,8 +408,7 @@ class RedpandaService(Service):
         'default_topic_partitions': 4,
         'enable_metrics_reporter': False,
         'superusers': [SUPERUSER_CREDENTIALS[0]],
-        'enable_auto_rebalance_on_node_add': True,
-        'cluster_id': CLUSTER_NAME
+        'enable_auto_rebalance_on_node_add': True
     }
 
     logs = {
@@ -935,11 +933,15 @@ class RedpandaService(Service):
         """
         patch_result = self._admin.patch_cluster_config(upsert=values)
         new_version = patch_result['config_version']
+
+        # The version check is >= to permit other config writes to happen in
+        # the background, including the write to cluster_id that happens
+        # early in the cluster's lifetime
         wait_until(
-            lambda: set([
-                n['config_version']
+            lambda: all([
+                n['config_version'] >= new_version
                 for n in self._admin.get_cluster_config_status()
-            ]) == {new_version},
+            ]),
             timeout_sec=10,
             backoff_sec=0.5,
             err_msg=f"Config status versions did not converge on {new_version}"
