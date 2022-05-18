@@ -24,6 +24,8 @@ import (
 )
 
 func NewDescribeCommand(fs afero.Fs) *cobra.Command {
+	var summary bool
+
 	cmd := &cobra.Command{
 		Use:   "describe [GROUPS...]",
 		Short: "Describe group offset status & lag.",
@@ -48,6 +50,11 @@ information about the members.
 			described, err := adm.DescribeGroups(ctx, groups...)
 			out.HandleShardError("DescribeGroups", err)
 
+			if summary {
+				printDescribedSummary(described)
+				return
+			}
+
 			fetched := adm.FetchManyOffsets(ctx, groups...)
 			fetched.EachError(func(r kadm.FetchOffsetsResponse) {
 				fmt.Printf("unable to fetch offsets for group %q: %v\n", r.Group, r.Err)
@@ -67,6 +74,7 @@ information about the members.
 			)
 		},
 	}
+	cmd.Flags().BoolVarP(&summary, "print-summary", "s", false, "Print only the group summary section")
 	return cmd
 }
 
@@ -136,13 +144,15 @@ func printDescribed(
 	}
 }
 
-func printDescribedGroup(
-	group kadm.DescribedGroup,
-	rows []describeRow,
-	useInstanceID bool,
-	useErr bool,
-) {
+func printDescribedSummary(groups kadm.DescribedGroups) {
+	for _, group := range groups.Sorted() {
+		printDescribedGroupSummary(group)
+	}
+}
+
+func printDescribedGroupSummary(group kadm.DescribedGroup) {
 	tw := out.NewTabWriter()
+	defer tw.Flush()
 	fmt.Fprintf(tw, "GROUP\t%s\n", group.Group)
 	fmt.Fprintf(tw, "COORDINATOR\t%d\n", group.Coordinator.NodeID)
 	fmt.Fprintf(tw, "STATE\t%s\n", group.State)
@@ -151,7 +161,15 @@ func printDescribedGroup(
 	if group.Err != nil {
 		fmt.Fprintf(tw, "ERROR\t%s\n", group.Err)
 	}
-	tw.Flush()
+}
+
+func printDescribedGroup(
+	group kadm.DescribedGroup,
+	rows []describeRow,
+	useInstanceID bool,
+	useErr bool,
+) {
+	printDescribedGroupSummary(group)
 
 	if len(rows) == 0 {
 		return
@@ -203,7 +221,7 @@ func printDescribedGroup(
 		}
 	}
 
-	tw = out.NewTable(headers...)
+	tw := out.NewTable(headers...)
 	defer tw.Flush()
 	for _, row := range rows {
 		tw.Print(args(&row)...)
