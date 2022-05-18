@@ -296,10 +296,18 @@ func startCluster(
 	for _, node := range nodes {
 		brokers = append(brokers, node.addr)
 	}
-	log.Infof(
-		"\nCluster started! You may use rpk to interact with it."+
-			" E.g:\n\nrpk cluster info --brokers %s\n", strings.Join(brokers, ","),
-	)
+	m := `
+Cluster started! You may use rpk to interact with it. E.g:
+
+  rpk cluster info --brokers %s
+
+You may also set an environment variable with the comma-separated list of broker addresses:
+
+  export REDPANDA_BROKERS="%s"
+  rpk cluster info
+`
+	b := strings.Join(brokers, ",")
+	log.Infof(m, b, b)
 
 	return nil
 }
