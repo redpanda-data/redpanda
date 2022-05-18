@@ -11,6 +11,8 @@ import time
 from ducktape.services.background_thread import BackgroundThreadService
 from ducktape.cluster.remoteaccount import RemoteCommandError
 
+import threading
+
 
 class ExampleRunner(BackgroundThreadService):
     """
@@ -25,8 +27,10 @@ class ExampleRunner(BackgroundThreadService):
 
         self._pid = None
 
+        self._stopping = threading.Event()
+
     def _worker(self, idx, node):
-        start_time = time.time()
+        self._stopping.clear()
 
         # Some examples require the hostname of the node
         self._example.set_node_name(node.name)
@@ -34,8 +38,17 @@ class ExampleRunner(BackgroundThreadService):
         # Run the example until the condition is met or timeout occurs
         cmd = "echo $$ ; " + self._example.cmd()
         output_iter = node.account.ssh_capture(cmd)
-        while not self._example.condition_met(
-        ) and time.time() < start_time + self._timeout:
+
+        start_time = time.time()
+
+        while True:
+
+            # Terminate loop on timeout or stop_node
+            if time.time() > start_time + self._timeout:
+                break
+            if self._stopping.is_set():
+                break
+
             line = next(output_iter)
             line = line.strip()
             self.logger.debug(line)
@@ -48,11 +61,16 @@ class ExampleRunner(BackgroundThreadService):
                 # store result in a boolean variable
                 self._example.condition(line)
 
+    def condition_met(self):
+        return self._example.condition_met()
+
     # Returns the node name that the example is running on
     def node_name(self):
         return self._example.node_name()
 
     def stop_node(self, node):
+        self._stopping.set()
+
         try:
             if self._pid:
                 node.account.signal(self._pid, 9, allow_fail=True)
