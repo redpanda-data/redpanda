@@ -19,6 +19,7 @@ v_cc_library(
     segment.cc
     segment_index.cc
     segment_appender_utils.cc
+    storage_resources.cc
     batch_cache.cc
     index_state.cc
     lock_manager.cc
