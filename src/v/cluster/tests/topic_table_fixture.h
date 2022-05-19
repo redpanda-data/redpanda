@@ -50,7 +50,6 @@ struct topic_table_fixture {
             config::mock_binding<std::optional<int32_t>>(std::nullopt),
             config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
             config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0}),
-            config::mock_binding<size_t>(32_MiB),
             config::mock_binding<bool>(false))
           .get0();
         allocator.local().register_node(

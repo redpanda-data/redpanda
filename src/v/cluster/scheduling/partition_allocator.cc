@@ -38,7 +38,6 @@ partition_allocator::partition_allocator(
   config::binding<std::optional<int32_t>> fds_per_partition,
   config::binding<uint32_t> partitions_per_shard,
   config::binding<uint32_t> partitions_reserve_shard0,
-  config::binding<size_t> fallocation_step,
   config::binding<bool> enable_rack_awareness)
   : _state(std::make_unique<allocation_state>(
     partitions_per_shard, partitions_reserve_shard0))
@@ -48,7 +47,6 @@ partition_allocator::partition_allocator(
   , _fds_per_partition(fds_per_partition)
   , _partitions_per_shard(partitions_per_shard)
   , _partitions_reserve_shard0(partitions_reserve_shard0)
-  , _fallocation_step(fallocation_step)
   , _enable_rack_awareness(enable_rack_awareness) {}
 
 allocation_constraints default_constraints() {

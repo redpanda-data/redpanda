@@ -30,7 +30,6 @@ public:
       config::binding<std::optional<int32_t>>,
       config::binding<uint32_t>,
       config::binding<uint32_t>,
-      config::binding<size_t>,
       config::binding<bool>);
 
     void register_node(allocation_state::node_ptr n) {
@@ -123,7 +122,6 @@ private:
     config::binding<std::optional<int32_t>> _fds_per_partition;
     config::binding<uint32_t> _partitions_per_shard;
     config::binding<uint32_t> _partitions_reserve_shard0;
-    config::binding<size_t> _fallocation_step;
     config::binding<bool> _enable_rack_awareness;
 };
 } // namespace cluster
