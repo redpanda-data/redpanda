@@ -528,11 +528,11 @@ ss::future<response_ptr> describe_configs_handler::handle(
               result,
               topic_property_remote_read,
               model::is_fetch_enabled(
-                ctx.metadata_cache().get_default_shadow_indexing_mode()),
+                ctx.metadata_cache().get_default_shadow_indexing_fetch_mode()),
               topic_property_remote_read,
-              topic_config->properties.shadow_indexing.has_value()
+              topic_config->properties.shadow_indexing_fetch.has_value()
                 ? std::make_optional(model::is_fetch_enabled(
-                  *topic_config->properties.shadow_indexing))
+                  *topic_config->properties.shadow_indexing_fetch))
                 : std::nullopt,
               request.data.include_synonyms,
               &describe_as_string<bool>);
@@ -542,11 +542,12 @@ ss::future<response_ptr> describe_configs_handler::handle(
               result,
               topic_property_remote_write,
               model::is_archival_enabled(
-                ctx.metadata_cache().get_default_shadow_indexing_mode()),
+                ctx.metadata_cache()
+                  .get_default_shadow_indexing_archival_mode()),
               topic_property_remote_write,
-              topic_config->properties.shadow_indexing.has_value()
+              topic_config->properties.shadow_indexing_archival.has_value()
                 ? std::make_optional(model::is_archival_enabled(
-                  *topic_config->properties.shadow_indexing))
+                  *topic_config->properties.shadow_indexing_archival))
                 : std::nullopt,
               request.data.include_synonyms,
               &describe_as_string<bool>);

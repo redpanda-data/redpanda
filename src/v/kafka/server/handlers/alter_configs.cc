@@ -62,23 +62,6 @@ void parse_and_set_tristate(
     }
 }
 
-static void parse_and_set_shadow_indexing_mode(
-  cluster::property_update<std::optional<model::shadow_indexing_mode>>&
-    property_update,
-  const std::optional<ss::sstring>& value,
-  model::shadow_indexing_mode enabled_value) {
-    if (!value) {
-        property_update.value = model::shadow_indexing_mode::disabled;
-    }
-    property_update.value
-      = string_switch<model::shadow_indexing_mode>(*value)
-          .match("no", model::shadow_indexing_mode::disabled)
-          .match("false", model::shadow_indexing_mode::disabled)
-          .match("yes", enabled_value)
-          .match("true", enabled_value)
-          .default_match(model::shadow_indexing_mode::disabled);
-}
-
 void check_data_policy(std::string_view property_name) {
     if (
       property_name == topic_property_data_policy_function_name
@@ -114,7 +97,9 @@ create_topic_properties_update(alter_configs_resource& resource) {
       = cluster::incremental_update_operation::set;
     update.properties.retention_duration.op
       = cluster::incremental_update_operation::set;
-    update.properties.shadow_indexing.op
+    update.properties.shadow_indexing_archival.op
+      = cluster::incremental_update_operation::set;
+    update.properties.shadow_indexing_fetch.op
       = cluster::incremental_update_operation::set;
     update.custom_properties.data_policy.op
       = cluster::incremental_update_operation::none;
@@ -152,23 +137,13 @@ create_topic_properties_update(alter_configs_resource& resource) {
                 continue;
             }
             if (cfg.name == topic_property_remote_write) {
-                auto set_value = update.properties.shadow_indexing.value
-                                   ? model::add_shadow_indexing_flag(
-                                     *update.properties.shadow_indexing.value,
-                                     model::shadow_indexing_mode::archival)
-                                   : model::shadow_indexing_mode::archival;
-                parse_and_set_shadow_indexing_mode(
-                  update.properties.shadow_indexing, cfg.value, set_value);
+                parse_and_set_optional(
+                  update.properties.shadow_indexing_archival, cfg.value);
                 continue;
             }
             if (cfg.name == topic_property_remote_read) {
-                auto set_value = update.properties.shadow_indexing.value
-                                   ? model::add_shadow_indexing_flag(
-                                     *update.properties.shadow_indexing.value,
-                                     model::shadow_indexing_mode::fetch)
-                                   : model::shadow_indexing_mode::fetch;
-                parse_and_set_shadow_indexing_mode(
-                  update.properties.shadow_indexing, cfg.value, set_value);
+                parse_and_set_optional(
+                  update.properties.shadow_indexing_fetch, cfg.value);
                 continue;
             }
             if (cfg.name == topic_property_retention_duration) {

@@ -54,6 +54,10 @@ void parse_and_set_optional(
     }
     // set property value
     if (op == config_resource_operation::set) {
+        vlog(
+          klog.debug,
+          "parse_and_set_optional, trying to cast value {}.",
+          *value);
         property.value = boost::lexical_cast<T>(*value);
         property.op = cluster::incremental_update_operation::set;
         return;
@@ -81,32 +85,6 @@ void parse_and_set_tristate(
 
         property.op = cluster::incremental_update_operation::set;
         return;
-    }
-}
-
-static void parse_and_set_shadow_indexing_mode(
-  cluster::property_update<std::optional<model::shadow_indexing_mode>>& simode,
-  const std::optional<ss::sstring>& value,
-  config_resource_operation op,
-  model::shadow_indexing_mode enabled_value) {
-    switch (op) {
-    case config_resource_operation::remove:
-        simode.op = cluster::incremental_update_operation::remove;
-        simode.value = model::negate_shadow_indexing_flag(enabled_value);
-        break;
-    case config_resource_operation::set:
-        simode.op = cluster::incremental_update_operation::set;
-        simode.value
-          = string_switch<model::shadow_indexing_mode>(*value)
-              .match("no", model::negate_shadow_indexing_flag(enabled_value))
-              .match("false", model::negate_shadow_indexing_flag(enabled_value))
-              .match("yes", enabled_value)
-              .match("true", enabled_value)
-              .default_match(model::shadow_indexing_mode::disabled);
-        break;
-    case config_resource_operation::append:
-    case config_resource_operation::subtract:
-        break;
     }
 }
 
@@ -229,19 +207,30 @@ create_topic_properties_update(incremental_alter_configs_resource& resource) {
                 continue;
             }
             if (cfg.name == topic_property_remote_write) {
-                parse_and_set_shadow_indexing_mode(
-                  update.properties.shadow_indexing,
+                vlog(
+                  klog.debug,
+                  "Parsing remote write, "
+                  "update.properties.shadow_indexing_archival: "
+                  "{}, "
+                  "cfg.value: {}, op: {}",
+                  update.properties.shadow_indexing_archival.value,
                   cfg.value,
-                  op,
-                  model::shadow_indexing_mode::archival);
+                  op);
+                parse_and_set_optional(
+                  update.properties.shadow_indexing_archival, cfg.value, op);
                 continue;
             }
             if (cfg.name == topic_property_remote_read) {
-                parse_and_set_shadow_indexing_mode(
-                  update.properties.shadow_indexing,
+                vlog(
+                  klog.debug,
+                  "Parsing remote read, "
+                  "update.properties.shadow_indexing_fetch: {}, "
+                  "cfg.value: {}, op: {}",
+                  update.properties.shadow_indexing_fetch.value,
                   cfg.value,
-                  op,
-                  model::shadow_indexing_mode::fetch);
+                  op);
+                parse_and_set_optional(
+                  update.properties.shadow_indexing_fetch, cfg.value, op);
                 continue;
             }
             if (
@@ -257,6 +246,11 @@ create_topic_properties_update(incremental_alter_configs_resource& resource) {
                 continue;
             }
         } catch (const boost::bad_lexical_cast& e) {
+            vlog(
+              klog.debug,
+              "bad_lexical_cast: unable to parse property {} value {}",
+              cfg.name,
+              cfg.value);
             return make_error_alter_config_resource_response<
               incremental_alter_configs_resource_response>(
               resource,
@@ -264,6 +258,14 @@ create_topic_properties_update(incremental_alter_configs_resource& resource) {
               fmt::format(
                 "unable to parse property {} value {}", cfg.name, cfg.value));
         } catch (const v8_engine::data_policy_exeption& e) {
+            vlog(
+              klog.debug,
+              "data_policy_exeption: unable to parse property "
+              "redpanda.data-policy.{} value {}, "
+              "error {}",
+              cfg.name,
+              cfg.value,
+              e.what());
             return make_error_alter_config_resource_response<
               incremental_alter_configs_resource_response>(
               resource,
@@ -468,7 +470,7 @@ ss::future<response_ptr> incremental_alter_configs_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group ssg) {
     incremental_alter_configs_request request;
     request.decode(ctx.reader(), ctx.header().version);
-    vlog(klog.trace, "Handling request {}", request);
+    vlog(klog.debug, "Handling request {}", request);
 
     auto groupped = group_alter_config_resources(
       std::move(request.data.resources));

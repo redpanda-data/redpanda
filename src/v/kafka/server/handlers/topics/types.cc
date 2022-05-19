@@ -64,22 +64,6 @@ get_bool_value(const config_map_t& config, std::string_view key) {
     return std::nullopt;
 }
 
-static std::optional<model::shadow_indexing_mode>
-get_shadow_indexing_mode(const config_map_t& config) {
-    std::optional<model::shadow_indexing_mode> mode;
-    auto arch_enabled = get_bool_value(config, topic_property_remote_write);
-    if (arch_enabled && *arch_enabled) {
-        mode = model::shadow_indexing_mode::archival;
-    }
-    auto si_enabled = get_bool_value(config, topic_property_remote_read);
-    if (si_enabled && *si_enabled) {
-        mode = mode == model::shadow_indexing_mode::archival
-                 ? model::shadow_indexing_mode::full
-                 : mode = model::shadow_indexing_mode::fetch;
-    }
-    return mode;
-}
-
 // Special case for options where Kafka allows -1
 // In redpanda the mapping is following
 //
@@ -128,7 +112,12 @@ to_cluster_type(const creatable_topic& t) {
         config_entries, topic_property_retention_duration);
     cfg.properties.recovery = get_bool_value(
       config_entries, topic_property_recovery);
-    cfg.properties.shadow_indexing = get_shadow_indexing_mode(config_entries);
+    cfg.properties.shadow_indexing_archival
+      = get_config_value<model::shadow_indexing_archival_mode>(
+        config_entries, topic_property_remote_write);
+    cfg.properties.shadow_indexing_fetch
+      = get_config_value<model::shadow_indexing_fetch_mode>(
+        config_entries, topic_property_remote_read);
 
     auto ret = cluster::custom_assignable_topic_configuration(cfg);
     /**
