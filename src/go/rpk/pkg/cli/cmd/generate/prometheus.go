@@ -19,7 +19,9 @@ import (
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -35,7 +37,7 @@ type StaticConfig struct {
 	Targets []string `yaml:"targets"`
 }
 
-func NewPrometheusConfigCmd(mgr config.Manager) *cobra.Command {
+func NewPrometheusConfigCmd(fs afero.Fs) *cobra.Command {
 	var (
 		jobName    string
 		nodeAddrs  []string
@@ -55,25 +57,25 @@ hosts via redpanda's Kafka API. If --node-addrs is passed, they will be used
 directly. Otherwise, 'rpk generate prometheus-conf' will read the redpanda
 config file and use the node IP configured there. --config may be passed to
 specify an arbitrary config file.`,
-		RunE: func(ccmd *cobra.Command, args []string) error {
+		Run: func(cmd *cobra.Command, args []string) {
 			log.SetFormatter(cli.NewNoopFormatter())
 			// The logger's default stream is stderr, which prevents piping to files
 			// from working without redirecting them with '2>&1'.
 			if log.StandardLogger().Out == os.Stderr {
 				log.SetOutput(os.Stdout)
 			}
+			p := config.ParamsFromCommand(cmd)
+			cfg, err := p.Load(fs)
+			out.MaybeDie(err, "unable to load config: %v", err)
+
 			yml, err := executePrometheusConfig(
-				mgr,
+				cfg,
 				jobName,
 				nodeAddrs,
 				seedAddr,
-				configFile,
 			)
-			if err != nil {
-				return err
-			}
+			out.MaybeDieErr(err)
 			log.Infof("\n%s", string(yml))
-			return nil
 		},
 	}
 	command.Flags().StringVar(
@@ -102,10 +104,10 @@ specify an arbitrary config file.`,
 }
 
 func executePrometheusConfig(
-	mgr config.Manager,
+	cfg *config.Config,
 	jobName string,
 	nodeAddrs []string,
-	seedAddr, configFile string,
+	seedAddr string,
 ) ([]byte, error) {
 	if len(nodeAddrs) > 0 {
 		return renderConfig(jobName, nodeAddrs)
@@ -124,13 +126,9 @@ func executePrometheusConfig(
 		}
 		return renderConfig(jobName, hosts)
 	}
-	conf, err := mgr.FindOrGenerate(configFile)
-	if err != nil {
-		return []byte(""), err
-	}
 	hosts, err := discoverHosts(
-		conf.Redpanda.KafkaAPI[0].Address,
-		conf.Redpanda.KafkaAPI[0].Port,
+		cfg.Redpanda.KafkaAPI[0].Address,
+		cfg.Redpanda.KafkaAPI[0].Port,
 	)
 	if err != nil {
 		return []byte(""), err

@@ -22,9 +22,9 @@ func addPlatformDependentCmds(
 	cmd.AddCommand(NewRedpandaCommand(fs, mgr, redpanda.NewLauncher()))
 	cmd.AddCommand(NewDebugCommand(fs))
 
-	cmd.AddCommand(NewTuneCommand(fs, mgr))
-	cmd.AddCommand(NewCheckCommand(fs, mgr))
-	cmd.AddCommand(NewIoTuneCmd(fs, mgr))
+	cmd.AddCommand(NewTuneCommand(fs))
+	cmd.AddCommand(NewCheckCommand(fs))
+	cmd.AddCommand(NewIoTuneCmd(fs))
 	cmd.AddCommand(NewStartCommand(fs, mgr, redpanda.NewLauncher()))
 	cmd.AddCommand(NewStopCommand(fs, mgr))
 	cmd.AddCommand(NewConfigCommand(fs, mgr))

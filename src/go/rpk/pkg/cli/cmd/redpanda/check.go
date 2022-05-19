@@ -21,12 +21,13 @@ import (
 	"github.com/olekukonko/tablewriter"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/ui"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func NewCheckCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
+func NewCheckCommand(fs afero.Fs) *cobra.Command {
 	var (
 		configFile string
 		timeout    time.Duration
@@ -34,8 +35,12 @@ func NewCheckCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "check",
 		Short: "Check if system meets redpanda requirements.",
-		RunE: func(ccmd *cobra.Command, args []string) error {
-			return executeCheck(fs, mgr, configFile, timeout)
+		Run: func(cmd *cobra.Command, args []string) {
+			p := config.ParamsFromCommand(cmd)
+			cfg, err := p.Load(fs)
+			out.MaybeDie(err, "unable to load config: %v", err)
+			err = executeCheck(fs, cfg, timeout)
+			out.MaybeDie(err, "unable to check: %v", err)
 		},
 	}
 	command.Flags().StringVar(
@@ -68,13 +73,9 @@ func appendToTable(t *tablewriter.Table, r tuners.CheckResult) {
 }
 
 func executeCheck(
-	fs afero.Fs, mgr config.Manager, configFile string, timeout time.Duration,
+	fs afero.Fs, cfg *config.Config, timeout time.Duration,
 ) error {
-	conf, err := mgr.FindOrGenerate(configFile)
-	if err != nil {
-		return err
-	}
-	results, err := tuners.Check(fs, conf, timeout)
+	results, err := tuners.Check(fs, cfg, timeout)
 	if err != nil {
 		return err
 	}

@@ -57,7 +57,6 @@ func TestInteractive(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			conf := config.Default()
 			fs := afero.NewMemMapFs()
-			mgr := config.NewManager(fs)
 			// Write invalid yaml to simulate an error
 			_, err := utils.WriteBytes(fs, []byte("*asdf&"), conf.ConfigFile)
 			if err != nil {
@@ -69,7 +68,7 @@ func TestInteractive(t *testing.T) {
 			}
 			var out bytes.Buffer
 			in := strings.NewReader(tt.input)
-			cmd := NewTuneCommand(fs, mgr)
+			cmd := NewTuneCommand(fs)
 			cmd.SetArgs([]string{"swappiness", "--interactive"})
 			cmd.SetIn(in)
 			logrus.SetOutput(&out)

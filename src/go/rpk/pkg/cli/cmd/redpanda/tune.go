@@ -42,7 +42,7 @@ type result struct {
 	errMsg    string
 }
 
-func NewTuneCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
+func NewTuneCommand(fs afero.Fs) *cobra.Command {
 	tunerParams := factory.TunerParams{}
 	var (
 		configFile        string
@@ -78,9 +78,10 @@ func NewTuneCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !tunerParamsEmpty(&tunerParams) && configFile != "" {
-				return errors.New("Use either tuner params or redpanda config file")
+				return errors.New("use either tuner params or redpanda config file")
 			}
 			var tuners []string
+			p := config.ParamsFromCommand(cmd)
 			if args[0] == "all" {
 				tuners = factory.AvailableTuners()
 			} else {
@@ -91,7 +92,7 @@ func NewTuneCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 				return err
 			}
 			tunerParams.CPUMask = cpuMask
-			conf, err := mgr.FindOrGenerate(configFile)
+			cfg, err := p.Load(fs)
 			if err != nil {
 				if !interactive {
 					return err
@@ -108,17 +109,17 @@ Would you like to continue with the default configuration?`,
 				if !confirmed {
 					return nil
 				}
-				conf = config.Default()
+				cfg = config.Default()
 			}
 			var tunerFactory factory.TunersFactory
 			if outTuneScriptFile != "" {
 				tunerFactory = factory.NewScriptRenderingTunersFactory(
-					fs, *conf, outTuneScriptFile, timeout)
+					fs, *cfg, outTuneScriptFile, timeout)
 			} else {
 				tunerFactory = factory.NewDirectExecutorTunersFactory(
-					fs, *conf, timeout)
+					fs, *cfg, timeout)
 			}
-			return tune(conf, tuners, tunerFactory, &tunerParams)
+			return tune(cfg, tuners, tunerFactory, &tunerParams)
 		},
 	}
 	command.Flags().StringVarP(&tunerParams.Mode,
