@@ -36,14 +36,12 @@ partition_allocator::partition_allocator(
   ss::sharded<members_table>& members,
   config::binding<std::optional<size_t>> memory_per_partition,
   config::binding<std::optional<int32_t>> fds_per_partition,
-  config::binding<size_t> fallocation_step,
   config::binding<bool> enable_rack_awareness)
   : _state(std::make_unique<allocation_state>())
   , _allocation_strategy(simple_allocation_strategy())
   , _members(members)
   , _memory_per_partition(memory_per_partition)
   , _fds_per_partition(fds_per_partition)
-  , _fallocation_step(fallocation_step)
   , _enable_rack_awareness(enable_rack_awareness) {}
 
 allocation_constraints default_constraints() {
