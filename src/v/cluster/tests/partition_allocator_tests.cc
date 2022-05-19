@@ -17,6 +17,7 @@
 
 #include <seastar/core/sharded.hh>
 
+#include <absl/container/flat_hash_set.h>
 #include <boost/test/tools/old/interface.hpp>
 
 void validate_replica_set_diversity(
@@ -123,6 +124,39 @@ FIXTURE_TEST(unsatisfyable_diversity_assignment, partition_allocator_fixture) {
 
     BOOST_REQUIRE_EQUAL(allocator.state().last_group_id()(), 0);
 }
+
+FIXTURE_TEST(diverse_replica_sets, partition_allocator_fixture) {
+    // This tests that all possible replica sets are chosen, rather than some
+    // fixed subset (e.g., if the allocator uses a repeating sequential pattern
+    // for allocating replica sets, most sets won't be chosen).
+
+    constexpr int node_count = 6;
+    constexpr int r = 3;
+    constexpr int possible_sets = 20; // 6 choose 3
+
+    for (int node = 0; node < node_count; node++) {
+        register_node(node, 2);
+    }
+
+    // for the 6 nodes, r=3 case, all replica sets will be chosen with
+    // probability about 1 - 1e-21 (i.e., with an astronomically high chance)
+    // after 1,000 samples.
+    absl::flat_hash_set<std::vector<model::broker_shard>> seen_replicas;
+    for (int i = 0; i < 1000; i++) {
+        auto req = make_allocation_request(1, r);
+        auto result = allocator.allocate(std::move(req));
+        BOOST_REQUIRE(result);
+        auto assignments = result.value().get_assignments();
+        BOOST_REQUIRE(assignments.size() == 1);
+        auto replicas = assignments.front().replicas;
+        // we need to sort the replica set
+        std::sort(replicas.begin(), replicas.end());
+        seen_replicas.insert(replicas);
+    }
+
+    BOOST_REQUIRE_EQUAL(seen_replicas.size(), possible_sets);
+}
+
 FIXTURE_TEST(partial_assignment, partition_allocator_fixture) {
     register_node(0, 2);
     register_node(1, 2);
