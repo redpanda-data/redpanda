@@ -437,6 +437,11 @@ STRUCT_TYPES = [
     "FinalizedFeatureKey",
 ]
 
+# The following is a list of tag types which contain fields where their
+# respective types are not prefixed with []. The generator special cases these
+# as ArrayTypes
+TAGGED_WITH_FIELDS = []
+
 SCALAR_TYPES = list(basic_type_map.keys())
 ENTITY_TYPES = list(entity_type_map.keys())
 
@@ -558,6 +563,9 @@ class FieldType:
         if type_name in SCALAR_TYPES:
             t = ScalarType(type_name)
         else:
+            # Its possible for tagged types to contain fields where the type is not
+            # prefixed with [], these types are listed in the TAGGED_WITH_FIELDS map
+            is_array = is_array or (type_name in TAGGED_WITH_FIELDS)
             assert is_array
             path = path + (field["name"], )
             type_name = apply_struct_renames(path, type_name)
@@ -1192,7 +1200,7 @@ std::ostream& operator<<(std::ostream& o, const {{ struct.name }}&) {
 ALLOWED_SCALAR_TYPES = list(set(SCALAR_TYPES) - set(["iobuf"]))
 ALLOWED_TYPES = \
     ALLOWED_SCALAR_TYPES + \
-    [f"[]{t}" for t in ALLOWED_SCALAR_TYPES + STRUCT_TYPES]
+    [f"[]{t}" for t in ALLOWED_SCALAR_TYPES + STRUCT_TYPES] + TAGGED_WITH_FIELDS
 
 # yapf: disable
 SCHEMA = {
