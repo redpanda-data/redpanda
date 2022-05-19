@@ -160,6 +160,14 @@ path_type_map = {
             },
         },
     },
+    "CreateTopicsResponseData": {
+        "Topics": {
+            "Configs": {
+                "ConfigSource": ("kafka::describe_configs_source", "int8"),
+            },
+            "TopicConfigErrorCode": ("kafka::error_code", "int16"),
+        },
+    },
     "FindCoordinatorRequestData": {
         "KeyType": ("kafka::coordinator_type", "int8"),
     },
