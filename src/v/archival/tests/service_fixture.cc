@@ -14,6 +14,7 @@
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "cluster/members_table.h"
+#include "model/fundamental.h"
 #include "random/generators.h"
 #include "s3/client.h"
 #include "seastarx.h"
@@ -278,7 +279,8 @@ void archiver_fixture::add_topic_with_random_data(
 ss::future<> archiver_fixture::add_topic_with_archival_enabled(
   model::topic_namespace_view tp_ns, int partitions) {
     cluster::topic_configuration cfg(tp_ns.ns, tp_ns.tp, partitions, 1);
-    cfg.properties.shadow_indexing = model::shadow_indexing_mode::archival;
+    cfg.properties.shadow_indexing_archival
+      = model::shadow_indexing_archival_mode::archival;
     std::vector<cluster::custom_assignable_topic_configuration> cfgs = {
       cluster::custom_assignable_topic_configuration(std::move(cfg))};
     return app.controller->get_topics_frontend()
@@ -332,7 +334,8 @@ void archiver_fixture::initialize_shard(
           data_dir.string());
         auto defaults
           = std::make_unique<storage::ntp_config::default_overrides>();
-        defaults->shadow_indexing_mode = model::shadow_indexing_mode::archival;
+        defaults->shadow_indexing_archival
+          = model::shadow_indexing_archival_mode::archival;
         app.partition_manager.local()
           .manage(
             storage::ntp_config(ntp.first, data_dir.string()),
