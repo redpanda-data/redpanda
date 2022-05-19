@@ -21,8 +21,9 @@ struct local_monitor_fixture {
     local_monitor_fixture();
     local_monitor_fixture(const local_monitor_fixture&) = delete;
     ~local_monitor_fixture();
-    static constexpr unsigned default_percent_threshold = 5;
-    static constexpr size_t default_bytes_threshold = 1_GiB;
+    static constexpr unsigned default_percent_alert = 5;
+    static constexpr size_t default_bytes_alert = 2_GiB;
+    static constexpr size_t default_min_bytes = 1_GiB;
 
     std::filesystem::path _test_path;
     ss::sharded<storage::node_api> _storage_api;

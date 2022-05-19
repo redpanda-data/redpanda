@@ -14,10 +14,15 @@
 
 namespace cluster::node {
 
-// If you want a smaller threshold, use bytes field.
-// We don't want alert to be disabled, as setting 0% would.
-static constexpr unsigned int min_percent_free_threshold = 1;
-static constexpr unsigned int max_percent_free_threshold = 50;
-static constexpr size_t min_bytes_free_threshold = 1_GiB;
+// Naming is a little confusing: these are min/max values we will allow for
+// config parameters that specify minimum free space thresholds.
+
+static constexpr unsigned int min_min_percent_free_alert = 0;
+static constexpr unsigned int max_min_percent_free_alert = 50;
+
+static constexpr size_t min_min_bytes_free_alert = 0;
+
+// Point at which we become degraded, blocking writes.
+static constexpr size_t min_min_bytes_free = 1_GiB;
 
 } // namespace cluster::node

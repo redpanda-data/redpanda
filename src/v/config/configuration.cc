@@ -1131,16 +1131,23 @@ configuration::configuration()
       "alert",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       5,
-      {.min = cluster::node::min_percent_free_threshold,
-       .max = cluster::node::max_percent_free_threshold})
+      {.min = cluster::node::min_min_percent_free_alert,
+       .max = cluster::node::max_min_percent_free_alert})
   , storage_space_alert_free_threshold_bytes(
       *this,
       "storage_space_alert_free_threshold_bytes",
       "Threshold of minimim bytes free space before setting storage space "
       "alert",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      1_GiB,
-      {.min = cluster::node::min_bytes_free_threshold})
+      cluster::node::min_min_bytes_free_alert,
+      {.min = cluster::node::min_min_bytes_free_alert})
+  , storage_min_free_bytes(
+      *this,
+      "storage_min_free_bytes",
+      "Threshold of minimim bytes free space before rejecting producers.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      cluster::node::min_min_bytes_free,
+      {.min = cluster::node::min_min_bytes_free})
   , enable_metrics_reporter(
       *this,
       "enable_metrics_reporter",

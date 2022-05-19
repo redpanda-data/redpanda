@@ -33,6 +33,7 @@ local_monitor_fixture::local_monitor_fixture()
   : _local_monitor(
     config::shard_local_cfg().storage_space_alert_free_threshold_bytes.bind(),
     config::shard_local_cfg().storage_space_alert_free_threshold_percent.bind(),
+    config::shard_local_cfg().storage_min_free_bytes.bind(),
     _storage_api) {
     _storage_api.start_single().get0();
 
@@ -53,8 +54,7 @@ local_monitor_fixture::local_monitor_fixture()
     _local_monitor.testing_only_set_path(_test_path.string());
     BOOST_ASSERT(ss::engine_is_ready());
 
-    set_config_alert_thresholds(
-      default_percent_threshold, default_bytes_threshold);
+    set_config_alert_thresholds(default_percent_alert, default_bytes_alert);
 }
 
 local_monitor_fixture::~local_monitor_fixture() {
@@ -115,8 +115,7 @@ FIXTURE_TEST(local_monitor_alert_on_space_percent, local_monitor_fixture) {
     // Minimum by %: 200 * 4k block = 800KiB total * 0.05 -> 40 KiB
     // Minimum by bytes:                                      1 GiB
     static constexpr auto total = 200UL, free = 0UL, block_size = 4096UL;
-    size_t min_free_percent_blocks = total
-                                     * (default_percent_threshold / 100.0);
+    size_t min_free_percent_blocks = total * (default_percent_alert / 100.0);
     struct statvfs stats = make_statvfs(free, total, block_size);
     auto lamb = [&](const ss::sstring&) { return stats; };
     _local_monitor.testing_only_set_statvfs(lamb);
@@ -136,7 +135,7 @@ FIXTURE_TEST(local_monitor_alert_on_space_bytes, local_monitor_fixture) {
     // Minimum by %: 30 GiB total * 0.05 => 1.5 GiB
     // Minimum by bytes:                    1   GiB
     static constexpr auto total = 30 * 1024 * 1024UL, block_size = 1024UL;
-    static constexpr auto min_bytes_in_blocks = default_bytes_threshold
+    static constexpr auto min_bytes_in_blocks = default_bytes_alert
                                                 / block_size;
     clusterlog.debug(
       "{}: bytes free threshold -> {} blocks", __func__, min_bytes_in_blocks);

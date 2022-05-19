@@ -56,8 +56,9 @@ public:
       ss::sharded<storage::node_api>&,
       ss::sharded<drain_manager>&,
       ss::sharded<feature_table>&,
-      config::binding<size_t> storage_min_bytes_threshold,
-      config::binding<unsigned> storage_min_percent_threshold);
+      config::binding<size_t> min_bytes_alert,
+      config::binding<unsigned> min_percent_alert,
+      config::binding<size_t> min_bytes);
 
     ss::future<> stop();
 

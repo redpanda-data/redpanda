@@ -16,6 +16,7 @@
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "storage/api.h"
+#include "storage/types.h"
 #include "utils/human.h"
 #include "vassert.h"
 #include "version.h"
@@ -36,11 +37,13 @@
 namespace cluster::node {
 
 local_monitor::local_monitor(
+  config::binding<size_t> alert_bytes,
+  config::binding<unsigned> alert_percent,
   config::binding<size_t> min_bytes,
-  config::binding<unsigned> min_percent,
   ss::sharded<storage::node_api>& api)
-  : _free_bytes_alert_threshold(min_bytes)
-  , _free_percent_alert_threshold(min_percent)
+  : _free_bytes_alert_threshold(alert_bytes)
+  , _free_percent_alert_threshold(alert_percent)
+  , _min_free_bytes(min_bytes)
   , _storage_api(api) {}
 
 ss::future<> local_monitor::update_state() {
@@ -107,44 +110,58 @@ float local_monitor::percent_free(const storage::disk& disk) {
 }
 
 void local_monitor::maybe_log_space_error(const storage::disk& disk) {
+    auto state = _state.storage_space_alert;
+    if (state == storage::disk_space_alert::ok) {
+        return;
+    }
     auto [min_by_bytes, min_by_percent] = minimum_free_by_bytes_and_percent(
       disk.total);
     auto min_space = std::min(min_by_percent, min_by_bytes);
+    constexpr auto alert_text = "avoid running out of space";
+    constexpr auto degraded_text = "allow writing again";
     clusterlog.log(
       ss::log_level::error,
       _despam_interval,
-      "{}: free space at {:.3f}% on {}: {} total, {} free, "
-      "min. free {}. Please adjust retention policies as needed to "
-      "avoid running out of space.",
+      "{}: free space at {:.3f}\% on {}: {} total, {} free, min. free {}. "
+      "Please adjust retention policies as needed to {}",
       stable_alert_string,
       percent_free(disk),
       disk.path,
       // TODO: generalize human::bytes for unsigned long
       human::bytes(disk.total), // NOLINT narrowing conv.
       human::bytes(disk.free),  // NOLINT  "  "
-      human::bytes(min_space)); // NOLINT  "  "
+      human::bytes(min_space),  // NOLINT  "  "
+      state == storage::disk_space_alert::degraded ? degraded_text
+                                                   : alert_text);
 }
 
 void local_monitor::update_alert_state() {
     _state.storage_space_alert = storage::disk_space_alert::ok;
     for (const auto& d : _state.disks) {
         vassert(d.total != 0.0, "Total disk space cannot be zero.");
+        // 1. Check alert thresholds.
         auto [min_by_bytes, min_by_percent] = minimum_free_by_bytes_and_percent(
           d.total);
-        auto min_space = std::min(min_by_percent, min_by_bytes);
+        auto alert_min = std::max(min_by_percent, min_by_bytes);
+        auto min_bytes = _min_free_bytes();
+        if (unlikely(d.free <= alert_min)) {
+            _state.storage_space_alert = storage::disk_space_alert::low_space;
+        }
+        // 2. Check degraded (read-only) threshold
+        if (unlikely(d.free <= min_bytes)) {
+            _state.storage_space_alert = storage::disk_space_alert::degraded;
+        }
+        maybe_log_space_error(d);
         clusterlog.debug(
-          "min by % {}, min bytes {}, disk.free {} -> alert {}",
+          "alert % {}, alert bytes {}, min bytes {} disk.free {} -> alert {}",
           min_by_percent,
           min_by_bytes,
+          min_bytes,
           d.free,
-          d.free <= min_space);
-
-        if (unlikely(d.free <= min_space)) {
-            _state.storage_space_alert = storage::disk_space_alert::low_space;
-            maybe_log_space_error(d);
-        }
+          _state.storage_space_alert);
     }
 }
+
 // Preconditions: _state.disks is non-empty.
 ss::future<> local_monitor::update_disk_metrics() {
     auto& d = _state.disks[0];

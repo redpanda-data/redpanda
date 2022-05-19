@@ -27,8 +27,9 @@ namespace cluster::node {
 class local_monitor {
 public:
     local_monitor(
+      config::binding<size_t> min_bytes_alert,
+      config::binding<unsigned> min_percent_alert,
       config::binding<size_t> min_bytes,
-      config::binding<unsigned> min_percent,
       ss::sharded<storage::node_api>& api);
     local_monitor(const local_monitor&) = delete;
     local_monitor(local_monitor&&) = default;
@@ -68,6 +69,7 @@ private:
       std::chrono::hours(1));
     config::binding<size_t> _free_bytes_alert_threshold;
     config::binding<unsigned> _free_percent_alert_threshold;
+    config::binding<size_t> _min_free_bytes;
 
     ss::sharded<storage::node_api>& _storage_api; // single instance
 

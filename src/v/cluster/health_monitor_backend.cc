@@ -53,8 +53,9 @@ health_monitor_backend::health_monitor_backend(
   ss::sharded<storage::node_api>& storage_api,
   ss::sharded<drain_manager>& drain_manager,
   ss::sharded<feature_table>& feature_table,
-  config::binding<size_t> storage_min_bytes_threshold,
-  config::binding<unsigned> storage_min_percent_threshold)
+  config::binding<size_t> storage_min_bytes_alert,
+  config::binding<unsigned> storage_min_percent_alert,
+  config::binding<size_t> storage_min_bytes)
   : _raft0(std::move(raft0))
   , _members(mt)
   , _connections(connections)
@@ -64,8 +65,9 @@ health_monitor_backend::health_monitor_backend(
   , _drain_manager(drain_manager)
   , _feature_table(feature_table)
   , _local_monitor(
-      std::move(storage_min_bytes_threshold),
-      std::move(storage_min_percent_threshold),
+      std::move(storage_min_bytes_alert),
+      std::move(storage_min_percent_alert),
+      std::move(storage_min_bytes),
       storage_api) {
     _tick_timer.set_callback([this] { tick(); });
     _tick_timer.arm(tick_interval());
