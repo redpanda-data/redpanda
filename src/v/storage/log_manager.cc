@@ -196,7 +196,8 @@ ss::future<ss::lw_shared_ptr<segment>> log_manager::make_log_segment(
             read_buf_size,
             read_ahead,
             _config.sanitize_fileops,
-            create_cache(ntp.cache_enabled()));
+            create_cache(ntp.cache_enabled()),
+            _resources);
       });
 }
 
@@ -277,7 +278,8 @@ ss::future<log> log_manager::do_manage(ntp_config cfg) {
       _abort_source,
       config::shard_local_cfg().storage_read_buffer_size(),
       config::shard_local_cfg().storage_read_readahead_count(),
-      last_clean_segment);
+      last_clean_segment,
+      _resources);
 
     auto l = storage::make_disk_backed_log(
       std::move(cfg), *this, std::move(segments), _kvstore);

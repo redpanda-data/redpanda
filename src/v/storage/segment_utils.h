@@ -35,7 +35,8 @@ ss::future<compaction_result> self_compact_segment(
   ss::lw_shared_ptr<storage::segment>,
   storage::compaction_config,
   storage::probe&,
-  storage::readers_cache&);
+  storage::readers_cache&,
+  storage::storage_resources&);
 
 /*
  * Concatentate segments into a minimal new segment.
@@ -57,12 +58,14 @@ ss::future<compaction_result> self_compact_segment(
 ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
   std::filesystem::path,
   std::vector<ss::lw_shared_ptr<segment>>,
-  compaction_config);
+  compaction_config,
+  storage_resources& resources);
 
 ss::future<> write_concatenated_compacted_index(
   std::filesystem::path,
   std::vector<ss::lw_shared_ptr<segment>>,
-  compaction_config);
+  compaction_config,
+  storage_resources& resources);
 
 ss::future<std::vector<ss::rwlock::holder>> transfer_segment(
   ss::lw_shared_ptr<segment> to,
@@ -100,7 +103,8 @@ ss::future<ss::file> make_handle(
 ss::future<compacted_index_writer> make_compacted_index_writer(
   const std::filesystem::path& path,
   storage::debug_sanitize_files debug,
-  ss::io_priority_class iopc);
+  ss::io_priority_class iopc,
+  storage_resources& resources);
 
 ss::future<segment_appender_ptr> make_segment_appender(
   const std::filesystem::path& path,
@@ -108,7 +112,7 @@ ss::future<segment_appender_ptr> make_segment_appender(
   size_t number_of_chunks,
   std::optional<uint64_t> segment_size,
   ss::io_priority_class iopc,
-  config::binding<size_t> fallocate_size);
+  storage_resources& resources);
 
 size_t number_of_chunks_from_config(const storage::ntp_config&);
 uint64_t segment_size_from_config(const storage::ntp_config&);
@@ -133,7 +137,9 @@ ss::future<> copy_filtered_entries(
 /// \brief writes a new `*.compacted_index` file and *closes* the
 /// input compacted_index_reader file
 ss::future<> write_clean_compacted_index(
-  storage::compacted_index_reader, storage::compaction_config);
+  storage::compacted_index_reader,
+  storage::compaction_config,
+  storage_resources& resources);
 
 ss::future<compacted_offset_list>
   generate_compacted_list(model::offset, storage::compacted_index_reader);
@@ -153,7 +159,8 @@ ss::future<storage::index_state> do_copy_segment_data(
   ss::lw_shared_ptr<storage::segment>,
   storage::compaction_config,
   storage::probe&,
-  ss::rwlock::holder);
+  ss::rwlock::holder,
+  storage_resources&);
 
 ss::future<> do_swap_data_file_handles(
   std::filesystem::path compacted,
