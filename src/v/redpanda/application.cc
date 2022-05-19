@@ -21,6 +21,7 @@
 #include "cluster/members_table.h"
 #include "cluster/metadata_dissemination_handler.h"
 #include "cluster/metadata_dissemination_service.h"
+#include "cluster/node/local_monitor.h"
 #include "cluster/partition_manager.h"
 #include "cluster/rm_partition_frontend.h"
 #include "cluster/security_frontend.h"
@@ -1199,8 +1200,20 @@ void application::start(::stop_signal& app_signal) {
 
 void application::start_redpanda(::stop_signal& app_signal) {
     syschecks::systemd_message("Staring storage services").get();
+
     // single instance
     storage_node.invoke_on_all(&storage::node_api::start).get0();
+
+    // Early initialization of disk stats, so that logic for e.g. picking
+    // falloc sizes works without having to wait for a local_monitor tick.
+    auto tmp_lm = cluster::node::local_monitor(
+      config::shard_local_cfg().storage_space_alert_free_threshold_bytes.bind(),
+      config::shard_local_cfg()
+        .storage_space_alert_free_threshold_percent.bind(),
+      config::shard_local_cfg().storage_min_free_bytes.bind(),
+      storage_node);
+    tmp_lm.update_state().get();
+
     storage.invoke_on_all(&storage::api::start).get();
 
     syschecks::systemd_message("Starting the partition manager").get();
