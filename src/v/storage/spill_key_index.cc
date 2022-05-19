@@ -55,7 +55,10 @@ spill_key_index::spill_key_index(
   , _appender(storage::segment_appender(
       std::move(dummy_file),
       segment_appender::options(
-        _pc, 1, config::shard_local_cfg().segment_fallocation_step.bind())))
+        _pc,
+        1,
+        std::nullopt,
+        config::shard_local_cfg().segment_fallocation_step.bind())))
   , _max_mem(max_memory) {}
 
 spill_key_index::~spill_key_index() {
@@ -246,7 +249,10 @@ ss::future<> spill_key_index::open() {
     _appender.emplace(storage::segment_appender(
       std::move(index_file),
       segment_appender::options(
-        _pc, 1, config::shard_local_cfg().segment_fallocation_step.bind())));
+        _pc,
+        1,
+        std::nullopt,
+        config::shard_local_cfg().segment_fallocation_step.bind())));
 }
 
 ss::future<> spill_key_index::close() {

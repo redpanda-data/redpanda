@@ -106,10 +106,12 @@ ss::future<segment_appender_ptr> make_segment_appender(
   const std::filesystem::path& path,
   storage::debug_sanitize_files debug,
   size_t number_of_chunks,
+  std::optional<uint64_t> segment_size,
   ss::io_priority_class iopc,
   config::binding<size_t> fallocate_size);
 
 size_t number_of_chunks_from_config(const storage::ntp_config&);
+uint64_t segment_size_from_config(const storage::ntp_config&);
 
 /*
 1. if footer.flags == truncate write new .compacted_index file
