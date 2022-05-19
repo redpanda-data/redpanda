@@ -291,37 +291,6 @@ void incremental_update(
     }
 }
 
-template<>
-void incremental_update(
-  std::optional<model::shadow_indexing_mode>& property,
-  property_update<std::optional<model::shadow_indexing_mode>> override) {
-    switch (override.op) {
-    case incremental_update_operation::remove:
-        if (!override.value || !property) {
-            break;
-        }
-        // It's guaranteed that the remove operation will only be
-        // used with one of the 'drop_' flags.
-        property = model::add_shadow_indexing_flag(*property, *override.value);
-        if (*property == model::shadow_indexing_mode::disabled) {
-            property = std::nullopt;
-        }
-        return;
-    case incremental_update_operation::set:
-        // set new value
-        if (!override.value) {
-            break;
-        }
-        property = model::add_shadow_indexing_flag(
-          property ? *property : model::shadow_indexing_mode::disabled,
-          *override.value);
-        return;
-    case incremental_update_operation::none:
-        // do nothing
-        return;
-    }
-}
-
 template<typename T>
 void incremental_update(
   tristate<T>& property, property_update<tristate<T>> override) {
@@ -362,7 +331,10 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
     incremental_update(properties.segment_size, overrides.segment_size);
     incremental_update(properties.timestamp_type, overrides.timestamp_type);
 
-    incremental_update(properties.shadow_indexing, overrides.shadow_indexing);
+    incremental_update(
+      properties.shadow_indexing_archival, overrides.shadow_indexing_archival);
+    incremental_update(
+      properties.shadow_indexing_fetch, overrides.shadow_indexing_fetch);
 
     // generate deltas for controller backend
     std::vector<topic_table_delta> deltas;
