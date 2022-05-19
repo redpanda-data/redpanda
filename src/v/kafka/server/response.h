@@ -15,6 +15,7 @@
 #include "kafka/protocol/response_writer.h"
 #include "kafka/protocol/types.h"
 #include "seastarx.h"
+#include "vassert.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/sharded.hh>
@@ -56,6 +57,11 @@ public:
     bool is_noop() const { return _noop; }
     void mark_noop() { _noop = true; }
 
+    void set_units(ss::semaphore_units<> units) {
+        vassert(!_units, "units already set");
+        _units = std::move(units);
+    }
+
 private:
     bool _noop{false};
     correlation_id _correlation;
@@ -63,6 +69,7 @@ private:
     std::optional<tagged_fields> _tags;
     iobuf _buf;
     response_writer _writer;
+    std::optional<ss::semaphore_units<>> _units;
 };
 
 using response_ptr = ss::foreign_ptr<std::unique_ptr<response>>;

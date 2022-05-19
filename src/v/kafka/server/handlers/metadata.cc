@@ -486,7 +486,10 @@ ss::future<response_ptr> metadata_handler::handle(
         vlog(klog.warn, "response size {} units {}", rsize, ctx.memunits());
     }
 
-    co_return co_await ctx.respond(std::move(reply));
+    auto resp = co_await ctx.respond(std::move(reply));
+    resp->set_units(std::move(units));
+
+    co_return resp;
 }
 
 size_t
