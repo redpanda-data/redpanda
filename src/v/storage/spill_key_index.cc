@@ -248,11 +248,7 @@ ss::future<> spill_key_index::open() {
 
     _appender.emplace(storage::segment_appender(
       std::move(index_file),
-      segment_appender::options(
-        _pc,
-        1,
-        std::nullopt,
-        config::shard_local_cfg().segment_fallocation_step.bind())));
+      segment_appender::options(_pc, 1, std::nullopt, _resources)));
 }
 
 ss::future<> spill_key_index::close() {

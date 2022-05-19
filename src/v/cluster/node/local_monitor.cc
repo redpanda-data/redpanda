@@ -41,10 +41,12 @@ local_monitor::local_monitor(
   config::binding<size_t> alert_bytes,
   config::binding<unsigned> alert_percent,
   config::binding<size_t> min_bytes,
-  ss::sharded<storage::node_api>& api)
+  ss::sharded<storage::node_api>& node_api,
+  ss::sharded<storage::api>& api)
   : _free_bytes_alert_threshold(alert_bytes)
   , _free_percent_alert_threshold(alert_percent)
   , _min_free_bytes(min_bytes)
+  , _storage_node_api(node_api)
   , _storage_api(api) {}
 
 ss::future<> local_monitor::update_state() {
@@ -180,7 +182,15 @@ void local_monitor::update_alert_state() {
 // Preconditions: _state.disks is non-empty.
 ss::future<> local_monitor::update_disk_metrics() {
     auto& d = _state.disks[0];
-    return _storage_api.invoke_on_all(
+
+    uint64_t sr_allowance = d.total;
+    uint64_t sr_free = d.free;
+    co_await _storage_api.invoke_on_all(
+      [sr_allowance, sr_free](storage::api& api) {
+          api.resources().update_allowance(sr_allowance, sr_free);
+      });
+
+    co_await _storage_node_api.invoke_on_all(
       &storage::node_api::set_disk_metrics,
       d.total,
       d.free,

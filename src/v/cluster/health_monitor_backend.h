@@ -53,6 +53,7 @@ public:
       ss::sharded<raft::group_manager>&,
       ss::sharded<ss::abort_source>&,
       ss::sharded<storage::node_api>&,
+      ss::sharded<storage::api>&,
       ss::sharded<drain_manager>&,
       ss::sharded<feature_table>&,
       config::binding<size_t> min_bytes_alert,

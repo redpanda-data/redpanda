@@ -1156,8 +1156,26 @@ void application::start_redpanda(::stop_signal& app_signal) {
       config::shard_local_cfg().storage_space_alert_free_threshold_bytes.bind(),
       config::shard_local_cfg()
         .storage_space_alert_free_threshold_percent.bind(),
-      storage_node);
+      storage_node,
+      storage);
     tmp_lm.update_state().get();
+
+    auto disk_stats
+      = storage_node
+          .invoke_on(
+            ss::shard_id{0},
+            [](const storage::node_api& na) -> storage::disk_metrics {
+                return na.get_disk_metrics();
+            })
+          .get();
+
+    storage
+      .invoke_on_all([disk_stats](storage::api& sa) -> ss::future<> {
+          sa.resources().update_allowance(
+            disk_stats.total_bytes, disk_stats.free_bytes);
+          return ss::now();
+      })
+      .get();
 
     storage.invoke_on_all(&storage::api::start).get();
 
