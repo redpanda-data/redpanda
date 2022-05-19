@@ -42,7 +42,8 @@ bool topic_properties::has_overrides() const {
     return cleanup_policy_bitflags || compaction_strategy || segment_size
            || retention_bytes.has_value() || retention_bytes.is_disabled()
            || retention_duration.has_value() || retention_duration.is_disabled()
-           || recovery.has_value() || shadow_indexing.has_value();
+           || recovery.has_value() || shadow_indexing_archival.has_value()
+           || shadow_indexing_fetch.has_value();
 }
 
 storage::ntp_config::default_overrides
@@ -53,9 +54,13 @@ topic_properties::get_ntp_cfg_overrides() const {
     ret.retention_bytes = retention_bytes;
     ret.retention_time = retention_duration;
     ret.segment_size = segment_size;
-    ret.shadow_indexing_mode = shadow_indexing
-                                 ? *shadow_indexing
-                                 : model::shadow_indexing_mode::disabled;
+    ret.shadow_indexing_archival
+      = shadow_indexing_archival
+          ? *shadow_indexing_archival
+          : model::shadow_indexing_archival_mode::disabled;
+    ret.shadow_indexing_fetch = shadow_indexing_fetch
+                                  ? *shadow_indexing_fetch
+                                  : model::shadow_indexing_fetch_mode::disabled;
     return ret;
 }
 
@@ -86,9 +91,14 @@ storage::ntp_config topic_configuration::make_ntp_config(
             .cache_enabled = storage::with_cache(!is_internal()),
             .recovery_enabled = storage::topic_recovery_enabled(
               properties.recovery ? *properties.recovery : false),
-            .shadow_indexing_mode = properties.shadow_indexing
-                                      ? *properties.shadow_indexing
-                                      : model::shadow_indexing_mode::disabled});
+            .shadow_indexing_archival
+            = properties.shadow_indexing_archival
+                ? *properties.shadow_indexing_archival
+                : model::shadow_indexing_archival_mode::disabled,
+            .shadow_indexing_fetch
+            = properties.shadow_indexing_fetch
+                ? *properties.shadow_indexing_fetch
+                : model::shadow_indexing_fetch_mode::disabled});
     }
     return {
       model::ntp(tp_ns.ns, tp_ns.tp, p_id),
@@ -172,7 +182,8 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       "compaction_strategy: "
       "{}, retention_bytes: {}, retention_duration_ms: {}, segment_size: "
       "{}, "
-      "timestamp_type: {}, recovery_enabled: {}, shadow_indexing: {} }}",
+      "timestamp_type: {}, recovery_enabled: {}, shadow_indexing_archival: {}, "
+      "shadow_indexing_fetch: {} }}",
       properties.compression,
       properties.cleanup_policy_bitflags,
       properties.compaction_strategy,
@@ -181,7 +192,8 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       properties.segment_size,
       properties.timestamp_type,
       properties.recovery,
-      properties.shadow_indexing);
+      properties.shadow_indexing_archival,
+      properties.shadow_indexing_fetch);
 
     return o;
 }
@@ -436,7 +448,7 @@ namespace reflection {
 
 void adl<cluster::topic_configuration>::to(
   iobuf& out, cluster::topic_configuration&& t) {
-    int32_t version = -1;
+    int32_t version = -2;
     reflection::serialize(
       out,
       version,
@@ -451,7 +463,8 @@ void adl<cluster::topic_configuration>::to(
       t.properties.retention_bytes,
       t.properties.retention_duration,
       t.properties.recovery,
-      t.properties.shadow_indexing);
+      t.properties.shadow_indexing_archival,
+      t.properties.shadow_indexing_fetch);
 }
 
 cluster::topic_configuration
@@ -468,7 +481,7 @@ adl<cluster::topic_configuration>::from(iobuf_parser& in) {
         // Consume version from stream
         in.skip(4);
         vassert(
-          -1 == version,
+          -1 == version || -2 == version,
           "topic_configuration version {} is not supported",
           version);
     } else {
@@ -494,10 +507,25 @@ adl<cluster::topic_configuration>::from(iobuf_parser& in) {
     cfg.properties.retention_bytes = adl<tristate<size_t>>{}.from(in);
     cfg.properties.retention_duration
       = adl<tristate<std::chrono::milliseconds>>{}.from(in);
-    if (version < 0) {
+    if (version == -1) {
         cfg.properties.recovery = adl<std::optional<bool>>{}.from(in);
-        cfg.properties.shadow_indexing
-          = adl<std::optional<model::shadow_indexing_mode>>{}.from(in);
+        auto si_mode = adl<std::optional<model::shadow_indexing_mode>>{}.from(
+          in);
+        if (
+          si_mode.has_value() && model::is_archival_enabled(si_mode.value())) {
+            cfg.properties.shadow_indexing_archival
+              = model::shadow_indexing_archival_mode::archival;
+        }
+        if (si_mode.has_value() && model::is_fetch_enabled(si_mode.value())) {
+            cfg.properties.shadow_indexing_fetch
+              = model::shadow_indexing_fetch_mode::fetch;
+        }
+    } else if (version == -2) {
+        cfg.properties.recovery = adl<std::optional<bool>>{}.from(in);
+        cfg.properties.shadow_indexing_archival
+          = adl<std::optional<model::shadow_indexing_archival_mode>>{}.from(in);
+        cfg.properties.shadow_indexing_fetch
+          = adl<std::optional<model::shadow_indexing_fetch_mode>>{}.from(in);
     }
     return cfg;
 }
@@ -1101,7 +1129,8 @@ void adl<cluster::incremental_topic_updates>::to(
       t.segment_size,
       t.retention_bytes,
       t.retention_duration,
-      t.shadow_indexing);
+      t.shadow_indexing_archival,
+      t.shadow_indexing_fetch);
 }
 
 cluster::incremental_topic_updates
@@ -1159,10 +1188,29 @@ adl<cluster::incremental_topic_updates>::from(iobuf_parser& in) {
     }
     if (
       version
-      <= cluster::incremental_topic_updates::version_with_shadow_indexing) {
-        updates.shadow_indexing = adl<cluster::property_update<
+      == cluster::incremental_topic_updates::version_with_shadow_indexing) {
+        auto si_mode = adl<cluster::property_update<
           std::optional<model::shadow_indexing_mode>>>{}
-                                    .from(in);
+                         .from(in);
+        if (si_mode.value.has_value()) {
+            updates.shadow_indexing_archival.value
+              = model::is_archival_enabled(si_mode.value.value())
+                  ? model::shadow_indexing_archival_mode::archival
+                  : model::shadow_indexing_archival_mode::disabled;
+            updates.shadow_indexing_fetch.value
+              = model::is_fetch_enabled(si_mode.value.value())
+                  ? model::shadow_indexing_fetch_mode::fetch
+                  : model::shadow_indexing_fetch_mode::disabled;
+        }
+    } else if (
+      version
+      == cluster::incremental_topic_updates::version_with_separate_si_flags) {
+        updates.shadow_indexing_archival = adl<cluster::property_update<
+          std::optional<model::shadow_indexing_archival_mode>>>{}
+                                             .from(in);
+        updates.shadow_indexing_fetch = adl<cluster::property_update<
+          std::optional<model::shadow_indexing_fetch_mode>>>{}
+                                          .from(in);
     }
     return updates;
 }

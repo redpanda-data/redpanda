@@ -364,7 +364,9 @@ struct topic_properties {
     tristate<size_t> retention_bytes{std::nullopt};
     tristate<std::chrono::milliseconds> retention_duration{std::nullopt};
     std::optional<bool> recovery;
-    std::optional<model::shadow_indexing_mode> shadow_indexing;
+    std::optional<model::shadow_indexing_archival_mode>
+      shadow_indexing_archival;
+    std::optional<model::shadow_indexing_fetch_mode> shadow_indexing_fetch;
 
     bool is_compacted() const;
     bool has_overrides() const;
@@ -397,11 +399,14 @@ struct property_update<tristate<T>> {
 struct incremental_topic_updates {
     static constexpr int8_t version_with_data_policy = -1;
     static constexpr int8_t version_with_shadow_indexing = -3;
+    static constexpr int8_t version_with_separate_si_flags = -4;
     // negative version indicating different format:
     // -1 - topic_updates with data_policy
     // -2 - topic_updates without data_policy
     // -3 - topic_updates with shadow_indexing
-    static constexpr int8_t version = -3;
+    // -4 - topic_updates without shadow_indexing, but with
+    // shadow_indexing_archival and shadow_indexing_fetch
+    static constexpr int8_t version = -4;
     property_update<std::optional<model::compression>> compression;
     property_update<std::optional<model::cleanup_policy_bitflags>>
       cleanup_policy_bitflags;
@@ -411,7 +416,10 @@ struct incremental_topic_updates {
     property_update<std::optional<size_t>> segment_size;
     property_update<tristate<size_t>> retention_bytes;
     property_update<tristate<std::chrono::milliseconds>> retention_duration;
-    property_update<std::optional<model::shadow_indexing_mode>> shadow_indexing;
+    property_update<std::optional<model::shadow_indexing_archival_mode>>
+      shadow_indexing_archival;
+    property_update<std::optional<model::shadow_indexing_fetch_mode>>
+      shadow_indexing_fetch;
 
     friend bool operator==(
       const incremental_topic_updates&, const incremental_topic_updates&)
