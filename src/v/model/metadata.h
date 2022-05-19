@@ -14,6 +14,7 @@
 #include "model/fundamental.h"
 #include "net/unresolved_address.h"
 #include "seastarx.h"
+#include "serde/envelope.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/sstring.hh>
@@ -245,6 +246,8 @@ struct topic_namespace_view {
 };
 
 struct topic_namespace {
+    topic_namespace() = default;
+
     topic_namespace(model::ns n, model::topic t)
       : ns(std::move(n))
       , tp(std::move(t)) {}
@@ -269,6 +272,21 @@ struct topic_namespace {
     template<typename H>
     friend H AbslHashValue(H h, const topic_namespace& tp_ns) {
         return H::combine(std::move(h), tp_ns.ns, tp_ns.tp);
+    }
+
+    friend void write(iobuf& out, topic_namespace t) {
+        using serde::write;
+        write(out, std::move(t.ns));
+        write(out, std::move(t.tp));
+    }
+
+    friend void read_nested(
+      iobuf_parser& in,
+      topic_namespace& t,
+      std::size_t const bytes_left_limit) {
+        using serde::read_nested;
+        read_nested(in, t.ns, bytes_left_limit);
+        read_nested(in, t.tp, bytes_left_limit);
     }
 
     model::ns ns;

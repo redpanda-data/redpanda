@@ -9,6 +9,7 @@
 
 #include "hashing/crc32c.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "serde/envelope.h"
 #include "serde/serde.h"
 #include "utils/fragmented_vector.h"
@@ -694,4 +695,16 @@ SEASTAR_THREAD_TEST_CASE(fragmented_vector_test) {
         BOOST_REQUIRE_EQUAL_COLLECTIONS(
           v_out.begin(), v_out.end(), v_in_copy.begin(), v_in_copy.end());
     }
+}
+
+SEASTAR_THREAD_TEST_CASE(serde_topic_namespace_test) {
+    iobuf b;
+    {
+        model::topic_namespace tn{model::ns{"abc"}, model::topic{"def"}};
+        b = serde::to_iobuf(std::move(tn));
+    }
+
+    auto tn = serde::from_iobuf<model::topic_namespace>(std::move(b));
+    BOOST_CHECK_EQUAL(tn.ns, "abc");
+    BOOST_CHECK_EQUAL(tn.tp, "def");
 }
