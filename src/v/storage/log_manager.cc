@@ -27,6 +27,7 @@
 #include "storage/segment_reader.h"
 #include "storage/segment_set.h"
 #include "storage/segment_utils.h"
+#include "storage/storage_resources.h"
 #include "utils/directory_walker.h"
 #include "utils/file_sanitizer.h"
 #include "vlog.h"
@@ -53,9 +54,11 @@
 namespace storage {
 using logs_type = absl::flat_hash_map<model::ntp, log_housekeeping_meta>;
 
-log_manager::log_manager(log_config config, kvstore& kvstore) noexcept
+log_manager::log_manager(
+  log_config config, kvstore& kvstore, storage_resources& resources) noexcept
   : _config(std::move(config))
   , _kvstore(kvstore)
+  , _resources(resources)
   , _jitter(_config.compaction_interval())
   , _batch_cache(config.reclaim_opts) {
     _compaction_timer.set_callback([this] { trigger_housekeeping(); });
@@ -266,6 +269,7 @@ ss::future<log> log_manager::do_manage(ntp_config cfg) {
               auto [it, success] = _logs.emplace(
                 l.config().ntp(), std::make_unique<log_housekeeping_meta>(l));
               _logs_list.push_back(*it->second);
+              _resources.update_partition_count(_logs.size());
               vassert(
                 success, "Could not keep track of:{} - concurrency issue", l);
               return l;
@@ -289,6 +293,7 @@ ss::future<> log_manager::remove(model::ntp ntp) {
     vlog(stlog.info, "Asked to remove: {}", ntp);
     return ss::with_gate(_open_gate, [this, ntp = std::move(ntp)] {
         auto handle = _logs.extract(ntp);
+        _resources.update_partition_count(_logs.size());
         if (handle.empty()) {
             return ss::make_ready_future<>();
         }

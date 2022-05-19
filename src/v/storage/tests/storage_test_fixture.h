@@ -46,6 +46,7 @@ class storage_test_fixture {
 public:
     ss::sstring test_dir;
     storage::kvstore kvstore;
+    storage::storage_resources resources;
 
     storage_test_fixture()
       : test_dir("test.data." + random_generators::gen_alphanum_string(10))
@@ -68,12 +69,13 @@ public:
 
     /// Creates a log manager in test directory
     storage::log_manager make_log_manager(storage::log_config cfg) {
-        return storage::log_manager(std::move(cfg), kvstore);
+        return storage::log_manager(std::move(cfg), kvstore, resources);
     }
 
     /// Creates a log manager in test directory with default config
     storage::log_manager make_log_manager() {
-        return storage::log_manager(default_log_config(test_dir), kvstore);
+        return storage::log_manager(
+          default_log_config(test_dir), kvstore, resources);
     }
 
     /// \brief randomizes the configuration options

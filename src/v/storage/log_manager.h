@@ -20,6 +20,7 @@
 #include "storage/log_housekeeping_meta.h"
 #include "storage/ntp_config.h"
 #include "storage/segment.h"
+#include "storage/storage_resources.h"
 #include "storage/types.h"
 #include "storage/version.h"
 #include "units.h"
@@ -181,7 +182,8 @@ struct log_config {
  */
 class log_manager {
 public:
-    explicit log_manager(log_config, kvstore& kvstore) noexcept;
+    explicit log_manager(
+      log_config, kvstore& kvstore, storage_resources&) noexcept;
 
     ss::future<log> manage(ntp_config);
 
@@ -252,6 +254,7 @@ private:
 
     log_config _config;
     kvstore& _kvstore;
+    storage_resources& _resources;
     simple_time_jitter<ss::lowres_clock> _jitter;
     ss::timer<ss::lowres_clock> _compaction_timer;
     logs_type _logs;
