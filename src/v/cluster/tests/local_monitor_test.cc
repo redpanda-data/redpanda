@@ -37,8 +37,27 @@ local_monitor_fixture::local_monitor_fixture()
     config::shard_local_cfg().storage_space_alert_free_threshold_bytes.bind(),
     config::shard_local_cfg().storage_space_alert_free_threshold_percent.bind(),
     config::shard_local_cfg().storage_min_free_bytes.bind(),
+    _storage_node_api,
     _storage_api) {
-    _storage_api.start_single().get0();
+    _storage_node_api.start_single().get0();
+
+    auto log_conf = storage::log_config{
+      storage::log_config::storage_type::disk,
+      "test.dir",
+      1024,
+      storage::debug_sanitize_files::yes};
+
+    auto kvstore_conf = storage::kvstore_config(
+      1_MiB,
+      config::mock_binding(10ms),
+      log_conf.base_dir,
+      storage::debug_sanitize_files::yes);
+
+    _storage_api
+      .start(
+        [kvstore_conf]() { return kvstore_conf; },
+        [log_conf]() { return log_conf; })
+      .get0();
 
     clusterlog.info("{}: create", __func__);
     auto test_dir = "local_monitor_test."
@@ -66,6 +85,7 @@ local_monitor_fixture::~local_monitor_fixture() {
         clusterlog.warn("Cleanup got error {} removing test dir.", err);
     }
     _storage_api.stop().get0();
+    _storage_node_api.stop().get0();
 }
 
 node::local_state local_monitor_fixture::update_state() {
