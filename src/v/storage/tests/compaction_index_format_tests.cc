@@ -24,18 +24,26 @@
 
 #include <boost/test/unit_test_suite.hpp>
 
-storage::compacted_index_writer make_dummy_compacted_index(
-  tmpbuf_file::store_t& index_data, size_t max_memory) {
+class
+
+  storage::compacted_index_writer
+  make_dummy_compacted_index(
+    tmpbuf_file::store_t& index_data,
+    size_t max_mem,
+    storage::storage_resources& resources) {
     auto f = ss::file(ss::make_shared(tmpbuf_file(index_data)));
     return storage::compacted_index_writer(
       std::make_unique<storage::internal::spill_key_index>(
-        "dummy name", f, max_memory));
+        "dummy name", f, max_mem, resources));
 }
 
-struct compacted_topic_fixture {};
+struct compacted_topic_fixture {
+    storage::storage_resources resources;
+};
+
 FIXTURE_TEST(format_verification, compacted_topic_fixture) {
     tmpbuf_file::store_t index_data;
-    auto idx = make_dummy_compacted_index(index_data, 1_KiB);
+    auto idx = make_dummy_compacted_index(index_data, 1_KiB, resources);
     const auto key = random_generators::get_bytes(1024);
     idx.index(key, model::offset(42), 66).get();
     idx.close().get();
@@ -64,7 +72,7 @@ FIXTURE_TEST(format_verification, compacted_topic_fixture) {
 }
 FIXTURE_TEST(format_verification_max_key, compacted_topic_fixture) {
     tmpbuf_file::store_t index_data;
-    auto idx = make_dummy_compacted_index(index_data, 1_MiB);
+    auto idx = make_dummy_compacted_index(index_data, 1_MiB, resources);
     const auto key = random_generators::get_bytes(1_MiB);
     idx.index(key, model::offset(42), 66).get();
     idx.close().get();
@@ -94,7 +102,7 @@ FIXTURE_TEST(format_verification_max_key, compacted_topic_fixture) {
 }
 FIXTURE_TEST(format_verification_roundtrip, compacted_topic_fixture) {
     tmpbuf_file::store_t index_data;
-    auto idx = make_dummy_compacted_index(index_data, 1_MiB);
+    auto idx = make_dummy_compacted_index(index_data, 1_MiB, resources);
     const auto key = random_generators::get_bytes(20);
     idx.index(key, model::offset(42), 66).get();
     idx.close().get();
@@ -118,7 +126,7 @@ FIXTURE_TEST(format_verification_roundtrip, compacted_topic_fixture) {
 FIXTURE_TEST(
   format_verification_roundtrip_exceeds_capacity, compacted_topic_fixture) {
     tmpbuf_file::store_t index_data;
-    auto idx = make_dummy_compacted_index(index_data, 1_MiB);
+    auto idx = make_dummy_compacted_index(index_data, 1_MiB, resources);
     const auto key = random_generators::get_bytes(1_MiB);
     idx.index(key, model::offset(42), 66).get();
     idx.close().get();
@@ -145,7 +153,7 @@ FIXTURE_TEST(
 FIXTURE_TEST(key_reducer_no_truncate_filter, compacted_topic_fixture) {
     tmpbuf_file::store_t index_data;
     // 1 KiB to FORCE eviction with every key basically
-    auto idx = make_dummy_compacted_index(index_data, 1_KiB);
+    auto idx = make_dummy_compacted_index(index_data, 1_KiB, resources);
 
     const auto key1 = random_generators::get_bytes(1_KiB);
     const auto key2 = random_generators::get_bytes(1_KiB);
@@ -185,7 +193,7 @@ FIXTURE_TEST(key_reducer_no_truncate_filter, compacted_topic_fixture) {
 FIXTURE_TEST(key_reducer_max_mem, compacted_topic_fixture) {
     tmpbuf_file::store_t index_data;
     // 1 KiB to FORCE eviction with every key basically
-    auto idx = make_dummy_compacted_index(index_data, 1_KiB);
+    auto idx = make_dummy_compacted_index(index_data, 1_KiB, resources);
 
     const auto key1 = random_generators::get_bytes(1_KiB);
     const auto key2 = random_generators::get_bytes(1_KiB);
@@ -250,7 +258,7 @@ FIXTURE_TEST(index_filtered_copy_tests, compacted_topic_fixture) {
     tmpbuf_file::store_t index_data;
 
     // 1 KiB to FORCE eviction with every key basically
-    auto idx = make_dummy_compacted_index(index_data, 1_KiB);
+    auto idx = make_dummy_compacted_index(index_data, 1_KiB, resources);
 
     const auto key1 = random_generators::get_bytes(128_KiB);
     const auto key2 = random_generators::get_bytes(1_KiB);
@@ -286,7 +294,7 @@ FIXTURE_TEST(index_filtered_copy_tests, compacted_topic_fixture) {
 
     // the main test
     tmpbuf_file::store_t final_data;
-    auto final_idx = make_dummy_compacted_index(final_data, 1_KiB);
+    auto final_idx = make_dummy_compacted_index(final_data, 1_KiB, resources);
 
     rdr.reset();
     rdr

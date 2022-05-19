@@ -96,6 +96,7 @@ ss::future<segment_set> recover_segments(
   std::function<std::optional<batch_cache_index>()> batch_cache_factory,
   ss::abort_source& as,
   size_t read_buf_size,
-  unsigned read_readahead_count);
+  unsigned read_readahead_count,
+  storage_resources&);
 
 } // namespace storage

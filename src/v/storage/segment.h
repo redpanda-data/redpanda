@@ -17,6 +17,7 @@
 #include "storage/segment_appender.h"
 #include "storage/segment_index.h"
 #include "storage/segment_reader.h"
+#include "storage/storage_resources.h"
 #include "storage/types.h"
 #include "storage/version.h"
 
@@ -69,7 +70,8 @@ public:
       segment_index,
       segment_appender_ptr,
       std::optional<compacted_index_writer>,
-      std::optional<batch_cache_index>) noexcept;
+      std::optional<batch_cache_index>,
+      storage_resources&) noexcept;
     ~segment() noexcept = default;
     segment(segment&&) noexcept = default;
     // rwlock does not have move-assignment
@@ -173,6 +175,8 @@ private:
         segment* _segment;
     };
 
+    [[maybe_unused]] storage_resources& _resources;
+
     appender_callbacks _appender_callbacks;
 
     void advance_stable_offset(size_t offset);
@@ -212,7 +216,8 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
   debug_sanitize_files sanitize_fileops,
   std::optional<batch_cache_index> batch_cache,
   size_t buf_size,
-  unsigned read_ahead);
+  unsigned read_ahead,
+  storage_resources&);
 
 ss::future<ss::lw_shared_ptr<segment>> make_segment(
   const ntp_config& ntpc,
@@ -223,7 +228,8 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
   size_t buf_size,
   unsigned read_ahead,
   debug_sanitize_files sanitize_fileops,
-  std::optional<batch_cache_index> batch_cache);
+  std::optional<batch_cache_index> batch_cache,
+  storage_resources&);
 
 // bitflags operators
 [[gnu::always_inline]] inline segment::bitflags

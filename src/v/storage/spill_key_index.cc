@@ -35,31 +35,31 @@ using namespace storage; // NOLINT
 spill_key_index::spill_key_index(
   ss::sstring name,
   ss::io_priority_class p,
-  size_t max_memory,
   bool truncate,
-  storage::debug_sanitize_files debug)
+  storage::debug_sanitize_files debug,
+  storage_resources& resources)
   : compacted_index_writer::impl(std::move(name))
   , _debug(debug)
+  , _resources(resources)
   , _pc(p)
-  , _truncate(truncate)
-  , _max_mem(max_memory) {}
+  , _truncate(truncate) {}
 
 /**
  * This constructor is only for unit tests, which pre-construct a ss::file
  * rather than relying on spill_key_index to open it on-demand.
  */
 spill_key_index::spill_key_index(
-  ss::sstring name, ss::file dummy_file, size_t max_memory)
+  ss::sstring name,
+  ss::file dummy_file,
+  size_t max_mem,
+  storage_resources& resources)
   : compacted_index_writer::impl(std::move(name))
+  , _resources(resources)
   , _pc(ss::default_priority_class())
   , _appender(storage::segment_appender(
       std::move(dummy_file),
-      segment_appender::options(
-        _pc,
-        1,
-        std::nullopt,
-        config::shard_local_cfg().segment_fallocation_step.bind())))
-  , _max_mem(max_memory) {}
+      segment_appender::options(_pc, 1, std::nullopt, _resources)))
+  , _max_mem(max_mem) {}
 
 spill_key_index::~spill_key_index() {
     vassert(
@@ -86,6 +86,8 @@ ss::future<> spill_key_index::add_key(bytes b, value_type v) {
     auto f = ss::now();
     auto const key_size = b.size();
     auto const expected_size = idx_mem_usage() + _keys_mem_usage + key_size;
+
+    // TODO call into storage_resources
 
     if (expected_size >= _max_mem) {
         f = ss::do_until(
@@ -299,10 +301,9 @@ void spill_key_index::print(std::ostream& o) const { o << *this; }
 std::ostream& operator<<(std::ostream& o, const spill_key_index& k) {
     fmt::print(
       o,
-      "{{name:{}, max_mem:{}, key_mem_usage:{}, persisted_entries:{}, "
+      "{{name:{}, key_mem_usage:{}, persisted_entries:{}, "
       "in_memory_entries:{}, file_appender:{}}}",
       k.filename(),
-      k._max_mem,
       k._keys_mem_usage,
       k._footer.keys,
       k._midx.size(),
@@ -318,8 +319,8 @@ compacted_index_writer make_file_backed_compacted_index(
   ss::io_priority_class p,
   debug_sanitize_files debug,
   bool truncate,
-  size_t max_memory) {
+  storage_resources& resources) {
     return compacted_index_writer(std::make_unique<internal::spill_key_index>(
-      std::move(name), p, max_memory, truncate, debug));
+      std::move(name), p, truncate, debug, resources));
 }
 } // namespace storage

@@ -314,7 +314,7 @@ ss::future<> disk_log_impl::do_compact(compaction_config cfg) {
         }
 
         auto result = co_await storage::internal::self_compact_segment(
-          seg, cfg, _probe, *_readers_cache);
+          seg, cfg, _probe, *_readers_cache, _manager.resources());
         vlog(
           gclog.debug,
           "[{}] segment {} compaction result: {}",
@@ -440,7 +440,7 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
     auto staging_path = std::filesystem::path(
       fmt::format("{}.compaction.staging", target->reader().filename()));
     auto replacement = co_await storage::internal::make_concatenated_segment(
-      staging_path, segments, cfg);
+      staging_path, segments, cfg, _manager.resources());
 
     // compact the combined data in the replacement segment. the partition size
     // tracking needs to be adjusted as compaction routines assume the segment
@@ -448,7 +448,7 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
     replacement->mark_as_compacted_segment();
     _probe.add_initial_segment(*replacement.get());
     auto ret = co_await storage::internal::self_compact_segment(
-      replacement, cfg, _probe, *_readers_cache);
+      replacement, cfg, _probe, *_readers_cache, _manager.resources());
     _probe.delete_segment(*replacement.get());
     vlog(gclog.debug, "Final compacted segment {}", replacement);
 
@@ -1317,6 +1317,8 @@ int64_t disk_log_impl::compaction_backlog() const {
 
     return backlog;
 }
+
+storage_resources& disk_log_impl::resources() { return _manager.resources(); }
 
 std::ostream& disk_log_impl::print(std::ostream& o) const {
     return o << "{offsets:" << offsets()

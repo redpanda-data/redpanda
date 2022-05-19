@@ -30,8 +30,9 @@ static ss::logger lg("kvstore");
 
 namespace storage {
 
-kvstore::kvstore(kvstore_config kv_conf)
+kvstore::kvstore(kvstore_config kv_conf, storage_resources& resources)
   : _conf(kv_conf)
+  , _resources(resources)
   , _ntpc(model::kvstore_ntp(ss::this_shard_id()), _conf.base_dir)
   , _snap(
       std::filesystem::path(_ntpc.work_directory()),
@@ -259,7 +260,8 @@ ss::future<> kvstore::roll() {
                  config::shard_local_cfg().storage_read_buffer_size(),
                  config::shard_local_cfg().storage_read_readahead_count(),
                  _conf.sanitize_fileops,
-                 std::nullopt)
+                 std::nullopt,
+                 _resources)
           .then([this](ss::lw_shared_ptr<segment> seg) {
               _segment = std::move(seg);
           });
@@ -300,7 +302,8 @@ ss::future<> kvstore::roll() {
                        config::shard_local_cfg().storage_read_buffer_size(),
                        config::shard_local_cfg().storage_read_readahead_count(),
                        _conf.sanitize_fileops,
-                       std::nullopt)
+                       std::nullopt,
+                       _resources)
                 .then([this](ss::lw_shared_ptr<segment> seg) {
                     _segment = std::move(seg);
                 });
@@ -385,7 +388,8 @@ ss::future<> kvstore::recover() {
               [] { return std::nullopt; },
               _as,
               config::shard_local_cfg().storage_read_buffer_size(),
-              config::shard_local_cfg().storage_read_readahead_count())
+              config::shard_local_cfg().storage_read_readahead_count(),
+              _resources)
               .get0();
 
         replay_segments_in_thread(std::move(segments));

@@ -33,6 +33,7 @@ class log_replayer_fixture {
 public:
     ss::lw_shared_ptr<segment> _seg;
     std::optional<log_replayer> replayer_opt;
+    storage::storage_resources resources;
     ss::sstring base_name = "test."
                             + random_generators::gen_alphanum_string(20);
 
@@ -50,7 +51,7 @@ public:
         auto appender = std::make_unique<segment_appender>(
           fd,
           segment_appender::options(
-            ss::default_priority_class(), 1, config::mock_binding(16_KiB)));
+            ss::default_priority_class(), 1, std::nullopt, resources));
         auto indexer = segment_index(
           base_name + ".index", std::move(fidx), base, 4096);
         auto reader = segment_reader(
@@ -62,7 +63,8 @@ public:
           std::move(indexer),
           std::move(appender),
           std::nullopt,
-          std::nullopt);
+          std::nullopt,
+          resources);
         replayer_opt = log_replayer(*_seg);
     }
 

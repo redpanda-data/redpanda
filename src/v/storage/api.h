@@ -57,7 +57,7 @@ public:
       , _log_conf_cb(std::move(log_conf_cb)) {}
 
     ss::future<> start() {
-        _kvstore = std::make_unique<kvstore>(_kv_conf_cb());
+        _kvstore = std::make_unique<kvstore>(_kv_conf_cb(), _resources);
         return _kvstore->start().then([this] {
             _log_mgr = std::make_unique<log_manager>(
               _log_conf_cb(), kvs(), _resources);

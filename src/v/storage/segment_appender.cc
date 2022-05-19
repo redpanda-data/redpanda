@@ -13,6 +13,7 @@
 #include "likely.h"
 #include "storage/chunk_cache.h"
 #include "storage/logger.h"
+#include "storage/storage_resources.h"
 #include "vassert.h"
 #include "vlog.h"
 
@@ -312,10 +313,17 @@ ss::future<> segment_appender::close() {
 }
 
 ss::future<> segment_appender::do_next_adaptive_fallocation() {
+    auto step = _opts.resources.get_falloc_step(_opts.segment_size);
+    if (step == 0) {
+        // Don't fallocate.  This happens if we're low on disk, or if
+        // the user has configured a 0 max falloc step.
+        return ss::make_ready_future<>();
+    }
+
     return ss::with_semaphore(
              _concurrent_flushes,
              ss::semaphore::max_counter(),
-             [this]() mutable {
+             [this, step]() mutable {
                  vassert(
                    _prev_head_write->available_units() == 1,
                    "Unexpected pending head write {}",
@@ -323,12 +331,12 @@ ss::future<> segment_appender::do_next_adaptive_fallocation() {
                  // step - compute step rounded to alignment(4096); this is
                  // needed because during a truncation the follow up fallocation
                  // might not be page aligned
-                 auto step = _opts.falloc_step();
                  if (_fallocation_offset % fallocation_alignment != 0) {
                      // add left over bytes to a full page
                      step += fallocation_alignment
                              - (_fallocation_offset % fallocation_alignment);
                  }
+
                  vassert(
                    _fallocation_offset >= _committed_offset,
                    "Attempting to fallocate at {} below the committed offset "

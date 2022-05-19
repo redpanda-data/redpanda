@@ -229,6 +229,8 @@ public:
 
     int64_t compaction_backlog() const;
 
+    storage_resources& resources() { return _resources; }
+
 private:
     using logs_type
       = absl::flat_hash_map<model::ntp, std::unique_ptr<log_housekeeping_meta>>;

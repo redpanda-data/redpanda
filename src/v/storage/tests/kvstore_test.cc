@@ -57,7 +57,8 @@ SEASTAR_THREAD_TEST_CASE(key_space) {
     auto conf = prepare_store(dir).get();
 
     // empty started then stopped
-    auto kvs = std::make_unique<storage::kvstore>(conf);
+    storage::storage_resources resources;
+    auto kvs = std::make_unique<storage::kvstore>(conf, resources);
     kvs->start().get();
 
     const auto value_a = bytes_to_iobuf(random_generators::get_bytes(100));
@@ -90,7 +91,7 @@ SEASTAR_THREAD_TEST_CASE(key_space) {
     kvs->stop().get();
 
     // still all true after recovery
-    kvs = std::make_unique<storage::kvstore>(conf);
+    kvs = std::make_unique<storage::kvstore>(conf, resources);
     kvs->start().get();
 
     BOOST_REQUIRE(
@@ -118,19 +119,20 @@ SEASTAR_THREAD_TEST_CASE(kvstore_empty) {
     auto conf = prepare_store(dir).get();
 
     // empty started then stopped
-    auto kvs = std::make_unique<storage::kvstore>(conf);
+    storage::storage_resources resources;
+    auto kvs = std::make_unique<storage::kvstore>(conf, resources);
     kvs->start().get();
     kvs->stop().get();
 
     // and can restart from empty
-    kvs = std::make_unique<storage::kvstore>(conf);
+    kvs = std::make_unique<storage::kvstore>(conf, resources);
     kvs->start().get();
     kvs->stop().get();
 
     std::unordered_map<bytes, iobuf> truth;
 
     // now fill it up with some key value pairs
-    kvs = std::make_unique<storage::kvstore>(conf);
+    kvs = std::make_unique<storage::kvstore>(conf, resources);
     kvs->start().get();
 
     std::vector<ss::future<>> batch;
@@ -170,7 +172,7 @@ SEASTAR_THREAD_TEST_CASE(kvstore_empty) {
     kvs->stop().get();
 
     // now restart the db and ensure still empty
-    kvs = std::make_unique<storage::kvstore>(conf);
+    kvs = std::make_unique<storage::kvstore>(conf, resources);
     kvs->start().get();
     BOOST_REQUIRE(kvs->empty());
     kvs->stop().get();
@@ -188,7 +190,8 @@ SEASTAR_THREAD_TEST_CASE(kvstore) {
 
     std::unordered_map<bytes, iobuf> truth;
 
-    auto kvs = std::make_unique<storage::kvstore>(conf);
+    storage::storage_resources resources;
+    auto kvs = std::make_unique<storage::kvstore>(conf, resources);
     kvs->start().get();
     for (int i = 0; i < 500; i++) {
         auto key = random_generators::get_bytes(2);
@@ -219,7 +222,7 @@ SEASTAR_THREAD_TEST_CASE(kvstore) {
     kvs.reset(nullptr);
 
     // shutdown, restart, and verify all the original key-value pairs
-    kvs = std::make_unique<storage::kvstore>(conf);
+    kvs = std::make_unique<storage::kvstore>(conf, resources);
     kvs->start().get();
     for (auto& e : truth) {
         BOOST_REQUIRE(

@@ -48,8 +48,10 @@ segment::segment(
   segment_index i,
   segment_appender_ptr a,
   std::optional<compacted_index_writer> ci,
-  std::optional<batch_cache_index> c) noexcept
-  : _appender_callbacks(this)
+  std::optional<batch_cache_index> c,
+  storage_resources& resources) noexcept
+  : _resources(resources)
+  , _appender_callbacks(this)
   , _tracker(tkr)
   , _reader(std::move(r))
   , _idx(std::move(i))
@@ -545,7 +547,8 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
   debug_sanitize_files sanitize_fileops,
   std::optional<batch_cache_index> batch_cache,
   size_t buf_size,
-  unsigned read_ahead) {
+  unsigned read_ahead,
+  storage_resources& resources) {
     auto const meta = segment_path::parse_segment_filename(
       path.filename().string());
     if (!meta || meta->version != record_version_type::v1) {
@@ -576,7 +579,8 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
       std::move(idx),
       nullptr,
       std::nullopt,
-      std::move(batch_cache));
+      std::move(batch_cache),
+      resources);
 }
 
 ss::future<ss::lw_shared_ptr<segment>> make_segment(
@@ -588,7 +592,8 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
   size_t buf_size,
   unsigned read_ahead,
   debug_sanitize_files sanitize_fileops,
-  std::optional<batch_cache_index> batch_cache) {
+  std::optional<batch_cache_index> batch_cache,
+  storage_resources& resources) {
     auto path = segment_path::make_segment_path(
       ntpc, base_offset, term, version);
     vlog(stlog.info, "Creating new segment {}", path.string());
@@ -597,12 +602,13 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
              sanitize_fileops,
              std::move(batch_cache),
              buf_size,
-             read_ahead)
-      .then([path, &ntpc, sanitize_fileops, pc](
+             read_ahead,
+             resources)
+      .then([path, &ntpc, sanitize_fileops, pc, &resources](
               ss::lw_shared_ptr<segment> seg) {
           return with_segment(
             std::move(seg),
-            [path, &ntpc, sanitize_fileops, pc](
+            [path, &ntpc, sanitize_fileops, pc, &resources](
               const ss::lw_shared_ptr<segment>& seg) {
                 return internal::make_segment_appender(
                          path,
@@ -610,9 +616,8 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
                          internal::number_of_chunks_from_config(ntpc),
                          internal::segment_size_from_config(ntpc),
                          pc,
-                         config::shard_local_cfg()
-                           .segment_fallocation_step.bind())
-                  .then([seg](segment_appender_ptr a) {
+                         resources)
+                  .then([seg, &resources](segment_appender_ptr a) {
                       return ss::make_ready_future<ss::lw_shared_ptr<segment>>(
                         ss::make_lw_shared<segment>(
                           seg->offsets(),
@@ -622,23 +627,24 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
                           std::nullopt,
                           seg->has_cache()
                             ? std::optional(std::move(seg->cache()->get()))
-                            : std::nullopt));
+                            : std::nullopt,
+                          resources));
                   });
             });
       })
-      .then([path, &ntpc, sanitize_fileops, pc](
+      .then([path, &ntpc, sanitize_fileops, pc, &resources](
               ss::lw_shared_ptr<segment> seg) {
           if (!ntpc.is_compacted()) {
               return ss::make_ready_future<ss::lw_shared_ptr<segment>>(seg);
           }
           return with_segment(
             seg,
-            [path, sanitize_fileops, pc](
+            [path, sanitize_fileops, pc, &resources](
               const ss::lw_shared_ptr<segment>& seg) {
                 auto compacted_path = internal::compacted_index_path(path);
                 return internal::make_compacted_index_writer(
-                         compacted_path, sanitize_fileops, pc)
-                  .then([seg](compacted_index_writer compact) {
+                         compacted_path, sanitize_fileops, pc, resources)
+                  .then([seg, &resources](compacted_index_writer compact) {
                       return ss::make_ready_future<ss::lw_shared_ptr<segment>>(
                         ss::make_lw_shared<segment>(
                           seg->offsets(),
@@ -648,7 +654,8 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
                           std::move(compact),
                           seg->has_cache()
                             ? std::optional(std::move(seg->cache()->get()))
-                            : std::nullopt));
+                            : std::nullopt,
+                          resources));
                   });
             });
       });

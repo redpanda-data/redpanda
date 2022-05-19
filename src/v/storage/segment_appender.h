@@ -16,6 +16,7 @@
 #include "likely.h"
 #include "seastarx.h"
 #include "storage/segment_appender_chunk.h"
+#include "storage/storage_resources.h"
 #include "utils/intrusive_list_helpers.h"
 
 #include <seastar/core/file.hh>
@@ -43,11 +44,11 @@ public:
           ss::io_priority_class p,
           size_t chunks_no,
           std::optional<uint64_t> s,
-          config::binding<size_t> falloc_step)
+          storage_resources& r)
           : priority(p)
           , number_of_chunks(chunks_no)
           , segment_size(s)
-          , falloc_step(falloc_step) {}
+          , resources(r) {}
 
         ss::io_priority_class priority;
         size_t number_of_chunks;
@@ -56,7 +57,7 @@ public:
         // to the dynamic fallocation size algorithm, to avoid falloc'ing
         // more space than a segment would ever need.
         std::optional<uint64_t> segment_size;
-        config::binding<size_t> falloc_step;
+        storage_resources& resources;
     };
 
     segment_appender(ss::file f, options opts);

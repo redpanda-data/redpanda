@@ -157,6 +157,8 @@ private:
 
     compaction_config apply_overrides(compaction_config) const;
 
+    storage_resources& resources();
+
 private:
     size_t max_segment_size() const;
     struct eviction_monitor {
