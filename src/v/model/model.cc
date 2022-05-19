@@ -396,4 +396,52 @@ std::ostream& operator<<(std::ostream& o, const shadow_indexing_mode& si) {
     return o;
 }
 
+std::ostream&
+operator<<(std::ostream& o, const shadow_indexing_archival_mode& si) {
+    switch (si) {
+    case shadow_indexing_archival_mode::disabled:
+        o << "disabled";
+        break;
+    case shadow_indexing_archival_mode::archival:
+        o << "archival";
+        break;
+    }
+    return o;
+}
+
+std::istream& operator>>(std::istream& i, shadow_indexing_archival_mode& si) {
+    ss::sstring s;
+    i >> s;
+    si = string_switch<shadow_indexing_archival_mode>(s)
+           .match("no", shadow_indexing_archival_mode::disabled)
+           .match("false", shadow_indexing_archival_mode::disabled)
+           .match("yes", shadow_indexing_archival_mode::archival)
+           .match("true", shadow_indexing_archival_mode::archival);
+    return i;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const shadow_indexing_fetch_mode& si) {
+    switch (si) {
+    case shadow_indexing_fetch_mode::disabled:
+        o << "disabled";
+        break;
+    case shadow_indexing_fetch_mode::fetch:
+        o << "fetch";
+        break;
+    }
+    return o;
+}
+
+std::istream& operator>>(std::istream& i, shadow_indexing_fetch_mode& si) {
+    ss::sstring s;
+    i >> s;
+    si = string_switch<shadow_indexing_fetch_mode>(s)
+           .match("no", shadow_indexing_fetch_mode::disabled)
+           .match("false", shadow_indexing_fetch_mode::disabled)
+           .match("yes", shadow_indexing_fetch_mode::fetch)
+           .match("true", shadow_indexing_fetch_mode::fetch);
+    return i;
+}
+
 } // namespace model

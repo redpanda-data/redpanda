@@ -216,6 +216,7 @@ using control_record_version
 
 static constexpr control_record_version current_control_record_version{0};
 
+// Deprecated
 enum class shadow_indexing_mode : uint8_t {
     // Upload is disabled
     disabled = 0,
@@ -242,58 +243,35 @@ inline bool is_fetch_enabled(shadow_indexing_mode m) {
     return m == shadow_indexing_mode::fetch || m == shadow_indexing_mode::full;
 }
 
-/// Set 'rhs' flag in 'lhs'
-constexpr shadow_indexing_mode
-add_shadow_indexing_flag(shadow_indexing_mode lhs, shadow_indexing_mode rhs) {
-    using underlying = std::underlying_type_t<shadow_indexing_mode>;
-    if (
-      rhs == shadow_indexing_mode::drop_archival
-      || rhs == shadow_indexing_mode::drop_fetch
-      || rhs == shadow_indexing_mode::drop_full) {
-        auto combined = underlying(lhs) & underlying(rhs);
-        return shadow_indexing_mode(combined);
-    }
-    auto combined = underlying(lhs) | underlying(rhs);
-    return shadow_indexing_mode(combined);
-}
-
-/// Turn normal shadow indexing flag into a 'drop_' flag. This flag
-/// can be used with 'add_shadow_indexing_flag' function to remove the flag.
-constexpr shadow_indexing_mode
-negate_shadow_indexing_flag(shadow_indexing_mode m) {
-    using underlying = std::underlying_type_t<shadow_indexing_mode>;
-    return shadow_indexing_mode(~underlying(m));
-}
-
-static_assert(
-  add_shadow_indexing_flag(
-    shadow_indexing_mode::fetch,
-    negate_shadow_indexing_flag(shadow_indexing_mode::fetch))
-  == shadow_indexing_mode::disabled);
-static_assert(
-  add_shadow_indexing_flag(
-    shadow_indexing_mode::fetch, shadow_indexing_mode::drop_fetch)
-  == shadow_indexing_mode::disabled);
-static_assert(
-  add_shadow_indexing_flag(
-    shadow_indexing_mode::archival,
-    negate_shadow_indexing_flag(shadow_indexing_mode::archival))
-  == shadow_indexing_mode::disabled);
-static_assert(
-  add_shadow_indexing_flag(
-    shadow_indexing_mode::archival, shadow_indexing_mode::drop_archival)
-  == shadow_indexing_mode::disabled);
-static_assert(
-  add_shadow_indexing_flag(
-    shadow_indexing_mode::full,
-    negate_shadow_indexing_flag(shadow_indexing_mode::full))
-  == shadow_indexing_mode::disabled);
-static_assert(
-  add_shadow_indexing_flag(
-    shadow_indexing_mode::full, shadow_indexing_mode::drop_full)
-  == shadow_indexing_mode::disabled);
-
 std::ostream& operator<<(std::ostream&, const shadow_indexing_mode&);
+
+enum class shadow_indexing_archival_mode : uint8_t {
+    // Upload is disabled
+    disabled = 0,
+    // Upload data to the object storage
+    archival = 1,
+};
+
+enum class shadow_indexing_fetch_mode : uint8_t {
+    // Download is disabled
+    disabled = 0,
+    // Enable download from object storage
+    fetch = 1,
+};
+
+inline bool is_fetch_enabled(shadow_indexing_fetch_mode s) {
+    return s == shadow_indexing_fetch_mode::fetch;
+}
+
+inline bool is_archival_enabled(shadow_indexing_archival_mode s) {
+    return s == shadow_indexing_archival_mode::archival;
+}
+
+std::ostream& operator<<(std::ostream&, const shadow_indexing_archival_mode&);
+std::istream& operator>>(std::istream&, shadow_indexing_archival_mode&);
+
+std::ostream& operator<<(std::ostream&, const shadow_indexing_fetch_mode&);
+std::istream& operator>>(std::istream&, shadow_indexing_fetch_mode&);
 
 } // namespace model
 
