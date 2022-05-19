@@ -165,7 +165,10 @@ public:
     std::optional<size_t> get_default_retention_bytes() const;
     std::optional<std::chrono::milliseconds>
     get_default_retention_duration() const;
-    model::shadow_indexing_mode get_default_shadow_indexing_mode() const;
+    model::shadow_indexing_archival_mode
+    get_default_shadow_indexing_archival_mode() const;
+    model::shadow_indexing_fetch_mode
+    get_default_shadow_indexing_fetch_mode() const;
 
 private:
     ss::sharded<topic_table>& _topics_state;
