@@ -1146,8 +1146,19 @@ void application::start(::stop_signal& app_signal) {
 
 void application::start_redpanda(::stop_signal& app_signal) {
     syschecks::systemd_message("Staring storage services").get();
+
     // single instance
     storage_node.invoke_on_all(&storage::node_api::start).get0();
+
+    // Early initialization of disk stats, so that logic for e.g. picking
+    // falloc sizes works without having to wait for a local_monitor tick.
+    auto tmp_lm = cluster::node::local_monitor(
+      config::shard_local_cfg().storage_space_alert_free_threshold_bytes.bind(),
+      config::shard_local_cfg()
+        .storage_space_alert_free_threshold_percent.bind(),
+      storage_node);
+    tmp_lm.update_state().get();
+
     storage.invoke_on_all(&storage::api::start).get();
 
     syschecks::systemd_message("Starting the partition manager").get();
