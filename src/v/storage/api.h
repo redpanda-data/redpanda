@@ -15,10 +15,16 @@
 #include "storage/kvstore.h"
 #include "storage/log_manager.h"
 #include "storage/probe.h"
+#include "storage/storage_resources.h"
 
 namespace storage {
 
-// Per-node API. For non-sharded state.
+/**
+ * Node-wide storage state: only maintained on shard 0.
+ *
+ * The disk usage stats in this class are periodically updated
+ * from the code in cluster::node.
+ */
 class node_api {
 public:
     ss::future<> start() {
@@ -32,6 +38,10 @@ public:
       uint64_t total_bytes, uint64_t free_bytes, disk_space_alert alert) {
         _probe.set_disk_metrics(total_bytes, free_bytes, alert);
     }
+
+    const storage::disk_metrics& get_disk_metrics() const {
+        return _probe.get_disk_metrics();
+    };
 
 private:
     storage::node_probe _probe;
@@ -66,8 +76,11 @@ public:
 
     kvstore& kvs() { return *_kvstore; }
     log_manager& log_mgr() { return *_log_mgr; }
+    storage_resources& resources() { return _resources; }
 
 private:
+    storage_resources _resources;
+
     std::function<kvstore_config()> _kv_conf_cb;
     std::function<log_config()> _log_conf_cb;
 
