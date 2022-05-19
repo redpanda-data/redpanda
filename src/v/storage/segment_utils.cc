@@ -183,10 +183,12 @@ ss::future<segment_appender_ptr> make_segment_appender(
   const std::filesystem::path& path,
   debug_sanitize_files debug,
   size_t number_of_chunks,
+  std::optional<uint64_t> segment_size,
   ss::io_priority_class iopc,
   config::binding<size_t> fallocate_size) {
     return internal::make_writer_handle(path, debug)
-      .then([number_of_chunks, iopc, path, fallocate_size](ss::file writer) {
+      .then([number_of_chunks, iopc, path, segment_size, fallocate_size](
+              ss::file writer) {
           try {
               // NOTE: This try-catch is needed to not uncover the real
               // exception during an OOM condition, since the appender allocates
@@ -195,7 +197,7 @@ ss::future<segment_appender_ptr> make_segment_appender(
                 std::make_unique<segment_appender>(
                   writer,
                   segment_appender::options(
-                    iopc, number_of_chunks, fallocate_size)));
+                    iopc, number_of_chunks, segment_size, fallocate_size)));
           } catch (...) {
               auto e = std::current_exception();
               vlog(stlog.error, "could not allocate appender: {}", e);
@@ -218,6 +220,20 @@ size_t number_of_chunks_from_config(const ntp_config& ntpc) {
         return def / 2;
     }
     return def;
+}
+
+uint64_t segment_size_from_config(const ntp_config& ntpc) {
+    auto def = config::shard_local_cfg().log_segment_size();
+
+    if (!ntpc.has_overrides()) {
+        return def;
+    }
+    auto& o = ntpc.get_overrides();
+    if (o.segment_size) {
+        return o.segment_size.value();
+    } else {
+        return def;
+    }
 }
 
 ss::future<Roaring>
@@ -365,6 +381,7 @@ ss::future<storage::index_state> do_copy_segment_data(
                    cfg.sanitize,
                    segment_appender::write_behind_memory
                      / config::shard_local_cfg().append_chunk_size(),
+                   std::nullopt,
                    cfg.iopc,
                    config::shard_local_cfg().segment_fallocation_step.bind())
             .then([l = std::move(list), &pb, h = std::move(h), cfg, s, tmpname](
