@@ -246,20 +246,6 @@ std::error_code partition_allocator::check_cluster_limits(
         }
     }
 
-    // Refuse to create partitions if there isn't enough space to at least
-    // falloc the first part of a segment for each partition
-    if (_fallocation_step() > 0) {
-        uint64_t disk_limit = effective_cluster_disk / _fallocation_step();
-        if (disk_limit > 0 && (proposed_total_partitions > disk_limit)) {
-            vlog(
-              clusterlog.warn,
-              "Refusing to create {} partitions, exceeds disk limit {}",
-              create_count,
-              disk_limit);
-            return errc::topic_invalid_partitions;
-        }
-    }
-
     return errc::success;
 }
 
