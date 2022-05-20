@@ -9,7 +9,9 @@
 
 #include "cluster/partition_manager.h"
 
+#include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/partition_recovery_manager.h"
+#include "cluster/archival_metadata_stm.h"
 #include "cluster/fwd.h"
 #include "cluster/logger.h"
 #include "config/configuration.h"
@@ -97,6 +99,10 @@ ss::future<consensus_ptr> partition_manager::manage(
           max_kafka_offset,
           last_included_term,
           initial_nodes);
+
+        // Initialize archival snapshot
+        co_await archival_metadata_stm::make_snapshot(
+          ntp_cfg, manifest, max_kafka_offset);
     }
     storage::log log = co_await _storage.log_mgr().manage(std::move(ntp_cfg));
     vlog(
@@ -133,17 +139,6 @@ ss::future<consensus_ptr> partition_manager::manage(
     _manage_watchers.notify(p->ntp(), p);
 
     co_await p->start();
-
-    if (logs_recovered) {
-        // Populate archival snapshot using the generated recovery manifest.
-        // This step is needed to connect the newly created partition with the
-        // data inside the snapshot and to prevent re-uploading of recovered
-        // data.
-        auto timeout = config::shard_local_cfg()
-                         .cloud_storage_segment_upload_timeout_ms.value();
-        auto deadline = ss::lowres_clock::now() + timeout;
-        co_await p->archival_meta_stm()->add_segments(manifest, deadline);
-    }
 
     co_return c;
 }

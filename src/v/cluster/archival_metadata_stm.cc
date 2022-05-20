@@ -9,6 +9,7 @@
 
 #include "cluster/archival_metadata_stm.h"
 
+#include "cluster/persisted_stm.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -16,6 +17,7 @@
 #include "model/record_batch_types.h"
 #include "model/record_utils.h"
 #include "raft/consensus.h"
+#include "resource_mgmt/io_priority.h"
 #include "serde/envelope.h"
 #include "serde/serde.h"
 #include "ssx/future-util.h"
@@ -82,6 +84,26 @@ archival_metadata_stm::segments_from_manifest(
       });
 
     return segments;
+}
+
+ss::future<> archival_metadata_stm::make_snapshot(
+  const storage::ntp_config& ntp_cfg,
+  const cloud_storage::partition_manifest& m,
+  model::offset insync_offset) {
+    // Create archival_stm_snapshot
+    auto segments = segments_from_manifest(m);
+    iobuf snap_data = serde::to_iobuf(
+      snapshot{.segments = std::move(segments)});
+
+    auto snapshot = stm_snapshot::create(
+      0, insync_offset, std::move(snap_data));
+
+    storage::simple_snapshot_manager tmp_snapshot_mgr(
+      std::filesystem::path(ntp_cfg.work_directory()),
+      "archival_metadata.snapshot",
+      raft_priority());
+
+    co_await persist_snapshot(tmp_snapshot_mgr, std::move(snapshot));
 }
 
 archival_metadata_stm::archival_metadata_stm(
