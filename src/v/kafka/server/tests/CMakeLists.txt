@@ -14,6 +14,7 @@ rp_test(
 )
 
 set(srcs
+  consumer_groups_test.cc
   member_test.cc
   group_test.cc
   read_write_roundtrip_test.cc
@@ -25,7 +26,6 @@ set(srcs
   create_topics_test.cc
   find_coordinator_test.cc
   list_offsets_test.cc
-  offset_commit_test.cc
   topic_recreate_test.cc
   fetch_session_test.cc
   alter_config_test.cc

@@ -82,6 +82,8 @@ public:
     /// Get the member id.
     const kafka::member_id& id() const { return _state.id; }
 
+    void replace_id(member_id new_id) { _state.id = std::move(new_id); }
+
     /// Get the id of the member's group.
     const kafka::group_id& group_id() const { return _group_id; }
 
@@ -141,6 +143,9 @@ public:
 
     /// Check if the member is syncing.
     bool is_syncing() const { return bool(_sync_promise); }
+
+    /// Check if member is static
+    bool is_static() const { return bool(_state.instance_id); }
 
     /**
      * Get the sync response.

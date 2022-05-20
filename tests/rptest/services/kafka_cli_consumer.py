@@ -25,7 +25,8 @@ class KafkaCliConsumer(BackgroundThreadService):
                  partitions=None,
                  isolation_level=None,
                  from_beginning=False,
-                 consumer_properties={}):
+                 consumer_properties={},
+                 formatter_properties={}):
         super(KafkaCliConsumer, self).__init__(context, num_nodes=1)
         self._redpanda = redpanda
         self._topic = topic
@@ -35,6 +36,7 @@ class KafkaCliConsumer(BackgroundThreadService):
         self._isolation_level = isolation_level
         self._from_beginning = from_beginning
         self._consumer_properties = consumer_properties
+        self._formatter_properties = formatter_properties
         self._stopping = threading.Event()
         assert self._partitions is not None or self._group is not None, "either partitions or group have to be set"
 
@@ -62,6 +64,8 @@ class KafkaCliConsumer(BackgroundThreadService):
                 cmd += ["--from-beginning"]
             for k, v in self._consumer_properties.items():
                 cmd += ['--consumer-property', f"{k}={v}"]
+            for k, v in self._formatter_properties.items():
+                cmd += ['--property', f"{k}={v}"]
 
             cmd += ["--bootstrap-server", self._redpanda.brokers()]
 
@@ -87,6 +91,15 @@ class KafkaCliConsumer(BackgroundThreadService):
                    timeout,
                    backoff_sec=2)
 
+    def wait_for_started(self, timeout=10):
+        def all_started():
+            return all([
+                len(node.account.java_pids("ConsoleConsumer")) == 1
+                for node in self.nodes
+            ])
+
+        wait_until(all_started, timeout, backoff_sec=1)
+
     def stop_node(self, node):
         self._stopping.set()
-        node.account.kill_process("java", clean_shutdown=False)
+        node.account.kill_process("java", clean_shutdown=True)

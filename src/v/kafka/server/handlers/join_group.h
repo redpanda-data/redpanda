@@ -17,7 +17,7 @@ namespace kafka {
 struct join_group_handler {
     using api = join_group_api;
     static constexpr api_version min_supported = api_version(0);
-    static constexpr api_version max_supported = api_version(4);
+    static constexpr api_version max_supported = api_version(5);
     static process_result_stages handle(request_context, ss::smp_service_group);
 };
 } // namespace kafka

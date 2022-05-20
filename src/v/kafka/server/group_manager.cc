@@ -559,12 +559,6 @@ group::join_group_stages group_manager::join_group(join_group_request&& r) {
 }
 
 group::sync_group_stages group_manager::sync_group(sync_group_request&& r) {
-    if (r.data.group_instance_id) {
-        vlog(klog.trace, "Static group membership is not supported");
-        return group::sync_group_stages(
-          sync_group_response(error_code::unsupported_version));
-    }
-
     auto error = validate_group_status(
       r.ntp, r.data.group_id, sync_group_api::key);
     if (error != error_code::none) {
@@ -598,11 +592,6 @@ group::sync_group_stages group_manager::sync_group(sync_group_request&& r) {
 }
 
 ss::future<heartbeat_response> group_manager::heartbeat(heartbeat_request&& r) {
-    if (r.data.group_instance_id) {
-        vlog(klog.trace, "Static group membership is not supported");
-        return make_heartbeat_error(error_code::unsupported_version);
-    }
-
     auto error = validate_group_status(
       r.ntp, r.data.group_id, heartbeat_api::key);
     if (error != error_code::none) {
@@ -643,7 +632,24 @@ group_manager::leave_group(leave_group_request&& r) {
           klog.trace,
           "Cannot handle leave group request for unknown group {}",
           r.data.group_id);
-        return make_leave_error(error_code::unknown_member_id);
+        if (r.version < api_version(3)) {
+            return make_leave_error(error_code::unknown_member_id);
+        }
+        // since version 3 we need to fill each member error code
+        leave_group_response response;
+        response.data.members.reserve(r.data.members.size());
+        std::transform(
+          r.data.members.begin(),
+          r.data.members.end(),
+          std::back_inserter(response.data.members),
+          [](member_identity& mid) {
+              return member_response{
+                .member_id = std::move(mid.member_id),
+                .group_instance_id = std::move(mid.group_instance_id),
+                .error_code = error_code::unknown_member_id,
+              };
+          });
+        return ss::make_ready_future<leave_group_response>(std::move(response));
     }
 }
 
