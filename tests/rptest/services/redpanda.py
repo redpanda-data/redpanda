@@ -247,7 +247,9 @@ class SISettings:
             cloud_storage_enable_remote_write: bool = True,
             cloud_storage_reconciliation_interval_ms: Optional[int] = None,
             cloud_storage_max_connections: Optional[int] = None,
-            cloud_storage_disable_tls: bool = True):
+            cloud_storage_disable_tls: bool = True,
+            cloud_storage_segment_max_upload_interval_sec: Optional[int] = None
+    ):
         self.log_segment_size = log_segment_size
         self.cloud_storage_access_key = cloud_storage_access_key
         self.cloud_storage_secret_key = cloud_storage_secret_key
@@ -261,7 +263,7 @@ class SISettings:
         self.cloud_storage_reconciliation_interval_ms = cloud_storage_reconciliation_interval_ms
         self.cloud_storage_max_connections = cloud_storage_max_connections
         self.cloud_storage_disable_tls = cloud_storage_disable_tls
-
+        self.cloud_storage_segment_max_upload_interval_sec = cloud_storage_segment_max_upload_interval_sec
         self.endpoint_url = f'http://{self.cloud_storage_api_endpoint}:{self.cloud_storage_api_endpoint_port}'
 
     def load_context(self, logger, test_context):
@@ -318,7 +320,9 @@ class SISettings:
         if self.cloud_storage_max_connections:
             conf[
                 'cloud_storage_max_connections'] = self.cloud_storage_max_connections
-
+        if self.cloud_storage_segment_max_upload_interval_sec:
+            conf[
+                'cloud_storage_segment_max_upload_interval_sec'] = self.cloud_storage_segment_max_upload_interval_sec
         return conf
 
 
