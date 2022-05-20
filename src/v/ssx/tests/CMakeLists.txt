@@ -5,6 +5,7 @@ rp_test(
     async_transforms.cc
     sformat.cc
     future_util.cc
+    metrics.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES v::seastar_testing_main v::ssx
   LABELS ssx
