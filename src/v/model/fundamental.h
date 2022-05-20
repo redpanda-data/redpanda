@@ -11,7 +11,9 @@
 
 #pragma once
 
+#include "bytes/iobuf.h"
 #include "seastarx.h"
+#include "serde/serde.h"
 #include "ssx/sformat.h"
 #include "utils/named_type.h"
 #include "vassert.h"
@@ -88,6 +90,17 @@ public:
 
     topic(model::topic_view view) // NOLINT - see topic_view_tests.cc
       : named_type<ss::sstring, struct model_topic_type>(ss::sstring(view())) {}
+
+    friend void
+    read_nested(iobuf_parser& in, topic& t, size_t const bytes_left_limit) {
+        using serde::read_nested;
+        return read_nested(in, t._value, bytes_left_limit);
+    }
+
+    friend void write(iobuf& out, topic t) {
+        using serde::write;
+        return write(out, std::move(t._value));
+    }
 
     operator topic_view() { return topic_view(_value); }
 
