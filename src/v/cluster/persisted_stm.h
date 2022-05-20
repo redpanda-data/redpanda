@@ -132,6 +132,8 @@ protected:
     ss::future<std::optional<stm_snapshot>> load_snapshot();
     ss::future<> wait_for_snapshot_hydrated();
     ss::future<> persist_snapshot(stm_snapshot&&);
+    static ss::future<>
+    persist_snapshot(storage::simple_snapshot_manager&, stm_snapshot&&);
     ss::future<> do_make_snapshot();
 
     /*

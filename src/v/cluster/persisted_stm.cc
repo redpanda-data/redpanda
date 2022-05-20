@@ -13,6 +13,7 @@
 #include "raft/errc.h"
 #include "raft/types.h"
 #include "storage/record_batch_builder.h"
+#include "storage/snapshot.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
@@ -86,7 +87,8 @@ ss::future<> persisted_stm::wait_for_snapshot_hydrated() {
     return f;
 }
 
-ss::future<> persisted_stm::persist_snapshot(stm_snapshot&& snapshot) {
+ss::future<> persisted_stm::persist_snapshot(
+  storage::simple_snapshot_manager& snapshot_mgr, stm_snapshot&& snapshot) {
     iobuf data_size_buf;
 
     int8_t version = snapshot_version;
@@ -96,14 +98,14 @@ ss::future<> persisted_stm::persist_snapshot(stm_snapshot&& snapshot) {
     reflection::serialize(
       data_size_buf, version, offset, data_version, data_size);
 
-    return _snapshot_mgr.start_snapshot().then(
-      [this,
+    return snapshot_mgr.start_snapshot().then(
+      [&snapshot_mgr,
        snapshot = std::move(snapshot),
        data_size_buf = std::move(data_size_buf)](
         storage::snapshot_writer writer) mutable {
           return ss::do_with(
             std::move(writer),
-            [this,
+            [&snapshot_mgr,
              snapshot = std::move(snapshot),
              data_size_buf = std::move(data_size_buf)](
               storage::snapshot_writer& writer) mutable {
@@ -113,11 +115,15 @@ ss::future<> persisted_stm::persist_snapshot(stm_snapshot&& snapshot) {
                         std::move(snapshot.data), writer.output());
                   })
                   .finally([&writer] { return writer.close(); })
-                  .then([this, &writer] {
-                      return _snapshot_mgr.finish_snapshot(writer);
+                  .then([&snapshot_mgr, &writer] {
+                      return snapshot_mgr.finish_snapshot(writer);
                   });
             });
       });
+}
+
+ss::future<> persisted_stm::persist_snapshot(stm_snapshot&& snapshot) {
+    return persist_snapshot(_snapshot_mgr, std::move(snapshot));
 }
 
 ss::future<> persisted_stm::do_make_snapshot() {
