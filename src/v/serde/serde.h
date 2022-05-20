@@ -141,6 +141,7 @@ inline constexpr auto const is_serde_compatible_v
     || std::is_same_v<T, std::chrono::milliseconds>
     || std::is_same_v<T, iobuf>
     || std::is_same_v<T, ss::sstring>
+    || std::is_same_v<T, bytes>
     || is_fragmented_vector_v<T>;
 
 template<typename T>
@@ -246,6 +247,9 @@ void write(iobuf& out, T t) {
         write<serde_size_t>(out, t.size_bytes());
         out.append(t.share(0, t.size_bytes()));
     } else if constexpr (std::is_same_v<Type, ss::sstring>) {
+        write<serde_size_t>(out, t.size());
+        out.append(t.data(), t.size());
+    } else if constexpr (std::is_same_v<Type, bytes>) {
         write<serde_size_t>(out, t.size());
         out.append(t.data(), t.size());
     } else if constexpr (reflection::is_std_optional_v<Type>) {
@@ -449,6 +453,11 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
         t = in.share(read_nested<serde_size_t>(in, bytes_left_limit));
     } else if constexpr (std::is_same_v<Type, ss::sstring>) {
         auto str = ss::uninitialized_string(
+          read_nested<serde_size_t>(in, bytes_left_limit));
+        in.consume_to(str.size(), str.begin());
+        t = str;
+    } else if constexpr (std::is_same_v<Type, bytes>) {
+        auto str = ss::uninitialized_string<bytes>(
           read_nested<serde_size_t>(in, bytes_left_limit));
         in.consume_to(str.size(), str.begin());
         t = str;
