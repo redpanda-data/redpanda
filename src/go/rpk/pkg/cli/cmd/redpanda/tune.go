@@ -13,10 +13,8 @@
 package redpanda
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"sort"
 	"strconv"
@@ -27,6 +25,7 @@ import (
 	tunecmd "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/redpanda/tune"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/ui"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/factory"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/hwloc"
 	log "github.com/sirupsen/logrus"
@@ -49,7 +48,6 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 		outTuneScriptFile string
 		cpuSet            string
 		timeout           time.Duration
-		interactive       bool
 	)
 	baseMsg := "Sets the OS parameters to tune system performance." +
 		" Available tuners: all, " +
@@ -93,24 +91,7 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 			}
 			tunerParams.CPUMask = cpuMask
 			cfg, err := p.Load(fs)
-			if err != nil {
-				if !interactive {
-					return err
-				}
-				msg := fmt.Sprintf(
-					`Couldn't read or generate the config at '%s'.
-Would you like to continue with the default configuration?`,
-					configFile,
-				)
-				confirmed, cerr := promptConfirmation(msg, cmd.InOrStdin())
-				if cerr != nil {
-					return cerr
-				}
-				if !confirmed {
-					return nil
-				}
-				cfg = config.Default()
-			}
+			out.MaybeDie(err, "unable to load config: %v", err)
 			var tunerFactory factory.TunersFactory
 			if outTuneScriptFile != "" {
 				tunerFactory = factory.NewScriptRenderingTunersFactory(
@@ -162,44 +143,16 @@ Would you like to continue with the default configuration?`,
 			"fraction and a unit suffix, such as '300ms', '1.5s' or '2h45m'. "+
 			"Valid time units are 'ns', 'us' (or 'µs'), 'ms', 's', 'm', 'h'",
 	)
+	// Deprecated
 	command.Flags().BoolVar(
-		&interactive,
+		new(bool),
 		"interactive",
 		false,
-		"Ask for confirmation on every step (e.g. tuner execution,"+
-			" configuration generation)",
+		"Ask for confirmation on every step (e.g. configuration generation)",
 	)
+	command.Flags().MarkDeprecated("interactive", "not needed: tune will use default configuration if config file is not found.")
 	command.AddCommand(tunecmd.NewHelpCommand())
 	return command
-}
-
-func promptConfirmation(msg string, in io.Reader) (bool, error) {
-	scanner := bufio.NewScanner(in)
-	for {
-		log.Info(fmt.Sprintf("%s (y/n/q)", msg))
-		scanner.Scan()
-		log.Info(scanner.Text())
-		if scanner.Err() != nil {
-			return false, scanner.Err()
-		}
-		text := strings.ToLower(scanner.Text())
-		if len(text) == 0 {
-			log.Infof("Please choose an option")
-			continue
-		}
-		opt := text[0]
-		switch opt {
-		case 'y':
-			return true, nil
-		case 'n':
-			return false, nil
-		case 'q':
-			return false, errors.New("user exited")
-		default:
-			log.Infof("Unrecognized option '%s'", text)
-			continue
-		}
-	}
 }
 
 func tune(
