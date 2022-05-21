@@ -68,12 +68,18 @@ enum class status : uint32_t {
     method_not_found = 404,
     request_timeout = 408,
     server_error = 500,
+    version_not_supported = 505,
+};
+
+enum class transport_version : uint8_t {
+    v0 = 0,
+    max_supported = v0,
 };
 
 /// \brief core struct for communications. sent with _each_ payload
 struct header {
     /// \brief version is unused. always 0. can be used for bitflags as well
-    uint8_t version{0};
+    transport_version version{transport_version::v0};
     /// \brief everything below the checksum is hashed with crc32
     uint32_t header_checksum{0};
     /// \breif compression on the wire
@@ -186,6 +192,7 @@ public:
     void set_compression(rpc::compression_type c);
     void set_service_method_id(uint32_t);
     void set_min_compression_bytes(size_t);
+    void set_version(transport_version v) { _hdr.version = v; }
     iobuf& buffer();
 
 private:
@@ -266,4 +273,5 @@ struct transport_configuration {
 };
 
 std::ostream& operator<<(std::ostream&, const status&);
+std::ostream& operator<<(std::ostream&, transport_version);
 } // namespace rpc

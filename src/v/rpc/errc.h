@@ -22,7 +22,8 @@ enum class errc {
     missing_node_rpc_client,
     client_request_timeout,
     service_error,
-    method_not_found
+    method_not_found,
+    version_not_supported,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "rpc::errc"; }
@@ -39,6 +40,8 @@ struct errc_category final : public std::error_category {
             return "rpc::errc::missing_node_rpc_client";
         case errc::client_request_timeout:
             return "rpc::errc::client_request_timeout";
+        case errc::version_not_supported:
+            return "rpc::errc::version_not_supported";
         default:
             return "rpc::errc::unknown";
         }

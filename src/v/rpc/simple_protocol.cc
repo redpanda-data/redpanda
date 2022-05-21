@@ -103,6 +103,31 @@ simple_protocol::dispatch_method_once(header h, net::server::resources rs) {
       = ssx::spawn_with_gate_then(
           rs.conn_gate(),
           [this, method_id, rs, ctx]() mutable {
+              if (unlikely(
+                    ctx->get_header().version
+                    > transport_version::max_supported)) {
+                  vlog(
+                    rpclog.debug,
+                    "Received a request at an unsupported transport version {} "
+                    "> {} from {}",
+                    ctx->get_header().version,
+                    transport_version::max_supported,
+                    ctx->res.conn->addr);
+                  netbuf reply_buf;
+                  reply_buf.set_status(rpc::status::version_not_supported);
+                  /*
+                   * client is not expected to react to max_supported being
+                   * returned, but it may be useful in future scenarios for the
+                   * client to know more about the state of the server.
+                   */
+                  reply_buf.set_version(transport_version::max_supported);
+                  return ctx->res.conn->input()
+                    .skip(ctx->get_header().payload_size)
+                    .then([ctx, reply_buf = std::move(reply_buf)]() mutable {
+                        return send_reply(ctx, std::move(reply_buf))
+                          .then([ctx]() mutable { ctx->signal_body_parse(); });
+                    });
+              }
               auto it = std::find_if(
                 _services.begin(),
                 _services.end(),
