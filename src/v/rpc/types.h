@@ -74,6 +74,12 @@ enum class status : uint32_t {
 enum class transport_version : uint8_t {
     v0 = 0,
     max_supported = v0,
+
+    /*
+     * unsupported is a convenience name used in tests to construct a message
+     * with an unsupported version. the bits should not be considered reserved.
+     */
+    unsupported = max_supported + 1,
 };
 
 /// \brief core struct for communications. sent with _each_ payload

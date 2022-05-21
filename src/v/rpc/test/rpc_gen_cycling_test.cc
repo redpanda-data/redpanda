@@ -458,3 +458,68 @@ FIXTURE_TEST(corrupted_data_at_server, rpc_integration_fixture) {
         BOOST_REQUIRE_EQUAL(echo_resp_new.value().data.str, "testing...");
     }
 }
+
+FIXTURE_TEST(version_not_supported, rpc_integration_fixture) {
+    configure_server();
+    register_services();
+    start_server();
+
+    rpc::transport t(client_config());
+    t.connect(model::no_timeout).get();
+    auto client = echo::echo_client_protocol(t);
+
+    const auto check_unsupported = [&] {
+        auto f = t.send_typed_versioned<echo::echo_req, echo::echo_resp>(
+          echo::echo_req{.str = "testing..."},
+          960598415,
+          rpc::client_opts(rpc::no_timeout),
+          rpc::transport_version::unsupported);
+        return f.then([&](auto ret) {
+            BOOST_REQUIRE(ret.has_value()); // low-level rpc succeeded
+
+            BOOST_REQUIRE(ret.value().ctx.has_error()); // payload failed
+            BOOST_REQUIRE_EQUAL(
+              ret.value().ctx.error(), rpc::errc::version_not_supported);
+
+            // returned version is server's max supported
+            BOOST_REQUIRE_EQUAL(
+              static_cast<uint8_t>(ret.value().version),
+              static_cast<uint8_t>(rpc::transport_version::max_supported));
+        });
+    };
+
+    const auto check_supported = [&] {
+        auto f = client.echo(
+          echo::echo_req{.str = "testing..."},
+          rpc::client_opts(rpc::no_timeout));
+        return f.then([&](auto ret) {
+            BOOST_REQUIRE(ret.has_value());
+            BOOST_REQUIRE_EQUAL(ret.value().data.str, "testing...");
+        });
+    };
+
+    /*
+     * randomizing the messages here is intentional: we want to ensure that
+     * unsupported version error can be handled in any situation and that the
+     * connection remains in a healthy state.
+     */
+    std::vector<std::function<ss::future<>()>> request_factory;
+    for (int i = 0; i < 200; i++) {
+        request_factory.emplace_back(check_unsupported);
+        request_factory.emplace_back(check_supported);
+    }
+    std::shuffle(
+      request_factory.begin(),
+      request_factory.end(),
+      random_generators::internal::gen);
+
+    // dispatch the requests
+    std::vector<ss::future<>> requests;
+    for (const auto& factory : request_factory) {
+        requests.emplace_back(factory());
+    }
+
+    ss::when_all_succeed(requests.begin(), requests.end()).get();
+
+    t.stop().get();
+}

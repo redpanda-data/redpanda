@@ -70,6 +70,8 @@ std::ostream& operator<<(std::ostream& o, transport_version v) {
     switch (v) {
     case transport_version::v0:
         return o << "rpc::transport_version::v0";
+    case transport_version::unsupported:
+        return o << "rpc::transport_version::unsupported";
     }
 }
 
