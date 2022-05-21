@@ -49,7 +49,7 @@ FIXTURE_TEST(echo_round_trip, rpc_integration_fixture) {
     BOOST_REQUIRE_EQUAL(ret.value().data.str, payload);
 }
 
-FIXTURE_TEST(rpcgen_tls_integration, rpc_integration_fixture) {
+FIXTURE_TEST(echo_round_trip_tls, rpc_integration_fixture) {
     auto creds_builder = config::tls_config(
                            true,
                            config::key_cert{"redpanda.key", "redpanda.crt"},
@@ -58,22 +58,22 @@ FIXTURE_TEST(rpcgen_tls_integration, rpc_integration_fixture) {
                            std::nullopt)
                            .get_credentials_builder()
                            .get0();
+
     configure_server(creds_builder);
     register_services();
     start_server();
-    info("started");
-    auto cli = rpc::client<cycling::team_movistar_client_protocol>(
+
+    auto client = rpc::client<echo::echo_client_protocol>(
       client_config(creds_builder));
-    info("client connecting");
-    cli.connect(model::no_timeout).get();
-    auto dcli = ss::defer([&cli] { cli.stop().get(); });
-    info("client calling method");
-    auto ret = cli
-                 .ibis_hakka(
-                   cycling::san_francisco{66},
-                   rpc::client_opts(rpc::no_timeout))
-                 .get0();
-    BOOST_REQUIRE_EQUAL(ret.value().data.x, 66);
+    client.connect(model::no_timeout).get();
+    auto cleanup = ss::defer([&client] { client.stop().get(); });
+
+    const auto payload = random_generators::gen_alphanum_string(100);
+    auto f = client.echo(
+      echo::echo_req{.str = payload}, rpc::client_opts(rpc::no_timeout));
+    auto ret = f.get();
+    BOOST_REQUIRE(ret.has_value());
+    BOOST_REQUIRE_EQUAL(ret.value().data.str, payload);
 }
 
 class temporary_dir {
