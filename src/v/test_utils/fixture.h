@@ -40,7 +40,7 @@
     };                                                                         \
     SEASTAR_THREAD_TEST_CASE_EXPECTED_FAILURES(method, failures) {             \
         BOOST_TEST_CHECKPOINT("" << #klass << "::" << #method << "()");        \
-        struct __FIXTURE_JOIN(klass, method) _fixture_driver;                  \
+        __FIXTURE_JOIN(klass, method) _fixture_driver;                         \
         _fixture_driver.fixture_test();                                        \
         BOOST_TEST_CHECKPOINT("~" << #klass << "::" << #method << "()");       \
     }                                                                          \
