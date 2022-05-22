@@ -21,16 +21,22 @@ struct local_monitor_fixture {
     local_monitor_fixture();
     local_monitor_fixture(const local_monitor_fixture&) = delete;
     ~local_monitor_fixture();
-    static constexpr unsigned default_percent_alert = 5;
-    static constexpr size_t default_bytes_alert = 2_GiB;
-    static constexpr size_t default_min_bytes = 1_GiB;
 
     std::filesystem::path _test_path;
     ss::sharded<storage::node_api> _storage_api;
     cluster::node::local_monitor _local_monitor;
 
     cluster::node::local_state update_state();
-    static struct statvfs make_statvfs(
-      unsigned long blk_free, unsigned long blk_total, unsigned long blk_size);
-    void set_config_alert_thresholds(unsigned percent, size_t bytes);
+    static struct statvfs
+    make_statvfs(size_t blk_free, size_t blk_total, size_t blk_size);
+
+    static void set_config_free_thresholds(
+      unsigned alert_percent, size_t alert_bytes, size_t min_bytes);
+    void assert_space_alert(
+      size_t volume,
+      size_t bytes_alert,
+      size_t percent_alert_bytes,
+      size_t min_bytes,
+      size_t free,
+      storage::disk_space_alert expected);
 };
