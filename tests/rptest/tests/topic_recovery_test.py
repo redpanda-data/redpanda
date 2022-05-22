@@ -6,6 +6,7 @@
 #
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
 
+from ducktape.mark import ok_to_fail
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 from rptest.tests.redpanda_test import RedpandaTest
@@ -1212,6 +1213,7 @@ class TopicRecoveryTest(RedpandaTest):
                                      self.rpk, self.s3_bucket, self.logger)
         self.do_run(test_case)
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/4849
     @cluster(num_nodes=3,
              log_allow_list=MISSING_DATA_ERRORS + TRANSIENT_ERRORS)
     def test_missing_segment(self):
