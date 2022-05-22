@@ -24,7 +24,8 @@ rp_test(
   SOURCES
     remote_test.cc
     retry_test.cc
-  LIBRARIES v::seastar_testing_main
+    container_utils_test.cc
+  LIBRARIES v::seastar_testing_main absl::flat_hash_map
   ARGS "-- -c 2"
   LABELS utils
 )

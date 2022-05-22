@@ -27,6 +27,7 @@
 #include "storage/segment_reader.h"
 #include "storage/segment_set.h"
 #include "storage/segment_utils.h"
+#include "utils/container_utils.h"
 #include "utils/directory_walker.h"
 #include "utils/file_sanitizer.h"
 #include "vlog.h"
@@ -91,7 +92,8 @@ ss::future<> log_manager::stop() {
               return entry.second.handle.close();
           });
       })
-      .then([this] { return _batch_cache.stop(); });
+      .then([this] { return _batch_cache.stop(); })
+      .then([this] { return async_clear(_logs); });
 }
 
 static inline logs_type::iterator find_next_non_compacted_log(logs_type& logs) {
