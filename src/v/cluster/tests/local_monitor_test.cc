@@ -187,3 +187,20 @@ FIXTURE_TEST(local_monitor_alert_on_space_bytes, local_monitor_fixture) {
       99_GiB,  // current free
       disk_space_alert::low_space);
 }
+
+FIXTURE_TEST(local_monitor_min_bytes, local_monitor_fixture) {
+    assert_space_alert(
+      20_TiB,  // total
+      0,       // alert bytes
+      100_GiB, // alert percent
+      20_GiB,  // min bytes
+      19_GiB,  // current free
+      disk_space_alert::degraded);
+    assert_space_alert(
+      10_GiB,    // total
+      0,         // alert bytes
+      0,         // alert percent
+      2_MiB,     // min bytes
+      2_MiB - 1, // current free
+      disk_space_alert::degraded);
+}
