@@ -159,6 +159,7 @@ private:
     ss::sharded<feature_backend> _feature_backend; // instance per core
     ss::sharded<feature_table>& _feature_table;    // instance per core
     std::unique_ptr<leader_balancer> _leader_balancer;
+    ss::sharded<partition_balancer_backend> _partition_balancer;
     consensus_ptr _raft0;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
     controller_probe _probe;
