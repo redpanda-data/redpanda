@@ -12,7 +12,6 @@ package config
 import (
 	"errors"
 	"fmt"
-	"os"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -84,8 +83,9 @@ If an empty string is given as the value, the property is reset to its default.`
 				// Special case 400 (validation) errors with friendly output
 				// about which configuration properties were invalid.
 				if he.Response.StatusCode == 400 {
-					fmt.Fprint(os.Stderr, formatValidationError(err, he))
-					out.Die("No changes were made.")
+					ve, err := formatValidationError(err, he)
+					out.MaybeDie(err, "error setting config: %v", err)
+					out.Die("No changes were made: %v", ve)
 				}
 			}
 
