@@ -252,6 +252,16 @@ struct client_context {
     T data;
 };
 
+/*
+ * wrapper to hold context associated with a response that can be inspected even
+ * in cases where there is no valid response, such as recoverable errors.
+ */
+template<typename T>
+struct result_context {
+    transport_version version;
+    result<client_context<T>> ctx;
+};
+
 template<typename T>
 inline result<T> get_ctx_data(result<client_context<T>>&& ctx) {
     if (unlikely(!ctx)) {
