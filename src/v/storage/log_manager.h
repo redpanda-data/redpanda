@@ -23,6 +23,7 @@
 #include "storage/types.h"
 #include "storage/version.h"
 #include "units.h"
+#include "utils/intrusive_list_helpers.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/abort_source.hh>
@@ -216,7 +217,7 @@ public:
     /// Returns the log for the specified ntp.
     std::optional<log> get(const model::ntp& ntp) {
         if (auto it = _logs.find(ntp); it != _logs.end()) {
-            return it->second.handle;
+            return it->second->handle;
         }
         return std::nullopt;
     }
@@ -227,7 +228,10 @@ public:
     int64_t compaction_backlog() const;
 
 private:
-    using logs_type = absl::flat_hash_map<model::ntp, log_housekeeping_meta>;
+    using logs_type
+      = absl::flat_hash_map<model::ntp, std::unique_ptr<log_housekeeping_meta>>;
+    using compaction_list_type
+      = intrusive_list<log_housekeeping_meta, &log_housekeeping_meta::link>;
 
     ss::future<log> do_manage(ntp_config);
 
@@ -243,11 +247,14 @@ private:
     ss::future<> dispatch_topic_dir_deletion(ss::sstring dir);
     ss::future<> recover_log_state(const ntp_config&);
 
+    ss::future<> housekeeping_scan(model::timestamp);
+
     log_config _config;
     kvstore& _kvstore;
     simple_time_jitter<ss::lowres_clock> _jitter;
     ss::timer<ss::lowres_clock> _compaction_timer;
     logs_type _logs;
+    compaction_list_type _logs_list;
     batch_cache _batch_cache;
     ss::gate _open_gate;
     ss::abort_source _abort_source;

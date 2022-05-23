@@ -12,6 +12,7 @@
 #pragma once
 
 #include "storage/log.h"
+#include "utils/intrusive_list_helpers.h"
 
 namespace storage {
 struct log_housekeeping_meta {
@@ -25,6 +26,8 @@ struct log_housekeeping_meta {
     log handle;
     bitflags flags{bitflags::none};
     ss::lowres_clock::time_point last_compaction;
+
+    intrusive_list_hook link;
 };
 
 inline log_housekeeping_meta::bitflags operator|(
