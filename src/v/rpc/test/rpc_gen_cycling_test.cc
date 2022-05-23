@@ -353,7 +353,7 @@ FIXTURE_TEST(corrupted_header_at_client_test, rpc_integration_fixture) {
     rpc::netbuf nb;
     nb.set_compression(rpc::compression_type::none);
     nb.set_correlation_id(10);
-    nb.set_service_method_id(960598415);
+    nb.set_service_method_id(echo::echo_service::echo_method_id);
     reflection::adl<echo::echo_req>{}.to(
       nb.buffer(), echo::echo_req{.str = "testing..."});
     // will fail all the futures as server close the connection
@@ -395,7 +395,7 @@ FIXTURE_TEST(corrupted_data_at_server, rpc_integration_fixture) {
     rpc::netbuf nb;
     nb.set_compression(rpc::compression_type::none);
     nb.set_correlation_id(10);
-    nb.set_service_method_id(960598415);
+    nb.set_service_method_id(echo::echo_service::echo_method_id);
     auto bytes = random_generators::get_bytes();
     nb.buffer().append(bytes.c_str(), bytes.size());
 
