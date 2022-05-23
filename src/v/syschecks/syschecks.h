@@ -58,9 +58,9 @@ ss::future<> systemd_raw_message(ss::sstring out);
 ss::future<> systemd_notify_ready();
 
 template<typename... Args>
-ss::future<> systemd_message(const char* fmt, Args&&... args) {
+ss::future<> systemd_message(fmt::format_string<Args...> fmt, Args&&... args) {
     ss::sstring s = ssx::sformat(
-      "STATUS={}\n", ssx::sformat(fmt, std::forward<Args>(args)...));
+      "STATUS={}\n", fmt::format(fmt, std::forward<Args>(args)...));
     return systemd_raw_message(std::move(s));
 }
 

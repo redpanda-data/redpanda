@@ -21,6 +21,7 @@
 #include <fmt/chrono.h>
 #include <fmt/format.h>
 
+#include <iterator>
 #include <limits>
 #include <variant>
 
@@ -170,9 +171,10 @@ retry_chain_node::~retry_chain_node() {
 }
 ss::sstring retry_chain_node::operator()() const {
     fmt::memory_buffer buf;
-    buf.push_back('[');
-    format(buf);
-    buf.push_back(']');
+    auto bii = std::back_insert_iterator(buf);
+    bii = '[';
+    format(bii);
+    bii = ']';
     return ss::sstring(buf.data(), buf.size());
 }
 
@@ -228,7 +230,8 @@ uint16_t retry_chain_node::get_len() const {
     return len;
 }
 
-void retry_chain_node::format(fmt::memory_buffer& str) const {
+void retry_chain_node::format(
+  std::back_insert_iterator<fmt::memory_buffer>& bii) const {
     std::array<uint16_t, max_retry_chain_depth> ids{_id};
     int ids_len = 1;
     auto next = get_parent();
@@ -242,9 +245,9 @@ void retry_chain_node::format(fmt::memory_buffer& str) const {
          id != ids.rend();
          ix++, id++) {
         if (ix == 0) {
-            fmt::format_to(str, "fiber{}", *id);
+            fmt::format_to(bii, "fiber{}", *id);
         } else {
-            fmt::format_to(str, "~{}", *id);
+            fmt::format_to(bii, "~{}", *id);
         }
     }
     if (_deadline != ss::lowres_clock::time_point::min()) {
@@ -255,7 +258,7 @@ void retry_chain_node::format(fmt::memory_buffer& str) const {
         }
         // [fiber42~0~4|2|100ms]
         fmt::format_to(
-          str, "|{}|{}", _retry, std::chrono::milliseconds(time_budget));
+          bii, "|{}|{}", _retry, std::chrono::milliseconds(time_budget));
     }
 }
 

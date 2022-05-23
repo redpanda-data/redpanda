@@ -15,6 +15,7 @@
 #include "rpc/backoff_policy.h"
 #include "rpc/transport.h"
 #include "rpc/types.h"
+#include "ssx/sformat.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>

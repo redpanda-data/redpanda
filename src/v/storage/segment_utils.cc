@@ -51,7 +51,33 @@
 #include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>
 #include <fmt/core.h>
+#include <fmt/format.h>
 #include <roaring/roaring.hh>
+
+template<>
+struct fmt::formatter<storage::compacted_index::recovery_state> {
+    using recovery_state = storage::compacted_index::recovery_state;
+    constexpr auto parse(format_parse_context& ctx) { return ctx.end(); }
+    template<typename FormatContext>
+    auto format(const recovery_state& s, FormatContext& ctx) const {
+        std::string_view str = "unknown";
+        switch (s) {
+        case recovery_state::missing:
+            str = "missing";
+            break;
+        case recovery_state::needsrebuild:
+            str = "needsrebuild";
+            break;
+        case recovery_state::recovered:
+            str = "recovered";
+            break;
+        case recovery_state::nonrecovered:
+            str = "nonrecovered";
+            break;
+        }
+        return format_to(ctx.out(), "{}", str);
+    }
+};
 
 namespace storage::internal {
 using namespace storage; // NOLINT

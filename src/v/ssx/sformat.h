@@ -14,24 +14,57 @@
 #include <seastar/core/sstring.hh>
 
 #include <fmt/format.h>
+#include <fmt/ostream.h>
 
+namespace fmt {
 template<>
-struct fmt::formatter<seastar::sstring> {
-    constexpr auto parse(format_parse_context& ctx) { return ctx.end(); }
+struct fmt::formatter<seastar::sstring> final : fmt::formatter<string_view> {
     template<typename FormatContext>
-    auto format(const seastar::sstring& s, FormatContext& ctx) {
-        return format_to(ctx.out(), "{}", std::string_view(s));
+    auto format(const seastar::sstring& s, FormatContext& ctx) const {
+        return formatter<string_view>::format(
+          string_view(s.data(), s.size()), ctx);
     }
 };
+
+namespace detail {
+
+// TODO(BenP): Remove this hack with next libfmt upgrade
+//
+// If a type that has both operator<< and formatter<>, the former is chosen,
+// which is not what is desired. This is a regression betwen 7.0.3 and 8.1.1
+//
+// This hack disables picking operator<<, enabling the above formatter.
+//
+// A future version of fmtlib will require explicit opt-in:
+// template<> struct formatter<test_string> : ostream_formatter {};
+//
+// Without this hack:
+// test               iterations      median         mad         min         max
+// std_std_fmt_1K.join     11739    75.312us     1.073us    74.156us    97.341us
+// ss_ss_fmt_1K.join        5855   155.362us   925.138ns   154.437us   160.463us
+// ss_ss_ssx_1K.join        6642   148.931us     1.317us   147.613us   155.382us
+//
+// With this hack:
+// test               iterations      median         mad         min         max
+// std_std_fmt_1K.join     11684    71.891us   218.588ns    71.652us    72.854us
+// ss_ss_fmt_1K.join       10300    86.037us   444.582ns    84.775us    88.985us
+// ss_ss_ssx_1K.join       12311    72.840us     2.224us    70.616us   101.076us
+template<>
+struct is_streamable<seastar::sstring, char> : std::false_type {};
+
+} // namespace detail
+
+} // namespace fmt
 
 namespace ssx {
 
 template<typename... Args>
-seastar::sstring sformat(fmt::string_view format_str, Args&&... args) {
-    auto size = fmt::formatted_size(format_str, std::forward<Args>(args)...);
-    seastar::sstring buffer(seastar::sstring::initialized_later{}, size);
-    fmt::format_to(buffer.data(), format_str, std::forward<Args>(args)...);
-    return buffer;
+seastar::sstring
+sformat(fmt::format_string<Args...> format_str, Args&&... args) {
+    fmt::memory_buffer buf;
+    fmt::format_to(
+      std::back_inserter(buf), format_str, std::forward<Args>(args)...);
+    return {buf.begin(), buf.end()};
 }
 
 } // namespace ssx

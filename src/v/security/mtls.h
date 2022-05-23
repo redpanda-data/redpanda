@@ -91,7 +91,8 @@ struct fmt::formatter<security::tls::rule> {
     constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
 
     template<typename FormatContext>
-    typename FormatContext::iterator format(const type& r, FormatContext& ctx);
+    typename FormatContext::iterator
+    format(const type& r, FormatContext& ctx) const;
 };
 
 template<>
@@ -101,5 +102,6 @@ struct fmt::formatter<security::tls::principal_mapper> {
     constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
 
     template<typename FormatContext>
-    typename FormatContext::iterator format(const type& r, FormatContext& ctx);
+    typename FormatContext::iterator
+    format(const type& r, FormatContext& ctx) const;
 };

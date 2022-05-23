@@ -258,13 +258,15 @@ public:
     /// Generate formattend log prefix and add custom string into it:
     /// Example: [fiber42~3~1|2|100ms ns/topic/42]
     template<typename... Args>
-    ss::sstring operator()(const char* format_str, Args&&... args) const {
+    ss::sstring
+    operator()(fmt::format_string<Args...> format_str, Args&&... args) const {
         fmt::memory_buffer mbuf;
-        mbuf.push_back('[');
-        format(mbuf);
-        mbuf.push_back(' ');
-        fmt::format_to(mbuf, format_str, std::forward<Args>(args)...);
-        mbuf.push_back(']');
+        auto bii = std::back_insert_iterator(mbuf);
+        bii = '[';
+        format(bii);
+        bii = ' ';
+        fmt::format_to(bii, format_str, std::forward<Args>(args)...);
+        bii = ']';
         return ss::sstring(mbuf.data(), mbuf.size());
     }
 
@@ -304,7 +306,7 @@ public:
     ss::lowres_clock::time_point get_deadline() const;
 
 private:
-    void format(fmt::memory_buffer& str) const;
+    void format(std::back_insert_iterator<fmt::memory_buffer>& bii) const;
 
     uint16_t add_child();
 
@@ -358,7 +360,9 @@ public:
       , _node(node)
       , _ctx(std::move(context)) {}
     template<typename... Args>
-    void log(ss::log_level lvl, const char* format, Args&&... args) const {
+    void
+    log(ss::log_level lvl, fmt::format_string<Args...> format, Args&&... args)
+      const {
         if (_log.is_enabled(lvl)) {
             auto lambda = [&](ss::logger& logger, ss::log_level lvl) {
                 auto msg = ssx::sformat(format, std::forward<Args>(args)...);
@@ -376,23 +380,23 @@ public:
         }
     }
     template<typename... Args>
-    void error(const char* format, Args&&... args) const {
+    void error(fmt::format_string<Args...> format, Args&&... args) const {
         log(ss::log_level::error, format, std::forward<Args>(args)...);
     }
     template<typename... Args>
-    void warn(const char* format, Args&&... args) const {
+    void warn(fmt::format_string<Args...> format, Args&&... args) const {
         log(ss::log_level::warn, format, std::forward<Args>(args)...);
     }
     template<typename... Args>
-    void info(const char* format, Args&&... args) const {
+    void info(fmt::format_string<Args...> format, Args&&... args) const {
         log(ss::log_level::info, format, std::forward<Args>(args)...);
     }
     template<typename... Args>
-    void debug(const char* format, Args&&... args) const {
+    void debug(fmt::format_string<Args...> format, Args&&... args) const {
         log(ss::log_level::debug, format, std::forward<Args>(args)...);
     }
     template<typename... Args>
-    void trace(const char* format, Args&&... args) const {
+    void trace(fmt::format_string<Args...> format, Args&&... args) const {
         log(ss::log_level::trace, format, std::forward<Args>(args)...);
     }
 

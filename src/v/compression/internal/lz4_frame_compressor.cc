@@ -28,7 +28,8 @@ static constexpr size_t lz4f_footer_size = 4;
 
 [[noreturn]] [[gnu::cold]] static void
 throw_lz4_error(const char* fmt, LZ4F_errorCode_t err) {
-    throw std::runtime_error(fmt::format(fmt, LZ4F_getErrorName(err)));
+    throw std::runtime_error(
+      fmt::format(fmt::runtime(fmt), LZ4F_getErrorName(err)));
 }
 static inline void check_lz4_error(const char* fmt, LZ4F_errorCode_t code) {
     if (unlikely(LZ4F_isError(code))) {
