@@ -334,6 +334,8 @@ github.com/twmb/franz-go/pkg/kadm v0.0.0-20220106030238-d62f1bef74f9/go.mod h1:f
 github.com/twmb/franz-go/pkg/kmsg v0.0.0-20211104051938-70808186d5f7/go.mod h1:SxG/xJKhgPu25SamAq0rrucfp7lbzCpEXOC+vH/ELrY=
 github.com/twmb/franz-go/pkg/kmsg v1.0.0 h1:dQdaXLDUEb+XkSUqw2/GvMEGdw1o89X2fOiFjlhztyA=
 github.com/twmb/franz-go/pkg/kmsg v1.0.0/go.mod h1:SxG/xJKhgPu25SamAq0rrucfp7lbzCpEXOC+vH/ELrY=
+github.com/twmb/franz-go/pkg/sr v0.0.0-20220523002247-6e9090dbbba1 h1:eG2B4K6X1QWL3703T6lzzT1Izws5LWBNPHUwXCDcE2A=
+github.com/twmb/franz-go/pkg/sr v0.0.0-20220523002247-6e9090dbbba1/go.mod h1:Js4uyv6UktPqVKzFre8+wE31N+uI5vtHzOc/Q7eYC08=
 github.com/twmb/go-rbtree v1.0.0 h1:KxN7dXJ8XaZ4cvmHV1qqXTshxX3EBvX/toG5+UR49Mg=
 github.com/twmb/go-rbtree v1.0.0/go.mod h1:UlIAI8gu3KRPkXSobZnmJfVwCJgEhD/liWzT5ppzIyc=
 github.com/twmb/tlscfg v1.2.0 h1:WCzLHtmnVJ94+veAO4TLTB1ENx7TPYLkTl4Q6WFF4Vo=
