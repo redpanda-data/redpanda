@@ -19,6 +19,7 @@
 #include <seastar/core/seastar.hh>
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/core/when_all.hh>
 #include <seastar/util/defer.hh>
 #include <seastar/util/file.hh>
 #include <seastar/util/tmp_file.hh>
@@ -31,28 +32,24 @@
 
 using namespace std::chrono_literals; // NOLINT
 
-FIXTURE_TEST(rpcgen_integration, rpc_integration_fixture) {
+FIXTURE_TEST(echo_round_trip, rpc_integration_fixture) {
     configure_server();
     register_services();
     start_server();
-    info("started");
-    auto cli = rpc::client<cycling::team_movistar_client_protocol>(
-      client_config());
-    info("client connecting");
-    cli.connect(model::no_timeout).get();
-    auto dcli = ss::defer([&cli] { cli.stop().get(); });
-    info("client calling method");
-    auto ret = cli
-                 .ibis_hakka(
-                   cycling::san_francisco{66},
-                   rpc::client_opts(rpc::no_timeout))
-                 .get0();
-    info("service stopping");
 
-    BOOST_REQUIRE_EQUAL(ret.value().data.x, 66);
+    auto client = rpc::client<echo::echo_client_protocol>(client_config());
+    client.connect(model::no_timeout).get();
+    auto cleanup = ss::defer([&client] { client.stop().get(); });
+
+    const auto payload = random_generators::gen_alphanum_string(100);
+    auto f = client.echo(
+      echo::echo_req{.str = payload}, rpc::client_opts(rpc::no_timeout));
+    auto ret = f.get();
+    BOOST_REQUIRE(ret.has_value());
+    BOOST_REQUIRE_EQUAL(ret.value().data.str, payload);
 }
 
-FIXTURE_TEST(rpcgen_tls_integration, rpc_integration_fixture) {
+FIXTURE_TEST(echo_round_trip_tls, rpc_integration_fixture) {
     auto creds_builder = config::tls_config(
                            true,
                            config::key_cert{"redpanda.key", "redpanda.crt"},
@@ -61,22 +58,22 @@ FIXTURE_TEST(rpcgen_tls_integration, rpc_integration_fixture) {
                            std::nullopt)
                            .get_credentials_builder()
                            .get0();
+
     configure_server(creds_builder);
     register_services();
     start_server();
-    info("started");
-    auto cli = rpc::client<cycling::team_movistar_client_protocol>(
+
+    auto client = rpc::client<echo::echo_client_protocol>(
       client_config(creds_builder));
-    info("client connecting");
-    cli.connect(model::no_timeout).get();
-    auto dcli = ss::defer([&cli] { cli.stop().get(); });
-    info("client calling method");
-    auto ret = cli
-                 .ibis_hakka(
-                   cycling::san_francisco{66},
-                   rpc::client_opts(rpc::no_timeout))
-                 .get0();
-    BOOST_REQUIRE_EQUAL(ret.value().data.x, 66);
+    client.connect(model::no_timeout).get();
+    auto cleanup = ss::defer([&client] { client.stop().get(); });
+
+    const auto payload = random_generators::gen_alphanum_string(100);
+    auto f = client.echo(
+      echo::echo_req{.str = payload}, rpc::client_opts(rpc::no_timeout));
+    auto ret = f.get();
+    BOOST_REQUIRE(ret.has_value());
+    BOOST_REQUIRE_EQUAL(ret.value().data.str, payload);
 }
 
 class temporary_dir {
@@ -320,15 +317,55 @@ FIXTURE_TEST(missing_method_test, rpc_integration_fixture) {
     configure_server();
     register_services();
     start_server();
+
     rpc::transport t(client_config());
     t.connect(model::no_timeout).get();
-    auto ret = t.send_typed<echo::failure_type, echo::throw_resp>(
-                  echo::failure_type::exceptional_future,
-                  1234,
-                  rpc::client_opts(model::no_timeout))
-                 .get0();
-    BOOST_REQUIRE(ret.has_error());
-    BOOST_REQUIRE_EQUAL(ret.error(), rpc::errc::method_not_found);
+    auto client = echo::echo_client_protocol(t);
+
+    const auto check_missing = [&] {
+        auto f = t.send_typed<echo::echo_req, echo::echo_resp>(
+          echo::echo_req{.str = "testing..."},
+          1234,
+          rpc::client_opts(rpc::no_timeout));
+        return f.then([&](auto ret) {
+            BOOST_REQUIRE(ret.has_error());
+            BOOST_REQUIRE_EQUAL(ret.error(), rpc::errc::method_not_found);
+        });
+    };
+
+    const auto check_success = [&] {
+        auto f = client.echo(
+          echo::echo_req{.str = "testing..."},
+          rpc::client_opts(rpc::no_timeout));
+        return f.then([&](auto ret) {
+            BOOST_REQUIRE(ret.has_value());
+            BOOST_REQUIRE_EQUAL(ret.value().data.str, "testing...");
+        });
+    };
+
+    /*
+     * randomizing the messages here is intentional: we want to ensure that
+     * missing method error can be handled in any situation and that the
+     * connection remains in a healthy state.
+     */
+    std::vector<std::function<ss::future<>()>> request_factory;
+    for (int i = 0; i < 200; i++) {
+        request_factory.emplace_back(check_missing);
+        request_factory.emplace_back(check_success);
+    }
+    std::shuffle(
+      request_factory.begin(),
+      request_factory.end(),
+      random_generators::internal::gen);
+
+    // dispatch the requests
+    std::vector<ss::future<>> requests;
+    for (const auto& factory : request_factory) {
+        requests.emplace_back(factory());
+    }
+
+    ss::when_all_succeed(requests.begin(), requests.end()).get();
+
     t.stop().get();
 }
 
@@ -416,4 +453,69 @@ FIXTURE_TEST(corrupted_data_at_server, rpc_integration_fixture) {
 
         BOOST_REQUIRE_EQUAL(echo_resp_new.value().data.str, "testing...");
     }
+}
+
+FIXTURE_TEST(version_not_supported, rpc_integration_fixture) {
+    configure_server();
+    register_services();
+    start_server();
+
+    rpc::transport t(client_config());
+    t.connect(model::no_timeout).get();
+    auto client = echo::echo_client_protocol(t);
+
+    const auto check_unsupported = [&] {
+        auto f = t.send_typed_versioned<echo::echo_req, echo::echo_resp>(
+          echo::echo_req{.str = "testing..."},
+          960598415,
+          rpc::client_opts(rpc::no_timeout),
+          rpc::transport_version::unsupported);
+        return f.then([&](auto ret) {
+            BOOST_REQUIRE(ret.has_value()); // low-level rpc succeeded
+
+            BOOST_REQUIRE(ret.value().ctx.has_error()); // payload failed
+            BOOST_REQUIRE_EQUAL(
+              ret.value().ctx.error(), rpc::errc::version_not_supported);
+
+            // returned version is server's max supported
+            BOOST_REQUIRE_EQUAL(
+              static_cast<uint8_t>(ret.value().version),
+              static_cast<uint8_t>(rpc::transport_version::max_supported));
+        });
+    };
+
+    const auto check_supported = [&] {
+        auto f = client.echo(
+          echo::echo_req{.str = "testing..."},
+          rpc::client_opts(rpc::no_timeout));
+        return f.then([&](auto ret) {
+            BOOST_REQUIRE(ret.has_value());
+            BOOST_REQUIRE_EQUAL(ret.value().data.str, "testing...");
+        });
+    };
+
+    /*
+     * randomizing the messages here is intentional: we want to ensure that
+     * unsupported version error can be handled in any situation and that the
+     * connection remains in a healthy state.
+     */
+    std::vector<std::function<ss::future<>()>> request_factory;
+    for (int i = 0; i < 200; i++) {
+        request_factory.emplace_back(check_unsupported);
+        request_factory.emplace_back(check_supported);
+    }
+    std::shuffle(
+      request_factory.begin(),
+      request_factory.end(),
+      random_generators::internal::gen);
+
+    // dispatch the requests
+    std::vector<ss::future<>> requests;
+    for (const auto& factory : request_factory) {
+        requests.emplace_back(factory());
+    }
+
+    ss::when_all_succeed(requests.begin(), requests.end()).get();
+
+    t.stop().get();
 }

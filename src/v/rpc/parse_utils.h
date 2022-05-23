@@ -83,26 +83,29 @@ inline void validate_payload_and_header(const iobuf& io, const header& h) {
 }
 
 template<typename T>
-ss::future<T> parse_type_without_compression(iobuf io) {
-    auto p = std::make_unique<iobuf_parser>(std::move(io));
-    auto raw = p.get();
-    return reflection::async_adl<T>{}.from(*raw).finally([p = std::move(p)] {});
-}
-
-template<typename T>
 ss::future<T> parse_type(ss::input_stream<char>& in, const header& h) {
     return read_iobuf_exactly(in, h.payload_size).then([h](iobuf io) {
         validate_payload_and_header(io, h);
-        if (h.compression == compression_type::none) {
-            return rpc::parse_type_without_compression<T>(std::move(io));
-        }
-        if (h.compression == compression_type::zstd) {
+
+        switch (h.compression) {
+        case compression_type::none:
+            break;
+
+        case compression_type::zstd: {
             compression::stream_zstd fn;
             io = fn.uncompress(std::move(io));
-            return rpc::parse_type_without_compression<T>(std::move(io));
+            break;
         }
-        return ss::make_exception_future<T>(std::runtime_error(
-          fmt::format("no compression supported. header: {}", h)));
+
+        default:
+            return ss::make_exception_future<T>(std::runtime_error(
+              fmt::format("no compression supported. header: {}", h)));
+        }
+
+        auto p = std::make_unique<iobuf_parser>(std::move(io));
+        auto raw = p.get();
+        return reflection::async_adl<T>{}.from(*raw).finally(
+          [p = std::move(p)] {});
     });
 }
 
