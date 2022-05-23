@@ -87,6 +87,12 @@ send_reply(ss::lw_shared_ptr<server_context_impl> ctx, netbuf buf) {
       });
 }
 
+ss::future<> send_reply_skip_payload(
+  ss::lw_shared_ptr<server_context_impl> ctx, netbuf buf) {
+    co_await ctx->res.conn->input().skip(ctx->get_header().payload_size);
+    co_await send_reply(std::move(ctx), std::move(buf));
+}
+
 ss::future<>
 simple_protocol::dispatch_method_once(header h, net::server::resources rs) {
     const auto method_id = h.meta;
@@ -121,12 +127,8 @@ simple_protocol::dispatch_method_once(header h, net::server::resources rs) {
                    * client to know more about the state of the server.
                    */
                   reply_buf.set_version(transport_version::max_supported);
-                  return ctx->res.conn->input()
-                    .skip(ctx->get_header().payload_size)
-                    .then([ctx, reply_buf = std::move(reply_buf)]() mutable {
-                        return send_reply(ctx, std::move(reply_buf))
-                          .then([ctx]() mutable { ctx->signal_body_parse(); });
-                    });
+                  return send_reply_skip_payload(ctx, std::move(reply_buf))
+                    .then([ctx] { ctx->signal_body_parse(); });
               }
               auto it = std::find_if(
                 _services.begin(),
@@ -143,12 +145,8 @@ simple_protocol::dispatch_method_once(header h, net::server::resources rs) {
                   rs.probe().method_not_found();
                   netbuf reply_buf;
                   reply_buf.set_status(rpc::status::method_not_found);
-                  return ctx->res.conn->input()
-                    .skip(ctx->get_header().payload_size)
-                    .then([ctx, reply_buf = std::move(reply_buf)]() mutable {
-                        return send_reply(ctx, std::move(reply_buf))
-                          .then([ctx]() mutable { ctx->signal_body_parse(); });
-                    });
+                  return send_reply_skip_payload(ctx, std::move(reply_buf))
+                    .then([ctx] { ctx->signal_body_parse(); });
               }
 
               method* m = it->get()->method_from_id(method_id);
