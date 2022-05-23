@@ -12,10 +12,7 @@ package resources
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"net/http"
-	"net/url"
 	"reflect"
 	"sort"
 	"strings"
@@ -34,10 +31,7 @@ const (
 	// RequeueDuration is the time controller should
 	// requeue resource reconciliation.
 	RequeueDuration = time.Second * 10
-	adminAPITimeout = time.Millisecond * 100
 )
-
-var errRedpandaNotReady = errors.New("redpanda not ready")
 
 // runUpdate handles image changes and additional storage in the redpanda cluster
 // CR by removing statefulset with orphans Pods. The stateful set is then recreated
@@ -150,20 +144,6 @@ func (r *StatefulSetResource) rollingUpdate(
 				RequeueAfter: RequeueDuration,
 				Msg:          fmt.Sprintf("wait for %s pod to become ready", pod.Name),
 			}
-		}
-
-		headlessServiceWithPort := fmt.Sprintf("%s:%d", r.serviceFQDN,
-			r.pandaCluster.AdminAPIInternal().Port)
-
-		adminURL := url.URL{
-			Scheme: "http",
-			Host:   fmt.Sprintf("%s.%s", pod.Name, headlessServiceWithPort),
-			Path:   "v1/status/ready",
-		}
-
-		r.logger.Info("Verify that Ready endpoint returns HTTP status OK")
-		if err = r.queryRedpandaStatus(ctx, &adminURL); err != nil {
-			return fmt.Errorf("unable to query Redpanda ready status: %w", err)
 		}
 	}
 
@@ -369,45 +349,6 @@ func deleteKubernetesTokenVolumeMounts(obj []byte) ([]byte, error) {
 	}
 
 	return obj, nil
-}
-
-// Temporarily using the status/ready endpoint until we have a specific one for restarting.
-func (r *StatefulSetResource) queryRedpandaStatus(
-	ctx context.Context, adminURL *url.URL,
-) error {
-	client := &http.Client{Timeout: adminAPITimeout}
-
-	// TODO right now we support TLS only on one listener so if external
-	// connectivity is enabled, TLS is enabled only on external listener. This
-	// will be fixed by https://github.com/redpanda-data/redpanda/issues/1084
-	if r.pandaCluster.AdminAPITLS() != nil &&
-		r.pandaCluster.AdminAPIExternal() == nil {
-		tlsConfig, err := r.adminTLSConfigProvider.GetTLSConfig(ctx, r)
-		if err != nil {
-			return err
-		}
-
-		client.Transport = &http.Transport{
-			TLSClientConfig: tlsConfig,
-		}
-		adminURL.Scheme = "https"
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, adminURL.String(), http.NoBody)
-	if err != nil {
-		return err
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return errRedpandaNotReady
-	}
-
-	return nil
 }
 
 // RequeueAfterError error carrying the time after which to requeue.
