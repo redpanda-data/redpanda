@@ -494,7 +494,7 @@ configuration::configuration()
       "abort_timed_out_transactions_interval_ms",
       "How often look for the inactive transactions and abort them",
       {.visibility = visibility::tunable},
-      1min)
+      10s)
   , create_topic_timeout_ms(
       *this,
       "create_topic_timeout_ms",
