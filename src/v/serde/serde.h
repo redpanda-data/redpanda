@@ -26,6 +26,7 @@
 #include <numeric>
 #include <string>
 #include <string_view>
+#include <type_traits>
 
 namespace serde {
 
@@ -145,11 +146,16 @@ inline constexpr auto const is_serde_compatible_v
     || is_fragmented_vector_v<T>;
 
 template<typename T>
+inline constexpr auto const are_bytes_and_string_different = !(
+  std::is_same_v<T, ss::sstring> && std::is_same_v<T, bytes>);
+
+template<typename T>
 void write(iobuf&, T);
 
 template<typename T>
 void write(iobuf& out, T t) {
     using Type = std::decay_t<T>;
+    static_assert(are_bytes_and_string_different<Type>);
     static_assert(has_serde_write<Type> || is_serde_compatible_v<Type>);
 
     if constexpr (is_envelope_v<Type>) {
@@ -350,6 +356,7 @@ header read_header(iobuf_parser& in, std::size_t const bytes_left_limit) {
 template<typename T>
 void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
     using Type = std::decay_t<T>;
+    static_assert(are_bytes_and_string_different<Type>);
     static_assert(has_serde_read<T> || is_serde_compatible_v<Type>);
 
     if constexpr (is_envelope_v<Type>) {
