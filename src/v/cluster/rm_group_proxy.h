@@ -19,6 +19,8 @@ namespace cluster {
 
 class rm_group_proxy {
 public:
+    virtual ~rm_group_proxy() = default;
+
     virtual ss::future<begin_group_tx_reply> begin_group_tx(
       kafka::group_id,
       model::producer_identity,

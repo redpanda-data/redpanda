@@ -11,7 +11,7 @@
 
 #pragma once
 #include <cstdint>
-#include <zlib.h>
+#include <zlib.h> // provides ::crc32
 
 namespace crc {
 

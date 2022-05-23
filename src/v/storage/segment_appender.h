@@ -72,6 +72,7 @@ public:
     ss::future<> flush();
 
     struct callbacks {
+        virtual ~callbacks() = default;
         virtual void committed_physical_offset(size_t) = 0;
     };
 

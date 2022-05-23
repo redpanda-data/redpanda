@@ -11,12 +11,10 @@
 
 #pragma once
 
+#include "bytes/bytes.h"
 #include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
-
-#include <boost/range/algorithm/generate.hpp>
-#include <bytes/bytes.h>
 
 #include <random>
 
