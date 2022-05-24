@@ -40,6 +40,7 @@ func importConfig(
 	client *admin.AdminAPI,
 	filename string,
 	oldConfig admin.Config,
+	oldConfigFull admin.Config,
 	schema admin.ConfigSchema,
 	all bool,
 ) (err error) {
@@ -65,6 +66,8 @@ func importConfig(
 	remove := make([]string, 0)
 	for k, v := range readbackConfig {
 		oldVal, haveOldVal := oldConfig[k]
+		oldValMaterialized, haveOldValMaterialized := oldConfigFull[k]
+
 		if meta, ok := schema[k]; ok {
 			// For numeric types need special handling because
 			// yaml encoding will see '1' as an integer, even
@@ -77,6 +80,9 @@ func importConfig(
 
 				if oldVal != nil {
 					oldVal = int(oldVal.(float64))
+				}
+				if oldValMaterialized != nil {
+					oldValMaterialized = int(oldValMaterialized.(float64))
 				}
 			} else if meta.Type == "number" {
 				if vInt, ok := v.(int); ok {
@@ -92,6 +98,9 @@ func importConfig(
 				}
 				if oldVal != nil {
 					oldVal = loadStringArray(oldVal.([]interface{}))
+				}
+				if oldValMaterialized != nil {
+					oldValMaterialized = loadStringArray(oldValMaterialized.([]interface{}))
 				}
 			}
 
@@ -119,13 +128,16 @@ func importConfig(
 				upsert[k] = v
 			}
 		} else {
-			// Present in input but not original config, insert
-			upsert[k] = v
-			propertyDeltas = append(propertyDeltas, propertyDelta{k, "", fmt.Sprintf("%v", v)})
+			// Present in input but not original config, insert if it differs
+			// from the materialized current value (which may be a default)
+			if !haveOldValMaterialized || !reflect.DeepEqual(oldValMaterialized, v) {
+				upsert[k] = v
+				propertyDeltas = append(propertyDeltas, propertyDelta{k, fmt.Sprintf("%v", oldValMaterialized), fmt.Sprintf("%v", v)})
+			}
 		}
 	}
 
-	for k := range oldConfig {
+	for k := range oldConfigFull {
 		if _, found := readbackConfig[k]; !found {
 			if k == "cluster_id" {
 				// see above
@@ -140,9 +152,11 @@ func importConfig(
 			if !all && meta.Visibility == "tunable" {
 				continue
 			}
-			oldValue := oldConfig[k]
-			propertyDeltas = append(propertyDeltas, propertyDelta{k, fmt.Sprintf("%v", oldValue), ""})
-			remove = append(remove, k)
+			oldValue, found := oldConfig[k]
+			if found {
+				propertyDeltas = append(propertyDeltas, propertyDelta{k, fmt.Sprintf("%v", oldValue), ""})
+				remove = append(remove, k)
+			}
 		}
 	}
 
@@ -237,11 +251,14 @@ from the YAML file, it is reset to its default value.  `,
 			out.MaybeDie(err, "unable to query config schema: %v", err)
 
 			// GET current config
-			currentConfig, err := client.Config(cmd.Context())
+			currentConfig, err := client.Config(cmd.Context(), false)
+			out.MaybeDie(err, "unable to query config values: %v", err)
+
+			currentFullConfig, err := client.Config(cmd.Context(), true)
 			out.MaybeDie(err, "unable to query config values: %v", err)
 
 			// Read back template & parse
-			err = importConfig(cmd.Context(), client, filename, currentConfig, schema, *all)
+			err = importConfig(cmd.Context(), client, filename, currentConfig, currentFullConfig, schema, *all)
 			if fe := (*formattedError)(nil); errors.As(err, &fe) {
 				fmt.Fprint(os.Stderr, err)
 				out.Die("No changes were made")
