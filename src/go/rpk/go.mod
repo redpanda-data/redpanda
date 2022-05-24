@@ -25,7 +25,6 @@ require (
 	github.com/google/uuid v1.1.1
 	github.com/gorilla/mux v1.7.3 // indirect
 	github.com/hashicorp/go-multierror v1.1.0
-	github.com/icza/dyno v0.0.0-20200205103839-49cb13720835
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lorenzosaino/go-sysctl v0.1.0
