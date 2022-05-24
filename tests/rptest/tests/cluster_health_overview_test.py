@@ -12,8 +12,7 @@ from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.rpk_producer import RpkProducer
-from rptest.tests.end_to_end import EndToEndTest
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 
 from ducktape.utils.util import wait_until
 
@@ -41,7 +40,7 @@ class ClusterHealthOverviewTest(RedpandaTest):
 
         wait_until(is_healthy, 30, 2)
 
-    @cluster(num_nodes=5)
+    @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def cluster_health_overview_baseline_test(self):
         self.create_topics()
 
