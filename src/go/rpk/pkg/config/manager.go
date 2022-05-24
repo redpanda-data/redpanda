@@ -20,7 +20,6 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/icza/dyno"
 	"github.com/mitchellh/mapstructure"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
 	log "github.com/sirupsen/logrus"
@@ -47,8 +46,6 @@ type Manager interface {
 	// Tries reading a config file at the given path, or tries to find it in
 	// the default locations if it doesn't exist.
 	ReadOrFind(path string) (*Config, error)
-	// Reads the configuration as JSON
-	ReadAsJSON(path string) (string, error)
 	// Generates and writes the node's UUID
 	WriteNodeUUID(conf *Config) error
 	// Merges an input config to the currently-loaded map
@@ -139,18 +136,6 @@ func (m *manager) ReadOrFind(path string) (*Config, error) {
 	return m.Read(path)
 }
 
-func (m *manager) ReadAsJSON(path string) (string, error) {
-	confMap, err := m.readMap(path)
-	if err != nil {
-		return "", err
-	}
-	confJSON, err := json.Marshal(confMap)
-	if err != nil {
-		return "", err
-	}
-	return string(confJSON), nil
-}
-
 func (m *manager) Read(path string) (*Config, error) {
 	// If the path was set, try reading only from there.
 	abs, err := filepath.Abs(path)
@@ -168,16 +153,6 @@ func (m *manager) Read(path string) (*Config, error) {
 	}
 	conf.ConfigFile, err = absPath(m.v.ConfigFileUsed())
 	return conf, err
-}
-
-func (m *manager) readMap(path string) (map[string]interface{}, error) {
-	m.v.SetConfigFile(path)
-	err := m.v.ReadInConfig()
-	if err != nil {
-		return nil, err
-	}
-	strMap := dyno.ConvertMapI2MapS(m.v.AllSettings())
-	return strMap.(map[string]interface{}), nil
 }
 
 func (m *manager) WriteNodeUUID(conf *Config) error {

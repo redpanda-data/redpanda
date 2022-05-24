@@ -108,24 +108,6 @@ func TestSendEnvironment(t *testing.T) {
 		VMType:       "i3.4xlarge",
 		OSInfo:       "x86_64 5.8.9-200.fc32.x86_64 #1 SMP Mon Sep 14 18:28:45 UTC 2020 \"Fedora release 32 (Thirty Two)\"",
 		SentAt:       time.Now(),
-		Config: map[string]interface{}{
-			"nodeUuid":  "abc123-hu234-234kh",
-			"clusterId": "cluster 1",
-			"redpanda": map[string]interface{}{
-				"directory": "/var/lib/redpanda/",
-				"rpcServer": map[string]interface{}{
-					"address": "0.0.0.0",
-					"port":    33145,
-				},
-				"kafkaAPI": map[string]interface{}{
-					"address": "0.0.0.0",
-					"port":    9092,
-				},
-			},
-			"rpk": map[string]interface{}{
-				"enableUsageStats": true,
-			},
-		},
 	}
 	bs, err := json.Marshal(body)
 	require.NoError(t, err)
