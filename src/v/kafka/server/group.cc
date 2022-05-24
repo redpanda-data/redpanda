@@ -2401,4 +2401,15 @@ void group::add_pending_member(
     res.first->second.arm(timeout);
 }
 
+std::ostream& operator<<(std::ostream& o, const group::offset_metadata& md) {
+    fmt::print(
+      o,
+      "{log_offset:{}, offset:{}, metadata:{}, committed_leader_epoch:{}}",
+      md.log_offset,
+      md.offset,
+      md.metadata,
+      md.committed_leader_epoch);
+    return o;
+}
+
 } // namespace kafka
