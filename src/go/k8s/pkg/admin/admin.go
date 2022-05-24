@@ -78,7 +78,7 @@ func NewInternalAdminAPI(
 //
 
 type AdminAPIClient interface {
-	Config(ctx context.Context) (admin.Config, error)
+	Config(ctx context.Context, includeDefaults bool) (admin.Config, error)
 	ClusterConfigStatus(ctx context.Context, sendToLeader bool) (admin.ConfigStatusResponse, error)
 	ClusterConfigSchema(ctx context.Context) (admin.ConfigSchema, error)
 	PatchClusterConfig(ctx context.Context, upsert map[string]interface{}, remove []string) (admin.ClusterConfigWriteResult, error)
