@@ -49,7 +49,9 @@ class SaramaTest(RedpandaTest):
         # Start the example
         example.start()
 
-        example.wait()
+        wait_until(example.condition_met,
+                   timeout_sec=self._timeout,
+                   backoff_sec=1)
 
     @cluster(num_nodes=4)
     def test_sarama_http_server(self):
@@ -62,7 +64,9 @@ class SaramaTest(RedpandaTest):
         example.start()
 
         # Wait for the server to load
-        example.wait()
+        wait_until(example.condition_met,
+                   timeout_sec=self._timeout,
+                   backoff_sec=1)
 
         # Get the node the server is on and
         # a ducktape node
@@ -123,7 +127,9 @@ class SaramaTest(RedpandaTest):
         example.start()
 
         # Wait until the example is OK to terminate
-        example.wait()
+        wait_until(example.condition_met,
+                   timeout_sec=self._timeout,
+                   backoff_sec=1)
 
 
 class SaramaScramTest(RedpandaTest):

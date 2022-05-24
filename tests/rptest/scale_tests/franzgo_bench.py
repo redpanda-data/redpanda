@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 from rptest.services.cluster import cluster
+from ducktape.utils.util import wait_until
 from rptest.services.compatibility.example_runner import ExampleRunner
 import rptest.services.compatibility.franzgo_examples as FranzGoExamples
 from rptest.tests.redpanda_test import RedpandaTest
@@ -66,13 +67,17 @@ class FranzGoBase(RedpandaTest):
     def test_franzgo_bench(self):
         # Start the produce bench
         self._producer.start()
-        self._producer.wait()
+        wait_until(self._producer.condition_met,
+                   timeout_sec=self._timeout,
+                   backoff_sec=1)
 
         # Start the consume bench.
         # Running the example sequentially because
         # it's easier to debug.
         self._consumer.start()
-        self._consumer.wait()
+        wait_until(self._consumer.condition_met,
+                   timeout_sec=self._timeout,
+                   backoff_sec=1)
 
 
 class FranzGoWithoutGroupTest(FranzGoBase):
