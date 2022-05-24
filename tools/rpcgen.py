@@ -57,6 +57,10 @@ class {{service_name}}_service : public rpc::service {
 public:
     class failure_probes;
 
+    {%- for method in methods %}
+    inline static constexpr uint32_t {{method.name}}_method_id = {{method.id}};
+    {%- endfor %}
+
     {{service_name}}_service(ss::scheduling_group sc, ss::smp_service_group ssg)
        : _sc(sc), _ssg(ssg) {}
 
@@ -101,8 +105,8 @@ public:
        return _ssg;
     }
 
-    rpc::method* method_from_id(uint32_t idx) final {
-       switch(idx) {
+    rpc::method* method_from_id(uint32_t id) final {
+       switch(id) {
        {%- for method in methods %}
          case {{method.id}}: return &_methods[{{loop.index - 1}}];
        {%- endfor %}
