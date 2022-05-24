@@ -3,10 +3,6 @@ include(CMakeParseArguments)
 set(V_CXX_STANDARD 20)
 set(V_DEFAULT_LINKOPTS)
 set(V_DEFAULT_COPTS -Wall -Wextra -Werror -Wno-missing-field-initializers)
-# Disable warning for clang++-14 only.
-if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 14 AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 15)
-  list(APPEND V_DEFAULT_COPTS -Wno-deprecated-experimental-coroutine)
-endif()
 set(V_COMMON_INCLUDE_DIRS
   "${PROJECT_SOURCE_DIR}/src/v")
 # v_cc_library()
