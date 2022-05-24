@@ -44,7 +44,8 @@ struct manual_deletion_fixture : public raft_test_fixture {
 
         auto first_ts = model::timestamp::now();
         // append some entries
-        bool res = replicate_compactible_batches(gr, first_ts).get0();
+        [[maybe_unused]] bool res
+          = replicate_compactible_batches(gr, first_ts).get0();
         auto second_ts = model::timestamp(first_ts() + 200000);
         // append some more entries
         res = replicate_compactible_batches(gr, second_ts).get0();

@@ -29,7 +29,7 @@ FIXTURE_TEST(test_updating_node_rpc_ip_address, cluster_test_fixture) {
     auto node_app_0 = create_node_application(node_0);
     wait_for_controller_leadership(node_0).get();
     auto node_app_1 = create_node_application(node_1);
-    auto node_app_2 = create_node_application(node_2);
+    [[maybe_unused]] auto node_app_2 = create_node_application(node_2);
 
     // wait for cluster to be stable
     tests::cooperative_spin_wait_with_timeout(
@@ -73,7 +73,7 @@ FIXTURE_TEST(test_single_node_update, cluster_test_fixture) {
     // single node
     model::node_id node_id(0);
 
-    auto node = create_node_application(node_id);
+    [[maybe_unused]] auto node = create_node_application(node_id);
     wait_for_controller_leadership(node_id).get();
 
     remove_node_application(node_id);
