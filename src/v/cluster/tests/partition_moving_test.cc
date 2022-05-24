@@ -88,6 +88,7 @@ ss::future<> wait_for_all_replicas(
 }
 
 struct op {
+    virtual ~op() = default;
     virtual ss::future<bool> operator()(cluster::topics_frontend&) = 0;
     virtual ss::sstring message() const;
 };
