@@ -303,3 +303,71 @@ class ConsumerGroupTest(RedpandaTest):
             c.stop()
             c.wait()
             c.free()
+
+    @cluster(num_nodes=6)
+    @parametrize(static_members=True)
+    @parametrize(static_members=False)
+    def test_dead_group_recovery(self, static_members):
+        """
+        Test validating that all offsets persisted in the group are removed when corresponding partition is removed.
+        """
+        self.setup_producer(20)
+        group = 'test-gr-1'
+        # using short session timeout to make the test finish faster
+        consumers = self.create_consumers(
+            2,
+            self.topic_spec.name,
+            group,
+            static_members=static_members,
+            consumer_properties={"session.timeout.ms": 6000})
+
+        # wait for some messages
+        wait_until(lambda: ConsumerGroupTest.consumed_at_least(consumers, 50),
+                   30, 2)
+        # at this point we have stable group
+        self.validate_group_state(group,
+                                  expected_state="Stable",
+                                  static_members=static_members)
+
+        # stop consumers
+        for c in consumers:
+            c.stop()
+
+        rpk = RpkTool(self.redpanda)
+
+        def group_is_empty():
+            rpk_group = rpk.group_describe(group)
+
+            return rpk_group.members == 0 and rpk_group.state == "Empty"
+
+        # group should be empty now
+
+        wait_until(group_is_empty, 30, 2)
+
+        # delete topic
+        rpk.delete_topic(self.topic_spec.name)
+
+        def group_is_dead():
+            rpk_group = rpk.group_describe(group)
+
+            return rpk_group.members == 0 and rpk_group.state == "Dead"
+
+        wait_until(group_is_dead, 30, 2)
+
+        # recreate topic
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        # after recovery group should still be dead as it was deleted
+        wait_until(group_is_dead, 30, 2)
+
+        self.client().create_topic(self.topic_spec)
+        for c in consumers:
+            c.start()
+        wait_until(
+            lambda: ConsumerGroupTest.consumed_at_least(consumers, 2000), 30,
+            2)
+        for c in consumers:
+            c.stop()
+            c.wait()
+            c.free()
+        self.producer.wait()
+        self.producer.free()
