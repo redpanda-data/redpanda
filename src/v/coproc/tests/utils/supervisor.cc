@@ -312,7 +312,7 @@ ss::future<absl::node_hash_set<script_id>> supervisor::registered_scripts() {
       absl::node_hash_set<script_id>(),
       [](absl::node_hash_set<script_id> set, absl::node_hash_set<script_id> x) {
           set.merge(std::move(x));
-          return std::move(set);
+          return set;
       });
 }
 
