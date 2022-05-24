@@ -191,7 +191,7 @@ bool are_offsets_equal(
 bool are_stms_equivalent(const group_stm& source, const group_stm& target) {
     if (source.get_metadata() != target.get_metadata()) {
         vlog(
-          mlog.debug,
+          mlog.info,
           "source and target group metadata does not match, source: {}, "
           "target: {}",
           source.get_metadata(),
@@ -205,14 +205,14 @@ bool are_stms_equivalent(const group_stm& source, const group_stm& target) {
         auto it = target.offsets().find(tp);
         if (it == target.offsets().end()) {
             vlog(
-              mlog.debug,
+              mlog.info,
               "unable to find offset for {} in target group offsets",
               tp);
             return false;
         }
         if (it->second.metadata != o.metadata) {
             vlog(
-              mlog.debug,
+              mlog.info,
               "{} offsets does not match. source: {}, target {}",
               tp,
               o.metadata,
@@ -222,7 +222,7 @@ bool are_stms_equivalent(const group_stm& source, const group_stm& target) {
     }
 
     if (source.fences() != target.fences()) {
-        vlog(mlog.debug, "group fences does not match");
+        vlog(mlog.info, "group fences does not match");
         return false;
     }
 
@@ -234,7 +234,7 @@ bool are_stms_equivalent(const group_stm& source, const group_stm& target) {
         auto it = target.prepared_txs().find(tp);
         if (it == target.prepared_txs().end()) {
             vlog(
-              mlog.debug,
+              mlog.info,
               "unable to find preppared txs for {} in target group state",
               tp);
             return false;
@@ -270,7 +270,7 @@ bool are_states_equivalent(
     for (auto& [g, stm] : source.groups) {
         auto it = target.groups.find(g);
         if (it == target.groups.end()) {
-            vlog(mlog.debug, "group {} not found in target group state", g);
+            vlog(mlog.info, "group {} not found in target group state", g);
             return false;
         }
         if (!are_stms_equivalent(stm, it->second)) {
@@ -504,7 +504,7 @@ ss::future<> wait_for_stable_group_topic(
               result.error());
         } else {
             vlog(
-              mlog.debug,
+              mlog.info,
               "waiting for partition operations to finish, current state: {}",
               result.value());
         }
