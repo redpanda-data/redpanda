@@ -399,7 +399,7 @@ func needsRestart(clusterStatus admin.ConfigStatusResponse) bool {
 func tryMapErrorToCondition(
 	err error,
 ) (*redpandav1alpha1.ClusterCondition, error) {
-	var httpErr *admin.HTTPError
+	var httpErr *admin.HTTPResponseError
 	if errors.As(err, &httpErr) {
 		if httpErr.Response != nil && httpErr.Response.StatusCode == http.StatusBadRequest {
 			return &redpandav1alpha1.ClusterCondition{
