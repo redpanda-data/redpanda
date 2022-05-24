@@ -69,6 +69,7 @@ auto group_router::route_tx(Request&& r, FwdFunc func) {
             });
       });
 }
+
 template<typename Request, typename FwdFunc>
 auto group_router::route_stages(Request r, FwdFunc func) {
     using return_type = std::invoke_result_t<
@@ -83,49 +84,86 @@ auto group_router::route_stages(Request r, FwdFunc func) {
     r.ntp = std::move(m->first);
     auto dispatched = std::make_unique<ss::promise<>>();
     auto dispatched_f = dispatched->get_future();
+    auto coordinator_shard = m->second;
+
     auto f = with_scheduling_group(
       _sg,
       [this,
-       shard = m->second,
+       coordinator_shard = coordinator_shard,
        r = std::move(r),
        dispatched = std::move(dispatched),
        func]() mutable {
-          return get_group_manager().invoke_on(
-            shard,
-            _ssg,
-            [r = std::move(r),
-             dispatched = std::move(dispatched),
-             source_shard = ss::this_shard_id(),
-             func](group_manager& mgr) mutable {
-                auto stages = std::invoke(func, mgr, std::move(r));
-                /**
-                 * dispatched future is always ready before committed one,
-                 * we do not have to use gate in here
-                 */
-                return stages.dispatched
-                  .then_wrapped([source_shard, d = std::move(dispatched)](
-                                  ss::future<> f) mutable {
-                      if (f.failed()) {
-                          (void)ss::smp::submit_to(
-                            source_shard,
-                            [d = std::move(d),
-                             e = f.get_exception()]() mutable {
-                                d->set_exception(e);
-                                d.reset();
-                            });
-                          return;
-                      }
-                      (void)ss::smp::submit_to(
-                        source_shard, [d = std::move(d)]() mutable {
-                            d->set_value();
-                            d.reset();
-                        });
-                  })
-                  .then([f = std::move(stages.result)]() mutable {
-                      return std::move(f);
-                  });
+          return get_group_manager()
+            .invoke_on(
+              coordinator_shard,
+              _ssg,
+              [r = std::move(r), func](group_manager& mgr) mutable {
+                  group::stages<resp_type> stages = std::invoke(
+                    func, mgr, std::move(r));
+                  /**
+                   * dispatched future is always ready before committed one,
+                   * we do not have to use gate in here
+                   */
+                  auto dstage = stages.dispatched.then_wrapped(
+                    [rfut = std::move(stages.result)](ss::future<> f) mutable {
+                        auto e = f.failed() ? f.get_exception() : nullptr;
+                        return std::make_tuple(
+                          e, std::make_unique<decltype(rfut)>(std::move(rfut)));
+                    });
+
+                  return dstage;
+              })
+            .then([this,
+                   coordinator_shard = coordinator_shard,
+                   d = std::move(dispatched)](auto f) {
+                // In the immediately preceding continuation we did not return
+                // the stages.result future directly, rather we wrapped it with
+                // a unique_ptr. This means that the future doesn't receive the
+                // cross-shard treatment and is only safe to use on the
+                // coordinator shard, not this one. So next we pass this future
+                // back to the coordinator to unwrap it and return it unwrapped,
+                // so it can be used by this shard (and, as a side effect the
+                // dispatched future is also set).
+                //
+                // Why do we need this second trip rather than just returning
+                // the unwrapped future above?
+                //
+                // Well, this second stage may take a very long time resolve and
+                // may depend on coordination with clients: e.g., the JoinGroup
+                // request won't be responded to until all other current members
+                // have also sent their JoinGroup requests: all the joiners have
+                // their responses held until that moment. Above, the invoke_on
+                // is under the influence of the kafka smp_service_group (_ssg),
+                // with a limit of 5,000 outstanding requests on any code to the
+                // coordinator: this means that a group with more than 5,000
+                // members cannot successfully be joined: at most join 5,000
+                // requests can be outstanding at once, any more will block on
+                // the ssg, and the existing ones won't complete because they
+                // are waiting for the blocked ones: a type of "soft" deadlock
+                // (soft because the server eventually) times out the join
+                // process an the process repeats.
+                //
+                // This is solved by not returning the state.result future
+                // directly above, but wrapping it: this means the returned
+                // future resolves as soon as the dispatch phase completes,
+                // freeing up the service group slot for another request to
+                // dispatch. We extract the stage.result below in a new
+                // invoke_on call *without any ssg*: this uses the default ssg
+                // which does not have any limit, avoiding the deadlock.
+
+                auto dispatched_exception = std::move(std::get<0>(f));
+                if (dispatched_exception) {
+                    d->set_exception(dispatched_exception);
+                } else {
+                    d->set_value();
+                }
+                return get_group_manager().invoke_on(
+                  coordinator_shard,
+                  [result_ptr = std::move(std::get<1>(f))](
+                    group_manager&) mutable { return std::move(*result_ptr); });
             });
       });
+
     return return_type(std::move(dispatched_f), std::move(f));
 }
 
