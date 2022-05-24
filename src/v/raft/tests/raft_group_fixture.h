@@ -455,7 +455,7 @@ struct raft_group {
     void election_callback(model::node_id src, raft::leadership_status st) {
         if (
           !st.current_leader
-          || st.current_leader && st.current_leader->id() != src) {
+          || (st.current_leader && st.current_leader->id() != src)) {
             // only accept election callbacks from current leader.
             return;
         }
