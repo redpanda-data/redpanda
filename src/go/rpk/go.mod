@@ -16,7 +16,6 @@ require (
 	github.com/fatih/color v1.7.0
 	github.com/google/uuid v1.1.1
 	github.com/hashicorp/go-multierror v1.1.0
-	github.com/icza/dyno v0.0.0-20200205103839-49cb13720835
 	github.com/lorenzosaino/go-sysctl v0.1.0
 	github.com/mitchellh/mapstructure v1.4.1
 	github.com/olekukonko/tablewriter v0.0.1

@@ -1899,49 +1899,6 @@ func TestCheckConfig(t *testing.T) {
 	}
 }
 
-func TestReadAsJSON(t *testing.T) {
-	tests := []struct {
-		name           string
-		before         func(fs afero.Fs) error
-		path           string
-		expected       string
-		expectedErrMsg string
-	}{
-		{
-			name: "it should load the config as JSON",
-			before: func(fs afero.Fs) error {
-				conf := Default()
-				conf.Redpanda.KafkaAPI[0].Name = "internal"
-				mgr := NewManager(fs)
-				return mgr.Write(conf)
-			},
-			path:     Default().ConfigFile,
-			expected: `{"config_file":"/etc/redpanda/redpanda.yaml","pandaproxy":{},"redpanda":{"admin":[{"address":"0.0.0.0","port":9644}],"data_directory":"/var/lib/redpanda/data","developer_mode":true,"kafka_api":[{"address":"0.0.0.0","name":"internal","port":9092}],"node_id":0,"rpc_server":{"address":"0.0.0.0","port":33145},"seed_servers":[]},"rpk":{"coredump_dir":"/var/lib/redpanda/coredump","enable_memory_locking":false,"enable_usage_stats":false,"overprovisioned":false,"tune_aio_events":false,"tune_ballast_file":false,"tune_clocksource":false,"tune_coredump":false,"tune_cpu":false,"tune_disk_irq":false,"tune_disk_nomerges":false,"tune_disk_scheduler":false,"tune_disk_write_cache":false,"tune_fstrim":false,"tune_network":false,"tune_swappiness":false,"tune_transparent_hugepages":false},"schema_registry":{}}`,
-		},
-		{
-			name:           "it should fail if the the config isn't found",
-			path:           Default().ConfigFile,
-			expectedErrMsg: "open /etc/redpanda/redpanda.yaml: file does not exist",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(st *testing.T) {
-			fs := afero.NewMemMapFs()
-			mgr := NewManager(fs)
-			if tt.before != nil {
-				require.NoError(st, tt.before(fs))
-			}
-			actual, err := mgr.ReadAsJSON(tt.path)
-			if tt.expectedErrMsg != "" {
-				require.EqualError(st, err, tt.expectedErrMsg)
-				return
-			}
-			require.NoError(st, err)
-			require.Equal(st, tt.expected, actual)
-		})
-	}
-}
-
 func TestWriteAndGenerateNodeUuid(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	mgr := NewManager(fs)
