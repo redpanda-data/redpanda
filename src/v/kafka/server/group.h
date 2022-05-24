@@ -141,6 +141,8 @@ public:
         model::offset offset;
         ss::sstring metadata;
         kafka::leader_epoch committed_leader_epoch;
+
+        friend std::ostream& operator<<(std::ostream&, const offset_metadata&);
     };
 
     struct offset_metadata_with_probe {
