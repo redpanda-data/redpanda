@@ -39,7 +39,7 @@ output, use the 'edit' and 'export' commands respectively.`,
 			client, err := admin.NewClient(fs, cfg)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-			currentConfig, err := client.Config()
+			currentConfig, err := client.Config(true)
 			out.MaybeDie(err, "unable to query current config: %v", err)
 
 			val, exists := currentConfig[key]
