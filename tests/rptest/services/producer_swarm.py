@@ -14,17 +14,23 @@ from ducktape.cluster.remoteaccount import RemoteCommandError
 
 
 class ProducerSwarm(BackgroundThreadService):
-    def __init__(self, context, redpanda, topic: str, producers: int,
-                 records_per_producer: int):
+    def __init__(self,
+                 context,
+                 redpanda,
+                 topic: str,
+                 producers: int,
+                 records_per_producer: int,
+                 log_level="INFO"):
         super(ProducerSwarm, self).__init__(context, num_nodes=1)
         self._redpanda = redpanda
         self._topic = topic
         self._producers = producers
         self._records_per_producer = records_per_producer
         self._stopping = threading.Event()
+        self._log_level = log_level
 
     def _worker(self, idx, node):
-        cmd = f"RUST_LOG=INFO client-swarm --brokers {self._redpanda.brokers()} producers --topic {self._topic} --count {self._producers} --messages {self._records_per_producer}"
+        cmd = f"RUST_LOG={self._log_level} client-swarm --brokers {self._redpanda.brokers()} producers --topic {self._topic} --count {self._producers} --messages {self._records_per_producer}"
 
         try:
             for line in node.account.ssh_capture(cmd):
