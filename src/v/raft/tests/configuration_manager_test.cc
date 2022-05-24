@@ -36,13 +36,13 @@ using namespace std::chrono_literals; // NOLINT
 struct config_manager_fixture {
     config_manager_fixture()
       : _storage(storage::api(
-        std::move([this]() {
+        [this] {
             return storage::kvstore_config(
               100_MiB,
               config::mock_binding(std::chrono::milliseconds(10)),
               base_dir,
               storage::debug_sanitize_files::yes);
-        }),
+        },
         [this]() {
             return storage::log_config(
               storage::log_config::storage_type::disk,
