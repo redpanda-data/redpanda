@@ -14,7 +14,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"net"
 	"os"
 	"path/filepath"
 	fp "path/filepath"
@@ -23,7 +22,6 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/icza/dyno"
 	"github.com/mitchellh/mapstructure"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
 	log "github.com/sirupsen/logrus"
@@ -50,12 +48,6 @@ type Manager interface {
 	// Tries reading a config file at the given path, or tries to find it in
 	// the default locations if it doesn't exist.
 	ReadOrFind(path string) (*Config, error)
-	// Reads the config and returns a map where the keys are the flattened
-	// paths.
-	// e.g. "redpanda.tls.key_file" => "value"
-	ReadFlat(path string) (map[string]string, error)
-	// Reads the configuration as JSON
-	ReadAsJSON(path string) (string, error)
 	// Generates and writes the node's UUID
 	WriteNodeUUID(conf *Config) error
 	// Merges an input config to the currently-loaded map
@@ -147,101 +139,6 @@ func (m *manager) ReadOrFind(path string) (*Config, error) {
 	return m.Read(path)
 }
 
-func (m *manager) ReadFlat(path string) (map[string]string, error) {
-	m.v.SetConfigFile(path)
-	err := m.v.ReadInConfig()
-	if err != nil {
-		return nil, err
-	}
-	keys := m.v.AllKeys()
-	flatMap := map[string]string{}
-	compactAddrFields := []string{
-		"redpanda.rpc_server",
-	}
-	for _, k := range keys {
-		if k == "redpanda.seed_servers" {
-			seeds := &[]SeedServer{}
-			err := unmarshalKey(m.v, k, seeds)
-			if err != nil {
-				return nil, err
-			}
-			for i, s := range *seeds {
-				key := fmt.Sprintf("%s.%d", k, i)
-				flatMap[key] = net.JoinHostPort(
-					s.Host.Address,
-					strconv.Itoa(s.Host.Port),
-				)
-			}
-			continue
-		}
-		if k == "redpanda.advertised_kafka_api" || k == "redpanda.kafka_api" || k == "redpanda.admin" {
-			addrs := []NamedSocketAddress{}
-			err := unmarshalKey(m.v, k, &addrs)
-			if err != nil {
-				return nil, err
-			}
-			for i, a := range addrs {
-				key := fmt.Sprintf("%s.%d", k, i)
-				str := net.JoinHostPort(
-					a.Address,
-					strconv.Itoa(a.Port),
-				)
-				if a.Name != "" {
-					str = fmt.Sprintf("%s://%s", a.Name, str)
-				}
-				flatMap[key] = str
-			}
-			continue
-		}
-		if k == "redpanda.kafka_api_tls" || k == "redpanda.admin_api_tls" {
-			tlss := []map[string]interface{}{}
-			err := unmarshalKey(m.v, k, &tlss)
-			if err != nil {
-				return nil, err
-			}
-
-			for i, tls := range tlss {
-				for field, val := range tls {
-					key := fmt.Sprintf("%s.%d.%s", k, i, field)
-					flatMap[key] = fmt.Sprint(val)
-				}
-			}
-			continue
-		}
-		// These fields are added later on as <address>:<port>
-		// instead of
-		// field.address <address>
-		// field.port    <port>
-		if strings.HasSuffix(k, ".port") || strings.HasSuffix(k, ".address") {
-			continue
-		}
-
-		s := m.v.GetString(k)
-		flatMap[k] = s
-	}
-	for _, k := range compactAddrFields {
-		sa := &SocketAddress{}
-		err := unmarshalKey(m.v, k, sa)
-		if err != nil {
-			return nil, err
-		}
-		flatMap[k] = net.JoinHostPort(sa.Address, strconv.Itoa(sa.Port))
-	}
-	return flatMap, nil
-}
-
-func (m *manager) ReadAsJSON(path string) (string, error) {
-	confMap, err := m.readMap(path)
-	if err != nil {
-		return "", err
-	}
-	confJSON, err := json.Marshal(confMap)
-	if err != nil {
-		return "", err
-	}
-	return string(confJSON), nil
-}
-
 func (m *manager) Read(path string) (*Config, error) {
 	// If the path was set, try reading only from there.
 	abs, err := fp.Abs(path)
@@ -259,16 +156,6 @@ func (m *manager) Read(path string) (*Config, error) {
 	}
 	conf.ConfigFile, err = absPath(m.v.ConfigFileUsed())
 	return conf, err
-}
-
-func (m *manager) readMap(path string) (map[string]interface{}, error) {
-	m.v.SetConfigFile(path)
-	err := m.v.ReadInConfig()
-	if err != nil {
-		return nil, err
-	}
-	strMap := dyno.ConvertMapI2MapS(m.v.AllSettings())
-	return strMap.(map[string]interface{}), nil
 }
 
 func (m *manager) WriteNodeUUID(conf *Config) error {
