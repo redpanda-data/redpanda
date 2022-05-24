@@ -76,9 +76,9 @@ public:
     }
 
 private:
+    size_t _depth;
     int _init_count;
     ss::circular_buffer<record_batch> _result;
-    size_t _depth;
 };
 
 template<typename... Offsets>
