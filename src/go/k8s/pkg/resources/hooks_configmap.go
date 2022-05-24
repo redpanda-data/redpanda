@@ -44,9 +44,7 @@ const (
 	defaultClusterHealthCheckTimeoutSeconds = 300
 )
 
-var (
-	hooksDigestAnnotationKey = redpandav1alpha1.GroupVersion.Group + "/hooks-digest"
-)
+var hooksHashAnnotationKey = redpandav1alpha1.GroupVersion.Group + "/hooks-hash"
 
 var _ Resource = &HooksConfigMapResource{}
 
@@ -372,7 +370,7 @@ func (r *HooksConfigMapResource) getHealthCheckTimeout() int {
 func (r *HooksConfigMapResource) forceConfigMapReload(
 	ctx context.Context, cm *corev1.ConfigMap,
 ) error {
-	digest, err := r.computeDigest(cm)
+	digest, err := r.computeHash(cm)
 	if err != nil {
 		return fmt.Errorf("could not compute digest for ConfigMap %s: %w", cm.Name, err)
 	}
@@ -396,7 +394,7 @@ func (r *HooksConfigMapResource) forceConfigMapReload(
 			if pod.Annotations == nil {
 				pod.Annotations = make(map[string]string, 1)
 			}
-			pod.Annotations[hooksDigestAnnotationKey] = digest
+			pod.Annotations[hooksHashAnnotationKey] = digest
 
 			return r.Update(ctx, pod)
 		})
@@ -407,7 +405,7 @@ func (r *HooksConfigMapResource) forceConfigMapReload(
 	return nil
 }
 
-func (r *HooksConfigMapResource) computeDigest(
+func (r *HooksConfigMapResource) computeHash(
 	cm *corev1.ConfigMap,
 ) (string, error) {
 	elements := make([]string, 0, len(cm.Data))

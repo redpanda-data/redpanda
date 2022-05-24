@@ -119,6 +119,7 @@ func (r *StatefulSetResource) rollingUpdate(
 		ignoreKubernetesTokenVolumeMounts(),
 		ignoreDefaultToleration(),
 		ignoreExistingVolumes(volumes),
+		utils.IgnoreAnnotation(hooksHashAnnotationKey),
 	}
 
 	for i := range podList.Items {
