@@ -232,7 +232,7 @@ func (m *mockAdminAPI) PatchClusterConfig(
 	}
 	invalidRequest := len(newInvalid)+len(newUnknown) > 0
 	if m.directValidation && invalidRequest {
-		return admin.ClusterConfigWriteResult{}, &admin.HTTPError{
+		return admin.ClusterConfigWriteResult{}, &admin.HTTPResponseError{
 			Method: http.MethodPut,
 			URL:    "/v1/cluster_config",
 			Response: &http.Response{

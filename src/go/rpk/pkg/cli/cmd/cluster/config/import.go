@@ -153,7 +153,7 @@ func importConfig(
 
 	// PUT to admin API
 	result, err := client.PatchClusterConfig(upsert, remove)
-	if he := (*admin.HTTPError)(nil); errors.As(err, &he) {
+	if he := (*admin.HTTPResponseError)(nil); errors.As(err, &he) {
 		// Special case 400 (validation) errors with friendly output
 		// about which configuration properties were invalid.
 		if he.Response.StatusCode == 400 {
@@ -176,7 +176,7 @@ func importConfig(
 }
 
 func formatValidationError(
-	err error, httpErr *admin.HTTPError,
+	err error, httpErr *admin.HTTPResponseError,
 ) (string, error) {
 	// Output structured validation errors from server
 	var validationErrs map[string]string
