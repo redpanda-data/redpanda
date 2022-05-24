@@ -1202,7 +1202,6 @@ FIXTURE_TEST(check_segment_size_jitter, storage_test_fixture) {
     cfg.stype = storage::log_config::storage_type::disk;
     ss::abort_source as;
     storage::log_manager mgr = make_log_manager(cfg);
-    using overrides_t = storage::ntp_config::default_overrides;
 
     auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
     std::vector<storage::log> logs;
