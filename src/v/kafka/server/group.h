@@ -817,7 +817,6 @@ private:
       std::unique_ptr<offset_metadata_with_probe>>
       _probe;
     model::violation_recovery_policy _recovery_policy;
-    ctx_log _ctxlog;
     ctx_log _ctx_glog;
     ctx_log _ctx_txlog;
     group_metadata_serializer _md_serializer;
