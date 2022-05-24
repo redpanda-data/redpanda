@@ -154,7 +154,7 @@ ss::future<> config_manager::do_bootstrap() {
               ss::sstring key_str(p.name());
               ss::sstring val_str = buf.GetString();
               vlog(clusterlog.info, "Importing property {}", p);
-              update.upsert.push_back({key_str, val_str});
+              update.upsert.emplace_back(key_str, val_str);
           }
       });
 
@@ -554,17 +554,17 @@ apply_local(cluster_config_delta_cmd_data const& data, bool silent) {
     auto& cfg = config::shard_local_cfg();
     auto result = config_manager::apply_result{};
     for (const auto& u : data.upsert) {
-        if (!cfg.contains(u.first)) {
+        if (!cfg.contains(u.key)) {
             // We never heard of this property.  Record it as unknown
             // in our config_status.
             if (!silent) {
-                vlog(clusterlog.info, "Unknown property {}", u.first);
+                vlog(clusterlog.info, "Unknown property {}", u.key);
             }
-            result.unknown.push_back(u.first);
+            result.unknown.push_back(u.key);
             continue;
         }
-        auto& property = cfg.get(u.first);
-        auto& val_yaml = u.second;
+        auto& property = cfg.get(u.key);
+        auto& val_yaml = u.value;
 
         try {
             auto val = YAML::Load(val_yaml);
@@ -572,7 +572,7 @@ apply_local(cluster_config_delta_cmd_data const& data, bool silent) {
             vlog(
               clusterlog.trace,
               "apply: upsert {}={}",
-              u.first,
+              u.key,
               property.format_raw(val_yaml));
 
             auto validation_err = property.validate(val);
@@ -581,11 +581,11 @@ apply_local(cluster_config_delta_cmd_data const& data, bool silent) {
                     vlog(
                       clusterlog.warn,
                       "Invalid property value {}: {} ({})",
-                      u.first,
+                      u.key,
                       property.format_raw(val_yaml),
                       validation_err.value().error_message());
                 }
-                result.invalid.push_back(u.first);
+                result.invalid.push_back(u.key);
 
                 // We still proceed to set_value after failing validation.
                 // The property class is responsible for clamping or rejecting
@@ -601,20 +601,20 @@ apply_local(cluster_config_delta_cmd_data const& data, bool silent) {
                 vlog(
                   clusterlog.warn,
                   "Invalid syntax in property {}: {}",
-                  u.first,
+                  u.key,
                   property.format_raw(val_yaml));
             }
-            result.invalid.push_back(u.first);
+            result.invalid.push_back(u.key);
             continue;
         } catch (YAML::BadConversion) {
             if (!silent) {
                 vlog(
                   clusterlog.warn,
                   "Invalid value for property {}: {}",
-                  u.first,
+                  u.key,
                   property.format_raw(val_yaml));
             }
-            result.invalid.push_back(u.first);
+            result.invalid.push_back(u.key);
             continue;
         } catch (std::bad_alloc) {
             // Don't include bad_alloc in the catch-all below
@@ -629,11 +629,11 @@ apply_local(cluster_config_delta_cmd_data const& data, bool silent) {
                 vlog(
                   clusterlog.warn,
                   "Unexpected error setting property {}={}: {}",
-                  u.first,
+                  u.key,
                   property.format_raw(val_yaml),
                   std::current_exception());
             }
-            result.invalid.push_back(u.first);
+            result.invalid.push_back(u.key);
             continue;
         }
     }
@@ -675,8 +675,8 @@ void config_manager::merge_apply_result(
         ok_properties.insert(i);
     }
     for (const auto& i : data.upsert) {
-        if (!errored_properties.contains(i.first)) {
-            ok_properties.insert(i.first);
+        if (!errored_properties.contains(i.key)) {
+            ok_properties.insert(i.key);
         }
     }
 
@@ -729,7 +729,7 @@ ss::future<> config_manager::store_delta(
     _frontend.local().set_next_version(_seen_version + config_version{1});
 
     for (const auto& u : data.upsert) {
-        _raw_values[u.first] = u.second;
+        _raw_values[u.key] = u.value;
     }
     for (const auto& d : data.remove) {
         _raw_values.erase(d);

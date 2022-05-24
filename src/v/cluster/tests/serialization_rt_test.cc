@@ -822,3 +822,52 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         roundtrip_test(status);
     }
 }
+
+SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {
+    using pairs_t = std::vector<std::pair<ss::sstring, ss::sstring>>;
+    using kvs_t = std::vector<cluster::cluster_property_kv>;
+    kvs_t kvs;
+    pairs_t pairs;
+
+    for (int i = 0; i < 10; ++i) {
+        auto k = random_generators::gen_alphanum_string(
+          random_generators::get_int(10, 20));
+        auto v = random_generators::gen_alphanum_string(
+          random_generators::get_int(10, 20));
+
+        kvs.emplace_back(k, v);
+        pairs.emplace_back(k, v);
+    }
+
+    auto serialized_pairs = reflection::to_iobuf(pairs);
+    auto serialized_kvs = reflection::to_iobuf(kvs);
+
+    auto deserialized_pairs_from_kvs = reflection::from_iobuf<pairs_t>(
+      serialized_kvs.copy());
+
+    auto deserialized_pairs_from_pairs = reflection::from_iobuf<pairs_t>(
+      serialized_pairs.copy());
+
+    auto deserialized_kvs_from_kvs = reflection::from_iobuf<kvs_t>(
+      serialized_kvs.copy());
+
+    auto deserialized_kvs_from_pairs = reflection::from_iobuf<kvs_t>(
+      serialized_pairs.copy());
+
+    BOOST_REQUIRE(deserialized_pairs_from_kvs == deserialized_pairs_from_pairs);
+    BOOST_REQUIRE(deserialized_kvs_from_kvs == deserialized_kvs_from_pairs);
+    for (auto i = 0; i < 10; ++i) {
+        BOOST_REQUIRE_EQUAL(
+          deserialized_pairs_from_kvs[i].first,
+          deserialized_kvs_from_pairs[i].key);
+        BOOST_REQUIRE_EQUAL(
+          deserialized_pairs_from_kvs[i].second,
+          deserialized_kvs_from_pairs[i].value);
+        BOOST_REQUIRE_EQUAL(
+          deserialized_pairs_from_pairs[i].second,
+          deserialized_kvs_from_kvs[i].value);
+        BOOST_REQUIRE_EQUAL(
+          deserialized_pairs_from_pairs[i].second,
+          deserialized_kvs_from_kvs[i].value);
+    }
+}

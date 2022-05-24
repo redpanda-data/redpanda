@@ -881,10 +881,21 @@ struct config_status : serde::envelope<config_status, serde::version<0>> {
     bool operator==(const config_status&) const;
     friend std::ostream& operator<<(std::ostream&, const config_status&);
 };
+struct cluster_property_kv {
+    cluster_property_kv() = default;
+    cluster_property_kv(ss::sstring k, ss::sstring v)
+      : key(std::move(k))
+      , value(std::move(v)) {}
+    ss::sstring key;
+    ss::sstring value;
+    friend bool
+    operator==(const cluster_property_kv&, const cluster_property_kv&)
+      = default;
+};
 
 struct cluster_config_delta_cmd_data {
     static constexpr int8_t current_version = 0;
-    std::vector<std::pair<ss::sstring, ss::sstring>> upsert;
+    std::vector<cluster_property_kv> upsert;
     std::vector<ss::sstring> remove;
 
     friend std::ostream&
@@ -1057,7 +1068,7 @@ struct create_non_replicable_topics_reply {
 };
 
 struct config_update_request final {
-    std::vector<std::pair<ss::sstring, ss::sstring>> upsert;
+    std::vector<cluster_property_kv> upsert;
     std::vector<ss::sstring> remove;
 };
 
@@ -1389,5 +1400,10 @@ struct adl<cluster::property_update<T>> {
           parser);
         return {std::move(value), op};
     }
+};
+template<>
+struct adl<cluster::cluster_property_kv> {
+    void to(iobuf&, cluster::cluster_property_kv&&);
+    cluster::cluster_property_kv from(iobuf_parser&);
 };
 } // namespace reflection

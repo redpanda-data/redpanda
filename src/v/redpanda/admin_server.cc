@@ -760,7 +760,7 @@ void config_multi_property_validation(
   std::map<ss::sstring, ss::sstring>& errors) {
     absl::flat_hash_set<ss::sstring> modified_keys;
     for (const auto& i : req.upsert) {
-        modified_keys.insert(i.first);
+        modified_keys.insert(i.key);
     }
 
     if (

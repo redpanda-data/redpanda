@@ -1202,8 +1202,7 @@ adl<cluster::cluster_config_delta_cmd_data>::from(iobuf_parser& in) {
       "Unexpected version: {} (expected {})",
       version,
       cluster::cluster_config_delta_cmd_data::current_version);
-    auto upsert = adl<std::vector<std::pair<ss::sstring, ss::sstring>>>().from(
-      in);
+    auto upsert = adl<std::vector<cluster::cluster_property_kv>>().from(in);
     auto remove = adl<std::vector<ss::sstring>>().from(in);
 
     return cluster::cluster_config_delta_cmd_data{
@@ -1431,6 +1430,20 @@ adl<cluster::topic_properties>::from(iobuf_parser& parser) {
       retention_duration,
       recovery,
       shadow_indexing};
+}
+
+void adl<cluster::cluster_property_kv>::to(
+  iobuf& out, cluster::cluster_property_kv&& kv) {
+    reflection::serialize(out, std::move(kv.key), std::move(kv.value));
+}
+
+cluster::cluster_property_kv
+adl<cluster::cluster_property_kv>::from(iobuf_parser& p) {
+    cluster::cluster_property_kv kv;
+
+    kv.key = adl<ss::sstring>{}.from(p);
+    kv.value = adl<ss::sstring>{}.from(p);
+    return kv;
 }
 
 } // namespace reflection

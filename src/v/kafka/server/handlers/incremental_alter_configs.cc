@@ -397,19 +397,19 @@ static ss::future<std::vector<resp_resource_t>> alter_broker_configuartion(
             // interface expects.
             // Don't both catching ParserException: this was encoded
             // just a few lines above.
-            const auto& yaml_value = i.second;
+            const auto& yaml_value = i.value;
             auto val = YAML::Load(yaml_value);
 
-            if (!cfg.contains(i.first)) {
+            if (!cfg.contains(i.key)) {
                 responses.push_back(
                   make_error_alter_config_resource_response<resp_resource_t>(
                     resource,
                     error_code::invalid_config,
-                    fmt::format("Unknown property '{}'", i.first)));
+                    fmt::format("Unknown property '{}'", i.key)));
                 errored = true;
                 continue;
             }
-            auto& property = cfg.get(i.first);
+            auto& property = cfg.get(i.key);
             try {
                 property.set_value(val);
             } catch (...) {
@@ -418,7 +418,7 @@ static ss::future<std::vector<resp_resource_t>> alter_broker_configuartion(
                     resource,
                     error_code::invalid_config,
                     fmt::format(
-                      "bad property value for '{}': '{}'", i.first, i.second)));
+                      "bad property value for '{}': '{}'", i.key, i.value)));
                 errored = true;
                 continue;
             }
