@@ -23,9 +23,12 @@ type Config map[string]interface{}
 
 // Config returns a single admin endpoint's configuration. This errors if
 // multiple URLs are configured.
-func (a *AdminAPI) Config() (Config, error) {
+// If include_defaults is true, all properties are returned, including those
+// that are simply reporting their defaults.  Otherwise, only properties with
+// non-default values are included (i.e. those which have been set at some point).
+func (a *AdminAPI) Config(includeDefaults bool) (Config, error) {
 	var rawResp []byte
-	err := a.sendAny(http.MethodGet, "/v1/config", nil, &rawResp)
+	err := a.sendAny(http.MethodGet, fmt.Sprintf("/v1/cluster_config?include_defaults=%t", includeDefaults), nil, &rawResp)
 	if err != nil {
 		return nil, err
 	}

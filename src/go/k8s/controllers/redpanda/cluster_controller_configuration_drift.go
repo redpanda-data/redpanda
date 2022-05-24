@@ -132,7 +132,7 @@ func (r *ClusterConfigurationDriftReconciler) Reconcile(
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("could not get cluster schema to check drifts: %w", err)
 	}
-	clusterConfig, err := adminAPI.Config()
+	clusterConfig, err := adminAPI.Config(true)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("could not get cluster configuration to check drifts: %w", err)
 	}

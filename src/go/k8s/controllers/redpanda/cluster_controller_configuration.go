@@ -232,7 +232,7 @@ func (r *ClusterReconciler) retrieveClusterState(
 	if err != nil {
 		return nil, nil, nil, errorWithContext(err, "could not get centralized configuration schema")
 	}
-	clusterConfig, err := adminAPI.Config()
+	clusterConfig, err := adminAPI.Config(true)
 	if err != nil {
 		return nil, nil, nil, errorWithContext(err, "could not get current centralized configuration from cluster")
 	}

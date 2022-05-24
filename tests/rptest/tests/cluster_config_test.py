@@ -690,6 +690,49 @@ class ClusterConfigTest(RedpandaTest):
         assert noop_version is None
 
     @cluster(num_nodes=3)
+    @parametrize(all=True)
+    @parametrize(all=False)
+    def test_rpk_import_sparse(self, all):
+        """
+        Verify that a user setting just their properties they're interested in
+        gets a suitable terse output, stability across multiple calls, and
+        that the resulting config is all-default apart from the values they set.
+
+        This is a typical gitops-type use case, where they have defined their
+        subset of configuration in a file somewhere, and periodically try
+        to apply it to the cluster.
+        """
+
+        text = """
+        superusers: [alice]
+        """
+
+        new_version = self._import(text, all, allow_noop=True)
+        self._wait_for_version_sync(new_version)
+
+        schema_properties = self.admin.get_cluster_config_schema(
+        )['properties']
+
+        conf = self.admin.get_cluster_config(include_defaults=False)
+        assert conf['superusers'] == ['alice']
+        if all:
+            # We should have wiped out any non-default property except the one we set,
+            # and cluster_id which rpk doesn't touch.
+            assert len(conf) == 2
+        else:
+            # Apart from the one we set, all the other properties should be tunables
+            for key in conf.keys():
+                if key == 'superusers' or key == 'cluster_id':
+                    continue
+                else:
+                    property_schema = schema_properties[key]
+                    is_tunable = property_schema['visibility'] == 'tunable'
+                    if not is_tunable:
+                        self.logger.error(
+                            "Unexpected property {k} set in config")
+                        self.logger.error("{k} schema: {property_schema}")
+
+    @cluster(num_nodes=3)
     def test_rpk_import_validation(self):
         """
         Verify that RPK handles 400 responses on import nicely

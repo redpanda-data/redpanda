@@ -159,7 +159,7 @@ to include all properties including these low level tunables.
 
 			// GET current config
 			var currentConfig admin.Config
-			currentConfig, err = client.Config()
+			currentConfig, err = client.Config(true)
 			out.MaybeDie(err, "unable to query current config: %v", err)
 
 			// Generate a yaml template for editing

@@ -128,7 +128,7 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			Consistently(annotationGetter(key, &appsv1.StatefulSet{}, centralizedConfigurationHashKey), timeoutShort, intervalShort).Should(BeEmpty())
 
 			By("Marking the last applied configuration in the configmap")
-			baseConfig, err := testAdminAPI.Config()
+			baseConfig, err := testAdminAPI.Config(true)
 			Expect(err).To(BeNil())
 			expectedAnnotation, err := json.Marshal(baseConfig)
 			Expect(err).To(BeNil())
