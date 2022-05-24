@@ -67,7 +67,7 @@ class Admin:
         if auth is not None:
             self._session.auth = auth
 
-        self._default_node = default_node
+        self._default_node: ClusterNode = default_node
 
         # - We retry on 503s because at any time a POST to a leader-redirected
         # request will return 503 if the partition is leaderless -- this is common

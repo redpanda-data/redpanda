@@ -28,7 +28,7 @@ inline const model::ntp controller_ntp(
  */
 inline const model::topic kvstore_topic("kvstore");
 inline model::ntp kvstore_ntp(ss::shard_id shard) {
-    return model::ntp(redpanda_ns, kvstore_topic, model::partition_id(shard));
+    return {redpanda_ns, kvstore_topic, model::partition_id(shard)};
 }
 
 inline const model::ns kafka_namespace("kafka");

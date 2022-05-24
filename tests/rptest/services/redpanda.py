@@ -1489,15 +1489,15 @@ class RedpandaService(Service):
     def admin_endpoints(self):
         return ",".join(self.admin_endpoints_list())
 
-    def brokers(self, limit=None):
+    def brokers(self, limit=None) -> str:
         return ",".join(self.brokers_list(limit))
 
-    def brokers_list(self, limit=None):
+    def brokers_list(self, limit=None) -> list[str]:
         brokers = [self.broker_address(n) for n in self._started[:limit]]
         random.shuffle(brokers)
         return brokers
 
-    def schema_reg(self, limit=None):
+    def schema_reg(self, limit=None) -> str:
         schema_reg = [
             f"http://{n.account.hostname}:8081" for n in self._started[:limit]
         ]

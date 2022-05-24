@@ -29,12 +29,11 @@
 
 namespace cluster {
 
-/// Metadata cache provides all informationrequired to fill Kafka metadata
-/// response. metadata dissemination service. MetadataCache is the facade over
-/// cluster state distributed in separate components. The metadata cache
-/// core-affinity is independent from the actual state location as the Metadata
-/// cache facade, for simplicity, is instantiated on every core.
-/// MetadaCache itself does not hold any state
+/// Metadata cache provides all information required to fill Kafka metadata
+/// response. MetadataCache is the facade over cluster state distributed in
+/// separate components. The metadata cache core-affinity is independent from
+/// the actual state location as the Metadata cache facade, for simplicity, is
+/// instantiated on every core. MetadaCache itself does not hold any state
 ///```plain
 ///
 ///   Kafka API                  Kafka Proxy
@@ -47,11 +46,11 @@ namespace cluster {
 /// |                                          |
 /// |         Metadata Cache (facade)          |
 /// |                                          |
-/// +----+-------------+----------------+------+
-///      |             |                |
-/// +----v----+   +----v-----+    +-----v------+
-/// | Members |   |  Topics  |    |  Leaders   |
-/// +---------+   +----------+    +------------+
+/// +---+----------+------------+----------+---+
+///     |          |            |          |
+/// +---v---+  +---v----+  +----v----+  +--v---+
+/// |Members|  | Topics |  | Leaders |  |Health|
+/// +-------+  +--------+  +---------+  +------+
 class metadata_cache {
 public:
     using with_leaders = ss::bool_class<struct with_leaders_tag>;
