@@ -14,13 +14,14 @@ import (
 	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func NewIoTuneCmd(fs afero.Fs, mgr config.Manager) *cobra.Command {
+func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
 	var (
 		configFile  string
 		outputFile  string
@@ -31,22 +32,22 @@ func NewIoTuneCmd(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "iotune",
 		Short: "Measure filesystem performance and create IO configuration file.",
-		RunE: func(ccmd *cobra.Command, args []string) error {
+		Run: func(cmd *cobra.Command, args []string) {
 			timeout += duration
-			conf, err := mgr.FindOrGenerate(configFile)
-			if err != nil {
-				return err
-			}
+			p := config.ParamsFromCommand(cmd)
+			cfg, err := p.Load(fs)
+			out.MaybeDie(err, "unable to load config: %v", err)
 			var evalDirectories []string
 			if len(directories) != 0 {
 				log.Infof("Overriding evaluation directories with '%v'",
 					directories)
 				evalDirectories = directories
 			} else {
-				evalDirectories = []string{conf.Redpanda.Directory}
+				evalDirectories = []string{cfg.Redpanda.Directory}
 			}
 
-			return execIoTune(fs, evalDirectories, outputFile, duration, timeout)
+			err = execIoTune(fs, evalDirectories, outputFile, duration, timeout)
+			out.MaybeDie(err, "error during IoTune execution: %v", err)
 		},
 	}
 	command.Flags().StringVar(

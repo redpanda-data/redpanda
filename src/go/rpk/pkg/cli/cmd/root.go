@@ -62,7 +62,7 @@ func Execute() {
 	rootCmd.PersistentFlags().BoolVarP(&verbose, config.FlagVerbose,
 		"v", false, "Enable verbose logging (default: false).")
 
-	rootCmd.AddCommand(NewGenerateCommand(mgr))
+	rootCmd.AddCommand(NewGenerateCommand(fs))
 	rootCmd.AddCommand(NewVersionCommand())
 	rootCmd.AddCommand(NewWasmCommand(fs))
 	rootCmd.AddCommand(NewContainerCommand())

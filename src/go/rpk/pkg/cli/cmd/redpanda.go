@@ -31,8 +31,8 @@ func NewRedpandaCommand(
 
 	command.AddCommand(redpanda.NewStartCommand(fs, mgr, launcher))
 	command.AddCommand(redpanda.NewStopCommand(fs, mgr))
-	command.AddCommand(redpanda.NewCheckCommand(fs, mgr))
-	command.AddCommand(redpanda.NewTuneCommand(fs, mgr))
+	command.AddCommand(redpanda.NewCheckCommand(fs))
+	command.AddCommand(redpanda.NewTuneCommand(fs))
 	command.AddCommand(redpanda.NewModeCommand(mgr))
 	command.AddCommand(redpanda.NewConfigCommand(fs, mgr))
 

@@ -11,17 +11,17 @@ package cmd
 
 import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/generate"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func NewGenerateCommand(mgr config.Manager) *cobra.Command {
+func NewGenerateCommand(fs afero.Fs) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "generate [template]",
 		Short: "Generate a configuration template for related services.",
 	}
 	command.AddCommand(generate.NewGrafanaDashboardCmd())
-	command.AddCommand(generate.NewPrometheusConfigCmd(mgr))
+	command.AddCommand(generate.NewPrometheusConfigCmd(fs))
 	command.AddCommand(generate.NewShellCompletionCommand())
 	return command
 }
