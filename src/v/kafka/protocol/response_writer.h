@@ -340,8 +340,7 @@ public:
         for (auto& [id, tag] : tags) {
             // write tag id +  size in bytes + tag itself
             write_unsigned_varint(id);
-            write_unsigned_varint(tag.size_bytes());
-            write_direct(std::move(tag));
+            write_size_prepended(std::move(tag));
         }
         return _out->size_bytes() - start_size;
     }
@@ -350,6 +349,15 @@ public:
     // custom tag fields but must encode at least a 0 byte to be protocol
     // compliant
     uint32_t write_tags() { return write_unsigned_varint(0); }
+
+    /// Used when a size (in bytes) must be prepended before serializing the
+    /// object itself. So far only used for encoding tag headers.
+    uint32_t write_size_prepended(iobuf&& buf) {
+        const auto size = write_unsigned_varint(buf.size_bytes())
+                          + buf.size_bytes();
+        _out->append(std::move(buf));
+        return size;
+    }
 
 private:
     iobuf* _out;

@@ -201,6 +201,8 @@ public:
         }
     }
 
+    void consume_unknown_tag(size_t s) { _parser.skip(s); }
+
 private:
     ss::sstring do_read_string(int16_t n) {
         if (unlikely(n < 0)) {
