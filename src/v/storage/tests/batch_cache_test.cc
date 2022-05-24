@@ -40,7 +40,8 @@ static model::record_batch make_random_batch(
     return std::move(b).build();
 }
 
-struct batch_cache_test_fixture {
+class batch_cache_test_fixture {
+public:
     batch_cache_test_fixture()
       : cache(opts) {}
 
