@@ -260,7 +260,7 @@ configuration::configuration()
       "group_initial_rebalance_delay",
       "Extra delay (ms) added to rebalance phase to wait for new members",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      300ms)
+      3s)
   , group_new_member_join_timeout(
       *this,
       "group_new_member_join_timeout",

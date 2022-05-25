@@ -24,6 +24,7 @@ class CompactedTopicVerifierTest(RedpandaTest):
         extra_rp_conf = dict(
             log_compaction_interval_ms=2000,
             compacted_log_segment_size=1048576,
+            group_initial_rebalance_delay=300,
         )
 
         super(CompactedTopicVerifierTest,

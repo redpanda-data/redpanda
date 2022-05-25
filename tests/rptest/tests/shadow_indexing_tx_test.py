@@ -38,6 +38,7 @@ class ShadowIndexingTxTest(RedpandaTest):
             enable_transactions=True,
             enable_leader_balancer=False,
             enable_auto_rebalance_on_node_add=False,
+            group_initial_rebalance_delay=300,
         )
 
         si_settings = SISettings(cloud_storage_reconciliation_interval_ms=500,
