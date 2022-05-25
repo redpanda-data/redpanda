@@ -73,4 +73,17 @@ const T& random_choice(const std::vector<T>& elements) {
     return elements[idx];
 }
 
+template<typename T>
+struct gen {};
+
+template<typename T>
+inline std::vector<T> gen_array(size_t size) {
+    std::vector<T> arr;
+    arr.reserve(size);
+    while (size-- > 0) {
+        arr.push_back(gen<T>::generate());
+    }
+    return arr;
+}
+
 } // namespace random_generators
