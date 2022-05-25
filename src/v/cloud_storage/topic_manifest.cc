@@ -323,7 +323,7 @@ void topic_manifest::serialize(std::ostream& out) const {
     json::Writer<json::OStreamWrapper> w(wrapper);
     w.StartObject();
     w.Key("version");
-    w.Int(static_cast<int>(manifest_version::v1));
+    w.Int(static_cast<int>(topic_manifest_version));
     w.Key("namespace");
     w.String(_topic_config->tp_ns.ns());
     w.Key("topic");
