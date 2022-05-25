@@ -36,7 +36,7 @@ import (
 // ErrNoAdminAPILeader happen when there's no leader for the Admin API.
 var ErrNoAdminAPILeader = errors.New("no Admin API leader found")
 
-type HTTPError struct {
+type HTTPResponseError struct {
 	Method   string
 	URL      string
 	Response *http.Response
@@ -549,19 +549,19 @@ func (a *AdminAPI) sendAndReceive(
 		if err != nil {
 			return nil, fmt.Errorf("request %s %s failed: %s, unable to read body: %w", method, url, status, err)
 		}
-		return nil, &HTTPError{Response: res, Body: resBody}
+		return nil, &HTTPResponseError{Response: res, Body: resBody}
 	}
 
 	return res, nil
 }
 
-func (he HTTPError) DecodeGenericErrorBody() (GenericErrorBody, error) {
+func (he HTTPResponseError) DecodeGenericErrorBody() (GenericErrorBody, error) {
 	var resp GenericErrorBody
 	err := json.Unmarshal(he.Body, &resp)
 	return resp, err
 }
 
-func (he HTTPError) Error() string {
+func (he HTTPResponseError) Error() string {
 	return fmt.Sprintf("request %s %s failed: %s, body: %q",
 		he.Method, he.URL, http.StatusText(he.Response.StatusCode), he.Body)
 }

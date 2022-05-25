@@ -172,7 +172,7 @@ func sendMetricsToURL(b metricsBody, url string, conf config.Config) error {
 	if err != nil {
 		return err
 	}
-	return sendRequest(bs, http.MethodPost, url, conf)
+	return sendRequest(bs, url, conf)
 }
 
 func sendEnvironmentToURL(
@@ -183,10 +183,10 @@ func sendEnvironmentToURL(
 	if err != nil {
 		return err
 	}
-	return sendRequest(bs, http.MethodPost, url, conf)
+	return sendRequest(bs, url, conf)
 }
 
-func sendRequest(body []byte, method, url string, conf config.Config) error {
+func sendRequest(body []byte, url string, conf config.Config) error {
 	if !conf.Rpk.EnableUsageStats {
 		log.Debug("Sending usage stats is disabled.")
 		return nil
@@ -200,7 +200,6 @@ func sendRequest(body []byte, method, url string, conf config.Config) error {
 	if err != nil {
 		return err
 	}
-	log.Debugf("%s '%s' body='%s'", method, url, body)
 	client := &http.Client{}
 	res, err := client.Do(req)
 	if err != nil {

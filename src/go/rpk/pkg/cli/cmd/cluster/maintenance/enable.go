@@ -51,7 +51,7 @@ node exists that is already in maintenance mode then an error will be returned.
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			err = client.EnableMaintenanceMode(nodeID)
-			var he *admin.HTTPError
+			var he *admin.HTTPResponseError
 			if errors.As(err, &he) {
 				if he.Response.StatusCode == 404 {
 					body, bodyErr := he.DecodeGenericErrorBody()
