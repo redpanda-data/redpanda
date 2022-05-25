@@ -16,21 +16,21 @@
 
 namespace kafka {
 // clang-format off
-CONCEPT(
 template<typename Request, typename T>
 concept RequestValidator = requires (T validator, const Request& request) {
     { T::is_valid(request) } -> std::same_as<bool>;
     { T::ec } -> std::convertible_to<const error_code&>;
     { T::error_message } -> std::convertible_to<const char*>;
-};)
+};
 // clang-format on
 
 template<typename Request, typename... Ts>
 struct validator_type_list {};
 
 template<typename Request, typename... Validators>
-CONCEPT(requires(RequestValidator<Request, Validators>, ...))
-using make_validator_types = validator_type_list<Request, Validators...>;
+requires(
+  RequestValidator<Request, Validators>,
+  ...) using make_validator_types = validator_type_list<Request, Validators...>;
 
 struct custom_partition_assignment_negative_partition_count {
     static constexpr error_code ec = error_code::invalid_request;

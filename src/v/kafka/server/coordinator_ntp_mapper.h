@@ -18,7 +18,6 @@
 #include "model/namespace.h"
 #include "seastar/core/sharded.hh"
 #include "seastarx.h"
-#include "utils/concepts-enabled.h"
 
 #include <seastar/core/reactor.hh>
 

@@ -138,10 +138,10 @@ public:
 
     // clang-format off
     template<typename ResponseType>
-    CONCEPT(requires requires (
+    requires requires (
             ResponseType r, response_writer& writer, api_version version) {
         { r.encode(writer, version) } -> std::same_as<void>;
-    })
+    }
     // clang-format on
     ss::future<response_ptr> respond(ResponseType r) {
         vlog(

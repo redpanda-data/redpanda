@@ -14,7 +14,6 @@
 #include "rpc/errc.h"
 #include "rpc/exceptions.h"
 #include "rpc/types.h"
-#include "utils/concepts-enabled.h"
 
 #include <seastar/core/future.hh>
 
@@ -34,12 +33,12 @@ public:
 
     // clang-format off
     template<typename Func>
-    CONCEPT(requires requires(Func f){
+    requires requires(Func f){
         {f()} -> std::same_as<void>;
-    })
+    }
     // clang-format on
-    void with_timeout(
-      rpc::clock_type::time_point timeout, Func&& timeout_action) {
+    void
+    with_timeout(rpc::clock_type::time_point timeout, Func&& timeout_action) {
         _timeout_timer = std::make_unique<rpc::timer_type>(
           [this, f = std::forward<Func>(timeout_action)]() mutable {
               complete_with_timeout(std::forward<Func>(f));

@@ -12,7 +12,6 @@
 #pragma once
 #include "model/metadata.h"
 #include "reflection/adl.h"
-#include "utils/concepts-enabled.h"
 #include "utils/to_string.h"
 
 #include <boost/range/join.hpp>
@@ -195,11 +194,11 @@ public:
     template<
       typename ValueProvider,
       typename Ret = std::invoke_result_t<ValueProvider, vnode>>
-    CONCEPT(requires requires(
+    requires requires(
         ValueProvider&& f, vnode nid, Ret ret_a, Ret ret_b) {
         f(nid);
         { ret_a < ret_b } -> std::same_as<bool>;
-    })
+    }
     // clang-format on
     auto quorum_match(ValueProvider&& f) const;
 
@@ -207,7 +206,7 @@ public:
      * Returns true if for majority of group_nodes predicate returns true
      */
     template<typename Predicate>
-    CONCEPT(requires std::predicate<Predicate, vnode>)
+    requires std::predicate<Predicate, vnode>
     bool majority(Predicate&& f) const;
 
     int8_t version() const { return _version; }
@@ -295,11 +294,11 @@ void group_configuration::for_each_broker_id(Func&& f) const {
 
 // clang-format off
 template<typename Func, typename Ret>
-CONCEPT(requires requires(
+requires requires(
     Func&& f, vnode nid, Ret ret_a, Ret ret_b) {
     f(nid);
     { ret_a < ret_b } -> std::same_as<bool>;
-})
+}
 // clang-format on
 auto group_configuration::quorum_match(Func&& f) const {
     if (!_old) {
@@ -327,7 +326,7 @@ auto group_configuration::quorum_match(Func&& f) const {
 }
 
 template<typename Predicate>
-CONCEPT(requires std::predicate<Predicate, vnode>)
+requires std::predicate<Predicate, vnode>
 bool group_configuration::majority(Predicate&& f) const {
     if (!_old) {
         return details::majority(std::forward<Predicate>(f), _current.voters);

@@ -11,7 +11,6 @@
 #pragma once
 #include "bytes/bytes.h"
 #include "security/scram_credential.h"
-#include "utils/concepts-enabled.h"
 
 #include <absl/container/node_hash_map.h>
 

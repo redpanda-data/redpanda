@@ -19,8 +19,9 @@ template<typename... Ts>
 struct type_list {};
 
 template<typename... Requests>
-CONCEPT(requires(KafkaApiHandler<Requests>, ...))
-using make_request_types = type_list<Requests...>;
+requires(
+  KafkaApiHandler<Requests>,
+  ...) using make_request_types = type_list<Requests...>;
 
 using request_types = make_request_types<
   produce_handler,

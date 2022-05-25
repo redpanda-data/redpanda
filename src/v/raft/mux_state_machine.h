@@ -39,7 +39,6 @@
 namespace raft {
 
 // clang-format off
-CONCEPT(
     template<typename T>
     concept State = requires(T s,
                              model::record_batch batch,
@@ -47,7 +46,6 @@ CONCEPT(
         { s.is_batch_applicable(const_batch) } -> std::convertible_to<bool>;
         { s.apply_update(std::move(batch)) } -> std::same_as<ss::future<std::error_code>>;
     };
-)
 // clang-format on
 
 using persistent_last_applied
@@ -95,8 +93,7 @@ using persistent_last_applied
 //      |<------------------------|               |          |
 //      |                         |               |          |
 template<typename... T>
-CONCEPT(requires(State<T>, ...))
-class mux_state_machine final : public state_machine {
+requires(State<T>, ...) class mux_state_machine final : public state_machine {
 public:
     explicit mux_state_machine(
       ss::logger&, consensus*, persistent_last_applied, T&...);
@@ -181,8 +178,7 @@ private:
 };
 
 template<typename... T>
-CONCEPT(requires(State<T>, ...))
-mux_state_machine<T...>::mux_state_machine(
+requires(State<T>, ...) mux_state_machine<T...>::mux_state_machine(
   ss::logger& logger,
   consensus* c,
   persistent_last_applied persist,
@@ -193,9 +189,9 @@ mux_state_machine<T...>::mux_state_machine(
   , _state(state...) {}
 
 template<typename... T>
-CONCEPT(requires(State<T>, ...))
-ss::future<result<raft::replicate_result>> mux_state_machine<T...>::replicate(
-  model::record_batch&& batch) {
+requires(State<T>, ...)
+  ss::future<result<raft::replicate_result>> mux_state_machine<T...>::replicate(
+    model::record_batch&& batch) {
     return ss::with_gate(_gate, [this, batch = std::move(batch)]() mutable {
         return _c->replicate(
           model::make_memory_record_batch_reader(std::move(batch)),
@@ -204,11 +200,11 @@ ss::future<result<raft::replicate_result>> mux_state_machine<T...>::replicate(
 }
 
 template<typename... T>
-CONCEPT(requires(State<T>, ...))
-ss::future<std::error_code> mux_state_machine<T...>::replicate_and_wait(
-  model::record_batch&& b,
-  model::timeout_clock::time_point timeout,
-  ss::abort_source& as) {
+requires(State<T>, ...)
+  ss::future<std::error_code> mux_state_machine<T...>::replicate_and_wait(
+    model::record_batch&& b,
+    model::timeout_clock::time_point timeout,
+    ss::abort_source& as) {
     if (_gate.is_closed()) {
         return ss::make_ready_future<std::error_code>(errc::shutting_down);
     }
@@ -285,8 +281,8 @@ is_batch_applicable(State& s, const model::record_batch& batch) {
 }
 
 template<typename... T>
-CONCEPT(requires(State<T>, ...))
-ss::future<> mux_state_machine<T...>::apply(model::record_batch b) {
+requires(State<T>, ...) ss::future<> mux_state_machine<T...>::apply(
+  model::record_batch b) {
     return ss::with_gate(_gate, [this, b = std::move(b)]() mutable {
         // lookup for the state to apply the update
         auto state = std::apply(

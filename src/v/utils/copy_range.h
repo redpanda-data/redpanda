@@ -12,7 +12,6 @@
 #pragma once
 
 #include "seastarx.h"
-#include "utils/concepts-enabled.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>
@@ -71,13 +70,13 @@ copy_range(Iterator begin, Iterator end, AsyncAction action, Container c) {
 /// preserved where applicable (i.e., the target Container has a notion of
 /// order).
 template<typename Container, typename Iterator, typename AsyncAction>
-CONCEPT(requires requires(AsyncAction aa, Iterator it, Container c) {
+requires requires(AsyncAction aa, Iterator it, Container c) {
     ss::futurize_invoke(aa, *it++);
     requires ss::is_future<decltype(ss::futurize_invoke(aa, *it))>::value;
     *std::inserter(c, c.end()) = ss::futurize_invoke(aa, *it).get0();
-})
-inline ss::future<Container> copy_range(
-  Iterator begin, Iterator end, AsyncAction action) {
+}
+inline ss::future<Container>
+copy_range(Iterator begin, Iterator end, AsyncAction action) {
     Container r;
     using itraits = std::iterator_traits<Iterator>;
     r.reserve(ss::internal::iterator_range_estimate_vector_capacity(
@@ -100,12 +99,12 @@ inline ss::future<Container> copy_range(
 /// preserved where applicable (i.e., the target Container has a notion of
 /// order).
 template<typename Container, typename Range, typename AsyncAction>
-CONCEPT(requires requires(AsyncAction aa, Range r, Container c) {
+requires requires(AsyncAction aa, Range r, Container c) {
     ss::futurize_invoke(aa, *r.begin());
     requires ss::is_future<decltype(ss::futurize_invoke(
       aa, *r.begin()))>::value;
     *std::inserter(c, c.end()) = ss::futurize_invoke(aa, *r.begin()).get0();
-})
+}
 inline ss::future<Container> copy_range(Range& r, AsyncAction action) {
     return copy_range<Container>(std::begin(r), std::end(r), std::move(action));
 }

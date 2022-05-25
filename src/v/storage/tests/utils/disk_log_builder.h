@@ -306,14 +306,14 @@ public:
 
     // Consumer with config
     template<typename Consumer>
-    CONCEPT(requires model::BatchReaderConsumer<Consumer>)
+    requires model::BatchReaderConsumer<Consumer>
     auto consume(log_reader_config config = reader_config()) {
         return consume_impl(Consumer{}, std::move(config));
     }
 
     // Non default constructable Consumer with config
     template<typename Consumer>
-    CONCEPT(requires model::BatchReaderConsumer<Consumer>)
+    requires model::BatchReaderConsumer<Consumer>
     auto consume(Consumer c, log_reader_config config = reader_config()) {
         return consume_impl(std::move(c), std::move(config));
     }

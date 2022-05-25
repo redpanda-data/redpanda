@@ -51,9 +51,9 @@ public:
      */
     // clang-format off
     template<typename Func>
-    CONCEPT(requires requires(Func f, Request req) {
+    requires requires(Func f, Request req) {
         { f(std::move(req)) } -> std::same_as<ss::future<Response>>;
-    })
+    }
     // clang-format on
     void start(Func&& f);
 
@@ -81,9 +81,9 @@ private:
 // clang-format off
 template<typename Request, typename Response>
 template<typename Func>
-CONCEPT(requires requires(Func f, Request req) {
+requires requires(Func f, Request req) {
     { f(std::move(req)) } -> std::same_as<ss::future<Response>>;
-})
+}
 // clang-format on
 void mutex_buffer<Request, Response>::start(Func&& f) {
     ssx::spawn_with_gate(_gate, [this, f = std::forward<Func>(f)]() mutable {

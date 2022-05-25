@@ -16,7 +16,6 @@
 #include "kafka/protocol/batch_reader.h"
 #include "likely.h"
 #include "seastarx.h"
-#include "utils/concepts-enabled.h"
 #include "utils/utf8.h"
 #include "utils/vint.h"
 
@@ -116,9 +115,9 @@ private:
     // clang-format off
     template<typename ElementParser,
              typename T = std::invoke_result_t<ElementParser, request_reader&>>
-    CONCEPT(requires requires(ElementParser parser, request_reader& rr) {
+    requires requires(ElementParser parser, request_reader& rr) {
         { parser(rr) } -> std::same_as<T>;
-    })
+    }
     // clang-format on
     std::vector<T> do_read_array(int32_t len, ElementParser&& parser) {
         std::vector<T> res;

@@ -11,7 +11,6 @@
 #pragma once
 
 #include "seastarx.h"
-#include "utils/concepts-enabled.h"
 #include "utils/gate_guard.h"
 #include "utils/mutex.h"
 
@@ -177,11 +176,11 @@ public:
 
     // clang-format off
     template<typename WrapperFuncForExecutor>
-    CONCEPT(requires requires(WrapperFuncForExecutor func) {
+    requires requires(WrapperFuncForExecutor func) {
         { func() } -> std::same_as<void>;
         { func.cancel() } -> std::same_as<void>;
         { func.on_timeout() } -> std::same_as<void>;
-    })
+    }
     // clang-format on
 
     ss::future<> submit(

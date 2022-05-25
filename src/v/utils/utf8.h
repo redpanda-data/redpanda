@@ -16,12 +16,10 @@
 #include <string_view>
 
 // clang-format off
-CONCEPT(
 template<typename T>
 concept ExceptionThrower = requires(T obj) {
     obj.conversion_error();
 };
-)
 // clang-format on
 
 namespace {
@@ -33,7 +31,7 @@ struct default_thrower {
 } // namespace
 
 template<typename Thrower>
-CONCEPT(requires ExceptionThrower<Thrower>)
+requires ExceptionThrower<Thrower>
 inline void validate_utf8(std::string_view s, Thrower&& thrower) {
     try {
         boost::locale::conv::utf_to_utf<char>(

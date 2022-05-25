@@ -58,12 +58,12 @@ patch<broker_ptr> calculate_changed_brokers(
 /// Creates the same topic_result for all requests
 // clang-format off
 template<typename T>
-CONCEPT(requires requires(const T& req) {
+requires requires(const T& req) {
     { req.tp_ns } -> std::convertible_to<const model::topic_namespace&>;
-})
+}
 // clang-format on
-std::vector<topic_result> create_topic_results(
-  const std::vector<T>& requests, errc error_code) {
+std::vector<topic_result>
+create_topic_results(const std::vector<T>& requests, errc error_code) {
     return detail::create_topic_results(requests, [error_code](const T& r) {
         return topic_result(r.tp_ns, error_code);
     });
@@ -106,9 +106,9 @@ ss::future<> remove_broker_client(
 
 // clang-format off
 template<typename Proto, typename Func>
-CONCEPT(requires requires(Func&& f, Proto c) {
+requires requires(Func&& f, Proto c) {
         f(c);
-})
+}
 // clang-format on
 auto with_client(
   model::node_id self,
@@ -171,7 +171,7 @@ maybe_build_reloadable_certificate_credentials(config::tls_config tls_config) {
 }
 
 template<typename Proto, typename Func>
-CONCEPT(requires requires(Func&& f, Proto c) { f(c); })
+requires requires(Func&& f, Proto c) { f(c); }
 auto do_with_client_one_shot(
   net::unresolved_address addr,
   config::tls_config tls_config,

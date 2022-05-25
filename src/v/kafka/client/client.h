@@ -90,11 +90,11 @@ public:
 
     /// \brief Dispatch a request to any broker.
     template<typename Func>
-    CONCEPT(requires requires {
+    requires requires {
         typename std::invoke_result_t<Func>::api_type::response_type;
-    })
-    ss::future<typename std::invoke_result_t<
-      Func>::api_type::response_type> dispatch(Func func) {
+    }
+    ss::future<typename std::invoke_result_t<Func>::api_type::response_type>
+    dispatch(Func func) {
         return gated_retry_with_mitigation([this, func{std::move(func)}]() {
             return _brokers.any().then([func](shared_broker_t broker) {
                 return broker->dispatch(func());

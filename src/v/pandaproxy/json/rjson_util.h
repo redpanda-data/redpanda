@@ -19,7 +19,6 @@
 #include "json/writer.h"
 #include "pandaproxy/json/exceptions.h"
 #include "pandaproxy/json/types.h"
-#include "utils/concepts-enabled.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -61,11 +60,11 @@ inline rjson_serialize_fmt_impl rjson_serialize_fmt(serialization_format fmt) {
 }
 
 template<typename Handler>
-CONCEPT(requires std::is_same_v<
-        decltype(std::declval<Handler>().result),
-        typename Handler::rjson_parse_result>)
+requires std::is_same_v<
+  decltype(std::declval<Handler>().result),
+  typename Handler::rjson_parse_result>
 typename Handler::rjson_parse_result
-  rjson_parse(const char* const s, Handler&& handler) {
+rjson_parse(const char* const s, Handler&& handler) {
     ::json::Reader reader;
     ::json::StringStream ss(s);
     if (!reader.Parse(ss, handler)) {

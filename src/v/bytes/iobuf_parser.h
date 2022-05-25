@@ -80,9 +80,9 @@ public:
 
     // clang-format off
     template<typename Consumer>
-    CONCEPT(requires requires(Consumer c, const char* src, size_t max) {
+    requires requires(Consumer c, const char* src, size_t max) {
         { c(src, max) } -> std::same_as<ss::stop_iteration>;
-    })
+    }
     // clang-format on
     size_t consume(const size_t n, Consumer&& f) {
         return _in.consume(n, std::forward<Consumer>(f));

@@ -13,7 +13,6 @@
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
 #include "kafka/types.h"
-#include "utils/concepts-enabled.h"
 
 #include <seastar/core/smp.hh>
 
@@ -32,7 +31,6 @@ struct handler {
 };
 
 // clang-format off
-CONCEPT(
 template<typename T>
 concept KafkaApiHandler = requires (T h, request_context&& ctx, ss::smp_service_group g) {
     KafkaApi<typename T::api>;
@@ -40,8 +38,6 @@ concept KafkaApiHandler = requires (T h, request_context&& ctx, ss::smp_service_
     { T::max_supported } -> std::convertible_to<const api_version&>;
     { T::handle(std::move(ctx), g) } -> std::same_as<ss::future<response_ptr>>;
 };
-)
-CONCEPT(
 template<typename T>
 concept KafkaApiTwoPhaseHandler = requires (T h, request_context&& ctx, ss::smp_service_group g) {
     KafkaApi<typename T::api>;
@@ -49,7 +45,6 @@ concept KafkaApiTwoPhaseHandler = requires (T h, request_context&& ctx, ss::smp_
     { T::max_supported } -> std::convertible_to<const api_version&>;
     { T::handle(std::move(ctx), g) } -> std::same_as<process_result_stages>;
 };
-)
 // clang-format on
 
 } // namespace kafka
