@@ -16,6 +16,7 @@
 #include "cluster/controller_service.h"
 #include "cluster/controller_stm.h"
 #include "cluster/errc.h"
+#include "cluster/fwd.h"
 #include "cluster/logger.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/types.h"
@@ -76,12 +77,14 @@ security_frontend::security_frontend(
   ss::sharded<controller_stm>& s,
   ss::sharded<rpc::connection_cache>& connections,
   ss::sharded<partition_leaders_table>& leaders,
+  ss::sharded<feature_table>& features,
   ss::sharded<ss::abort_source>& as,
   ss::sharded<security::authorizer>& authorizer)
   : _self(self)
   , _stm(s)
   , _connections(connections)
   , _leaders(leaders)
+  , _features(features)
   , _as(as)
   , _authorizer(authorizer) {}
 
@@ -90,13 +93,13 @@ ss::future<std::error_code> security_frontend::create_user(
   security::scram_credential credential,
   model::timeout_clock::time_point tout) {
     create_user_cmd cmd(std::move(username), std::move(credential));
-    return replicate_and_wait(_stm, _as, std::move(cmd), tout);
+    return replicate_and_wait(_stm, _features, _as, std::move(cmd), tout);
 }
 
 ss::future<std::error_code> security_frontend::delete_user(
   security::credential_user username, model::timeout_clock::time_point tout) {
     delete_user_cmd cmd(std::move(username), 0 /* unused */);
-    return replicate_and_wait(_stm, _as, std::move(cmd), tout);
+    return replicate_and_wait(_stm, _features, _as, std::move(cmd), tout);
 }
 
 ss::future<std::error_code> security_frontend::update_user(
@@ -104,7 +107,7 @@ ss::future<std::error_code> security_frontend::update_user(
   security::scram_credential credential,
   model::timeout_clock::time_point tout) {
     update_user_cmd cmd(std::move(username), std::move(credential));
-    return replicate_and_wait(_stm, _as, std::move(cmd), tout);
+    return replicate_and_wait(_stm, _features, _as, std::move(cmd), tout);
 }
 
 ss::future<std::vector<errc>> security_frontend::create_acls(
@@ -170,7 +173,11 @@ ss::future<std::vector<errc>> security_frontend::do_create_acls(
     errc err;
     try {
         auto ec = co_await replicate_and_wait(
-          _stm, _as, std::move(cmd), model::timeout_clock::now() + timeout);
+          _stm,
+          _features,
+          _as,
+          std::move(cmd),
+          model::timeout_clock::now() + timeout);
         err = map_errc(ec);
     } catch (const std::exception& e) {
         vlog(clusterlog.warn, "Unable to create ACLs: {}", e);
@@ -208,7 +215,11 @@ ss::future<std::vector<delete_acls_result>> security_frontend::do_delete_acls(
     errc err;
     try {
         auto ec = co_await replicate_and_wait(
-          _stm, _as, std::move(cmd), model::timeout_clock::now() + timeout);
+          _stm,
+          _features,
+          _as,
+          std::move(cmd),
+          model::timeout_clock::now() + timeout);
         err = map_errc(ec);
     } catch (const std::exception& e) {
         vlog(clusterlog.warn, "Unable to delete ACLs: {}", e);

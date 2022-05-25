@@ -128,6 +128,7 @@ ss::future<> controller::start() {
             std::ref(_stm),
             std::ref(_connections),
             std::ref(_partition_leaders),
+            std::ref(_feature_table),
             std::ref(_as));
       })
       .then([this] {
@@ -165,11 +166,13 @@ ss::future<> controller::start() {
             std::ref(_stm),
             std::ref(_connections),
             std::ref(_partition_leaders),
+            std::ref(_feature_table),
             std::ref(_as),
             std::ref(_authorizer));
       })
       .then([this] {
-          return _data_policy_frontend.start(std::ref(_stm), std::ref(_as));
+          return _data_policy_frontend.start(
+            std::ref(_stm), std::ref(_feature_table), std::ref(_as));
       })
       .then([this] {
           return _tp_frontend.start(
@@ -181,7 +184,8 @@ ss::future<> controller::start() {
             std::ref(_tp_state),
             std::ref(_data_policy_frontend),
             std::ref(_as),
-            std::ref(_cloud_storage_api));
+            std::ref(_cloud_storage_api),
+            std::ref(_feature_table));
       })
       .then([this] {
           return _members_backend.start_single(

@@ -347,7 +347,8 @@ ss::future<> feature_manager::do_maybe_update_active_version() {
     );
 
     auto timeout = model::timeout_clock::now() + status_retry;
-    auto err = co_await replicate_and_wait(_stm, _as, std::move(cmd), timeout);
+    auto err = co_await replicate_and_wait(
+      _stm, _feature_table, _as, std::move(cmd), timeout);
     if (err == errc::not_leader) {
         // Harmless, we lost leadership so the new controller
         // leader is responsible for picking up where we left off.
@@ -423,7 +424,8 @@ feature_manager::write_action(cluster::feature_update_action action) {
           std::move(data),
           0 // unused
         );
-        return replicate_and_wait(_stm, _as, std::move(cmd), timeout);
+        return replicate_and_wait(
+          _stm, _feature_table, _as, std::move(cmd), timeout);
     }
 }
 

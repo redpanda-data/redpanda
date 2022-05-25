@@ -30,6 +30,7 @@ public:
       ss::sharded<controller_stm>&,
       ss::sharded<rpc::connection_cache>&,
       ss::sharded<partition_leaders_table>&,
+      ss::sharded<feature_table>&,
       ss::sharded<ss::abort_source>&,
       ss::sharded<security::authorizer>&);
 
@@ -75,6 +76,7 @@ private:
     ss::sharded<controller_stm>& _stm;
     ss::sharded<rpc::connection_cache>& _connections;
     ss::sharded<partition_leaders_table>& _leaders;
+    ss::sharded<feature_table>& _features;
     ss::sharded<ss::abort_source>& _as;
     ss::sharded<security::authorizer>& _authorizer;
 };
