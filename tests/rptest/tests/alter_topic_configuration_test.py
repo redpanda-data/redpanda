@@ -189,7 +189,7 @@ class ShadowIndexingGlobalConfig(RedpandaTest):
 
         self.client().alter_topic_config(topic, "redpanda.remote.read",
                                          "false")
-        self.client().alter_topic_config(topic, "redpanda.remote.read",
+        self.client().alter_topic_config(topic, "redpanda.remote.write",
                                          "false")
         altered_output = self.client().describe_topic_configs(topic)
         self.logger.info(f"altered_output={altered_output}")
