@@ -33,6 +33,7 @@ public:
       ss::sharded<controller_api>&,
       ss::sharded<members_frontend>&,
       ss::sharded<config_frontend>&,
+      ss::sharded<config_manager>&,
       ss::sharded<feature_manager>&,
       ss::sharded<feature_table>&,
       ss::sharded<health_monitor_frontend>&,
@@ -130,6 +131,7 @@ private:
     ss::sharded<controller_api>& _api;
     ss::sharded<members_frontend>& _members_frontend;
     ss::sharded<config_frontend>& _config_frontend;
+    ss::sharded<config_manager>& _config_manager;
     ss::sharded<feature_manager>& _feature_manager;
     ss::sharded<feature_table>& _feature_table;
     ss::sharded<health_monitor_frontend>& _hm_frontend;

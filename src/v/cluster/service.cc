@@ -43,6 +43,7 @@ service::service(
   ss::sharded<controller_api>& api,
   ss::sharded<members_frontend>& members_frontend,
   ss::sharded<config_frontend>& config_frontend,
+  ss::sharded<config_manager>& config_manager,
   ss::sharded<feature_manager>& feature_manager,
   ss::sharded<feature_table>& feature_table,
   ss::sharded<health_monitor_frontend>& hm_frontend,
@@ -55,6 +56,7 @@ service::service(
   , _api(api)
   , _members_frontend(members_frontend)
   , _config_frontend(config_frontend)
+  , _config_manager(config_manager)
   , _feature_manager(feature_manager)
   , _feature_table(feature_table)
   , _hm_frontend(hm_frontend)
@@ -355,6 +357,10 @@ service::hello(hello_request&& req, rpc::streaming_context&) {
 
 ss::future<config_status_reply>
 service::config_status(config_status_request&& req, rpc::streaming_context&) {
+    if (!_config_manager.local().needs_update(req.status)) {
+        co_return config_status_reply{.error = errc::success};
+    }
+
     auto ec = co_await _config_frontend.local().set_status(
       req.status,
       config::shard_local_cfg().replicate_append_timeout_ms()

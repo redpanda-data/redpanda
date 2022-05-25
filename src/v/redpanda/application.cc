@@ -1201,6 +1201,7 @@ void application::start_redpanda(::stop_signal& app_signal) {
             std::ref(controller->get_api()),
             std::ref(controller->get_members_frontend()),
             std::ref(controller->get_config_frontend()),
+            std::ref(controller->get_config_manager()),
             std::ref(controller->get_feature_manager()),
             std::ref(controller->get_feature_table()),
             std::ref(controller->get_health_monitor()),
