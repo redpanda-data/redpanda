@@ -208,6 +208,19 @@ struct broker_shard {
     friend H AbslHashValue(H h, const broker_shard& s) {
         return H::combine(std::move(h), s.node_id(), s.shard);
     }
+
+    friend void write(iobuf& out, broker_shard bs) {
+        using serde::write;
+        write(out, bs.node_id);
+        write(out, bs.shard);
+    }
+
+    friend void read_nested(
+      iobuf_parser& in, broker_shard& bs, std::size_t const bytes_left_limit) {
+        using serde::read_nested;
+        read_nested(in, bs.node_id, bytes_left_limit);
+        read_nested(in, bs.shard, bytes_left_limit);
+    }
 };
 
 struct partition_metadata {
