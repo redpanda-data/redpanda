@@ -27,7 +27,6 @@
 #include "storage/segment_reader.h"
 #include "storage/segment_set.h"
 #include "storage/segment_utils.h"
-#include "utils/container_utils.h"
 #include "utils/directory_walker.h"
 #include "utils/file_sanitizer.h"
 #include "vlog.h"
@@ -42,6 +41,7 @@
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/core/with_scheduling_group.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 
 #include <fmt/format.h>
 
@@ -93,7 +93,7 @@ ss::future<> log_manager::stop() {
           });
       })
       .then([this] { return _batch_cache.stop(); })
-      .then([this] { return async_clear(_logs); });
+      .then([this] { return async_clear_logs(); });
 }
 
 static inline logs_type::iterator find_next_non_compacted_log(logs_type& logs) {
@@ -198,6 +198,30 @@ log_manager::create_cache(with_cache ntp_cache_enabled) {
     }
 
     return batch_cache_index(_batch_cache);
+}
+
+/*
+ * Clears the `_logs` container while giving seastar the ability to yield the
+ * fiber after every log is erased. This is used to avoid reactor stall warnings
+ * when deleting `_logs` when it contains a large number of objects.
+ *
+ * Note this function should only be called once `_logs` is no longer
+ * being used as it doesn't check for iterator invalidation.
+ */
+ss::future<> log_manager::async_clear_logs() {
+    constexpr size_t threshold_size = 1000;
+
+    // Avoid excessive erases on small containers.
+    if (_logs.size() <= threshold_size) {
+        _logs.clear();
+        co_return;
+    }
+
+    auto current = _logs.begin();
+    while (current != _logs.end()) {
+        current = _logs.erase(current, ++current);
+        co_await ss::coroutine::maybe_yield();
+    }
 }
 
 ss::future<log> log_manager::manage(ntp_config cfg) {

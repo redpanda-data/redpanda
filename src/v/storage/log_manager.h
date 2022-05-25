@@ -242,6 +242,7 @@ private:
 
     ss::future<> dispatch_topic_dir_deletion(ss::sstring dir);
     ss::future<> recover_log_state(const ntp_config&);
+    ss::future<> async_clear_logs();
 
     log_config _config;
     kvstore& _kvstore;
