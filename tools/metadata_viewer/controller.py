@@ -112,6 +112,38 @@ def decode_acl_command(record):
     return cmd
 
 
+def read_config_kv(reader):
+
+    k = reader.read_string()
+    v = reader.read_string()
+    return (k, v)
+
+
+def decode_config_command(record):
+    rdr = Reader(BytesIO(record.value))
+    k_rdr = Reader(BytesIO(record.key))
+    cmd = {}
+    cmd['type'] = rdr.read_int8()
+    if cmd['type'] == 0:
+        cmd['type_name'] = 'config_delta'
+        cmd['version'] = k_rdr.read_int64()
+        cmd['cmd_version'] = rdr.read_int8()
+        cmd['upsert'] = rdr.read_vector(read_config_kv)
+        cmd['remove'] = rdr.read_vector(lambda r: r.read_string())
+    elif cmd['type'] == 1:
+        cmd['type_name'] = 'config_status'
+        cmd['node_id'] = k_rdr.read_int32()
+        cmd['cmd_version'] = rdr.read_int8()
+        cmd['status_node_id'] = rdr.read_int32()
+        cmd['cfg_version'] = rdr.read_int64()
+        cmd['restart'] = rdr.read_bool()
+        cmd['unknown'] = rdr.read_vector(lambda r: r.read_string())
+        cmd['invalid'] = rdr.read_vector(lambda r: r.read_string())
+    else:
+        cmd['type_name'] = 'unknown'
+    return cmd
+
+
 def decode_record(header, record):
     ret = {}
     ret['type'] = type_str(header)
@@ -129,6 +161,8 @@ def decode_record(header, record):
         ret['data'] = decode_user_command(record)
     if header.type == 13:
         ret['data'] = decode_acl_command(record)
+    if header.type == 20:
+        ret['data'] = decode_config_command(record)
     return ret
 
 
@@ -149,6 +183,12 @@ def type_str(header):
         return "user management command"
     if header.type == 13:
         return "acl management command"
+    if header.type == 17:
+        return "node management command"
+    if header.type == 20:
+        return "cluster config management command"
+    if header.type == 21:
+        return "feature management command"
 
     return f"unknown {header.type}"
 
