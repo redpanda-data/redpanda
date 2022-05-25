@@ -9,6 +9,7 @@
 
 import subprocess
 import tempfile
+
 from rptest.clients.types import TopicSpec
 
 
@@ -40,7 +41,7 @@ class KafkaCliTools:
         self._redpanda = redpanda
         self._version = version
         assert self._version is None or \
-                self._version in KafkaCliTools.VERSIONS
+               self._version in KafkaCliTools.VERSIONS
         self._command_config = None
         if user and passwd:
             self._command_config = tempfile.NamedTemporaryFile(mode="w")
@@ -198,19 +199,26 @@ sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule require
                 record_size,
                 acks=-1,
                 throughput=-1,
-                batch_size=81960):
+                batch_size=81960,
+                round_robin_partition=False):
         self._redpanda.logger.debug("Producing to topic: %s", topic)
         cmd = [self._script("kafka-producer-perf-test.sh")]
         cmd += ["--topic", topic]
         cmd += ["--num-records", str(num_records)]
         cmd += ["--record-size", str(record_size)]
         cmd += ["--throughput", str(throughput)]
-        cmd += [
-            "--producer-props",
-            "acks=%d" % acks, "client.id=ducktape",
-            "batch.size=%d" % batch_size,
-            "bootstrap.servers=%s" % self._redpanda.brokers()
+
+        producer_props = [
+            "--producer-props", f"acks={acks:d}", "client.id=ducktape",
+            f"batch.size={batch_size:d}",
+            f"bootstrap.servers={self._redpanda.brokers()}"
         ]
+
+        if round_robin_partition:
+            producer_props.append(
+                'partitioner.class=org.apache.kafka.clients.producer.RoundRobinPartitioner'
+            )
+        cmd += producer_props
         self._execute(cmd)
 
     def list_acls(self):
