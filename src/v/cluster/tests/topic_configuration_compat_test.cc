@@ -23,6 +23,7 @@
 #include <seastar/testing/thread_test_case.hh>
 
 #include <chrono>
+#include <optional>
 
 using namespace std::chrono_literals; // NOLINT
 
@@ -395,7 +396,10 @@ void topic_config_roundtrip() {
     if constexpr (std::is_same<CfgIn, cluster::topic_configuration>::value) {
         // Init new fields
         cfg.properties.recovery = true;
-        cfg.properties.shadow_indexing = model::shadow_indexing_mode::archival;
+        cfg.properties.shadow_indexing_archival
+          = model::shadow_indexing_archival_mode::archival;
+        cfg.properties.shadow_indexing_fetch
+          = model::shadow_indexing_fetch_mode::fetch;
     }
 
     auto d = serialize_upgrade_rpc<CfgIn, CfgOut>(std::move(cfg));
@@ -419,11 +423,17 @@ void topic_config_roundtrip() {
         // Init new fields
         BOOST_REQUIRE(d.properties.recovery == true);
         BOOST_REQUIRE(
-          d.properties.shadow_indexing
-          == model::shadow_indexing_mode::archival);
+          d.properties.shadow_indexing_archival
+          == model::shadow_indexing_archival_mode::archival);
+        BOOST_REQUIRE(
+          d.properties.shadow_indexing_fetch
+          == model::shadow_indexing_fetch_mode::fetch);
     } else {
         BOOST_REQUIRE_EQUAL(false, d.properties.recovery.has_value());
-        BOOST_REQUIRE_EQUAL(false, d.properties.shadow_indexing.has_value());
+        BOOST_REQUIRE_EQUAL(
+          false, d.properties.shadow_indexing_archival.has_value());
+        BOOST_REQUIRE_EQUAL(
+          false, d.properties.shadow_indexing_fetch.has_value());
     }
 }
 
@@ -441,7 +451,8 @@ SEASTAR_THREAD_TEST_CASE(topic_config_uniform_rt_test) {
 
 void topic_config_with_recovery_field_roundtrip(
   std::optional<bool> recovery_field,
-  std::optional<model::shadow_indexing_mode> si_mode) {
+  std::optional<model::shadow_indexing_archival_mode> archival_mode,
+  std::optional<model::shadow_indexing_fetch_mode> fetch_mode) {
     cluster::topic_configuration cfg(
       model::ns("test"), model::topic{"a_topic"}, 3, 1);
 
@@ -455,7 +466,8 @@ void topic_config_with_recovery_field_roundtrip(
     cfg.properties.retention_duration = tristate<std::chrono::milliseconds>(
       10h);
     cfg.properties.recovery = recovery_field;
-    cfg.properties.shadow_indexing = si_mode;
+    cfg.properties.shadow_indexing_archival = archival_mode;
+    cfg.properties.shadow_indexing_fetch = fetch_mode;
 
     auto d = serialize_roundtrip_rpc(std::move(cfg));
 
@@ -474,29 +486,38 @@ void topic_config_with_recovery_field_roundtrip(
     BOOST_CHECK(10h == d.properties.retention_duration.value());
     BOOST_REQUIRE_EQUAL(tristate<size_t>{}, d.properties.retention_bytes);
     BOOST_REQUIRE_EQUAL(recovery_field, d.properties.recovery);
-    BOOST_REQUIRE_EQUAL(si_mode, d.properties.shadow_indexing);
+    BOOST_REQUIRE_EQUAL(archival_mode, d.properties.shadow_indexing_archival);
+    BOOST_REQUIRE_EQUAL(fetch_mode, d.properties.shadow_indexing_fetch);
 }
 
 SEASTAR_THREAD_TEST_CASE(topic_config_with_recovery_field_null_null_rt_test) {
-    topic_config_with_recovery_field_roundtrip(std::nullopt, std::nullopt);
+    topic_config_with_recovery_field_roundtrip(
+      std::nullopt, std::nullopt, std::nullopt);
 }
 
 SEASTAR_THREAD_TEST_CASE(
   topic_config_with_recovery_field_true_archival_rt_test) {
     topic_config_with_recovery_field_roundtrip(
-      true, model::shadow_indexing_mode::archival);
+      true, model::shadow_indexing_archival_mode::archival, std::nullopt);
+}
+
+SEASTAR_THREAD_TEST_CASE(topic_config_with_recovery_field_true_fetch_rt_test) {
+    topic_config_with_recovery_field_roundtrip(
+      true, std::nullopt, model::shadow_indexing_fetch_mode::fetch);
 }
 
 SEASTAR_THREAD_TEST_CASE(
-  topic_config_with_recovery_field_true_shadow_indexing_rt_test) {
+  topic_config_with_recovery_field_true_archival_and_fetch_rt_test) {
     topic_config_with_recovery_field_roundtrip(
-      true, model::shadow_indexing_mode::fetch);
+      true,
+      model::shadow_indexing_archival_mode::archival,
+      model::shadow_indexing_fetch_mode::fetch);
 }
 
 SEASTAR_THREAD_TEST_CASE(
   topic_config_with_recovery_field_false_disabled_rt_test) {
     topic_config_with_recovery_field_roundtrip(
-      false, model::shadow_indexing_mode::disabled);
+      false, std::nullopt, std::nullopt);
 }
 
 template<class ReqIn, class ReqOut>
@@ -507,9 +528,11 @@ void create_topics_request_roundtrip() {
     auto t2 = cfg_t(model::ns("default"), model::topic("tp-2"), 6, 5);
     if constexpr (std::is_same<cfg_t, cluster::topic_configuration>::value) {
         t1.properties.recovery = false;
-        t1.properties.shadow_indexing = model::shadow_indexing_mode::archival;
+        t1.properties.shadow_indexing_archival
+          = model::shadow_indexing_mode::archival;
         t2.properties.recovery = true;
-        t2.properties.shadow_indexing = model::shadow_indexing_mode::fetch;
+        t2.properties.shadow_indexing_fetch
+          = model::shadow_indexing_mode::fetch;
     }
     req.topics = {t1, t2};
     req.timeout = std::chrono::seconds(10101);
@@ -523,13 +546,17 @@ void create_topics_request_roundtrip() {
     if constexpr (std::is_same<cfg_t, cluster::topic_configuration>::value) {
         BOOST_REQUIRE_EQUAL(res.topics[0].properties.recovery.value(), false);
         BOOST_REQUIRE_EQUAL(
-          res.topics[0].properties.shadow_indexing.value(),
+          res.topics[0].properties.shadow_indexing_archival.value(),
           model::shadow_indexing_mode::archival);
+        BOOST_REQUIRE_EQUAL(
+          res.topics[0].properties.shadow_indexing_fetch.has_value(), false);
     } else {
         BOOST_REQUIRE_EQUAL(
           res.topics[0].properties.recovery.has_value(), false);
         BOOST_REQUIRE_EQUAL(
-          res.topics[0].properties.shadow_indexing.has_value(), false);
+          res.topics[0].properties.shadow_indexing_archival.has_value(), false);
+        BOOST_REQUIRE_EQUAL(
+          res.topics[0].properties.shadow_indexing_fetch.has_value(), false);
     }
 
     BOOST_REQUIRE_EQUAL(res.topics[1].partition_count, 6);
@@ -539,13 +566,17 @@ void create_topics_request_roundtrip() {
     if constexpr (std::is_same<cfg_t, cluster::topic_configuration>::value) {
         BOOST_REQUIRE_EQUAL(res.topics[1].properties.recovery.value(), true);
         BOOST_REQUIRE_EQUAL(
-          res.topics[1].properties.shadow_indexing.value(),
+          res.topics[0].properties.shadow_indexing_archival.has_value(), false);
+        BOOST_REQUIRE_EQUAL(
+          res.topics[1].properties.shadow_indexing_fetch.value(),
           model::shadow_indexing_mode::fetch);
     } else {
         BOOST_REQUIRE_EQUAL(
           res.topics[1].properties.recovery.has_value(), false);
         BOOST_REQUIRE_EQUAL(
-          res.topics[1].properties.shadow_indexing.has_value(), false);
+          res.topics[0].properties.shadow_indexing_archival.has_value(), false);
+        BOOST_REQUIRE_EQUAL(
+          res.topics[0].properties.shadow_indexing_fetch.has_value(), false);
     }
 }
 
@@ -569,9 +600,11 @@ void create_topics_reply_roundtrip() {
     auto t2 = cfg_t(model::ns("default"), model::topic("tp-2"), 6, 5);
     if constexpr (std::is_same<cfg_t, cluster::topic_configuration>::value) {
         t1.properties.recovery = false;
-        t1.properties.shadow_indexing = model::shadow_indexing_mode::archival;
+        t1.properties.shadow_indexing_archival
+          = model::shadow_indexing_mode::archival;
         t2.properties.recovery = true;
-        t2.properties.shadow_indexing = model::shadow_indexing_mode::fetch;
+        t2.properties.shadow_indexing_fetch
+          = model::shadow_indexing_mode::fetch;
     }
 
     auto md1 = model::topic_metadata(
@@ -628,13 +661,18 @@ void create_topics_reply_roundtrip() {
     if constexpr (std::is_same<cfg_t, cluster::topic_configuration>::value) {
         BOOST_REQUIRE_EQUAL(res.configs[0].properties.recovery.value(), false);
         BOOST_REQUIRE_EQUAL(
-          res.configs[0].properties.shadow_indexing.value(),
+          res.configs[0].properties.shadow_indexing_archival.value(),
           model::shadow_indexing_mode::archival);
+        BOOST_REQUIRE_EQUAL(
+          res.configs[0].properties.shadow_indexing_fetch.has_value(), false);
     } else {
         BOOST_REQUIRE_EQUAL(
           res.configs[0].properties.recovery.has_value(), false);
         BOOST_REQUIRE_EQUAL(
-          res.configs[0].properties.shadow_indexing.has_value(), false);
+          res.configs[0].properties.shadow_indexing_archival.has_value(),
+          false);
+        BOOST_REQUIRE_EQUAL(
+          res.configs[0].properties.shadow_indexing_fetch.has_value(), false);
     }
 
     BOOST_REQUIRE_EQUAL(res.configs[1].partition_count, 6);
@@ -644,13 +682,19 @@ void create_topics_reply_roundtrip() {
     if constexpr (std::is_same<cfg_t, cluster::topic_configuration>::value) {
         BOOST_REQUIRE_EQUAL(res.configs[1].properties.recovery.value(), true);
         BOOST_REQUIRE_EQUAL(
-          res.configs[1].properties.shadow_indexing.value(),
+          res.configs[0].properties.shadow_indexing_archival.has_value(),
+          false);
+        BOOST_REQUIRE_EQUAL(
+          res.configs[1].properties.shadow_indexing_fetch.value(),
           model::shadow_indexing_mode::fetch);
     } else {
         BOOST_REQUIRE_EQUAL(
           res.configs[1].properties.recovery.has_value(), false);
         BOOST_REQUIRE_EQUAL(
-          res.configs[1].properties.shadow_indexing.has_value(), false);
+          res.configs[0].properties.shadow_indexing_archival.has_value(),
+          false);
+        BOOST_REQUIRE_EQUAL(
+          res.configs[0].properties.shadow_indexing_fetch.has_value(), false);
     }
 }
 
@@ -672,7 +716,8 @@ void topic_configuration_assignment_roundtrip() {
     auto tc = cfg_t(model::ns("default"), model::topic("tp-1"), 12, 3);
     if constexpr (std::is_same<cfg_t, cluster::topic_configuration>::value) {
         tc.properties.recovery = true;
-        tc.properties.shadow_indexing = model::shadow_indexing_mode::archival;
+        tc.properties.shadow_indexing_archival
+          = model::shadow_indexing_mode::archival;
     }
     auto p1 = cluster::partition_assignment{
       .group = raft::group_id{42},
@@ -703,12 +748,16 @@ void topic_configuration_assignment_roundtrip() {
     if constexpr (std::is_same<cfg_t, cluster::topic_configuration>::value) {
         BOOST_REQUIRE_EQUAL(res.cfg.properties.recovery.value(), true);
         BOOST_REQUIRE_EQUAL(
-          res.cfg.properties.shadow_indexing.value(),
+          res.cfg.properties.shadow_indexing_archival.value(),
           model::shadow_indexing_mode::archival);
+        BOOST_REQUIRE_EQUAL(
+          res.cfg.properties.shadow_indexing_fetch.has_value(), false);
     } else {
         BOOST_REQUIRE_EQUAL(res.cfg.properties.recovery.has_value(), false);
         BOOST_REQUIRE_EQUAL(
-          res.cfg.properties.shadow_indexing.has_value(), false);
+          res.cfg.properties.shadow_indexing_archival.has_value(), false);
+        BOOST_REQUIRE_EQUAL(
+          res.cfg.properties.shadow_indexing_fetch.has_value(), false);
     }
 }
 
@@ -743,8 +792,10 @@ T make_incremental_topic_properties() {
     upd.timestamp_type.op = cluster::incremental_update_operation::set;
     upd.timestamp_type.value = model::timestamp_type::create_time;
     if constexpr (std::is_same<T, cluster::incremental_topic_updates>::value) {
-        upd.shadow_indexing.op = cluster::incremental_update_operation::set;
-        upd.shadow_indexing.value = model::shadow_indexing_mode::archival;
+        upd.shadow_indexing_archival.op
+          = cluster::incremental_update_operation::set;
+        upd.shadow_indexing_archival.value
+          = model::shadow_indexing_mode::archival;
     }
     if constexpr (std::is_same<T, old::incremental_topic_updates_1>::value) {
         upd.data_policy.op = cluster::incremental_update_operation::set;
@@ -774,8 +825,11 @@ void compare_incremental_topic_updates(const UpdIn& upd, const UpdOut& res) {
     BOOST_REQUIRE(upd.timestamp_type.value == res.timestamp_type.value);
     if constexpr (std::is_same<UpdIn, cluster::incremental_topic_updates>::
                     value) {
-        BOOST_REQUIRE(upd.shadow_indexing.op == res.shadow_indexing.op);
-        BOOST_REQUIRE(upd.shadow_indexing.value == res.shadow_indexing.value);
+        BOOST_REQUIRE(
+          upd.shadow_indexing_archival.op == res.shadow_indexing_archival.op);
+        BOOST_REQUIRE(
+          upd.shadow_indexing_archival.value
+          == res.shadow_indexing_archival.value);
     }
 }
 
