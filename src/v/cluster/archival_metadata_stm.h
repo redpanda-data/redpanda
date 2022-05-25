@@ -49,6 +49,11 @@ public:
 
     ss::future<> stop() override;
 
+    static ss::future<> make_snapshot(
+      const storage::ntp_config& ntp_cfg,
+      const cloud_storage::partition_manifest& m,
+      model::offset insync_offset);
+
 private:
     ss::future<std::error_code> do_add_segments(
       const cloud_storage::partition_manifest&,
