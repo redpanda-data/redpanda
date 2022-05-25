@@ -14,12 +14,10 @@
 #include <functional>
 #include <optional>
 
-// clang-format off
 template<typename T, typename U = typename T::value_type>
 concept SupportsPushBack = requires(T a, U b) {
     { a.push_back(b) } -> std::same_as<void>;
 };
-// clang-format on
 
 namespace reduce {
 struct push_back {

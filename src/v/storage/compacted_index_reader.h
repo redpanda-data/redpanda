@@ -20,13 +20,12 @@
 #include <memory>
 namespace storage {
 
-// clang-format off
 template<typename Consumer>
-concept CompactedIndexEntryConsumer = requires(Consumer c, compacted_index::entry&& b) {
+concept CompactedIndexEntryConsumer
+  = requires(Consumer c, compacted_index::entry&& b) {
     { c(std::move(b)) } -> std::same_as<ss::future<ss::stop_iteration>>;
     c.end_of_stream();
 };
-// clang-format on
 
 /// use this like a shared-pointer and pass around a copy
 class compacted_index_reader {

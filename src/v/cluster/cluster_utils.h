@@ -56,12 +56,10 @@ patch<broker_ptr> calculate_changed_brokers(
   const std::vector<broker_ptr>& old_list);
 
 /// Creates the same topic_result for all requests
-// clang-format off
 template<typename T>
 requires requires(const T& req) {
     { req.tp_ns } -> std::convertible_to<const model::topic_namespace&>;
 }
-// clang-format on
 std::vector<topic_result>
 create_topic_results(const std::vector<T>& requests, errc error_code) {
     return detail::create_topic_results(requests, [error_code](const T& r) {
@@ -104,12 +102,8 @@ ss::future<> update_broker_client(
 ss::future<> remove_broker_client(
   model::node_id, ss::sharded<rpc::connection_cache>&, model::node_id);
 
-// clang-format off
 template<typename Proto, typename Func>
-requires requires(Func&& f, Proto c) {
-        f(c);
-}
-// clang-format on
+requires requires(Func&& f, Proto c) { f(c); }
 auto with_client(
   model::node_id self,
   ss::sharded<rpc::connection_cache>& cache,

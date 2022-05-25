@@ -31,12 +31,10 @@ public:
     response_handler(const response_handler&) = delete;
     response_handler& operator=(const response_handler&) = delete;
 
-    // clang-format off
     template<typename Func>
-    requires requires(Func f){
-        {f()} -> std::same_as<void>;
+    requires requires(Func f) {
+        { f() } -> std::same_as<void>;
     }
-    // clang-format on
     void
     with_timeout(rpc::clock_type::time_point timeout, Func&& timeout_action) {
         _timeout_timer = std::make_unique<rpc::timer_type>(

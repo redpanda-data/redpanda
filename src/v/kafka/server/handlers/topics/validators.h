@@ -15,14 +15,12 @@
 #include "kafka/server/handlers/topics/types.h"
 
 namespace kafka {
-// clang-format off
 template<typename Request, typename T>
-concept RequestValidator = requires (T validator, const Request& request) {
+concept RequestValidator = requires(T validator, const Request& request) {
     { T::is_valid(request) } -> std::same_as<bool>;
     { T::ec } -> std::convertible_to<const error_code&>;
     { T::error_message } -> std::convertible_to<const char*>;
 };
-// clang-format on
 
 template<typename Request, typename... Ts>
 struct validator_type_list {};

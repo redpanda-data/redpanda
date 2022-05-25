@@ -60,17 +60,15 @@ public:
       ss::lowres_clock::time_point,
       std::optional<std::reference_wrapper<ss::abort_source>>);
 
-    // clang-format off
     template<typename Func>
     requires requires(
-      Func f, 
-      model::topic_namespace_view tp_ns, 
-      model::partition_id pid, 
-      std::optional<model::node_id> leader, 
+      Func f,
+      model::topic_namespace_view tp_ns,
+      model::partition_id pid,
+      std::optional<model::node_id> leader,
       model::term_id term) {
-            { f(tp_ns, pid, leader, term) } -> std::same_as<void>;
+        { f(tp_ns, pid, leader, term) } -> std::same_as<void>;
     }
-    // clang-format on
     void for_each_leader(Func&& f) const {
         for (auto& [k, v] : _leaders) {
             f(k.tp_ns, k.pid, v.current_leader, v.update_term);

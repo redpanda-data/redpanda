@@ -78,12 +78,10 @@ public:
 
     void skip(size_t n) { _in.skip(n); }
 
-    // clang-format off
     template<typename Consumer>
     requires requires(Consumer c, const char* src, size_t max) {
         { c(src, max) } -> std::same_as<ss::stop_iteration>;
     }
-    // clang-format on
     size_t consume(const size_t n, Consumer&& f) {
         return _in.consume(n, std::forward<Consumer>(f));
     }

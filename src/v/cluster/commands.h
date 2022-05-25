@@ -211,9 +211,8 @@ using feature_update_cmd = controller_command<
   model::record_batch_type::feature_update>;
 
 // typelist utils
-// clang-format off
 template<typename T>
-concept ControllerCommand = requires (T cmd) {
+concept ControllerCommand = requires(T cmd) {
     typename T::key_t;
     typename T::value_t;
     { cmd.key } -> std::convertible_to<const typename T::key_t&>;
@@ -221,7 +220,6 @@ concept ControllerCommand = requires (T cmd) {
     { T::type } -> std::convertible_to<const command_type&>;
     { T::batch_type } -> std::convertible_to<const model::record_batch_type&>;
 };
-// clang-format on
 
 template<typename... Commands>
 struct commands_type_list {};

@@ -22,10 +22,11 @@ namespace kafka {
 /**
  * Dispatch request with version bounds checking.
  */
+// clang-format off
 template<typename Request>
-requires(
-  KafkaApiHandler<
-    Request> || KafkaApiTwoPhaseHandler<Request>) struct process_dispatch {
+requires(KafkaApiHandler<Request> || KafkaApiTwoPhaseHandler<Request>)
+  // clang-format on
+  struct process_dispatch {
     static process_result_stages
     process(request_context&& ctx, ss::smp_service_group g) {
         if (

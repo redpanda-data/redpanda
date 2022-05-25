@@ -17,12 +17,10 @@ namespace kafka {
 
 static constexpr model::node_id consumer_replica_id{-1};
 
-// clang-format off
 template<typename T>
-concept KafkaApi = requires (T request) {
+concept KafkaApi = requires(T request) {
     { T::name } -> std::convertible_to<const char*>;
     { T::key } -> std::convertible_to<const api_key&>;
 };
-// clang-format on
 
 } // namespace kafka

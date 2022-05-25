@@ -190,16 +190,13 @@ public:
      * This method is used to find an offset that was replicated by majority of
      * nodes.
      */
-    // clang-format off
     template<
       typename ValueProvider,
       typename Ret = std::invoke_result_t<ValueProvider, vnode>>
-    requires requires(
-        ValueProvider&& f, vnode nid, Ret ret_a, Ret ret_b) {
+    requires requires(ValueProvider&& f, vnode nid, Ret ret_a, Ret ret_b) {
         f(nid);
         { ret_a < ret_b } -> std::same_as<bool>;
     }
-    // clang-format on
     auto quorum_match(ValueProvider&& f) const;
 
     /**
@@ -292,14 +289,11 @@ void group_configuration::for_each_broker_id(Func&& f) const {
       std::cbegin(joined), std::cend(joined), std::forward<Func>(f));
 }
 
-// clang-format off
 template<typename Func, typename Ret>
-requires requires(
-    Func&& f, vnode nid, Ret ret_a, Ret ret_b) {
+requires requires(Func&& f, vnode nid, Ret ret_a, Ret ret_b) {
     f(nid);
     { ret_a < ret_b } -> std::same_as<bool>;
 }
-// clang-format on
 auto group_configuration::quorum_match(Func&& f) const {
     if (!_old) {
         return details::quorum_match(std::forward<Func>(f), _current.voters);

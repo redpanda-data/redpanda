@@ -112,13 +112,12 @@ private:
         return _parser.read_string(n);
     }
 
-    // clang-format off
-    template<typename ElementParser,
-             typename T = std::invoke_result_t<ElementParser, request_reader&>>
+    template<
+      typename ElementParser,
+      typename T = std::invoke_result_t<ElementParser, request_reader&>>
     requires requires(ElementParser parser, request_reader& rr) {
         { parser(rr) } -> std::same_as<T>;
     }
-    // clang-format on
     std::vector<T> do_read_array(int32_t len, ElementParser&& parser) {
         std::vector<T> res;
         res.reserve(std::max(0, len));

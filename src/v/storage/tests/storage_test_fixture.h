@@ -130,7 +130,7 @@ public:
 
     // clang-format off
     template<typename T = random_batches_generator>
-        requires requires (T generator) {
+        requires requires(T generator) {
             { generator() } -> std::same_as<ss::circular_buffer<model::record_batch>>;
         }
     // clang-format on

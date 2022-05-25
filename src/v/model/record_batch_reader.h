@@ -28,7 +28,6 @@
 
 namespace model {
 
-// clang-format off
 template<typename Consumer>
 concept BatchReaderConsumer = requires(Consumer c, record_batch&& b) {
     { c(std::move(b)) } -> std::same_as<ss::future<ss::stop_iteration>>;
@@ -36,11 +35,11 @@ concept BatchReaderConsumer = requires(Consumer c, record_batch&& b) {
 };
 
 template<typename ReferenceConsumer>
-concept ReferenceBatchReaderConsumer = requires(ReferenceConsumer c, record_batch& b) {
+concept ReferenceBatchReaderConsumer
+  = requires(ReferenceConsumer c, record_batch& b) {
     { c(b) } -> std::same_as<ss::future<ss::stop_iteration>>;
     c.end_of_stream();
 };
-// clang-format on
 
 class record_batch_reader final {
 public:
@@ -277,12 +276,10 @@ make_memory_record_batch_reader(model::record_batch b) {
     return make_memory_record_batch_reader(std::move(batches));
 }
 
-// clang-format off
 template<typename Func>
 requires requires(Func f, model::record_batch&& batch) {
     { f(std::move(batch)) } -> std::same_as<model::record_batch>;
 }
-// clang-format on
 ss::future<record_batch_reader::data_t> transform_reader_to_memory(
   record_batch_reader reader, timeout_clock::time_point timeout, Func&& f) {
     using data_t = record_batch_reader::data_t;

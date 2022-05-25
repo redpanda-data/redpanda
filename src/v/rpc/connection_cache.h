@@ -58,11 +58,7 @@ public:
     ss::future<> stop();
 
     template<typename Protocol, typename Func>
-    // clang-format off
-    requires requires(Func&& f, Protocol proto) {
-        f(proto);
-    }
-    // clang-format on
+    requires requires(Func&& f, Protocol proto) { f(proto); }
     auto with_node_client(
       model::node_id self,
       ss::shard_id src_shard,
@@ -96,11 +92,7 @@ public:
     }
 
     template<typename Protocol, typename Func>
-    // clang-format off
-    requires requires(Func&& f, Protocol proto) {
-        f(proto);
-    }
-    // clang-format on
+    requires requires(Func&& f, Protocol proto) { f(proto); }
     auto with_node_client(
       model::node_id self,
       ss::shard_id src_shard,

@@ -28,18 +28,17 @@ public:
 private:
     uint32_t _current_backoff = 0;
 };
-// clang-format off
+
 template<typename Policy>
-concept BackoffPolicy = requires (Policy b) {
+concept BackoffPolicy = requires(Policy b) {
     { b.next_backoff() } -> std::same_as<uint32_t>;
 };
-// clang-format on
 
 // clang-format off
 template<typename Func, typename DurationType = std::chrono::seconds, typename Policy = exp_backoff_policy>
   requires requires (Func f) {
       { f() } -> std::same_as<ss::futurize_t<std::invoke_result_t<Func>>>;
-  } 
+  }
   && BackoffPolicy<Policy>
   // clang-format on
   ss::futurize_t<std::invoke_result_t<Func>> retry_with_backoff(

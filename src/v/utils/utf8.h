@@ -15,12 +15,10 @@
 
 #include <string_view>
 
-// clang-format off
 template<typename T>
 concept ExceptionThrower = requires(T obj) {
     obj.conversion_error();
 };
-// clang-format on
 
 namespace {
 struct default_thrower {
