@@ -25,7 +25,6 @@
 #include "model/timestamp.h"
 #include "raft/errc.h"
 #include "raft/types.h"
-#include "storage/shard_assignment.h"
 #include "utils/remote.h"
 #include "utils/to_string.h"
 #include "vlog.h"
