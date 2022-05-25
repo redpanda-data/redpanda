@@ -13,15 +13,18 @@
 #include "random/generators.h"
 #include "serde/envelope.h"
 #include "serde/serde.h"
+#include "tristate.h"
 #include "utils/fragmented_vector.h"
 
 #include <seastar/core/scheduling.hh>
+#include <seastar/core/sstring.hh>
 #include <seastar/testing/thread_test_case.hh>
 
 #include <boost/test/unit_test.hpp>
 
 #include <chrono>
 #include <limits>
+#include <optional>
 
 struct custom_read_write {
     friend inline void read_nested(
@@ -718,4 +721,22 @@ SEASTAR_THREAD_TEST_CASE(serde_bytes_test) {
 
     auto result = serde::from_iobuf<bytes>(std::move(b));
     BOOST_CHECK_EQUAL(bt, result);
+}
+
+SEASTAR_THREAD_TEST_CASE(serde_tristate_test) {
+    tristate<ss::sstring> disabled{};
+    tristate<ss::sstring> empty(std::nullopt);
+    tristate<ss::sstring> set("test-tristate-value");
+
+    iobuf disabled_buf = serde::to_iobuf(disabled);
+    iobuf empty_buf = serde::to_iobuf(empty);
+    iobuf set_buf = serde::to_iobuf(set);
+
+    BOOST_CHECK_EQUAL(
+      disabled,
+      serde::from_iobuf<tristate<ss::sstring>>(std::move(disabled_buf)));
+    BOOST_CHECK_EQUAL(
+      empty, serde::from_iobuf<tristate<ss::sstring>>(std::move(empty_buf)));
+    BOOST_CHECK_EQUAL(
+      set, serde::from_iobuf<tristate<ss::sstring>>(std::move(set_buf)));
 }
