@@ -17,6 +17,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
@@ -270,6 +272,69 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 	return c, nil
 }
 
+// Write writes loaded configuration parameters to redpanda.yaml.
+func (c *Config) Write(fs afero.Fs) (rerr error) {
+	cfgPath := c.loadedPath
+	if cfgPath == "" {
+		cfgPath = Default().ConfigFile
+	}
+
+	b, err := yaml.Marshal(c)
+	if err != nil {
+		return fmt.Errorf("marshal error in loaded config, err: %s", err)
+	}
+
+	// Create a temp file.
+	layout := "20060102150405" // year-month-day-hour-min-sec
+	bFilename := "redpanda-" + time.Now().Format(layout) + ".yaml"
+	temp := filepath.Join(filepath.Dir(cfgPath), bFilename)
+
+	err = afero.WriteFile(fs, temp, b, 0o644) // default permissions 644
+	if err != nil {
+		return fmt.Errorf("error writing to temporary file: %v", err)
+	}
+	defer func() {
+		if rerr != nil {
+			if removeErr := fs.Remove(temp); removeErr != nil {
+				rerr = fmt.Errorf("%s, unable to remove temp file: %v", rerr, removeErr)
+			} else {
+				rerr = fmt.Errorf("%s, temp file removed from disk", rerr)
+			}
+		}
+	}()
+
+	// If we have a loaded file we keep permission and ownership of the
+	// original config file.
+	if c.loadedPath != "" {
+		stat, err := fs.Stat(c.loadedPath)
+		if err != nil {
+			return fmt.Errorf("unable to stat existing file: %v", err)
+		}
+
+		err = fs.Chmod(temp, stat.Mode())
+		if err != nil {
+			return fmt.Errorf("unable to chmod temp config file: %v", err)
+		}
+
+		// Stat_t is only valid in unix not on Windows.
+		if stat, ok := stat.Sys().(*syscall.Stat_t); ok {
+			gid := int(stat.Gid)
+			uid := int(stat.Uid)
+			err = fs.Chown(temp, uid, gid)
+			if err != nil {
+				return fmt.Errorf("unable to chown temp config file: %v", err)
+			}
+		}
+	}
+
+	err = fs.Rename(temp, cfgPath)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (p *Params) LocateConfig(fs afero.Fs) (string, error) {
 	paths := []string{p.ConfigPath}
 	if p.ConfigPath == "" {
@@ -313,6 +378,7 @@ func (p *Params) readConfig(fs afero.Fs, c *Config) error {
 		return fmt.Errorf("unable to yaml decode %s: %v", path, err)
 	}
 	yaml.Unmarshal(file, &c.file) // cannot error since previous did not
+	c.loadedPath = path
 
 	return nil
 }
