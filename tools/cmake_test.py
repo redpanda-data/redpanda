@@ -41,9 +41,9 @@ class BacktraceCapture(threading.Thread):
     """
 
     BACKTRACE_START = re.compile(
-        "(^Backtrace:|.+Sanitizer.*|.+Backtrace below:$|^Direct leak.+|^Indirect leak.+|^READ of size.*|^0x.+ is located.+|^previously allocated by.+|^Thread.+created by.+)"
+        "(^Backtrace:|.+Sanitizer.*|.+Backtrace below:$|^Direct leak.+|^Indirect leak.+|^READ of size.*|^0x.+ is located.+|^previously allocated by.+|^Thread.+created by.+|Exceptional future ignored)"
     )
-    BACKTRACE_BODY = re.compile("^(  |==|0x)")
+    BACKTRACE_BODY = re.compile("^(  |==|0x|.*backtrace: 0x)")
 
     def __init__(self, binary, process):
         super(BacktraceCapture, self).__init__()
@@ -100,6 +100,8 @@ class BacktraceCapture(threading.Thread):
                 # A start of backtrace line, which may also have been an end of backtrace line above
                 if accumulator is None and self.BACKTRACE_START.search(line):
                     accumulator = []
+                    if self.BACKTRACE_BODY.search(line):
+                        accumulator.append(line)
             else:
                 break
 
