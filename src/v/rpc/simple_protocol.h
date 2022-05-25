@@ -12,12 +12,14 @@
 #pragma once
 #include "net/server.h"
 #include "rpc/service.h"
+
+#include <concepts>
+
 namespace rpc {
 class simple_protocol final : public net::server::protocol {
 public:
-    template<typename T, typename... Args>
+    template<std::derived_from<service> T, typename... Args>
     void register_service(Args&&... args) {
-        static_assert(std::is_base_of_v<service, T>, "must extend service.h");
         _services.push_back(std::make_unique<T>(std::forward<Args>(args)...));
     }
 
