@@ -89,13 +89,13 @@ jobs:
   cpp:
     name: Lint files with clang-format
     runs-on: ubuntu-20.04
-    # Use ubuntu:hirsute explicitly as it is the first version to have
-    # clang-format 12 available
-    container: ubuntu:hirsute
     steps:
 
     - name: Fetch clang-format
-      run: apt-get update && apt-get install -y git clang-format
+      run: |
+        curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+        sudo add-apt-repository --yes --update 'deb http://apt.llvm.org/focal/ llvm-toolchain-focal-14 main'
+        sudo apt-get install -y git clang-format-14
       env:
         DEBIAN_FRONTEND: noninteractive
 
@@ -104,7 +104,7 @@ jobs:
 
     - name: Run clang fmt
       run: |
-        find . -regex '.*\.\(cpp\|h\|hpp\|cc\|proto\|java\)' | xargs -n1 clang-format -i -style=file -fallback-style=none
+        find . -regex '.*\.\(cpp\|h\|hpp\|cc\|proto\|java\)' | xargs -n1 clang-format-14 -i -style=file -fallback-style=none
         git diff --exit-code
 
   sh:
