@@ -310,7 +310,7 @@ bool reconciliation_backend::stale_create_non_replicable_partition_request(
   const std::vector<model::broker_shard>& replicas) {
     /// If the source partition exists in the topics table, but not in
     /// the cluster::partition_manager, either this request occurred before the
-    /// source partition has been instered into the partition_manager and a
+    /// source partition has been inserted into the partition_manager and a
     /// retry of creating 'this' partition should occur (until success), OR the
     /// source topic has been moved to another broker_shard and this request is
     /// therefore stale

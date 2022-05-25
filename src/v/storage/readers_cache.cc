@@ -139,7 +139,7 @@ ss::future<> readers_cache::stop() {
     }
     /**
      * First we close the gate, this will prevent new readers from being
-     * insterted to the cache
+     * inserted to the cache
      */
     co_await _gate.close();
     /**
