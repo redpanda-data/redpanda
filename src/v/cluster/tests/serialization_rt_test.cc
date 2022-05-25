@@ -1258,3 +1258,154 @@ SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {
           deserialized_kvs_from_kvs[i].value);
     }
 }
+template<typename Cmd, typename Key, typename Value>
+void serde_roundtrip_cmd(Key key, Value value) {
+    auto cmd = Cmd(std::move(key), std::move(value));
+    auto batch = cluster::serde_serialize_cmd(cmd);
+    auto deserialized = cluster::deserialize(
+                          std::move(batch), cluster::make_commands_list<Cmd>())
+                          .get();
+
+    auto deserialized_cmd = std::get<Cmd>(deserialized);
+
+    BOOST_REQUIRE(deserialized_cmd.key == cmd.key);
+    BOOST_REQUIRE(deserialized_cmd.value == cmd.value);
+}
+
+template<typename Cmd, typename Key, typename Value>
+void adl_roundtrip_cmd(Key key, Value value) {
+    auto cmd = Cmd(std::move(key), std::move(value));
+    auto batch = cluster::serialize_cmd(cmd).get();
+    auto deserialized = cluster::deserialize(
+                          std::move(batch), cluster::make_commands_list<Cmd>())
+                          .get();
+    auto deserialized_cmd = std::get<Cmd>(deserialized);
+
+    BOOST_REQUIRE(deserialized_cmd.key == cmd.key);
+    BOOST_REQUIRE(deserialized_cmd.value == cmd.value);
+}
+
+template<typename Cmd, typename Key, typename Value>
+void roundtrip_cmd(Key key, Value value) {
+    adl_roundtrip_cmd<Cmd>(key, value);
+    serde_roundtrip_cmd<Cmd>(key, value);
+}
+
+SEASTAR_THREAD_TEST_CASE(commands_serialization_test) {
+    for (int i = 0; i < 50; ++i) {
+        serde_roundtrip_cmd<cluster::create_topic_cmd>(
+          model::random_topic_namespace(),
+          cluster::topic_configuration_assignment(
+            random_topic_configuration(), random_partition_assignments()));
+
+        roundtrip_cmd<cluster::delete_topic_cmd>(
+          model::random_topic_namespace(), model::random_topic_namespace());
+
+        roundtrip_cmd<cluster::move_partition_replicas_cmd>(
+          model::random_ntp(),
+          std::vector<model::broker_shard>{
+            {model::node_id(10), 1}, {model::node_id(1), 2}});
+
+        roundtrip_cmd<cluster::finish_moving_partition_replicas_cmd>(
+          model::random_ntp(),
+          std::vector<model::broker_shard>{
+            {model::node_id(10), 1}, {model::node_id(1), 2}});
+
+        roundtrip_cmd<cluster::update_topic_properties_cmd>(
+          model::random_topic_namespace(), random_incremental_topic_updates());
+
+        roundtrip_cmd<cluster::create_partition_cmd>(
+          model::random_topic_namespace(),
+          cluster::create_partitions_configuration_assignment(
+            random_create_partitions_configuration(),
+            random_partition_assignments()));
+
+        roundtrip_cmd<cluster::create_non_replicable_topic_cmd>(
+          cluster::non_replicable_topic{
+            .source = model::random_topic_namespace(),
+            .name = model::random_topic_namespace()},
+          0);
+
+        roundtrip_cmd<cluster::create_user_cmd>(
+          tests::random_named_string<security::credential_user>(),
+          random_credential());
+
+        roundtrip_cmd<cluster::delete_user_cmd>(
+          tests::random_named_string<security::credential_user>(), 0);
+
+        roundtrip_cmd<cluster::update_user_cmd>(
+          tests::random_named_string<security::credential_user>(),
+          random_credential());
+
+        cluster::create_acls_cmd_data create_acls_data{};
+        for (auto i = 0; i < random_generators::get_int(1, 20); ++i) {
+            create_acls_data.bindings.push_back(random_acl_binding());
+        }
+
+        roundtrip_cmd<cluster::create_acls_cmd>(std::move(create_acls_data), 0);
+
+        cluster::delete_acls_cmd_data delete_acl_data;
+
+        for (auto i = 0; i < random_generators::get_int(1, 20); ++i) {
+            delete_acl_data.filters.push_back(random_acl_binding_filter());
+        }
+
+        roundtrip_cmd<cluster::delete_acls_cmd>(std::move(delete_acl_data), 0);
+        cluster::create_data_policy_cmd_data create_dp;
+        create_dp.dp = v8_engine::data_policy(
+          random_generators::gen_alphanum_string(15),
+          random_generators::gen_alphanum_string(15));
+
+        roundtrip_cmd<cluster::create_data_policy_cmd>(
+          model::random_topic_namespace(), std::move(create_dp));
+
+        roundtrip_cmd<cluster::delete_data_policy_cmd>(
+          model::random_topic_namespace(),
+          random_generators::gen_alphanum_string(20));
+
+        roundtrip_cmd<cluster::decommission_node_cmd>(
+          tests::random_named_int<model::node_id>(), 0);
+
+        roundtrip_cmd<cluster::recommission_node_cmd>(
+          tests::random_named_int<model::node_id>(), 0);
+
+        roundtrip_cmd<cluster::finish_reallocations_cmd>(
+          tests::random_named_int<model::node_id>(), 0);
+
+        roundtrip_cmd<cluster::maintenance_mode_cmd>(
+          tests::random_named_int<model::node_id>(), 0);
+
+        cluster::cluster_config_delta_cmd_data config_delta;
+        for (auto i = 0; i < random_generators::get_int(1, 20); ++i) {
+            config_delta.upsert.push_back(random_property_kv());
+        }
+        config_delta.remove = random_strings();
+
+        roundtrip_cmd<cluster::cluster_config_delta_cmd>(
+          tests::random_named_int<cluster::config_version>(),
+          std::move(config_delta));
+
+        cluster::cluster_config_status_cmd_data config_status;
+
+        config_status.status.invalid = random_strings();
+        config_status.status.restart = tests::random_bool();
+        config_status.status.node = tests::random_named_int<model::node_id>();
+        config_status.status.unknown = random_strings();
+        config_status.status.version
+          = tests::random_named_int<cluster::config_version>();
+
+        roundtrip_cmd<cluster::cluster_config_status_cmd>(
+          tests::random_named_int<model::node_id>(), std::move(config_status));
+
+        cluster::feature_update_cmd_data feature_update_data;
+        for (auto i = 0; i < random_generators::get_int(1, 20); ++i) {
+            feature_update_data.actions.push_back(
+              random_feature_update_action());
+        }
+        feature_update_data.logical_version
+          = tests::random_named_int<cluster::cluster_version>();
+
+        roundtrip_cmd<cluster::feature_update_cmd>(
+          std::move(feature_update_data), 0);
+    }
+}
