@@ -142,7 +142,7 @@ auto to_cluster_type(KafkaApiTypeIter begin, KafkaApiTypeIter end)
 
 /// Generate errors for all the request items that topic names
 /// are duplicated within given range,
-/// the errors are insterted in the range begginning at out_it
+/// the errors are inserted in the range begginning at out_it
 // clang-format off
 template<typename Iter, typename ErrIter>
 CONCEPT(requires TopicRequestItem<typename Iter::value_type> && 
@@ -165,7 +165,7 @@ Iter validate_range_duplicates(Iter begin, Iter end, ErrIter out_it) {
 }
 
 /// Generate NOT_CONTROLLER error for all the request items within given range
-/// the errors are insterted in the range begginning at out_it
+/// the errors are inserted in the range begginning at out_it
 /// This pattern is used in every Admin request of Kafka protocol.
 template<typename Iter, typename ErrIter>
 CONCEPT(requires TopicRequestItem<typename Iter::value_type>&&

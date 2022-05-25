@@ -71,7 +71,7 @@ ss::future<> configuration_manager::prefix_truncate(model::offset offset) {
           "Configuration manager should always have at least one "
           "configuration");
         /**
-         * When prefix truncation would remove all the configuration we instert
+         * When prefix truncation would remove all the configuration we insert
          * the last configuration from before requested offset at the offset.
          * This way we preserver last know configuration and indexing.
          *
