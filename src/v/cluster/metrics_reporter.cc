@@ -132,13 +132,16 @@ ss::future<> metrics_reporter::stop() {
 }
 
 void metrics_reporter::report_metrics() {
-    ssx::spawn_with_gate(_gate, [this] {
-        return do_report_metrics().finally([this] {
-            if (!_gate.is_closed()) {
-                _tick_timer.arm(
-                  config::shard_local_cfg().metrics_reporter_tick_interval());
-            }
-        });
+    ssx::background = ssx::spawn_with_gate_then(_gate, [this] {
+                          return do_report_metrics().finally([this] {
+                              if (!_gate.is_closed()) {
+                                  _tick_timer.arm(
+                                    config::shard_local_cfg()
+                                      .metrics_reporter_tick_interval());
+                              }
+                          });
+                      }).handle_exception([](const std::exception_ptr& e) {
+        vlog(clusterlog.warn, "Exception reporting metrics: {}", e);
     });
 }
 
