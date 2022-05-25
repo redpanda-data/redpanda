@@ -2404,7 +2404,7 @@ void group::add_pending_member(
 std::ostream& operator<<(std::ostream& o, const group::offset_metadata& md) {
     fmt::print(
       o,
-      "{log_offset:{}, offset:{}, metadata:{}, committed_leader_epoch:{}}",
+      "{{log_offset:{}, offset:{}, metadata:{}, committed_leader_epoch:{}}}",
       md.log_offset,
       md.offset,
       md.metadata,
