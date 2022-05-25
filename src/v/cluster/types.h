@@ -519,9 +519,9 @@ struct custom_assignable_topic_configuration {
     operator<<(std::ostream&, const custom_assignable_topic_configuration&);
 };
 
-struct create_partititions_configuration {
+struct create_partitions_configuration {
     using custom_assignment = std::vector<model::node_id>;
-    create_partititions_configuration(model::topic_namespace, int32_t);
+    create_partitions_configuration(model::topic_namespace, int32_t);
 
     model::topic_namespace tp_ns;
 
@@ -532,7 +532,7 @@ struct create_partititions_configuration {
     std::vector<custom_assignment> custom_assignments;
 
     friend std::ostream&
-    operator<<(std::ostream&, const create_partititions_configuration&);
+    operator<<(std::ostream&, const create_partitions_configuration&);
 };
 
 struct topic_configuration_assignment {
@@ -549,18 +549,18 @@ struct topic_configuration_assignment {
     model::topic_metadata get_metadata() const;
 };
 
-struct create_partititions_configuration_assignment {
-    create_partititions_configuration_assignment(
-      create_partititions_configuration cfg,
+struct create_partitions_configuration_assignment {
+    create_partitions_configuration_assignment(
+      create_partitions_configuration cfg,
       std::vector<partition_assignment> pas)
       : cfg(std::move(cfg))
       , assignments(std::move(pas)) {}
 
-    create_partititions_configuration cfg;
+    create_partitions_configuration cfg;
     std::vector<partition_assignment> assignments;
 
     friend std::ostream& operator<<(
-      std::ostream&, const create_partititions_configuration_assignment&);
+      std::ostream&, const create_partitions_configuration_assignment&);
 };
 
 struct topic_result {
@@ -1118,15 +1118,15 @@ struct adl<cluster::delete_acls_result> {
 };
 
 template<>
-struct adl<cluster::create_partititions_configuration> {
-    void to(iobuf&, cluster::create_partititions_configuration&&);
-    cluster::create_partititions_configuration from(iobuf_parser&);
+struct adl<cluster::create_partitions_configuration> {
+    void to(iobuf&, cluster::create_partitions_configuration&&);
+    cluster::create_partitions_configuration from(iobuf_parser&);
 };
 
 template<>
-struct adl<cluster::create_partititions_configuration_assignment> {
-    void to(iobuf&, cluster::create_partititions_configuration_assignment&&);
-    cluster::create_partititions_configuration_assignment from(iobuf_parser&);
+struct adl<cluster::create_partitions_configuration_assignment> {
+    void to(iobuf&, cluster::create_partitions_configuration_assignment&&);
+    cluster::create_partitions_configuration_assignment from(iobuf_parser&);
 };
 
 template<>

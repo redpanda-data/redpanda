@@ -100,7 +100,7 @@ ss::future<std::vector<cluster::topic_result>> do_create_partitions(
     if (sz == 0) {
         co_return std::vector<cluster::topic_result>{};
     }
-    std::vector<cluster::create_partititions_configuration> partitions;
+    std::vector<cluster::create_partitions_configuration> partitions;
     partitions.reserve(sz);
 
     std::transform(
@@ -108,7 +108,7 @@ ss::future<std::vector<cluster::topic_result>> do_create_partitions(
       end,
       std::back_inserter(partitions),
       [](create_partitions_topic& tp) {
-          return cluster::create_partititions_configuration(
+          return cluster::create_partitions_configuration(
             model::topic_namespace(model::kafka_namespace, std::move(tp.name)),
             tp.count);
       });
