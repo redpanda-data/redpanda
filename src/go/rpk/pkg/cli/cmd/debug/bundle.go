@@ -547,6 +547,28 @@ func saveConfig(ps *stepParams, conf *config.Config) step {
 			conf.Rpk.SASL.User = redacted
 			conf.Rpk.SASL.Password = redacted
 		}
+		// We want to redact any blindly decoded parameters.
+		redactOtherMap(conf.Other)
+		redactOtherMap(conf.Redpanda.Other)
+		redactServerTLSSlice(conf.Redpanda.RPCServerTLS)
+		redactServerTLSSlice(conf.Redpanda.KafkaApiTLS)
+		redactServerTLSSlice(conf.Redpanda.AdminApiTLS)
+		if conf.SchemaRegistry != nil {
+			for _, server := range conf.SchemaRegistry.SchemaRegistryAPITLS {
+				redactOtherMap(server.Other)
+			}
+		}
+		if conf.Pandaproxy != nil {
+			redactOtherMap(conf.Pandaproxy.Other)
+			redactServerTLSSlice(conf.Pandaproxy.PandaproxyAPITLS)
+		}
+		if conf.PandaproxyClient != nil {
+			redactOtherMap(conf.PandaproxyClient.Other)
+		}
+		if conf.SchemaRegistryClient != nil {
+			redactOtherMap(conf.SchemaRegistryClient.Other)
+		}
+
 		bs, err := yaml.Marshal(conf)
 		if err != nil {
 			return fmt.Errorf("couldn't encode the redpanda config as YAML: %w", err)
@@ -555,7 +577,19 @@ func saveConfig(ps *stepParams, conf *config.Config) step {
 	}
 }
 
-// Saves the contents of /proc/cpuinfo
+func redactServerTLSSlice(servers []config.ServerTLS) {
+	for _, server := range servers {
+		redactOtherMap(server.Other)
+	}
+}
+
+func redactOtherMap(other map[string]interface{}) {
+	for k := range other {
+		other[k] = "(REDACTED)"
+	}
+}
+
+// Saves the contents of '/proc/cpuinfo'.
 func saveCPUInfo(ps *stepParams) step {
 	return func() error {
 		bs, err := afero.ReadFile(ps.fs, "/proc/cpuinfo")
