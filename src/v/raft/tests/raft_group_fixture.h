@@ -321,11 +321,11 @@ struct raft_node {
     ss::sharded<rpc::connection_cache> cache;
     ss::sharded<net::server> server;
     ss::sharded<test_raft_manager> raft_manager;
+    leader_clb_t leader_callback;
     raft::recovery_memory_quota recovery_mem_quota;
     std::unique_ptr<raft::heartbeat_manager> hbeats;
     consensus_ptr consensus;
     std::unique_ptr<raft::log_eviction_stm> _nop_stm;
-    leader_clb_t leader_callback;
     ss::abort_source _as;
 };
 

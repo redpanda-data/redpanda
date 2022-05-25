@@ -67,7 +67,7 @@ static partition_manifest load_manifest_from_str(std::string_view v) {
     i.append(v.data(), v.size());
     auto s = make_iobuf_input_stream(std::move(i));
     m.update(std::move(s)).get();
-    return std::move(m);
+    return m;
 }
 
 FIXTURE_TEST(test_download_manifest, s3_imposter_fixture) { // NOLINT

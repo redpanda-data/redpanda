@@ -76,7 +76,6 @@ ss::future<> wait_for_all_replicas(
   Predicate p) {
     return tests::cooperative_spin_wait_with_timeout(
       tout, [replica_set = std::move(replica_set), p = std::move(p)]() mutable {
-          using partition_ptr = ss::lw_shared_ptr<cluster::partition>;
           return ssx::parallel_transform(
                    replica_set.cbegin(),
                    replica_set.cend(),
@@ -89,6 +88,7 @@ ss::future<> wait_for_all_replicas(
 }
 
 struct op {
+    virtual ~op() = default;
     virtual ss::future<bool> operator()(cluster::topics_frontend&) = 0;
     virtual ss::sstring message() const;
 };

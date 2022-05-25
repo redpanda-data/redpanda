@@ -60,7 +60,7 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
 
         kafka::produce_request::partition partition;
         partition.partition_index = model::partition_id(0);
-        partition.records.emplace(std::move(std::move(builder).build()));
+        partition.records.emplace(std::move(builder).build());
         res.push_back(std::move(partition));
         return res;
     }

@@ -55,7 +55,7 @@ load_manifest_from_str(std::string_view v) {
     i.append(v.data(), v.size());
     auto s = make_iobuf_input_stream(std::move(i));
     m.update(std::move(s)).get();
-    return std::move(m);
+    return m;
 }
 
 static void write_batches(
@@ -464,7 +464,7 @@ cloud_storage::partition_manifest load_manifest(std::string_view v) {
     i.append(v.data(), v.size());
     auto s = make_iobuf_input_stream(std::move(i));
     m.update(std::move(s)).get();
-    return std::move(m);
+    return m;
 }
 
 archival::remote_segment_path get_segment_path(

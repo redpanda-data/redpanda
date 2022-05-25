@@ -451,7 +451,7 @@ private:
                 ss::sstring body = parser.read_string(parser.bytes_left());
                 if (body.find(_expected_data) != ss::sstring::npos) {
                     _fin.close().get();
-                    return std::move(buffer);
+                    return buffer;
                 }
             }
             ss::sleep(1ms).get();
