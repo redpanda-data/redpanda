@@ -488,7 +488,10 @@ class MissingPartition(BaseCase):
     def generate_baseline(self):
         """Produce enough data to trigger uploads to S3/minio"""
         for topic in self.topics:
-            self._kafka_tools.produce(topic.name, 10000, 1024)
+            self._kafka_tools.produce(topic.name,
+                                      10000,
+                                      1024,
+                                      round_robin_partition=True)
 
     def _delete(self, key):
         self.logger.info(f"deleting manifest file {key}")
