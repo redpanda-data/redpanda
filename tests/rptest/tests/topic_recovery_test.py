@@ -6,24 +6,25 @@
 #
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
 
-from ducktape.mark import ok_to_fail
-from rptest.services.cluster import cluster
-from ducktape.utils.util import wait_until
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.archival.s3_client import S3Client
-from rptest.services.redpanda import RedpandaService, SISettings, RESTART_LOG_ALLOW_LIST
-from rptest.clients.rpk import RpkTool
-
-from rptest.clients.types import TopicSpec
-from rptest.clients.kafka_cli_tools import KafkaCliTools
-
-from collections import namedtuple, defaultdict
-import time
 import datetime
-import os
 import json
-import uuid
+import os
+import time
+from collections import namedtuple, defaultdict
+from typing import Optional
+
 import xxhash
+from ducktape.mark import ok_to_fail
+from ducktape.utils.util import wait_until
+
+from rptest.archival.s3_client import S3Client
+from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import RedpandaService, SISettings, RESTART_LOG_ALLOW_LIST
+from rptest.services.rpk_producer import RpkProducer
+from rptest.tests.redpanda_test import RedpandaTest
 
 default_log_segment_size = 1048576  # 1MB
 
@@ -479,16 +480,23 @@ class MissingPartition(BaseCase):
                         partition_count=2,
                         replication_factor=3), )
 
-    def __init__(self, s3_client, kafka_tools, rpk_client, s3_bucket, logger):
+    def __init__(self, s3_client, kafka_tools, rpk_client, s3_bucket, logger,
+                 rpk_producer_maker):
         self._part1_offset = 0
         self._part1_num_segments = 0
+        self._rpk_producer_maker = rpk_producer_maker
         super(MissingPartition, self).__init__(s3_client, kafka_tools,
                                                rpk_client, s3_bucket, logger)
 
     def generate_baseline(self):
         """Produce enough data to trigger uploads to S3/minio"""
         for topic in self.topics:
-            self._kafka_tools.produce(topic.name, 10000, 1024)
+            producer = self._rpk_producer_maker(topic=topic.name,
+                                                msg_count=10000,
+                                                msg_size=1024)
+            producer.start()
+            producer.wait()
+            producer.free()
 
     def _delete(self, key):
         self.logger.info(f"deleting manifest file {key}")
@@ -546,8 +554,8 @@ class MissingPartition(BaseCase):
                 min_expected_hwm = self._part1_offset - self._part1_num_segments
                 max_expected_hwm = self._part1_offset
                 assert partition.high_watermark >= min_expected_hwm \
-                    and partition.high_watermark <= max_expected_hwm, \
-                    f"Unexpected high watermark {partition.high_watermark} "\
+                       and partition.high_watermark <= max_expected_hwm, \
+                    f"Unexpected high watermark {partition.high_watermark} " \
                     f"(min expected: {min_expected_hwm}, max expected: {max_expected_hwm})"
             else:
                 assert False, "Unexpected partition id"
@@ -700,7 +708,7 @@ def is_close_size(actual_size, expected_size):
     """
     lower_bound = expected_size
     upper_bound = expected_size + default_log_segment_size + \
-        int(default_log_segment_size * 0.2)
+                  int(default_log_segment_size * 0.2)
     return actual_size in range(lower_bound, upper_bound)
 
 
@@ -957,6 +965,18 @@ class TopicRecoveryTest(RedpandaTest):
 
         self.rpk = RpkTool(self.redpanda)
 
+    def rpk_producer_maker(self,
+                           topic: str,
+                           msg_size: int,
+                           msg_count: int,
+                           acks: Optional[int] = None) -> RpkProducer:
+        return RpkProducer(self.test_context,
+                           self.redpanda,
+                           topic=topic,
+                           msg_size=msg_size,
+                           msg_count=msg_count,
+                           acks=acks)
+
     def tearDown(self):
         self.s3_client.empty_bucket(self.s3_bucket)
         super().tearDown()
@@ -1058,16 +1078,20 @@ class TopicRecoveryTest(RedpandaTest):
             topic_manifests = []
             segments = []
             lst = self.s3_client.list_objects(self.s3_bucket)
+            topic_manifest_paths = {
+                f'/{t.name}/topic_manifest.json'
+                for t in expected_topics
+            }
             for obj in lst:
                 if obj.Key.endswith("/manifest.json"):
                     manifests.append(obj)
-                elif obj.Key.endswith("/topic_manifest.json"):
+                elif any(obj.Key.endswith(p) for p in topic_manifest_paths):
                     topic_manifests.append(obj)
                 else:
                     segments.append(obj)
             if len(expected_topics) != len(topic_manifests):
                 self.logger.info(
-                    f"can't find enough topic_manifest.json objects, expected: {len(expected_topicsi)}, actual: {len(topic_manifest)}"
+                    f"can't find enough topic_manifest.json objects, expected: {len(expected_topics)}, actual: {len(topic_manifests)}"
                 )
                 return False
             if total_partitions != len(manifests):
@@ -1205,7 +1229,7 @@ class TopicRecoveryTest(RedpandaTest):
                                          self.rpk, self.s3_bucket, self.logger)
         self.do_run(test_case)
 
-    @cluster(num_nodes=3,
+    @cluster(num_nodes=4,
              log_allow_list=MISSING_DATA_ERRORS + TRANSIENT_ERRORS)
     def test_missing_partition(self):
         """Test situation when one of the partition manifests are missing.
@@ -1215,7 +1239,8 @@ class TopicRecoveryTest(RedpandaTest):
         nodes.
         """
         test_case = MissingPartition(self.s3_client, self.kafka_tools,
-                                     self.rpk, self.s3_bucket, self.logger)
+                                     self.rpk, self.s3_bucket, self.logger,
+                                     self.rpk_producer_maker)
         self.do_run(test_case)
 
     @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/4849
