@@ -365,6 +365,10 @@ func (r *StatefulSetResource) obj(
 									Name:  "HOST_PORT",
 									Value: r.getNodePort(ExternalListenerName),
 								},
+								{
+									Name:  "DATA_DIR_PATH",
+									Value: dataDirectory,
+								},
 							}, r.pandaproxyEnvVars()...),
 							SecurityContext: &corev1.SecurityContext{
 								RunAsUser:  pointer.Int64Ptr(userID),

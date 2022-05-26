@@ -42,6 +42,7 @@ const (
 	externalConnectivityAddressTypeEnvVar = "EXTERNAL_CONNECTIVITY_ADDRESS_TYPE"
 	hostPortEnvVar                        = "HOST_PORT"
 	proxyHostPortEnvVar                   = "PROXY_HOST_PORT"
+	dataDirPath                           = "DATA_DIR_PATH"
 )
 
 type brokerID int
@@ -58,6 +59,7 @@ type configuratorConfig struct {
 	redpandaRPCPort                 int
 	hostPort                        int
 	proxyHostPort                   int
+	dataDirPath                     string
 }
 
 func (c *configuratorConfig) String() string {
@@ -72,7 +74,8 @@ func (c *configuratorConfig) String() string {
 		"externalConnectivityAddressType: %s\n"+
 		"redpandaRPCPort: %d\n"+
 		"hostPort: %d\n"+
-		"proxyHostPort: %d\n",
+		"proxyHostPort: %d\n"+
+		"dataDirPath: %s\n",
 		c.hostName,
 		c.svcFQDN,
 		c.configSourceDir,
@@ -83,7 +86,8 @@ func (c *configuratorConfig) String() string {
 		c.externalConnectivityAddressType,
 		c.redpandaRPCPort,
 		c.hostPort,
-		c.proxyHostPort)
+		c.proxyHostPort,
+		c.dataDirPath)
 }
 
 var errorMissingEnvironmentVariable = errors.New("missing environment variable")
@@ -335,6 +339,10 @@ func checkEnvVars() (configuratorConfig, error) {
 		{
 			value: &hostPort,
 			name:  hostPortEnvVar,
+		},
+		{
+			value: &c.dataDirPath,
+			name:  dataDirPath,
 		},
 	}
 	for _, envVar := range envVarList {
