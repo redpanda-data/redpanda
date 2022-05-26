@@ -612,6 +612,17 @@ func setVolumes(ss *appsv1.StatefulSet, cluster *redpandav1alpha1.Cluster) {
 		}
 	}
 
+	initContainers := ss.Spec.Template.Spec.InitContainers
+	for i := range initContainers {
+		if initContainers[i].Name == configuratorContainerName {
+			volMount := corev1.VolumeMount{
+				Name:      datadirName,
+				MountPath: dataDirectory,
+			}
+			initContainers[i].VolumeMounts = append(initContainers[i].VolumeMounts, volMount)
+		}
+	}
+
 	if cluster.Spec.CloudStorage.Enabled && featuregates.ShadowIndex(cluster.Spec.Version) && cluster.Spec.CloudStorage.CacheStorage != nil {
 		pvcArchivalDir := preparePVCResource(archivalCacheIndexAnchorName, cluster.Namespace, *cluster.Spec.CloudStorage.CacheStorage, ss.Labels)
 		ss.Spec.VolumeClaimTemplates = append(ss.Spec.VolumeClaimTemplates, pvcArchivalDir)
