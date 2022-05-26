@@ -82,6 +82,39 @@ inline void validate_payload_and_header(const iobuf& io, const header& h) {
     }
 }
 
+/*
+ * the transition from adl to serde encoding in rpc requires a period of time
+ * where both encodings are supported for all message types. however, we do not
+ * want to extend this requirement to brand new messages / services, nor to rpc
+ * types used in coproc which will remain in legacy adl format for now.
+ *
+ * we use the type system to enforce these rules and allow types to be opt-out
+ * on a case-by-case basis for adl (new messages) or serde (legacy like coproc).
+ *
+ * the `rpc_adl_exempt` and `rpc_serde_exempt` type trait helpers can be used to
+ * opt-out a type T from adl or serde support. a type is marked exempt by
+ * defining the type `T::rpc_(adl|serde)_exempt`.  the typedef may be defined as
+ * any type such as std::{void_t, true_type}.
+ *
+ * Example:
+ *
+ *     struct exempt_msg {
+ *         using rpc_adl_exempt = std::true_type;
+ *         ...
+ *     };
+ *
+ * then use the `is_rpc_adl_exempt` or `is_rpc_serde_exempt` concept to test.
+ */
+template<typename T>
+concept is_rpc_adl_exempt = requires {
+    typename T::rpc_adl_exempt;
+};
+
+template<typename T>
+concept is_rpc_serde_exempt = requires {
+    typename T::rpc_serde_exempt;
+};
+
 template<typename T>
 ss::future<T> parse_type(ss::input_stream<char>& in, const header& h) {
     return read_iobuf_exactly(in, h.payload_size).then([h](iobuf io) {
