@@ -22,6 +22,7 @@ import (
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
+	resourcetypes "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -84,8 +85,8 @@ type StatefulSetResource struct {
 	serviceName            string
 	nodePortName           types.NamespacedName
 	nodePortSvc            corev1.Service
-	volumeProvider         StatefulsetTLSVolumeProvider
-	adminTLSConfigProvider AdminTLSConfigProvider
+	volumeProvider         resourcetypes.StatefulsetTLSVolumeProvider
+	adminTLSConfigProvider resourcetypes.AdminTLSConfigProvider
 	serviceAccountName     string
 	configuratorSettings   ConfiguratorSettings
 	// hash of configmap containing configuration for redpanda (node config only), it's injected to
@@ -106,8 +107,8 @@ func NewStatefulSet(
 	serviceFQDN string,
 	serviceName string,
 	nodePortName types.NamespacedName,
-	volumeProvider StatefulsetTLSVolumeProvider,
-	adminTLSConfigProvider AdminTLSConfigProvider,
+	volumeProvider resourcetypes.StatefulsetTLSVolumeProvider,
+	adminTLSConfigProvider resourcetypes.AdminTLSConfigProvider,
 	serviceAccountName string,
 	configuratorSettings ConfiguratorSettings,
 	nodeConfigMapHashGetter func(context.Context) (string, error),

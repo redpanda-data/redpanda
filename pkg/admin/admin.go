@@ -16,7 +16,7 @@ import (
 	"fmt"
 
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -35,7 +35,7 @@ func NewInternalAdminAPI(
 	k8sClient client.Reader,
 	redpandaCluster *redpandav1alpha1.Cluster,
 	fqdn string,
-	adminTLSProvider resources.AdminTLSConfigProvider,
+	adminTLSProvider types.AdminTLSConfigProvider,
 ) (AdminAPIClient, error) {
 	adminInternal := redpandaCluster.AdminAPIInternal()
 	if adminInternal == nil {

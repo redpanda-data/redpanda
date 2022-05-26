@@ -29,6 +29,7 @@ import (
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/configuration"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -92,7 +93,7 @@ var _ = BeforeSuite(func(done Done) {
 		_ client.Reader,
 		_ *redpandav1alpha1.Cluster,
 		_ string,
-		_ resources.AdminTLSConfigProvider,
+		_ types.AdminTLSConfigProvider,
 	) (adminutils.AdminAPIClient, error) {
 		return testAdminAPI, nil
 	}

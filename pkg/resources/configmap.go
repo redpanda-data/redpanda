@@ -25,6 +25,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/configuration"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
+	resourcetypes "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -216,7 +217,7 @@ func (r *ConfigMapResource) CreateConfiguration(
 ) (*configuration.GlobalConfiguration, error) {
 	cfg := configuration.For(r.pandaCluster.Spec.Version)
 	cfg.NodeConfiguration = *config.Default()
-	mountPoints := GetTLSMountPoints()
+	mountPoints := resourcetypes.GetTLSMountPoints()
 
 	c := r.pandaCluster.Spec.Configuration
 	cr := &cfg.NodeConfiguration.Redpanda
@@ -525,7 +526,7 @@ func (r *ConfigMapResource) prepareSchemaRegistryClient(
 }
 
 func (r *ConfigMapResource) preparePandaproxyTLS(
-	cfgRpk *config.Config, mountPoints *TLSMountPoints,
+	cfgRpk *config.Config, mountPoints *resourcetypes.TLSMountPoints,
 ) {
 	tlsListener := r.pandaCluster.PandaproxyAPITLS()
 	if tlsListener != nil {
@@ -550,7 +551,7 @@ func (r *ConfigMapResource) preparePandaproxyTLS(
 }
 
 func (r *ConfigMapResource) prepareSchemaRegistryTLS(
-	cfgRpk *config.Config, mountPoints *TLSMountPoints,
+	cfgRpk *config.Config, mountPoints *resourcetypes.TLSMountPoints,
 ) {
 	if r.pandaCluster.Spec.Configuration.SchemaRegistry != nil &&
 		r.pandaCluster.Spec.Configuration.SchemaRegistry.TLS != nil {

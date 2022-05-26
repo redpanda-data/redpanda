@@ -24,6 +24,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/networking"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/certmanager"
+	resourcetypes "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	appsv1 "k8s.io/api/apps/v1"
@@ -497,7 +498,7 @@ func (r *ClusterReconciler) setInitialSuperUserPassword(
 	ctx context.Context,
 	redpandaCluster *redpandav1alpha1.Cluster,
 	fqdn string,
-	adminTLSConfigProvider resources.AdminTLSConfigProvider,
+	adminTLSConfigProvider resourcetypes.AdminTLSConfigProvider,
 	objs []types.NamespacedName,
 ) error {
 	adminAPI, err := r.AdminAPIClientFactory(ctx, r, redpandaCluster, fqdn, adminTLSConfigProvider)
