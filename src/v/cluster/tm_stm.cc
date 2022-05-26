@@ -43,7 +43,8 @@ static model::record_batch serialize_tx(tm_transaction tx) {
 
 std::ostream& operator<<(std::ostream& o, const tm_transaction& tx) {
     return o << "{tm_transaction: id=" << tx.id << ", status=" << tx.status
-             << ", pid=" << tx.pid << ", etag=" << tx.etag
+             << ", pid=" << tx.pid << ", last_pid=" << tx.last_pid
+             << ", etag=" << tx.etag
              << ", size(partitions)=" << tx.partitions.size()
              << ", tx_seq=" << tx.tx_seq << "}";
 }
@@ -425,16 +426,26 @@ ss::future<> tm_stm::apply(model::record_batch b) {
     auto version = reflection::adl<int8_t>{}.from(val_reader);
 
     tm_transaction tx;
-    if (version == tm_transaction_v0::version) {
+    switch (version) {
+    case tm_transaction_v0::version: {
         auto tx0 = reflection::adl<tm_transaction_v0>{}.from(val_reader);
         tx = tx0.upcast();
-    } else {
+        break;
+    }
+    case tm_transaction_v1::version: {
+        auto tx1 = reflection::adl<tm_transaction_v1>{}.from(val_reader);
+        tx = tx1.upcast();
+        break;
+    }
+    default: {
         vassert(
           version == tm_transaction::version,
           "unknown group inflight tx record version: {} expected: {}",
           version,
           tm_transaction::version);
         tx = reflection::adl<tm_transaction>{}.from(val_reader);
+        break;
+    }
     }
 
     auto key_buf = record.release_key();

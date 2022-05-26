@@ -448,7 +448,7 @@ struct producer_identity
 
     producer_identity() noexcept = default;
 
-    producer_identity(int64_t id, int16_t epoch)
+    constexpr producer_identity(int64_t id, int16_t epoch)
       : id(id)
       , epoch(epoch) {}
 
@@ -469,6 +469,8 @@ struct producer_identity
 
     auto serde_fields() { return std::tie(id, epoch); }
 };
+
+static constexpr producer_identity unknow_pid{-1, -1};
 
 struct batch_identity {
     static int32_t increment_sequence(int32_t sequence, int32_t increment) {
