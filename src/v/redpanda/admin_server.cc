@@ -1009,7 +1009,7 @@ void admin_server::register_cluster_config_routes() {
                             logger.warn,
                             "Invalid {}: '{}' ({})",
                             i.first,
-                            yaml_value,
+                            property.format_raw(yaml_value),
                             validation_err.value().error_message());
                       } else {
                           // In case any property subclass might throw
@@ -1053,7 +1053,7 @@ void admin_server::register_cluster_config_routes() {
                         logger.warn,
                         "Invalid {}: '{}' ({})",
                         i.first,
-                        yaml_value,
+                        property.format_raw(yaml_value),
                         std::current_exception());
                   } catch (...) {
                       auto message = fmt::format(
@@ -1063,7 +1063,7 @@ void admin_server::register_cluster_config_routes() {
                         logger.warn,
                         "Invalid {}: '{}' ({})",
                         i.first,
-                        yaml_value,
+                        property.format_raw(yaml_value),
                         message);
                   }
               }
