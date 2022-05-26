@@ -24,7 +24,7 @@ class ProducerSwarm(BackgroundThreadService):
         self._stopping = threading.Event()
 
     def _worker(self, idx, node):
-        cmd = f"RUST_LOG=INFO client-swarm producers {self._redpanda.brokers()} {self._topic} {self._producers} {self._records_per_producer}"
+        cmd = f"RUST_LOG=INFO client-swarm --brokers {self._redpanda.brokers()} producers --topic {self._topic} --count {self._producers} --messages {self._records_per_producer}"
 
         try:
             for line in node.account.ssh_capture(cmd):
