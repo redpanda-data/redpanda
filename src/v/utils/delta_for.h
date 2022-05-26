@@ -666,7 +666,7 @@ private:
  * it can't be reset to read the sequence again.
  *
  * The initial_value and number of rows should match the corresponding
- * encoder wich was used to compress the data.
+ * encoder which was used to compress the data.
  */
 template<class TVal, class DeltaStep = details::delta_xor>
 class deltafor_decoder {

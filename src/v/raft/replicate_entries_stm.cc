@@ -233,7 +233,7 @@ inline bool replicate_entries_stm::should_skip_follower_request(vnode id) {
         if (it->second.last_received_append_entries_reply_timestamp < timeout) {
             vlog(
               _ctxlog.trace,
-              "Skipping sending append request to {} - didn't  receive "
+              "Skipping sending append request to {} - didn't receive "
               "follower heartbeat",
               id);
             return true;
