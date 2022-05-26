@@ -58,7 +58,7 @@ public:
     class failure_probes;
 
     {%- for method in methods %}
-    inline static constexpr uint32_t {{method.name}}_method_id = {{method.id}};
+    static constexpr uint32_t {{method.name}}_method_id = {{method.id}};
     {%- endfor %}
 
     {{service_name}}_service(ss::scheduling_group sc, ss::smp_service_group ssg)
