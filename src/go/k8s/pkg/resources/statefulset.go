@@ -503,7 +503,7 @@ func (r *StatefulSetResource) obj(
 		})
 	}
 
-	setCloudStorage(ss, r.pandaCluster)
+	setVolumes(ss, r.pandaCluster)
 
 	rpkStatusContainer := r.rpkStatusContainer(tlsVolumeMounts)
 	if rpkStatusContainer != nil {
@@ -586,11 +586,9 @@ func (r *StatefulSetResource) composeCURLMaintenanceCommand(
 	return cmd
 }
 
-// setCloudStorage manipulates v1.StatefulSet object in order to add cloud storage specific
-// properties to Redpanda pod.
-func setCloudStorage(
-	ss *appsv1.StatefulSet, cluster *redpandav1alpha1.Cluster,
-) {
+// setVolumes manipulates v1.StatefulSet object in order to add cloud storage and
+// Redpanda data volume
+func setVolumes(ss *appsv1.StatefulSet, cluster *redpandav1alpha1.Cluster) {
 	pvcDataDir := preparePVCResource(datadirName, cluster.Namespace, cluster.Spec.Storage, ss.Labels)
 	ss.Spec.VolumeClaimTemplates = append(ss.Spec.VolumeClaimTemplates, pvcDataDir)
 	vol := corev1.Volume{
