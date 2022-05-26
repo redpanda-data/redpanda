@@ -41,4 +41,4 @@ class ProducerSwarm(BackgroundThreadService):
         self.stop()
 
     def stop_node(self, node):
-        node.account.kill_process("conn_test", clean_shutdown=False)
+        node.account.kill_process("client-swarm", clean_shutdown=False)
