@@ -11,6 +11,7 @@
 
 #include "cluster/logger.h"
 #include "cluster/types.h"
+#include "model/record.h"
 #include "raft/errc.h"
 #include "raft/types.h"
 #include "storage/record_batch_builder.h"
@@ -298,6 +299,7 @@ ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::reset_tx_ready(
     }
     tm_transaction tx = tx_opt.value();
     tx.status = tm_transaction::tx_status::ready;
+    tx.last_pid = model::unknown_pid;
     tx.partitions.clear();
     tx.groups.clear();
     tx.etag = term;
@@ -397,6 +399,7 @@ ss::future<tm_stm::op_status> tm_stm::do_register_new_producer(
     auto tx = tm_transaction{
       .id = tx_id,
       .pid = pid,
+      .last_pid = model::unknown_pid,
       .tx_seq = model::tx_seq(0),
       .etag = expected_term,
       .status = tm_transaction::tx_status::ready,
@@ -706,6 +709,7 @@ ss::future<> tm_stm::expire_tx(kafka::transactional_id tx_id) {
     tm_transaction tx = tx_opt.value();
     tx.etag = _insync_term;
     tx.status = tm_transaction::tx_status::tombstone;
+    tx.last_pid = model::unknown_pid;
     tx.partitions.clear();
     tx.groups.clear();
     tx.last_update_ts = clock_type::now();
