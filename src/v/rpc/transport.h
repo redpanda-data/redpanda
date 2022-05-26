@@ -102,6 +102,14 @@ private:
     requests_queue_t _requests_queue;
     sequence_t _seq;
     sequence_t _last_seq;
+
+    /*
+     * version level used when dispatching requests. this value may change
+     * during the lifetime of the transport. for example the version may be
+     * upgraded if it is discovered that a server supports a newer version.
+     */
+    transport_version _version{transport_version::v0};
+
     friend std::ostream& operator<<(std::ostream&, const transport&);
 };
 
@@ -165,7 +173,7 @@ inline ss::future<result<client_context<Output>>>
 transport::send_typed(Input r, uint32_t method_id, rpc::client_opts opts) {
     using ret_t = result<client_context<Output>>;
     return send_typed_versioned<Input, Output>(
-             std::move(r), method_id, std::move(opts), transport_version::v0)
+             std::move(r), method_id, std::move(opts), _version)
       .then([](result<result_context<Output>> res) {
           if (!res) {
               return ss::make_ready_future<ret_t>(res.error());
