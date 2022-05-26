@@ -19,6 +19,7 @@ struct produce_handler {
     static constexpr api_version min_supported = api_version(0);
     static constexpr api_version max_supported = api_version(7);
     static process_result_stages handle(request_context, ss::smp_service_group);
+    static constexpr auto despam_interval = std::chrono::minutes(5);
 };
 
 } // namespace kafka

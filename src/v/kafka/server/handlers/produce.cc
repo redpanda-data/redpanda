@@ -64,6 +64,12 @@ produce_response produce_request::make_error_response(error_code error) const {
 
     return response;
 }
+produce_response produce_request::make_full_disk_response() const {
+    auto resp = make_error_response(error_code::broker_not_available);
+    // TODO set a field in response to signal to quota manager to throttle the
+    // client
+    return resp;
+}
 
 struct produce_ctx {
     request_context rctx;
@@ -461,6 +467,20 @@ process_result_stages
 produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
     produce_request request;
     request.decode(ctx.reader(), ctx.header().version);
+
+    if (ctx.metadata_cache().should_reject_writes()) {
+        thread_local static ss::logger::rate_limit rate(despam_interval);
+        klog.log(
+          ss::log_level::warn,
+          rate,
+          "[{}:{}] rejecting produce request: no disk space; bytes free less "
+          "than configurable threshold",
+          ctx.connection()->client_host(),
+          ctx.connection()->client_port());
+
+        return process_result_stages::single_stage(
+          ctx.respond(request.make_full_disk_response()));
+    }
 
     // determine if the request has transactional / idemponent batches
     for (auto& topic : request.data.topics) {
