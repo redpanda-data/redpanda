@@ -20,7 +20,8 @@ class ProducerSwarm(BackgroundThreadService):
                  topic: str,
                  producers: int,
                  records_per_producer: int,
-                 log_level="INFO"):
+                 log_level="INFO",
+                 properties={}):
         super(ProducerSwarm, self).__init__(context, num_nodes=1)
         self._redpanda = redpanda
         self._topic = topic
@@ -28,10 +29,12 @@ class ProducerSwarm(BackgroundThreadService):
         self._records_per_producer = records_per_producer
         self._stopping = threading.Event()
         self._log_level = log_level
+        self._properties = properties
 
     def _worker(self, idx, node):
         cmd = f"RUST_LOG={self._log_level} client-swarm --brokers {self._redpanda.brokers()} producers --topic {self._topic} --count {self._producers} --messages {self._records_per_producer}"
-
+        for k, v in self._properties.items():
+            cmd += f" --properties {k}={v}"
         try:
             for line in node.account.ssh_capture(cmd):
                 self.logger.debug(line.rstrip())
