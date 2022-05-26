@@ -106,7 +106,7 @@ ss::future<consensus_ptr> partition_manager::manage(
     }
     storage::log log = co_await _storage.log_mgr().manage(std::move(ntp_cfg));
     vlog(
-      clusterlog.info,
+      clusterlog.debug,
       "Log created manage completed, ntp: {}, rev: {}, {} "
       "segments, {} bytes",
       log.config().ntp(),

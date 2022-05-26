@@ -480,6 +480,8 @@ ss::future<topic_result> topics_frontend::replicate_create_topic(
 ss::future<std::vector<topic_result>> topics_frontend::delete_topics(
   std::vector<model::topic_namespace> topics,
   model::timeout_clock::time_point timeout) {
+    vlog(clusterlog.info, "Delete topics {}", topics);
+
     std::vector<ss::future<topic_result>> futures;
     futures.reserve(topics.size());
 

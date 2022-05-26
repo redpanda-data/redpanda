@@ -505,7 +505,7 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
                 stop = true;
                 continue;
             }
-            vlog(clusterlog.info, "partition operation {} finished", *it);
+            vlog(clusterlog.debug, "partition operation {} finished", *it);
         } catch (ss::gate_closed_exception const&) {
             vlog(
               clusterlog.debug,
