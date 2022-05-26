@@ -42,6 +42,8 @@ v_cc_library(
     v::archival
   )
 
+add_subdirectory(tests)
+
 add_executable(redpanda
     main.cc)
 target_link_libraries(redpanda PUBLIC v::application v::raft v::kafka)
