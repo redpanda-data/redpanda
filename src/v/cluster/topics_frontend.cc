@@ -643,7 +643,7 @@ ss::future<std::error_code> topics_frontend::finish_moving_partition_replicas(
 ss::future<result<model::offset>> topics_frontend::stm_linearizable_barrier(
   model::timeout_clock::time_point timeout) {
     return _stm.invoke_on(controller_stm_shard, [timeout](controller_stm& stm) {
-        return stm.insert_linerizable_barrier(timeout);
+        return stm.insert_linearizable_barrier(timeout);
     });
 }
 

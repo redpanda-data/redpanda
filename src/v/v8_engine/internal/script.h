@@ -104,7 +104,7 @@ private:
     /// because js function can have inf loop or smth like that.
     /// We need to controle execution time for js function
 
-    /// \param buffer with data, wich js code can read and edit.
+    /// \param buffer with data, which js code can read and edit.
     void run_internal(ss::temporary_buffer<char> data);
 
     // Throw c++ exception from v8::TryCatch
