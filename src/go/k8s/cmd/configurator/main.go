@@ -14,10 +14,13 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/go-multierror"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/networking"
@@ -133,7 +136,10 @@ func main() {
 		}
 	}
 
-	cfg.Redpanda.ID = int(hostIndex)
+	err = calculateRedpandaID(cfg, c, hostIndex)
+	if err != nil {
+		log.Fatalf("%s", fmt.Errorf("unable to calculate Redpanda ID: %w", err))
+	}
 
 	// First Redpanda node need to have cleared seed servers in order
 	// to form raft group 0
@@ -151,6 +157,62 @@ func main() {
 	}
 
 	log.Printf("Configuration saved to: %s", c.configDestination)
+}
+
+func calculateRedpandaID(
+	cfg *config.Config, c configuratorConfig, initialID brokerID,
+) error {
+	redpandaIDFile := filepath.Join(c.dataDirPath, ".redpanda_id")
+
+	_, err := os.Stat(redpandaIDFile)
+	if errors.Is(err, os.ErrNotExist) {
+		empty, err := IsRedpandaDataFolderEmpty(c.dataDirPath)
+		if err != nil {
+			return fmt.Errorf("checking Redpanda data folder content (%s): %w", c.dataDirPath, err)
+		}
+
+		if !empty {
+			err = os.WriteFile(redpandaIDFile, []byte(strconv.Itoa(int(initialID))), 0o666)
+			if err != nil {
+				return fmt.Errorf("storing redpanda ID in data folder (%s): %w", c.dataDirPath, err)
+			}
+			cfg.Redpanda.ID = int(initialID)
+			return nil
+		}
+
+		redpandaID := int(rand.NewSource(time.Now().Unix()).Int63())
+
+		err = os.WriteFile(redpandaIDFile, []byte(strconv.Itoa(redpandaID)), 0o666)
+		if err != nil {
+			return fmt.Errorf("storing redpanda ID in data folder (%s): %w", c.dataDirPath, err)
+		}
+		cfg.Redpanda.ID = redpandaID
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("stat redpanda ID file: %w", err)
+	}
+
+	redpandaID, err := os.ReadFile(redpandaIDFile)
+	if err != nil {
+		return fmt.Errorf("reading redpanda id file: %w", err)
+	}
+
+	rID, err := strconv.Atoi(string(redpandaID))
+	if err != nil {
+		return fmt.Errorf("converting content of redpanda id file to int: %w", err)
+	}
+	cfg.Redpanda.ID = rID
+
+	return nil
+}
+
+func IsRedpandaDataFolderEmpty(dataDirPath string) (bool, error) {
+	de, err := os.ReadDir(dataDirPath)
+	if err != nil {
+		return false, fmt.Errorf("reading volume content: %w", err)
+	}
+	return len(de) == 0, nil
 }
 
 var errInternalPortMissing = errors.New("port configration is missing internal port")
@@ -393,8 +455,7 @@ func checkEnvVars() (configuratorConfig, error) {
 }
 
 // hostIndex takes advantage of pod naming convention in Kubernetes StatfulSet
-// the last number is the index of replica. This index is then propagated
-// to redpanda.node_id.
+// the last number is the index of replica.
 func hostIndex(hostName string) (brokerID, error) {
 	s := strings.Split(hostName, "-")
 	last := len(s) - 1
