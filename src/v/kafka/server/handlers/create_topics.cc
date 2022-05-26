@@ -58,7 +58,11 @@ using validators = make_validator_types<
   partition_count_must_be_positive,
   replication_factor_must_be_positive,
   replication_factor_must_be_odd,
-  replicas_diversity>;
+  replicas_diversity,
+  compression_type_validator,
+  compaction_strategy_validator,
+  timestamp_type_validator,
+  cleanup_policy_validator>;
 
 template<>
 ss::future<response_ptr> create_topics_handler::handle(
