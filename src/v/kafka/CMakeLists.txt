@@ -54,6 +54,7 @@ v_cc_library(
     server/connection_context.cc
     server/protocol.cc
     server/protocol_utils.cc
+    server/flex_versions.cc
     server/logger.cc
     server/quota_manager.cc
     server/fetch_session_cache.cc
