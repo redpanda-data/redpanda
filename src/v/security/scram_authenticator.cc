@@ -42,8 +42,7 @@ scram_authenticator<T>::handle_client_first(bytes_view auth_bytes) {
     if (_credential->iterations() < scram::min_iterations) {
         vlog(
           seclog.info,
-          "Requested iterations {} less than minimum {}",
-          _credential->iterations(),
+          "Requested iterations less than minimum {}",
           scram::min_iterations);
         return errc::invalid_credentials;
     }

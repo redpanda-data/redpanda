@@ -96,6 +96,7 @@ struct produce_request_record_data {
 
     friend std::ostream&
     operator<<(std::ostream& os, const produce_request_record_data& data) {
+        // NOTE: this stream is intentially devoid of user data.
         fmt::print(
           os,
           "batch {} v2_format {} valid_crc {}",
