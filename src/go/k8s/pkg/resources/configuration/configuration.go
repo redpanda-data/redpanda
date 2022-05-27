@@ -135,6 +135,18 @@ func (c *GlobalConfiguration) GetNodeConfigurationHash() (string, error) {
 	return fmt.Sprintf("%x", md5Hash), nil
 }
 
+// GetAllConfigurationHash computes a hash of the whole serialized config. This
+// is default behavior prior to centralized configuration feature was developed
+func (c *GlobalConfiguration) GetAllConfigurationHash() (string, error) {
+	clone := *c
+	serialized, err := clone.Serialize()
+	if err != nil {
+		return "", err
+	}
+	md5Hash := md5.Sum(serialized.RedpandaFile) // nolint:gosec // this is not encrypting secure info
+	return fmt.Sprintf("%x", md5Hash), nil
+}
+
 // GetAdditionalRedpandaProperty retrieves a configuration option
 func (c *GlobalConfiguration) GetAdditionalRedpandaProperty(
 	prop string,
