@@ -136,6 +136,8 @@ func (r *Cluster) ValidateCreate() error {
 
 	var allErrs field.ErrorList
 
+	allErrs = append(allErrs, r.validateScaling()...)
+
 	allErrs = append(allErrs, r.validateKafkaListeners()...)
 
 	allErrs = append(allErrs, r.validateAdminListeners()...)
@@ -173,12 +175,8 @@ func (r *Cluster) ValidateUpdate(old runtime.Object) error {
 	oldCluster := old.(*Cluster)
 	var allErrs field.ErrorList
 
-	if r.Spec.Replicas != nil && oldCluster.Spec.Replicas != nil && *r.Spec.Replicas < *oldCluster.Spec.Replicas {
-		allErrs = append(allErrs,
-			field.Invalid(field.NewPath("spec").Child("replicas"),
-				r.Spec.Replicas,
-				"scaling down is not supported"))
-	}
+	allErrs = append(allErrs, r.validateScaling()...)
+
 	allErrs = append(allErrs, r.validateKafkaListeners()...)
 
 	allErrs = append(allErrs, r.validateAdminListeners()...)
@@ -210,6 +208,23 @@ func (r *Cluster) ValidateUpdate(old runtime.Object) error {
 	return apierrors.NewInvalid(
 		r.GroupVersionKind().GroupKind(),
 		r.Name, allErrs)
+}
+
+func (r *Cluster) validateScaling() field.ErrorList {
+	var allErrs field.ErrorList
+	if r.Spec.Replicas == nil {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("replicas"),
+				r.Spec.Replicas,
+				"replicas must be specified explicitly"))
+	} else if *r.Spec.Replicas <= 0 {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("replicas"),
+				r.Spec.Replicas,
+				"downscaling is not allowed to less than 1 instance"))
+	}
+
+	return allErrs
 }
 
 func (r *Cluster) validateAdminListeners() field.ErrorList {
