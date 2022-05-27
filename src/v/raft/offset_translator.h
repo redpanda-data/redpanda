@@ -128,6 +128,15 @@ private:
     model::offset _highest_known_offset;
 
     size_t _bytes_processed = 0;
+
+    // Units issued by the storage resource manager to track how many bytes
+    // of data is currently pending checkpoint.
+    ss::semaphore_units<> _bytes_processed_units;
+
+    // If true, the storage resource manager has asked us to checkpoint at the
+    // next opportunity.
+    bool _checkpoint_hint{false};
+
     size_t _map_version = 0;
 
     mutex _checkpoint_lock;
