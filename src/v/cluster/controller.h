@@ -136,7 +136,6 @@ private:
     ss::sharded<topics_frontend> _tp_frontend;       // instance per core
     ss::sharded<controller_backend> _backend;        // instance per core
     ss::sharded<controller_stm> _stm;                // single instance
-    ss::sharded<controller_service> _service;        // instance per core
     ss::sharded<controller_api> _api;                // instance per core
     ss::sharded<members_frontend> _members_frontend; // instance per core
     ss::sharded<members_backend> _members_backend;   // single instance
