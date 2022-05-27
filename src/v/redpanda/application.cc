@@ -175,11 +175,14 @@ int application::run(int ac, char** av) {
       po::value<std::string>(),
       ".yaml file config for redpanda");
 
+    // Validate command line args using options registered by the app and
+    // seastar
     if (!cli_parser{
           ac,
           av,
-          app.get_options_description(),
-          app.get_conf_file_options_description()}
+          cli_parser::app_opts{app.get_options_description()},
+          cli_parser::ss_opts{app.get_conf_file_options_description()},
+          _log}
            .validate()) {
         return 1;
     }

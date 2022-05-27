@@ -14,11 +14,14 @@
 #include "redpanda/cli_parser.h"
 
 #include <seastar/core/smp.hh>
+#include <seastar/util/log-cli.hh>
 
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/program_options/options_description.hpp>
 #include <boost/test/unit_test.hpp>
+
+static ss::logger test_log{"test"};
 
 namespace po = boost::program_options;
 
@@ -45,7 +48,12 @@ BOOST_AUTO_TEST_CASE(test_positional_args_rejected) {
     po::options_description unused;
     argv a{"redpanda foo bar"};
     auto [ac, av] = a.args();
-    cli_parser parser{ac, av, unused, unused};
+    cli_parser parser{
+      ac,
+      av,
+      cli_parser::app_opts{unused},
+      cli_parser::ss_opts{unused},
+      test_log};
     BOOST_REQUIRE(!parser.validate());
 }
 
@@ -57,7 +65,9 @@ BOOST_AUTO_TEST_CASE(test_help_flag) {
 
     argv a{"redpanda --help"};
     auto [ac, av] = a.args();
-    cli_parser parser{ac, av, help, ss};
+
+    cli_parser parser{
+      ac, av, cli_parser::app_opts{help}, cli_parser::ss_opts{ss}, test_log};
     BOOST_REQUIRE(parser.validate());
 }
 
@@ -69,7 +79,8 @@ BOOST_AUTO_TEST_CASE(test_help_mixed_with_bad_pos_arg) {
 
     argv a{"redpanda --help bad"};
     auto [ac, av] = a.args();
-    cli_parser parser{ac, av, help, ss};
+    cli_parser parser{
+      ac, av, cli_parser::app_opts{help}, cli_parser::ss_opts{ss}, test_log};
     BOOST_REQUIRE(!parser.validate());
 }
 
@@ -82,14 +93,16 @@ BOOST_AUTO_TEST_CASE(test_flag_with_arguments) {
     {
         argv a{"redpanda --redpanda-cfg f.yaml"};
         auto [ac, av] = a.args();
-        cli_parser parser{ac, av, cfg, ss};
+        cli_parser parser{
+          ac, av, cli_parser::app_opts{cfg}, cli_parser::ss_opts{ss}, test_log};
         BOOST_REQUIRE(parser.validate());
     }
 
     {
         argv a{"redpanda --redpanda-cfg=f.yaml"};
         auto [ac, av] = a.args();
-        cli_parser parser{ac, av, cfg, ss};
+        cli_parser parser{
+          ac, av, cli_parser::app_opts{cfg}, cli_parser::ss_opts{ss}, test_log};
         BOOST_REQUIRE(parser.validate());
     }
 }
@@ -102,7 +115,8 @@ BOOST_AUTO_TEST_CASE(test_flags_with_arguments_and_bad_pos_arg) {
 
     argv a{"redpanda --redpanda-cfg f.yaml testing"};
     auto [ac, av] = a.args();
-    cli_parser parser{ac, av, cfg, ss};
+    cli_parser parser{
+      ac, av, cli_parser::app_opts{cfg}, cli_parser::ss_opts{ss}, test_log};
     BOOST_REQUIRE(!parser.validate());
 }
 
@@ -115,10 +129,22 @@ BOOST_AUTO_TEST_CASE(test_redpanda_and_ss_opts) {
     // add seastar smp flags for testing, these are added to our application
     // along with many other seastar flags
     ss.add(seastar::smp::get_options_description());
+    ss.add(seastar::log_cli::get_options_description());
 
-    argv a{"redpanda --redpanda-cfg f.yaml --smp 2 --memory 4G --mbind 1 "
-           "--max-io-requests=10"};
-    auto [ac, av] = a.args();
-    cli_parser parser{ac, av, cfg, ss};
-    BOOST_REQUIRE(parser.validate());
+    {
+        argv a{"redpanda --redpanda-cfg f.yaml --smp 2 --memory 4G --mbind 1 "
+               "--max-io-requests=10"};
+        auto [ac, av] = a.args();
+        cli_parser parser{
+          ac, av, cli_parser::app_opts{cfg}, cli_parser::ss_opts{ss}, test_log};
+        BOOST_REQUIRE(parser.validate());
+    }
+
+    {
+        argv a{"redpanda --help-loggers"};
+        auto [ac, av] = a.args();
+        cli_parser parser{
+          ac, av, cli_parser::app_opts{cfg}, cli_parser::ss_opts{ss}, test_log};
+        BOOST_REQUIRE(parser.validate());
+    }
 }

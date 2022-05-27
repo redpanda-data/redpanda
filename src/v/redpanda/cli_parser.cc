@@ -11,34 +11,32 @@
 
 #include "cli_parser.h"
 
+#include "vlog.h"
+
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options/parsers.hpp>
 #include <boost/program_options/variables_map.hpp>
 
 #include <iostream>
+#include <utility>
 
 namespace po = boost::program_options;
 
 cli_parser::cli_parser(
-  int ac,
-  char** av,
-  const po::options_description& opts_desc,
-  const po::options_description& conf_file_opts_desc)
+  int ac, char** av, app_opts opts_desc, ss_opts seastar_opts, ss::logger& log)
   : _ac{ac}
   , _av{av}
-  , _opts_desc{opts_desc}
-  , _conf_opts_desc{conf_file_opts_desc} {}
+  , _opts_desc{std::move(opts_desc)}
+  , _seastar_opts_desc{std::move(seastar_opts)}
+  , _log{log} {}
 
 bool cli_parser::validate() {
     po::options_description desc;
-    // Copy the cli options added by redpanda, plus the seastar options added in
-    // app-template constructor
+    // Copy the cli options added by redpanda, plus
     desc.add(_opts_desc);
-    desc.add(_conf_opts_desc);
 
-    // help-loggers is not added in app-template constructor but is handled
-    // specially in the app_template::run_deprecated method by seastar
-    desc.add_options()("help-loggers", "");
+    // Copy the seastar options added in app-template constructor
+    desc.add(_seastar_opts_desc);
 
     try {
         po::variables_map vm;
@@ -46,7 +44,7 @@ bool cli_parser::validate() {
           po::command_line_parser{_ac, _av}.options(desc).positional({}).run(),
           vm);
     } catch (const std::exception& err) {
-        std::cerr << "Error: " << err.what() << "\n";
+        vlog(_log.error, "Argument parse error: {}", err.what());
         return false;
     }
 

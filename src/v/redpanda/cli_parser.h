@@ -11,22 +11,38 @@
 
 #pragma once
 
-namespace boost::program_options {
-class options_description;
-}
+#include "seastarx.h"
+#include "utils/named_type.h"
 
+#include <seastar/util/log.hh>
+
+#include <boost/program_options/options_description.hpp>
+
+/// Parses command line options passed to the redpanda binary. Validates the
+/// options against a set of registered values. The values should include both
+/// those explicitly registered against the redpanda application as well as
+/// those that seastar adds during its startup process.
+///
+/// The parser in its current state rejects any positional arguments as these
+/// are not supported with redpanda yet.
 struct cli_parser {
+    using opts_desc = boost::program_options::options_description;
+    using app_opts = named_type<opts_desc, struct app_opts_tag>;
+    using ss_opts = named_type<opts_desc, struct ss_opts_tag>;
+
     cli_parser(
       int ac,
       char** av,
-      const boost::program_options::options_description& opts_desc,
-      const boost::program_options::options_description& conf_file_opts_desc);
+      app_opts opts_desc,
+      ss_opts seastar_opts,
+      ss::logger& log);
 
     bool validate();
 
 private:
     int _ac;
     char** _av;
-    const boost::program_options::options_description& _opts_desc;
-    const boost::program_options::options_description& _conf_opts_desc;
+    app_opts _opts_desc;
+    ss_opts _seastar_opts_desc;
+    ss::logger& _log;
 };
