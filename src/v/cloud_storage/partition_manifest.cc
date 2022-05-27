@@ -26,6 +26,8 @@
 #include <fmt/ostream.h>
 
 #include <charconv>
+#include <memory>
+#include <optional>
 
 namespace cloud_storage {
 std::ostream&
@@ -304,6 +306,377 @@ partition_manifest::difference(const partition_manifest& remote_set) const {
       result.get_insert_iterator());
     return result;
 }
+
+/**
+     ┌──────────────────────┐
+     │ expect_manifest_start│
+     └──────────┬───────────┘
+                │                             ┌───────────────┐
+                │            Key("segments")  │expect_segments│
+   StartObject()│        ┌───────────────────►│    start      │
+                │        │                    └──────┬────────┘
+                │        │                           │StartObject()
+                ▼        │                           ▼
+        ┌────────────────┴──┐                  ┌──────────────┐
+┌───────┤expect_manifest_key│◄─────────────────┤expect_segment│◄───┐
+│       └──┬────────────────┘   EndObject()    │   path       │    │
+│          │          ▲                        └────┬─────────┘    │
+│     Key()│          │String()                     │              │
+│          │          │Uint()                  Key()│              │
+│          │          │Null()                       ▼              │EndObject()
+│          ▼          │                       ┌──────────────┐     │
+│      ┌──────────────┴──────┐                │expect_segment│     │
+│      │expect_manifest_value│                │ meta_start   │     │
+│      └─────────────────────┘                └─────┬────────┘     │
+│                                                   │              │
+│                                      StartObject()│              │
+│EndObject()                                        ▼              │
+│                                             ┌───────────────┐    │
+│                                             │ expect_segment├────┘
+│                                             │  meta_key     │
+│            ┌────────┐                       └───┬───────────┘
+│            │terminal│                           │      ▲String()
+└───────────►│  state │                           │      │Uint()
+             └────────┘                      Key()│      │Bool()
+                                                  ▼      │Null()
+                                               ┌─────────┴─────┐
+                                               │ expect_segment│
+                                               │  meta_value   │
+                                               └───────────────┘
+**/
+
+struct partition_manifest_handler
+  : public rapidjson::
+      BaseReaderHandler<rapidjson::UTF8<>, partition_manifest_handler> {
+    using key_string = ss::basic_sstring<char, uint32_t, 31>;
+    bool StartObject() {
+        switch (_state) {
+        case state::expect_manifest_start:
+            _state = state::expect_manifest_key;
+            return true;
+        case state::expect_segments_start:
+            _state = state::expect_segment_path;
+            return true;
+        case state::expect_segment_meta_start:
+            _state = state::expect_segment_meta_key;
+            return true;
+        case state::expect_manifest_key:
+        case state::expect_manifest_value:
+        case state::expect_segment_path:
+        case state::expect_segment_meta_key:
+        case state::expect_segment_meta_value:
+        case state::terminal_state:
+            return false;
+        }
+    }
+
+    bool Key(const char* str, rapidjson::SizeType length, bool /*copy*/) {
+        switch (_state) {
+        case state::expect_manifest_key:
+            _manifest_key = key_string(str, length);
+            if (_manifest_key == "segments") {
+                _state = state::expect_segments_start;
+            } else {
+                _state = state::expect_manifest_value;
+            }
+            return true;
+        case state::expect_segment_path:
+            _segment_name = segment_name{str};
+            _parsed_segment_key = parse_segment_name(_segment_name);
+            if (!_parsed_segment_key) {
+                throw std::runtime_error(fmt_with_ctx(
+                  fmt::format,
+                  "can't parse segment name \"{}\"",
+                  _segment_name));
+            }
+            _segment_key = {
+              .base_offset = _parsed_segment_key->base_offset,
+              .term = _parsed_segment_key->term};
+            _state = state::expect_segment_meta_start;
+            return true;
+        case state::expect_segment_meta_key:
+            _segment_meta_key = key_string(str, length);
+            _state = state::expect_segment_meta_value;
+            return true;
+        case state::expect_manifest_start:
+        case state::expect_manifest_value:
+        case state::expect_segments_start:
+        case state::expect_segment_meta_start:
+        case state::expect_segment_meta_value:
+        case state::terminal_state:
+            return false;
+        }
+    }
+
+    bool String(const char* str, rapidjson::SizeType length, bool /*copy*/) {
+        std::string_view sv(str, length);
+        switch (_state) {
+        case state::expect_manifest_value:
+            if ("namespace" == _manifest_key) {
+                _namespace = model::ns(ss::sstring(sv));
+            } else if ("topic" == _manifest_key) {
+                _topic = model::topic(ss::sstring(sv));
+            } else {
+                return false;
+            }
+            _state = state::expect_manifest_key;
+            return true;
+        case state::expect_manifest_start:
+        case state::expect_manifest_key:
+        case state::expect_segments_start:
+        case state::expect_segment_path:
+        case state::expect_segment_meta_start:
+        case state::expect_segment_meta_key:
+        case state::expect_segment_meta_value:
+        case state::terminal_state:
+            return false;
+        }
+    }
+
+    bool Uint(unsigned u) { return Uint64(u); }
+
+    bool Uint64(uint64_t u) {
+        switch (_state) {
+        case state::expect_manifest_value:
+            if ("version" == _manifest_key) {
+                _version = u;
+            } else if ("partition" == _manifest_key) {
+                _partition_id = model::partition_id(u);
+            } else if ("revision" == _manifest_key) {
+                _revision_id = model::initial_revision_id(u);
+            } else if ("last_offset" == _manifest_key) {
+                _last_offset = model::offset(u);
+            } else {
+                return false;
+            }
+            _state = state::expect_manifest_key;
+            return true;
+        case state::expect_segment_meta_value:
+            if ("size_bytes" == _segment_meta_key) {
+                _size_bytes = static_cast<size_t>(u);
+            } else if ("base_offset" == _segment_meta_key) {
+                _base_offset = model::offset(u);
+            } else if ("committed_offset" == _segment_meta_key) {
+                _committed_offset = model::offset(u);
+            } else if ("base_timestamp" == _segment_meta_key) {
+                _base_timestamp = model::timestamp(u);
+            } else if ("max_timestamp" == _segment_meta_key) {
+                _max_timestamp = model::timestamp(u);
+            } else if ("delta_offset" == _segment_meta_key) {
+                _delta_offset = model::offset(u);
+            } else if ("ntp_revision" == _segment_meta_key) {
+                _ntp_revision = model::initial_revision_id(u);
+            } else if ("archiver_term" == _segment_meta_key) {
+                _archiver_term = model::term_id(u);
+            }
+            _state = state::expect_segment_meta_key;
+            return true;
+        case state::expect_manifest_start:
+        case state::expect_manifest_key:
+        case state::expect_segments_start:
+        case state::expect_segment_path:
+        case state::expect_segment_meta_start:
+        case state::expect_segment_meta_key:
+        case state::terminal_state:
+            return false;
+        }
+    }
+
+    bool EndObject(rapidjson::SizeType /*size*/) {
+        switch (_state) {
+        case state::expect_manifest_key:
+            check_manifest_fields_are_present();
+            _state = state::terminal_state;
+            return true;
+        case state::expect_segment_path:
+            _state = state::expect_manifest_key;
+            return true;
+        case state::expect_segment_meta_key:
+            check_that_required_meta_fields_are_present();
+            _meta = {
+              .is_compacted = _is_compacted.value(),
+              .size_bytes = _size_bytes.value(),
+              .base_offset = _base_offset.value(),
+              .committed_offset = _committed_offset.value(),
+              .base_timestamp = _base_timestamp.value_or(
+                model::timestamp::missing()),
+              .max_timestamp = _max_timestamp.value_or(
+                model::timestamp::missing()),
+              .delta_offset = _delta_offset.value_or(model::offset::min()),
+              .ntp_revision = _ntp_revision.value_or(
+                _revision_id.value_or(model::initial_revision_id())),
+              .archiver_term = _archiver_term.value_or(model::term_id{})};
+            if (!_segments) {
+                _segments = std::make_unique<segment_map>();
+            }
+            _segments->insert(std::make_pair(_segment_key, _meta));
+            clear_meta_fields();
+            _state = state::expect_segment_path;
+            return true;
+        case state::expect_manifest_start:
+        case state::expect_manifest_value:
+        case state::expect_segments_start:
+        case state::expect_segment_meta_start:
+        case state::expect_segment_meta_value:
+        case state::terminal_state:
+            return false;
+        }
+    }
+
+    bool Bool(bool b) {
+        switch (_state) {
+        case state::expect_segment_meta_value:
+            if ("is_compacted" == _segment_meta_key) {
+                _is_compacted = b;
+                _state = state::expect_segment_meta_key;
+                return true;
+            }
+            return false;
+        case state::expect_manifest_start:
+        case state::expect_manifest_key:
+        case state::expect_manifest_value:
+        case state::expect_segments_start:
+        case state::expect_segment_path:
+        case state::expect_segment_meta_start:
+        case state::expect_segment_meta_key:
+        case state::terminal_state:
+            return false;
+        }
+    }
+
+    bool Null() {
+        switch (_state) {
+        case state::expect_manifest_value:
+            _state = state::expect_manifest_key;
+            return true;
+        case state::expect_segment_meta_value:
+            _state = state::expect_segment_meta_key;
+            return true;
+        case state::expect_manifest_start:
+        case state::expect_manifest_key:
+        case state::expect_segments_start:
+        case state::expect_segment_path:
+        case state::expect_segment_meta_start:
+        case state::expect_segment_meta_key:
+        case state::terminal_state:
+            return false;
+        }
+    }
+
+    bool Default() { return false; }
+
+    enum class state {
+        expect_manifest_start,
+        expect_manifest_key,
+        expect_manifest_value,
+        expect_segments_start,
+        expect_segment_path,
+        expect_segment_meta_start,
+        expect_segment_meta_key,
+        expect_segment_meta_value,
+        terminal_state,
+    } _state{state::expect_manifest_start};
+
+    using segment_map = partition_manifest::segment_map;
+
+    key_string _manifest_key;
+    key_string _segment_meta_key;
+    segment_name _segment_name;
+    std::optional<segment_name_components> _parsed_segment_key;
+    partition_manifest::key _segment_key;
+    partition_manifest::segment_meta _meta;
+    std::unique_ptr<segment_map> _segments;
+
+    // required manifest fields
+    std::optional<int32_t> _version;
+    std::optional<model::ns> _namespace;
+    std::optional<model::topic> _topic;
+    std::optional<int32_t> _partition_id;
+    std::optional<model::initial_revision_id> _revision_id;
+    std::optional<model::offset> _last_offset;
+
+    // required segment meta fields
+    std::optional<bool> _is_compacted;
+    std::optional<size_t> _size_bytes;
+    std::optional<model::offset> _base_offset;
+    std::optional<model::offset> _committed_offset;
+
+    // optional segment meta fields
+    std::optional<model::timestamp> _base_timestamp;
+    std::optional<model::timestamp> _max_timestamp;
+    std::optional<model::offset> _delta_offset;
+    std::optional<model::initial_revision_id> _ntp_revision;
+    std::optional<model::term_id> _archiver_term;
+
+    void check_that_required_meta_fields_are_present() {
+        if (!_is_compacted) {
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format,
+              "Missing is_compacted value in {} segment meta",
+              _segment_name));
+        }
+        if (!_size_bytes) {
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format,
+              "Missing size_bytes value in {} segment meta",
+              _segment_name));
+        }
+        if (!_base_offset) {
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format,
+              "Missing base_offset value in {} segment meta",
+              _segment_name));
+        }
+        if (!_committed_offset) {
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format,
+              "Missing committed_offset value in {} segment meta",
+              _segment_name));
+        }
+    }
+
+    void clear_meta_fields() {
+        // required fields
+        _is_compacted = std::nullopt;
+        _size_bytes = std::nullopt;
+        _base_offset = std::nullopt;
+        _committed_offset = std::nullopt;
+
+        // optional segment meta fields
+        _base_timestamp = std::nullopt;
+        _max_timestamp = std::nullopt;
+        _delta_offset = std::nullopt;
+        _ntp_revision = std::nullopt;
+        _archiver_term = std::nullopt;
+    }
+
+    void check_manifest_fields_are_present() {
+        if (!_version) {
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format, "Missing version value partition manifest"));
+        }
+        if (!_namespace) {
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format, "Missing namespace value in partition manifest"));
+        }
+        if (!_topic) {
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format, "Missing topic value in partition manifest"));
+        }
+        if (!_partition_id) {
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format, "Missing partition_id value in partition manifest"));
+        }
+        if (!_revision_id) {
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format, "Missing revision_id value in partition manifest"));
+        }
+        if (!_last_offset) {
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format, "Missing last_offset value in partition manifest"));
+        }
+    }
+};
 
 ss::future<> partition_manifest::update(ss::input_stream<char> is) {
     iobuf result;
