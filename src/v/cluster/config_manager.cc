@@ -516,12 +516,14 @@ ss::future<> config_manager::reconcile_status() {
     }
 
     try {
-        if (failed) {
-            // If we were dirty & failed to send our update, sleep until retry
+        if (failed || should_send_status()) {
+            // * we were dirty & failed to send our update, sleep until retry
+            // OR
+            // * our status updated while we were sending, wait a short time
+            //   before sending our next update to avoid spamming the leader
+            //   with too many set_status RPCs if we are behind on seeing
+            //   updates to the controller log.
             co_await ss::sleep_abortable(status_retry, _as.local());
-        } else if (should_send_status()) {
-            // Our status updated while we were sending, proceed
-            // immediately to next iteration of loop.
         } else {
             // We are clean: sleep until signalled.
             co_await _reconcile_wait.wait();

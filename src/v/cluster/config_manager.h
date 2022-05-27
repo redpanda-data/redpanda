@@ -71,6 +71,14 @@ public:
 
     config_version get_version() const noexcept { return _seen_version; }
 
+    bool needs_update(const config_status& new_status) {
+        if (auto s = status.find(new_status.node); s != status.end()) {
+            return s->second != new_status;
+        } else {
+            return true;
+        }
+    }
+
 private:
     void merge_apply_result(
       config_status&,
