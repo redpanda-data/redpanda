@@ -21,8 +21,9 @@ namespace rpc {
 /// \brief expects the inputstream to be prefixed by an rpc::header
 template<typename T>
 ss::future<T> parse_framed(ss::input_stream<char>& in) {
-    return parse_header(in).then(
-      [&in](std::optional<header> o) { return parse_type<T>(in, o.value()); });
+    return parse_header(in).then([&in](std::optional<header> o) {
+        return parse_type<T, default_message_codec>(in, o.value());
+    });
 }
 } // namespace rpc
 

@@ -26,7 +26,7 @@ namespace rpc {
 
 /// \brief most service implementations will be codegenerated
 struct service {
-    template<typename Input, typename Output>
+    template<typename Input, typename Output, typename Codec>
     struct execution_helper;
 
     service() = default;
@@ -50,7 +50,7 @@ private:
     seastar::sstring _what;
 };
 
-template<typename Input, typename Output>
+template<typename Input, typename Output, typename Codec>
 struct service::execution_helper {
     using input = Input;
     using output = Output;
@@ -63,7 +63,7 @@ struct service::execution_helper {
       Func&& f) {
         return ctx.permanent_memory_reservation(ctx.get_header().payload_size)
           .then([f = std::forward<Func>(f), method_id, &in, &ctx]() mutable {
-              return parse_type<Input>(in, ctx.get_header())
+              return parse_type<Input, Codec>(in, ctx.get_header())
                 .then_wrapped([f = std::forward<Func>(f),
                                &ctx](ss::future<Input> input_f) mutable {
                     if (input_f.failed()) {
@@ -75,12 +75,13 @@ struct service::execution_helper {
                     return f(std::move(input), ctx);
                 })
                 .then([method_id, &ctx](Output out) mutable {
-                    const auto version = ctx.get_header().version;
+                    const auto version = Codec::response_version(
+                      ctx.get_header());
                     auto b = std::make_unique<netbuf>();
                     auto raw_b = b.get();
                     raw_b->set_service_method_id(method_id);
                     raw_b->set_version(version);
-                    return encode_for_version(
+                    return Codec::encode(
                              raw_b->buffer(), std::move(out), version)
                       .then([version, b = std::move(b)](
                               transport_version effective_version) {
