@@ -74,13 +74,28 @@ struct service::execution_helper {
                     auto input = input_f.get0();
                     return f(std::move(input), ctx);
                 })
-                .then([method_id](Output out) mutable {
+                .then([method_id, &ctx](Output out) mutable {
+                    const auto version = ctx.get_header().version;
                     auto b = std::make_unique<netbuf>();
                     auto raw_b = b.get();
                     raw_b->set_service_method_id(method_id);
-                    return reflection::async_adl<Output>{}
-                      .to(raw_b->buffer(), std::move(out))
-                      .then([b = std::move(b)] { return std::move(*b); });
+                    raw_b->set_version(version);
+                    return encode_for_version(
+                             raw_b->buffer(), std::move(out), version)
+                      .then([version, b = std::move(b)](
+                              transport_version effective_version) {
+                          /*
+                           * this assertion is safe because the conditions under
+                           * which this assertion would fail should have been
+                           * verified in parse_type above.
+                           */
+                          vassert(
+                            effective_version == version,
+                            "Unexpected encoding at effective {} != {}",
+                            effective_version,
+                            version);
+                          return std::move(*b);
+                      });
                 });
           });
     }
