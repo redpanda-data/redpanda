@@ -136,9 +136,17 @@ ss::future<result<rpc::client_context<T>>> parse_result(
     using ret_t = result<rpc::client_context<T>>;
     // check status first
     auto st = static_cast<status>(sctx->get_header().meta);
+    if (st != status::success) {
+    /**
+     * signal that request body is parsed since it is empty when status
+     * indicates server error.
+     */
+    sctx->signal_body_parse();
+
+    return ss::make_ready_future<ret_t>(map_server_error(st));
+    }
 
     // success case
-    if (st == status::success) {
         return parse_type<T>(in, sctx->get_header())
           .then_wrapped([sctx = std::move(sctx)](ss::future<T> data_fut) {
               if (data_fut.failed()) {
@@ -155,15 +163,6 @@ ss::future<result<rpc::client_context<T>>> parse_result(
               return ret_t(rpc::client_context<T>(
                 sctx->get_header(), std::move(data_fut.get())));
           });
-    }
-
-    /**
-     * signal that request body is parsed since it is empty when status
-     * indicates server error.
-     */
-    sctx->signal_body_parse();
-
-    return ss::make_ready_future<ret_t>(map_server_error(st));
 }
 
 } // namespace internal
