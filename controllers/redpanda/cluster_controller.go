@@ -180,7 +180,7 @@ func (r *ClusterReconciler) Reconcile(
 
 		var e *resources.RequeueAfterError
 		if errors.As(err, &e) {
-			log.Error(e, e.Msg)
+			log.Info(e.Error())
 			return ctrl.Result{RequeueAfter: e.RequeueAfter}, nil
 		}
 
