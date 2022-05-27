@@ -24,10 +24,12 @@
 #include <seastar/core/coroutine.hh>
 
 #include <fmt/ostream.h>
+#include <rapidjson/error/en.h>
 
 #include <charconv>
 #include <memory>
 #include <optional>
+#include <utility>
 
 namespace cloud_storage {
 std::ostream&
@@ -684,79 +686,42 @@ ss::future<> partition_manifest::update(ss::input_stream<char> is) {
     co_await ss::copy(is, os);
     iobuf_istreambuf ibuf(result);
     std::istream stream(&ibuf);
-    json::Document m;
     json::IStreamWrapper wrapper(stream);
-    m.ParseStream(wrapper);
-    update(m);
+    rapidjson::Reader reader;
+    partition_manifest_handler handler;
+
+    if (reader.Parse(wrapper, handler)) {
+        partition_manifest::update(handler);
+    } else {
+        rapidjson::ParseErrorCode e = reader.GetParseErrorCode();
+        size_t o = reader.GetErrorOffset();
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "Failed to parse topic manifest {}: {} at offset {}",
+          get_manifest_path(),
+          rapidjson::GetParseError_En(e),
+          o));
+    }
     co_return;
 }
 
-void partition_manifest::update(const json::Document& m) {
-    auto ver = model::partition_id(m["version"].GetInt());
-    if (ver != static_cast<int>(manifest_version::v1)) {
-        throw std::runtime_error("manifest version not supported");
+void partition_manifest::update(const partition_manifest_handler& handler) {
+    if (handler._version != static_cast<int>(manifest_version::v1)) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "partition manifest version {} is not supported",
+          handler._version));
     }
-    auto ns = model::ns(m["namespace"].GetString());
-    auto tp = model::topic(m["topic"].GetString());
-    auto pt = model::partition_id(m["partition"].GetInt());
-    _rev = model::initial_revision_id(m["revision"].GetInt());
-    _ntp = model::ntp(ns, tp, pt);
-    _last_offset = model::offset(m["last_offset"].GetInt64());
-    segment_map tmp;
-    if (m.HasMember("segments")) {
-        const auto& s = m["segments"].GetObject();
-        for (auto it = s.MemberBegin(); it != s.MemberEnd(); it++) {
-            auto name = segment_name{it->name.GetString()};
-            auto parsed_key = parse_segment_name(name);
-            if (!parsed_key) {
-                throw std::runtime_error(fmt_with_ctx(
-                  fmt::format, "can't parse segment name \"{}\"", name));
-            }
-            key key = {
-              .base_offset = parsed_key->base_offset, .term = parsed_key->term};
-            auto coffs = it->value["committed_offset"].GetInt64();
-            auto boffs = it->value["base_offset"].GetInt64();
-            auto size_bytes = it->value["size_bytes"].GetInt64();
-            model::timestamp base_timestamp = model::timestamp::missing();
-            if (it->value.HasMember("base_timestamp")) {
-                base_timestamp = model::timestamp(
-                  it->value["base_timestamp"].GetInt64());
-            }
-            model::timestamp max_timestamp = model::timestamp::missing();
-            if (it->value.HasMember("max_timestamp")) {
-                max_timestamp = model::timestamp(
-                  it->value["max_timestamp"].GetInt64());
-            }
-            model::offset delta_offset = model::offset::min();
-            if (it->value.HasMember("delta_offset")) {
-                delta_offset = model::offset(
-                  it->value["delta_offset"].GetInt64());
-            }
-            model::initial_revision_id ntp_revision = _rev;
-            if (it->value.HasMember("ntp_revision")) {
-                ntp_revision = model::initial_revision_id(
-                  it->value["ntp_revision"].GetInt64());
-            }
-            model::term_id archiver_term;
-            if (it->value.HasMember("archiver_term")) {
-                archiver_term = model::term_id(
-                  it->value["archiver_term"].GetInt64());
-            }
-            segment_meta meta{
-              .is_compacted = it->value["is_compacted"].GetBool(),
-              .size_bytes = static_cast<size_t>(size_bytes),
-              .base_offset = model::offset(boffs),
-              .committed_offset = model::offset(coffs),
-              .base_timestamp = base_timestamp,
-              .max_timestamp = max_timestamp,
-              .delta_offset = delta_offset,
-              .ntp_revision = ntp_revision,
-              .archiver_term = archiver_term,
-            };
-            tmp.insert(std::make_pair(key, meta));
-        }
+    _rev = handler._revision_id.value();
+    _ntp = model::ntp(
+      handler._namespace.value(),
+      handler._topic.value(),
+      handler._partition_id.value());
+    _last_offset = handler._last_offset.value();
+
+    if (handler._segments) {
+        _segments = std::move(*handler._segments);
     }
-    std::swap(tmp, _segments);
 }
 
 serialized_json_stream partition_manifest::serialize() const {
