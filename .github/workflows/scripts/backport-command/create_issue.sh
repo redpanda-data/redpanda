@@ -5,6 +5,7 @@
 
 set -e
 
+# shellcheck disable=SC1091
 source "$SCRIPT_DIR/gh_wrapper.sh"
 
 if [[ -n $(echo "$ORIG_LABELS" | jq '.[] | select(.name == "kind/backport")') ]]; then
