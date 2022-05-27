@@ -132,21 +132,47 @@ inline errc map_server_error(status status) {
 
 template<typename T>
 ss::future<result<rpc::client_context<T>>> parse_result(
-  ss::input_stream<char>& in, std::unique_ptr<streaming_context> sctx) {
+  ss::input_stream<char>& in,
+  std::unique_ptr<streaming_context> sctx,
+  transport_version req_ver) {
     using ret_t = result<rpc::client_context<T>>;
-    // check status first
-    auto st = static_cast<status>(sctx->get_header().meta);
-    if (st != status::success) {
-        /**
-         * signal that request body is parsed since it is empty when status
-         * indicates server error.
-         */
-        sctx->signal_body_parse();
 
+    const auto st = static_cast<status>(sctx->get_header().meta);
+    const auto rep_ver = sctx->get_header().version;
+
+    /*
+     * the reply version should always be the same as the request version,
+     * otherwise this is non-compliant behavior. the exception to this
+     * rule is a v0 reply to a v1 request (ie talking to old v0 server).
+     */
+    const auto protocol_violation
+      = rep_ver != req_ver
+        && (req_ver != transport_version::v1 || rep_ver != transport_version::v0);
+
+    if (unlikely(st != status::success || protocol_violation)) {
+        sctx->signal_body_parse();
+        if (st == status::version_not_supported) {
+            /*
+             * let version_not_supported take precedence over error handling for
+             * protocol violations because the protocol violation may be due to
+             * the unsupported version scenario.
+             */
+            return ss::make_ready_future<ret_t>(map_server_error(st));
+        }
+        if (protocol_violation) {
+            vlog(
+              rpclog.warn,
+              "Protocol violation: request version {} incompatible with "
+              "reply version {}",
+              req_ver,
+              rep_ver);
+        }
+        if (st == status::success) {
+            return ss::make_ready_future<ret_t>(errc::service_error);
+        }
         return ss::make_ready_future<ret_t>(map_server_error(st));
     }
 
-    // success case
     return parse_type<T>(in, sctx->get_header())
       .then_wrapped([sctx = std::move(sctx)](ss::future<T> data_fut) {
           if (data_fut.failed()) {
@@ -189,6 +215,7 @@ transport::send_typed_versioned(
   rpc::client_opts opts,
   transport_version version) {
     using ret_t = result<result_context<Output>>;
+    using ctx_t = result<std::unique_ptr<streaming_context>>;
     _probe.request();
 
     auto b = std::make_unique<rpc::netbuf>();
@@ -214,15 +241,31 @@ transport::send_typed_versioned(
             version,
             effective_version);
           b->set_version(effective_version);
-          return do_send(seq, std::move(*b.get()), std::move(opts));
+          return do_send(seq, std::move(*b.get()), std::move(opts))
+            .then([effective_version](ctx_t ctx) {
+                return std::make_tuple(std::move(ctx), effective_version);
+            });
       })
-      .then([this](result<std::unique_ptr<streaming_context>> sctx) mutable {
+      .then_unpack([this](ctx_t sctx, transport_version req_ver) {
           if (!sctx) {
               return ss::make_ready_future<ret_t>(sctx.error());
           }
           const auto version = sctx.value()->get_header().version;
-          return internal::parse_result<Output>(_in, std::move(sctx.value()))
-            .then([version](result<client_context<Output>> r) {
+          return internal::parse_result<Output>(
+                   _in, std::move(sctx.value()), req_ver)
+            .then([this, version](result<client_context<Output>> r) {
+                /*
+                 * upgrade transport to v2 when:
+                 * - at version v1 (do not upgrade from v0 -- for testing)
+                 * - the response was handled/contains no errors
+                 * - the response is v1,v2 (from a new server)
+                 */
+                if (
+                  _version == transport_version::v1 && r.has_value()
+                  && (version == transport_version::v1 || version == transport_version::v2)) {
+                    vlog(rpclog.debug, "Upgrading connection from v1 to v2");
+                    _version = transport_version::v2;
+                }
                 return ret_t(result_context<Output>{version, std::move(r)});
             });
       });
