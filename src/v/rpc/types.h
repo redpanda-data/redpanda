@@ -35,6 +35,7 @@
 #include <chrono>
 #include <cstdint>
 #include <iosfwd>
+#include <limits>
 #include <type_traits>
 #include <vector>
 
@@ -79,7 +80,7 @@ enum class transport_version : uint8_t {
      * unsupported is a convenience name used in tests to construct a message
      * with an unsupported version. the bits should not be considered reserved.
      */
-    unsupported = max_supported + 1,
+    unsupported = std::numeric_limits<uint8_t>::max()
 };
 
 /// \brief core struct for communications. sent with _each_ payload
