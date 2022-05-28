@@ -231,11 +231,22 @@ struct default_message_codec {
  *
  * example:
  *   using echo_service_v0 = echo_service_base<v0_message_codec>;
+ *
+ * Note that for serde-supported messages a vassert(false) is generated. First,
+ * the v0_message_encoder is only used in tests. Second, serde usage is not
+ * possible in v0 servers, so this restriction is realistic. And from a
+ * practical standpoint this allows us to avoid bifurcation of services (or more
+ * sfinae magic) in tests so that serde-only types were never present within a
+ * service configured with a v0_message_encoder.
  */
 struct v0_message_codec {
     template<typename T>
     static ss::future<T> decode(iobuf_parser& parser, transport_version) {
-        return reflection::async_adl<T>{}.from(parser);
+        if constexpr (is_rpc_adl_exempt<T>) {
+            vassert(false, "Cannot use serde-only types in v0 server");
+        } else {
+            return reflection::async_adl<T>{}.from(parser);
+        }
     }
 
     static transport_version response_version(const header&) {
@@ -245,9 +256,13 @@ struct v0_message_codec {
     template<typename T>
     static ss::future<transport_version>
     encode(iobuf& out, T msg, transport_version) {
-        return reflection::async_adl<T>{}.to(out, std::move(msg)).then([] {
-            return transport_version::v0;
-        });
+        if constexpr (is_rpc_adl_exempt<T>) {
+            vassert(false, "Cannot use serde-only types in v0 server");
+        } else {
+            return reflection::async_adl<T>{}.to(out, std::move(msg)).then([] {
+                return transport_version::v0;
+            });
+        }
     }
 };
 

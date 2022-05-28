@@ -10,6 +10,7 @@
 #include "model/timeout_clock.h"
 #include "random/generators.h"
 #include "rpc/exceptions.h"
+#include "rpc/parse_utils.h"
 #include "rpc/test/cycling_service.h"
 #include "rpc/test/echo_service.h"
 #include "rpc/test/rpc_gen_types.h"
@@ -35,9 +36,10 @@
 using namespace std::chrono_literals; // NOLINT
 
 // Test services
-struct movistar final : cycling::team_movistar_service {
+template<typename Codec>
+struct movistar final : cycling::team_movistar_service_base<Codec> {
     movistar(ss::scheduling_group& sc, ss::smp_service_group& ssg)
-      : cycling::team_movistar_service(sc, ssg) {}
+      : cycling::team_movistar_service_base<Codec>(sc, ssg) {}
     ss::future<cycling::mount_tamalpais>
     ibis_hakka(cycling::san_francisco&&, rpc::streaming_context&) final {
         return ss::make_ready_future<cycling::mount_tamalpais>(
@@ -50,9 +52,10 @@ struct movistar final : cycling::team_movistar_service {
     }
 };
 
-struct echo_impl final : echo::echo_service {
+template<typename Codec>
+struct echo_impl final : echo::echo_service_base<Codec> {
     echo_impl(ss::scheduling_group& sc, ss::smp_service_group& ssg)
-      : echo::echo_service(sc, ssg) {}
+      : echo::echo_service_base<Codec>(sc, ssg) {}
     ss::future<echo::echo_resp>
     echo(echo::echo_req&& req, rpc::streaming_context&) final {
         return ss::make_ready_future<echo::echo_resp>(
@@ -122,8 +125,13 @@ public:
       : rpc_simple_integration_fixture(redpanda_rpc_port) {}
 
     void register_services() {
-        register_service<movistar>();
-        register_service<echo_impl>();
+        register_service<movistar<rpc::default_message_codec>>();
+        register_service<echo_impl<rpc::default_message_codec>>();
+    }
+
+    void register_services_v0() {
+        register_service<movistar<rpc::v0_message_codec>>();
+        register_service<echo_impl<rpc::v0_message_codec>>();
     }
 
     static constexpr uint16_t redpanda_rpc_port = 32147;
@@ -658,8 +666,8 @@ public:
       : rpc_fixture_swappable_proto(redpanda_rpc_port) {}
 
     void register_services() {
-        register_service<movistar>();
-        register_service<echo_impl>();
+        register_service<movistar<rpc::default_message_codec>>();
+        register_service<echo_impl<rpc::default_message_codec>>();
     }
 
     static constexpr uint16_t redpanda_rpc_port = 32147;
