@@ -87,7 +87,7 @@ enum class transport_version : uint8_t {
     v1 = 1,
     v2 = 2,
 
-    max_supported = v0,
+    max_supported = v2,
 
     /*
      * unsupported is a convenience name used in tests to construct a message

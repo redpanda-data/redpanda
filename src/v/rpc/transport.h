@@ -110,7 +110,7 @@ private:
      * during the lifetime of the transport. for example the version may be
      * upgraded if it is discovered that a server supports a newer version.
      */
-    transport_version _version{transport_version::v0};
+    transport_version _version{transport_version::v1};
 
     friend std::ostream& operator<<(std::ostream&, const transport&);
 };
