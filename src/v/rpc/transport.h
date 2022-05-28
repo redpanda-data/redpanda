@@ -68,6 +68,8 @@ public:
 
     void reset_state() final;
 
+    transport_version version() const { return _version; }
+
 private:
     using sequence_t = named_type<uint64_t, struct sequence_tag>;
     struct entry {
