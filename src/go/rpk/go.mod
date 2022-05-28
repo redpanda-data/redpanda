@@ -35,6 +35,7 @@ require (
 	github.com/twmb/franz-go v1.5.2
 	github.com/twmb/franz-go/pkg/kadm v0.0.0-20220106030238-d62f1bef74f9
 	github.com/twmb/franz-go/pkg/kmsg v1.0.0
+	github.com/twmb/franz-go/pkg/sr v0.0.0-20220523002247-6e9090dbbba1
 	github.com/twmb/tlscfg v1.2.0
 	github.com/twmb/types v1.1.6
 	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9

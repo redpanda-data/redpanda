@@ -25,6 +25,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/group"
 	plugincmd "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/plugin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/registry"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/plugin"
 	log "github.com/sirupsen/logrus"
@@ -70,6 +71,7 @@ func Execute() {
 	rootCmd.AddCommand(NewClusterCommand(fs))
 	rootCmd.AddCommand(NewACLCommand(fs))
 	rootCmd.AddCommand(group.NewCommand(fs))
+	rootCmd.AddCommand(registry.NewCommand())
 
 	rootCmd.AddCommand(plugincmd.NewCommand(fs))
 
