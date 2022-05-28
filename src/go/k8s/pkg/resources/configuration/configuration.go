@@ -120,6 +120,7 @@ func (c *GlobalConfiguration) GetNodeConfigurationHash() (string, error) {
 	clone := *c
 	// clean any cluster property from config before serializing
 	clone.ClusterConfiguration = nil
+	removeIgnoredFields(&clone)
 	props := clone.NodeConfiguration.Redpanda.Other
 	clone.NodeConfiguration.Redpanda.Other = make(map[string]interface{})
 	for k, v := range props {
@@ -139,12 +140,19 @@ func (c *GlobalConfiguration) GetNodeConfigurationHash() (string, error) {
 // is default behavior prior to centralized configuration feature was developed
 func (c *GlobalConfiguration) GetAllConfigurationHash() (string, error) {
 	clone := *c
+	removeIgnoredFields(&clone)
 	serialized, err := clone.Serialize()
 	if err != nil {
 		return "", err
 	}
 	md5Hash := md5.Sum(serialized.RedpandaFile) // nolint:gosec // this is not encrypting secure info
 	return fmt.Sprintf("%x", md5Hash), nil
+}
+
+func removeIgnoredFields(clone *GlobalConfiguration) {
+	// ignore seeds for hash computation so that changes in this field don't
+	// trigger cluster restats
+	clone.NodeConfiguration.Redpanda.SeedServers = []config.SeedServer{}
 }
 
 // GetAdditionalRedpandaProperty retrieves a configuration option

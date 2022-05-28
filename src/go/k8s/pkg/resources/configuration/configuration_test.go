@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/configuration"
+	rpkcfg "github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -122,4 +123,24 @@ func TestStringSliceProperties(t *testing.T) {
 			assert.Error(t, config.AppendToAdditionalRedpandaProperty("superusers", "value"))
 		})
 	}
+}
+
+func TestHash_SeedServersNoHashChange(t *testing.T) {
+	cfg := configuration.For("v22.1.1-test")
+	cfg.NodeConfiguration.Redpanda.SeedServers = []rpkcfg.SeedServer{}
+	nodeConfHash, err := cfg.GetNodeConfigurationHash()
+	require.NoError(t, err)
+	allConfHash, err := cfg.GetAllConfigurationHash()
+	require.NoError(t, err)
+
+	cfg.NodeConfiguration.Redpanda.SeedServers = []rpkcfg.SeedServer{{Host: rpkcfg.SocketAddress{Address: "redpanda.com", Port: 9090}}}
+	nodeConfHashNew, err := cfg.GetNodeConfigurationHash()
+	require.NoError(t, err)
+	allConfHashNew, err := cfg.GetAllConfigurationHash()
+	require.NoError(t, err)
+
+	// seed servers should not change hash to not require restart (e.g. when
+	// scaling up/down cluster)
+	require.Equal(t, allConfHash, allConfHashNew, "all conf")
+	require.Equal(t, nodeConfHash, nodeConfHashNew, "node conf")
 }
