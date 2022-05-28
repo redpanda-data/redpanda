@@ -48,9 +48,9 @@ public:
       std::unique_ptr<ss::httpd::reply> rep);
 
 private:
+    ss::lw_shared_ptr<raft::kvelldb::kvrsm> _kvrsm;
     ss::httpd::http_server _server;
     ss::socket_address _addr;
-    ss::lw_shared_ptr<raft::kvelldb::kvrsm> _kvrsm;
 };
 
 } // namespace raft::kvelldb
