@@ -129,7 +129,7 @@ public:
 
 private:
     ss::future<> execute_one(cli* const c) {
-        if (_cfg.test_case < 1 && _cfg.test_case > 3) {
+        if (_cfg.test_case < 1 || _cfg.test_case > 3) {
             throw std::runtime_error(fmt::format(
               "Unknown test:{}, bad config:{}", _cfg.test_case, _cfg));
         }
