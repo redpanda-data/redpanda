@@ -71,7 +71,7 @@ void test_async_read(
     // Check the situation when we have one slow consumer
     iobuf input;
     iobuf copy;
-    int szfull = 0;
+    [[maybe_unused]] int szfull = 0;
     for (int i = 0; i < 20; i++) {
         int sz = random_generators::get_int(100, 8 * 1024);
         auto b = random_generators::get_bytes(sz);
