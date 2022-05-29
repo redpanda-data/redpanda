@@ -11,7 +11,6 @@
 
 #pragma once
 
-#include "utils/concepts-enabled.h"
 #include "utils/retry.h"
 
 namespace kafka::client {
@@ -28,7 +27,7 @@ template<
   typename Func,
   typename ErrFunc,
   typename Futurator = ss::futurize<std::invoke_result_t<Func>>>
-CONCEPT(requires std::regular_invocable<Func>)
+requires std::regular_invocable<Func>
 auto retry_with_mitigation(
   int32_t retries,
   std::chrono::milliseconds retry_base_backoff,

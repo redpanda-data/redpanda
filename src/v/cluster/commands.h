@@ -211,10 +211,8 @@ using feature_update_cmd = controller_command<
   model::record_batch_type::feature_update>;
 
 // typelist utils
-// clang-format off
-CONCEPT(
 template<typename T>
-concept ControllerCommand = requires (T cmd) {
+concept ControllerCommand = requires(T cmd) {
     typename T::key_t;
     typename T::value_t;
     { cmd.key } -> std::convertible_to<const typename T::key_t&>;
@@ -222,15 +220,14 @@ concept ControllerCommand = requires (T cmd) {
     { T::type } -> std::convertible_to<const command_type&>;
     { T::batch_type } -> std::convertible_to<const model::record_batch_type&>;
 };
-)
-// clang-format on
 
 template<typename... Commands>
 struct commands_type_list {};
 
 template<typename... Commands>
-CONCEPT(requires(ControllerCommand<Commands>, ...))
-using make_commands_list = commands_type_list<Commands...>;
+requires(
+  ControllerCommand<Commands>,
+  ...) using make_commands_list = commands_type_list<Commands...>;
 
 /// Commands are serialized as a batch with single record. Command key is
 /// serialized as a record key. Key is independent from command type so it can
@@ -243,8 +240,8 @@ using make_commands_list = commands_type_list<Commands...>;
 ///                  +--------------+-------+
 ///
 template<typename Cmd>
-CONCEPT(requires ControllerCommand<Cmd>)
-ss::future<model::record_batch> serialize_cmd(Cmd cmd) {
+requires ControllerCommand<Cmd> ss::future<model::record_batch>
+serialize_cmd(Cmd cmd) {
     return ss::do_with(
       iobuf{},
       iobuf{},
@@ -292,8 +289,8 @@ struct deserializer {
 };
 
 template<typename Cmd>
-CONCEPT(requires ControllerCommand<Cmd>)
-std::optional<deserializer<Cmd>> make_deserializer(command_type tp) {
+requires ControllerCommand<Cmd> std::optional<deserializer<Cmd>>
+make_deserializer(command_type tp) {
     if (tp != Cmd::type) {
         return std::nullopt;
     }

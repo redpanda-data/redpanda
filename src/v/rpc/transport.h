@@ -209,18 +209,13 @@ transport::send_typed_versioned(
       });
 }
 
-// clang-format off
-CONCEPT(
 template<typename Protocol>
-concept RpcClientProtocol = requires (rpc::transport& t) {
+concept RpcClientProtocol = requires(rpc::transport& t) {
     { Protocol(t) } -> std::same_as<Protocol>;
 };
-)
-// clang-format on
 
 template<typename... Protocol>
-CONCEPT(requires(RpcClientProtocol<Protocol>&&...))
-class client : public Protocol... {
+requires(RpcClientProtocol<Protocol>&&...) class client : public Protocol... {
 public:
     explicit client(transport_configuration cfg)
       : Protocol(_transport)...

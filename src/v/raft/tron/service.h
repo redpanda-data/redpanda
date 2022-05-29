@@ -21,12 +21,9 @@
 #include "ssx/sformat.h"
 
 namespace raft::tron {
-// clang-format off
 template<typename ConsensusManager, typename ShardLookup>
-CONCEPT(
-  requires raft::RaftGroupManager<ConsensusManager>
-  && raft::ShardLookupManager<ShardLookup>)
-// clang-format on
+requires raft::RaftGroupManager<ConsensusManager> && raft::ShardLookupManager<
+  ShardLookup>
 struct service final : trongen_service {
     service(
       ss::scheduling_group sc,

@@ -11,7 +11,6 @@
 
 #pragma once
 #include "seastarx.h"
-#include "utils/concepts-enabled.h"
 
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
@@ -29,27 +28,21 @@ public:
 private:
     uint32_t _current_backoff = 0;
 };
-// clang-format off
 
-CONCEPT(
 template<typename Policy>
-concept BackoffPolicy = requires (Policy b) {
+concept BackoffPolicy = requires(Policy b) {
     { b.next_backoff() } -> std::same_as<uint32_t>;
 };
-)
-// clang-format on
 
 // clang-format off
 template<typename Func, typename DurationType = std::chrono::seconds, typename Policy = exp_backoff_policy>
-CONCEPT(
   requires requires (Func f) {
       { f() } -> std::same_as<ss::futurize_t<std::invoke_result_t<Func>>>;
-  } 
+  }
   && BackoffPolicy<Policy>
-)
-// clang-format on
-ss::futurize_t<std::invoke_result_t<Func>> retry_with_backoff(
-  int max_retries, Func&& f, DurationType base_backoff = DurationType{1}) {
+  // clang-format on
+  ss::futurize_t<std::invoke_result_t<Func>> retry_with_backoff(
+    int max_retries, Func&& f, DurationType base_backoff = DurationType{1}) {
     using ss::stop_iteration;
     using ret = ss::futurize<std::invoke_result_t<Func>>;
     return ss::do_with(

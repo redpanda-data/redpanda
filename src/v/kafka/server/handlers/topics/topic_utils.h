@@ -29,33 +29,29 @@
 /// for topic request items.
 
 namespace kafka {
-// clang-format off
-CONCEPT(
-template<typename T> 
+template<typename T>
 concept TopicRequestItem = requires(T item) {
     { item.name } -> std::convertible_to<model::topic_view>;
-};)
-CONCEPT(
-template<typename Iterator> 
-concept TopicResultIterator = requires (Iterator it) {
+};
+template<typename Iterator>
+concept TopicResultIterator = requires(Iterator it) {
     it = creatable_topic_result{};
-} && std::is_same_v<typename Iterator::iterator_category, std::output_iterator_tag>;
-)
-// clang-format on
+}
+&&std::
+  is_same_v<typename Iterator::iterator_category, std::output_iterator_tag>;
 
 /// Generates failed creatable_topic_result for single topic request item
 template<typename T>
-CONCEPT(requires TopicRequestItem<T>)
-creatable_topic_result
-  generate_error(T item, error_code code, const ss::sstring& msg) {
+requires TopicRequestItem<T> creatable_topic_result
+generate_error(T item, error_code code, const ss::sstring& msg) {
     return creatable_topic_result{
       .name = item.name, .error_code = code, .error_message = msg};
 }
 
 /// Generates successfull creatable_topic_result for single topic request item
 template<typename T>
-CONCEPT(requires TopicRequestItem<T>)
-creatable_topic_result generate_successfull_result(T item) {
+requires TopicRequestItem<T>
+  creatable_topic_result generate_successfull_result(T item) {
     return creatable_topic_result{
       .name = item.name, .error_code = error_code::none};
 }
@@ -65,19 +61,17 @@ creatable_topic_result generate_successfull_result(T item) {
 /// Generated errors are stored in other range beggining at out_it.
 // clang-format off
 template<typename Iter, typename ErrIter, typename Predicate>
-CONCEPT(
-    requires TopicRequestItem<typename Iter::value_type> && 
+    requires TopicRequestItem<typename Iter::value_type> &&
     TopicResultIterator<ErrIter> &&
     std::predicate<Predicate, std::iter_reference_t<Iter>>
-)
-// clang-format on
-Iter validate_requests_range(
-  Iter begin,
-  Iter end,
-  ErrIter out_it,
-  error_code code,
-  const ss::sstring& error_msg,
-  Predicate&& p) {
+  // clang-format on
+  Iter validate_requests_range(
+    Iter begin,
+    Iter end,
+    ErrIter out_it,
+    error_code code,
+    const ss::sstring& error_msg,
+    Predicate&& p) {
     auto valid_range_end = std::partition(begin, end, p);
     std::transform(
       valid_range_end,
@@ -92,12 +86,12 @@ Iter validate_requests_range(
 /// Validates topic request items with validators from the ValidatorTypes
 /// type list
 template<typename Iter, typename ErrIter, typename... ValidatorTypes>
-CONCEPT(requires TopicRequestItem<typename Iter::value_type>)
-Iter validate_requests_range(
-  Iter begin,
-  Iter end,
-  ErrIter err_it,
-  validator_type_list<typename Iter::value_type, ValidatorTypes...>) {
+requires TopicRequestItem<typename Iter::value_type>
+  Iter validate_requests_range(
+    Iter begin,
+    Iter end,
+    ErrIter err_it,
+    validator_type_list<typename Iter::value_type, ValidatorTypes...>) {
     ((end = validate_requests_range(
         begin,
         end,
@@ -119,12 +113,10 @@ void append_cluster_results(
 // by cluster::controller API
 // clang-format off
 template<typename KafkaApiTypeIter>
-CONCEPT(
-    requires TopicRequestItem<typename KafkaApiTypeIter::value_type> &&
-    requires(KafkaApiTypeIter it) { 
-        to_cluster_type(*it); 
-    }
-)
+requires TopicRequestItem<typename KafkaApiTypeIter::value_type> &&
+requires(KafkaApiTypeIter it) {
+    to_cluster_type(*it);
+}
 // clang-format on
 auto to_cluster_type(KafkaApiTypeIter begin, KafkaApiTypeIter end)
   -> std::vector<decltype(to_cluster_type(*begin))> {
@@ -142,13 +134,13 @@ auto to_cluster_type(KafkaApiTypeIter begin, KafkaApiTypeIter end)
 
 /// Generate errors for all the request items that topic names
 /// are duplicated within given range,
-/// the errors are inserted in the range begginning at out_it
+/// the errors are insterted in the range begginning at out_it
 // clang-format off
 template<typename Iter, typename ErrIter>
-CONCEPT(requires TopicRequestItem<typename Iter::value_type> && 
-                 TopicResultIterator<ErrIter>)
-// clang-format on
-Iter validate_range_duplicates(Iter begin, Iter end, ErrIter out_it) {
+requires TopicRequestItem<typename Iter::value_type> &&
+         TopicResultIterator<ErrIter>
+  // clang-format on
+  Iter validate_range_duplicates(Iter begin, Iter end, ErrIter out_it) {
     using type = typename Iter::value_type;
     boost::container::flat_map<model::topic_view, uint32_t> freq;
     freq.reserve(std::distance(begin, end));
@@ -167,9 +159,11 @@ Iter validate_range_duplicates(Iter begin, Iter end, ErrIter out_it) {
 /// Generate NOT_CONTROLLER error for all the request items within given range
 /// the errors are inserted in the range begginning at out_it
 /// This pattern is used in every Admin request of Kafka protocol.
+// clang-format off
 template<typename Iter, typename ErrIter>
-CONCEPT(requires TopicRequestItem<typename Iter::value_type>&&
-          TopicResultIterator<ErrIter>)
+requires TopicRequestItem<typename Iter::value_type> &&
+         TopicResultIterator<ErrIter>
+// clang-format on
 void generate_not_controller_errors(Iter begin, Iter end, ErrIter out_it) {
     std::transform(
       begin, end, out_it, [](const typename Iter::value_type& item) {

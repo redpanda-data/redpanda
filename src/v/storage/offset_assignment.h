@@ -15,7 +15,7 @@
 
 namespace storage {
 template<typename Consumer>
-CONCEPT(requires model::BatchReaderConsumer<Consumer>)
+requires model::BatchReaderConsumer<Consumer>
 class assigning_consumer {
 public:
     assigning_consumer(Consumer consumer, model::offset offset)
@@ -36,9 +36,8 @@ private:
 };
 
 template<typename Consumer>
-CONCEPT(requires model::BatchReaderConsumer<Consumer>)
-assigning_consumer<Consumer> wrap_with_offset_assignment(
-  Consumer&& consumer, model::offset offset) {
+requires model::BatchReaderConsumer<Consumer> assigning_consumer<Consumer>
+wrap_with_offset_assignment(Consumer&& consumer, model::offset offset) {
     return assigning_consumer<Consumer>(
       std::forward<Consumer>(consumer), offset);
 }

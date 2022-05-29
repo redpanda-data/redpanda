@@ -130,11 +130,9 @@ public:
 
     // clang-format off
     template<typename T = random_batches_generator>
-    CONCEPT(
-        requires requires (T generator) {
+        requires requires(T generator) {
             { generator() } -> std::same_as<ss::circular_buffer<model::record_batch>>;
         }
-    )
     // clang-format on
     std::vector<model::record_batch_header> append_random_batches(
       storage::log log,

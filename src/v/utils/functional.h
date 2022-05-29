@@ -10,25 +10,20 @@
  */
 
 #pragma once
-#include "utils/concepts-enabled.h"
 
 #include <functional>
 #include <optional>
 
-// clang-format off
-CONCEPT(
 template<typename T, typename U = typename T::value_type>
 concept SupportsPushBack = requires(T a, U b) {
     { a.push_back(b) } -> std::same_as<void>;
 };
-)
-// clang-format on
 
 namespace reduce {
 struct push_back {
     template<typename VecLike>
-    CONCEPT(requires SupportsPushBack<VecLike>)
-    VecLike operator()(VecLike acc, typename VecLike::value_type t) const {
+    requires SupportsPushBack<VecLike>
+      VecLike operator()(VecLike acc, typename VecLike::value_type t) const {
         acc.push_back(std::move(t));
         return acc;
     }
@@ -36,8 +31,7 @@ struct push_back {
 
 struct push_back_opt {
     template<typename VecLike>
-    CONCEPT(requires SupportsPushBack<VecLike>)
-    VecLike operator()(
+    requires SupportsPushBack<VecLike> VecLike operator()(
       VecLike acc, std::optional<typename VecLike::value_type> ot) const {
         if (ot) {
             acc.push_back(std::move(*ot));

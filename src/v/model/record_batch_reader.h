@@ -15,7 +15,6 @@
 #include "model/record.h"
 #include "model/timeout_clock.h"
 #include "seastarx.h"
-#include "utils/concepts-enabled.h"
 
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/do_with.hh>
@@ -29,8 +28,6 @@
 
 namespace model {
 
-// clang-format off
-CONCEPT(
 template<typename Consumer>
 concept BatchReaderConsumer = requires(Consumer c, record_batch&& b) {
     { c(std::move(b)) } -> std::same_as<ss::future<ss::stop_iteration>>;
@@ -38,12 +35,11 @@ concept BatchReaderConsumer = requires(Consumer c, record_batch&& b) {
 };
 
 template<typename ReferenceConsumer>
-concept ReferenceBatchReaderConsumer = requires(ReferenceConsumer c, record_batch& b) {
+concept ReferenceBatchReaderConsumer
+  = requires(ReferenceConsumer c, record_batch& b) {
     { c(b) } -> std::same_as<ss::future<ss::stop_iteration>>;
     c.end_of_stream();
 };
-)
-// clang-format on
 
 class record_batch_reader final {
 public:
@@ -184,7 +180,7 @@ public:
     /// if you need to own the data, please use consume() below
     /// Stops when consumer returns stop_iteration::yes or end of stream
     template<typename ReferenceConsumer>
-    CONCEPT(requires ReferenceBatchReaderConsumer<ReferenceConsumer>)
+    requires ReferenceBatchReaderConsumer<ReferenceConsumer>
     auto for_each_ref(
       ReferenceConsumer consumer, timeout_clock::time_point timeout) & {
         return _impl->for_each_ref(std::move(consumer), timeout);
@@ -196,7 +192,7 @@ public:
     /// r-value version so you can do std::move(reader).do_for_each_ref();
     ///
     template<typename ReferenceConsumer>
-    CONCEPT(requires ReferenceBatchReaderConsumer<ReferenceConsumer>)
+    requires ReferenceBatchReaderConsumer<ReferenceConsumer>
     auto for_each_ref(
       ReferenceConsumer consumer, timeout_clock::time_point timeout) && {
         auto raw = _impl.get();
@@ -210,7 +206,7 @@ public:
     // reached. Next call will start from the next mutation_fragment in the
     // stream.
     template<typename Consumer>
-    CONCEPT(requires BatchReaderConsumer<Consumer>)
+    requires BatchReaderConsumer<Consumer>
     auto consume(Consumer consumer, timeout_clock::time_point timeout) & {
         return _impl->consume(std::move(consumer), timeout);
     }
@@ -231,7 +227,7 @@ public:
      * the consume method.
      */
     template<typename Consumer>
-    CONCEPT(requires BatchReaderConsumer<Consumer>)
+    requires BatchReaderConsumer<Consumer>
     auto consume(Consumer consumer, timeout_clock::time_point timeout) && {
         /*
          * ideally what we would do here is:
@@ -280,12 +276,10 @@ make_memory_record_batch_reader(model::record_batch b) {
     return make_memory_record_batch_reader(std::move(batches));
 }
 
-// clang-format off
 template<typename Func>
-CONCEPT(requires requires(Func f, model::record_batch&& batch) {
+requires requires(Func f, model::record_batch&& batch) {
     { f(std::move(batch)) } -> std::same_as<model::record_batch>;
-})
-// clang-format on
+}
 ss::future<record_batch_reader::data_t> transform_reader_to_memory(
   record_batch_reader reader, timeout_clock::time_point timeout, Func&& f) {
     using data_t = record_batch_reader::data_t;

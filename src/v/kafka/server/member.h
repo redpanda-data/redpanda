@@ -17,7 +17,6 @@
 #include "kafka/protocol/sync_group.h"
 #include "kafka/server/group_metadata.h"
 #include "kafka/types.h"
-#include "utils/concepts-enabled.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>

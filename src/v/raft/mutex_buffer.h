@@ -49,12 +49,10 @@ public:
      * executed while holding mutex lock. This method starts background dispatch
      * loop that waits for the mutex to be acquired.
      */
-    // clang-format off
     template<typename Func>
-    CONCEPT(requires requires(Func f, Request req) {
+    requires requires(Func f, Request req) {
         { f(std::move(req)) } -> std::same_as<ss::future<Response>>;
-    })
-    // clang-format on
+    }
     void start(Func&& f);
 
     ss::future<> stop() {
@@ -78,13 +76,11 @@ private:
     const size_t _max_buffered;
 };
 
-// clang-format off
 template<typename Request, typename Response>
 template<typename Func>
-CONCEPT(requires requires(Func f, Request req) {
+requires requires(Func f, Request req) {
     { f(std::move(req)) } -> std::same_as<ss::future<Response>>;
-})
-// clang-format on
+}
 void mutex_buffer<Request, Response>::start(Func&& f) {
     ssx::spawn_with_gate(_gate, [this, f = std::forward<Func>(f)]() mutable {
         return ss::do_until(

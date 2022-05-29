@@ -14,7 +14,6 @@
 #include "bytes/details/io_byte_iterator.h"
 #include "bytes/details/io_fragment.h"
 #include "bytes/details/io_placeholder.h"
-#include "utils/concepts-enabled.h"
 
 #include <seastar/core/byteorder.hh>
 #include <seastar/core/future-util.hh>
@@ -112,16 +111,13 @@ public:
     }
 
     template<typename Consumer>
-    // clang-format off
-    CONCEPT(requires requires(Consumer c, const char* src, size_t max) {
-                    { c(src, max) } -> std::same_as<ss::stop_iteration>;
-            }
-    )
-      // clang-format on
-      /// takes a Consumer object and iteraters over the chunks in oder, from
-      /// the given buffer index position. Use a stop_iteration::yes for early
-      /// exit;
-      size_t consume(const size_t n, Consumer&& f) {
+    requires requires(Consumer c, const char* src, size_t max) {
+        { c(src, max) } -> std::same_as<ss::stop_iteration>;
+    }
+    /// takes a Consumer object and iteraters over the chunks in oder, from
+    /// the given buffer index position. Use a stop_iteration::yes for early
+    /// exit;
+    size_t consume(const size_t n, Consumer&& f) {
         size_t i = 0;
         while (i < n) {
             if (_frag == _frag_end) {

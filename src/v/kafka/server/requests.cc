@@ -22,9 +22,11 @@ namespace kafka {
 /**
  * Dispatch request with version bounds checking.
  */
+// clang-format off
 template<typename Request>
-CONCEPT(requires(KafkaApiHandler<Request> || KafkaApiTwoPhaseHandler<Request>))
-struct process_dispatch {
+requires(KafkaApiHandler<Request> || KafkaApiTwoPhaseHandler<Request>)
+  // clang-format on
+  struct process_dispatch {
     static process_result_stages
     process(request_context&& ctx, ss::smp_service_group g) {
         if (
@@ -89,8 +91,8 @@ struct process_dispatch<sync_group_handler> {
 };
 
 template<typename Request>
-CONCEPT(requires(KafkaApiHandler<Request> || KafkaApiTwoPhaseHandler<Request>))
-process_result_stages
+requires(KafkaApiHandler<Request> || KafkaApiTwoPhaseHandler<Request>)
+  process_result_stages
   do_process(request_context&& ctx, ss::smp_service_group g) {
     vlog(
       klog.trace,

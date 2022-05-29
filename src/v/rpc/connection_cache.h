@@ -58,17 +58,13 @@ public:
     ss::future<> stop();
 
     template<typename Protocol, typename Func>
-    // clang-format off
-    CONCEPT(requires requires(Func&& f, Protocol proto) {
-        f(proto);
-    })
-      // clang-format on
-      auto with_node_client(
-        model::node_id self,
-        ss::shard_id src_shard,
-        model::node_id node_id,
-        clock_type::time_point connection_timeout,
-        Func&& f) {
+    requires requires(Func&& f, Protocol proto) { f(proto); }
+    auto with_node_client(
+      model::node_id self,
+      ss::shard_id src_shard,
+      model::node_id node_id,
+      clock_type::time_point connection_timeout,
+      Func&& f) {
         using ret_t = result_wrap_t<std::invoke_result_t<Func, Protocol>>;
         auto shard = rpc::connection_cache::shard_for(self, src_shard, node_id);
 
@@ -96,17 +92,13 @@ public:
     }
 
     template<typename Protocol, typename Func>
-    // clang-format off
-    CONCEPT(requires requires(Func&& f, Protocol proto) {
-        f(proto);
-    })
-      // clang-format on
-      auto with_node_client(
-        model::node_id self,
-        ss::shard_id src_shard,
-        model::node_id node_id,
-        clock_type::duration connection_timeout,
-        Func&& f) {
+    requires requires(Func&& f, Protocol proto) { f(proto); }
+    auto with_node_client(
+      model::node_id self,
+      ss::shard_id src_shard,
+      model::node_id node_id,
+      clock_type::duration connection_timeout,
+      Func&& f) {
         return with_node_client<Protocol, Func>(
           self,
           src_shard,

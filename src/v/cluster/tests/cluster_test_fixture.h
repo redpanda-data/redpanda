@@ -29,7 +29,7 @@
 #include <absl/container/flat_hash_map.h>
 
 template<typename Pred>
-CONCEPT(requires std::predicate<Pred>)
+requires std::predicate<Pred>
 void wait_for(model::timeout_clock::duration timeout, Pred&& p) {
     with_timeout(
       model::timeout_clock::now() + timeout,

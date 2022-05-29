@@ -56,8 +56,7 @@ public:
       , _gated_mutex{} {}
 
     template<typename T, typename Ret = typename T::api_type::response_type>
-    CONCEPT(requires(KafkaApi<typename T::api_type>))
-    ss::future<Ret> dispatch(T r) {
+    requires(KafkaApi<typename T::api_type>) ss::future<Ret> dispatch(T r) {
         using api_t = typename T::api_type;
         return _gated_mutex
           .with([this, r{std::move(r)}]() mutable {

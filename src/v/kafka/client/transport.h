@@ -78,9 +78,9 @@ public:
      * types to encode their type relationships between api/request/response.
      */
     template<typename T>
-    CONCEPT(requires(KafkaApi<typename T::api_type>))
-    ss::future<typename T::api_type::response_type> dispatch(
-      T r, api_version request_version, api_version response_version) {
+    requires(KafkaApi<typename T::api_type>)
+      ss::future<typename T::api_type::response_type> dispatch(
+        T r, api_version request_version, api_version response_version) {
         return send_recv([this, request_version, r = std::move(r)](
                            response_writer& wr) mutable {
                    write_header(wr, T::api_type::key, request_version);
@@ -95,9 +95,9 @@ public:
     }
 
     template<typename T>
-    CONCEPT(requires(KafkaApi<typename T::api_type>))
-    ss::future<typename T::api_type::response_type> dispatch(
-      T r, api_version ver) {
+    requires(KafkaApi<typename T::api_type>)
+      ss::future<typename T::api_type::response_type> dispatch(
+        T r, api_version ver) {
         return dispatch(std::move(r), ver, ver);
     }
 
@@ -110,8 +110,8 @@ public:
      * range.
      */
     template<typename T>
-    CONCEPT(requires(KafkaApi<typename T::api_type>))
-    ss::future<typename T::api_type::response_type> dispatch(T r) {
+    requires(KafkaApi<typename T::api_type>)
+      ss::future<typename T::api_type::response_type> dispatch(T r) {
         using type = std::remove_reference_t<std::decay_t<T>>;
         if constexpr (std::is_same_v<type, offset_fetch_request>) {
             return dispatch(std::move(r), api_version(4));

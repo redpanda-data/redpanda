@@ -104,12 +104,10 @@ private:
 
 // clang-format off
 template<typename Func>
-CONCEPT(
     requires requires(Func f, model::record_batch b){
         { f(std::move(b)) } 
             -> std::same_as<ss::futurize_t<std::invoke_result_t<Func, model::record_batch&&>>>;
     }
-)
 // clang-format on
 // Consumer applying an async action to each element in the reader
 class do_for_each_batch_consumer {

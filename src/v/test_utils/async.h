@@ -12,7 +12,6 @@
 #pragma once
 #include "model/timeout_clock.h"
 #include "seastarx.h"
-#include "utils/concepts-enabled.h"
 
 #include <seastar/core/future-util.hh>
 #include <seastar/core/lowres_clock.hh>
@@ -25,12 +24,12 @@ namespace tests {
 
 // clang-format off
 template<typename Rep, typename Period, typename Predicate>
-CONCEPT(requires ss::ApplyReturns<Predicate, bool> ||
-        ss::ApplyReturns<Predicate, ss::future<bool>>)
-// clang-format on
-/// Used to wait for Prediacate to become true
-ss::future<> cooperative_spin_wait_with_timeout(
-  std::chrono::duration<Rep, Period> timeout, Predicate p) {
+requires ss::ApplyReturns<Predicate, bool> ||
+         ss::ApplyReturns<Predicate, ss::future<bool>>
+    // clang-format on
+    /// Used to wait for Prediacate to become true
+    ss::future<> cooperative_spin_wait_with_timeout(
+      std::chrono::duration<Rep, Period> timeout, Predicate p) {
     using futurator = ss::futurize<std::invoke_result_t<Predicate>>;
     auto tout = model::timeout_clock::now() + timeout;
     return ss::with_timeout(

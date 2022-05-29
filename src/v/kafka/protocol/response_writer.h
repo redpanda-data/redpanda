@@ -19,7 +19,6 @@
 #include "model/fundamental.h"
 #include "model/timestamp.h"
 #include "seastarx.h"
-#include "utils/concepts-enabled.h"
 #include "utils/vint.h"
 
 #include <seastar/core/byteorder.hh>
@@ -38,10 +37,11 @@ void writer_serialize_batch(response_writer& w, model::record_batch&& batch);
 class response_writer {
     template<typename ExplicitIntegerType, typename IntegerType>
     // clang-format off
-    CONCEPT(requires std::is_integral<ExplicitIntegerType>::value
-            && std::is_integral<IntegerType>::value)
+    requires std::is_integral<ExplicitIntegerType>::value
+             && std::is_integral<IntegerType>::value
       // clang-format on
-      uint32_t serialize_int(IntegerType val) {
+      uint32_t
+      serialize_int(IntegerType val) {
         auto nval = ss::cpu_to_be(ExplicitIntegerType(val));
         _out->append(reinterpret_cast<const char*>(&nval), sizeof(nval));
         return sizeof(nval);
@@ -152,14 +152,11 @@ public:
         return write(int32_t(d.count()));
     }
 
-    // clang-format off
     template<typename T, typename ElementWriter>
-    CONCEPT(requires requires (ElementWriter writer,
-                               response_writer& rw,
-                               const T& elem) {
+    requires requires(
+      ElementWriter writer, response_writer& rw, const T& elem) {
         { writer(elem, rw) } -> std::same_as<void>;
-    })
-    // clang-format on
+    }
     uint32_t write_array(const std::vector<T>& v, ElementWriter&& writer) {
         auto start_size = uint32_t(_out->size_bytes());
         write(int32_t(v.size()));
@@ -168,13 +165,10 @@ public:
         }
         return _out->size_bytes() - start_size;
     }
-    // clang-format off
     template<typename T, typename ElementWriter>
-    CONCEPT(
-          requires requires(ElementWriter writer, response_writer& rw, T& elem) {
-            { writer(elem, rw) } -> std::same_as<void>;
-    })
-    // clang-format on
+    requires requires(ElementWriter writer, response_writer& rw, T& elem) {
+        { writer(elem, rw) } -> std::same_as<void>;
+    }
     uint32_t write_array(std::vector<T>& v, ElementWriter&& writer) {
         auto start_size = uint32_t(_out->size_bytes());
         write(int32_t(v.size()));
@@ -184,13 +178,10 @@ public:
         return _out->size_bytes() - start_size;
     }
 
-    // clang-format off
     template<typename T, typename ElementWriter>
-    CONCEPT(
-          requires requires(ElementWriter writer, response_writer& rw, T& elem) {
-            { writer(elem, rw) } -> std::same_as<void>;
-    })
-    // clang-format on
+    requires requires(ElementWriter writer, response_writer& rw, T& elem) {
+        { writer(elem, rw) } -> std::same_as<void>;
+    }
     uint32_t write_nullable_array(
       std::optional<std::vector<T>>& v, ElementWriter&& writer) {
         if (!v) {
@@ -202,13 +193,10 @@ public:
     // wrap a writer in a kafka bytes array object. the writer should return
     // true if writing no bytes should result in the encoding as nullable bytes,
     // and false otherwise.
-    // clang-format off
     template<typename ElementWriter>
-    CONCEPT(requires requires (ElementWriter writer,
-                               response_writer& rw) {
+    requires requires(ElementWriter writer, response_writer& rw) {
         { writer(rw) } -> std::same_as<bool>;
-    })
-    // clang-format on
+    }
     uint32_t write_bytes_wrapped(ElementWriter&& writer) {
         auto ph = _out->reserve(sizeof(int32_t));
         auto start_size = uint32_t(_out->size_bytes());

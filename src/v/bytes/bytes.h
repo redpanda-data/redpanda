@@ -47,12 +47,10 @@ struct bytes_type_hash {
     size_t operator()(const bytes_view&) const;
 };
 
-// clang-format off
 template<typename R, R (*HashFunction)(bytes::const_pointer, size_t)>
-CONCEPT(requires requires(bytes::const_pointer data, size_t len) {
+requires requires(bytes::const_pointer data, size_t len) {
     { HashFunction(data, len) } -> std::same_as<R>;
-})
-// clang-format on
+}
 struct bytes_hasher {
     using is_transparent = std::true_type;
 
