@@ -361,6 +361,10 @@ health_monitor_backend::dispatch_refresh_cluster_health_request(
     _reports.clear();
     for (auto& n_report : reply.value().report->node_reports) {
         const auto id = n_report.id;
+
+        // TODO serialize storage_space_alert, instead of recomputing here.
+        n_report.local_state.storage_space_alert
+          = node::local_monitor::eval_disks(n_report.local_state.disks);
         _reports.emplace(id, std::move(n_report));
     }
 
@@ -527,6 +531,10 @@ result<node_health_report> health_monitor_backend::process_node_reply(
         }
         return result<node_health_report>(reply.error());
     }
+
+    // TODO serialize storage_space_alert, instead of recomputing here.
+    auto& s = res.value().local_state;
+    s.storage_space_alert = node::local_monitor::eval_disks(s.disks);
 
     it->second.last_reply_timestamp = ss::lowres_clock::now();
     if (!it->second.is_alive && clusterlog.is_enabled(ss::log_level::info)) {
