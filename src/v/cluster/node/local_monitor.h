@@ -11,6 +11,7 @@
 #pragma once
 #include "cluster/node/types.h"
 #include "config/property.h"
+#include "storage/types.h"
 #include "units.h"
 
 #include <seastar/core/sstring.hh>
@@ -39,6 +40,8 @@ public:
 
     ss::future<> update_state();
     const local_state& get_state_cached() const;
+    static storage::disk_space_alert
+    eval_disks(const std::vector<storage::disk>&);
 
     static constexpr std::string_view stable_alert_string
       = "storage space alert"; // for those who grep the logs..
@@ -49,14 +52,16 @@ public:
 
 private:
     // helpers
-    std::tuple<size_t, size_t>
-    minimum_free_by_bytes_and_percent(size_t bytes_available) const;
+    static size_t
+    alert_percent_in_bytes(unsigned alert_percent, size_t bytes_available);
+
     ss::future<std::vector<storage::disk>> get_disks();
     ss::future<struct statvfs> get_statvfs(const ss::sstring);
     void update_alert_state();
     ss::future<> update_disk_metrics();
     float percent_free(const storage::disk& disk);
-    void maybe_log_space_error(const storage::disk&);
+    void maybe_log_space_error(
+      const storage::disk&, const storage::disk_space_alert);
 
     // configuration
     void refresh_configuration();
