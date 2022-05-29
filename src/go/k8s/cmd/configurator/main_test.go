@@ -88,3 +88,121 @@ func TestCalculateRedpandaID(t *testing.T) {
 		assert.NotEqual(t, statefulsetOrdinal, cfg.Redpanda.ID)
 	})
 }
+
+func TestInitSeedServerList(t *testing.T) {
+	t.Run("empty Redpanda data folder", func(t *testing.T) {
+		t.Run("first POD", func(t *testing.T) {
+			tmp := t.TempDir()
+
+			statefulsetOrdinal := 0
+
+			cfg := config.Config{
+				Redpanda: config.RedpandaConfig{
+					SeedServers: []config.SeedServer{
+						{
+							Host: config.SocketAddress{
+								Address: "testAddress",
+								Port:    768,
+							},
+						},
+					},
+				},
+			}
+			err := initializeSeedSeverList(&cfg,
+				configuratorConfig{
+					dataDirPath: tmp,
+				},
+				brokerID(statefulsetOrdinal))
+			assert.NoError(t, err)
+
+			assert.Len(t, cfg.Redpanda.SeedServers, 0)
+		})
+
+		t.Run("not first POD", func(t *testing.T) {
+			tmp := t.TempDir()
+
+			statefulsetOrdinal := 2
+
+			cfg := config.Config{
+				Redpanda: config.RedpandaConfig{
+					SeedServers: []config.SeedServer{
+						{
+							Host: config.SocketAddress{
+								Address: "testAddress",
+								Port:    768,
+							},
+						},
+					},
+				},
+			}
+			err := initializeSeedSeverList(&cfg,
+				configuratorConfig{
+					dataDirPath: tmp,
+				},
+				brokerID(statefulsetOrdinal))
+			assert.NoError(t, err)
+
+			assert.Len(t, cfg.Redpanda.SeedServers, 1)
+		})
+	})
+
+	t.Run("Fake Redpanda data folder that is not empty", func(t *testing.T) {
+		t.Run("first POD", func(t *testing.T) {
+			tmp := t.TempDir()
+			err := os.WriteFile(filepath.Join(tmp, "test"), []byte("test"), 0o666)
+			require.NoError(t, err)
+
+			statefulsetOrdinal := 0
+
+			cfg := config.Config{
+				Redpanda: config.RedpandaConfig{
+					SeedServers: []config.SeedServer{
+						{
+							Host: config.SocketAddress{
+								Address: "testAddress",
+								Port:    768,
+							},
+						},
+					},
+				},
+			}
+			err = initializeSeedSeverList(&cfg,
+				configuratorConfig{
+					dataDirPath: tmp,
+				},
+				brokerID(statefulsetOrdinal))
+			assert.NoError(t, err)
+
+			assert.Len(t, cfg.Redpanda.SeedServers, 1)
+		})
+
+		t.Run("not first POD", func(t *testing.T) {
+			tmp := t.TempDir()
+			err := os.WriteFile(filepath.Join(tmp, "test"), []byte("test"), 0o666)
+			require.NoError(t, err)
+
+			statefulsetOrdinal := 2
+
+			cfg := config.Config{
+				Redpanda: config.RedpandaConfig{
+					SeedServers: []config.SeedServer{
+						{
+							Host: config.SocketAddress{
+								Address: "testAddress",
+								Port:    768,
+							},
+						},
+					},
+				},
+			}
+			err = initializeSeedSeverList(&cfg,
+				configuratorConfig{
+					dataDirPath: tmp,
+				},
+				brokerID(statefulsetOrdinal))
+			assert.NoError(t, err)
+
+			assert.Len(t, cfg.Redpanda.SeedServers, 1)
+		})
+	})
+}

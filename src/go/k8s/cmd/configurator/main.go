@@ -138,13 +138,12 @@ func main() {
 
 	err = calculateRedpandaID(cfg, c, hostIndex)
 	if err != nil {
-		log.Fatalf("%s", fmt.Errorf("unable to calculate Redpanda ID: %w", err))
+		log.Fatalf("%s", fmt.Errorf("unable to register node Redpanda ID: %w", err))
 	}
 
-	// First Redpanda node need to have cleared seed servers in order
-	// to form raft group 0
-	if hostIndex == 0 {
-		cfg.Redpanda.SeedServers = []config.SeedServer{}
+	err = initializeSeedSeverList(cfg, c, hostIndex)
+	if err != nil {
+		log.Fatalf("%s", fmt.Errorf("unable to determine seed server list: %w", err))
 	}
 
 	cfgBytes, err := yaml.Marshal(cfg)
@@ -157,6 +156,21 @@ func main() {
 	}
 
 	log.Printf("Configuration saved to: %s", c.configDestination)
+}
+
+func initializeSeedSeverList(
+	cfg *config.Config, c configuratorConfig, index brokerID,
+) error {
+	empty, err := IsRedpandaDataFolderEmpty(c.dataDirPath)
+	if err != nil {
+		return fmt.Errorf("checking Redpanda data folder content (%s): %w", c.dataDirPath, err)
+	}
+
+	if index == 0 && empty {
+		cfg.Redpanda.SeedServers = []config.SeedServer{}
+	}
+
+	return nil
 }
 
 func calculateRedpandaID(
