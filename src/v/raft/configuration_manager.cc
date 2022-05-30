@@ -18,6 +18,8 @@
 #include "storage/kvstore.h"
 #include "vlog.h"
 
+#include <seastar/core/coroutine.hh>
+
 #include <absl/container/btree_map.h>
 #include <boost/range/irange.hpp>
 
@@ -370,12 +372,26 @@ ss::future<> configuration_manager::maybe_store_highest_known_offset(
     _highest_known_offset = offset;
     _bytes_since_last_offset_update += bytes;
 
-    if (_bytes_since_last_offset_update < offset_update_treshold) {
-        return ss::now();
+    auto take_result = _storage.resources().configuration_manager_take_bytes(
+      bytes);
+    if (_bytes_since_last_offset_update_units.count()) {
+        _bytes_since_last_offset_update_units.adopt(
+          std::move(take_result.units));
+    } else {
+        _bytes_since_last_offset_update_units = std::move(take_result.units);
+    }
+
+    if (
+      _bytes_since_last_offset_update < offset_update_treshold
+      && !take_result.checkpoint_hint) {
+        co_return;
     }
 
     _bytes_since_last_offset_update = 0;
-    return store_highest_known_offset();
+
+    co_await store_highest_known_offset();
+
+    _bytes_since_last_offset_update_units.return_all();
 }
 
 ss::future<offset_configuration> configuration_manager::wait_for_change(
