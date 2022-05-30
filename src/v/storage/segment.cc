@@ -82,14 +82,12 @@ ss::future<> segment::close() {
      * pending background roll operation that requires the write lock.
      */
     vlog(stlog.trace, "closing segment: {} ", *this);
-    return _gate.close().then([this] {
-        return write_lock().then([this](ss::rwlock::holder h) {
-            return do_flush()
-              .then([this] { return do_close(); })
-              .then([this] { return remove_tombstones(); })
-              .finally([h = std::move(h)] {});
-        });
-    });
+    co_await _gate.close();
+    auto locked = co_await write_lock();
+
+    co_await do_flush();
+    co_await do_close();
+    co_await remove_tombstones();
 }
 
 ss::future<> segment::remove_persistent_state() {
