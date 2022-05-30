@@ -11,6 +11,7 @@
 
 #include "bytes/details/io_iterator_consumer.h"
 #include "bytes/iobuf.h"
+#include "config/base_property.h"
 #include "http/logger.h"
 #include "ssx/sformat.h"
 #include "vlog.h"
@@ -77,10 +78,12 @@ ss::future<client::request_response_t> client::make_request(
     auto verb = header.method();
     auto target = header.target();
     ss::sstring target_str(target.data(), target.size());
+    prefix_logger ctxlog(http_log, ssx::sformat("[{}]", target_str));
+    vlog(ctxlog.trace, "client.make_request {}", redacted_header(header));
+
     auto req = ss::make_shared<request_stream>(this, std::move(header));
     auto res = ss::make_shared<response_stream>(this, verb, target_str);
-    prefix_logger ctxlog(http_log, ssx::sformat("[{}]", target_str));
-    vlog(ctxlog.trace, "client.make_request {}", header);
+
     auto now = ss::lowres_clock::now();
     auto age = _last_response == ss::lowres_clock::time_point::min()
                  ? ss::lowres_clock::duration::max()
@@ -588,6 +591,27 @@ ss::input_stream<char> client::response_stream::as_input_stream() {
     auto ds = ss::data_source(
       std::make_unique<response_data_source>(shared_from_this()));
     return ss::input_stream<char>(std::move(ds));
+}
+
+client::request_header redacted_header(client::request_header original) {
+    using field_type = std::variant<boost::beast::http::field, std::string>;
+
+    static const std::unordered_set<field_type> redacted_fields{
+      boost::beast::http::field::authorization, "x-amz-content-sha256"};
+
+    auto h{std::move(original)};
+
+    for (const auto& field : redacted_fields) {
+        std::visit(
+          [&h](const auto& f) {
+              if (h.find(f) != h.end()) {
+                  h.set(f, std::string{config::secret_placeholder});
+              }
+          },
+          field);
+    }
+
+    return h;
 }
 
 } // namespace http
