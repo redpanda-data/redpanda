@@ -127,7 +127,7 @@ public:
     ss::future<std::error_code> abort_configuration_change(model::revision_id);
     // Revert current configuration change - this is safe and will never cause
     // data loss
-    ss::future<std::error_code> revert_configuration_change(model::revision_id);
+    ss::future<std::error_code> cancel_configuration_change(model::revision_id);
     bool is_elected_leader() const { return _vstate == vote_state::leader; }
     // The node won the elections and made sure that the records written in
     // previous term are behind committed index

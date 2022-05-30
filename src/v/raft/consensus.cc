@@ -1010,14 +1010,14 @@ consensus::interrupt_configuration_change(model::revision_id revision, Func f) {
 }
 
 ss::future<std::error_code>
-consensus::revert_configuration_change(model::revision_id revision) {
+consensus::cancel_configuration_change(model::revision_id revision) {
     vlog(
       _ctxlog.info,
       "requested revert of current configuration change - {}",
       config());
     return interrupt_configuration_change(
       revision, [](raft::group_configuration cfg) {
-          cfg.revert_configuration_change();
+          cfg.cancel_configuration_change();
           return cfg;
       });
 }

@@ -144,7 +144,7 @@ public:
      * but the direction of change is being changed
      *
      */
-    void revert_configuration_change();
+    void cancel_configuration_change();
 
     /**
      * demotes all voters if they were removed from current configuration,

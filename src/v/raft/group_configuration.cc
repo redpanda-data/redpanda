@@ -380,7 +380,7 @@ void group_configuration::abort_configuration_change() {
     }
 }
 
-void group_configuration::revert_configuration_change() {
+void group_configuration::cancel_configuration_change() {
     vassert(
       _old,
       "can not abort configuration change if it is of simple type - "

@@ -115,7 +115,7 @@ BOOST_AUTO_TEST_CASE(test_reverting_configuration_change) {
     auto old = *test_grp.old_config();
 
     // abort change
-    test_grp.revert_configuration_change();
+    test_grp.cancel_configuration_change();
 
     BOOST_REQUIRE_EQUAL(test_grp.type(), raft::configuration_type::joint);
     BOOST_REQUIRE_EQUAL(test_grp.brokers().size(), 3);
