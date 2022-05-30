@@ -18,9 +18,9 @@ const (
 	ModeDev  = "dev"
 	ModeProd = "prod"
 
-	DefaultKafkaPort     = 9092
 	DefaultSchemaRegPort = 8081
 	DefaultProxyPort     = 8082
+	DefaultKafkaPort     = 9092
 	DefaultAdminPort     = 9644
 	DefaultRPCPort       = 33145
 	DefaultListenAddress = "0.0.0.0"

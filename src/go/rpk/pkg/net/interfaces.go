@@ -58,9 +58,12 @@ func getFreePort() (uint, error) {
 	return uint(l.Addr().(*net.TCPAddr).Port), nil
 }
 
-func GetFreePortPool(n int) ([]uint, error) {
+func GetFreePortPool(n int, takenPorts map[uint]struct{}) ([]uint, error) {
 	m := make(map[uint]struct{})
-	for len(m) != n {
+	for p := range takenPorts {
+		m[p] = struct{}{}
+	}
+	for len(m) < n {
 		p, err := getFreePort()
 		if err != nil {
 			return nil, err

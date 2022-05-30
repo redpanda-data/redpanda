@@ -23,6 +23,7 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
 	"github.com/sirupsen/logrus"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -33,16 +34,21 @@ func noopCheck(_ []node) func() error {
 }
 
 func TestStart(t *testing.T) {
+	happyPathClusterPorts := clusterPorts{
+		kafka: []uint{9092},
+	}
 	tests := []struct {
 		name           string
 		client         func(st *testing.T) (common.Client, error)
+		ports          clusterPorts
 		nodes          uint
 		check          func([]node) func() error
 		expectedErrMsg string
 		expectedOutput string
 	}{
 		{
-			name: "it should fail if the img can't be pulled and imgs can't be listed",
+			name:  "fail if the img can't be pulled and imgs can't be listed",
+			ports: happyPathClusterPorts,
 			client: func(_ *testing.T) (common.Client, error) {
 				return &common.MockClient{
 					MockImagePull: func(
@@ -64,7 +70,8 @@ func TestStart(t *testing.T) {
 				" wasn't found either: Can't pull",
 		},
 		{
-			name: "it should fail if the img couldn't be pulled bc of internet conn issues",
+			name:  "fail if the img couldn't be pulled bc of internet conn issues",
+			ports: happyPathClusterPorts,
 			client: func(_ *testing.T) (common.Client, error) {
 				return &common.MockClient{
 					MockImagePull: func(
@@ -89,7 +96,8 @@ func TestStart(t *testing.T) {
 Please check your internet connection and try again.`,
 		},
 		{
-			name: "it should fail if the img can't be pulled and it isn't avail. locally",
+			name:  "fail if the img can't be pulled and it isn't avail. locally",
+			ports: happyPathClusterPorts,
 			client: func(_ *testing.T) (common.Client, error) {
 				return &common.MockClient{
 					MockImagePull: func(
@@ -111,7 +119,8 @@ Please check your internet connection and try again.`,
 				" wasn't found either: Can't pull",
 		},
 		{
-			name: "it should fail if creating the network fails",
+			name:  "fail if creating the network fails",
+			ports: happyPathClusterPorts,
 			client: func(_ *testing.T) (common.Client, error) {
 				return &common.MockClient{
 					MockNetworkCreate: func(
@@ -129,7 +138,8 @@ Please check your internet connection and try again.`,
 			expectedErrMsg: "Network create go boom",
 		},
 		{
-			name:  "it should fail if inspecting the network fails",
+			name:  "fail if inspecting the network fails",
+			ports: happyPathClusterPorts,
 			nodes: 1,
 			client: func(_ *testing.T) (common.Client, error) {
 				return &common.MockClient{
@@ -148,7 +158,8 @@ Please check your internet connection and try again.`,
 			expectedErrMsg: "Can't inspect the network",
 		},
 		{
-			name:  "it should fail if the network config is corrupted",
+			name:  "fail if the network config is corrupted",
+			ports: happyPathClusterPorts,
 			nodes: 1,
 			client: func(_ *testing.T) (common.Client, error) {
 				return &common.MockClient{
@@ -171,7 +182,8 @@ Please check your internet connection and try again.`,
 			expectedErrMsg: "'rpnet' network config is corrupted",
 		},
 		{
-			name: "it should fail if listing the containers fails",
+			name:  "fail if listing the containers fails",
+			ports: happyPathClusterPorts,
 			client: func(_ *testing.T) (common.Client, error) {
 				return &common.MockClient{
 					MockContainerList: func(
@@ -185,7 +197,8 @@ Please check your internet connection and try again.`,
 			expectedErrMsg: "Can't list",
 		},
 		{
-			name: "it should fail if inspecting existing containers fails",
+			name:  "fail if inspecting existing containers fails",
+			ports: happyPathClusterPorts,
 			client: func(_ *testing.T) (common.Client, error) {
 				return &common.MockClient{
 					MockContainerInspect: func(
@@ -213,7 +226,8 @@ Please check your internet connection and try again.`,
 			expectedErrMsg: "Can't inspect",
 		},
 		{
-			name:  "it should fail if creating the container fails",
+			name:  "fail if creating the container fails",
+			ports: happyPathClusterPorts,
 			nodes: 1,
 			client: func(_ *testing.T) (common.Client, error) {
 				return &common.MockClient{
@@ -258,7 +272,8 @@ Please check your internet connection and try again.`,
 			expectedErrMsg: "Can't create container",
 		},
 		{
-			name:  "it should allow creating a single container",
+			name:  "allow creating a single container",
+			ports: happyPathClusterPorts,
 			nodes: 1,
 			client: func(_ *testing.T) (common.Client, error) {
 				return &common.MockClient{
@@ -303,7 +318,10 @@ Please check your internet connection and try again.`,
 			expectedOutput: `Cluster started! You may use rpk to interact with it.`,
 		},
 		{
-			name:  "it should allow creating multiple containers",
+			name: "allow creating multiple containers",
+			ports: clusterPorts{
+				kafka: []uint{9092, 9093, 9094},
+			},
 			nodes: 3,
 			client: func(_ *testing.T) (common.Client, error) {
 				return &common.MockClient{
@@ -348,7 +366,8 @@ Please check your internet connection and try again.`,
 			expectedOutput: `Cluster started! You may use rpk to interact with it.`,
 		},
 		{
-			name:  "it should do nothing if there's an existing running cluster",
+			name:  "do nothing if there's an existing running cluster",
+			ports: happyPathClusterPorts,
 			nodes: 1,
 			client: func(_ *testing.T) (common.Client, error) {
 				return &common.MockClient{
@@ -382,7 +401,10 @@ Please check your internet connection and try again.`,
 			},
 		},
 		{
-			name:  "it should fail if the cluster doesn't form",
+			name: "fail if the cluster doesn't form",
+			ports: clusterPorts{
+				kafka: []uint{9092, 9093, 9094},
+			},
 			nodes: 3,
 			client: func(_ *testing.T) (common.Client, error) {
 				return &common.MockClient{
@@ -432,7 +454,10 @@ Please check your internet connection and try again.`,
 			expectedErrMsg: `Some weird error`,
 		},
 		{
-			name:  "it should pass the right flags",
+			name: "pass the right flags",
+			ports: clusterPorts{
+				kafka: []uint{9092, 9093, 9094},
+			},
 			nodes: 3,
 			client: func(st *testing.T) (common.Client, error) {
 				return &common.MockClient{
@@ -507,6 +532,7 @@ Please check your internet connection and try again.`,
 			err = startCluster(
 				c,
 				tt.nodes,
+				tt.ports,
 				check,
 				retries,
 				common.DefaultImage(),
@@ -557,6 +583,119 @@ func TestCollectFlags(t *testing.T) {
 		t.Run(tt.name, func(st *testing.T) {
 			res := collectFlags(tt.input, "--set")
 			require.Exactly(st, tt.expected, res)
+		})
+	}
+}
+
+func TestAssignPorts(t *testing.T) {
+	tests := []struct {
+		name       string
+		ports      []string
+		takenPorts map[uint]struct{}
+		nodes      uint
+		expErr     string
+		exp        []uint
+		isAny      bool
+	}{
+		{
+			name:       "not allow if ports is greater than the number of nodes",
+			ports:      []string{"9092", "9093"},
+			takenPorts: map[uint]struct{}{},
+			nodes:      1,
+			expErr:     "--test-port should not exceed the total number of nodes (1)",
+			exp:        []uint(nil),
+		},
+		{
+			name:       "return 0 nodes if there are no ports passed",
+			ports:      []string{},
+			takenPorts: map[uint]struct{}{},
+			nodes:      1,
+			expErr:     "",
+			exp:        []uint(nil),
+		},
+		{
+			name:       "validate none uints",
+			ports:      []string{"this_is_not_none"},
+			takenPorts: map[uint]struct{}{},
+			nodes:      1,
+			expErr:     "provided port \"this_is_not_none\" is not a valid uint nor a valid string ('any', 'none', 'skip')",
+			exp:        []uint(nil),
+		},
+		{
+			name:       "validate ports that is not within the port range",
+			ports:      []string{"65536"},
+			takenPorts: map[uint]struct{}{},
+			nodes:      1,
+			expErr:     "provided port \"65536\" exceeded the range of transport layer range of 1025 - 65535",
+			exp:        []uint(nil),
+		},
+		{
+			name:       "don't allow 'none' and 'any'",
+			ports:      []string{"none", "any"},
+			takenPorts: map[uint]struct{}{},
+			nodes:      2,
+			expErr:     "cannot specify 'any' and ('none' or 'skip') together",
+			exp:        []uint(nil),
+		},
+		{
+			name:       "don't allow 'none' or 'any' specified with ports",
+			ports:      []string{"none", "9092"},
+			takenPorts: map[uint]struct{}{},
+			nodes:      2,
+			expErr:     "cannot specify 'any', 'none', or 'skip' with specific ports",
+			exp:        []uint(nil),
+		},
+		{
+			name:       "would return a single element array with the element 0 to signal that this is for random assignment",
+			ports:      []string{"any"},
+			takenPorts: map[uint]struct{}{},
+			isAny:      true,
+			nodes:      5,
+			exp:        []uint{0},
+			expErr:     "",
+		},
+		{
+			name:       "use the highest port as a base port",
+			ports:      []string{"9092", "9082"},
+			takenPorts: map[uint]struct{}{},
+			nodes:      3,
+			expErr:     "",
+			exp:        []uint{9082, 9092, 9093},
+		},
+		{
+			name:       "don't allow overlaps",
+			ports:      []string{"9092"},
+			takenPorts: map[uint]struct{}{9092: {}},
+			nodes:      3,
+			expErr:     "--test-port port (9092) has an overlap with other flags",
+		},
+		{
+			name:       "return no ports when none is specified",
+			ports:      []string{"none"},
+			takenPorts: map[uint]struct{}{},
+			nodes:      3,
+			expErr:     "",
+			exp:        []uint(nil),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(st *testing.T) {
+			assert := assert.New(st)
+			assignedPorts, err := assignPorts("test-port", test.ports, test.takenPorts, test.nodes, false)
+			if test.expErr != "" {
+				assert.Error(err)
+				assert.Equal(test.expErr, err.Error())
+				return
+			} else {
+				assert.NoError(err)
+				assert.Equal(len(test.exp), len(assignedPorts))
+				if len(test.exp) > 0 {
+					for i, ep := range test.exp {
+						assert.Equal(ep, assignedPorts[i])
+					}
+				}
+			}
 		})
 	}
 }
