@@ -116,32 +116,32 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	hostIndex, err := hostIndex(c.hostName)
+	podOrdinal, err := hostIndex(c.hostName)
 	if err != nil {
 		log.Fatalf("%s", fmt.Errorf("unable to extract host index: %w", err))
 	}
 
-	log.Printf("Host index calculated %d", hostIndex)
+	log.Printf("Host index calculated %d", podOrdinal)
 
-	err = registerAdvertisedKafkaAPI(&c, cfg, hostIndex, kafkaAPIPort)
+	err = registerAdvertisedKafkaAPI(&c, cfg, podOrdinal, kafkaAPIPort)
 	if err != nil {
 		log.Fatalf("%s", fmt.Errorf("unable to register advertised Kafka API: %w", err))
 	}
 
 	if cfg.Pandaproxy != nil && len(cfg.Pandaproxy.PandaproxyAPI) > 0 {
 		proxyAPIPort := getInternalProxyAPIPort(cfg)
-		err = registerAdvertisedPandaproxyAPI(&c, cfg, hostIndex, proxyAPIPort)
+		err = registerAdvertisedPandaproxyAPI(&c, cfg, podOrdinal, proxyAPIPort)
 		if err != nil {
 			log.Fatalf("%s", fmt.Errorf("unable to register advertised Pandaproxy API: %w", err))
 		}
 	}
 
-	err = calculateRedpandaID(cfg, c, hostIndex)
+	err = calculateRedpandaID(cfg, c, podOrdinal)
 	if err != nil {
 		log.Fatalf("%s", fmt.Errorf("unable to register node Redpanda ID: %w", err))
 	}
 
-	err = initializeSeedSeverList(cfg, c, hostIndex)
+	err = initializeSeedSeverList(cfg, c, podOrdinal)
 	if err != nil {
 		log.Fatalf("%s", fmt.Errorf("unable to determine seed server list: %w", err))
 	}
