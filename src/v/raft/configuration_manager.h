@@ -205,6 +205,10 @@ private:
      */
     size_t _bytes_since_last_offset_update = 0;
 
+    // Units issued by the storage resource manager to track how many bytes
+    // of data is currently pending checkpoint.
+    ss::semaphore_units<> _bytes_since_last_offset_update_units;
+
     model::revision_id _initial_revision{};
     ctx_log& _ctxlog;
     configuration_idx _next_index{0};
