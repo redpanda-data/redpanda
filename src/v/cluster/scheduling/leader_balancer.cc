@@ -95,7 +95,7 @@ ss::future<> leader_balancer::start() {
                 if (_enabled()) {
                     vlog(
                       clusterlog.info,
-                      "Leader balancer: controller leadership lost");
+                      "Leader balancer: node is not controller leader");
                 }
                 _need_controller_refresh = true;
                 _timer.cancel();
