@@ -118,7 +118,7 @@ ss::future<> state_machine::apply() {
               f = handle_eviction();
           }
           return f.then([this] {
-              // build a reader for log range [_next, +inf).
+              vlog(_log.debug, "State machine startup reading {}->max", _next);
               storage::log_reader_config config(
                 _next, model::model_limits<model::offset>::max(), _io_prio);
               return _raft->make_reader(config);

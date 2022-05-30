@@ -628,6 +628,10 @@ private:
     voter_priority _target_priority = voter_priority::max();
     std::optional<voter_priority> _node_priority_override;
 
+    // storage_resources units to track bytes written since last
+    // stm_manager snapshot.
+    ss::semaphore_units<> _stm_dirty_bytes_units;
+
     /**
      * We keep an idex of the most recent entry replicated with quorum
      * consistency level to make sure that all requests replicated with quorum

@@ -2175,6 +2175,17 @@ ss::future<storage::append_result> consensus::disk_append(
               _last_quorum_replicated_index = ret.last_offset;
           }
           _has_pending_flushes = true;
+
+          // Register increase in dirty bytes since last STM snapshot
+          auto take_result = _storage.resources().consensus_stm_take_bytes(
+            ret.byte_size);
+          if (_stm_dirty_bytes_units.count()) {
+              _stm_dirty_bytes_units.adopt(std::move(take_result.units));
+          } else {
+              _stm_dirty_bytes_units = std::move(take_result.units);
+          }
+          bool stm_snapshot_hint = take_result.checkpoint_hint;
+
           // TODO
           // if we rolled a log segment. write current configuration
           // for speedy recovery in the background
@@ -2190,10 +2201,15 @@ ss::future<storage::append_result> consensus::disk_append(
               f = _configuration_manager.add(std::move(configurations));
           }
 
-          return f.then([this, ret = ret] {
+          return f.then([this, ret = ret, stm_snapshot_hint] {
               // if we are already shutting down, do nothing
               if (_bg.is_closed()) {
                   return ret;
+              }
+
+              if (stm_snapshot_hint) {
+                  _log.stm_manager()->make_snapshot_in_background();
+                  _stm_dirty_bytes_units.return_all();
               }
 
               // Do checkpointing in the background to avoid latency spikes in
