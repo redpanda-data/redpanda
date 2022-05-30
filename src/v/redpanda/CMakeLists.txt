@@ -25,9 +25,10 @@ endforeach()
 
 v_cc_library(
   NAME application
-  SRCS 
+  SRCS
     ${swag_files}
     admin_server.cc
+    cli_parser.cc
     request_auth.cc
     application.cc
   DEPS
@@ -41,9 +42,10 @@ v_cc_library(
     v::archival
   )
 
+add_subdirectory(tests)
+
 add_executable(redpanda
-    main.cc
-  )
+    main.cc)
 target_link_libraries(redpanda PUBLIC v::application v::raft v::kafka)
 set_property(TARGET redpanda PROPERTY POSITION_INDEPENDENT_CODE ON)
 

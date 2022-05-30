@@ -12,6 +12,7 @@
 #include "archival/ntp_archiver_service.h"
 #include "archival/service.h"
 #include "archival/upload_controller.h"
+#include "cli_parser.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/controller.h"
 #include "cluster/fwd.h"
@@ -173,6 +174,18 @@ int application::run(int ac, char** av) {
       "redpanda-cfg",
       po::value<std::string>(),
       ".yaml file config for redpanda");
+
+    // Validate command line args using options registered by the app and
+    // seastar
+    if (!cli_parser{
+          ac,
+          av,
+          cli_parser::app_opts{app.get_options_description()},
+          cli_parser::ss_opts{app.get_conf_file_options_description()},
+          _log}
+           .validate()) {
+        return 1;
+    }
 
     return app.run(ac, av, [this, &app] {
         auto& cfg = app.configuration();
