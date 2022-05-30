@@ -94,6 +94,11 @@ func (r *ClusterRoleResource) obj() k8sclient.Object {
 				APIGroups: []string{redpandav1alpha1.SchemeBuilder.GroupVersion.String()},
 				Resources: []string{"clusters"},
 			},
+			{
+				Verbs:     []string{"get", "create", "update"},
+				APIGroups: []string{corev1.GroupName},
+				Resources: []string{"configmaps"},
+			},
 		},
 	}
 }

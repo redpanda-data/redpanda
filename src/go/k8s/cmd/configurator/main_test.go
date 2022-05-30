@@ -1,6 +1,7 @@
 package main
 
 import (
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
@@ -29,11 +31,52 @@ func TestCalculateRedpandaID(t *testing.T) {
 
 		statefulsetOrdinal := 2
 
-		err := calculateRedpandaID(&cfg,
+		c := fake.NewClientBuilder().Build()
+		err := calculateRedpandaID(func() int {
+			return int(rand.NewSource(time.Now().Unix()).Int63())
+		},
+			&cfg,
 			configuratorConfig{
 				dataDirPath: tmp,
+				hostName:    "test-hostname-2",
 			},
-			brokerID(statefulsetOrdinal))
+			brokerID(statefulsetOrdinal), c)
+		assert.NoError(t, err)
+
+		redpandaID, err := os.ReadFile(filepath.Join(tmp, redpandaIDFile))
+		require.NoError(t, err)
+
+		rpID, err := strconv.Atoi(string(redpandaID))
+		require.NoError(t, err)
+
+		assert.Equal(t, rpID, cfg.Redpanda.ID)
+		assert.NotEqual(t, statefulsetOrdinal, cfg.Redpanda.ID)
+	})
+
+	t.Run("Clean state - empty Redpanda data folder, but id already exist", func(t *testing.T) {
+		initialID := 999
+		tmp := t.TempDir()
+		cfg := config.Config{}
+
+		statefulsetOrdinal := 2
+
+		c := fake.NewClientBuilder().WithObjects(&v1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-hostname-ids",
+			},
+			Data: map[string]string{
+				redpandaIDs: "999;1000",
+			},
+		}).Build()
+		err := calculateRedpandaID(func() int {
+			initialID++
+			return initialID
+		}, &cfg,
+			configuratorConfig{
+				dataDirPath: tmp,
+				hostName:    "test-hostname-2",
+			},
+			brokerID(statefulsetOrdinal), c)
 		assert.NoError(t, err)
 
 		redpandaID, err := os.ReadFile(filepath.Join(tmp, redpandaIDFile))
@@ -54,11 +97,14 @@ func TestCalculateRedpandaID(t *testing.T) {
 		statefulsetOrdinal := 2
 
 		cfg := config.Config{}
-		err = calculateRedpandaID(&cfg,
+		c := fake.NewClientBuilder().Build()
+		err = calculateRedpandaID(func() int {
+			return 0
+		}, &cfg,
 			configuratorConfig{
 				dataDirPath: tmp,
 			},
-			brokerID(statefulsetOrdinal))
+			brokerID(statefulsetOrdinal), c)
 		assert.NoError(t, err)
 
 		redpandaID, err := os.ReadFile(filepath.Join(tmp, redpandaIDFile))
@@ -80,11 +126,14 @@ func TestCalculateRedpandaID(t *testing.T) {
 		statefulsetOrdinal := 2
 
 		cfg := config.Config{}
-		err = calculateRedpandaID(&cfg,
+		c := fake.NewClientBuilder().Build()
+		err = calculateRedpandaID(func() int {
+			return 999
+		}, &cfg,
 			configuratorConfig{
 				dataDirPath: tmp,
 			},
-			brokerID(statefulsetOrdinal))
+			brokerID(statefulsetOrdinal), c)
 		assert.NoError(t, err)
 
 		redpandaID, err := os.ReadFile(filepath.Join(tmp, redpandaIDFile))

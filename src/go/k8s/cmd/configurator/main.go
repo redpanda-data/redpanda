@@ -35,6 +35,7 @@ import (
 	"gopkg.in/yaml.v3"
 	v1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sLabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes"
@@ -56,6 +57,8 @@ const (
 	hostPortEnvVar                        = "HOST_PORT"
 	proxyHostPortEnvVar                   = "PROXY_HOST_PORT"
 	dataDirPath                           = "DATA_DIR_PATH"
+
+	redpandaIDs = "redoanda-ids"
 )
 
 type brokerID int
@@ -103,7 +106,7 @@ func (c *configuratorConfig) String() string {
 		c.dataDirPath)
 }
 
-var errorMissingEnvironmentVariable = errors.New("missing environment variable")
+var errorMissingEnvironmentVariable = fmt.Errorf("missing environment variable")
 
 func main() {
 	log.Print("The redpanda configurator is starting")
@@ -146,11 +149,6 @@ func main() {
 		}
 	}
 
-	err = calculateRedpandaID(cfg, c, podOrdinal)
-	if err != nil {
-		log.Fatalf("%s", fmt.Errorf("unable to register node Redpanda ID: %w", err))
-	}
-
 	restCfg, err := k8sConfig.GetConfig()
 	if err != nil {
 		log.Fatalf("%s", fmt.Errorf("unable to create kubernetes rest config: %w", err))
@@ -159,6 +157,13 @@ func main() {
 	k8sClient, err := client.New(restCfg, client.Options{})
 	if err != nil {
 		log.Fatalf("%s", fmt.Errorf("unable to create kubernetes client: %w", err))
+	}
+
+	err = calculateRedpandaID(func() int {
+		return int(rand.NewSource(time.Now().Unix()).Int63())
+	}, cfg, c, podOrdinal, k8sClient)
+	if err != nil {
+		log.Fatalf("%s", fmt.Errorf("unable to register node Redpanda ID: %w", err))
 	}
 
 	err = initializeSeedSeverList(cfg, c, podOrdinal, k8sClient)
@@ -303,7 +308,7 @@ func renderStsName(podName string, index brokerID) string {
 }
 
 func calculateRedpandaID(
-	cfg *config.Config, c configuratorConfig, initialID brokerID,
+	randID func() int, cfg *config.Config, c configuratorConfig, initialID brokerID, k8sClient client.Client,
 ) error {
 	redpandaIDFile := filepath.Join(c.dataDirPath, ".redpanda_id")
 
@@ -323,7 +328,54 @@ func calculateRedpandaID(
 			return nil
 		}
 
-		redpandaID := int(rand.NewSource(time.Now().Unix()).Int63())
+		redpandaID := randID()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		if len(c.hostName) < 3 {
+			return fmt.Errorf("hostname should have more than 3 caracters")
+		}
+		cmName := renderStsName(c.hostName, initialID)
+
+		cm := &corev1.ConfigMap{}
+		err = k8sClient.Get(ctx, client.ObjectKey{
+			Name: fmt.Sprintf("%s-ids", cmName),
+		}, cm)
+		if err != nil && k8sErrors.IsNotFound(err) {
+			cm.Name = fmt.Sprintf("%s-ids", cmName)
+			cm.Data = map[string]string{
+				redpandaIDs: "",
+			}
+			err = k8sClient.Create(ctx, cm)
+			if err != nil {
+				return fmt.Errorf("creating Redpanda ID in configmap: %w", err)
+			}
+		} else if err != nil {
+			return fmt.Errorf("retreving redpanda ids config map: %w", err)
+		}
+
+		ids, ok := cm.Data[redpandaIDs]
+		if ok {
+			splitIDs := strings.Split(ids, ";")
+			found := true
+			for found {
+				found = false
+				for _, id := range splitIDs {
+					if id == strconv.Itoa(redpandaID) {
+						redpandaID = randID()
+						found = true
+						break
+					}
+				}
+			}
+
+			cm.Data[redpandaIDs] = fmt.Sprintf("%s;%d", ids, redpandaID)
+			err = k8sClient.Update(ctx, cm)
+			if err != nil {
+				return fmt.Errorf("updating redpanda ids config map: %w", err)
+			}
+		}
 
 		err = os.WriteFile(redpandaIDFile, []byte(strconv.Itoa(redpandaID)), 0o666)
 		if err != nil {
@@ -358,7 +410,7 @@ func IsRedpandaDataFolderEmpty(dataDirPath string) (bool, error) {
 	return len(de) == 0, nil
 }
 
-var errInternalPortMissing = errors.New("port configration is missing internal port")
+var errInternalPortMissing = fmt.Errorf("port configration is missing internal port")
 
 func getInternalKafkaAPIPort(cfg *config.Config) (int, error) {
 	for _, l := range cfg.Redpanda.KafkaAPI {
