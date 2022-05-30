@@ -87,6 +87,8 @@ ss::future<> segment::close() {
     co_await _gate.close();
     auto locked = co_await write_lock();
 
+    auto units = co_await _resources.get_close_flush_units();
+
     co_await do_flush();
     co_await do_close();
     co_await remove_tombstones();
