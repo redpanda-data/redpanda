@@ -499,12 +499,21 @@ private:
              * no raft group instance on target node to handle the request.
              */
             if (reply.value().target_node_id.id() == model::node_id{}) {
-                vlog(
-                  _ctxlog.warn,
-                  "received {} reply from the node where ntp {} does not "
-                  "exists",
-                  request,
-                  _log.config().ntp());
+                // A grace period, where perhaps it is okay that a peer
+                // hasn't seen the controller log message that created
+                // this partition yet.
+                static constexpr clock_type::duration grace = 30s;
+                bool instantiated_recently = (clock_type::now()
+                                              - _instantiated_at)
+                                             < grace;
+                if (!instantiated_recently) {
+                    vlog(
+                      _ctxlog.warn,
+                      "received {} reply from the node where ntp {} does not "
+                      "exists",
+                      request,
+                      _log.config().ntp());
+                }
                 return result<Reply>(errc::group_not_exists);
             }
 
@@ -560,6 +569,8 @@ private:
     /// useful for when we are not the leader
     clock_type::time_point _hbeat = clock_type::now();
     clock_type::time_point _became_leader_at = clock_type::now();
+    clock_type::time_point _instantiated_at = clock_type::now();
+
     /// used to keep track if we are a leader, or transitioning
     vote_state _vstate = vote_state::follower;
     /// used for votes only. heartbeats are done by heartbeat_manager
