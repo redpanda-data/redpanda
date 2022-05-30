@@ -62,10 +62,6 @@ RESTART_LOG_ALLOW_LIST = [
     re.compile(
         "(raft|rpc) - .*(disconnected_endpoint|Broken pipe|Connection reset by peer)"
     ),
-    # cluster - members_manager.cc:118 - Unable to update node configuration - seastar::sleep_aborted (Sleep is aborted)
-    re.compile("members_manager.*sleep_aborted"),
-    # cluster - members_backend.cc:91 - error waiting for members updates - seastar::abort_requested_exception (abort requested)
-    re.compile("members_backend.*abort_requested_exception"),
     re.compile(
         "raft - .*recovery append entries error.*client_request_timeout"),
     # cluster - rm_stm.cc:550 - Error "raft::errc:19" on replicating pid:{producer_identity: id=1, epoch=0} commit batch
