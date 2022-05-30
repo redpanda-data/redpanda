@@ -216,9 +216,9 @@ ss::future<> log_manager::async_clear_logs() {
 }
 
 ss::future<log> log_manager::manage(ntp_config cfg) {
-    return ss::with_gate(_open_gate, [this, cfg = std::move(cfg)]() mutable {
-        return do_manage(std::move(cfg));
-    });
+    auto gate = _open_gate.hold();
+
+    co_return co_await do_manage(std::move(cfg));
 }
 
 ss::future<> log_manager::recover_log_state(const ntp_config& cfg) {
