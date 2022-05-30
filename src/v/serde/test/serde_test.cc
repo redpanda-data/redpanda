@@ -10,6 +10,7 @@
 #include "hashing/crc32c.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "random/generators.h"
 #include "serde/envelope.h"
 #include "serde/serde.h"
 #include "utils/fragmented_vector.h"
@@ -707,4 +708,14 @@ SEASTAR_THREAD_TEST_CASE(serde_topic_namespace_test) {
     auto tn = serde::from_iobuf<model::topic_namespace>(std::move(b));
     BOOST_CHECK_EQUAL(tn.ns, "abc");
     BOOST_CHECK_EQUAL(tn.tp, "def");
+}
+
+SEASTAR_THREAD_TEST_CASE(serde_bytes_test) {
+    iobuf b;
+    bytes bt = random_generators::get_bytes(128);
+
+    b = serde::to_iobuf(bt);
+
+    auto result = serde::from_iobuf<bytes>(std::move(b));
+    BOOST_CHECK_EQUAL(bt, result);
 }

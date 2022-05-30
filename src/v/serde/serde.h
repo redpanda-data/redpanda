@@ -26,6 +26,7 @@
 #include <numeric>
 #include <string>
 #include <string_view>
+#include <type_traits>
 
 namespace serde {
 
@@ -141,7 +142,12 @@ inline constexpr auto const is_serde_compatible_v
     || std::is_same_v<T, std::chrono::milliseconds>
     || std::is_same_v<T, iobuf>
     || std::is_same_v<T, ss::sstring>
+    || std::is_same_v<T, bytes>
     || is_fragmented_vector_v<T>;
+
+template<typename T>
+inline constexpr auto const are_bytes_and_string_different = !(
+  std::is_same_v<T, ss::sstring> && std::is_same_v<T, bytes>);
 
 template<typename T>
 void write(iobuf&, T);
@@ -149,6 +155,7 @@ void write(iobuf&, T);
 template<typename T>
 void write(iobuf& out, T t) {
     using Type = std::decay_t<T>;
+    static_assert(are_bytes_and_string_different<Type>);
     static_assert(has_serde_write<Type> || is_serde_compatible_v<Type>);
 
     if constexpr (is_envelope_v<Type>) {
@@ -246,6 +253,9 @@ void write(iobuf& out, T t) {
         write<serde_size_t>(out, t.size_bytes());
         out.append(t.share(0, t.size_bytes()));
     } else if constexpr (std::is_same_v<Type, ss::sstring>) {
+        write<serde_size_t>(out, t.size());
+        out.append(t.data(), t.size());
+    } else if constexpr (std::is_same_v<Type, bytes>) {
         write<serde_size_t>(out, t.size());
         out.append(t.data(), t.size());
     } else if constexpr (reflection::is_std_optional_v<Type>) {
@@ -346,6 +356,7 @@ header read_header(iobuf_parser& in, std::size_t const bytes_left_limit) {
 template<typename T>
 void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
     using Type = std::decay_t<T>;
+    static_assert(are_bytes_and_string_different<Type>);
     static_assert(has_serde_read<T> || is_serde_compatible_v<Type>);
 
     if constexpr (is_envelope_v<Type>) {
@@ -449,6 +460,11 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
         t = in.share(read_nested<serde_size_t>(in, bytes_left_limit));
     } else if constexpr (std::is_same_v<Type, ss::sstring>) {
         auto str = ss::uninitialized_string(
+          read_nested<serde_size_t>(in, bytes_left_limit));
+        in.consume_to(str.size(), str.begin());
+        t = str;
+    } else if constexpr (std::is_same_v<Type, bytes>) {
+        auto str = ss::uninitialized_string<bytes>(
           read_nested<serde_size_t>(in, bytes_left_limit));
         in.consume_to(str.size(), str.begin());
         t = str;
