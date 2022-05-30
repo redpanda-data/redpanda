@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -77,6 +78,21 @@ func (r *ClusterRoleResource) obj() k8sclient.Object {
 				Verbs:     []string{"get"},
 				APIGroups: []string{corev1.GroupName},
 				Resources: []string{"nodes"},
+			},
+			{
+				Verbs:     []string{"get"},
+				APIGroups: []string{appsv1.SchemeGroupVersion.String()},
+				Resources: []string{"statefulsets"},
+			},
+			{
+				Verbs:     []string{"list"},
+				APIGroups: []string{corev1.GroupName},
+				Resources: []string{"pods"},
+			},
+			{
+				Verbs:     []string{"get"},
+				APIGroups: []string{redpandav1alpha1.SchemeBuilder.GroupVersion.String()},
+				Resources: []string{"clusters"},
 			},
 		},
 	}

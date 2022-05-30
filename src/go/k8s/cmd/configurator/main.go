@@ -11,10 +11,14 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -23,14 +27,20 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-multierror"
+	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	labels "github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/networking"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"gopkg.in/yaml.v3"
+	v1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sLabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	k8sConfig "sigs.k8s.io/controller-runtime/pkg/client/config"
 )
 
 const (
@@ -141,7 +151,17 @@ func main() {
 		log.Fatalf("%s", fmt.Errorf("unable to register node Redpanda ID: %w", err))
 	}
 
-	err = initializeSeedSeverList(cfg, c, podOrdinal)
+	restCfg, err := k8sConfig.GetConfig()
+	if err != nil {
+		log.Fatalf("%s", fmt.Errorf("unable to create kubernetes rest config: %w", err))
+	}
+
+	k8sClient, err := client.New(restCfg, client.Options{})
+	if err != nil {
+		log.Fatalf("%s", fmt.Errorf("unable to create kubernetes client: %w", err))
+	}
+
+	err = initializeSeedSeverList(cfg, c, podOrdinal, k8sClient)
 	if err != nil {
 		log.Fatalf("%s", fmt.Errorf("unable to determine seed server list: %w", err))
 	}
@@ -159,18 +179,127 @@ func main() {
 }
 
 func initializeSeedSeverList(
-	cfg *config.Config, c configuratorConfig, index brokerID,
+	cfg *config.Config, c configuratorConfig, index brokerID, k8sClient client.Client,
 ) error {
+	if index != 0 {
+		return nil
+	}
+
 	empty, err := IsRedpandaDataFolderEmpty(c.dataDirPath)
 	if err != nil {
 		return fmt.Errorf("checking Redpanda data folder content (%s): %w", c.dataDirPath, err)
 	}
 
-	if index == 0 && empty {
-		cfg.Redpanda.SeedServers = []config.SeedServer{}
+	if !empty {
+		return nil
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	stsName := renderStsName(c.hostName, index)
+
+	sts := &v1.StatefulSet{}
+	err = k8sClient.Get(ctx, client.ObjectKey{
+		Name: stsName,
+	}, sts)
+	if err != nil {
+		return fmt.Errorf("retrieving statful set: %w", err)
+	}
+
+	if *sts.Spec.Replicas == 1 {
+		cfg.Redpanda.SeedServers = []config.SeedServer{}
+		return nil
+	}
+
+	podList := &corev1.PodList{}
+	err = k8sClient.List(ctx, podList, &client.ListOptions{
+		LabelSelector: k8sLabels.SelectorFromSet(map[string]string{
+			labels.InstanceKey: stsName,
+		}),
+	})
+	if err != nil {
+		return fmt.Errorf("listing available PODs: %w", err)
+	}
+
+	anyRedpandaPodIsRunning := false
+	for _, pod := range podList.Items {
+		if pod.Name == c.hostName {
+			continue
+		}
+		if pod.Status.Phase == corev1.PodRunning {
+			anyRedpandaPodIsRunning = true
+			break
+		}
+	}
+
+	if anyRedpandaPodIsRunning {
+		for _, srv := range cfg.Redpanda.SeedServers {
+			cl := &redpandav1alpha1.Cluster{}
+			err = k8sClient.Get(ctx, client.ObjectKey{
+				Name: stsName,
+			}, cl)
+			if err != nil {
+				return fmt.Errorf("retrieving cluster object: %w", err)
+			}
+
+			scheme := "http"
+			if len(cl.Spec.Configuration.AdminAPI) > 0 && cl.Spec.Configuration.AdminAPI[0].TLS.Enabled {
+				scheme = "https"
+			}
+			// TODO: Implement AdminAPI that has RequireClientAuth set to true (mTLS)
+			request, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s://%s:%d/v1/brokers", scheme, srv.Host.Address, srv.Host.Port), nil)
+			if err != nil {
+				return fmt.Errorf("creating seed server broker reques: %w", err)
+			}
+
+			tr := http.DefaultTransport.(*http.Transport).Clone()
+			// TODO: construct client with root CA for AdminApi that should be mounted
+			// to the configurator container.
+			tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+			httpClient := &http.Client{Transport: tr}
+			resp, err := httpClient.Do(request)
+			if err != nil {
+				// init container need to be robust in retrieving other brokers cluster view
+				// any error might block Redpanda initialization
+				continue
+			}
+			b, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err != nil {
+				return fmt.Errorf("reading seed server broker body: %w", err)
+			}
+
+			var brokers []broker
+			err = json.Unmarshal(b, &brokers)
+			if err != nil {
+				return fmt.Errorf("unmarshalling brokers response: %w", err)
+			}
+
+			for _, br := range brokers {
+				if br.NodeId == 0 {
+					continue
+				}
+				if br.IsAlive {
+					return nil
+				}
+			}
+		}
+	}
+
+	cfg.Redpanda.SeedServers = []config.SeedServer{}
+
 	return nil
+}
+
+type broker struct {
+	NodeId  int  `json:"node_id"`
+	IsAlive bool `json:"is_alive"`
+}
+
+func renderStsName(podName string, index brokerID) string {
+	indexStr := strconv.Itoa(int(index))
+	return podName[:len(podName)-1-len(indexStr)]
 }
 
 func calculateRedpandaID(
