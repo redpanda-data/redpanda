@@ -93,9 +93,11 @@ class continuous_batch_parser {
 public:
     continuous_batch_parser(
       std::unique_ptr<batch_consumer> consumer,
-      ss::input_stream<char> input) noexcept
+      ss::input_stream<char> input,
+      bool recovery = false) noexcept
       : _consumer(std::move(consumer))
-      , _input(std::move(input)) {}
+      , _input(std::move(input))
+      , _recovery(recovery) {}
     continuous_batch_parser(const continuous_batch_parser&) = delete;
     continuous_batch_parser& operator=(const continuous_batch_parser&) = delete;
     continuous_batch_parser(continuous_batch_parser&&) noexcept = default;
@@ -127,6 +129,12 @@ private:
 private:
     std::unique_ptr<batch_consumer> _consumer;
     ss::input_stream<char> _input;
+
+    // If _recovery is true, we do not log unexpected data at the
+    // end of the stream as an error (it is expected after an unclean
+    // shutdown)
+    bool _recovery{false};
+
     std::optional<model::record_batch_header> _header;
     parser_errc _err = parser_errc::none;
     size_t _bytes_consumed{0};
