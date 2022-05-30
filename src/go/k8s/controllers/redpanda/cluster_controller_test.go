@@ -33,21 +33,21 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
+const (
+	timeout  = time.Second * 30
+	interval = time.Second * 1
+
+	adminPort                 = 9644
+	kafkaPort                 = 9092
+	pandaProxyPort            = 8082
+	schemaRegistryPort        = 8081
+	redpandaConfigurationFile = "redpanda.yaml"
+	replicas                  = 1
+	redpandaContainerTag      = "x"
+	redpandaContainerImage    = "vectorized/redpanda"
+)
+
 var _ = Describe("RedPandaCluster controller", func() {
-	const (
-		timeout  = time.Second * 30
-		interval = time.Second * 1
-
-		adminPort                 = 9644
-		kafkaPort                 = 9092
-		pandaProxyPort            = 8082
-		schemaRegistryPort        = 8081
-		redpandaConfigurationFile = "redpanda.yaml"
-		replicas                  = 1
-		redpandaContainerTag      = "x"
-		redpandaContainerImage    = "vectorized/redpanda"
-	)
-
 	Context("When creating RedpandaCluster", func() {
 		It("Should create Redpanda cluster with corresponding resources", func() {
 			resourceRedpanda := corev1.ResourceList{
@@ -259,48 +259,13 @@ var _ = Describe("RedPandaCluster controller", func() {
 			}, timeout, interval).Should(BeTrue())
 		})
 		It("creates redpanda cluster with tls enabled", func() {
-			resources := corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("1"),
-				corev1.ResourceMemory: resource.MustParse("2Gi"),
-			}
-
-			key := types.NamespacedName{
-				Name:      "redpanda-test-tls",
-				Namespace: "default",
-			}
-			redpandaCluster := &v1alpha1.Cluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      key.Name,
-					Namespace: key.Namespace,
-				},
-				Spec: v1alpha1.ClusterSpec{
-					Image:    redpandaContainerImage,
-					Version:  redpandaContainerTag,
-					Replicas: pointer.Int32Ptr(replicas),
-					Configuration: v1alpha1.RedpandaConfig{
-						KafkaAPI: []v1alpha1.KafkaAPI{
-							{
-								Port: kafkaPort,
-								TLS:  v1alpha1.KafkaAPITLS{Enabled: true, RequireClientAuth: true},
-							},
-						},
-						AdminAPI: []v1alpha1.AdminAPI{{Port: adminPort}},
-					},
-					Resources: v1alpha1.RedpandaResourceRequirements{
-						ResourceRequirements: corev1.ResourceRequirements{
-							Limits:   resources,
-							Requests: resources,
-						},
-						Redpanda: nil,
-					},
-				},
-			}
+			redpandaCluster := rpCluster()
 			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
 
 			By("Creating StatefulSet")
 			var sts appsv1.StatefulSet
 			Eventually(func() bool {
-				err := k8sClient.Get(context.Background(), key, &sts)
+				err := k8sClient.Get(context.Background(), types.NamespacedName{Name: redpandaCluster.Name, Namespace: redpandaCluster.Namespace}, &sts)
 				return err == nil &&
 					*sts.Spec.Replicas == replicas
 			}, timeout, interval).Should(BeTrue())
@@ -690,6 +655,31 @@ var _ = Describe("RedPandaCluster controller", func() {
 					rc.Status.Nodes.ExternalBootstrap != nil
 			}, timeout, interval).Should(BeTrue())
 		})
+		It("does not trigger restart when scaling up", func() {
+			redpandaCluster := rpCluster()
+			redpandaCluster.Name = "no-restart-cluster"
+			key := types.NamespacedName{Name: redpandaCluster.Name, Namespace: redpandaCluster.Namespace}
+			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
+
+			By("Creating StatefulSet")
+			var sts appsv1.StatefulSet
+			Eventually(func() bool {
+				err := k8sClient.Get(context.Background(), key, &sts)
+				return err == nil &&
+					*sts.Spec.Replicas == replicas
+			}, timeout, interval).Should(BeTrue())
+
+			// configmap annotation should not change when scaling up replicas
+			// to avoid unnecessary cluster restart
+			configMapHash := sts.Annotations[res.ConfigMapHashAnnotationKey]
+			var existingCluster v1alpha1.Cluster
+			Expect(k8sClient.Get(context.Background(), key, &existingCluster)).Should(Succeed())
+			var repliasP1 int32 = replicas + 1
+			existingCluster.Spec.Replicas = &repliasP1
+			Expect(k8sClient.Update(context.Background(), &existingCluster)).Should(Succeed())
+			newConfigMapHash := sts.Annotations[res.ConfigMapHashAnnotationKey]
+			Expect(newConfigMapHash).Should(Equal(configMapHash))
+		})
 	})
 
 	Context("Calling reconcile", func() {
@@ -736,6 +726,45 @@ var _ = Describe("RedPandaCluster controller", func() {
 		Entry("Empty image pull policy", "", Not(Succeed())),
 		Entry("Random image pull policy", "asdvasd", Not(Succeed())))
 })
+
+func rpCluster() *v1alpha1.Cluster {
+	resources := corev1.ResourceList{
+		corev1.ResourceCPU:    resource.MustParse("1"),
+		corev1.ResourceMemory: resource.MustParse("2Gi"),
+	}
+
+	key := types.NamespacedName{
+		Name:      "redpanda-test-tls",
+		Namespace: "default",
+	}
+	return &v1alpha1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      key.Name,
+			Namespace: key.Namespace,
+		},
+		Spec: v1alpha1.ClusterSpec{
+			Image:    redpandaContainerImage,
+			Version:  redpandaContainerTag,
+			Replicas: pointer.Int32Ptr(replicas),
+			Configuration: v1alpha1.RedpandaConfig{
+				KafkaAPI: []v1alpha1.KafkaAPI{
+					{
+						Port: kafkaPort,
+						TLS:  v1alpha1.KafkaAPITLS{Enabled: true, RequireClientAuth: true},
+					},
+				},
+				AdminAPI: []v1alpha1.AdminAPI{{Port: adminPort}},
+			},
+			Resources: v1alpha1.RedpandaResourceRequirements{
+				ResourceRequirements: corev1.ResourceRequirements{
+					Limits:   resources,
+					Requests: resources,
+				},
+				Redpanda: nil,
+			},
+		},
+	}
+}
 
 func findPort(ports []corev1.ServicePort, name string) int32 {
 	for _, port := range ports {
