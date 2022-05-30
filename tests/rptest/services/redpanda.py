@@ -1412,9 +1412,15 @@ class RedpandaService(Service):
                     partition.add_files(listdir(partition.path))
         return store
 
-    def storage(self):
+    def storage(self, all_nodes: bool = False):
+        """
+        :param all_nodes: if true, report on all nodes, otherwise only report
+                          on started nodes.
+
+        :returns: instances of ClusterStorage
+        """
         store = ClusterStorage()
-        for node in self._started:
+        for node in (self.nodes if all_nodes else self._started):
             s = self.node_storage(node)
             store.add_node(s)
         return store

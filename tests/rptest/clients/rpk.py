@@ -282,7 +282,9 @@ class RpkTool:
                 group=None,
                 regex=False,
                 offset=None,
-                fetch_max_bytes=None):
+                partition=None,
+                fetch_max_bytes=None,
+                quiet=False):
         cmd = ["consume", topic]
         if group is not None:
             cmd += ["-g", group]
@@ -294,6 +296,11 @@ class RpkTool:
             cmd += ["--fetch-max-bytes", str(fetch_max_bytes)]
         if offset is not None:
             cmd += ["-o", f"{n}"]
+        if partition is not None:
+            cmd += ["-p", f"{partition}"]
+        if quiet:
+            cmd += ["-f", "_\\n"]
+
         return self._run_topic(cmd)
 
     def group_seek_to(self, group, to):
