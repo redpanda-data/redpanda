@@ -105,7 +105,7 @@ RUN mkdir -p "/opt/kafka-2.3.1" && chmod a+rw /opt/kafka-2.3.1 && curl -s "$KAFK
     ldconfig
 
 # Install golang dependencies for kafka clients such as sarama
-RUN git -C /opt clone https://github.com/Shopify/sarama.git && \
+RUN git -C /opt clone -b v1.32.0 --single-branch https://github.com/Shopify/sarama.git && \
     cd /opt/sarama/examples/interceptors && go mod tidy && go build && \
     cd /opt/sarama/examples/http_server && go mod tidy && go build && \
     cd /opt/sarama/examples/consumergroup && go mod tidy && go build && \
@@ -116,7 +116,8 @@ COPY --chown=0:0 tests/go /opt/redpanda-tests/go
 RUN cd /opt/redpanda-tests/go/sarama/produce_test && go mod tidy && go build
 
 # Install franz-go
-RUN git -C /opt clone https://github.com/twmb/franz-go.git && cd /opt/franz-go && \
+RUN git -C /opt clone -b v1.5.0 --single-branch https://github.com/twmb/franz-go.git && \
+    cd /opt/franz-go && \
     cd /opt/franz-go/examples/bench && go mod tidy && go build
 
 RUN go install github.com/twmb/kcl@v0.8.0 && \
