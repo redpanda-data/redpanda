@@ -215,6 +215,7 @@ log_manager::create_cache(with_cache ntp_cache_enabled) {
 ss::future<log> log_manager::manage(ntp_config cfg) {
     auto gate = _open_gate.hold();
 
+    auto units = co_await _resources.get_recovery_units();
     co_return co_await do_manage(std::move(cfg));
 }
 
