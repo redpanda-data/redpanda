@@ -159,6 +159,17 @@ members_table::apply(model::offset version, maintenance_mode_cmd cmd) {
         return errc::success;
     }
 
+    if (_brokers.size() < 2) {
+        // Maintenance mode is refused on size 1 clusters in the admin API, but
+        // we might be upgrading from a version that didn't have the validation.
+        vlog(
+          clusterlog.info,
+          "Dropping maintenance mode enable operation on single node cluster");
+
+        // Return success to enable progress: this is a clean no-op.
+        return errc::success;
+    }
+
     if (
       target->second->get_maintenance_state()
       == model::maintenance_state::active) {
