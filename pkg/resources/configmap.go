@@ -224,20 +224,16 @@ func (r *ConfigMapResource) CreateConfiguration(
 	internalListener := r.pandaCluster.InternalListener()
 	cr.KafkaAPI = []config.NamedSocketAddress{} // we don't want to inherit default kafka port
 	cr.KafkaAPI = append(cr.KafkaAPI, config.NamedSocketAddress{
-		SocketAddress: config.SocketAddress{
-			Address: "0.0.0.0",
-			Port:    internalListener.Port,
-		},
-		Name: InternalListenerName,
+		Address: "0.0.0.0",
+		Port:    internalListener.Port,
+		Name:    InternalListenerName,
 	})
 
 	if r.pandaCluster.ExternalListener() != nil {
 		cr.KafkaAPI = append(cr.KafkaAPI, config.NamedSocketAddress{
-			SocketAddress: config.SocketAddress{
-				Address: "0.0.0.0",
-				Port:    calculateExternalPort(internalListener.Port, r.pandaCluster.ExternalListener().Port),
-			},
-			Name: ExternalListenerName,
+			Address: "0.0.0.0",
+			Port:    calculateExternalPort(internalListener.Port, r.pandaCluster.ExternalListener().Port),
+			Name:    ExternalListenerName,
 		})
 	}
 
@@ -251,11 +247,9 @@ func (r *ConfigMapResource) CreateConfiguration(
 	cr.AdminAPI[0].Name = AdminPortName
 	if r.pandaCluster.AdminAPIExternal() != nil {
 		externalAdminAPI := config.NamedSocketAddress{
-			SocketAddress: config.SocketAddress{
-				Address: cr.AdminAPI[0].Address,
-				Port:    cr.AdminAPI[0].Port + 1,
-			},
-			Name: AdminPortExternalName,
+			Address: cr.AdminAPI[0].Address,
+			Port:    cr.AdminAPI[0].Port + 1,
+			Name:    AdminPortExternalName,
 		}
 		cr.AdminAPI = append(cr.AdminAPI, externalAdminAPI)
 	}
@@ -357,11 +351,9 @@ func (r *ConfigMapResource) CreateConfiguration(
 	if sr := r.pandaCluster.Spec.Configuration.SchemaRegistry; sr != nil {
 		cfg.NodeConfiguration.SchemaRegistry.SchemaRegistryAPI = []config.NamedSocketAddress{
 			{
-				SocketAddress: config.SocketAddress{
-					Address: "0.0.0.0",
-					Port:    sr.Port,
-				},
-				Name: SchemaRegistryPortName,
+				Address: "0.0.0.0",
+				Port:    sr.Port,
+				Name:    SchemaRegistryPortName,
 			},
 		}
 	}
@@ -438,22 +430,18 @@ func (r *ConfigMapResource) preparePandaproxy(cfgRpk *config.Config) {
 
 	cfgRpk.Pandaproxy.PandaproxyAPI = []config.NamedSocketAddress{
 		{
-			SocketAddress: config.SocketAddress{
-				Address: "0.0.0.0",
-				Port:    internal.Port,
-			},
-			Name: PandaproxyPortInternalName,
+			Address: "0.0.0.0",
+			Port:    internal.Port,
+			Name:    PandaproxyPortInternalName,
 		},
 	}
 
 	if r.pandaCluster.PandaproxyAPIExternal() != nil {
 		cfgRpk.Pandaproxy.PandaproxyAPI = append(cfgRpk.Pandaproxy.PandaproxyAPI,
 			config.NamedSocketAddress{
-				SocketAddress: config.SocketAddress{
-					Address: "0.0.0.0",
-					Port:    calculateExternalPort(internal.Port, 0),
-				},
-				Name: PandaproxyPortExternalName,
+				Address: "0.0.0.0",
+				Port:    calculateExternalPort(internal.Port, 0),
+				Name:    PandaproxyPortExternalName,
 			})
 	}
 }
