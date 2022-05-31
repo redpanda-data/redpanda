@@ -438,8 +438,6 @@ void application::hydrate_config(const po::variables_map& cfg) {
         }
     };
 
-    _redpanda_enabled = config["redpanda"].IsDefined();
-    if (_redpanda_enabled) {
         ss::smp::invoke_on_all([&config, cfg_path] {
             config::node().load(cfg_path, config);
         }).get0();
@@ -467,7 +465,7 @@ void application::hydrate_config(const po::variables_map& cfg) {
         vlog(_log.info, "Node configuration properties:");
         vlog(_log.info, "(use `rpk config set <cfg> <value>` to change)");
         config_printer("redpanda", config::node());
-    }
+
     if (config["pandaproxy"]) {
         _proxy_config.emplace(config["pandaproxy"]);
         if (config["pandaproxy_client"]) {
@@ -499,11 +497,9 @@ void application::check_environment() {
     syschecks::systemd_message("checking environment (CPU, Mem)").get();
     syschecks::cpu();
     syschecks::memory(config::node().developer_mode());
-    if (_redpanda_enabled) {
         storage::directories::initialize(
           config::node().data_directory().as_sstring())
           .get();
-    }
 }
 
 static admin_server_cfg
@@ -659,9 +655,7 @@ make_upload_controller_config(ss::scheduling_group sg) {
 
 // add additional services in here
 void application::wire_up_services() {
-    if (_redpanda_enabled) {
         wire_up_redpanda_services();
-    }
     if (_proxy_config) {
         construct_service(
           _proxy_client,
@@ -1225,9 +1219,7 @@ application::set_proxy_client_config(ss::sstring name, std::any val) {
 }
 
 void application::start(::stop_signal& app_signal) {
-    if (_redpanda_enabled) {
         start_redpanda(app_signal);
-    }
 
     if (_proxy_config) {
         _proxy.invoke_on_all(&pandaproxy::rest::proxy::start).get();
@@ -1245,9 +1237,7 @@ void application::start(::stop_signal& app_signal) {
           _schema_reg_config->schema_registry_api());
     }
 
-    if (_redpanda_enabled) {
         start_kafka(app_signal);
-    }
 
     _admin.invoke_on_all([](admin_server& admin) { admin.set_ready(); }).get();
 
