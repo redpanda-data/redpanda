@@ -292,7 +292,7 @@ void application::initialize(
     }).get0();
 
     ss::smp::invoke_on_all([] {
-        ss::memory::set_large_allocation_warning_threshold(1000 * 1000);
+        ss::memory::set_large_allocation_warning_threshold(10 * 1000 * 1000);
     }).get();
 
     if (config::shard_local_cfg().enable_pid_file()) {
