@@ -12,6 +12,9 @@
 #pragma once
 #include "bytes/bytes.h"
 
+#include <seastar/core/future.hh>
+#include <seastar/core/iostream.hh>
+
 #include <cstdint>
 
 namespace unsigned_vint {
@@ -19,29 +22,50 @@ namespace unsigned_vint {
 inline constexpr size_t max_length = 5;
 
 namespace detail {
-
-/// \brief almost identical impl to leveldb, made generic for c++
-/// friendliness
-/// https://github.com/google/leveldb/blob/201f52201f/util/coding.cc#L116
-template<typename Range>
-inline std::pair<uint64_t, size_t>
-deserialize(Range&& r, uint8_t limit) noexcept {
+struct var_decoder {
     uint64_t result = 0;
     size_t bytes_read = 0;
     uint64_t shift = 0;
-    for (auto src = r.begin(); shift <= limit && src != r.end(); ++src) {
-        uint64_t byte = *src;
+    uint8_t limit;
+
+    explicit var_decoder(uint8_t limit)
+      : limit(limit) {}
+
+    /**
+     * @brief Incorporate a new byte into the state.
+     * Returns true if the outer loop should break (last byte found).
+     */
+    bool accept(uint8_t byte) {
+        /// \brief almost identical impl to leveldb, made generic for c++
+        /// friendliness
+        /// https://github.com/google/leveldb/blob/201f52201f/util/coding.cc#L116
+        if (shift > limit) {
+            return true;
+        }
         bytes_read++;
         if (byte & 128) {
             result |= ((byte & 127) << shift);
         } else {
             result |= byte << shift;
-            break;
+            return true;
         }
         shift += 7;
+        return false;
     }
-    return {result, bytes_read};
+};
+
+template<typename Range>
+inline std::pair<uint64_t, size_t>
+deserialize(Range&& r, uint8_t limit) noexcept {
+    var_decoder decoder(limit);
+    for (auto byte : r) {
+        if (decoder.accept(static_cast<uint8_t>(byte))) {
+            break;
+        }
+    }
+    return std::make_pair(decoder.result, decoder.bytes_read);
 }
+
 } // namespace detail
 
 inline size_t serialize(uint64_t value, uint8_t* out) noexcept {
@@ -63,6 +87,9 @@ inline size_t serialize(uint64_t value, uint8_t* out) noexcept {
     out[bytes_used++] = static_cast<uint8_t>(value);
     return bytes_used;
 }
+
+ss::future<std::pair<uint32_t, size_t>>
+stream_deserialize(ss::input_stream<char>&);
 
 template<typename Range>
 inline std::pair<uint32_t, size_t> deserialize(Range&& r) noexcept {
