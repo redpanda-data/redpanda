@@ -438,33 +438,33 @@ void application::hydrate_config(const po::variables_map& cfg) {
         }
     };
 
-        ss::smp::invoke_on_all([&config, cfg_path] {
-            config::node().load(cfg_path, config);
-        }).get0();
+    ss::smp::invoke_on_all([&config, cfg_path] {
+        config::node().load(cfg_path, config);
+    }).get0();
 
-        auto node_config_errors = config::node().load(config);
-        for (const auto& i : node_config_errors) {
-            vlog(
-              _log.warn,
-              "Node property '{}' validation error: {}",
-              i.first,
-              i.second);
-        }
-        if (node_config_errors.size() > 0) {
-            throw std::invalid_argument("Validation errors in node config");
-        }
+    auto node_config_errors = config::node().load(config);
+    for (const auto& i : node_config_errors) {
+        vlog(
+          _log.warn,
+          "Node property '{}' validation error: {}",
+          i.first,
+          i.second);
+    }
+    if (node_config_errors.size() > 0) {
+        throw std::invalid_argument("Validation errors in node config");
+    }
 
-        // This includes loading from local bootstrap file or legacy
-        // config file on first-start or upgrade cases.
-        _config_preload = cluster::config_manager::preload(config).get0();
+    // This includes loading from local bootstrap file or legacy
+    // config file on first-start or upgrade cases.
+    _config_preload = cluster::config_manager::preload(config).get0();
 
-        vlog(_log.info, "Cluster configuration properties:");
-        vlog(_log.info, "(use `rpk cluster config edit` to change)");
-        config_printer("redpanda", config::shard_local_cfg());
+    vlog(_log.info, "Cluster configuration properties:");
+    vlog(_log.info, "(use `rpk cluster config edit` to change)");
+    config_printer("redpanda", config::shard_local_cfg());
 
-        vlog(_log.info, "Node configuration properties:");
-        vlog(_log.info, "(use `rpk config set <cfg> <value>` to change)");
-        config_printer("redpanda", config::node());
+    vlog(_log.info, "Node configuration properties:");
+    vlog(_log.info, "(use `rpk config set <cfg> <value>` to change)");
+    config_printer("redpanda", config::node());
 
     if (config["pandaproxy"]) {
         _proxy_config.emplace(config["pandaproxy"]);
@@ -497,9 +497,9 @@ void application::check_environment() {
     syschecks::systemd_message("checking environment (CPU, Mem)").get();
     syschecks::cpu();
     syschecks::memory(config::node().developer_mode());
-        storage::directories::initialize(
-          config::node().data_directory().as_sstring())
-          .get();
+    storage::directories::initialize(
+      config::node().data_directory().as_sstring())
+      .get();
 }
 
 static admin_server_cfg
@@ -655,7 +655,7 @@ make_upload_controller_config(ss::scheduling_group sg) {
 
 // add additional services in here
 void application::wire_up_services() {
-        wire_up_redpanda_services();
+    wire_up_redpanda_services();
     if (_proxy_config) {
         construct_service(
           _proxy_client,
@@ -1219,7 +1219,7 @@ application::set_proxy_client_config(ss::sstring name, std::any val) {
 }
 
 void application::start(::stop_signal& app_signal) {
-        start_redpanda(app_signal);
+    start_redpanda(app_signal);
 
     if (_proxy_config) {
         _proxy.invoke_on_all(&pandaproxy::rest::proxy::start).get();
@@ -1237,7 +1237,7 @@ void application::start(::stop_signal& app_signal) {
           _schema_reg_config->schema_registry_api());
     }
 
-        start_kafka(app_signal);
+    start_kafka(app_signal);
 
     _admin.invoke_on_all([](admin_server& admin) { admin.set_ready(); }).get();
 
