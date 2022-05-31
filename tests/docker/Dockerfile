@@ -79,12 +79,12 @@ RUN mkdir -p "/opt/kafka-2.3.1" && chmod a+rw /opt/kafka-2.3.1 && curl -s "$KAFK
     ldconfig
 
 # Install dependencies for kafka clients such as sarama and franz-go
-RUN git -C /opt clone https://github.com/Shopify/sarama.git && \
+RUN git -C /opt clone -b v1.32.0 --single-branch https://github.com/Shopify/sarama.git && \
     cd /opt/sarama/examples/interceptors && go mod tidy && go build && \
     cd /opt/sarama/examples/http_server && go mod tidy && go build && \
     cd /opt/sarama/examples/consumergroup && go mod tidy && go build && \
     cd /opt/sarama/examples/sasl_scram_client && go mod tidy && go build && \
-    git -C /opt clone https://github.com/twmb/franz-go.git && cd /opt/franz-go && \
+    git -C /opt clone -b v1.5.0 --single-branch https://github.com/twmb/franz-go.git && \
     cd /opt/franz-go/examples/bench && go mod tidy && go build && \
     git -C /opt clone --branch ducktape2 https://github.com/vectorizedio/kafka-streams-examples.git && \
     cd /opt/kafka-streams-examples && mvn -DskipTests=true clean package
@@ -93,7 +93,7 @@ RUN git -C /opt clone https://github.com/Shopify/sarama.git && \
 COPY --chown=0:0 tests/go /tmp/go
 RUN cd /tmp/go/sarama/produce_test && go mod tidy && go build
 
-RUN go install github.com/twmb/kcl@latest && \
+RUN go install github.com/twmb/kcl@v0.8.0 && \
     mv /root/go/bin/kcl /usr/local/bin/
 
 # Expose port 8080 for any http examples within clients
