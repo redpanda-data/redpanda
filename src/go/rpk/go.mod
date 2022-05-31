@@ -32,9 +32,9 @@ require (
 	github.com/spf13/viper v1.7.0
 	github.com/stretchr/testify v1.7.0
 	github.com/tklauser/go-sysconf v0.1.0
-	github.com/twmb/franz-go v1.5.2
-	github.com/twmb/franz-go/pkg/kadm v0.0.0-20220106030238-d62f1bef74f9
-	github.com/twmb/franz-go/pkg/kmsg v1.0.0
+	github.com/twmb/franz-go v1.6.0
+	github.com/twmb/franz-go/pkg/kadm v1.0.0
+	github.com/twmb/franz-go/pkg/kmsg v1.1.0
 	github.com/twmb/tlscfg v1.2.0
 	github.com/twmb/types v1.1.6
 	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
@@ -59,7 +59,7 @@ require (
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
 	github.com/jmespath/go-jmespath v0.0.0-20180206201540-c2b33e8439af // indirect
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
-	github.com/klauspost/compress v1.15.2 // indirect
+	github.com/klauspost/compress v1.15.4 // indirect
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/magiconair/properties v1.8.1 // indirect
@@ -78,8 +78,7 @@ require (
 	github.com/spf13/jwalterweatherman v1.0.0 // indirect
 	github.com/subosito/gotenv v1.2.0 // indirect
 	github.com/tklauser/numcpus v0.1.0 // indirect
-	github.com/twmb/go-rbtree v1.0.0 // indirect
-	golang.org/x/crypto v0.0.0-20220427172511-eb4f295cb31f // indirect
+	golang.org/x/crypto v0.0.0-20220518034528-6f7dac969898 // indirect
 	golang.org/x/net v0.0.0-20220225172249-27dd8689420f // indirect
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect

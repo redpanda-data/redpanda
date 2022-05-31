@@ -120,7 +120,7 @@ Seek group G to the beginning of a topic it was not previously consuming:
 	cmd.Flags().StringVar(&to, "to", "", "Where to seek (start, end, unix second | millisecond | nanosecond)")
 	cmd.Flags().StringVar(&toGroup, "to-group", "", "Seek to the commits of another group")
 	cmd.Flags().StringVar(&toFile, "to-file", "", "Seek to offsets as specified in the file")
-	cmd.Flags().StringArrayVar(&topics, "topics", nil, "Only seek these topics, if any are specified")
+	cmd.Flags().StringSliceVar(&topics, "topics", nil, "Only seek these topics, if any are specified")
 	cmd.Flags().BoolVar(&allowNewTopics, "allow-new-topics", false, "Allow seeking to new topics not currently consumed (implied with --to-group or --to-file)")
 
 	return cmd
@@ -190,7 +190,7 @@ func seekFetch(
 	if len(topics) > 0 {
 		resps.KeepFunc(func(o kadm.OffsetResponse) bool { return topics[o.Topic] })
 	}
-	return resps.Into()
+	return resps.Offsets()
 }
 
 func seek(
@@ -247,7 +247,7 @@ func seek(
 			err = listed.Error()
 		}
 		out.MaybeDie(err, "unable to list all offsets successfully: %v", err)
-		commitTo = listed.Into()
+		commitTo = listed.Offsets()
 	}
 
 	// Finally, we commit.

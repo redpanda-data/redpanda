@@ -96,7 +96,7 @@ In the broker section, the controller node is suffixed with *.
 			if topics || len(args) > 0 {
 				m, err = adm.Metadata(context.Background(), args...)
 			} else {
-				m, err = adm.MetadataWithoutTopics(context.Background())
+				m, err = adm.BrokerMetadata(context.Background())
 			}
 			out.MaybeDie(err, "unable to request metadata: %v", err)
 

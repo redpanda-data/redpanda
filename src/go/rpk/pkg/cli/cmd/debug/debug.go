@@ -7,9 +7,6 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-//go:build linux
-// +build linux
-
 package debug
 
 import (
@@ -17,6 +14,17 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func AddPlatformDependentCmds(fs afero.Fs, cmd *cobra.Command) {
-	cmd.AddCommand(NewBundleCommand(fs))
+func NewCommand(fs afero.Fs) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "debug",
+		Short: "Debug the local Redpanda process.",
+	}
+
+	cmd.AddCommand(
+		newBundleCommand(fs),
+		NewInfoCommand(fs),
+		newLogdirsCommand(fs),
+	)
+
+	return cmd
 }
