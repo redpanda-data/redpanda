@@ -64,7 +64,9 @@ ss::future<bool> try_create_consumer_group_topic(
            * kindly ask client to retry on error
            */
           vassert(res.size() == 1, "expected exactly one result");
-          if (res[0].ec != cluster::errc::success) {
+          if (
+            res[0].ec != cluster::errc::success
+            && res[0].ec != cluster::errc::topic_already_exists) {
               vlog(
                 klog.warn,
                 "can not create {}/{} topic - error: {}",

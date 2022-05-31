@@ -62,18 +62,11 @@ RESTART_LOG_ALLOW_LIST = [
     re.compile(
         "(raft|rpc) - .*(disconnected_endpoint|Broken pipe|Connection reset by peer)"
     ),
-    # cluster - members_manager.cc:118 - Unable to update node configuration - seastar::sleep_aborted (Sleep is aborted)
-    re.compile("members_manager.*sleep_aborted"),
-    # cluster - members_backend.cc:91 - error waiting for members updates - seastar::abort_requested_exception (abort requested)
-    re.compile("members_backend.*abort_requested_exception"),
     re.compile(
         "raft - .*recovery append entries error.*client_request_timeout"),
     # cluster - rm_stm.cc:550 - Error "raft::errc:19" on replicating pid:{producer_identity: id=1, epoch=0} commit batch
     # raft::errc:19 is the shutdown error code, the transaction subsystem encounters this and logs at error level
     re.compile("Error \"raft::errc:19\" on replicating"),
-
-    # cluster - persisted_stm.cc:199 - sync error: wait_offset_committed failed with seastar::broken_condition_variable (Condition variable is broken); offsets: dirty=692, committed=689; ntp={kafka/topic7/0
-    re.compile("cluster - .*broken_condition_variable"),
 ]
 
 # Log errors that are expected in chaos-style tests that e.g.
@@ -83,9 +76,6 @@ CHAOS_LOG_ALLOW_LIST = [
     re.compile(
         "(raft|rpc) - .*(client_request_timeout|disconnected_endpoint|Broken pipe|Connection reset by peer)"
     ),
-
-    # cluster - persisted_stm.cc:199 - sync error: wait_offset_committed failed with seastar::broken_condition_variable (Condition variable is broken); offsets: dirty=692, committed=689; ntp={kafka/topic7/0
-    re.compile("cluster - .*broken_condition_variable"),
 
     # Torn disk writes
     re.compile("storage - Could not parse header"),
@@ -106,11 +96,6 @@ CHAOS_LOG_ALLOW_LIST = [
 
     # rpc - Service handler threw an exception: seastar::broken_promise (broken promise)"
     re.compile("rpc - Service handler threw an exception: seastar"),
-
-    # rpc - server.cc:91 - vectorized internal rpc protocol - Error[applying protocol] remote address: 172.18.0.10:60503 - rpc::rpc_internal_body_parsing_exception (Unable to parse received RPC request payload - std::out_of_range (parse_utils out of range. got:9726 bytes and expected:46927 bytes
-    re.compile(
-        "rpc - .*Unable to parse received RPC request payload - std::out_of_range"
-    ),
     re.compile(
         "cluster - .*exception while executing partition operation:.*std::exception \(std::exception\)"
     ),

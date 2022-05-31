@@ -141,6 +141,7 @@ ss::future<> members_manager::maybe_update_current_node_configuration() {
       .then([] {
           vlog(clusterlog.info, "Node configuration updated successfully");
       })
+      .handle_exception_type([](const ss::sleep_aborted&) {})
       .handle_exception([](const std::exception_ptr& e) {
           vlog(clusterlog.error, "Unable to update node configuration - {}", e);
       });
