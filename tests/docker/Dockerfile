@@ -153,7 +153,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
     export PATH="/root/.cargo/bin:${PATH}" && \
     git clone https://github.com/redpanda-data/client-swarm.git && \
     cd client-swarm && \
-    git reset --hard 9427df19 && \
+    git reset --hard 28790f8 && \
     cargo build --release && \
     cp target/release/client-swarm /usr/local/bin && \
     cd .. && rm -rf client-swarm && rm -rf /root/.cargo
