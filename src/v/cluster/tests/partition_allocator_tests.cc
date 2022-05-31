@@ -533,9 +533,15 @@ FIXTURE_TEST(rack_aware_assignment_1, partition_allocator_fixture) {
         nodes.insert(node_id);
     }
     BOOST_REQUIRE(nodes.size() == 3);
-    BOOST_REQUIRE(nodes.contains(model::node_id(0))); // rack-a
-    BOOST_REQUIRE(nodes.contains(model::node_id(2))); // rack-b
-    BOOST_REQUIRE(nodes.contains(model::node_id(4))); // rack-c
+    BOOST_REQUIRE(
+      nodes.contains(model::node_id(0))
+      || nodes.contains(model::node_id(1))); // rack-a
+    BOOST_REQUIRE(
+      nodes.contains(model::node_id(2))
+      || nodes.contains(model::node_id(3))); // rack-b
+    BOOST_REQUIRE(
+      nodes.contains(model::node_id(4))
+      || nodes.contains(model::node_id(5))); // rack-c
 }
 FIXTURE_TEST(rack_aware_assignment_2, partition_allocator_fixture) {
     std::vector<std::tuple<int, model::rack_id, int>> id_rack_ncpu = {
