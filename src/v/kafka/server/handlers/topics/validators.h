@@ -141,4 +141,68 @@ struct unsupported_configuration_entries {
     }
 };
 
+struct compression_type_validator_details {
+    using validated_type = model::compression;
+
+    static constexpr const char* error_message
+      = "Unsupported compression type ";
+    static constexpr const auto config_name = topic_property_compression;
+};
+
+struct compaction_strategy_validator_details {
+    using validated_type = model::compaction_strategy;
+
+    static constexpr const char* error_message
+      = "Unsupported compaction strategy ";
+    static constexpr const auto config_name
+      = topic_property_compaction_strategy;
+};
+
+struct timestamp_type_validator_details {
+    using validated_type = model::timestamp_type;
+
+    static constexpr const char* error_message = "Unsupported timestamp type ";
+    static constexpr const auto config_name = topic_property_timestamp_type;
+};
+
+struct cleanup_policy_validator_details {
+    using validated_type = model::cleanup_policy_bitflags;
+
+    static constexpr const char* error_message = "Unsupported cleanup policy ";
+    static constexpr const auto config_name = topic_property_cleanup_policy;
+};
+
+template<typename T>
+struct configuration_value_validator {
+    static constexpr const char* error_message = T::error_message;
+    static constexpr error_code ec = error_code::invalid_config;
+
+    static bool is_valid(const creatable_topic& c) {
+        auto config_entries = config_map(c.configs);
+        auto end = config_entries.end();
+
+        auto iter = config_entries.find(T::config_name);
+
+        if (end == iter) {
+            return true;
+        }
+
+        try {
+            boost::lexical_cast<typename T::validated_type>(iter->second);
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
+};
+
+using compression_type_validator
+  = configuration_value_validator<compression_type_validator_details>;
+using compaction_strategy_validator
+  = configuration_value_validator<compaction_strategy_validator_details>;
+using timestamp_type_validator
+  = configuration_value_validator<timestamp_type_validator_details>;
+using cleanup_policy_validator
+  = configuration_value_validator<cleanup_policy_validator_details>;
+
 } // namespace kafka
