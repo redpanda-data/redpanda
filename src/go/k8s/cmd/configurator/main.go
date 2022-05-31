@@ -192,11 +192,9 @@ func registerAdvertisedKafkaAPI(
 ) error {
 	cfg.Redpanda.AdvertisedKafkaAPI = []config.NamedSocketAddress{
 		{
-			SocketAddress: config.SocketAddress{
-				Address: c.hostName + "." + c.svcFQDN,
-				Port:    kafkaAPIPort,
-			},
-			Name: "kafka",
+			Address: c.hostName + "." + c.svcFQDN,
+			Port:    kafkaAPIPort,
+			Name:    "kafka",
 		},
 	}
 
@@ -206,11 +204,9 @@ func registerAdvertisedKafkaAPI(
 
 	if len(c.subdomain) > 0 {
 		cfg.Redpanda.AdvertisedKafkaAPI = append(cfg.Redpanda.AdvertisedKafkaAPI, config.NamedSocketAddress{
-			SocketAddress: config.SocketAddress{
-				Address: fmt.Sprintf("%d.%s", index, c.subdomain),
-				Port:    c.hostPort,
-			},
-			Name: "kafka-external",
+			Address: fmt.Sprintf("%d.%s", index, c.subdomain),
+			Port:    c.hostPort,
+			Name:    "kafka-external",
 		})
 		return nil
 	}
@@ -221,11 +217,9 @@ func registerAdvertisedKafkaAPI(
 	}
 
 	cfg.Redpanda.AdvertisedKafkaAPI = append(cfg.Redpanda.AdvertisedKafkaAPI, config.NamedSocketAddress{
-		SocketAddress: config.SocketAddress{
-			Address: networking.GetPreferredAddress(node, c.externalConnectivityAddressType),
-			Port:    c.hostPort,
-		},
-		Name: "kafka-external",
+		Address: networking.GetPreferredAddress(node, c.externalConnectivityAddressType),
+		Port:    c.hostPort,
+		Name:    "kafka-external",
 	})
 
 	return nil
@@ -236,11 +230,9 @@ func registerAdvertisedPandaproxyAPI(
 ) error {
 	cfg.Pandaproxy.AdvertisedPandaproxyAPI = []config.NamedSocketAddress{
 		{
-			SocketAddress: config.SocketAddress{
-				Address: c.hostName + "." + c.svcFQDN,
-				Port:    proxyAPIPort,
-			},
-			Name: "proxy",
+			Address: c.hostName + "." + c.svcFQDN,
+			Port:    proxyAPIPort,
+			Name:    "proxy",
 		},
 	}
 
@@ -251,11 +243,9 @@ func registerAdvertisedPandaproxyAPI(
 	// Pandaproxy uses the Kafka API subdomain.
 	if len(c.subdomain) > 0 {
 		cfg.Pandaproxy.AdvertisedPandaproxyAPI = append(cfg.Pandaproxy.AdvertisedPandaproxyAPI, config.NamedSocketAddress{
-			SocketAddress: config.SocketAddress{
-				Address: fmt.Sprintf("%d.%s", index, c.subdomain),
-				Port:    c.proxyHostPort,
-			},
-			Name: "proxy-external",
+			Address: fmt.Sprintf("%d.%s", index, c.subdomain),
+			Port:    c.proxyHostPort,
+			Name:    "proxy-external",
 		})
 		return nil
 	}
@@ -266,11 +256,9 @@ func registerAdvertisedPandaproxyAPI(
 	}
 
 	cfg.Pandaproxy.AdvertisedPandaproxyAPI = append(cfg.Pandaproxy.AdvertisedPandaproxyAPI, config.NamedSocketAddress{
-		SocketAddress: config.SocketAddress{
-			Address: getExternalIP(node),
-			Port:    c.proxyHostPort,
-		},
-		Name: "proxy-external",
+		Address: getExternalIP(node),
+		Port:    c.proxyHostPort,
+		Name:    "proxy-external",
 	})
 
 	return nil

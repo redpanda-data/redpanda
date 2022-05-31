@@ -120,17 +120,13 @@ func bootstrap(mgr config.Manager) *cobra.Command {
 			conf.Redpanda.ID = id
 			conf.Redpanda.RPCServer.Address = ownIP.String()
 			conf.Redpanda.KafkaAPI = []config.NamedSocketAddress{{
-				SocketAddress: config.SocketAddress{
-					Address: ownIP.String(),
-					Port:    config.DefaultKafkaPort,
-				},
+				Address: ownIP.String(),
+				Port:    config.DefaultKafkaPort,
 			}}
 
 			conf.Redpanda.AdminAPI = []config.NamedSocketAddress{{
-				SocketAddress: config.SocketAddress{
-					Address: ownIP.String(),
-					Port:    config.DefaultAdminPort,
-				},
+				Address: ownIP.String(),
+				Port:    config.DefaultAdminPort,
 			}}
 			conf.Redpanda.SeedServers = []config.SeedServer{}
 			conf.Redpanda.SeedServers = seeds

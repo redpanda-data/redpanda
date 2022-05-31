@@ -240,14 +240,14 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 				Address: "0.0.0.0",
 				Port:    33145,
 			},
-			KafkaAPI: []NamedSocketAddress{{SocketAddress: SocketAddress{
+			KafkaAPI: []NamedSocketAddress{{
 				Address: "0.0.0.0",
 				Port:    9092,
-			}}},
-			AdminAPI: []NamedSocketAddress{{SocketAddress: SocketAddress{
+			}},
+			AdminAPI: []NamedSocketAddress{{
 				Address: "0.0.0.0",
 				Port:    9644,
-			}}},
+			}},
 			DeveloperMode: true,
 		},
 		Rpk: RpkConfig{

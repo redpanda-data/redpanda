@@ -309,7 +309,7 @@ func checkRedpandaConfig(v *viper.Viper) []error {
 			errs = append(
 				errs,
 				checkSocketAddress(
-					addr.SocketAddress,
+					SocketAddress{addr.Address, addr.Port},
 					configPath,
 				)...,
 			)

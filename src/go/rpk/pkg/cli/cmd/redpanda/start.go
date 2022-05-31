@@ -887,7 +887,10 @@ func parseAddress(addr string, defaultPort int) (*config.SocketAddress, error) {
 	if named == nil {
 		return nil, nil
 	}
-	return &named.SocketAddress, nil
+	return &config.SocketAddress{
+		Address: named.Address,
+		Port:    named.Port,
+	}, nil
 }
 
 func parseNamedAddresses(
@@ -919,11 +922,9 @@ func parseNamedAddress(
 	host, port := net.SplitHostPortDefault(hostport, defaultPort)
 
 	return &config.NamedSocketAddress{
-		SocketAddress: config.SocketAddress{
-			Address: host,
-			Port:    port,
-		},
-		Name: scheme,
+		Address: host,
+		Port:    port,
+		Name:    scheme,
 	}, nil
 }
 
