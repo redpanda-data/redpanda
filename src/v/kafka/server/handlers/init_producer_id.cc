@@ -19,12 +19,22 @@
 #include "kafka/server/logger.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
+#include "model/record.h"
 #include "utils/remote.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/print.hh>
 
 namespace kafka {
+
+namespace {
+
+bool is_invalid_pid(int64_t producer_id, int16_t producer_epoch) {
+    return (producer_epoch == -1 && producer_id != -1)
+           || (producer_epoch != -1 && producer_id == -1);
+}
+
+} // namespace
 
 template<>
 ss::future<response_ptr> init_producer_id_handler::handle(
@@ -43,11 +53,22 @@ ss::future<response_ptr> init_producer_id_handler::handle(
                 return ctx.respond(reply);
             }
 
+            if (is_invalid_pid(
+                  request.data.producer_id, request.data.producer_epoch)) {
+                init_producer_id_response reply;
+                reply.data.error_code = error_code::invalid_request;
+                return ctx.respond(reply);
+            }
+
+            model::producer_identity expected_pid = model::producer_identity{
+              request.data.producer_id, request.data.producer_epoch};
+
             return ctx.tx_gateway_frontend()
               .init_tm_tx(
                 request.data.transactional_id.value(),
                 request.data.transaction_timeout_ms,
-                config::shard_local_cfg().create_topic_timeout_ms())
+                config::shard_local_cfg().create_topic_timeout_ms(),
+                expected_pid)
               .then([&ctx](cluster::init_tm_tx_reply r) {
                   init_producer_id_response reply;
 
