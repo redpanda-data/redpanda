@@ -194,6 +194,12 @@ ss::future<bool> persisted_stm::do_sync(
     if (offset > committed) {
         try {
             co_await wait_offset_committed(timeout, offset, term);
+        } catch (const ss::broken_condition_variable&) {
+            co_return false;
+        } catch (const ss::gate_closed_exception&) {
+            co_return false;
+        } catch (const ss::abort_requested_exception&) {
+            co_return false;
         } catch (...) {
             vlog(
               clusterlog.error,
