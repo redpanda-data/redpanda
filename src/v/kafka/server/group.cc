@@ -571,7 +571,7 @@ group::add_new_static_member(member_id new_member_id, join_group_request&& r) {
 
     if (it != _static_members.end()) {
         vlog(
-          _ctxlog.debug,
+          _ctx_glog.debug,
           "Static member with unknown member id and instance id {} joins the "
           "group, replacing previously mapped {} member id with new member_id "
           "{}",
@@ -582,7 +582,7 @@ group::add_new_static_member(member_id new_member_id, join_group_request&& r) {
           it->second, std::move(new_member_id), std::move(r));
     }
     vlog(
-      _ctxlog.debug,
+      _ctx_glog.debug,
       "Static member with unknown member id and instance id {} joins the "
       "group new member id: {}",
       r.data.group_instance_id.value(),
@@ -607,7 +607,7 @@ group::join_group_stages group::update_static_member_and_rebalance(
         auto next_gen_protocol = select_protocol();
         if (_protocol == next_gen_protocol) {
             vlog(
-              _ctxlog.trace,
+              _ctx_glog.trace,
               "static member {} joins in stable state with the protocol that "
               "does not require group protocol update, will not trigger "
               "rebalance",
@@ -623,7 +623,7 @@ group::join_group_stages group::update_static_member_and_rebalance(
                           result<raft::replicate_result> result) mutable {
                       if (!result) {
                           vlog(
-                            _ctxlog.warn,
+                            _ctx_glog.warn,
                             "unable to store group checkpoint - {}",
                             result.error());
                           // <kafka>Failed to persist member.id of the
@@ -663,7 +663,7 @@ group::join_group_stages group::update_static_member_and_rebalance(
             return join_group_stages(std::move(f));
         } else {
             vlog(
-              _ctxlog.trace,
+              _ctx_glog.trace,
               "static member {} joins in stable state with the protocol that "
               "requires group protocol update, trying to trigger rebalance",
               r.data.group_instance_id);
@@ -675,7 +675,7 @@ group::join_group_stages group::update_static_member_and_rebalance(
         return join_group_stages(std::move(f));
     case group_state::completing_rebalance:
         vlog(
-          _ctxlog.trace,
+          _ctx_glog.trace,
           "updating static member {} (member_id: {}) metadata",
           member->group_instance_id().value(),
           member->id());
@@ -1511,7 +1511,8 @@ group::sync_group_stages group::sync_group_completing_rebalance(
                        set_assignments(std::move(assignments));
                        finish_syncing_members(error_code::none);
                        set_state(group_state::stable);
-                       vlog(_ctx_glog.trace, "Successfully completed group sync");
+                       vlog(
+                         _ctx_glog.trace, "Successfully completed group sync");
                    } else {
                        vlog(
                          _ctx_glog.trace,
@@ -2696,7 +2697,7 @@ error_code group::validate_existing_member(
             return error_code::unknown_member_id;
         } else if (it->second != member_id) {
             vlog(
-              _ctxlog.info,
+              _ctx_glog.info,
               "operation: {} - static member with instance id {} has different "
               "member_id assigned, current: {}, requested: {}",
               ctx,
