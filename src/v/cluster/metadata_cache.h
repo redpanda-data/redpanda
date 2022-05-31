@@ -118,6 +118,8 @@ public:
     /// broker can change
     std::optional<broker_ptr> get_broker(model::node_id) const;
 
+    bool should_reject_writes() const;
+
     bool contains(model::topic_namespace_view, model::partition_id) const;
     bool contains(model::topic_namespace_view) const;
 
