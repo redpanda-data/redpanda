@@ -277,7 +277,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
             return ss::make_ready_future<>();
         }
         auto remaining = size - request_header_size
-                         - hdr.client_id_buffer.size();
+                         - hdr.client_id_buffer.size() - hdr.tags_size_bytes;
         return read_iobuf_exactly(_rs.conn->input(), remaining)
           .then([this, hdr = std::move(hdr), sres = std::move(sres)](
                   iobuf buf) mutable {

@@ -11,6 +11,7 @@
 
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
+#include "kafka/server/flex_versions.h"
 
 #include <seastar/core/temporary_buffer.hh>
 
@@ -37,8 +38,11 @@ parse_header(ss::input_stream<char>& src) {
     header.key = api_key(reader.read_int16());
     header.version = api_version(reader.read_int16());
     header.correlation = correlation_id(reader.read_int32());
-    auto client_id_size = reader.read_int16();
 
+    // There is a contradiction here with the proposed flexible header
+    // introduced in KIP-482. The KIP details how client_id will be a compact
+    // string, however this is not the case
+    auto client_id_size = reader.read_int16();
     if (client_id_size == 0) {
         header.client_id = std::string_view();
         co_return header;
@@ -64,7 +68,52 @@ parse_header(ss::input_stream<char>& src) {
     header.client_id = std::string_view(
       header.client_id_buffer.get(), header.client_id_buffer.size());
     validate_utf8(*header.client_id);
+
+    /// Conditionally handle v1 (flex) header
+    if (!flex_versions::is_api_in_schema(header.key)) {
+        /// User provided unsupported an invalid key that does not map
+        /// to any known kafka requests, code will throw when it eventually
+        /// reaches the request router
+    } else if (flex_versions::is_flexible_request(header.key, header.version)) {
+        auto [tags, bytes_read] = co_await parse_tags(src);
+        header.tags = std::move(tags);
+        header.tags_size_bytes = bytes_read;
+    }
     co_return header;
+}
+
+ss::future<std::pair<std::optional<tagged_fields>, size_t>>
+parse_tags(ss::input_stream<char>& src) {
+    size_t total_bytes_read = 0;
+    auto read_unsigned_vint =
+      [](size_t& total_bytes_read, ss::input_stream<char>& src) {
+          return unsigned_vint::stream_deserialize(src).then(
+            [&total_bytes_read](std::pair<uint32_t, size_t> pair) {
+                auto& [n, bytes_read] = pair;
+                total_bytes_read += bytes_read;
+                return n;
+            });
+      };
+
+    auto num_tags = co_await read_unsigned_vint(total_bytes_read, src);
+    if (num_tags == 0) {
+        /// In the likely event that no tags are parsed as headers, return
+        /// nullopt instead of an empty vector to reduce the memory overhead
+        /// (that will never be used) per request
+        co_return std::make_pair(std::nullopt, total_bytes_read);
+    }
+
+    tagged_fields tags;
+    while (num_tags-- > 0) {
+        auto tag_id = co_await read_unsigned_vint(total_bytes_read, src);
+        auto next_len = co_await read_unsigned_vint(total_bytes_read, src);
+        auto buf = co_await src.read_exactly(next_len);
+        iobuf data;
+        data.append(std::move(buf));
+        total_bytes_read += next_len;
+        tags.emplace_back(tag_id, std::move(data));
+    }
+    co_return std::make_pair(std::move(tags), total_bytes_read);
 }
 
 size_t parse_size_buffer(ss::temporary_buffer<char> buf) {

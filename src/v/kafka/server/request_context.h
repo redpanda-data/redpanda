@@ -14,6 +14,7 @@
 #include "cluster/security_frontend.h"
 #include "kafka/protocol/fwd.h"
 #include "kafka/protocol/request_reader.h"
+#include "kafka/protocol/types.h"
 #include "kafka/server/connection_context.h"
 #include "kafka/server/fetch_session_cache.h"
 #include "kafka/server/logger.h"
@@ -44,6 +45,13 @@ struct request_header {
     correlation_id correlation;
     ss::temporary_buffer<char> client_id_buffer;
     std::optional<std::string_view> client_id;
+
+    // value of std::nullopt indicates v0 request was parsed, 0 tag bytes will
+    // be parsed. If this is non-null a v1 (flex) request header is parsed in
+    // which the min number of bytes parsed must be at least 1.
+    std::optional<tagged_fields> tags;
+    size_t tags_size_bytes{0};
+    bool is_flexible() const { return tags_size_bytes > 0; }
 
     friend std::ostream& operator<<(std::ostream&, const request_header&);
 };
