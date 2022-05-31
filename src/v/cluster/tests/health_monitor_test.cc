@@ -56,6 +56,9 @@ void check_reports_the_same(
           lr.local_state.redpanda_version == rr.local_state.redpanda_version);
         BOOST_TEST_REQUIRE(lr.topics == rr.topics);
         BOOST_TEST_REQUIRE(lr.local_state.disks == rr.local_state.disks);
+        BOOST_TEST_REQUIRE(
+          lr.local_state.storage_space_alert
+          == rr.local_state.storage_space_alert);
     }
 }
 

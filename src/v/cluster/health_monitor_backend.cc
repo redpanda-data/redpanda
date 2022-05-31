@@ -26,6 +26,7 @@
 #include "raft/fwd.h"
 #include "random/generators.h"
 #include "rpc/connection_cache.h"
+#include "storage/types.h"
 #include "version.h"
 
 #include <seastar/core/coroutine.hh>
@@ -358,16 +359,24 @@ health_monitor_backend::dispatch_refresh_cluster_health_request(
         _status.emplace(n_status.id, n_status);
     }
 
+    storage::disk_space_alert cluster_disk_health
+      = storage::disk_space_alert::ok;
     _reports.clear();
     for (auto& n_report : reply.value().report->node_reports) {
         const auto id = n_report.id;
 
         // TODO serialize storage_space_alert, instead of recomputing here.
-        n_report.local_state.storage_space_alert
-          = node::local_monitor::eval_disks(n_report.local_state.disks);
+        auto node_disk_health = node::local_monitor::eval_disks(
+          n_report.local_state.disks);
+        n_report.local_state.storage_space_alert = node_disk_health;
+
+        // Update cached cluster-level disk health: non-raft0-leader nodes
+        cluster_disk_health = std::max(cluster_disk_health, node_disk_health);
+
         _reports.emplace(id, std::move(n_report));
     }
 
+    _reports_disk_health = cluster_disk_health;
     _last_refresh = ss::lowres_clock::now();
     co_return make_error_code(errc::success);
 }
@@ -410,6 +419,23 @@ health_monitor_backend::get_cluster_health(
     }
 
     co_return build_cluster_report(filter);
+}
+
+ss::future<storage::disk_space_alert>
+health_monitor_backend::get_cluster_disk_health(
+  force_refresh refresh, model::timeout_clock::time_point deadline) {
+    auto ec = co_await maybe_refresh_cluster_health(refresh, deadline);
+    if (ec) {
+        vlog(clusterlog.warn, "Failed to refresh cluster health.");
+        // No obvious choice what to return here; really, health data should be
+        // requirement for staying in the cluster quorum.
+        // We return OK in the remote possibility that health monitor is failing
+        // to update while an operator is addressing a out-of-space condition.
+        // In this case, we'd want to err on the side of allowing the cluster to
+        // operate, I guess.
+        co_return storage::disk_space_alert::ok;
+    }
+    co_return _reports_disk_health;
 }
 
 ss::future<std::error_code>
@@ -565,7 +591,9 @@ ss::future<> health_monitor_backend::collect_cluster_health() {
 
     auto old_reports = std::exchange(_reports, {});
 
-    // update nodes reports
+    // update nodes reports and cache cluster-level disk health
+    storage::disk_space_alert cluster_disk_health
+      = storage::disk_space_alert::ok;
     for (auto& r : reports) {
         if (r) {
             const auto id = r.value().id;
@@ -591,10 +619,13 @@ ss::future<> health_monitor_backend::collect_cluster_health() {
             for (auto& cb : _node_callbacks) {
                 cb.second(r.value(), old_report);
             }
+            cluster_disk_health = std::max(
+              r.value().local_state.storage_space_alert, cluster_disk_health);
 
             _reports.emplace(id, std::move(r.value()));
         }
     }
+    _reports_disk_health = cluster_disk_health;
 }
 
 ss::future<result<node_health_report>>
