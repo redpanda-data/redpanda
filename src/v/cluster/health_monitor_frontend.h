@@ -13,8 +13,10 @@
 #include "cluster/fwd.h"
 #include "cluster/health_monitor_backend.h"
 #include "cluster/health_monitor_types.h"
+#include "controller_stm.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
+#include "storage/types.h"
 
 #include <seastar/core/sharded.hh>
 
@@ -23,20 +25,34 @@
 namespace cluster {
 
 /**
- * The health_monitor_frontend is cluster health monitor entry point.
- * It provides interaface that allow caller
- * to query cluster health and request current node state collection proccess.
+ * The health_monitor_frontend is the main cluster health monitor entry point.
+ * It provides an interface that allow callers to query cluster health and
+ * request current node state collection proccess.
  * Health monitor frontend is available on every node and dispatches requests to
  * health monitor backend which lives on single shard.
+ * Most requests are forwarded to the backend shard, except cluster-level disk
+ * health, which is kept cached on each core for fast access.
  */
-class health_monitor_frontend {
+class health_monitor_frontend
+  : public seastar::peering_sharded_service<health_monitor_frontend> {
 public:
+    static constexpr auto default_timeout = std::chrono::seconds(5);
+    static constexpr std::chrono::seconds disk_health_refresh_interval{5};
+    static constexpr ss::shard_id refresher_shard
+      = cluster::controller_stm_shard;
+
     explicit health_monitor_frontend(ss::sharded<health_monitor_backend>&);
+
+    ss::future<> start();
+    ss::future<> stop();
+
     // Reports cluster health. Cluster health is based on the cluster health
     // state that is cached on current node. If force_refresh flag is set. It
     // will always refresh cluster health metadata
     ss::future<result<cluster_health_report>> get_cluster_health(
       cluster_report_filter, force_refresh, model::timeout_clock::time_point);
+
+    storage::disk_space_alert get_cluster_disk_health();
 
     // Returns currently available cluster health report snapshot
     ss::future<cluster_health_report>
@@ -79,5 +95,14 @@ private:
     }
 
     ss::sharded<health_monitor_backend>& _backend;
+
+    // Currently the worst / max of all nodes' disk space state
+    storage::disk_space_alert _cluster_disk_health{};
+    ss::timer<ss::lowres_clock> _refresh_timer;
+    ss::gate _refresh_gate;
+
+    void disk_health_tick();
+    ss::future<> update_other_shards(const storage::disk_space_alert);
+    ss::future<> update_disk_health_cache();
 };
 } // namespace cluster

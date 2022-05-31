@@ -303,6 +303,9 @@ ss::future<> controller::start() {
       })
       .then([this] { return _hm_frontend.start(std::ref(_hm_backend)); })
       .then([this] {
+          return _hm_frontend.invoke_on_all(&health_monitor_frontend::start);
+      })
+      .then([this] {
           return _feature_manager.invoke_on(
             feature_manager::backend_shard, &feature_manager::start);
       })
