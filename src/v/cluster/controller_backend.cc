@@ -699,7 +699,7 @@ ss::future<std::error_code> controller_backend::process_partition_update(
   model::revision_id rev) {
     vlog(
       clusterlog.trace,
-      "processing partiton {} update command with replicas {}",
+      "processing partition {} update command with replicas {}",
       ntp,
       requested.replicas);
 
