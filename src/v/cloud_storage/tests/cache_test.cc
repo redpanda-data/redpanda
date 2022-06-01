@@ -10,6 +10,7 @@
 
 #include "bytes/iobuf.h"
 #include "cache_test_fixture.h"
+#include "cloud_storage/access_time_tracker.h"
 #include "cloud_storage/cache_service.h"
 #include "test_utils/fixture.h"
 #include "units.h"
@@ -22,6 +23,7 @@
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
 
+#include <chrono>
 #include <stdexcept>
 
 using namespace cloud_storage;
@@ -280,4 +282,90 @@ FIXTURE_TEST(put_outside_cache_dir_throws, cache_test_fixture) {
                  != std::string::npos;
       });
     BOOST_CHECK(!ss::file_exists((CACHE_DIR / key).native()).get());
+}
+
+static std::chrono::system_clock::time_point make_ts(int64_t val) {
+    auto seconds = std::chrono::seconds(val);
+    return std::chrono::system_clock::time_point(seconds);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_access_time_tracker) {
+    access_time_tracker cm;
+
+    std::vector<std::chrono::system_clock::time_point> timestamps = {
+      make_ts(1653000000),
+      make_ts(1653000001),
+      make_ts(1653000002),
+      make_ts(1653000003),
+      make_ts(1653000004),
+      make_ts(1653000005),
+      make_ts(1653000006),
+      make_ts(1653000007),
+      make_ts(1653000008),
+      make_ts(1653000009),
+    };
+
+    std::vector<std::string_view> names = {
+      "key0",
+      "key1",
+      "key2",
+      "key3",
+      "key4",
+      "key5",
+      "key6",
+      "key7",
+      "key8",
+      "key9",
+    };
+
+    for (int i = 0; i < 10; i++) {
+        cm.add_timestamp(names[i], timestamps[i]);
+    }
+
+    for (int i = 0; i < 10; i++) {
+        auto ts = cm.estimate_timestamp(names[i]);
+        BOOST_REQUIRE(ts.value() >= timestamps[i]);
+    }
+}
+
+SEASTAR_THREAD_TEST_CASE(test_access_time_tracker_serializer) {
+    access_time_tracker in;
+
+    std::vector<std::chrono::system_clock::time_point> timestamps = {
+      make_ts(1653000000),
+      make_ts(1653000001),
+      make_ts(1653000002),
+      make_ts(1653000003),
+      make_ts(1653000004),
+      make_ts(1653000005),
+      make_ts(1653000006),
+      make_ts(1653000007),
+      make_ts(1653000008),
+      make_ts(1653000009),
+    };
+
+    std::vector<std::string_view> names = {
+      "key0",
+      "key1",
+      "key2",
+      "key3",
+      "key4",
+      "key5",
+      "key6",
+      "key7",
+      "key8",
+      "key9",
+    };
+
+    for (int i = 0; i < 10; i++) {
+        in.add_timestamp(names[i], timestamps[i]);
+    }
+
+    access_time_tracker out;
+    out.from_iobuf(in.to_iobuf());
+
+    for (int i = 0; i < 10; i++) {
+        auto ts = out.estimate_timestamp(names[i]);
+        BOOST_REQUIRE(ts.value() >= timestamps[i]);
+    }
 }

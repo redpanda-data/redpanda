@@ -17,3 +17,12 @@ rp_test(
   ARGS "-- -c 1"
   LABELS cloud_storage
 )
+
+
+rp_test(
+  BENCHMARK_TEST
+  BINARY_NAME cloud_storage_bench
+  SOURCES cache_bench.cc
+  LIBRARIES Seastar::seastar_perf_testing v::cloud_storage
+  LABELS cloud_storage
+)
