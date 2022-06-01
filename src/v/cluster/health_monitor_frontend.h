@@ -97,7 +97,8 @@ private:
     ss::sharded<health_monitor_backend>& _backend;
 
     // Currently the worst / max of all nodes' disk space state
-    storage::disk_space_alert _cluster_disk_health{};
+    storage::disk_space_alert _cluster_disk_health{
+      storage::disk_space_alert::ok};
     ss::timer<ss::lowres_clock> _refresh_timer;
     ss::gate _refresh_gate;
 

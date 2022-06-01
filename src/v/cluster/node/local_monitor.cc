@@ -145,9 +145,9 @@ local_monitor::eval_disks(const std::vector<storage::disk>& disks) {
     size_t alert_bytes = cfg.storage_space_alert_free_threshold_bytes.value();
     size_t min_bytes = cfg.storage_min_free_bytes();
 
-    storage::disk_space_alert node_sa{};
+    storage::disk_space_alert node_sa{storage::disk_space_alert::ok};
     for (const auto& d : disks) {
-        storage::disk_space_alert disk_sa{};
+        storage::disk_space_alert disk_sa{storage::disk_space_alert::ok};
         if (unlikely(d.total == 0.0)) {
             vlog(
               clusterlog.error,
