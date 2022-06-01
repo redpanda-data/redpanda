@@ -39,15 +39,17 @@ struct var_decoder {
         /// \brief almost identical impl to leveldb, made generic for c++
         /// friendliness
         /// https://github.com/google/leveldb/blob/201f52201f/util/coding.cc#L116
+        if (shift > limit) {
+            return true;
+        }
         bytes_read++;
         if (byte & 128) {
             result |= ((byte & 127) << shift);
-        } else {
-            result |= byte << shift;
-            return true;
+            shift += 7;
+            return false;
         }
-        shift += 7;
-        return shift > limit;
+        result |= byte << shift;
+        return true;
     }
 };
 
