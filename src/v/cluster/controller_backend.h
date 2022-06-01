@@ -87,7 +87,7 @@ private:
     ss::future<std::error_code> process_partition_update(
       model::ntp,
       const partition_assignment&,
-      const partition_assignment&,
+      const std::vector<model::broker_shard>&,
       model::revision_id);
     ss::future<> finish_partition_update(
       model::ntp, const partition_assignment&, model::revision_id);

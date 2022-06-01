@@ -1524,13 +1524,13 @@ struct topic_table_delta {
       cluster::partition_assignment,
       model::offset,
       op_type,
-      std::optional<partition_assignment> = std::nullopt);
+      std::optional<std::vector<model::broker_shard>> = std::nullopt);
 
     model::ntp ntp;
     cluster::partition_assignment new_assignment;
     model::offset offset;
     op_type type;
-    std::optional<partition_assignment> previous_assignment;
+    std::optional<std::vector<model::broker_shard>> previous_replica_set;
 
     model::topic_namespace_view tp_ns() const {
         return model::topic_namespace_view(ntp);

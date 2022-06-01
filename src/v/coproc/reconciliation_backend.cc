@@ -195,7 +195,7 @@ reconciliation_backend::process_update(model::ntp ntp, update_t delta) {
     using op_t = update_t::op_type;
     model::revision_id rev(delta.offset());
     const auto& replicas = delta.type == op_t::update
-                             ? delta.previous_assignment->replicas
+                             ? delta.previous_replica_set.value()
                              : delta.new_assignment.replicas;
     if (!cluster::has_local_replicas(_self, replicas)) {
         return ss::make_ready_future<std::error_code>(errc::success);

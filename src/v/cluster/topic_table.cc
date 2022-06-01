@@ -213,7 +213,7 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
       *current_assignment_it,
       o,
       delta::op_type::update,
-      previous_assignment);
+      std::move(previous_assignment.replicas));
 
     notify_waiters();
 

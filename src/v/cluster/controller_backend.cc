@@ -281,11 +281,11 @@ std::vector<topic_table::delta> calculate_bootstrap_deltas(
     return result_delta;
 }
 bool is_cross_core_update(model::node_id self, const topic_table_delta& delta) {
-    if (!delta.previous_assignment) {
+    if (!delta.previous_replica_set) {
         return false;
     }
-    return contains_node(self, delta.previous_assignment->replicas)
-           && !has_local_replicas(self, delta.previous_assignment->replicas);
+    return contains_node(self, *delta.previous_replica_set)
+           && !has_local_replicas(self, *delta.previous_replica_set);
 }
 ss::future<>
 controller_backend::bootstrap_ntp(const model::ntp& ntp, deltas_t& deltas) {
@@ -624,11 +624,11 @@ controller_backend::execute_partitition_op(const topic_table::delta& delta) {
         });
     case op_t::update:
         vassert(
-          delta.previous_assignment,
-          "update delta must have previous assignment, current delta: {}",
+          delta.previous_replica_set,
+          "update delta must have previous replica set, current delta: {}",
           delta);
         return process_partition_update(
-          delta.ntp, delta.new_assignment, *delta.previous_assignment, rev);
+          delta.ntp, delta.new_assignment, *delta.previous_replica_set, rev);
     case op_t::update_finished:
         return finish_partition_update(delta.ntp, delta.new_assignment, rev)
           .then([] { return std::error_code(errc::success); });
@@ -664,18 +664,17 @@ ss::future<> controller_backend::ack_remote_shard_partition_created(
 }
 
 bool are_assignments_equal(
-  const partition_assignment& requested, const partition_assignment& previous) {
-    if (requested.id != previous.id || requested.group != previous.group) {
-        return false;
-    }
-    return are_replica_sets_equal(requested.replicas, previous.replicas);
+  const partition_assignment& requested,
+  const std::vector<model::broker_shard>& previous) {
+    return are_replica_sets_equal(requested.replicas, previous);
 }
 
 model::node_id first_with_assignment_change(
-  const partition_assignment& requested, const partition_assignment& previous) {
+  const partition_assignment& requested,
+  const std::vector<model::broker_shard>& previous_replica_set) {
     absl::node_hash_map<model::node_id, model::broker_shard> prev_map;
-    prev_map.reserve(previous.replicas.size());
-    for (auto& replica : previous.replicas) {
+    prev_map.reserve(previous_replica_set.size());
+    for (auto& replica : previous_replica_set) {
         prev_map.emplace(replica.node_id, replica);
     }
 
@@ -696,7 +695,7 @@ model::node_id first_with_assignment_change(
 ss::future<std::error_code> controller_backend::process_partition_update(
   model::ntp ntp,
   const partition_assignment& requested,
-  const partition_assignment& previous,
+  const std::vector<model::broker_shard>& previous_replica_set,
   model::revision_id rev) {
     vlog(
       clusterlog.trace,
@@ -771,7 +770,7 @@ ss::future<std::error_code> controller_backend::process_partition_update(
     if (partition) {
         // if requested assignment is equal to current one, just finish the
         // update
-        if (are_assignments_equal(requested, previous)) {
+        if (are_assignments_equal(requested, previous_replica_set)) {
             if (requested.replicas.front().node_id == _self) {
                 co_return co_await dispatch_update_finished(
                   std::move(ntp), requested);
@@ -790,7 +789,9 @@ ss::future<std::error_code> controller_backend::process_partition_update(
              * NOTE: deletion is safe as we are already running with new
              * configuration so old replicas are not longer needed.
              */
-            if (first_with_assignment_change(requested, previous) == _self) {
+            if (
+              first_with_assignment_change(requested, previous_replica_set)
+              == _self) {
                 co_return co_await dispatch_update_finished(
                   std::move(ntp), requested);
             }
@@ -812,9 +813,9 @@ ss::future<std::error_code> controller_backend::process_partition_update(
      * created.
      */
     if (
-      contains_node(_self, previous.replicas)
-      && !has_local_replicas(_self, previous.replicas)) {
-        auto previous_shard = get_target_shard(_self, previous.replicas);
+      contains_node(_self, previous_replica_set)
+      && !has_local_replicas(_self, previous_replica_set)) {
+        auto previous_shard = get_target_shard(_self, previous_replica_set);
         std::optional<model::revision_id> initial_revision;
         std::vector<model::broker> initial_brokers;
         if (auto it = _bootstrap_revisions.find(ntp);
