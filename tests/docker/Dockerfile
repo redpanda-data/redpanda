@@ -142,9 +142,8 @@ RUN python3 -m pip install --upgrade --force pip && \
     python3 -m pip install --force --no-cache-dir -e /root/tests/
 
 # Install the OMB tool
-# ToDo: remove checkouting branch when it will be merged to main
-RUN git -C /opt clone https://github.com/redpanda-data/openmessaging-benchmark.git --branch ducktape_testing && \
-    cd /opt/openmessaging-benchmark && git reset --hard 64605eab8277397aab75e8a7455f144af282d7fe && mvn package
+RUN git -C /opt clone https://github.com/redpanda-data/openmessaging-benchmark.git && \
+    cd /opt/openmessaging-benchmark && git reset --hard cde313756faa1ebd0114a35d6fc3b09198559738 && mvn package
 
 # Compile and install rust-based workload generator.
 # Install & remove compiler in the same step, to avoid bulking
