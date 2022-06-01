@@ -13,6 +13,8 @@
 #include "config/configuration.h"
 #include "prometheus/prometheus_sanitize.h"
 
+#include <seastar/core/metrics.hh>
+
 namespace cloud_storage {
 
 partition_probe::partition_probe(const model::ntp& ntp) {
