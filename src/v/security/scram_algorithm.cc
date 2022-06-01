@@ -329,17 +329,6 @@ parse_server_final(std::string_view message) {
 
 namespace security {
 
-std::ostream& operator<<(std::ostream& os, const scram_credential& cred) {
-    fmt::print(
-      os,
-      "salt {} server_key {} stored_key {} iterations {}",
-      cred._salt,
-      cred._server_key,
-      cred._stored_key,
-      cred._iterations);
-    return os;
-}
-
 client_first_message::client_first_message(bytes_view data) {
     auto view = std::string_view(
       reinterpret_cast<const char*>(data.data()), data.size()); // NOLINT
@@ -395,14 +384,10 @@ bool client_first_message::token_authenticated() const {
     return false;
 }
 
-std::ostream& operator<<(std::ostream& os, const client_first_message& msg) {
-    fmt::print(
-      os,
-      "authzid {} username {} nonce {}",
-      msg._authzid,
-      msg._username,
-      msg._nonce);
-    return os;
+std::ostream& operator<<(std::ostream& os, const client_first_message&) {
+    // NOTE: this stream is intentially left minimal to err away from exposing
+    // anything that may be useful for an attacker to use.
+    return os << "{client_first_message}";
 }
 
 ss::sstring server_first_message::sasl_message() const {
@@ -410,14 +395,10 @@ ss::sstring server_first_message::sasl_message() const {
       "r={},s={},i={}", _nonce, bytes_to_base64(_salt), _iterations);
 }
 
-std::ostream& operator<<(std::ostream& os, const server_first_message& msg) {
-    fmt::print(
-      os,
-      "nonce {} salt {} iterations {}",
-      msg._nonce,
-      msg._salt,
-      msg._iterations);
-    return os;
+std::ostream& operator<<(std::ostream& os, const server_first_message&) {
+    // NOTE: this stream is intentially left minimal to err away from exposing
+    // anything that may be useful for an attacker to use.
+    return os << "{server_first_message}";
 }
 
 client_final_message::client_final_message(bytes_view data) {
@@ -441,15 +422,10 @@ ss::sstring client_final_message::msg_no_proof() const {
     return ssx::sformat("c={},r={}", bytes_to_base64(_channel_binding), _nonce);
 }
 
-std::ostream& operator<<(std::ostream& os, const client_final_message& msg) {
-    fmt::print(
-      os,
-      "channel {} nonce {} extensions {} proof {}",
-      msg._channel_binding,
-      msg._nonce,
-      msg._extensions,
-      msg._proof);
-    return os;
+std::ostream& operator<<(std::ostream& os, const client_final_message&) {
+    // NOTE: this stream is intentially left minimal to err away from exposing
+    // anything that may be useful for an attacker to use.
+    return os << "{client_final_message}";
 }
 
 ss::sstring server_final_message::sasl_message() const {
@@ -459,9 +435,10 @@ ss::sstring server_final_message::sasl_message() const {
     return ssx::sformat("v={}", bytes_to_base64(_signature));
 }
 
-std::ostream& operator<<(std::ostream& os, const server_final_message& msg) {
-    fmt::print(os, "error {} signature {}", msg._error, msg._signature);
-    return os;
+std::ostream& operator<<(std::ostream& os, const server_final_message&) {
+    // NOTE: this stream is intentially left minimal to err away from exposing
+    // anything that may be useful for an attacker to use.
+    return os << "{server_final_message}";
 }
 
 server_first_message::server_first_message(bytes_view data) {

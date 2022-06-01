@@ -32,6 +32,12 @@
 #   ignorable flag on a field doesn't change the wire protocol, but gives
 #   instruction on how things should behave when there is missing data.
 #
+#   - Build a more robust way to define messages and their contents as
+#   sensitive. The current approach relies on a list of root structs to
+#   generate stream operators that don't contain sensitive information. We
+#   should strongly consider leveraging the C++ type system to generate code
+#   that forces users to explicitly "unwrap" sensitive fields before use, to
+#   make it easier to audit where sensitive information is used.
 import io
 import json
 import functools
@@ -308,6 +314,18 @@ basic_type_map = dict(
     iobuf=("iobuf", None, "read_fragmented_nullable_bytes()"),
     fetch_record_set=("batch_reader", None, "read_nullable_batch_reader()"),
 )
+
+# Declare some fields as sensitive. Utmost care should be taken to ensure the
+# contents of these fields are never made available over unsecure channels
+# (sent over an unencrypted connection, printed in logs, etc.).
+sensitive_map = {
+    "SaslAuthenticateRequestData": {
+        "AuthBytes": True,
+    },
+    "SaslAuthenticateResponseData": {
+        "AuthBytes": True,
+    },
+}
 
 # apply a rename to a struct. this is useful when there is a type name conflict
 # between two request types. since we generate types in a flat namespace this
@@ -707,6 +725,23 @@ class Field:
         return plain_decoder[1], named_type
 
     @property
+    def is_sensitive(self):
+        d = sensitive_map
+        for p in self._path:
+            d = d.get(p, None)
+            if d is None:
+                break
+        if type(d) is dict:
+            # We got to the end of this field's path and `sensitive_map` has
+            # sensitive decendents defined. This field is an ancestor of a
+            # sensitive field, but it itself isn't sensitive.
+            return False
+        assert d is None or d is True, \
+          "expected field '{}' to be missing or True; field path: {}, remaining path: {}" \
+          .format(self._field["name"], self._path, d)
+        return d
+
+    @property
     def is_array(self):
         return isinstance(self._type, ArrayType)
 
@@ -934,11 +969,12 @@ void {{ struct.name }}::decode(iobuf, api_version) {}
 {% set structs = struct.structs() + [struct] %}
 {% for struct in structs %}
 {%- if struct.fields %}
-std::ostream& operator<<(std::ostream& o, const {{ struct.name }}& v) {
+std::ostream& operator<<(std::ostream& o, [[maybe_unused]] const {{ struct.name }}& v) {
     fmt::print(o,
       "{{'{{' + struct.format + '}}'}}",
       {%- for field in struct.fields %}
-      v.{{ field.name }}{% if not loop.last %},{% endif %}
+      {%- if field.is_sensitive %}"****"{% else %}v.{{ field.name }}{% endif %}{% if not loop.last %},{% endif %}
+
       {%- endfor %}
     );
     return o;

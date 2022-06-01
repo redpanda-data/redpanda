@@ -12,6 +12,7 @@
 #include "bytes/bytes.h"
 #include "kafka/protocol/errors.h"
 #include "security/scram_algorithm.h"
+#include "vlog.h"
 
 namespace kafka {
 
