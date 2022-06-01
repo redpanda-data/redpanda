@@ -1809,6 +1809,13 @@ void admin_server::register_broker_routes() {
               throw ss::httpd::bad_request_exception(
                 "Maintenance mode feature not active (upgrade in progress?)");
           }
+
+          if (
+            _controller->get_members_table().local().all_brokers().size() < 2) {
+              throw ss::httpd::bad_request_exception(
+                "Maintenance mode may not be used on a single node cluster");
+          }
+
           model::node_id id = parse_broker_id(*req);
           auto ec = co_await _controller->get_members_frontend()
                       .local()
