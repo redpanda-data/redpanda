@@ -409,7 +409,9 @@ void members_manager::join_raft0() {
                          }
 
                          return wait_for_next_join_retry(
-                                  _join_retry_jitter.next_duration(),
+                                  std::chrono::duration_cast<
+                                    std::chrono::milliseconds>(
+                                    _join_retry_jitter.next_duration()),
                                   _as.local())
                            .then([] { return ss::stop_iteration::no; });
                      });

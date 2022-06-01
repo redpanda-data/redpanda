@@ -14,13 +14,17 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <chrono>
+
 using namespace std::chrono_literals; // NOLINT
 
 SEASTAR_THREAD_TEST_CASE(base_jitter_gurantees) {
     raft::timeout_jitter jit(100ms, 75ms);
     auto const low = jit.base_duration();
     auto const high = jit.base_duration() + 75ms;
-    BOOST_CHECK_EQUAL(low.count(), (100ms).count());
+    BOOST_CHECK_EQUAL(
+      std::chrono::duration_cast<std::chrono::milliseconds>(low).count(),
+      (100ms).count());
     for (auto i = 0; i < 10; ++i) {
         auto now = raft::clock_type::now();
         auto next = jit();

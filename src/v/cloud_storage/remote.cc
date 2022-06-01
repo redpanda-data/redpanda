@@ -202,7 +202,8 @@ ss::future<download_result> remote::download_manifest(
               ctxlog.debug,
               "Downloading manifest from {}, {} backoff required",
               bucket,
-              std::chrono::milliseconds(retry_permit.delay));
+              std::chrono::duration_cast<std::chrono::milliseconds>(
+                retry_permit.delay));
             _probe.manifest_download_backoff();
             co_await ss::sleep_abortable(retry_permit.delay, _as);
             retry_permit = fib.retry();
@@ -285,7 +286,8 @@ ss::future<upload_result> remote::upload_manifest(
               "Uploading manifest {} to {}, {} backoff required",
               path,
               bucket,
-              std::chrono::milliseconds(permit.delay));
+              std::chrono::duration_cast<std::chrono::milliseconds>(
+                permit.delay));
             _probe.manifest_upload_backoff();
             co_await ss::sleep_abortable(permit.delay, _as);
             permit = fib.retry();
@@ -366,7 +368,8 @@ ss::future<upload_result> remote::upload_segment(
               "Uploading segment {} to {}, {} backoff required",
               path,
               bucket,
-              std::chrono::milliseconds(permit.delay));
+              std::chrono::duration_cast<std::chrono::milliseconds>(
+                permit.delay));
             _probe.upload_backoff();
             co_await ss::sleep_abortable(permit.delay, _as);
             permit = fib.retry();
@@ -436,7 +439,8 @@ ss::future<download_result> remote::download_segment(
               ctxlog.debug,
               "Downloading segment from {}, {} backoff required",
               bucket,
-              std::chrono::milliseconds(permit.delay));
+              std::chrono::duration_cast<std::chrono::milliseconds>(
+                permit.delay));
             _probe.download_backoff();
             co_await ss::sleep_abortable(permit.delay, _as);
             permit = fib.retry();
@@ -506,7 +510,8 @@ ss::future<download_result> remote::segment_exists(
               ctxlog.debug,
               "HeadObject from {}, {} backoff required",
               bucket,
-              std::chrono::milliseconds(permit.delay));
+              std::chrono::duration_cast<std::chrono::milliseconds>(
+                permit.delay));
             co_await ss::sleep_abortable(permit.delay, _as);
             permit = fib.retry();
             break;

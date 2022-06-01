@@ -645,7 +645,8 @@ void adl<model::timeout_clock::duration>::to(iobuf& out, duration dur) {
     // This is a clang bug that cause ss::cpu_to_le to become ambiguous
     // because rep has type of long long
     // adl<rep>{}.to(out, dur.count());
-    adl<uint64_t>{}.to(out, std::chrono::milliseconds(dur).count());
+    adl<uint64_t>{}.to(
+      out, std::chrono::duration_cast<std::chrono::milliseconds>(dur).count());
 }
 
 model::timeout_clock::duration
@@ -654,7 +655,7 @@ adl<model::timeout_clock::duration>::from(iobuf_parser& in) {
     // because rep has type of long long
     // auto rp = adl<rep>{}.from(in);
     auto rp = adl<uint64_t>{}.from(in);
-    return duration(rp);
+    return std::chrono::duration_cast<duration>(std::chrono::milliseconds{rp});
 }
 
 void adl<cluster::topic_configuration_assignment>::to(

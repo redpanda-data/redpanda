@@ -21,6 +21,7 @@
 
 #include <fmt/ostream.h>
 
+#include <chrono>
 #include <type_traits>
 
 namespace raft {
@@ -643,7 +644,7 @@ raft::snapshot_metadata adl<raft::snapshot_metadata>::from(iobuf_parser& in) {
 
     auto cfg = adl<raft::group_configuration>{}.from(in);
     ss::lowres_clock::time_point cluster_time{
-      adl<ss::lowres_clock::duration>{}.from(in)};
+      adl<std::chrono::milliseconds>{}.from(in)};
 
     if (version >= raft::snapshot_metadata::initial_version) {
         log_start_delta = adl<raft::offset_translator_delta>{}.from(in);
@@ -665,7 +666,8 @@ void adl<raft::snapshot_metadata>::to(
       md.last_included_term,
       md.version,
       md.latest_configuration,
-      md.cluster_time.time_since_epoch(),
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+        md.cluster_time.time_since_epoch()),
       md.log_start_delta);
 }
 } // namespace reflection

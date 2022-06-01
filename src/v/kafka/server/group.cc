@@ -927,9 +927,11 @@ void group::try_prepare_rebalance() {
     if (_initial_join_in_progress) {
         // debounce joins to an empty group. for a bounded delay, we'll avoid
         // competing the join phase as long as new members are arriving.
-        auto rebalance = rebalance_timeout();
+        auto rebalance = std::chrono::duration_cast<std::chrono::milliseconds>(
+          rebalance_timeout());
         auto initial = _conf.group_initial_rebalance_delay();
-        auto remaining = std::max(rebalance - initial, duration_type(0));
+        auto remaining = std::max(
+          rebalance - initial, std::chrono::milliseconds(0));
 
         _join_timer.cancel();
         _join_timer.set_callback(
@@ -939,7 +941,7 @@ void group::try_prepare_rebalance() {
                   auto prev_delay = delay;
                   delay = std::min(initial, remaining);
                   remaining = std::max(
-                    remaining - prev_delay, duration_type(0));
+                    remaining - prev_delay, std::chrono::milliseconds(0));
                   vlog(
                     _ctxlog.trace,
                     "Scheduling debounce join timer for {} ms remaining {} ms",

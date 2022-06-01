@@ -18,7 +18,10 @@ namespace archival {
 std::ostream&
 operator<<(std::ostream& o, const std::optional<segment_time_limit>& tl) {
     if (tl) {
-        fmt::print(o, "{}", std::chrono::milliseconds(tl.value()));
+        fmt::print(
+          o,
+          "{}",
+          std::chrono::duration_cast<std::chrono::milliseconds>(tl.value()()));
     } else {
         fmt::print(o, "N/A");
     }
@@ -32,10 +35,14 @@ std::ostream& operator<<(std::ostream& o, const configuration& cfg) {
       "segment_upload_timeout: {}, "
       "manifest_upload_timeout: {}, time_limit: {}}}",
       cfg.bucket_name,
-      std::chrono::milliseconds(cfg.reconciliation_interval),
-      std::chrono::milliseconds(cfg.cloud_storage_initial_backoff),
-      std::chrono::milliseconds(cfg.segment_upload_timeout),
-      std::chrono::milliseconds(cfg.manifest_upload_timeout),
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+        cfg.reconciliation_interval),
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+        cfg.cloud_storage_initial_backoff),
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+        cfg.segment_upload_timeout),
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+        cfg.manifest_upload_timeout),
       cfg.time_limit);
     return o;
 }

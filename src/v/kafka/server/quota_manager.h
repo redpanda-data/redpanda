@@ -101,14 +101,14 @@ private:
     };
 
     config::binding<int16_t> _default_num_windows;
-    config::binding<clock::duration> _default_window_width;
+    config::binding<std::chrono::milliseconds> _default_window_width;
 
     config::binding<uint32_t> _target_tp_rate;
     absl::flat_hash_map<ss::sstring, quota> _quotas;
 
     ss::timer<> _gc_timer;
     clock::duration _gc_freq;
-    config::binding<clock::duration> _max_delay;
+    config::binding<std::chrono::milliseconds> _max_delay;
 };
 
 } // namespace kafka

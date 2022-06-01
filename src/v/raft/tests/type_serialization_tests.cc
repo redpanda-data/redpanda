@@ -29,6 +29,7 @@
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test_log.hpp>
 
+#include <chrono>
 #include <cstdint>
 #include <vector>
 
@@ -323,7 +324,9 @@ SEASTAR_THREAD_TEST_CASE(snapshot_metadata_roundtrip) {
 
     BOOST_REQUIRE_EQUAL(d.last_included_index, model::offset(123));
     BOOST_REQUIRE_EQUAL(d.last_included_term, model::term_id(32));
-    BOOST_REQUIRE(d.cluster_time == ct);
+    BOOST_REQUIRE(
+      std::chrono::time_point_cast<std::chrono::milliseconds>(d.cluster_time)
+      == std::chrono::time_point_cast<std::chrono::milliseconds>(ct));
     BOOST_REQUIRE_EQUAL(d.latest_configuration, cfg);
     BOOST_REQUIRE_EQUAL(d.log_start_delta, delta);
 }
@@ -348,7 +351,8 @@ SEASTAR_THREAD_TEST_CASE(snapshot_metadata_backward_compatibility) {
       model::offset(123),
       model::term_id(32),
       std::move(cfg),
-      ct.time_since_epoch());
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+        ct.time_since_epoch()));
 
     iobuf_parser parser(std::move(serialize_buf));
 
@@ -358,7 +362,10 @@ SEASTAR_THREAD_TEST_CASE(snapshot_metadata_backward_compatibility) {
 
     BOOST_REQUIRE_EQUAL(metadata.last_included_index, model::offset(123));
     BOOST_REQUIRE_EQUAL(metadata.last_included_term, model::term_id(32));
-    BOOST_REQUIRE(metadata.cluster_time == ct);
+    BOOST_REQUIRE(
+      std::chrono::time_point_cast<std::chrono::milliseconds>(
+        metadata.cluster_time)
+      == std::chrono::time_point_cast<std::chrono::milliseconds>(ct));
     BOOST_REQUIRE_EQUAL(metadata.latest_configuration, c);
     BOOST_REQUIRE_EQUAL(
       metadata.log_start_delta, raft::offset_translator_delta{});

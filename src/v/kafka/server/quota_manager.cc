@@ -68,9 +68,10 @@ throttle_delay quota_manager::record_tp_and_throttle(
     if (rate > _target_tp_rate()) {
         auto diff = rate - _target_tp_rate();
         double delay = (diff / _target_tp_rate())
-                       * (double)std::chrono::milliseconds(
+                       * static_cast<double>(
+                         std::chrono::duration_cast<std::chrono::milliseconds>(
                            it->second.tp_rate.window_size())
-                           .count();
+                           .count());
         delay_ms = std::chrono::milliseconds(static_cast<uint64_t>(delay));
     }
     std::chrono::milliseconds max_delay_ms(_max_delay());

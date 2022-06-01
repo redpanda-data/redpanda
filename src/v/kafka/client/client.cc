@@ -475,7 +475,9 @@ ss::future<kafka::fetch_response> client::consumer_fetch(
               auto timeout = std::max(
                 model::timeout_clock::duration{0},
                 end - model::timeout_clock::now());
-              return c->fetch(timeout, max_bytes);
+              return c->fetch(
+                std::chrono::duration_cast<std::chrono::milliseconds>(timeout),
+                max_bytes);
           });
     });
 }
