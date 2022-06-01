@@ -35,7 +35,7 @@ partition_probe::partition_probe(const model::ntp& ntp) {
           [this] { return _bytes_read; },
           sm::description("Total bytes read from remote partition"),
           labels),
-        sm::make_derive(
+        sm::make_counter(
           "read_records",
           [this] { return _records_read; },
           sm::description("Total number of records read from remote partition"),

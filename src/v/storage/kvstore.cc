@@ -66,7 +66,7 @@ ss::future<> kvstore::start() {
               "cached_bytes",
               [this] { return _probe.cached_bytes; },
               ss::metrics::description("Size of the database in memory")),
-            ss::metrics::make_derive(
+            ss::metrics::make_counter(
               "key_count",
               [this] { return _db.size(); },
               ss::metrics::description("Number of keys in the database")),
