@@ -50,7 +50,7 @@ fi
 head_branch=$(echo "backport-$backport_issues_numbers$BACKPORT_BRANCH-$suffix" | sed 's/ /-/g')
 git checkout -b "$head_branch" "remotes/upstream/$BACKPORT_BRANCH"
 
-if ! git cherry-pick -x "$BACKPORT_COMMITS"; then
+if ! git cherry-pick -x $BACKPORT_COMMITS; then
   msg="Failed to run cherry-pick command. I executed the below command:\n
 \`\`\`\r
 git cherry-pick -x $BACKPORT_COMMITS
