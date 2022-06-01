@@ -623,3 +623,28 @@ class RpkTool:
         ] + self._kafka_conn_settings()
         output = self._execute(cmd)
         return output
+
+    def cluster_metadata_id(self):
+        """
+        Calls 'cluster metadata' and returns the cluster ID, if set,
+        else None.  Don't return the rest of the output (brokers list)
+        because there are already other ways to get at that.
+        """
+        cmd = [
+            self._rpk_binary(), '--brokers',
+            self._redpanda.brokers(), 'cluster', 'metadata'
+        ]
+        output = self._execute(cmd)
+        lines = output.strip().split("\n")
+
+        # Output is like:
+        #
+        # CLUSTER
+        # =======
+        # foobar
+
+        # Output only has a "CLUSTER" section if cluster id is set
+        if lines[0] != "CLUSTER":
+            return None
+        else:
+            return lines[2]
