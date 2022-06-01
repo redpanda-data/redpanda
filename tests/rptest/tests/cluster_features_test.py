@@ -61,6 +61,24 @@ class FeaturesTestBase(RedpandaTest):
 
         return features_response
 
+    def _wait_for_version_everywhere(self, target_version):
+        """
+        Apply a GET check to all nodes, for writes that are expected to
+        propagate via controller log
+        """
+        def check():
+            for node in self.redpanda.nodes:
+                node_version = self.admin.get_features(
+                    node=node)['cluster_version']
+                if node_version != target_version:
+                    return False
+
+            return True
+
+        # Version propagation is a little slower than feature write propagation, because
+        # it relies on periodic health messages
+        wait_until(check, timeout_sec=20, backoff_sec=1)
+
 
 class FeaturesMultiNodeTest(FeaturesTestBase):
     """
@@ -91,24 +109,6 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
         # Controller writes usually propagate in milliseconds, so this is not
         # a particularly long timeout: it's here for when tests run very slow.
         wait_until(check, timeout_sec=10, backoff_sec=0.5)
-
-    def _wait_for_version_everywhere(self, target_version):
-        """
-        Apply a GET check to all nodes, for writes that are expected to
-        propagate via controller log
-        """
-        def check():
-            for node in self.redpanda.nodes:
-                node_version = self.admin.get_features(
-                    node=node)['cluster_version']
-                if node_version != target_version:
-                    return False
-
-            return True
-
-        # Version propagation is a little slower than feature write propagation, because
-        # it relies on periodic health messages
-        wait_until(check, timeout_sec=20, backoff_sec=1)
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_explicit_activation(self):
@@ -251,10 +251,24 @@ class FeaturesMultiNodeUpgradeTest(FeaturesTestBase):
         # Node logical versions are transmitted as part of health messages, so we may
         # have to wait for the next health tick (health_monitor_tick_interval=10s) before
         # the controller leader fetches health from the last restarted peer.
-        wait_until(lambda: CURRENT_LOGICAL_VERSION == self.admin.get_features(
-        )['cluster_version'],
-                   timeout_sec=15,
-                   backoff_sec=1)
+        self._wait_for_version_everywhere(CURRENT_LOGICAL_VERSION)
+
+        # Check that initial version and current version are properly reflected
+        # across all nodes.
+        def complete():
+            for n in self.redpanda.nodes:
+                features = self.admin.get_features(node=n)
+                if features[
+                        'cluster_version'] != CURRENT_LOGICAL_VERSION or features[
+                            'original_cluster_version'] != initial_version:
+                    return False
+            return True
+
+        wait_until(complete, timeout_sec=5, backoff_sec=1)
+
+        # Check that initial version is properly remembered past restarts
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        assert complete()
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_rollback(self):

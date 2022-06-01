@@ -182,6 +182,12 @@ void feature_state::notify_version(cluster_version v) {
 void feature_table::set_active_version(cluster_version v) {
     _active_version = v;
 
+    if (_original_version == invalid_version) {
+        // Rely on controller log replay to call us first with
+        // the first version the cluster ever agreed upon.
+        _original_version = v;
+    }
+
     for (auto& fs : _feature_state) {
         fs.notify_version(v);
     }
