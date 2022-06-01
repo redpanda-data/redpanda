@@ -12,13 +12,9 @@ from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 from ducktape.cluster.cluster_spec import ClusterSpec
 
-import os
-import time
-
-from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import SISettings
+from rptest.services.redpanda import SISettings, ResourceSettings
 from rptest.services.franz_go_verifiable_services import FranzGoVerifiableProducer, FranzGoVerifiableRandomConsumer
 
 
@@ -55,7 +51,9 @@ class ShadowIndexingCacheSpaceLeakTest(RedpandaTest):
         super().__init__(test_context,
                          num_brokers=3,
                          extra_rp_conf=extra_rp_conf,
-                         si_settings=si_settings)
+                         si_settings=si_settings,
+                         resource_settings=ResourceSettings(num_cpus=2,
+                                                            memory_mb=2048))
         self._ctx = test_context
         self._verifier_node = test_context.cluster.alloc(
             ClusterSpec.simple_linux(1))[0]
