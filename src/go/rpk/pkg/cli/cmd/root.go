@@ -23,6 +23,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/common"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/debug"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/group"
 	plugincmd "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/plugin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -54,26 +55,29 @@ func Execute() {
 		}
 	})
 
-	rootCmd := &cobra.Command{
+	root := &cobra.Command{
 		Use:   "rpk",
 		Short: "rpk is the Redpanda CLI & toolbox.",
 		Long:  "",
 	}
-	rootCmd.PersistentFlags().BoolVarP(&verbose, config.FlagVerbose,
+	root.PersistentFlags().BoolVarP(&verbose, config.FlagVerbose,
 		"v", false, "Enable verbose logging (default: false).")
 
-	rootCmd.AddCommand(NewGenerateCommand(fs))
-	rootCmd.AddCommand(NewVersionCommand())
-	rootCmd.AddCommand(NewWasmCommand(fs))
-	rootCmd.AddCommand(NewContainerCommand())
-	rootCmd.AddCommand(NewTopicCommand(fs))
-	rootCmd.AddCommand(NewClusterCommand(fs))
-	rootCmd.AddCommand(NewACLCommand(fs))
-	rootCmd.AddCommand(group.NewCommand(fs))
+	root.AddCommand(
+		NewGenerateCommand(fs),
+		NewVersionCommand(),
+		NewWasmCommand(fs),
+		NewContainerCommand(),
+		NewTopicCommand(fs),
+		NewClusterCommand(fs),
+		NewACLCommand(fs),
 
-	rootCmd.AddCommand(plugincmd.NewCommand(fs))
+		debug.NewCommand(fs),
+		group.NewCommand(fs),
+		plugincmd.NewCommand(fs),
+	)
 
-	addPlatformDependentCmds(fs, mgr, rootCmd)
+	addPlatformDependentCmds(fs, mgr, root)
 
 	// To support autocompletion even for plugins, we list all plugins now
 	// and add tiny commands to our root command. Cobra works by creating
@@ -93,8 +97,8 @@ func Execute() {
 	// that here by only adding a plugin with exec if a command does not
 	// exist yet.
 	for _, plugin := range plugin.ListPlugins(fs, plugin.UserPaths()) {
-		if _, _, err := rootCmd.Find(plugin.Arguments); err != nil {
-			addPluginWithExec(rootCmd, plugin.Arguments, plugin.Path)
+		if _, _, err := root.Find(plugin.Arguments); err != nil {
+			addPluginWithExec(root, plugin.Arguments, plugin.Path)
 		}
 	}
 
@@ -102,7 +106,7 @@ func Execute() {
 	// command nor a discovered plugin, we do one more search for an
 	// external plugin. Given the above code, this is likely to find
 	// nothing, but this does not hurt.
-	if _, _, err := rootCmd.Find(os.Args[1:]); err != nil {
+	if _, _, err := root.Find(os.Args[1:]); err != nil {
 		if foundPath, err := tryExecPlugin(new(osPluginHandler), os.Args[1:]); len(foundPath) > 0 {
 			if err != nil {
 				log.Fatalf("exec %s: %v\n", foundPath, err)
@@ -111,7 +115,7 @@ func Execute() {
 		}
 	}
 
-	err := rootCmd.Execute()
+	err := root.Execute()
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "check":
