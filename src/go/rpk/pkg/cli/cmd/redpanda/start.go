@@ -13,7 +13,6 @@
 package redpanda
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -178,7 +177,7 @@ func NewStartCommand(
 			}
 			seedServers, err := parseSeeds(seeds)
 			if err != nil {
-				sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, err)
+				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			if len(seedServers) != 0 {
@@ -197,7 +196,7 @@ func NewStartCommand(
 				config.DefaultKafkaPort,
 			)
 			if err != nil {
-				sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, err)
+				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			if kafkaApi != nil && len(kafkaApi) > 0 {
@@ -216,7 +215,7 @@ func NewStartCommand(
 				config.DefaultProxyPort,
 			)
 			if err != nil {
-				sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, err)
+				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			if proxyApi != nil && len(proxyApi) > 0 {
@@ -238,7 +237,7 @@ func NewStartCommand(
 				config.DefaultSchemaRegPort,
 			)
 			if err != nil {
-				sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, err)
+				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			if schemaRegApi != nil && len(schemaRegApi) > 0 {
@@ -257,7 +256,7 @@ func NewStartCommand(
 				config.Default().Redpanda.RPCServer.Port,
 			)
 			if err != nil {
-				sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, err)
+				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			if rpcServer != nil {
@@ -276,7 +275,7 @@ func NewStartCommand(
 				config.DefaultKafkaPort,
 			)
 			if err != nil {
-				sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, err)
+				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			if advKafkaApi != nil {
@@ -295,7 +294,7 @@ func NewStartCommand(
 				config.DefaultProxyPort,
 			)
 			if err != nil {
-				sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, err)
+				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			if advProxyApi != nil {
@@ -314,7 +313,7 @@ func NewStartCommand(
 				config.Default().Redpanda.RPCServer.Port,
 			)
 			if err != nil {
-				sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, err)
+				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			if advRPCApi != nil {
@@ -322,7 +321,7 @@ func NewStartCommand(
 			}
 			installDirectory, err := cli.GetOrFindInstallDir(fs, installDirFlag)
 			if err != nil {
-				sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, err)
+				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			rpArgs, err := buildRedpandaFlags(
@@ -334,7 +333,7 @@ func NewStartCommand(
 				!prestartCfg.checkEnabled,
 			)
 			if err != nil {
-				sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, err)
+				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			checkPayloads, tunerPayloads, err := prestart(
@@ -347,17 +346,17 @@ func NewStartCommand(
 			env.Checks = checkPayloads
 			env.Tuners = tunerPayloads
 			if err != nil {
-				sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, err)
+				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
 
 			err = mgr.Write(conf)
 			if err != nil {
-				sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, err)
+				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
 
-			sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, nil)
+			sendEnv(fs, env, conf, !prestartCfg.checkEnabled, nil)
 			rpArgs.ExtraArgs = args
 			log.Info(common.FeedbackMsg)
 			log.Info("Starting redpanda...")
@@ -928,37 +927,11 @@ func parseNamedAddress(
 	}, nil
 }
 
-func sendEnv(
-	fs afero.Fs,
-	mgr config.Manager,
-	env api.EnvironmentPayload,
-	conf *config.Config,
-	skipChecks bool,
-	err error,
-) {
+func sendEnv(fs afero.Fs, env api.EnvironmentPayload, conf *config.Config, skipChecks bool, err error) {
 	if err != nil {
 		env.ErrorMsg = err.Error()
 	}
-	// The config.Config struct holds only a subset of everything that can
-	// go in the YAML config file, so try to read the file directly to
-	// send everything.
-	confJSON, err := mgr.ReadAsJSON(conf.ConfigFile)
-	if err != nil {
-		log.Warnf(
-			"Couldn't parse latest config at '%s' due to: %s",
-			conf.ConfigFile,
-			err,
-		)
-		confBytes, err := json.Marshal(conf)
-		if err != nil {
-			log.Warnf(
-				"Couldn't marshal the loaded config: %s",
-				err,
-			)
-		}
-		confJSON = string(confBytes)
-	}
-	err = api.SendEnvironment(fs, env, *conf, confJSON, skipChecks)
+	err = api.SendEnvironment(fs, env, *conf, skipChecks)
 	if err != nil {
 		log.Debugf("couldn't send environment data: %v", err)
 	}
