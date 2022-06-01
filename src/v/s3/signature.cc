@@ -334,11 +334,7 @@ std::error_code signature_v4::sign_header(
     auto sign_key = gen_sig_key(_private_key(), date_str, _region(), service);
     auto cred_scope = ssx::sformat(
       "{}/{}/{}/aws4_request", date_str, _region(), service);
-    vlog(
-      s3_log.trace,
-      "Credentials updated:\n[signing key]\n{}\n[scope]\n{}\n",
-      hexdigest(sign_key),
-      cred_scope);
+    vlog(s3_log.trace, "Credentials updated:\n[scope]\n{}\n", cred_scope);
     auto amz_date = _sig_time.format_datetime();
     header.set("x-amz-date", {amz_date.data(), amz_date.size()});
     header.set("x-amz-content-sha256", {sha256.data(), sha256.size()});
@@ -363,7 +359,8 @@ std::error_code signature_v4::sign_header(
       canonical_headers.value().signed_headers,
       hexdigest(digest));
     header.set(boost::beast::http::field::authorization, auth_header);
-    vlog(s3_log.trace, "\n[signed-header]\n\n{}", header);
+    vlog(
+      s3_log.trace, "\n[signed-header]\n\n{}", http::redacted_header(header));
     return {};
 }
 

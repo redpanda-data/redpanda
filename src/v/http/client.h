@@ -248,6 +248,13 @@ private:
     ss::lowres_clock::duration _max_idle_time;
 };
 
+/// Utility function for producing a copy of the request header with some
+/// fields redacted for logging.
+///
+/// \param original a request header with potentially sensitive header values
+/// \return redacted header with sensitive values removed
+client::request_header redacted_header(client::request_header original);
+
 template<class BufferSeq>
 inline ss::future<> client::forward(client* client, BufferSeq&& seq) {
     auto scattered = iobuf_as_scattered(std::forward<BufferSeq>(seq));
