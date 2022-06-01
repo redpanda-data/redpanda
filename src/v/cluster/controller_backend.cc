@@ -445,7 +445,7 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
             continue;
         }
         try {
-            auto ec = co_await execute_partitition_op(*it);
+            auto ec = co_await execute_partition_op(*it);
             if (ec) {
                 if (it->type == topic_table_delta::op_type::update) {
                     /**
@@ -586,7 +586,7 @@ std::optional<ss::shard_id> get_target_shard(
 }
 
 ss::future<std::error_code>
-controller_backend::execute_partitition_op(const topic_table::delta& delta) {
+controller_backend::execute_partition_op(const topic_table::delta& delta) {
     using op_t = topic_table::delta::op_type;
     /**
      * Revision is derived from delta offset, i.e. offset of a command that
@@ -641,7 +641,7 @@ controller_backend::execute_partitition_op(const topic_table::delta& delta) {
 }
 
 ss::future<std::optional<controller_backend::cross_shard_move_request>>
-controller_backend::ask_remote_shard_for_initail_rev(
+controller_backend::ask_remote_shard_for_initial_rev(
   model::ntp ntp, ss::shard_id shard) {
     using ret_t = std::optional<controller_backend::cross_shard_move_request>;
     return container().invoke_on(
@@ -828,7 +828,7 @@ ss::future<std::error_code> controller_backend::process_partition_update(
               *previous_shard,
               ntp);
             // ask previous controller for partition initial revision
-            auto x_core_move_req = co_await ask_remote_shard_for_initail_rev(
+            auto x_core_move_req = co_await ask_remote_shard_for_initial_rev(
               ntp, *previous_shard);
             if (!x_core_move_req) {
                 co_return errc::wating_for_partition_shutdown;
