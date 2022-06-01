@@ -21,7 +21,7 @@ helm install \
 ```
 3. Get Latest version of the operator
 ```
-export VERSION=$(curl -s https://api.github.com/repos/vectorizedio/redpanda/releases/latest | jq -r .tag_name)
+export VERSION=$(curl -s https://api.github.com/repos/redpanda-data/redpanda/releases/latest | jq -r .tag_name)
 ```
 4. Install CRDs
 ```
