@@ -41,6 +41,11 @@ using command_type = named_type<int8_t, struct command_type_tag>;
 // Generic controller command, this type is base for all commands
 template<typename K, typename V, int8_t tp, model::record_batch_type bt>
 struct controller_command {
+    static_assert(
+      tp >= 0,
+      "Command type must be greater than 0. Negative values are used to "
+      "determine serialization type");
+
     using key_t = K;
     using value_t = V;
 
