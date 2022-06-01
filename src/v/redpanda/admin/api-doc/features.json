@@ -118,6 +118,10 @@
                     "type": "long",
                     "description": "Logical version of cluster"
                 },
+                "original_cluster_version": {
+                    "type": "long",
+                    "description": "Logical version at time of cluster creation"
+                },
                 "features": {
                     "type": "array",
                     "description": "list of feature_state for each feature",
