@@ -7,8 +7,8 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "model/tests/random_batch.h"
 #include "storage/offset_assignment.h"
-#include "storage/tests/utils/random_batch.h"
 
 #include <seastar/testing/thread_test_case.hh>
 
@@ -31,7 +31,7 @@ struct offset_validating_consumer {
 };
 
 SEASTAR_THREAD_TEST_CASE(test_offset_assignment) {
-    auto batches = storage::test::make_random_batches(model::offset(0), 10);
+    auto batches = model::test::make_random_batches(model::offset(0), 10);
     auto reader = model::make_memory_record_batch_reader(std::move(batches));
     auto starting_offset = model::offset(123);
     reader

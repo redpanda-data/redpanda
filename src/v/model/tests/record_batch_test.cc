@@ -9,8 +9,8 @@
 
 #include "model/record.h"
 #include "model/record_utils.h"
+#include "model/tests/random_batch.h"
 #include "model/timestamp.h"
-#include "storage/tests/utils/random_batch.h"
 
 #include <seastar/testing/thread_test_case.hh>
 
@@ -54,7 +54,7 @@ BOOST_DATA_TEST_CASE(
 }
 
 SEASTAR_THREAD_TEST_CASE(set_max_timestamp) {
-    auto batch = storage::test::make_random_batch(model::offset(0), 10, true);
+    auto batch = model::test::make_random_batch(model::offset(0), 10, true);
 
     // nothing changes if set to same values
     auto crc = batch.header().crc;

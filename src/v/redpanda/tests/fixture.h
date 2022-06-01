@@ -36,7 +36,6 @@
 #include "resource_mgmt/cpu_scheduling.h"
 #include "storage/directories.h"
 #include "storage/tests/utils/disk_log_builder.h"
-#include "storage/tests/utils/random_batch.h"
 #include "test_utils/async.h"
 #include "test_utils/fixture.h"
 #include "test_utils/logs.h"

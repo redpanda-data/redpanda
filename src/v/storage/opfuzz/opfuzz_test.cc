@@ -11,7 +11,6 @@
 #include "random/generators.h"
 #include "storage/opfuzz/opfuzz.h"
 #include "storage/tests/storage_test_fixture.h"
-#include "storage/tests/utils/random_batch.h"
 #include "storage/types.h"
 #include "test_utils/fixture.h"
 #include "utils/file_sanitizer.h"

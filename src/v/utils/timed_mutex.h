@@ -42,9 +42,9 @@ class timed_mutex;
 
 class locked_token {
     timed_mutex* _mutex;
+    const char* _lock_holder_id;
     ss::semaphore_units<> _unit;
     bool _is_moved{false};
-    const char* _lock_holder_id;
 
 public:
     locked_token(
@@ -152,8 +152,8 @@ public:
     }
 
 private:
-    bool _is_tracing{false};
     ss::semaphore _sem;
+    bool _is_tracing{false};
     int64_t _lock_counter{0};
     std::chrono::steady_clock::time_point _acquired_at;
     lock_trace _top_leasee;

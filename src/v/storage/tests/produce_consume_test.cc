@@ -33,7 +33,7 @@ SEASTAR_THREAD_TEST_CASE(produce_consume_concurrency) {
           auto appender = log.make_appender(app_cfg);
           return ss::do_with(
             model::make_memory_record_batch_reader(
-              storage::test::make_random_batches(model::offset(0), 1)),
+              model::test::make_random_batches(model::offset(0), 1)),
             [app_cfg, &log](model::record_batch_reader& rdr) {
                 return rdr
                   .for_each_ref(log.make_appender(app_cfg), model::no_timeout)

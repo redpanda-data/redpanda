@@ -11,6 +11,7 @@
 #include "model/metadata.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
+#include "model/tests/random_batch.h"
 #include "model/timeout_clock.h"
 #include "raft/consensus_utils.h"
 #include "raft/group_configuration.h"
@@ -18,7 +19,6 @@
 #include "random/generators.h"
 #include "reflection/adl.h"
 #include "storage/record_batch_builder.h"
-#include "storage/tests/utils/random_batch.h"
 #include "test_utils/randoms.h"
 #include "test_utils/rpc.h"
 
@@ -59,8 +59,7 @@ struct checking_consumer {
 };
 
 SEASTAR_THREAD_TEST_CASE(append_entries_requests) {
-    auto batches = storage::test::make_random_batches(
-      model::offset(1), 3, false);
+    auto batches = model::test::make_random_batches(model::offset(1), 3, false);
 
     for (auto& b : batches) {
         b.set_term(model::term_id(123));

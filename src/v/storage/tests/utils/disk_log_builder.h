@@ -13,12 +13,12 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
+#include "model/tests/random_batch.h"
 #include "random/generators.h"
 #include "seastarx.h"
 #include "ssx/sformat.h"
 #include "storage/api.h"
 #include "storage/disk_log_impl.h"
-#include "storage/tests/utils/random_batch.h"
 #include "units.h"
 #include "vassert.h"
 

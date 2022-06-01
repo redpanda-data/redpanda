@@ -15,7 +15,6 @@
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "storage/log.h"
-#include "storage/tests/utils/random_batch.h"
 
 #include <seastar/util/log.hh>
 

@@ -43,7 +43,7 @@ ss::future<> disk_log_builder::add_random_batch(
   should_flush_after flush) {
     auto buff = ss::circular_buffer<model::record_batch>();
     buff.push_back(
-      test::make_random_batch(offset, num_records, bool(comp), bt));
+      model::test::make_random_batch(offset, num_records, bool(comp), bt));
     return write(std::move(buff), config, flush);
 }
 
@@ -54,12 +54,14 @@ ss::future<> disk_log_builder::add_random_batches(
   log_append_config config,
   should_flush_after flush) {
     return write(
-      test::make_random_batches(offset, count, bool(comp)), config, flush);
+      model::test::make_random_batches(offset, count, bool(comp)),
+      config,
+      flush);
 }
 
 ss::future<> disk_log_builder::add_random_batches(
   model::offset offset, log_append_config config, should_flush_after flush) {
-    return write(test::make_random_batches(offset), config, flush);
+    return write(model::test::make_random_batches(offset), config, flush);
 }
 
 ss::future<> disk_log_builder::add_batch(

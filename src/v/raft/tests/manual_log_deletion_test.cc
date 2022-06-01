@@ -18,7 +18,6 @@
 #include "random/generators.h"
 #include "storage/record_batch_builder.h"
 #include "storage/tests/utils/disk_log_builder.h"
-#include "storage/tests/utils/random_batch.h"
 #include "test_utils/async.h"
 
 #include <seastar/core/abort_source.hh>

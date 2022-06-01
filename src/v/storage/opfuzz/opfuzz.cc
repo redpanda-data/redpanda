@@ -10,6 +10,7 @@
 #include "storage/opfuzz/opfuzz.h"
 
 #include "model/record.h"
+#include "model/tests/random_batch.h"
 #include "model/timestamp.h"
 #include "random/generators.h"
 #include "units.h"
@@ -112,7 +113,7 @@ struct append_op final : opfuzz::op {
           storage::log_append_config::fsync::no,
           ss::default_priority_class(),
           model::no_timeout};
-        auto batches = storage::test::make_random_batches(model::offset(0), 10);
+        auto batches = model::test::make_random_batches(model::offset(0), 10);
         vlog(
           fuzzlogger.info,
           "[{}] - Appending: {} batches. {}-{}",
@@ -141,7 +142,7 @@ struct append_op_foreign final : opfuzz::op {
         return ss::smp::submit_to(
                  source_core,
                  [ctx] {
-                     auto batches = storage::test::make_random_batches(
+                     auto batches = model::test::make_random_batches(
                        model::offset(0), 10);
                      vlog(
                        fuzzlogger.info,
@@ -185,7 +186,7 @@ struct append_multi_term_op final : opfuzz::op {
           storage::log_append_config::fsync::no,
           ss::default_priority_class(),
           model::no_timeout};
-        auto batches = storage::test::make_random_batches(model::offset(0), 10);
+        auto batches = model::test::make_random_batches(model::offset(0), 10);
         const size_t mid = batches.size() / 2;
         vlog(
           fuzzlogger.info,

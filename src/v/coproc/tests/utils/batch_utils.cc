@@ -11,8 +11,8 @@
 
 #include "coproc/tests/utils/batch_utils.h"
 
+#include "model/tests/random_batch.h"
 #include "random/generators.h"
-#include "storage/tests/utils/random_batch.h"
 
 #include <numeric>
 
@@ -32,8 +32,8 @@ model::record_batch_reader make_random_batch(std::size_t n_records) {
     auto n_batches = std::gcd(
       n_records, random_generators::get_int(std::size_t{1}, n_records));
     auto recs_per_batch = n_records / n_batches;
-    return storage::test::make_random_memory_record_batch_reader(
-      storage::test::record_batch_spec{
+    return model::test::make_random_memory_record_batch_reader(
+      model::test::record_batch_spec{
         .offset = model::offset{0},
         .allow_compression = false,
         .count = static_cast<int>(n_batches),

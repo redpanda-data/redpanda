@@ -11,6 +11,7 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
+#include "model/tests/random_batch.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
 #include "random/generators.h"
@@ -20,7 +21,6 @@
 #include "storage/segment_utils.h"
 #include "storage/tests/storage_test_fixture.h"
 #include "storage/tests/utils/disk_log_builder.h"
-#include "storage/tests/utils/random_batch.h"
 #include "storage/types.h"
 #include "utils/to_string.h"
 
@@ -134,7 +134,7 @@ FIXTURE_TEST(test_single_record_per_segment, storage_test_fixture) {
     auto headers = append_random_batches(log, 10, model::term_id(1), []() {
         ss::circular_buffer<model::record_batch> batches;
         batches.push_back(
-          storage::test::make_random_batch(model::offset(0), 1, true));
+          model::test::make_random_batch(model::offset(0), 1, true));
         return batches;
     });
     log.flush().get0();
@@ -165,7 +165,7 @@ FIXTURE_TEST(test_segment_rolling, storage_test_fixture) {
       []() {
           ss::circular_buffer<model::record_batch> batches;
           batches.push_back(
-            storage::test::make_random_batch(model::offset(0), 1, true));
+            model::test::make_random_batch(model::offset(0), 1, true));
           return batches;
       },
       storage::log_append_config::fsync::no,
@@ -188,7 +188,7 @@ FIXTURE_TEST(test_segment_rolling, storage_test_fixture) {
       []() {
           ss::circular_buffer<model::record_batch> batches;
           batches.push_back(
-            storage::test::make_random_batch(model::offset(0), 1, true));
+            model::test::make_random_batch(model::offset(0), 1, true));
           return batches;
       },
       storage::log_append_config::fsync::no,
@@ -285,7 +285,7 @@ FIXTURE_TEST(test_append_batches_from_multiple_terms, storage_test_fixture) {
     ss::circular_buffer<model::record_batch> batches;
     std::vector<size_t> term_batches_counts;
     for (auto i = 0; i < 5; i++) {
-        auto term_batches = storage::test::make_random_batches(
+        auto term_batches = model::test::make_random_batches(
           model::offset(0), 10);
         for (auto& b : term_batches) {
             b.set_term(model::term_id(i));
@@ -328,7 +328,7 @@ struct custom_ts_batch_generator {
       : _start_ts(start_ts) {}
 
     ss::circular_buffer<model::record_batch> operator()() {
-        auto batches = storage::test::make_random_batches(
+        auto batches = model::test::make_random_batches(
           model::offset(0), random_generators::get_int(1, 10));
 
         for (auto& b : batches) {
@@ -806,7 +806,7 @@ FIXTURE_TEST(empty_segment_recovery, storage_test_fixture) {
         .timeout = model::no_timeout});
     ss::circular_buffer<model::record_batch> batches;
     batches.push_back(
-      storage::test::make_random_batch(model::offset(0), 1, false));
+      model::test::make_random_batch(model::offset(0), 1, false));
 
     auto rdr = model::make_memory_record_batch_reader(std::move(batches));
     auto ret = rdr.for_each_ref(std::move(appender), model::no_timeout).get0();
@@ -881,7 +881,7 @@ FIXTURE_TEST(test_compation_preserve_state, storage_test_fixture) {
 
     ss::circular_buffer<model::record_batch> batches;
     batches.push_back(
-      storage::test::make_random_batch(model::offset(0), 1, false));
+      model::test::make_random_batch(model::offset(0), 1, false));
 
     auto rdr = model::make_memory_record_batch_reader(std::move(batches));
     auto ret = std::move(rdr)
@@ -1783,7 +1783,7 @@ FIXTURE_TEST(committed_offset_updates, storage_test_fixture) {
 
         ss::circular_buffer<model::record_batch> batches;
         batches.push_back(
-          storage::test::make_random_batch(model::offset(0), 1, false));
+          model::test::make_random_batch(model::offset(0), 1, false));
 
         auto rdr = model::make_memory_record_batch_reader(std::move(batches));
         return std::move(rdr).for_each_ref(

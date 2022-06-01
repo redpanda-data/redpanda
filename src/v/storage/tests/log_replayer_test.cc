@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "model/record_utils.h"
+#include "model/tests/random_batch.h"
 #include "random/generators.h"
 #include "seastarx.h"
 #include "storage/disk_log_appender.h"
@@ -17,7 +18,6 @@
 #include "storage/segment_appender_utils.h"
 #include "storage/segment_index.h"
 #include "storage/segment_reader.h"
-#include "storage/tests/utils/random_batch.h"
 #include "utils/file_sanitizer.h"
 
 #include <seastar/core/reactor.hh>
@@ -109,7 +109,7 @@ struct context {
 
 SEASTAR_THREAD_TEST_CASE(test_can_recover_single_batch) {
     context ctx;
-    auto batches = test::make_random_batches(model::offset(1), 1);
+    auto batches = model::test::make_random_batches(model::offset(1), 1);
     auto last_offset = batches.back().last_offset();
     ctx.write(batches);
     storage::log_replayer::checkpoint recovered
@@ -121,7 +121,7 @@ SEASTAR_THREAD_TEST_CASE(test_can_recover_single_batch) {
 SEASTAR_THREAD_TEST_CASE(test_unrecovered_single_batch) {
     {
         context ctx;
-        auto batches = test::make_random_batches(model::offset(1), 1);
+        auto batches = model::test::make_random_batches(model::offset(1), 1);
         batches.back().header().crc = 10;
         ctx.write(batches);
         auto recovered = ctx.replayer().recover_in_thread(
@@ -130,7 +130,7 @@ SEASTAR_THREAD_TEST_CASE(test_unrecovered_single_batch) {
     }
     {
         context ctx;
-        auto batches = test::make_random_batches(model::offset(1), 1);
+        auto batches = model::test::make_random_batches(model::offset(1), 1);
         batches.back().header().first_timestamp = model::timestamp(10);
         ctx.write(batches);
         auto recovered = ctx.replayer().recover_in_thread(
@@ -150,7 +150,7 @@ SEASTAR_THREAD_TEST_CASE(test_malformed_segment) {
 
 SEASTAR_THREAD_TEST_CASE(test_can_recover_multiple_batches) {
     context ctx;
-    auto batches = test::make_random_batches(model::offset(1), 10);
+    auto batches = model::test::make_random_batches(model::offset(1), 10);
     auto last_offset = batches.back().last_offset();
     ctx.write(batches);
     auto recovered = ctx.replayer().recover_in_thread(
@@ -163,7 +163,7 @@ SEASTAR_THREAD_TEST_CASE(test_unrecovered_multiple_batches) {
     {
         // bad crc test
         context ctx;
-        auto batches = test::make_random_batches(model::offset(1), 10);
+        auto batches = model::test::make_random_batches(model::offset(1), 10);
         batches.back().header().crc = 10;
         auto last_offset = (batches.end() - 2)->last_offset();
         ctx.write(batches);
@@ -175,7 +175,7 @@ SEASTAR_THREAD_TEST_CASE(test_unrecovered_multiple_batches) {
     {
         // timestamp test
         context ctx;
-        auto batches = test::make_random_batches(model::offset(1), 10);
+        auto batches = model::test::make_random_batches(model::offset(1), 10);
         batches.back().header().first_timestamp = model::timestamp(10);
         auto last_offset = (batches.end() - 2)->last_offset();
         ctx.write(batches);
@@ -189,7 +189,7 @@ SEASTAR_THREAD_TEST_CASE(test_reset_index) {
     // bad crc test
     context ctx;
     ctx.write_garbage_index(); // key
-    auto batches = test::make_random_batches(model::offset(1), 10);
+    auto batches = model::test::make_random_batches(model::offset(1), 10);
     auto last_offset = batches.back().last_offset();
     ctx.write(batches);
     auto recovered = ctx.replayer().recover_in_thread(

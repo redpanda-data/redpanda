@@ -16,7 +16,6 @@
 #include "kafka/protocol/fetch.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
-#include "storage/tests/utils/random_batch.h"
 
 #include <seastar/testing/thread_test_case.hh>
 

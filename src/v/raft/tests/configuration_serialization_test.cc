@@ -8,11 +8,11 @@
 // by the Apache License, Version 2.0
 
 #include "model/metadata.h"
+#include "model/tests/random_batch.h"
 #include "raft/consensus_utils.h"
 #include "raft/group_configuration.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
-#include "storage/tests/utils/random_batch.h"
 #include "test_utils/randoms.h"
 
 #include <seastar/testing/thread_test_case.hh>
@@ -108,18 +108,17 @@ SEASTAR_THREAD_TEST_CASE(test_config_extracting_reader) {
     // serialize to batches
     auto cfg_batch_1 = raft::details::serialize_configuration_as_batches(cfg_1);
     auto cfg_batch_2 = raft::details::serialize_configuration_as_batches(cfg_2);
-    auto batches = storage::test::make_random_batches(
-      model::offset(0), 10, true);
+    auto batches = model::test::make_random_batches(model::offset(0), 10, true);
 
     std::vector<batches_t> ranges;
     ranges.reserve(4);
     // interleave config batches with data batches
     ranges.push_back(std::move(cfg_batch_1));
     ranges.push_back(
-      storage::test::make_random_batches(model::offset(0), 10, true));
+      model::test::make_random_batches(model::offset(0), 10, true));
     ranges.push_back(std::move(cfg_batch_2));
     ranges.push_back(
-      storage::test::make_random_batches(model::offset(0), 10, true));
+      model::test::make_random_batches(model::offset(0), 10, true));
 
     for (auto& r : ranges) {
         std::move(r.begin(), r.end(), std::back_inserter(all_batches));

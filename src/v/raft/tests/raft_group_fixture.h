@@ -16,6 +16,7 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/record_batch_reader.h"
+#include "model/tests/random_batch.h"
 #include "net/dns.h"
 #include "net/server.h"
 #include "raft/consensus.h"
@@ -34,7 +35,6 @@
 #include "storage/log_manager.h"
 #include "storage/ntp_config.h"
 #include "storage/record_batch_builder.h"
-#include "storage/tests/utils/random_batch.h"
 #include "storage/types.h"
 #include "test_utils/fixture.h"
 
@@ -455,7 +455,7 @@ struct raft_group {
     void election_callback(model::node_id src, raft::leadership_status st) {
         if (
           !st.current_leader
-          || st.current_leader && st.current_leader->id() != src) {
+          || (st.current_leader && st.current_leader->id() != src)) {
             // only accept election callbacks from current leader.
             return;
         }
@@ -515,8 +515,8 @@ private:
 };
 
 static model::record_batch_reader random_batches_reader(int max_batches) {
-    auto batches = storage::test::make_random_batches(
-      storage::test::record_batch_spec{
+    auto batches = model::test::make_random_batches(
+      model::test::record_batch_spec{
         .offset = model::offset(0),
         .allow_compression = true,
         .count = max_batches});
@@ -524,8 +524,8 @@ static model::record_batch_reader random_batches_reader(int max_batches) {
 }
 
 static model::record_batch_reader
-random_batch_reader(storage::test::record_batch_spec spec) {
-    auto batch = storage::test::make_random_batch(spec);
+random_batch_reader(model::test::record_batch_spec spec) {
+    auto batch = model::test::make_random_batch(spec);
     ss::circular_buffer<model::record_batch> batches;
     batches.reserve(1);
     batch.set_term(model::term_id(0));
@@ -534,8 +534,8 @@ random_batch_reader(storage::test::record_batch_spec spec) {
 }
 
 static model::record_batch_reader
-random_batches_reader(storage::test::record_batch_spec spec) {
-    auto batches = storage::test::make_random_batches(spec);
+random_batches_reader(model::test::record_batch_spec spec) {
+    auto batches = model::test::make_random_batches(spec);
     return model::make_memory_record_batch_reader(std::move(batches));
 }
 

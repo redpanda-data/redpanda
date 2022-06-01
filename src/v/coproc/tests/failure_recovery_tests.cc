@@ -14,7 +14,6 @@
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "model/record_batch_reader.h"
-#include "storage/tests/utils/random_batch.h"
 #include "test_utils/fixture.h"
 
 #include <seastar/core/when_all.hh>

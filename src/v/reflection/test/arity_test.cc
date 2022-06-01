@@ -9,10 +9,21 @@
 
 #define BOOST_TEST_MODULE reflection
 
+#include "bytes/iobuf.h"
 #include "reflection/arity.h"
-#include "rpc/test/test_types.h"
 
 #include <boost/test/unit_test.hpp>
+
+struct pod {
+    int16_t x = 1;
+    int32_t y = 2;
+    int64_t z = 3;
+};
+
+struct complex_custom {
+    pod pit;
+    iobuf oi;
+};
 
 struct inherit_complex_pod : complex_custom {
     int i;

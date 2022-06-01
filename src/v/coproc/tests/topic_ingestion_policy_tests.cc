@@ -14,7 +14,6 @@
 #include "coproc/tests/utils/batch_utils.h"
 #include "coproc/tests/utils/coprocessor.h"
 #include "model/namespace.h"
-#include "storage/tests/utils/random_batch.h"
 #include "test_utils/fixture.h"
 
 #include <boost/test/tools/old/interface.hpp>

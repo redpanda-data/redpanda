@@ -8,10 +8,10 @@
 // by the Apache License, Version 2.0
 
 #include "model/record.h"
+#include "model/tests/random_batch.h"
 #include "seastarx.h"
 #include "storage/ntp_config.h"
 #include "storage/tests/disk_log_builder_fixture.h"
-#include "storage/tests/utils/random_batch.h"
 #include "test_utils/fixture.h"
 
 #include <seastar/core/file.hh>
@@ -22,7 +22,7 @@
 FIXTURE_TEST(kitchen_sink, log_builder_fixture) {
     using namespace storage; // NOLINT
 
-    auto batch = test::make_random_batch(model::offset(104), 1, false);
+    auto batch = model::test::make_random_batch(model::offset(104), 1, false);
 
     b | start() | add_segment(0)
       | add_random_batch(0, 100, maybe_compress_batches::yes)
