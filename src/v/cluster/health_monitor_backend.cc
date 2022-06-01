@@ -371,7 +371,8 @@ health_monitor_backend::dispatch_refresh_cluster_health_request(
         n_report.local_state.storage_space_alert = node_disk_health;
 
         // Update cached cluster-level disk health: non-raft0-leader nodes
-        cluster_disk_health = std::max(cluster_disk_health, node_disk_health);
+        cluster_disk_health = storage::max_severity(
+          cluster_disk_health, node_disk_health);
 
         _reports.emplace(id, std::move(n_report));
     }
@@ -619,7 +620,7 @@ ss::future<> health_monitor_backend::collect_cluster_health() {
             for (auto& cb : _node_callbacks) {
                 cb.second(r.value(), old_report);
             }
-            cluster_disk_health = std::max(
+            cluster_disk_health = storage::max_severity(
               r.value().local_state.storage_space_alert, cluster_disk_health);
 
             _reports.emplace(id, std::move(r.value()));

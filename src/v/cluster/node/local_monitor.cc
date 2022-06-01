@@ -163,7 +163,7 @@ local_monitor::eval_disks(const std::vector<storage::disk>& disks) {
         if (unlikely(d.free <= min_bytes)) {
             disk_sa = storage::disk_space_alert::degraded;
         }
-        node_sa = std::max(node_sa, disk_sa);
+        node_sa = storage::max_severity(node_sa, disk_sa);
     }
     return node_sa;
 }
