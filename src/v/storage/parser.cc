@@ -79,18 +79,31 @@ static model::record_batch_header header_from_iobuf(iobuf b) {
 }
 
 static ss::future<result<iobuf>> verify_read_iobuf(
-  ss::input_stream<char>& in, size_t expected, ss::sstring msg) {
+  ss::input_stream<char>& in,
+  size_t expected,
+  ss::sstring msg,
+  bool recover = false) {
     return read_iobuf_exactly(in, expected)
-      .then([msg = std::move(msg), expected](iobuf b) {
+      .then([msg = std::move(msg), expected, recover](iobuf b) {
           if (likely(b.size_bytes() == expected)) {
               return ss::make_ready_future<result<iobuf>>(std::move(b));
           }
-          stlog.error(
-            "Cannot continue parsing. recived size:{} bytes, expected:{} "
-            "bytes. context:{}",
-            b.size_bytes(),
-            expected,
-            msg);
+          if (!recover) {
+              stlog.error(
+                "cannot continue parsing. recived size:{} bytes, expected:{} "
+                "bytes. context:{}",
+                b.size_bytes(),
+                expected,
+                msg);
+          } else {
+              stlog.debug(
+                "recovery ended with short read. recived size:{} bytes, "
+                "expected:{} "
+                "bytes. context:{}",
+                b.size_bytes(),
+                expected,
+                msg);
+          }
           return ss::make_ready_future<result<iobuf>>(
             parser_errc::input_stream_not_enough_bytes);
       });
@@ -125,7 +138,7 @@ ss::future<result<stop_parser>> continuous_batch_parser::consume_header() {
             auto remaining = _header->size_bytes
                              - model::packed_record_batch_header_size;
             auto b = co_await verify_read_iobuf(
-              _input, remaining, "parser::skip_batch");
+              _input, remaining, "parser::skip_batch", _recovery);
 
             if (!b) {
                 co_return b.error();
@@ -139,8 +152,10 @@ ss::future<result<stop_parser>> continuous_batch_parser::consume_header() {
 }
 
 template<class Consumer>
-static ss::future<result<model::record_batch_header>>
-read_header_impl(ss::input_stream<char>& input, const Consumer& consumer) {
+static ss::future<result<model::record_batch_header>> read_header_impl(
+  ss::input_stream<char>& input,
+  const Consumer& consumer,
+  bool recovery = false) {
     auto b = co_await read_iobuf_exactly(
       input, model::packed_record_batch_header_size);
 
@@ -149,11 +164,20 @@ read_header_impl(ss::input_stream<char>& input, const Consumer& consumer) {
         co_return parser_errc::end_of_stream;
     }
     if (b.size_bytes() != model::packed_record_batch_header_size) {
-        stlog.error(
-          "Could not parse header. Expected:{}, but Got:{}. consumer:{}",
-          model::packed_record_batch_header_size,
-          b.size_bytes(),
-          consumer);
+        if (!recovery) {
+            stlog.error(
+              "Could not parse header. Expected:{}, but Got:{}. consumer:{}",
+              model::packed_record_batch_header_size,
+              b.size_bytes(),
+              consumer);
+        } else {
+            stlog.debug(
+              "End of recovery with parse error. Expected:{}, but Got:{}. "
+              "consumer:{})",
+              model::packed_record_batch_header_size,
+              b.size_bytes(),
+              consumer);
+        }
         co_return parser_errc::input_stream_not_enough_bytes;
     }
     // check if iobuf is filled is zeros, this means that we are reading
@@ -166,14 +190,25 @@ read_header_impl(ss::input_stream<char>& input, const Consumer& consumer) {
 
     if (auto computed_crc = model::internal_header_only_crc(header);
         unlikely(header.header_crc != computed_crc)) {
-        vlog(
-          stlog.error,
-          "detected header corruption. stopping parser. Expected CRC of "
-          "{}, but got header CRC: {} - {}. consumer:{}",
-          computed_crc,
-          header.header_crc,
-          header,
-          consumer);
+        if (!recovery) {
+            vlog(
+              stlog.error,
+              "detected header corruption. stopping parser. Expected CRC of "
+              "{}, but got header CRC: {} - {}. consumer:{}",
+              computed_crc,
+              header.header_crc,
+              header,
+              consumer);
+        } else {
+            vlog(
+              stlog.debug,
+              "End of recovery with CRC mismatch. Expected CRC of "
+              "{}, but got header CRC: {} - {}. consumer:{}",
+              computed_crc,
+              header.header_crc,
+              header,
+              consumer);
+        }
         co_return parser_errc::header_only_crc_missmatch;
     }
     co_return header;
@@ -181,7 +216,7 @@ read_header_impl(ss::input_stream<char>& input, const Consumer& consumer) {
 
 ss::future<result<model::record_batch_header>>
 continuous_batch_parser::read_header() {
-    return read_header_impl(_input, *_consumer);
+    return read_header_impl(_input, *_consumer, _recovery);
 }
 
 ss::future<result<stop_parser>> continuous_batch_parser::consume_one() {
@@ -209,7 +244,7 @@ void continuous_batch_parser::add_bytes_and_reset() {
 }
 ss::future<result<stop_parser>> continuous_batch_parser::consume_records() {
     auto sz = _header->size_bytes - model::packed_record_batch_header_size;
-    return verify_read_iobuf(_input, sz, "parser::consume_records")
+    return verify_read_iobuf(_input, sz, "parser::consume_records", _recovery)
       .then([this](result<iobuf> record) -> result<stop_parser> {
           if (!record) {
               return record.error();

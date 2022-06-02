@@ -97,7 +97,7 @@ log_replayer::recover_in_thread(const ss::io_priority_class& prio) {
     auto data_stream = _seg->reader().data_stream(0, prio);
     auto consumer = std::make_unique<checksumming_consumer>(_seg, _ckpt);
     auto parser = continuous_batch_parser(
-      std::move(consumer), std::move(data_stream));
+      std::move(consumer), std::move(data_stream), true);
     try {
         parser.consume().get();
         parser.close().get();

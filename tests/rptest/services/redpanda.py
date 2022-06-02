@@ -77,10 +77,6 @@ CHAOS_LOG_ALLOW_LIST = [
         "(raft|rpc) - .*(client_request_timeout|disconnected_endpoint|Broken pipe|Connection reset by peer)"
     ),
 
-    # Torn disk writes
-    re.compile("storage - Could not parse header"),
-    re.compile("storage - Cannot continue parsing"),
-
     # e.g. raft - [group_id:59, {kafka/test-topic-319-1639161306093460/0}] consensus.cc:2301 - unable to replicate updated configuration: raft::errc::replicated_entry_truncated
     re.compile("raft - .*replicated_entry_truncated"),
 
