@@ -188,17 +188,13 @@ func TestSet(t *testing.T) {
 `,
 			check: func(st *testing.T, c *Config, _ *manager) {
 				expected := []NamedSocketAddress{{
-					Name: "external",
-					SocketAddress: SocketAddress{
-						Address: "192.168.73.45",
-						Port:    9092,
-					},
+					Name:    "external",
+					Address: "192.168.73.45",
+					Port:    9092,
 				}, {
-					Name: "internal",
-					SocketAddress: SocketAddress{
-						Address: "10.21.34.58",
-						Port:    9092,
-					},
+					Name:    "internal",
+					Address: "10.21.34.58",
+					Port:    9092,
 				}}
 				require.Exactly(st, expected, c.Redpanda.KafkaAPI)
 			},
@@ -213,10 +209,8 @@ func TestSet(t *testing.T) {
 			format: "json",
 			check: func(st *testing.T, c *Config, _ *manager) {
 				expected := []NamedSocketAddress{{
-					SocketAddress: SocketAddress{
-						Port:    9092,
-						Address: "192.168.54.2",
-					},
+					Port:    9092,
+					Address: "192.168.54.2",
 				}}
 				require.Exactly(st, expected, c.Redpanda.KafkaAPI)
 			},
@@ -230,10 +224,8 @@ func TestSet(t *testing.T) {
 		}]`,
 			check: func(st *testing.T, c *Config, _ *manager) {
 				expected := []NamedSocketAddress{{
-					SocketAddress: SocketAddress{
-						Port:    9092,
-						Address: "192.168.54.2",
-					},
+					Port:    9092,
+					Address: "192.168.54.2",
 				}}
 				require.Exactly(st, expected, c.Redpanda.AdvertisedKafkaAPI)
 			},
@@ -300,11 +292,9 @@ func TestMerge(t *testing.T) {
 			config: Config{
 				Redpanda: RedpandaConfig{
 					KafkaAPI: []NamedSocketAddress{{
-						Name: "kafka-api-name",
-						SocketAddress: SocketAddress{
-							"1.2.3.4",
-							9123,
-						},
+						Name:    "kafka-api-name",
+						Address: "1.2.3.4",
+						Port:    9123,
 					}},
 				},
 			},
@@ -319,11 +309,9 @@ func TestMerge(t *testing.T) {
 			config: Config{
 				Pandaproxy: &Pandaproxy{
 					PandaproxyAPI: []NamedSocketAddress{{
-						Name: "proxy-api-name",
-						SocketAddress: SocketAddress{
-							"1.2.3.4",
-							8123,
-						},
+						Name:    "proxy-api-name",
+						Address: "1.2.3.4",
+						Port:    8123,
 					}},
 				},
 			},
@@ -364,16 +352,12 @@ func TestDefault(t *testing.T) {
 			Directory: "/var/lib/redpanda/data",
 			RPCServer: SocketAddress{"0.0.0.0", 33145},
 			KafkaAPI: []NamedSocketAddress{{
-				SocketAddress: SocketAddress{
-					"0.0.0.0",
-					9092,
-				},
+				Address: "0.0.0.0",
+				Port:    9092,
 			}},
 			AdminAPI: []NamedSocketAddress{{
-				SocketAddress: SocketAddress{
-					"0.0.0.0",
-					9644,
-				},
+				Address: "0.0.0.0",
+				Port:    9644,
 			}},
 			ID:            0,
 			SeedServers:   []SeedServer{},
@@ -600,10 +584,8 @@ schema_registry: {}
 			conf: func() *Config {
 				c := getValidConfig()
 				c.Redpanda.AdvertisedKafkaAPI = []NamedSocketAddress{{
-					SocketAddress: SocketAddress{
-						"174.32.64.2",
-						9092,
-					},
+					Address: "174.32.64.2",
+					Port:    9092,
 				}}
 				return c
 			},
@@ -1113,11 +1095,9 @@ schema_registry: {}
 				c.Pandaproxy = &Pandaproxy{
 					PandaproxyAPI: []NamedSocketAddress{
 						{
-							Name: "first",
-							SocketAddress: SocketAddress{
-								Address: "1.2.3.4",
-								Port:    1234,
-							},
+							Name:    "first",
+							Address: "1.2.3.4",
+							Port:    1234,
 						},
 					},
 					PandaproxyAPITLS: []ServerTLS{{
@@ -1129,11 +1109,9 @@ schema_registry: {}
 					}},
 					AdvertisedPandaproxyAPI: []NamedSocketAddress{
 						{
-							Name: "advertised",
-							SocketAddress: SocketAddress{
-								Address: "2.3.4.1",
-								Port:    2341,
-							},
+							Name:    "advertised",
+							Address: "2.3.4.1",
+							Port:    2341,
 						},
 					},
 				}
@@ -1205,11 +1183,9 @@ schema_registry: {}
 				c.Pandaproxy = &Pandaproxy{
 					PandaproxyAPI: []NamedSocketAddress{
 						{
-							Name: "first",
-							SocketAddress: SocketAddress{
-								Address: "1.2.3.4",
-								Port:    1234,
-							},
+							Name:    "first",
+							Address: "1.2.3.4",
+							Port:    1234,
 						},
 					},
 				}

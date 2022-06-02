@@ -260,23 +260,17 @@ func TestStartCommand(t *testing.T) {
 			conf, err := mgr.Read(path)
 			require.NoError(st, err)
 			expectedAdmin := []config.NamedSocketAddress{{
-				SocketAddress: config.SocketAddress{
-					Address: "192.168.54.2",
-					Port:    9643,
-				},
+				Address: "192.168.54.2",
+				Port:    9643,
 			}}
 			expectedKafkaAPI := []config.NamedSocketAddress{{
-				Name: "external",
-				SocketAddress: config.SocketAddress{
-					Address: "192.168.73.45",
-					Port:    9092,
-				},
+				Name:    "external",
+				Address: "192.168.73.45",
+				Port:    9092,
 			}, {
-				Name: "internal",
-				SocketAddress: config.SocketAddress{
-					Address: "10.21.34.58",
-					Port:    9092,
-				},
+				Name:    "internal",
+				Address: "10.21.34.58",
+				Port:    9092,
 			}}
 			require.Exactly(st, 39, conf.Redpanda.ID)
 			require.Exactly(st, expectedAdmin, conf.Redpanda.AdminAPI)
@@ -332,30 +326,22 @@ func TestStartCommand(t *testing.T) {
 			conf, err := mgr.Read(path)
 			require.NoError(st, err)
 			expectedAdmin := []config.NamedSocketAddress{{
-				SocketAddress: config.SocketAddress{
-					Address: "192.168.54.2",
-					Port:    9643,
-				},
+				Address: "192.168.54.2",
+				Port:    9643,
 			}}
 			expectedKafkaAPI := []config.NamedSocketAddress{{
-				Name: "external",
-				SocketAddress: config.SocketAddress{
-					Address: "192.168.73.45",
-					Port:    9092,
-				},
+				Name:    "external",
+				Address: "192.168.73.45",
+				Port:    9092,
 			}, {
-				Name: "internal",
-				SocketAddress: config.SocketAddress{
-					Address: "10.21.34.58",
-					Port:    9092,
-				},
+				Name:    "internal",
+				Address: "10.21.34.58",
+				Port:    9092,
 			}}
 			expectedAdvKafkaAPI := []config.NamedSocketAddress{{
-				Name: "plaintext",
-				SocketAddress: config.SocketAddress{
-					Address: "192.168.34.32",
-					Port:    9092,
-				},
+				Name:    "plaintext",
+				Address: "192.168.34.32",
+				Port:    9092,
 			}}
 			// The value set with --node-id should have been prioritized
 			require.Exactly(st, 42, conf.Redpanda.ID)
@@ -396,11 +382,9 @@ func TestStartCommand(t *testing.T) {
 			// The value set through the --kafka-addr flag should
 			// have been picked.
 			expectedKafkaAPI := []config.NamedSocketAddress{{
-				Name: "flag",
-				SocketAddress: config.SocketAddress{
-					Address: "192.168.34.3",
-					Port:    9093,
-				},
+				Name:    "flag",
+				Address: "192.168.34.3",
+				Port:    9093,
 			}}
 			// The value set with --kafka-addr should have been prioritized
 			require.Exactly(st, expectedKafkaAPI, conf.Redpanda.KafkaAPI)
@@ -857,10 +841,8 @@ func TestStartCommand(t *testing.T) {
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
 			expectedAddr := []config.NamedSocketAddress{{
-				SocketAddress: config.SocketAddress{
-					Address: "192.168.34.32",
-					Port:    33145,
-				},
+				Address: "192.168.34.32",
+				Port:    33145,
 			}}
 			// Check that the generated config is as expected.
 			require.Exactly(
@@ -880,10 +862,8 @@ func TestStartCommand(t *testing.T) {
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
 			expectedAddr := []config.NamedSocketAddress{{
-				SocketAddress: config.SocketAddress{
-					Address: "192.168.34.32",
-					Port:    9092,
-				},
+				Address: "192.168.34.32",
+				Port:    9092,
 			}}
 			// Check that the generated config is as expected.
 			require.Exactly(
@@ -903,11 +883,9 @@ func TestStartCommand(t *testing.T) {
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
 			expectedAddr := []config.NamedSocketAddress{{
-				Name: "nondefaultname",
-				SocketAddress: config.SocketAddress{
-					Address: "192.168.34.32",
-					Port:    9092,
-				},
+				Name:    "nondefaultname",
+				Address: "192.168.34.32",
+				Port:    9092,
 			}}
 			// Check that the generated config is as expected.
 			require.Exactly(
@@ -927,16 +905,12 @@ func TestStartCommand(t *testing.T) {
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
 			expectedAddr := []config.NamedSocketAddress{{
-				Name: "nondefaultname",
-				SocketAddress: config.SocketAddress{
-					Address: "192.168.34.32",
-					Port:    9092,
-				},
+				Name:    "nondefaultname",
+				Address: "192.168.34.32",
+				Port:    9092,
 			}, {
-				SocketAddress: config.SocketAddress{
-					Address: "host",
-					Port:    9092,
-				},
+				Address: "host",
+				Port:    9092,
 			}}
 			// Check that the generated config is as expected.
 			require.Exactly(
@@ -969,10 +943,8 @@ func TestStartCommand(t *testing.T) {
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
 			expectedAddr := []config.NamedSocketAddress{{
-				SocketAddress: config.SocketAddress{
-					Address: "host",
-					Port:    3123,
-				},
+				Address: "host",
+				Port:    3123,
 			}}
 			// Check that the generated config is as expected.
 			require.Exactly(
@@ -990,10 +962,8 @@ func TestStartCommand(t *testing.T) {
 			mgr := config.NewManager(fs)
 			conf := config.Default()
 			conf.Redpanda.KafkaAPI = []config.NamedSocketAddress{{
-				SocketAddress: config.SocketAddress{
-					Address: "192.168.33.33",
-					Port:    9892,
-				},
+				Address: "192.168.33.33",
+				Port:    9892,
 			}}
 			return mgr.Write(conf)
 		},
@@ -1002,10 +972,8 @@ func TestStartCommand(t *testing.T) {
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
 			expectedAddr := []config.NamedSocketAddress{{
-				SocketAddress: config.SocketAddress{
-					Address: "192.168.33.33",
-					Port:    9892,
-				},
+				Address: "192.168.33.33",
+				Port:    9892,
 			}}
 			// Check that the generated config is as expected.
 			require.Exactly(
@@ -1025,10 +993,8 @@ func TestStartCommand(t *testing.T) {
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
 			expectedAddr := []config.NamedSocketAddress{{
-				SocketAddress: config.SocketAddress{
-					Address: "192.168.34.32",
-					Port:    33145,
-				},
+				Address: "192.168.34.32",
+				Port:    33145,
 			}}
 			// Check that the generated config is as expected.
 			require.Exactly(
@@ -1048,10 +1014,8 @@ func TestStartCommand(t *testing.T) {
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
 			expectedAddr := []config.NamedSocketAddress{{
-				SocketAddress: config.SocketAddress{
-					Address: "192.168.34.32",
-					Port:    9092,
-				},
+				Address: "192.168.34.32",
+				Port:    9092,
 			}}
 			// Check that the generated config is as expected.
 			require.Exactly(
@@ -1084,10 +1048,8 @@ func TestStartCommand(t *testing.T) {
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
 			expectedAddr := []config.NamedSocketAddress{{
-				SocketAddress: config.SocketAddress{
-					Address: "host",
-					Port:    3123,
-				},
+				Address: "host",
+				Port:    3123,
 			}}
 			// Check that the generated config is as expected.
 			require.Exactly(
@@ -1105,10 +1067,8 @@ func TestStartCommand(t *testing.T) {
 			mgr := config.NewManager(fs)
 			conf := config.Default()
 			conf.Redpanda.AdvertisedKafkaAPI = []config.NamedSocketAddress{{
-				SocketAddress: config.SocketAddress{
-					Address: "192.168.33.33",
-					Port:    9892,
-				},
+				Address: "192.168.33.33",
+				Port:    9892,
 			}}
 			return mgr.Write(conf)
 		},
@@ -1117,10 +1077,8 @@ func TestStartCommand(t *testing.T) {
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
 			expectedAddr := []config.NamedSocketAddress{{
-				SocketAddress: config.SocketAddress{
-					Address: "192.168.33.33",
-					Port:    9892,
-				},
+				Address: "192.168.33.33",
+				Port:    9892,
 			}}
 			// Check that the generated config is as expected.
 			require.Exactly(
@@ -1140,10 +1098,8 @@ func TestStartCommand(t *testing.T) {
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
 			expectedAddr := []config.NamedSocketAddress{{
-				SocketAddress: config.SocketAddress{
-					Address: "192.168.34.32",
-					Port:    8083,
-				},
+				Address: "192.168.34.32",
+				Port:    8083,
 			}}
 			// Check that the generated config is as expected.
 			require.Exactly(
@@ -1169,10 +1125,8 @@ func TestStartCommand(t *testing.T) {
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
 			expectedAddr := []config.NamedSocketAddress{{
-				SocketAddress: config.SocketAddress{
-					Address: "host",
-					Port:    3123,
-				},
+				Address: "host",
+				Port:    3123,
 			}}
 			// Check that the generated config is as expected.
 			require.Exactly(
