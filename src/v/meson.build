@@ -129,3 +129,8 @@ subdir('coproc/tests')
 subdir('pandaproxy/rest/test')
 subdir('pandaproxy/schema_registry/test')
 subdir('security/tests')
+
+t = executable('test_outcome',
+  'outcome_tests.cc',
+  dependencies: [boost])
+test('outcome', t)
