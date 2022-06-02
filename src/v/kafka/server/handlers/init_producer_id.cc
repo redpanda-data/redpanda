@@ -12,6 +12,7 @@
 #include "cluster/id_allocator_frontend.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/tx_gateway_frontend.h"
+#include "cluster/types.h"
 #include "config/configuration.h"
 #include "kafka/server/group_manager.h"
 #include "kafka/server/group_router.h"
@@ -65,6 +66,10 @@ ss::future<response_ptr> init_producer_id_handler::handle(
                       break;
                   case cluster::tx_errc::not_coordinator:
                       reply.data.error_code = error_code::not_coordinator;
+                      break;
+                  case cluster::tx_errc::invalid_producer_epoch:
+                      reply.data.error_code
+                        = error_code::invalid_producer_epoch;
                       break;
                   default:
                       vlog(klog.warn, "failed to allocate pid, ec: {}", r.ec);
