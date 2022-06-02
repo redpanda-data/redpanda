@@ -87,3 +87,5 @@ add_test_setup('redpanda',
   exe_wrapper: [test_runner, '--meson', '--default_cores', '4'],
   is_default: true,
   timeout_multiplier: get_option('buildtype').startswith('debug') ? 5 : 2)
+
+subdir('test_utils')
