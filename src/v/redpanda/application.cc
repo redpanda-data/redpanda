@@ -70,6 +70,7 @@
 #include <seastar/core/metrics.hh>
 #include <seastar/core/prometheus.hh>
 #include <seastar/core/seastar.hh>
+#include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/json/json_elements.hh>
@@ -620,8 +621,9 @@ void application::wire_up_redpanda_services() {
 
     syschecks::systemd_message("Intializing raft recovery throttle").get();
     recovery_throttle
-      .start(
-        config::shard_local_cfg().raft_learner_recovery_rate() / ss::smp::count)
+      .start(ss::sharded_parameter([] {
+          return config::shard_local_cfg().raft_learner_recovery_rate.bind();
+      }))
       .get();
 
     syschecks::systemd_message("Intializing raft group manager").get();

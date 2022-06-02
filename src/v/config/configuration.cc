@@ -554,7 +554,7 @@ configuration::configuration()
       *this,
       "raft_learner_recovery_rate",
       "Raft learner recovery rate limit in bytes per sec",
-      {.visibility = visibility::user},
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
       100_MiB)
   , raft_smp_max_non_local_requests(
       *this,

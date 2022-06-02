@@ -141,7 +141,10 @@ struct raft_node {
           storage.local().log_mgr().manage(std::move(ntp_cfg)).get0());
 
         recovery_throttle
-          .start(config::shard_local_cfg().raft_learner_recovery_rate())
+          .start(ss::sharded_parameter([] {
+              return config::shard_local_cfg()
+                .raft_learner_recovery_rate.bind();
+          }))
           .get();
 
         // setup consensus
