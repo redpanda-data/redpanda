@@ -74,3 +74,5 @@ add_project_dependencies(common, language: 'cpp')
 add_project_arguments(
   '-Wno-deprecated-experimental-coroutine',
   language: 'cpp')
+
+subdir('test_utils')
