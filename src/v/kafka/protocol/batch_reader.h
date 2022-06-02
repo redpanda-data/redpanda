@@ -54,6 +54,7 @@ public:
     ss::future<storage_t> do_load_slice(model::timeout_clock::time_point) final;
 
     // Implements model::record_batch_reader::impl
+    // NOTE: this stream is intentially devoid of user data.
     void print(std::ostream& os) final { os << "{kafka::consumer_records}"; }
 
     // Release any remaining iobuf that hasn't been consumed
@@ -65,6 +66,7 @@ private:
 };
 
 inline std::ostream& operator<<(std::ostream& os, const batch_reader& reader) {
+    // NOTE: this stream is intentially devoid of user data.
     fmt::print(os, "{{size {}}}", reader.size_bytes());
     return os;
 }
