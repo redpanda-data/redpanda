@@ -118,7 +118,8 @@ enum class tx_errc {
     // the target node
     request_rejected,
     invalid_producer_id_mapping,
-    invalid_txn_state
+    invalid_txn_state,
+    invalid_producer_epoch
 };
 struct tx_errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::tx_errc"; }
@@ -161,6 +162,8 @@ struct tx_errc_category final : public std::error_category {
             return "Unknown server error";
         case tx_errc::request_rejected:
             return "Request rejected";
+        case tx_errc::invalid_producer_epoch:
+            return "Invalid producer epoch";
         default:
             return "cluster::tx_errc::unknown";
         }
