@@ -115,7 +115,7 @@ FIXTURE_TEST(data_are_consistent_across_nodes, cluster_test_fixture) {
                  .get_cluster_health(
                    get_all, cluster::force_refresh::yes, model::no_timeout)
                  .get0();
-    auto r_3 = n2->controller->get_health_monitor()
+    auto r_3 = n3->controller->get_health_monitor()
                  .local()
                  .get_cluster_health(
                    get_all, cluster::force_refresh::yes, model::no_timeout)
