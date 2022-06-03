@@ -115,6 +115,7 @@ public:
      */
     void to_json(
       json::Writer<json::StringBuffer>& w,
+      redact_secrets redact,
       std::optional<std::function<bool(base_property&)>> filter
       = std::nullopt) const {
         w.StartObject();
@@ -129,7 +130,7 @@ public:
             }
 
             w.Key(name.data(), name.size());
-            property->to_json(w);
+            property->to_json(w, redact);
         }
 
         w.EndObject();
@@ -151,10 +152,10 @@ private:
     std::unordered_map<std::string_view, base_property*> _properties;
 };
 
-inline YAML::Node to_yaml(const config_store& cfg) {
+inline YAML::Node to_yaml(const config_store& cfg, redact_secrets redact) {
     json::StringBuffer buf;
     json::Writer<json::StringBuffer> writer(buf);
-    cfg.to_json(writer);
+    cfg.to_json(writer, redact);
     return YAML::Load(buf.GetString());
 }
 }; // namespace config

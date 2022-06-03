@@ -228,7 +228,7 @@ SEASTAR_THREAD_TEST_CASE(config_json_serialization) {
     // cfg -> json string
     json::StringBuffer cfg_sb;
     json::Writer<json::StringBuffer> cfg_writer(cfg_sb);
-    cfg.to_json(cfg_writer);
+    cfg.to_json(cfg_writer, config::redact_secrets::no);
     auto jstr = cfg_sb.GetString();
 
     // json string -> rapidjson doc

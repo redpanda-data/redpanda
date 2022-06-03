@@ -113,7 +113,8 @@ public:
     // serialize the value. the key is taken from the property name at the
     // serialization point in config_store::to_json to avoid users from being
     // forced to consume the property as a json object.
-    void to_json(json::Writer<json::StringBuffer>& w) const override {
+    void to_json(json::Writer<json::StringBuffer>& w, redact_secrets)
+      const override {
         json::rjson_serialize(w, _value);
     }
 
@@ -624,7 +625,8 @@ public:
     // serialize the value. the key is taken from the property name at the
     // serialization point in config_store::to_json to avoid users from being
     // forced to consume the property as a json object.
-    void to_json(json::Writer<json::StringBuffer>& w) const final {
+    void to_json(
+      json::Writer<json::StringBuffer>& w, redact_secrets) const final {
         json::rjson_serialize(w, _value.value_or(-1ms));
     }
 
