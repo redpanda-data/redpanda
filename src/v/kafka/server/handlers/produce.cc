@@ -186,6 +186,8 @@ static partition_produce_stages partition_append(
                     p.error_code = error_code::none;
                     partition->probe().add_records_produced(num_records);
                     partition->probe().add_bytes_produced(num_bytes);
+                    partition->probe_v2().add_produce_bytes_cluster_lvl(
+                      num_bytes);
                 } else {
                     p.error_code = map_produce_error_code(r.error());
                 }

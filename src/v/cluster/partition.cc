@@ -35,6 +35,7 @@ partition::partition(
   ss::sharded<cloud_storage::cache>& cloud_storage_cache)
   : _raft(r)
   , _probe(std::make_unique<replicated_partition_probe>(*this))
+  , _probe_v2()
   , _tx_gateway_frontend(tx_gateway_frontend)
   , _is_tx_enabled(config::shard_local_cfg().enable_transactions.value())
   , _is_idempotence_enabled(
@@ -255,6 +256,7 @@ ss::future<> partition::start() {
     auto ntp = _raft->ntp();
 
     _probe.setup_metrics(ntp);
+    _probe_v2.setup_metrics(ntp);
 
     auto f = _raft->start();
 

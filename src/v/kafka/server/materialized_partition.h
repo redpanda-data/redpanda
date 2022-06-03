@@ -10,6 +10,7 @@
  */
 #pragma once
 #include "cluster/partition_probe.h"
+#include "cluster/partition_probe_v2.h"
 #include "coproc/partition.h"
 #include "kafka/server/partition_proxy.h"
 #include "kafka/types.h"
@@ -25,6 +26,7 @@ public:
     explicit materialized_partition(
       ss::lw_shared_ptr<coproc::partition> p) noexcept
       : _probe(cluster::make_materialized_partition_probe())
+      , _probe_v2()
       , _partition(p) {}
 
     const model::ntp& ntp() const final { return _partition->ntp(); }
@@ -83,6 +85,7 @@ public:
     }
 
     cluster::partition_probe& probe() final { return _probe; }
+    cluster::partition_probe_v2& probe_v2() final { return _probe_v2; }
 
     ss::future<bool> is_fetch_offset_valid(
       model::offset fetch_offset, model::timeout_clock::time_point) final {
@@ -95,6 +98,7 @@ private:
     }
 
     cluster::partition_probe _probe;
+    cluster::partition_probe_v2 _probe_v2;
     ss::lw_shared_ptr<coproc::partition> _partition;
 };
 

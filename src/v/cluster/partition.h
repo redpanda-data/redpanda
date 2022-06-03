@@ -15,6 +15,7 @@
 #include "cluster/archival_metadata_stm.h"
 #include "cluster/id_allocator_stm.h"
 #include "cluster/partition_probe.h"
+#include "cluster/partition_probe_v2.h"
 #include "cluster/rm_stm.h"
 #include "cluster/tm_stm.h"
 #include "cluster/types.h"
@@ -168,6 +169,7 @@ public:
     }
 
     partition_probe& probe() { return _probe; }
+    partition_probe_v2& probe_v2() { return _probe_v2; }
 
     model::revision_id get_revision_id() const {
         return _raft->config().revision_id();
@@ -277,6 +279,7 @@ public:
 private:
     friend partition_manager;
     friend replicated_partition_probe;
+    friend partition_probe_v2;
 
     consensus_ptr raft() { return _raft; }
 
@@ -289,6 +292,7 @@ private:
     ss::shared_ptr<archival_metadata_stm> _archival_meta_stm;
     ss::abort_source _as;
     partition_probe _probe;
+    partition_probe_v2 _probe_v2;
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
     bool _is_tx_enabled{false};
     bool _is_idempotence_enabled{false};

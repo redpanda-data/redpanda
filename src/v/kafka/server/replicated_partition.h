@@ -12,6 +12,7 @@
 
 #include "cluster/partition.h"
 #include "cluster/partition_probe.h"
+#include "cluster/partition_probe_v2.h"
 #include "kafka/server/partition_proxy.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
@@ -86,6 +87,9 @@ public:
       ss::lw_shared_ptr<const storage::offset_translator_state>) final;
 
     cluster::partition_probe& probe() final { return _partition->probe(); }
+    cluster::partition_probe_v2& probe_v2() final {
+        return _partition->probe_v2();
+    }
 
     std::optional<model::offset>
       get_leader_epoch_last_offset(kafka::leader_epoch) const final;

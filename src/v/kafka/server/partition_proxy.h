@@ -55,6 +55,7 @@ public:
           is_fetch_offset_valid(model::offset, model::timeout_clock::time_point)
           = 0;
         virtual cluster::partition_probe& probe() = 0;
+        virtual cluster::partition_probe_v2& probe_v2() = 0;
         virtual ~impl() noexcept = default;
     };
 
@@ -96,6 +97,7 @@ public:
     }
 
     cluster::partition_probe& probe() { return _impl->probe(); }
+    cluster::partition_probe_v2& probe_v2() { return _impl->probe_v2(); }
 
     kafka::leader_epoch leader_epoch() const { return _impl->leader_epoch(); }
 
