@@ -103,8 +103,15 @@ func importConfig(
 		}
 
 		if haveOldVal {
-			// If value changed, add it to list of updates
-			// DeepEqual because values can be slices
+			// Since the admin endpoint will redact secret fields, ignore any
+			// such sentinel strings we've been given, to avoid accidentally
+			// setting configs to this value.
+			// TODO: why doesn't this work with DeepEqual?
+			if fmt.Sprintf("%v", oldVal) == "[secret]" && fmt.Sprintf("%v", v) == "[secret]" {
+				continue
+			}
+			// If value changed, add it to list of updates.
+			// DeepEqual because values can be slices.
 			if !reflect.DeepEqual(oldVal, v) {
 				propertyDeltas = append(propertyDeltas, propertyDelta{k, fmt.Sprintf("%v", oldVal), fmt.Sprintf("%v", v)})
 				upsert[k] = v
