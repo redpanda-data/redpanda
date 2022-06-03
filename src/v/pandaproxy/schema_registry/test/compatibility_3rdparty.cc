@@ -68,7 +68,10 @@ SEASTAR_THREAD_TEST_CASE(test_consume_to_store_3rdparty) {
     // (which itself is only instantiated to receive consume_to_store's
     //  offset updates), is just needed for constructor;
     ss::sharded<kafka::client::client> dummy_kafka_client;
-    dummy_kafka_client.start(to_yaml(kafka::client::configuration{})).get();
+    dummy_kafka_client
+      .start(
+        to_yaml(kafka::client::configuration{}, config::redact_secrets::no))
+      .get();
     auto stop_kafka_client = ss::defer(
       [&dummy_kafka_client]() { dummy_kafka_client.stop().get(); });
 
