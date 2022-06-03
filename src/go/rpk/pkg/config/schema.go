@@ -18,7 +18,8 @@ import (
 )
 
 type Config struct {
-	file *Config
+	file       *Config
+	loadedPath string
 
 	NodeUUID             string          `yaml:"node_uuid,omitempty" mapstructure:"node_uuid,omitempty" json:"nodeUuid"`
 	Organization         string          `yaml:"organization,omitempty" mapstructure:"organization,omitempty" json:"organization"`
