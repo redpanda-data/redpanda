@@ -73,12 +73,12 @@ public:
         return errors;
     }
 
-    void to_json(rapidjson::Writer<rapidjson::StringBuffer>& w) const {
+    void to_json(rapidjson::Writer<rapidjson::StringBuffer>& w, redact_secrets redact) const {
         w.StartObject();
 
         for (const auto& [name, property] : _properties) {
             w.Key(name.data(), name.size());
-            property->to_json(w);
+            property->to_json(w, redact);
         }
 
         w.EndObject();
@@ -100,10 +100,10 @@ private:
     std::unordered_map<std::string_view, base_property*> _properties;
 };
 
-inline YAML::Node to_yaml(const config_store& cfg) {
+inline YAML::Node to_yaml(const config_store& cfg, redact_secrets redact) {
     rapidjson::StringBuffer buf;
     rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
-    cfg.to_json(writer);
+    cfg.to_json(writer, redact);
     return YAML::Load(buf.GetString());
 }
 }; // namespace config
