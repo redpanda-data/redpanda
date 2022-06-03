@@ -85,9 +85,12 @@ class ConsumerOffsetsMigrationTest(EndToEndTest):
         spec = TopicSpec(partition_count=6, replication_factor=3)
         self.client().create_topic(spec)
         self.topic = spec.name
+        # use two groups, one of them will be deleted to test migrating tombstone records
+        group_id = 'test-group-1'
+        second_group_id = 'test-group-2'
 
         self.start_producer(1, throughput=5000)
-        self.start_consumer(1)
+        self.start_consumer(1, group_id=group_id)
         self.await_startup()
 
         def cluster_is_stable():
@@ -105,6 +108,10 @@ class ConsumerOffsetsMigrationTest(EndToEndTest):
 
         kcl = KCL(self.redpanda)
 
+        rpk = RpkTool(self.redpanda)
+        # start consumer in second group
+        rpk.consume(spec.name, 100, group=second_group_id)
+
         def _group_present():
             return len(kcl.list_groups().splitlines()) > 1
 
@@ -116,8 +123,18 @@ class ConsumerOffsetsMigrationTest(EndToEndTest):
 
         assert "__consumer_offsets" not in topics
 
+        # delete second group
+        def _second_group_empty():
+            return rpk.group_describe(second_group_id).state == "Empty"
+
+        wait_until(_second_group_empty, 60, 1)
+        rpk.group_delete(group=second_group_id)
+
+        # recreate second group, recovering a group will require reading tombstones
+        rpk.consume(spec.name, 100, group=second_group_id)
+
         # enable consumer offsets support
-        self.redpanda.set_environment({"__REDPANDA_LOGICAL_VERSION": 2})
+        self.redpanda.set_environment({})
         for n in self.redpanda.nodes:
             id = self.redpanda.idx(n)
             suppressed.add(id)
@@ -196,7 +213,7 @@ class ConsumerOffsetsMigrationTest(EndToEndTest):
         assert "__consumer_offsets" not in topics
 
         # enable consumer offsets support
-        self.redpanda.set_environment({"__REDPANDA_LOGICAL_VERSION": 2})
+        self.redpanda.set_environment({})
 
         def get_raft0_follower():
             ctrl = self.redpanda.controller

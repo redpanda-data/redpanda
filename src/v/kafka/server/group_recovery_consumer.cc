@@ -141,7 +141,7 @@ void group_recovery_consumer::handle_record(model::record r) {
     } catch (...) {
         vlog(
           klog.error,
-          "error handling record record - {}",
+          "error handling group metadata record - {}",
           std::current_exception());
     }
 }
