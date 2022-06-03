@@ -11,7 +11,9 @@
 
 #pragma once
 
+#include "kafka/protocol/api_versions.h"
 #include "kafka/protocol/fwd.h"
+#include "kafka/server/flex_versions.h"
 #include "kafka/server/protocol_utils.h"
 #include "kafka/types.h"
 #include "net/transport.h"
@@ -41,7 +43,7 @@ private:
      * requests can be in flight.
      */
     template<typename Func>
-    auto send_recv(Func&& func) {
+    auto send_recv(api_key key, api_version request_version, Func&& func) {
         // size prefixed buffer for request
         iobuf buf;
         auto ph = buf.reserve(sizeof(int32_t));
@@ -51,23 +53,49 @@ private:
         // encode request
         func(wr);
 
+        vassert(
+          flex_versions::is_api_in_schema(key),
+          "Attempted to send request to non-existent API: {}",
+          key);
+
+        /// KIP-511 bumps api_versions_request/response to 3 the first flex
+        /// version for the API three however makes an exception that there will
+        /// be no tags in the response header.
+        const auto is_flexible = flex_versions::is_flexible_request(
+                                   key, request_version)
+                                 && key() != api_versions_api::key;
+
         // finalize by filling in the size prefix
         int32_t total_size = buf.size_bytes() - start_size;
         auto be_total_size = ss::cpu_to_be(total_size);
         auto* raw_size = reinterpret_cast<const char*>(&be_total_size);
         ph.write(raw_size, sizeof(be_total_size));
 
-        return _out.write(iobuf_as_scattered(std::move(buf))).then([this] {
-            return parse_size(_in).then([this](std::optional<size_t> sz) {
-                auto size = sz.value();
-                return _in.read_exactly(sizeof(correlation_id))
-                  .then([this, size](ss::temporary_buffer<char>) {
-                      // drops the correlation id on the floor
-                      auto remaining = size - sizeof(correlation_id);
-                      return read_iobuf_exactly(_in, remaining);
-                  });
-            });
-        });
+        return _out.write(iobuf_as_scattered(std::move(buf)))
+          .then([this, is_flexible] {
+              return parse_size(_in).then([this, is_flexible](
+                                            std::optional<size_t> sz) {
+                  auto size = sz.value();
+                  return _in.read_exactly(sizeof(correlation_id))
+                    .then([this, size, is_flexible](
+                            ss::temporary_buffer<char>) {
+                        if (is_flexible) {
+                            return parse_tags(_in).then([size](auto p) {
+                                auto& [_, bytes_read] = p;
+                                return size
+                                       - (sizeof(correlation_id) + bytes_read);
+                            });
+                        }
+                        return ss::make_ready_future<size_t>(
+                          size - sizeof(correlation_id));
+                    })
+                    .then([this](size_t remaining) {
+                        // Finally, read the rest of the response from the
+                        // buffer
+                        return read_iobuf_exactly(_in, remaining);
+                    });
+              });
+          });
     }
 
 public:
@@ -81,11 +109,14 @@ public:
     requires(KafkaApi<typename T::api_type>)
       ss::future<typename T::api_type::response_type> dispatch(
         T r, api_version request_version, api_version response_version) {
-        return send_recv([this, request_version, r = std::move(r)](
-                           response_writer& wr) mutable {
-                   write_header(wr, T::api_type::key, request_version);
-                   r.encode(wr, request_version);
-               })
+        return send_recv(
+                 T::api_type::key,
+                 request_version,
+                 [this, request_version, r = std::move(r)](
+                   response_writer& wr) mutable {
+                     write_header(wr, T::api_type::key, request_version);
+                     r.encode(wr, request_version);
+                 })
           .then([response_version](iobuf buf) {
               using response_type = typename T::api_type::response_type;
               response_type r;
@@ -154,6 +185,15 @@ private:
         wr.write(int16_t(version()));
         wr.write(int32_t(_correlation()));
         wr.write(std::string_view("test_client"));
+        vassert(
+          flex_versions::is_api_in_schema(key),
+          "Attempted to send request to non-existent API: {}",
+          key);
+        if (flex_versions::is_flexible_request(key, version)) {
+            /// Tags are unused by the client but to be protocol compliant
+            /// with flex versions at least a 0 byte must be written
+            wr.write_tags();
+        }
         _correlation = _correlation + correlation_id(1);
     }
 

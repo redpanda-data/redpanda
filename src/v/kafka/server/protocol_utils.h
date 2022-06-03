@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "kafka/protocol/types.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
 #include "kafka/types.h"
@@ -22,6 +23,9 @@
 #include <optional>
 
 namespace kafka {
+
+ss::future<std::pair<std::optional<tagged_fields>, size_t>>
+parse_tags(ss::input_stream<char>&);
 
 // TODO: move to iobuf_parser
 ss::future<std::optional<request_header>> parse_header(ss::input_stream<char>&);

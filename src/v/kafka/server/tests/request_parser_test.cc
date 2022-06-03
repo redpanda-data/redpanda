@@ -64,7 +64,8 @@ get_request_context(kafka::protocol& proto, ss::input_stream<char>&& input) {
                   std::optional<kafka::request_header> oheader) {
                     auto header = std::move(oheader.value());
                     auto remaining = size - kafka::request_header_size
-                                     - header.client_id_buffer.size();
+                                     - header.client_id_buffer.size()
+                                     - header.tags_size_bytes;
                     /*
                      * read the request body
                      */

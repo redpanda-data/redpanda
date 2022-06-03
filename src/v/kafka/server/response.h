@@ -25,8 +25,9 @@ namespace kafka {
 
 class response {
 public:
-    response() noexcept
-      : _writer(_buf) {}
+    explicit response(bool flexible) noexcept
+      : _flexible(flexible)
+      , _writer(_buf) {}
 
     response_writer& writer() { return _writer; }
 
@@ -36,6 +37,12 @@ public:
 
     correlation_id correlation() const { return _correlation; }
     void set_correlation(correlation_id c) { _correlation = c; }
+
+    bool is_flexible() const { return _flexible; }
+
+    /// Currently unused
+    const std::optional<tagged_fields>& tags() const { return _tags; }
+    std::optional<tagged_fields>& tags() { return _tags; }
 
     /*
      * Marking a response as a noop means that it will be processed like any
@@ -49,6 +56,8 @@ public:
 private:
     bool _noop{false};
     correlation_id _correlation;
+    bool _flexible{false};
+    std::optional<tagged_fields> _tags;
     iobuf _buf;
     response_writer _writer;
 };

@@ -43,3 +43,48 @@
 #include "kafka/server/handlers/sasl_handshake.h"
 #include "kafka/server/handlers/sync_group.h"
 #include "kafka/server/handlers/txn_offset_commit.h"
+
+namespace kafka {
+template<typename... Ts>
+struct type_list {};
+
+template<typename... Requests>
+requires(
+  KafkaApiHandler<Requests>,
+  ...) using make_request_types = type_list<Requests...>;
+
+using request_types = make_request_types<
+  produce_handler,
+  fetch_handler,
+  list_offsets_handler,
+  metadata_handler,
+  offset_fetch_handler,
+  find_coordinator_handler,
+  list_groups_handler,
+  api_versions_handler,
+  join_group_handler,
+  heartbeat_handler,
+  leave_group_handler,
+  sync_group_handler,
+  create_topics_handler,
+  offset_commit_handler,
+  describe_configs_handler,
+  alter_configs_handler,
+  delete_topics_handler,
+  describe_groups_handler,
+  sasl_handshake_handler,
+  sasl_authenticate_handler,
+  incremental_alter_configs_handler,
+  delete_groups_handler,
+  describe_acls_handler,
+  describe_log_dirs_handler,
+  create_acls_handler,
+  delete_acls_handler,
+  init_producer_id_handler,
+  add_partitions_to_txn_handler,
+  txn_offset_commit_handler,
+  add_offsets_to_txn_handler,
+  end_txn_handler,
+  create_partitions_handler,
+  offset_for_leader_epoch_handler>;
+} // namespace kafka

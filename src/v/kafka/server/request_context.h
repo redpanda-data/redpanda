@@ -14,6 +14,7 @@
 #include "cluster/security_frontend.h"
 #include "kafka/protocol/fwd.h"
 #include "kafka/protocol/request_reader.h"
+#include "kafka/protocol/types.h"
 #include "kafka/server/connection_context.h"
 #include "kafka/server/fetch_session_cache.h"
 #include "kafka/server/logger.h"
@@ -44,6 +45,13 @@ struct request_header {
     correlation_id correlation;
     ss::temporary_buffer<char> client_id_buffer;
     std::optional<std::string_view> client_id;
+
+    // value of std::nullopt indicates v0 request was parsed, 0 tag bytes will
+    // be parsed. If this is non-null a v1 (flex) request header is parsed in
+    // which the min number of bytes parsed must be at least 1.
+    std::optional<tagged_fields> tags;
+    size_t tags_size_bytes{0};
+    bool is_flexible() const { return tags_size_bytes > 0; }
 
     friend std::ostream& operator<<(std::ostream&, const request_header&);
 };
@@ -150,8 +158,24 @@ public:
           ResponseType::api_type::key,
           ResponseType::api_type::name,
           r);
-        auto resp = std::make_unique<response>();
-        r.encode(resp->writer(), header().version);
+        /// KIP-511 bumps api_versions_request/response to 3, past the first
+        /// supported flex version for this API, and makes an exception
+        /// that there will be no tags in the response header.
+        bool is_flexible = header().is_flexible();
+        api_version version = header().version;
+        if constexpr (std::is_same_v<ResponseType, api_versions_response>) {
+            is_flexible = false;
+            if (r.data.error_code == kafka::error_code::unsupported_version) {
+                /// Furthermore if the client has made an api_versions_request
+                /// outside of the max supported version, any assumptions about
+                /// its ability to understand a response at a given version
+                /// cannot be made. In this case return api_versions_response at
+                /// version 0.
+                version = api_version(0);
+            }
+        }
+        auto resp = std::make_unique<response>(is_flexible);
+        r.encode(resp->writer(), version);
         return ss::make_ready_future<response_ptr>(std::move(resp));
     }
 
