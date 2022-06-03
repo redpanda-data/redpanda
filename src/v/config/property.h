@@ -113,9 +113,13 @@ public:
     // serialize the value. the key is taken from the property name at the
     // serialization point in config_store::to_json to avoid users from being
     // forced to consume the property as a json object.
-    void to_json(json::Writer<json::StringBuffer>& w, redact_secrets)
+    void to_json(json::Writer<json::StringBuffer>& w, redact_secrets redact)
       const override {
-        json::rjson_serialize(w, _value);
+        if (is_secret() && !is_default() && redact == redact_secrets::yes) {
+            json::rjson_serialize(w, secret_placeholder);
+        } else {
+            json::rjson_serialize(w, _value);
+        }
     }
 
     void set_value(std::any v) override {
@@ -613,20 +617,19 @@ public:
     }
 
     void print(std::ostream& o) const final {
-        o << name() << ":";
-
-        if (is_secret() && !is_default()) {
-            o << secret_placeholder;
-        } else {
-            o << _value.value_or(-1ms);
-        }
+        vassert(!is_secret(), "{} must not be a secret", name());
+        o << name() << ":" << _value.value_or(-1ms);
     }
 
     // serialize the value. the key is taken from the property name at the
     // serialization point in config_store::to_json to avoid users from being
     // forced to consume the property as a json object.
-    void to_json(
-      json::Writer<json::StringBuffer>& w, redact_secrets) const final {
+    void
+    to_json(json::Writer<json::StringBuffer>& w, redact_secrets) const final {
+        // TODO: there's nothing forcing the retention duration to be a
+        // non-secret; if a secret retention duration is ever introduced,
+        // redact it, but consider the implications on the JSON type.
+        vassert(!is_secret(), "{} must not be a secret", name());
         json::rjson_serialize(w, _value.value_or(-1ms));
     }
 
