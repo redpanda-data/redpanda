@@ -1,0 +1,23 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: decommissioning
+status:
+  replicas: 3
+  currentReplicas: 3
+---
+
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+collectors:
+  - type: pod
+    selector: app.kubernetes.io/name=redpanda
+    tail: -1
+  - type: pod
+    namespace: redpanda-system
+    selector: control-plane=controller-manager
+    tail: -1
+  - type: command
+    command: kubectl get clusters -o jsonpath={@} -n $NAMESPACE
+  - type: command
+    command: kubectl get pods -o jsonpath={@} -n $NAMESPACE
