@@ -13,6 +13,7 @@
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/types.h"
 #include "model/metadata.h"
+#include "model/timestamp.h"
 #include "seastarx.h"
 
 #include <seastar/testing/test_case.hh>
@@ -61,6 +62,123 @@ static constexpr std::string_view complete_manifest_json = R"json({
         }
     }
 })json";
+
+static constexpr std::string_view max_segment_meta_manifest_json = R"json({
+    "version": 1,
+    "namespace": "test-ns",
+    "topic": "test-topic",
+    "partition": 42,
+    "revision": 1,
+    "last_offset": 39,
+    "segments": {
+        "10-1-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 1024,
+            "base_offset": 10,
+            "committed_offset": 19,
+            "base_timestamp" : 123456,
+            "max_timestamp": 123456789,
+            "delta_offset": 12313,
+            "ntp_revision": 3,
+            "archiver_term" : 3
+        }
+    }
+})json";
+
+static constexpr std::string_view no_size_bytes_segment_meta = R"json({
+    "version": 1,
+    "namespace": "test-ns",
+    "topic": "test-topic",
+    "partition": 42,
+    "revision": 1,
+    "last_offset": 39,
+    "segments": {
+        "10-1-v1.log": {
+            "is_compacted": false,
+            "base_offset": 10,
+            "committed_offset": 19
+        }
+    }
+})json";
+
+static constexpr std::string_view segment_meta_gets_smaller_manifest_json
+  = R"json({
+    "version": 1,
+    "namespace": "test-ns",
+    "topic": "test-topic",
+    "partition": 42,
+    "revision": 1,
+    "last_offset": 39,
+    "segments": {
+        "10-1-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 1024,
+            "base_offset": 10,
+            "committed_offset": 19,
+            "base_timestamp" : 123456,
+            "max_timestamp": 123456789,
+            "delta_offset": 12313,
+            "ntp_revision": 3,
+            "archiver_term" : 3
+        },
+        "20-1-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 2048,
+            "base_offset": 20,
+            "committed_offset": 29
+        }
+    }
+})json";
+
+static constexpr std::string_view no_closing_bracket_segment_meta = R"json({
+    "version": 1,
+    "namespace": "test-ns",
+    "topic": "test-topic",
+    "partition": 42,
+    "revision": 1,
+    "last_offset": 39,
+    "segments": {
+        "10-1-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 1024,
+            "base_offset": 10,
+            "committed_offset": 19
+        }
+})json";
+
+static constexpr std::string_view fields_after_segments_json = R"json({
+    "segments": {
+        "10-1-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 1024,
+            "base_offset": 10,
+            "committed_offset": 19
+        }
+    },
+    "version": 1,
+    "namespace": "test-ns",
+    "topic": "test-topic",
+    "partition": 42,
+    "revision": 1,
+    "last_offset": 39
+})json";
+
+static constexpr std::string_view missing_last_offset_manifest_json = R"json({
+    "version": 1,
+    "namespace": "test-ns",
+    "topic": "test-topic",
+    "partition": 42,
+    "revision": 1,
+    "segments": {
+        "10-1-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 1024,
+            "base_offset": 10,
+            "committed_offset": 19
+        }
+    }
+})json";
+
 static const model::ntp manifest_ntp(
   model::ns("test-ns"), model::topic("test-topic"), model::partition_id(42));
 
@@ -160,6 +278,20 @@ SEASTAR_THREAD_TEST_CASE(test_empty_manifest_update) {
       path, "20000000/meta/test-ns/test-topic/42_0/manifest.json");
 }
 
+void require_equal_segment_meta(
+  partition_manifest::segment_meta expected,
+  partition_manifest::segment_meta actual) {
+    BOOST_REQUIRE_EQUAL(expected.is_compacted, actual.is_compacted);
+    BOOST_REQUIRE_EQUAL(expected.size_bytes, actual.size_bytes);
+    BOOST_REQUIRE_EQUAL(expected.base_offset, actual.base_offset);
+    BOOST_REQUIRE_EQUAL(expected.committed_offset, actual.committed_offset);
+    BOOST_REQUIRE_EQUAL(expected.base_timestamp, actual.base_timestamp);
+    BOOST_REQUIRE_EQUAL(expected.max_timestamp, actual.max_timestamp);
+    BOOST_REQUIRE_EQUAL(expected.delta_offset, actual.delta_offset);
+    BOOST_REQUIRE_EQUAL(expected.ntp_revision, actual.ntp_revision);
+    BOOST_REQUIRE_EQUAL(expected.archiver_term, actual.archiver_term);
+}
+
 SEASTAR_THREAD_TEST_CASE(test_complete_manifest_update) {
     partition_manifest m;
     m.update(make_manifest_stream(complete_manifest_json)).get0();
@@ -170,38 +302,169 @@ SEASTAR_THREAD_TEST_CASE(test_complete_manifest_update) {
     std::map<ss::sstring, partition_manifest::segment_meta> expected = {
       {"10-1-v1.log",
        partition_manifest::segment_meta{
-         false, 1024, model::offset(10), model::offset(19)}},
+         .is_compacted = false,
+         .size_bytes = 1024,
+         .base_offset = model::offset(10),
+         .committed_offset = model::offset(19),
+         .ntp_revision = model::initial_revision_id(
+           1) // revision is propagated from manifest
+       }},
       {"20-1-v1.log",
        partition_manifest::segment_meta{
-         false,
-         2048,
-         model::offset(20),
-         model::offset(29),
-         model::timestamp(1234567890),
-         model::timestamp(1234567890)}},
+         .is_compacted = false,
+         .size_bytes = 2048,
+         .base_offset = model::offset(20),
+         .committed_offset = model::offset(29),
+         .max_timestamp = model::timestamp(1234567890),
+         .ntp_revision = model::initial_revision_id(
+           1) // revision is propagated from manifest
+       }},
       {"30-1-v1.log",
        partition_manifest::segment_meta{
-         false,
-         4096,
-         model::offset(30),
-         model::offset(39),
-         model::timestamp(1234567890),
-         model::timestamp(1234567890)}},
+         .is_compacted = false,
+         .size_bytes = 4096,
+         .base_offset = model::offset(30),
+         .committed_offset = model::offset(39),
+         .max_timestamp = model::timestamp(1234567890),
+         .ntp_revision = model::initial_revision_id(
+           1) // revision is propagated from manifest
+       }},
     };
     for (const auto& actual : m) {
         auto sn = generate_segment_name(
           actual.first.base_offset, actual.first.term);
         auto it = expected.find(sn());
         BOOST_REQUIRE(it != expected.end());
-        BOOST_REQUIRE_EQUAL(it->second.base_offset, actual.second.base_offset);
-        BOOST_REQUIRE_EQUAL(
-          it->second.committed_offset, actual.second.committed_offset);
-        BOOST_REQUIRE_EQUAL(
-          it->second.is_compacted, actual.second.is_compacted);
-        BOOST_REQUIRE_EQUAL(it->second.size_bytes, actual.second.size_bytes);
-        BOOST_REQUIRE_EQUAL(
-          it->second.max_timestamp, actual.second.max_timestamp);
+        require_equal_segment_meta(it->second, actual.second);
     }
+}
+
+SEASTAR_THREAD_TEST_CASE(test_max_segment_meta_update) {
+    partition_manifest m;
+    m.update(make_manifest_stream(max_segment_meta_manifest_json)).get0();
+    auto path = m.get_manifest_path();
+    BOOST_REQUIRE_EQUAL(
+      path, "60000000/meta/test-ns/test-topic/42_1/manifest.json");
+    BOOST_REQUIRE_EQUAL(m.size(), 1);
+    std::map<ss::sstring, partition_manifest::segment_meta> expected = {
+      {"10-1-v1.log",
+       partition_manifest::segment_meta{
+         false,
+         1024,
+         model::offset(10),
+         model::offset(19),
+         model::timestamp(123456),
+         model::timestamp(123456789),
+         model::offset(12313),
+         model::initial_revision_id(3),
+         model::term_id(3)}}};
+
+    for (const auto& actual : m) {
+        auto sn = generate_segment_name(
+          actual.first.base_offset, actual.first.term);
+        auto it = expected.find(sn());
+        BOOST_REQUIRE(it != expected.end());
+        require_equal_segment_meta(it->second, actual.second);
+    }
+}
+
+SEASTAR_THREAD_TEST_CASE(test_no_size_bytes_segment_meta) {
+    partition_manifest m;
+    BOOST_REQUIRE_EXCEPTION(
+      m.update(make_manifest_stream(no_size_bytes_segment_meta)).get0(),
+      std::runtime_error,
+      [](std::runtime_error ex) {
+          return std::string(ex.what()).find(
+                   "Missing size_bytes value in {10-1-v1.log} segment meta")
+                 != std::string::npos;
+      });
+}
+
+SEASTAR_THREAD_TEST_CASE(test_metas_get_smaller) {
+    partition_manifest m;
+    m.update(make_manifest_stream(segment_meta_gets_smaller_manifest_json))
+      .get0();
+    auto path = m.get_manifest_path();
+    BOOST_REQUIRE_EQUAL(
+      path, "60000000/meta/test-ns/test-topic/42_1/manifest.json");
+    BOOST_REQUIRE_EQUAL(m.size(), 2);
+    std::map<ss::sstring, partition_manifest::segment_meta> expected = {
+      {"10-1-v1.log",
+       partition_manifest::segment_meta{
+         .is_compacted = false,
+         .size_bytes = 1024,
+         .base_offset = model::offset(10),
+         .committed_offset = model::offset(19),
+         .base_timestamp = model::timestamp(123456),
+         .max_timestamp = model::timestamp(123456789),
+         .delta_offset = model::offset(12313),
+         .ntp_revision = model::initial_revision_id(3),
+         .archiver_term = model::term_id(3)}},
+      {"20-1-v1.log",
+       partition_manifest::segment_meta{
+         .is_compacted = false,
+         .size_bytes = 2048,
+         .base_offset = model::offset(20),
+         .committed_offset = model::offset(29),
+         .ntp_revision = model::initial_revision_id(
+           1)}}, // if ntp_revision if missing in meta, we get revision from
+                 // manifest
+    };
+    for (const auto& actual : m) {
+        auto sn = generate_segment_name(
+          actual.first.base_offset, actual.first.term);
+        auto it = expected.find(sn());
+        BOOST_REQUIRE(it != expected.end());
+        require_equal_segment_meta(it->second, actual.second);
+    }
+}
+
+SEASTAR_THREAD_TEST_CASE(test_no_closing_bracket_meta) {
+    partition_manifest m;
+    BOOST_REQUIRE_EXCEPTION(
+      m.update(make_manifest_stream(no_closing_bracket_segment_meta)).get0(),
+      std::runtime_error,
+      [](std::runtime_error ex) {
+          return std::string(ex.what()).find(
+                   "Failed to parse topic manifest "
+                   "{\"b0000000/meta///-2147483648_-9223372036854775808/"
+                   "manifest.json\"}: Missing a comma or '}' after an object "
+                   "member. at offset 325")
+                 != std::string::npos;
+      });
+}
+
+SEASTAR_THREAD_TEST_CASE(test_fields_after_segments) {
+    partition_manifest m;
+    m.update(make_manifest_stream(fields_after_segments_json)).get0();
+    auto path = m.get_manifest_path();
+    BOOST_REQUIRE_EQUAL(
+      path, "60000000/meta/test-ns/test-topic/42_1/manifest.json");
+    BOOST_REQUIRE_EQUAL(m.size(), 1);
+    std::map<ss::sstring, partition_manifest::segment_meta> expected = {
+      {"10-1-v1.log",
+       partition_manifest::segment_meta{
+         false, 1024, model::offset(10), model::offset(19)}}};
+
+    for (const auto& actual : m) {
+        auto sn = generate_segment_name(
+          actual.first.base_offset, actual.first.term);
+        auto it = expected.find(sn());
+        BOOST_REQUIRE(it != expected.end());
+        require_equal_segment_meta(it->second, actual.second);
+    }
+}
+
+SEASTAR_THREAD_TEST_CASE(test_missing_manifest_field) {
+    partition_manifest m;
+    BOOST_REQUIRE_EXCEPTION(
+      m.update(make_manifest_stream(missing_last_offset_manifest_json)).get0(),
+      std::runtime_error,
+      [](std::runtime_error ex) {
+          return std::string(ex.what()).find(
+                   "Missing last_offset value in partition manifest")
+                 != std::string::npos;
+      });
 }
 
 SEASTAR_THREAD_TEST_CASE(test_manifest_serialization) {

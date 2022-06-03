@@ -16,6 +16,8 @@
 
 namespace cloud_storage {
 
+struct partition_manifest_handler;
+
 /// Information contained inside the partition manifest path
 struct partition_manifest_path_components {
     std::filesystem::path _origin;
@@ -168,7 +170,7 @@ public:
 private:
     /// Update manifest content from json document that supposed to be generated
     /// from manifest.json file
-    void update(const json::Document& m);
+    void update(const partition_manifest_handler& handler);
 
     model::ntp _ntp;
     model::initial_revision_id _rev;
