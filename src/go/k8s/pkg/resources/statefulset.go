@@ -538,7 +538,7 @@ func (r *StatefulSetResource) getPreStopHook() *corev1.Handler {
 	curlGetCommand := r.composeCURLMaintenanceCommand(`--silent`, &genericMaintenancePath)
 	cmd := fmt.Sprintf(`until [ "${status:-}" = "200" ]; do status=$(%s); sleep 0.5; done`, curlCommand) +
 		" && " +
-		fmt.Sprintf(`until [ "${finished:-}" = "true" ]; do finished=$(%s | grep -o '\"finished\":[^,}]*' | grep -o '[^: ]*$'); sleep 0.5; done`, curlGetCommand)
+		fmt.Sprintf(`until [ "${finished:-}" = "true" ] || [ "${draining:-}" = "false" ]; do res=$(%s); finished=$(echo $res | grep -o '\"finished\":[^,}]*' | grep -o '[^: ]*$'); draining=$(echo $res | grep -o '\"draining\":[^,}]*' | grep -o '[^: ]*$'); sleep 0.5; done`, curlGetCommand)
 
 	return &corev1.Handler{
 		Exec: &corev1.ExecAction{
