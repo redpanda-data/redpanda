@@ -41,7 +41,7 @@ FIXTURE_TEST(get_after_put, cache_test_fixture) {
     put_into_cache(data_string, KEY);
 
     std::optional<cloud_storage::cache_item> returned_item
-      = cache_service.get(KEY).get();
+      = sharded_cache.local().get(KEY).get();
     BOOST_REQUIRE(returned_item);
     BOOST_CHECK_EQUAL(returned_item->size, data_string.length());
 
@@ -62,7 +62,7 @@ FIXTURE_TEST(put_rewrites_file, cache_test_fixture) {
     put_into_cache(data_string2, KEY);
 
     std::optional<cloud_storage::cache_item> returned_item
-      = cache_service.get(KEY).get();
+      = sharded_cache.local().get(KEY).get();
     BOOST_REQUIRE(returned_item);
     BOOST_CHECK_EQUAL(returned_item->size, data_string2.length());
 
@@ -77,13 +77,13 @@ FIXTURE_TEST(put_rewrites_file, cache_test_fixture) {
 
 FIXTURE_TEST(get_missing_file, cache_test_fixture) {
     std::optional<cloud_storage::cache_item> returned_item
-      = cache_service.get(WRONG_KEY).get();
+      = sharded_cache.local().get(WRONG_KEY).get();
 
     BOOST_CHECK(!returned_item);
 }
 
 FIXTURE_TEST(missing_file_not_cached, cache_test_fixture) {
-    auto is_cached = cache_service.is_cached(WRONG_KEY).get();
+    auto is_cached = sharded_cache.local().is_cached(WRONG_KEY).get();
 
     BOOST_CHECK_EQUAL(is_cached, cache_element_status::not_available);
 }
@@ -91,9 +91,9 @@ FIXTURE_TEST(missing_file_not_cached, cache_test_fixture) {
 FIXTURE_TEST(is_cached_after_put_success, cache_test_fixture) {
     iobuf buf;
     auto input = make_iobuf_input_stream(std::move(buf));
-    cache_service.put(KEY, input).get();
+    sharded_cache.local().put(KEY, input).get();
 
-    auto is_cached = cache_service.is_cached(KEY).get();
+    auto is_cached = sharded_cache.local().is_cached(KEY).get();
 
     BOOST_CHECK_EQUAL(is_cached, cache_element_status::available);
 }
@@ -102,20 +102,20 @@ FIXTURE_TEST(after_invalidate_is_not_cached, cache_test_fixture) {
     auto data_string1 = create_data_string('a', 1_MiB + 1_KiB);
     put_into_cache(data_string1, KEY);
 
-    cache_service.invalidate(KEY).get();
+    sharded_cache.local().invalidate(KEY).get();
 
-    auto is_cached = cache_service.is_cached(KEY).get();
+    auto is_cached = sharded_cache.local().is_cached(KEY).get();
     BOOST_CHECK_EQUAL(is_cached, cache_element_status::not_available);
 }
 
 FIXTURE_TEST(invalidate_missing_file_ok, cache_test_fixture) {
-    BOOST_CHECK_NO_THROW(cache_service.invalidate(WRONG_KEY).get());
+    BOOST_CHECK_NO_THROW(sharded_cache.local().invalidate(WRONG_KEY).get());
 }
 
 FIXTURE_TEST(empty_cache_nothing_deleted, cache_test_fixture) {
     ss::sleep(ss::lowres_clock::duration(2s)).get();
 
-    BOOST_CHECK_EQUAL(0, cache_service.get_total_cleaned());
+    BOOST_CHECK_EQUAL(0, sharded_cache.local().get_total_cleaned());
 }
 
 FIXTURE_TEST(files_up_to_max_cache_size_not_deleted, cache_test_fixture) {
@@ -124,7 +124,7 @@ FIXTURE_TEST(files_up_to_max_cache_size_not_deleted, cache_test_fixture) {
 
     ss::sleep(ss::lowres_clock::duration(2s)).get();
 
-    BOOST_CHECK_EQUAL(0, cache_service.get_total_cleaned());
+    BOOST_CHECK_EQUAL(0, sharded_cache.local().get_total_cleaned());
 }
 
 FIXTURE_TEST(file_bigger_than_max_cache_size_deleted, cache_test_fixture) {
@@ -133,7 +133,7 @@ FIXTURE_TEST(file_bigger_than_max_cache_size_deleted, cache_test_fixture) {
 
     ss::sleep(ss::lowres_clock::duration(2s)).get();
 
-    BOOST_CHECK_EQUAL(2_MiB + 1_KiB, cache_service.get_total_cleaned());
+    BOOST_CHECK_EQUAL(2_MiB + 1_KiB, sharded_cache.local().get_total_cleaned());
 }
 
 FIXTURE_TEST(
@@ -146,7 +146,7 @@ FIXTURE_TEST(
 
     ss::sleep(ss::lowres_clock::duration(2s)).get();
 
-    BOOST_CHECK_EQUAL(1_MiB + 1_KiB, cache_service.get_total_cleaned());
+    BOOST_CHECK_EQUAL(1_MiB + 1_KiB, sharded_cache.local().get_total_cleaned());
     BOOST_REQUIRE(!ss::file_exists((CACHE_DIR / KEY).native()).get());
     BOOST_REQUIRE(ss::file_exists((CACHE_DIR / KEY2).native()).get());
 }
@@ -163,7 +163,7 @@ FIXTURE_TEST(invalidate_cleans_directory, cache_test_fixture) {
       "unique_prefix/test_topic/test_cache_file.txt"};
     put_into_cache(data_string1, unique_prefix_key);
 
-    cache_service.invalidate(unique_prefix_key).get();
+    sharded_cache.local().invalidate(unique_prefix_key).get();
 
     BOOST_CHECK(
       !ss::file_exists((CACHE_DIR / unique_prefix_key).native()).get());
@@ -188,7 +188,7 @@ FIXTURE_TEST(eviction_cleans_directory, cache_test_fixture) {
 
     ss::sleep(ss::lowres_clock::duration(2s)).get();
 
-    BOOST_CHECK_EQUAL(1_MiB + 1_KiB, cache_service.get_total_cleaned());
+    BOOST_CHECK_EQUAL(1_MiB + 1_KiB, sharded_cache.local().get_total_cleaned());
     BOOST_CHECK(!ss::file_exists((CACHE_DIR / key1).native()).get());
     BOOST_CHECK(
       !ss::file_exists((CACHE_DIR / "a/b/c/first_topic").native()).get());
@@ -220,7 +220,7 @@ FIXTURE_TEST(invalidate_outside_cache_dir_throws, cache_test_fixture) {
       = ss::open_file_dma((CACHE_DIR / key).native(), flags).get();
 
     BOOST_CHECK_THROW(
-      cache_service.invalidate(key).get(), std::invalid_argument);
+      sharded_cache.local().invalidate(key).get(), std::invalid_argument);
     BOOST_CHECK(ss::file_exists((CACHE_DIR / key).native()).get());
 }
 
@@ -248,7 +248,7 @@ FIXTURE_TEST(invalidate_prefix_outside_cache_dir_throws, cache_test_fixture) {
       = ss::open_file_dma((CACHE_DIR / key).native(), flags).get();
 
     BOOST_CHECK_THROW(
-      cache_service.invalidate(key).get(), std::invalid_argument);
+      sharded_cache.local().invalidate(key).get(), std::invalid_argument);
     BOOST_CHECK(ss::file_exists((CACHE_DIR / key).native()).get());
 }
 
@@ -274,7 +274,7 @@ FIXTURE_TEST(put_outside_cache_dir_throws, cache_test_fixture) {
     auto input = make_iobuf_input_stream(std::move(buf));
 
     BOOST_CHECK_EXCEPTION(
-      cache_service.put(key, input).get(),
+      sharded_cache.local().put(key, input).get(),
       std::invalid_argument,
       [](const std::invalid_argument& e) {
           return std::string(e.what()).find(

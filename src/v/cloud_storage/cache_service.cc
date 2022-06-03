@@ -9,6 +9,7 @@
  */
 
 #include "cloud_storage/logger.h"
+#include "ssx/future-util.h"
 #include "storage/segment.h"
 #include "utils/gate_guard.h"
 #include "vassert.h"
@@ -30,7 +31,11 @@
 #include <stdexcept>
 #include <string_view>
 
+using namespace std::chrono_literals;
+
 namespace cloud_storage {
+
+static constexpr auto access_timer_period = 60s;
 
 std::ostream& operator<<(std::ostream& o, cache_element_status s) {
     switch (s) {
@@ -103,7 +108,7 @@ uint64_t cache::get_total_cleaned() { return _total_cleaned; }
 ss::future<> cache::clean_up_at_start() {
     gate_guard guard{_gate};
     auto [cache_size, candidates_for_deletion] = co_await _walker.walk(
-      _cache_dir.native());
+      _cache_dir.native(), _access_time_tracker);
     probe.set_size(cache_size);
     probe.set_num_files(candidates_for_deletion.size());
 
@@ -131,9 +136,10 @@ ss::future<> cache::clean_up_at_start() {
 }
 
 ss::future<> cache::clean_up_cache() {
+    vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
     gate_guard guard{_gate};
     auto [curr_cache_size, candidates_for_deletion] = co_await _walker.walk(
-      _cache_dir.native());
+      _cache_dir.native(), _access_time_tracker);
     probe.set_size(curr_cache_size);
     probe.set_num_files(candidates_for_deletion.size());
 
@@ -155,6 +161,10 @@ ss::future<> cache::clean_up_cache() {
                     co_await recursive_delete_empty_directory(
                       filename_to_remove);
                     deleted_size += candidates_for_deletion[i_to_delete].size;
+                    // Remove key if possible to make sure there is no resource
+                    // leak
+                    _access_time_tracker.remove_timestamp(
+                      std::string_view(filename_to_remove));
                 } catch (std::exception& e) {
                     vlog(
                       cst_log.error,
@@ -174,23 +184,92 @@ ss::future<> cache::clean_up_cache() {
     }
 }
 
+ss::future<> cache::load_access_time_tracker() {
+    ss::gate::holder guard{_gate};
+    vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
+    auto source = _cache_dir / access_time_tracker_file_name;
+    auto present = co_await ss::file_exists(source.native());
+    if (!present) {
+        vlog(cst_log.info, "Access time tracker doesn't exist at '{}'", source);
+        co_return;
+    }
+    vlog(
+      cst_log.info, "Trying to hydrate access time tracker from '{}'", source);
+    if (auto cache_item = co_await get(source); cache_item.has_value()) {
+        try {
+            ss::file_input_stream_options options{};
+            options.buffer_size
+              = config::shard_local_cfg().storage_read_buffer_size;
+            options.read_ahead
+              = config::shard_local_cfg().storage_read_readahead_count;
+            options.io_priority_class
+              = priority_manager::local().shadow_indexing_priority();
+            auto inp_stream = ss::make_file_input_stream(
+              cache_item->body, options);
+            iobuf state;
+            auto out_stream = make_iobuf_ref_output_stream(state);
+            co_await ss::copy(inp_stream, out_stream).finally([&inp_stream] {
+                return inp_stream.close();
+            });
+            _access_time_tracker.from_iobuf(std::move(state));
+        } catch (...) {
+            vlog(
+              cst_log.warn,
+              "Failed to materialize access time tracker '{}'. Error: {}",
+              source,
+              std::current_exception());
+        }
+        co_await cache_item->body.close();
+    } else {
+        vlog(
+          cst_log.info, "Access time tracker is not available at '{}'", source);
+    }
+}
+
+ss::future<> cache::save_access_time_tracker() {
+    ss::gate::holder guard{_gate};
+    vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
+    auto source = _cache_dir / access_time_tracker_file_name;
+    auto index_stream = make_iobuf_input_stream(
+      _access_time_tracker.to_iobuf());
+    co_await put(source.native(), index_stream);
+}
+
+ss::future<> cache::maybe_save_access_time_tracker() {
+    vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
+    if (_access_time_tracker.is_dirty() && !_gate.is_closed()) {
+        co_await save_access_time_tracker();
+    }
+}
+
 ss::future<> cache::start() {
     vlog(
       cst_log.debug,
       "Starting archival cache service, data directory: {}",
       _cache_dir);
-    // TODO: implement more optimal cache eviction
+
     if (ss::this_shard_id() == 0) {
+        // access time tracker has to be initialized before
+        // cleanup
+        co_await load_access_time_tracker();
         co_await clean_up_at_start();
 
         _timer.set_callback([this] { ssx::background = clean_up_cache(); });
         _timer.arm_periodic(_check_period);
+
+        _tracker_timer.set_callback(
+          [this] { return maybe_save_access_time_tracker(); });
+        _tracker_timer.arm_periodic(access_timer_period);
     }
 }
 
 ss::future<> cache::stop() {
     vlog(cst_log.debug, "Stopping archival cache service");
     _timer.cancel();
+    _tracker_timer.cancel();
+    if (ss::this_shard_id() == 0) {
+        co_await save_access_time_tracker();
+    }
     co_await _walker.stop();
     co_await _gate.close();
 }
@@ -201,15 +280,21 @@ ss::future<std::optional<cache_item>> cache::get(std::filesystem::path key) {
     probe.get();
     ss::file cache_file;
     try {
-        /*
-         * TODO: update access time of file. Cache eviction uses file access
-         * timestamp to delete files from oldest to newest. File access time
-         * should be updated every time file is returned by cache, see
-         *
-         *  https://github.com/redpanda-data/redpanda/issues/2459
-         */
-        cache_file = co_await ss::open_file_dma(
-          (_cache_dir / key).native(), ss::open_flags::ro);
+        auto source = (_cache_dir / key).native();
+        cache_file = co_await ss::open_file_dma(source, ss::open_flags::ro);
+
+        // Bump access time of the file
+        if (ss::this_shard_id() == 0) {
+            _access_time_tracker.add_timestamp(
+              source, std::chrono::system_clock::now());
+        } else {
+            ssx::spawn_with_gate(_gate, [this, source] {
+                return container().invoke_on(0, [source](cache& c) {
+                    c._access_time_tracker.add_timestamp(
+                      source, std::chrono::system_clock::now());
+                });
+            });
+        }
     } catch (std::filesystem::filesystem_error& e) {
         if (e.code() == std::errc::no_such_file_or_directory) {
             co_return std::nullopt;
@@ -312,8 +397,21 @@ ss::future<> cache::put(
       .finally([&out]() { return out.close(); });
 
     // commit write transaction
-    co_await ss::rename_file(
-      (dir_path / tmp_filename).native(), (dir_path / filename).native());
+    auto dest = (dir_path / filename).native();
+    co_await ss::rename_file((dir_path / tmp_filename).native(), dest);
+
+    // Bump access time of the file
+    if (ss::this_shard_id() == 0) {
+        _access_time_tracker.add_timestamp(
+          dest, std::chrono::system_clock::now());
+    } else {
+        ssx::spawn_with_gate(_gate, [this, dest] {
+            return container().invoke_on(0, [dest](cache& c) {
+                c._access_time_tracker.add_timestamp(
+                  dest, std::chrono::system_clock::now());
+            });
+        });
+    }
 }
 
 ss::future<cache_element_status>

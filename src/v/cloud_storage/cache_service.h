@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "cloud_storage/access_time_tracker.h"
 #include "cloud_storage/cache_probe.h"
 #include "cloud_storage/recursive_directory_walker.h"
 #include "resource_mgmt/io_priority.h"
@@ -29,6 +30,7 @@ namespace cloud_storage {
 
 static constexpr size_t default_write_buffer_size = 128_KiB;
 static constexpr unsigned default_writebehind = 10;
+static constexpr const char* access_time_tracker_file_name = "accesstime";
 
 struct cache_item {
     ss::file body;
@@ -38,7 +40,7 @@ struct cache_item {
 enum class cache_element_status { available, not_available, in_progress };
 std::ostream& operator<<(std::ostream& o, cache_element_status);
 
-class cache {
+class cache : public ss::peering_sharded_service<cache> {
 public:
     /// C-tor.
     ///
@@ -51,8 +53,7 @@ public:
     ss::future<> start();
     ss::future<> stop();
 
-    /// Get cached value as a stream if it exists on disk
-    ///
+    /// Get cached value as a stream if it exists on disk ///
     /// \param key is a cache key
     ss::future<std::optional<cache_item>> get(std::filesystem::path key);
 
@@ -89,6 +90,15 @@ public:
     uint64_t get_total_cleaned();
 
 private:
+    /// Load access time tracker from file
+    ss::future<> load_access_time_tracker();
+
+    /// Save access time tracker to file
+    ss::future<> save_access_time_tracker();
+
+    /// Save access time tracker state to the file if needed
+    ss::future<> maybe_save_access_time_tracker();
+
     /// Triggers directory walker, creates a list of files to delete and deletes
     /// them until cache size <= _cache_size_low_watermark * max_cache_size
     ss::future<> clean_up_cache();
@@ -115,6 +125,8 @@ private:
     uint64_t _total_cleaned;
     std::set<std::filesystem::path> _files_in_progress;
     cache_probe probe;
+    access_time_tracker _access_time_tracker;
+    ss::timer<ss::lowres_clock> _tracker_timer;
 };
 
 } // namespace cloud_storage
