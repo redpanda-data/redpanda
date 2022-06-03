@@ -618,7 +618,8 @@ void admin_server::register_config_routes() {
       ss::httpd::config_json::get_config, [](ss::const_req, ss::reply& reply) {
           json::StringBuffer buf;
           json::Writer<json::StringBuffer> writer(buf);
-          config::shard_local_cfg().to_json(writer, config::redact_secrets::no);
+          config::shard_local_cfg().to_json(
+            writer, config::redact_secrets::yes);
 
           reply.set_status(ss::httpd::reply::status_type::ok, buf.GetString());
           return "";
@@ -638,7 +639,7 @@ void admin_server::register_config_routes() {
 
           config::shard_local_cfg().to_json(
             writer,
-            config::redact_secrets::no,
+            config::redact_secrets::yes,
             [include_defaults](config::base_property& p) {
                 return include_defaults || !p.is_default();
             });
@@ -652,7 +653,7 @@ void admin_server::register_config_routes() {
       [](ss::const_req, ss::reply& reply) {
           json::StringBuffer buf;
           json::Writer<json::StringBuffer> writer(buf);
-          config::node().to_json(writer, config::redact_secrets::no);
+          config::node().to_json(writer, config::redact_secrets::yes);
 
           reply.set_status(ss::httpd::reply::status_type::ok, buf.GetString());
           return "";

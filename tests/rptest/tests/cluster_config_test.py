@@ -30,6 +30,8 @@ BOOTSTRAP_CONFIG = {
     'enable_idempotence': True,
 }
 
+SECRET_CONFIG_NAMES = frozenset(["cloud_storage_secret_key"])
+
 
 def search_log(redpanda, pattern):
     """
@@ -265,25 +267,25 @@ class ClusterConfigTest(RedpandaTest):
             })
         self._wait_for_version_sync(patch_result['config_version'])
         self._check_value_everywhere("cloud_storage_access_key", "user")
-        self._check_value_everywhere("cloud_storage_secret_key", "pass")
+        self._check_value_everywhere("cloud_storage_secret_key", "[secret]")
 
         # Check initially set values survive a restart
         self.redpanda.restart_nodes(self.redpanda.nodes)
         self._check_value_everywhere("cloud_storage_access_key", "user")
-        self._check_value_everywhere("cloud_storage_secret_key", "pass")
+        self._check_value_everywhere("cloud_storage_secret_key", "[secret]")
 
         # Set just one of the values
         patch_result = self.admin.patch_cluster_config(
             upsert={"cloud_storage_access_key": "user2"})
         self._wait_for_version_sync(patch_result['config_version'])
         self._check_value_everywhere("cloud_storage_access_key", "user2")
-        self._check_value_everywhere("cloud_storage_secret_key", "pass")
+        self._check_value_everywhere("cloud_storage_secret_key", "[secret]")
 
         # Check that the recently set value persists, AND the originally
         # set value of another property is not corrupted.
         self.redpanda.restart_nodes(self.redpanda.nodes)
         self._check_value_everywhere("cloud_storage_access_key", "user2")
-        self._check_value_everywhere("cloud_storage_secret_key", "pass")
+        self._check_value_everywhere("cloud_storage_secret_key", "[secret]")
 
     def _check_value_everywhere(self, key, expect_value):
         for node in self.redpanda.nodes:
@@ -556,6 +558,12 @@ class ClusterConfigTest(RedpandaTest):
                 # String-ized comparison, because the example values are strings,
                 # whereas by the time we read them back they're properly typed.
                 actual = read_back.get(k, None)
+                if k in SECRET_CONFIG_NAMES:
+                    # Expect a redacted value for secrets. Redpanda redacts the
+                    # values and we have no way of cross checking the actual
+                    # values match.
+                    expect = "[secret]"
+
                 if isinstance(actual, bool):
                     # Lowercase because yaml and python capitalize bools differently.
                     actual = str(actual).lower()
@@ -566,7 +574,7 @@ class ClusterConfigTest(RedpandaTest):
                         f"Config set failed ({k}) {actual}!={expect}")
                     mismatch.append((k, actual, expect))
 
-            assert len(mismatch) == 0
+            assert len(mismatch) == 0, mismatch
 
         check_status(properties_require_restart)
         check_values()
@@ -686,6 +694,28 @@ class ClusterConfigTest(RedpandaTest):
 
         # Check that an import/export with no edits does nothing.
         text = self._export(all=True)
+        noop_version = self._import(text, allow_noop=True, all=True)
+        assert noop_version is None
+
+        # Now try setting a secret.
+        text = text.replace("cloud_storage_secret_key: [secret]",
+                            "cloud_storage_secret_key: different_secret")
+        version_e = self._import(text, all)
+        assert version_e is not None
+        assert version_e > version_d
+
+        # Because rpk doesn't know the contents of the secrets, it can't
+        # determine whether a secret is new, and a new version will be
+        # generated even if it's sent the same secret.
+        version_f = self._import(text, all)
+        assert version_f is not None
+        assert version_f > version_e
+
+        # Attempting to change the secret to the redacted version, on the other
+        # hand, results in no version change, to prevent against accidentally
+        # setting the secret to the redacted string.
+        text = text.replace("cloud_storage_secret_key: different_secret",
+                            "cloud_storage_secret_key: [secret]")
         noop_version = self._import(text, allow_noop=True, all=True)
         assert noop_version is None
 
@@ -907,9 +937,15 @@ class ClusterConfigTest(RedpandaTest):
             self.redpanda.restart_nodes(self.redpanda.nodes)
             assert search_log(self.redpanda, value) is expect_log
 
+        # Default valued secrets are still shown.
+        self._check_value_everywhere("cloud_storage_secret_key", None)
+
         secret_key = "cloud_storage_secret_key"
         secret_value = "ThePandaFliesTonight"
         set_and_search(secret_key, secret_value, False)
+
+        # Once set, we shouldn't be able to access the secret values.
+        self._check_value_everywhere("cloud_storage_secret_key", "[secret]")
 
         # To avoid false negatives in the test of a secret, go through the same procedure
         # but on a non-secret property, thereby validating that our log scanning procedure
