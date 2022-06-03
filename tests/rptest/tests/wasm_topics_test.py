@@ -47,39 +47,3 @@ class WasmCreateTopicsTest(WasmIdentityTest):
             if output != test_cfg:
                 raise Exception("Bad config, expected: %s observed: %s" %
                                 (test_cfg, output))
-
-
-class WasmDeleteTopicsTest(WasmIdentityTest):
-    def __init__(self, test_context, num_records=10, record_size=1024):
-        super(WasmDeleteTopicsTest, self).__init__(test_context,
-                                                   extra_rp_conf=None,
-                                                   num_records=num_records,
-                                                   record_size=record_size)
-
-    def wasm_test_plan(self):
-        return [
-            WasmScript(inputs=self.wasm_test_input(),
-                       outputs=["output_1", "output_2", "output_3"],
-                       script=WasmTemplateRepository.IDENTITY_TRANSFORM)
-        ]
-
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/3745
-    @cluster(num_nodes=4)
-    def verify_materialized_topics_test(self):
-        super().verify_materialized_topics_test()
-
-        for topic in self.wasm_test_output():
-            self._rpk_tool.delete_topic(topic)
-        self._rpk_tool.delete_topic(self.topic)
-
-        topics = self._rpk_tool.list_topics()
-
-        for topic in self.wasm_test_output():
-            if topic in topics:
-                raise Exception(
-                    'Failed to delete materialized topic %s - topics: %s' %
-                    (topic, topics))
-
-        if self.topic in topics:
-            raise Exception('Failed to delete source topic: %s - topics: %s' %
-                            (self.topic, topics))
