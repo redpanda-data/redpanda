@@ -240,13 +240,13 @@ static void preload_local(
     result) {
     auto& cfg = config::shard_local_cfg();
     if (cfg.contains(key)) {
+        auto& property = cfg.get(key);
         try {
             // Cache values are string-ized yaml.  In many cases this
             // is the same as the underlying value (e.g. integers, bools),
             // but for strings it's not (the literal value in the cache is
             // "\"foo\"").
             auto decoded = YAML::Load(value.as<std::string>());
-            auto& property = cfg.get(key);
             property.set_value(decoded);
 
             // Because we are in preload, it doesn't matter if the property
@@ -266,7 +266,7 @@ static void preload_local(
                   clusterlog.info,
                   "Ignoring invalid property: {}={}",
                   key,
-                  YAML::Dump(value));
+                  property.format_raw(YAML::Dump(value)));
                 result.value().get().invalid.push_back(key);
             }
         }
@@ -520,11 +520,6 @@ void config_manager::merge_apply_result(
   config_status& status,
   cluster_config_delta_cmd_data const& data,
   apply_result const& r) {
-    vlog(
-      clusterlog.trace,
-      "merge_apply_result: data {} {}",
-      fmt::ptr(&data),
-      data.upsert.size());
     status.restart |= r.restart;
 
     std::set<ss::sstring> errored_properties;
