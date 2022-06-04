@@ -77,6 +77,9 @@ struct ntp_leader_revision {
 
 struct update_leadership_request {
     std::vector<ntp_leader> leaders;
+
+    explicit update_leadership_request(std::vector<ntp_leader> leaders)
+      : leaders(std::move(leaders)) {}
 };
 
 struct update_leadership_request_v2 {
@@ -95,6 +98,17 @@ struct get_leadership_reply {
 } // namespace cluster
 
 namespace reflection {
+template<>
+struct adl<cluster::update_leadership_request> {
+    void to(iobuf& out, cluster::update_leadership_request&& r) {
+        serialize(out, std::move(r.leaders));
+    }
+    cluster::update_leadership_request from(iobuf_parser& in) {
+        auto leaders = adl<std::vector<cluster::ntp_leader>>{}.from(in);
+        return cluster::update_leadership_request(std::move(leaders));
+    }
+};
+
 template<>
 struct adl<cluster::ntp_leader_revision> {
     void to(iobuf& out, cluster::ntp_leader_revision&& l) {

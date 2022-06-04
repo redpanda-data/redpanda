@@ -453,8 +453,8 @@ ss::future<> metadata_dissemination_service::dispatch_one_update(
                         updates,
                         target_id);
                       return proto.update_leadership(
-                        update_leadership_request{
-                          from_ntp_leader_revision_vector(std::move(updates))},
+                        update_leadership_request(
+                          from_ntp_leader_revision_vector(std::move(updates))),
                         rpc::client_opts(
                           _dissemination_interval + rpc::clock_type::now()));
                   })
