@@ -75,10 +75,8 @@ struct ntp_leader_revision {
     }
 };
 
-using ntp_leaders = std::vector<ntp_leader>;
-
 struct update_leadership_request {
-    ntp_leaders leaders;
+    std::vector<ntp_leader> leaders;
 };
 
 struct update_leadership_request_v2 {
@@ -91,7 +89,7 @@ struct update_leadership_reply {};
 struct get_leadership_request {};
 
 struct get_leadership_reply {
-    ntp_leaders leaders;
+    std::vector<ntp_leader> leaders;
 };
 
 } // namespace cluster

@@ -85,7 +85,7 @@ metadata_dissemination_handler::do_update_leadership(
 
 static get_leadership_reply
 make_get_leadership_reply(const partition_leaders_table& leaders) {
-    ntp_leaders ret;
+    std::vector<ntp_leader> ret;
     leaders.for_each_leader([&ret](
                               model::topic_namespace_view tp_ns,
                               model::partition_id pid,
