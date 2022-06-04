@@ -101,11 +101,25 @@ struct get_leadership_request {
 
 struct get_leadership_reply {
     std::vector<ntp_leader> leaders;
+
+    explicit get_leadership_reply(std::vector<ntp_leader> leaders)
+      : leaders(std::move(leaders)) {}
 };
 
 } // namespace cluster
 
 namespace reflection {
+template<>
+struct adl<cluster::get_leadership_reply> {
+    void to(iobuf& out, cluster::get_leadership_reply&& r) {
+        serialize(out, r.leaders);
+    }
+    cluster::get_leadership_reply from(iobuf_parser& in) {
+        auto leaders = adl<std::vector<cluster::ntp_leader>>{}.from(in);
+        return cluster::get_leadership_reply(std::move(leaders));
+    }
+};
+
 template<>
 struct adl<cluster::get_leadership_request> {
     void to(iobuf&, cluster::get_leadership_request&&) {}
