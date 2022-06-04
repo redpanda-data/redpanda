@@ -91,7 +91,9 @@ struct update_leadership_request_v2 {
       : leaders(std::move(leaders)) {}
 };
 
-struct update_leadership_reply {};
+struct update_leadership_reply {
+    update_leadership_reply() = default;
+};
 
 struct get_leadership_request {};
 
@@ -102,6 +104,12 @@ struct get_leadership_reply {
 } // namespace cluster
 
 namespace reflection {
+template<>
+struct adl<cluster::update_leadership_reply> {
+    void to(iobuf&, cluster::update_leadership_reply&&) {}
+    cluster::update_leadership_reply from(iobuf_parser&) { return {}; }
+};
+
 template<>
 struct adl<cluster::update_leadership_request> {
     void to(iobuf& out, cluster::update_leadership_request&& r) {
