@@ -209,7 +209,7 @@ static ss::future<read_result> do_read_from_ntp(
         return ss::make_ready_future<read_result>(
           error_code::unknown_topic_or_partition);
     }
-    if (unlikely(!kafka_partition->is_elected_leader())) {
+    if (unlikely(!kafka_partition->is_leader())) {
         return ss::make_ready_future<read_result>(
           error_code::not_leader_for_partition);
     }
