@@ -33,11 +33,12 @@ from_ntp_leaders(std::vector<cluster::ntp_leader> old_leaders) {
       old_leaders.end(),
       std::back_inserter(leaders),
       [](cluster::ntp_leader& leader) {
-          return cluster::ntp_leader_revision{
-            .ntp = std::move(leader.ntp),
-            .term = leader.term,
-            .leader_id = leader.leader_id,
-          };
+          return cluster::ntp_leader_revision(
+            std::move(leader.ntp),
+            leader.term,
+            leader.leader_id,
+            model::revision_id{} /* explicitly default */
+          );
       });
     return leaders;
 }

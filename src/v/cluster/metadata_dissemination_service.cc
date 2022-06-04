@@ -87,11 +87,7 @@ void metadata_dissemination_service::disseminate_leadership(
       ntp,
       leader_id.value());
 
-    _requests.push_back(ntp_leader_revision{
-      .ntp = std::move(ntp),
-      .term = term,
-      .leader_id = leader_id,
-      .revision = revision});
+    _requests.emplace_back(std::move(ntp), term, leader_id, revision);
 }
 
 ss::future<> metadata_dissemination_service::start() {

@@ -51,6 +51,17 @@ struct ntp_leader_revision {
     model::term_id term;
     std::optional<model::node_id> leader_id;
     model::revision_id revision;
+
+    ntp_leader_revision(
+      model::ntp ntp,
+      model::term_id term,
+      std::optional<model::node_id> leader_id,
+      model::revision_id revision)
+      : ntp(std::move(ntp))
+      , term(term)
+      , leader_id(leader_id)
+      , revision(revision) {}
+
     friend std::ostream&
     operator<<(std::ostream& o, const ntp_leader_revision& r) {
         fmt::print(
@@ -86,6 +97,20 @@ struct get_leadership_reply {
 } // namespace cluster
 
 namespace reflection {
+template<>
+struct adl<cluster::ntp_leader_revision> {
+    void to(iobuf& out, cluster::ntp_leader_revision&& l) {
+        serialize(out, std::move(l.ntp), l.term, l.leader_id, l.revision);
+    }
+    cluster::ntp_leader_revision from(iobuf_parser& in) {
+        auto ntp = adl<model::ntp>{}.from(in);
+        auto term = adl<model::term_id>{}.from(in);
+        auto leader = adl<std::optional<model::node_id>>{}.from(in);
+        auto revision = adl<model::revision_id>{}.from(in);
+        return {std::move(ntp), term, leader, revision};
+    }
+};
+
 template<>
 struct adl<cluster::ntp_leader> {
     void to(iobuf& out, cluster::ntp_leader&& l) {
