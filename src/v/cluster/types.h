@@ -51,6 +51,10 @@ struct allocate_id_request {
 struct allocate_id_reply {
     int64_t id;
     errc ec;
+
+    allocate_id_reply(int64_t id, errc ec)
+      : id(id)
+      , ec(ec) {}
 };
 
 enum class tx_errc {
@@ -1200,6 +1204,18 @@ struct adl<cluster::allocate_id_request> {
     cluster::allocate_id_request from(iobuf_parser& in) {
         auto timeout = adl<model::timeout_clock::duration>{}.from(in);
         return cluster::allocate_id_request(timeout);
+    }
+};
+
+template<>
+struct adl<cluster::allocate_id_reply> {
+    void to(iobuf& out, cluster::allocate_id_reply&& r) {
+        serialize(out, r.id, r.ec);
+    }
+    cluster::allocate_id_reply from(iobuf_parser& in) {
+        auto id = adl<int64_t>{}.from(in);
+        auto ec = adl<cluster::errc>{}.from(in);
+        return {id, ec};
     }
 };
 
