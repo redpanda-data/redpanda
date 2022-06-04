@@ -27,9 +27,12 @@ struct ntp_leader {
     std::optional<model::node_id> leader_id;
 
     friend std::ostream& operator<<(std::ostream& o, const ntp_leader& l) {
-        o << "{ " << l.ntp << ", term: " << l.term
-          << ", leader_id: " << (l.leader_id ? l.leader_id.value()() : -1)
-          << " }";
+        fmt::print(
+          o,
+          "{{ntp: {}, term: {}, leader: {}}}",
+          l.ntp,
+          l.term,
+          l.leader_id ? l.leader_id.value()() : -1);
         return o;
     }
 };
