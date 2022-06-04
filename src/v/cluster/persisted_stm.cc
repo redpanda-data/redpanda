@@ -229,7 +229,7 @@ ss::future<bool> persisted_stm::do_sync(
 
 ss::future<bool> persisted_stm::sync(model::timeout_clock::duration timeout) {
     auto term = _c->term();
-    if (!_c->is_elected_leader()) {
+    if (!_c->is_leader()) {
         co_return false;
     }
     if (_insync_term == term) {

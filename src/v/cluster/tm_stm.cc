@@ -69,7 +69,7 @@ std::optional<tm_transaction> tm_stm::get_tx(kafka::transactional_id tx_id) {
 }
 
 ss::future<checked<model::term_id, tm_stm::op_status>> tm_stm::barrier() {
-    if (!_c->is_elected_leader()) {
+    if (!_c->is_leader()) {
         return ss::make_ready_future<
           checked<model::term_id, tm_stm::op_status>>(
           tm_stm::op_status::not_leader);
@@ -104,7 +104,7 @@ ss::future<checked<model::term_id, tm_stm::op_status>> tm_stm::barrier() {
 
 ss::future<checked<model::term_id, tm_stm::op_status>>
 tm_stm::sync(model::timeout_clock::duration timeout) {
-    if (!_c->is_elected_leader()) {
+    if (!_c->is_leader()) {
         co_return tm_stm::op_status::not_leader;
     }
 
