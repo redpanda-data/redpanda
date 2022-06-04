@@ -95,7 +95,9 @@ struct update_leadership_reply {
     update_leadership_reply() = default;
 };
 
-struct get_leadership_request {};
+struct get_leadership_request {
+    get_leadership_request() = default;
+};
 
 struct get_leadership_reply {
     std::vector<ntp_leader> leaders;
@@ -104,6 +106,12 @@ struct get_leadership_reply {
 } // namespace cluster
 
 namespace reflection {
+template<>
+struct adl<cluster::get_leadership_request> {
+    void to(iobuf&, cluster::get_leadership_request&&) {}
+    cluster::get_leadership_request from(iobuf_parser&) { return {}; }
+};
+
 template<>
 struct adl<cluster::update_leadership_reply> {
     void to(iobuf&, cluster::update_leadership_reply&&) {}
