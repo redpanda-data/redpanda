@@ -429,7 +429,7 @@ ss::future<> metadata_dissemination_service::dispatch_one_update(
               target_id);
             return proto
               .update_leadership_v2(
-                update_leadership_request_v2{std::move(updates)},
+                update_leadership_request_v2(std::move(updates)),
                 rpc::client_opts(
                   _dissemination_interval + rpc::clock_type::now()))
               .then(&rpc::get_ctx_data<update_leadership_reply>);

@@ -85,6 +85,10 @@ struct update_leadership_request {
 struct update_leadership_request_v2 {
     static constexpr int8_t version = 0;
     std::vector<ntp_leader_revision> leaders;
+
+    explicit update_leadership_request_v2(
+      std::vector<ntp_leader_revision> leaders)
+      : leaders(std::move(leaders)) {}
 };
 
 struct update_leadership_reply {};
@@ -146,8 +150,7 @@ struct adl<cluster::update_leadership_request_v2> {
         adl<int8_t>{}.from(in);
         auto leaders = adl<std::vector<cluster::ntp_leader_revision>>{}.from(
           in);
-        return cluster::update_leadership_request_v2{
-          .leaders = std::move(leaders)};
+        return cluster::update_leadership_request_v2(std::move(leaders));
     }
 };
 } // namespace reflection
