@@ -11,6 +11,7 @@
 
 #pragma once
 #include "bytes/iobuf_parser.h"
+#include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "reflection/adl.h"
@@ -25,6 +26,14 @@ struct ntp_leader {
     model::ntp ntp;
     model::term_id term;
     std::optional<model::node_id> leader_id;
+
+    ntp_leader(
+      model::ntp ntp,
+      model::term_id term,
+      std::optional<model::node_id> leader_id)
+      : ntp(std::move(ntp))
+      , term(term)
+      , leader_id(leader_id) {}
 
     friend std::ostream& operator<<(std::ostream& o, const ntp_leader& l) {
         fmt::print(
@@ -77,6 +86,19 @@ struct get_leadership_reply {
 } // namespace cluster
 
 namespace reflection {
+template<>
+struct adl<cluster::ntp_leader> {
+    void to(iobuf& out, cluster::ntp_leader&& l) {
+        serialize(out, std::move(l.ntp), l.term, l.leader_id);
+    }
+    cluster::ntp_leader from(iobuf_parser& in) {
+        auto ntp = adl<model::ntp>{}.from(in);
+        auto term = adl<model::term_id>{}.from(in);
+        auto leader = adl<std::optional<model::node_id>>{}.from(in);
+        return {std::move(ntp), term, leader};
+    }
+};
+
 template<>
 struct adl<cluster::update_leadership_request_v2> {
     void to(iobuf& out, cluster::update_leadership_request_v2&& req) {

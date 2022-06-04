@@ -409,11 +409,8 @@ std::vector<cluster::ntp_leader> from_ntp_leader_revision_vector(
       leaders.end(),
       std::back_inserter(old_leaders),
       [](cluster::ntp_leader_revision& leader) {
-          return cluster::ntp_leader{
-            .ntp = std::move(leader.ntp),
-            .term = leader.term,
-            .leader_id = leader.leader_id,
-          };
+          return cluster::ntp_leader(
+            std::move(leader.ntp), leader.term, leader.leader_id);
       });
     return old_leaders;
 }
