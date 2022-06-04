@@ -43,6 +43,9 @@ constexpr cluster_version invalid_version = cluster_version{-1};
 
 struct allocate_id_request {
     model::timeout_clock::duration timeout;
+
+    explicit allocate_id_request(model::timeout_clock::duration timeout)
+      : timeout(timeout) {}
 };
 
 struct allocate_id_reply {
@@ -1187,6 +1190,17 @@ template<>
 struct adl<cluster::set_maintenance_mode_reply> {
     void to(iobuf&, cluster::set_maintenance_mode_reply&&);
     cluster::set_maintenance_mode_reply from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::allocate_id_request> {
+    void to(iobuf& out, cluster::allocate_id_request&& r) {
+        serialize(out, r.timeout);
+    }
+    cluster::allocate_id_request from(iobuf_parser& in) {
+        auto timeout = adl<model::timeout_clock::duration>{}.from(in);
+        return cluster::allocate_id_request(timeout);
+    }
 };
 
 } // namespace reflection
