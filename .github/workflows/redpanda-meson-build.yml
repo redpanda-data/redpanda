@@ -1,0 +1,50 @@
+# Copyright 2022 Redpanda Data, Inc.
+#
+# Use of this software is governed by the Business Source License
+# included in the file licenses/BSL.md
+#
+# As of the Change Date specified in that file, in accordance with
+# the Business Source License, use of this software will be governed
+# by the Apache License, Version 2.0
+
+name: build-meson
+on: [push, pull_request]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        build_type: [debug, debugoptimized, release]
+        default_library: [static, shared]
+    runs-on: ubuntu-22.04
+    steps:
+    - name: install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -qq \
+          python3 python3-pip python3-setuptools python3-wheel ninja-build \
+          libboost1.74-all-dev libprotobuf-dev libprotoc-dev libcrypto++-dev \
+          pkg-config libfmt-dev liblz4-dev libgnutls28-dev libc-ares-dev \
+          libyaml-cpp-dev ragel clang libabsl-dev libsnappy-dev libxxhash-dev \
+          libzstd-dev git python3-jsonschema xfslibs-dev valgrind systemtap-sdt-dev \
+          libsctp-dev ccache python3-jinja2 libroaring-dev cmake lld
+        sudo pip3 install meson
+    - name: checkout
+      uses: actions/checkout@v3
+    - name: Fetch ccache cache
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/ccache
+        key: meson-cache-${{ matrix.default_library }}-${{ matrix.build_type }}
+    - name: Configure Redpanda build directory
+      env:
+        CC: "ccache clang"
+        CXX: "ccache clang++"
+        CC_LD: "lld"
+        CXX_LD: "lld"
+      run: meson builddir -Dbuildtype=${{ matrix.build_type }} -Ddefault_library=${{ matrix.default_library }}
+    - name: Build Redpanda
+      run: |
+        ccache -z
+        meson compile -C builddir
+        ccache -s -v
