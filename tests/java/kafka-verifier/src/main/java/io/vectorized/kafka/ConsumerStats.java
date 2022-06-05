@@ -39,7 +39,7 @@ public class ConsumerStats {
     this.maxRecords = numRecords;
   }
 
-  public void record(int iter, int latency, int bytes, long time) {
+  public void record(final int iter, final int latency, final int bytes, final long time) {
     this.count++;
     this.bytes += bytes;
     this.totalLatency += latency;
