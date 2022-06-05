@@ -12,6 +12,7 @@ import time
 import re
 import random
 import ducktape.errors
+from string import Template
 from typing import Optional
 
 from ducktape.mark import parametrize
@@ -199,15 +200,19 @@ class RaftAvailabilityTest(RedpandaTest):
             f"Tracking stats on expected new leader node {expect_new_leader_id} {expect_new_leader_node.account.hostname}"
         )
 
+        metrics_to_watch = [
+            "vectorized_raft_leadership_changes_total",
+            "vectorized_raft_leader_for",
+            "vectorized_raft_received_vote_requests_total"
+        ]
+
+        metrics_query = Template(f"select value from metrics where name = '$name' and topic='{self.topic}'")
+
         observer_metrics = MetricCheck(self.logger, self.redpanda,
-                                       observer_node,
-                                       re.compile("vectorized_raft_.*"),
-                                       {'topic': self.topic})
+                                       observer_node, metrics_query, metrics_to_watch)
 
         new_leader_metrics = MetricCheck(self.logger, self.redpanda,
-                                         expect_new_leader_node,
-                                         re.compile("vectorized_raft_.*"),
-                                         {'topic': self.topic})
+                                         expect_new_leader_node, metrics_query, metrics_to_watch)
 
         self.logger.info(
             f"Stopping node {initial_leader_id} ({leader_node.account.hostname})"
@@ -241,18 +246,16 @@ class RaftAvailabilityTest(RedpandaTest):
         # It would be good to impose stricter checks, to detect bugs that manifest as
         # elections taking more iterations than expected, once we have a less contended
         # test environment to execute in.
-        observer_metrics.expect([
-            ("vectorized_raft_leadership_changes_total", lambda a, b: b > a),
-            ("vectorized_raft_leader_for", lambda a, b: int(b) == 0),
-            ("vectorized_raft_received_vote_requests_total",
-             lambda a, b: b > a),
+        assert observer_metrics.evaluate([
+            lambda a, b: b > a,
+            lambda a, b: int(b) == 0,
+            lambda a, b: b > a,
         ])
 
-        new_leader_metrics.expect([
-            ("vectorized_raft_leadership_changes_total", lambda a, b: b > a),
-            ("vectorized_raft_leader_for", lambda a, b: int(b) == 1),
-            ("vectorized_raft_received_vote_requests_total",
-             lambda a, b: b == a),
+        assert new_leader_metrics.evaluate([
+            lambda a, b: b > a,
+            lambda a, b: int(b) == 1,
+            lambda a, b: b == a,
         ])
 
     @cluster(num_nodes=3)

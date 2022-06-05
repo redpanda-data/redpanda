@@ -11,6 +11,7 @@ import random
 from rptest.services.cluster import cluster
 from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
+from pandasql import PandaSQL
 
 from rptest.clients.types import TopicSpec
 from rptest.tests.end_to_end import EndToEndTest
@@ -96,16 +97,13 @@ class FullNodeRecoveryTest(EndToEndTest):
                                  timeout=90)
 
         def all_topics_recovered():
-            metric = self.redpanda.metrics_sample("under_replicated_replicas",
-                                                  self.redpanda.nodes)
-            under_replicated = filter(lambda s: s.value == 1, metric.samples)
-            under_replicated = list(
-                map(
-                    lambda s: (s.labels['namespace'], s.labels['topic'], s.
-                               labels['partition']), under_replicated))
-            self.redpanda.logger.info(
-                f"under replicated partitions: {list(under_replicated)}")
-            return len(under_replicated) == 0
+            samples = self.redpanda.metrics_sample("under_replicated_replicas", self.redpanda.nodes)
+            if samples is None:
+                return False # Metrics not populated yet.
+            filter_query = "select namespace, topic, partition from samples where value = 1"
+            under_replicated = PandaSQL()(filter_query)
+            self.redpanda.logger.info(f"under replicated partitions: {under_replicated}")
+            return len(under_replicated.index) == 0
 
         # wait for prepopulated topic to recover
         wait_until(all_topics_recovered, 60, 1)

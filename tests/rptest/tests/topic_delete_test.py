@@ -9,6 +9,7 @@
 
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
+from string import Template
 
 import time
 import re
@@ -78,7 +79,7 @@ class TopicDeleteStressTest(RedpandaTest):
     The purpose of this test is to execute topic deletion during compaction process.
 
     The testing strategy is:
-        1. Start to produce messaes
+        1. Start to produce messages
         2. Produce until compaction starting
         3. Delete topic
         4. Verify that all data for kafka namespace will be deleted
@@ -108,18 +109,16 @@ class TopicDeleteStressTest(RedpandaTest):
                                    topic_name, 1024, 100000)
             producer.start()
 
+            metrics_query = Template("select sum(value) as value from metrics where name = '$name'")
+
             metrics = [
-                MetricCheck(self.logger, self.redpanda, n,
-                            'vectorized_storage_log_compacted_segment_total',
-                            {}, sum) for n in self.redpanda.nodes
+                MetricCheck(self.logger, self.redpanda, n, metrics_query, ['vectorized_storage_log_compacted_segment_total'])
+                    for n in self.redpanda.nodes
             ]
 
             def check_compaction():
                 return all([
-                    m.evaluate([
-                        ('vectorized_storage_log_compacted_segment_total',
-                         lambda a, b: b > 3)
-                    ]) for m in metrics
+                    m.evaluate([lambda a, b: b > 3]) for m in metrics
                 ])
 
             wait_until(check_compaction,

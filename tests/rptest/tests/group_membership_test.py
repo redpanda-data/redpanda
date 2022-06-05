@@ -13,6 +13,7 @@ import random
 
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
+from pandasql import PandaSQL
 
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
@@ -134,15 +135,12 @@ class GroupMetricsTest(RedpandaTest):
         self._ctx = ctx
 
     def _get_offset_from_metrics(self, group):
-        metric = self.redpanda.metrics_sample("kafka_group_offset")
-        if metric is None:
+        samples = self.redpanda.metrics_sample("kafka_group_offset")
+        if samples is None:
             return None
-        metric = metric.label_filter(dict(group=group))
-        res = {}
-        for sample in metric.samples:
-            res[(sample.labels['topic'],
-                 sample.labels['partition'])] = sample.value
-        return res
+        query = f"select topic, partition, value from samples where `group`='{group}'"
+        result = PandaSQL()(query)
+        return dict(zip(zip(result.topic, result.partition), result.value))
 
     @cluster(num_nodes=3)
     def test_check_value(self):
@@ -282,7 +280,7 @@ class GroupMetricsTest(RedpandaTest):
 
         # Wait until cluster starts producing metrics
         wait_until(
-            lambda: self.redpanda.metrics_sample("kafka_group_offset") != None,
+            lambda: self.redpanda.metrics_sample("kafka_group_offset") is not None,
             timeout_sec=30,
             backoff_sec=5)
 
@@ -300,19 +298,17 @@ class GroupMetricsTest(RedpandaTest):
             """
             Check that metrics are produced only by the given node.
             """
-            metrics = self.redpanda.metrics_sample("kafka_group_offset")
-            if not metrics:
+            samples = self.redpanda.metrics_sample("kafka_group_offset")
+            if samples is None:
                 self.logger.debug("No metrics found")
                 return False
-            metrics = metrics.label_filter(dict(group=group)).samples
-            for metric in metrics:
-                self.logger.debug(
-                    f"Retrieved metric from node={metric.node.account.hostname}: {metric}"
-                )
-            return all([
-                metric.node.account.hostname == node.account.hostname
-                for metric in metrics
-            ])
+            # Group samples by hostname, we should only see samples from the
+            # input node.
+            query = f"""select node as n, count(*) as c from samples where
+               `group`='{group}' group by node
+            """
+            result = PandaSQL()(query)
+            return len(result.index) == 1 and result.at[0, 'n'] == node.account.hostname
 
         def transfer_leadership(new_leader):
             """

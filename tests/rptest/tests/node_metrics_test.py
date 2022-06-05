@@ -38,9 +38,9 @@ class NodeMetricsTest(RedpandaTest):
         super().__init__(test_context=test_ctx)
 
     def _get_metrics_vals(self, name_substr: str) -> list[float]:
-        family = self.redpanda.metrics_sample(name_substr)
-        assert family
-        return list(map(lambda s: floor(s.value), family.samples))
+        samples = self.redpanda.metrics_sample(name_substr)
+        assert samples is not None
+        return [floor(val) for val in samples['value'].values.tolist()]
 
     def _node_disk_total_bytes(self) -> list[float]:
         return self._get_metrics_vals("storage_disk_total_bytes")
