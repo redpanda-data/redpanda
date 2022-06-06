@@ -970,6 +970,7 @@ void admin_server::register_cluster_config_routes() {
           // but we also do an early validation pass here to avoid writing
           // clearly wrong things into the log & give better feedback
           // to the API consumer.
+          absl::flat_hash_set<ss::sstring> upsert_no_op_names;
           if (!get_boolean_query_param(*req, "force")) {
               // A scratch copy of configuration: we must not touch
               // the real live configuration object, that will be updated
@@ -1019,7 +1020,10 @@ void admin_server::register_cluster_config_routes() {
                           // from it's value setter even after a non-throwing
                           // call to validate (if this happens validate() was
                           // implemented wrongly, but let's be safe)
-                          property.set_value(val);
+                          auto changed = property.set_value(val);
+                          if (!changed) {
+                              upsert_no_op_names.insert(yaml_name);
+                          }
                       }
                   } catch (YAML::BadConversion const& e) {
                       // Be helpful, and give the user an example of what
@@ -1111,6 +1115,24 @@ void admin_server::register_cluster_config_routes() {
               // A dry run doesn't really need a result, but it's simpler for
               // the API definition if we return the same structure as a
               // normal write.
+              ss::httpd::cluster_config_json::cluster_config_write_result
+                result;
+              result.config_version = current_version;
+              co_return ss::json::json_return_type(std::move(result));
+          }
+
+          if (
+            update.upsert.size() == upsert_no_op_names.size()
+            && update.remove.empty()) {
+              vlog(
+                logger.trace,
+                "patch_cluster_config: ignoring request, {} upserts resulted "
+                "in no-ops",
+                update.upsert.size());
+              auto current_version
+                = co_await _controller->get_config_manager().invoke_on(
+                  cluster::config_manager::shard,
+                  [](cluster::config_manager& cm) { return cm.get_version(); });
               ss::httpd::cluster_config_json::cluster_config_write_result
                 result;
               result.config_version = current_version;
