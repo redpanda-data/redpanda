@@ -75,6 +75,7 @@ class ResourceLimitsTest(RedpandaTest):
         self.redpanda.set_resource_settings(ResourceSettings(num_cpus=1))
 
         self.redpanda.set_extra_rp_conf({
+            'segment_fallocation_step': 16384,
             # Disable memory limit: on a test node the physical memory can easily
             # be the limiting factor
             'topic_memory_per_partition': None,
