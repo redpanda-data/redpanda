@@ -58,7 +58,7 @@ type UserAPI interface {
 func NewCreateUserCommand(fs afero.Fs) *cobra.Command {
 	var userOld, pass, passOld, mechanism string
 	cmd := &cobra.Command{
-		Use:   "create [USER} -p [PASS]",
+		Use:   "create [USER] -p [PASS]",
 		Short: "Create a SASL user.",
 		Long: `Create a SASL user.
 
@@ -130,7 +130,7 @@ acl help text for more info.
 		&mechanism,
 		"mechanism",
 		strings.ToLower(admin.ScramSha256),
-		"SASL mechanism to use (scram-sha-256, scram-sha-512, case insensitive)",
+		"SASL mechanism to use for the user you are creating (scram-sha-256, scram-sha-512, case insensitive); not to be confused with the global flag --sasl-mechanism which is used for authenticating the rpk client",
 	)
 
 	return cmd
