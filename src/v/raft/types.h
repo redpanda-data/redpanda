@@ -66,7 +66,7 @@ struct follower_index_metadata {
     follower_index_metadata(const follower_index_metadata&) = delete;
     follower_index_metadata& operator=(const follower_index_metadata&) = delete;
     follower_index_metadata(follower_index_metadata&&) = default;
-    follower_index_metadata& operator=(follower_index_metadata&&) = default;
+    follower_index_metadata& operator=(follower_index_metadata&&) = delete;
 
     vnode node_id;
     // index of last known log for this follower
