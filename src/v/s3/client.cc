@@ -167,7 +167,9 @@ std::ostream& operator<<(std::ostream& o, const configuration& c) {
     o << "{access_key:" << c.access_key << ",region:" << c.region()
       << ",secret_key:****"
       << ",access_point_uri:" << c.uri() << ",server_addr:" << c.server_addr
-      << ",max_idle_time:" << std::chrono::milliseconds(c.max_idle_time).count()
+      << ",max_idle_time:"
+      << std::chrono::duration_cast<std::chrono::milliseconds>(c.max_idle_time)
+           .count()
       << "}";
     return o;
 }

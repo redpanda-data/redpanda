@@ -92,12 +92,12 @@ void replicated_partition_probe::setup_metrics(const model::ntp& ntp) {
           },
           sm::description("Number of under replicated replicas"),
           labels),
-        sm::make_derive(
+        sm::make_counter(
           "records_produced",
           [this] { return _records_produced; },
           sm::description("Total number of records produced"),
           labels),
-        sm::make_derive(
+        sm::make_counter(
           "records_fetched",
           [this] { return _records_fetched; },
           sm::description("Total number of records fetched"),

@@ -32,7 +32,10 @@ std::ostream& operator<<(std::ostream& os, const std::optional<T>& opt) {
 
 inline std::ostream&
 operator<<(std::ostream& o, const ss::lowres_clock::duration& d) {
-    fmt::print(o, "{}", std::chrono::milliseconds(d).count());
+    fmt::print(
+      o,
+      "{}",
+      std::chrono::duration_cast<std::chrono::milliseconds>(d).count());
     return o;
 }
 

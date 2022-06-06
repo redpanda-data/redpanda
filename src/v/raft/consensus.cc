@@ -3086,7 +3086,11 @@ std::vector<follower_metrics> consensus::get_follower_metrics() const {
     const auto offsets = _log.offsets();
     for (const auto& f : _fstats) {
         ret.push_back(build_follower_metrics(
-          f.first.id(), offsets, _jit.base_duration(), f.second));
+          f.first.id(),
+          offsets,
+          std::chrono::duration_cast<std::chrono::milliseconds>(
+            _jit.base_duration()),
+          f.second));
     }
 
     return ret;
@@ -3105,7 +3109,11 @@ consensus::get_follower_metrics(model::node_id id) const {
         return errc::node_does_not_exists;
     }
     return build_follower_metrics(
-      id, _log.offsets(), _jit.base_duration(), it->second);
+      id,
+      _log.offsets(),
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+        _jit.base_duration()),
+      it->second);
 }
 
 ss::future<std::optional<storage::timequery_result>>

@@ -79,7 +79,7 @@ void probe::setup_metrics(const model::ntp& ntp) {
           [this] { return _bytes_written; },
           sm::description("Total number of bytes written"),
           labels),
-        sm::make_derive(
+        sm::make_counter(
           "batches_written",
           [this] { return _batches_written; },
           sm::description("Total number of batches written"),
@@ -94,48 +94,48 @@ void probe::setup_metrics(const model::ntp& ntp) {
           [this] { return _cached_bytes_read; },
           sm::description("Total number of cached bytes read"),
           labels),
-        sm::make_derive(
+        sm::make_counter(
           "batches_read",
           [this] { return _batches_read; },
           sm::description("Total number of batches read"),
           labels),
-        sm::make_derive(
+        sm::make_counter(
           "cached_batches_read",
           [this] { return _cached_batches_read; },
           sm::description("Total number of cached batches read"),
           labels),
-        sm::make_derive(
+        sm::make_counter(
           "log_segments_created",
           [this] { return _log_segments_created; },
           sm::description("Number of created log segments"),
           labels),
-        sm::make_derive(
+        sm::make_counter(
           "log_segments_removed",
           [this] { return _log_segments_removed; },
           sm::description("Number of removed log segments"),
           labels),
-        sm::make_derive(
+        sm::make_counter(
           "log_segments_active",
           [this] { return _log_segments_active; },
           sm::description("Number of active log segments"),
           labels),
-        sm::make_derive(
+        sm::make_counter(
           "batch_parse_errors",
           [this] { return _batch_parse_errors; },
           sm::description("Number of batch parsing (reading) errors"),
           labels),
-        sm::make_derive(
+        sm::make_counter(
           "batch_write_errors",
           [this] { return _batch_write_errors; },
           sm::description("Number of batch write errors"),
           labels),
-        sm::make_derive(
+        sm::make_counter(
           "corrupted_compaction_indices",
           [this] { return _corrupted_compaction_index; },
           sm::description("Number of times we had to re-construct the "
                           ".compaction index on a segment"),
           labels),
-        sm::make_derive(
+        sm::make_counter(
           "compacted_segment",
           [this] { return _segment_compacted; },
           sm::description("Number of compacted segments"),
@@ -177,22 +177,22 @@ void readers_cache_probe::setup_metrics(const model::ntp& ntp) {
     _metrics.add_group(
       prometheus_sanitize::metrics_name("storage:log"),
       {
-        sm::make_derive(
+        sm::make_counter(
           "readers_added",
           [this] { return _readers_added; },
           sm::description("Number of readers added to cache"),
           labels),
-        sm::make_derive(
+        sm::make_counter(
           "readers_evicted",
           [this] { return _readers_evicted; },
           sm::description("Number of readers evicted from cache"),
           labels),
-        sm::make_derive(
+        sm::make_counter(
           "cache_hits",
           [this] { return _cache_hits; },
           sm::description("Reader cache hits"),
           labels),
-        sm::make_derive(
+        sm::make_counter(
           "cache_misses",
           [this] { return _cache_misses; },
           sm::description("Reader cache misses"),
