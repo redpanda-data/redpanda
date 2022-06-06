@@ -29,10 +29,10 @@ class feature_barrier_tag_state {
 public:
     feature_barrier_tag_state() {}
 
-    feature_barrier_tag_state(bool e)
+    explicit feature_barrier_tag_state(bool e)
       : _exited(e) {}
 
-    feature_barrier_tag_state(std::pair<model::node_id, bool> p)
+    explicit feature_barrier_tag_state(std::pair<model::node_id, bool> p)
       : _exited(false) {
         _nodes_entered.insert(p);
     }
