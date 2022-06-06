@@ -21,6 +21,13 @@ namespace kafka {
 
 using tagged_fields = std::vector<std::tuple<uint32_t, iobuf>>;
 
+/// Used to signify if a kafka request will never be interpreted as flexible.
+/// Consumed by our generator and flexible method helpers.
+///
+/// The only request that is never flexible is sasl_handshake_request - 17.
+/// Older versions of schemas may also contain values of 'none' that map to -1
+static constexpr api_version never_flexible = api_version(-1);
+
 static constexpr model::node_id consumer_replica_id{-1};
 
 template<typename T>

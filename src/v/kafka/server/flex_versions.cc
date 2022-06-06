@@ -9,6 +9,7 @@
 
 #include "kafka/server/flex_versions.h"
 
+#include "kafka/protocol/types.h"
 #include "kafka/server/handlers/handlers.h"
 namespace kafka {
 
@@ -16,11 +17,6 @@ template<typename T>
 concept HasMinFlex = requires(T) {
     {T::min_flexible};
 };
-
-/// The only request that is never flexible is sasl_handshake_request - 17
-/// Older versions of our schema may also contain values of 'none' that map
-/// to -1
-static constexpr api_version never_flexible = api_version(-1);
 
 /// Not every value from 0 -> max_api_key is a valid request, non-supported
 /// requests will map to a value of api_key(-2)
