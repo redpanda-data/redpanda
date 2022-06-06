@@ -161,7 +161,8 @@ feature_barrier_response feature_barrier_state_base::update_barrier(
       entered);
     auto i = _barrier_state.find(tag);
     if (i == _barrier_state.end()) {
-        _barrier_state[tag] = feature_barrier_tag_state({{peer, entered}});
+        _barrier_state.erase(tag);
+        _barrier_state.emplace(tag, std::make_pair(peer, entered));
         return {false, false};
     } else {
         i->second.node_enter(peer, entered);

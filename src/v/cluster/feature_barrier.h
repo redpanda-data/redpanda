@@ -110,7 +110,8 @@ public:
     ss::future<> barrier(feature_barrier_tag tag);
 
     void exit_barrier(feature_barrier_tag tag) {
-        _barrier_state[tag] = feature_barrier_tag_state(true);
+        _barrier_state.erase(tag);
+        _barrier_state.emplace(tag, true);
     }
 
     struct update_barrier_result {
