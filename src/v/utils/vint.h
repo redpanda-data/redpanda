@@ -35,7 +35,7 @@ struct var_decoder {
      * @brief Incorporate a new byte into the state.
      * Returns true if the outer loop should break (last byte found).
      */
-    bool accept(uint8_t byte) {
+    bool accept(uint64_t byte) {
         /// \brief almost identical impl to leveldb, made generic for c++
         /// friendliness
         /// https://github.com/google/leveldb/blob/201f52201f/util/coding.cc#L116
@@ -59,7 +59,7 @@ inline std::pair<uint64_t, size_t>
 deserialize(Range&& r, uint8_t limit) noexcept {
     var_decoder decoder(limit);
     for (auto byte : r) {
-        if (decoder.accept(static_cast<uint8_t>(byte))) {
+        if (decoder.accept(byte)) {
             break;
         }
     }
