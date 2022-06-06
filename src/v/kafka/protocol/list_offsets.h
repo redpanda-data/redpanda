@@ -26,16 +26,6 @@
 
 namespace kafka {
 
-struct list_offsets_response;
-
-class list_offsets_api final {
-public:
-    using response_type = list_offsets_response;
-
-    static constexpr const char* name = "list_offsets";
-    static constexpr api_key key = api_key(2);
-};
-
 struct list_offsets_request final {
     using api_type = list_offsets_api;
 

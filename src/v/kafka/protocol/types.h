@@ -34,6 +34,7 @@ template<typename T>
 concept KafkaApi = requires(T request) {
     { T::name } -> std::convertible_to<const char*>;
     { T::key } -> std::convertible_to<const api_key&>;
+    { T::min_flexible } -> std::convertible_to<const api_version&>;
 };
 
 } // namespace kafka

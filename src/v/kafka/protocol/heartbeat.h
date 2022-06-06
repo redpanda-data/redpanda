@@ -21,15 +21,6 @@
 
 namespace kafka {
 
-struct heartbeat_response;
-
-struct heartbeat_api final {
-    using response_type = heartbeat_response;
-
-    static constexpr const char* name = "heartbeat";
-    static constexpr api_key key = api_key(12);
-};
-
 struct heartbeat_request final {
     using api_type = heartbeat_api;
 

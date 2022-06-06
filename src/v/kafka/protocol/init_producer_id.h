@@ -24,15 +24,6 @@
 
 namespace kafka {
 
-struct init_producer_id_response;
-
-struct init_producer_id_api final {
-    using response_type = init_producer_id_response;
-
-    static constexpr const char* name = "init producer_id";
-    static constexpr api_key key = api_key(22);
-};
-
 struct init_producer_id_request final {
     using api_type = init_producer_id_api;
 

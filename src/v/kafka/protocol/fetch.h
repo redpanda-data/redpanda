@@ -31,15 +31,6 @@
 
 namespace kafka {
 
-struct fetch_response;
-
-struct fetch_api final {
-    using response_type = fetch_response;
-
-    static constexpr const char* name = "fetch";
-    static constexpr api_key key = api_key(1);
-};
-
 struct fetch_request final {
     using api_type = fetch_api;
     using partition = fetch_partition;

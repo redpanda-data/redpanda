@@ -20,16 +20,6 @@
 
 namespace kafka {
 
-struct describe_groups_response;
-
-class describe_groups_api final {
-public:
-    using response_type = describe_groups_response;
-
-    static constexpr const char* name = "describe groups";
-    static constexpr api_key key = api_key(15);
-};
-
 struct describe_groups_request final {
     using api_type = describe_groups_api;
 

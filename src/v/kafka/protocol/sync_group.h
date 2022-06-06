@@ -23,15 +23,6 @@
 
 namespace kafka {
 
-struct sync_group_response;
-
-struct sync_group_api final {
-    using response_type = sync_group_response;
-
-    static constexpr const char* name = "sync group";
-    static constexpr api_key key = api_key(14);
-};
-
 struct sync_group_request final {
     using api_type = sync_group_api;
 

@@ -23,16 +23,6 @@
 
 namespace kafka {
 
-struct offset_fetch_response;
-
-class offset_fetch_api final {
-public:
-    using response_type = offset_fetch_response;
-
-    static constexpr const char* name = "offset fetch";
-    static constexpr api_key key = api_key(9);
-};
-
 struct offset_fetch_request final {
     using api_type = offset_fetch_api;
 
