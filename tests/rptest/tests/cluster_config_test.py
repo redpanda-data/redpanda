@@ -698,18 +698,18 @@ class ClusterConfigTest(RedpandaTest):
         assert noop_version is None
 
         # Now try setting a secret.
-        text = text.replace("cloud_storage_secret_key: [secret]",
+        text = text.replace("cloud_storage_secret_key:",
                             "cloud_storage_secret_key: different_secret")
         version_e = self._import(text, all)
         assert version_e is not None
         assert version_e > version_d
 
         # Because rpk doesn't know the contents of the secrets, it can't
-        # determine whether a secret is new, and a new version will be
-        # generated even if it's sent the same secret.
+        # determine whether a secret is new. The request should be de-duped on
+        # the server side, and the same config version should be returned.
         version_f = self._import(text, all)
         assert version_f is not None
-        assert version_f > version_e
+        assert version_f == version_e
 
         # Attempting to change the secret to the redacted version, on the other
         # hand, results in no version change, to prevent against accidentally
@@ -718,6 +718,12 @@ class ClusterConfigTest(RedpandaTest):
                             "cloud_storage_secret_key: [secret]")
         noop_version = self._import(text, allow_noop=True, all=True)
         assert noop_version is None
+
+        # Removing a secret should succeed with a new version.
+        text = text.replace("cloud_storage_secret_key: [secret]", "")
+        version_g = self._import(text, all)
+        assert version_g is not None
+        assert version_g > version_f
 
     @cluster(num_nodes=3)
     def test_rpk_import_validation(self):
