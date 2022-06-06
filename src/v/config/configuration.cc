@@ -237,6 +237,17 @@ configuration::configuration()
       "Disable registering metrics",
       base_property::metadata{},
       false)
+  , aggregate_metrics(
+      *this,
+      "aggregate_metrics",
+      "Enable aggregations of metrics returned by the prometheus '/metrics' "
+      "endpoint. "
+      "Metric aggregation is performed by summing the values of samples by "
+      "labels. "
+      "Aggregations are performed where it makes sense by the shard and/or "
+      "partition labels.",
+      {.needs_restart = needs_restart::yes},
+      false)
   , group_min_session_timeout_ms(
       *this,
       "group_min_session_timeout_ms",
