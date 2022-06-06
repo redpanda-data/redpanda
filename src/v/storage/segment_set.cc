@@ -254,7 +254,16 @@ unsafe_do_recover(segment_set&& segments, ss::abort_source& as) {
               vlog(stlog.info, "Removing empty segment: {}", segment);
               segment->close().get();
               ss::remove_file(segment->reader().filename()).get();
-              ss::remove_file(segment->index().filename()).get();
+              try {
+                  ss::remove_file(segment->index().filename()).get();
+              } catch (const std::filesystem::filesystem_error& e) {
+                  // Ignore ENOENT on deletion: segments are allowed to
+                  // exist without an index if redpanda shutdown without
+                  // a flush.
+                  if (e.code() != std::errc::no_such_file_or_directory) {
+                      throw;
+                  }
+              }
               return false;
           });
         // remove empty from to recover set
