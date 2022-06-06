@@ -990,29 +990,28 @@ void admin_server::register_cluster_config_routes() {
               // properties.
 
               std::map<ss::sstring, ss::sstring> errors;
-              for (const auto& i : update.upsert) {
+              for (const auto& [yaml_name, yaml_value] : update.upsert) {
                   // Decode to a YAML object because that's what the property
                   // interface expects.
                   // Don't both catching ParserException: this was encoded
                   // just a few lines above.
-                  const auto& yaml_value = i.second;
                   auto val = YAML::Load(yaml_value);
 
-                  if (!cfg.contains(i.first)) {
-                      errors[i.first] = "Unknown property";
+                  if (!cfg.contains(yaml_name)) {
+                      errors[yaml_name] = "Unknown property";
                       continue;
                   }
-                  auto& property = cfg.get(i.first);
+                  auto& property = cfg.get(yaml_name);
 
                   try {
                       auto validation_err = property.validate(val);
                       if (validation_err.has_value()) {
-                          errors[i.first]
+                          errors[yaml_name]
                             = validation_err.value().error_message();
                           vlog(
                             logger.warn,
                             "Invalid {}: '{}' ({})",
-                            i.first,
+                            yaml_name,
                             property.format_raw(yaml_value),
                             validation_err.value().error_message());
                       } else {
@@ -1055,21 +1054,21 @@ void admin_server::register_cluster_config_routes() {
                           }
                       }
 
-                      errors[i.first] = message;
+                      errors[yaml_name] = message;
                       vlog(
                         logger.warn,
                         "Invalid {}: '{}' ({})",
-                        i.first,
+                        yaml_name,
                         property.format_raw(yaml_value),
                         std::current_exception());
                   } catch (...) {
                       auto message = fmt::format(
                         "{}", std::current_exception());
-                      errors[i.first] = message;
+                      errors[yaml_name] = message;
                       vlog(
                         logger.warn,
                         "Invalid {}: '{}' ({})",
-                        i.first,
+                        yaml_name,
                         property.format_raw(yaml_value),
                         message);
                   }
