@@ -35,6 +35,7 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/smp.hh>
+#include <seastar/util/log.hh>
 
 #include <chrono>
 #include <system_error>
@@ -502,6 +503,18 @@ auto members_manager::dispatch_rpc_to_leader(
       std::forward<Func>(f));
 }
 
+#define fmt_level_with_ctx(logger, level, fmt, args...)                        \
+    logger.log(                                                                \
+      level,                                                                   \
+      "{}:{} - " fmt,                                                          \
+      (const char*)&__FILE__[vlog_internal::log_basename_start<                \
+        vlog_internal::basename_index(__FILE__)>::value],                      \
+      __LINE__,                                                                \
+      ##args)
+
+// NOLINTNEXTLINE
+#define vlog_level(method, fmt, args...) fmt_level_with_ctx(method, fmt, ##args)
+
 ss::future<result<join_node_reply>>
 members_manager::handle_join_request(join_node_request const req) {
     using ret_t = result<join_node_reply>;
@@ -564,8 +577,13 @@ members_manager::handle_join_request(join_node_request const req) {
               if (!ec) {
                   return ret_t(join_node_reply{true, broker.id()});
               }
-              vlog(
-                clusterlog.warn,
+              auto loglevel = ss::log_level::warn;
+              if (ec == raft::errc::configuration_change_in_progress) {
+                  loglevel = ss::log_level::info;
+              }
+              vlog_level(
+                clusterlog,
+                loglevel,
                 "Error adding node {} to cluster - {}",
                 broker,
                 ec.message());
