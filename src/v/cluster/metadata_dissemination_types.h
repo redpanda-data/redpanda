@@ -15,6 +15,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "reflection/adl.h"
+#include "serde/serde.h"
 
 #include <fmt/ostream.h>
 
@@ -22,10 +23,12 @@
 
 namespace cluster {
 
-struct ntp_leader {
+struct ntp_leader : serde::envelope<ntp_leader, serde::version<0>> {
     model::ntp ntp;
     model::term_id term;
     std::optional<model::node_id> leader_id;
+
+    ntp_leader() noexcept = default;
 
     ntp_leader(
       model::ntp ntp,
@@ -44,6 +47,8 @@ struct ntp_leader {
           l.leader_id ? l.leader_id.value()() : -1);
         return o;
     }
+
+    auto serde_fields() { return std::tie(ntp, term, leader_id); }
 };
 
 struct ntp_leader_revision {
