@@ -548,12 +548,15 @@ struct topic_properties_update {
 
 // Structure holding topic configuration, optionals will be replaced by broker
 // defaults
-struct topic_configuration {
+struct topic_configuration
+  : serde::envelope<topic_configuration, serde::version<0>> {
     topic_configuration(
       model::ns ns,
       model::topic topic,
       int32_t partition_count,
       int16_t replication_factor);
+
+    topic_configuration() = default;
 
     storage::ntp_config make_ntp_config(
       const ss::sstring&,
@@ -573,6 +576,10 @@ struct topic_configuration {
     int16_t replication_factor;
 
     topic_properties properties;
+
+    auto serde_fields() {
+        return std::tie(tp_ns, partition_count, replication_factor, properties);
+    }
 
     friend std::ostream& operator<<(std::ostream&, const topic_configuration&);
 

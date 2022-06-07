@@ -481,6 +481,29 @@ cluster::property_update<T> random_property_update(T value) {
     };
 }
 
+cluster::topic_properties random_topic_properties() {
+    cluster::topic_properties properties;
+    properties.cleanup_policy_bitflags = tests::random_optional(
+      [] { return model::random_cleanup_policy(); });
+    properties.compaction_strategy = tests::random_optional(
+      [] { return model::random_compaction_strategy(); });
+    properties.compression = tests::random_optional(
+      [] { return model::random_compression(); });
+    properties.timestamp_type = tests::random_optional(
+      [] { return model::random_timestamp_type(); });
+    properties.segment_size = tests::random_optional(
+      [] { return random_generators::get_int(100_MiB, 1_GiB); });
+    properties.retention_bytes = tests::random_tristate(
+      [] { return random_generators::get_int(100_MiB, 1_GiB); });
+    properties.retention_duration = tests::random_tristate(
+      [] { return tests::random_duration_ms(); });
+    properties.recovery = tests::random_optional(
+      [] { return tests::random_bool(); });
+    properties.shadow_indexing = tests::random_optional(
+      [] { return model::random_shadow_indexing_mode(); });
+    return properties;
+}
+
 SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     roundtrip_test(cluster::ntp_leader(
       model::ntp(
@@ -552,29 +575,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
 
         roundtrip_test(p_as);
     }
-    {
-        cluster::topic_properties properties;
-        properties.cleanup_policy_bitflags = tests::random_optional(
-          [] { return model::random_cleanup_policy(); });
-        properties.compaction_strategy = tests::random_optional(
-          [] { return model::random_compaction_strategy(); });
-        properties.compression = tests::random_optional(
-          [] { return model::random_compression(); });
-        properties.timestamp_type = tests::random_optional(
-          [] { return model::random_timestamp_type(); });
-        properties.segment_size = tests::random_optional(
-          [] { return random_generators::get_int(100_MiB, 1_GiB); });
-        properties.retention_bytes = tests::random_tristate(
-          [] { return random_generators::get_int(100_MiB, 1_GiB); });
-        properties.retention_duration = tests::random_tristate(
-          [] { return tests::random_duration_ms(); });
-        properties.recovery = tests::random_optional(
-          [] { return tests::random_bool(); });
-        properties.shadow_indexing = tests::random_optional(
-          [] { return model::random_shadow_indexing_mode(); });
-
-        roundtrip_test(properties);
-    }
+    { roundtrip_test(random_topic_properties()); }
     {
         roundtrip_test(
           random_property_update(random_generators::gen_alphanum_string(10)));
@@ -603,5 +604,13 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
             [] { return model::random_shadow_indexing_mode(); })),
         };
         roundtrip_test(updates);
+    }
+    {
+        cluster::topic_configuration tp_cfg;
+        tp_cfg.tp_ns = model::random_topic_namespace();
+        tp_cfg.properties = random_topic_properties();
+        tp_cfg.replication_factor = random_generators::get_int<int16_t>(0, 10);
+        tp_cfg.partition_count = random_generators::get_int(0, 100);
+        roundtrip_test(tp_cfg);
     }
 }
