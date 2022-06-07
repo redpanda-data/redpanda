@@ -575,6 +575,10 @@ struct topic_configuration {
     topic_properties properties;
 
     friend std::ostream& operator<<(std::ostream&, const topic_configuration&);
+
+    friend bool
+    operator==(const topic_configuration&, const topic_configuration&)
+      = default;
 };
 
 struct custom_partition_assignment {
