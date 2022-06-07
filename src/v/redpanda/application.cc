@@ -782,11 +782,7 @@ void application::wire_up_redpanda_services() {
         }
         auto cache_size
           = config::shard_local_cfg().cloud_storage_cache_size.value();
-        auto cache_interval = config::shard_local_cfg()
-                                .cloud_storage_cache_check_interval_ms.value();
-        construct_service(
-          shadow_index_cache, cache_dir, cache_size, cache_interval)
-          .get();
+        construct_service(shadow_index_cache, cache_dir, cache_size).get();
 
         shadow_index_cache
           .invoke_on_all(

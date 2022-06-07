@@ -19,6 +19,7 @@
 #include <seastar/core/fstream.hh>
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/seastar.hh>
+#include <seastar/core/semaphore.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/util/defer.hh>
@@ -54,13 +55,9 @@ std::ostream& operator<<(std::ostream& o, cache_element_status s) {
 
 static constexpr std::string_view tmp_extension{".part"};
 
-cache::cache(
-  std::filesystem::path cache_dir,
-  size_t max_cache_size,
-  ss::lowres_clock::duration check_period) noexcept
+cache::cache(std::filesystem::path cache_dir, size_t max_cache_size) noexcept
   : _cache_dir(std::move(cache_dir))
   , _max_cache_size(max_cache_size)
-  , _check_period(check_period)
   , _cnt(0)
   , _total_cleaned(0) {}
 
@@ -105,6 +102,18 @@ cache::recursive_delete_empty_directory(const std::string_view& key) {
 
 uint64_t cache::get_total_cleaned() { return _total_cleaned; }
 
+ss::future<> cache::consume_cache_space(size_t sz) {
+    vassert(ss::this_shard_id() == 0, "This method can only run on shard 0");
+    _current_cache_size += sz;
+    if (_current_cache_size > _max_cache_size) {
+        auto units = ss::try_get_units(_cleanup_sm, 1);
+        if (units) {
+            co_await clean_up_cache();
+        }
+        // Otherwise the cleanup is already running
+    }
+}
+
 ss::future<> cache::clean_up_at_start() {
     gate_guard guard{_gate};
     auto [cache_size, candidates_for_deletion] = co_await _walker.walk(
@@ -143,12 +152,12 @@ ss::future<> cache::clean_up_cache() {
     probe.set_size(curr_cache_size);
     probe.set_num_files(candidates_for_deletion.size());
 
+    uint64_t deleted_size = 0;
     if (curr_cache_size >= _max_cache_size) {
         auto size_to_delete
           = curr_cache_size
             - (_max_cache_size * (long double)_cache_size_low_watermark);
 
-        uint64_t deleted_size = 0;
         size_t i_to_delete = 0;
         while (i_to_delete < candidates_for_deletion.size()
                && deleted_size < size_to_delete) {
@@ -182,6 +191,7 @@ ss::future<> cache::clean_up_cache() {
           i_to_delete,
           deleted_size);
     }
+    _current_cache_size = curr_cache_size - deleted_size;
 }
 
 ss::future<> cache::load_access_time_tracker() {
@@ -254,9 +264,6 @@ ss::future<> cache::start() {
         co_await load_access_time_tracker();
         co_await clean_up_at_start();
 
-        _timer.set_callback([this] { ssx::background = clean_up_cache(); });
-        _timer.arm_periodic(_check_period);
-
         _tracker_timer.set_callback(
           [this] { return maybe_save_access_time_tracker(); });
         _tracker_timer.arm_periodic(access_timer_period);
@@ -265,7 +272,6 @@ ss::future<> cache::start() {
 
 ss::future<> cache::stop() {
     vlog(cst_log.debug, "Stopping archival cache service");
-    _timer.cancel();
     _tracker_timer.cancel();
     if (ss::this_shard_id() == 0) {
         co_await save_access_time_tracker();
@@ -400,15 +406,21 @@ ss::future<> cache::put(
     auto dest = (dir_path / filename).native();
     co_await ss::rename_file((dir_path / tmp_filename).native(), dest);
 
+    auto put_size = co_await ss::file_size(dest);
+
     // Bump access time of the file
     if (ss::this_shard_id() == 0) {
         _access_time_tracker.add_timestamp(
           dest, std::chrono::system_clock::now());
+        ssx::spawn_with_gate(_gate, [this, dest, put_size] {
+            return consume_cache_space(put_size);
+        });
     } else {
-        ssx::spawn_with_gate(_gate, [this, dest] {
-            return container().invoke_on(0, [dest](cache& c) {
+        ssx::spawn_with_gate(_gate, [this, dest, put_size] {
+            return container().invoke_on(0, [dest, put_size](cache& c) {
                 c._access_time_tracker.add_timestamp(
                   dest, std::chrono::system_clock::now());
+                return c.consume_cache_space(put_size);
             });
         });
     }

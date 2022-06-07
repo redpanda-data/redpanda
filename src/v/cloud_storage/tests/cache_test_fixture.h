@@ -47,9 +47,7 @@ public:
     cache_test_fixture()
       : test_dir("test_cache_dir")
       , CACHE_DIR(get_cache_dir(test_dir.get_path())) {
-        sharded_cache
-          .start(CACHE_DIR, 1_MiB + 500_KiB, ss::lowres_clock::duration(1s))
-          .get();
+        sharded_cache.start(CACHE_DIR, 1_MiB + 500_KiB).get();
         sharded_cache
           .invoke_on_all([](cloud_storage::cache& c) { return c.start(); })
           .get();

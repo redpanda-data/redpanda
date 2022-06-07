@@ -45,10 +45,7 @@ public:
     /// C-tor.
     ///
     /// \param cache_dir is a directory where cached data is stored
-    cache(
-      std::filesystem::path cache_dir,
-      size_t _max_cache_size,
-      ss::lowres_clock::duration _check_period) noexcept;
+    cache(std::filesystem::path cache_dir, size_t _max_cache_size) noexcept;
 
     ss::future<> start();
     ss::future<> stop();
@@ -113,16 +110,21 @@ private:
     /// \param key if a path to a file what should be deleted
     ss::future<> recursive_delete_empty_directory(const std::string_view& key);
 
+    /// This method is called on shard 0 by other shards to report disk
+    /// space changes.
+    ss::future<> consume_cache_space(size_t);
+
     std::filesystem::path _cache_dir;
     size_t _max_cache_size;
-    ss::lowres_clock::duration _check_period;
 
     ss::gate _gate;
     uint64_t _cnt;
     static constexpr double _cache_size_low_watermark{0.8};
-    ss::timer<ss::lowres_clock> _timer;
     cloud_storage::recursive_directory_walker _walker;
     uint64_t _total_cleaned;
+    /// Current size of the cache directory (only used on shard 0)
+    uint64_t _current_cache_size{0};
+    ss::semaphore _cleanup_sm{1};
     std::set<std::filesystem::path> _files_in_progress;
     cache_probe probe;
     access_time_tracker _access_time_tracker;

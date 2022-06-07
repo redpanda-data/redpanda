@@ -29,9 +29,8 @@ struct cloud_storage_fixture : s3_imposter_fixture {
     cloud_storage_fixture() {
         tmp_directory.create().get();
         constexpr size_t cache_size = 1024 * 1024 * 1024;
-        const ss::lowres_clock::duration cache_duration = 1000s;
 
-        cache.start(tmp_directory.get_path(), cache_size, cache_duration).get();
+        cache.start(tmp_directory.get_path(), cache_size).get();
 
         cache.invoke_on_all([](cloud_storage::cache& c) { return c.start(); })
           .get();
