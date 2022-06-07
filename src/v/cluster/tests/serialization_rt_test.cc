@@ -582,4 +582,26 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         roundtrip_test(random_property_update(tests::random_tristate(
           [] { return random_generators::get_int<size_t>(0, 100000); })));
     }
+    {
+        cluster::incremental_topic_updates updates{
+          .compression = random_property_update(
+            tests::random_optional([] { return model::random_compression(); })),
+          .cleanup_policy_bitflags = random_property_update(
+            tests::random_optional(
+              [] { return model::random_cleanup_policy(); })),
+          .compaction_strategy = random_property_update(tests::random_optional(
+            [] { return model::random_compaction_strategy(); })),
+          .timestamp_type = random_property_update(tests::random_optional(
+            [] { return model::random_timestamp_type(); })),
+          .segment_size = random_property_update(tests::random_optional(
+            [] { return random_generators::get_int(100_MiB, 1_GiB); })),
+          .retention_bytes = random_property_update(tests::random_tristate(
+            [] { return random_generators::get_int(100_MiB, 1_GiB); })),
+          .retention_duration = random_property_update(
+            tests::random_tristate([] { return tests::random_duration_ms(); })),
+          .shadow_indexing = random_property_update(tests::random_optional(
+            [] { return model::random_shadow_indexing_mode(); })),
+        };
+        roundtrip_test(updates);
+    }
 }

@@ -481,7 +481,8 @@ struct property_update<tristate<T>>
       = default;
 };
 
-struct incremental_topic_updates {
+struct incremental_topic_updates
+  : serde::envelope<incremental_topic_updates, serde::version<0>> {
     static constexpr int8_t version_with_data_policy = -1;
     static constexpr int8_t version_with_shadow_indexing = -3;
     // negative version indicating different format:
@@ -499,6 +500,18 @@ struct incremental_topic_updates {
     property_update<tristate<size_t>> retention_bytes;
     property_update<tristate<std::chrono::milliseconds>> retention_duration;
     property_update<std::optional<model::shadow_indexing_mode>> shadow_indexing;
+
+    auto serde_fields() {
+        return std::tie(
+          compression,
+          cleanup_policy_bitflags,
+          compaction_strategy,
+          timestamp_type,
+          segment_size,
+          retention_bytes,
+          retention_duration,
+          shadow_indexing);
+    }
 
     friend bool operator==(
       const incremental_topic_updates&, const incremental_topic_updates&)
