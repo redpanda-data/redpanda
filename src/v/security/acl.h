@@ -214,8 +214,9 @@ inline std::ostream& operator<<(std::ostream& os, principal_type type) {
 /*
  * Kafka principal is (principal-type, principal)
  */
-class acl_principal {
+class acl_principal : public serde::envelope<acl_principal, serde::version<0>> {
 public:
+    acl_principal() = default;
     acl_principal(principal_type type, ss::sstring name)
       : _type(type)
       , _name(std::move(name)) {}
@@ -237,6 +238,8 @@ public:
     const ss::sstring& name() const { return _name; }
     principal_type type() const { return _type; }
     bool wildcard() const { return _name == "*"; }
+
+    auto serde_fields() { return std::tie(_type, _name); }
 
 private:
     principal_type _type;

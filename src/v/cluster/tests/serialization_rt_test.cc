@@ -575,6 +575,11 @@ security::resource_pattern random_resource_pattern() {
       random_pattern_type()};
 }
 
+security::acl_principal random_acl_principal() {
+    return {
+      security::principal_type::user,
+      random_generators::gen_alphanum_string(12)};
+}
 SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     roundtrip_test(cluster::ntp_leader(
       model::ntp(
