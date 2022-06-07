@@ -430,10 +430,30 @@ private:
 /*
  * A filter for matching resources.
  */
-class resource_pattern_filter {
+class resource_pattern_filter
+  : public serde::envelope<resource_pattern_filter, serde::version<0>> {
+private:
+    enum class serialized_pattern_type {
+        literal = 0,
+        prefixed = 1,
+        match = 2,
+    };
+
+    static serialized_pattern_type to_pattern(security::pattern_type from) {
+        switch (from) {
+        case security::pattern_type::literal:
+            return serialized_pattern_type::literal;
+        case security::pattern_type::prefixed:
+            return serialized_pattern_type::prefixed;
+        }
+        __builtin_unreachable();
+    }
+
 public:
     struct pattern_match {};
     using pattern_filter_type = std::variant<pattern_type, pattern_match>;
+
+    resource_pattern_filter() = default;
 
     resource_pattern_filter(
       std::optional<resource_type> type,
@@ -463,6 +483,57 @@ public:
     std::optional<resource_type> resource() const { return _resource; }
     const std::optional<ss::sstring>& name() const { return _name; }
     std::optional<pattern_filter_type> pattern() const { return _pattern; }
+
+    friend void read_nested(
+      iobuf_parser& in,
+      resource_pattern_filter& filter,
+      size_t const bytes_left_limit) {
+        using serde::read_nested;
+
+        read_nested(in, filter._resource, bytes_left_limit);
+        read_nested(in, filter._name, bytes_left_limit);
+
+        auto pattern = read_nested<std::optional<serialized_pattern_type>>(
+          in, bytes_left_limit);
+
+        if (!pattern) {
+            filter._pattern = std::nullopt;
+            return;
+        }
+
+        switch (*pattern) {
+        case serialized_pattern_type::literal:
+            filter._pattern = security::pattern_type::literal;
+            break;
+
+        case serialized_pattern_type::prefixed:
+            filter._pattern = security::pattern_type::prefixed;
+            break;
+        case serialized_pattern_type::match:
+            filter._pattern
+              = security::resource_pattern_filter::pattern_match{};
+            break;
+        }
+    }
+
+    friend void write(iobuf& out, resource_pattern_filter filter) {
+        using serde::write;
+        std::optional<serialized_pattern_type> pattern;
+        if (filter.pattern()) {
+            if (std::holds_alternative<
+                  security::resource_pattern_filter::pattern_match>(
+                  *filter.pattern())) {
+                pattern = serialized_pattern_type::match;
+            } else {
+                auto source_pattern = std::get<security::pattern_type>(
+                  *filter.pattern());
+                pattern = to_pattern(source_pattern);
+            }
+        }
+        write(out, filter._resource);
+        write(out, filter._name);
+        write(out, pattern);
+    }
 
 private:
     std::optional<resource_type> _resource;
