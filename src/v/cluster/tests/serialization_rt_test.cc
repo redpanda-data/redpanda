@@ -507,4 +507,6 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         model::node_id(2),
         model::revision_id(8888)),
     }));
+
+    roundtrip_test(cluster::update_leadership_reply());
 }
