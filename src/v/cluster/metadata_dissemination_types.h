@@ -51,11 +51,14 @@ struct ntp_leader : serde::envelope<ntp_leader, serde::version<0>> {
     auto serde_fields() { return std::tie(ntp, term, leader_id); }
 };
 
-struct ntp_leader_revision {
+struct ntp_leader_revision
+  : serde::envelope<ntp_leader_revision, serde::version<0>> {
     model::ntp ntp;
     model::term_id term;
     std::optional<model::node_id> leader_id;
     model::revision_id revision;
+
+    ntp_leader_revision() noexcept = default;
 
     ntp_leader_revision(
       model::ntp ntp,
@@ -78,6 +81,8 @@ struct ntp_leader_revision {
           r.revision);
         return o;
     }
+
+    auto serde_fields() { return std::tie(ntp, term, leader_id, revision); }
 };
 
 struct update_leadership_request {

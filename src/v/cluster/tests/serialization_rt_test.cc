@@ -477,4 +477,13 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         model::partition_id(287)),
       model::term_id(1234),
       model::node_id(2)));
+
+    roundtrip_test(cluster::ntp_leader_revision(
+      model::ntp(
+        model::ns("a namespace"),
+        model::topic("a topic"),
+        model::partition_id(287)),
+      model::term_id(1234),
+      model::node_id(2),
+      model::revision_id(888)));
 }
