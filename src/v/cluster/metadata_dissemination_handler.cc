@@ -33,11 +33,12 @@ from_ntp_leaders(std::vector<cluster::ntp_leader> old_leaders) {
       old_leaders.end(),
       std::back_inserter(leaders),
       [](cluster::ntp_leader& leader) {
-          return cluster::ntp_leader_revision{
-            .ntp = std::move(leader.ntp),
-            .term = leader.term,
-            .leader_id = leader.leader_id,
-          };
+          return cluster::ntp_leader_revision(
+            std::move(leader.ntp),
+            leader.term,
+            leader.leader_id,
+            model::revision_id{} /* explicitly default */
+          );
       });
     return leaders;
 }
@@ -84,16 +85,13 @@ metadata_dissemination_handler::do_update_leadership(
 
 static get_leadership_reply
 make_get_leadership_reply(const partition_leaders_table& leaders) {
-    ntp_leaders ret;
+    std::vector<ntp_leader> ret;
     leaders.for_each_leader([&ret](
                               model::topic_namespace_view tp_ns,
                               model::partition_id pid,
                               std::optional<model::node_id> leader,
                               model::term_id term) mutable {
-        ret.emplace_back(ntp_leader{
-          .ntp = model::ntp(tp_ns.ns, tp_ns.tp, pid),
-          .term = term,
-          .leader_id = leader});
+        ret.emplace_back(model::ntp(tp_ns.ns, tp_ns.tp, pid), term, leader);
     });
 
     return get_leadership_reply{std::move(ret)};

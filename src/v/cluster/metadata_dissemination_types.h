@@ -11,6 +11,7 @@
 
 #pragma once
 #include "bytes/iobuf_parser.h"
+#include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "reflection/adl.h"
@@ -26,10 +27,21 @@ struct ntp_leader {
     model::term_id term;
     std::optional<model::node_id> leader_id;
 
+    ntp_leader(
+      model::ntp ntp,
+      model::term_id term,
+      std::optional<model::node_id> leader_id)
+      : ntp(std::move(ntp))
+      , term(term)
+      , leader_id(leader_id) {}
+
     friend std::ostream& operator<<(std::ostream& o, const ntp_leader& l) {
-        o << "{ " << l.ntp << ", term: " << l.term
-          << ", leader_id: " << (l.leader_id ? l.leader_id.value()() : -1)
-          << " }";
+        fmt::print(
+          o,
+          "{{ntp: {}, term: {}, leader: {}}}",
+          l.ntp,
+          l.term,
+          l.leader_id ? l.leader_id.value()() : -1);
         return o;
     }
 };
@@ -39,6 +51,17 @@ struct ntp_leader_revision {
     model::term_id term;
     std::optional<model::node_id> leader_id;
     model::revision_id revision;
+
+    ntp_leader_revision(
+      model::ntp ntp,
+      model::term_id term,
+      std::optional<model::node_id> leader_id,
+      model::revision_id revision)
+      : ntp(std::move(ntp))
+      , term(term)
+      , leader_id(leader_id)
+      , revision(revision) {}
+
     friend std::ostream&
     operator<<(std::ostream& o, const ntp_leader_revision& r) {
         fmt::print(
@@ -52,28 +75,101 @@ struct ntp_leader_revision {
     }
 };
 
-using ntp_leaders = std::vector<ntp_leader>;
-
 struct update_leadership_request {
-    ntp_leaders leaders;
+    std::vector<ntp_leader> leaders;
+
+    explicit update_leadership_request(std::vector<ntp_leader> leaders)
+      : leaders(std::move(leaders)) {}
 };
 
 struct update_leadership_request_v2 {
     static constexpr int8_t version = 0;
     std::vector<ntp_leader_revision> leaders;
+
+    explicit update_leadership_request_v2(
+      std::vector<ntp_leader_revision> leaders)
+      : leaders(std::move(leaders)) {}
 };
 
-struct update_leadership_reply {};
+struct update_leadership_reply {
+    update_leadership_reply() = default;
+};
 
-struct get_leadership_request {};
+struct get_leadership_request {
+    get_leadership_request() = default;
+};
 
 struct get_leadership_reply {
-    ntp_leaders leaders;
+    std::vector<ntp_leader> leaders;
+
+    explicit get_leadership_reply(std::vector<ntp_leader> leaders)
+      : leaders(std::move(leaders)) {}
 };
 
 } // namespace cluster
 
 namespace reflection {
+template<>
+struct adl<cluster::get_leadership_reply> {
+    void to(iobuf& out, cluster::get_leadership_reply&& r) {
+        serialize(out, r.leaders);
+    }
+    cluster::get_leadership_reply from(iobuf_parser& in) {
+        auto leaders = adl<std::vector<cluster::ntp_leader>>{}.from(in);
+        return cluster::get_leadership_reply(std::move(leaders));
+    }
+};
+
+template<>
+struct adl<cluster::get_leadership_request> {
+    void to(iobuf&, cluster::get_leadership_request&&) {}
+    cluster::get_leadership_request from(iobuf_parser&) { return {}; }
+};
+
+template<>
+struct adl<cluster::update_leadership_reply> {
+    void to(iobuf&, cluster::update_leadership_reply&&) {}
+    cluster::update_leadership_reply from(iobuf_parser&) { return {}; }
+};
+
+template<>
+struct adl<cluster::update_leadership_request> {
+    void to(iobuf& out, cluster::update_leadership_request&& r) {
+        serialize(out, std::move(r.leaders));
+    }
+    cluster::update_leadership_request from(iobuf_parser& in) {
+        auto leaders = adl<std::vector<cluster::ntp_leader>>{}.from(in);
+        return cluster::update_leadership_request(std::move(leaders));
+    }
+};
+
+template<>
+struct adl<cluster::ntp_leader_revision> {
+    void to(iobuf& out, cluster::ntp_leader_revision&& l) {
+        serialize(out, std::move(l.ntp), l.term, l.leader_id, l.revision);
+    }
+    cluster::ntp_leader_revision from(iobuf_parser& in) {
+        auto ntp = adl<model::ntp>{}.from(in);
+        auto term = adl<model::term_id>{}.from(in);
+        auto leader = adl<std::optional<model::node_id>>{}.from(in);
+        auto revision = adl<model::revision_id>{}.from(in);
+        return {std::move(ntp), term, leader, revision};
+    }
+};
+
+template<>
+struct adl<cluster::ntp_leader> {
+    void to(iobuf& out, cluster::ntp_leader&& l) {
+        serialize(out, std::move(l.ntp), l.term, l.leader_id);
+    }
+    cluster::ntp_leader from(iobuf_parser& in) {
+        auto ntp = adl<model::ntp>{}.from(in);
+        auto term = adl<model::term_id>{}.from(in);
+        auto leader = adl<std::optional<model::node_id>>{}.from(in);
+        return {std::move(ntp), term, leader};
+    }
+};
+
 template<>
 struct adl<cluster::update_leadership_request_v2> {
     void to(iobuf& out, cluster::update_leadership_request_v2&& req) {
@@ -84,8 +180,7 @@ struct adl<cluster::update_leadership_request_v2> {
         adl<int8_t>{}.from(in);
         auto leaders = adl<std::vector<cluster::ntp_leader_revision>>{}.from(
           in);
-        return cluster::update_leadership_request_v2{
-          .leaders = std::move(leaders)};
+        return cluster::update_leadership_request_v2(std::move(leaders));
     }
 };
 } // namespace reflection
