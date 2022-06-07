@@ -647,6 +647,11 @@ struct topic_configuration_assignment {
     std::vector<partition_assignment> assignments;
 
     model::topic_metadata get_metadata() const;
+
+    friend bool operator==(
+      const topic_configuration_assignment&,
+      const topic_configuration_assignment&)
+      = default;
 };
 
 struct create_partitions_configuration_assignment {
