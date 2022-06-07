@@ -396,8 +396,9 @@ private:
  * An ACL binding is an association of resource(s) and an ACL entry. An ACL
  * binding describes if a principal may access resources.
  */
-class acl_binding {
+class acl_binding : public serde::envelope<acl_binding, serde::version<0>> {
 public:
+    acl_binding() = default;
     acl_binding(resource_pattern pattern, acl_entry entry)
       : _pattern(std::move(pattern))
       , _entry(std::move(entry)) {}
@@ -418,6 +419,8 @@ public:
 
     const resource_pattern& pattern() const { return _pattern; }
     const acl_entry& entry() const { return _entry; }
+
+    auto serde_fields() { return std::tie(_pattern, _entry); }
 
 private:
     resource_pattern _pattern;

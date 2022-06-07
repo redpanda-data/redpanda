@@ -609,6 +609,9 @@ security::acl_entry random_acl_entry() {
       random_acl_operation(),
       random_acl_permission()};
 }
+security::acl_binding random_acl_binding() {
+    return {random_resource_pattern(), random_acl_entry()};
+}
 
 SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     roundtrip_test(cluster::ntp_leader(
