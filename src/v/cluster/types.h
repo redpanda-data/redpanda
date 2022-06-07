@@ -657,7 +657,10 @@ struct topic_configuration_assignment
       = default;
 };
 
-struct create_partitions_configuration_assignment {
+struct create_partitions_configuration_assignment
+  : serde::
+      envelope<create_partitions_configuration_assignment, serde::version<0>> {
+    create_partitions_configuration_assignment() = default;
     create_partitions_configuration_assignment(
       create_partitions_configuration cfg,
       std::vector<partition_assignment> pas)
@@ -666,6 +669,8 @@ struct create_partitions_configuration_assignment {
 
     create_partitions_configuration cfg;
     std::vector<partition_assignment> assignments;
+
+    auto serde_fields() { return std::tie(cfg, assignments); }
 
     friend std::ostream& operator<<(
       std::ostream&, const create_partitions_configuration_assignment&);

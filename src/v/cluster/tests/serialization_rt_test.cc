@@ -532,6 +532,22 @@ cluster::topic_configuration random_topic_configuration() {
     return tp_cfg;
 }
 
+cluster::create_partitions_configuration
+random_create_partitions_configuration() {
+    cluster::create_partitions_configuration cpc;
+    cpc.tp_ns = model::random_topic_namespace();
+    cpc.new_total_partition_count = random_generators::get_int<int16_t>(
+      10, 100);
+
+    for (int i = 0; i < 3; ++i) {
+        cpc.custom_assignments.push_back(
+          {tests::random_named_int<model::node_id>(),
+           tests::random_named_int<model::node_id>(),
+           tests::random_named_int<model::node_id>()});
+    }
+    return cpc;
+}
+
 SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     roundtrip_test(cluster::ntp_leader(
       model::ntp(
@@ -634,24 +650,17 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         roundtrip_test(updates);
     }
     { roundtrip_test(random_topic_configuration()); }
-    {
-        cluster::create_partitions_configuration cpc;
-        cpc.tp_ns = model::random_topic_namespace();
-        cpc.new_total_partition_count = random_generators::get_int<int16_t>(
-          10, 100);
-
-        for (int i = 0; i < 3; ++i) {
-            cpc.custom_assignments.push_back(
-              {tests::random_named_int<model::node_id>(),
-               tests::random_named_int<model::node_id>(),
-               tests::random_named_int<model::node_id>()});
-        }
-
-        roundtrip_test(cpc);
-    }
+    { roundtrip_test(random_create_partitions_configuration()); }
     {
         cluster::topic_configuration_assignment cfg;
         cfg.cfg = random_topic_configuration();
+        cfg.assignments = random_partition_assignments();
+
+        roundtrip_test(cfg);
+    }
+    {
+        cluster::create_partitions_configuration_assignment cfg;
+        cfg.cfg = random_create_partitions_configuration();
         cfg.assignments = random_partition_assignments();
 
         roundtrip_test(cfg);
