@@ -669,6 +669,11 @@ struct create_partitions_configuration_assignment {
 
     friend std::ostream& operator<<(
       std::ostream&, const create_partitions_configuration_assignment&);
+
+    friend bool operator==(
+      const create_partitions_configuration_assignment&,
+      const create_partitions_configuration_assignment&)
+      = default;
 };
 
 struct topic_result {
