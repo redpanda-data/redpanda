@@ -19,11 +19,28 @@ class PartitionMovementMixin():
         partition = random.choice(topic.partitions)
         return topic.name, partition.id
 
+    def _update_assignment(self, assignments, src_node_id, dst_node_id):
+        """
+        Updates the given assignments to move a replica from one node to another.
+        """
+        new_assignments = []
+        for a in assignments:
+            a_copy = a.copy()
+            if a_copy["node_id"] == src_node_id:
+                a_copy["node_id"] = dst_node_id
+                new_assignments.append(a_copy)
+                continue
+            new_assignments.append(a_copy)
+        return new_assignments
+
+
     @staticmethod
     def _choose_replacement(admin, assignments):
         """
         Does not produce assignments that contain duplicate nodes. This is a
         limitation in redpanda raft implementation.
+        assignments:
+        { "node_id" => node_id:int, ... }
         """
         replication_factor = len(assignments)
         node_ids = lambda x: set([a["node_id"] for a in x])
@@ -105,6 +122,20 @@ class PartitionMovementMixin():
             return self._equal_assignments(info, assignments)
 
         wait_until(derived_done, timeout_sec=timeout_sec, backoff_sec=2)
+
+    def _move_replica(self, topic, partition, src_node_id, dst_node_id):
+        """
+        Returns the assignments
+        """
+        admin = Admin(self.redpanda)
+        orig_assignments = self._get_assignments(admin, topic, partition)
+        new_assignments = self._update_assignment(orig_assignments, src_node_id, dst_node_id)
+        self.logger.info(
+            f"moving {topic}-{partition}: {orig_assignments} -> {new_assignments}"
+        )
+        r = admin.set_partition_replicas(topic, partition, new_assignments)
+        return new_assignments
+
 
     def _do_move_and_verify(self, topic, partition, timeout_sec):
         admin = Admin(self.redpanda)
