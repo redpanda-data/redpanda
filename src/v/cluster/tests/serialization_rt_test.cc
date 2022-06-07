@@ -613,4 +613,19 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         tp_cfg.partition_count = random_generators::get_int(0, 100);
         roundtrip_test(tp_cfg);
     }
+    {
+        cluster::create_partitions_configuration cpc;
+        cpc.tp_ns = model::random_topic_namespace();
+        cpc.new_total_partition_count = random_generators::get_int<int16_t>(
+          10, 100);
+
+        for (int i = 0; i < 3; ++i) {
+            cpc.custom_assignments.push_back(
+              {tests::random_named_int<model::node_id>(),
+               tests::random_named_int<model::node_id>(),
+               tests::random_named_int<model::node_id>()});
+        }
+
+        roundtrip_test(cpc);
+    }
 }

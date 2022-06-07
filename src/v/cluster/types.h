@@ -612,8 +612,11 @@ struct custom_assignable_topic_configuration {
     operator<<(std::ostream&, const custom_assignable_topic_configuration&);
 };
 
-struct create_partitions_configuration {
+struct create_partitions_configuration
+  : serde::envelope<create_partitions_configuration, serde::version<0>> {
     using custom_assignment = std::vector<model::node_id>;
+
+    create_partitions_configuration() = default;
     create_partitions_configuration(model::topic_namespace, int32_t);
 
     model::topic_namespace tp_ns;
@@ -623,6 +626,10 @@ struct create_partitions_configuration {
 
     // TODO: use when we will start supporting custom partitions assignment
     std::vector<custom_assignment> custom_assignments;
+
+    auto serde_fields() {
+        return std::tie(tp_ns, new_total_partition_count, custom_assignments);
+    }
 
     friend std::ostream&
     operator<<(std::ostream&, const create_partitions_configuration&);
