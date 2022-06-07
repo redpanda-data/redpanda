@@ -69,7 +69,7 @@ func NewConfigChecker(conf *config.Config) Checker {
 		Fatal,
 		true,
 		func() (interface{}, error) {
-			ok, _ := config.Check(conf)
+			ok, _ := conf.Check()
 			return ok, nil
 		})
 }

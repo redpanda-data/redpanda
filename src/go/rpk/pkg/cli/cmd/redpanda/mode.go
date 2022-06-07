@@ -17,11 +17,12 @@ import (
 	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
-	log "github.com/sirupsen/logrus"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func NewModeCommand(mgr config.Manager) *cobra.Command {
+func NewModeCommand(fs afero.Fs) *cobra.Command {
 	var configFile string
 	command := &cobra.Command{
 		Use:   "mode <mode>",
@@ -33,9 +34,10 @@ func NewModeCommand(mgr config.Manager) *cobra.Command {
 			}
 			return nil
 		},
-		RunE: func(_ *cobra.Command, args []string) error {
+		Run: func(cmd *cobra.Command, args []string) {
 			// Safe to access args[0] because it was validated in Args
-			return executeMode(mgr, configFile, args[0])
+			err := executeMode(fs, cmd, args[0])
+			out.MaybeDieErr(err)
 		},
 	}
 	command.Flags().StringVar(
@@ -48,15 +50,21 @@ func NewModeCommand(mgr config.Manager) *cobra.Command {
 	return command
 }
 
-func executeMode(mgr config.Manager, configFile string, mode string) error {
-	conf, err := mgr.FindOrGenerate(configFile)
+func executeMode(fs afero.Fs, cmd *cobra.Command, mode string) error {
+	p := config.ParamsFromCommand(cmd)
+	cfg, err := p.Load(fs)
+	if err != nil {
+		return fmt.Errorf("unable to load config: %v", err)
+	}
+	cfg, err = config.SetMode(mode, cfg)
 	if err != nil {
 		return err
 	}
-	conf, err = config.SetMode(mode, conf)
+
+	fmt.Printf("Writing %q mode defaults to %q\n", mode, cfg.ConfigFile)
+	err = cfg.Write(fs)
 	if err != nil {
 		return err
 	}
-	log.Infof("Writing '%s' mode defaults to '%s'", mode, conf.ConfigFile)
-	return mgr.Write(conf)
+	return nil
 }

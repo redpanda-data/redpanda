@@ -545,7 +545,7 @@ func TestSeedServers(t *testing.T) {
     port: 80
 `,
 			exp: []SeedServer{
-				{Host: SocketAddress{"0.0.0.1", 80}},
+				{SocketAddress{"0.0.0.1", 80}},
 			},
 		},
 		{
@@ -559,8 +559,8 @@ func TestSeedServers(t *testing.T) {
       port: 90
 `,
 			exp: []SeedServer{
-				{Host: SocketAddress{"0.0.0.1", 80}},
-				{Host: SocketAddress{"0.0.0.2", 90}},
+				{SocketAddress{"0.0.0.1", 80}},
+				{SocketAddress{"0.0.0.2", 90}},
 			},
 		},
 		{
@@ -589,6 +589,142 @@ func TestSeedServers(t *testing.T) {
 				return
 			}
 			require.Equal(t, seedServers(test.exp), ts.Ss)
+		})
+	}
+}
+
+func TestSeedServer(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		data   string
+		exp    SeedServer
+		expErr bool
+	}{
+		{
+			name: "with node_id",
+			data: `test_server:
+  node_id: 1
+  host:
+    address: 192.168.10.1
+    port: 33145
+`,
+			exp: SeedServer{
+				SocketAddress{"192.168.10.1", 33145},
+			},
+		},
+		{
+			name: "with host",
+			data: `test_server:
+    host:
+        address: "0.0.0.1"
+        port: 80
+`,
+			exp: SeedServer{
+				SocketAddress{"0.0.0.1", 80},
+			},
+		},
+		{
+			name: "address and port",
+			data: `test_server:
+    address: "1.0.0.1"
+    port: 80
+`,
+			exp: SeedServer{
+				SocketAddress{"1.0.0.1", 80},
+			},
+		},
+		{
+			name: "equal host and address & port",
+			data: `test_server:
+  host:
+    address: "0.0.0.1"
+    port: 80
+  address: "0.0.0.1"
+  port: 80
+`,
+			exp: SeedServer{
+				SocketAddress{"0.0.0.1", 80},
+			},
+		},
+		{
+			name: "host.address and port",
+			data: `test_server:
+  host:
+    address: "0.0.0.1"
+  port: 80
+`,
+			expErr: true,
+		},
+		{
+			name: "address and host.port",
+			data: `test_server:
+  host:
+    port: 80
+  address: "0.0.0.1"
+`,
+			expErr: true,
+		},
+		{
+			name: "address different from host.address",
+			data: `test_server:
+  host:
+    address: "0.0.0.1"
+    port: 80
+  address: "0.2.0.1"
+  port: 80
+`,
+			expErr: true,
+		},
+		{
+			name: "port different from host.port",
+			data: `test_server:
+  host:
+    address: "0.0.0.1"
+    port: 82
+  address: "0.0.0.1"
+  port: 80
+`,
+			expErr: true,
+		},
+		{
+			name: "equal host.address and address",
+			data: `test_server:
+  host:
+    address: "0.0.0.1"
+  address: "0.0.0.1"
+`,
+			exp: SeedServer{
+				SocketAddress{Address: "0.0.0.1"},
+			},
+		},
+		{
+			name: "equal host.port and port",
+			data: `test_server:
+  host:
+    port: 82
+  port: 82
+`,
+			exp: SeedServer{
+				SocketAddress{Port: 82},
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var ts struct {
+				Ss SeedServer `yaml:"test_server"`
+			}
+			err := yaml.Unmarshal([]byte(test.data), &ts)
+
+			gotErr := err != nil
+			if gotErr != test.expErr {
+				t.Errorf("input %q: got err? %v, exp err? %v; error: %v",
+					test.data, gotErr, test.expErr, err)
+				return
+			}
+			if test.expErr {
+				return
+			}
+			require.Equal(t, test.exp, ts.Ss)
 		})
 	}
 }
@@ -647,9 +783,8 @@ redpanda:
     name: external
     port: 9093
   seed_servers:
-  - host:
-      address: 192.168.0.1
-      port: 33145
+  - address: 192.168.0.1
+    port: 33145
   rack: "rack-id"
 pandaproxy:
   pandaproxy_api:
@@ -761,7 +896,7 @@ rpk:
 						{"redpanda-0.my.domain.com.", 9093, "external"},
 					},
 					SeedServers: []SeedServer{
-						{Host: SocketAddress{"192.168.0.1", 33145}},
+						{SocketAddress{"192.168.0.1", 33145}},
 					},
 					Other: map[string]interface{}{
 						"enable_admin_api": true,
@@ -876,9 +1011,15 @@ redpanda:
     name: external
     port: 9093
   seed_servers:
+  - host:
+      address: 192.168.0.1
+      port: 33145
+  - node_id: "0"
     host:
       address: 192.168.0.1
       port: 33145
+  - address: 192.168.0.1
+    port: 33145
   rack: "rack-id"
 pandaproxy:
   pandaproxy_api:
@@ -989,7 +1130,9 @@ rpk:
 						{"redpanda-0.my.domain.com.", 9093, "external"},
 					},
 					SeedServers: []SeedServer{
-						{Host: SocketAddress{"192.168.0.1", 33145}},
+						{SocketAddress{"192.168.0.1", 33145}},
+						{SocketAddress{"192.168.0.1", 33145}},
+						{SocketAddress{"192.168.0.1", 33145}},
 					},
 					Other: map[string]interface{}{
 						"enable_admin_api": true,

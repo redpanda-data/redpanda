@@ -17,74 +17,78 @@ import (
 	"fmt"
 	"net"
 
+	"github.com/google/uuid"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	vnet "github.com/redpanda-data/redpanda/src/go/rpk/pkg/net"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-const configFileFlag = "config"
+const (
+	configFileFlag     = "config"
+	configFileFlagDesc = "Redpanda config file, if not set the file will be searched for in the default location"
+)
 
-func NewConfigCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
+func NewConfigCommand(fs afero.Fs) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "config <command>",
 		Short: "Edit configuration.",
 	}
-	root.AddCommand(set(fs, mgr))
-	root.AddCommand(bootstrap(mgr))
-	root.AddCommand(initNode(mgr))
+	root.AddCommand(set(fs))
+	root.AddCommand(bootstrap(fs))
+	root.AddCommand(initNode(fs))
 
 	return root
 }
 
-func set(fs afero.Fs, mgr config.Manager) *cobra.Command {
+func set(fs afero.Fs) *cobra.Command {
 	var (
 		format     string
 		configPath string
 	)
 	c := &cobra.Command{
 		Use:   "set <key> <value>",
-		Short: "Set configuration values, such as the node IDs or the list of seed servers.",
-		Args:  cobra.ExactArgs(2),
-		RunE: func(_ *cobra.Command, args []string) error {
-			var err error
-			key := args[0]
-			value := args[1]
-			if configPath == "" {
-				configPath, err = config.FindConfigFile(fs)
-				if err != nil {
-					return err
-				}
+		Short: "Set configuration values, such as the node IDs or the list of seed servers",
+		Long: `Set configuration values, such as the node IDs or the list of seed servers
+
+You can pass a key that represents the configuration property name, if it's a 
+nested property you should pass the group/category where it belongs, e.g:
+
+  rpk redpanda config set redpanda.developer_mode true
+
+if --format is not used, rpk will use yaml as default, you can also pass
+partial json/yaml config objects:
+
+  rpk redpanda config set redpanda.rpc_server '{"address":"0.0.0.0","port":33145}' --format json
+`,
+		Args: cobra.ExactArgs(2),
+		Run: func(cmd *cobra.Command, args []string) {
+			p := config.ParamsFromCommand(cmd)
+			cfg, err := p.Load(fs)
+			out.MaybeDie(err, "unable to load config: %v", err)
+
+			if format == "single" {
+				fmt.Println("'--format single' is deprecated, either remove it or use yaml/json")
 			}
-			_, err = mgr.Read(configPath)
-			if err != nil {
-				return err
-			}
-			err = mgr.Set(key, value, format)
-			if err != nil {
-				return err
-			}
-			return mgr.WriteLoaded()
+			err = cfg.Set(args[0], args[1], format)
+			out.MaybeDie(err, "unable to set %q:%v", args[0], err)
+
+			err = cfg.Write(fs)
+			out.MaybeDieErr(err)
 		},
 	}
-	c.Flags().StringVar(&format,
-		"format",
-		"single",
-		"The value format. Can be 'single', for single values such as"+
-			" '/etc/redpanda' or 100; and 'json' and 'yaml' when"+
-			" partially or completely setting config objects",
-	)
+	c.Flags().StringVar(&format, "format", "yaml", "Format of the value (yaml/json)")
 	c.Flags().StringVar(
 		&configPath,
 		configFileFlag,
 		"",
-		"Redpanda config file, if not set the file will be searched"+
-			" for in the default location.",
+		configFileFlagDesc,
 	)
 	return c
 }
 
-func bootstrap(mgr config.Manager) *cobra.Command {
+func bootstrap(fs afero.Fs) *cobra.Command {
 	var (
 		ips        []string
 		self       string
@@ -93,44 +97,36 @@ func bootstrap(mgr config.Manager) *cobra.Command {
 	)
 	c := &cobra.Command{
 		Use:   "bootstrap --id <id> [--self <ip>] [--ips <ip1,ip2,...>]",
-		Short: "Initialize the configuration to bootstrap a cluster.",
+		Short: "Initialize the configuration to bootstrap a cluster",
 		Long:  helpBootstrap,
-		Args:  cobra.OnlyValidArgs,
-		RunE: func(c *cobra.Command, args []string) error {
-			conf, err := mgr.FindOrGenerate(configPath)
-			if err != nil {
-				return err
-			}
+		Args:  cobra.ExactArgs(0),
+		Run: func(cmd *cobra.Command, args []string) {
+			p := config.ParamsFromCommand(cmd)
+			cfg, err := p.Load(fs)
+			out.MaybeDie(err, "unable to load config: %v", err)
+
 			seeds, err := parseSeedIPs(ips)
-			if err != nil {
-				return err
-			}
-			var ownIP net.IP
-			if self != "" {
-				ownIP = net.ParseIP(self)
-				if ownIP == nil {
-					return fmt.Errorf("%s is not a valid IP", self)
-				}
-			} else {
-				ownIP, err = getOwnIP()
-				if err != nil {
-					return err
-				}
-			}
-			conf.Redpanda.ID = id
-			conf.Redpanda.RPCServer.Address = ownIP.String()
-			conf.Redpanda.KafkaAPI = []config.NamedSocketAddress{{
+			out.MaybeDieErr(err)
+
+			ownIP, err := parseSelfIP(self)
+			out.MaybeDieErr(err)
+
+			cfg.Redpanda.ID = id
+			cfg.Redpanda.RPCServer.Address = ownIP.String()
+			cfg.Redpanda.KafkaAPI = []config.NamedSocketAddress{{
 				Address: ownIP.String(),
 				Port:    config.DefaultKafkaPort,
 			}}
 
-			conf.Redpanda.AdminAPI = []config.NamedSocketAddress{{
+			cfg.Redpanda.AdminAPI = []config.NamedSocketAddress{{
 				Address: ownIP.String(),
 				Port:    config.DefaultAdminPort,
 			}}
-			conf.Redpanda.SeedServers = []config.SeedServer{}
-			conf.Redpanda.SeedServers = seeds
-			return mgr.Write(conf)
+			cfg.Redpanda.SeedServers = []config.SeedServer{}
+			cfg.Redpanda.SeedServers = seeds
+
+			err = cfg.Write(fs)
+			out.MaybeDie(err, "error writing config file: %v", err)
 		},
 	}
 	c.Flags().StringSliceVar(
@@ -143,8 +139,7 @@ func bootstrap(mgr config.Manager) *cobra.Command {
 		&configPath,
 		configFileFlag,
 		"",
-		"Redpanda config file, if not set the file will be searched"+
-			" for in the default location.",
+		configFileFlagDesc,
 	)
 	c.Flags().StringVar(
 		&self,
@@ -162,32 +157,51 @@ func bootstrap(mgr config.Manager) *cobra.Command {
 	return c
 }
 
-func initNode(mgr config.Manager) *cobra.Command {
+func initNode(fs afero.Fs) *cobra.Command {
 	var configPath string
 	c := &cobra.Command{
 		Use:   "init",
-		Short: "Init the node after install, by setting the node's UUID.",
-		Args:  cobra.OnlyValidArgs,
-		RunE: func(_ *cobra.Command, args []string) error {
-			conf, err := mgr.FindOrGenerate(configPath)
-			if err != nil {
-				return err
-			}
+		Short: "Init the node after install, by setting the node's UUID",
+		Args:  cobra.ExactArgs(0),
+		Run: func(cmd *cobra.Command, args []string) {
+			p := config.ParamsFromCommand(cmd)
+			cfg, err := p.Load(fs)
+			out.MaybeDie(err, "unable to load config: %v", err)
+
 			// Don't reset the node's UUID if it has already been set.
-			if conf.NodeUUID == "" {
-				return mgr.WriteNodeUUID(conf)
+			if cfg.NodeUUID == "" {
+				id, err := uuid.NewUUID()
+				out.MaybeDie(err, "error creating nodeUUID: %v", err)
+				cfg.NodeUUID = id.String()
 			}
-			return nil
+
+			err = cfg.Write(fs)
+			out.MaybeDie(err, "error writing config file: %v", err)
 		},
 	}
 	c.Flags().StringVar(
 		&configPath,
 		configFileFlag,
 		"",
-		"Redpanda config file, if not set the file will be searched"+
-			" for in the default location.",
+		configFileFlagDesc,
 	)
 	return c
+}
+
+func parseSelfIP(self string) (net.IP, error) {
+	if self != "" {
+		ownIP := net.ParseIP(self)
+		if ownIP == nil {
+			return nil, fmt.Errorf("%s is not a valid IP", self)
+		}
+		return ownIP, nil
+	} else {
+		ownIP, err := getOwnIP()
+		if err != nil {
+			return nil, err
+		}
+		return ownIP, nil
+	}
 }
 
 func parseSeedIPs(ips []string) ([]config.SeedServer, error) {

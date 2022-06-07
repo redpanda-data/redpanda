@@ -15,17 +15,14 @@ package cmd
 import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/redpanda"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	rp "github.com/redpanda-data/redpanda/src/go/rpk/pkg/redpanda"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func NewStartCommand(
-	fs afero.Fs, mgr config.Manager, launcher rp.Launcher,
-) *cobra.Command {
+func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 	return common.Deprecated(
-		redpanda.NewStartCommand(fs, mgr, launcher),
+		redpanda.NewStartCommand(fs, launcher),
 		"rpk redpanda start",
 	)
 }
