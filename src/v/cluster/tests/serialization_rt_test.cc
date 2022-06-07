@@ -527,4 +527,17 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
 
     roundtrip_test(
       cluster::allocate_id_reply(23433, cluster::errc::invalid_node_operation));
+    {
+        cluster::partition_assignment p_as;
+        p_as.group = tests::random_named_int<raft::group_id>();
+        p_as.id = tests::random_named_int<model::partition_id>();
+        for (int i = 0; i < 5; ++i) {
+            p_as.replicas.push_back(model::broker_shard{
+              .node_id = tests::random_named_int<model::node_id>(),
+              .shard = random_generators::get_int<uint16_t>(1, 20),
+            });
+        }
+
+        roundtrip_test(p_as);
+    }
 }

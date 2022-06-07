@@ -355,7 +355,8 @@ struct configuration_update_reply {
 
 /// Partition assignment describes an assignment of all replicas for single NTP.
 /// The replicas are hold in vector of broker_shard.
-struct partition_assignment {
+struct partition_assignment
+  : serde::envelope<partition_assignment, serde::version<0>> {
     partition_assignment() noexcept = default;
     partition_assignment(
       raft::group_id group,
@@ -375,6 +376,7 @@ struct partition_assignment {
         return p_md;
     }
 
+    auto serde_fields() { return std::tie(group, id, replicas); }
     friend std::ostream& operator<<(std::ostream&, const partition_assignment&);
 
     friend bool
