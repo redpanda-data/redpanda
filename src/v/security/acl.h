@@ -296,8 +296,9 @@ private:
 /*
  * A host (or wildcard) in an ACL rule.
  */
-class acl_host {
+class acl_host : public serde::envelope<acl_host, serde::version<0>> {
 public:
+    acl_host() = default;
     explicit acl_host(const ss::sstring& host)
       : _addr(host) {}
 
@@ -330,9 +331,9 @@ public:
 
     std::optional<ss::net::inet_address> address() const { return _addr; }
 
-private:
-    acl_host() = default;
+    auto serde_fields() { return std::tie(_addr); }
 
+private:
     std::optional<ss::net::inet_address> _addr;
 };
 

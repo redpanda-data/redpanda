@@ -580,6 +580,10 @@ security::acl_principal random_acl_principal() {
       security::principal_type::user,
       random_generators::gen_alphanum_string(12)};
 }
+security::acl_host create_acl_host() {
+    return security::acl_host(ss::net::inet_address("127.0.0.1"));
+}
+
 SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     roundtrip_test(cluster::ntp_leader(
       model::ntp(
