@@ -226,8 +226,14 @@ sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule require
         args += ["--operation", op, "--cluster"]
         return self._run("kafka-acls.sh", args)
 
-    def _run(self, script, args):
+    def get_api_versions(self):
+        return self._run("kafka-run-class.sh", [],
+                         "kafka.admin.BrokerApiVersionsCommand")
+
+    def _run(self, script, args, classname=None):
         cmd = [self._script(script)]
+        if classname is not None:
+            cmd += [classname]
         cmd += ["--bootstrap-server", self._redpanda.brokers()]
         if self._command_config:
             cmd += ["--command-config", self._command_config.name]
