@@ -142,9 +142,8 @@ RUN python3 -m pip install --upgrade --force pip && \
     python3 -m pip install --force --no-cache-dir -e /root/tests/
 
 # Install the OMB tool
-# ToDo: remove checkouting branch when it will be merged to main
-RUN git -C /opt clone https://github.com/redpanda-data/openmessaging-benchmark.git --branch ducktape_testing && \
-    cd /opt/openmessaging-benchmark && git reset --hard 64605eab8277397aab75e8a7455f144af282d7fe && mvn package
+RUN git -C /opt clone https://github.com/redpanda-data/openmessaging-benchmark.git && \
+    cd /opt/openmessaging-benchmark && git reset --hard cde313756faa1ebd0114a35d6fc3b09198559738 && mvn package
 
 # Compile and install rust-based workload generator.
 # Install & remove compiler in the same step, to avoid bulking
@@ -168,5 +167,12 @@ RUN mkdir -p /opt/scripts && \
     curl https://raw.githubusercontent.com/redpanda-data/seastar/2a9504b3238cba4150be59353bf8d0b3a01fe39c/scripts/addr2line.py -o /opt/scripts/addr2line.py && \
     curl https://raw.githubusercontent.com/redpanda-data/seastar/2a9504b3238cba4150be59353bf8d0b3a01fe39c/scripts/seastar-addr2line -o /opt/scripts/seastar-addr2line && \
     chmod +x /opt/scripts/seastar-addr2line
+
+#mkdir -p "/opt/kafka-2.7.0" && chmod a+rw /opt/kafka-2.7.0 && curl -s "$KAFKA_MIRROR/2.7.0/kafka_2.12-2.7.0.tgz" | tar xz --strip-components=1 -C "/opt/kafka-2.7.0"
+ENV MY_MIRROR="https://archive.apache.org/dist/kafka"
+RUN mkdir -p "/opt/kafka-2.8.0" && chmod a+rw /opt/kafka-2.8.0 && curl -s "$MY_MIRROR/2.8.0/kafka_2.12-2.8.0.tgz" | tar xz --strip-components=1 -C "/opt/kafka-2.8.0"
+
+RUN git -C /opt clone https://github.com/NyaliaLui/simple-producer.git && \
+    cd /opt/simple-producer && mvn clean dependency:copy-dependencies package
 
 CMD service ssh start && tail -f /dev/null
