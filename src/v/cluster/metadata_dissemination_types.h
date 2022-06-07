@@ -97,13 +97,18 @@ struct update_leadership_request
     auto serde_fields() { return std::tie(leaders); }
 };
 
-struct update_leadership_request_v2 {
+struct update_leadership_request_v2
+  : serde::envelope<update_leadership_request_v2, serde::version<0>> {
     static constexpr int8_t version = 0;
     std::vector<ntp_leader_revision> leaders;
+
+    update_leadership_request_v2() noexcept = default;
 
     explicit update_leadership_request_v2(
       std::vector<ntp_leader_revision> leaders)
       : leaders(std::move(leaders)) {}
+
+    auto serde_fields() { return std::tie(leaders); }
 };
 
 struct update_leadership_reply {
