@@ -635,8 +635,9 @@ struct create_partitions_configuration
     operator<<(std::ostream&, const create_partitions_configuration&);
 };
 
-struct topic_configuration_assignment {
-    topic_configuration_assignment() = delete;
+struct topic_configuration_assignment
+  : serde::envelope<topic_configuration_assignment, serde::version<0>> {
+    topic_configuration_assignment() = default;
 
     topic_configuration_assignment(
       topic_configuration cfg, std::vector<partition_assignment> pas)
@@ -647,6 +648,8 @@ struct topic_configuration_assignment {
     std::vector<partition_assignment> assignments;
 
     model::topic_metadata get_metadata() const;
+
+    auto serde_fields() { return std::tie(cfg, assignments); }
 
     friend bool operator==(
       const topic_configuration_assignment&,
