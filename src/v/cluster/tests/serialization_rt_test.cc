@@ -14,6 +14,7 @@
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/tests/randoms.h"
 #include "model/timestamp.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
@@ -539,5 +540,28 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         }
 
         roundtrip_test(p_as);
+    }
+    {
+        cluster::topic_properties properties;
+        properties.cleanup_policy_bitflags = tests::random_optional(
+          [] { return model::random_cleanup_policy(); });
+        properties.compaction_strategy = tests::random_optional(
+          [] { return model::random_compaction_strategy(); });
+        properties.compression = tests::random_optional(
+          [] { return model::random_compression(); });
+        properties.timestamp_type = tests::random_optional(
+          [] { return model::random_timestamp_type(); });
+        properties.segment_size = tests::random_optional(
+          [] { return random_generators::get_int(100_MiB, 1_GiB); });
+        properties.retention_bytes = tests::random_tristate(
+          [] { return random_generators::get_int(100_MiB, 1_GiB); });
+        properties.retention_duration = tests::random_tristate(
+          [] { return tests::random_duration_ms(); });
+        properties.recovery = tests::random_optional(
+          [] { return tests::random_bool(); });
+        properties.shadow_indexing = tests::random_optional(
+          [] { return model::random_shadow_indexing_mode(); });
+
+        roundtrip_test(properties);
     }
 }

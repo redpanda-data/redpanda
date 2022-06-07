@@ -388,7 +388,7 @@ struct partition_assignment
  * Structure holding topic properties overrides, empty values will be replaced
  * with defaults
  */
-struct topic_properties {
+struct topic_properties : serde::envelope<topic_properties, serde::version<0>> {
     topic_properties() noexcept = default;
     topic_properties(
       std::optional<model::compression> compression,
@@ -426,6 +426,18 @@ struct topic_properties {
     storage::ntp_config::default_overrides get_ntp_cfg_overrides() const;
 
     friend std::ostream& operator<<(std::ostream&, const topic_properties&);
+    auto serde_fields() {
+        return std::tie(
+          compression,
+          cleanup_policy_bitflags,
+          compaction_strategy,
+          timestamp_type,
+          segment_size,
+          retention_bytes,
+          retention_duration,
+          recovery,
+          shadow_indexing);
+    }
 
     friend bool operator==(const topic_properties&, const topic_properties&)
       = default;
