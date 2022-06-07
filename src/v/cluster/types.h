@@ -814,9 +814,12 @@ struct create_acls_reply {
     std::vector<errc> results;
 };
 
-struct delete_acls_cmd_data {
+struct delete_acls_cmd_data
+  : serde::envelope<delete_acls_cmd_data, serde::version<0>> {
     static constexpr int8_t current_version = 1;
     std::vector<security::acl_binding_filter> filters;
+
+    auto serde_fields() { return std::tie(filters); }
 };
 
 // result for a single filter

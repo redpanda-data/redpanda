@@ -613,6 +613,45 @@ security::acl_entry random_acl_entry() {
 security::acl_binding random_acl_binding() {
     return {random_resource_pattern(), random_acl_entry()};
 }
+security::resource_pattern_filter random_resource_pattern_filter() {
+    auto resource = tests::random_optional(
+      [] { return random_resource_type(); });
+
+    auto name = tests::random_optional(
+      [] { return random_generators::gen_alphanum_string(14); });
+
+    auto pattern = tests::random_optional([] {
+        using ret_t = std::variant<
+          security::pattern_type,
+          security::resource_pattern_filter::pattern_match>;
+        if (tests::random_bool()) {
+            return ret_t(random_pattern_type());
+        } else {
+            return ret_t(security::resource_pattern_filter::pattern_match{});
+        }
+    });
+
+    return {resource, std::move(name), pattern};
+}
+
+security::acl_entry_filter random_acl_entry_filter() {
+    auto principal = tests::random_optional(
+      [] { return random_acl_principal(); });
+
+    auto host = tests::random_optional([] { return create_acl_host(); });
+
+    auto operation = tests::random_optional(
+      [] { return random_acl_operation(); });
+
+    auto permission = tests::random_optional(
+      [] { return random_acl_permission(); });
+
+    return {std::move(principal), host, operation, permission};
+}
+
+security::acl_binding_filter random_acl_binding_filter() {
+    return {random_resource_pattern_filter(), random_acl_entry_filter()};
+}
 
 SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     roundtrip_test(cluster::ntp_leader(
@@ -735,6 +774,13 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         cluster::create_acls_cmd_data data;
         for (auto i = 0; i < random_generators::get_int(5, 25); ++i) {
             data.bindings.push_back(random_acl_binding());
+        }
+        roundtrip_test(data);
+    }
+    {
+        cluster::delete_acls_cmd_data data;
+        for (auto i = 0; i < random_generators::get_int(5, 25); ++i) {
+            data.filters.push_back(random_acl_binding_filter());
         }
         roundtrip_test(data);
     }
