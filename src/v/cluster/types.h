@@ -405,6 +405,9 @@ struct topic_properties {
     storage::ntp_config::default_overrides get_ntp_cfg_overrides() const;
 
     friend std::ostream& operator<<(std::ostream&, const topic_properties&);
+
+    friend bool operator==(const topic_properties&, const topic_properties&)
+      = default;
 };
 
 enum incremental_update_operation : int8_t { none, set, remove };
