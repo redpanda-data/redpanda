@@ -446,6 +446,11 @@ struct topic_properties : serde::envelope<topic_properties, serde::version<0>> {
 enum incremental_update_operation : int8_t { none, set, remove };
 template<typename T>
 struct property_update {
+    property_update() = default;
+    property_update(T v, incremental_update_operation op)
+      : value(std::move(v))
+      , op(op) {}
+
     T value;
     incremental_update_operation op = incremental_update_operation::none;
 
@@ -455,7 +460,14 @@ struct property_update {
 
 template<typename T>
 struct property_update<tristate<T>> {
-    tristate<T> value = tristate<T>(std::nullopt);
+    property_update()
+      : value(std::nullopt){};
+
+    property_update(tristate<T> v, incremental_update_operation op)
+      : value(std::move(v))
+      , op(op) {}
+
+    tristate<T> value;
     incremental_update_operation op = incremental_update_operation::none;
 
     friend bool operator==(
@@ -1290,5 +1302,19 @@ template<>
 struct adl<cluster::topic_properties> {
     void to(iobuf&, cluster::topic_properties&&);
     cluster::topic_properties from(iobuf_parser&);
+};
+
+template<typename T>
+struct adl<cluster::property_update<T>> {
+    void to(iobuf& out, cluster::property_update<T>&& update) {
+        reflection::serialize(out, std::move(update.value), update.op);
+    }
+
+    cluster::property_update<T> from(iobuf_parser& parser) {
+        auto value = reflection::adl<T>{}.from(parser);
+        auto op = reflection::adl<cluster::incremental_update_operation>{}.from(
+          parser);
+        return {std::move(value), op};
+    }
 };
 } // namespace reflection
