@@ -389,6 +389,27 @@ struct partition_assignment
  * with defaults
  */
 struct topic_properties {
+    topic_properties() noexcept = default;
+    topic_properties(
+      std::optional<model::compression> compression,
+      std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags,
+      std::optional<model::compaction_strategy> compaction_strategy,
+      std::optional<model::timestamp_type> timestamp_type,
+      std::optional<size_t> segment_size,
+      tristate<size_t> retention_bytes,
+      tristate<std::chrono::milliseconds> retention_duration,
+      std::optional<bool> recovery,
+      std::optional<model::shadow_indexing_mode> shadow_indexing)
+      : compression(compression)
+      , cleanup_policy_bitflags(cleanup_policy_bitflags)
+      , compaction_strategy(compaction_strategy)
+      , timestamp_type(timestamp_type)
+      , segment_size(segment_size)
+      , retention_bytes(retention_bytes)
+      , retention_duration(retention_duration)
+      , recovery(recovery)
+      , shadow_indexing(shadow_indexing) {}
+
     std::optional<model::compression> compression;
     std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags;
     std::optional<model::compaction_strategy> compaction_strategy;
@@ -1251,5 +1272,11 @@ template<>
 struct adl<cluster::partition_assignment> {
     void to(iobuf&, cluster::partition_assignment&&);
     cluster::partition_assignment from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::topic_properties> {
+    void to(iobuf&, cluster::topic_properties&&);
+    cluster::topic_properties from(iobuf_parser&);
 };
 } // namespace reflection

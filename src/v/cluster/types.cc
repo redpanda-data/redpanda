@@ -1385,4 +1385,52 @@ adl<cluster::partition_assignment>::from(iobuf_parser& parser) {
     return {group, id, std::move(replicas)};
 }
 
+void adl<cluster::topic_properties>::to(
+  iobuf& out, cluster::topic_properties&& p) {
+    reflection::serialize(
+      out,
+      p.compression,
+      p.cleanup_policy_bitflags,
+      p.compaction_strategy,
+      p.timestamp_type,
+      p.segment_size,
+      p.retention_bytes,
+      p.retention_duration,
+      p.recovery,
+      p.shadow_indexing);
+}
+
+cluster::topic_properties
+adl<cluster::topic_properties>::from(iobuf_parser& parser) {
+    auto compression
+      = reflection::adl<std::optional<model::compression>>{}.from(parser);
+    auto cleanup_policy_bitflags
+      = reflection::adl<std::optional<model::cleanup_policy_bitflags>>{}.from(
+        parser);
+    auto compaction_strategy
+      = reflection::adl<std::optional<model::compaction_strategy>>{}.from(
+        parser);
+    auto timestamp_type
+      = reflection::adl<std::optional<model::timestamp_type>>{}.from(parser);
+    auto segment_size = reflection::adl<std::optional<size_t>>{}.from(parser);
+    auto retention_bytes = reflection::adl<tristate<size_t>>{}.from(parser);
+    auto retention_duration
+      = reflection::adl<tristate<std::chrono::milliseconds>>{}.from(parser);
+    auto recovery = reflection::adl<std::optional<bool>>{}.from(parser);
+    auto shadow_indexing
+      = reflection::adl<std::optional<model::shadow_indexing_mode>>{}.from(
+        parser);
+
+    return {
+      compression,
+      cleanup_policy_bitflags,
+      compaction_strategy,
+      timestamp_type,
+      segment_size,
+      retention_bytes,
+      retention_duration,
+      recovery,
+      shadow_indexing};
+}
+
 } // namespace reflection
