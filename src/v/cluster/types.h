@@ -54,13 +54,18 @@ struct allocate_id_request
     auto serde_fields() { return std::tie(timeout); }
 };
 
-struct allocate_id_reply {
+struct allocate_id_reply
+  : serde::envelope<allocate_id_reply, serde::version<0>> {
     int64_t id;
     errc ec;
+
+    allocate_id_reply() noexcept = default;
 
     allocate_id_reply(int64_t id, errc ec)
       : id(id)
       , ec(ec) {}
+
+    auto serde_fields() { return std::tie(id, ec); }
 };
 
 enum class tx_errc {
