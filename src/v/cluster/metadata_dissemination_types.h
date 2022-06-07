@@ -85,11 +85,16 @@ struct ntp_leader_revision
     auto serde_fields() { return std::tie(ntp, term, leader_id, revision); }
 };
 
-struct update_leadership_request {
+struct update_leadership_request
+  : serde::envelope<update_leadership_request, serde::version<0>> {
     std::vector<ntp_leader> leaders;
+
+    update_leadership_request() noexcept = default;
 
     explicit update_leadership_request(std::vector<ntp_leader> leaders)
       : leaders(std::move(leaders)) {}
+
+    auto serde_fields() { return std::tie(leaders); }
 };
 
 struct update_leadership_request_v2 {
