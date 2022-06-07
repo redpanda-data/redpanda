@@ -198,7 +198,7 @@ public:
         cfg.get("pandaproxy_api")
           .set_value(std::vector<model::broker_endpoint>{model::broker_endpoint(
             net::unresolved_address("127.0.0.1", proxy_port))});
-        return to_yaml(cfg);
+        return to_yaml(cfg, config::redact_secrets::no);
     }
 
     YAML::Node proxy_client_config(
@@ -208,7 +208,7 @@ public:
           config::node().kafka_api()[0].address.host(), kafka_api_port};
         cfg.brokers.set_value(
           std::vector<net::unresolved_address>({kafka_api}));
-        return to_yaml(cfg);
+        return to_yaml(cfg, config::redact_secrets::no);
     }
 
     YAML::Node schema_reg_config(uint16_t listen_port = 8081) {
@@ -218,7 +218,7 @@ public:
             net::unresolved_address("127.0.0.1", listen_port))});
         cfg.get("schema_registry_replication_factor")
           .set_value(std::make_optional<int16_t>(1));
-        return to_yaml(cfg);
+        return to_yaml(cfg, config::redact_secrets::no);
     }
 
     ss::future<> wait_for_controller_leadership() {

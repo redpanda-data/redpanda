@@ -40,7 +40,7 @@ kafka::client::client make_client() {
     cfg.brokers.set_value(std::vector<net::unresolved_address>{
       config::node().kafka_api()[0].address});
     cfg.retries.set_value(size_t(1));
-    return kafka::client::client{to_yaml(cfg)};
+    return kafka::client::client{to_yaml(cfg, config::redact_secrets::no)};
 }
 
 } // namespace
