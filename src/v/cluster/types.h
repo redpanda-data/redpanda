@@ -309,7 +309,13 @@ struct commit_group_tx_request {
 
 struct commit_group_tx_reply {
     tx_errc ec;
+
+    commit_group_tx_reply() noexcept = default;
+
+    explicit commit_group_tx_reply(tx_errc ec)
+      : ec(ec) {}
 };
+
 struct abort_group_tx_request {
     model::ntp ntp;
     kafka::group_id group_id;
@@ -1533,6 +1539,17 @@ struct adl<cluster::commit_group_tx_request> {
         auto group_id = adl<kafka::group_id>{}.from(in);
         auto timeout = adl<model::timeout_clock::duration>{}.from(in);
         return {std::move(ntp), pid, tx_seq, std::move(group_id), timeout};
+    }
+};
+
+template<>
+struct adl<cluster::commit_group_tx_reply> {
+    void to(iobuf& out, cluster::commit_group_tx_reply&& r) {
+        serialize(out, r.ec);
+    }
+    cluster::commit_group_tx_reply from(iobuf_parser& in) {
+        auto ec = adl<cluster::tx_errc>{}.from(in);
+        return cluster::commit_group_tx_reply{ec};
     }
 };
 } // namespace reflection
