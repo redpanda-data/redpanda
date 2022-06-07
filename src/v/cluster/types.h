@@ -288,7 +288,17 @@ struct begin_group_tx_request {
 struct begin_group_tx_reply {
     model::term_id etag;
     tx_errc ec;
+
+    begin_group_tx_reply() noexcept = default;
+
+    explicit begin_group_tx_reply(tx_errc ec)
+      : ec(ec) {}
+
+    begin_group_tx_reply(model::term_id etag, tx_errc ec)
+      : etag(etag)
+      , ec(ec) {}
 };
+
 struct prepare_group_tx_request {
     model::ntp ntp;
     kafka::group_id group_id;
@@ -1665,6 +1675,18 @@ struct adl<cluster::begin_group_tx_request> {
         auto tx_seq = adl<model::tx_seq>{}.from(in);
         auto timeout = adl<model::timeout_clock::duration>{}.from(in);
         return {std::move(ntp), std::move(group_id), pid, tx_seq, timeout};
+    }
+};
+
+template<>
+struct adl<cluster::begin_group_tx_reply> {
+    void to(iobuf& out, cluster::begin_group_tx_reply&& r) {
+        serialize(out, r.etag, r.ec);
+    }
+    cluster::begin_group_tx_reply from(iobuf_parser& in) {
+        auto etag = adl<model::term_id>{}.from(in);
+        auto ec = adl<cluster::tx_errc>{}.from(in);
+        return {etag, ec};
     }
 };
 } // namespace reflection

@@ -132,7 +132,7 @@ ss::future<cluster::begin_group_tx_reply> rm_group_frontend::begin_group_tx(
               "can't create consumer group topic",
               group_id);
             co_return cluster::begin_group_tx_reply{
-              .ec = cluster::tx_errc::partition_not_exists};
+              cluster::tx_errc::partition_not_exists};
         }
     }
 
@@ -174,7 +174,7 @@ ss::future<cluster::begin_group_tx_reply> rm_group_frontend::begin_group_tx(
     }
 
     if (!leader_opt) {
-        co_return cluster::begin_group_tx_reply{.ec = ec};
+        co_return cluster::begin_group_tx_reply{ec};
     }
 
     auto leader = leader_opt.value();
@@ -234,8 +234,7 @@ rm_group_frontend::dispatch_begin_group_tx(
                 cluster::txlog.warn,
                 "got error {} on remote begin group tx",
                 r.error());
-              return cluster::begin_group_tx_reply{
-                .ec = cluster::tx_errc::timeout};
+              return cluster::begin_group_tx_reply{cluster::tx_errc::timeout};
           }
 
           return r.value();
