@@ -10,16 +10,19 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -255,6 +258,9 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 		Rpk: RpkConfig{
 			CoredumpDir: "/var/lib/redpanda/coredump",
 		},
+		// enable pandaproxy and schema_registry by default
+		Pandaproxy:     &Pandaproxy{},
+		SchemaRegistry: &SchemaRegistry{},
 	}
 
 	if err := p.readConfig(fs, c); err != nil {
@@ -551,4 +557,116 @@ func (c *Config) addUnsetDefaults() {
 	if len(r.AdminAPI.Addresses) == 0 {
 		r.AdminAPI.Addresses = []string{"127.0.0.1:9644"}
 	}
+}
+
+func (c *Config) Set(key, value, format string) error {
+	if key == "" {
+		return fmt.Errorf("key field must not be empty")
+	}
+
+	// key can come in the form of rpk.admin_api.addresses
+	props := strings.Split(key, ".")
+
+	rv := reflect.ValueOf(c).Elem()
+	found, err := getField(props, rv)
+	if err != nil {
+		return err
+	}
+
+	isOther := found.Type().String() == "map[string]interface {}"
+
+	if found.CanAddr() {
+		i := found.Addr().Interface()
+		switch strings.ToLower(format) {
+		case "yaml", "single", "":
+			if isOther {
+				err = yaml.Unmarshal([]byte(fmt.Sprintf("%v: %v", props[len(props)-1], value)), i)
+				if err != nil {
+					return err
+				}
+				return nil
+			}
+			err = yaml.Unmarshal([]byte(value), i)
+			if err != nil {
+				return err
+			}
+			return nil
+		case "json":
+			err = json.Unmarshal([]byte(value), i)
+			if err != nil {
+				return err
+			}
+			return nil
+		default:
+			return fmt.Errorf("unsupported format %s", format)
+		}
+	}
+	return fmt.Errorf("this is a bug... please fill an issue")
+}
+
+// getField deeply search in p for the value that reflect property props.
+func getField(props []string, p reflect.Value) (reflect.Value, error) {
+	if len(props) == 0 {
+		return p, nil
+	}
+	if p.Kind() == reflect.Ptr {
+		if p.IsNil() {
+			p.Set(reflect.New(p.Type().Elem()))
+		}
+		p = reflect.Indirect(p)
+	}
+
+	if p.Kind() == reflect.Struct {
+		newP, err := getFieldByTag(props[0], p)
+		if err != nil {
+			return reflect.Value{}, err
+		}
+		return getField(props[1:], newP)
+	}
+	return reflect.Value{}, fmt.Errorf("cannot recurse on type %v", p.Type())
+}
+
+// getFieldByTag searches for a field with a given yaml tag and returns
+// found value or an error if it can't find the given tag.
+func getFieldByTag(tag string, p reflect.Value) (reflect.Value, error) {
+	t := p.Type()
+	var other bool
+	// Loop struct to get the field that match tag.
+	for i := 0; i < p.NumField(); i++ {
+		// Rpk blindly set configuration parameters, we parse these parameters
+		// in the "Other" field
+		if t.Field(i).Name == "Other" {
+			other = true
+		}
+		// Get yaml tag of current field
+		yt := t.Field(i).Tag.Get("yaml")
+
+		// yaml struct tags can contain flags such as omitempty,
+		// when tag.Get("yaml") is called it will return
+		//   "my_tag,omitempty"
+		// so we only need first parameter of the string slice.
+		ft := strings.Split(yt, ",")[0]
+
+		if ft == tag {
+			return p.Field(i), nil
+		} else {
+			continue
+		}
+	}
+
+	// If we can't find the tag but the struct has an 'Other' map:
+	if other {
+		return p.FieldByName("Other"), nil
+	}
+
+	return reflect.Value{}, fmt.Errorf("couldn't find property %q", tag)
+}
+
+func (c *Config) WriteNodeUUID() error {
+	id, err := uuid.NewUUID()
+	if err != nil {
+		return err
+	}
+	c.NodeUUID = id.String()
+	return nil
 }

@@ -99,8 +99,8 @@ func main() {
 	log.Print(c.String())
 
 	fs := afero.NewOsFs()
-	mgr := config.NewManager(fs)
-	cfg, err := mgr.Read(path.Join(c.configSourceDir, "redpanda.yaml"))
+	p := config.Params{ConfigPath: path.Join(c.configSourceDir, "redpanda.yaml")}
+	cfg, err := p.Load(fs)
 	if err != nil {
 		log.Fatalf("%s", fmt.Errorf("unable to read the redpanda configuration file: %w", err))
 	}

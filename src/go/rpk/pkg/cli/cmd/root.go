@@ -37,7 +37,6 @@ import (
 func Execute() {
 	verbose := false
 	fs := afero.NewOsFs()
-	mgr := config.NewManager(fs)
 
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
 		color.NoColor = true
@@ -77,7 +76,7 @@ func Execute() {
 		plugincmd.NewCommand(fs),
 	)
 
-	addPlatformDependentCmds(fs, mgr, root)
+	addPlatformDependentCmds(fs, root)
 
 	// To support autocompletion even for plugins, we list all plugins now
 	// and add tiny commands to our root command. Cobra works by creating

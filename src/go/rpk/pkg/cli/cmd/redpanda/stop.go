@@ -14,6 +14,7 @@ package redpanda
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 	"syscall"
 	"time"
@@ -26,7 +27,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewStopCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
+func NewStopCommand(fs afero.Fs) *cobra.Command {
 	var (
 		configFile string
 		timeout    time.Duration
@@ -38,8 +39,8 @@ func NewStopCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 first sends SIGINT, and waits for the specified timeout. Then, if redpanda
 hasn't stopped, it sends SIGTERM. Lastly, it sends SIGKILL if it's still
 running.`,
-		RunE: func(ccmd *cobra.Command, args []string) error {
-			return executeStop(fs, mgr, configFile, timeout)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return executeStop(fs, cmd, timeout)
 		},
 	}
 	command.Flags().StringVar(
@@ -63,14 +64,14 @@ running.`,
 	return command
 }
 
-func executeStop(
-	fs afero.Fs, mgr config.Manager, configFile string, timeout time.Duration,
-) error {
-	conf, err := mgr.ReadOrFind(configFile)
+func executeStop(fs afero.Fs, cmd *cobra.Command, timeout time.Duration) error {
+	p := config.ParamsFromCommand(cmd)
+	cfg, err := p.Load(fs)
 	if err != nil {
-		return err
+		return fmt.Errorf("unable to load config: %v", err)
 	}
-	pidFile := conf.PIDFile()
+
+	pidFile := cfg.PIDFile()
 	isLocked, err := os.CheckLocked(pidFile)
 	if err != nil {
 		log.Debugf("error checking if the PID file is locked: %v", err)

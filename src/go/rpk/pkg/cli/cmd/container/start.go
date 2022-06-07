@@ -260,6 +260,7 @@ func startCluster(
 			if err != nil {
 				return err
 			}
+			fmt.Println(kafkaPort, proxyPort, schemaRegPort, rpcPort, metricsPort)
 			log.Debugf(
 				"Created container with NodeID=%d, IP=%s, ID='%s",
 				id,

@@ -113,9 +113,7 @@ func parseConfigKvs(args []string) ([]string, []string) {
 	return kvs, args
 }
 
-func NewStartCommand(
-	fs afero.Fs, mgr config.Manager, launcher rp.Launcher,
-) *cobra.Command {
+func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 	prestartCfg := prestartConfig{}
 	var (
 		configFile      string
@@ -143,25 +141,26 @@ func NewStartCommand(
 			// (POSIX standard)
 			UnknownFlags: true,
 		},
-		RunE: func(ccmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			// --set flags have to be parsed by hand because pflag (the
 			// underlying flag-parsing lib used by cobra) uses a CSV parser
 			// for list flags, and since JSON often contains commas, it
 			// blows up when there's a JSON object.
 			configKvs, filteredArgs := parseConfigKvs(os.Args)
-			conf, err := mgr.FindOrGenerate(configFile)
+			p := config.ParamsFromCommand(cmd)
+			cfg, err := p.Load(fs)
 			if err != nil {
-				return err
+				return fmt.Errorf("unable to load config file: %s", err)
 			}
 
 			if len(configKvs) > 0 {
-				conf, err = setConfig(mgr, configKvs)
+				err = setConfig(cfg, configKvs)
 				if err != nil {
 					return err
 				}
 			}
 
-			updateConfigWithFlags(conf, ccmd.Flags())
+			updateConfigWithFlags(cfg, cmd.Flags())
 
 			env := api.EnvironmentPayload{}
 			if len(seeds) == 0 {
@@ -177,11 +176,11 @@ func NewStartCommand(
 			}
 			seedServers, err := parseSeeds(seeds)
 			if err != nil {
-				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
+				sendEnv(fs, env, cfg, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			if len(seedServers) != 0 {
-				conf.Redpanda.SeedServers = seedServers
+				cfg.Redpanda.SeedServers = seedServers
 			}
 
 			kafkaAddr = stringSliceOr(
@@ -196,11 +195,11 @@ func NewStartCommand(
 				config.DefaultKafkaPort,
 			)
 			if err != nil {
-				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
+				sendEnv(fs, env, cfg, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			if len(kafkaAPI) > 0 {
-				conf.Redpanda.KafkaAPI = kafkaAPI
+				cfg.Redpanda.KafkaAPI = kafkaAPI
 			}
 
 			proxyAddr = stringSliceOr(
@@ -215,14 +214,14 @@ func NewStartCommand(
 				config.DefaultProxyPort,
 			)
 			if err != nil {
-				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
+				sendEnv(fs, env, cfg, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			if len(proxyAPI) > 0 {
-				if conf.Pandaproxy == nil {
-					conf.Pandaproxy = config.Default().Pandaproxy
+				if cfg.Pandaproxy == nil {
+					cfg.Pandaproxy = config.Default().Pandaproxy
 				}
-				conf.Pandaproxy.PandaproxyAPI = proxyAPI
+				cfg.Pandaproxy.PandaproxyAPI = proxyAPI
 			}
 
 			schemaRegAddr = stringSliceOr(
@@ -237,14 +236,14 @@ func NewStartCommand(
 				config.DefaultSchemaRegPort,
 			)
 			if err != nil {
-				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
+				sendEnv(fs, env, cfg, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			if len(schemaRegAPI) > 0 {
-				if conf.SchemaRegistry == nil {
-					conf.SchemaRegistry = config.Default().SchemaRegistry
+				if cfg.SchemaRegistry == nil {
+					cfg.SchemaRegistry = config.Default().SchemaRegistry
 				}
-				conf.SchemaRegistry.SchemaRegistryAPI = schemaRegAPI
+				cfg.SchemaRegistry.SchemaRegistryAPI = schemaRegAPI
 			}
 
 			rpcAddr = stringOr(
@@ -256,11 +255,11 @@ func NewStartCommand(
 				config.Default().Redpanda.RPCServer.Port,
 			)
 			if err != nil {
-				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
+				sendEnv(fs, env, cfg, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			if rpcServer != nil {
-				conf.Redpanda.RPCServer = *rpcServer
+				cfg.Redpanda.RPCServer = *rpcServer
 			}
 
 			advertisedKafka = stringSliceOr(
@@ -275,11 +274,12 @@ func NewStartCommand(
 				config.DefaultKafkaPort,
 			)
 			if err != nil {
-				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
+				sendEnv(fs, env, cfg, !prestartCfg.checkEnabled, err)
 				return err
 			}
-			if advKafkaAPI != nil {
-				conf.Redpanda.AdvertisedKafkaAPI = advKafkaAPI
+
+			if len(advKafkaAPI) > 0 {
+				cfg.Redpanda.AdvertisedKafkaAPI = advKafkaAPI
 			}
 
 			advertisedProxy = stringSliceOr(
@@ -294,14 +294,14 @@ func NewStartCommand(
 				config.DefaultProxyPort,
 			)
 			if err != nil {
-				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
+				sendEnv(fs, env, cfg, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			if advProxyAPI != nil {
-				if conf.Pandaproxy == nil {
-					conf.Pandaproxy = config.Default().Pandaproxy
+				if cfg.Pandaproxy == nil {
+					cfg.Pandaproxy = config.Default().Pandaproxy
 				}
-				conf.Pandaproxy.AdvertisedPandaproxyAPI = advProxyAPI
+				cfg.Pandaproxy.AdvertisedPandaproxyAPI = advProxyAPI
 			}
 
 			advertisedRPC = stringOr(
@@ -313,50 +313,50 @@ func NewStartCommand(
 				config.Default().Redpanda.RPCServer.Port,
 			)
 			if err != nil {
-				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
+				sendEnv(fs, env, cfg, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			if advRPCApi != nil {
-				conf.Redpanda.AdvertisedRPCAPI = advRPCApi
+				cfg.Redpanda.AdvertisedRPCAPI = advRPCApi
 			}
 			installDirectory, err := cli.GetOrFindInstallDir(fs, installDirFlag)
 			if err != nil {
-				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
+				sendEnv(fs, env, cfg, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			rpArgs, err := buildRedpandaFlags(
 				fs,
-				conf,
+				cfg,
 				filteredArgs,
 				sFlags,
-				ccmd.Flags(),
+				cmd.Flags(),
 				!prestartCfg.checkEnabled,
 			)
 			if err != nil {
-				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
+				sendEnv(fs, env, cfg, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			checkPayloads, tunerPayloads, err := prestart(
 				fs,
 				rpArgs,
-				conf,
+				cfg,
 				prestartCfg,
 				timeout,
 			)
 			env.Checks = checkPayloads
 			env.Tuners = tunerPayloads
 			if err != nil {
-				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
+				sendEnv(fs, env, cfg, !prestartCfg.checkEnabled, err)
 				return err
 			}
 
-			err = mgr.Write(conf)
+			err = cfg.Write(fs)
 			if err != nil {
-				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
+				sendEnv(fs, env, cfg, !prestartCfg.checkEnabled, err)
 				return err
 			}
 
-			sendEnv(fs, env, conf, !prestartCfg.checkEnabled, nil)
+			sendEnv(fs, env, cfg, !prestartCfg.checkEnabled, nil)
 			rpArgs.ExtraArgs = args
 			log.Info(common.FeedbackMsg)
 			log.Info("Starting redpanda...")
@@ -640,21 +640,21 @@ func mergeFlags(
 	return current
 }
 
-func setConfig(mgr config.Manager, configKvs []string) (*config.Config, error) {
+func setConfig(cfg *config.Config, configKvs []string) error {
 	for _, rawKv := range configKvs {
 		parts := strings.SplitN(rawKv, "=", 2)
 		if len(parts) < 2 {
-			return nil, fmt.Errorf(
+			return fmt.Errorf(
 				"key-value pair '%s' is not formatted as expected (k=v)",
 				rawKv,
 			)
 		}
-		err := mgr.Set(parts[0], parts[1], "")
+		err := cfg.Set(parts[0], parts[1], "")
 		if err != nil {
-			return nil, err
+			return err
 		}
 	}
-	return mgr.Get()
+	return nil
 }
 
 func resolveWellKnownIo(
