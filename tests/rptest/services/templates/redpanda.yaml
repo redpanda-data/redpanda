@@ -33,6 +33,7 @@ redpanda:
       address: "{{node_ip}}"
       port: {{admin_alternate_port}}
 
+{{legacy_config_yaml}}
 
 {% if node_id > 1 %}
   seed_servers:

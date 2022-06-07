@@ -77,10 +77,6 @@ CHAOS_LOG_ALLOW_LIST = [
         "(raft|rpc) - .*(client_request_timeout|disconnected_endpoint|Broken pipe|Connection reset by peer)"
     ),
 
-    # Torn disk writes
-    re.compile("storage - Could not parse header"),
-    re.compile("storage - Cannot continue parsing"),
-
     # e.g. raft - [group_id:59, {kafka/test-topic-319-1639161306093460/0}] consensus.cc:2301 - unable to replicate updated configuration: raft::errc::replicated_entry_truncated
     re.compile("raft - .*replicated_entry_truncated"),
 
@@ -438,7 +434,8 @@ class RedpandaService(Service):
                  log_level: Optional[str] = None,
                  environment: Optional[dict[str, str]] = None,
                  security: SecurityConfig = SecurityConfig(),
-                 node_ready_timeout_s=None):
+                 node_ready_timeout_s=None,
+                 legacy_config_mode=False):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
         self._context = context
         self._enable_rp = enable_rp
@@ -450,6 +447,8 @@ class RedpandaService(Service):
         if node_ready_timeout_s is None:
             node_ready_timeout_s = RedpandaService.DEFAULT_NODE_READY_TIMEOUT_SEC
         self.node_ready_timeout_s = node_ready_timeout_s
+
+        self._legacy_config_mode = legacy_config_mode
 
         self._extra_node_conf = {}
         for node in self.nodes:
@@ -1207,12 +1206,24 @@ class RedpandaService(Service):
         # exercise code paths that deal with multiple listeners
         node_ip = socket.gethostbyname(node.account.hostname)
 
+        if self._legacy_config_mode:
+            node_conf_yaml = self._write_bootstrap_cluster_config_yaml()
+
+            # Hacky indentation to use this inside the "redpanda:" block
+            tmp = []
+            for line in node_conf_yaml.split("\n"):
+                tmp.append(f"  {line}")
+            node_conf_yaml = "\n".join(tmp)
+        else:
+            node_conf_yaml = ""
+
         conf = self.render("redpanda.yaml",
                            node=node,
                            data_dir=RedpandaService.DATA_DIR,
                            nodes=node_info,
                            node_id=self.idx(node),
                            node_ip=node_ip,
+                           legacy_config_yaml=node_conf_yaml,
                            kafka_alternate_port=self.KAFKA_ALTERNATE_PORT,
                            admin_alternate_port=self.ADMIN_ALTERNATE_PORT,
                            enable_rp=self._enable_rp,
@@ -1255,6 +1266,16 @@ class RedpandaService(Service):
         self.logger.debug(conf)
         node.account.create_file(RedpandaService.NODE_CONFIG_FILE, conf)
 
+    def _write_bootstrap_cluster_config_yaml(self):
+        conf = copy.deepcopy(self.CLUSTER_CONFIG_DEFAULTS)
+        if self._extra_rp_conf:
+            self.logger.debug(
+                "Setting custom cluster configuration options: {}".format(
+                    self._extra_rp_conf))
+            conf.update(self._extra_rp_conf)
+
+        return yaml.dump(conf)
+
     def write_bootstrap_cluster_config(self):
         conf = copy.deepcopy(self.CLUSTER_CONFIG_DEFAULTS)
         if self._extra_rp_conf:
@@ -1267,7 +1288,7 @@ class RedpandaService(Service):
             self.logger.debug("Enabling SASL in cluster configuration")
             conf.update(dict(enable_sasl=True))
 
-        conf_yaml = yaml.dump(conf)
+        conf_yaml = self._write_bootstrap_cluster_config_yaml()
         for node in self.nodes:
             self.logger.info(
                 "Writing bootstrap cluster config file {}:{}".format(
