@@ -376,6 +376,10 @@ struct partition_assignment {
     }
 
     friend std::ostream& operator<<(std::ostream&, const partition_assignment&);
+
+    friend bool
+    operator==(const partition_assignment&, const partition_assignment&)
+      = default;
 };
 
 /**
