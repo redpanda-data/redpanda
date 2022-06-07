@@ -445,7 +445,9 @@ struct topic_properties : serde::envelope<topic_properties, serde::version<0>> {
 
 enum incremental_update_operation : int8_t { none, set, remove };
 template<typename T>
-struct property_update {
+
+struct property_update
+  : serde::envelope<property_update<T>, serde::version<0>> {
     property_update() = default;
     property_update(T v, incremental_update_operation op)
       : value(std::move(v))
@@ -454,21 +456,25 @@ struct property_update {
     T value;
     incremental_update_operation op = incremental_update_operation::none;
 
+    auto serde_fields() { return std::tie(value, op); }
+
     friend bool operator==(const property_update<T>&, const property_update<T>&)
       = default;
 };
 
 template<typename T>
-struct property_update<tristate<T>> {
+struct property_update<tristate<T>>
+  : serde::envelope<property_update<tristate<T>>, serde::version<0>> {
     property_update()
       : value(std::nullopt){};
 
     property_update(tristate<T> v, incremental_update_operation op)
       : value(std::move(v))
       , op(op) {}
-
     tristate<T> value;
     incremental_update_operation op = incremental_update_operation::none;
+
+    auto serde_fields() { return std::tie(value, op); }
 
     friend bool operator==(
       const property_update<tristate<T>>&, const property_update<tristate<T>>&)

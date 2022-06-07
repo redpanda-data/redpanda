@@ -470,6 +470,17 @@ void roundtrip_test(const T original) {
     BOOST_REQUIRE(original == from_adl);
 }
 
+template<typename T>
+cluster::property_update<T> random_property_update(T value) {
+    return {
+      value,
+      random_generators::random_choice(
+        std::vector<cluster::incremental_update_operation>{
+          cluster::incremental_update_operation::set,
+          cluster::incremental_update_operation::remove}),
+    };
+}
+
 SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     roundtrip_test(cluster::ntp_leader(
       model::ntp(
@@ -563,5 +574,12 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           [] { return model::random_shadow_indexing_mode(); });
 
         roundtrip_test(properties);
+    }
+    {
+        roundtrip_test(
+          random_property_update(random_generators::gen_alphanum_string(10)));
+
+        roundtrip_test(random_property_update(tests::random_tristate(
+          [] { return random_generators::get_int<size_t>(0, 100000); })));
     }
 }
