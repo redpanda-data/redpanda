@@ -511,4 +511,14 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     roundtrip_test(cluster::update_leadership_reply());
 
     roundtrip_test(cluster::get_leadership_request());
+
+    roundtrip_test(cluster::get_leadership_reply({
+      cluster::ntp_leader(
+        model::ntp(
+          model::ns("a namespace"),
+          model::topic("a topic"),
+          model::partition_id(287)),
+        model::term_id(1234),
+        model::node_id(2)),
+    }));
 }

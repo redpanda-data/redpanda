@@ -125,11 +125,16 @@ struct get_leadership_request
     auto serde_fields() { return std::tie(); }
 };
 
-struct get_leadership_reply {
+struct get_leadership_reply
+  : serde::envelope<get_leadership_reply, serde::version<0>> {
     std::vector<ntp_leader> leaders;
+
+    get_leadership_reply() noexcept = default;
 
     explicit get_leadership_reply(std::vector<ntp_leader> leaders)
       : leaders(std::move(leaders)) {}
+
+    auto serde_fields() { return std::tie(leaders); }
 };
 
 } // namespace cluster
