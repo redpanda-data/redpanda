@@ -641,23 +641,6 @@ adl<cluster::create_topics_reply>::from(iobuf_parser& in) {
       std::move(results), std::move(md), std::move(cfg)};
 }
 
-void adl<model::timeout_clock::duration>::to(iobuf& out, duration dur) {
-    // This is a clang bug that cause ss::cpu_to_le to become ambiguous
-    // because rep has type of long long
-    // adl<rep>{}.to(out, dur.count());
-    adl<uint64_t>{}.to(
-      out, std::chrono::duration_cast<std::chrono::milliseconds>(dur).count());
-}
-
-model::timeout_clock::duration
-adl<model::timeout_clock::duration>::from(iobuf_parser& in) {
-    // This is a clang bug that cause ss::cpu_to_le to become ambiguous
-    // because rep has type of long long
-    // auto rp = adl<rep>{}.from(in);
-    auto rp = adl<uint64_t>{}.from(in);
-    return std::chrono::duration_cast<duration>(std::chrono::milliseconds{rp});
-}
-
 void adl<cluster::topic_configuration_assignment>::to(
   iobuf& b, cluster::topic_configuration_assignment&& assigned_cfg) {
     reflection::serialize(

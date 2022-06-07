@@ -993,15 +993,6 @@ struct is_error_code_enum<cluster::tx_errc> : true_type {};
 namespace reflection {
 
 template<>
-struct adl<model::timeout_clock::duration> {
-    using rep = model::timeout_clock::rep;
-    using duration = model::timeout_clock::duration;
-
-    void to(iobuf& out, duration dur);
-    duration from(iobuf_parser& in);
-};
-
-template<>
 struct adl<cluster::topic_configuration> {
     void to(iobuf&, cluster::topic_configuration&&);
     cluster::topic_configuration from(iobuf_parser&);

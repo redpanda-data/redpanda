@@ -8,9 +8,10 @@
 // by the Apache License, Version 2.0
 
 #include "bytes/iobuf_parser.h"
-#include "cluster/types.h"
+#include "model/adl_serde.h"
 #include "model/timeout_clock.h"
 #include "reflection/adl.h"
+#include "utils/to_string.h"
 
 #include <boost/test/unit_test.hpp>
 

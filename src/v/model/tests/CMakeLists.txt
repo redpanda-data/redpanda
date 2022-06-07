@@ -20,7 +20,7 @@ rp_test(
     topic_view_tests.cc
     timeout_adl.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES Boost::unit_test_framework v::model v::cluster
+  LIBRARIES Boost::unit_test_framework v::model
   LABELS model
 )
 
