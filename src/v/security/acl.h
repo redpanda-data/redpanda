@@ -249,10 +249,11 @@ inline const acl_principal acl_wildcard_user(principal_type::user, "*");
  * Resource pattern matches resources using a (type, name, pattern) tuple. The
  * pattern type changes how matching occurs (e.g. literal, name prefix).
  */
-class resource_pattern {
+class resource_pattern
+  : public serde::envelope<resource_pattern, serde::version<0>> {
 public:
     static constexpr const char* wildcard = "*";
-
+    resource_pattern() = default;
     resource_pattern(resource_type type, ss::sstring name, pattern_type pattern)
       : _resource(type)
       , _name(std::move(name))
@@ -280,6 +281,8 @@ public:
     resource_type resource() const { return _resource; }
     const ss::sstring& name() const { return _name; }
     pattern_type pattern() const { return _pattern; }
+
+    auto serde_fields() { return std::tie(_resource, _name, _pattern); }
 
 private:
     resource_type _resource;

@@ -547,6 +547,33 @@ random_create_partitions_configuration() {
     }
     return cpc;
 }
+security::scram_credential random_credential() {
+    return security::scram_credential(
+      random_generators::get_bytes(256),
+      random_generators::get_bytes(256),
+      random_generators::get_bytes(256),
+      random_generators::get_int(1, 10));
+}
+
+security::resource_type random_resource_type() {
+    return random_generators::random_choice<security::resource_type>(
+      {security::resource_type::cluster,
+       security::resource_type::group,
+       security::resource_type::topic,
+       security::resource_type::transactional_id});
+}
+
+security::pattern_type random_pattern_type() {
+    return random_generators::random_choice<security::pattern_type>(
+      {security::pattern_type::literal, security::pattern_type::prefixed});
+}
+
+security::resource_pattern random_resource_pattern() {
+    return {
+      random_resource_type(),
+      random_generators::gen_alphanum_string(10),
+      random_pattern_type()};
+}
 
 SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     roundtrip_test(cluster::ntp_leader(
