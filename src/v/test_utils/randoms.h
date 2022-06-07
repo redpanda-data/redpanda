@@ -19,6 +19,10 @@
 
 #include <bits/stdint-uintn.h>
 
+#include <limits>
+#include <optional>
+#include <vector>
+
 namespace tests {
 
 inline net::unresolved_address random_net_address() {
@@ -37,6 +41,42 @@ random_broker(int32_t id_low_bound, int32_t id_upper_bound) {
       std::nullopt,
       model::broker_properties{
         .cores = random_generators::get_int<uint32_t>(96)});
+}
+
+inline bool random_bool() { return random_generators::get_int(0, 100) > 50; }
+
+template<typename T>
+T random_named_string(size_t size = 20) {
+    return T{random_generators::gen_alphanum_string(size)};
+}
+
+template<typename T>
+T random_named_int() {
+    return T{random_generators::get_int<typename T::type>(
+      0, std::numeric_limits<T>::max())};
+}
+
+template<typename Func>
+auto random_optional(Func f) {
+    using T = decltype(f());
+    if (random_bool()) {
+        return std::optional<T>(f());
+    }
+    return std::optional<T>();
+}
+
+template<typename Func>
+auto random_tristate(Func f) {
+    using T = decltype(f());
+    if (random_bool()) {
+        return tristate<T>{};
+    }
+    return tristate<T>(random_optional(f));
+}
+
+inline std::chrono::milliseconds random_duration_ms() {
+    return std::chrono::milliseconds(random_generators::get_int<uint64_t>(
+      0, std::chrono::milliseconds::max().count()));
 }
 
 } // namespace tests
