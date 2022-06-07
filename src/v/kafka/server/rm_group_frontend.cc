@@ -303,12 +303,8 @@ ss::future<cluster::prepare_group_tx_reply> rm_group_frontend::prepare_group_tx(
     auto _self = _controller->self();
 
     if (leader == _self) {
-        cluster::prepare_group_tx_request req;
-        req.group_id = group_id;
-        req.etag = etag;
-        req.pid = pid;
-        req.tx_seq = tx_seq;
-        req.timeout = timeout;
+        cluster::prepare_group_tx_request req{
+          group_id, etag, pid, tx_seq, timeout};
         co_return co_await prepare_group_tx_locally(std::move(req));
     }
 
@@ -357,11 +353,7 @@ rm_group_frontend::dispatch_prepare_group_tx(
           cluster::tx_gateway_client_protocol cp) {
             return cp.prepare_group_tx(
               cluster::prepare_group_tx_request{
-                .group_id = group_id,
-                .etag = etag,
-                .pid = pid,
-                .tx_seq = tx_seq,
-                .timeout = timeout},
+                group_id, etag, pid, tx_seq, timeout},
               rpc::client_opts(model::timeout_clock::now() + timeout));
         })
       .then(&rpc::get_ctx_data<cluster::prepare_group_tx_reply>)
