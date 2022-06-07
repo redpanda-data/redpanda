@@ -319,6 +319,11 @@ struct abort_group_tx_request {
 
 struct abort_group_tx_reply {
     tx_errc ec;
+
+    abort_group_tx_reply() noexcept = default;
+
+    explicit abort_group_tx_reply(tx_errc ec)
+      : ec(ec) {}
 };
 
 /// Old-style request sent by node to join raft-0
@@ -1471,6 +1476,17 @@ struct adl<cluster::abort_group_tx_request> {
         auto tx_seq = adl<model::tx_seq>{}.from(in);
         auto timeout = adl<model::timeout_clock::duration>{}.from(in);
         return {std::move(ntp), std::move(group_id), pid, tx_seq, timeout};
+    }
+};
+
+template<>
+struct adl<cluster::abort_group_tx_reply> {
+    void to(iobuf& out, cluster::abort_group_tx_reply&& r) {
+        serialize(out, r.ec);
+    }
+    cluster::abort_group_tx_reply from(iobuf_parser& in) {
+        auto ec = adl<cluster::tx_errc>{}.from(in);
+        return cluster::abort_group_tx_reply{ec};
     }
 };
 } // namespace reflection
