@@ -118,8 +118,11 @@ struct update_leadership_reply
     auto serde_fields() { return std::tie(); }
 };
 
-struct get_leadership_request {
-    get_leadership_request() = default;
+struct get_leadership_request
+  : serde::envelope<get_leadership_request, serde::version<0>> {
+    get_leadership_request() noexcept = default;
+
+    auto serde_fields() { return std::tie(); }
 };
 
 struct get_leadership_reply {

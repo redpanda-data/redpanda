@@ -509,4 +509,6 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     }));
 
     roundtrip_test(cluster::update_leadership_reply());
+
+    roundtrip_test(cluster::get_leadership_request());
 }
