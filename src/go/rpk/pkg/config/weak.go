@@ -12,6 +12,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"reflect"
 	"strconv"
 
 	"gopkg.in/yaml.v3"
@@ -246,7 +247,8 @@ func (s *serverTLSArray) UnmarshalYAML(n *yaml.Node) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "redpanda.yaml: %+v must be an array; a non-array value in array fields is deprecated and will be removed in the future\n", single)
+	// do not log serverTLS because the Other field may contain a secret
+	fmt.Fprintf(os.Stderr, "redpanda.yaml: Server TLS must be an array; a non-array value in array fields is deprecated and will be removed in the future\n")
 	*s = []ServerTLS{single}
 	return nil
 }
@@ -333,6 +335,7 @@ func (rpc *RedpandaConfig) UnmarshalYAML(n *yaml.Node) error {
 		DeveloperMode              weakBool               `yaml:"developer_mode"`
 		Other                      map[string]interface{} `yaml:",inline"`
 	}
+
 	if err := n.Decode(&internal); err != nil {
 		return err
 	}
@@ -530,6 +533,64 @@ func (s *ServerTLS) UnmarshalYAML(n *yaml.Node) error {
 	s.Enabled = bool(internal.Enabled)
 	s.RequireClientAuth = bool(internal.RequireClientAuth)
 	s.Other = internal.Other
+	return nil
+}
+
+func (ss *SeedServer) UnmarshalYAML(n *yaml.Node) error {
+	var internal struct {
+		// New schema should only contain Address and Port, but we will
+		// support this under Host also.
+		Address weakString     `yaml:"address"`
+		Port    weakInt        `yaml:"port"`
+		Host    *SocketAddress `yaml:"host"`
+		// deprecated
+		NodeID *weakInt `yaml:"node_id"`
+	}
+	if err := n.Decode(&internal); err != nil {
+		return err
+	}
+	if internal.NodeID != nil {
+		fmt.Println("redpanda yaml: redpanda.seed_server.node_id is deprecated and unused")
+	}
+
+	if internal.Address != "" || internal.Port != 0 {
+		sa := SocketAddress{string(internal.Address), int(internal.Port)}
+		if internal.Host == nil {
+			ss.Host = sa
+			return nil
+		}
+
+		// If we set both address, port and host.address and host.port they
+		// must be equal.
+		if internal.Address != "" && internal.Port != 0 {
+			if !reflect.DeepEqual(internal.Host, &sa) {
+				return fmt.Errorf("redpanda yaml: reedpanda.seed_server.host doesn't match reedpanda.seed_server.{address,port}, please use only one")
+			}
+		} else {
+			// If we set partial sockets in both structures, eg:
+
+			// internal.address = 0.0.0.1
+			// internal.host.port = 80
+			if internal.Address != "" {
+				if internal.Host.Address != "" {
+					return fmt.Errorf("redpanda yaml: reedpanda.seed_server.address and redpanda.seed_server.host.address can't be set at the same time")
+				}
+				sa.Port = internal.Host.Port
+			}
+			// internal.host.address = 0.0.0.1
+			// internal.port = 80
+			if internal.Port != 0 {
+				if internal.Host.Port != 0 {
+					return fmt.Errorf("redpanda yaml: reedpanda.seed_server.port and redpanda.seed_server.host.port can't be set at the same time")
+				}
+				sa.Address = internal.Host.Address
+			}
+		}
+		ss.Host = sa
+		return nil
+	}
+
+	ss.Host = *internal.Host
 	return nil
 }
 

@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/spf13/afero"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 func TestParams_Write(t *testing.T) {
@@ -20,27 +20,27 @@ func TestParams_Write(t *testing.T) {
 			name: "create default config file if there is no config file yet",
 			exp: `config_file: /etc/redpanda/redpanda.yaml
 redpanda:
-  data_directory: /var/lib/redpanda/data
-  node_id: 0
-  seed_servers: []
-  rpc_server:
-    address: 0.0.0.0
-    port: 33145
-  kafka_api:
-  - address: 0.0.0.0
-    port: 9092
-  admin:
-  - address: 0.0.0.0
-    port: 9644
-  developer_mode: true
+    data_directory: /var/lib/redpanda/data
+    node_id: 0
+    seed_servers: []
+    rpc_server:
+        address: 0.0.0.0
+        port: 33145
+    kafka_api:
+        - address: 0.0.0.0
+          port: 9092
+    admin:
+        - address: 0.0.0.0
+          port: 9644
+    developer_mode: true
 rpk:
-  kafka_api:
-    brokers:
-    - 0.0.0.0:9092
-  admin_api:
-    addresses:
-    - 127.0.0.1:9644
-  enable_usage_stats: false
+    kafka_api:
+        brokers:
+            - 0.0.0.0:9092
+    admin_api:
+        addresses:
+            - 127.0.0.1:9644
+    enable_usage_stats: false
 `,
 		},
 		{
@@ -49,8 +49,8 @@ rpk:
 			cfgToWrite: &Config{ConfigFile: "/etc/redpanda/redpanda.yaml", Redpanda: RedpandaConfig{ID: 6}},
 			exp: `config_file: /etc/redpanda/redpanda.yaml
 redpanda:
-  data_directory: ""
-  node_id: 6
+    data_directory: ""
+    node_id: 6
 `,
 		},
 	}

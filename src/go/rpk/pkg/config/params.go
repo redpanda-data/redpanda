@@ -10,11 +10,13 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"syscall"
@@ -23,7 +25,7 @@ import (
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 // This file contains the Params type, which will eventually be created in
@@ -210,7 +212,7 @@ func ParamsFromCommand(cmd *cobra.Command) *Params {
 			}
 
 			val := f.Value.String()
-			// Value.String() adds backets to slice types, and we
+			// Value.String() adds brackets to slice types, and we
 			// need to strip that here.
 			if stripBrackets {
 				if len(val) > 0 && val[0] == '[' && val[len(val)-1] == ']' {
@@ -234,8 +236,20 @@ func ParamsFromCommand(cmd *cobra.Command) *Params {
 //  * Sets unset default values.
 //
 func (p *Params) Load(fs afero.Fs) (*Config, error) {
+	cf := "/etc/redpanda/redpanda.yaml"
+	// If we have a config path loaded (through --config flag) the user
+	// expect to load or create the file from this directory.
+	if p.ConfigPath != "" {
+		if exist, _ := afero.Exists(fs, p.ConfigPath); !exist {
+			err := fs.MkdirAll(filepath.Dir(p.ConfigPath), 0o755)
+			if err != nil {
+				return nil, err
+			}
+		}
+		cf = p.ConfigPath
+	}
 	c := &Config{
-		ConfigFile: "/etc/redpanda/redpanda.yaml",
+		ConfigFile: cf,
 		Redpanda: RedpandaConfig{
 			Directory: "/var/lib/redpanda/data",
 			RPCServer: SocketAddress{
@@ -255,6 +269,9 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 		Rpk: RpkConfig{
 			CoredumpDir: "/var/lib/redpanda/coredump",
 		},
+		// enable pandaproxy and schema_registry by default
+		Pandaproxy:     &Pandaproxy{},
+		SchemaRegistry: &SchemaRegistry{},
 	}
 
 	if err := p.readConfig(fs, c); err != nil {
@@ -276,9 +293,8 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 func (c *Config) Write(fs afero.Fs) (rerr error) {
 	cfgPath := c.loadedPath
 	if cfgPath == "" {
-		cfgPath = Default().ConfigFile
+		cfgPath = c.ConfigFile
 	}
-
 	b, err := yaml.Marshal(c)
 	if err != nil {
 		return fmt.Errorf("marshal error in loaded config, err: %s", err)
@@ -379,7 +395,7 @@ func (p *Params) readConfig(fs afero.Fs, c *Config) error {
 	}
 	yaml.Unmarshal(file, &c.file) // cannot error since previous did not
 	c.loadedPath = path
-
+	c.ConfigFile = path
 	return nil
 }
 
@@ -551,4 +567,134 @@ func (c *Config) addUnsetDefaults() {
 	if len(r.AdminAPI.Addresses) == 0 {
 		r.AdminAPI.Addresses = []string{"127.0.0.1:9644"}
 	}
+}
+
+// Set allow to set a single configuration property by passing a key value pair
+//
+//   Key:    string containing the yaml property tag, e.g: 'rpk.admin_api'.
+//   Value:  string representation of the value, either single value or partial
+//           representation if a format is passed (yaml / json).
+//   Format: either single, json, or yaml (default: single).
+func (c *Config) Set(key, value, format string) error {
+	if key == "" {
+		return fmt.Errorf("key field must not be empty")
+	}
+	props := strings.Split(key, ".")
+	rv := reflect.ValueOf(c).Elem()
+	found, other, err := getField(props, rv)
+	if err != nil {
+		return err
+	}
+	isOther := other != reflect.Value{}
+
+	field := found
+	if isOther {
+		field = other
+	}
+
+	if field.CanAddr() {
+		i := field.Addr().Interface()
+		in := value
+		switch strings.ToLower(format) {
+		case "yaml", "single", "":
+			if isOther {
+				p := props[len(props)-1]
+				in = fmt.Sprintf("%s: %s", p, value)
+			}
+			err = yaml.Unmarshal([]byte(in), i)
+			if err != nil {
+				return err
+			}
+			return nil
+		case "json":
+			if isOther {
+				p := props[len(props)-1]
+				in = fmt.Sprintf("{%q: %q}", p, value)
+			}
+			err = json.Unmarshal([]byte(in), i)
+			if err != nil {
+				return err
+			}
+			return nil
+		default:
+			return fmt.Errorf("unsupported format %s", format)
+		}
+	}
+	return errors.New("rpk bug, please describe how you encountered this at https://github.com/redpanda-data/redpanda/issues/new?assignees=&labels=kind%2Fbug&template=01_bug_report.md")
+}
+
+// getField deeply search in p for the value that reflect property props.
+func getField(props []string, p reflect.Value) (reflect.Value, reflect.Value, error) {
+	if len(props) == 0 {
+		return p, reflect.Value{}, nil
+	}
+	if p.Kind() == reflect.Slice && p.Len() > 0 {
+		p = p.Index(0)
+	}
+	if p.Kind() == reflect.Slice && p.Len() == 0 {
+		p.Set(reflect.New(p.Type().Elem()))
+	}
+	// If is a nil pointer we assign the zero value, and we reassign p to the
+	// value that p points to
+	if p.Kind() == reflect.Ptr {
+		if p.IsNil() {
+			p.Set(reflect.New(p.Type().Elem()))
+		}
+		p = reflect.Indirect(p)
+	}
+	if p.Kind() == reflect.Struct {
+		newP, other, err := getFieldByTag(props[0], p)
+		if err != nil {
+			return reflect.Value{}, reflect.Value{}, err
+		}
+		// if is "Other" map field, we stop the recursion and return
+		if (other != reflect.Value{}) {
+			// user may try to set deep unmanaged property:
+			// rpk.unmanaged.name = "name"
+			if len(props) > 1 {
+				return reflect.Value{}, reflect.Value{}, fmt.Errorf("cannot set property %v", strings.Join(props, "."))
+			}
+			return reflect.Value{}, other, nil
+		}
+		return getField(props[1:], newP)
+	}
+	return reflect.Value{}, reflect.Value{}, fmt.Errorf("cannot recurse on type %v", p.Type())
+}
+
+// getFieldByTag finds a field with a given yaml tag and returns 3 parameters:
+//
+//   1. if tag is found within the struct, return the field.
+//   2. if tag is not found _but_ the struct has "Other" field, return Other.
+//   3. Error if it can't find the given tag and "Other" field is unavailable.
+func getFieldByTag(tag string, p reflect.Value) (reflect.Value, reflect.Value, error) {
+	t := p.Type()
+	var other bool
+	// Loop struct to get the field that match tag.
+	for i := 0; i < p.NumField(); i++ {
+		// Rpk blindly set configuration parameters, we parse these parameters
+		// in the "Other" field.
+		if t.Field(i).Name == "Other" {
+			other = true
+		}
+		yt := t.Field(i).Tag.Get("yaml")
+
+		// yaml struct tags can contain flags such as omitempty,
+		// when tag.Get("yaml") is called it will return
+		//   "my_tag,omitempty"
+		// so we only need first parameter of the string slice.
+		ft := strings.Split(yt, ",")[0]
+
+		if ft == tag {
+			return p.Field(i), reflect.Value{}, nil
+		} else {
+			continue
+		}
+	}
+
+	// If we can't find the tag but the struct has an 'Other' map field:
+	if other {
+		return reflect.Value{}, p.FieldByName("Other"), nil
+	}
+
+	return reflect.Value{}, reflect.Value{}, fmt.Errorf("couldn't find property %q", tag)
 }

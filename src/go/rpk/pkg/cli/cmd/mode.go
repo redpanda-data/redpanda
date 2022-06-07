@@ -15,13 +15,13 @@ package cmd
 import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/redpanda"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func NewModeCommand(mgr config.Manager) *cobra.Command {
+func NewModeCommand(fs afero.Fs) *cobra.Command {
 	return common.Deprecated(
-		redpanda.NewModeCommand(mgr),
+		redpanda.NewModeCommand(fs),
 		"rpk redpanda mode",
 	)
 }
