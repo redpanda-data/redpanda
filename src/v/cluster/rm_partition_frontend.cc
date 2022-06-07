@@ -633,14 +633,14 @@ ss::future<abort_tx_reply> rm_partition_frontend::abort_tx(
 
     if (!_metadata_cache.local().contains(nt, ntp.tp.partition)) {
         return ss::make_ready_future<abort_tx_reply>(
-          abort_tx_reply{.ec = tx_errc::partition_not_exists});
+          abort_tx_reply{tx_errc::partition_not_exists});
     }
 
     auto leader = _leaders.local().get_leader(ntp);
     if (!leader) {
         vlog(txlog.warn, "can't find a leader for {}", ntp);
         return ss::make_ready_future<abort_tx_reply>(
-          abort_tx_reply{.ec = tx_errc::leader_not_found});
+          abort_tx_reply{tx_errc::leader_not_found});
     }
 
     auto _self = _controller->self();
@@ -692,7 +692,7 @@ ss::future<abort_tx_reply> rm_partition_frontend::dispatch_abort_tx(
       .then([](result<abort_tx_reply> r) {
           if (r.has_error()) {
               vlog(txlog.warn, "got error {} on remote abort tx", r.error());
-              return abort_tx_reply{.ec = tx_errc::timeout};
+              return abort_tx_reply{tx_errc::timeout};
           }
 
           return r.value();
@@ -728,14 +728,14 @@ ss::future<abort_tx_reply> rm_partition_frontend::do_abort_tx(
   model::timeout_clock::duration timeout) {
     if (!is_leader_of(ntp)) {
         return ss::make_ready_future<abort_tx_reply>(
-          abort_tx_reply{.ec = tx_errc::leader_not_found});
+          abort_tx_reply{tx_errc::leader_not_found});
     }
 
     auto shard = _shard_table.local().shard_for(ntp);
 
     if (!shard) {
         return ss::make_ready_future<abort_tx_reply>(
-          abort_tx_reply{.ec = tx_errc::shard_not_found});
+          abort_tx_reply{tx_errc::shard_not_found});
     }
 
     return _partition_manager.invoke_on(
@@ -745,7 +745,7 @@ ss::future<abort_tx_reply> rm_partition_frontend::do_abort_tx(
           auto partition = mgr.get(ntp);
           if (!partition) {
               return ss::make_ready_future<abort_tx_reply>(
-                abort_tx_reply{.ec = tx_errc::partition_not_found});
+                abort_tx_reply{tx_errc::partition_not_found});
           }
 
           auto stm = partition->rm_stm();
@@ -753,11 +753,11 @@ ss::future<abort_tx_reply> rm_partition_frontend::do_abort_tx(
           if (!stm) {
               vlog(txlog.warn, "can't get tx stm of the {}' partition", ntp);
               return ss::make_ready_future<abort_tx_reply>(
-                abort_tx_reply{.ec = tx_errc::stm_not_found});
+                abort_tx_reply{tx_errc::stm_not_found});
           }
 
           return stm->abort_tx(pid, tx_seq, timeout).then([](tx_errc ec) {
-              return cluster::abort_tx_reply{.ec = ec};
+              return cluster::abort_tx_reply{ec};
           });
       });
 }
