@@ -685,8 +685,7 @@ ss::future<abort_tx_reply> rm_partition_frontend::dispatch_abort_tx(
         timeout,
         [ntp, pid, tx_seq, timeout](tx_gateway_client_protocol cp) {
             return cp.abort_tx(
-              abort_tx_request{
-                .ntp = ntp, .pid = pid, .tx_seq = tx_seq, .timeout = timeout},
+              abort_tx_request{ntp, pid, tx_seq, timeout},
               rpc::client_opts(model::timeout_clock::now() + timeout));
         })
       .then(&rpc::get_ctx_data<abort_tx_reply>)
