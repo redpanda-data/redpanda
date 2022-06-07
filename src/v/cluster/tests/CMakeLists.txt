@@ -50,7 +50,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME test_cluster
   SOURCES ${srcs}
-  LIBRARIES v::seastar_testing_main v::application v::storage_test_utils v::v8_engine
+  LIBRARIES v::seastar_testing_main v::application v::storage_test_utils v::v8_engine v::cluster
   LABELS cluster
 )
 

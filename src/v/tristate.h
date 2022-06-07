@@ -32,6 +32,7 @@
 template<typename T>
 class tristate {
 public:
+    using value_type = T;
     constexpr tristate() noexcept = default;
 
     constexpr explicit tristate(std::optional<T> t) noexcept

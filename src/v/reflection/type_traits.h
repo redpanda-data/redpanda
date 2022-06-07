@@ -12,6 +12,7 @@
 #pragma once
 
 #include "seastarx.h"
+#include "tristate.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/circular_buffer.hh>
@@ -57,5 +58,12 @@ template<typename T>
 struct is_ss_bool<ss::bool_class<T>> : std::true_type {};
 template<typename T>
 inline constexpr bool is_ss_bool_v = is_ss_bool<T>::value;
+
+template<typename T>
+struct is_tristate : std::false_type {};
+template<typename T>
+struct is_tristate<tristate<T>> : std::true_type {};
+template<typename T>
+inline constexpr bool is_tristate_v = is_tristate<T>::value;
 
 } // namespace reflection

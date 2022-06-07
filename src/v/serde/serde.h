@@ -1,3 +1,4 @@
+
 // Copyright 2021 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
@@ -18,6 +19,7 @@
 #include "serde/type_str.h"
 #include "ssx/future-util.h"
 #include "ssx/sformat.h"
+#include "tristate.h"
 #include "utils/fragmented_vector.h"
 #include "utils/named_type.h"
 #include "vlog.h"
@@ -143,7 +145,7 @@ inline constexpr auto const is_serde_compatible_v
     || std::is_same_v<T, iobuf>
     || std::is_same_v<T, ss::sstring>
     || std::is_same_v<T, bytes>
-    || is_fragmented_vector_v<T>;
+    || is_fragmented_vector_v<T> || reflection::is_tristate_v<T>;
 
 template<typename T>
 inline constexpr auto const are_bytes_and_string_different = !(
@@ -275,6 +277,15 @@ void write(iobuf& out, T t) {
         write(out, static_cast<serde_size_t>(t.size()));
         for (auto& el : t) {
             write(out, std::move(el));
+        }
+    } else if constexpr (reflection::is_tristate_v<T>) {
+        if (t.is_disabled()) {
+            write<int8_t>(out, -1);
+        } else if (!t.has_value()) {
+            write<int8_t>(out, 0);
+        } else {
+            write<int8_t>(out, 1);
+            write(out, std::move(t.value()));
         }
     }
 }
@@ -480,6 +491,26 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
             t.push_back(read_nested<value_type>(in, bytes_left_limit));
         }
         t.shrink_to_fit();
+    } else if constexpr (reflection::is_tristate_v<T>) {
+        int8_t flag = read_nested<int8_t>(in, bytes_left_limit);
+        if (flag == -1) {
+            // disabled
+            t = T{};
+        } else if (flag == 0) {
+            // empty
+            t = T(std::nullopt);
+        } else if (flag == 1) {
+            t = T(read_nested<typename T::value_type>(in, bytes_left_limit));
+        } else {
+            throw serde_exception(fmt_with_ctx(
+              ssx::sformat,
+              "reading type {} of size {}: {} bytes left - unexpected tristate "
+              "state flag: {}, expected states are -1,0,1",
+              type_str<Type>(),
+              sizeof(Type),
+              in.bytes_left(),
+              flag));
+        }
     }
 }
 
