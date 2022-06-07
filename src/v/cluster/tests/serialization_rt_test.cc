@@ -97,9 +97,9 @@ SEASTAR_THREAD_TEST_CASE(broker_metadata_rt_test) {
 
 SEASTAR_THREAD_TEST_CASE(partition_assignment_rt_test) {
     cluster::partition_assignment p_as{
-      .group = raft::group_id(2),
-      .id = model::partition_id(3),
-      .replicas = {{.node_id = model::node_id(0), .shard = 1}}};
+      raft::group_id(2),
+      model::partition_id(3),
+      {{.node_id = model::node_id(0), .shard = 1}}};
 
     auto d = serialize_roundtrip_rpc(std::move(p_as));
 

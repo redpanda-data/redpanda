@@ -356,6 +356,15 @@ struct configuration_update_reply {
 /// Partition assignment describes an assignment of all replicas for single NTP.
 /// The replicas are hold in vector of broker_shard.
 struct partition_assignment {
+    partition_assignment() noexcept = default;
+    partition_assignment(
+      raft::group_id group,
+      model::partition_id id,
+      std::vector<model::broker_shard> replicas)
+      : group(group)
+      , id(id)
+      , replicas(std::move(replicas)) {}
+
     raft::group_id group;
     model::partition_id id;
     std::vector<model::broker_shard> replicas;
@@ -1229,5 +1238,9 @@ struct adl<cluster::allocate_id_reply> {
         return {id, ec};
     }
 };
-
+template<>
+struct adl<cluster::partition_assignment> {
+    void to(iobuf&, cluster::partition_assignment&&);
+    cluster::partition_assignment from(iobuf_parser&);
+};
 } // namespace reflection

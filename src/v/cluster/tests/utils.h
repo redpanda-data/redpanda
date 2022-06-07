@@ -23,9 +23,10 @@ static cluster::partition_assignment create_test_assignment(
   int partition_id,
   std::vector<std::pair<uint32_t, uint32_t>> shards_assignment,
   int group_id) {
-    cluster::partition_assignment p_as{
-      .group = raft::group_id(group_id),
-      .id = model::partition_id(partition_id)};
+    cluster::partition_assignment p_as;
+    p_as.group = raft::group_id(group_id);
+    p_as.id = model::partition_id(partition_id);
+
     std::transform(
       shards_assignment.begin(),
       shards_assignment.end(),

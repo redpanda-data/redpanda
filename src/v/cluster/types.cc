@@ -1370,4 +1370,19 @@ adl<cluster::set_maintenance_mode_reply>::from(iobuf_parser& parser) {
     return cluster::set_maintenance_mode_reply{.error = error};
 }
 
+void adl<cluster::partition_assignment>::to(
+  iobuf& out, cluster::partition_assignment&& p_as) {
+    reflection::serialize(out, p_as.group, p_as.id, std::move(p_as.replicas));
+}
+
+cluster::partition_assignment
+adl<cluster::partition_assignment>::from(iobuf_parser& parser) {
+    auto group = reflection::adl<raft::group_id>{}.from(parser);
+    auto id = reflection::adl<model::partition_id>{}.from(parser);
+    auto replicas = reflection::adl<std::vector<model::broker_shard>>{}.from(
+      parser);
+
+    return {group, id, std::move(replicas)};
+}
+
 } // namespace reflection
