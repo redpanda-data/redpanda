@@ -521,4 +521,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         model::term_id(1234),
         model::node_id(2)),
     }));
+
+    roundtrip_test(
+      cluster::allocate_id_request(model::timeout_clock::duration(234234)));
 }
