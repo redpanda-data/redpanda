@@ -676,8 +676,10 @@ inline bool acl_entry_filter::matches(const acl_entry& other) const {
 /*
  * A filter for matching ACL bindings.
  */
-class acl_binding_filter {
+class acl_binding_filter
+  : public serde::envelope<acl_binding_filter, serde::version<0>> {
 public:
+    acl_binding_filter() = default;
     acl_binding_filter(resource_pattern_filter pattern, acl_entry_filter acl)
       : _pattern(std::move(pattern))
       , _acl(std::move(acl)) {}
@@ -698,6 +700,8 @@ public:
 
     const resource_pattern_filter& pattern() const { return _pattern; }
     const acl_entry_filter& entry() const { return _acl; }
+
+    auto serde_fields() { return std::tie(_pattern, _acl); }
 
 private:
     resource_pattern_filter _pattern;
