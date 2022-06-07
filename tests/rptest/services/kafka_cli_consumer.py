@@ -26,7 +26,9 @@ class KafkaCliConsumer(BackgroundThreadService):
                  isolation_level=None,
                  from_beginning=False,
                  consumer_properties={},
-                 formatter_properties={}):
+                 formatter_properties={},
+                 save_msgs=True,
+                 kafka_version: str = None):
         super(KafkaCliConsumer, self).__init__(context, num_nodes=1)
         self._redpanda = redpanda
         self._topic = topic
@@ -37,10 +39,11 @@ class KafkaCliConsumer(BackgroundThreadService):
         self._from_beginning = from_beginning
         self._consumer_properties = consumer_properties
         self._formatter_properties = formatter_properties
+        self._save_msgs = save_msgs
         self._stopping = threading.Event()
-        assert self._partitions is not None or self._group is not None, "either partitions or group have to be set"
+        # assert self._partitions is not None or self._group is not None, "either partitions or group have to be set"
 
-        self._cli = KafkaCliTools(self._redpanda)
+        self._cli = KafkaCliTools(self._redpanda, version=kafka_version)
         self._messages = []
 
     def script(self):
@@ -72,7 +75,9 @@ class KafkaCliConsumer(BackgroundThreadService):
             for line in node.account.ssh_capture(' '.join(cmd)):
                 line.strip()
                 self.logger.debug(f"consumed: '{line}'")
-                self._messages.append(line)
+
+                if self._save_msgs:
+                    self._messages.append(line)
 
                 if self._stopping.is_set():
                     break
@@ -103,3 +108,15 @@ class KafkaCliConsumer(BackgroundThreadService):
     def stop_node(self, node):
         self._stopping.set()
         node.account.kill_process("java", clean_shutdown=True)
+
+    def allocate_nodes(self):
+        if self.use_custom_node:
+            return
+        else:
+            return super(KafkaCliConsumer, self).allocate_nodes()
+
+    def free(self):
+        if self.use_custom_node:
+            return
+        else:
+            return super(KafkaCliConsumer, self).free_all()
