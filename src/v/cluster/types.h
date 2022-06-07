@@ -1692,16 +1692,21 @@ using assignments_set
 
 class topic_metadata {
 public:
-    topic_metadata(topic_configuration_assignment, model::revision_id) noexcept;
+    topic_metadata(
+      topic_configuration_assignment,
+      model::revision_id,
+      std::optional<model::initial_revision_id> = std::nullopt) noexcept;
 
     topic_metadata(
       topic_configuration,
       assignments_set,
       model::revision_id,
-      model::topic) noexcept;
+      model::topic,
+      std::optional<model::initial_revision_id> = std::nullopt) noexcept;
 
     bool is_topic_replicable() const;
     model::revision_id get_revision() const;
+    std::optional<model::initial_revision_id> get_remote_revision() const;
     const model::topic& get_source_topic() const;
 
     const topic_configuration& get_configuration() const;
@@ -1715,6 +1720,7 @@ private:
     assignments_set _assignments;
     std::optional<model::topic> _source_topic;
     model::revision_id _revision;
+    std::optional<model::initial_revision_id> _remote_revision;
 };
 
 } // namespace cluster
