@@ -344,8 +344,9 @@ inline const acl_host acl_wildcard_host = acl_host::wildcard_host();
  * permitted to execute an operation on. When associated with a resource, it
  * describes if the principal can execute the operation on that resource.
  */
-class acl_entry {
+class acl_entry : public serde::envelope<acl_entry, serde::version<0>> {
 public:
+    acl_entry() = default;
     acl_entry(
       acl_principal principal,
       acl_host host,
@@ -379,6 +380,10 @@ public:
     const acl_host& host() const { return _host; }
     acl_operation operation() const { return _operation; }
     acl_permission permission() const { return _permission; }
+
+    auto serde_fields() {
+        return std::tie(_principal, _host, _operation, _permission);
+    }
 
 private:
     acl_principal _principal;

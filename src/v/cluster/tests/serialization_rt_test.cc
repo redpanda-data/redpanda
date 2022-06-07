@@ -583,6 +583,32 @@ security::acl_principal random_acl_principal() {
 security::acl_host create_acl_host() {
     return security::acl_host(ss::net::inet_address("127.0.0.1"));
 }
+security::acl_operation random_acl_operation() {
+    return random_generators::random_choice<security::acl_operation>(
+      {security::acl_operation::all,
+       security::acl_operation::alter,
+       security::acl_operation::alter_configs,
+       security::acl_operation::describe_configs,
+       security::acl_operation::cluster_action,
+       security::acl_operation::create,
+       security::acl_operation::remove,
+       security::acl_operation::read,
+       security::acl_operation::idempotent_write,
+       security::acl_operation::describe});
+}
+
+security::acl_permission random_acl_permission() {
+    return random_generators::random_choice<security::acl_permission>(
+      {security::acl_permission::allow, security::acl_permission::deny});
+}
+
+security::acl_entry random_acl_entry() {
+    return {
+      random_acl_principal(),
+      create_acl_host(),
+      random_acl_operation(),
+      random_acl_permission()};
+}
 
 SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     roundtrip_test(cluster::ntp_leader(
