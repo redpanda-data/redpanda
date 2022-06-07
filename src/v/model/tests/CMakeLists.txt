@@ -18,8 +18,9 @@ rp_test(
     lexical_cast_tests.cc
     ntp_path_test.cc
     topic_view_tests.cc
+    timeout_adl.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES Boost::unit_test_framework v::model
+  LIBRARIES Boost::unit_test_framework v::model v::cluster
   LABELS model
 )
 
