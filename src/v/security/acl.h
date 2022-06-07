@@ -608,8 +608,10 @@ resource_pattern_filter::to_resource_patterns() const {
 /*
  * A filter for matching ACL entries.
  */
-class acl_entry_filter {
+class acl_entry_filter
+  : public serde::envelope<acl_entry_filter, serde::version<0>> {
 public:
+    acl_entry_filter() = default;
     // NOLINTNEXTLINE(hicpp-explicit-conversions)
     acl_entry_filter(const acl_entry& entry)
       : acl_entry_filter(
@@ -643,6 +645,10 @@ public:
     std::optional<acl_host> host() const { return _host; }
     std::optional<acl_operation> operation() const { return _operation; }
     std::optional<acl_permission> permission() const { return _permission; }
+
+    auto serde_fields() {
+        return std::tie(_principal, _host, _operation, _permission);
+    }
 
 private:
     std::optional<acl_principal> _principal;
