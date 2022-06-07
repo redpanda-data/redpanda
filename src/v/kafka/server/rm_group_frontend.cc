@@ -435,11 +435,7 @@ ss::future<cluster::commit_group_tx_reply> rm_group_frontend::commit_group_tx(
     auto _self = _controller->self();
 
     if (leader == _self) {
-        cluster::commit_group_tx_request req;
-        req.group_id = group_id;
-        req.pid = pid;
-        req.tx_seq = tx_seq;
-        req.timeout = timeout;
+        cluster::commit_group_tx_request req{pid, tx_seq, group_id, timeout};
         co_return co_await commit_group_tx_locally(std::move(req));
     }
 
@@ -483,11 +479,7 @@ rm_group_frontend::dispatch_commit_group_tx(
         [group_id, pid, tx_seq, timeout](
           cluster::tx_gateway_client_protocol cp) {
             return cp.commit_group_tx(
-              cluster::commit_group_tx_request{
-                .pid = pid,
-                .tx_seq = tx_seq,
-                .group_id = group_id,
-                .timeout = timeout},
+              cluster::commit_group_tx_request{pid, tx_seq, group_id, timeout},
               rpc::client_opts(model::timeout_clock::now() + timeout));
         })
       .then(&rpc::get_ctx_data<cluster::commit_group_tx_reply>)
