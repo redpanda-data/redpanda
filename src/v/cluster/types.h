@@ -797,9 +797,12 @@ struct topic_table_delta {
     friend std::ostream& operator<<(std::ostream&, const op_type&);
 };
 
-struct create_acls_cmd_data {
+struct create_acls_cmd_data
+  : serde::envelope<create_acls_cmd_data, serde::version<0>> {
     static constexpr int8_t current_version = 1;
     std::vector<security::acl_binding> bindings;
+
+    auto serde_fields() { return std::tie(bindings); }
 };
 
 struct create_acls_request {

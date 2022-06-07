@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "cluster/commands.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/metadata_dissemination_types.h"
 #include "cluster/tests/utils.h"
@@ -729,5 +730,12 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         cfg.assignments = random_partition_assignments();
 
         roundtrip_test(cfg);
+    }
+    {
+        cluster::create_acls_cmd_data data;
+        for (auto i = 0; i < random_generators::get_int(5, 25); ++i) {
+            data.bindings.push_back(random_acl_binding());
+        }
+        roundtrip_test(data);
     }
 }
