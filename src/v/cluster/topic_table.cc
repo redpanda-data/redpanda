@@ -19,6 +19,8 @@
 
 #include <seastar/core/coroutine.hh>
 
+#include <optional>
+
 namespace cluster {
 
 template<typename Func>
@@ -51,9 +53,15 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
           std::move(ntp), pas, offset, delta::op_type::add);
     }
 
+    std::optional<model::initial_revision_id> remote_revision
+      = cmd.value.cfg.properties.remote_topic_properties ? std::make_optional(
+          cmd.value.cfg.properties.remote_topic_properties->remote_revision)
+                                                         : std::nullopt;
+
     _topics.insert(
       {cmd.key,
-       topic_metadata(std::move(cmd.value), model::revision_id(offset()))});
+       topic_metadata(
+         std::move(cmd.value), model::revision_id(offset()), remote_revision)});
     notify_waiters();
     return ss::make_ready_future<std::error_code>(errc::success);
 }
@@ -569,7 +577,8 @@ bool topic_table::is_update_in_progress(const model::ntp& ntp) const {
 std::optional<model::initial_revision_id>
 topic_table::get_initial_revision(model::topic_namespace_view tp) const {
     if (auto it = _topics.find(tp); it != _topics.end()) {
-        return model::initial_revision_id(it->second.get_revision()());
+        return it->second.get_remote_revision().value_or(
+          model::initial_revision_id(it->second.get_revision()()));
     }
     return std::nullopt;
 }
