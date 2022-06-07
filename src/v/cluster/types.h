@@ -259,7 +259,32 @@ struct begin_group_tx_request {
     model::producer_identity pid;
     model::tx_seq tx_seq;
     model::timeout_clock::duration timeout;
+
+    begin_group_tx_request(
+      model::ntp ntp,
+      kafka::group_id group_id,
+      model::producer_identity pid,
+      model::tx_seq tx_seq,
+      model::timeout_clock::duration timeout)
+      : ntp(std::move(ntp))
+      , group_id(std::move(group_id))
+      , pid(pid)
+      , tx_seq(tx_seq)
+      , timeout(timeout) {}
+
+    /*
+     * construct with default value model::ntp
+     * https://github.com/redpanda-data/redpanda/issues/5055
+     */
+    begin_group_tx_request(
+      kafka::group_id group_id,
+      model::producer_identity pid,
+      model::tx_seq tx_seq,
+      model::timeout_clock::duration timeout)
+      : begin_group_tx_request(
+        model::ntp(), std::move(group_id), pid, tx_seq, timeout) {}
 };
+
 struct begin_group_tx_reply {
     model::term_id etag;
     tx_errc ec;
@@ -1619,6 +1644,27 @@ struct adl<cluster::prepare_group_tx_reply> {
     cluster::prepare_group_tx_reply from(iobuf_parser& in) {
         auto ec = adl<cluster::tx_errc>{}.from(in);
         return cluster::prepare_group_tx_reply{ec};
+    }
+};
+
+template<>
+struct adl<cluster::begin_group_tx_request> {
+    void to(iobuf& out, cluster::begin_group_tx_request&& r) {
+        serialize(
+          out,
+          std::move(r.ntp),
+          std::move(r.group_id),
+          r.pid,
+          r.tx_seq,
+          r.timeout);
+    }
+    cluster::begin_group_tx_request from(iobuf_parser& in) {
+        auto ntp = adl<model::ntp>{}.from(in);
+        auto group_id = adl<kafka::group_id>{}.from(in);
+        auto pid = adl<model::producer_identity>{}.from(in);
+        auto tx_seq = adl<model::tx_seq>{}.from(in);
+        auto timeout = adl<model::timeout_clock::duration>{}.from(in);
+        return {std::move(ntp), std::move(group_id), pid, tx_seq, timeout};
     }
 };
 } // namespace reflection
