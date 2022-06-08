@@ -158,7 +158,18 @@ struct try_abort_request {
     model::producer_identity pid;
     model::tx_seq tx_seq;
     model::timeout_clock::duration timeout;
+
+    try_abort_request(
+      model::partition_id tm,
+      model::producer_identity pid,
+      model::tx_seq tx_seq,
+      model::timeout_clock::duration timeout)
+      : tm(tm)
+      , pid(pid)
+      , tx_seq(tx_seq)
+      , timeout(timeout) {}
 };
+
 struct try_abort_reply {
     bool commited{false};
     bool aborted{false};
@@ -1865,6 +1876,20 @@ struct adl<cluster::begin_tx_reply> {
         auto etag = adl<model::term_id>{}.from(in);
         auto ec = adl<cluster::tx_errc>{}.from(in);
         return {std::move(ntp), etag, ec};
+    }
+};
+
+template<>
+struct adl<cluster::try_abort_request> {
+    void to(iobuf& out, cluster::try_abort_request&& r) {
+        serialize(out, r.tm, r.pid, r.tx_seq, r.timeout);
+    }
+    cluster::try_abort_request from(iobuf_parser& in) {
+        auto tm = adl<model::partition_id>{}.from(in);
+        auto pid = adl<model::producer_identity>{}.from(in);
+        auto tx_seq = adl<model::tx_seq>{}.from(in);
+        auto timeout = adl<model::timeout_clock::duration>{}.from(in);
+        return {tm, pid, tx_seq, timeout};
     }
 };
 } // namespace reflection

@@ -294,8 +294,7 @@ ss::future<try_abort_reply> tx_gateway_frontend::dispatch_try_abort(
         timeout,
         [tm, pid, tx_seq, timeout](tx_gateway_client_protocol cp) {
             return cp.try_abort(
-              try_abort_request{
-                .tm = tm, .pid = pid, .tx_seq = tx_seq, .timeout = timeout},
+              try_abort_request{tm, pid, tx_seq, timeout},
               rpc::client_opts(model::timeout_clock::now() + timeout));
         })
       .then(&rpc::get_ctx_data<try_abort_reply>)
