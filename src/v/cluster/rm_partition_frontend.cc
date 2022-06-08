@@ -84,8 +84,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
     }
     if (!has_metadata) {
         vlog(txlog.warn, "can't find {} in the metadata cache", ntp);
-        co_return begin_tx_reply{
-          .ntp = ntp, .ec = tx_errc::partition_not_exists};
+        co_return begin_tx_reply{ntp, tx_errc::partition_not_exists};
     }
 
     retries = _metadata_dissemination_retries;
@@ -202,7 +201,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
     if (error) {
         vlog(txlog.warn, "{}", error.value());
     }
-    co_return begin_tx_reply{.ntp = ntp, .ec = tx_errc::leader_not_found};
+    co_return begin_tx_reply{ntp, tx_errc::leader_not_found};
 }
 
 ss::future<begin_tx_reply> rm_partition_frontend::dispatch_begin_tx(
@@ -228,7 +227,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::dispatch_begin_tx(
       .then([ntp](result<begin_tx_reply> r) {
           if (r.has_error()) {
               vlog(txlog.warn, "got error {} on remote begin tx", r.error());
-              return begin_tx_reply{.ntp = ntp, .ec = tx_errc::timeout};
+              return begin_tx_reply{ntp, tx_errc::timeout};
           }
 
           return r.value();
@@ -265,14 +264,14 @@ ss::future<begin_tx_reply> rm_partition_frontend::do_begin_tx(
   std::chrono::milliseconds transaction_timeout_ms) {
     if (!is_leader_of(ntp)) {
         return ss::make_ready_future<begin_tx_reply>(
-          begin_tx_reply{.ntp = ntp, .ec = tx_errc::leader_not_found});
+          begin_tx_reply{ntp, tx_errc::leader_not_found});
     }
 
     auto shard = _shard_table.local().shard_for(ntp);
 
     if (!shard) {
         return ss::make_ready_future<begin_tx_reply>(
-          begin_tx_reply{.ntp = ntp, .ec = tx_errc::shard_not_found});
+          begin_tx_reply{ntp, tx_errc::shard_not_found});
     }
 
     return _partition_manager.invoke_on(
@@ -283,7 +282,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::do_begin_tx(
           auto partition = mgr.get(ntp);
           if (!partition) {
               return ss::make_ready_future<begin_tx_reply>(
-                begin_tx_reply{.ntp = ntp, .ec = tx_errc::partition_not_found});
+                begin_tx_reply{ntp, tx_errc::partition_not_found});
           }
 
           auto stm = partition->rm_stm();
@@ -291,7 +290,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::do_begin_tx(
           if (!stm) {
               vlog(txlog.warn, "partition {} doesn't have rm_stm", ntp);
               return ss::make_ready_future<begin_tx_reply>(
-                begin_tx_reply{.ntp = ntp, .ec = tx_errc::stm_not_found});
+                begin_tx_reply{ntp, tx_errc::stm_not_found});
           }
 
           return stm->begin_tx(pid, tx_seq, transaction_timeout_ms)
@@ -303,15 +302,12 @@ ss::future<begin_tx_reply> rm_partition_frontend::do_begin_tx(
                       ntp,
                       etag.error());
                     if (etag.error() == tx_errc::leader_not_found) {
-                        return begin_tx_reply{
-                          .ntp = ntp, .ec = tx_errc::leader_not_found};
+                        return begin_tx_reply{ntp, tx_errc::leader_not_found};
                     }
-                    return begin_tx_reply{
-                      .ntp = ntp, .ec = tx_errc::unknown_server_error};
+                    return begin_tx_reply{ntp, tx_errc::unknown_server_error};
                 }
 
-                return begin_tx_reply{
-                  .ntp = ntp, .etag = etag.value(), .ec = tx_errc::none};
+                return begin_tx_reply{ntp, etag.value(), tx_errc::none};
             });
       });
 }

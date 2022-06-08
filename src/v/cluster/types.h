@@ -234,7 +234,19 @@ struct begin_tx_reply {
     model::ntp ntp;
     model::term_id etag;
     tx_errc ec;
+
+    begin_tx_reply() noexcept = default;
+
+    begin_tx_reply(model::ntp ntp, model::term_id etag, tx_errc ec)
+      : ntp(std::move(ntp))
+      , etag(etag)
+      , ec(ec) {}
+
+    begin_tx_reply(model::ntp ntp, tx_errc ec)
+      : ntp(std::move(ntp))
+      , ec(ec) {}
 };
+
 struct prepare_tx_request {
     model::ntp ntp;
     model::term_id etag;
@@ -1840,6 +1852,19 @@ struct adl<cluster::begin_tx_request> {
         auto tx_seq = adl<model::tx_seq>{}.from(in);
         auto timeout = adl<model::timeout_clock::duration>{}.from(in);
         return {std::move(ntp), pid, tx_seq, timeout};
+    }
+};
+
+template<>
+struct adl<cluster::begin_tx_reply> {
+    void to(iobuf& out, cluster::begin_tx_reply&& r) {
+        serialize(out, std::move(r.ntp), r.etag, r.ec);
+    }
+    cluster::begin_tx_reply from(iobuf_parser& in) {
+        auto ntp = adl<model::ntp>{}.from(in);
+        auto etag = adl<model::term_id>{}.from(in);
+        auto ec = adl<cluster::tx_errc>{}.from(in);
+        return {std::move(ntp), etag, ec};
     }
 };
 } // namespace reflection
