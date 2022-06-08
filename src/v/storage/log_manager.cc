@@ -89,14 +89,12 @@ void log_manager::trigger_housekeeping() {
 ss::future<> log_manager::stop() {
     _compaction_timer.cancel();
     _abort_source.request_abort();
-    return _open_gate.close()
-      .then([this] {
-          return ss::parallel_for_each(_logs, [](logs_type::value_type& entry) {
-              return entry.second->handle.close();
-          });
-      })
-      .then([this] { return _batch_cache.stop(); })
-      .then([this] { return async_clear_logs(); });
+    co_await _open_gate.close();
+    co_await ss::parallel_for_each(_logs, [](logs_type::value_type& entry) {
+        return entry.second->handle.close();
+    });
+    co_await _batch_cache.stop();
+    co_await async_clear_logs();
 }
 
 /**
@@ -237,8 +235,8 @@ ss::future<> log_manager::recover_log_state(const ntp_config& cfg) {
 
 ss::future<log> log_manager::do_manage(ntp_config cfg) {
     if (_config.base_dir.empty()) {
-        return ss::make_exception_future<log>(std::runtime_error(
-          "log_manager:: cannot have empty config.base_dir"));
+        throw std::runtime_error(
+          "log_manager:: cannot have empty config.base_dir");
     }
 
     vassert(
@@ -251,45 +249,42 @@ ss::future<log> log_manager::do_manage(ntp_config cfg) {
           l.config().ntp(), std::make_unique<log_housekeeping_meta>(l));
         _logs_list.push_back(*it->second);
         // in-memory needs to write vote_for configuration
-        return ss::recursive_touch_directory(path).then([l] { return l; });
+        co_await ss::recursive_touch_directory(path);
+        co_return l;
     }
 
-    return recover_log_state(cfg).then([this, cfg = std::move(cfg)]() mutable {
-        ss::sstring path = cfg.work_directory();
-        with_cache cache_enabled = cfg.cache_enabled();
-        return recover_segments(
-                 std::filesystem::path(path),
-                 _config.sanitize_fileops,
-                 cfg.is_compacted(),
-                 [this, cache_enabled] { return create_cache(cache_enabled); },
-                 _abort_source,
-                 config::shard_local_cfg().storage_read_buffer_size(),
-                 config::shard_local_cfg().storage_read_readahead_count(),
-                 _resources)
-          .then([this, cfg = std::move(cfg)](segment_set segments) mutable {
-              auto l = storage::make_disk_backed_log(
-                std::move(cfg), *this, std::move(segments), _kvstore);
-              auto [it, success] = _logs.emplace(
-                l.config().ntp(), std::make_unique<log_housekeeping_meta>(l));
-              _logs_list.push_back(*it->second);
-              _resources.update_partition_count(_logs.size());
-              vassert(
-                success, "Could not keep track of:{} - concurrency issue", l);
-              return l;
-          });
-    });
+    co_await recover_log_state(cfg);
+
+    ss::sstring path = cfg.work_directory();
+    with_cache cache_enabled = cfg.cache_enabled();
+    auto segments = co_await recover_segments(
+      std::filesystem::path(path),
+      _config.sanitize_fileops,
+      cfg.is_compacted(),
+      [this, cache_enabled] { return create_cache(cache_enabled); },
+      _abort_source,
+      config::shard_local_cfg().storage_read_buffer_size(),
+      config::shard_local_cfg().storage_read_readahead_count(),
+      _resources);
+    auto l = storage::make_disk_backed_log(
+      std::move(cfg), *this, std::move(segments), _kvstore);
+    auto [it, success] = _logs.emplace(
+      l.config().ntp(), std::make_unique<log_housekeeping_meta>(l));
+    _logs_list.push_back(*it->second);
+    _resources.update_partition_count(_logs.size());
+    vassert(success, "Could not keep track of:{} - concurrency issue", l);
+    co_return l;
 }
 
 ss::future<> log_manager::shutdown(model::ntp ntp) {
     vlog(stlog.debug, "Asked to shutdown: {}", ntp);
-    return ss::with_gate(_open_gate, [this, ntp = std::move(ntp)] {
-        auto handle = _logs.extract(ntp);
-        if (handle.empty()) {
-            return ss::make_ready_future<>();
-        }
-        storage::log lg = handle.mapped()->handle;
-        return lg.close().finally([lg] {});
-    });
+    auto gate = _open_gate.hold();
+    auto handle = _logs.extract(ntp);
+    if (handle.empty()) {
+        co_return;
+    }
+    storage::log lg = handle.mapped()->handle;
+    co_await lg.close();
 }
 
 ss::future<> log_manager::remove(model::ntp ntp) {
