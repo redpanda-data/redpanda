@@ -23,7 +23,9 @@
 #include "test_utils/rpc.h"
 #include "tristate.h"
 #include "units.h"
+#include "v8_engine/data_policy.h"
 
+#include <seastar/core/sstring.hh>
 #include <seastar/testing/thread_test_case.hh>
 
 #include <boost/test/tools/old/interface.hpp>
@@ -652,6 +654,16 @@ security::acl_entry_filter random_acl_entry_filter() {
 security::acl_binding_filter random_acl_binding_filter() {
     return {random_resource_pattern_filter(), random_acl_entry_filter()};
 }
+std::vector<ss::sstring> random_strings() {
+    auto cnt = random_generators::get_int(0, 20);
+    std::vector<ss::sstring> ret;
+    ret.reserve(cnt);
+    for (int i = 0; i < cnt; ++i) {
+        ret.push_back(random_generators::gen_alphanum_string(
+          random_generators::get_int(1, 64)));
+    }
+    return ret;
+}
 
 SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     roundtrip_test(cluster::ntp_leader(
@@ -798,5 +810,15 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         tp.source = model::random_topic_namespace();
 
         roundtrip_test(tp);
+    }
+    {
+        cluster::config_status status;
+        status.node = tests::random_named_int<model::node_id>();
+        status.restart = tests::random_bool();
+        status.version = tests::random_named_int<cluster::config_version>();
+        status.invalid = random_strings();
+        status.unknown = random_strings();
+
+        roundtrip_test(status);
     }
 }

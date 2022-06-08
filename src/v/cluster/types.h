@@ -867,12 +867,16 @@ struct non_replicable_topic
 using config_version = named_type<int64_t, struct config_version_type>;
 constexpr config_version config_version_unset = config_version{-1};
 
-struct config_status {
+struct config_status : serde::envelope<config_status, serde::version<0>> {
     model::node_id node;
     config_version version{config_version_unset};
     bool restart{false};
     std::vector<ss::sstring> unknown;
     std::vector<ss::sstring> invalid;
+
+    auto serde_fields() {
+        return std::tie(node, version, restart, unknown, invalid);
+    }
 
     bool operator==(const config_status&) const;
     friend std::ostream& operator<<(std::ostream&, const config_status&);
