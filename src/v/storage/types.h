@@ -32,6 +32,12 @@ using log_clock = ss::lowres_clock;
 using debug_sanitize_files = ss::bool_class<struct debug_sanitize_files_tag>;
 
 enum class disk_space_alert { ok = 0, low_space = 1, degraded = 2 };
+
+static inline disk_space_alert
+max_severity(disk_space_alert a, disk_space_alert b) {
+    return std::max(a, b);
+}
+
 struct disk {
     static constexpr int8_t current_version = 0;
 

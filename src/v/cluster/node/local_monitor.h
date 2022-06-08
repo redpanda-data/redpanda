@@ -11,6 +11,7 @@
 #pragma once
 #include "cluster/node/types.h"
 #include "config/property.h"
+#include "storage/types.h"
 #include "units.h"
 
 #include <seastar/core/sstring.hh>
@@ -27,8 +28,9 @@ namespace cluster::node {
 class local_monitor {
 public:
     local_monitor(
+      config::binding<size_t> min_bytes_alert,
+      config::binding<unsigned> min_percent_alert,
       config::binding<size_t> min_bytes,
-      config::binding<unsigned> min_percent,
       ss::sharded<storage::node_api>& api);
     local_monitor(const local_monitor&) = delete;
     local_monitor(local_monitor&&) = default;
@@ -38,6 +40,8 @@ public:
 
     ss::future<> update_state();
     const local_state& get_state_cached() const;
+    static storage::disk_space_alert
+    eval_disks(const std::vector<storage::disk>&);
 
     static constexpr std::string_view stable_alert_string
       = "storage space alert"; // for those who grep the logs..
@@ -48,14 +52,16 @@ public:
 
 private:
     // helpers
-    std::tuple<size_t, size_t>
-    minimum_free_by_bytes_and_percent(size_t bytes_available) const;
+    static size_t
+    alert_percent_in_bytes(unsigned alert_percent, size_t bytes_available);
+
     ss::future<std::vector<storage::disk>> get_disks();
     ss::future<struct statvfs> get_statvfs(const ss::sstring);
     void update_alert_state();
     ss::future<> update_disk_metrics();
     float percent_free(const storage::disk& disk);
-    void maybe_log_space_error(const storage::disk&);
+    void maybe_log_space_error(
+      const storage::disk&, const storage::disk_space_alert);
 
     // configuration
     void refresh_configuration();
@@ -68,6 +74,7 @@ private:
       std::chrono::hours(1));
     config::binding<size_t> _free_bytes_alert_threshold;
     config::binding<unsigned> _free_percent_alert_threshold;
+    config::binding<size_t> _min_free_bytes;
 
     ss::sharded<storage::node_api>& _storage_api; // single instance
 

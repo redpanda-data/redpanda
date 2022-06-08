@@ -23,10 +23,11 @@ namespace cluster::node {
 std::ostream& operator<<(std::ostream& o, const local_state& s) {
     fmt::print(
       o,
-      "{{redpanda_version: {}, uptime: {}, disks: {}}}",
+      "{{redpanda_version: {}, uptime: {}, disks: {}, space_alert: {}}}",
       s.redpanda_version,
       s.uptime,
-      s.disks);
+      s.disks,
+      s.storage_space_alert);
     return o;
 }
 

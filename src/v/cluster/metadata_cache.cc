@@ -20,6 +20,7 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/timestamp.h"
+#include "storage/types.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/sharded.hh>
@@ -152,6 +153,11 @@ ss::future<std::vector<broker_ptr>> metadata_cache::all_alive_brokers() const {
 
 std::vector<model::node_id> metadata_cache::all_broker_ids() const {
     return _members_table.local().all_broker_ids();
+}
+
+bool metadata_cache::should_reject_writes() const {
+    return _health_monitor.local().get_cluster_disk_health()
+           == storage::disk_space_alert::degraded;
 }
 
 bool metadata_cache::contains(

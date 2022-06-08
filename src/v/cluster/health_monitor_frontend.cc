@@ -10,13 +10,33 @@
  */
 #include "cluster/health_monitor_frontend.h"
 
-#include "cluster/errc.h"
+#include "cluster/logger.h"
+#include "model/timeout_clock.h"
+
+#include <seastar/util/later.hh>
 
 namespace cluster {
 
 health_monitor_frontend::health_monitor_frontend(
   ss::sharded<health_monitor_backend>& backend)
   : _backend(backend) {}
+
+ss::future<> health_monitor_frontend::start() {
+    if (ss::this_shard_id() == refresher_shard) {
+        _refresh_timer.set_callback([this] { disk_health_tick(); });
+        _refresh_timer.arm(disk_health_refresh_interval);
+    }
+    co_return;
+}
+
+ss::future<> health_monitor_frontend::stop() {
+    if (ss::this_shard_id() == refresher_shard) {
+        if (_refresh_timer.armed()) {
+            _refresh_timer.cancel();
+        }
+        co_await _refresh_gate.close();
+    }
+}
 
 ss::future<result<cluster_health_report>>
 health_monitor_frontend::get_cluster_health(
@@ -27,6 +47,10 @@ health_monitor_frontend::get_cluster_health(
       [f = std::move(f), force_refresh, deadline](health_monitor_backend& be) {
           return be.get_cluster_health(f, force_refresh, deadline);
       });
+}
+
+storage::disk_space_alert health_monitor_frontend::get_cluster_disk_health() {
+    return _cluster_disk_health;
 }
 
 ss::future<cluster_health_report>
@@ -84,4 +108,40 @@ health_monitor_frontend::get_cluster_health_overview(
         return be.get_cluster_health_overview(deadline);
     });
 }
+
+ss::future<> health_monitor_frontend::update_other_shards(
+  const storage::disk_space_alert dsa) {
+    co_await container().invoke_on_others(
+      [dsa](health_monitor_frontend& fe) { fe._cluster_disk_health = dsa; });
+}
+
+ss::future<> health_monitor_frontend::update_disk_health_cache() {
+    auto deadline = model::time_from_now(default_timeout);
+    auto disk_health = co_await dispatch_to_backend(
+      [deadline](health_monitor_backend& be) {
+          return be.get_cluster_disk_health(force_refresh::no, deadline);
+      });
+    if (disk_health != _cluster_disk_health) {
+        vlog(
+          clusterlog.debug,
+          "Update disk health cache {} -> {}",
+          _cluster_disk_health,
+          disk_health);
+        _cluster_disk_health = disk_health;
+        co_await update_other_shards(disk_health);
+    }
+}
+
+// Handler for refresh_shard's update timer
+void health_monitor_frontend::disk_health_tick() {
+    if (_refresh_gate.is_closed()) {
+        return;
+    }
+    ssx::spawn_with_gate(_refresh_gate, [this]() {
+        // Ensure that this node's cluster health data is not too stale.
+        return update_disk_health_cache().finally(
+          [this] { _refresh_timer.arm(disk_health_refresh_interval); });
+    });
+}
+
 } // namespace cluster

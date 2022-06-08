@@ -251,6 +251,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> health_monitor_max_metadata_age;
     bounded_property<unsigned> storage_space_alert_free_threshold_percent;
     bounded_property<size_t> storage_space_alert_free_threshold_bytes;
+    bounded_property<size_t> storage_min_free_bytes;
     // metrics reporter
     property<bool> enable_metrics_reporter;
     property<std::chrono::milliseconds> metrics_reporter_tick_interval;

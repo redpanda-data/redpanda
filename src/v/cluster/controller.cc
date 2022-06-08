@@ -298,9 +298,13 @@ ss::future<> controller::start() {
             config::shard_local_cfg()
               .storage_space_alert_free_threshold_bytes.bind(),
             config::shard_local_cfg()
-              .storage_space_alert_free_threshold_percent.bind());
+              .storage_space_alert_free_threshold_percent.bind(),
+            config::shard_local_cfg().storage_min_free_bytes.bind());
       })
       .then([this] { return _hm_frontend.start(std::ref(_hm_backend)); })
+      .then([this] {
+          return _hm_frontend.invoke_on_all(&health_monitor_frontend::start);
+      })
       .then([this] {
           return _feature_manager.invoke_on(
             feature_manager::backend_shard, &feature_manager::start);

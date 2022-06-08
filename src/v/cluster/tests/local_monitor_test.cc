@@ -14,6 +14,7 @@
 #include "local_monitor_fixture.h"
 #include "redpanda/tests/fixture.h"
 #include "seastarx.h"
+#include "storage/types.h"
 
 #include <seastar/core/reactor.hh>
 #include <seastar/core/sstring.hh>
@@ -29,10 +30,13 @@
 
 using namespace cluster;
 
+using storage::disk_space_alert;
+
 local_monitor_fixture::local_monitor_fixture()
   : _local_monitor(
     config::shard_local_cfg().storage_space_alert_free_threshold_bytes.bind(),
     config::shard_local_cfg().storage_space_alert_free_threshold_percent.bind(),
+    config::shard_local_cfg().storage_min_free_bytes.bind(),
     _storage_api) {
     _storage_api.start_single().get0();
 
@@ -52,9 +56,6 @@ local_monitor_fixture::local_monitor_fixture()
     }
     _local_monitor.testing_only_set_path(_test_path.string());
     BOOST_ASSERT(ss::engine_is_ready());
-
-    set_config_alert_thresholds(
-      default_percent_threshold, default_bytes_threshold);
 }
 
 local_monitor_fixture::~local_monitor_fixture() {
@@ -81,15 +82,18 @@ struct statvfs local_monitor_fixture::make_statvfs(
     return s;
 }
 
-void local_monitor_fixture::set_config_alert_thresholds(
-  unsigned percent, size_t bytes) {
-    auto f = ss::smp::invoke_on_all([percent, bytes]() {
+void local_monitor_fixture::set_config_free_thresholds(
+  unsigned alert_percent, size_t alert_bytes, size_t min_bytes) {
+    auto f = ss::smp::invoke_on_all([&]() {
         config::shard_local_cfg()
           .get("storage_space_alert_free_threshold_bytes")
-          .set_value(std::any_cast<size_t>(bytes));
+          .set_value(std::any_cast<size_t>(alert_bytes));
         config::shard_local_cfg()
           .get("storage_space_alert_free_threshold_percent")
-          .set_value(std::any_cast<unsigned>(percent));
+          .set_value(std::any_cast<unsigned>(alert_percent));
+        config::shard_local_cfg()
+          .get("storage_min_free_bytes")
+          .set_value(std::any_cast<size_t>(min_bytes));
     });
     f.get();
 }
@@ -111,47 +115,92 @@ FIXTURE_TEST(local_monitor_inject_statvfs, local_monitor_fixture) {
     BOOST_TEST_REQUIRE(ls.disks[0].free == free * block_size);
 }
 
-FIXTURE_TEST(local_monitor_alert_on_space_percent, local_monitor_fixture) {
-    // Minimum by %: 200 * 4k block = 800KiB total * 0.05 -> 40 KiB
-    // Minimum by bytes:                                      1 GiB
-    static constexpr auto total = 200UL, free = 0UL, block_size = 4096UL;
-    size_t min_free_percent_blocks = total
-                                     * (default_percent_threshold / 100.0);
-    struct statvfs stats = make_statvfs(free, total, block_size);
+void local_monitor_fixture::assert_space_alert(
+  size_t volume,
+  size_t bytes_alert,
+  size_t percent_alert_bytes,
+  size_t min_bytes,
+  size_t free,
+  disk_space_alert expected) {
+    static const size_t block_size = 1024;
+    size_t min_percent_blocks = percent_alert_bytes / block_size;
+    size_t min_bytes_blocks = bytes_alert / block_size;
+
+    unsigned percent = (percent_alert_bytes * 100) / volume;
+    set_config_free_thresholds(percent, bytes_alert, min_bytes);
+    struct statvfs stats = make_statvfs(
+      free / block_size, volume / block_size, block_size);
     auto lamb = [&](const ss::sstring&) { return stats; };
     _local_monitor.testing_only_set_statvfs(lamb);
 
-    // One block over the threshold should not alert
-    stats.f_bfree = min_free_percent_blocks + 1;
     auto ls = update_state();
-    BOOST_TEST_REQUIRE(ls.storage_space_alert == storage::disk_space_alert::ok);
+    BOOST_TEST_REQUIRE(ls.storage_space_alert == expected);
+}
 
-    // One block under the free threshold should alert
-    stats.f_bfree = min_free_percent_blocks - 1;
-    ls = update_state();
-    BOOST_TEST_REQUIRE(ls.storage_space_alert != storage::disk_space_alert::ok);
+FIXTURE_TEST(local_monitor_alert_none, local_monitor_fixture) {
+    assert_space_alert(
+      100_TiB, // total volume size
+      200_GiB, // alert min free bytes
+      200_GiB, // alert min percent (in bytes here)
+      1_GiB,   // min bytes
+      201_GiB, // current free
+      disk_space_alert::ok);
+    assert_space_alert(
+      100_GiB, // total
+      10_MiB,  // alert bytes
+      20_MiB,  // alert percent
+      5_GiB,   // min bytes
+      100_GiB, // current free
+      disk_space_alert::ok);
+}
+
+FIXTURE_TEST(local_monitor_alert_on_space_percent, local_monitor_fixture) {
+    assert_space_alert(
+      1_TiB,  // total
+      1_GiB,  // alert bytes
+      11_GiB, // alert percent
+      1_GiB,  // min bytes
+      4_GiB,  // current free
+      disk_space_alert::low_space);
+    assert_space_alert(
+      2_TiB,   // total
+      0,       // alert bytes
+      100_GiB, // alert percent
+      1_GiB,   // min bytes
+      44_GiB,  // current free
+      disk_space_alert::low_space);
 }
 
 FIXTURE_TEST(local_monitor_alert_on_space_bytes, local_monitor_fixture) {
-    // Minimum by %: 30 GiB total * 0.05 => 1.5 GiB
-    // Minimum by bytes:                    1   GiB
-    static constexpr auto total = 30 * 1024 * 1024UL, block_size = 1024UL;
-    static constexpr auto min_bytes_in_blocks = default_bytes_threshold
-                                                / block_size;
-    clusterlog.debug(
-      "{}: bytes free threshold -> {} blocks", __func__, min_bytes_in_blocks);
+    assert_space_alert(
+      20_TiB,  // total
+      1_TiB,   // alert bytes
+      100_GiB, // alert percent
+      20_GiB,  // min bytes
+      99_GiB,  // current free
+      disk_space_alert::low_space);
+    assert_space_alert(
+      20_TiB,  // total
+      100_GiB, // alert bytes
+      0,       // alert percent
+      20_GiB,  // min bytes
+      99_GiB,  // current free
+      disk_space_alert::low_space);
+}
 
-    // Minimum bytes + one block -> No alert
-    struct statvfs stats = make_statvfs(
-      min_bytes_in_blocks + 1, total, block_size);
-    auto lamb = [&](const ss::sstring&) { return stats; };
-    _local_monitor.testing_only_set_statvfs(lamb);
-
-    auto ls = update_state();
-    BOOST_TEST_REQUIRE(ls.storage_space_alert == storage::disk_space_alert::ok);
-
-    // Min bytes threshold minus a blocks -> Alert
-    stats.f_bfree = min_bytes_in_blocks - 1;
-    ls = update_state();
-    BOOST_TEST_REQUIRE(ls.storage_space_alert != storage::disk_space_alert::ok);
+FIXTURE_TEST(local_monitor_min_bytes, local_monitor_fixture) {
+    assert_space_alert(
+      20_TiB,  // total
+      0,       // alert bytes
+      100_GiB, // alert percent
+      20_GiB,  // min bytes
+      19_GiB,  // current free
+      disk_space_alert::degraded);
+    assert_space_alert(
+      10_GiB,    // total
+      0,         // alert bytes
+      0,         // alert percent
+      2_MiB,     // min bytes
+      2_MiB - 1, // current free
+      disk_space_alert::degraded);
 }

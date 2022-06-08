@@ -56,8 +56,9 @@ public:
       ss::sharded<storage::node_api>&,
       ss::sharded<drain_manager>&,
       ss::sharded<feature_table>&,
-      config::binding<size_t> storage_min_bytes_threshold,
-      config::binding<unsigned> storage_min_percent_threshold);
+      config::binding<size_t> min_bytes_alert,
+      config::binding<unsigned> min_percent_alert,
+      config::binding<size_t> min_bytes);
 
     ss::future<> stop();
 
@@ -66,6 +67,9 @@ public:
 
     cluster_health_report
     get_current_cluster_health_snapshot(const cluster_report_filter&);
+
+    ss::future<storage::disk_space_alert> get_cluster_disk_health(
+      force_refresh refresh, model::timeout_clock::time_point deadline);
 
     ss::future<result<node_health_report>>
       collect_current_node_health(node_report_filter);
@@ -158,6 +162,8 @@ private:
 
     status_cache_t _status;
     report_cache_t _reports;
+    storage::disk_space_alert _reports_disk_health
+      = storage::disk_space_alert::ok;
     last_reply_cache_t _last_replies;
 
     ss::timer<ss::lowres_clock> _tick_timer;
