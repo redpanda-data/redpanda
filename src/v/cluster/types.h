@@ -28,6 +28,8 @@
 #include "utils/to_string.h"
 #include "v8_engine/data_policy.h"
 
+#include <seastar/core/sstring.hh>
+
 #include <absl/container/btree_set.h>
 #include <fmt/format.h>
 
@@ -944,7 +946,8 @@ struct feature_update_action
     operator<<(std::ostream&, const feature_update_action&);
 };
 
-struct feature_update_cmd_data {
+struct feature_update_cmd_data
+  : serde::envelope<feature_update_cmd_data, serde::version<0>> {
     // To avoid ambiguity on 'versions' here: `current_version`
     // is the encoding version of the struct, subsequent version
     // fields are the payload.
@@ -952,6 +955,8 @@ struct feature_update_cmd_data {
 
     cluster_version logical_version;
     std::vector<feature_update_action> actions;
+
+    auto serde_fields() { return std::tie(logical_version, actions); }
 
     friend std::ostream&
     operator<<(std::ostream&, const feature_update_cmd_data&);

@@ -859,6 +859,18 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         roundtrip_test(data);
     }
     { roundtrip_test(random_feature_update_action()); }
+    {
+        cluster::feature_update_cmd_data data;
+        data.actions = {
+          random_feature_update_action(),
+          random_feature_update_action(),
+          random_feature_update_action(),
+          random_feature_update_action()};
+        data.logical_version
+          = tests::random_named_int<cluster::cluster_version>();
+
+        roundtrip_test(data);
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {
