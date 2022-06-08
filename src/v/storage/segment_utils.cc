@@ -883,4 +883,10 @@ bytes start_offset_key(model::ntp ntp) {
     return iobuf_to_bytes(buf);
 }
 
+bytes clean_segment_key(model::ntp ntp) {
+    iobuf buf;
+    reflection::serialize(buf, kvstore_key_type::clean_segment, std::move(ntp));
+    return iobuf_to_bytes(buf);
+}
+
 } // namespace storage::internal
