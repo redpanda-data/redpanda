@@ -33,7 +33,12 @@
 
 namespace kafka {
 
-config_map_t config_map(const std::vector<createable_topic_config>& config) {
+template<typename T>
+concept CreatableTopicCfg = std::is_same_v<T, creatable_topic_configs> || std::
+  is_same_v<T, createable_topic_config>;
+
+template<CreatableTopicCfg T>
+config_map_t make_config_map(const std::vector<T>& config) {
     config_map_t ret;
     ret.reserve(config.size());
     for (const auto& c : config) {
@@ -42,6 +47,14 @@ config_map_t config_map(const std::vector<createable_topic_config>& config) {
         }
     }
     return ret;
+}
+
+config_map_t config_map(const std::vector<createable_topic_config>& config) {
+    return make_config_map(config);
+}
+
+config_map_t config_map(const std::vector<creatable_topic_configs>& config) {
+    return make_config_map(config);
 }
 
 // Either parse configuration or return nullopt
