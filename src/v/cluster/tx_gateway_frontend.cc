@@ -496,8 +496,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
           txlog.warn,
           "can't find {}/0 in the metadata cache",
           model::tx_manager_nt);
-        co_return cluster::init_tm_tx_reply{
-          .ec = tx_errc::partition_not_exists};
+        co_return cluster::init_tm_tx_reply{tx_errc::partition_not_exists};
     }
 
     retries = _metadata_dissemination_retries;
@@ -517,7 +516,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
           txlog.warn,
           "can't find {} in the leaders cache",
           model::tx_manager_ntp);
-        co_return cluster::init_tm_tx_reply{.ec = tx_errc::leader_not_found};
+        co_return cluster::init_tm_tx_reply{tx_errc::leader_not_found};
     }
 
     auto leader = leader_opt.value();
@@ -570,7 +569,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx_locally(
           "sending name:init_tm_tx, tx_id:{}, ec: {}",
           tx_id,
           tx_errc::shard_not_found);
-        co_return cluster::init_tm_tx_reply{.ec = tx_errc::shard_not_found};
+        co_return cluster::init_tm_tx_reply{tx_errc::shard_not_found};
     }
 
     auto reply = co_await do_init_tm_tx(
@@ -607,7 +606,7 @@ ss::future<init_tm_tx_reply> tx_gateway_frontend::dispatch_init_tm_tx(
       .then([](result<init_tm_tx_reply> r) {
           if (r.has_error()) {
               vlog(txlog.warn, "got error {} on remote init tm tx", r.error());
-              return init_tm_tx_reply{.ec = tx_errc::invalid_txn_state};
+              return init_tm_tx_reply{tx_errc::invalid_txn_state};
           }
 
           return r.value();
@@ -631,7 +630,7 @@ ss::future<init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
                 "can't get partition by {} ntp",
                 model::tx_manager_ntp);
               return ss::make_ready_future<init_tm_tx_reply>(
-                init_tm_tx_reply{.ec = tx_errc::partition_not_found});
+                init_tm_tx_reply{tx_errc::partition_not_found});
           }
 
           auto stm = partition->tm_stm();
@@ -642,7 +641,7 @@ ss::future<init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
                 "can't get tm stm of the {}' partition",
                 model::tx_manager_ntp);
               return ss::make_ready_future<init_tm_tx_reply>(
-                init_tm_tx_reply{.ec = tx_errc::stm_not_found});
+                init_tm_tx_reply{tx_errc::stm_not_found});
           }
 
           return stm->read_lock().then([&self,
@@ -676,14 +675,14 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
               txlog.warn,
               "this node isn't a leader for tx.id={} coordinator",
               tx_id);
-            co_return init_tm_tx_reply{.ec = tx_errc::not_coordinator};
+            co_return init_tm_tx_reply{tx_errc::not_coordinator};
         }
         vlog(
           txlog.warn,
           "got error {} on loading tx.id={}",
           term_opt.error(),
           tx_id);
-        co_return init_tm_tx_reply{.ec = tx_errc::invalid_txn_state};
+        co_return init_tm_tx_reply{tx_errc::invalid_txn_state};
     }
     auto term = term_opt.value();
     auto tx_opt = stm->get_tx(tx_id);
@@ -693,13 +692,14 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
           = co_await _id_allocator_frontend.local().allocate_id(timeout);
         if (pid_reply.ec != errc::success) {
             vlog(txlog.warn, "allocate_id failed with {}", pid_reply.ec);
-            co_return init_tm_tx_reply{.ec = tx_errc::invalid_txn_state};
+            co_return init_tm_tx_reply{tx_errc::invalid_txn_state};
         }
 
         model::producer_identity pid{pid_reply.id, 0};
         tm_stm::op_status op_status = co_await stm->register_new_producer(
           term, tx_id, transaction_timeout_ms, pid);
-        init_tm_tx_reply reply{.pid = pid};
+        init_tm_tx_reply reply;
+        reply.pid = pid;
         if (op_status == tm_stm::op_status::success) {
             reply.ec = tx_errc::none;
         } else if (op_status == tm_stm::op_status::conflict) {
@@ -767,7 +767,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
           r.error(),
           tx_id,
           tx.status);
-        co_return init_tm_tx_reply{.ec = r.error()};
+        co_return init_tm_tx_reply{r.error()};
     }
 
     tx = r.value();

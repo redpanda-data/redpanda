@@ -213,7 +213,17 @@ struct init_tm_tx_reply {
     // partition_not_exists, not_leader, topic_not_exists
     model::producer_identity pid;
     tx_errc ec;
+
+    init_tm_tx_reply() noexcept = default;
+
+    init_tm_tx_reply(model::producer_identity pid, tx_errc ec)
+      : pid(pid)
+      , ec(ec) {}
+
+    explicit init_tm_tx_reply(tx_errc ec)
+      : ec(ec) {}
 };
+
 struct add_paritions_tx_request {
     struct topic {
         model::topic name{};
@@ -1947,6 +1957,18 @@ struct adl<cluster::init_tm_tx_request> {
         auto tx_timeout = adl<std::chrono::milliseconds>{}.from(in);
         auto timeout = adl<model::timeout_clock::duration>{}.from(in);
         return {std::move(tx_id), tx_timeout, timeout};
+    }
+};
+
+template<>
+struct adl<cluster::init_tm_tx_reply> {
+    void to(iobuf& out, cluster::init_tm_tx_reply&& r) {
+        serialize(out, r.pid, r.ec);
+    }
+    cluster::init_tm_tx_reply from(iobuf_parser& in) {
+        auto pid = adl<model::producer_identity>{}.from(in);
+        auto ec = adl<cluster::tx_errc>{}.from(in);
+        return {pid, ec};
     }
 };
 } // namespace reflection
