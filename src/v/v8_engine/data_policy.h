@@ -12,6 +12,7 @@
 
 #include "reflection/adl.h"
 #include "seastarx.h"
+#include "serde/envelope.h"
 #include "vlog.h"
 
 #include <seastar/core/sstring.hh>
@@ -35,10 +36,11 @@ private:
 // Datapolicy property for v8_engine. In first version it contains only
 // function_name and script_name, in the future it will contain ACLs, geo,
 // e.t.c.
-class data_policy {
+class data_policy : public serde::envelope<data_policy, serde::version<0>> {
 public:
     static constexpr int8_t version{1};
 
+    data_policy() = default;
     data_policy(ss::sstring fn, ss::sstring sn) noexcept
       : _function_name(std::move(fn))
       , _script_name(std::move(sn)) {}
@@ -47,6 +49,7 @@ public:
     const ss::sstring& script_name() const { return _script_name; }
 
     friend bool operator==(const data_policy&, const data_policy&) = default;
+    auto serde_fields() { return std::tie(_function_name, _script_name); }
 
 private:
     ss::sstring _function_name;
