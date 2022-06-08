@@ -302,28 +302,6 @@ FIXTURE_TEST(create_non_replicable_topics, create_topic_fixture) {
     BOOST_CHECK(resp[1].tp_ns.tp() == "topic2");
 }
 
-// read replica creation is not implemented yet, see
-// https://github.com/redpanda-data/redpanda/issues/4736
-FIXTURE_TEST(create_read_replica_topics, create_topic_fixture) {
-    auto topic = make_topic(
-      "topic1",
-      std::nullopt,
-      std::nullopt,
-      std::map<ss::sstring, ss::sstring>{
-        {"redpanda.remote.readreplica", "true"},
-        {"redpanda.remote.readreplica.bucket", "panda-bucket"}});
-
-    auto req = make_req({topic});
-
-    auto client = make_kafka_client().get0();
-    client.connect().get();
-    auto resp = client.dispatch(req, kafka::api_version(2)).get0();
-
-    BOOST_CHECK(
-      resp.data.topics[0].error_code == kafka::error_code::invalid_config);
-    BOOST_CHECK(resp.data.topics[0].name == "topic1");
-}
-
 FIXTURE_TEST(s3bucket_is_missing, create_topic_fixture) {
     auto topic = make_topic(
       "topic1",
