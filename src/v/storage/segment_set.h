@@ -97,6 +97,7 @@ ss::future<segment_set> recover_segments(
   ss::abort_source& as,
   size_t read_buf_size,
   unsigned read_readahead_count,
+  std::optional<ss::sstring> last_clean_segment,
   storage_resources&);
 
 } // namespace storage

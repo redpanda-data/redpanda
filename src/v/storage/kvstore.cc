@@ -389,6 +389,7 @@ ss::future<> kvstore::recover() {
               _as,
               config::shard_local_cfg().storage_read_buffer_size(),
               config::shard_local_cfg().storage_read_readahead_count(),
+              std::nullopt,
               _resources)
               .get0();
 
