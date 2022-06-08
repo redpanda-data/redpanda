@@ -1296,6 +1296,7 @@ class TopicRecoveryTest(RedpandaTest):
                               self.rpk_producer_maker, topics)
         self.do_run(test_case)
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/4960
     @cluster(num_nodes=4, log_allow_list=TRANSIENT_ERRORS)
     def test_fast2(self):
         """Basic recovery test. This test stresses successful recovery
@@ -1334,6 +1335,7 @@ class TopicRecoveryTest(RedpandaTest):
                               self.rpk_producer_maker, topics)
         self.do_run(test_case)
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/4887
     @cluster(num_nodes=3, log_allow_list=TRANSIENT_ERRORS)
     def test_size_based_retention(self):
         """Test topic recovery with size based retention policy.
