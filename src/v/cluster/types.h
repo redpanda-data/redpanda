@@ -199,7 +199,16 @@ struct init_tm_tx_request {
     kafka::transactional_id tx_id;
     std::chrono::milliseconds transaction_timeout_ms;
     model::timeout_clock::duration timeout;
+
+    init_tm_tx_request(
+      kafka::transactional_id tx_id,
+      std::chrono::milliseconds tx_timeout,
+      model::timeout_clock::duration timeout)
+      : tx_id(std::move(tx_id))
+      , transaction_timeout_ms(tx_timeout)
+      , timeout(timeout) {}
 };
+
 struct init_tm_tx_reply {
     // partition_not_exists, not_leader, topic_not_exists
     model::producer_identity pid;
@@ -1925,6 +1934,19 @@ struct adl<cluster::try_abort_reply> {
         auto aborted = aborted_type(adl<bool>{}.from(in));
         auto ec = adl<cluster::tx_errc>{}.from(in);
         return {committed, aborted, ec};
+    }
+};
+
+template<>
+struct adl<cluster::init_tm_tx_request> {
+    void to(iobuf& out, cluster::init_tm_tx_request&& r) {
+        serialize(out, std::move(r.tx_id), r.transaction_timeout_ms, r.timeout);
+    }
+    cluster::init_tm_tx_request from(iobuf_parser& in) {
+        auto tx_id = adl<kafka::transactional_id>{}.from(in);
+        auto tx_timeout = adl<std::chrono::milliseconds>{}.from(in);
+        auto timeout = adl<model::timeout_clock::duration>{}.from(in);
+        return {std::move(tx_id), tx_timeout, timeout};
     }
 };
 } // namespace reflection

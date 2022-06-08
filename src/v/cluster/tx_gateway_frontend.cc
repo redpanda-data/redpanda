@@ -600,10 +600,7 @@ ss::future<init_tm_tx_reply> tx_gateway_frontend::dispatch_init_tm_tx(
         [tx_id, transaction_timeout_ms, timeout](
           tx_gateway_client_protocol cp) {
             return cp.init_tm_tx(
-              init_tm_tx_request{
-                .tx_id = tx_id,
-                .transaction_timeout_ms = transaction_timeout_ms,
-                .timeout = timeout},
+              init_tm_tx_request{tx_id, transaction_timeout_ms, timeout},
               rpc::client_opts(model::timeout_clock::now() + timeout));
         })
       .then(&rpc::get_ctx_data<init_tm_tx_reply>)
