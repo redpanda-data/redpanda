@@ -911,8 +911,12 @@ struct cluster_config_delta_cmd_data
     operator<<(std::ostream&, const cluster_config_delta_cmd_data&);
 };
 
-struct cluster_config_status_cmd_data {
+struct cluster_config_status_cmd_data
+  : serde::envelope<cluster_config_status_cmd_data, serde::version<0>> {
     static constexpr int8_t current_version = 0;
+
+    auto serde_fields() { return std::tie(status); }
+
     config_status status;
 };
 
