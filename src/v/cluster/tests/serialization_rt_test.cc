@@ -792,4 +792,11 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
 
         roundtrip_test(data);
     }
+    {
+        cluster::non_replicable_topic tp;
+        tp.name = model::random_topic_namespace();
+        tp.source = model::random_topic_namespace();
+
+        roundtrip_test(tp);
+    }
 }

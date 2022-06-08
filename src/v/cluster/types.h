@@ -853,10 +853,14 @@ struct create_data_policy_cmd_data
     v8_engine::data_policy dp;
 };
 
-struct non_replicable_topic {
+struct non_replicable_topic
+  : serde::envelope<non_replicable_topic, serde::version<0>> {
     static constexpr int8_t current_version = 1;
     model::topic_namespace source;
     model::topic_namespace name;
+
+    auto serde_fields() { return std::tie(source, name); }
+
     friend std::ostream& operator<<(std::ostream&, const non_replicable_topic&);
 };
 
