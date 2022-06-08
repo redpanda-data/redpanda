@@ -25,6 +25,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <type_traits>
 
 namespace cluster {
@@ -172,7 +173,8 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       "compaction_strategy: "
       "{}, retention_bytes: {}, retention_duration_ms: {}, segment_size: "
       "{}, "
-      "timestamp_type: {}, recovery_enabled: {}, shadow_indexing: {} }}",
+      "timestamp_type: {}, recovery_enabled: {}, shadow_indexing: {}, "
+      "read_replica: {} }}",
       properties.compression,
       properties.cleanup_policy_bitflags,
       properties.compaction_strategy,
@@ -181,7 +183,8 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       properties.segment_size,
       properties.timestamp_type,
       properties.recovery,
-      properties.shadow_indexing);
+      properties.shadow_indexing,
+      properties.read_replica);
 
     return o;
 }
@@ -434,6 +437,8 @@ std::ostream& operator<<(std::ostream& o, const feature_update_action& fua) {
 
 namespace reflection {
 
+// note: adl serialization doesn't support read replica fields since serde
+// should be used for new versions.
 void adl<cluster::topic_configuration>::to(
   iobuf& out, cluster::topic_configuration&& t) {
     int32_t version = -1;
@@ -454,6 +459,8 @@ void adl<cluster::topic_configuration>::to(
       t.properties.shadow_indexing);
 }
 
+// note: adl deserialization doesn't support read replica fields since serde
+// should be used for new versions.
 cluster::topic_configuration
 adl<cluster::topic_configuration>::from(iobuf_parser& in) {
     // NOTE: The first field of the topic_configuration is a
@@ -1396,7 +1403,8 @@ void adl<cluster::topic_properties>::to(
       p.retention_bytes,
       p.retention_duration,
       p.recovery,
-      p.shadow_indexing);
+      p.shadow_indexing,
+      p.read_replica);
 }
 
 cluster::topic_properties
@@ -1419,6 +1427,7 @@ adl<cluster::topic_properties>::from(iobuf_parser& parser) {
     auto shadow_indexing
       = reflection::adl<std::optional<model::shadow_indexing_mode>>{}.from(
         parser);
+    auto read_replica = reflection::adl<std::optional<bool>>{}.from(parser);
 
     return {
       compression,
@@ -1429,7 +1438,8 @@ adl<cluster::topic_properties>::from(iobuf_parser& parser) {
       retention_bytes,
       retention_duration,
       recovery,
-      shadow_indexing};
+      shadow_indexing,
+      read_replica};
 }
 
 void adl<cluster::cluster_property_kv>::to(

@@ -22,6 +22,7 @@
 #include "model/timeout_clock.h"
 #include "raft/types.h"
 #include "security/acl.h"
+#include "serde/envelope.h"
 #include "serde/serde.h"
 #include "storage/ntp_config.h"
 #include "tristate.h"
@@ -32,6 +33,8 @@
 
 #include <absl/container/btree_set.h>
 #include <fmt/format.h>
+
+#include <optional>
 
 namespace cluster {
 using consensus_ptr = ss::lw_shared_ptr<raft::consensus>;
@@ -736,7 +739,9 @@ struct partition_assignment
  * Structure holding topic properties overrides, empty values will be replaced
  * with defaults
  */
-struct topic_properties : serde::envelope<topic_properties, serde::version<0>> {
+struct topic_properties
+  : serde::
+      envelope<topic_properties, serde::version<1>, serde::compat_version<0>> {
     topic_properties() noexcept = default;
     topic_properties(
       std::optional<model::compression> compression,
@@ -747,7 +752,8 @@ struct topic_properties : serde::envelope<topic_properties, serde::version<0>> {
       tristate<size_t> retention_bytes,
       tristate<std::chrono::milliseconds> retention_duration,
       std::optional<bool> recovery,
-      std::optional<model::shadow_indexing_mode> shadow_indexing)
+      std::optional<model::shadow_indexing_mode> shadow_indexing,
+      std::optional<bool> read_replica)
       : compression(compression)
       , cleanup_policy_bitflags(cleanup_policy_bitflags)
       , compaction_strategy(compaction_strategy)
@@ -756,7 +762,8 @@ struct topic_properties : serde::envelope<topic_properties, serde::version<0>> {
       , retention_bytes(retention_bytes)
       , retention_duration(retention_duration)
       , recovery(recovery)
-      , shadow_indexing(shadow_indexing) {}
+      , shadow_indexing(shadow_indexing)
+      , read_replica(read_replica) {}
 
     std::optional<model::compression> compression;
     std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags;
@@ -767,6 +774,7 @@ struct topic_properties : serde::envelope<topic_properties, serde::version<0>> {
     tristate<std::chrono::milliseconds> retention_duration{std::nullopt};
     std::optional<bool> recovery;
     std::optional<model::shadow_indexing_mode> shadow_indexing;
+    std::optional<bool> read_replica;
 
     bool is_compacted() const;
     bool has_overrides() const;
@@ -784,7 +792,8 @@ struct topic_properties : serde::envelope<topic_properties, serde::version<0>> {
           retention_bytes,
           retention_duration,
           recovery,
-          shadow_indexing);
+          shadow_indexing,
+          read_replica);
     }
 
     friend bool operator==(const topic_properties&, const topic_properties&)
@@ -916,6 +925,9 @@ struct topic_configuration
         return tp_ns.ns == model::kafka_internal_namespace
                || tp_ns == model::kafka_consumer_offsets_nt;
     }
+    bool is_read_replica() const {
+        return properties.read_replica && properties.read_replica.value();
+    }
 
     model::topic_namespace tp_ns;
     // using signed integer because Kafka protocol defines it as signed int
@@ -955,6 +967,7 @@ struct custom_assignable_topic_configuration {
     std::vector<custom_partition_assignment> custom_assignments;
 
     bool has_custom_assignment() const { return !custom_assignments.empty(); }
+    bool is_read_replica() const { return cfg.is_read_replica(); }
 
     friend std::ostream&
     operator<<(std::ostream&, const custom_assignable_topic_configuration&);
