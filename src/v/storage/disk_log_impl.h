@@ -60,7 +60,7 @@ public:
     disk_log_impl(const disk_log_impl&) = delete;
     disk_log_impl& operator=(const disk_log_impl&) = delete;
 
-    ss::future<> close() final;
+    ss::future<std::optional<ss::sstring>> close() final;
     ss::future<> remove() final;
     ss::future<> flush() final;
     ss::future<> truncate(truncate_config) final;

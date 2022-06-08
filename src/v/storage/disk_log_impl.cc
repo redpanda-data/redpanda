@@ -109,7 +109,8 @@ ss::future<> disk_log_impl::remove() {
             });
       });
 }
-ss::future<> disk_log_impl::close() {
+
+ss::future<std::optional<ss::sstring>> disk_log_impl::close() {
     vassert(!_closed, "Invalid double closing of log - {}", *this);
     vlog(stlog.debug, "closing log {}", *this);
     _closed = true;
@@ -129,6 +130,20 @@ ss::future<> disk_log_impl::close() {
             });
         });
     });
+
+    if (_segs.size()) {
+        auto clean_seg = _segs.back()->filename();
+        vlog(
+          stlog.debug,
+          "closed {}, last clean segment is {}",
+          config().ntp(),
+          clean_seg);
+        co_return clean_seg;
+    }
+
+    // Avoid assuming there will always be a segment: it is legal to
+    // open a log + close it without writing anything.
+    co_return std::nullopt;
 }
 
 model::offset disk_log_impl::size_based_gc_max_offset(size_t max_size) {

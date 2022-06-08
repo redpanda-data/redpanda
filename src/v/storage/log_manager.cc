@@ -91,7 +91,7 @@ ss::future<> log_manager::stop() {
     co_await _open_gate.close();
     co_await ss::coroutine::parallel_for_each(
       _logs, [](logs_type::value_type& entry) {
-          return entry.second->handle.close();
+          return entry.second->handle.close().discard_result();
       });
     co_await _batch_cache.stop();
     co_await ssx::async_clear(_logs)();
