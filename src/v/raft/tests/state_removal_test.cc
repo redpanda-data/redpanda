@@ -55,6 +55,11 @@ bool snapshot_exists(raft_node& n) {
     return snapshot_exists;
 }
 
+/**
+ * Specialized vs. raft_node::stop_node because in the below
+ * tests we explicitly stop consensus early, so need to avoid
+ * double-stopping it during stop_node.
+ */
 void stop_node(raft_node& node) {
     node.recovery_throttle.stop().get();
     node.server.stop().get0();
@@ -63,7 +68,9 @@ void stop_node(raft_node& node) {
         node._nop_stm->stop().get0();
     }
     node.raft_manager.stop().get0();
+    node.consensus = nullptr;
     node.hbeats->stop().get0();
+    node.hbeats.reset();
     node.cache.stop().get0();
     node.storage.stop().get0();
 

@@ -321,6 +321,7 @@ FIXTURE_TEST(test_recovery_of_crashed_leader_truncation, raft_test_fixture) {
     auto leader_raft = gr.get_member(first_leader_id).consensus;
     auto f = leader_raft->replicate(
       random_batches_reader(2), default_replicate_opts);
+    leader_raft.release();
     // since replicate doesn't accept timeout client have to deal with it.
     auto v = ss::with_timeout(model::timeout_clock::now() + 1s, std::move(f))
                .handle_exception_type([](const ss::timed_out_error&) {
