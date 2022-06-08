@@ -670,6 +670,17 @@ cluster::cluster_property_kv random_property_kv() {
       random_generators::gen_alphanum_string(
         random_generators::get_int(1, 64))};
 }
+cluster::feature_update_action random_feature_update_action() {
+    cluster::feature_update_action action;
+    action.action = random_generators::random_choice(
+      std::vector<cluster::feature_update_action::action_t>{
+        cluster::feature_update_action::action_t::activate,
+        cluster::feature_update_action::action_t::deactivate,
+        cluster::feature_update_action::action_t::complete_preparing,
+      });
+    action.feature_name = random_generators::gen_alphanum_string(32);
+    return action;
+}
 
 SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     roundtrip_test(cluster::ntp_leader(
@@ -847,6 +858,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
 
         roundtrip_test(data);
     }
+    { roundtrip_test(random_feature_update_action()); }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {

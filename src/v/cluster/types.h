@@ -920,7 +920,8 @@ struct cluster_config_status_cmd_data
     config_status status;
 };
 
-struct feature_update_action {
+struct feature_update_action
+  : serde::envelope<feature_update_action, serde::version<0>> {
     static constexpr int8_t current_version = 1;
     enum class action_t : std::uint16_t {
         // Notify when a feature is done with preparing phase
@@ -936,6 +937,8 @@ struct feature_update_action {
     // meant to be stable for use on the wire, so we refer to features by name
     ss::sstring feature_name;
     action_t action;
+
+    auto serde_fields() { return std::tie(feature_name, action); }
 
     friend std::ostream&
     operator<<(std::ostream&, const feature_update_action&);
