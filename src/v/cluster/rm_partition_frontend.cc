@@ -494,14 +494,14 @@ ss::future<commit_tx_reply> rm_partition_frontend::commit_tx(
 
     if (!_metadata_cache.local().contains(nt, ntp.tp.partition)) {
         return ss::make_ready_future<commit_tx_reply>(
-          commit_tx_reply{.ec = tx_errc::partition_not_exists});
+          commit_tx_reply{tx_errc::partition_not_exists});
     }
 
     auto leader = _leaders.local().get_leader(ntp);
     if (!leader) {
         vlog(txlog.warn, "can't find a leader for {}", ntp);
         return ss::make_ready_future<commit_tx_reply>(
-          commit_tx_reply{.ec = tx_errc::leader_not_found});
+          commit_tx_reply{tx_errc::leader_not_found});
     }
 
     auto _self = _controller->self();
@@ -553,7 +553,7 @@ ss::future<commit_tx_reply> rm_partition_frontend::dispatch_commit_tx(
       .then([](result<commit_tx_reply> r) {
           if (r.has_error()) {
               vlog(txlog.warn, "got error {} on remote commit tx", r.error());
-              return commit_tx_reply{.ec = tx_errc::timeout};
+              return commit_tx_reply{tx_errc::timeout};
           }
 
           return r.value();
@@ -589,14 +589,14 @@ ss::future<commit_tx_reply> rm_partition_frontend::do_commit_tx(
   model::timeout_clock::duration timeout) {
     if (!is_leader_of(ntp)) {
         return ss::make_ready_future<commit_tx_reply>(
-          commit_tx_reply{.ec = tx_errc::leader_not_found});
+          commit_tx_reply{tx_errc::leader_not_found});
     }
 
     auto shard = _shard_table.local().shard_for(ntp);
 
     if (!shard) {
         return ss::make_ready_future<commit_tx_reply>(
-          commit_tx_reply{.ec = tx_errc::shard_not_found});
+          commit_tx_reply{tx_errc::shard_not_found});
     }
 
     return _partition_manager.invoke_on(
@@ -606,7 +606,7 @@ ss::future<commit_tx_reply> rm_partition_frontend::do_commit_tx(
           auto partition = mgr.get(ntp);
           if (!partition) {
               return ss::make_ready_future<commit_tx_reply>(
-                commit_tx_reply{.ec = tx_errc::partition_not_found});
+                commit_tx_reply{tx_errc::partition_not_found});
           }
 
           auto stm = partition->rm_stm();
@@ -614,11 +614,11 @@ ss::future<commit_tx_reply> rm_partition_frontend::do_commit_tx(
           if (!stm) {
               vlog(txlog.warn, "can't get tx stm of the {}' partition", ntp);
               return ss::make_ready_future<commit_tx_reply>(
-                commit_tx_reply{.ec = tx_errc::stm_not_found});
+                commit_tx_reply{tx_errc::stm_not_found});
           }
 
           return stm->commit_tx(pid, tx_seq, timeout).then([](tx_errc ec) {
-              return commit_tx_reply{.ec = ec};
+              return commit_tx_reply{ec};
           });
       });
 }

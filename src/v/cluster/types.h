@@ -254,7 +254,13 @@ struct commit_tx_request {
 
 struct commit_tx_reply {
     tx_errc ec;
+
+    commit_tx_reply() noexcept = default;
+
+    explicit commit_tx_reply(tx_errc ec)
+      : ec(ec) {}
 };
+
 struct abort_tx_request {
     model::ntp ntp;
     model::producer_identity pid;
@@ -1752,6 +1758,15 @@ struct adl<cluster::commit_tx_request> {
         auto tx_seq = adl<model::tx_seq>{}.from(in);
         auto timeout = adl<model::timeout_clock::duration>{}.from(in);
         return {std::move(ntp), pid, tx_seq, timeout};
+    }
+};
+
+template<>
+struct adl<cluster::commit_tx_reply> {
+    void to(iobuf& out, cluster::commit_tx_reply&& r) { serialize(out, r.ec); }
+    cluster::commit_tx_reply from(iobuf_parser& in) {
+        auto ec = adl<cluster::tx_errc>{}.from(in);
+        return cluster::commit_tx_reply{ec};
     }
 };
 } // namespace reflection
