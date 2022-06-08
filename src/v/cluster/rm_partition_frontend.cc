@@ -546,8 +546,7 @@ ss::future<commit_tx_reply> rm_partition_frontend::dispatch_commit_tx(
         timeout,
         [ntp, pid, tx_seq, timeout](tx_gateway_client_protocol cp) {
             return cp.commit_tx(
-              commit_tx_request{
-                .ntp = ntp, .pid = pid, .tx_seq = tx_seq, .timeout = timeout},
+              commit_tx_request{ntp, pid, tx_seq, timeout},
               rpc::client_opts(model::timeout_clock::now() + timeout));
         })
       .then(&rpc::get_ctx_data<commit_tx_reply>)
