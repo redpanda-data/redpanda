@@ -10,6 +10,7 @@
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 
+from pandasql import PandaSQL
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.services.rpk_consumer import RpkConsumer
@@ -44,15 +45,10 @@ class PartitionMetricsTest(RedpandaTest):
 
     def _sum_metrics(self, metric_name):
 
-        family = self.redpanda.metrics_sample(metric_name,
+        samples = self.redpanda.metrics_sample(metric_name,
                                               nodes=self.redpanda.nodes)
-        total = 0
-        for sample in family.samples:
-            self.redpanda.logger.info(
-                f"value: {sample.family} - {sample.value}")
-            total += sample.value
-
-        return total
+        assert samples is not None
+        return PandaSQL()("select sum(value) as s from samples").at[0, 's']
 
     @cluster(num_nodes=3)
     def test_partition_metrics(self):

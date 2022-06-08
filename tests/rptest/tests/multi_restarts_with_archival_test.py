@@ -17,6 +17,7 @@ from rptest.clients.default import DefaultClient
 from rptest.clients.rpk import RpkTool
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST
+from pandasql import PandaSQL
 
 
 class MultiRestartTest(EndToEndTest):
@@ -59,11 +60,10 @@ class MultiRestartTest(EndToEndTest):
         self.await_startup()
 
         def no_under_replicated_partitions():
-            metric_sample = self.redpanda.metrics_sample("under_replicated")
-            for s in metric_sample.samples:
-                if s.value > 0:
-                    return False
-            return True
+            samples = self.redpanda.metrics_sample("under_replicated")
+            assert samples is not None
+            count = PandaSQL()("select count(*) as c from samples where value > 0").at[0, 'c']
+            return count == 0
 
         # restart all the nodes and wait for recovery
         for i in range(0, 10):

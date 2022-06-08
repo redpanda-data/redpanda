@@ -9,6 +9,7 @@
 
 import socket
 
+from string import Template
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
 from rptest.services.rpk_producer import RpkProducer
@@ -25,14 +26,16 @@ class ConnectionLimitsTest(RedpandaTest):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, num_brokers=1, **kwargs)
+        self.metrics_query =\
+            Template("select sum(value) as value from metrics where name = '$name'")
 
     @cluster(num_nodes=4)
     def test_exceed_broker_limit(self):
         self.redpanda.set_cluster_config({"kafka_connections_max": 6})
 
         metrics = [
-            MetricCheck(self.logger, self.redpanda, n, REJECTED_METRIC, {},
-                        sum) for n in self.redpanda.nodes
+            MetricCheck(self.logger, self.redpanda, n, self.metrics_query, [REJECTED_METRIC])
+            for n in self.redpanda.nodes
         ]
 
         # I happen to know that an `rpk topic consume` occupies three
@@ -66,10 +69,7 @@ class ConnectionLimitsTest(RedpandaTest):
             c.stop()
             c.wait()
 
-        assert any([
-            m.evaluate([(REJECTED_METRIC, lambda a, b: b > a)])
-            for m in metrics
-        ])
+        assert any([m.evaluate([lambda a, b: b > a]) for m in metrics])
 
     @cluster(num_nodes=2)
     def test_null(self):
@@ -80,8 +80,8 @@ class ConnectionLimitsTest(RedpandaTest):
         self.redpanda.set_cluster_config({"kafka_connections_max": 6})
 
         metrics = [
-            MetricCheck(self.logger, self.redpanda, n, REJECTED_METRIC, {},
-                        sum) for n in self.redpanda.nodes
+            MetricCheck(self.logger, self.redpanda, n, self.metrics_query, [REJECTED_METRIC])
+            for n in self.redpanda.nodes
         ]
 
         producer = RpkProducer(self.test_context,
@@ -95,10 +95,7 @@ class ConnectionLimitsTest(RedpandaTest):
             producer.start()
             producer.wait()
 
-        assert all([
-            m.evaluate([(REJECTED_METRIC, lambda a, b: b == a)])
-            for m in metrics
-        ])
+        assert all([m.evaluate([lambda a, b: b == a]) for m in metrics])
 
     @cluster(num_nodes=3)
     def test_overrides(self):

@@ -11,6 +11,7 @@ from ducktape.mark.resource import cluster
 from ducktape.mark import ignore
 from ducktape.utils.util import wait_until
 from ducktape.cluster.cluster_spec import ClusterSpec
+from string import Template
 
 import os
 import time
@@ -113,6 +114,9 @@ class ConnectionRateLimitTest(PreallocNodesTest):
 
     @cluster(num_nodes=8)
     def connection_rate_test(self):
+        metrics_sql = Template("select sum(value) as value from metrics where name = '$name'")
+        metrics = MetricCheck(self.logger, self.redpanda, self.redpanda.nodes[0], metrics_sql, [RATE_METRIC])
+
         self._producer.start(clean=False)
         self._producer.wait()
 
@@ -120,7 +124,4 @@ class ConnectionRateLimitTest(PreallocNodesTest):
         time2 = self.get_read_time(self.RANDOM_READ_PARALLEL * 2)
 
         assert time2 >= time1 * 1.7
-
-        metrics = MetricCheck(self.logger, self.redpanda,
-                              self.redpanda.nodes[0], RATE_METRIC, {})
-        metrics.evaluate([(RATE_METRIC, lambda a, b: b > 0)])
+        assert metrics.evaluate([lambda a, b: b > a])

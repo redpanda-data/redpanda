@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 import copy
+from heapq import merge
 
 import time
 import os
@@ -18,6 +19,7 @@ import requests
 import random
 import threading
 import collections
+import pandas
 import re
 import uuid
 from typing import Mapping, Optional, Union, Any
@@ -28,6 +30,7 @@ from rptest.archival.s3_client import S3Client
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.utils.util import wait_until
 from ducktape.cluster.cluster import ClusterNode
+from pandasql import PandaSQL
 from prometheus_client.parser import text_string_to_metric_families
 
 from rptest.clients.kafka_cat import KafkaCat
@@ -40,8 +43,8 @@ from rptest.services import tls
 Partition = collections.namedtuple('Partition',
                                    ['index', 'leader', 'replicas'])
 
-MetricSample = collections.namedtuple(
-    'MetricSample', ['family', 'sample', 'node', 'value', 'labels'])
+# Fields of interest in a metric sample (other than labels)
+MetricSampleFields = ['name', 'value', 'timestamp']
 
 SaslCredentials = collections.namedtuple("SaslCredentials",
                                          ["username", "password", "algorithm"])
@@ -96,20 +99,6 @@ CHAOS_LOG_ALLOW_LIST = [
         "cluster - .*exception while executing partition operation:.*std::exception \(std::exception\)"
     ),
 ]
-
-
-class MetricSamples:
-    def __init__(self, samples: list[MetricSample]):
-        self.samples = samples
-
-    def label_filter(self, labels: Mapping[str, float]):
-        def f(sample):
-            for key, value in labels.items():
-                assert key in sample.labels
-                return sample.labels[key] == value
-
-        return MetricSamples([s for s in filter(f, self.samples)])
-
 
 def one_or_many(value):
     """
@@ -1484,21 +1473,63 @@ class RedpandaService(Service):
         ]
         return ",".join(schema_reg)
 
-    def metrics(self, node):
+    def metrics(self, node) -> pandas.DataFrame:
+        """
+        Returns the current metrics snapshot as a pandas DataFrame. Each metric sample
+        is flattened into a single DataFrame row with the following format.
+
+        (family, name, value, timestamp, label1, label2.....).
+
+        Label columns are a union of labels across all the metric samples. Since labels
+        are not uniformly typed across samples, pandas treats them as strings and should be
+        queried accordingly.
+
+        Example:
+
+        vectorized_alien_receive_batch_queue_length{shard="0"} 0.000000
+        vectorized_httpd_connections_total{service="admin",shard="0"} 3
+
+        translates to
+
+                                                family                                         name  value timestamp shard service
+        0  vectorized_alien_receive_batch_queue_length  vectorized_alien_receive_batch_queue_length    0.0      None     0    None
+        1           vectorized_httpd_connections_total           vectorized_httpd_connections_total   31.0      None     0   admin
+
+
+        Callers can use query abstractions like pandasql for complex filtering and aggregations.
+
+        Example: Find total bytes read by reactor threads across all shards on a node.
+
+        query_metrics(node, "select sum(value) from df where name='vectorized_reactor_aio_bytes_read_total'")
+        """
         assert node in self._started
         url = f"http://{node.account.hostname}:9644/metrics"
         resp = requests.get(url)
         assert resp.status_code == 200
-        return text_string_to_metric_families(resp.text)
 
-    def metrics_sample(self,
-                       sample_pattern,
-                       nodes=None) -> Optional[MetricSamples]:
+        metric_families = text_string_to_metric_families(resp.text)
+        metric_samples = []
+        for family in metric_families:
+            for sample in family.samples:
+                metric_samples.append(\
+                    {**{"family" : family.name}, **{f:getattr(sample, f) for f in MetricSampleFields}, **sample.labels})
+        df = pandas.DataFrame(metric_samples)
+        df['node'] = node.account.hostname
+        return df
+
+    def query_metrics(self, node, query) -> pandas.DataFrame:
+        """
+        Executes a SQL query against metrics for the given node. Query should refer to table 'metrics'.
+        """
+        metrics = self.metrics(node)
+        return PandaSQL()(query)
+
+    def metrics_sample(self, sample_pattern,nodes=None) -> Optional[pandas.DataFrame]:
         """
         Query metrics for a single sample using fuzzy name matching. This
         interface matches the sample pattern against sample names, and requires
         that exactly one (family, sample) match the query. All values for the
-        sample across the requested set of nodes are returned in a flat array.
+        sample across the requested set of nodes are returned as a DataFrame.
 
         None will be returned if less than one (family, sample) matches.
         An exception will be raised if more than one (family, sample) matches.
@@ -1509,33 +1540,26 @@ class RedpandaService(Service):
 
               redpanda.metrics_sample("under_replicated")
 
-           will return an array containing MetricSample instances for each node and
-           core/shard in the cluster. Each entry will correspond to a value from:
+           will return a DataFrame for each node and core/shard in the cluster.
+           Each entry will correspond to a value from:
 
               family = vectorized_cluster_partition_under_replicated_replicas
               sample = vectorized_cluster_partition_under_replicated_replicas
         """
         nodes = nodes or self.nodes
-        found_sample = None
-        sample_values = []
-        for node in nodes:
-            metrics = self.metrics(node)
-            for family in metrics:
-                for sample in family.samples:
-                    if sample_pattern not in sample.name:
-                        continue
-                    if not found_sample:
-                        found_sample = (family.name, sample.name)
-                    if found_sample != (family.name, sample.name):
-                        raise Exception(
-                            f"More than one metric matched '{sample_pattern}'. Found {found_sample} and {(family.name, sample.name)}"
-                        )
-                    sample_values.append(
-                        MetricSample(family.name, sample.name, node,
-                                     sample.value, sample.labels))
-        if not sample_values:
+        matcher_query = f"select * from metrics where name like '%{sample_pattern}%'"
+
+        # Compute matching metrics for all nodes.
+        matched_dfs = [self.query_metrics(node, matcher_query) for node in nodes]
+        # Merge into a single DataFrame
+        merged_df = pandas.concat(matched_dfs, ignore_index = True)
+        if len(merged_df.index) == 0:
             return None
-        return MetricSamples(sample_values)
+        # Validate uniqueness
+        result = PandaSQL()("select distinct family, name from merged_df")
+        if len(result.index) > 1: # More than one distinct (family, name) combination
+            raise Exception(f"Multiple metrics matched {sample_pattern}, result: {result}")
+        return merged_df
 
     def read_configuration(self, node):
         assert node in self._started
@@ -1547,15 +1571,10 @@ class RedpandaService(Service):
         """
         Fetch the max shard id for each node.
         """
+        query = f"select max(cast(shard as integer)) as id from metrics where name = 'vectorized_reactor_utilization'"
         shards_per_node = {}
         for node in self._started:
-            num_shards = 0
-            metrics = self.metrics(node)
-            for family in metrics:
-                for sample in family.samples:
-                    if sample.name == "vectorized_reactor_utilization":
-                        num_shards = max(num_shards,
-                                         int(sample.labels["shard"]))
+            num_shards = self.query_metrics(node, query).at[0, "id"]
             assert num_shards > 0
             shards_per_node[self.idx(node)] = num_shards
         return shards_per_node
@@ -1568,15 +1587,10 @@ class RedpandaService(Service):
         the health of a node after a restart.
         """
         counts = {self.idx(node): None for node in self.nodes}
+        count_query = f"select sum(value) as s from metrics where name = 'vectorized_cluster_partition_under_replicated_replicas'"
         for node in self.nodes:
-            metrics = self.metrics(node)
             idx = self.idx(node)
-            for family in metrics:
-                for sample in family.samples:
-                    if sample.name == "vectorized_cluster_partition_under_replicated_replicas":
-                        if counts[idx] is None:
-                            counts[idx] = 0
-                        counts[idx] += int(sample.value)
+            counts[idx] = self.query_metrics(node, count_query).at[0, 's'] # None if metric is not populated, sum(value) otherwise.
         return all(map(lambda count: count == 0, counts.values()))
 
     def partitions(self, topic):

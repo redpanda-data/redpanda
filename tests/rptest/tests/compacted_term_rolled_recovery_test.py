@@ -10,6 +10,7 @@
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 
+from pandasql import PandaSQL
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kafka_cli_tools import KafkaCliTools
@@ -83,21 +84,15 @@ class CompactionTermRollRecoveryTest(RedpandaTest):
     def _compacted_segments(self, nodes, topic, partition):
         """
         Fetch the number of compacted segments.
-
-        TODO: we may want to consider starting up prometheus on a ducktape node
-        so that we can use a query language to lookup metrics instead of parsing
-        exported node metrics in their raw form.
         """
         def fetch(node):
-            count = 0
-            metrics = self.redpanda.metrics(node)
-            for family in metrics:
-                for sample in family.samples:
-                    if sample.name == "vectorized_storage_log_compacted_segment_total" and \
-                            sample.labels["namespace"] == "kafka" and \
-                            sample.labels["topic"] == topic and \
-                            int(sample.labels["partition"]) == partition:
-                        count += int(sample.value)
+            metric_query = f"""select sum(value) as result from metrics where
+                name='vectorized_storage_log_compacted_segment_total' and
+                namespace = 'kafka' and
+                topic='{topic}' and
+                partition='{partition}'
+            """
+            count = self.redpanda.query_metrics(node, metric_query).at[0, "result"]
             self.logger.debug(count)
             return count
 
@@ -110,14 +105,13 @@ class CompactionTermRollRecoveryTest(RedpandaTest):
         def fetch_lso(node):
             last_stable_offset = None
             try:
-                metrics = self.redpanda.metrics(node)
-                for family in metrics:
-                    for sample in family.samples:
-                        if sample.name == "vectorized_cluster_partition_last_stable_offset" and \
-                                sample.labels["namespace"] == "kafka" and \
-                                sample.labels["topic"] == topic and \
-                                int(sample.labels["partition"]) == partition:
-                            last_stable_offset = int(sample.value)
+                metric_query = f"""select cast(value as integer) as result from metrics where
+                    name='vectorized_cluster_partition_last_stable_offset' and
+                    namespace='kafka' and
+                    topic='{topic}' and
+                    partition='{partition}'
+                """
+                last_stable_offset = self.redpanda.query_metrics(node, metric_query).at[0, "result"]
             except Exception as e:
                 self.logger.debug(e)
             finally:

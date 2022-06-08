@@ -34,20 +34,11 @@ class BytesSentTest(RedpandaTest):
 
     def _bytes_sent(self):
         bytes_sent = 0
+        bytes_sent_query = "select sum(value) as total_bytes from metrics where family='vectorized_kafka_rpc_sent_bytes'"
 
         for node in self.redpanda.nodes:
-            # Convert the metrics generator to a list
-            metrics = list(self.redpanda.metrics(node))
-
-            # Find the metric family that tracks bytes sent from kafka subsystem
-            family_filter = filter(
-                lambda fam: fam.name == "vectorized_kafka_rpc_sent_bytes",
-                metrics)
-            family = next(family_filter)
-
-            # Sum bytes sent
-            for sample in family.samples:
-                bytes_sent += sample.value
+            result = self.redpanda.query_metrics(node, bytes_sent_query)
+            bytes_sent += result.at[0, "total_bytes"]
 
         return bytes_sent
 

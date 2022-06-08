@@ -10,6 +10,7 @@
 from ducktape.mark import matrix
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
+from pandasql import PandaSQL
 
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
@@ -61,20 +62,29 @@ class PrefixTruncateRecoveryTest(RedpandaTest):
         Test that for each specified node that there are no reported under
         replicated partitions corresponding to the test topic.
         """
-        metric = self.redpanda.metrics_sample("under_replicated_replicas",
+        samples = self.redpanda.metrics_sample("under_replicated_replicas",
                                               nodes)
-        metric = metric.label_filter(dict(namespace="kafka", topic=self.topic))
-        assert len(metric.samples) == len(nodes)
-        return all(map(lambda s: s.value == 0, metric.samples))
+        assert samples is not None
+        assert len(samples) >= len(nodes) # Need a tighter check?
+        query = f"""select count(*) as c from samples where
+            namespace = 'kafka' and
+            topic = '{self.topic}' and
+            value != 0
+        """
+        return PandaSQL()(query).at[0, 'c'] == 0
 
     def get_segments_deleted(self, nodes):
         """
         Return the values of the log segments removed metric.
         """
-        metric = self.redpanda.metrics_sample("log_segments_removed", nodes)
-        metric = metric.label_filter(dict(namespace="kafka", topic=self.topic))
-        assert len(metric.samples) == len(nodes)
-        return [s.value for s in metric.samples]
+        samples = self.redpanda.metrics_sample("log_segments_removed", nodes)
+        assert samples is not None
+        assert len(samples) >= len(nodes) # Need a tighter check?
+        query = f"""select value as v from samples where
+            namespace = 'kafka' and
+            topic = '{self.topic}'
+        """
+        return PandaSQL()(query)['v'].values.tolist()
 
     def produce_until_reclaim(self, initial_deleted, acks):
         """

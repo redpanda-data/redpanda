@@ -18,6 +18,7 @@ setup(
         'crc32c==2.2', 'confluent-kafka==1.7.0', 'zstandard==0.15.2',
         'xxhash==2.0.2', 'protobuf==3.19.3', 'fastavro==1.4.9',
         'psutil==5.9.0', 'numpy==1.22.3',
+        'pandas==1.4.2', 'pandasql==0.7.3',
         'kafkatest@git+https://github.com/apache/kafka.git@058589b03db686803b33052d574ce887fb5cfbd1#egg=kafkatest&subdirectory=tests'
     ],
     scripts=[],
