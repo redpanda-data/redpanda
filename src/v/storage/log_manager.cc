@@ -86,12 +86,26 @@ void log_manager::trigger_housekeeping() {
     });
 }
 
+ss::future<> log_manager::clean_close(storage::log& log) {
+    auto clean_segment = co_await log.close();
+
+    if (clean_segment) {
+        vlog(stlog.debug, "writing clean record for: {}", log.config().ntp());
+        co_await _kvstore.put(
+          kvstore::key_space::storage,
+          internal::clean_segment_key(log.config().ntp()),
+          serde::to_iobuf(internal::clean_segment_value{
+            .segment_name = clean_segment.value()}));
+    }
+}
+
 ss::future<> log_manager::stop() {
     _compaction_timer.cancel();
     _abort_source.request_abort();
+
     co_await _open_gate.close();
-    co_await ss::parallel_for_each(_logs, [](logs_type::value_type& entry) {
-        return entry.second->handle.close().discard_result();
+    co_await ss::parallel_for_each(_logs, [this](logs_type::value_type& entry) {
+        return clean_close(entry.second->handle);
     });
     co_await _batch_cache.stop();
     co_await async_clear_logs();
@@ -253,6 +267,15 @@ ss::future<log> log_manager::do_manage(ntp_config cfg) {
         co_return l;
     }
 
+    std::optional<ss::sstring> last_clean_segment;
+    auto clean_iobuf = _kvstore.get(
+      kvstore::key_space::storage, internal::clean_segment_key(cfg.ntp()));
+    if (clean_iobuf) {
+        last_clean_segment = serde::from_iobuf<internal::clean_segment_value>(
+                               std::move(clean_iobuf.value()))
+                               .segment_name;
+    }
+
     co_await recover_log_state(cfg);
 
     ss::sstring path = cfg.work_directory();
@@ -266,6 +289,7 @@ ss::future<log> log_manager::do_manage(ntp_config cfg) {
       config::shard_local_cfg().storage_read_buffer_size(),
       config::shard_local_cfg().storage_read_readahead_count(),
       _resources);
+
     auto l = storage::make_disk_backed_log(
       std::move(cfg), *this, std::move(segments), _kvstore);
     auto [it, success] = _logs.emplace(
@@ -283,8 +307,7 @@ ss::future<> log_manager::shutdown(model::ntp ntp) {
     if (handle.empty()) {
         co_return;
     }
-    storage::log lg = handle.mapped()->handle;
-    co_await lg.close();
+    co_await clean_close(handle.mapped()->handle);
 }
 
 ss::future<> log_manager::remove(model::ntp ntp) {
