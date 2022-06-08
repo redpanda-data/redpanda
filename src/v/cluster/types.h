@@ -171,10 +171,30 @@ struct try_abort_request {
 };
 
 struct try_abort_reply {
-    bool commited{false};
-    bool aborted{false};
+    using committed_type = ss::bool_class<struct committed_type_tag>;
+    using aborted_type = ss::bool_class<struct aborted_type_tag>;
+
+    committed_type commited;
+    aborted_type aborted;
     tx_errc ec;
+
+    try_abort_reply(committed_type committed, aborted_type aborted, tx_errc ec)
+      : commited(committed)
+      , aborted(aborted)
+      , ec(ec) {}
+
+    explicit try_abort_reply(tx_errc ec)
+      : ec(ec) {}
+
+    static try_abort_reply make_aborted() {
+        return {committed_type::no, aborted_type::yes, tx_errc::none};
+    }
+
+    static try_abort_reply make_committed() {
+        return {committed_type::yes, aborted_type::no, tx_errc::none};
+    }
 };
+
 struct init_tm_tx_request {
     kafka::transactional_id tx_id;
     std::chrono::milliseconds transaction_timeout_ms;
@@ -1890,6 +1910,21 @@ struct adl<cluster::try_abort_request> {
         auto tx_seq = adl<model::tx_seq>{}.from(in);
         auto timeout = adl<model::timeout_clock::duration>{}.from(in);
         return {tm, pid, tx_seq, timeout};
+    }
+};
+
+template<>
+struct adl<cluster::try_abort_reply> {
+    void to(iobuf& out, cluster::try_abort_reply&& r) {
+        serialize(out, bool(r.commited), bool(r.aborted), r.ec);
+    }
+    cluster::try_abort_reply from(iobuf_parser& in) {
+        using committed_type = cluster::try_abort_reply::committed_type;
+        using aborted_type = cluster::try_abort_reply::aborted_type;
+        auto committed = committed_type(adl<bool>{}.from(in));
+        auto aborted = aborted_type(adl<bool>{}.from(in));
+        auto ec = adl<cluster::tx_errc>{}.from(in);
+        return {committed, aborted, ec};
     }
 };
 } // namespace reflection
