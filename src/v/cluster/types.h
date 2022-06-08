@@ -881,13 +881,19 @@ struct config_status : serde::envelope<config_status, serde::version<0>> {
     bool operator==(const config_status&) const;
     friend std::ostream& operator<<(std::ostream&, const config_status&);
 };
-struct cluster_property_kv {
+
+struct cluster_property_kv
+  : serde::envelope<cluster_property_kv, serde::version<0>> {
     cluster_property_kv() = default;
     cluster_property_kv(ss::sstring k, ss::sstring v)
       : key(std::move(k))
       , value(std::move(v)) {}
+
     ss::sstring key;
     ss::sstring value;
+
+    auto serde_fields() { return std::tie(key, value); }
+
     friend bool
     operator==(const cluster_property_kv&, const cluster_property_kv&)
       = default;

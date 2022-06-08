@@ -664,6 +664,12 @@ std::vector<ss::sstring> random_strings() {
     }
     return ret;
 }
+cluster::cluster_property_kv random_property_kv() {
+    return {
+      random_generators::gen_alphanum_string(random_generators::get_int(1, 64)),
+      random_generators::gen_alphanum_string(
+        random_generators::get_int(1, 64))};
+}
 
 SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     roundtrip_test(cluster::ntp_leader(
@@ -821,6 +827,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
 
         roundtrip_test(status);
     }
+    { roundtrip_test(random_property_kv()); }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {
