@@ -200,6 +200,8 @@ ss::future<bool> persisted_stm::do_sync(
             co_return false;
         } catch (const ss::abort_requested_exception&) {
             co_return false;
+        } catch (const ss::condition_variable_timed_out&) {
+            co_return false;
         } catch (...) {
             vlog(
               clusterlog.error,
@@ -218,6 +220,14 @@ ss::future<bool> persisted_stm::do_sync(
     if (_c->term() == term) {
         try {
             co_await wait(offset, model::timeout_clock::now() + timeout);
+        } catch (const ss::broken_condition_variable&) {
+            co_return false;
+        } catch (const ss::gate_closed_exception&) {
+            co_return false;
+        } catch (const ss::abort_requested_exception&) {
+            co_return false;
+        } catch (const ss::condition_variable_timed_out&) {
+            co_return false;
         } catch (...) {
             vlog(
               clusterlog.error,
