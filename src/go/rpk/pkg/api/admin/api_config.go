@@ -10,6 +10,7 @@
 package admin
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -23,9 +24,9 @@ type Config map[string]interface{}
 
 // Config returns a single admin endpoint's configuration. This errors if
 // multiple URLs are configured.
-func (a *AdminAPI) Config() (Config, error) {
+func (a *AdminAPI) Config(ctx context.Context) (Config, error) {
 	var rawResp []byte
-	err := a.sendAny(http.MethodGet, "/v1/config", nil, &rawResp)
+	err := a.sendAny(ctx, http.MethodGet, "/v1/config", nil, &rawResp)
 	if err != nil {
 		return nil, err
 	}
@@ -42,7 +43,7 @@ func (a *AdminAPI) Config() (Config, error) {
 //
 // Expiry configures how long the log level override will persist. If zero,
 // Redpanda will persist the override until it shuts down.
-func (a *AdminAPI) SetLogLevel(name, level string, expirySeconds int) error {
+func (a *AdminAPI) SetLogLevel(ctx context.Context, name, level string, expirySeconds int) error {
 	if expirySeconds < 0 {
 		return fmt.Errorf("invalid negative expiry of %ds", expirySeconds)
 	}
@@ -57,7 +58,7 @@ func (a *AdminAPI) SetLogLevel(name, level string, expirySeconds int) error {
 	}
 
 	path := fmt.Sprintf("/v1/config/log_level/%s?level=%s&expires=%d", url.PathEscape(name), level, expirySeconds)
-	return a.sendOne(http.MethodPut, path, nil, nil, false)
+	return a.sendOne(ctx, http.MethodPut, path, nil, nil, false)
 }
 
 type ConfigPropertyItems struct {
@@ -82,9 +83,9 @@ type ConfigSchemaResponse struct {
 	Properties ConfigSchema `json:"properties"`
 }
 
-func (a *AdminAPI) ClusterConfigSchema() (ConfigSchema, error) {
+func (a *AdminAPI) ClusterConfigSchema(ctx context.Context) (ConfigSchema, error) {
 	var response ConfigSchemaResponse
-	err := a.sendAny(http.MethodGet, "/v1/cluster_config/schema", nil, &response)
+	err := a.sendAny(ctx, http.MethodGet, "/v1/cluster_config/schema", nil, &response)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +98,7 @@ type ClusterConfigWriteResult struct {
 }
 
 func (a *AdminAPI) PatchClusterConfig(
-	upsert map[string]interface{}, remove []string,
+	ctx context.Context, upsert map[string]interface{}, remove []string,
 ) (ClusterConfigWriteResult, error) {
 	body := map[string]interface{}{
 		"upsert": upsert,
@@ -105,7 +106,7 @@ func (a *AdminAPI) PatchClusterConfig(
 	}
 
 	var result ClusterConfigWriteResult
-	err := a.sendAny(http.MethodPut, "/v1/cluster_config", body, &result)
+	err := a.sendAny(ctx, http.MethodPut, "/v1/cluster_config", body, &result)
 	if err != nil {
 		return result, err
 	}
@@ -123,9 +124,9 @@ type ConfigStatus struct {
 
 type ConfigStatusResponse []ConfigStatus
 
-func (a *AdminAPI) ClusterConfigStatus() (ConfigStatusResponse, error) {
+func (a *AdminAPI) ClusterConfigStatus(ctx context.Context) (ConfigStatusResponse, error) {
 	var result ConfigStatusResponse
-	err := a.sendAny(http.MethodGet, "/v1/cluster_config/status", nil, &result)
+	err := a.sendAny(ctx, http.MethodGet, "/v1/cluster_config/status", nil, &result)
 	if err != nil {
 		return nil, err
 	}

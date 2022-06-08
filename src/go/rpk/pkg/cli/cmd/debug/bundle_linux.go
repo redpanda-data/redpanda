@@ -47,6 +47,7 @@ import (
 )
 
 func executeBundle(
+	ctx context.Context,
 	fs afero.Fs,
 	conf *config.Config,
 	cl *kgo.Client,
@@ -88,7 +89,7 @@ func executeBundle(
 		saveResourceUsageData(ps, conf),
 		saveNTPDrift(ps),
 		saveSyslog(ps),
-		savePrometheusMetrics(ps, admin),
+		savePrometheusMetrics(ctx, ps, admin),
 		saveDNSData(ps),
 		saveDiskUsage(ps, conf),
 		saveLogs(ps, logsSince, logsUntil, logsLimitBytes),
@@ -546,9 +547,9 @@ func saveSyslog(ps *stepParams) step {
 }
 
 // Queries the given admin API address for prometheus metrics.
-func savePrometheusMetrics(ps *stepParams, admin *admin.AdminAPI) step {
+func savePrometheusMetrics(ctx context.Context, ps *stepParams, admin *admin.AdminAPI) step {
 	return func() error {
-		raw, err := admin.PrometheusMetrics()
+		raw, err := admin.PrometheusMetrics(ctx)
 		if err != nil {
 			return fmt.Errorf("unable to fetch metrics from the admin API: %w", err)
 		}

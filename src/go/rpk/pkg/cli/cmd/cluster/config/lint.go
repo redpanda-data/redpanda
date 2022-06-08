@@ -39,7 +39,7 @@ central configuration store (and via 'rpk cluster config edit').
 			client, err := admin.NewClient(fs, cfg)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-			schema, err := client.ClusterConfigSchema()
+			schema, err := client.ClusterConfigSchema(cmd.Context())
 			out.MaybeDie(err, "unable to query config schema: %v", err)
 
 			configFile, err := p.LocateConfig(fs)

@@ -154,12 +154,12 @@ to include all properties including these low level tunables.
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			// GET the schema
-			schema, err := client.ClusterConfigSchema()
+			schema, err := client.ClusterConfigSchema(cmd.Context())
 			out.MaybeDie(err, "unable to query config schema: %v", err)
 
 			// GET current config
 			var currentConfig admin.Config
-			currentConfig, err = client.Config()
+			currentConfig, err = client.Config(cmd.Context())
 			out.MaybeDie(err, "unable to query current config: %v", err)
 
 			// Generate a yaml template for editing

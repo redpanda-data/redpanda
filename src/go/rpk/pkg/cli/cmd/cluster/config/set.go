@@ -43,7 +43,7 @@ If an empty string is given as the value, the property is reset to its default.`
 			client, err := admin.NewClient(fs, cfg)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-			schema, err := client.ClusterConfigSchema()
+			schema, err := client.ClusterConfigSchema(cmd.Context())
 			out.MaybeDie(err, "unable to query config schema: %v", err)
 
 			meta, ok := schema[key]
@@ -78,7 +78,7 @@ If an empty string is given as the value, the property is reset to its default.`
 				upsert[key] = value
 			}
 
-			result, err := client.PatchClusterConfig(upsert, remove)
+			result, err := client.PatchClusterConfig(cmd.Context(), upsert, remove)
 			if he := (*admin.HTTPResponseError)(nil); errors.As(err, &he) {
 				// Special case 400 (validation) errors with friendly output
 				// about which configuration properties were invalid.

@@ -113,7 +113,7 @@ acl help text for more info.
 				out.Die("unsupported mechanism %q", mechanism)
 			}
 
-			err = cl.CreateUser(user, pass, mechanism)
+			err = cl.CreateUser(cmd.Context(), user, pass, mechanism)
 			out.MaybeDie(err, "unable to create user %q: %v", user, err)
 			fmt.Printf("Created user %q.\n", user)
 		},
@@ -167,7 +167,7 @@ delete any ACLs that may exist for this user.
 				out.Die("missing required username argument")
 			}
 
-			err = cl.DeleteUser(user)
+			err = cl.DeleteUser(cmd.Context(), user)
 			out.MaybeDie(err, "unable to delete user %q: %s", user, err)
 			fmt.Printf("Deleted user %q.\n", user)
 		},
@@ -192,7 +192,7 @@ func NewListUsersCommand(fs afero.Fs) *cobra.Command {
 			cl, err := admin.NewClient(fs, cfg)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-			users, err := cl.ListUsers()
+			users, err := cl.ListUsers(cmd.Context())
 			out.MaybeDie(err, "unable to list users: %v", err)
 
 			tw := out.NewTable("Username")

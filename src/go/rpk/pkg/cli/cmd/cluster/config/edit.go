@@ -10,6 +10,7 @@
 package config
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -51,14 +52,14 @@ to edit all properties including these tunables.
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			// GET the schema
-			schema, err := client.ClusterConfigSchema()
+			schema, err := client.ClusterConfigSchema(cmd.Context())
 			out.MaybeDie(err, "unable to query config schema: %v", err)
 
 			// GET current config
-			currentConfig, err := client.Config()
+			currentConfig, err := client.Config(cmd.Context())
 			out.MaybeDie(err, "unable to get current config: %v", err)
 
-			err = executeEdit(client, schema, currentConfig, all)
+			err = executeEdit(cmd.Context(), client, schema, currentConfig, all)
 			out.MaybeDie(err, "unable to edit: %v", err)
 		},
 	}
@@ -66,6 +67,7 @@ to edit all properties including these tunables.
 }
 
 func executeEdit(
+	ctx context.Context,
 	client *admin.AdminAPI,
 	schema admin.ConfigSchema,
 	currentConfig admin.Config,
@@ -115,7 +117,7 @@ func executeEdit(
 	}
 
 	// Read back template & parse
-	err = importConfig(client, filename, currentConfig, schema, *all)
+	err = importConfig(ctx, client, filename, currentConfig, schema, *all)
 	if err != nil {
 		return fmt.Errorf("error updating config: %v", err)
 	}

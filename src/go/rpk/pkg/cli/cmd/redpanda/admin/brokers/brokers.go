@@ -51,7 +51,7 @@ func newListCommand(fs afero.Fs) *cobra.Command {
 			cl, err := admin.NewClient(fs, cfg)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-			bs, err := cl.Brokers()
+			bs, err := cl.Brokers(cmd.Context())
 			out.MaybeDie(err, "unable to request brokers: %v", err)
 
 			headers := []string{"Node-ID", "Num-Cores", "Membership-Status"}
@@ -105,7 +105,7 @@ leader handles the request.
 			cl, err := admin.NewClient(fs, cfg)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-			err = cl.DecommissionBroker(broker)
+			err = cl.DecommissionBroker(cmd.Context(), broker)
 			out.MaybeDie(err, "unable to decommission broker: %v", err)
 
 			fmt.Printf("Success, broker %d has been decommissioned!\n", broker)
@@ -143,7 +143,7 @@ the cluster leader handles the request.
 			cl, err := admin.NewClient(fs, cfg)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-			err = cl.RecommissionBroker(broker)
+			err = cl.RecommissionBroker(cmd.Context(), broker)
 			out.MaybeDie(err, "unable to recommission broker: %v", err)
 
 			fmt.Printf("Success, broker %d has been recommissioned!\n", broker)

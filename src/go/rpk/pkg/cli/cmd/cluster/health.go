@@ -57,7 +57,7 @@ following conditions are met:
 
 			var lastOverview admin.ClusterHealthOverview
 			for {
-				ret, err := cl.GetHealthOverview()
+				ret, err := cl.GetHealthOverview(cmd.Context())
 				out.MaybeDie(err, "unable to request cluster health: %v", err)
 				if !reflect.DeepEqual(ret, lastOverview) {
 					printHealthOverview(&ret)
