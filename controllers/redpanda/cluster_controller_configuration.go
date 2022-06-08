@@ -85,7 +85,7 @@ func (r *ClusterReconciler) reconcileConfiguration(
 	// Checking if the feature is active because in the initial stages of cluster creation, it takes time for the feature to be activated
 	// and the API returns the same error (400) that is returned in case of malformed input, which causes a stop of the reconciliation
 	var centralConfigActive bool
-	if centralConfigActive, err = adminutils.IsFeatureActive(adminAPI, adminutils.CentralConfigFeatureName); err != nil {
+	if centralConfigActive, err = adminutils.IsFeatureActive(ctx, adminAPI, adminutils.CentralConfigFeatureName); err != nil {
 		return errorWithContext(err, "could not determine if central config is active in the cluster")
 	} else if !centralConfigActive {
 		log.Info("Waiting for the centralized configuration feature to be active in the cluster")
@@ -95,7 +95,7 @@ func (r *ClusterReconciler) reconcileConfiguration(
 		}
 	}
 
-	schema, clusterConfig, status, err := r.retrieveClusterState(redpandaCluster, adminAPI)
+	schema, clusterConfig, status, err := r.retrieveClusterState(ctx, redpandaCluster, adminAPI)
 	if err != nil {
 		return err
 	}
@@ -193,7 +193,7 @@ func (r *ClusterReconciler) applyPatchIfNeeded(
 	}
 
 	log.Info("Applying patch to the cluster configuration", "patch", patch.String())
-	_, err = adminAPI.PatchClusterConfig(patch.Upsert, patch.Remove)
+	_, err = adminAPI.PatchClusterConfig(ctx, patch.Upsert, patch.Remove)
 	if err != nil {
 		var conditionData *redpandav1alpha1.ClusterCondition
 		conditionData, err = tryMapErrorToCondition(err)
@@ -224,20 +224,22 @@ func (r *ClusterReconciler) applyPatchIfNeeded(
 }
 
 func (r *ClusterReconciler) retrieveClusterState(
-	redpandaCluster *redpandav1alpha1.Cluster, adminAPI adminutils.AdminAPIClient,
+	ctx context.Context,
+	redpandaCluster *redpandav1alpha1.Cluster,
+	adminAPI adminutils.AdminAPIClient,
 ) (admin.ConfigSchema, admin.Config, admin.ConfigStatusResponse, error) {
 	errorWithContext := newErrorWithContext(redpandaCluster.Namespace, redpandaCluster.Name)
 
-	schema, err := adminAPI.ClusterConfigSchema()
+	schema, err := adminAPI.ClusterConfigSchema(ctx)
 	if err != nil {
 		return nil, nil, nil, errorWithContext(err, "could not get centralized configuration schema")
 	}
-	clusterConfig, err := adminAPI.Config()
+	clusterConfig, err := adminAPI.Config(ctx)
 	if err != nil {
 		return nil, nil, nil, errorWithContext(err, "could not get current centralized configuration from cluster")
 	}
 
-	status, err := adminAPI.ClusterConfigStatus()
+	status, err := adminAPI.ClusterConfigStatus(ctx)
 	if err != nil {
 		return nil, nil, nil, errorWithContext(err, "could not get current centralized configuration status from cluster")
 	}
@@ -310,7 +312,7 @@ func (r *ClusterReconciler) synchronizeStatusWithCluster(
 ) (*redpandav1alpha1.ClusterCondition, error) {
 	errorWithContext := newErrorWithContext(redpandaCluster.Namespace, redpandaCluster.Name)
 	// Check status again using admin API
-	status, err := adminAPI.ClusterConfigStatus()
+	status, err := adminAPI.ClusterConfigStatus(ctx)
 	if err != nil {
 		return nil, errorWithContext(err, "could not get config status from admin API")
 	}

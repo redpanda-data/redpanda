@@ -128,7 +128,7 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			Consistently(annotationGetter(key, &appsv1.StatefulSet{}, centralizedConfigurationHashKey), timeoutShort, intervalShort).Should(BeEmpty())
 
 			By("Marking the last applied configuration in the configmap")
-			baseConfig, err := testAdminAPI.Config()
+			baseConfig, err := testAdminAPI.Config(context.Background())
 			Expect(err).To(BeNil())
 			expectedAnnotation, err := json.Marshal(baseConfig)
 			Expect(err).To(BeNil())
@@ -672,7 +672,7 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 		It("Should report configuration errors present in the .bootstrap.yaml file", func() {
 			// Inject property before creating the cluster, simulating .bootstrap.yaml
 			const val = "nown"
-			_, err := testAdminAPI.PatchClusterConfig(map[string]interface{}{
+			_, err := testAdminAPI.PatchClusterConfig(context.Background(), map[string]interface{}{
 				"unk": val,
 			}, nil)
 			Expect(err).To(BeNil())

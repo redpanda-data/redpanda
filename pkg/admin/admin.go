@@ -70,14 +70,14 @@ func NewInternalAdminAPI(
 // AdminAPIClient is a sub interface of the admin API containing what we need in the operator
 // nolint:revive // usually package is called adminutils
 type AdminAPIClient interface {
-	Config() (admin.Config, error)
-	ClusterConfigStatus() (admin.ConfigStatusResponse, error)
-	ClusterConfigSchema() (admin.ConfigSchema, error)
-	PatchClusterConfig(upsert map[string]interface{}, remove []string) (admin.ClusterConfigWriteResult, error)
+	Config(ctx context.Context) (admin.Config, error)
+	ClusterConfigStatus(ctx context.Context) (admin.ConfigStatusResponse, error)
+	ClusterConfigSchema(ctx context.Context) (admin.ConfigSchema, error)
+	PatchClusterConfig(ctx context.Context, upsert map[string]interface{}, remove []string) (admin.ClusterConfigWriteResult, error)
 
-	CreateUser(username, password, mechanism string) error
+	CreateUser(ctx context.Context, username, password, mechanism string) error
 
-	GetFeatures() (admin.FeaturesResponse, error)
+	GetFeatures(ctx context.Context) (admin.FeaturesResponse, error)
 }
 
 var _ AdminAPIClient = &admin.AdminAPI{}
