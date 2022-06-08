@@ -828,6 +828,14 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         roundtrip_test(status);
     }
     { roundtrip_test(random_property_kv()); }
+    {
+        cluster::cluster_config_delta_cmd_data data;
+        data.upsert = {
+          random_property_kv(), random_property_kv(), random_property_kv()};
+        data.remove = random_strings();
+
+        roundtrip_test(data);
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {

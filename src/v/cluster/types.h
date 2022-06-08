@@ -899,10 +899,13 @@ struct cluster_property_kv
       = default;
 };
 
-struct cluster_config_delta_cmd_data {
+struct cluster_config_delta_cmd_data
+  : serde::envelope<cluster_config_delta_cmd_data, serde::version<0>> {
     static constexpr int8_t current_version = 0;
     std::vector<cluster_property_kv> upsert;
     std::vector<ss::sstring> remove;
+
+    auto serde_fields() { return std::tie(upsert, remove); }
 
     friend std::ostream&
     operator<<(std::ostream&, const cluster_config_delta_cmd_data&);
