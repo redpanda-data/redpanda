@@ -237,6 +237,11 @@ struct raft_node {
               return ss::make_ready_future<>();
           })
           .then([this] {
+              if (hbeats) {
+                  hbeats.reset();
+              }
+          })
+          .then([this] {
               tstlog.info("Stopping raft at {}", broker.id());
               return consensus->stop();
           })
@@ -247,8 +252,19 @@ struct raft_node {
               return ss::now();
           })
           .then([this] {
-              tstlog.info("Raft stopped at node {}", broker.id());
+              tstlog.info(
+                "Raft stopped at node {} {}",
+                broker.id(),
+                consensus.use_count());
               return raft_manager.stop();
+          })
+          .then([this] {
+              tstlog.info(
+                "consensus destroyed at node {} {}",
+                broker.id(),
+                consensus.use_count());
+              consensus = nullptr;
+              return ss::now();
           })
           .then([this] {
               tstlog.info("Stopping cache at node {}", broker.id());

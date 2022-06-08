@@ -96,6 +96,7 @@ struct mux_state_machine_fixture {
         if (_started) {
             _recovery_throttle.stop().get();
             _group_mgr.stop().get0();
+            _raft.release();
             _connections.stop().get0();
             _storage.stop().get0();
         }
