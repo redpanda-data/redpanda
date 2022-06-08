@@ -11,6 +11,7 @@
 #pragma once
 #include "cluster/partition_probe.h"
 #include "coproc/partition.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/server/partition_proxy.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
@@ -84,9 +85,11 @@ public:
 
     cluster::partition_probe& probe() final { return _probe; }
 
-    ss::future<bool> is_fetch_offset_valid(
+    ss::future<error_code> validate_fetch_offset(
       model::offset fetch_offset, model::timeout_clock::time_point) final {
-        co_return fetch_offset >= start_offset();
+        co_return fetch_offset >= start_offset()
+          ? error_code::none
+          : error_code::offset_out_of_range;
     }
 
 private:

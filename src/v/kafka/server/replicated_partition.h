@@ -12,6 +12,7 @@
 
 #include "cluster/partition.h"
 #include "cluster/partition_probe.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/server/partition_proxy.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
@@ -94,7 +95,7 @@ public:
         return leader_epoch_from_term(_partition->term());
     }
 
-    ss::future<bool> is_fetch_offset_valid(
+    ss::future<error_code> validate_fetch_offset(
       model::offset, model::timeout_clock::time_point) final;
 
 private:
