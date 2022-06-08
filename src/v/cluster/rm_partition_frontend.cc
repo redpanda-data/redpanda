@@ -221,11 +221,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::dispatch_begin_tx(
         [ntp, pid, tx_seq, transaction_timeout_ms, timeout](
           tx_gateway_client_protocol cp) {
             return cp.begin_tx(
-              begin_tx_request{
-                .ntp = ntp,
-                .pid = pid,
-                .tx_seq = tx_seq,
-                .transaction_timeout_ms = transaction_timeout_ms},
+              begin_tx_request{ntp, pid, tx_seq, transaction_timeout_ms},
               rpc::client_opts(model::timeout_clock::now() + timeout));
         })
       .then(&rpc::get_ctx_data<begin_tx_reply>)
