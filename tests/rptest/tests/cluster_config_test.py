@@ -21,6 +21,8 @@ BOOTSTRAP_CONFIG = {
     'enable_idempotence': True,
 }
 
+SECRET_CONFIG_NAMES = frozenset(["cloud_storage_secret_key"])
+
 
 class ClusterConfigTest(RedpandaTest):
     def __init__(self, *args, **kwargs):
@@ -139,6 +141,15 @@ class ClusterConfigTest(RedpandaTest):
         assert self.admin.get_cluster_config()[
             new_setting[0]] != new_setting[1]
         self._check_restart_clears()
+
+    def _check_value_everywhere(self, key, expect_value):
+        for node in self.redpanda.nodes:
+            actual_value = self.admin.get_cluster_config(node)[key]
+            if actual_value != expect_value:
+                self.logger.error(
+                    f"Wrong value on node {node.account.hostname}: {key}={actual_value} (!={expect_value})"
+                )
+            assert self.admin.get_cluster_config(node)[key] == expect_value
 
     def _check_propagated_and_persistent(self, key, expect_value):
         """
@@ -342,6 +353,12 @@ class ClusterConfigTest(RedpandaTest):
             mismatch = []
             for k, expect in updates.items():
                 actual = read_back.get(k, None)
+                if k in SECRET_CONFIG_NAMES:
+                    # Expect a redacted value for secrets. Redpanda redacts the
+                    # values and we have no way of cross checking the actual
+                    # values match.
+                    expect = "[secret]"
+
                 # String-ized comparison, because the example values are strings,
                 # whereas by the time we read them back they're properly typed.
                 if str(actual) != str(expect):
@@ -349,7 +366,7 @@ class ClusterConfigTest(RedpandaTest):
                         f"Config set failed ({k}) {actual}!={expect}")
                     mismatch.append((k, actual, expect))
 
-            assert len(mismatch) == 0
+            assert len(mismatch) == 0, mismatch
 
         check_status(properties_require_restart)
         check_values()
@@ -390,9 +407,15 @@ class ClusterConfigTest(RedpandaTest):
             self.redpanda.restart_nodes(self.redpanda.nodes)
             assert search_log(value) is expect_log
 
+        # Default valued secrets are still shown.
+        self._check_value_everywhere("cloud_storage_secret_key", None)
+
         secret_key = "cloud_storage_secret_key"
         secret_value = "ThePandaFliesTonight"
         set_and_search(secret_key, secret_value, False)
+
+        # Once set, we shouldn't be able to access the secret values.
+        self._check_value_everywhere("cloud_storage_secret_key", "[secret]")
 
         # To avoid false negatives in the test of a secret, go through the same procedure
         # but on a non-secret property, thereby validating that our log scanning procedure

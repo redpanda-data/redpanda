@@ -32,6 +32,10 @@ using required = ss::bool_class<struct required_tag>;
 using needs_restart = ss::bool_class<struct needs_restart_tag>;
 using is_secret = ss::bool_class<struct is_secret_tag>;
 
+// Whether to redact secrets. If true, `secret_placeholder` should be used
+// instead of the config value.
+using redact_secrets = ss::bool_class<struct redact_secrets_tag>;
+
 enum class visibility {
     // Tunables can be set by the user, but they control implementation
     // details like (e.g. buffer sizes, queue lengths)
@@ -75,7 +79,7 @@ public:
     // performed in config_store::to_json where the json object key is taken
     // from the property name.
     virtual void
-    to_json(rapidjson::Writer<rapidjson::StringBuffer>& w) const = 0;
+    to_json(rapidjson::Writer<rapidjson::StringBuffer>& w, redact_secrets redact) const = 0;
 
     virtual void print(std::ostream&) const = 0;
     virtual bool set_value(YAML::Node) = 0;

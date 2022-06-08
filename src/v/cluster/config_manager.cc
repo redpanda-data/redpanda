@@ -142,7 +142,7 @@ ss::future<> config_manager::do_bootstrap() {
           if (!p.is_default()) {
               rapidjson::StringBuffer buf;
               rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
-              p.to_json(writer);
+              p.to_json(writer, config::redact_secrets::no);
               ss::sstring key_str(p.name());
               ss::sstring val_str = buf.GetString();
               vlog(clusterlog.info, "Importing property {}", p);

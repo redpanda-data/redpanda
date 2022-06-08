@@ -551,10 +551,13 @@ void application::wire_up_services() {
         wire_up_redpanda_services();
     }
     if (_proxy_config) {
-        construct_service(_proxy_client, to_yaml(*_proxy_client_config)).get();
+        construct_service(
+          _proxy_client,
+          to_yaml(*_proxy_client_config, config::redact_secrets::no))
+          .get();
         construct_service(
           _proxy,
-          to_yaml(*_proxy_config),
+          to_yaml(*_proxy_config, config::redact_secrets::no),
           smp_service_groups.proxy_smp_sg(),
           // TODO: Improve memory budget for services
           // https://github.com/vectorizedio/redpanda/issues/1392
