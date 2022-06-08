@@ -22,6 +22,7 @@
 #include "model/timeout_clock.h"
 #include "raft/types.h"
 #include "security/acl.h"
+#include "serde/serde.h"
 #include "storage/ntp_config.h"
 #include "tristate.h"
 #include "utils/to_string.h"
@@ -41,20 +42,30 @@ using broker_ptr = ss::lw_shared_ptr<model::broker>;
 using cluster_version = named_type<int64_t, struct cluster_version_tag>;
 constexpr cluster_version invalid_version = cluster_version{-1};
 
-struct allocate_id_request {
+struct allocate_id_request
+  : serde::envelope<allocate_id_request, serde::version<0>> {
     model::timeout_clock::duration timeout;
+
+    allocate_id_request() noexcept = default;
 
     explicit allocate_id_request(model::timeout_clock::duration timeout)
       : timeout(timeout) {}
+
+    auto serde_fields() { return std::tie(timeout); }
 };
 
-struct allocate_id_reply {
+struct allocate_id_reply
+  : serde::envelope<allocate_id_reply, serde::version<0>> {
     int64_t id;
     errc ec;
+
+    allocate_id_reply() noexcept = default;
 
     allocate_id_reply(int64_t id, errc ec)
       : id(id)
       , ec(ec) {}
+
+    auto serde_fields() { return std::tie(id, ec); }
 };
 
 enum class tx_errc {

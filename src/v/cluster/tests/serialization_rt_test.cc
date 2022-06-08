@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "cluster/health_monitor_types.h"
+#include "cluster/metadata_dissemination_types.h"
 #include "cluster/tests/utils.h"
 #include "cluster/types.h"
 #include "model/compression.h"
@@ -451,4 +452,79 @@ SEASTAR_THREAD_TEST_CASE(partition_status_serialization_old_version) {
         BOOST_CHECK(result[i].term == original[i].term);
         BOOST_CHECK(result[i].leader_id == original[i].leader_id);
     }
+}
+
+template<typename T>
+void roundtrip_test(const T original) {
+    auto serde_in = original;
+    auto adl_in = original;
+
+    auto serde_out = serde::to_iobuf(std::move(serde_in));
+    auto adl_out = reflection::to_iobuf(std::move(adl_in));
+
+    auto from_serde = serde::from_iobuf<T>(std::move(serde_out));
+    auto from_adl = reflection::from_iobuf<T>(std::move(adl_out));
+
+    BOOST_REQUIRE(original == from_serde);
+    BOOST_REQUIRE(original == from_adl);
+}
+
+SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
+    roundtrip_test(cluster::ntp_leader(
+      model::ntp(
+        model::ns("a namespace"),
+        model::topic("a topic"),
+        model::partition_id(287)),
+      model::term_id(1234),
+      model::node_id(2)));
+
+    roundtrip_test(cluster::ntp_leader_revision(
+      model::ntp(
+        model::ns("a namespace"),
+        model::topic("a topic"),
+        model::partition_id(287)),
+      model::term_id(1234),
+      model::node_id(2),
+      model::revision_id(888)));
+
+    roundtrip_test(cluster::update_leadership_request({
+      cluster::ntp_leader(
+        model::ntp(
+          model::ns("a namespace"),
+          model::topic("a topic"),
+          model::partition_id(287)),
+        model::term_id(1234),
+        model::node_id(2)),
+    }));
+
+    roundtrip_test(cluster::update_leadership_request_v2({
+      cluster::ntp_leader_revision(
+        model::ntp(
+          model::ns("a namespace"),
+          model::topic("a topic"),
+          model::partition_id(287)),
+        model::term_id(1234),
+        model::node_id(2),
+        model::revision_id(8888)),
+    }));
+
+    roundtrip_test(cluster::update_leadership_reply());
+
+    roundtrip_test(cluster::get_leadership_request());
+
+    roundtrip_test(cluster::get_leadership_reply({
+      cluster::ntp_leader(
+        model::ntp(
+          model::ns("a namespace"),
+          model::topic("a topic"),
+          model::partition_id(287)),
+        model::term_id(1234),
+        model::node_id(2)),
+    }));
+
+    roundtrip_test(
+      cluster::allocate_id_request(model::timeout_clock::duration(234234)));
+
+    roundtrip_test(
+      cluster::allocate_id_reply(23433, cluster::errc::invalid_node_operation));
 }

@@ -15,6 +15,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "reflection/adl.h"
+#include "serde/serde.h"
 
 #include <fmt/ostream.h>
 
@@ -22,10 +23,12 @@
 
 namespace cluster {
 
-struct ntp_leader {
+struct ntp_leader : serde::envelope<ntp_leader, serde::version<0>> {
     model::ntp ntp;
     model::term_id term;
     std::optional<model::node_id> leader_id;
+
+    ntp_leader() noexcept = default;
 
     ntp_leader(
       model::ntp ntp,
@@ -44,13 +47,18 @@ struct ntp_leader {
           l.leader_id ? l.leader_id.value()() : -1);
         return o;
     }
+
+    auto serde_fields() { return std::tie(ntp, term, leader_id); }
 };
 
-struct ntp_leader_revision {
+struct ntp_leader_revision
+  : serde::envelope<ntp_leader_revision, serde::version<0>> {
     model::ntp ntp;
     model::term_id term;
     std::optional<model::node_id> leader_id;
     model::revision_id revision;
+
+    ntp_leader_revision() noexcept = default;
 
     ntp_leader_revision(
       model::ntp ntp,
@@ -73,37 +81,60 @@ struct ntp_leader_revision {
           r.revision);
         return o;
     }
+
+    auto serde_fields() { return std::tie(ntp, term, leader_id, revision); }
 };
 
-struct update_leadership_request {
+struct update_leadership_request
+  : serde::envelope<update_leadership_request, serde::version<0>> {
     std::vector<ntp_leader> leaders;
+
+    update_leadership_request() noexcept = default;
 
     explicit update_leadership_request(std::vector<ntp_leader> leaders)
       : leaders(std::move(leaders)) {}
+
+    auto serde_fields() { return std::tie(leaders); }
 };
 
-struct update_leadership_request_v2 {
+struct update_leadership_request_v2
+  : serde::envelope<update_leadership_request_v2, serde::version<0>> {
     static constexpr int8_t version = 0;
     std::vector<ntp_leader_revision> leaders;
+
+    update_leadership_request_v2() noexcept = default;
 
     explicit update_leadership_request_v2(
       std::vector<ntp_leader_revision> leaders)
       : leaders(std::move(leaders)) {}
+
+    auto serde_fields() { return std::tie(leaders); }
 };
 
-struct update_leadership_reply {
-    update_leadership_reply() = default;
+struct update_leadership_reply
+  : serde::envelope<update_leadership_reply, serde::version<0>> {
+    update_leadership_reply() noexcept = default;
+
+    auto serde_fields() { return std::tie(); }
 };
 
-struct get_leadership_request {
-    get_leadership_request() = default;
+struct get_leadership_request
+  : serde::envelope<get_leadership_request, serde::version<0>> {
+    get_leadership_request() noexcept = default;
+
+    auto serde_fields() { return std::tie(); }
 };
 
-struct get_leadership_reply {
+struct get_leadership_reply
+  : serde::envelope<get_leadership_reply, serde::version<0>> {
     std::vector<ntp_leader> leaders;
+
+    get_leadership_reply() noexcept = default;
 
     explicit get_leadership_reply(std::vector<ntp_leader> leaders)
       : leaders(std::move(leaders)) {}
+
+    auto serde_fields() { return std::tie(leaders); }
 };
 
 } // namespace cluster
