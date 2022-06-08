@@ -36,6 +36,7 @@ func NewInternalAdminAPI(
 	redpandaCluster *redpandav1alpha1.Cluster,
 	fqdn string,
 	adminTLSProvider types.AdminTLSConfigProvider,
+	ordinals ...int32,
 ) (AdminAPIClient, error) {
 	adminInternal := redpandaCluster.AdminAPIInternal()
 	if adminInternal == nil {
@@ -53,11 +54,20 @@ func NewInternalAdminAPI(
 
 	adminInternalPort := adminInternal.Port
 
-	var urls []string
-	replicas := *redpandaCluster.Spec.Replicas
+	if len(ordinals) == 0 {
+		// Not a specific node, just go through all them
+		replicas := redpandaCluster.Status.CurrentReplicas
+		if replicas <= 0 {
+			replicas = *redpandaCluster.Spec.Replicas
+		}
 
-	for i := int32(0); i < replicas; i++ {
-		urls = append(urls, fmt.Sprintf("%s-%d.%s:%d", redpandaCluster.Name, i, fqdn, adminInternalPort))
+		for i := int32(0); i < replicas; i++ {
+			ordinals = append(ordinals, i)
+		}
+	}
+	var urls []string
+	for _, on := range ordinals {
+		urls = append(urls, fmt.Sprintf("%s-%d.%s:%d", redpandaCluster.Name, on, fqdn, adminInternalPort))
 	}
 
 	adminAPI, err := admin.NewAdminAPI(urls, admin.BasicCredentials{}, tlsConfig)
@@ -74,6 +84,7 @@ type AdminAPIClient interface {
 	ClusterConfigStatus(ctx context.Context, sendToLeader bool) (admin.ConfigStatusResponse, error)
 	ClusterConfigSchema(ctx context.Context) (admin.ConfigSchema, error)
 	PatchClusterConfig(ctx context.Context, upsert map[string]interface{}, remove []string) (admin.ClusterConfigWriteResult, error)
+	GetNodeConfig(ctx context.Context) (admin.NodeConfig, error)
 
 	CreateUser(ctx context.Context, username, password, mechanism string) error
 
@@ -89,7 +100,8 @@ type AdminAPIClientFactory func(
 	k8sClient client.Reader,
 	redpandaCluster *redpandav1alpha1.Cluster,
 	fqdn string,
-	adminTLSProvider resources.AdminTLSConfigProvider,
+	adminTLSProvider types.AdminTLSConfigProvider,
+	ordinals ...int32,
 ) (AdminAPIClient, error)
 
 var _ AdminAPIClientFactory = NewInternalAdminAPI

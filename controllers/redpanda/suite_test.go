@@ -94,6 +94,7 @@ var _ = BeforeSuite(func(done Done) {
 		_ *redpandav1alpha1.Cluster,
 		_ string,
 		_ types.AdminTLSConfigProvider,
+		_ ...int32,
 	) (adminutils.AdminAPIClient, error) {
 		return testAdminAPI, nil
 	}
@@ -364,6 +365,12 @@ func (m *mockAdminAPI) SetUnavailable(unavailable bool) {
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
 	m.unavailable = unavailable
+}
+
+func (m *mockAdminAPI) GetNodeConfig(
+	_ context.Context,
+) (admin.NodeConfig, error) {
+	return admin.NodeConfig{}, nil
 }
 
 func (m *mockAdminAPI) SetDirectValidationEnabled(directValidation bool) {
