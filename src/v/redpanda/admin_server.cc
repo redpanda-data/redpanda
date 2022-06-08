@@ -618,7 +618,8 @@ void admin_server::register_config_routes() {
       ss::httpd::config_json::get_config, [](ss::const_req, ss::reply& reply) {
           json::StringBuffer buf;
           json::Writer<json::StringBuffer> writer(buf);
-          config::shard_local_cfg().to_json(writer);
+          config::shard_local_cfg().to_json(
+            writer, config::redact_secrets::yes);
 
           reply.set_status(ss::httpd::reply::status_type::ok, buf.GetString());
           return "";
@@ -637,7 +638,9 @@ void admin_server::register_config_routes() {
           }
 
           config::shard_local_cfg().to_json(
-            writer, [include_defaults](config::base_property& p) {
+            writer,
+            config::redact_secrets::yes,
+            [include_defaults](config::base_property& p) {
                 return include_defaults || !p.is_default();
             });
 
@@ -650,7 +653,7 @@ void admin_server::register_config_routes() {
       [](ss::const_req, ss::reply& reply) {
           json::StringBuffer buf;
           json::Writer<json::StringBuffer> writer(buf);
-          config::node().to_json(writer);
+          config::node().to_json(writer, config::redact_secrets::yes);
 
           reply.set_status(ss::httpd::reply::status_type::ok, buf.GetString());
           return "";
@@ -967,6 +970,7 @@ void admin_server::register_cluster_config_routes() {
           // but we also do an early validation pass here to avoid writing
           // clearly wrong things into the log & give better feedback
           // to the API consumer.
+          absl::flat_hash_set<ss::sstring> upsert_no_op_names;
           if (!get_boolean_query_param(*req, "force")) {
               // A scratch copy of configuration: we must not touch
               // the real live configuration object, that will be updated
@@ -986,29 +990,28 @@ void admin_server::register_cluster_config_routes() {
               // properties.
 
               std::map<ss::sstring, ss::sstring> errors;
-              for (const auto& i : update.upsert) {
+              for (const auto& [yaml_name, yaml_value] : update.upsert) {
                   // Decode to a YAML object because that's what the property
                   // interface expects.
                   // Don't both catching ParserException: this was encoded
                   // just a few lines above.
-                  const auto& yaml_value = i.second;
                   auto val = YAML::Load(yaml_value);
 
-                  if (!cfg.contains(i.first)) {
-                      errors[i.first] = "Unknown property";
+                  if (!cfg.contains(yaml_name)) {
+                      errors[yaml_name] = "Unknown property";
                       continue;
                   }
-                  auto& property = cfg.get(i.first);
+                  auto& property = cfg.get(yaml_name);
 
                   try {
                       auto validation_err = property.validate(val);
                       if (validation_err.has_value()) {
-                          errors[i.first]
+                          errors[yaml_name]
                             = validation_err.value().error_message();
                           vlog(
                             logger.warn,
                             "Invalid {}: '{}' ({})",
-                            i.first,
+                            yaml_name,
                             property.format_raw(yaml_value),
                             validation_err.value().error_message());
                       } else {
@@ -1016,7 +1019,10 @@ void admin_server::register_cluster_config_routes() {
                           // from it's value setter even after a non-throwing
                           // call to validate (if this happens validate() was
                           // implemented wrongly, but let's be safe)
-                          property.set_value(val);
+                          auto changed = property.set_value(val);
+                          if (!changed) {
+                              upsert_no_op_names.insert(yaml_name);
+                          }
                       }
                   } catch (YAML::BadConversion const& e) {
                       // Be helpful, and give the user an example of what
@@ -1048,21 +1054,21 @@ void admin_server::register_cluster_config_routes() {
                           }
                       }
 
-                      errors[i.first] = message;
+                      errors[yaml_name] = message;
                       vlog(
                         logger.warn,
                         "Invalid {}: '{}' ({})",
-                        i.first,
+                        yaml_name,
                         property.format_raw(yaml_value),
                         std::current_exception());
                   } catch (...) {
                       auto message = fmt::format(
                         "{}", std::current_exception());
-                      errors[i.first] = message;
+                      errors[yaml_name] = message;
                       vlog(
                         logger.warn,
                         "Invalid {}: '{}' ({})",
-                        i.first,
+                        yaml_name,
                         property.format_raw(yaml_value),
                         message);
                   }
@@ -1108,6 +1114,24 @@ void admin_server::register_cluster_config_routes() {
               // A dry run doesn't really need a result, but it's simpler for
               // the API definition if we return the same structure as a
               // normal write.
+              ss::httpd::cluster_config_json::cluster_config_write_result
+                result;
+              result.config_version = current_version;
+              co_return ss::json::json_return_type(std::move(result));
+          }
+
+          if (
+            update.upsert.size() == upsert_no_op_names.size()
+            && update.remove.empty()) {
+              vlog(
+                logger.trace,
+                "patch_cluster_config: ignoring request, {} upserts resulted "
+                "in no-ops",
+                update.upsert.size());
+              auto current_version
+                = co_await _controller->get_config_manager().invoke_on(
+                  cluster::config_manager::shard,
+                  [](cluster::config_manager& cm) { return cm.get_version(); });
               ss::httpd::cluster_config_json::cluster_config_write_result
                 result;
               result.config_version = current_version;
