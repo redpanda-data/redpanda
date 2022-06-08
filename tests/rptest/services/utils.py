@@ -33,3 +33,6 @@ class NodeCrash(Exception):
         else:
             names = ",".join([c[0].name for c in self.crashes])
             return f"<NodeCrash ({names}) {example}>"
+
+    def __repr__(self):
+        return self.__str__()
