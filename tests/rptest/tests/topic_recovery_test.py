@@ -7,6 +7,7 @@
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
 
 from rptest.services.cluster import cluster
+from ducktape.mark import ok_to_fail
 from ducktape.utils.util import wait_until
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.archival.s3_client import S3Client
@@ -1240,7 +1241,8 @@ class TopicRecoveryTest(RedpandaTest):
                               self.s3_bucket, self.logger, topics)
         self.do_run(test_case)
 
-    @cluster(num_nodes=3, log_allow_list=TRANSIENT_ERRORS)
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/4960
+    @cluster(num_nodes=4, log_allow_list=TRANSIENT_ERRORS)
     def test_fast2(self):
         """Basic recovery test. This test stresses successful recovery
         of the topic with different set of data."""
@@ -1256,6 +1258,7 @@ class TopicRecoveryTest(RedpandaTest):
                               self.s3_bucket, self.logger, topics)
         self.do_run(test_case)
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/4972
     @cluster(num_nodes=3, log_allow_list=TRANSIENT_ERRORS)
     def test_fast3(self):
         """Basic recovery test. This test stresses successful recovery
@@ -1275,6 +1278,7 @@ class TopicRecoveryTest(RedpandaTest):
                               self.s3_bucket, self.logger, topics)
         self.do_run(test_case)
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/4887
     @cluster(num_nodes=3, log_allow_list=TRANSIENT_ERRORS)
     def test_size_based_retention(self):
         """Test topic recovery with size based retention policy.
