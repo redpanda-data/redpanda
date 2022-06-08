@@ -392,13 +392,7 @@ ss::future<prepare_tx_reply> rm_partition_frontend::dispatch_prepare_tx(
         timeout,
         [ntp, etag, tm, pid, tx_seq, timeout](tx_gateway_client_protocol cp) {
             return cp.prepare_tx(
-              prepare_tx_request{
-                .ntp = ntp,
-                .etag = etag,
-                .tm = tm,
-                .pid = pid,
-                .tx_seq = tx_seq,
-                .timeout = timeout},
+              prepare_tx_request{ntp, etag, tm, pid, tx_seq, timeout},
               rpc::client_opts(model::timeout_clock::now() + timeout));
         })
       .then(&rpc::get_ctx_data<prepare_tx_reply>)

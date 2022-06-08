@@ -231,7 +231,22 @@ struct prepare_tx_request {
     model::producer_identity pid;
     model::tx_seq tx_seq;
     model::timeout_clock::duration timeout;
+
+    prepare_tx_request(
+      model::ntp ntp,
+      model::term_id etag,
+      model::partition_id tm,
+      model::producer_identity pid,
+      model::tx_seq tx_seq,
+      model::timeout_clock::duration timeout)
+      : ntp(std::move(ntp))
+      , etag(etag)
+      , tm(tm)
+      , pid(pid)
+      , tx_seq(tx_seq)
+      , timeout(timeout) {}
 };
+
 struct prepare_tx_reply {
     tx_errc ec;
 };
@@ -1767,6 +1782,23 @@ struct adl<cluster::commit_tx_reply> {
     cluster::commit_tx_reply from(iobuf_parser& in) {
         auto ec = adl<cluster::tx_errc>{}.from(in);
         return cluster::commit_tx_reply{ec};
+    }
+};
+
+template<>
+struct adl<cluster::prepare_tx_request> {
+    void to(iobuf& out, cluster::prepare_tx_request&& r) {
+        serialize(
+          out, std::move(r.ntp), r.etag, r.tm, r.pid, r.tx_seq, r.timeout);
+    }
+    cluster::prepare_tx_request from(iobuf_parser& in) {
+        auto ntp = adl<model::ntp>{}.from(in);
+        auto etag = adl<model::term_id>{}.from(in);
+        auto tm = adl<model::partition_id>{}.from(in);
+        auto pid = adl<model::producer_identity>{}.from(in);
+        auto tx_seq = adl<model::tx_seq>{}.from(in);
+        auto timeout = adl<model::timeout_clock::duration>{}.from(in);
+        return {std::move(ntp), etag, tm, pid, tx_seq, timeout};
     }
 };
 } // namespace reflection
