@@ -844,8 +844,12 @@ struct backend_operation {
     friend std::ostream& operator<<(std::ostream&, const backend_operation&);
 };
 
-struct create_data_policy_cmd_data {
+struct create_data_policy_cmd_data
+  : serde::envelope<create_data_policy_cmd_data, serde::version<0>> {
     static constexpr int8_t current_version = 1; // In future dp will be vector
+
+    auto serde_fields() { return std::tie(dp); }
+
     v8_engine::data_policy dp;
 };
 

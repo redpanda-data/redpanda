@@ -784,4 +784,12 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         }
         roundtrip_test(data);
     }
+    {
+        cluster::create_data_policy_cmd_data data;
+        data.dp = v8_engine::data_policy(
+          random_generators::gen_alphanum_string(20),
+          random_generators::gen_alphanum_string(20));
+
+        roundtrip_test(data);
+    }
 }
