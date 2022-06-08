@@ -254,4 +254,20 @@ metadata_cache::get_default_shadow_indexing_mode() const {
     }
     return m;
 }
+
+topic_properties metadata_cache::get_default_properties() const {
+    topic_properties tp;
+    tp.compression = {get_default_compression()};
+    tp.cleanup_policy_bitflags = {get_default_cleanup_policy_bitflags()};
+    tp.compaction_strategy = {get_default_compaction_strategy()};
+    tp.timestamp_type = {get_default_timestamp_type()};
+    tp.segment_size = {get_default_segment_size()};
+    tp.retention_bytes = tristate<size_t>({get_default_retention_bytes()});
+    tp.retention_duration = tristate<std::chrono::milliseconds>(
+      {get_default_retention_duration()});
+    tp.recovery = {false};
+    tp.shadow_indexing = {get_default_shadow_indexing_mode()};
+    return tp;
+}
+
 } // namespace cluster
