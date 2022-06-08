@@ -30,6 +30,7 @@ add_subdirectory(security)
 add_subdirectory(serde)
 add_subdirectory(cloud_storage)
 add_subdirectory(v8_engine)
+add_subdirectory(rp_util)
 
 option(ENABLE_GIT_VERSION "Build with Git metadata" OFF)
 if(${ENABLE_GIT_VERSION})
