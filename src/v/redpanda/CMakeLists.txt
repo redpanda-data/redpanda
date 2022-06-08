@@ -27,6 +27,7 @@ v_cc_library(
   NAME application
   SRCS
     ${swag_files}
+    cluster_config_schema_util.cc
     admin_server.cc
     cli_parser.cc
     request_auth.cc
