@@ -669,14 +669,14 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
                     }
                 }
                 vlog(
-                  clusterlog.info,
+                  partlog.info,
                   "partition operation {} result: {}",
                   *it,
                   ec.message());
                 stop = true;
                 continue;
             }
-            vlog(clusterlog.debug, "partition operation {} finished", *it);
+            vlog(partlog.info, "partition operation {} finished", *it);
         } catch (ss::gate_closed_exception const&) {
             vlog(
               clusterlog.debug,
@@ -689,7 +689,7 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
             continue;
         } catch (...) {
             vlog(
-              clusterlog.error,
+              partlog.error,
               "exception while executing partition operation: {} - {}",
               *it,
               std::current_exception());
@@ -704,34 +704,45 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
 // caller must hold _topics_sem lock
 ss::future<> controller_backend::reconcile_topics() {
     auto start_ts = ss::lowres_clock::now();
-    return ss::with_semaphore(_topics_sem, 1, [this] {
-        if (_topic_deltas.empty()) {
-            return ss::now();
-        }
+    return ss::with_semaphore(
+             _topics_sem,
+             1,
+             [this] {
+                 if (_topic_deltas.empty()) {
+                     return ss::now();
+                 }
 
-        vlog(clusterlog.info, "Reconciling {} topic deltas", _topic_deltas.size());
+                 vlog(
+                   partlog.info,
+                   "Reconciling {} topic deltas",
+                   _topic_deltas.size());
 
-        // reconcile NTPs in parallel
-        return ss::parallel_for_each(
-                 _topic_deltas.begin(),
-                 _topic_deltas.end(),
-                 [this](underlying_t::value_type& ntp_deltas) {
-                     return reconcile_ntp(ntp_deltas.second);
-                 })
-          .then([this] {
-              // cleanup empty NTP keys
-              for (auto it = _topic_deltas.cbegin();
-                   it != _topic_deltas.cend();) {
-                  if (it->second.empty()) {
-                      _topic_deltas.erase(it++);
-                  } else {
-                      ++it;
-                  }
-              }
-          });
-    }).then([start_ts = start_ts](){
-        vlog(clusterlog.info, "Completed reconciling topics in {} ms", ss::lowres_clock::now() - start_ts);
-    });
+                 // reconcile NTPs in parallel
+                 return ss::parallel_for_each(
+                          _topic_deltas.begin(),
+                          _topic_deltas.end(),
+                          [this](underlying_t::value_type& ntp_deltas) {
+                              return reconcile_ntp(ntp_deltas.second);
+                          })
+                   .then([this] {
+                       // cleanup empty NTP keys
+                       for (auto it = _topic_deltas.cbegin();
+                            it != _topic_deltas.cend();) {
+                           if (it->second.empty()) {
+                               _topic_deltas.erase(it++);
+                           } else {
+                               ++it;
+                           }
+                       }
+                   });
+             })
+      .then([this, start_ts = start_ts]() {
+          vlog(
+            partlog.info,
+            "Completed reconciling topics in {} ms, {} left",
+            ss::lowres_clock::now() - start_ts,
+            _topic_deltas.size());
+      });
 }
 
 ss::future<std::error_code>
@@ -839,7 +850,7 @@ controller_backend::process_partition_reconfiguration(
   const topic_table_delta::revision_map_t& replica_revisions,
   model::revision_id rev) {
     vlog(
-      clusterlog.trace,
+      partlog.trace,
       "processing partition {} reconfiguration {} command with target "
       "replicas: {}, previous replica set: {}, revision: {}",
       ntp,
@@ -857,7 +868,7 @@ controller_backend::process_partition_reconfiguration(
      */
     if (partition && partition->group_configuration().revision_id() > rev) {
         vlog(
-          clusterlog.trace,
+          partlog.info,
           "found newer revision for {}, finishing reconfiguration to: {}",
           ntp,
           target_assignment.replicas);
@@ -1485,7 +1496,7 @@ controller_backend::cross_shard_move_request::cross_shard_move_request(
 
 ss::future<std::error_code> controller_backend::shutdown_on_current_shard(
   model::ntp ntp, model::revision_id rev) {
-    vlog(clusterlog.trace, "cross core move, shutting down partition: {}", ntp);
+    vlog(partlog.info, "cross core move, shutting down partition: {}", ntp);
     auto partition = _partition_manager.local().get(ntp);
     // partition doesn't exists it was deleted
     if (!partition) {

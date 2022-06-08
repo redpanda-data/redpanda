@@ -18,5 +18,6 @@
 
 namespace cluster {
 extern ss::logger clusterlog;
+extern ss::logger partlog;
 extern ss::logger txlog;
 } // namespace cluster

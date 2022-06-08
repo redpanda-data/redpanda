@@ -11,5 +11,6 @@
 
 namespace cluster {
 ss::logger clusterlog{"cluster"};
+ss::logger partlog{"cluster/part"};
 ss::logger txlog{"tx"};
 } // namespace cluster
