@@ -171,7 +171,7 @@ func (*unavailableError) Error() string {
 	return "unavailable"
 }
 
-func (m *mockAdminAPI) Config() (admin.Config, error) {
+func (m *mockAdminAPI) Config(_ context.Context) (admin.Config, error) {
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
 	if m.unavailable {
@@ -182,10 +182,9 @@ func (m *mockAdminAPI) Config() (admin.Config, error) {
 	return res, nil
 }
 
-func (m *mockAdminAPI) ClusterConfigStatus() (
-	admin.ConfigStatusResponse,
-	error,
-) {
+func (m *mockAdminAPI) ClusterConfigStatus(
+	_ context.Context,
+) (admin.ConfigStatusResponse, error) {
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
 	if m.unavailable {
@@ -198,7 +197,9 @@ func (m *mockAdminAPI) ClusterConfigStatus() (
 	return []admin.ConfigStatus{node}, nil
 }
 
-func (m *mockAdminAPI) ClusterConfigSchema() (admin.ConfigSchema, error) {
+func (m *mockAdminAPI) ClusterConfigSchema(
+	_ context.Context,
+) (admin.ConfigSchema, error) {
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
 	if m.unavailable {
@@ -210,7 +211,7 @@ func (m *mockAdminAPI) ClusterConfigSchema() (admin.ConfigSchema, error) {
 }
 
 func (m *mockAdminAPI) PatchClusterConfig(
-	upsert map[string]interface{}, remove []string,
+	_ context.Context, upsert map[string]interface{}, remove []string,
 ) (admin.ClusterConfigWriteResult, error) {
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
@@ -269,7 +270,7 @@ func (m *mockAdminAPI) PatchClusterConfig(
 	return admin.ClusterConfigWriteResult{}, nil
 }
 
-func (m *mockAdminAPI) CreateUser(_, _, _ string) error {
+func (m *mockAdminAPI) CreateUser(_ context.Context, _, _, _ string) error {
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
 	if m.unavailable {
@@ -288,7 +289,9 @@ func (m *mockAdminAPI) Clear() {
 	m.directValidation = false
 }
 
-func (m *mockAdminAPI) GetFeatures() (admin.FeaturesResponse, error) {
+func (m *mockAdminAPI) GetFeatures(
+	_ context.Context,
+) (admin.FeaturesResponse, error) {
 	return admin.FeaturesResponse{
 		ClusterVersion: 0,
 		Features: []admin.Feature{
