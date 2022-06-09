@@ -265,6 +265,14 @@ ss::future<> remove_compacted_index(const ss::sstring& reader_path) {
     auto path = internal::compacted_index_path(reader_path.c_str());
     return ss::remove_file(path.c_str())
       .handle_exception([path](const std::exception_ptr& e) {
+          try {
+              rethrow_exception(e);
+          } catch (const std::filesystem::filesystem_error& e) {
+              if (e.code() == std::errc::no_such_file_or_directory) {
+                  // Do not log: ENOENT on removal is success
+                  return;
+              }
+          }
           vlog(stlog.warn, "error removing compacted index {} - {}", path, e);
       });
 }
