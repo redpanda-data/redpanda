@@ -397,11 +397,13 @@ struct commit_tx_reply : serde::envelope<commit_tx_reply, serde::version<0>> {
     auto serde_fields() { return std::tie(ec); }
 };
 
-struct abort_tx_request {
+struct abort_tx_request : serde::envelope<abort_tx_request, serde::version<0>> {
     model::ntp ntp;
     model::producer_identity pid;
     model::tx_seq tx_seq;
     model::timeout_clock::duration timeout;
+
+    abort_tx_request() noexcept = default;
 
     abort_tx_request(
       model::ntp ntp,
@@ -412,6 +414,8 @@ struct abort_tx_request {
       , pid(pid)
       , tx_seq(tx_seq)
       , timeout(timeout) {}
+
+    auto serde_fields() { return std::tie(ntp, pid, tx_seq, timeout); }
 };
 
 struct abort_tx_reply {
