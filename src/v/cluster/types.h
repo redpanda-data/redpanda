@@ -225,7 +225,7 @@ struct init_tm_tx_request
     }
 };
 
-struct init_tm_tx_reply {
+struct init_tm_tx_reply : serde::envelope<init_tm_tx_reply, serde::version<0>> {
     // partition_not_exists, not_leader, topic_not_exists
     model::producer_identity pid;
     tx_errc ec;
@@ -238,6 +238,8 @@ struct init_tm_tx_reply {
 
     explicit init_tm_tx_reply(tx_errc ec)
       : ec(ec) {}
+
+    auto serde_fields() { return std::tie(pid, ec); }
 };
 
 struct add_paritions_tx_request {
