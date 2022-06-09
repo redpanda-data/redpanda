@@ -104,6 +104,9 @@ public:
     // Get last offset
     const model::offset get_last_offset() const;
 
+    /// Get starting offset
+    std::optional<model::offset> get_start_offset() const;
+
     /// Get revision
     model::initial_revision_id get_revision_id() const;
 
@@ -124,6 +127,15 @@ public:
     /// Add new segment to the manifest
     bool add(const key& key, const segment_meta& meta);
     bool add(const segment_name& name, const segment_meta& meta);
+
+    /// Remove segment from the manifest only if the metadata matches
+    bool remove(const key& key, const segment_meta& meta);
+    bool remove(const segment_name& key, const segment_meta& meta);
+
+    /// \brief Truncate the manifest
+    /// \param starting_rp_offset is a new starting offset of the manifest
+    /// \return manifest that contains only removed segments
+    partition_manifest truncate(model::offset starting_rp_offset);
 
     /// Get segment if available or nullopt
     const segment_meta* get(const key& key) const;

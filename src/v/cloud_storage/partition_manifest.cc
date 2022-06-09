@@ -191,6 +191,13 @@ const model::offset partition_manifest::get_last_offset() const {
     return _last_offset;
 }
 
+std::optional<model::offset> partition_manifest::get_start_offset() const {
+    if (_segments.empty()) {
+        return std::nullopt;
+    }
+    return _segments.begin()->second.base_offset;
+}
+
 model::initial_revision_id partition_manifest::get_revision_id() const {
     return _rev;
 }
@@ -253,6 +260,42 @@ bool partition_manifest::add(
     }
     key key = {.base_offset = maybe_key->base_offset, .term = maybe_key->term};
     return add(key, meta);
+}
+
+bool partition_manifest::remove(
+  const partition_manifest::key& key, const segment_meta& meta) {
+    if (auto it = _segments.find(key); it != _segments.end()) {
+        if (it->second.committed_offset == meta.committed_offset) {
+            _segments.erase(it);
+            return true;
+        }
+    }
+    return false;
+}
+
+bool partition_manifest::remove(
+  const segment_name& name, const segment_meta& meta) {
+    auto maybe_key = parse_segment_name(name);
+    if (!maybe_key) {
+        throw std::runtime_error(
+          fmt_with_ctx(fmt::format, "can't parse segment name \"{}\"", name));
+    }
+    key key = {.base_offset = maybe_key->base_offset, .term = maybe_key->term};
+    return remove(key, meta);
+}
+
+partition_manifest
+partition_manifest::truncate(model::offset starting_rp_offset) {
+    partition_manifest removed(_ntp, _rev);
+    for (auto it : _segments) {
+        if (it.second.committed_offset < starting_rp_offset) {
+            removed.add(it.first, it.second);
+        }
+    }
+    for (auto s : removed._segments) {
+        _segments.erase(s.first);
+    }
+    return removed;
 }
 
 const partition_manifest::segment_meta*
