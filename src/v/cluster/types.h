@@ -540,12 +540,15 @@ struct prepare_group_tx_reply
     auto serde_fields() { return std::tie(ec); }
 };
 
-struct commit_group_tx_request {
+struct commit_group_tx_request
+  : serde::envelope<commit_group_tx_request, serde::version<0>> {
     model::ntp ntp;
     model::producer_identity pid;
     model::tx_seq tx_seq;
     kafka::group_id group_id;
     model::timeout_clock::duration timeout;
+
+    commit_group_tx_request() noexcept = default;
 
     commit_group_tx_request(
       model::ntp ntp,
@@ -570,6 +573,10 @@ struct commit_group_tx_request {
       model::timeout_clock::duration timeout)
       : commit_group_tx_request(
         model::ntp(), pid, tx_seq, std::move(group_id), timeout) {}
+
+    auto serde_fields() {
+        return std::tie(ntp, pid, tx_seq, group_id, timeout);
+    }
 };
 
 struct commit_group_tx_reply {
