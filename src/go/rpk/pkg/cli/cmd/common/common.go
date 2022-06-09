@@ -17,7 +17,7 @@ import (
 )
 
 const FeedbackMsg = `We'd love to hear about your experience with redpanda:
-https://vectorized.io/feedback`
+https://redpanda.com/feedback`
 
 func Deprecated(newCmd *cobra.Command, newUse string) *cobra.Command {
 	newCmd.Deprecated = fmt.Sprintf("use %q instead", newUse)
