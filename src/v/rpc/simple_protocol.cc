@@ -82,7 +82,16 @@ send_reply(ss::lw_shared_ptr<server_context_impl> ctx, netbuf buf) {
     }
     return ctx->res.conn->write(std::move(view))
       .handle_exception([ctx = std::move(ctx)](std::exception_ptr e) {
-          vlog(rpclog.info, "Error dispatching method: {}", e);
+          auto disconnect = net::is_disconnect_exception(e);
+          if (disconnect) {
+              vlog(
+                rpclog.info,
+                "Disconnected {} ({})",
+                ctx->res.conn->addr,
+                disconnect.value());
+          } else {
+              vlog(rpclog.warn, "Error dispatching method: {}", e);
+          }
           ctx->res.conn->shutdown_input();
       });
 }
