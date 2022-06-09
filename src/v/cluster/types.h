@@ -53,7 +53,17 @@ struct allocate_id_request
     explicit allocate_id_request(model::timeout_clock::duration timeout)
       : timeout(timeout) {}
 
-    auto serde_fields() { return std::tie(timeout); }
+    auto serde_read(iobuf_parser& in, const serde::header& h) {
+        using serde::read_nested;
+        timeout = std::chrono::duration_cast<model::timeout_clock::duration>(
+          read_nested<std::chrono::milliseconds>(in, h._bytes_left_limit));
+    }
+
+    auto serde_write(iobuf& out) {
+        using serde::write;
+        write(
+          out, std::chrono::duration_cast<std::chrono::milliseconds>(timeout));
+    }
 };
 
 struct allocate_id_reply
@@ -172,7 +182,23 @@ struct try_abort_request
       , tx_seq(tx_seq)
       , timeout(timeout) {}
 
-    auto serde_fields() { return std::tie(tm, pid, tx_seq, timeout); }
+    auto serde_read(iobuf_parser& in, const serde::header& h) {
+        using serde::read_nested;
+        tm = read_nested<model::partition_id>(in, h._bytes_left_limit);
+        pid = read_nested<model::producer_identity>(in, h._bytes_left_limit);
+        tx_seq = read_nested<model::tx_seq>(in, h._bytes_left_limit);
+        timeout = std::chrono::duration_cast<model::timeout_clock::duration>(
+          read_nested<std::chrono::milliseconds>(in, h._bytes_left_limit));
+    }
+
+    auto serde_write(iobuf& out) {
+        using serde::write;
+        write(out, tm);
+        write(out, pid);
+        write(out, tx_seq);
+        write(
+          out, std::chrono::duration_cast<std::chrono::milliseconds>(timeout));
+    }
 };
 
 struct try_abort_reply : serde::envelope<try_abort_reply, serde::version<0>> {
@@ -220,8 +246,21 @@ struct init_tm_tx_request
       , transaction_timeout_ms(tx_timeout)
       , timeout(timeout) {}
 
-    auto serde_fields() {
-        return std::tie(tx_id, transaction_timeout_ms, timeout);
+    auto serde_read(iobuf_parser& in, const serde::header& h) {
+        using serde::read_nested;
+        tx_id = read_nested<kafka::transactional_id>(in, h._bytes_left_limit);
+        transaction_timeout_ms = read_nested<std::chrono::milliseconds>(
+          in, h._bytes_left_limit);
+        timeout = std::chrono::duration_cast<model::timeout_clock::duration>(
+          read_nested<std::chrono::milliseconds>(in, h._bytes_left_limit));
+    }
+
+    auto serde_write(iobuf& out) {
+        using serde::write;
+        write(out, tx_id);
+        write(out, transaction_timeout_ms);
+        write(
+          out, std::chrono::duration_cast<std::chrono::milliseconds>(timeout));
     }
 };
 
@@ -348,8 +387,26 @@ struct prepare_tx_request
       , tx_seq(tx_seq)
       , timeout(timeout) {}
 
-    auto serde_fields() {
-        return std::tie(ntp, etag, tm, pid, tx_seq, timeout);
+    auto serde_read(iobuf_parser& in, const serde::header& h) {
+        using serde::read_nested;
+        ntp = read_nested<model::ntp>(in, h._bytes_left_limit);
+        etag = read_nested<model::term_id>(in, h._bytes_left_limit);
+        tm = read_nested<model::partition_id>(in, h._bytes_left_limit);
+        pid = read_nested<model::producer_identity>(in, h._bytes_left_limit);
+        tx_seq = read_nested<model::tx_seq>(in, h._bytes_left_limit);
+        timeout = std::chrono::duration_cast<model::timeout_clock::duration>(
+          read_nested<std::chrono::milliseconds>(in, h._bytes_left_limit));
+    }
+
+    auto serde_write(iobuf& out) {
+        using serde::write;
+        write(out, ntp);
+        write(out, etag);
+        write(out, tm);
+        write(out, pid);
+        write(out, tx_seq);
+        write(
+          out, std::chrono::duration_cast<std::chrono::milliseconds>(timeout));
     }
 };
 
@@ -383,7 +440,23 @@ struct commit_tx_request
       , tx_seq(tx_seq)
       , timeout(timeout) {}
 
-    auto serde_fields() { return std::tie(ntp, pid, tx_seq, timeout); }
+    auto serde_read(iobuf_parser& in, const serde::header& h) {
+        using serde::read_nested;
+        ntp = read_nested<model::ntp>(in, h._bytes_left_limit);
+        pid = read_nested<model::producer_identity>(in, h._bytes_left_limit);
+        tx_seq = read_nested<model::tx_seq>(in, h._bytes_left_limit);
+        timeout = std::chrono::duration_cast<model::timeout_clock::duration>(
+          read_nested<std::chrono::milliseconds>(in, h._bytes_left_limit));
+    }
+
+    auto serde_write(iobuf& out) {
+        using serde::write;
+        write(out, ntp);
+        write(out, pid);
+        write(out, tx_seq);
+        write(
+          out, std::chrono::duration_cast<std::chrono::milliseconds>(timeout));
+    }
 };
 
 struct commit_tx_reply : serde::envelope<commit_tx_reply, serde::version<0>> {
@@ -415,7 +488,23 @@ struct abort_tx_request : serde::envelope<abort_tx_request, serde::version<0>> {
       , tx_seq(tx_seq)
       , timeout(timeout) {}
 
-    auto serde_fields() { return std::tie(ntp, pid, tx_seq, timeout); }
+    auto serde_read(iobuf_parser& in, const serde::header& h) {
+        using serde::read_nested;
+        ntp = read_nested<model::ntp>(in, h._bytes_left_limit);
+        pid = read_nested<model::producer_identity>(in, h._bytes_left_limit);
+        tx_seq = read_nested<model::tx_seq>(in, h._bytes_left_limit);
+        timeout = std::chrono::duration_cast<model::timeout_clock::duration>(
+          read_nested<std::chrono::milliseconds>(in, h._bytes_left_limit));
+    }
+
+    auto serde_write(iobuf& out) {
+        using serde::write;
+        write(out, ntp);
+        write(out, pid);
+        write(out, tx_seq);
+        write(
+          out, std::chrono::duration_cast<std::chrono::milliseconds>(timeout));
+    }
 };
 
 struct abort_tx_reply : serde::envelope<abort_tx_reply, serde::version<0>> {
@@ -463,8 +552,24 @@ struct begin_group_tx_request
       : begin_group_tx_request(
         model::ntp(), std::move(group_id), pid, tx_seq, timeout) {}
 
-    auto serde_fields() {
-        return std::tie(ntp, group_id, pid, tx_seq, timeout);
+    auto serde_read(iobuf_parser& in, const serde::header& h) {
+        using serde::read_nested;
+        ntp = read_nested<model::ntp>(in, h._bytes_left_limit);
+        group_id = read_nested<kafka::group_id>(in, h._bytes_left_limit);
+        pid = read_nested<model::producer_identity>(in, h._bytes_left_limit);
+        tx_seq = read_nested<model::tx_seq>(in, h._bytes_left_limit);
+        timeout = std::chrono::duration_cast<model::timeout_clock::duration>(
+          read_nested<std::chrono::milliseconds>(in, h._bytes_left_limit));
+    }
+
+    auto serde_write(iobuf& out) {
+        using serde::write;
+        write(out, ntp);
+        write(out, group_id);
+        write(out, pid);
+        write(out, tx_seq);
+        write(
+          out, std::chrono::duration_cast<std::chrono::milliseconds>(timeout));
     }
 };
 
@@ -523,8 +628,26 @@ struct prepare_group_tx_request
       : prepare_group_tx_request(
         model::ntp(), std::move(group_id), etag, pid, tx_seq, timeout) {}
 
-    auto serde_fields() {
-        return std::tie(ntp, group_id, etag, pid, tx_seq, timeout);
+    auto serde_read(iobuf_parser& in, const serde::header& h) {
+        using serde::read_nested;
+        ntp = read_nested<model::ntp>(in, h._bytes_left_limit);
+        group_id = read_nested<kafka::group_id>(in, h._bytes_left_limit);
+        etag = read_nested<model::term_id>(in, h._bytes_left_limit);
+        pid = read_nested<model::producer_identity>(in, h._bytes_left_limit);
+        tx_seq = read_nested<model::tx_seq>(in, h._bytes_left_limit);
+        timeout = std::chrono::duration_cast<model::timeout_clock::duration>(
+          read_nested<std::chrono::milliseconds>(in, h._bytes_left_limit));
+    }
+
+    auto serde_write(iobuf& out) {
+        using serde::write;
+        write(out, ntp);
+        write(out, group_id);
+        write(out, etag);
+        write(out, pid);
+        write(out, tx_seq);
+        write(
+          out, std::chrono::duration_cast<std::chrono::milliseconds>(timeout));
     }
 };
 
@@ -574,8 +697,24 @@ struct commit_group_tx_request
       : commit_group_tx_request(
         model::ntp(), pid, tx_seq, std::move(group_id), timeout) {}
 
-    auto serde_fields() {
-        return std::tie(ntp, pid, tx_seq, group_id, timeout);
+    auto serde_read(iobuf_parser& in, const serde::header& h) {
+        using serde::read_nested;
+        ntp = read_nested<model::ntp>(in, h._bytes_left_limit);
+        pid = read_nested<model::producer_identity>(in, h._bytes_left_limit);
+        tx_seq = read_nested<model::tx_seq>(in, h._bytes_left_limit);
+        group_id = read_nested<kafka::group_id>(in, h._bytes_left_limit);
+        timeout = std::chrono::duration_cast<model::timeout_clock::duration>(
+          read_nested<std::chrono::milliseconds>(in, h._bytes_left_limit));
+    }
+
+    auto serde_write(iobuf& out) {
+        using serde::write;
+        write(out, ntp);
+        write(out, pid);
+        write(out, tx_seq);
+        write(out, group_id);
+        write(
+          out, std::chrono::duration_cast<std::chrono::milliseconds>(timeout));
     }
 };
 
@@ -625,8 +764,24 @@ struct abort_group_tx_request
       : abort_group_tx_request(
         model::ntp(), std::move(group_id), pid, tx_seq, timeout) {}
 
-    auto serde_fields() {
-        return std::tie(ntp, group_id, pid, tx_seq, timeout);
+    auto serde_read(iobuf_parser& in, const serde::header& h) {
+        using serde::read_nested;
+        ntp = read_nested<model::ntp>(in, h._bytes_left_limit);
+        group_id = read_nested<kafka::group_id>(in, h._bytes_left_limit);
+        pid = read_nested<model::producer_identity>(in, h._bytes_left_limit);
+        tx_seq = read_nested<model::tx_seq>(in, h._bytes_left_limit);
+        timeout = std::chrono::duration_cast<model::timeout_clock::duration>(
+          read_nested<std::chrono::milliseconds>(in, h._bytes_left_limit));
+    }
+
+    auto serde_write(iobuf& out) {
+        using serde::write;
+        write(out, ntp);
+        write(out, group_id);
+        write(out, pid);
+        write(out, tx_seq);
+        write(
+          out, std::chrono::duration_cast<std::chrono::milliseconds>(timeout));
     }
 };
 
@@ -1988,7 +2143,7 @@ struct adl<cluster::begin_tx_request> {
         auto ntp = adl<model::ntp>{}.from(in);
         auto pid = adl<model::producer_identity>{}.from(in);
         auto tx_seq = adl<model::tx_seq>{}.from(in);
-        auto timeout = adl<model::timeout_clock::duration>{}.from(in);
+        auto timeout = adl<std::chrono::milliseconds>{}.from(in);
         return {std::move(ntp), pid, tx_seq, timeout};
     }
 };

@@ -2132,13 +2132,19 @@ void admin_server::register_partition_routes() {
                     // long transaction do not do progress is useless for
                     // expired tx.
                     new_tx.staleness_ms = staleness.has_value()
-                                            ? staleness.value().count()
+                                            ? std::chrono::duration_cast<
+                                                std::chrono::milliseconds>(
+                                                staleness.value())
+                                                .count()
                                             : -1;
                     auto timeout = tx_info.get_timeout();
                     // -1 is returned for expired transaction, because
                     // timeout is useless for expired tx.
                     new_tx.timeout_ms = timeout.has_value()
-                                          ? timeout.value().count()
+                                          ? std::chrono::duration_cast<
+                                              std::chrono::milliseconds>(
+                                              timeout.value())
+                                              .count()
                                           : -1;
 
                     if (tx_info.is_expired()) {
