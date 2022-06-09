@@ -12,6 +12,7 @@
 
 #include "bytes/iobuf_parser.h"
 #include "hashing/crc32c.h"
+#include "likely.h"
 #include "reflection/type_traits.h"
 #include "serde/envelope_for_each_field.h"
 #include "serde/logger.h"
@@ -23,6 +24,8 @@
 #include "utils/fragmented_vector.h"
 #include "utils/named_type.h"
 #include "vlog.h"
+
+#include <seastar/net/inet_address.hh>
 
 #include <iosfwd>
 #include <numeric>
@@ -145,7 +148,7 @@ inline constexpr auto const is_serde_compatible_v
     || std::is_same_v<T, iobuf>
     || std::is_same_v<T, ss::sstring>
     || std::is_same_v<T, bytes>
-    || is_fragmented_vector_v<T> || reflection::is_tristate_v<T>;
+    || is_fragmented_vector_v<T> || reflection::is_tristate_v<T> || std::is_same_v<T, ss::net::inet_address>;
 
 template<typename T>
 inline constexpr auto const are_bytes_and_string_different = !(
@@ -287,6 +290,14 @@ void write(iobuf& out, T t) {
             write<int8_t>(out, 1);
             write(out, std::move(t.value()));
         }
+    } else if constexpr (std::is_same_v<T, ss::net::inet_address>) {
+        iobuf address_bytes;
+
+        // NOLINTNEXTLINE
+        address_bytes.append((const char*)t.data(), t.size());
+
+        write(out, t.is_ipv4());
+        write(out, std::move(address_bytes));
     }
 }
 
@@ -510,6 +521,42 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
               sizeof(Type),
               in.bytes_left(),
               flag));
+        }
+    } else if constexpr (std::is_same_v<T, ss::net::inet_address>) {
+        bool is_ipv4 = read_nested<bool>(in, bytes_left_limit);
+        auto address_buf = read_nested<iobuf>(in, bytes_left_limit);
+        auto address_bytes = iobuf_to_bytes(address_buf);
+        if (is_ipv4) {
+            ::in_addr addr{};
+            if (unlikely(address_bytes.size() != sizeof(addr))) {
+                throw serde_exception(fmt_with_ctx(
+                  ssx::sformat,
+                  "reading type {} of size {}: {} bytes left - unexpected ipv4 "
+                  "address size, read: {}, expected: {}",
+                  type_str<Type>(),
+                  sizeof(Type),
+                  in.bytes_left(),
+                  address_bytes.size(),
+                  sizeof(addr)));
+            }
+
+            std::memcpy(&addr, address_bytes.c_str(), sizeof(addr));
+            t = ss::net::inet_address(addr);
+        } else {
+            ::in6_addr addr{};
+            if (unlikely(address_bytes.size() != sizeof(addr))) {
+                throw serde_exception(fmt_with_ctx(
+                  ssx::sformat,
+                  "reading type {} of size {}: {} bytes left - unexpected ipv6 "
+                  "address size, read: {}, expected: {}",
+                  type_str<Type>(),
+                  sizeof(Type),
+                  in.bytes_left(),
+                  address_bytes.size(),
+                  sizeof(addr)));
+            }
+            std::memcpy(&addr, address_bytes.c_str(), sizeof(addr));
+            t = ss::net::inet_address(addr);
         }
     }
 }
