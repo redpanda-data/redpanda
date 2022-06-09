@@ -368,10 +368,22 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                               // on any future reader to check the abort
                               // source before considering reading the
                               // connection.
-                              vlog(
-                                klog.info,
-                                "Detected error processing request: {}",
+
+                              auto disconnected = net::is_disconnect_exception(
                                 e);
+                              if (disconnected) {
+                                  vlog(
+                                    klog.info,
+                                    "Disconnected {} ({})",
+                                    self->_rs.conn->addr,
+                                    disconnected.value());
+                              } else {
+                                  vlog(
+                                    klog.warn,
+                                    "Error processing request: {}",
+                                    e);
+                              }
+
                               self->_rs.probe().service_error();
                               self->_rs.conn->shutdown_input();
                           })
