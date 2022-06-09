@@ -87,7 +87,7 @@ static heartbeat_requests requests_for_range(
 
     auto last_heartbeat = clock_type::now() - heartbeat_interval;
     for (auto& ptr : c) {
-        if (!ptr->is_leader()) {
+        if (!ptr->is_elected_leader()) {
             continue;
         }
 

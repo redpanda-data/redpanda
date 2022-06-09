@@ -42,7 +42,7 @@ FIXTURE_TEST(
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
 
-    wait_for_leader();
+    wait_for_confirmed_leader();
     wait_for_meta_initialized();
 
     auto count = 5;
@@ -94,7 +94,7 @@ FIXTURE_TEST(
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
 
-    wait_for_leader();
+    wait_for_confirmed_leader();
     wait_for_meta_initialized();
 
     auto count = 5;
@@ -147,7 +147,7 @@ FIXTURE_TEST(test_rm_stm_caches_last_5_offsets, mux_state_machine_fixture) {
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
 
-    wait_for_leader();
+    wait_for_confirmed_leader();
     wait_for_meta_initialized();
 
     std::vector<model::offset> offsets;
@@ -212,7 +212,7 @@ FIXTURE_TEST(test_rm_stm_doesnt_cache_6th_offset, mux_state_machine_fixture) {
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
 
-    wait_for_leader();
+    wait_for_confirmed_leader();
     wait_for_meta_initialized();
 
     auto count = 5;
@@ -272,7 +272,7 @@ FIXTURE_TEST(test_rm_stm_prevents_gaps, mux_state_machine_fixture) {
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
 
-    wait_for_leader();
+    wait_for_confirmed_leader();
     wait_for_meta_initialized();
 
     auto count = 5;
@@ -325,7 +325,7 @@ FIXTURE_TEST(
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
 
-    wait_for_leader();
+    wait_for_confirmed_leader();
     wait_for_meta_initialized();
 
     auto count = 5;
@@ -361,7 +361,7 @@ FIXTURE_TEST(test_rm_stm_passes_immediate_retry, mux_state_machine_fixture) {
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
 
-    wait_for_leader();
+    wait_for_confirmed_leader();
     wait_for_meta_initialized();
 
     auto count = 5;

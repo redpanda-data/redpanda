@@ -73,7 +73,7 @@ FIXTURE_TEST(test_tx_happy_tx, mux_state_machine_fixture) {
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
     auto tx_seq = model::tx_seq(0);
 
-    wait_for_leader();
+    wait_for_confirmed_leader();
     wait_for_meta_initialized();
 
     auto min_offset = model::offset(0);
@@ -146,7 +146,7 @@ FIXTURE_TEST(test_tx_aborted_tx_1, mux_state_machine_fixture) {
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
     auto tx_seq = model::tx_seq(0);
 
-    wait_for_leader();
+    wait_for_confirmed_leader();
     wait_for_meta_initialized();
 
     auto min_offset = model::offset(0);
@@ -221,7 +221,7 @@ FIXTURE_TEST(test_tx_aborted_tx_2, mux_state_machine_fixture) {
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
     auto tx_seq = model::tx_seq(0);
 
-    wait_for_leader();
+    wait_for_confirmed_leader();
     wait_for_meta_initialized();
 
     auto min_offset = model::offset(0);
@@ -299,7 +299,7 @@ FIXTURE_TEST(test_tx_unknown_produce, mux_state_machine_fixture) {
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
 
-    wait_for_leader();
+    wait_for_confirmed_leader();
     wait_for_meta_initialized();
 
     auto pid1 = model::producer_identity{.id = 1, .epoch = 0};
@@ -337,7 +337,7 @@ FIXTURE_TEST(test_tx_begin_fences_produce, mux_state_machine_fixture) {
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
     auto tx_seq = model::tx_seq(0);
 
-    wait_for_leader();
+    wait_for_confirmed_leader();
     wait_for_meta_initialized();
 
     auto pid1 = model::producer_identity{.id = 1, .epoch = 0};
@@ -394,7 +394,7 @@ FIXTURE_TEST(test_tx_post_aborted_produce, mux_state_machine_fixture) {
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
     auto tx_seq = model::tx_seq(0);
 
-    wait_for_leader();
+    wait_for_confirmed_leader();
     wait_for_meta_initialized();
 
     auto pid1 = model::producer_identity{.id = 1, .epoch = 0};

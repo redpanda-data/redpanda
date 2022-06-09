@@ -672,7 +672,7 @@ FIXTURE_TEST(test_last_visible_offset_relaxed_consistency, raft_test_fixture) {
     std::vector<model::node_id> disabled;
     model::node_id leader_id;
     for (auto& m : gr.get_members()) {
-        if (!m.second.consensus->is_leader()) {
+        if (!m.second.consensus->is_elected_leader()) {
             disabled.push_back(m.first);
         } else {
             leader_id = m.first;

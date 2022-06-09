@@ -37,6 +37,7 @@ public:
         virtual kafka::leader_epoch leader_epoch() const = 0;
         virtual std::optional<model::offset>
           get_leader_epoch_last_offset(kafka::leader_epoch) const = 0;
+        virtual bool is_elected_leader() const = 0;
         virtual bool is_leader() const = 0;
         virtual ss::future<std::error_code> linearizable_barrier() = 0;
         virtual ss::future<storage::translating_reader> make_reader(
@@ -72,6 +73,8 @@ public:
     ss::future<std::error_code> linearizable_barrier() {
         return _impl->linearizable_barrier();
     }
+
+    bool is_elected_leader() const { return _impl->is_elected_leader(); }
 
     bool is_leader() const { return _impl->is_leader(); }
 

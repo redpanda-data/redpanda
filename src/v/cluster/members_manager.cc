@@ -502,7 +502,7 @@ members_manager::handle_join_request(join_node_request const req) {
       req.logical_version);
 
     // curent node is a leader
-    if (_raft0->is_leader()) {
+    if (_raft0->is_elected_leader()) {
         // if configuration contains the broker already just update its config
         // with data from join request
 

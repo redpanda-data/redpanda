@@ -120,7 +120,14 @@ struct mux_state_machine_fixture {
           model::broker_properties{});
     }
 
-    void wait_for_leader() {
+    void wait_for_becoming_leader() {
+        using namespace std::chrono_literals;
+        tests::cooperative_spin_wait_with_timeout(10s, [this] {
+            return _raft->is_elected_leader();
+        }).get0();
+    }
+
+    void wait_for_confirmed_leader() {
         using namespace std::chrono_literals;
         tests::cooperative_spin_wait_with_timeout(10s, [this] {
             return _raft->is_leader();
