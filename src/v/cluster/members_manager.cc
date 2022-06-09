@@ -905,9 +905,9 @@ members_manager::initialize_broker_connection(const model::broker& broker) {
 
           vlog(
             clusterlog.info,
-            "Hello response from {} failed: {}",
+            "Node {} did not respond to Hello message ({})",
             broker_id,
-            r.error());
+            r.error().message());
       });
 }
 
