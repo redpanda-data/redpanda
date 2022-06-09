@@ -107,7 +107,8 @@ class EndToEndShadowIndexingTestWithDisruptions(EndToEndShadowIndexingBase):
     def __init__(self, test_context):
         super().__init__(test_context,
                          extra_rp_conf={
-                             'default_topic_replications': self.num_brokers,
+                             'internal_topic_replication_factor':
+                             self.num_brokers,
                          })
 
     @cluster(num_nodes=5, log_allow_list=CHAOS_LOG_ALLOW_LIST)
