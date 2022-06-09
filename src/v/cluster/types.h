@@ -353,13 +353,15 @@ struct prepare_tx_request
     }
 };
 
-struct prepare_tx_reply {
+struct prepare_tx_reply : serde::envelope<prepare_tx_reply, serde::version<0>> {
     tx_errc ec;
 
     prepare_tx_reply() noexcept = default;
 
     explicit prepare_tx_reply(tx_errc ec)
       : ec(ec) {}
+
+    auto serde_fields() { return std::tie(ec); }
 };
 
 struct commit_tx_request {
