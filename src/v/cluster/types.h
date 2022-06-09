@@ -153,11 +153,14 @@ inline std::error_code make_error_code(tx_errc e) noexcept {
     return std::error_code(static_cast<int>(e), tx_error_category());
 }
 
-struct try_abort_request {
+struct try_abort_request
+  : serde::envelope<try_abort_request, serde::version<0>> {
     model::partition_id tm;
     model::producer_identity pid;
     model::tx_seq tx_seq;
     model::timeout_clock::duration timeout;
+
+    try_abort_request() noexcept = default;
 
     try_abort_request(
       model::partition_id tm,
@@ -168,6 +171,8 @@ struct try_abort_request {
       , pid(pid)
       , tx_seq(tx_seq)
       , timeout(timeout) {}
+
+    auto serde_fields() { return std::tie(tm, pid, tx_seq, timeout); }
 };
 
 struct try_abort_reply {

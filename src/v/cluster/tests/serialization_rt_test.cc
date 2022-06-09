@@ -682,6 +682,21 @@ cluster::feature_update_action random_feature_update_action() {
     return action;
 }
 
+model::producer_identity random_producer_identity() {
+    return {
+      random_generators::get_int(
+        std::numeric_limits<int64_t>::min(),
+        std::numeric_limits<int64_t>::max()),
+      random_generators::get_int(
+        std::numeric_limits<int16_t>::min(),
+        std::numeric_limits<int16_t>::max())};
+}
+
+model::timeout_clock::duration random_timeout_clock_duration() {
+    return model::timeout_clock::duration(
+      random_generators::get_int(-100000, 100000));
+}
+
 SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     roundtrip_test(cluster::ntp_leader(
       model::ntp(
@@ -868,6 +883,15 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           random_feature_update_action()};
         data.logical_version
           = tests::random_named_int<cluster::cluster_version>();
+
+        roundtrip_test(data);
+    }
+    {
+        cluster::try_abort_request data{
+          tests::random_named_int<model::partition_id>(),
+          random_producer_identity(),
+          tests::random_named_int<model::tx_seq>(),
+          random_timeout_clock_duration()};
 
         roundtrip_test(data);
     }
