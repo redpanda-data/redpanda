@@ -58,6 +58,9 @@ using namespace cloud_storage;
 
 inline ss::logger test_log("test"); // NOLINT
 
+static constexpr model::cloud_credentials_source config_file{
+  model::cloud_credentials_source::config_file};
+
 static std::unique_ptr<storage::continuous_batch_parser>
 make_recording_batch_parser(
   iobuf buf,
@@ -318,7 +321,7 @@ static model::record_batch_header read_single_batch_from_remote_partition(
   cloud_storage_fixture& fixture, model::offset target) {
     auto conf = fixture.get_configuration();
     static auto bucket = s3::bucket_name("bucket");
-    remote api(s3_connection_limit(10), conf);
+    remote api(s3_connection_limit(10), conf, config_file);
     auto action = ss::defer([&api] { api.stop().get(); });
     auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
       manifest_ntp, manifest_revision);
@@ -348,7 +351,7 @@ static std::vector<model::record_batch_header> scan_remote_partition(
   cloud_storage_fixture& imposter, model::offset base, model::offset max) {
     auto conf = imposter.get_configuration();
     static auto bucket = s3::bucket_name("bucket");
-    remote api(s3_connection_limit(10), conf);
+    remote api(s3_connection_limit(10), conf, config_file);
     auto action = ss::defer([&api] { api.stop().get(); });
     auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
       manifest_ntp, manifest_revision);
@@ -884,7 +887,7 @@ scan_remote_partition_incrementally(
   cloud_storage_fixture& imposter, model::offset base, model::offset max) {
     auto conf = imposter.get_configuration();
     static auto bucket = s3::bucket_name("bucket");
-    remote api(s3_connection_limit(10), conf);
+    remote api(s3_connection_limit(10), conf, config_file);
     auto action = ss::defer([&api] { api.stop().get(); });
     auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
       manifest_ntp, manifest_revision);
@@ -1007,7 +1010,7 @@ FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {
 
     auto conf = get_configuration();
     auto bucket = s3::bucket_name("bucket");
-    remote api(s3_connection_limit(10), conf);
+    remote api(s3_connection_limit(10), conf, config_file);
     auto action = ss::defer([&api] { api.stop().get(); });
     auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
       manifest_ntp, manifest_revision);

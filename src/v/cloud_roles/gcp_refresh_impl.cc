@@ -16,6 +16,7 @@
 #include "json/document.h"
 #include "json/istreamwrapper.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/sleep.hh>
 
 static constexpr std::string_view token_path

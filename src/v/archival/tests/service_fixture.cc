@@ -116,6 +116,8 @@ get_configurations() {
     cconf.bucket_name = s3::bucket_name("test-bucket");
     cconf.connection_limit = archival::s3_connection_limit(2);
     cconf.metrics_disabled = cloud_storage::remote_metrics_disabled::yes;
+    cconf.cloud_credentials_source
+      = model::cloud_credentials_source::config_file;
     return std::make_tuple(aconf, cconf);
 }
 
