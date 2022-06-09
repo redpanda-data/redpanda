@@ -579,13 +579,16 @@ struct commit_group_tx_request
     }
 };
 
-struct commit_group_tx_reply {
+struct commit_group_tx_reply
+  : serde::envelope<commit_group_tx_reply, serde::version<0>> {
     tx_errc ec;
 
     commit_group_tx_reply() noexcept = default;
 
     explicit commit_group_tx_reply(tx_errc ec)
       : ec(ec) {}
+
+    auto serde_fields() { return std::tie(ec); }
 };
 
 struct abort_group_tx_request {
