@@ -67,7 +67,7 @@ public:
       std::vector<topic_properties_update>, model::timeout_clock::time_point);
 
     ss::future<std::vector<topic_result>> create_partitions(
-      std::vector<create_partititions_configuration>,
+      std::vector<create_partitions_configuration>,
       model::timeout_clock::time_point);
 
     ss::future<std::vector<topic_result>> create_non_replicable_topics(
@@ -123,7 +123,7 @@ private:
     validate_topic_configuration(const custom_assignable_topic_configuration&);
 
     ss::future<topic_result> do_create_partition(
-      create_partititions_configuration, model::timeout_clock::time_point);
+      create_partitions_configuration, model::timeout_clock::time_point);
 
     model::node_id _self;
     ss::sharded<controller_stm>& _stm;

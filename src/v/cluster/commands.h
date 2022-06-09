@@ -117,7 +117,7 @@ using update_topic_properties_cmd = controller_command<
 
 using create_partition_cmd = controller_command<
   model::topic_namespace,
-  create_partititions_configuration_assignment,
+  create_partitions_configuration_assignment,
   create_partition_cmd_type,
   model::record_batch_type::topic_management_cmd>;
 

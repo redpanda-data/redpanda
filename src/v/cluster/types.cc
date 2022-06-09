@@ -146,7 +146,7 @@ ntp_reconciliation_state::ntp_reconciliation_state(
   : ntp_reconciliation_state(
     std::move(ntp), {}, reconciliation_status::error, ec) {}
 
-create_partititions_configuration::create_partititions_configuration(
+create_partitions_configuration::create_partitions_configuration(
   model::topic_namespace tp_ns, int32_t cnt)
   : tp_ns(std::move(tp_ns))
   , new_total_partition_count(cnt) {}
@@ -374,7 +374,7 @@ operator<<(std::ostream& o, const ntp_reconciliation_state& state) {
 }
 
 std::ostream&
-operator<<(std::ostream& o, const create_partititions_configuration& cfg) {
+operator<<(std::ostream& o, const create_partitions_configuration& cfg) {
     fmt::print(
       o,
       "{{topic: {}, new total partition count: {}, custom assignments: {}}}",
@@ -385,7 +385,7 @@ operator<<(std::ostream& o, const create_partititions_configuration& cfg) {
 }
 
 std::ostream& operator<<(
-  std::ostream& o, const create_partititions_configuration_assignment& cpca) {
+  std::ostream& o, const create_partitions_configuration_assignment& cpca) {
     fmt::print(
       o, "{{configuration: {}, assignments: {}}}", cpca.cfg, cpca.assignments);
     return o;
@@ -1014,38 +1014,38 @@ adl<cluster::ntp_reconciliation_state>::from(iobuf_parser& in) {
       std::move(ntp), std::move(ops), status, error);
 }
 
-void adl<cluster::create_partititions_configuration>::to(
-  iobuf& out, cluster::create_partititions_configuration&& pc) {
+void adl<cluster::create_partitions_configuration>::to(
+  iobuf& out, cluster::create_partitions_configuration&& pc) {
     return serialize(
       out, pc.tp_ns, pc.new_total_partition_count, pc.custom_assignments);
 }
 
-cluster::create_partititions_configuration
-adl<cluster::create_partititions_configuration>::from(iobuf_parser& in) {
+cluster::create_partitions_configuration
+adl<cluster::create_partitions_configuration>::from(iobuf_parser& in) {
     auto tp_ns = adl<model::topic_namespace>{}.from(in);
     auto partition_count = adl<int32_t>{}.from(in);
     auto custom_assignment = adl<std::vector<
-      cluster::create_partititions_configuration::custom_assignment>>{}
+      cluster::create_partitions_configuration::custom_assignment>>{}
                                .from(in);
 
-    cluster::create_partititions_configuration ret(
+    cluster::create_partitions_configuration ret(
       std::move(tp_ns), partition_count);
     ret.custom_assignments = std::move(custom_assignment);
     return ret;
 }
 
-void adl<cluster::create_partititions_configuration_assignment>::to(
-  iobuf& out, cluster::create_partititions_configuration_assignment&& ca) {
+void adl<cluster::create_partitions_configuration_assignment>::to(
+  iobuf& out, cluster::create_partitions_configuration_assignment&& ca) {
     return serialize(out, std::move(ca.cfg), std::move(ca.assignments));
 }
 
-cluster::create_partititions_configuration_assignment
-adl<cluster::create_partititions_configuration_assignment>::from(
+cluster::create_partitions_configuration_assignment
+adl<cluster::create_partitions_configuration_assignment>::from(
   iobuf_parser& in) {
-    auto cfg = adl<cluster::create_partititions_configuration>{}.from(in);
+    auto cfg = adl<cluster::create_partitions_configuration>{}.from(in);
     auto p_as = adl<std::vector<cluster::partition_assignment>>{}.from(in);
 
-    return cluster::create_partititions_configuration_assignment(
+    return cluster::create_partitions_configuration_assignment(
       std::move(cfg), std::move(p_as));
 };
 
@@ -1202,8 +1202,7 @@ adl<cluster::cluster_config_delta_cmd_data>::from(iobuf_parser& in) {
       "Unexpected version: {} (expected {})",
       version,
       cluster::cluster_config_delta_cmd_data::current_version);
-    auto upsert = adl<std::vector<std::pair<ss::sstring, ss::sstring>>>().from(
-      in);
+    auto upsert = adl<std::vector<cluster::cluster_property_kv>>().from(in);
     auto remove = adl<std::vector<ss::sstring>>().from(in);
 
     return cluster::cluster_config_delta_cmd_data{
@@ -1368,6 +1367,83 @@ adl<cluster::set_maintenance_mode_reply>::from(iobuf_parser& parser) {
     auto error = adl<cluster::errc>{}.from(parser);
 
     return cluster::set_maintenance_mode_reply{.error = error};
+}
+
+void adl<cluster::partition_assignment>::to(
+  iobuf& out, cluster::partition_assignment&& p_as) {
+    reflection::serialize(out, p_as.group, p_as.id, std::move(p_as.replicas));
+}
+
+cluster::partition_assignment
+adl<cluster::partition_assignment>::from(iobuf_parser& parser) {
+    auto group = reflection::adl<raft::group_id>{}.from(parser);
+    auto id = reflection::adl<model::partition_id>{}.from(parser);
+    auto replicas = reflection::adl<std::vector<model::broker_shard>>{}.from(
+      parser);
+
+    return {group, id, std::move(replicas)};
+}
+
+void adl<cluster::topic_properties>::to(
+  iobuf& out, cluster::topic_properties&& p) {
+    reflection::serialize(
+      out,
+      p.compression,
+      p.cleanup_policy_bitflags,
+      p.compaction_strategy,
+      p.timestamp_type,
+      p.segment_size,
+      p.retention_bytes,
+      p.retention_duration,
+      p.recovery,
+      p.shadow_indexing);
+}
+
+cluster::topic_properties
+adl<cluster::topic_properties>::from(iobuf_parser& parser) {
+    auto compression
+      = reflection::adl<std::optional<model::compression>>{}.from(parser);
+    auto cleanup_policy_bitflags
+      = reflection::adl<std::optional<model::cleanup_policy_bitflags>>{}.from(
+        parser);
+    auto compaction_strategy
+      = reflection::adl<std::optional<model::compaction_strategy>>{}.from(
+        parser);
+    auto timestamp_type
+      = reflection::adl<std::optional<model::timestamp_type>>{}.from(parser);
+    auto segment_size = reflection::adl<std::optional<size_t>>{}.from(parser);
+    auto retention_bytes = reflection::adl<tristate<size_t>>{}.from(parser);
+    auto retention_duration
+      = reflection::adl<tristate<std::chrono::milliseconds>>{}.from(parser);
+    auto recovery = reflection::adl<std::optional<bool>>{}.from(parser);
+    auto shadow_indexing
+      = reflection::adl<std::optional<model::shadow_indexing_mode>>{}.from(
+        parser);
+
+    return {
+      compression,
+      cleanup_policy_bitflags,
+      compaction_strategy,
+      timestamp_type,
+      segment_size,
+      retention_bytes,
+      retention_duration,
+      recovery,
+      shadow_indexing};
+}
+
+void adl<cluster::cluster_property_kv>::to(
+  iobuf& out, cluster::cluster_property_kv&& kv) {
+    reflection::serialize(out, std::move(kv.key), std::move(kv.value));
+}
+
+cluster::cluster_property_kv
+adl<cluster::cluster_property_kv>::from(iobuf_parser& p) {
+    cluster::cluster_property_kv kv;
+
+    kv.key = adl<ss::sstring>{}.from(p);
+    kv.value = adl<ss::sstring>{}.from(p);
+    return kv;
 }
 
 } // namespace reflection

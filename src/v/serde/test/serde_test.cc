@@ -18,6 +18,7 @@
 
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/sstring.hh>
+#include <seastar/net/inet_address.hh>
 #include <seastar/testing/thread_test_case.hh>
 
 #include <boost/test/unit_test.hpp>
@@ -739,4 +740,15 @@ SEASTAR_THREAD_TEST_CASE(serde_tristate_test) {
       empty, serde::from_iobuf<tristate<ss::sstring>>(std::move(empty_buf)));
     BOOST_CHECK_EQUAL(
       set, serde::from_iobuf<tristate<ss::sstring>>(std::move(set_buf)));
+}
+
+SEASTAR_THREAD_TEST_CASE(seastar_inet_address_test) {
+    ss::net::inet_address ipv4("192.168.1.0");
+    ss::net::inet_address ipv6("2001:0db8:85a3:0000:0000:8a2e:0370:7334");
+    iobuf ipv4_buf = serde::to_iobuf(ipv4);
+    iobuf ipv6_buf = serde::to_iobuf(ipv6);
+    BOOST_CHECK_EQUAL(
+      ipv4, serde::from_iobuf<ss::net::inet_address>(std::move(ipv4_buf)));
+    BOOST_CHECK_EQUAL(
+      ipv6, serde::from_iobuf<ss::net::inet_address>(std::move(ipv6_buf)));
 }

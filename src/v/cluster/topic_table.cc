@@ -240,9 +240,9 @@ topic_table::apply(finish_moving_partition_replicas_cmd cmd, model::offset o) {
     _update_in_progress.erase(cmd.key);
 
     partition_assignment delta_assignment{
-      .group = current_assignment_it->group,
-      .id = current_assignment_it->id,
-      .replicas = std::move(cmd.value),
+      current_assignment_it->group,
+      current_assignment_it->id,
+      std::move(cmd.value),
     };
 
     /// Remove child non_replicable topics out of the 'update_in_progress' set

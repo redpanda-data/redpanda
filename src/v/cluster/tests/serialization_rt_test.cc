@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "cluster/commands.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/metadata_dissemination_types.h"
 #include "cluster/tests/utils.h"
@@ -14,6 +15,7 @@
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/tests/randoms.h"
 #include "model/timestamp.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
@@ -21,7 +23,9 @@
 #include "test_utils/rpc.h"
 #include "tristate.h"
 #include "units.h"
+#include "v8_engine/data_policy.h"
 
+#include <seastar/core/sstring.hh>
 #include <seastar/testing/thread_test_case.hh>
 
 #include <boost/test/tools/old/interface.hpp>
@@ -97,9 +101,9 @@ SEASTAR_THREAD_TEST_CASE(broker_metadata_rt_test) {
 
 SEASTAR_THREAD_TEST_CASE(partition_assignment_rt_test) {
     cluster::partition_assignment p_as{
-      .group = raft::group_id(2),
-      .id = model::partition_id(3),
-      .replicas = {{.node_id = model::node_id(0), .shard = 1}}};
+      raft::group_id(2),
+      model::partition_id(3),
+      {{.node_id = model::node_id(0), .shard = 1}}};
 
     auto d = serialize_roundtrip_rpc(std::move(p_as));
 
@@ -469,6 +473,215 @@ void roundtrip_test(const T original) {
     BOOST_REQUIRE(original == from_adl);
 }
 
+template<typename T>
+cluster::property_update<T> random_property_update(T value) {
+    return {
+      value,
+      random_generators::random_choice(
+        std::vector<cluster::incremental_update_operation>{
+          cluster::incremental_update_operation::set,
+          cluster::incremental_update_operation::remove}),
+    };
+}
+
+cluster::topic_properties random_topic_properties() {
+    cluster::topic_properties properties;
+    properties.cleanup_policy_bitflags = tests::random_optional(
+      [] { return model::random_cleanup_policy(); });
+    properties.compaction_strategy = tests::random_optional(
+      [] { return model::random_compaction_strategy(); });
+    properties.compression = tests::random_optional(
+      [] { return model::random_compression(); });
+    properties.timestamp_type = tests::random_optional(
+      [] { return model::random_timestamp_type(); });
+    properties.segment_size = tests::random_optional(
+      [] { return random_generators::get_int(100_MiB, 1_GiB); });
+    properties.retention_bytes = tests::random_tristate(
+      [] { return random_generators::get_int(100_MiB, 1_GiB); });
+    properties.retention_duration = tests::random_tristate(
+      [] { return tests::random_duration_ms(); });
+    properties.recovery = tests::random_optional(
+      [] { return tests::random_bool(); });
+    properties.shadow_indexing = tests::random_optional(
+      [] { return model::random_shadow_indexing_mode(); });
+    return properties;
+}
+
+std::vector<cluster::partition_assignment> random_partition_assignments() {
+    std::vector<cluster::partition_assignment> ret;
+
+    for (auto a = 0; a < random_generators::get_int(1, 10); a++) {
+        cluster::partition_assignment p_as;
+        p_as.group = tests::random_named_int<raft::group_id>();
+        p_as.id = tests::random_named_int<model::partition_id>();
+
+        for (int i = 0; i < random_generators::get_int(1, 10); ++i) {
+            p_as.replicas.push_back(model::broker_shard{
+              .node_id = tests::random_named_int<model::node_id>(),
+              .shard = random_generators::get_int<uint16_t>(1, 128),
+            });
+        }
+        ret.push_back(std::move(p_as));
+    }
+    return ret;
+}
+
+cluster::topic_configuration random_topic_configuration() {
+    cluster::topic_configuration tp_cfg;
+    tp_cfg.tp_ns = model::random_topic_namespace();
+    tp_cfg.properties = random_topic_properties();
+    tp_cfg.replication_factor = random_generators::get_int<int16_t>(0, 10);
+    tp_cfg.partition_count = random_generators::get_int(0, 100);
+    return tp_cfg;
+}
+
+cluster::create_partitions_configuration
+random_create_partitions_configuration() {
+    cluster::create_partitions_configuration cpc;
+    cpc.tp_ns = model::random_topic_namespace();
+    cpc.new_total_partition_count = random_generators::get_int<int16_t>(
+      10, 100);
+
+    for (int i = 0; i < 3; ++i) {
+        cpc.custom_assignments.push_back(
+          {tests::random_named_int<model::node_id>(),
+           tests::random_named_int<model::node_id>(),
+           tests::random_named_int<model::node_id>()});
+    }
+    return cpc;
+}
+security::scram_credential random_credential() {
+    return security::scram_credential(
+      random_generators::get_bytes(256),
+      random_generators::get_bytes(256),
+      random_generators::get_bytes(256),
+      random_generators::get_int(1, 10));
+}
+
+security::resource_type random_resource_type() {
+    return random_generators::random_choice<security::resource_type>(
+      {security::resource_type::cluster,
+       security::resource_type::group,
+       security::resource_type::topic,
+       security::resource_type::transactional_id});
+}
+
+security::pattern_type random_pattern_type() {
+    return random_generators::random_choice<security::pattern_type>(
+      {security::pattern_type::literal, security::pattern_type::prefixed});
+}
+
+security::resource_pattern random_resource_pattern() {
+    return {
+      random_resource_type(),
+      random_generators::gen_alphanum_string(10),
+      random_pattern_type()};
+}
+
+security::acl_principal random_acl_principal() {
+    return {
+      security::principal_type::user,
+      random_generators::gen_alphanum_string(12)};
+}
+security::acl_host create_acl_host() {
+    return security::acl_host(ss::net::inet_address("127.0.0.1"));
+}
+security::acl_operation random_acl_operation() {
+    return random_generators::random_choice<security::acl_operation>(
+      {security::acl_operation::all,
+       security::acl_operation::alter,
+       security::acl_operation::alter_configs,
+       security::acl_operation::describe_configs,
+       security::acl_operation::cluster_action,
+       security::acl_operation::create,
+       security::acl_operation::remove,
+       security::acl_operation::read,
+       security::acl_operation::idempotent_write,
+       security::acl_operation::describe});
+}
+
+security::acl_permission random_acl_permission() {
+    return random_generators::random_choice<security::acl_permission>(
+      {security::acl_permission::allow, security::acl_permission::deny});
+}
+
+security::acl_entry random_acl_entry() {
+    return {
+      random_acl_principal(),
+      create_acl_host(),
+      random_acl_operation(),
+      random_acl_permission()};
+}
+security::acl_binding random_acl_binding() {
+    return {random_resource_pattern(), random_acl_entry()};
+}
+security::resource_pattern_filter random_resource_pattern_filter() {
+    auto resource = tests::random_optional(
+      [] { return random_resource_type(); });
+
+    auto name = tests::random_optional(
+      [] { return random_generators::gen_alphanum_string(14); });
+
+    auto pattern = tests::random_optional([] {
+        using ret_t = std::variant<
+          security::pattern_type,
+          security::resource_pattern_filter::pattern_match>;
+        if (tests::random_bool()) {
+            return ret_t(random_pattern_type());
+        } else {
+            return ret_t(security::resource_pattern_filter::pattern_match{});
+        }
+    });
+
+    return {resource, std::move(name), pattern};
+}
+
+security::acl_entry_filter random_acl_entry_filter() {
+    auto principal = tests::random_optional(
+      [] { return random_acl_principal(); });
+
+    auto host = tests::random_optional([] { return create_acl_host(); });
+
+    auto operation = tests::random_optional(
+      [] { return random_acl_operation(); });
+
+    auto permission = tests::random_optional(
+      [] { return random_acl_permission(); });
+
+    return {std::move(principal), host, operation, permission};
+}
+
+security::acl_binding_filter random_acl_binding_filter() {
+    return {random_resource_pattern_filter(), random_acl_entry_filter()};
+}
+std::vector<ss::sstring> random_strings() {
+    auto cnt = random_generators::get_int(0, 20);
+    std::vector<ss::sstring> ret;
+    ret.reserve(cnt);
+    for (int i = 0; i < cnt; ++i) {
+        ret.push_back(random_generators::gen_alphanum_string(
+          random_generators::get_int(1, 64)));
+    }
+    return ret;
+}
+cluster::cluster_property_kv random_property_kv() {
+    return {
+      random_generators::gen_alphanum_string(random_generators::get_int(1, 64)),
+      random_generators::gen_alphanum_string(
+        random_generators::get_int(1, 64))};
+}
+cluster::feature_update_action random_feature_update_action() {
+    cluster::feature_update_action action;
+    action.action = random_generators::random_choice(
+      std::vector<cluster::feature_update_action::action_t>{
+        cluster::feature_update_action::action_t::activate,
+        cluster::feature_update_action::action_t::deactivate,
+        cluster::feature_update_action::action_t::complete_preparing,
+      });
+    action.feature_name = random_generators::gen_alphanum_string(32);
+    return action;
+}
+
 SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     roundtrip_test(cluster::ntp_leader(
       model::ntp(
@@ -527,4 +740,184 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
 
     roundtrip_test(
       cluster::allocate_id_reply(23433, cluster::errc::invalid_node_operation));
+    {
+        cluster::partition_assignment p_as;
+        p_as.group = tests::random_named_int<raft::group_id>();
+        p_as.id = tests::random_named_int<model::partition_id>();
+        for (int i = 0; i < 5; ++i) {
+            p_as.replicas.push_back(model::broker_shard{
+              .node_id = tests::random_named_int<model::node_id>(),
+              .shard = random_generators::get_int<uint16_t>(1, 20),
+            });
+        }
+
+        roundtrip_test(p_as);
+    }
+    { roundtrip_test(random_topic_properties()); }
+    {
+        roundtrip_test(
+          random_property_update(random_generators::gen_alphanum_string(10)));
+
+        roundtrip_test(random_property_update(tests::random_tristate(
+          [] { return random_generators::get_int<size_t>(0, 100000); })));
+    }
+    {
+        cluster::incremental_topic_updates updates{
+          .compression = random_property_update(
+            tests::random_optional([] { return model::random_compression(); })),
+          .cleanup_policy_bitflags = random_property_update(
+            tests::random_optional(
+              [] { return model::random_cleanup_policy(); })),
+          .compaction_strategy = random_property_update(tests::random_optional(
+            [] { return model::random_compaction_strategy(); })),
+          .timestamp_type = random_property_update(tests::random_optional(
+            [] { return model::random_timestamp_type(); })),
+          .segment_size = random_property_update(tests::random_optional(
+            [] { return random_generators::get_int(100_MiB, 1_GiB); })),
+          .retention_bytes = random_property_update(tests::random_tristate(
+            [] { return random_generators::get_int(100_MiB, 1_GiB); })),
+          .retention_duration = random_property_update(
+            tests::random_tristate([] { return tests::random_duration_ms(); })),
+          .shadow_indexing = random_property_update(tests::random_optional(
+            [] { return model::random_shadow_indexing_mode(); })),
+        };
+        roundtrip_test(updates);
+    }
+    { roundtrip_test(random_topic_configuration()); }
+    { roundtrip_test(random_create_partitions_configuration()); }
+    {
+        cluster::topic_configuration_assignment cfg;
+        cfg.cfg = random_topic_configuration();
+        cfg.assignments = random_partition_assignments();
+
+        roundtrip_test(cfg);
+    }
+    {
+        cluster::create_partitions_configuration_assignment cfg;
+        cfg.cfg = random_create_partitions_configuration();
+        cfg.assignments = random_partition_assignments();
+
+        roundtrip_test(cfg);
+    }
+    {
+        cluster::create_acls_cmd_data data;
+        for (auto i = 0; i < random_generators::get_int(5, 25); ++i) {
+            data.bindings.push_back(random_acl_binding());
+        }
+        roundtrip_test(data);
+    }
+    {
+        cluster::delete_acls_cmd_data data;
+        for (auto i = 0; i < random_generators::get_int(5, 25); ++i) {
+            data.filters.push_back(random_acl_binding_filter());
+        }
+        roundtrip_test(data);
+    }
+    {
+        cluster::create_data_policy_cmd_data data;
+        data.dp = v8_engine::data_policy(
+          random_generators::gen_alphanum_string(20),
+          random_generators::gen_alphanum_string(20));
+
+        roundtrip_test(data);
+    }
+    {
+        cluster::non_replicable_topic tp;
+        tp.name = model::random_topic_namespace();
+        tp.source = model::random_topic_namespace();
+
+        roundtrip_test(tp);
+    }
+    {
+        cluster::config_status status;
+        status.node = tests::random_named_int<model::node_id>();
+        status.restart = tests::random_bool();
+        status.version = tests::random_named_int<cluster::config_version>();
+        status.invalid = random_strings();
+        status.unknown = random_strings();
+
+        roundtrip_test(status);
+    }
+    { roundtrip_test(random_property_kv()); }
+    {
+        cluster::cluster_config_delta_cmd_data data;
+        data.upsert = {
+          random_property_kv(), random_property_kv(), random_property_kv()};
+        data.remove = random_strings();
+
+        roundtrip_test(data);
+    }
+    {
+        cluster::cluster_config_status_cmd_data data;
+        data.status.node = tests::random_named_int<model::node_id>();
+        data.status.restart = tests::random_bool();
+        data.status.version
+          = tests::random_named_int<cluster::config_version>();
+        data.status.invalid = random_strings();
+        data.status.unknown = random_strings();
+
+        roundtrip_test(data);
+    }
+    { roundtrip_test(random_feature_update_action()); }
+    {
+        cluster::feature_update_cmd_data data;
+        data.actions = {
+          random_feature_update_action(),
+          random_feature_update_action(),
+          random_feature_update_action(),
+          random_feature_update_action()};
+        data.logical_version
+          = tests::random_named_int<cluster::cluster_version>();
+
+        roundtrip_test(data);
+    }
+}
+
+SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {
+    using pairs_t = std::vector<std::pair<ss::sstring, ss::sstring>>;
+    using kvs_t = std::vector<cluster::cluster_property_kv>;
+    kvs_t kvs;
+    pairs_t pairs;
+
+    for (int i = 0; i < 10; ++i) {
+        auto k = random_generators::gen_alphanum_string(
+          random_generators::get_int(10, 20));
+        auto v = random_generators::gen_alphanum_string(
+          random_generators::get_int(10, 20));
+
+        kvs.emplace_back(k, v);
+        pairs.emplace_back(k, v);
+    }
+
+    auto serialized_pairs = reflection::to_iobuf(pairs);
+    auto serialized_kvs = reflection::to_iobuf(kvs);
+
+    auto deserialized_pairs_from_kvs = reflection::from_iobuf<pairs_t>(
+      serialized_kvs.copy());
+
+    auto deserialized_pairs_from_pairs = reflection::from_iobuf<pairs_t>(
+      serialized_pairs.copy());
+
+    auto deserialized_kvs_from_kvs = reflection::from_iobuf<kvs_t>(
+      serialized_kvs.copy());
+
+    auto deserialized_kvs_from_pairs = reflection::from_iobuf<kvs_t>(
+      serialized_pairs.copy());
+
+    BOOST_REQUIRE(deserialized_pairs_from_kvs == deserialized_pairs_from_pairs);
+    BOOST_REQUIRE(deserialized_kvs_from_kvs == deserialized_kvs_from_pairs);
+    for (auto i = 0; i < 10; ++i) {
+        BOOST_REQUIRE_EQUAL(
+          deserialized_pairs_from_kvs[i].first,
+          deserialized_kvs_from_pairs[i].key);
+        BOOST_REQUIRE_EQUAL(
+          deserialized_pairs_from_kvs[i].second,
+          deserialized_kvs_from_pairs[i].value);
+        BOOST_REQUIRE_EQUAL(
+          deserialized_pairs_from_pairs[i].second,
+          deserialized_kvs_from_kvs[i].value);
+        BOOST_REQUIRE_EQUAL(
+          deserialized_pairs_from_pairs[i].second,
+          deserialized_kvs_from_kvs[i].value);
+    }
 }

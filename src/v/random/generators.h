@@ -67,4 +67,10 @@ inline ss::sstring gen_alphanum_string(size_t n) {
     return s;
 }
 
+template<typename T>
+const T& random_choice(const std::vector<T>& elements) {
+    auto idx = get_int<size_t>(0, elements.size() - 1);
+    return elements[idx];
+}
+
 } // namespace random_generators

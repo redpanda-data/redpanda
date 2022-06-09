@@ -36,9 +36,7 @@ cluster::partition_assignment create_test_assignment(uint32_t p, uint16_t rf) {
     }
 
     return cluster::partition_assignment{
-      .group = raft::group_id(p),
-      .id = model::partition_id(p),
-      .replicas = std::move(replicas)};
+      raft::group_id(p), model::partition_id(p), std::move(replicas)};
 }
 
 SEASTAR_THREAD_TEST_CASE(simple_batch_builder_batch_test) {

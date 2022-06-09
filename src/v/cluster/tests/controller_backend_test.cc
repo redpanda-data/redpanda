@@ -25,9 +25,7 @@ model::broker_shard make_bs(uint32_t node, uint32_t shard) {
 cluster::partition_assignment
 make_assignment(std::vector<model::broker_shard> replicas) {
     return cluster::partition_assignment{
-      .group = raft::group_id(1),
-      .id = model::partition_id(1),
-      .replicas = std::move(replicas)};
+      raft::group_id(1), model::partition_id(1), std::move(replicas)};
 }
 
 using op_t = cluster::topic_table::delta::op_type;

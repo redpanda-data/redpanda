@@ -123,27 +123,30 @@ FIXTURE_TEST(test_adding_partition, topic_table_fixture) {
     // discard create delta
     create_topics();
     table.local().wait_for_changes(as).get0();
-    cluster::create_partititions_configuration cfg(make_tp_ns("test_tp_2"), 3);
+    cluster::create_partitions_configuration cfg(make_tp_ns("test_tp_2"), 3);
     std::vector<cluster::partition_assignment> p_as{
       cluster::partition_assignment{
-        .group = raft::group_id(10),
-        .id = model::partition_id(0),
-        .replicas
-        = {model::broker_shard{model::node_id(0), 0}, model::broker_shard{model::node_id(1), 1}, model::broker_shard{model::node_id(2), 2}},
+        raft::group_id(10),
+        model::partition_id(0),
+        {model::broker_shard{model::node_id(0), 0},
+         model::broker_shard{model::node_id(1), 1},
+         model::broker_shard{model::node_id(2), 2}},
       },
       cluster::partition_assignment{
-        .group = raft::group_id(11),
-        .id = model::partition_id(1),
-        .replicas
-        = {model::broker_shard{model::node_id(0), 0}, model::broker_shard{model::node_id(1), 1}, model::broker_shard{model::node_id(2), 2}},
+        raft::group_id(11),
+        model::partition_id(1),
+        {model::broker_shard{model::node_id(0), 0},
+         model::broker_shard{model::node_id(1), 1},
+         model::broker_shard{model::node_id(2), 2}},
       },
       cluster::partition_assignment{
-        .group = raft::group_id(12),
-        .id = model::partition_id(2),
-        .replicas
-        = {model::broker_shard{model::node_id(0), 0}, model::broker_shard{model::node_id(1), 1}, model::broker_shard{model::node_id(2), 2}},
+        raft::group_id(12),
+        model::partition_id(2),
+        {model::broker_shard{model::node_id(0), 0},
+         model::broker_shard{model::node_id(1), 1},
+         model::broker_shard{model::node_id(2), 2}},
       }};
-    cluster::create_partititions_configuration_assignment pca(
+    cluster::create_partitions_configuration_assignment pca(
       std::move(cfg), std::move(p_as));
 
     auto res_1 = table.local()

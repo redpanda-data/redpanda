@@ -28,6 +28,8 @@
 #include "utils/to_string.h"
 #include "v8_engine/data_policy.h"
 
+#include <seastar/core/sstring.hh>
+
 #include <absl/container/btree_set.h>
 #include <fmt/format.h>
 
@@ -355,7 +357,17 @@ struct configuration_update_reply {
 
 /// Partition assignment describes an assignment of all replicas for single NTP.
 /// The replicas are hold in vector of broker_shard.
-struct partition_assignment {
+struct partition_assignment
+  : serde::envelope<partition_assignment, serde::version<0>> {
+    partition_assignment() noexcept = default;
+    partition_assignment(
+      raft::group_id group,
+      model::partition_id id,
+      std::vector<model::broker_shard> replicas)
+      : group(group)
+      , id(id)
+      , replicas(std::move(replicas)) {}
+
     raft::group_id group;
     model::partition_id id;
     std::vector<model::broker_shard> replicas;
@@ -366,14 +378,40 @@ struct partition_assignment {
         return p_md;
     }
 
+    auto serde_fields() { return std::tie(group, id, replicas); }
     friend std::ostream& operator<<(std::ostream&, const partition_assignment&);
+
+    friend bool
+    operator==(const partition_assignment&, const partition_assignment&)
+      = default;
 };
 
 /**
  * Structure holding topic properties overrides, empty values will be replaced
  * with defaults
  */
-struct topic_properties {
+struct topic_properties : serde::envelope<topic_properties, serde::version<0>> {
+    topic_properties() noexcept = default;
+    topic_properties(
+      std::optional<model::compression> compression,
+      std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags,
+      std::optional<model::compaction_strategy> compaction_strategy,
+      std::optional<model::timestamp_type> timestamp_type,
+      std::optional<size_t> segment_size,
+      tristate<size_t> retention_bytes,
+      tristate<std::chrono::milliseconds> retention_duration,
+      std::optional<bool> recovery,
+      std::optional<model::shadow_indexing_mode> shadow_indexing)
+      : compression(compression)
+      , cleanup_policy_bitflags(cleanup_policy_bitflags)
+      , compaction_strategy(compaction_strategy)
+      , timestamp_type(timestamp_type)
+      , segment_size(segment_size)
+      , retention_bytes(retention_bytes)
+      , retention_duration(retention_duration)
+      , recovery(recovery)
+      , shadow_indexing(shadow_indexing) {}
+
     std::optional<model::compression> compression;
     std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags;
     std::optional<model::compaction_strategy> compaction_strategy;
@@ -390,29 +428,63 @@ struct topic_properties {
     storage::ntp_config::default_overrides get_ntp_cfg_overrides() const;
 
     friend std::ostream& operator<<(std::ostream&, const topic_properties&);
+    auto serde_fields() {
+        return std::tie(
+          compression,
+          cleanup_policy_bitflags,
+          compaction_strategy,
+          timestamp_type,
+          segment_size,
+          retention_bytes,
+          retention_duration,
+          recovery,
+          shadow_indexing);
+    }
+
+    friend bool operator==(const topic_properties&, const topic_properties&)
+      = default;
 };
 
 enum incremental_update_operation : int8_t { none, set, remove };
 template<typename T>
-struct property_update {
+
+struct property_update
+  : serde::envelope<property_update<T>, serde::version<0>> {
+    property_update() = default;
+    property_update(T v, incremental_update_operation op)
+      : value(std::move(v))
+      , op(op) {}
+
     T value;
     incremental_update_operation op = incremental_update_operation::none;
+
+    auto serde_fields() { return std::tie(value, op); }
 
     friend bool operator==(const property_update<T>&, const property_update<T>&)
       = default;
 };
 
 template<typename T>
-struct property_update<tristate<T>> {
-    tristate<T> value = tristate<T>(std::nullopt);
+struct property_update<tristate<T>>
+  : serde::envelope<property_update<tristate<T>>, serde::version<0>> {
+    property_update()
+      : value(std::nullopt){};
+
+    property_update(tristate<T> v, incremental_update_operation op)
+      : value(std::move(v))
+      , op(op) {}
+    tristate<T> value;
     incremental_update_operation op = incremental_update_operation::none;
+
+    auto serde_fields() { return std::tie(value, op); }
 
     friend bool operator==(
       const property_update<tristate<T>>&, const property_update<tristate<T>>&)
       = default;
 };
 
-struct incremental_topic_updates {
+struct incremental_topic_updates
+  : serde::envelope<incremental_topic_updates, serde::version<0>> {
     static constexpr int8_t version_with_data_policy = -1;
     static constexpr int8_t version_with_shadow_indexing = -3;
     // negative version indicating different format:
@@ -430,6 +502,18 @@ struct incremental_topic_updates {
     property_update<tristate<size_t>> retention_bytes;
     property_update<tristate<std::chrono::milliseconds>> retention_duration;
     property_update<std::optional<model::shadow_indexing_mode>> shadow_indexing;
+
+    auto serde_fields() {
+        return std::tie(
+          compression,
+          cleanup_policy_bitflags,
+          compaction_strategy,
+          timestamp_type,
+          segment_size,
+          retention_bytes,
+          retention_duration,
+          shadow_indexing);
+    }
 
     friend bool operator==(
       const incremental_topic_updates&, const incremental_topic_updates&)
@@ -466,12 +550,15 @@ struct topic_properties_update {
 
 // Structure holding topic configuration, optionals will be replaced by broker
 // defaults
-struct topic_configuration {
+struct topic_configuration
+  : serde::envelope<topic_configuration, serde::version<0>> {
     topic_configuration(
       model::ns ns,
       model::topic topic,
       int32_t partition_count,
       int16_t replication_factor);
+
+    topic_configuration() = default;
 
     storage::ntp_config make_ntp_config(
       const ss::sstring&,
@@ -492,7 +579,15 @@ struct topic_configuration {
 
     topic_properties properties;
 
+    auto serde_fields() {
+        return std::tie(tp_ns, partition_count, replication_factor, properties);
+    }
+
     friend std::ostream& operator<<(std::ostream&, const topic_configuration&);
+
+    friend bool
+    operator==(const topic_configuration&, const topic_configuration&)
+      = default;
 };
 
 struct custom_partition_assignment {
@@ -519,9 +614,12 @@ struct custom_assignable_topic_configuration {
     operator<<(std::ostream&, const custom_assignable_topic_configuration&);
 };
 
-struct create_partititions_configuration {
+struct create_partitions_configuration
+  : serde::envelope<create_partitions_configuration, serde::version<0>> {
     using custom_assignment = std::vector<model::node_id>;
-    create_partititions_configuration(model::topic_namespace, int32_t);
+
+    create_partitions_configuration() = default;
+    create_partitions_configuration(model::topic_namespace, int32_t);
 
     model::topic_namespace tp_ns;
 
@@ -531,12 +629,17 @@ struct create_partititions_configuration {
     // TODO: use when we will start supporting custom partitions assignment
     std::vector<custom_assignment> custom_assignments;
 
+    auto serde_fields() {
+        return std::tie(tp_ns, new_total_partition_count, custom_assignments);
+    }
+
     friend std::ostream&
-    operator<<(std::ostream&, const create_partititions_configuration&);
+    operator<<(std::ostream&, const create_partitions_configuration&);
 };
 
-struct topic_configuration_assignment {
-    topic_configuration_assignment() = delete;
+struct topic_configuration_assignment
+  : serde::envelope<topic_configuration_assignment, serde::version<0>> {
+    topic_configuration_assignment() = default;
 
     topic_configuration_assignment(
       topic_configuration cfg, std::vector<partition_assignment> pas)
@@ -547,20 +650,37 @@ struct topic_configuration_assignment {
     std::vector<partition_assignment> assignments;
 
     model::topic_metadata get_metadata() const;
+
+    auto serde_fields() { return std::tie(cfg, assignments); }
+
+    friend bool operator==(
+      const topic_configuration_assignment&,
+      const topic_configuration_assignment&)
+      = default;
 };
 
-struct create_partititions_configuration_assignment {
-    create_partititions_configuration_assignment(
-      create_partititions_configuration cfg,
+struct create_partitions_configuration_assignment
+  : serde::
+      envelope<create_partitions_configuration_assignment, serde::version<0>> {
+    create_partitions_configuration_assignment() = default;
+    create_partitions_configuration_assignment(
+      create_partitions_configuration cfg,
       std::vector<partition_assignment> pas)
       : cfg(std::move(cfg))
       , assignments(std::move(pas)) {}
 
-    create_partititions_configuration cfg;
+    create_partitions_configuration cfg;
     std::vector<partition_assignment> assignments;
 
+    auto serde_fields() { return std::tie(cfg, assignments); }
+
     friend std::ostream& operator<<(
-      std::ostream&, const create_partititions_configuration_assignment&);
+      std::ostream&, const create_partitions_configuration_assignment&);
+
+    friend bool operator==(
+      const create_partitions_configuration_assignment&,
+      const create_partitions_configuration_assignment&)
+      = default;
 };
 
 struct topic_result {
@@ -679,9 +799,12 @@ struct topic_table_delta {
     friend std::ostream& operator<<(std::ostream&, const op_type&);
 };
 
-struct create_acls_cmd_data {
+struct create_acls_cmd_data
+  : serde::envelope<create_acls_cmd_data, serde::version<0>> {
     static constexpr int8_t current_version = 1;
     std::vector<security::acl_binding> bindings;
+
+    auto serde_fields() { return std::tie(bindings); }
 };
 
 struct create_acls_request {
@@ -693,9 +816,12 @@ struct create_acls_reply {
     std::vector<errc> results;
 };
 
-struct delete_acls_cmd_data {
+struct delete_acls_cmd_data
+  : serde::envelope<delete_acls_cmd_data, serde::version<0>> {
     static constexpr int8_t current_version = 1;
     std::vector<security::acl_binding_filter> filters;
+
+    auto serde_fields() { return std::tie(filters); }
 };
 
 // result for a single filter
@@ -720,47 +846,84 @@ struct backend_operation {
     friend std::ostream& operator<<(std::ostream&, const backend_operation&);
 };
 
-struct create_data_policy_cmd_data {
+struct create_data_policy_cmd_data
+  : serde::envelope<create_data_policy_cmd_data, serde::version<0>> {
     static constexpr int8_t current_version = 1; // In future dp will be vector
+
+    auto serde_fields() { return std::tie(dp); }
+
     v8_engine::data_policy dp;
 };
 
-struct non_replicable_topic {
+struct non_replicable_topic
+  : serde::envelope<non_replicable_topic, serde::version<0>> {
     static constexpr int8_t current_version = 1;
     model::topic_namespace source;
     model::topic_namespace name;
+
+    auto serde_fields() { return std::tie(source, name); }
+
     friend std::ostream& operator<<(std::ostream&, const non_replicable_topic&);
 };
 
 using config_version = named_type<int64_t, struct config_version_type>;
 constexpr config_version config_version_unset = config_version{-1};
 
-struct config_status {
+struct config_status : serde::envelope<config_status, serde::version<0>> {
     model::node_id node;
     config_version version{config_version_unset};
     bool restart{false};
     std::vector<ss::sstring> unknown;
     std::vector<ss::sstring> invalid;
 
+    auto serde_fields() {
+        return std::tie(node, version, restart, unknown, invalid);
+    }
+
     bool operator==(const config_status&) const;
     friend std::ostream& operator<<(std::ostream&, const config_status&);
 };
 
-struct cluster_config_delta_cmd_data {
+struct cluster_property_kv
+  : serde::envelope<cluster_property_kv, serde::version<0>> {
+    cluster_property_kv() = default;
+    cluster_property_kv(ss::sstring k, ss::sstring v)
+      : key(std::move(k))
+      , value(std::move(v)) {}
+
+    ss::sstring key;
+    ss::sstring value;
+
+    auto serde_fields() { return std::tie(key, value); }
+
+    friend bool
+    operator==(const cluster_property_kv&, const cluster_property_kv&)
+      = default;
+};
+
+struct cluster_config_delta_cmd_data
+  : serde::envelope<cluster_config_delta_cmd_data, serde::version<0>> {
     static constexpr int8_t current_version = 0;
-    std::vector<std::pair<ss::sstring, ss::sstring>> upsert;
+    std::vector<cluster_property_kv> upsert;
     std::vector<ss::sstring> remove;
+
+    auto serde_fields() { return std::tie(upsert, remove); }
 
     friend std::ostream&
     operator<<(std::ostream&, const cluster_config_delta_cmd_data&);
 };
 
-struct cluster_config_status_cmd_data {
+struct cluster_config_status_cmd_data
+  : serde::envelope<cluster_config_status_cmd_data, serde::version<0>> {
     static constexpr int8_t current_version = 0;
+
+    auto serde_fields() { return std::tie(status); }
+
     config_status status;
 };
 
-struct feature_update_action {
+struct feature_update_action
+  : serde::envelope<feature_update_action, serde::version<0>> {
     static constexpr int8_t current_version = 1;
     enum class action_t : std::uint16_t {
         // Notify when a feature is done with preparing phase
@@ -777,11 +940,14 @@ struct feature_update_action {
     ss::sstring feature_name;
     action_t action;
 
+    auto serde_fields() { return std::tie(feature_name, action); }
+
     friend std::ostream&
     operator<<(std::ostream&, const feature_update_action&);
 };
 
-struct feature_update_cmd_data {
+struct feature_update_cmd_data
+  : serde::envelope<feature_update_cmd_data, serde::version<0>> {
     // To avoid ambiguity on 'versions' here: `current_version`
     // is the encoding version of the struct, subsequent version
     // fields are the payload.
@@ -789,6 +955,8 @@ struct feature_update_cmd_data {
 
     cluster_version logical_version;
     std::vector<feature_update_action> actions;
+
+    auto serde_fields() { return std::tie(logical_version, actions); }
 
     friend std::ostream&
     operator<<(std::ostream&, const feature_update_cmd_data&);
@@ -921,7 +1089,7 @@ struct create_non_replicable_topics_reply {
 };
 
 struct config_update_request final {
-    std::vector<std::pair<ss::sstring, ss::sstring>> upsert;
+    std::vector<cluster_property_kv> upsert;
     std::vector<ss::sstring> remove;
 };
 
@@ -1118,15 +1286,15 @@ struct adl<cluster::delete_acls_result> {
 };
 
 template<>
-struct adl<cluster::create_partititions_configuration> {
-    void to(iobuf&, cluster::create_partititions_configuration&&);
-    cluster::create_partititions_configuration from(iobuf_parser&);
+struct adl<cluster::create_partitions_configuration> {
+    void to(iobuf&, cluster::create_partitions_configuration&&);
+    cluster::create_partitions_configuration from(iobuf_parser&);
 };
 
 template<>
-struct adl<cluster::create_partititions_configuration_assignment> {
-    void to(iobuf&, cluster::create_partititions_configuration_assignment&&);
-    cluster::create_partititions_configuration_assignment from(iobuf_parser&);
+struct adl<cluster::create_partitions_configuration_assignment> {
+    void to(iobuf&, cluster::create_partitions_configuration_assignment&&);
+    cluster::create_partitions_configuration_assignment from(iobuf_parser&);
 };
 
 template<>
@@ -1229,5 +1397,34 @@ struct adl<cluster::allocate_id_reply> {
         return {id, ec};
     }
 };
+template<>
+struct adl<cluster::partition_assignment> {
+    void to(iobuf&, cluster::partition_assignment&&);
+    cluster::partition_assignment from(iobuf_parser&);
+};
 
+template<>
+struct adl<cluster::topic_properties> {
+    void to(iobuf&, cluster::topic_properties&&);
+    cluster::topic_properties from(iobuf_parser&);
+};
+
+template<typename T>
+struct adl<cluster::property_update<T>> {
+    void to(iobuf& out, cluster::property_update<T>&& update) {
+        reflection::serialize(out, std::move(update.value), update.op);
+    }
+
+    cluster::property_update<T> from(iobuf_parser& parser) {
+        auto value = reflection::adl<T>{}.from(parser);
+        auto op = reflection::adl<cluster::incremental_update_operation>{}.from(
+          parser);
+        return {std::move(value), op};
+    }
+};
+template<>
+struct adl<cluster::cluster_property_kv> {
+    void to(iobuf&, cluster::cluster_property_kv&&);
+    cluster::cluster_property_kv from(iobuf_parser&);
+};
 } // namespace reflection

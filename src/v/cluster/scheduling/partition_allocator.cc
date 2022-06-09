@@ -284,11 +284,8 @@ partition_allocator::allocate(allocation_request request) {
         if (!replicas) {
             return replicas.error();
         }
-        assignments.push_back(partition_assignment{
-          .group = _state->next_group_id(),
-          .id = partition_id,
-          .replicas = std::move(replicas.value()),
-        });
+        assignments.emplace_back(
+          _state->next_group_id(), partition_id, std::move(replicas.value()));
     }
 
     return allocation_units(std::move(assignments).finish(), _state.get());
@@ -337,9 +334,9 @@ result<allocation_units> partition_allocator::reallocate_partition(
     }
 
     partition_assignment assignment{
-      .group = current_assignment.group,
-      .id = current_assignment.id,
-      .replicas = std::move(replicas.value()),
+      current_assignment.group,
+      current_assignment.id,
+      std::move(replicas.value()),
     };
 
     return allocation_units(
@@ -370,9 +367,9 @@ result<allocation_units> partition_allocator::reassign_decommissioned_replicas(
     }
 
     partition_assignment assignment{
-      .group = current_assignment.group,
-      .id = current_assignment.id,
-      .replicas = std::move(replicas.value()),
+      current_assignment.group,
+      current_assignment.id,
+      std::move(replicas.value()),
     };
 
     return allocation_units(

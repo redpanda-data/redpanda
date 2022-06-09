@@ -84,6 +84,11 @@ private:
         }
         void push_back(T t) { _partial.push_back(std::move(t)); }
 
+        template<typename... Args>
+        void emplace_back(Args&&... args) {
+            _partial.emplace_back(std::forward<Args>(args)...);
+        }
+
         const std::vector<T>& get() const { return _partial; }
         std::vector<T> finish() && { return std::exchange(_partial, {}); }
         intermediate_allocation(intermediate_allocation&&) noexcept = default;
