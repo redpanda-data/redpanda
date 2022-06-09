@@ -31,9 +31,8 @@ batched_output_stream::batched_output_stream(
 
 [[gnu::cold]] static ss::future<>
 already_closed_error(ss::scattered_message<char>& msg) {
-    return ss::make_exception_future<>(std::runtime_error(fmt::format(
-      "batched_output_stream is already closed. Ignoring: {} bytes",
-      msg.size())));
+    return ss::make_exception_future<>(
+      batched_output_stream_closed(msg.size()));
 }
 
 ss::future<> batched_output_stream::write(ss::scattered_message<char> msg) {
