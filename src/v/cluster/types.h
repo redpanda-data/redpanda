@@ -418,13 +418,15 @@ struct abort_tx_request : serde::envelope<abort_tx_request, serde::version<0>> {
     auto serde_fields() { return std::tie(ntp, pid, tx_seq, timeout); }
 };
 
-struct abort_tx_reply {
+struct abort_tx_reply : serde::envelope<abort_tx_reply, serde::version<0>> {
     tx_errc ec;
 
     abort_tx_reply() noexcept = default;
 
     explicit abort_tx_reply(tx_errc ec)
       : ec(ec) {}
+
+    auto serde_fields() { return std::tie(ec); }
 };
 
 struct begin_group_tx_request {
