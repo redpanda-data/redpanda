@@ -304,7 +304,7 @@ struct begin_tx_request : serde::envelope<begin_tx_request, serde::version<0>> {
     }
 };
 
-struct begin_tx_reply {
+struct begin_tx_reply : serde::envelope<begin_tx_reply, serde::version<0>> {
     model::ntp ntp;
     model::term_id etag;
     tx_errc ec;
@@ -319,6 +319,8 @@ struct begin_tx_reply {
     begin_tx_reply(model::ntp ntp, tx_errc ec)
       : ntp(std::move(ntp))
       , ec(ec) {}
+
+    auto serde_fields() { return std::tie(ntp, etag, ec); }
 };
 
 struct prepare_tx_request {
