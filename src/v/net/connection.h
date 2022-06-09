@@ -29,6 +29,8 @@
  */
 namespace net {
 
+std::optional<ss::sstring> is_disconnect_exception(std::exception_ptr);
+
 class connection : public boost::intrusive::list_base_hook<> {
 public:
     connection(

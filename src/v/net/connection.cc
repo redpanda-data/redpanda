@@ -9,9 +9,41 @@
 
 #include "net/connection.h"
 
-#include "rpc/logger.h"
+#include "rpc/service.h"
 
 namespace net {
+
+/**
+ * If the exception is a "boring" disconnection case, then populate this with
+ * the reason.
+ *
+ * This avoids logging overly alarmist "error" messages for exceptions that
+ * are typical in the case of a client or node simply stopping.
+ */
+std::optional<ss::sstring> is_disconnect_exception(std::exception_ptr e) {
+    try {
+        rethrow_exception(e);
+    } catch (std::system_error& e) {
+        if (
+          e.code() == std::errc::broken_pipe
+          || e.code() == std::errc::connection_reset
+          || e.code() == std::errc::connection_aborted) {
+            return e.code().message();
+        }
+    } catch (const net::batched_output_stream_closed& e) {
+        return "stream closed";
+    } catch (const std::out_of_range&) {
+        // Happens on unclean client disconnect, when io_iterator_consumer
+        // gets fewer bytes than it wanted
+        return "short read";
+    } catch (const rpc::rpc_internal_body_parsing_exception&) {
+        // Happens on unclean client disconnect, typically wrapping
+        // an out_of_range
+        return "parse error";
+    }
+
+    return std::nullopt;
+}
 
 connection::connection(
   boost::intrusive::list<connection>& hook,
