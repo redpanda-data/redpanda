@@ -246,6 +246,7 @@ private:
 
     ss::future<> dispatch_topic_dir_deletion(ss::sstring dir);
     ss::future<> recover_log_state(const ntp_config&);
+    ss::future<> async_clear_logs();
 
     ss::future<> housekeeping_scan(model::timestamp);
 
