@@ -723,41 +723,29 @@ cluster::tx_errc random_tx_errc() {
 
 SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     roundtrip_test(cluster::ntp_leader(
-      model::ntp(
-        model::ns("a namespace"),
-        model::topic("a topic"),
-        model::partition_id(287)),
-      model::term_id(1234),
-      model::node_id(2)));
+      model::random_ntp(),
+      tests::random_named_int<model::term_id>(),
+      tests::random_named_int<model::node_id>()));
 
     roundtrip_test(cluster::ntp_leader_revision(
-      model::ntp(
-        model::ns("a namespace"),
-        model::topic("a topic"),
-        model::partition_id(287)),
-      model::term_id(1234),
-      model::node_id(2),
-      model::revision_id(888)));
+      model::random_ntp(),
+      tests::random_named_int<model::term_id>(),
+      tests::random_named_int<model::node_id>(),
+      tests::random_named_int<model::revision_id>()));
 
     roundtrip_test(cluster::update_leadership_request({
       cluster::ntp_leader(
-        model::ntp(
-          model::ns("a namespace"),
-          model::topic("a topic"),
-          model::partition_id(287)),
-        model::term_id(1234),
-        model::node_id(2)),
+        model::random_ntp(),
+        tests::random_named_int<model::term_id>(),
+        tests::random_named_int<model::node_id>()),
     }));
 
     roundtrip_test(cluster::update_leadership_request_v2({
       cluster::ntp_leader_revision(
-        model::ntp(
-          model::ns("a namespace"),
-          model::topic("a topic"),
-          model::partition_id(287)),
-        model::term_id(1234),
-        model::node_id(2),
-        model::revision_id(8888)),
+        model::random_ntp(),
+        tests::random_named_int<model::term_id>(),
+        tests::random_named_int<model::node_id>(),
+        tests::random_named_int<model::revision_id>()),
     }));
 
     roundtrip_test(cluster::update_leadership_reply());
@@ -766,12 +754,9 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
 
     roundtrip_test(cluster::get_leadership_reply({
       cluster::ntp_leader(
-        model::ntp(
-          model::ns("a namespace"),
-          model::topic("a topic"),
-          model::partition_id(287)),
-        model::term_id(1234),
-        model::node_id(2)),
+        model::random_ntp(),
+        tests::random_named_int<model::term_id>(),
+        tests::random_named_int<model::node_id>()),
     }));
 
     roundtrip_test(
