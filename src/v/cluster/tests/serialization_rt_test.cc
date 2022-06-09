@@ -1001,6 +1001,26 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         cluster::abort_tx_reply data{random_tx_errc()};
         roundtrip_test(data);
     }
+    {
+        cluster::begin_group_tx_request data{
+          model::random_ntp(),
+          tests::random_named_string<kafka::group_id>(),
+          random_producer_identity(),
+          tests::random_named_int<model::tx_seq>(),
+          random_timeout_clock_duration()};
+
+        roundtrip_test(data);
+    }
+    {
+        // with default ntp ctor
+        cluster::begin_group_tx_request data{
+          tests::random_named_string<kafka::group_id>(),
+          random_producer_identity(),
+          tests::random_named_int<model::tx_seq>(),
+          random_timeout_clock_duration()};
+
+        roundtrip_test(data);
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {
