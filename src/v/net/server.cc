@@ -108,27 +108,10 @@ static inline void print_exceptional_future(
         return;
     }
 
-    bool is_error = true;
-    std::exception_ptr ex;
-    try {
-        std::rethrow_exception(f.get_exception());
-    } catch (const std::out_of_range&) {
-        // Happens on unclean client disconnect, when io_iterator_consumer
-        // gets fewer bytes than it wanted
-        ex = std::current_exception();
-        is_error = false;
-    } catch (const rpc::rpc_internal_body_parsing_exception&) {
-        // Happens on unclean client disconnect, typically wrapping
-        // an out_of_range
-        ex = std::current_exception();
-        is_error = false;
-    } catch (...) {
-        // An unexpected exception: this could be anything, including
-        // a bug: report as an error.
-        ex = std::current_exception();
-        is_error = true;
-    }
-    if (is_error) {
+    auto ex = f.get_exception();
+    auto disconnected = is_disconnect_exception(ex);
+
+    if (!disconnected) {
         vlog(
           rpc::rpclog.error,
           "{} - Error[{}] remote address: {} - {}",
@@ -138,12 +121,12 @@ static inline void print_exceptional_future(
           ex);
     } else {
         vlog(
-          rpc::rpclog.warn,
-          "{} - Exception[{}] remote address: {} - {}",
+          rpc::rpclog.info,
+          "{} - Disconnected {} ({}, {})",
           proto->name(),
-          ctx,
           address,
-          ex);
+          ctx,
+          disconnected.value());
     }
 }
 
