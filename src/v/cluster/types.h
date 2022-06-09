@@ -281,11 +281,13 @@ struct end_tx_request {
 struct end_tx_reply {
     tx_errc error_code{};
 };
-struct begin_tx_request {
+struct begin_tx_request : serde::envelope<begin_tx_request, serde::version<0>> {
     model::ntp ntp;
     model::producer_identity pid;
     model::tx_seq tx_seq;
     std::chrono::milliseconds transaction_timeout_ms;
+
+    begin_tx_request() noexcept = default;
 
     begin_tx_request(
       model::ntp ntp,
@@ -296,6 +298,10 @@ struct begin_tx_request {
       , pid(pid)
       , tx_seq(tx_seq)
       , transaction_timeout_ms(transaction_timeout_ms) {}
+
+    auto serde_fields() {
+        return std::tie(ntp, pid, tx_seq, transaction_timeout_ms);
+    }
 };
 
 struct begin_tx_reply {

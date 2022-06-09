@@ -942,6 +942,16 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
 
         roundtrip_test(data);
     }
+    {
+        cluster::begin_tx_request data{
+          model::random_ntp(),
+          random_producer_identity(),
+          tests::random_named_int<model::tx_seq>(),
+          std::chrono::duration_cast<std::chrono::milliseconds>(
+            random_timeout_clock_duration())};
+
+        roundtrip_test(data);
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {
