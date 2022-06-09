@@ -23,7 +23,40 @@ import (
 	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// handleScaling is called to detect cases of replicas change and apply them to the cluster
+// handleScaling is responsible for managing the current number of replicas running for a cluster.
+//
+// Replicas are controlled via the field `status.currentReplicas` that is set in the current method and should be
+// respected by all other external reconcile functions, including the one that sets the actual amount of replicas in the StatefulSet.
+// External functions should use `cluster.getCurrentReplicas()` to get the number of expected replicas for a cluster,
+// since it deals with cases where the status is not initialized yet.
+//
+// When users change the value of `spec.replicas` for a cluster, this function is responsible for progressively changing the `status.currentReplicas` to match that value.
+// In the case of a Cluster downscaled by 1 replica (i.e. `spec.replicas` lower than current value of `status.currentReplicas` by `1`), before lowering the
+// value of `status.currentReplicas`, this handler will first decommission the last node, using the admin API of the cluster.
+//
+// There are cases where the cluster will not decommission a node (e.g. user reduces `spec.replicas` to `2`, but there are topics with `3` partition replicas),
+// in which case the draining phase will hang indefinitely in Redpanda. When this happens, the controller will not downscale the cluster and
+// users will find in `status.decommissioningNode` that a node is constantly being decommissioned.
+//
+// In cases where the decommissioning process hangs, users can increase again the value of `spec.replicas` and the handler will contact the admin API
+// to recommission the last node, ensuring that the number of replicas matches the expected value and that the node joins the cluster again.
+//
+// Users can change the value of `spec.replicas` freely (except it cannot be 0). In case of downscaling by multiple replicas, the handler will
+// decommission one node at time, until the desired number of replicas is met.
+//
+// When a new cluster is created, the value of `status.currentReplicas` will be initially set to `1`, no matter what the user sets in `spec.replicas`.
+// This handler will first ensure that the initial node forms a cluster, by retrieving the list of brokers using the admin API.
+// After the cluster is formed, the handler will increase the `status.currentReplicas` as requested.
+//
+// This is due to the fact that Redpanda is currently unable to initialize a cluster if each node is given the full list of seed servers: https://github.com/redpanda-data/redpanda/issues/333.
+// Previous versions of the operator use to hack the list of seeds server (in the configurator pod) of node with ordinal 0, to set it always to an empty set,
+// allowing it to create an initial cluster. That strategy worked because the list of seed servers is not read again from the `redpanda.yaml` file once the
+// cluster is initialized.
+// But the drawback was that, on an existing running cluster, when node 0 loses its data directory (e.g. because it's using local storage, and it undergoes a k8s node upgrade),
+// then node 0 (having no data and an empty seed server list in `redpanda.yaml`) creates a brand new cluster ignoring the other nodes (split-brain).
+// The strategy implemented here (to initialize the cluster at 1 replica, then upscaling to the desired number, without hacks on the seed server list),
+// should fix this problem, since the list of seeds servers will be the same in all nodes once the cluster is created.
+//
 // nolint:nestif // for clarity
 func (r *StatefulSetResource) handleScaling(ctx context.Context) error {
 	if r.pandaCluster.Status.DecommissioningNode != nil {
@@ -76,7 +109,16 @@ func (r *StatefulSetResource) handleScaling(ctx context.Context) error {
 	return r.Status().Update(ctx, r.pandaCluster)
 }
 
-// handleDecommission manages cases of node decommissioning
+// handleDecommission manages the case of decommissioning of the last node of a cluster.
+//
+// When this handler is called, the `status.decommissioningNode` is populated with the pod ordinal (== nodeID) of the
+// node that needs to be decommissioned.
+//
+// The handler verifies that the node is not present in the list of brokers registered in the cluster, via admin API,
+// then downscales the StatefulSet via decreasing the `status.currentReplicas`.
+//
+// Before completing the process, it double-checks if the node is still not registered, for handling cases where the node was
+// about to start when the decommissioning process started. If the broker is found, the process is restarted.
 func (r *StatefulSetResource) handleDecommission(ctx context.Context) error {
 	targetReplicas := *r.pandaCluster.Status.DecommissioningNode
 	r.logger.Info("Handling cluster in decommissioning phase", "target replicas", targetReplicas)
@@ -151,7 +193,15 @@ func (r *StatefulSetResource) handleDecommission(ctx context.Context) error {
 	return r.Status().Update(ctx, r.pandaCluster)
 }
 
-// handleRecommission manages cases of nodes being recommissioned after a failed/wrong decommission
+// handleRecommission manages the case of a node being recommissioned after a failed/wrong decommission.
+//
+// Recommission can only work for nodes that are still in the "draining" phase according to Redpanda.
+//
+// When this handler is triggered, `status.decommissioningNode` is populated with the node that was being decommissioned and
+// `spec.replicas` reports a value that include that node, indicating the intention from the user to recommission it.
+//
+// The handler ensures that the node is running and also calls the admin API to recommission it.
+// The process finishes when the node is registered among brokers and the StatefulSet is correctly scaled.
 func (r *StatefulSetResource) handleRecommission(ctx context.Context) error {
 	r.logger.Info("Handling cluster in recommissioning phase")
 
@@ -278,6 +328,7 @@ type NodeReappearingError struct {
 	NodeID int
 }
 
+// Error makes the NodeReappearingError a proper error
 func (e *NodeReappearingError) Error() string {
 	return fmt.Sprintf("node has appeared in the cluster with id=%d", e.NodeID)
 }
