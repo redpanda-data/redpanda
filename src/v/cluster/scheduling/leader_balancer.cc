@@ -172,6 +172,7 @@ void leader_balancer::trigger_balance() {
                    return balance();
                })
           .handle_exception_type([](const ss::gate_closed_exception&) {})
+          .handle_exception_type([](const ss::sleep_aborted&) {})
           .handle_exception_type([this](const std::exception& e) {
               vlog(
                 clusterlog.info,
