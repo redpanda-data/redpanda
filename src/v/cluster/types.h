@@ -468,7 +468,8 @@ struct begin_group_tx_request
     }
 };
 
-struct begin_group_tx_reply {
+struct begin_group_tx_reply
+  : serde::envelope<begin_group_tx_reply, serde::version<0>> {
     model::term_id etag;
     tx_errc ec;
 
@@ -480,6 +481,8 @@ struct begin_group_tx_reply {
     begin_group_tx_reply(model::term_id etag, tx_errc ec)
       : etag(etag)
       , ec(ec) {}
+
+    auto serde_fields() { return std::tie(etag, ec); }
 };
 
 struct prepare_group_tx_request {
