@@ -557,7 +557,7 @@ SEASTAR_THREAD_TEST_CASE(create_topics_request_upgrade_rt_test) {
 
 SEASTAR_THREAD_TEST_CASE(create_topics_request_uniform_rt_test) {
     create_topics_request_roundtrip<
-      old::create_topics_request,
+      cluster::create_topics_request,
       cluster::create_topics_request>();
 }
 
