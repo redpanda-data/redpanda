@@ -204,10 +204,13 @@ struct try_abort_reply : serde::envelope<try_abort_reply, serde::version<0>> {
     auto serde_fields() { return std::tie(commited, aborted, ec); }
 };
 
-struct init_tm_tx_request {
+struct init_tm_tx_request
+  : serde::envelope<init_tm_tx_request, serde::version<0>> {
     kafka::transactional_id tx_id;
     std::chrono::milliseconds transaction_timeout_ms;
     model::timeout_clock::duration timeout;
+
+    init_tm_tx_request() noexcept = default;
 
     init_tm_tx_request(
       kafka::transactional_id tx_id,
@@ -216,6 +219,10 @@ struct init_tm_tx_request {
       : tx_id(std::move(tx_id))
       , transaction_timeout_ms(tx_timeout)
       , timeout(timeout) {}
+
+    auto serde_fields() {
+        return std::tie(tx_id, transaction_timeout_ms, timeout);
+    }
 };
 
 struct init_tm_tx_reply {

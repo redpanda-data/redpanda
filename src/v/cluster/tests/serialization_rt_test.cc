@@ -927,6 +927,15 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
 
         roundtrip_test(data);
     }
+    {
+        cluster::init_tm_tx_request data{
+          tests::random_named_string<kafka::transactional_id>(),
+          std::chrono::duration_cast<std::chrono::milliseconds>(
+            random_timeout_clock_duration()),
+          random_timeout_clock_duration()};
+
+        roundtrip_test(data);
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {
