@@ -507,7 +507,8 @@ func (r *StatefulSetResource) obj(
 	}
 
 	// Only multi-replica clusters should use maintenance mode. See: https://github.com/redpanda-data/redpanda/issues/4338
-	multiReplica := r.pandaCluster.Spec.Replicas != nil && *r.pandaCluster.Spec.Replicas > 1
+	// Startup of a fresh cluster would let the first pod restart, until dynamic hooks are implemented. See: https://github.com/redpanda-data/redpanda/pull/4907
+	multiReplica := r.pandaCluster.GetCurrentReplicas() > 1
 	if featuregates.MaintenanceMode(r.pandaCluster.Spec.Version) && r.pandaCluster.IsUsingMaintenanceModeHooks() && multiReplica {
 		ss.Spec.Template.Spec.Containers[0].Lifecycle = &corev1.Lifecycle{
 			PreStop:   r.getPreStopHook(),
