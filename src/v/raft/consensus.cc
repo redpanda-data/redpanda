@@ -836,6 +836,8 @@ void consensus::dispatch_vote(bool leadership_transfer) {
                                     ss::future<> vote_f) mutable {
                         try {
                             vote_f.get();
+                        } catch (const ss::gate_closed_exception&) {
+                            // Shutting down, don't log.
                         } catch (...) {
                             vlog(
                               _ctxlog.warn,
