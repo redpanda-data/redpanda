@@ -630,13 +630,16 @@ struct abort_group_tx_request
     }
 };
 
-struct abort_group_tx_reply {
+struct abort_group_tx_reply
+  : serde::envelope<abort_group_tx_reply, serde::version<0>> {
     tx_errc ec;
 
     abort_group_tx_reply() noexcept = default;
 
     explicit abort_group_tx_reply(tx_errc ec)
       : ec(ec) {}
+
+    auto serde_fields() { return std::tie(ec); }
 };
 
 /// Old-style request sent by node to join raft-0
