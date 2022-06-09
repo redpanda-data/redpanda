@@ -386,13 +386,15 @@ struct commit_tx_request
     auto serde_fields() { return std::tie(ntp, pid, tx_seq, timeout); }
 };
 
-struct commit_tx_reply {
+struct commit_tx_reply : serde::envelope<commit_tx_reply, serde::version<0>> {
     tx_errc ec;
 
     commit_tx_reply() noexcept = default;
 
     explicit commit_tx_reply(tx_errc ec)
       : ec(ec) {}
+
+    auto serde_fields() { return std::tie(ec); }
 };
 
 struct abort_tx_request {
