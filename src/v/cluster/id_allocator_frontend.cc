@@ -207,7 +207,7 @@ ss::future<allocate_id_reply> id_allocator_frontend::do_allocate_id(
                     vlog(
                       clusterlog.warn,
                       "allocate id stm call failed with {}",
-                      r.raft_status);
+                      raft::make_error_code(r.raft_status).message());
                     return allocate_id_reply{r.id, errc::replication_error};
                 }
 
