@@ -697,6 +697,30 @@ model::timeout_clock::duration random_timeout_clock_duration() {
       random_generators::get_int(-100000, 100000));
 }
 
+cluster::tx_errc random_tx_errc() {
+    return random_generators::random_choice(std::vector<cluster::tx_errc>{
+      cluster::tx_errc::none,
+      cluster::tx_errc::leader_not_found,
+      cluster::tx_errc::shard_not_found,
+      cluster::tx_errc::partition_not_found,
+      cluster::tx_errc::stm_not_found,
+      cluster::tx_errc::partition_not_exists,
+      cluster::tx_errc::pid_not_found,
+      cluster::tx_errc::timeout,
+      cluster::tx_errc::conflict,
+      cluster::tx_errc::fenced,
+      cluster::tx_errc::stale,
+      cluster::tx_errc::not_coordinator,
+      cluster::tx_errc::coordinator_not_available,
+      cluster::tx_errc::preparing_rebalance,
+      cluster::tx_errc::rebalance_in_progress,
+      cluster::tx_errc::coordinator_load_in_progress,
+      cluster::tx_errc::unknown_server_error,
+      cluster::tx_errc::request_rejected,
+      cluster::tx_errc::invalid_producer_id_mapping,
+      cluster::tx_errc::invalid_txn_state});
+}
+
 SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     roundtrip_test(cluster::ntp_leader(
       model::ntp(
@@ -892,6 +916,14 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           random_producer_identity(),
           tests::random_named_int<model::tx_seq>(),
           random_timeout_clock_duration()};
+
+        roundtrip_test(data);
+    }
+    {
+        cluster::try_abort_reply data{
+          cluster::try_abort_reply::committed_type(tests::random_bool()),
+          cluster::try_abort_reply::aborted_type(tests::random_bool()),
+          random_tx_errc()};
 
         roundtrip_test(data);
     }

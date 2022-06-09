@@ -175,13 +175,15 @@ struct try_abort_request
     auto serde_fields() { return std::tie(tm, pid, tx_seq, timeout); }
 };
 
-struct try_abort_reply {
+struct try_abort_reply : serde::envelope<try_abort_reply, serde::version<0>> {
     using committed_type = ss::bool_class<struct committed_type_tag>;
     using aborted_type = ss::bool_class<struct aborted_type_tag>;
 
     committed_type commited;
     aborted_type aborted;
     tx_errc ec;
+
+    try_abort_reply() noexcept = default;
 
     try_abort_reply(committed_type committed, aborted_type aborted, tx_errc ec)
       : commited(committed)
@@ -198,6 +200,8 @@ struct try_abort_reply {
     static try_abort_reply make_committed() {
         return {committed_type::yes, aborted_type::no, tx_errc::none};
     }
+
+    auto serde_fields() { return std::tie(commited, aborted, ec); }
 };
 
 struct init_tm_tx_request {
