@@ -464,8 +464,13 @@ health_monitor_backend::maybe_refresh_cluster_health(
             auto f = refresh_cluster_health_cache(refresh);
             auto err = co_await ss::with_timeout(deadline, std::move(f));
             if (err) {
-                vlog(
-                  clusterlog.info,
+                // Many callers may try to do this: when the leader controller
+                // is unavailable, we want to avoid an excess of log messages.
+                static constexpr auto rate_limit = std::chrono::seconds(1);
+                thread_local static ss::logger::rate_limit rate(rate_limit);
+                clusterlog.log(
+                  ss::log_level::info,
+                  rate,
                   "error refreshing cluster health state - {}",
                   err.message());
                 co_return err;
