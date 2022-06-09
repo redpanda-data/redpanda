@@ -428,7 +428,13 @@ configured_server_and_client_pool started_pool_and_server(
   size_t size,
   s3::client_pool_overdraft_policy policy,
   const s3::configuration& conf) {
+    auto credentials = cloud_roles::aws_credentials{
+      conf.access_key.value(),
+      conf.secret_key.value(),
+      std::nullopt,
+      conf.region};
     auto client = ss::make_shared<s3::client_pool>(size, conf, policy);
+    client->load_credentials(std::move(credentials));
     auto server = ss::make_shared<ss::httpd::http_server_control>();
     server->start().get();
     server->set_routes(set_routes).get();

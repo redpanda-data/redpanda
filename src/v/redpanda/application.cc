@@ -700,7 +700,7 @@ void application::wire_up_redpanda_services() {
           })
           .get();
         construct_service(cloud_storage_api, std::ref(cloud_configs)).get();
-
+        cloud_storage_api.invoke_on_all(&cloud_storage::remote::start).get();
         construct_service(
           partition_recovery_manager,
           cloud_configs.local().bucket_name,

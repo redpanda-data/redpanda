@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "cloud_roles/refresh_credentials.h"
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/probe.h"
 #include "cloud_storage/types.h"
@@ -24,6 +25,46 @@
 
 namespace cloud_storage {
 
+static constexpr ss::shard_id auth_refresh_shard_id = 0;
+
+/// Helper class to start the background operations to periodically refresh
+/// authentication. Selects the implementation for fetch based on the
+/// cloud_credentials_source property.
+class auth_refresh_bg_op {
+public:
+    auth_refresh_bg_op(
+      ss::gate& gate,
+      ss::abort_source& as,
+      s3::configuration s3_conf,
+      model::cloud_credentials_source cloud_credentials_source);
+
+    /// Helper to decide if credentials will be regularly fetched from
+    /// infrastructure APIs or loaded once from config file.
+    bool is_static_config() const;
+
+    /// Builds a set of static AWS compatible credentials, reading values from
+    /// the S3 configuration passed to us.
+    cloud_roles::credentials build_static_credentials() const;
+
+    /// Start a background refresh operation, accepting a callback which is
+    /// called with newly fetched credentials periodically. The operation is
+    /// started on auth_refresh_shard_id and credentials are copied to other
+    /// shards using the callback.
+    void maybe_start_auth_refresh_op(
+      cloud_roles::credentials_update_cb_t credentials_update_cb);
+
+private:
+    void do_start_auth_refresh_op(
+      cloud_roles::credentials_update_cb_t credentials_update_cb);
+
+    ss::gate& _gate;
+    ss::abort_source& _as;
+    s3::configuration _s3_conf;
+    cloud_roles::aws_region_name _region_name;
+    model::cloud_credentials_source _cloud_credentials_source;
+    std::optional<cloud_roles::refresh_credentials> _refresh_credentials;
+};
+
 /// \brief Represents remote endpoint
 ///
 /// The `remote` is responsible for remote data
@@ -31,7 +72,7 @@ namespace cloud_storage {
 /// download data. Also, it's responsible for maintaining
 /// correct naming in S3. The remote takes into account
 /// things like reconnects, backpressure and backoff.
-class remote {
+class remote : public ss::peering_sharded_service<remote> {
 public:
     /// Functor that returns fresh input_stream object that can be used
     /// to re-upload and will return all data that needs to be uploaded
@@ -56,7 +97,10 @@ public:
     ///
     /// \param limit is a number of simultaneous connections
     /// \param conf is an S3 configuration
-    remote(s3_connection_limit limit, const s3::configuration& conf);
+    remote(
+      s3_connection_limit limit,
+      const s3::configuration& conf,
+      model::cloud_credentials_source cloud_credentials_source);
 
     /// \brief Initialize 'remote'
     ///
@@ -135,10 +179,12 @@ public:
       retry_chain_node& parent);
 
 private:
+    ss::future<> propagate_credentials(cloud_roles::credentials credentials);
     s3::client_pool _pool;
     ss::gate _gate;
     ss::abort_source _as;
     remote_probe _probe;
+    auth_refresh_bg_op _auth_refresh_bg_op;
 };
 
 } // namespace cloud_storage

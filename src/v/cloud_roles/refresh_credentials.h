@@ -13,6 +13,7 @@
 #include "cloud_roles/logger.h"
 #include "cloud_roles/probe.h"
 #include "cloud_roles/request_response_helpers.h"
+#include "cloud_roles/signature.h"
 #include "model/metadata.h"
 #include "seastarx.h"
 
