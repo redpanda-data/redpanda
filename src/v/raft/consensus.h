@@ -429,7 +429,7 @@ private:
       follower_index_metadata&, append_entries_reply);
 
     bool needs_recovery(const follower_index_metadata&, model::offset);
-    void dispatch_recovery(follower_index_metadata&);
+    void dispatch_recovery(follower_index_metadata&, bool force = false);
     void maybe_update_leader_commit_idx();
     ss::future<> do_maybe_update_leader_commit_idx(ssx::semaphore_units);
 

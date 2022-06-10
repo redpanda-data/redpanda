@@ -49,6 +49,21 @@
 #include <iterator>
 #include <system_error>
 
+class raft_resources {
+public:
+    ss::semaphore recovery{128};
+    ss::semaphore vote{128};
+
+    raft_resources()
+      : recovery(config::shard_local_cfg().raft_concurrent_recovery_per_shard())
+      , vote(config::shard_local_cfg().raft_concurrent_votes_per_shard()) {}
+};
+
+raft_resources& get_raft_resources() {
+    static thread_local raft_resources r;
+    return r;
+}
+
 template<>
 struct fmt::formatter<raft::consensus::vote_state> final
   : fmt::formatter<std::string_view> {
@@ -506,7 +521,40 @@ bool consensus::needs_recovery(
            || idx.match_index > idx.last_dirty_log_index;
 }
 
-void consensus::dispatch_recovery(follower_index_metadata& idx) {
+void consensus::dispatch_recovery(follower_index_metadata& idx, bool force) {
+    if (get_raft_resources().recovery.current() <= 0) {
+        if (force) {
+            auto cur = get_raft_resources().recovery.current();
+            if (
+              cur < -config::shard_local_cfg()
+                       .raft_concurrent_recovery_per_shard()) {
+                vlog(
+                  _ctxlog.debug,
+                  "dispatch_recovery: 2x concurrency limit reached, not "
+                  "forcing");
+                return;
+            } else {
+                // Let a limited number of recoveries violate the concurreny
+                // limit if they are set with force=true from leader transfer
+                // code.
+                vlog(
+                  _ctxlog.debug,
+                  "dispatch_recovery: no units, but proceeding for force=true");
+            }
+            return;
+        } else {
+            vlog(_ctxlog.debug, "dispatch_recovery: no units, deferring");
+            return;
+        }
+    } else {
+        vlog(
+          _ctxlog.trace,
+          "dispatch_recovery: units available {}",
+          get_raft_resources().recovery.current());
+    }
+
+    auto units = ss::consume_units(get_raft_resources().recovery, 1);
+
     auto lstats = _log.offsets();
     auto log_max_offset = lstats.dirty_offset;
     if (idx.last_dirty_log_index >= log_max_offset) {
@@ -523,29 +571,33 @@ void consensus::dispatch_recovery(follower_index_metadata& idx) {
     idx.is_recovering = true;
     // background
     ssx::background
-      = ssx::spawn_with_gate_then(_bg, [this, node_id = idx.node_id] {
-            auto recovery = std::make_unique<recovery_stm>(
-              this, node_id, _scheduling, _recovery_mem_quota);
-            auto ptr = recovery.get();
-            return ptr->apply()
-              .handle_exception_type(
-                [this, node_id](const std::system_error& syserr) {
-                    // Likely to contain an rpc::errc such as
-                    // client_request_timeout
+      = ssx::spawn_with_gate_then(
+          _bg,
+          [this, node_id = idx.node_id] {
+              auto recovery = std::make_unique<recovery_stm>(
+                this, node_id, _scheduling, _recovery_mem_quota);
+              auto ptr = recovery.get();
+              return ptr->apply()
+                .handle_exception_type(
+                  [this, node_id](const std::system_error& syserr) {
+                      // Likely to contain an rpc::errc such as
+                      // client_request_timeout
+                      vlog(
+                        _ctxlog.info,
+                        "Node {} recovery cancelled ({})",
+                        node_id,
+                        syserr.code().message());
+                  })
+                .handle_exception([this, node_id](const std::exception_ptr& e) {
                     vlog(
-                      _ctxlog.info,
-                      "Node {} recovery cancelled ({})",
-                      node_id,
-                      syserr.code().message());
+                      _ctxlog.warn, "Node {} recovery failed - {}", node_id, e);
                 })
-              .handle_exception([this, node_id](const std::exception_ptr& e) {
-                  vlog(
-                    _ctxlog.warn, "Node {} recovery failed - {}", node_id, e);
-              })
-              .finally([r = std::move(recovery)] {});
-        }).handle_exception([this](const std::exception_ptr& e) {
-            vlog(_ctxlog.warn, "Recovery error - {}", e);
-        });
+                .finally([r = std::move(recovery)] {});
+          })
+          .handle_exception([this](const std::exception_ptr& e) {
+              vlog(_ctxlog.warn, "Recovery error - {}", e);
+          })
+          .finally([units = std::move(units)]() {});
 }
 
 ss::future<result<model::offset>> consensus::linearizable_barrier() {
@@ -817,6 +869,21 @@ void consensus::dispatch_vote(bool leadership_transfer) {
         arm_vote_timeout();
         return;
     }
+
+    if (get_raft_resources().vote.current() <= 0) {
+        // Important to drop out before adjusting priority: this is not
+        // a real failure to vote, just a resource throttle.
+        vlog(
+          _ctxlog.info, "resources.vote: Too many votes in flight, deferring");
+        arm_vote_timeout();
+        return;
+    } else {
+        vlog(
+          _ctxlog.debug,
+          "resources.vote: Voting, sem count {}",
+          get_raft_resources().vote.current());
+    }
+
     auto self_priority = get_node_priority(_self);
     // check if current node priority is high enough
     // update target priority
@@ -846,50 +913,60 @@ void consensus::dispatch_vote(bool leadership_transfer) {
         arm_vote_timeout();
         return;
     }
+
+    auto vote_units = ss::consume_units(get_raft_resources().vote, 1);
+
     // background, acquire lock, transition state
     ssx::background
-      = ssx::spawn_with_gate_then(_bg, [this, leadership_transfer] {
-            return dispatch_prevote(leadership_transfer)
-              .then([this, leadership_transfer](bool ready) mutable {
-                  if (!ready) {
-                      return ss::make_ready_future<>();
-                  }
-                  auto vstm = std::make_unique<vote_stm>(this);
-                  auto p = vstm.get();
-
-                  // CRITICAL: vote performs locking on behalf of consensus
-                  return p->vote(leadership_transfer)
-                    .then_wrapped([this, p, vstm = std::move(vstm)](
-                                    ss::future<> vote_f) mutable {
-                        try {
-                            vote_f.get();
-                        } catch (const ss::gate_closed_exception&) {
-                            // Shutting down, don't log.
-                        } catch (...) {
-                            vlog(
-                              _ctxlog.warn,
-                              "Error returned from voting process {}",
-                              std::current_exception());
-                        }
-                        auto f = p->wait().finally([vstm = std::move(vstm)] {});
-                        // make sure we wait for all futures when gate is closed
-                        if (_bg.is_closed()) {
-                            return f;
-                        }
-                        // background
-                        ssx::spawn_with_gate(
-                          _bg,
-                          [vstm = std::move(vstm), f = std::move(f)]() mutable {
-                              return std::move(f);
-                          });
-
+      = ssx::spawn_with_gate_then(
+          _bg,
+          [this, leadership_transfer] {
+              return dispatch_prevote(leadership_transfer)
+                .then([this, leadership_transfer](bool ready) mutable {
+                    if (!ready) {
                         return ss::make_ready_future<>();
-                    });
-              })
-              .finally([this] { arm_vote_timeout(); });
-        }).handle_exception([this](const std::exception_ptr& e) {
-            vlog(_ctxlog.warn, "Exception thrown while voting - {}", e);
-        });
+                    }
+                    auto vstm = std::make_unique<vote_stm>(this);
+                    auto p = vstm.get();
+
+                    // CRITICAL: vote performs locking on behalf of consensus
+                    return p->vote(leadership_transfer)
+                      .then_wrapped([this, p, vstm = std::move(vstm)](
+                                      ss::future<> vote_f) mutable {
+                          try {
+                              vote_f.get();
+                          } catch (const ss::gate_closed_exception&) {
+                              // Shutting down, don't log.
+                          } catch (...) {
+                              vlog(
+                                _ctxlog.warn,
+                                "Error returned from voting process {}",
+                                std::current_exception());
+                          }
+                          auto f = p->wait().finally(
+                            [vstm = std::move(vstm)] {});
+                          // make sure we wait for all futures when gate is
+                          // closed
+                          if (_bg.is_closed()) {
+                              return f;
+                          }
+                          // background
+                          ssx::spawn_with_gate(
+                            _bg,
+                            [vstm = std::move(vstm),
+                             f = std::move(f)]() mutable {
+                                return std::move(f);
+                            });
+
+                          return ss::make_ready_future<>();
+                      });
+                })
+                .finally([this] { arm_vote_timeout(); });
+          })
+          .handle_exception([this](const std::exception_ptr& e) {
+              vlog(_ctxlog.warn, "Exception thrown while voting - {}", e);
+          })
+          .finally([vu = std::move(vote_units)]() {});
 }
 
 void consensus::arm_vote_timeout() {
@@ -2815,7 +2892,7 @@ consensus::prepare_transfer_leadership(vnode target_rni) {
           _ctxlog.debug,
           "transfer leadership: starting node {} recovery",
           target_rni);
-        dispatch_recovery(meta); // sets is_recovering flag
+        dispatch_recovery(meta, true); // sets is_recovering flag
     } else {
         vlog(
           _ctxlog.debug,
