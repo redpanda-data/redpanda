@@ -20,16 +20,6 @@
 
 namespace kafka {
 
-struct find_coordinator_response;
-
-class find_coordinator_api final {
-public:
-    using response_type = find_coordinator_response;
-
-    static constexpr const char* name = "find coordinator";
-    static constexpr api_key key = api_key(10);
-};
-
 struct find_coordinator_request final {
     using api_type = find_coordinator_api;
 

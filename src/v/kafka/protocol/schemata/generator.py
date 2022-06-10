@@ -829,6 +829,7 @@ class Field:
 HEADER_TEMPLATE = """
 #pragma once
 #include "kafka/types.h"
+#include "kafka/protocol/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "kafka/protocol/batch_reader.h"
@@ -898,6 +899,18 @@ private:
 {%- endif %}
 };
 
+{%- if op_type == "request" %}
+
+struct {{ request_name }}_response;
+
+struct {{ request_name }}_api final {
+    using response_type = {{ request_name }}_response;
+
+    static constexpr const char* name = "{{ request_name }}";
+    static constexpr api_key key = api_key({{ api_key }});
+    static constexpr api_version min_flexible = {% if first_flex == -1 %}never_flexible{% else %}api_version({{ first_flex }}){% endif %};
+};
+{%- endif %}
 }
 """
 
@@ -1346,6 +1359,18 @@ if __name__ == "__main__":
     # request or response
     op_type = msg["type"]
 
+    # request id
+    api_key = msg["apiKey"]
+
+    def parse_name(name):
+        name = name.removesuffix("Request")
+        name = name.removesuffix("Response")
+        name = snake_case(name)
+        # Special case to sidestep an otherwise large rename in the source
+        return "list_offsets" if name == "list_offset" else name
+
+    request_name = parse_name(msg["name"])
+
     # either 'none' or 'VersionRange'
     first_flex = parse_flexible_versions(msg["flexibleVersions"])
 
@@ -1359,6 +1384,8 @@ if __name__ == "__main__":
                 render_struct_comment=render_struct_comment,
                 op_type=op_type,
                 fail=fail,
+                api_key=api_key,
+                request_name=request_name,
                 first_flex=first_flex))
 
     with open(src, 'w') as f:

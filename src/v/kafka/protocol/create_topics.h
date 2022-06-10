@@ -21,16 +21,6 @@
 
 namespace kafka {
 
-struct create_topics_response;
-
-class create_topics_api final {
-public:
-    using response_type = create_topics_response;
-
-    static constexpr const char* name = "create topics";
-    static constexpr api_key key = api_key(19);
-};
-
 struct create_topics_request final {
     using api_type = create_topics_api;
 

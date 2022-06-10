@@ -21,14 +21,6 @@ namespace kafka {
 
 struct list_groups_response;
 
-class list_groups_api final {
-public:
-    using response_type = list_groups_response;
-
-    static constexpr const char* name = "list groups";
-    static constexpr api_key key = api_key(16);
-};
-
 struct list_groups_request final {
     using api_type = list_groups_api;
 

@@ -19,16 +19,6 @@
 
 namespace kafka {
 
-struct sasl_authenticate_response;
-
-class sasl_authenticate_api final {
-public:
-    using response_type = sasl_authenticate_response;
-
-    static constexpr const char* name = "sasl authenticate";
-    static constexpr api_key key = api_key(36);
-};
-
 struct sasl_authenticate_request final {
     using api_type = sasl_authenticate_api;
 

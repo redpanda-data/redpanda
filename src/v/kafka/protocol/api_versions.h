@@ -19,15 +19,6 @@
 
 namespace kafka {
 
-struct api_versions_response;
-
-struct api_versions_api final {
-    using response_type = api_versions_response;
-
-    static constexpr const char* name = "api-versions";
-    static constexpr api_key key = api_key(18);
-};
-
 struct api_versions_request final {
     using api_type = api_versions_api;
 

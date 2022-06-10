@@ -22,16 +22,6 @@
 
 namespace kafka {
 
-struct describe_log_dirs_response;
-
-class describe_log_dirs_api final {
-public:
-    using response_type = describe_log_dirs_response;
-
-    static constexpr const char* name = "describe_log_dirs";
-    static constexpr api_key key = api_key(35);
-};
-
 struct describe_log_dirs_request final {
     using api_type = describe_log_dirs_api;
 

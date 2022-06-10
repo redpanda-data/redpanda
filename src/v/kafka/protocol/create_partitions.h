@@ -19,16 +19,6 @@
 
 namespace kafka {
 
-struct create_partitions_response;
-
-class create_partitions_api final {
-public:
-    using response_type = create_partitions_response;
-
-    static constexpr const char* name = "create partitions";
-    static constexpr api_key key = api_key(37);
-};
-
 struct create_partitions_request final {
     using api_type = create_partitions_api;
 

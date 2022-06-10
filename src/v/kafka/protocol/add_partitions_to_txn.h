@@ -24,15 +24,6 @@
 
 namespace kafka {
 
-struct add_partitions_to_txn_response;
-
-struct add_partitions_to_txn_api final {
-    using response_type = add_partitions_to_txn_response;
-
-    static constexpr const char* name = "add partitions to txn";
-    static constexpr api_key key = api_key(24);
-};
-
 struct add_partitions_to_txn_request final {
     using api_type = add_partitions_to_txn_api;
 

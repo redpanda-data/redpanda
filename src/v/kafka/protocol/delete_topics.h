@@ -24,15 +24,6 @@
 
 namespace kafka {
 
-struct delete_topics_response;
-
-struct delete_topics_api final {
-    using response_type = delete_topics_response;
-
-    static constexpr const char* name = "delete topics";
-    static constexpr api_key key = api_key(20);
-};
-
 struct delete_topics_request final {
     using api_type = delete_topics_api;
 

@@ -24,15 +24,6 @@
 
 namespace kafka {
 
-struct end_txn_response;
-
-struct end_txn_api final {
-    using response_type = end_txn_response;
-
-    static constexpr const char* name = "end txn";
-    static constexpr api_key key = api_key(26);
-};
-
 struct end_txn_request final {
     using api_type = end_txn_api;
 

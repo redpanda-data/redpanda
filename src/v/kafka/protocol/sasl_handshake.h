@@ -19,16 +19,6 @@
 
 namespace kafka {
 
-struct sasl_handshake_response;
-
-class sasl_handshake_api final {
-public:
-    using response_type = sasl_handshake_response;
-
-    static constexpr const char* name = "sasl handshake";
-    static constexpr api_key key = api_key(17);
-};
-
 struct sasl_handshake_request final {
     using api_type = sasl_handshake_api;
 

@@ -9,32 +9,13 @@
 
 #include "kafka/server/flex_versions.h"
 
+#include "kafka/protocol/types.h"
 #include "kafka/server/handlers/handlers.h"
 namespace kafka {
-
-template<typename T>
-concept HasMinFlex = requires(T) {
-    {T::min_flexible};
-};
-
-/// The only request that is never flexible is sasl_handshake_request - 17
-/// Older versions of our schema may also contain values of 'none' that map
-/// to -1
-static constexpr api_version never_flexible = api_version(-1);
 
 /// Not every value from 0 -> max_api_key is a valid request, non-supported
 /// requests will map to a value of api_key(-2)
 static constexpr api_version invalid_api = api_version(-2);
-
-template<typename RequestType>
-static constexpr api_version get_min_flex() {
-    /// Necessary until all requests provide a value for `::min_flexible`
-    if constexpr (HasMinFlex<RequestType>) {
-        return RequestType::min_flexible;
-    } else {
-        return never_flexible;
-    }
-}
 
 template<typename... RequestTypes>
 static constexpr size_t max_api_key(type_list<RequestTypes...>) {
@@ -51,7 +32,8 @@ get_flexible_request_min_versions_list(type_list<RequestTypes...> r) {
     /// at an index -2 or \ref invalid_api will be the value at the index.
     std::array<api_version, max_api_key(r) + 1> versions;
     versions.fill(invalid_api);
-    ((versions[RequestTypes::api::key()] = get_min_flex<RequestTypes>()), ...);
+    ((versions[RequestTypes::api::key()] = RequestTypes::api::min_flexible),
+     ...);
     return versions;
 }
 
