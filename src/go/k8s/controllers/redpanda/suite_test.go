@@ -466,6 +466,14 @@ func (m *mockAdminAPI) RecommissionBroker(_ context.Context, id int) error {
 	return m.SetBrokerStatus(id, admin.MembershipStatusActive)
 }
 
+func (m *mockAdminAPI) EnableMaintenanceMode(_ context.Context, _ int) error {
+	return nil
+}
+
+func (m *mockAdminAPI) DisableMaintenanceMode(_ context.Context, _ int) error {
+	return nil
+}
+
 // nolint:goerr113 // test code
 func (m *mockAdminAPI) SetBrokerStatus(
 	id int, status admin.MembershipStatus,

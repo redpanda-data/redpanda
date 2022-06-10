@@ -90,6 +90,9 @@ type AdminAPIClient interface {
 	Brokers(ctx context.Context) ([]admin.Broker, error)
 	DecommissionBroker(ctx context.Context, node int) error
 	RecommissionBroker(ctx context.Context, node int) error
+
+	EnableMaintenanceMode(ctx context.Context, node int) error
+	DisableMaintenanceMode(ctx context.Context, node int) error
 }
 
 var _ AdminAPIClient = &admin.AdminAPI{}
