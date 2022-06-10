@@ -441,7 +441,8 @@ using tx_seq = named_type<int64_t, struct tm_tx_seq>;
 using producer_id = named_type<int64_t, struct producer_identity_id>;
 using producer_epoch = named_type<int16_t, struct producer_identity_epoch>;
 
-struct producer_identity {
+struct producer_identity
+  : serde::envelope<producer_identity, serde::version<0>> {
     int64_t id{-1};
     int16_t epoch{0};
 
@@ -465,6 +466,8 @@ struct producer_identity {
     }
 
     friend std::ostream& operator<<(std::ostream&, const producer_identity&);
+
+    auto serde_fields() { return std::tie(id, epoch); }
 };
 
 struct batch_identity {
