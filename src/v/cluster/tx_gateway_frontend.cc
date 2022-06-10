@@ -702,7 +702,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
             co_return init_tm_tx_reply{.ec = tx_errc::invalid_txn_state};
         }
 
-        model::producer_identity pid{.id = pid_reply.id, .epoch = 0};
+        model::producer_identity pid{pid_reply.id, 0};
         tm_stm::op_status op_status = co_await stm->register_new_producer(
           term, tx_id, transaction_timeout_ms, pid);
         init_tm_tx_reply reply{.pid = pid};
@@ -780,11 +780,11 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
     init_tm_tx_reply reply;
     if (tx.pid.epoch < std::numeric_limits<int16_t>::max()) {
         reply.pid = model::producer_identity{
-          .id = tx.pid.id, .epoch = static_cast<int16_t>(tx.pid.epoch + 1)};
+          tx.pid.id, static_cast<int16_t>(tx.pid.epoch + 1)};
     } else {
         allocate_id_reply pid_reply
           = co_await _id_allocator_frontend.local().allocate_id(timeout);
-        reply.pid = model::producer_identity{.id = pid_reply.id, .epoch = 0};
+        reply.pid = model::producer_identity{pid_reply.id, 0};
     }
 
     auto op_status = co_await stm->re_register_producer(
@@ -869,8 +869,7 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
   ss::shared_ptr<tm_stm> stm,
   add_paritions_tx_request request,
   model::timeout_clock::duration timeout) {
-    model::producer_identity pid{
-      .id = request.producer_id, .epoch = request.producer_epoch};
+    model::producer_identity pid{request.producer_id, request.producer_epoch};
 
     auto term_opt = co_await stm->sync();
     if (!term_opt.has_value()) {
@@ -1055,8 +1054,7 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::do_add_offsets_to_tx(
   ss::shared_ptr<tm_stm> stm,
   add_offsets_tx_request request,
   model::timeout_clock::duration timeout) {
-    model::producer_identity pid{
-      .id = request.producer_id, .epoch = request.producer_epoch};
+    model::producer_identity pid{request.producer_id, request.producer_epoch};
 
     auto term_opt = co_await stm->sync();
     if (!term_opt.has_value()) {
@@ -1352,8 +1350,7 @@ tx_gateway_frontend::do_end_txn(
         co_return tx_errc::invalid_producer_id_mapping;
     }
 
-    model::producer_identity pid{
-      .id = request.producer_id, .epoch = request.producer_epoch};
+    model::producer_identity pid{request.producer_id, request.producer_epoch};
     auto tx = tx_opt.value();
     if (tx.pid != pid) {
         if (tx.pid.id == pid.id && tx.pid.epoch > pid.epoch) {

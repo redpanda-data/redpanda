@@ -269,7 +269,7 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
     if (is_new_pid || pid.get_epoch() > fence_it->second) {
         if (!is_new_pid) {
             auto old_pid = model::producer_identity{
-              .id = pid.get_id(), .epoch = fence_it->second};
+              pid.get_id(), fence_it->second};
             // there is a fence, it might be that tm_stm failed, forget about
             // an ongoing transaction, assigned next pid for the same tx.id and
             // started a new transaction without aborting the previous one.
@@ -1631,8 +1631,7 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
     tx_snapshot tx_ss;
 
     for (auto const& [k, v] : _log_state.fence_pid_epoch) {
-        tx_ss.fenced.push_back(
-          model::producer_identity{.id = k(), .epoch = v()});
+        tx_ss.fenced.push_back(model::producer_identity{k(), v()});
     }
     for (auto& entry : _log_state.ongoing_map) {
         tx_ss.ongoing.push_back(entry.second);

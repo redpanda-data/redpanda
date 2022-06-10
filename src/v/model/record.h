@@ -440,9 +440,16 @@ struct record_batch_header {
 using tx_seq = named_type<int64_t, struct tm_tx_seq>;
 using producer_id = named_type<int64_t, struct producer_identity_id>;
 using producer_epoch = named_type<int16_t, struct producer_identity_epoch>;
+
 struct producer_identity {
     int64_t id{-1};
     int16_t epoch{0};
+
+    producer_identity() noexcept = default;
+
+    producer_identity(int64_t id, int16_t epoch)
+      : id(id)
+      , epoch(epoch) {}
 
     model::producer_id get_id() const { return model::producer_id(id); }
 
@@ -471,8 +478,7 @@ struct batch_identity {
 
     static batch_identity from(const record_batch_header& hdr) {
         return batch_identity{
-          .pid = model::
-            producer_identity{.id = hdr.producer_id, .epoch = hdr.producer_epoch},
+          .pid = model::producer_identity{hdr.producer_id, hdr.producer_epoch},
           .first_seq = hdr.base_sequence,
           .last_seq = increment_sequence(
             hdr.base_sequence, hdr.last_offset_delta),

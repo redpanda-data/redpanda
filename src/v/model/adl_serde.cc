@@ -288,4 +288,15 @@ model::topic_metadata adl<model::topic_metadata>::from(iobuf_parser& in) {
       = reflection::adl<std::vector<model::partition_metadata>>{}.from(in);
     return md;
 }
+
+model::producer_identity adl<model::producer_identity>::from(iobuf_parser& in) {
+    auto id = reflection::adl<int64_t>{}.from(in);
+    auto epoch = reflection::adl<int16_t>{}.from(in);
+    return {id, epoch};
+}
+
+void adl<model::producer_identity>::to(
+  iobuf& out, model::producer_identity&& p) {
+    reflection::serialize(out, p.id, p.epoch);
+}
 } // namespace reflection
