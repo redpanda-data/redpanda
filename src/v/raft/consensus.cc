@@ -543,8 +543,23 @@ void consensus::dispatch_recovery(follower_index_metadata& idx) {
               auto ptr = recovery.get();
               return ptr->apply()
                 .handle_exception([this, node_id](const std::exception_ptr& e) {
-                    vlog(
-                      _ctxlog.warn, "Node {} recovery failed - {}", node_id, e);
+                    try {
+                        rethrow_exception(e);
+                    } catch (const std::system_error& syserr) {
+                        // Likely to contain an rpc::errc such as
+                        // client_request_timeout
+                        vlog(
+                          _ctxlog.warn,
+                           "Node {} recovery cancelled ({})",
+                          node_id,
+                          syserr.code().message());
+                    } catch (...) {
+                        vlog(
+                          _ctxlog.warn,
+                          "Node {} recovery failed - {}",
+                          node_id,
+                          e);
+                    }
                 })
                 .finally([r = std::move(recovery)] {});
           })
