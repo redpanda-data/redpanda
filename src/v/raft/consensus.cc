@@ -506,7 +506,7 @@ bool consensus::needs_recovery(
 
 void consensus::dispatch_recovery(follower_index_metadata& idx) {
     if (get_raft_resources().recovery.current() <= 0) {
-        vlog(_ctxlog.warn, "resource.recovery: no units, deferring");
+        vlog(_ctxlog.info, "resource.recovery: no units, deferring");
         return;
     } else {
         vlog(
@@ -518,7 +518,7 @@ void consensus::dispatch_recovery(follower_index_metadata& idx) {
     auto since_last_failure = ss::lowres_clock::now()
                               - get_raft_resources().recovery_failure;
     if (since_last_failure < 10s) {
-        vlog(_ctxlog.warn, "resource.recovery: recent failure, deferring");
+        vlog(_ctxlog.info, "resource.recovery: recent failure, deferring");
         return;
     }
 
