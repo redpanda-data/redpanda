@@ -78,7 +78,7 @@ Notes:
 			client, err := admin.NewClient(fs, cfg)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-			brokers, err := client.Brokers()
+			brokers, err := client.Brokers(cmd.Context())
 			out.MaybeDie(err, "unable to request brokers: %v", err)
 
 			if len(brokers) == 0 {

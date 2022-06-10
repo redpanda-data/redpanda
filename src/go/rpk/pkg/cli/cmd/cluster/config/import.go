@@ -10,6 +10,7 @@
 package config
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -35,6 +36,7 @@ func (fe *formattedError) Error() string {
 }
 
 func importConfig(
+	ctx context.Context,
 	client *admin.AdminAPI,
 	filename string,
 	oldConfig admin.Config,
@@ -159,7 +161,7 @@ func importConfig(
 	fmt.Printf("\n")
 
 	// PUT to admin API
-	result, err := client.PatchClusterConfig(upsert, remove)
+	result, err := client.PatchClusterConfig(ctx, upsert, remove)
 	if he := (*admin.HTTPResponseError)(nil); errors.As(err, &he) {
 		// Special case 400 (validation) errors with friendly output
 		// about which configuration properties were invalid.
@@ -231,15 +233,15 @@ from the YAML file, it is reset to its default value.  `,
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			// GET the schema
-			schema, err := client.ClusterConfigSchema()
+			schema, err := client.ClusterConfigSchema(cmd.Context())
 			out.MaybeDie(err, "unable to query config schema: %v", err)
 
 			// GET current config
-			currentConfig, err := client.Config()
+			currentConfig, err := client.Config(cmd.Context())
 			out.MaybeDie(err, "unable to query config values: %v", err)
 
 			// Read back template & parse
-			err = importConfig(client, filename, currentConfig, schema, *all)
+			err = importConfig(cmd.Context(), client, filename, currentConfig, schema, *all)
 			if fe := (*formattedError)(nil); errors.As(err, &fe) {
 				fmt.Fprint(os.Stderr, err)
 				out.Die("No changes were made")

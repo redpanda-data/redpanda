@@ -12,6 +12,7 @@
 package debug
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 )
 
 func executeBundle(
+	context.Context,
 	afero.Fs,
 	*config.Config,
 	*kgo.Client,

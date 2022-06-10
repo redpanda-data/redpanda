@@ -47,6 +47,7 @@ import (
 )
 
 func executeBundle(
+	ctx context.Context,
 	fs afero.Fs,
 	conf *config.Config,
 	cl *kgo.Client,
@@ -80,7 +81,7 @@ func executeBundle(
 	}
 
 	steps := []step{
-		saveKafkaMetadata(ps, cl),
+		saveKafkaMetadata(ctx, ps, cl),
 		saveDataDirStructure(ps, conf),
 		saveConfig(ps, conf),
 		saveCPUInfo(ps),
@@ -88,16 +89,16 @@ func executeBundle(
 		saveResourceUsageData(ps, conf),
 		saveNTPDrift(ps),
 		saveSyslog(ps),
-		savePrometheusMetrics(ps, admin),
-		saveDNSData(ps),
-		saveDiskUsage(ps, conf),
-		saveLogs(ps, logsSince, logsUntil, logsLimitBytes),
-		saveSocketData(ps),
-		saveTopOutput(ps),
-		saveVmstat(ps),
-		saveIP(ps),
-		saveLspci(ps),
-		saveDmidecode(ps),
+		savePrometheusMetrics(ctx, ps, admin),
+		saveDNSData(ctx, ps),
+		saveDiskUsage(ctx, ps, conf),
+		saveLogs(ctx, ps, logsSince, logsUntil, logsLimitBytes),
+		saveSocketData(ctx, ps),
+		saveTopOutput(ctx, ps),
+		saveVmstat(ctx, ps),
+		saveIP(ctx, ps),
+		saveLspci(ctx, ps),
+		saveDmidecode(ctx, ps),
 	}
 
 	for _, s := range steps {
@@ -180,6 +181,7 @@ func writeFileToZip(ps *stepParams, filename string, contents []byte) error {
 
 // Runs a command and pipes its output to a new file in the zip writer.
 func writeCommandOutputToZipLimit(
+	rootCtx context.Context,
 	ps *stepParams,
 	filename string,
 	outputLimitBytes int,
@@ -189,7 +191,7 @@ func writeCommandOutputToZipLimit(
 	ps.m.Lock()
 	defer ps.m.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), ps.timeout)
+	ctx, cancel := context.WithTimeout(rootCtx, ps.timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, command, args...)
 
@@ -233,9 +235,9 @@ func writeCommandOutputToZipLimit(
 
 // Runs a command and pipes its output to a new file in the zip writer.
 func writeCommandOutputToZip(
-	ps *stepParams, filename, command string, args ...string,
+	ctx context.Context, ps *stepParams, filename, command string, args ...string,
 ) error {
-	return writeCommandOutputToZipLimit(ps, filename, -1, command, args...)
+	return writeCommandOutputToZipLimit(ctx, ps, filename, -1, command, args...)
 }
 
 // Parses an error return from kadm, and if the return is a shard errors,
@@ -267,11 +269,11 @@ func stringifyKadmErr(err error) []string {
 	}
 }
 
-func saveKafkaMetadata(ps *stepParams, cl *kgo.Client) step {
+func saveKafkaMetadata(rootCtx context.Context, ps *stepParams, cl *kgo.Client) step {
 	return func() error {
 		log.Debug("Reading Kafka information")
 
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(rootCtx, 10*time.Second)
 		defer cancel()
 
 		type resp struct {
@@ -546,9 +548,9 @@ func saveSyslog(ps *stepParams) step {
 }
 
 // Queries the given admin API address for prometheus metrics.
-func savePrometheusMetrics(ps *stepParams, admin *admin.AdminAPI) step {
+func savePrometheusMetrics(ctx context.Context, ps *stepParams, admin *admin.AdminAPI) step {
 	return func() error {
-		raw, err := admin.PrometheusMetrics()
+		raw, err := admin.PrometheusMetrics(ctx)
 		if err != nil {
 			return fmt.Errorf("unable to fetch metrics from the admin API: %w", err)
 		}
@@ -557,16 +559,17 @@ func savePrometheusMetrics(ps *stepParams, admin *admin.AdminAPI) step {
 }
 
 // Saves the output of `dig`.
-func saveDNSData(ps *stepParams) step {
+func saveDNSData(ctx context.Context, ps *stepParams) step {
 	return func() error {
-		return writeCommandOutputToZip(ps, "dig.txt", "dig")
+		return writeCommandOutputToZip(ctx, ps, "dig.txt", "dig")
 	}
 }
 
 // Saves the disk usage total within redpanda's data directory.
-func saveDiskUsage(ps *stepParams, conf *config.Config) step {
+func saveDiskUsage(ctx context.Context, ps *stepParams, conf *config.Config) step {
 	return func() error {
 		return writeCommandOutputToZip(
+			ctx,
 			ps,
 			"du.txt",
 			"du", "-h", conf.Redpanda.Directory,
@@ -576,7 +579,7 @@ func saveDiskUsage(ps *stepParams, conf *config.Config) step {
 
 // TODO: What if running inside a container/ k8s?
 // Writes the journald redpanda logs, if available, to the bundle.
-func saveLogs(ps *stepParams, since, until string, logsLimitBytes int) step {
+func saveLogs(ctx context.Context, ps *stepParams, since, until string, logsLimitBytes int) step {
 	return func() error {
 		args := []string{"--no-pager", "-u", "redpanda"}
 		if since != "" {
@@ -586,6 +589,7 @@ func saveLogs(ps *stepParams, since, until string, logsLimitBytes int) step {
 			args = append(args, "--until", until)
 		}
 		return writeCommandOutputToZipLimit(
+			ctx,
 			ps,
 			"redpanda.log",
 			logsLimitBytes,
@@ -596,16 +600,17 @@ func saveLogs(ps *stepParams, since, until string, logsLimitBytes int) step {
 }
 
 // Saves the output of `ss`.
-func saveSocketData(ps *stepParams) step {
+func saveSocketData(ctx context.Context, ps *stepParams) step {
 	return func() error {
-		return writeCommandOutputToZip(ps, "ss.txt", "ss")
+		return writeCommandOutputToZip(ctx, ps, "ss.txt", "ss")
 	}
 }
 
 // Saves the output of `top`.
-func saveTopOutput(ps *stepParams) step {
+func saveTopOutput(ctx context.Context, ps *stepParams) step {
 	return func() error {
 		return writeCommandOutputToZip(
+			ctx,
 			ps,
 			"top.txt",
 			"top", "-b", "-n", "10", "-H", "-d", "1",
@@ -614,9 +619,10 @@ func saveTopOutput(ps *stepParams) step {
 }
 
 // Saves the output of `vmstat`.
-func saveVmstat(ps *stepParams) step {
+func saveVmstat(ctx context.Context, ps *stepParams) step {
 	return func() error {
 		return writeCommandOutputToZip(
+			ctx,
 			ps,
 			"vmstat.txt",
 			"vmstat", "-w", "1", "10",
@@ -625,9 +631,10 @@ func saveVmstat(ps *stepParams) step {
 }
 
 // Saves the output of `ip addr`.
-func saveIP(ps *stepParams) step {
+func saveIP(ctx context.Context, ps *stepParams) step {
 	return func() error {
 		return writeCommandOutputToZip(
+			ctx,
 			ps,
 			"ip.txt",
 			"ip", "addr",
@@ -636,9 +643,10 @@ func saveIP(ps *stepParams) step {
 }
 
 // Saves the output of `lspci`.
-func saveLspci(ps *stepParams) step {
+func saveLspci(ctx context.Context, ps *stepParams) step {
 	return func() error {
 		return writeCommandOutputToZip(
+			ctx,
 			ps,
 			"lspci.txt",
 			"lspci",
@@ -647,9 +655,10 @@ func saveLspci(ps *stepParams) step {
 }
 
 // Saves the output of `dmidecode`.
-func saveDmidecode(ps *stepParams) step {
+func saveDmidecode(ctx context.Context, ps *stepParams) step {
 	return func() error {
 		return writeCommandOutputToZip(
+			ctx,
 			ps,
 			"dmidecode.txt",
 			"dmidecode",

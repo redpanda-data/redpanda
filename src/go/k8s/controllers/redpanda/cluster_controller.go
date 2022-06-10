@@ -518,7 +518,7 @@ func (r *ClusterReconciler) setInitialSuperUserPassword(
 		username := string(secret.Data[corev1.BasicAuthUsernameKey])
 		password := string(secret.Data[corev1.BasicAuthPasswordKey])
 
-		err = adminAPI.CreateUser(username, password, admin.ScramSha256)
+		err = adminAPI.CreateUser(ctx, username, password, admin.ScramSha256)
 		// {"message": "Creating user: User already exists", "code": 400}
 		if err != nil && !strings.Contains(err.Error(), "already exists") { // TODO if user already exists, we only receive "400". Check for specific error code when available.
 			return &resources.RequeueAfterError{

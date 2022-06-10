@@ -50,7 +50,7 @@ node exists that is already in maintenance mode then an error will be returned.
 			client, err := admin.NewClient(fs, cfg)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-			err = client.EnableMaintenanceMode(nodeID)
+			err = client.EnableMaintenanceMode(cmd.Context(), nodeID)
 			var he *admin.HTTPResponseError
 			if errors.As(err, &he) {
 				if he.Response.StatusCode == 404 {
@@ -78,7 +78,7 @@ node exists that is already in maintenance mode then an error will be returned.
 			var table *out.TabWriter
 			retries := 3
 			for {
-				b, err := client.Broker(nodeID)
+				b, err := client.Broker(cmd.Context(), nodeID)
 				if err == nil && b.Maintenance == nil {
 					err = fmt.Errorf("maintenance mode not supported. upgrade in progress?")
 					// since admin api client uses `sendAny` it is possible that

@@ -45,7 +45,7 @@ func newPrintCommand(fs afero.Fs) *cobra.Command {
 			cl, err := admin.NewHostClient(fs, cfg, host)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-			conf, err := cl.Config()
+			conf, err := cl.Config(cmd.Context())
 			out.MaybeDie(err, "unable to request configuration: %v", err)
 
 			marshaled, err := json.MarshalIndent(conf, "", "  ")
@@ -135,7 +135,7 @@ failure of enabling each logger is individually printed.
 			var successes []string
 
 			for _, logger := range loggers {
-				err := cl.SetLogLevel(logger, level, expirySeconds)
+				err := cl.SetLogLevel(cmd.Context(), logger, level, expirySeconds)
 				if err != nil {
 					failures = append(failures, failure{logger, err})
 				} else {

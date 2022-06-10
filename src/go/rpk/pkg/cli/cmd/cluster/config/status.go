@@ -40,7 +40,7 @@ is offline.`,
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			// GET the status endpoint
-			resp, err := client.ClusterConfigStatus()
+			resp, err := client.ClusterConfigStatus(cmd.Context())
 			out.MaybeDie(err, "error fetching status: %v", err)
 
 			tw := out.NewTable("NODE", "CONFIG-VERSION", "NEEDS-RESTART", "INVALID", "UNKNOWN")

@@ -70,7 +70,7 @@ func newBundleCommand(fs afero.Fs) *cobra.Command {
 			logsLimit, err := units.FromHumanSize(logsSizeLimit)
 			out.MaybeDie(err, "unable to parse --logs-size-limit: %v", err)
 
-			err = executeBundle(fs, cfg, cl, admin, logsSince, logsUntil, int(logsLimit), timeout)
+			err = executeBundle(cmd.Context(), fs, cfg, cl, admin, logsSince, logsUntil, int(logsLimit), timeout)
 			out.MaybeDie(err, "unable to create bundle: %v", err)
 		},
 	}

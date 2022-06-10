@@ -10,6 +10,7 @@
 package admin
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/url"
@@ -35,7 +36,7 @@ const (
 
 // CreateUser creates a user with the given username and password using the
 // given mechanism (SCRAM-SHA-256, SCRAM-SHA-512).
-func (a *AdminAPI) CreateUser(username, password, mechanism string) error {
+func (a *AdminAPI) CreateUser(ctx context.Context, username, password, mechanism string) error {
 	if username == "" {
 		return errors.New("invalid empty username")
 	}
@@ -47,20 +48,20 @@ func (a *AdminAPI) CreateUser(username, password, mechanism string) error {
 		Password:  password,
 		Algorithm: mechanism,
 	}
-	return a.sendToLeader(http.MethodPost, usersEndpoint, u, nil)
+	return a.sendToLeader(ctx, http.MethodPost, usersEndpoint, u, nil)
 }
 
 // DeleteUser deletes the given username, if it exists.
-func (a *AdminAPI) DeleteUser(username string) error {
+func (a *AdminAPI) DeleteUser(ctx context.Context, username string) error {
 	if username == "" {
 		return errors.New("invalid empty username")
 	}
 	path := usersEndpoint + "/" + url.PathEscape(username)
-	return a.sendToLeader(http.MethodDelete, path, nil, nil)
+	return a.sendToLeader(ctx, http.MethodDelete, path, nil, nil)
 }
 
 // ListUsers returns the current users.
-func (a *AdminAPI) ListUsers() ([]string, error) {
+func (a *AdminAPI) ListUsers(ctx context.Context) ([]string, error) {
 	var users []string
-	return users, a.sendAny(http.MethodGet, usersEndpoint, nil, &users)
+	return users, a.sendAny(ctx, http.MethodGet, usersEndpoint, nil, &users)
 }

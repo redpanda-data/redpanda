@@ -9,7 +9,10 @@
 
 package admin
 
-import "net/http"
+import (
+	"context"
+	"net/http"
+)
 
 // Health overview data structure.
 type ClusterHealthOverview struct {
@@ -20,7 +23,7 @@ type ClusterHealthOverview struct {
 	LeaderlessPartitions []string `json:"leaderless_partition"`
 }
 
-func (a *AdminAPI) GetHealthOverview() (ClusterHealthOverview, error) {
+func (a *AdminAPI) GetHealthOverview(ctx context.Context) (ClusterHealthOverview, error) {
 	var response ClusterHealthOverview
-	return response, a.sendAny(http.MethodGet, "/v1/cluster/health_overview", nil, &response)
+	return response, a.sendAny(ctx, http.MethodGet, "/v1/cluster/health_overview", nil, &response)
 }
