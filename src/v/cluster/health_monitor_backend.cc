@@ -18,6 +18,7 @@
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "cluster/node/local_monitor.h"
+#include "cluster/partition_probe.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "config/property.h"
@@ -39,6 +40,7 @@
 #include <seastar/util/log.hh>
 
 #include <absl/container/node_hash_set.h>
+#include <fmt/format.h>
 
 #include <iterator>
 
@@ -661,81 +663,95 @@ health_monitor_backend::collect_current_node_health(node_report_filter filter) {
     co_return ret;
 }
 namespace {
+
 struct ntp_leader {
-    model::ntp ntp;
     model::term_id term;
     std::optional<model::node_id> leader_id;
     model::revision_id revision_id;
 };
 
-partition_status to_partition_leader(const ntp_leader& ntpl) {
+struct ntp_report {
+    model::ntp ntp;
+    ntp_leader leader;
+    size_t size_bytes;
+};
+
+partition_status to_partition_status(const ntp_report& ntpr) {
     return partition_status{
-      .id = ntpl.ntp.tp.partition,
-      .term = ntpl.term,
-      .leader_id = ntpl.leader_id,
-      .revision_id = ntpl.revision_id,
+      .id = ntpr.ntp.tp.partition,
+      .term = ntpr.leader.term,
+      .leader_id = ntpr.leader.leader_id,
+      .revision_id = ntpr.leader.revision_id,
+      .size_bytes = ntpr.size_bytes,
     };
 }
 
-std::vector<ntp_leader> collect_shard_local_leaders(
+std::vector<ntp_report> collect_shard_local_reports(
   partition_manager& pm, const partitions_filter& filters) {
-    std::vector<ntp_leader> leaders;
+    std::vector<ntp_report> reports;
     // empty filter, collect all
     if (filters.namespaces.empty()) {
-        leaders.reserve(pm.partitions().size());
+        reports.reserve(pm.partitions().size());
         std::transform(
           pm.partitions().begin(),
           pm.partitions().end(),
-          std::back_inserter(leaders),
+          std::back_inserter(reports),
           [](auto& p) {
-              return ntp_leader{
+              return ntp_report{
                 .ntp = p.first,
-                .term = p.second->term(),
-                .leader_id = p.second->get_leader_id(),
-                .revision_id = p.second->get_revision_id(),
+                .leader = ntp_leader{
+                  .term = p.second->term(),
+                  .leader_id = p.second->get_leader_id(),
+                  .revision_id = p.second->get_revision_id(),
+                },
+                .size_bytes = p.second->size_bytes(),
               };
           });
     } else {
         for (const auto& [ntp, partition] : pm.partitions()) {
             if (filters.matches(ntp)) {
-                leaders.push_back(ntp_leader{
-                  .ntp = ntp,
+                reports.push_back(ntp_report{
+                .ntp = ntp,
+                .leader = ntp_leader{
                   .term = partition->term(),
                   .leader_id = partition->get_leader_id(),
                   .revision_id = partition->get_revision_id(),
+                },
+                .size_bytes = partition->size_bytes(),
                 });
             }
         }
     }
 
-    return leaders;
+    return reports;
 }
-using leaders_acc_t
+
+using reports_acc_t
   = absl::node_hash_map<model::topic_namespace, std::vector<partition_status>>;
 
-leaders_acc_t
-reduce_leaders_map(leaders_acc_t acc, std::vector<ntp_leader> current_leaders) {
-    for (auto& ntpl : current_leaders) {
+reports_acc_t
+reduce_reports_map(reports_acc_t acc, std::vector<ntp_report> current_reports) {
+    for (auto& ntpr : current_reports) {
         model::topic_namespace tp_ns(
-          std::move(ntpl.ntp.ns), std::move(ntpl.ntp.tp.topic));
+          std::move(ntpr.ntp.ns), std::move(ntpr.ntp.tp.topic));
 
-        acc[tp_ns].push_back(to_partition_leader(ntpl));
+        acc[tp_ns].push_back(to_partition_status(ntpr));
     }
     return acc;
 }
 } // namespace
 ss::future<std::vector<topic_status>>
 health_monitor_backend::collect_topic_status(partitions_filter filters) {
-    auto leaders_map = co_await _partition_manager.map_reduce0(
+    auto reports_map = co_await _partition_manager.map_reduce0(
       [&filters](partition_manager& pm) {
-          return collect_shard_local_leaders(pm, filters);
+          return collect_shard_local_reports(pm, filters);
       },
-      leaders_acc_t{},
-      &reduce_leaders_map);
+      reports_acc_t{},
+      &reduce_reports_map);
 
     std::vector<topic_status> topics;
-    topics.reserve(leaders_map.size());
-    for (auto& [tp_ns, partitions] : leaders_map) {
+    topics.reserve(reports_map.size());
+    for (auto& [tp_ns, partitions] : reports_map) {
         topics.push_back(
           topic_status{.tp_ns = tp_ns, .partitions = std::move(partitions)});
     }

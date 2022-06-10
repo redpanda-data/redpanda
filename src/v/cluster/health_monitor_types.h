@@ -54,13 +54,24 @@ struct partition_status {
      * cause older redpanda versions to crash.
      *
      * Version: -1: added revision_id field
+     * Version: -2: added size_bytes field
+     *
+     * Same versioning should also be supported in get_node_health_request
      */
-    static constexpr int8_t current_version = -1;
+
+    static constexpr int8_t initial_version = 0;
+    static constexpr int8_t revision_id_version = -1;
+    static constexpr int8_t size_bytes_version = -2;
+
+    static constexpr int8_t current_version = size_bytes_version;
+
+    static constexpr size_t invalid_size_bytes = size_t(-1);
 
     model::partition_id id;
     model::term_id term;
     std::optional<model::node_id> leader_id;
     model::revision_id revision_id;
+    size_t size_bytes;
 
     friend std::ostream& operator<<(std::ostream&, const partition_status&);
     friend bool operator==(const partition_status&, const partition_status&)
@@ -194,8 +205,13 @@ using force_refresh = ss::bool_class<struct hm_force_refresh_tag>;
  */
 
 struct get_node_health_request {
+    static constexpr int8_t initial_version = 0;
     // version -1: included revision id in partition status
-    static constexpr int8_t current_version = -1;
+    static constexpr int8_t revision_id_version = -1;
+    // version -2: included size_bytes in partition status
+    static constexpr int8_t size_bytes_version = -2;
+
+    static constexpr int8_t current_version = size_bytes_version;
 
     node_report_filter filter;
     // this field is not serialized
@@ -210,8 +226,14 @@ struct get_node_health_reply {
 };
 
 struct get_cluster_health_request {
+    static constexpr int8_t initial_version = 0;
     // version -1: included revision id in partition status
-    static constexpr int8_t current_version = -1;
+    static constexpr int8_t revision_id_version = -1;
+    // version -2: included size_bytes in partition status
+    static constexpr int8_t size_bytes_version = -2;
+
+    static constexpr int8_t current_version = size_bytes_version;
+
     cluster_report_filter filter;
     // if set to true will force node health metadata refresh
     force_refresh refresh = force_refresh::no;

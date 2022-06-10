@@ -378,6 +378,7 @@ SEASTAR_THREAD_TEST_CASE(partition_status_serialiaztion_test) {
       .term = model::term_id(256),
       .leader_id = model::node_id(123),
       .revision_id = model::revision_id(1024),
+      .size_bytes = 4096,
     };
     auto original = status;
 
@@ -393,23 +394,50 @@ struct partition_status_v0 {
     std::optional<model::node_id> leader_id;
 };
 
+struct partition_status_v1 {
+    int8_t version = 0;
+    model::partition_id id;
+    model::term_id term;
+    std::optional<model::node_id> leader_id;
+    model::revision_id revision_id;
+};
+
 SEASTAR_THREAD_TEST_CASE(partition_status_serialization_backward_compat_test) {
-    partition_status_v0 status{
+    partition_status_v0 status_v0{
       .id = model::partition_id(10),
       .term = model::term_id(256),
       .leader_id = model::node_id(123),
     };
 
-    auto original = status;
-    auto buf = reflection::to_iobuf(std::move(status));
+    auto original_v0 = status_v0;
+    auto buf = reflection::to_iobuf(std::move(status_v0));
     auto result = reflection::from_iobuf<cluster::partition_status>(
       std::move(buf));
 
-    BOOST_REQUIRE_EQUAL(result.id, original.id);
-    BOOST_REQUIRE_EQUAL(result.term, original.term);
-    BOOST_REQUIRE_EQUAL(result.leader_id, original.leader_id);
+    BOOST_REQUIRE_EQUAL(result.id, original_v0.id);
+    BOOST_REQUIRE_EQUAL(result.term, original_v0.term);
+    BOOST_REQUIRE_EQUAL(result.leader_id, original_v0.leader_id);
     BOOST_REQUIRE_EQUAL(result.revision_id, model::revision_id{});
+    BOOST_REQUIRE_EQUAL(result.size_bytes, 0);
+
+    partition_status_v1 status_v1{
+      .id = model::partition_id(10),
+      .term = model::term_id(256),
+      .leader_id = model::node_id(123),
+      .revision_id = model::revision_id(1024),
+    };
+
+    auto original_v1 = status_v1;
+    buf = reflection::to_iobuf(std::move(status_v1));
+    result = reflection::from_iobuf<cluster::partition_status>(std::move(buf));
+
+    BOOST_REQUIRE_EQUAL(result.id, original_v1.id);
+    BOOST_REQUIRE_EQUAL(result.term, original_v1.term);
+    BOOST_REQUIRE_EQUAL(result.leader_id, original_v1.leader_id);
+    BOOST_REQUIRE_EQUAL(result.revision_id, model::revision_id{1024});
+    BOOST_REQUIRE_EQUAL(result.size_bytes, 0);
 }
+
 namespace reflection {
 template<>
 struct adl<partition_status_v0> {
@@ -430,6 +458,34 @@ struct adl<partition_status_v0> {
         };
     }
 };
+
+template<>
+struct adl<partition_status_v1> {
+    void to(iobuf& out, partition_status_v1&& s) {
+        if (s.revision_id == model::revision_id{}) {
+            serialize(out, int8_t(0), s.id, s.term, s.leader_id);
+        } else {
+            serialize(
+              out, int8_t(-1), s.id, s.term, s.leader_id, s.revision_id);
+        }
+    }
+
+    partition_status_v1 from(iobuf_parser& p) {
+        auto version = adl<int8_t>{}.from(p);
+        auto id = adl<model::partition_id>{}.from(p);
+        auto term = adl<model::term_id>{}.from(p);
+        auto leader = adl<std::optional<model::node_id>>{}.from(p);
+        partition_status_v1 ret{
+          .id = id,
+          .term = term,
+          .leader_id = leader,
+        };
+        if (version < 0) {
+            ret.revision_id = adl<model::revision_id>{}.from(p);
+        }
+        return ret;
+    }
+};
 } // namespace reflection
 
 SEASTAR_THREAD_TEST_CASE(partition_status_serialization_old_version) {
@@ -439,22 +495,33 @@ SEASTAR_THREAD_TEST_CASE(partition_status_serialization_old_version) {
       .term = model::term_id(256),
       .leader_id = model::node_id(123),
       .revision_id = model::revision_id{},
+      .size_bytes = 0,
     });
     statuses.push_back(cluster::partition_status{
       .id = model::partition_id(1),
       .term = model::term_id(256),
       .leader_id = model::node_id(123),
       .revision_id = model::revision_id{},
+      .size_bytes = 0,
     });
 
     auto original = statuses;
     auto buf = reflection::to_iobuf(std::move(statuses));
-    auto result = reflection::from_iobuf<std::vector<partition_status_v0>>(
+    auto result_v0 = reflection::from_iobuf<std::vector<partition_status_v0>>(
       std::move(buf));
     for (auto i = 0; i < statuses.size(); ++i) {
-        BOOST_CHECK(result[i].id == original[i].id);
-        BOOST_CHECK(result[i].term == original[i].term);
-        BOOST_CHECK(result[i].leader_id == original[i].leader_id);
+        BOOST_CHECK(result_v0[i].id == original[i].id);
+        BOOST_CHECK(result_v0[i].term == original[i].term);
+        BOOST_CHECK(result_v0[i].leader_id == original[i].leader_id);
+    }
+
+    buf = reflection::to_iobuf(std::move(statuses));
+    auto result_v1 = reflection::from_iobuf<std::vector<partition_status_v1>>(
+      std::move(buf));
+    for (auto i = 0; i < statuses.size(); ++i) {
+        BOOST_CHECK(result_v1[i].id == original[i].id);
+        BOOST_CHECK(result_v1[i].term == original[i].term);
+        BOOST_CHECK(result_v1[i].leader_id == original[i].leader_id);
     }
 }
 
