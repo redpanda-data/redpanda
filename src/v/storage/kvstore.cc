@@ -24,6 +24,7 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/metrics.hh>
 #include <seastar/core/thread.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/util/defer.hh>
 #include <seastar/util/log.hh>
 
@@ -341,12 +342,16 @@ ss::future<> kvstore::save_snapshot() {
     }
     auto batch = std::move(builder).build();
 
+    co_await ss::coroutine::maybe_yield();
+
     // serialize batch: size_prefix + batch
     iobuf data;
     auto ph = data.reserve(sizeof(int32_t));
     reflection::serialize(data, std::move(batch));
     auto size = ss::cpu_to_le(int32_t(data.size_bytes() - sizeof(int32_t)));
     ph.write((const char*)&size, sizeof(size));
+
+    co_await ss::coroutine::maybe_yield();
 
     auto wr = co_await _snap.start_snapshot();
     // the last log offset represented in the snapshot
@@ -446,6 +451,7 @@ void kvstore::load_snapshot_in_thread() {
           batch.header().header_crc));
     }
 
+    _db.reserve(batch.header().last_offset() - batch.header().base_offset);
     batch.for_each_record([this](model::record r) {
         auto key = iobuf_to_bytes(r.release_key());
         _probe.add_cached_bytes(key.size() + r.value().size_bytes());
