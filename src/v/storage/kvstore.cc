@@ -22,6 +22,7 @@
 #include "storage/types.h"
 #include "vlog.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/metrics.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/util/defer.hh>
@@ -328,7 +329,7 @@ ss::future<> kvstore::save_snapshot() {
 
     // no operations have been applied to the db
     if (_next_offset == model::offset(0)) {
-        return ss::now();
+        co_return;
     }
 
     vlog(
@@ -353,29 +354,20 @@ ss::future<> kvstore::save_snapshot() {
     auto size = ss::cpu_to_le(int32_t(data.size_bytes() - sizeof(int32_t)));
     ph.write((const char*)&size, sizeof(size));
 
-    return _snap.start_snapshot().then(
-      [this, data = std::move(data)](snapshot_writer writer) mutable {
-          return ss::do_with(
-            std::move(writer),
-            [this, data = std::move(data)](snapshot_writer& wr) mutable {
-                // the last log offset represented in the snapshot
-                auto last_offset = _next_offset - model::offset(1);
+    auto wr = co_await _snap.start_snapshot();
+    // the last log offset represented in the snapshot
+    auto last_offset = _next_offset - model::offset(1);
 
-                iobuf meta;
-                reflection::serialize(meta, last_offset);
+    iobuf meta;
+    reflection::serialize(meta, last_offset);
 
-                return wr.write_metadata(std::move(meta))
-                  .then([&wr, data = std::move(data)]() mutable {
-                      auto& os = wr.output(); // kept alive by do_with above
-                      return write_iobuf_to_output_stream(std::move(data), os);
-                  })
-                  .then([&wr] { return wr.close(); })
-                  .then([this, &wr]() {
-                      vlog(lg.debug, "Finishing snapshot creation");
-                      return _snap.finish_snapshot(wr);
-                  });
-            });
-      });
+    co_await wr.write_metadata(std::move(meta));
+    auto& os = wr.output();
+    co_await write_iobuf_to_output_stream(std::move(data), os);
+    co_await wr.close();
+
+    vlog(lg.debug, "Finishing snapshot creation");
+    co_await _snap.finish_snapshot(wr);
 }
 
 ss::future<> kvstore::recover() {
