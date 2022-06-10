@@ -57,7 +57,8 @@ controller::controller(
   ss::sharded<storage::api>& storage,
   ss::sharded<storage::node_api>& storage_node,
   ss::sharded<raft::group_manager>& raft_manager,
-  ss::sharded<v8_engine::data_policy_table>& data_policy_table)
+  ss::sharded<v8_engine::data_policy_table>& data_policy_table,
+  ss::sharded<cloud_storage::remote>& cloud_storage_api)
   : _config_preload(std::move(config_preload))
   , _connections(ccache)
   , _partition_manager(pm)
@@ -67,7 +68,8 @@ controller::controller(
   , _tp_updates_dispatcher(_partition_allocator, _tp_state, _partition_leaders)
   , _security_manager(_credentials, _authorizer)
   , _data_policy_manager(data_policy_table)
-  , _raft_manager(raft_manager) {}
+  , _raft_manager(raft_manager)
+  , _cloud_storage_api(cloud_storage_api) {}
 
 ss::future<> controller::wire_up() {
     return _as.start()
