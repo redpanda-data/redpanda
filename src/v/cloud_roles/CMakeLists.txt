@@ -16,4 +16,7 @@ v_cc_library(
     v::http
     v::s3
     v::model
+    v::utils
 )
+
+add_subdirectory(tests)
