@@ -43,6 +43,8 @@ redpanda:
   # Skips most of the checks performed at startup (i.e. memory, xfs)
   # not recomended for production use
   developer_mode: true
+  enable_idempotence: true
+  enable_transactions: true
 
 # Enable Pandaproxy
 pandaproxy:
