@@ -418,8 +418,7 @@ ss::future<topic_result> topics_frontend::do_create_topic(
     auto validation_err = validate_topic_configuration(assignable_config);
 
     if (validation_err != errc::success) {
-        return ss::make_ready_future<topic_result>(
-          topic_result(assignable_config.cfg.tp_ns, validation_err));
+        co_return topic_result(assignable_config.cfg.tp_ns, validation_err);
     }
 
     // TODO: implement read replicas, see
@@ -429,23 +428,16 @@ ss::future<topic_result> topics_frontend::do_create_topic(
           assignable_config.cfg.tp_ns, errc::topic_invalid_config));
     }
 
-    return _allocator
-      .invoke_on(
-        partition_allocator::shard,
-        [assignable_config](partition_allocator& al) {
-            return al.allocate(make_allocation_request(assignable_config));
-        })
-      .then([this, t_cfg = std::move(assignable_config.cfg), timeout](
-              result<allocation_units> units) mutable {
-          // no assignments, error
-          if (!units) {
-              return ss::make_ready_future<topic_result>(
-                make_error_result(t_cfg.tp_ns, units.error()));
-          }
-
-          return replicate_create_topic(
-            std::move(t_cfg), std::move(units.value()), timeout);
+    auto units = co_await _allocator.invoke_on(
+      partition_allocator::shard, [assignable_config](partition_allocator& al) {
+          return al.allocate(make_allocation_request(assignable_config));
       });
+
+    if (!units) {
+        co_return make_error_result(assignable_config.cfg.tp_ns, units.error());
+    }
+    co_return co_await replicate_create_topic(
+      std::move(assignable_config.cfg), std::move(units.value()), timeout);
 }
 
 ss::future<topic_result> topics_frontend::replicate_create_topic(
