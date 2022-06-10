@@ -34,6 +34,7 @@
 #include <seastar/core/reactor.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/smp.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 
 #include <algorithm>
 #include <exception>
@@ -162,7 +163,14 @@ ss::future<> partition_manager::stop_partitions() {
     co_await _gate.close();
     // prevent partitions from being accessed
     auto partitions = std::exchange(_ntp_table, {});
+
     _raft_table.clear();
+    auto current = _raft_table.begin();
+    while (current != _raft_table.end()) {
+        current = _raft_table.erase(current, ++current);
+        co_await ss::coroutine::maybe_yield();
+    }
+
     // shutdown all partitions
     co_await ss::parallel_for_each(
       partitions, [this](auto& e) { return do_shutdown(e.second); });
