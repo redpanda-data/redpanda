@@ -534,39 +534,39 @@ void consensus::dispatch_recovery(follower_index_metadata& idx) {
     }
     idx.is_recovering = true;
     // background
-    ssx::background
-      = ssx::spawn_with_gate_then(
-          _bg,
-          [this, node_id = idx.node_id] {
-              auto recovery = std::make_unique<recovery_stm>(
-                this, node_id, _scheduling, _recovery_mem_quota);
-              auto ptr = recovery.get();
-              return ptr->apply()
-                .handle_exception([this, node_id](const std::exception_ptr& e) {
-                    try {
-                        rethrow_exception(e);
-                    } catch (const std::system_error& syserr) {
-                        // Likely to contain an rpc::errc such as
-                        // client_request_timeout
-                        vlog(
-                          _ctxlog.warn,
-                           "Node {} recovery cancelled ({})",
-                          node_id,
-                          syserr.code().message());
-                    } catch (...) {
-                        vlog(
-                          _ctxlog.warn,
-                          "Node {} recovery failed - {}",
-                          node_id,
-                          e);
-                    }
-                })
-                .finally([r = std::move(recovery)] {});
-          })
-          .handle_exception([this](const std::exception_ptr& e) {
-              vlog(_ctxlog.warn, "Recovery error - {}", e);
-          })
-          .finally([units = std::move(units)]() {});
+    ssx::background = ssx::spawn_with_gate_then(
+                        _bg,
+                        [this, node_id = idx.node_id] {
+                            auto recovery = std::make_unique<recovery_stm>(
+                              this, node_id, _scheduling, _recovery_mem_quota);
+                            auto ptr = recovery.get();
+                            return ptr->apply()
+                              .handle_exception(
+                                [this, node_id](const std::exception_ptr& e) {
+                                    try {
+                                        rethrow_exception(e);
+                                    } catch (const std::system_error& syserr) {
+                                        // Likely to contain an rpc::errc such
+                                        // as client_request_timeout
+                                        vlog(
+                                          _ctxlog.warn,
+                                          "Node {} recovery cancelled ({})",
+                                          node_id,
+                                          syserr.code().message());
+                                    } catch (...) {
+                                        vlog(
+                                          _ctxlog.warn,
+                                          "Node {} recovery failed - {}",
+                                          node_id,
+                                          e);
+                                    }
+                                })
+                              .finally([r = std::move(recovery)] {});
+                        })
+                        .handle_exception([this](const std::exception_ptr& e) {
+                            vlog(_ctxlog.warn, "Recovery error - {}", e);
+                        })
+                        .finally([units = std::move(units)]() {});
 }
 
 ss::future<result<model::offset>> consensus::linearizable_barrier() {
