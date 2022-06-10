@@ -12,7 +12,6 @@ package resources
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
@@ -22,10 +21,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
-)
-
-const (
-	DecommissionRequeueDuration = time.Second * 10
 )
 
 // handleScaling is called to detect cases of replicas change and apply them to the cluster
@@ -63,7 +58,7 @@ func (r *StatefulSetResource) handleScaling(ctx context.Context) error {
 			}
 			if !formed {
 				return &RequeueAfterError{
-					RequeueAfter: DecommissionRequeueDuration,
+					RequeueAfter: r.decommissionWaitInterval,
 					Msg:          fmt.Sprintf("Waiting for cluster to be formed before upscaling to %d replicas", *r.pandaCluster.Spec.Replicas),
 				}
 			}
@@ -97,7 +92,7 @@ func (r *StatefulSetResource) handleDecommission(ctx context.Context) error {
 	}
 
 	if broker != nil {
-		r.logger.Info("Broker still exists in the cluster", "node_id", broker.NodeID)
+		r.logger.Info("Broker still exists in the cluster", "node_id", broker.NodeID, "status", broker.MembershipStatus)
 		if broker.MembershipStatus != admin.MembershipStatusDraining {
 			// We ask to decommission since it does not seem done
 			err = adminAPI.DecommissionBroker(ctx, broker.NodeID)
@@ -116,7 +111,7 @@ func (r *StatefulSetResource) handleDecommission(ctx context.Context) error {
 
 		// Wait until the node is fully drained (or wait forever if the cluster does not allow decommissioning of that specific node)
 		return &RequeueAfterError{
-			RequeueAfter: DecommissionRequeueDuration,
+			RequeueAfter: r.decommissionWaitInterval,
 			Msg:          fmt.Sprintf("Waiting for node %d to be decommissioned from cluster", broker.NodeID),
 		}
 	}
@@ -135,7 +130,7 @@ func (r *StatefulSetResource) handleDecommission(ctx context.Context) error {
 	}
 	if !scaledDown {
 		return &RequeueAfterError{
-			RequeueAfter: DecommissionRequeueDuration,
+			RequeueAfter: r.decommissionWaitInterval,
 			Msg:          fmt.Sprintf("Waiting for statefulset to downscale to %d replicas", targetReplicas),
 		}
 	}
@@ -185,7 +180,7 @@ func (r *StatefulSetResource) handleRecommission(ctx context.Context) error {
 		r.logger.Info("Node marked for being recommissioned in cluster", "node_id", *r.pandaCluster.Status.DecommissioningNode)
 
 		return &RequeueAfterError{
-			RequeueAfter: DecommissionRequeueDuration,
+			RequeueAfter: r.decommissionWaitInterval,
 			Msg:          fmt.Sprintf("Waiting for node %d to be recommissioned into cluster %s", *r.pandaCluster.Status.DecommissioningNode, r.pandaCluster.Name),
 		}
 	}
@@ -198,7 +193,7 @@ func (r *StatefulSetResource) handleRecommission(ctx context.Context) error {
 func (r *StatefulSetResource) getAdminAPIClient(
 	ctx context.Context, ordinals ...int32,
 ) (adminutils.AdminAPIClient, error) {
-	return adminutils.NewInternalAdminAPI(ctx, r, r.pandaCluster, r.serviceFQDN, r.adminTLSConfigProvider, ordinals...)
+	return r.adminAPIClientFactory(ctx, r, r.pandaCluster, r.serviceFQDN, r.adminTLSConfigProvider, ordinals...)
 }
 
 func (r *StatefulSetResource) isClusterFormed(

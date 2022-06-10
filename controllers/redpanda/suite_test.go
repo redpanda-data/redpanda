@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"sort"
@@ -94,16 +95,23 @@ var _ = BeforeSuite(func(done Done) {
 		_ *redpandav1alpha1.Cluster,
 		_ string,
 		_ types.AdminTLSConfigProvider,
-		_ ...int32,
+		ordinals ...int32,
 	) (adminutils.AdminAPIClient, error) {
+		if len(ordinals) == 1 {
+			return &scopedMockAdminAPI{
+				mockAdminAPI: testAdminAPI,
+				ordinal:      ordinals[0],
+			}, nil
+		}
 		return testAdminAPI, nil
 	}
 
 	err = (&redpandacontrollers.ClusterReconciler{
-		Client:                k8sManager.GetClient(),
-		Log:                   ctrl.Log.WithName("controllers").WithName("core").WithName("RedpandaCluster"),
-		Scheme:                k8sManager.GetScheme(),
-		AdminAPIClientFactory: testAdminAPIFactory,
+		Client:                   k8sManager.GetClient(),
+		Log:                      ctrl.Log.WithName("controllers").WithName("core").WithName("RedpandaCluster"),
+		Scheme:                   k8sManager.GetScheme(),
+		AdminAPIClientFactory:    testAdminAPIFactory,
+		DecommissionWaitInterval: 100 * time.Millisecond,
 	}).WithClusterDomain("cluster.local").WithConfiguratorSettings(resources.ConfiguratorSettings{
 		ConfiguratorBaseImage: "vectorized/configurator",
 		ConfiguratorTag:       "latest",
@@ -162,7 +170,13 @@ type mockAdminAPI struct {
 	invalid          []string
 	unknown          []string
 	directValidation bool
+	brokers          []admin.Broker
 	monitor          sync.Mutex
+}
+
+type scopedMockAdminAPI struct {
+	*mockAdminAPI
+	ordinal int32
 }
 
 var _ adminutils.AdminAPIClient = &mockAdminAPI{}
@@ -289,6 +303,7 @@ func (m *mockAdminAPI) Clear() {
 	m.patches = nil
 	m.unavailable = false
 	m.directValidation = false
+	m.brokers = nil
 }
 
 func (m *mockAdminAPI) GetFeatures(
@@ -373,22 +388,98 @@ func (m *mockAdminAPI) GetNodeConfig(
 	return admin.NodeConfig{}, nil
 }
 
+// nolint:goerr113 // test code
+func (s *scopedMockAdminAPI) GetNodeConfig(
+	ctx context.Context,
+) (admin.NodeConfig, error) {
+	brokers, err := s.Brokers(ctx)
+	if err != nil {
+		return admin.NodeConfig{}, err
+	}
+	if len(brokers) <= int(s.ordinal) {
+		return admin.NodeConfig{}, fmt.Errorf("broker not registered")
+	}
+	return admin.NodeConfig{
+		NodeID: brokers[int(s.ordinal)].NodeID,
+	}, nil
+}
+
 func (m *mockAdminAPI) SetDirectValidationEnabled(directValidation bool) {
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
 	m.directValidation = directValidation
 }
 
+func (m *mockAdminAPI) AddBroker(broker admin.Broker) {
+	m.monitor.Lock()
+	defer m.monitor.Unlock()
+
+	m.brokers = append(m.brokers, broker)
+}
+
+func (m *mockAdminAPI) RemoveBroker(id int) bool {
+	m.monitor.Lock()
+	defer m.monitor.Unlock()
+
+	idx := -1
+	for i := range m.brokers {
+		if m.brokers[i].NodeID == id {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return false
+	}
+	m.brokers = append(m.brokers[:idx], m.brokers[idx+1:]...)
+	return true
+}
+
 func (m *mockAdminAPI) Brokers(_ context.Context) ([]admin.Broker, error) {
-	return nil, nil
+	m.monitor.Lock()
+	defer m.monitor.Unlock()
+
+	return append([]admin.Broker{}, m.brokers...), nil
 }
 
-func (m *mockAdminAPI) DecommissionBroker(_ context.Context, _ int) error {
-	return nil
+func (m *mockAdminAPI) BrokerStatusGetter(
+	id int,
+) func() admin.MembershipStatus {
+	return func() admin.MembershipStatus {
+		m.monitor.Lock()
+		defer m.monitor.Unlock()
+
+		for i := range m.brokers {
+			if m.brokers[i].NodeID == id {
+				return m.brokers[i].MembershipStatus
+			}
+		}
+		return ""
+	}
 }
 
-func (m *mockAdminAPI) RecommissionBroker(_ context.Context, _ int) error {
-	return nil
+func (m *mockAdminAPI) DecommissionBroker(_ context.Context, id int) error {
+	return m.SetBrokerStatus(id, admin.MembershipStatusDraining)
+}
+
+func (m *mockAdminAPI) RecommissionBroker(_ context.Context, id int) error {
+	return m.SetBrokerStatus(id, admin.MembershipStatusActive)
+}
+
+// nolint:goerr113 // test code
+func (m *mockAdminAPI) SetBrokerStatus(
+	id int, status admin.MembershipStatus,
+) error {
+	m.monitor.Lock()
+	defer m.monitor.Unlock()
+
+	for i := range m.brokers {
+		if m.brokers[i].NodeID == id {
+			m.brokers[i].MembershipStatus = status
+			return nil
+		}
+	}
+	return fmt.Errorf("unknown broker %d", id)
 }
 
 func makeCopy(input, output interface{}) {
