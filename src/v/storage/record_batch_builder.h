@@ -40,6 +40,8 @@ public:
     virtual model::record_batch build() &&;
     virtual ~record_batch_builder();
 
+    void reserve(size_t n) { _records.reserve(n); }
+
     void set_producer_identity(int64_t id, int16_t epoch) {
         _producer_id = id;
         _producer_epoch = epoch;

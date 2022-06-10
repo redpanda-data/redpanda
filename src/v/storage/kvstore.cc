@@ -332,6 +332,7 @@ ss::future<> kvstore::save_snapshot() {
     // package up the db into a batch
     storage::record_batch_builder builder(
       model::record_batch_type::kvstore, model::offset(0));
+    builder.reserve(_db.size());
     for (auto& entry : _db) {
         builder.add_raw_kv(
           bytes_to_iobuf(entry.first),
