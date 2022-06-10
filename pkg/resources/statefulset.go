@@ -176,6 +176,12 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 	}
 	r.LastObservedState = &sts
 
+	// Hack for: https://github.com/redpanda-data/redpanda/issues/4999
+	err = r.disableMaintenanceModeOnDecommissionedNodes(ctx)
+	if err != nil {
+		return err
+	}
+
 	r.logger.Info("Running update", "resource name", r.Key().Name)
 	err = r.runUpdate(ctx, &sts, obj.(*appsv1.StatefulSet))
 	if err != nil {

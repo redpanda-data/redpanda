@@ -11,12 +11,14 @@ package resources
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -261,6 +263,56 @@ func (r *StatefulSetResource) isClusterFormed(
 	return len(brokers) > 0, nil
 }
 
+// disableMaintenanceModeOnDecommissionedNodes can be used to put a cluster in a consistent state, disabling maintenance mode on
+// nodes that have been decommissioned.
+//
+// A decommissioned node may activate maintenance mode via shutdown hooks and the cluster may enter an inconsistent state,
+// preventing other pods clean shutdown.
+//
+// See: https://github.com/redpanda-data/redpanda/issues/4999
+func (r *StatefulSetResource) disableMaintenanceModeOnDecommissionedNodes(
+	ctx context.Context,
+) error {
+	if !featuregates.MaintenanceMode(r.pandaCluster.Status.Version) {
+		return nil
+	}
+
+	if r.pandaCluster.Status.DecommissioningNode == nil || r.pandaCluster.Status.CurrentReplicas > *r.pandaCluster.Status.DecommissioningNode {
+		// Only if actually in a decommissioning phase
+		return nil
+	}
+
+	ordinal := *r.pandaCluster.Status.DecommissioningNode
+	targetReplicas := ordinal
+
+	scaledDown, err := r.verifyRunningCount(ctx, targetReplicas)
+	if err != nil || !scaledDown {
+		// This should be done only when the pod disappears from the cluster
+		return err
+	}
+
+	adminAPI, err := r.getAdminAPIClient(ctx)
+	if err != nil {
+		return err
+	}
+
+	r.logger.Info("Forcing deletion of maintenance mode for the decommissioned node", "node_id", ordinal)
+	err = adminAPI.DisableMaintenanceMode(ctx, int(ordinal))
+	if err != nil {
+		var httpErr *admin.HTTPResponseError
+		if errors.As(err, &httpErr) {
+			if httpErr.Response != nil && httpErr.Response.StatusCode/100 == 4 {
+				// Cluster says we don't need to do it
+				r.logger.Info("No need to disable maintenance mode on the decommissioned node", "node_id", ordinal, "status_code", httpErr.Response.StatusCode)
+				return nil
+			}
+		}
+		return fmt.Errorf("could not disable maintenance mode on decommissioning node %d: %w", ordinal, err)
+	}
+	r.logger.Info("Maintenance mode disabled for the decommissioned node", "node_id", ordinal)
+	return nil
+}
+
 // verifyRunningCount checks if the statefulset is configured to run the given amount of replicas and that also pods match the expectations
 func (r *StatefulSetResource) verifyRunningCount(
 	ctx context.Context, replicas int32,
@@ -281,6 +333,7 @@ func (r *StatefulSetResource) verifyRunningCount(
 	if err != nil {
 		return false, fmt.Errorf("could not list pods for checking replicas: %w", err)
 	}
+
 	return len(podList.Items) == int(replicas), nil
 }
 
