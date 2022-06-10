@@ -86,11 +86,12 @@ std::ostream& operator<<(std::ostream& o, const cluster_health_report& r) {
 std::ostream& operator<<(std::ostream& o, const partition_status& ps) {
     fmt::print(
       o,
-      "{{id: {}, term: {}, leader_id: {}, revision_id: {}}}",
+      "{{id: {}, term: {}, leader_id: {}, revision_id: {}, size_bytes: {}}}",
       ps.id,
       ps.term,
       ps.leader_id,
-      ps.revision_id);
+      ps.revision_id,
+      ps.size_bytes);
     return o;
 }
 
@@ -172,19 +173,34 @@ cluster::node_state adl<cluster::node_state>::from(iobuf_parser& p) {
 
 void adl<cluster::partition_status>::to(
   iobuf& out, cluster::partition_status&& s) {
-    // if revision is not set fallback to old version, we do it here to prevent
-    // old redpanda version from crashing, request handler will decode request
-    // version and base on that handle revision_id field correctly.
+    // if revision or size is not set fallback to old version, we do it here to
+    // prevent old redpanda version from crashing, request handler will decode
+    // request version and base on that handle revision_id and size_bytes fields
+    // correctly.
     if (s.revision_id == model::revision_id{}) {
-        serialize(out, int8_t(0), s.id, s.term, s.leader_id);
-    } else {
         serialize(
           out,
-          cluster::partition_status::current_version,
+          cluster::partition_status::initial_version,
+          s.id,
+          s.term,
+          s.leader_id);
+    } else if (s.size_bytes == cluster::partition_status::invalid_size_bytes) {
+        serialize(
+          out,
+          cluster::partition_status::revision_id_version,
           s.id,
           s.term,
           s.leader_id,
           s.revision_id);
+    } else {
+        serialize(
+          out,
+          cluster::partition_status::size_bytes_version,
+          s.id,
+          s.term,
+          s.leader_id,
+          s.revision_id,
+          s.size_bytes);
     }
 }
 
@@ -200,8 +216,11 @@ adl<cluster::partition_status>::from(iobuf_parser& p) {
       .term = term,
       .leader_id = leader,
     };
-    if (version < 0) {
+    if (version <= cluster::partition_status::revision_id_version) {
         ret.revision_id = adl<model::revision_id>{}.from(p);
+    }
+    if (version <= cluster::partition_status::size_bytes_version) {
+        ret.size_bytes = adl<size_t>{}.from(p);
     }
     return ret;
 }

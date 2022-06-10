@@ -15,6 +15,7 @@
 #include "cluster/feature_manager.h"
 #include "cluster/fwd.h"
 #include "cluster/health_monitor_frontend.h"
+#include "cluster/health_monitor_types.h"
 #include "cluster/logger.h"
 #include "cluster/members_frontend.h"
 #include "cluster/members_manager.h"
@@ -450,6 +451,14 @@ void clear_partition_revisions(node_health_report& report) {
         }
     }
 }
+
+void clear_partition_sizes(node_health_report& report) {
+    for (auto& t : report.topics) {
+        for (auto& p : t.partitions) {
+            p.size_bytes = partition_status::invalid_size_bytes;
+        }
+    }
+}
 } // namespace
 
 ss::future<get_node_health_reply>
@@ -461,9 +470,15 @@ service::do_collect_node_health_report(get_node_health_request req) {
           .error = map_health_monitor_error_code(res.error())};
     }
     auto report = std::move(res.value());
-    // clear all revision ids to prevent sending them to old redpanda nodes
-    if (req.decoded_version == 0) {
+    // clear all revision ids to prevent sending them to old versioned redpanda
+    // nodes
+    if (req.decoded_version > get_node_health_request::revision_id_version) {
         clear_partition_revisions(report);
+    }
+    // clear all partition sizes to prevent sending them to old versioned
+    // redpanda nodes
+    if (req.decoded_version > get_node_health_request::size_bytes_version) {
+        clear_partition_sizes(report);
     }
     co_return get_node_health_reply{
       .error = errc::success,
@@ -483,10 +498,19 @@ service::do_get_cluster_health_report(get_cluster_health_request req) {
           .error = map_health_monitor_error_code(res.error())};
     }
     auto report = std::move(res.value());
-    // clear all revision ids to prevent sending them to old redpanda nodes
-    if (req.decoded_version == 0) {
+    // clear all revision ids to prevent sending them to old versioned redpanda
+    // nodes
+    if (req.decoded_version > get_cluster_health_request::revision_id_version) {
         for (auto& r : report.node_reports) {
             clear_partition_revisions(r);
+        }
+    }
+
+    // clear all partition sizes to prevent sending them to old versioned
+    // redpanda nodes
+    if (req.decoded_version > get_cluster_health_request::size_bytes_version) {
+        for (auto& r : report.node_reports) {
+            clear_partition_sizes(r);
         }
     }
     co_return get_cluster_health_reply{
