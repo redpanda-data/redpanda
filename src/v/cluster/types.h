@@ -1988,7 +1988,7 @@ struct adl<cluster::begin_tx_request> {
         auto ntp = adl<model::ntp>{}.from(in);
         auto pid = adl<model::producer_identity>{}.from(in);
         auto tx_seq = adl<model::tx_seq>{}.from(in);
-        auto timeout = adl<model::timeout_clock::duration>{}.from(in);
+        auto timeout = adl<std::chrono::milliseconds>{}.from(in);
         return {std::move(ntp), pid, tx_seq, timeout};
     }
 };
