@@ -17,9 +17,11 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 	resourcetypes "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
@@ -93,8 +95,10 @@ type StatefulSetResource struct {
 	// annotation to ensure the pods get restarted when configuration changes
 	// this has to be retrieved lazily to achieve the correct order of resources
 	// being applied
-	nodeConfigMapHashGetter func(context.Context) (string, error)
-	logger                  logr.Logger
+	nodeConfigMapHashGetter  func(context.Context) (string, error)
+	adminAPIClientFactory    adminutils.AdminAPIClientFactory
+	decommissionWaitInterval time.Duration
+	logger                   logr.Logger
 
 	LastObservedState *appsv1.StatefulSet
 }
@@ -112,6 +116,8 @@ func NewStatefulSet(
 	serviceAccountName string,
 	configuratorSettings ConfiguratorSettings,
 	nodeConfigMapHashGetter func(context.Context) (string, error),
+	adminAPIClientFactory adminutils.AdminAPIClientFactory,
+	decommissionWaitInterval time.Duration,
 	logger logr.Logger,
 ) *StatefulSetResource {
 	return &StatefulSetResource{
@@ -127,6 +133,8 @@ func NewStatefulSet(
 		serviceAccountName,
 		configuratorSettings,
 		nodeConfigMapHashGetter,
+		adminAPIClientFactory,
+		decommissionWaitInterval,
 		logger.WithValues("Kind", statefulSetKind()),
 		nil,
 	}

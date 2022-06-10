@@ -17,8 +17,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	res "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -96,6 +98,8 @@ func TestEnsure_StatefulSet(t *testing.T) {
 			ImagePullPolicy:       "Always",
 		},
 		func(ctx context.Context) (string, error) { return hash, nil },
+		adminutils.NewInternalAdminAPI,
+		time.Second,
 		ctrl.Log.WithName("test"))
 
 	err = sts.Ensure(context.Background())

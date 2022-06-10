@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
@@ -46,11 +47,12 @@ var (
 // ClusterReconciler reconciles a Cluster object
 type ClusterReconciler struct {
 	client.Client
-	Log                   logr.Logger
-	configuratorSettings  resources.ConfiguratorSettings
-	clusterDomain         string
-	Scheme                *runtime.Scheme
-	AdminAPIClientFactory adminutils.AdminAPIClientFactory
+	Log                      logr.Logger
+	configuratorSettings     resources.ConfiguratorSettings
+	clusterDomain            string
+	Scheme                   *runtime.Scheme
+	AdminAPIClientFactory    adminutils.AdminAPIClientFactory
+	DecommissionWaitInterval time.Duration
 }
 
 //+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=clusters,verbs=get;list;watch;create;update;patch;delete
@@ -156,6 +158,8 @@ func (r *ClusterReconciler) Reconcile(
 		sa.Key().Name,
 		r.configuratorSettings,
 		configMapResource.GetNodeConfigHash,
+		r.AdminAPIClientFactory,
+		r.DecommissionWaitInterval,
 		log)
 
 	toApply := []resources.Reconciler{

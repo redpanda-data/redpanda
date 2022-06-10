@@ -11,6 +11,7 @@ package main
 import (
 	"flag"
 	"os"
+	"time"
 
 	cmapiv1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
@@ -98,10 +99,11 @@ func main() {
 	}
 
 	if err = (&redpandacontrollers.ClusterReconciler{
-		Client:                mgr.GetClient(),
-		Log:                   ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Cluster"),
-		Scheme:                mgr.GetScheme(),
-		AdminAPIClientFactory: adminutils.NewInternalAdminAPI,
+		Client:                   mgr.GetClient(),
+		Log:                      ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Cluster"),
+		Scheme:                   mgr.GetScheme(),
+		AdminAPIClientFactory:    adminutils.NewInternalAdminAPI,
+		DecommissionWaitInterval: 10 * time.Second,
 	}).WithClusterDomain(clusterDomain).WithConfiguratorSettings(configurator).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "Cluster")
 		os.Exit(1)
