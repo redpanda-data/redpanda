@@ -812,14 +812,31 @@ health_monitor_backend::get_cluster_health_overview(
             ret.nodes_down.push_back(broker->id());
         }
     }
+
+    // On a system with many partitions, bound the size of
+    // our output for efficient & for practical display
+    // to the user
+    static constexpr size_t max_report_partitions = 32;
+
     absl::node_hash_set<model::ntp> leaderless;
     for (const auto& [_, report] : _reports) {
         for (const auto& [tp_ns, partitions] : report.topics) {
             for (const auto& partition : partitions) {
                 if (!partition.leader_id.has_value()) {
-                    leaderless.emplace(tp_ns.ns, tp_ns.tp, partition.id);
+                    if (leaderless.size() < max_report_partitions) {
+                        leaderless.emplace(tp_ns.ns, tp_ns.tp, partition.id);
+                    } else {
+                        break;
+                    }
                 }
             }
+
+            if (leaderless.size() >= max_report_partitions) {
+                break;
+            }
+        }
+        if (leaderless.size() >= max_report_partitions) {
+            break;
         }
     }
     ret.leaderless_partitions.reserve(leaderless.size());
