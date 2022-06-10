@@ -164,6 +164,12 @@ struct adl<tristate<T>> {
     }
 };
 
+template<>
+struct adl<model::producer_identity> {
+    void to(iobuf& out, model::producer_identity&& md);
+    model::producer_identity from(iobuf_parser& in);
+};
+
 template<typename Parser>
 model::record_batch_header
 adl<model::record_batch_header>::parse_from(Parser& in) {

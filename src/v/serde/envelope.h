@@ -40,6 +40,7 @@ template<
   typename CompatVersion = compat_version<Version::v>>
 struct envelope {
     bool operator==(envelope const&) const = default;
+    auto operator<=>(envelope const&) const = default;
     using value_t = T;
     static constexpr auto redpanda_serde_version = Version::v;
     static constexpr auto redpanda_serde_compat_version = CompatVersion::v;

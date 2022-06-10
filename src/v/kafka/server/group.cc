@@ -1989,8 +1989,7 @@ group::store_txn_offsets(txn_offset_commit_request r) {
           r, error_code::unknown_server_error);
     }
 
-    model::producer_identity pid{
-      .id = r.data.producer_id, .epoch = r.data.producer_epoch};
+    model::producer_identity pid{r.data.producer_id, r.data.producer_epoch};
 
     auto tx_it = _volatile_txs.find(pid);
 

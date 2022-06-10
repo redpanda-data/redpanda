@@ -55,7 +55,7 @@ FIXTURE_TEST(test_tm_stm_new_tx, mux_state_machine_fixture) {
     wait_for_meta_initialized();
 
     auto tx_id = kafka::transactional_id("app-id-1");
-    auto pid = model::producer_identity{.id = 1, .epoch = 0};
+    auto pid = model::producer_identity{1, 0};
 
     auto op_code = stm
                      .register_new_producer(
@@ -114,7 +114,7 @@ FIXTURE_TEST(test_tm_stm_seq_tx, mux_state_machine_fixture) {
     wait_for_meta_initialized();
 
     auto tx_id = kafka::transactional_id("app-id-1");
-    auto pid = model::producer_identity{.id = 1, .epoch = 0};
+    auto pid = model::producer_identity{1, 0};
 
     auto op_code = stm
                      .register_new_producer(
@@ -153,7 +153,7 @@ FIXTURE_TEST(test_tm_stm_re_tx, mux_state_machine_fixture) {
     wait_for_meta_initialized();
 
     auto tx_id = kafka::transactional_id("app-id-1");
-    auto pid1 = model::producer_identity{.id = 1, .epoch = 0};
+    auto pid1 = model::producer_identity{1, 0};
 
     auto op_code = stm
                      .register_new_producer(
@@ -173,7 +173,7 @@ FIXTURE_TEST(test_tm_stm_re_tx, mux_state_machine_fixture) {
     auto tx5 = expect_tx(stm.mark_tx_prepared(c->term(), tx_id).get());
     auto tx6 = expect_tx(stm.mark_tx_ongoing(tx_id));
 
-    auto pid2 = model::producer_identity{.id = 1, .epoch = 1};
+    auto pid2 = model::producer_identity{1, 1};
     op_code = stm
                 .re_register_producer(
                   c->term(), tx_id, std::chrono::milliseconds(0), pid2)

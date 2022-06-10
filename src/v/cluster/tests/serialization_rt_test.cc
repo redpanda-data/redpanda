@@ -749,43 +749,70 @@ cluster::feature_update_action random_feature_update_action() {
     return action;
 }
 
+model::producer_identity random_producer_identity() {
+    return {
+      random_generators::get_int(
+        std::numeric_limits<int64_t>::min(),
+        std::numeric_limits<int64_t>::max()),
+      random_generators::get_int(
+        std::numeric_limits<int16_t>::min(),
+        std::numeric_limits<int16_t>::max())};
+}
+
+model::timeout_clock::duration random_timeout_clock_duration() {
+    return model::timeout_clock::duration(
+      random_generators::get_int(-100000, 100000));
+}
+
+cluster::tx_errc random_tx_errc() {
+    return random_generators::random_choice(std::vector<cluster::tx_errc>{
+      cluster::tx_errc::none,
+      cluster::tx_errc::leader_not_found,
+      cluster::tx_errc::shard_not_found,
+      cluster::tx_errc::partition_not_found,
+      cluster::tx_errc::stm_not_found,
+      cluster::tx_errc::partition_not_exists,
+      cluster::tx_errc::pid_not_found,
+      cluster::tx_errc::timeout,
+      cluster::tx_errc::conflict,
+      cluster::tx_errc::fenced,
+      cluster::tx_errc::stale,
+      cluster::tx_errc::not_coordinator,
+      cluster::tx_errc::coordinator_not_available,
+      cluster::tx_errc::preparing_rebalance,
+      cluster::tx_errc::rebalance_in_progress,
+      cluster::tx_errc::coordinator_load_in_progress,
+      cluster::tx_errc::unknown_server_error,
+      cluster::tx_errc::request_rejected,
+      cluster::tx_errc::invalid_producer_id_mapping,
+      cluster::tx_errc::invalid_txn_state});
+}
+
 SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     roundtrip_test(cluster::ntp_leader(
-      model::ntp(
-        model::ns("a namespace"),
-        model::topic("a topic"),
-        model::partition_id(287)),
-      model::term_id(1234),
-      model::node_id(2)));
+      model::random_ntp(),
+      tests::random_named_int<model::term_id>(),
+      tests::random_named_int<model::node_id>()));
 
     roundtrip_test(cluster::ntp_leader_revision(
-      model::ntp(
-        model::ns("a namespace"),
-        model::topic("a topic"),
-        model::partition_id(287)),
-      model::term_id(1234),
-      model::node_id(2),
-      model::revision_id(888)));
+      model::random_ntp(),
+      tests::random_named_int<model::term_id>(),
+      tests::random_named_int<model::node_id>(),
+      tests::random_named_int<model::revision_id>()));
 
     roundtrip_test(cluster::update_leadership_request({
       cluster::ntp_leader(
-        model::ntp(
-          model::ns("a namespace"),
-          model::topic("a topic"),
-          model::partition_id(287)),
-        model::term_id(1234),
-        model::node_id(2)),
+        model::random_ntp(),
+        tests::random_named_int<model::term_id>(),
+        tests::random_named_int<model::node_id>()),
     }));
 
     roundtrip_test(cluster::update_leadership_request_v2({
       cluster::ntp_leader_revision(
-        model::ntp(
-          model::ns("a namespace"),
-          model::topic("a topic"),
-          model::partition_id(287)),
-        model::term_id(1234),
-        model::node_id(2),
-        model::revision_id(8888)),
+        model::random_ntp(),
+        tests::random_named_int<model::term_id>(),
+        tests::random_named_int<model::node_id>(),
+        tests::random_named_int<model::revision_id>()),
     }));
 
     roundtrip_test(cluster::update_leadership_reply());
@@ -794,12 +821,9 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
 
     roundtrip_test(cluster::get_leadership_reply({
       cluster::ntp_leader(
-        model::ntp(
-          model::ns("a namespace"),
-          model::topic("a topic"),
-          model::partition_id(287)),
-        model::term_id(1234),
-        model::node_id(2)),
+        model::random_ntp(),
+        tests::random_named_int<model::term_id>(),
+        tests::random_named_int<model::node_id>()),
     }));
 
     roundtrip_test(
@@ -936,6 +960,201 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         data.logical_version
           = tests::random_named_int<cluster::cluster_version>();
 
+        roundtrip_test(data);
+    }
+    {
+        cluster::try_abort_request data{
+          tests::random_named_int<model::partition_id>(),
+          random_producer_identity(),
+          tests::random_named_int<model::tx_seq>(),
+          random_timeout_clock_duration()};
+
+        roundtrip_test(data);
+    }
+    {
+        cluster::try_abort_reply data{
+          cluster::try_abort_reply::committed_type(tests::random_bool()),
+          cluster::try_abort_reply::aborted_type(tests::random_bool()),
+          random_tx_errc()};
+
+        roundtrip_test(data);
+    }
+    {
+        cluster::init_tm_tx_request data{
+          tests::random_named_string<kafka::transactional_id>(),
+          std::chrono::duration_cast<std::chrono::milliseconds>(
+            random_timeout_clock_duration()),
+          random_timeout_clock_duration()};
+
+        roundtrip_test(data);
+    }
+    {
+        cluster::init_tm_tx_reply data{
+          random_producer_identity(), random_tx_errc()};
+
+        roundtrip_test(data);
+    }
+    {
+        cluster::begin_tx_request data{
+          model::random_ntp(),
+          random_producer_identity(),
+          tests::random_named_int<model::tx_seq>(),
+          std::chrono::duration_cast<std::chrono::milliseconds>(
+            random_timeout_clock_duration())};
+
+        roundtrip_test(data);
+    }
+    {
+        cluster::begin_tx_reply data{
+          model::random_ntp(),
+          tests::random_named_int<model::term_id>(),
+          random_tx_errc()};
+
+        roundtrip_test(data);
+    }
+    {
+        cluster::prepare_tx_request data{
+          model::random_ntp(),
+          tests::random_named_int<model::term_id>(),
+          tests::random_named_int<model::partition_id>(),
+          random_producer_identity(),
+          tests::random_named_int<model::tx_seq>(),
+          random_timeout_clock_duration()};
+
+        roundtrip_test(data);
+    }
+    {
+        cluster::prepare_tx_reply data{random_tx_errc()};
+        roundtrip_test(data);
+    }
+    {
+        cluster::commit_tx_request data{
+          model::random_ntp(),
+          random_producer_identity(),
+          tests::random_named_int<model::tx_seq>(),
+          random_timeout_clock_duration()};
+
+        roundtrip_test(data);
+    }
+    {
+        cluster::commit_tx_reply data{random_tx_errc()};
+        roundtrip_test(data);
+    }
+    {
+        cluster::abort_tx_request data{
+          model::random_ntp(),
+          random_producer_identity(),
+          tests::random_named_int<model::tx_seq>(),
+          random_timeout_clock_duration()};
+
+        roundtrip_test(data);
+    }
+    {
+        cluster::abort_tx_reply data{random_tx_errc()};
+        roundtrip_test(data);
+    }
+    {
+        cluster::begin_group_tx_request data{
+          model::random_ntp(),
+          tests::random_named_string<kafka::group_id>(),
+          random_producer_identity(),
+          tests::random_named_int<model::tx_seq>(),
+          random_timeout_clock_duration()};
+
+        roundtrip_test(data);
+    }
+    {
+        // with default ntp ctor
+        cluster::begin_group_tx_request data{
+          tests::random_named_string<kafka::group_id>(),
+          random_producer_identity(),
+          tests::random_named_int<model::tx_seq>(),
+          random_timeout_clock_duration()};
+
+        roundtrip_test(data);
+    }
+    {
+        cluster::begin_group_tx_reply data{
+          tests::random_named_int<model::term_id>(), random_tx_errc()};
+        roundtrip_test(data);
+    }
+    {
+        // error only ctor
+        cluster::begin_group_tx_reply data{random_tx_errc()};
+        roundtrip_test(data);
+    }
+    {
+        cluster::prepare_group_tx_request data{
+          model::random_ntp(),
+          tests::random_named_string<kafka::group_id>(),
+          tests::random_named_int<model::term_id>(),
+          random_producer_identity(),
+          tests::random_named_int<model::tx_seq>(),
+          random_timeout_clock_duration()};
+
+        roundtrip_test(data);
+    }
+    {
+        // with default ntp ctor
+        cluster::prepare_group_tx_request data{
+          tests::random_named_string<kafka::group_id>(),
+          tests::random_named_int<model::term_id>(),
+          random_producer_identity(),
+          tests::random_named_int<model::tx_seq>(),
+          random_timeout_clock_duration()};
+
+        roundtrip_test(data);
+    }
+    {
+        cluster::prepare_group_tx_reply data{random_tx_errc()};
+        roundtrip_test(data);
+    }
+    {
+        cluster::commit_group_tx_request data{
+          model::random_ntp(),
+          random_producer_identity(),
+          tests::random_named_int<model::tx_seq>(),
+          tests::random_named_string<kafka::group_id>(),
+          random_timeout_clock_duration()};
+
+        roundtrip_test(data);
+    }
+    {
+        // with default ntp ctor
+        cluster::commit_group_tx_request data{
+          random_producer_identity(),
+          tests::random_named_int<model::tx_seq>(),
+          tests::random_named_string<kafka::group_id>(),
+          random_timeout_clock_duration()};
+
+        roundtrip_test(data);
+    }
+    {
+        cluster::commit_group_tx_reply data{random_tx_errc()};
+        roundtrip_test(data);
+    }
+    {
+        cluster::abort_group_tx_request data{
+          model::random_ntp(),
+          tests::random_named_string<kafka::group_id>(),
+          random_producer_identity(),
+          tests::random_named_int<model::tx_seq>(),
+          random_timeout_clock_duration()};
+
+        roundtrip_test(data);
+    }
+    {
+        // with default ntp ctor
+        cluster::abort_group_tx_request data{
+          tests::random_named_string<kafka::group_id>(),
+          random_producer_identity(),
+          tests::random_named_int<model::tx_seq>(),
+          random_timeout_clock_duration()};
+
+        roundtrip_test(data);
+    }
+    {
+        cluster::abort_group_tx_reply data{random_tx_errc()};
         roundtrip_test(data);
     }
 }

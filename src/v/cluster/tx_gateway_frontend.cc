@@ -191,7 +191,7 @@ ss::future<try_abort_reply> tx_gateway_frontend::try_abort(
     if (!_metadata_cache.local().contains(
           model::tx_manager_nt, model::tx_manager_ntp.tp.partition)) {
         vlog(txlog.warn, "can't find {}/0 partition", model::tx_manager_nt);
-        co_return try_abort_reply{.ec = tx_errc::partition_not_exists};
+        co_return try_abort_reply{tx_errc::partition_not_exists};
     }
 
     auto leader_opt = _leaders.local().get_leader(model::tx_manager_ntp);
@@ -206,7 +206,7 @@ ss::future<try_abort_reply> tx_gateway_frontend::try_abort(
 
     if (!leader_opt) {
         vlog(txlog.warn, "can't find a leader for {}", model::tx_manager_ntp);
-        co_return try_abort_reply{.ec = tx_errc::leader_not_found};
+        co_return try_abort_reply{tx_errc::leader_not_found};
     }
 
     auto leader = leader_opt.value();
@@ -264,7 +264,7 @@ ss::future<try_abort_reply> tx_gateway_frontend::try_abort_locally(
           pid,
           tx_seq,
           tx_errc::shard_not_found);
-        co_return try_abort_reply{.ec = tx_errc::shard_not_found};
+        co_return try_abort_reply{tx_errc::shard_not_found};
     }
 
     auto reply = co_await do_try_abort(*shard, tm, pid, tx_seq, timeout);
@@ -294,15 +294,14 @@ ss::future<try_abort_reply> tx_gateway_frontend::dispatch_try_abort(
         timeout,
         [tm, pid, tx_seq, timeout](tx_gateway_client_protocol cp) {
             return cp.try_abort(
-              try_abort_request{
-                .tm = tm, .pid = pid, .tx_seq = tx_seq, .timeout = timeout},
+              try_abort_request{tm, pid, tx_seq, timeout},
               rpc::client_opts(model::timeout_clock::now() + timeout));
         })
       .then(&rpc::get_ctx_data<try_abort_reply>)
       .then([](result<try_abort_reply> r) {
           if (r.has_error()) {
               vlog(txlog.warn, "got error {} on remote try abort", r.error());
-              return try_abort_reply{.ec = tx_errc::unknown_server_error};
+              return try_abort_reply{tx_errc::unknown_server_error};
           }
 
           return r.value();
@@ -325,7 +324,7 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
                 "can't get partition by {} ntp",
                 model::tx_manager_ntp);
               return ss::make_ready_future<try_abort_reply>(
-                try_abort_reply{.ec = tx_errc::partition_not_found});
+                try_abort_reply{tx_errc::partition_not_found});
           }
 
           auto stm = partition->tm_stm();
@@ -336,7 +335,7 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
                 "can't get tm stm of the {}' partition",
                 model::tx_manager_ntp);
               return ss::make_ready_future<try_abort_reply>(
-                try_abort_reply{.ec = tx_errc::stm_not_found});
+                try_abort_reply{tx_errc::stm_not_found});
           }
 
           return stm->read_lock().then([&self, stm, pid, tx_seq, timeout](
@@ -347,17 +346,16 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
                     if (!term_opt.has_value()) {
                         if (term_opt.error() == tm_stm::op_status::not_leader) {
                             return ss::make_ready_future<try_abort_reply>(
-                              try_abort_reply{.ec = tx_errc::not_coordinator});
+                              try_abort_reply{tx_errc::not_coordinator});
                         }
                         return ss::make_ready_future<try_abort_reply>(
-                          try_abort_reply{.ec = tx_errc::unknown_server_error});
+                          try_abort_reply{tx_errc::unknown_server_error});
                     }
                     auto term = term_opt.value();
                     auto tx_id_opt = stm->get_id_by_pid(pid);
                     if (!tx_id_opt) {
                         return ss::make_ready_future<try_abort_reply>(
-                          try_abort_reply{
-                            .aborted = true, .ec = tx_errc::none});
+                          try_abort_reply::make_aborted());
                     }
                     auto tx_id = tx_id_opt.value();
 
@@ -370,11 +368,10 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
                                  return self.do_try_abort(
                                    term, stm, tx_id, pid, tx_seq, timeout);
                              })
-                      .handle_exception_type(
-                        [](const ss::semaphore_timed_out&) {
-                            return try_abort_reply{
-                              .ec = tx_errc::unknown_server_error};
-                        });
+                      .handle_exception_type([](
+                                               const ss::semaphore_timed_out&) {
+                          return try_abort_reply{tx_errc::unknown_server_error};
+                      });
                 })
                 .finally([u = std::move(unit)] {});
           });
@@ -390,29 +387,29 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
   model::timeout_clock::duration timeout) {
     auto term_opt = co_await stm->sync();
     if (!term_opt.has_value()) {
-        co_return try_abort_reply{.ec = tx_errc::unknown_server_error};
+        co_return try_abort_reply{tx_errc::unknown_server_error};
     }
     if (term_opt.value() != expected_term) {
-        co_return try_abort_reply{.ec = tx_errc::unknown_server_error};
+        co_return try_abort_reply{tx_errc::unknown_server_error};
     }
     auto tx_opt = stm->get_tx(tx_id);
     if (!tx_opt) {
-        co_return try_abort_reply{.aborted = true, .ec = tx_errc::none};
+        co_return try_abort_reply::make_aborted();
     }
     auto tx = tx_opt.value();
     if (tx.pid != pid || tx.tx_seq != tx_seq) {
-        co_return try_abort_reply{.aborted = true, .ec = tx_errc::none};
+        co_return try_abort_reply::make_aborted();
     }
 
     if (tx.status == tm_transaction::tx_status::prepared) {
-        co_return try_abort_reply{.commited = true, .ec = tx_errc::none};
+        co_return try_abort_reply::make_committed();
     } else if (
       tx.status == tm_transaction::tx_status::aborting
       || tx.status == tm_transaction::tx_status::killed
       || tx.status == tm_transaction::tx_status::ready) {
         // when it's ready it means in-memory state was lost
         // so can't be comitted and it's save to aborted
-        co_return try_abort_reply{.aborted = true, .ec = tx_errc::none};
+        co_return try_abort_reply::make_aborted();
     } else if (tx.status == tm_transaction::tx_status::preparing) {
         ssx::spawn_with_gate(_gate, [this, stm, tx, timeout] {
             return with(
@@ -425,19 +422,19 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
                      })
               .discard_result();
         });
-        co_return try_abort_reply{.ec = tx_errc::none};
+        co_return try_abort_reply{tx_errc::none};
     } else if (tx.status == tm_transaction::tx_status::ongoing) {
         auto killed_tx = co_await stm->mark_tx_killed(expected_term, tx.id);
         if (!killed_tx.has_value()) {
             if (killed_tx.error() == tm_stm::op_status::not_leader) {
-                co_return try_abort_reply{.ec = tx_errc::not_coordinator};
+                co_return try_abort_reply{tx_errc::not_coordinator};
             }
-            co_return try_abort_reply{.ec = tx_errc::unknown_server_error};
+            co_return try_abort_reply{tx_errc::unknown_server_error};
         }
-        co_return try_abort_reply{.aborted = true, .ec = tx_errc::none};
+        co_return try_abort_reply::make_aborted();
     } else {
         vlog(txlog.error, "unknown tx status: {}", tx.status);
-        co_return try_abort_reply{.ec = tx_errc::unknown_server_error};
+        co_return try_abort_reply{tx_errc::unknown_server_error};
     }
 }
 
@@ -499,8 +496,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
           txlog.warn,
           "can't find {}/0 in the metadata cache",
           model::tx_manager_nt);
-        co_return cluster::init_tm_tx_reply{
-          .ec = tx_errc::partition_not_exists};
+        co_return cluster::init_tm_tx_reply{tx_errc::partition_not_exists};
     }
 
     retries = _metadata_dissemination_retries;
@@ -520,7 +516,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
           txlog.warn,
           "can't find {} in the leaders cache",
           model::tx_manager_ntp);
-        co_return cluster::init_tm_tx_reply{.ec = tx_errc::leader_not_found};
+        co_return cluster::init_tm_tx_reply{tx_errc::leader_not_found};
     }
 
     auto leader = leader_opt.value();
@@ -573,7 +569,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx_locally(
           "sending name:init_tm_tx, tx_id:{}, ec: {}",
           tx_id,
           tx_errc::shard_not_found);
-        co_return cluster::init_tm_tx_reply{.ec = tx_errc::shard_not_found};
+        co_return cluster::init_tm_tx_reply{tx_errc::shard_not_found};
     }
 
     auto reply = co_await do_init_tm_tx(
@@ -603,17 +599,14 @@ ss::future<init_tm_tx_reply> tx_gateway_frontend::dispatch_init_tm_tx(
         [tx_id, transaction_timeout_ms, timeout](
           tx_gateway_client_protocol cp) {
             return cp.init_tm_tx(
-              init_tm_tx_request{
-                .tx_id = tx_id,
-                .transaction_timeout_ms = transaction_timeout_ms,
-                .timeout = timeout},
+              init_tm_tx_request{tx_id, transaction_timeout_ms, timeout},
               rpc::client_opts(model::timeout_clock::now() + timeout));
         })
       .then(&rpc::get_ctx_data<init_tm_tx_reply>)
       .then([](result<init_tm_tx_reply> r) {
           if (r.has_error()) {
               vlog(txlog.warn, "got error {} on remote init tm tx", r.error());
-              return init_tm_tx_reply{.ec = tx_errc::invalid_txn_state};
+              return init_tm_tx_reply{tx_errc::invalid_txn_state};
           }
 
           return r.value();
@@ -637,7 +630,7 @@ ss::future<init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
                 "can't get partition by {} ntp",
                 model::tx_manager_ntp);
               return ss::make_ready_future<init_tm_tx_reply>(
-                init_tm_tx_reply{.ec = tx_errc::partition_not_found});
+                init_tm_tx_reply{tx_errc::partition_not_found});
           }
 
           auto stm = partition->tm_stm();
@@ -648,7 +641,7 @@ ss::future<init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
                 "can't get tm stm of the {}' partition",
                 model::tx_manager_ntp);
               return ss::make_ready_future<init_tm_tx_reply>(
-                init_tm_tx_reply{.ec = tx_errc::stm_not_found});
+                init_tm_tx_reply{tx_errc::stm_not_found});
           }
 
           return stm->read_lock().then([&self,
@@ -682,14 +675,14 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
               txlog.warn,
               "this node isn't a leader for tx.id={} coordinator",
               tx_id);
-            co_return init_tm_tx_reply{.ec = tx_errc::not_coordinator};
+            co_return init_tm_tx_reply{tx_errc::not_coordinator};
         }
         vlog(
           txlog.warn,
           "got error {} on loading tx.id={}",
           term_opt.error(),
           tx_id);
-        co_return init_tm_tx_reply{.ec = tx_errc::invalid_txn_state};
+        co_return init_tm_tx_reply{tx_errc::invalid_txn_state};
     }
     auto term = term_opt.value();
     auto tx_opt = stm->get_tx(tx_id);
@@ -699,13 +692,14 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
           = co_await _id_allocator_frontend.local().allocate_id(timeout);
         if (pid_reply.ec != errc::success) {
             vlog(txlog.warn, "allocate_id failed with {}", pid_reply.ec);
-            co_return init_tm_tx_reply{.ec = tx_errc::invalid_txn_state};
+            co_return init_tm_tx_reply{tx_errc::invalid_txn_state};
         }
 
-        model::producer_identity pid{.id = pid_reply.id, .epoch = 0};
+        model::producer_identity pid{pid_reply.id, 0};
         tm_stm::op_status op_status = co_await stm->register_new_producer(
           term, tx_id, transaction_timeout_ms, pid);
-        init_tm_tx_reply reply{.pid = pid};
+        init_tm_tx_reply reply;
+        reply.pid = pid;
         if (op_status == tm_stm::op_status::success) {
             reply.ec = tx_errc::none;
         } else if (op_status == tm_stm::op_status::conflict) {
@@ -773,18 +767,18 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
           r.error(),
           tx_id,
           tx.status);
-        co_return init_tm_tx_reply{.ec = r.error()};
+        co_return init_tm_tx_reply{r.error()};
     }
 
     tx = r.value();
     init_tm_tx_reply reply;
     if (tx.pid.epoch < std::numeric_limits<int16_t>::max()) {
         reply.pid = model::producer_identity{
-          .id = tx.pid.id, .epoch = static_cast<int16_t>(tx.pid.epoch + 1)};
+          tx.pid.id, static_cast<int16_t>(tx.pid.epoch + 1)};
     } else {
         allocate_id_reply pid_reply
           = co_await _id_allocator_frontend.local().allocate_id(timeout);
-        reply.pid = model::producer_identity{.id = pid_reply.id, .epoch = 0};
+        reply.pid = model::producer_identity{pid_reply.id, 0};
     }
 
     auto op_status = co_await stm->re_register_producer(
@@ -869,8 +863,7 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
   ss::shared_ptr<tm_stm> stm,
   add_paritions_tx_request request,
   model::timeout_clock::duration timeout) {
-    model::producer_identity pid{
-      .id = request.producer_id, .epoch = request.producer_epoch};
+    model::producer_identity pid{request.producer_id, request.producer_epoch};
 
     auto term_opt = co_await stm->sync();
     if (!term_opt.has_value()) {
@@ -1055,8 +1048,7 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::do_add_offsets_to_tx(
   ss::shared_ptr<tm_stm> stm,
   add_offsets_tx_request request,
   model::timeout_clock::duration timeout) {
-    model::producer_identity pid{
-      .id = request.producer_id, .epoch = request.producer_epoch};
+    model::producer_identity pid{request.producer_id, request.producer_epoch};
 
     auto term_opt = co_await stm->sync();
     if (!term_opt.has_value()) {
@@ -1352,8 +1344,7 @@ tx_gateway_frontend::do_end_txn(
         co_return tx_errc::invalid_producer_id_mapping;
     }
 
-    model::producer_identity pid{
-      .id = request.producer_id, .epoch = request.producer_epoch};
+    model::producer_identity pid{request.producer_id, request.producer_epoch};
     auto tx = tx_opt.value();
     if (tx.pid != pid) {
         if (tx.pid.id == pid.id && tx.pid.epoch > pid.epoch) {
