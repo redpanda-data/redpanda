@@ -46,10 +46,8 @@
 
 struct raft_resources {
     ss::semaphore recovery{128};
-
-    // not actually safe to control concurrent votes because if
-    //
     ss::semaphore vote{128};
+    ss::lowres_clock::time_point recovery_failure;
 };
 
 raft_resources& get_raft_resources() {
@@ -508,13 +506,20 @@ bool consensus::needs_recovery(
 
 void consensus::dispatch_recovery(follower_index_metadata& idx) {
     if (get_raft_resources().recovery.current() <= 0) {
-        vlog(_ctxlog.info, "resource.recovery: no units, deferring");
+        vlog(_ctxlog.warn, "resource.recovery: no units, deferring");
         return;
     } else {
         vlog(
           _ctxlog.debug,
           "resource.recovery: units available {}",
           get_raft_resources().recovery.current());
+    }
+
+    auto since_last_failure = ss::lowres_clock::now()
+                              - get_raft_resources().recovery_failure;
+    if (since_last_failure < 10s) {
+        vlog(_ctxlog.warn, "resource.recovery: recent failure, deferring");
+        return;
     }
 
     auto units = ss::consume_units(get_raft_resources().recovery, 1);
@@ -553,6 +558,8 @@ void consensus::dispatch_recovery(follower_index_metadata& idx) {
                                           "Node {} recovery cancelled ({})",
                                           node_id,
                                           syserr.code().message());
+                                        get_raft_resources().recovery_failure
+                                          = ss::lowres_clock::now();
                                     } catch (...) {
                                         vlog(
                                           _ctxlog.warn,
