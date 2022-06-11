@@ -11,6 +11,7 @@
 
 #include "boost/program_options.hpp"
 #include "redpanda/cluster_config_schema_util.h"
+#include "version.h"
 
 #include <iostream>
 
@@ -28,7 +29,8 @@ namespace po = boost::program_options;
 int main(int ac, char* av[]) {
     po::options_description desc("Allowed options");
     desc.add_options()("help", "Allowed options")(
-      "config_schema_json", "Generates JSON schema for cluster configuration");
+      "config_schema_json", "Generates JSON schema for cluster configuration")(
+      "version", "Redpanda core version for this utility");
     po::variables_map vm;
     po::store(po::parse_command_line(ac, av, desc), vm);
     po::notify(vm);
@@ -38,6 +40,8 @@ int main(int ac, char* av[]) {
     } else if (vm.count("config_schema_json")) {
         std::cout << util::generate_json_schema(config::configuration())._res
                   << "\n";
+    } else if (vm.count("version")) {
+        std::cout << redpanda_version() << "\n";
     }
     return 0;
 }
