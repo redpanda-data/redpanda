@@ -218,6 +218,11 @@ public:
         return write(t());
     }
 
+    template<::detail::NamedTypeTrivialSubclass T>
+    uint32_t write(const T& t) {
+        return write(t());
+    }
+
     template<typename T, typename Tag>
     uint32_t write_flex(const named_type<T, Tag>& t) {
         return write_flex(t());
