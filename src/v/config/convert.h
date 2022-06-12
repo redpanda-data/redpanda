@@ -182,6 +182,20 @@ struct convert<named_type<T, Tag>> {
     }
 };
 
+template<::detail::NamedTypeTrivialSubclass T>
+struct convert<T> {
+
+    static Node encode(const T& rhs) { return Node(rhs()); }
+
+    static bool decode(const Node& node, T& rhs) {
+        if (!node) {
+            return false;
+        }
+        rhs = T{node.as<typename T::type>()};
+        return true;
+    }
+};
+
 template<>
 struct convert<model::cleanup_policy_bitflags> {
     using type = model::cleanup_policy_bitflags;
