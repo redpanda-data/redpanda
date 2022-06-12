@@ -71,6 +71,12 @@ void rjson_serialize(
     rjson_serialize(w, v());
 }
 
+template<::detail::NamedTypeTrivialSubclass T>
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const T& v) {
+    rjson_serialize(w, v());
+}
+
 template<typename T>
 void rjson_serialize(
   json::Writer<json::StringBuffer>& w, const std::optional<T>& v) {
