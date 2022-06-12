@@ -53,6 +53,6 @@ rp_test(
   SOURCES
     named_type_mini.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES Boost::unit_test_framework v::utils
+  LIBRARIES Boost::unit_test_framework v::utils v::json
   LABELS utils
 )
