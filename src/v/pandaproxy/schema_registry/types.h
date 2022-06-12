@@ -62,7 +62,7 @@ std::ostream& operator<<(std::ostream& os, const schema_type& v);
 ///\brief A subject is the name under which a schema is registered.
 ///
 /// Typically it will be "<topic>-key" or "<topic>-value".
-using subject = named_type<ss::sstring, struct subject_tag>;
+struct subject : named_base<ss::sstring, subject> { using base::base; };
 static const subject invalid_subject{};
 
 ///\brief Definition of a schema and its type.
@@ -70,7 +70,7 @@ template<typename Tag>
 class typed_schema_definition {
 public:
     using tag = Tag;
-    using raw_string = named_type<ss::sstring, tag>;
+    struct raw_string : named_base<ss::sstring, raw_string> { using named_base<ss::sstring, raw_string>::named_base; };
 
     template<typename T>
     typed_schema_definition(T&& def, schema_type type)
@@ -228,11 +228,11 @@ private:
 ///
 /// A subject may evolve its schema over time. Each version is associated with a
 /// schema_id.
-using schema_version = named_type<int32_t, struct schema_version_tag>;
+struct schema_version : named_base<int32_t, schema_version> { using base::base; };
 static constexpr schema_version invalid_schema_version{-1};
 
 ///\brief Globally unique identifier for a schema.
-using schema_id = named_type<int32_t, struct schema_id_tag>;
+struct schema_id : named_base<int32_t, schema_id> { using base::base; };
 static constexpr schema_id invalid_schema_id{-1};
 
 struct subject_version {
