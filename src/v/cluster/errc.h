@@ -55,7 +55,7 @@ enum class errc : int16_t {
     data_policy_not_exists,
     source_topic_not_exists,
     source_topic_still_in_use,
-    wating_for_partition_shutdown,
+    waiting_for_partition_shutdown,
     error_collecting_health_report,
     leadership_changed,
     feature_disabled,
@@ -158,7 +158,7 @@ struct errc_category final : public std::error_category {
         case errc::source_topic_still_in_use:
             return "Cannot delete source topic for which there still are "
                    "materialized topics for";
-        case errc::wating_for_partition_shutdown:
+        case errc::waiting_for_partition_shutdown:
             return "Partition update on current core can not be finished since "
                    "backend is waiting for the partition to be shutdown on its "
                    "originating core";

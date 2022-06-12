@@ -530,7 +530,7 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
 
         if (has_non_replicable_op_type(*it)) {
             /// This if statement has nothing to do with correctness and is only
-            /// here to reduce the amount of unecessary logging emitted by the
+            /// here to reduce the amount of unnecessary logging emitted by the
             /// controller_backend for events that it eventually will not handle
             /// anyway.
             ++it;
@@ -559,7 +559,7 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
                      * do not skip cross core partition updates waiting for
                      * partition to be shut down on the other core
                      */
-                    if (ec == errc::wating_for_partition_shutdown) {
+                    if (ec == errc::waiting_for_partition_shutdown) {
                         stop = true;
                         continue;
                     }
@@ -958,7 +958,7 @@ controller_backend::create_partition_from_remote_shard(
         }
 
         if (!x_shard_req) {
-            co_return errc::wating_for_partition_shutdown;
+            co_return errc::waiting_for_partition_shutdown;
         }
         initial_revision = x_shard_req->revision;
         std::copy(
@@ -968,7 +968,7 @@ controller_backend::create_partition_from_remote_shard(
     }
 
     if (!initial_revision) {
-        co_return errc::wating_for_partition_shutdown;
+        co_return errc::waiting_for_partition_shutdown;
     }
 
     std::error_code result = errc::waiting_for_recovery;

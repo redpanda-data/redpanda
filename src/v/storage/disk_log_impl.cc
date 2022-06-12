@@ -568,7 +568,7 @@ ss::future<> disk_log_impl::compact(compaction_config cfg) {
     return ss::try_with_gate(_compaction_gate, [this, cfg]() mutable {
         vlog(
           gclog.trace,
-          "[{}] houskeeping with configuration from manager: {}",
+          "[{}] house keeping with configuration from manager: {}",
           config().ntp(),
           cfg);
         cfg = apply_overrides(cfg);

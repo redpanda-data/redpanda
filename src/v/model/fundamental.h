@@ -271,7 +271,7 @@ enum class shadow_indexing_mode : uint8_t {
     drop_archival = 0xfe,
     // Remove fetch flag (used for incremental updates)
     drop_fetch = 0xfd,
-    // Remove both fetch and archival falgs
+    // Remove both fetch and archival flags
     drop_full = 0xfc,
 };
 

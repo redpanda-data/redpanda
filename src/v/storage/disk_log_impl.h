@@ -44,10 +44,10 @@ public:
      * in a segment exists. by placing a hard limit on segment size we can avoid
      * those overflows because a segment with more than 4-billion records would
      * be larger than 4gb even when the records are empty. other practical but
-     * not fundmental limits exist for large segment sizes like our current
+     * not fundamental limits exist for large segment sizes like our current
      * in-memory representation of indices.
      *
-     * the hard limit here is a slight mischaracterization. we apply this hard
+     * the hard limit here is a slight mis-characterization. we apply this hard
      * limit to the user requested size. max segment size fuzzing is still
      * applied.
      */
