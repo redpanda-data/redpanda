@@ -265,13 +265,19 @@ class FeaturesNodeJoinTest(RedpandaTest):
         self.redpanda.set_environment(
             {'__REDPANDA_LOGICAL_VERSION': f"{initial_version}"})
 
+        # Pick a node to roleplay an old version of redpanda
+        old_node = self.redpanda.nodes[-1]
+
         # Start first three nodes
         self.redpanda.start(self.redpanda.nodes[0:-1])
+
+        # Explicit clean because it's not included in the default
+        # one during start()
+        self.redpanda.clean_node(old_node)
 
         assert initial_version == self.admin.get_features()['cluster_version']
 
         # Bring up the fourth node reporting an old logical version
-        old_node = self.redpanda.nodes[-1]
         old_version = initial_version - 1
         self.redpanda.set_environment(
             {'__REDPANDA_LOGICAL_VERSION': f"{old_version}"})
