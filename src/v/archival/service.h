@@ -10,7 +10,7 @@
 
 #pragma once
 #include "archival/ntp_archiver_service.h"
-#include "cluster/partition_manager.h"
+#include "cluster/fwd.h"
 #include "model/fundamental.h"
 #include "s3/client.h"
 #include "storage/ntp_config.h"
