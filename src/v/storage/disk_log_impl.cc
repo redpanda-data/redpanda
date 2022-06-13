@@ -79,6 +79,11 @@ disk_log_impl::~disk_log_impl() {
     vassert(_closed, "log segment must be closed before deleting:{}", *this);
 }
 
+void disk_log_impl::recompute_max_segment_size() {
+    _max_segment_size = internal::jitter_segment_size(
+      std::min(max_segment_size(), segment_size_hard_limit));
+}
+
 ss::future<> disk_log_impl::remove() {
     vassert(!_closed, "Invalid double closing of log - {}", *this);
     _closed = true;
@@ -714,6 +719,9 @@ ss::future<> disk_log_impl::new_segment(
   model::offset o, model::term_id t, ss::io_priority_class pc) {
     vassert(
       o() >= 0 && t() >= 0, "offset:{} and term:{} must be initialized", o, t);
+    // Recomputing here means that any roll size checks after this takes into
+    // account updated segment size.
+    recompute_max_segment_size();
     return _manager
       .make_log_segment(
         config(),
@@ -1211,27 +1219,27 @@ ss::future<bool> disk_log_impl::update_start_offset(model::offset o) {
 
 ss::future<>
 disk_log_impl::update_configuration(ntp_config::default_overrides o) {
+    // Note: This hook is called to update topic level configuration overrides.
+    // Cluster level configuration updates are handled separately by
+    // binding to shard local configuration properties of interest.
+
     auto was_compacted = config().is_compacted();
     mutable_config().set_overrides(o);
+
     /**
      * For most of the settings we always query ntp config, only cleanup_policy
-     * and segment size need special treatment.
+     * needs special treatment.
      */
-    if (config().has_overrides()) {
-        if (config().get_overrides().segment_size) {
-            _max_segment_size = *config().get_overrides().segment_size;
+    // enable compaction
+    if (!was_compacted && config().is_compacted()) {
+        for (auto& s : _segs) {
+            s->mark_as_compacted_segment();
         }
-        // enable compaction
-        if (!was_compacted && config().is_compacted()) {
-            for (auto& s : _segs) {
-                s->mark_as_compacted_segment();
-            }
-        }
-        // disable compaction
-        if (was_compacted && !config().is_compacted()) {
-            for (auto& s : _segs) {
-                s->unmark_as_compacted_segment();
-            }
+    }
+    // disable compaction
+    if (was_compacted && !config().is_compacted()) {
+        for (auto& s : _segs) {
+            s->unmark_as_compacted_segment();
         }
     }
 
