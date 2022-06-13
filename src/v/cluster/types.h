@@ -753,7 +753,8 @@ struct topic_properties
       tristate<std::chrono::milliseconds> retention_duration,
       std::optional<bool> recovery,
       std::optional<model::shadow_indexing_mode> shadow_indexing,
-      std::optional<bool> read_replica)
+      std::optional<bool> read_replica,
+      std::optional<ss::sstring> read_replica_bucket)
       : compression(compression)
       , cleanup_policy_bitflags(cleanup_policy_bitflags)
       , compaction_strategy(compaction_strategy)
@@ -763,7 +764,8 @@ struct topic_properties
       , retention_duration(retention_duration)
       , recovery(recovery)
       , shadow_indexing(shadow_indexing)
-      , read_replica(read_replica) {}
+      , read_replica(read_replica)
+      , read_replica_bucket(read_replica_bucket) {}
 
     std::optional<model::compression> compression;
     std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags;
@@ -775,6 +777,7 @@ struct topic_properties
     std::optional<bool> recovery;
     std::optional<model::shadow_indexing_mode> shadow_indexing;
     std::optional<bool> read_replica;
+    std::optional<ss::sstring> read_replica_bucket;
 
     bool is_compacted() const;
     bool has_overrides() const;
@@ -793,7 +796,8 @@ struct topic_properties
           retention_duration,
           recovery,
           shadow_indexing,
-          read_replica);
+          read_replica,
+          read_replica_bucket);
     }
 
     friend bool operator==(const topic_properties&, const topic_properties&)

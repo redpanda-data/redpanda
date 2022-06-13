@@ -19,6 +19,8 @@
 #include "tristate.h"
 #include "utils/to_string.h"
 
+#include <seastar/core/sstring.hh>
+
 #include <fmt/ostream.h>
 
 #include <chrono>
@@ -174,7 +176,7 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       "{}, retention_bytes: {}, retention_duration_ms: {}, segment_size: "
       "{}, "
       "timestamp_type: {}, recovery_enabled: {}, shadow_indexing: {}, "
-      "read_replica: {} }}",
+      "read_replica: {}, read_replica_bucket: {} }}",
       properties.compression,
       properties.cleanup_policy_bitflags,
       properties.compaction_strategy,
@@ -184,7 +186,8 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       properties.timestamp_type,
       properties.recovery,
       properties.shadow_indexing,
-      properties.read_replica);
+      properties.read_replica,
+      properties.read_replica_bucket);
 
     return o;
 }
@@ -1404,7 +1407,8 @@ void adl<cluster::topic_properties>::to(
       p.retention_duration,
       p.recovery,
       p.shadow_indexing,
-      p.read_replica);
+      p.read_replica,
+      p.read_replica_bucket);
 }
 
 cluster::topic_properties
@@ -1428,6 +1432,8 @@ adl<cluster::topic_properties>::from(iobuf_parser& parser) {
       = reflection::adl<std::optional<model::shadow_indexing_mode>>{}.from(
         parser);
     auto read_replica = reflection::adl<std::optional<bool>>{}.from(parser);
+    auto read_replica_bucket
+      = reflection::adl<std::optional<ss::sstring>>{}.from(parser);
 
     return {
       compression,
@@ -1439,7 +1445,8 @@ adl<cluster::topic_properties>::from(iobuf_parser& parser) {
       retention_duration,
       recovery,
       shadow_indexing,
-      read_replica};
+      read_replica,
+      read_replica_bucket};
 }
 
 void adl<cluster::cluster_property_kv>::to(
