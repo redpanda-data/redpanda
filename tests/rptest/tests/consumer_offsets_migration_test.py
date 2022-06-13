@@ -155,6 +155,15 @@ class ConsumerOffsetsMigrationTest(EndToEndTest):
         # recreate second group, recovering a group will require reading tombstones
         rpk.consume(spec.name, 100, group=second_group_id)
 
+        for i in range(1):
+            topic_name = "test" + str(i)
+            spec = TopicSpec(name=topic_name, partition_count=3, replication_factor=3, )
+            self.client().create_topic(spec1)
+            for j in range(10):
+                rpk.produce(topic_name, str(j), str(j))
+            group_name = topic_name + "group"
+            rpk.consume(topic=topic_name, n=10, group=group_name)
+
         # enable consumer offsets support
         self.redpanda.set_environment({})
         for n in self.redpanda.nodes:
@@ -176,6 +185,11 @@ class ConsumerOffsetsMigrationTest(EndToEndTest):
                 return False
 
         wait_until(_consumer_offsets_present, timeout_sec=90, backoff_sec=3)
+
+        for i in range(1):
+            topic_name = "test" + str(i)
+            group_name = topic_name + "group"
+            rpk.consume(topic=topic_name, n=10, group=group_name)
 
         self.run_validation(min_records=100000,
                             producer_timeout_sec=300,
