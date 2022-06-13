@@ -10,6 +10,7 @@
 #include "cluster/persisted_stm.h"
 
 #include "cluster/logger.h"
+#include "raft/consensus.h"
 #include "raft/errc.h"
 #include "raft/types.h"
 #include "storage/record_batch_builder.h"

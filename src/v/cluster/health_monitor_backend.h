@@ -12,11 +12,10 @@
 #pragma once
 #include "cluster/fwd.h"
 #include "cluster/health_monitor_types.h"
-#include "cluster/members_table.h"
 #include "cluster/node/local_monitor.h"
-#include "cluster/partition_manager.h"
 #include "model/metadata.h"
 #include "raft/consensus.h"
+#include "rpc/fwd.h"
 
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/sharded.hh>

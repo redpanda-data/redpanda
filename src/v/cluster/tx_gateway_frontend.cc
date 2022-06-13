@@ -24,6 +24,7 @@
 #include "cluster/tx_helpers.h"
 #include "config/configuration.h"
 #include "errc.h"
+#include "rpc/connection_cache.h"
 #include "types.h"
 
 #include <seastar/core/coroutine.hh>

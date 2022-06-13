@@ -12,6 +12,7 @@
 #include "config_frontend.h"
 
 #include "cluster/cluster_utils.h"
+#include "cluster/controller_service.h"
 #include "cluster/partition_leaders_table.h"
 
 namespace cluster {

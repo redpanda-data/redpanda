@@ -20,6 +20,7 @@
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "resource_mgmt/io_priority.h"
+#include "rpc/connection_cache.h"
 #include "utils/file_io.h"
 #include "vlog.h"
 

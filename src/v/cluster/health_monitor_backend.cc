@@ -18,6 +18,7 @@
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "cluster/node/local_monitor.h"
+#include "cluster/partition_manager.h"
 #include "cluster/partition_probe.h"
 #include "config/configuration.h"
 #include "config/node_config.h"

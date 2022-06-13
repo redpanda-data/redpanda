@@ -11,6 +11,7 @@
 
 #include "cluster/cluster_utils.h"
 #include "cluster/commands.h"
+#include "cluster/controller_service.h"
 #include "cluster/drain_manager.h"
 #include "cluster/fwd.h"
 #include "cluster/logger.h"

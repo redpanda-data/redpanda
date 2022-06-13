@@ -10,10 +10,11 @@
  */
 
 #pragma once
-#include "cluster/controller_service.h"
 #include "cluster/controller_stm.h"
 #include "cluster/errc.h"
+#include "cluster/fwd.h"
 #include "cluster/logger.h"
+#include "cluster/types.h"
 #include "config/node_config.h"
 #include "config/tls_config.h"
 #include "net/dns.h"

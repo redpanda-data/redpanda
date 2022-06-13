@@ -18,7 +18,6 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
-#include "rpc/connection_cache.h"
 
 #include <algorithm>
 #include <iterator>
