@@ -79,7 +79,6 @@ public:
     const ss::sstring& filename() const { return _name; }
 
     ss::future<bool> materialize_index();
-    ss::future<> close();
     ss::future<> flush();
     ss::future<> truncate(model::offset);
 

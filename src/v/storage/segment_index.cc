@@ -229,7 +229,7 @@ ss::future<> segment_index::flush() {
         co_await out.flush();
     });
 }
-ss::future<> segment_index::close() { co_await flush(); }
+
 std::ostream& operator<<(std::ostream& o, const segment_index& i) {
     return o << "{file:" << i.filename() << ", offsets:" << i.base_offset()
              << ", index:" << i._state << ", step:" << i._step

@@ -141,7 +141,7 @@ ss::future<> segment::do_close() {
     }
     // after appender flushes to make sure we make things visible
     // only after appender flush
-    f = f.then([this] { return _idx.close(); });
+    f = f.then([this] { return _idx.flush(); });
     return f;
 }
 

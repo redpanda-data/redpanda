@@ -28,7 +28,6 @@ struct context {
           _base_offset,
           storage::segment_index::default_data_buffer_step);
     }
-    ~context() { _idx->close().get(); }
 
     const model::record_batch_header
     modify_get(model::offset o, int32_t batch_size) {
