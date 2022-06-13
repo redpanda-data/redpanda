@@ -20,6 +20,7 @@
 #include "coproc/partition_manager.h"
 #include "coproc/script_database.h"
 #include "model/metadata.h"
+#include "rpc/connection_cache.h"
 #include "storage/api.h"
 
 #include <seastar/core/coroutine.hh>
