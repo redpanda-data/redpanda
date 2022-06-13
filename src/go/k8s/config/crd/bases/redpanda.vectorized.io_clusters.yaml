@@ -811,6 +811,11 @@ spec:
                   currently wants to run for the cluster.
                 format: int32
                 type: integer
+              decommissioningNode:
+                description: Indicates that a node is currently being decommissioned
+                  from the cluster and provides its ordinal number
+                format: int32
+                type: integer
               nodes:
                 description: Nodes of the provisioned redpanda nodes
                 properties:
