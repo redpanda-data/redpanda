@@ -10,11 +10,9 @@
  */
 
 #define BOOST_TEST_MODULE cli_parser
-
 #include "redpanda/cli_parser.h"
 
-#include <seastar/core/smp.hh>
-#include <seastar/util/log-cli.hh>
+#include <seastar/core/app-template.hh>
 
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -121,15 +119,11 @@ BOOST_AUTO_TEST_CASE(test_flags_with_arguments_and_bad_pos_arg) {
 }
 
 BOOST_AUTO_TEST_CASE(test_redpanda_and_ss_opts) {
-    po::options_description cfg;
-    po::options_description ss;
+    seastar::app_template app;
 
-    cfg.add_options()("redpanda-cfg", po::value<std::string>(), "");
-
-    // add seastar smp flags for testing, these are added to our application
-    // along with many other seastar flags
-    ss.add(seastar::smp::get_options_description());
-    ss.add(seastar::log_cli::get_options_description());
+    app.add_options()("redpanda-cfg", po::value<std::string>(), "");
+    const auto& cfg = app.get_options_description();
+    const auto& ss = app.get_conf_file_options_description();
 
     {
         argv a{"redpanda --redpanda-cfg f.yaml --smp 2 --memory 4G --mbind 1 "

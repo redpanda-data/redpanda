@@ -19,6 +19,7 @@
 #include <seastar/core/iostream.hh>
 #include <seastar/net/api.hh>
 #include <seastar/net/socket_defs.hh>
+#include <seastar/net/tls.hh>
 
 #include <boost/intrusive/list.hpp>
 
@@ -57,7 +58,7 @@ public:
     /// The value can only be returned by the server socket and
     /// only in case if the client authentication is enabled.
     ss::future<std::optional<ss::session_dn>> get_distinguished_name() {
-        return _fd.get_distinguished_name();
+        return ss::tls::get_dn_information(_fd);
     }
 
     const std::optional<security::tls::principal_mapper>&
