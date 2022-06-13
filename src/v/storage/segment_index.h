@@ -55,13 +55,6 @@ public:
       size_t step,
       debug_sanitize_files);
 
-    /** Constructor with mock file content for unit testing */
-    segment_index(
-      ss::sstring filename,
-      ss::file mock_file,
-      model::offset base,
-      size_t step);
-
     ~segment_index() noexcept = default;
     segment_index(segment_index&&) noexcept = default;
     segment_index& operator=(segment_index&&) noexcept = default;
@@ -104,9 +97,19 @@ private:
     index_state _state;
     debug_sanitize_files _sanitize;
 
+    /** Constructor with mock file content for unit testing */
+    segment_index(
+      ss::sstring filename,
+      ss::file mock_file,
+      model::offset base,
+      size_t step);
+
     // For unit testing only.  If this is set, then open() returns
     // the contents of mock_file instead of opening the path in _name.
     std::optional<ss::file> _mock_file;
+
+    friend class offset_index_utils_fixture;
+    friend class log_replayer_fixture;
 
     friend std::ostream& operator<<(std::ostream&, const segment_index&);
 };

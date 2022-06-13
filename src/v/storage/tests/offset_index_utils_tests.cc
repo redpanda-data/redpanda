@@ -18,15 +18,19 @@
 
 #include <boost/test/tools/old/interface.hpp>
 
-struct context {
-    context(model::offset base = model::offset(0)) {
+using namespace storage;
+
+namespace storage {
+class offset_index_utils_fixture {
+public:
+    offset_index_utils_fixture(model::offset base = model::offset(0)) {
         _base_offset = base;
         // index
-        _idx = std::make_unique<storage::segment_index>(
-          "In memoyr iobuf",
+        _idx = std::unique_ptr<segment_index>(new segment_index(
+          "In memory iobuf",
           ss::file(ss::make_shared(tmpbuf_file(_data))),
           _base_offset,
-          storage::segment_index::default_data_buffer_step);
+          storage::segment_index::default_data_buffer_step));
     }
 
     const model::record_batch_header
@@ -48,7 +52,9 @@ struct context {
     storage::segment_index_ptr _idx;
     tmpbuf_file::store_t _data;
 };
-FIXTURE_TEST(index_round_trip, context) {
+} // namespace storage
+
+FIXTURE_TEST(index_round_trip, offset_index_utils_fixture) {
     BOOST_CHECK(true);
     info("index: {}", _idx);
     for (uint32_t i = 0; i < 1024; ++i) {
@@ -67,7 +73,7 @@ FIXTURE_TEST(index_round_trip, context) {
     BOOST_REQUIRE_EQUAL(raw_idx.relative_offset_index.size(), 1024);
 }
 
-FIXTURE_TEST(bucket_bug1, context) {
+FIXTURE_TEST(bucket_bug1, offset_index_utils_fixture) {
     info("index: {}", _idx);
     info("Testing bucket find");
     _idx->maybe_track(modify_get(model::offset{824}, 155103), 0); // indexed
@@ -94,7 +100,7 @@ FIXTURE_TEST(bucket_bug1, context) {
         BOOST_REQUIRE_EQUAL(p->filepos, 600121);
     }
 }
-FIXTURE_TEST(bucket_truncate, context) {
+FIXTURE_TEST(bucket_truncate, offset_index_utils_fixture) {
     info("index: {}", _idx);
     info("Testing bucket truncate");
     _idx->maybe_track(modify_get(model::offset{824}, 155103), 0); // indexed
