@@ -7,7 +7,7 @@ require (
 	github.com/banzaicloud/k8s-objectmatcher v1.7.0
 	github.com/go-logr/logr v0.4.0
 	github.com/hashicorp/go-multierror v1.1.0
-	github.com/jetstack/cert-manager v1.2.0
+	github.com/jetstack/cert-manager v1.4.4
 	github.com/json-iterator/go v1.1.11
 	github.com/onsi/ginkgo v1.16.4
 	github.com/onsi/gomega v1.15.0
