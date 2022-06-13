@@ -292,4 +292,26 @@ struct convert<model::cloud_credentials_source> {
         return true;
     }
 };
+
+template<>
+struct convert<model::partition_autobalancing_mode> {
+    using type = model::partition_autobalancing_mode;
+    static Node encode(const type& rhs) { return Node(fmt::format("{}", rhs)); }
+    static bool decode(const Node& node, type& rhs) {
+        auto value = node.as<std::string>();
+
+        if (value == "off") {
+            rhs = model::partition_autobalancing_mode::off;
+        } else if (value == "node_add_remove") {
+            rhs = model::partition_autobalancing_mode::node_add_remove;
+        } else if (value == "continuous") {
+            rhs = model::partition_autobalancing_mode::continuous;
+        } else {
+            return false;
+        }
+
+        return true;
+    }
+};
+
 } // namespace YAML
