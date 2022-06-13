@@ -856,6 +856,30 @@ func (s *ClusterStatus) SetRestarting(restarting bool) {
 	s.DeprecatedUpgrading = restarting
 }
 
+// GetCurrentReplicas returns the current number of replicas that the controller wants to run.
+// It returns 1 when not initialized (as fresh clusters start from 1 replica)
+func (r *Cluster) GetCurrentReplicas() int32 {
+	if r.Status.CurrentReplicas <= 0 {
+		// Not initialized, let's give the computed value
+		return r.ComputeInitialCurrentReplicasField()
+	}
+	return r.Status.CurrentReplicas
+}
+
+// ComputeInitialCurrentReplicasField calculates the initial value for status.currentReplicas.
+//
+// It needs to consider the following cases:
+// - Fresh cluster: we start from 1 replicas, then upscale if needed (initialization to bypass https://github.com/redpanda-data/redpanda/issues/333)
+// - Existing clusters: we keep spec.replicas as starting point
+func (r *Cluster) ComputeInitialCurrentReplicasField() int32 {
+	if r.Status.Replicas > 1 || r.Status.ReadyReplicas > 1 || len(r.Status.Nodes.Internal) > 1 {
+		// A cluster seems to be already running, we start from the existing amount of replicas
+		return *r.Spec.Replicas
+	}
+	// Clusters start from a single replica, then upscale
+	return 1
+}
+
 // TLSConfig is a generic TLS configuration
 type TLSConfig struct {
 	Enabled           bool                    `json:"enabled,omitempty"`

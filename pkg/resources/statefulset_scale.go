@@ -29,6 +29,7 @@ const (
 )
 
 // handleScaling is called to detect cases of replicas change and apply them to the cluster
+// nolint:nestif // for clarity
 func (r *StatefulSetResource) handleScaling(ctx context.Context) error {
 	if r.pandaCluster.Status.DecommissioningNode != nil {
 		decommissionTargetReplicas := *r.pandaCluster.Status.DecommissioningNode
@@ -40,8 +41,8 @@ func (r *StatefulSetResource) handleScaling(ctx context.Context) error {
 	}
 
 	if r.pandaCluster.Status.CurrentReplicas == 0 {
-		// Initialize the status currentReplicas
-		r.pandaCluster.Status.CurrentReplicas = *r.pandaCluster.Spec.Replicas
+		// Initialize the currentReplicas field, so that it can be later controlled
+		r.pandaCluster.Status.CurrentReplicas = r.pandaCluster.ComputeInitialCurrentReplicasField()
 		return r.Status().Update(ctx, r.pandaCluster)
 	}
 
@@ -52,6 +53,23 @@ func (r *StatefulSetResource) handleScaling(ctx context.Context) error {
 
 	if *r.pandaCluster.Spec.Replicas > r.pandaCluster.Status.CurrentReplicas {
 		r.logger.Info("Upscaling cluster", "replicas", *r.pandaCluster.Spec.Replicas)
+
+		// We care about upscaling only when the cluster is moving off 1 replica, which happen e.g. at cluster startup
+		if r.pandaCluster.Status.CurrentReplicas == 1 {
+			r.logger.Info("Waiting for first node to form a cluster before upscaling")
+			formed, err := r.isClusterFormed(ctx)
+			if err != nil {
+				return err
+			}
+			if !formed {
+				return &RequeueAfterError{
+					RequeueAfter: DecommissionRequeueDuration,
+					Msg:          fmt.Sprintf("Waiting for cluster to be formed before upscaling to %d replicas", *r.pandaCluster.Spec.Replicas),
+				}
+			}
+			r.logger.Info("Initial cluster has been formed")
+		}
+
 		// Upscaling request: this is already handled by Redpanda, so we just increase status currentReplicas
 		return setCurrentReplicas(ctx, r, r.pandaCluster, *r.pandaCluster.Spec.Replicas, r.logger)
 	}
@@ -181,6 +199,21 @@ func (r *StatefulSetResource) getAdminAPIClient(
 	ctx context.Context, ordinals ...int32,
 ) (adminutils.AdminAPIClient, error) {
 	return adminutils.NewInternalAdminAPI(ctx, r, r.pandaCluster, r.serviceFQDN, r.adminTLSConfigProvider, ordinals...)
+}
+
+func (r *StatefulSetResource) isClusterFormed(
+	ctx context.Context,
+) (bool, error) {
+	rootNodeAdminAPI, err := r.getAdminAPIClient(ctx, 0)
+	if err != nil {
+		return false, err
+	}
+	brokers, err := rootNodeAdminAPI.Brokers(ctx)
+	if err != nil {
+		// Eat the error and return that the cluster is not formed
+		return false, nil
+	}
+	return len(brokers) > 0, nil
 }
 
 // verifyRunningCount checks if the statefulset is configured to run the given amount of replicas and that also pods match the expectations

@@ -131,9 +131,11 @@ func main() {
 
 	cfg.Redpanda.ID = int(hostIndex)
 
-	// First Redpanda node need to have cleared seed servers in order
-	// to form raft group 0
-	if hostIndex == 0 {
+	// In case of a single seed server, the list should contain the current node itself.
+	// Normally the cluster is able to recognize it's talking to itself, except when the cluster is
+	// configured to use mutual TLS on the Kafka API (see Helm test).
+	// So, we clear the list of seeds to help Redpanda.
+	if len(cfg.Redpanda.SeedServers) == 1 {
 		cfg.Redpanda.SeedServers = []config.SeedServer{}
 	}
 
