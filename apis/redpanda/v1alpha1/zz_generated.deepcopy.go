@@ -221,6 +221,11 @@ func (in *ClusterSpec) DeepCopy() *ClusterSpec {
 func (in *ClusterStatus) DeepCopyInto(out *ClusterStatus) {
 	*out = *in
 	in.Nodes.DeepCopyInto(&out.Nodes)
+	if in.DecommissioningNode != nil {
+		in, out := &in.DecommissioningNode, &out.DecommissioningNode
+		*out = new(int32)
+		**out = **in
+	}
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions
 		*out = make([]ClusterCondition, len(*in))

@@ -312,6 +312,9 @@ type ClusterStatus struct {
 	// Indicates that a cluster is restarting due to an upgrade or a different reason
 	// +optional
 	Restarting bool `json:"restarting"`
+	// Indicates that a node is currently being decommissioned from the cluster and provides its ordinal number
+	// +optional
+	DecommissioningNode *int32 `json:"decommissioningNode,omitempty"`
 	// Current version of the cluster.
 	// +optional
 	Version string `json:"version"`
