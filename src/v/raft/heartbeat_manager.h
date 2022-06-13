@@ -17,7 +17,6 @@
 #include "raft/consensus_client_protocol.h"
 #include "raft/group_configuration.h"
 #include "raft/types.h"
-#include "rpc/connection_cache.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/semaphore.hh>

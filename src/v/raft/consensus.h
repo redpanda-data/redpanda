@@ -31,7 +31,6 @@
 #include "raft/replicate_batcher.h"
 #include "raft/timeout_jitter.h"
 #include "raft/types.h"
-#include "rpc/connection_cache.h"
 #include "seastarx.h"
 #include "storage/fwd.h"
 #include "storage/log.h"
