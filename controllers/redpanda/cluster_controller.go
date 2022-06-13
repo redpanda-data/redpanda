@@ -324,7 +324,8 @@ func (r *ClusterReconciler) reportStatus(
 			}
 
 			cluster.Status.Nodes = *nodeList
-			cluster.Status.Replicas = sts.LastObservedState.Status.ReadyReplicas
+			cluster.Status.ReadyReplicas = sts.LastObservedState.Status.ReadyReplicas
+			cluster.Status.Replicas = sts.LastObservedState.Status.Replicas
 			cluster.Status.Version = sts.Version()
 
 			err = r.Status().Update(ctx, &cluster)
@@ -353,7 +354,8 @@ func statusShouldBeUpdated(
 			!reflect.DeepEqual(nodeList.ExternalPandaproxy, status.Nodes.ExternalPandaproxy) ||
 			!reflect.DeepEqual(nodeList.SchemaRegistry, status.Nodes.SchemaRegistry) ||
 			!reflect.DeepEqual(nodeList.ExternalBootstrap, status.Nodes.ExternalBootstrap)) ||
-		status.Replicas != sts.LastObservedState.Status.ReadyReplicas ||
+		status.Replicas != sts.LastObservedState.Status.Replicas ||
+		status.ReadyReplicas != sts.LastObservedState.Status.ReadyReplicas ||
 		status.Version != sts.Version()
 }
 
