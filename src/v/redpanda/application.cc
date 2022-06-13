@@ -1006,10 +1006,24 @@ void application::wire_up_redpanda_services() {
                 = memory_groups::kafka_total_memory();
               c.listen_backlog
                 = config::shard_local_cfg().rpc_server_listen_backlog;
-              c.tcp_recv_buf
-                = config::shard_local_cfg().rpc_server_tcp_recv_buf;
-              c.tcp_send_buf
-                = config::shard_local_cfg().rpc_server_tcp_send_buf;
+              if (config::shard_local_cfg().kafka_rpc_server_tcp_recv_buf()) {
+                  c.tcp_recv_buf
+                    = config::shard_local_cfg().kafka_rpc_server_tcp_recv_buf;
+              } else {
+                  // Backward compat: prior to Redpanda 22.2, rpc_server_*
+                  // settings applied to both Kafka and Internal RPC listeners.
+                  c.tcp_recv_buf
+                    = config::shard_local_cfg().rpc_server_tcp_recv_buf;
+              };
+              if (config::shard_local_cfg().kafka_rpc_server_tcp_send_buf()) {
+                  c.tcp_send_buf
+                    = config::shard_local_cfg().kafka_rpc_server_tcp_send_buf;
+              } else {
+                  // Backward compat: prior to Redpanda 22.2, rpc_server_*
+                  // settings applied to both Kafka and Internal RPC listeners.
+                  c.tcp_send_buf
+                    = config::shard_local_cfg().rpc_server_tcp_send_buf;
+              }
               auto& tls_config = config::node().kafka_api_tls.value();
               for (const auto& ep : config::node().kafka_api()) {
                   ss::shared_ptr<ss::tls::server_credentials> credentails;
