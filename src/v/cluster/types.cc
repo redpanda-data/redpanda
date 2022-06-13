@@ -1394,6 +1394,20 @@ adl<cluster::partition_assignment>::from(iobuf_parser& parser) {
     return {group, id, std::move(replicas)};
 }
 
+void adl<cluster::remote_topic_properties>::to(
+  iobuf& out, cluster::remote_topic_properties&& p) {
+    reflection::serialize(out, p.remote_revision, p.remote_partition_count);
+}
+
+cluster::remote_topic_properties
+adl<cluster::remote_topic_properties>::from(iobuf_parser& parser) {
+    auto remote_revision = reflection::adl<model::initial_revision_id>{}.from(
+      parser);
+    auto remote_partition_count = reflection::adl<int32_t>{}.from(parser);
+
+    return {remote_revision, remote_partition_count};
+}
+
 void adl<cluster::topic_properties>::to(
   iobuf& out, cluster::topic_properties&& p) {
     reflection::serialize(
@@ -1408,7 +1422,8 @@ void adl<cluster::topic_properties>::to(
       p.recovery,
       p.shadow_indexing,
       p.read_replica,
-      p.read_replica_bucket);
+      p.read_replica_bucket,
+      p.remote_topic_properties);
 }
 
 cluster::topic_properties
@@ -1434,6 +1449,9 @@ adl<cluster::topic_properties>::from(iobuf_parser& parser) {
     auto read_replica = reflection::adl<std::optional<bool>>{}.from(parser);
     auto read_replica_bucket
       = reflection::adl<std::optional<ss::sstring>>{}.from(parser);
+    auto remote_topic_properties
+      = reflection::adl<std::optional<cluster::remote_topic_properties>>{}.from(
+        parser);
 
     return {
       compression,
@@ -1446,7 +1464,8 @@ adl<cluster::topic_properties>::from(iobuf_parser& parser) {
       recovery,
       shadow_indexing,
       read_replica,
-      read_replica_bucket};
+      read_replica_bucket,
+      remote_topic_properties};
 }
 
 void adl<cluster::cluster_property_kv>::to(

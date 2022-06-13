@@ -34,6 +34,7 @@
 #include <absl/container/btree_set.h>
 #include <fmt/format.h>
 
+#include <cstdint>
 #include <optional>
 
 namespace cluster {
@@ -735,6 +736,30 @@ struct partition_assignment
       = default;
 };
 
+struct remote_topic_properties
+  : serde::envelope<remote_topic_properties, serde::version<0>> {
+    remote_topic_properties() = default;
+    remote_topic_properties(
+      model::initial_revision_id remote_revision,
+      int32_t remote_partition_count)
+      : remote_revision(remote_revision)
+      , remote_partition_count(remote_partition_count) {}
+
+    model::initial_revision_id remote_revision;
+    int32_t remote_partition_count;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const remote_topic_properties&);
+
+    auto serde_fields() {
+        return std::tie(remote_revision, remote_partition_count);
+    }
+
+    friend bool
+    operator==(const remote_topic_properties&, const remote_topic_properties&)
+      = default;
+};
+
 /**
  * Structure holding topic properties overrides, empty values will be replaced
  * with defaults
@@ -754,7 +779,8 @@ struct topic_properties
       std::optional<bool> recovery,
       std::optional<model::shadow_indexing_mode> shadow_indexing,
       std::optional<bool> read_replica,
-      std::optional<ss::sstring> read_replica_bucket)
+      std::optional<ss::sstring> read_replica_bucket,
+      std::optional<remote_topic_properties> remote_topic_properties)
       : compression(compression)
       , cleanup_policy_bitflags(cleanup_policy_bitflags)
       , compaction_strategy(compaction_strategy)
@@ -765,7 +791,8 @@ struct topic_properties
       , recovery(recovery)
       , shadow_indexing(shadow_indexing)
       , read_replica(read_replica)
-      , read_replica_bucket(read_replica_bucket) {}
+      , read_replica_bucket(read_replica_bucket)
+      , remote_topic_properties(remote_topic_properties) {}
 
     std::optional<model::compression> compression;
     std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags;
@@ -778,6 +805,7 @@ struct topic_properties
     std::optional<model::shadow_indexing_mode> shadow_indexing;
     std::optional<bool> read_replica;
     std::optional<ss::sstring> read_replica_bucket;
+    std::optional<remote_topic_properties> remote_topic_properties;
 
     bool is_compacted() const;
     bool has_overrides() const;
@@ -797,7 +825,8 @@ struct topic_properties
           recovery,
           shadow_indexing,
           read_replica,
-          read_replica_bucket);
+          read_replica_bucket,
+          remote_topic_properties);
     }
 
     friend bool operator==(const topic_properties&, const topic_properties&)
@@ -1764,6 +1793,12 @@ template<>
 struct adl<cluster::partition_assignment> {
     void to(iobuf&, cluster::partition_assignment&&);
     cluster::partition_assignment from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::remote_topic_properties> {
+    void to(iobuf&, cluster::remote_topic_properties&&);
+    cluster::remote_topic_properties from(iobuf_parser&);
 };
 
 template<>
