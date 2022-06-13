@@ -279,11 +279,7 @@ func (r *StatefulSetResource) obj(
 	tlsVolumes, tlsVolumeMounts := r.volumeProvider.Volumes()
 
 	// We set statefulset replicas via status.currentReplicas in order to control it from the handleScaling function
-	replicas := r.pandaCluster.Status.CurrentReplicas
-	if replicas <= 0 {
-		// Until the state is initialized
-		replicas = *r.pandaCluster.Spec.Replicas
-	}
+	replicas := r.pandaCluster.GetCurrentReplicas()
 
 	ss := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{

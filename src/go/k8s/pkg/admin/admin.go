@@ -56,16 +56,13 @@ func NewInternalAdminAPI(
 
 	if len(ordinals) == 0 {
 		// Not a specific node, just go through all them
-		replicas := redpandaCluster.Status.CurrentReplicas
-		if replicas <= 0 {
-			replicas = *redpandaCluster.Spec.Replicas
-		}
+		replicas := redpandaCluster.GetCurrentReplicas()
 
 		for i := int32(0); i < replicas; i++ {
 			ordinals = append(ordinals, i)
 		}
 	}
-	var urls []string
+	urls := make([]string, 0, len(ordinals))
 	for _, on := range ordinals {
 		urls = append(urls, fmt.Sprintf("%s-%d.%s:%d", redpandaCluster.Name, on, fqdn, adminInternalPort))
 	}
