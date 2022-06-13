@@ -9,6 +9,8 @@
 
 #include "handlers.h"
 
+#include "hashing/jump_consistent_hash.h"
+#include "hashing/xx.h"
 #include "kafka/client/exceptions.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/fetch.h"

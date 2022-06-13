@@ -14,7 +14,6 @@
 #include "hashing/crc32c.h"
 #include "kafka/protocol/legacy_message.h"
 #include "kafka/protocol/request_reader.h"
-#include "kafka/server/request_context.h"
 #include "likely.h"
 #include "model/fundamental.h"
 #include "model/record.h"

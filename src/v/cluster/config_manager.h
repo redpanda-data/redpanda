@@ -13,7 +13,7 @@
 
 #include "cluster/commands.h"
 #include "model/record.h"
-#include "rpc/connection_cache.h"
+#include "rpc/fwd.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>

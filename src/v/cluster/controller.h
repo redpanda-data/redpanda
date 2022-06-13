@@ -11,18 +11,11 @@
 
 #pragma once
 
-#include "cluster/config_frontend.h"
-#include "cluster/config_manager.h"
 #include "cluster/controller_stm.h"
-#include "cluster/drain_manager.h"
 #include "cluster/fwd.h"
-#include "cluster/health_manager.h"
-#include "cluster/health_monitor_frontend.h"
-#include "cluster/partition_manager.h"
 #include "cluster/scheduling/leader_balancer.h"
-#include "cluster/topic_updates_dispatcher.h"
-#include "raft/group_manager.h"
-#include "rpc/connection_cache.h"
+#include "raft/fwd.h"
+#include "rpc/fwd.h"
 #include "security/authorizer.h"
 #include "security/credential_store.h"
 #include "storage/api.h"

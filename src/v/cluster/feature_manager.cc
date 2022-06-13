@@ -13,8 +13,10 @@
 
 #include "cluster/cluster_utils.h"
 #include "cluster/commands.h"
+#include "cluster/controller_service.h"
 #include "cluster/health_monitor_frontend.h"
 #include "cluster/members_table.h"
+#include "config/configuration.h"
 #include "feature_table.h"
 #include "raft/group_manager.h"
 

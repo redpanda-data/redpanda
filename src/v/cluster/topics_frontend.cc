@@ -11,6 +11,7 @@
 
 #include "cluster/cluster_utils.h"
 #include "cluster/commands.h"
+#include "cluster/controller_service.h"
 #include "cluster/controller_stm.h"
 #include "cluster/errc.h"
 #include "cluster/logger.h"
@@ -23,6 +24,7 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/validation.h"
+#include "raft/consensus_client_protocol.h"
 #include "raft/errc.h"
 #include "raft/types.h"
 #include "random/generators.h"

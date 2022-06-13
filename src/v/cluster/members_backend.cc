@@ -13,9 +13,11 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/timeout_clock.h"
+#include "prometheus/prometheus_sanitize.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/loop.hh>
+#include <seastar/core/metrics.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/util/later.hh>
 #include <seastar/util/optimized_optional.hh>

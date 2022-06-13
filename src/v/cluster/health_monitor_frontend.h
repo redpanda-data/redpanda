@@ -9,7 +9,6 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
-#include "cluster/controller_backend.h"
 #include "cluster/fwd.h"
 #include "cluster/health_monitor_backend.h"
 #include "cluster/health_monitor_types.h"

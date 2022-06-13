@@ -10,8 +10,7 @@
  */
 
 #pragma once
-#include "cluster/controller.h"
-#include "cluster/partition_manager.h"
+#include "cluster/fwd.h"
 #include "cluster/tests/utils.h"
 #include "config/seed_server.h"
 #include "model/metadata.h"

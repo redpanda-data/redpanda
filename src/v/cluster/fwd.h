@@ -16,6 +16,7 @@ namespace cluster {
 class controller;
 class controller_backend;
 class controller_service;
+class controller_stm_shard;
 class id_allocator_frontend;
 class rm_partition_frontend;
 class tx_gateway_frontend;
@@ -40,6 +41,7 @@ class data_policy_frontend;
 class tx_gateway;
 class rm_group_proxy;
 class non_replicable_topics_frontend;
+class health_manager;
 class health_monitor_frontend;
 class health_monitor_backend;
 class metrics_reporter;

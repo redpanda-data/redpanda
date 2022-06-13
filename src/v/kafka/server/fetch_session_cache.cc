@@ -8,6 +8,8 @@
 #include "model/timeout_clock.h"
 #include "prometheus/prometheus_sanitize.h"
 
+#include <seastar/core/metrics.hh>
+
 #include <chrono>
 
 namespace kafka {

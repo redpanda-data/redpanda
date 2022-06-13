@@ -14,7 +14,6 @@
 #include "cluster/fwd.h"
 #include "cluster/metadata_dissemination_rpc_service.h"
 #include "raft/types.h"
-#include "rpc/connection_cache.h"
 
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/sharded.hh>

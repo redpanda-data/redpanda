@@ -14,6 +14,7 @@
 #include "archival/logger.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/types.h"
+#include "cluster/partition_manager.h"
 #include "model/metadata.h"
 #include "s3/client.h"
 #include "s3/error.h"

@@ -12,7 +12,6 @@
 #pragma once
 
 #include "cluster/fwd.h"
-#include "cluster/health_monitor_types.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/topic_table.h"
 #include "cluster/types.h"

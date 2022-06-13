@@ -21,7 +21,7 @@
 #include "raft/consensus.h"
 #include "raft/types.h"
 #include "random/simple_time_jitter.h"
-#include "rpc/connection_cache.h"
+#include "rpc/fwd.h"
 #include "storage/fwd.h"
 
 namespace cluster {

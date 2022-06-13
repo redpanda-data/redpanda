@@ -10,6 +10,7 @@
 #include "cluster/controller.h"
 
 #include "cluster/cluster_utils.h"
+#include "cluster/config_frontend.h"
 #include "cluster/controller_api.h"
 #include "cluster/controller_backend.h"
 #include "cluster/controller_service.h"
@@ -18,6 +19,7 @@
 #include "cluster/feature_manager.h"
 #include "cluster/feature_table.h"
 #include "cluster/fwd.h"
+#include "cluster/health_manager.h"
 #include "cluster/health_monitor_frontend.h"
 #include "cluster/logger.h"
 #include "cluster/members_backend.h"
