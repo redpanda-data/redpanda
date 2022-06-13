@@ -293,9 +293,15 @@ type ClusterStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Replicas show how many nodes are working in the cluster
+	// Replicas show how many nodes have been created for the cluster
 	// +optional
 	Replicas int32 `json:"replicas"`
+	// ReadyReplicas is the number of Pods belonging to the cluster that have a Ready Condition.
+	// +optional
+	ReadyReplicas int32 `json:"readyReplicas,omitempty"`
+	// CurrentReplicas is the number of Pods that the controller currently wants to run for the cluster.
+	// +optional
+	CurrentReplicas int32 `json:"currentReplicas,omitempty"`
 	// Nodes of the provisioned redpanda nodes
 	// +optional
 	Nodes NodesList `json:"nodes,omitempty"`
