@@ -750,19 +750,42 @@ reduce_reports_map(reports_acc_t acc, std::vector<ntp_report> current_reports) {
 } // namespace
 ss::future<std::vector<topic_status>>
 health_monitor_backend::collect_topic_status(partitions_filter filters) {
+    auto t1 = ss::thread_cputime_clock::now();
+
     auto reports_map = co_await _partition_manager.map_reduce0(
       [&filters](partition_manager& pm) {
           return collect_shard_local_reports(pm, filters);
+
+          auto tt1 = ss::thread_cputime_clock::now();
+          auto r = collect_shard_local_reports(pm, filters);
+          auto tt2 = ss::thread_cputime_clock::now();
+
+          vlog(
+            clusterlog.info,
+            "collect_shard_local_reports {} {} {}",
+            (tt2 - tt1).count(),
+            filters.namespaces.size(),
+            r.size() * sizeof(ntp_report));
+
+          return r;
       },
       reports_acc_t{},
       &reduce_reports_map);
 
+    auto t2 = ss::thread_cputime_clock::now();
     std::vector<topic_status> topics;
     topics.reserve(reports_map.size());
     for (auto& [tp_ns, partitions] : reports_map) {
         topics.push_back(
           topic_status{.tp_ns = tp_ns, .partitions = std::move(partitions)});
     }
+    auto t3 = ss::thread_cputime_clock::now();
+
+    vlog(
+      clusterlog.info,
+      "collect_topic_status {} {}",
+      (t2 - t1).count(),
+      (t3 - t2).count());
 
     co_return topics;
 }
