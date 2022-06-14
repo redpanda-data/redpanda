@@ -157,4 +157,12 @@ struct async_adl<std::optional<T>> {
     }
 };
 
+template<typename T>
+ss::future<T> from_iobuf_async(iobuf b) {
+    iobuf_parser parser(std::move(b));
+    return ss::do_with(std::move(parser), [](iobuf_parser& parser) {
+        return async_adl<std::decay_t<T>>{}.from(parser);
+    });
+}
+
 } // namespace reflection
