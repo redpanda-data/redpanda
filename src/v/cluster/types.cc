@@ -19,12 +19,15 @@
 #include "tristate.h"
 #include "utils/to_string.h"
 
+#include <seastar/core/sstring.hh>
+
 #include <fmt/ostream.h>
 
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <type_traits>
 
 namespace cluster {
@@ -172,7 +175,8 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       "compaction_strategy: "
       "{}, retention_bytes: {}, retention_duration_ms: {}, segment_size: "
       "{}, "
-      "timestamp_type: {}, recovery_enabled: {}, shadow_indexing: {} }}",
+      "timestamp_type: {}, recovery_enabled: {}, shadow_indexing: {}, "
+      "read_replica: {}, read_replica_bucket: {} }}",
       properties.compression,
       properties.cleanup_policy_bitflags,
       properties.compaction_strategy,
@@ -181,7 +185,9 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       properties.segment_size,
       properties.timestamp_type,
       properties.recovery,
-      properties.shadow_indexing);
+      properties.shadow_indexing,
+      properties.read_replica,
+      properties.read_replica_bucket);
 
     return o;
 }
@@ -434,6 +440,8 @@ std::ostream& operator<<(std::ostream& o, const feature_update_action& fua) {
 
 namespace reflection {
 
+// note: adl serialization doesn't support read replica fields since serde
+// should be used for new versions.
 void adl<cluster::topic_configuration>::to(
   iobuf& out, cluster::topic_configuration&& t) {
     int32_t version = -1;
@@ -454,6 +462,8 @@ void adl<cluster::topic_configuration>::to(
       t.properties.shadow_indexing);
 }
 
+// note: adl deserialization doesn't support read replica fields since serde
+// should be used for new versions.
 cluster::topic_configuration
 adl<cluster::topic_configuration>::from(iobuf_parser& in) {
     // NOTE: The first field of the topic_configuration is a
@@ -1384,6 +1394,20 @@ adl<cluster::partition_assignment>::from(iobuf_parser& parser) {
     return {group, id, std::move(replicas)};
 }
 
+void adl<cluster::remote_topic_properties>::to(
+  iobuf& out, cluster::remote_topic_properties&& p) {
+    reflection::serialize(out, p.remote_revision, p.remote_partition_count);
+}
+
+cluster::remote_topic_properties
+adl<cluster::remote_topic_properties>::from(iobuf_parser& parser) {
+    auto remote_revision = reflection::adl<model::initial_revision_id>{}.from(
+      parser);
+    auto remote_partition_count = reflection::adl<int32_t>{}.from(parser);
+
+    return {remote_revision, remote_partition_count};
+}
+
 void adl<cluster::topic_properties>::to(
   iobuf& out, cluster::topic_properties&& p) {
     reflection::serialize(
@@ -1396,7 +1420,10 @@ void adl<cluster::topic_properties>::to(
       p.retention_bytes,
       p.retention_duration,
       p.recovery,
-      p.shadow_indexing);
+      p.shadow_indexing,
+      p.read_replica,
+      p.read_replica_bucket,
+      p.remote_topic_properties);
 }
 
 cluster::topic_properties
@@ -1419,6 +1446,12 @@ adl<cluster::topic_properties>::from(iobuf_parser& parser) {
     auto shadow_indexing
       = reflection::adl<std::optional<model::shadow_indexing_mode>>{}.from(
         parser);
+    auto read_replica = reflection::adl<std::optional<bool>>{}.from(parser);
+    auto read_replica_bucket
+      = reflection::adl<std::optional<ss::sstring>>{}.from(parser);
+    auto remote_topic_properties
+      = reflection::adl<std::optional<cluster::remote_topic_properties>>{}.from(
+        parser);
 
     return {
       compression,
@@ -1429,7 +1462,10 @@ adl<cluster::topic_properties>::from(iobuf_parser& parser) {
       retention_bytes,
       retention_duration,
       recovery,
-      shadow_indexing};
+      shadow_indexing,
+      read_replica,
+      read_replica_bucket,
+      remote_topic_properties};
 }
 
 void adl<cluster::cluster_property_kv>::to(

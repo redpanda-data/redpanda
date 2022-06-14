@@ -526,18 +526,27 @@ SEASTAR_THREAD_TEST_CASE(partition_status_serialization_old_version) {
 }
 
 template<typename T>
-void roundtrip_test(const T original) {
+void serde_roundtrip_test(const T original) {
     auto serde_in = original;
-    auto adl_in = original;
-
     auto serde_out = serde::to_iobuf(std::move(serde_in));
-    auto adl_out = reflection::to_iobuf(std::move(adl_in));
-
     auto from_serde = serde::from_iobuf<T>(std::move(serde_out));
-    auto from_adl = reflection::from_iobuf<T>(std::move(adl_out));
 
     BOOST_REQUIRE(original == from_serde);
+}
+
+template<typename T>
+void adl_roundtrip_test(const T original) {
+    auto adl_in = original;
+    auto adl_out = reflection::to_iobuf(std::move(adl_in));
+    auto from_adl = reflection::from_iobuf<T>(std::move(adl_out));
+
     BOOST_REQUIRE(original == from_adl);
+}
+
+template<typename T>
+void roundtrip_test(const T original) {
+    serde_roundtrip_test(original);
+    adl_roundtrip_test(original);
 }
 
 template<typename T>
@@ -551,7 +560,15 @@ cluster::property_update<T> random_property_update(T value) {
     };
 }
 
-cluster::topic_properties random_topic_properties() {
+cluster::remote_topic_properties random_remote_topic_properties() {
+    cluster::remote_topic_properties remote_tp;
+    remote_tp.remote_revision
+      = tests::random_named_int<model::initial_revision_id>();
+    remote_tp.remote_partition_count = random_generators::get_int(0, 1000);
+    return remote_tp;
+}
+
+cluster::topic_properties old_random_topic_properties() {
     cluster::topic_properties properties;
     properties.cleanup_policy_bitflags = tests::random_optional(
       [] { return model::random_cleanup_policy(); });
@@ -574,6 +591,21 @@ cluster::topic_properties random_topic_properties() {
     return properties;
 }
 
+cluster::topic_properties random_topic_properties() {
+    cluster::topic_properties properties = old_random_topic_properties();
+
+    properties.read_replica = tests::random_optional(
+      [] { return tests::random_bool(); });
+    properties.read_replica_bucket = tests::random_optional([] {
+        return random_generators::gen_alphanum_string(
+          random_generators::get_int(1, 64));
+    });
+    properties.remote_topic_properties = tests::random_optional(
+      [] { return random_remote_topic_properties(); });
+
+    return properties;
+}
+
 std::vector<cluster::partition_assignment> random_partition_assignments() {
     std::vector<cluster::partition_assignment> ret;
 
@@ -591,6 +623,15 @@ std::vector<cluster::partition_assignment> random_partition_assignments() {
         ret.push_back(std::move(p_as));
     }
     return ret;
+}
+
+cluster::topic_configuration old_random_topic_configuration() {
+    cluster::topic_configuration tp_cfg;
+    tp_cfg.tp_ns = model::random_topic_namespace();
+    tp_cfg.properties = old_random_topic_properties();
+    tp_cfg.replication_factor = random_generators::get_int<int16_t>(0, 10);
+    tp_cfg.partition_count = random_generators::get_int(0, 100);
+    return tp_cfg;
 }
 
 cluster::topic_configuration random_topic_configuration() {
@@ -844,7 +885,9 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
 
         roundtrip_test(p_as);
     }
-    { roundtrip_test(random_topic_properties()); }
+    { serde_roundtrip_test(random_remote_topic_properties()); }
+    { roundtrip_test(old_random_topic_properties()); }
+    { serde_roundtrip_test(random_topic_properties()); }
     {
         roundtrip_test(
           random_property_update(random_generators::gen_alphanum_string(10)));
@@ -874,14 +917,22 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         };
         roundtrip_test(updates);
     }
-    { roundtrip_test(random_topic_configuration()); }
+    { roundtrip_test(old_random_topic_configuration()); }
+    { serde_roundtrip_test(random_topic_configuration()); }
     { roundtrip_test(random_create_partitions_configuration()); }
+    {
+        cluster::topic_configuration_assignment cfg;
+        cfg.cfg = old_random_topic_configuration();
+        cfg.assignments = random_partition_assignments();
+
+        roundtrip_test(cfg);
+    }
     {
         cluster::topic_configuration_assignment cfg;
         cfg.cfg = random_topic_configuration();
         cfg.assignments = random_partition_assignments();
 
-        roundtrip_test(cfg);
+        serde_roundtrip_test(cfg);
     }
     {
         cluster::create_partitions_configuration_assignment cfg;
