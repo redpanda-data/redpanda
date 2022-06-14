@@ -19,7 +19,7 @@ metadata:
 spec:
   initContainers:
     - name: redpanda-configurator
-      image: "vectorized/configurator:latest" 
+      image: "vectorized/configurator:latest"
 status:
   phase: "Running"
 
