@@ -49,8 +49,27 @@ class ConsumerOffsetsMigrationTest(EndToEndTest):
 
         self.redpanda.start()
         self._client = DefaultClient(self.redpanda)
-        # set of failure suppressed nodes - required to make restarts deterministic
-        suppressed = set()
+
+        # Set of nodes that are undergoing some destructive operations like fault injections
+        # or restarts. We only want to do one of those at a time to avoid conflicts.
+        busy_nodes = set()
+        # synchronize access to busy_nodes set.
+        busy_nodes_lock = threading.RLock()
+
+        # Atomic "mark a node busy if it is not" function.
+        def mark_node_busy(node_idx):
+            with busy_nodes_lock:
+                if node_idx in busy_nodes:
+                    return False
+                busy_nodes.add(node_idx)
+                self.logger.debug(f"Marked {node_idx} busy")
+                return True
+
+        def mark_node_free(node_idx):
+            with busy_nodes_lock:
+                assert node_idx in busy_nodes
+                busy_nodes.remove(node_idx)
+                self.logger.debug(f"Marked {node_idx} free")
 
         def failure_injector_loop():
             f_injector = FailureInjector(self.redpanda)
@@ -58,17 +77,20 @@ class ConsumerOffsetsMigrationTest(EndToEndTest):
                 f_type = random.choice(FailureSpec.FAILURE_TYPES)
                 length = 0
                 node = random.choice(self.redpanda.nodes)
-                while self.redpanda.idx(node) in suppressed:
+                while not mark_node_busy(self.redpanda.idx(node)):
                     node = random.choice(self.redpanda.nodes)
 
-                # allow suspending any node
-                if f_type == FailureSpec.FAILURE_SUSPEND:
-                    length = random.randint(
-                        1,
-                        ConsumerOffsetsMigrationTest.max_suspend_duration_sec)
+                try:
+                    # allow suspending any node
+                    if f_type == FailureSpec.FAILURE_SUSPEND:
+                        length = random.randint(
+                            1, ConsumerOffsetsMigrationTest.
+                            max_suspend_duration_sec)
 
-                f_injector.inject_failure(
-                    FailureSpec(node=node, type=f_type, length=length))
+                    f_injector.inject_failure(
+                        FailureSpec(node=node, type=f_type, length=length))
+                finally:
+                    mark_node_free(self.redpanda.idx(node))
 
                 delay = random.randint(
                     ConsumerOffsetsMigrationTest.min_inter_failure_time_sec,
@@ -119,10 +141,12 @@ class ConsumerOffsetsMigrationTest(EndToEndTest):
         # enable consumer offsets support
         self.redpanda.set_environment({"__REDPANDA_LOGICAL_VERSION": 2})
         for n in self.redpanda.nodes:
-            id = self.redpanda.idx(n)
-            suppressed.add(id)
-            self.redpanda.restart_nodes(n, stop_timeout=60)
-            suppressed.remove(id)
+            idx = self.redpanda.idx(n)
+            wait_until(lambda: mark_node_busy(idx), 90, backoff_sec=2)
+            try:
+                self.redpanda.restart_nodes(n, stop_timeout=60)
+            finally:
+                mark_node_free(idx)
             # wait for leader balancer to start evening out leadership
             wait_until(cluster_is_stable, 90, backoff_sec=2)
 
