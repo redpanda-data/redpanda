@@ -12,6 +12,7 @@
 #include "bytes/iobuf.h"
 #include "bytes/iostream.h"
 #include "config/configuration.h"
+#include "model/async_adl_serde.h"
 #include "model/namespace.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "raft/types.h"
@@ -350,7 +351,8 @@ ss::future<> kvstore::save_snapshot() {
     // serialize batch: size_prefix + batch
     iobuf data;
     auto ph = data.reserve(sizeof(int32_t));
-    reflection::serialize(data, std::move(batch));
+    co_await reflection::async_adl<model::record_batch>{}.to(
+      data, std::move(batch));
     auto size = ss::cpu_to_le(int32_t(data.size_bytes() - sizeof(int32_t)));
     ph.write((const char*)&size, sizeof(size));
 
@@ -445,7 +447,8 @@ ss::future<> kvstore::load_snapshot_from_reader(snapshot_reader& reader) {
           buf.size_bytes()));
     }
 
-    auto batch = reflection::from_iobuf<model::record_batch>(std::move(buf));
+    auto batch = co_await reflection::from_iobuf_async<model::record_batch>(
+      std::move(buf));
 
     auto batch_crc = model::crc_record_batch(batch);
     if (batch.header().crc != batch_crc) {

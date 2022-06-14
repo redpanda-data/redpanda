@@ -13,6 +13,8 @@
 #include "model/record_batch_reader.h"
 #include "reflection/seastar/circular_buffer.h"
 
+#include <seastar/coroutine/maybe_yield.hh>
+
 namespace reflection {
 
 ss::future<> async_adl<model::record_batch_reader>::to(
@@ -67,7 +69,9 @@ async_adl<model::record_batch>::from(iobuf_parser& in) {
     auto recs = std::vector<model::record>{};
     recs.reserve(hdr.bhdr.record_count);
     for (int i = 0; i < hdr.bhdr.record_count; ++i) {
-        recs.push_back(co_await async_adl<model::record>{}.from(in));
+        auto rec = adl<model::record>{}.from(in);
+        recs.push_back(std::move(rec));
+        co_await ss::coroutine::maybe_yield();
     }
     co_return model::record_batch(hdr.bhdr, std::move(recs));
 }
