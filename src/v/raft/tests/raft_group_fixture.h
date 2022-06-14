@@ -422,7 +422,9 @@ struct raft_group {
     ss::future<model::node_id> wait_for_leader() {
         if (_leader_id) {
             auto it = _members.find(*_leader_id);
-            if (it != _members.end() && it->second.consensus->is_leader()) {
+            if (
+              it != _members.end()
+              && it->second.consensus->is_elected_leader()) {
                 return ss::make_ready_future<model::node_id>(*_leader_id);
             }
             _leader_id = std::nullopt;
@@ -548,7 +550,7 @@ static void assert_at_most_one_leader(raft_group& gr) {
             leaders_per_term.try_emplace(term, 0);
         }
         auto it = leaders_per_term.find(m.consensus->term());
-        it->second += m.consensus->is_leader();
+        it->second += m.consensus->is_elected_leader();
     }
     for (auto& [term, leaders] : leaders_per_term) {
         BOOST_REQUIRE_LE(leaders, 1);

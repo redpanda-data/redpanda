@@ -90,11 +90,7 @@ struct test_config : public config::config_store {
           config::required::no,
           {})
       , milliseconds(
-          *this,
-          "milliseconds",
-          "Plain milliseconds",
-          config::required::no,
-          {})
+          *this, "milliseconds", "Plain milliseconds", config::required::no, {})
       , default_secret_string(
           *this,
           "default_secret_string",

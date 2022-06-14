@@ -61,7 +61,7 @@ ntp_archiver::ntp_archiver(
   , _manifest_upload_timeout(conf.manifest_upload_timeout)
   , _io_priority(conf.upload_io_priority) {
     vassert(
-      _partition && _partition->is_leader(),
+      _partition && _partition->is_elected_leader(),
       "must be the leader to launch ntp_archiver {}",
       _ntp);
     _start_term = _partition->term();

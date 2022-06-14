@@ -39,7 +39,9 @@ public:
         return raft::details::next_offset(_log.offsets().dirty_offset);
     }
 
-    bool is_leader() const final { return _partition->is_leader(); }
+    bool is_elected_leader() const final {
+        return _partition->is_elected_leader();
+    }
 
     ss::future<std::error_code> linearizable_barrier() final {
         return _partition->linearizable_barrier().then(

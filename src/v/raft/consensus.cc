@@ -119,13 +119,13 @@ void consensus::setup_metrics() {
       prometheus_sanitize::metrics_name("raft"),
       {sm::make_gauge(
          "leader_for",
-         [this] { return is_leader(); },
+         [this] { return is_elected_leader(); },
          sm::description("Number of groups for which node is a leader"),
          labels),
        sm::make_gauge(
          "configuration_change_in_progress",
          [this] {
-             return is_leader()
+             return is_elected_leader()
                     && _configuration_manager.get_latest().type()
                          == configuration_type::joint;
          },
@@ -309,7 +309,7 @@ consensus::success_reply consensus::update_follower_index(
     idx.last_received_seq = std::max(seq, idx.last_received_seq);
 
     // check preconditions for processing the reply
-    if (!is_leader()) {
+    if (!is_elected_leader()) {
         vlog(_ctxlog.debug, "ignoring append entries reply, not leader");
         return success_reply::no;
     }
@@ -659,7 +659,7 @@ replicate_stages consensus::do_replicate(
         return replicate_stages(errc::shutting_down);
     }
 
-    if (!is_leader() || unlikely(_transferring_leadership)) {
+    if (!is_elected_leader() || unlikely(_transferring_leadership)) {
         return replicate_stages(errc::not_leader);
     }
 
@@ -707,7 +707,7 @@ ss::future<result<replicate_result>> consensus::do_append_replicate_relaxed(
   consistency_level lvl,
   ss::semaphore_units<> u) {
     using ret_t = result<replicate_result>;
-    if (!is_leader()) {
+    if (!is_elected_leader()) {
         return seastar::make_ready_future<ret_t>(errc::not_leader);
     }
 
@@ -1368,7 +1368,7 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
     // to have been recently restarted (have failed heartbeats
     // and an <= present term), reset their RPC backoff to get
     // a heartbeat sent out sooner.
-    if (is_leader() and r.term <= _term) {
+    if (is_elected_leader() and r.term <= _term) {
         // Look up follower stats for the requester
         if (auto it = _fstats.find(r.node_id); it != _fstats.end()) {
             auto& fstats = it->second;
@@ -2006,7 +2006,7 @@ consensus::do_write_snapshot(model::offset last_included_index, iobuf&& data) {
 ss::future<std::error_code> consensus::replicate_configuration(
   ss::semaphore_units<> u, group_configuration cfg) {
     // under the _op_sem lock
-    if (!is_leader()) {
+    if (!is_elected_leader()) {
         return ss::make_ready_future<std::error_code>(errc::not_leader);
     }
     vlog(_ctxlog.debug, "Replicating group configuration {}", cfg);
@@ -2266,7 +2266,7 @@ ss::future<> consensus::refresh_commit_index() {
             f = flush_log();
         }
 
-        if (!is_leader()) {
+        if (!is_elected_leader()) {
             return f;
         }
         return f.then([this, u = std::move(u)]() mutable {
@@ -2281,7 +2281,7 @@ void consensus::maybe_update_leader_commit_idx() {
           [this](ss::semaphore_units<> u) mutable {
               // do not update committed index if not the leader, this check has
               // to be done under the semaphore
-              if (!is_leader()) {
+              if (!is_elected_leader()) {
                   return ss::now();
               }
               return do_maybe_update_leader_commit_idx(std::move(u));
@@ -2651,7 +2651,7 @@ consensus::prepare_transfer_leadership(vnode target_rni) {
 
 ss::future<std::error_code>
 consensus::do_transfer_leadership(std::optional<model::node_id> target) {
-    if (!is_leader()) {
+    if (!is_elected_leader()) {
         vlog(_ctxlog.warn, "Cannot transfer leadership from non-leader");
         return seastar::make_ready_future<std::error_code>(
           make_error_code(errc::not_leader));
@@ -2766,7 +2766,7 @@ consensus::do_transfer_leadership(std::optional<model::node_id> target) {
                *   - shutdown may be in progress
                *   - other: identified by follower not caught-up
                */
-              if (!is_leader()) {
+              if (!is_elected_leader()) {
                   vlog(
                     _ctxlog.warn, "Cannot transfer leadership from non-leader");
                   return seastar::make_ready_future<std::error_code>(
@@ -3015,7 +3015,7 @@ follower_metrics build_follower_metrics(
 
 std::vector<follower_metrics> consensus::get_follower_metrics() const {
     // if not leader return empty vector, as metrics wouldn't have any sense
-    if (!is_leader()) {
+    if (!is_elected_leader()) {
         return {};
     }
     std::vector<follower_metrics> ret;
@@ -3032,7 +3032,7 @@ std::vector<follower_metrics> consensus::get_follower_metrics() const {
 result<follower_metrics>
 consensus::get_follower_metrics(model::node_id id) const {
     // if not leader return empty vector, as metrics wouldn't have any sense
-    if (!is_leader()) {
+    if (!is_elected_leader()) {
         return errc::not_leader;
     }
     auto it = std::find_if(_fstats.begin(), _fstats.end(), [id](const auto& p) {

@@ -242,7 +242,7 @@ void archiver_fixture::wait_for_partition_leadership(const model::ntp& ntp) {
         auto self = app.controller->self();
         ss::lowres_clock::time_point deadline = ss::lowres_clock::now() + 100ms;
         return table.wait_for_leader(ntp, deadline, {}).get0() == self
-               && app.partition_manager.local().get(ntp)->is_leader();
+               && app.partition_manager.local().get(ntp)->is_elected_leader();
     }).get();
 }
 void archiver_fixture::delete_topic(model::ns ns, model::topic topic) {

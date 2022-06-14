@@ -138,7 +138,7 @@ FIXTURE_TEST(test_topic_namespaces, redpanda_thread_fixture) {
             }
             return app.partition_manager.invoke_on(
               *shard, [ntp](cluster::partition_manager& pm) {
-                  return pm.get(ntp)->is_leader();
+                  return pm.get(ntp)->is_elected_leader();
               });
         });
     };

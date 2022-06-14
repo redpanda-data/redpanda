@@ -174,7 +174,7 @@ ss::future<ss::lw_shared_ptr<coproc::source>> fiber_mock_fixture::make_source(
     vassert(partition, "Input must not be nullptr");
     auto batch = make_random_batch(params.records_per_input);
     co_await tests::cooperative_spin_wait_with_timeout(
-      2s, [partition]() { return partition->is_leader(); });
+      2s, [partition]() { return partition->is_elected_leader(); });
     auto r = co_await partition->replicate(
       std::move(batch),
       raft::replicate_options(raft::consistency_level::leader_ack));

@@ -123,7 +123,7 @@ public:
     ss::future<std::error_code>
       replace_configuration(std::vector<model::broker>, model::revision_id);
 
-    bool is_leader() const { return _vstate == vote_state::leader; }
+    bool is_elected_leader() const { return _vstate == vote_state::leader; }
     bool is_candidate() const { return _vstate == vote_state::candidate; }
     std::optional<model::node_id> get_leader_id() const {
         return _leader_id ? std::make_optional(_leader_id->id()) : std::nullopt;

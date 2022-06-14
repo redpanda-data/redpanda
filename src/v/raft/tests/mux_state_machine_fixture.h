@@ -111,7 +111,7 @@ struct mux_state_machine_fixture {
     void wait_for_leader() {
         using namespace std::chrono_literals;
         tests::cooperative_spin_wait_with_timeout(10s, [this] {
-            return _raft->is_leader();
+            return _raft->is_elected_leader();
         }).get0();
     }
 

@@ -132,7 +132,8 @@ BOOST_AUTO_TEST_CASE(to_acl_permission) {
 
 BOOST_AUTO_TEST_CASE(redact_sensitive_messages) {
     BOOST_REQUIRE_EQUAL(
-      "{auth_bytes=****}", ssx::sformat("{}", sasl_authenticate_request_data{}));
+      "{auth_bytes=****}",
+      ssx::sformat("{}", sasl_authenticate_request_data{}));
 
     BOOST_REQUIRE_EQUAL(
       "{error_code={ error_code: none [0] } error_message={nullopt} "

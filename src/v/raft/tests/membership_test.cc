@@ -109,7 +109,7 @@ FIXTURE_TEST(remove_non_leader, raft_test_fixture) {
                            members.begin(),
                            members.end(),
                            [](raft_group::members_t::value_type& p) {
-                               return !p.second.consensus->is_leader();
+                               return !p.second.consensus->is_elected_leader();
                            })
                            ->first;
     res = retry_with_leader(gr, 5, 1s, [non_leader_id](raft_node& leader) {
@@ -182,7 +182,7 @@ FIXTURE_TEST(remove_multiple_members, raft_test_fixture) {
                            members.begin(),
                            members.end(),
                            [](raft_group::members_t::value_type& p) {
-                               return !p.second.consensus->is_leader();
+                               return !p.second.consensus->is_elected_leader();
                            })
                            ->first;
     res = retry_with_leader(

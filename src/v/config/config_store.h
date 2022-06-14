@@ -73,7 +73,9 @@ public:
         return errors;
     }
 
-    void to_json(rapidjson::Writer<rapidjson::StringBuffer>& w, redact_secrets redact) const {
+    void to_json(
+      rapidjson::Writer<rapidjson::StringBuffer>& w,
+      redact_secrets redact) const {
         w.StartObject();
 
         for (const auto& [name, property] : _properties) {

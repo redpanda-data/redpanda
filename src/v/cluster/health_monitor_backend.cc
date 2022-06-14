@@ -58,7 +58,7 @@ cluster_health_report health_monitor_backend::build_cluster_report(
     std::vector<node_state> statuses;
     // refreshing node status is not expensive on leader, we can refresh it
     // every time
-    if (_raft0->is_leader()) {
+    if (_raft0->is_elected_leader()) {
         refresh_nodes_status();
     }
 
@@ -245,7 +245,7 @@ health_monitor_backend::get_cluster_health(
 
     // if current node is not the controller leader and we need a refresh we
     // refresh metadata cache
-    if (!_raft0->is_leader() && need_refresh) {
+    if (!_raft0->is_elected_leader() && need_refresh) {
         try {
             auto f = refresh_cluster_health_cache(refresh);
             auto err = co_await ss::with_timeout(deadline, std::move(f));
@@ -275,7 +275,7 @@ health_monitor_backend::get_current_cluster_health_snapshot(
 }
 
 void health_monitor_backend::tick() {
-    if (!_raft0->is_leader()) {
+    if (!_raft0->is_elected_leader()) {
         vlog(clusterlog.trace, "skipping tick, not leader");
         _tick_timer.arm(tick_interval());
         return;
