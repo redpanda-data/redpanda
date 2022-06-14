@@ -112,7 +112,7 @@ kafka::error_code map_store_offset_error_code(std::error_code);
 /// \brief A Kafka group.
 ///
 /// Container of members.
-class group {
+class group final : public ss::enable_lw_shared_from_this<group> {
 public:
     using clock_type = ss::lowres_clock;
     using duration_type = clock_type::duration;
