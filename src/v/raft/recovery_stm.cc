@@ -512,9 +512,9 @@ bool recovery_stm::is_recovery_finished() {
      */
     return (is_up_to_date
             && (quorum_writes || _ptr->_transferring_leadership)) // caught up
-           || _stop_requested       // stop requested
-           || _term != _ptr->term() // term changed
-           || !_ptr->is_leader();   // no longer a leader
+           || _stop_requested             // stop requested
+           || _term != _ptr->term()       // term changed
+           || !_ptr->is_elected_leader(); // no longer a leader
 }
 
 ss::future<> recovery_stm::apply() {

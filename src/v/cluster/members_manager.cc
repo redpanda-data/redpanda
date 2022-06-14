@@ -457,7 +457,7 @@ members_manager::handle_join_request(model::broker broker) {
     using ret_t = result<join_reply>;
     vlog(clusterlog.info, "Processing node '{}' join request", broker.id());
     // curent node is a leader
-    if (_raft0->is_leader()) {
+    if (_raft0->is_elected_leader()) {
         // if configuration contains the broker already just update its config
         // with data from join request
 

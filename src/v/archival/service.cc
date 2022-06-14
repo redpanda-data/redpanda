@@ -334,7 +334,7 @@ scheduler_service_impl::create_archivers(std::vector<model::ntp> to_create) {
           storage::log_manager& lm = api.log_mgr();
           auto log = lm.get(ntp);
           auto part = _partition_manager.local().get(ntp);
-          if (log.has_value() && part && part->is_leader()
+          if (log.has_value() && part && part->is_elected_leader()
               && (part->get_ntp_config().is_archival_enabled()
                   || config::shard_local_cfg().cloud_storage_enable_remote_read())) {
               auto svc = ss::make_lw_shared<ntp_archiver>(
@@ -380,7 +380,7 @@ ss::future<> scheduler_service_impl::reconcile_archivers() {
     _queue.copy_if(
       std::back_inserter(to_remove), [&snapshot, &pm](const model::ntp& ntp) {
           auto p = pm.get(ntp);
-          return !snapshot.contains(ntp) || !p || !p->is_leader();
+          return !snapshot.contains(ntp) || !p || !p->is_elected_leader();
       });
     // find new ntps that present in the snapshot only
     std::copy_if(
@@ -390,7 +390,7 @@ ss::future<> scheduler_service_impl::reconcile_archivers() {
       [this, &pm](const model::ntp& ntp) {
           auto p = pm.get(ntp);
           return ntp.ns != model::redpanda_ns && !_queue.contains(ntp) && p
-                 && p->is_leader();
+                 && p->is_elected_leader();
       });
     // epxect to_create & to_remove be empty most of the time
     if (unlikely(!to_remove.empty() || !to_create.empty())) {

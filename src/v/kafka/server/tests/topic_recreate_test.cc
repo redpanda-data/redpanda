@@ -248,7 +248,7 @@ FIXTURE_TEST(test_recreated_topic_does_not_lose_data, recreate_test_fixture) {
         return app.partition_manager.invoke_on(
           *shard_id, [ntp](cluster::partition_manager& pm) {
               if (pm.get(ntp)) {
-                  return pm.get(ntp)->is_leader();
+                  return pm.get(ntp)->is_elected_leader();
               }
               return false;
           });

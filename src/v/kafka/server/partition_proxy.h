@@ -32,6 +32,7 @@ public:
         virtual model::offset start_offset() const = 0;
         virtual model::offset high_watermark() const = 0;
         virtual model::offset last_stable_offset() const = 0;
+        virtual bool is_elected_leader() const = 0;
         virtual bool is_leader() const = 0;
         virtual ss::future<std::error_code> linearizable_barrier() = 0;
         virtual ss::future<storage::translating_reader> make_reader(
@@ -64,6 +65,8 @@ public:
     ss::future<std::error_code> linearizable_barrier() {
         return _impl->linearizable_barrier();
     }
+
+    bool is_elected_leader() const { return _impl->is_elected_leader(); }
 
     bool is_leader() const { return _impl->is_leader(); }
 

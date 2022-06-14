@@ -423,7 +423,8 @@ void admin_server::register_config_routes() {
       []([[maybe_unused]] ss::const_req req, ss::reply& reply) {
           rapidjson::StringBuffer buf;
           rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
-          config::shard_local_cfg().to_json(writer, config::redact_secrets::yes);
+          config::shard_local_cfg().to_json(
+            writer, config::redact_secrets::yes);
 
           reply.set_status(ss::httpd::reply::status_type::ok, buf.GetString());
           return "";

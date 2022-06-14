@@ -197,7 +197,7 @@ replicate_batcher::flush(ss::semaphore_units<> u, bool const transfer_flush) {
                 // by the followers while it is no longer a leader
                 // this problem caused truncation failure.
 
-                if (!_ptr->is_leader()) {
+                if (!_ptr->is_elected_leader()) {
                     for (auto& n : item_cache) {
                         n->_promise.set_value(errc::not_leader);
                     }

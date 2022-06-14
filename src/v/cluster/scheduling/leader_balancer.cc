@@ -76,7 +76,7 @@ ss::future<> leader_balancer::start() {
             if (group != _raft0->group()) {
                 return;
             }
-            if (_raft0->is_leader()) {
+            if (_raft0->is_elected_leader()) {
                 vlog(
                   clusterlog.info,
                   "Leader balancer: controller leadership detected. Starting "
@@ -164,7 +164,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
         return now >= g.second.expires;
     });
 
-    if (!_raft0->is_leader()) {
+    if (!_raft0->is_elected_leader()) {
         vlog(clusterlog.debug, "Leadership balancer tick: not leader");
         if (!_timer.armed()) {
             _timer.arm(_idle_timeout);
