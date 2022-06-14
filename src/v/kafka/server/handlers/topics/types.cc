@@ -129,6 +129,8 @@ to_cluster_type(const creatable_topic& t) {
     cfg.properties.recovery = get_bool_value(
       config_entries, topic_property_recovery);
     cfg.properties.shadow_indexing = get_shadow_indexing_mode(config_entries);
+    cfg.properties.read_replica = get_bool_value(
+      config_entries, topic_property_read_replica);
 
     auto ret = cluster::custom_assignable_topic_configuration(cfg);
     /**

@@ -422,6 +422,13 @@ ss::future<topic_result> topics_frontend::do_create_topic(
           topic_result(assignable_config.cfg.tp_ns, validation_err));
     }
 
+    // TODO: implement read replicas, see
+    // https://github.com/redpanda-data/redpanda/issues/4736
+    if (assignable_config.is_read_replica()) {
+        return ss::make_ready_future<topic_result>(topic_result(
+          assignable_config.cfg.tp_ns, errc::topic_invalid_config));
+    }
+
     return _allocator
       .invoke_on(
         partition_allocator::shard,
