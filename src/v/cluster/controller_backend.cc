@@ -52,6 +52,7 @@
 
 /// on every core, sharded
 namespace cluster {
+namespace {
 
 inline bool contains_node(
   model::node_id id, const std::vector<model::broker_shard>& replicas) {
@@ -60,6 +61,75 @@ inline bool contains_node(
           return bs.node_id == id;
       });
 }
+
+bool is_cross_core_update(model::node_id self, const topic_table_delta& delta) {
+    if (!delta.previous_replica_set) {
+        return false;
+    }
+    return contains_node(self, *delta.previous_replica_set)
+           && !has_local_replicas(self, *delta.previous_replica_set);
+}
+
+std::vector<model::broker> create_brokers_set(
+  const std::vector<model::broker_shard>& replicas,
+  cluster::members_table& members) {
+    std::vector<model::broker> brokers;
+    brokers.reserve(replicas.size());
+    std::transform(
+      std::cbegin(replicas),
+      std::cend(replicas),
+      std::back_inserter(brokers),
+      [&members](const model::broker_shard& bs) {
+          auto br = members.get_broker(bs.node_id);
+          if (!br) {
+              throw std::logic_error(
+                fmt::format("Replica node {} is not available", bs.node_id));
+          }
+          return *br->get();
+      });
+    return brokers;
+}
+
+std::optional<ss::shard_id> get_target_shard(
+  model::node_id id, const std::vector<model::broker_shard>& replicas) {
+    auto it = std::find_if(
+      replicas.cbegin(), replicas.cend(), [id](const model::broker_shard& bs) {
+          return bs.node_id == id;
+      });
+
+    return it != replicas.cend() ? std::optional<ss::shard_id>(it->shard)
+                                 : std::nullopt;
+}
+
+bool are_assignments_equal(
+  const partition_assignment& requested,
+  const std::vector<model::broker_shard>& previous) {
+    return are_replica_sets_equal(requested.replicas, previous);
+}
+
+model::node_id first_with_assignment_change(
+  const partition_assignment& requested,
+  const std::vector<model::broker_shard>& previous_replica_set) {
+    absl::node_hash_map<model::node_id, model::broker_shard> prev_map;
+    prev_map.reserve(previous_replica_set.size());
+    for (auto& replica : previous_replica_set) {
+        prev_map.emplace(replica.node_id, replica);
+    }
+
+    auto it = std::find_if(
+      requested.replicas.begin(),
+      requested.replicas.end(),
+      [&](const model::broker_shard& bs) {
+          auto it = prev_map.find(bs.node_id);
+          return it == prev_map.end() || it->second != bs;
+      });
+    // there are no changed assignements
+    if (it == requested.replicas.end()) {
+        return requested.replicas.begin()->node_id;
+    }
+    return it->node_id;
+}
+} // namespace
 
 std::error_code check_configuration_update(
   model::node_id self,
@@ -98,10 +168,10 @@ std::error_code check_configuration_update(
      *
      * NOTE: why include_self matters
      *
-     * If the node is not included in current configuration there is no guarantee
-     * that it will receive configuration that was moving consensus from JOINT
-     * to SIMPLE. Also if the node is removed from replica set we will only
-     * remove the partition after other node claim update as finished.
+     * If the node is not included in current configuration there is no
+     * guarantee that it will receive configuration that was moving consensus
+     * from JOINT to SIMPLE. Also if the node is removed from replica set we
+     * will only remove the partition after other node claim update as finished.
      *
      */
     if (includes_self && group_cfg.type() == raft::configuration_type::joint) {
@@ -280,13 +350,7 @@ std::vector<topic_table::delta> calculate_bootstrap_deltas(
     std::move(start, deltas.end(), std::back_inserter(result_delta));
     return result_delta;
 }
-bool is_cross_core_update(model::node_id self, const topic_table_delta& delta) {
-    if (!delta.previous_replica_set) {
-        return false;
-    }
-    return contains_node(self, *delta.previous_replica_set)
-           && !has_local_replicas(self, *delta.previous_replica_set);
-}
+
 ss::future<>
 controller_backend::bootstrap_ntp(const model::ntp& ntp, deltas_t& deltas) {
     // find last delta that has to be applied
@@ -554,37 +618,6 @@ ss::future<> controller_backend::reconcile_topics() {
     });
 }
 
-std::vector<model::broker> create_brokers_set(
-  const std::vector<model::broker_shard>& replicas,
-  cluster::members_table& members) {
-    std::vector<model::broker> brokers;
-    brokers.reserve(replicas.size());
-    std::transform(
-      std::cbegin(replicas),
-      std::cend(replicas),
-      std::back_inserter(brokers),
-      [&members](const model::broker_shard& bs) {
-          auto br = members.get_broker(bs.node_id);
-          if (!br) {
-              throw std::logic_error(
-                fmt::format("Replica node {} is not available", bs.node_id));
-          }
-          return *br->get();
-      });
-    return brokers;
-}
-
-std::optional<ss::shard_id> get_target_shard(
-  model::node_id id, const std::vector<model::broker_shard>& replicas) {
-    auto it = std::find_if(
-      replicas.cbegin(), replicas.cend(), [id](const model::broker_shard& bs) {
-          return bs.node_id == id;
-      });
-
-    return it != replicas.cend() ? std::optional<ss::shard_id>(it->shard)
-                                 : std::nullopt;
-}
-
 ss::future<std::error_code>
 controller_backend::execute_partition_op(const topic_table::delta& delta) {
     using op_t = topic_table::delta::op_type;
@@ -663,35 +696,6 @@ ss::future<> controller_backend::ack_remote_shard_partition_created(
       });
 }
 
-bool are_assignments_equal(
-  const partition_assignment& requested,
-  const std::vector<model::broker_shard>& previous) {
-    return are_replica_sets_equal(requested.replicas, previous);
-}
-
-model::node_id first_with_assignment_change(
-  const partition_assignment& requested,
-  const std::vector<model::broker_shard>& previous_replica_set) {
-    absl::node_hash_map<model::node_id, model::broker_shard> prev_map;
-    prev_map.reserve(previous_replica_set.size());
-    for (auto& replica : previous_replica_set) {
-        prev_map.emplace(replica.node_id, replica);
-    }
-
-    auto it = std::find_if(
-      requested.replicas.begin(),
-      requested.replicas.end(),
-      [&](const model::broker_shard& bs) {
-          auto it = prev_map.find(bs.node_id);
-          return it == prev_map.end() || it->second != bs;
-      });
-    // there are no changed assignements
-    if (it == requested.replicas.end()) {
-        return requested.replicas.begin()->node_id;
-    }
-    return it->node_id;
-}
-
 ss::future<std::error_code> controller_backend::process_partition_update(
   model::ntp ntp,
   const partition_assignment& requested,
@@ -722,8 +726,8 @@ ss::future<std::error_code> controller_backend::process_partition_update(
      * if there is no local replica in replica set but,
      * partition with requested ntp exists on this broker core
      * it has to be removed, we can not remove the partition immediately as it
-     * may be required for other nodes to recover. The partition is removed after
-     * update is finished on other nodes
+     * may be required for other nodes to recover. The partition is removed
+     * after update is finished on other nodes
      */
 
     if (!has_local_replicas(_self, requested.replicas)) {
