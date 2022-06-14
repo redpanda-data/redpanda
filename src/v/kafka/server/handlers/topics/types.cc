@@ -18,6 +18,8 @@
 #include "units.h"
 #include "utils/string_switch.h"
 
+#include <seastar/core/sstring.hh>
+
 #include <bits/stdint-intn.h>
 #include <bits/stdint-uintn.h>
 
@@ -48,6 +50,14 @@ static std::optional<T>
 get_config_value(const config_map_t& config, std::string_view key) {
     if (auto it = config.find(key); it != config.end()) {
         return boost::lexical_cast<T>(it->second);
+    }
+    return std::nullopt;
+}
+
+static std::optional<ss::sstring>
+get_string_value(const config_map_t& config, std::string_view key) {
+    if (auto it = config.find(key); it != config.end()) {
+        return it->second;
     }
     return std::nullopt;
 }
@@ -131,6 +141,8 @@ to_cluster_type(const creatable_topic& t) {
     cfg.properties.shadow_indexing = get_shadow_indexing_mode(config_entries);
     cfg.properties.read_replica = get_bool_value(
       config_entries, topic_property_read_replica);
+    cfg.properties.read_replica_bucket = get_string_value(
+      config_entries, topic_property_read_replica_bucket);
 
     auto ret = cluster::custom_assignable_topic_configuration(cfg);
     /**
