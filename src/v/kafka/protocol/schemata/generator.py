@@ -801,6 +801,11 @@ class Field:
         return isinstance(self._type, ArrayType)
 
     @property
+    def is_small_array(self):
+        return self._field["name"] == "IsrNodes" or self._field[
+            "name"] == "ReplicaNodes"
+
+    @property
     def potentially_flexible_type(self):
         return isinstance(self._type,
                           ScalarType) and self._type.potentially_flexible_type
@@ -810,7 +815,10 @@ class Field:
         name, default_value = self._redpanda_type()
         if isinstance(self._type, ArrayType):
             assert default_value is None  # not supported
-            name = f"std::vector<{name}>"
+            if self.is_small_array:
+                name = f"boost::container::small_vector<{name}, 4>"
+            else:
+                name = f"std::vector<{name}>"
         if self.nullable():
             assert default_value is None  # not supported
             return f"std::optional<{name}>", None
@@ -836,6 +844,7 @@ HEADER_TEMPLATE = """
 #include "kafka/protocol/errors.h"
 #include "model/timestamp.h"
 #include "seastarx.h"
+#include <boost/container/small_vector.hpp>
 
 #include <seastar/core/sstring.hh>
 
@@ -989,9 +998,17 @@ writer.write({{ fname }});
 {%- endif %}
 {%- else %}
 {%- if flex %}
+{%- if field.is_small_array %}
+{{ fname }} = reader.read_small_flex_array([version](request_reader& reader) {
+{%- else %}
 {{ fname }} = reader.read_flex_array([version](request_reader& reader) {
+{%- endif %}
+{%- else %}
+{%- if field.is_small_array %}
+{{ fname }} = reader.read_small_array([version](request_reader& reader) {
 {%- else %}
 {{ fname }} = reader.read_array([version](request_reader& reader) {
+{%- endif %}
 {%- endif %}
     (void)version;
 {%- endif %}
@@ -1162,7 +1179,7 @@ std::ostream& operator<<(std::ostream& o, [[maybe_unused]] const {{ struct.name 
     fmt::print(o,
       "{{'{{' + struct.format + '}}'}}",
       {%- for field in struct.fields %}
-      {%- if field.is_sensitive %}"****"{% else %}v.{{ field.name }}{% endif %}{% if not loop.last %},{% endif %}
+      {%- if field.is_sensitive or field.is_small_array %}"****"{% else %}v.{{ field.name }}{% endif %}{% if not loop.last %},{% endif %}
 
       {%- endfor %}
     );

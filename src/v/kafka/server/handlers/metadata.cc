@@ -71,7 +71,7 @@ std::optional<cluster::leader_term> get_leader_term(
   model::topic_namespace_view tp_ns,
   model::partition_id p_id,
   const cluster::metadata_cache& md_cache,
-  const std::vector<model::node_id>& replicas) {
+  const boost::container::small_vector<model::node_id, 4>& replicas) {
     auto leader_term = md_cache.get_leader_term(tp_ns, p_id);
     if (!leader_term) {
         return std::nullopt;
@@ -104,13 +104,14 @@ metadata_response::topic make_topic_response_from_topic_metadata(
     tp.name = std::move(tp_md.get_configuration().tp_ns.tp);
 
     tp.is_internal = is_internal(tp_ns);
+    tp.partitions.reserve(tp_md.get_assignments().size());
     std::transform(
       tp_md.get_assignments().begin(),
       tp_md.get_assignments().end(),
       std::back_inserter(tp.partitions),
       [tp_ns = std::move(tp_ns),
        &md_cache](cluster::partition_assignment& p_md) {
-          std::vector<model::node_id> replicas{};
+          boost::container::small_vector<model::node_id, 4> replicas{};
           replicas.reserve(p_md.replicas.size());
           std::transform(
             std::cbegin(p_md.replicas),
@@ -251,10 +252,13 @@ get_topic_metadata(request_context& ctx, metadata_request& request) {
         if (auto md = ctx.metadata_cache().get_topic_metadata(
               model::topic_namespace_view(model::kafka_namespace, topic.name));
             md) {
+            auto tt1 = ss::thread_cputime_clock::now();
             auto src_topic_response = make_topic_response(
               ctx, request, std::move(*md));
             src_topic_response.name = std::move(topic.name);
             res.push_back(std::move(src_topic_response));
+            auto tt2 = ss::thread_cputime_clock::now();
+            vlog(klog.info, "get_topic_metadata {}", (tt2 - tt1).count());
             continue;
         }
 
@@ -368,6 +372,7 @@ guess_peer_listener(request_context& ctx, cluster::broker_ptr broker) {
 template<>
 ss::future<response_ptr> metadata_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
+    auto t1 = ss::thread_cputime_clock::now();
     metadata_response reply;
     auto alive_brokers = co_await ctx.metadata_cache().all_alive_brokers();
     for (const auto& broker : alive_brokers) {
@@ -418,6 +423,9 @@ ss::future<response_ptr> metadata_handler::handle(
         reply.data.cluster_authorized_operations = details::to_bit_field(
           details::authorized_operations(ctx, security::default_cluster_name));
     }
+
+    auto t2 = ss::thread_cputime_clock::now();
+    vlog(klog.info, "metadata_handler::handle {}", (t2 - t1).count());
 
     co_return co_await ctx.respond(std::move(reply));
 }
