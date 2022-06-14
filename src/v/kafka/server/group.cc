@@ -2159,7 +2159,7 @@ void add_offset_tombstone_record(
       .partition = tp.partition,
     };
     auto kv = serializer.to_kv(offset_metadata_kv{.key = std::move(key)});
-    builder.add_raw_kv(reflection::to_iobuf(std::move(kv.key)), std::nullopt);
+    builder.add_raw_kv(std::move(kv.key), std::nullopt);
 }
 
 void add_group_tombstone_record(
@@ -2170,7 +2170,7 @@ void add_group_tombstone_record(
       .group_id = group,
     };
     auto kv = serializer.to_kv(group_metadata_kv{.key = std::move(key)});
-    builder.add_raw_kv(reflection::to_iobuf(std::move(kv.key)), std::nullopt);
+    builder.add_raw_kv(std::move(kv.key), std::nullopt);
 }
 } // namespace
 
