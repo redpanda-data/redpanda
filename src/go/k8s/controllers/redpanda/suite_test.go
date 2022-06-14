@@ -379,6 +379,18 @@ func (m *mockAdminAPI) SetDirectValidationEnabled(directValidation bool) {
 	m.directValidation = directValidation
 }
 
+func (m *mockAdminAPI) Brokers(_ context.Context) ([]admin.Broker, error) {
+	return nil, nil
+}
+
+func (m *mockAdminAPI) DecommissionBroker(_ context.Context, _ int) error {
+	return nil
+}
+
+func (m *mockAdminAPI) RecommissionBroker(_ context.Context, _ int) error {
+	return nil
+}
+
 func makeCopy(input, output interface{}) {
 	ser, err := json.Marshal(input)
 	if err != nil {

@@ -89,6 +89,10 @@ type AdminAPIClient interface {
 	CreateUser(ctx context.Context, username, password, mechanism string) error
 
 	GetFeatures(ctx context.Context) (admin.FeaturesResponse, error)
+
+	Brokers(ctx context.Context) ([]admin.Broker, error)
+	DecommissionBroker(ctx context.Context, node int) error
+	RecommissionBroker(ctx context.Context, node int) error
 }
 
 var _ AdminAPIClient = &admin.AdminAPI{}
