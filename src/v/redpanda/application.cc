@@ -21,6 +21,7 @@
 #include "cluster/members_table.h"
 #include "cluster/metadata_dissemination_handler.h"
 #include "cluster/metadata_dissemination_service.h"
+#include "cluster/node/local_monitor.h"
 #include "cluster/partition_manager.h"
 #include "cluster/rm_partition_frontend.h"
 #include "cluster/security_frontend.h"
@@ -1156,6 +1157,7 @@ void application::start_redpanda(::stop_signal& app_signal) {
       config::shard_local_cfg().storage_space_alert_free_threshold_bytes.bind(),
       config::shard_local_cfg()
         .storage_space_alert_free_threshold_percent.bind(),
+      config::shard_local_cfg().storage_min_free_bytes.bind(),
       storage_node,
       storage);
     tmp_lm.update_state().get();
