@@ -115,10 +115,11 @@ FIXTURE_TEST(test_upload_segment, s3_imposter_fixture) { // NOLINT
       manifest_ntp, manifest_revision, name, model::term_id{123});
     uint64_t clen = manifest_payload.size();
     auto action = ss::defer([&remote] { remote.stop().get(); });
-    auto reset_stream = [] {
+    auto reset_stream = []() -> ss::future<storage::segment_reader_handle> {
         iobuf out;
         out.append(manifest_payload.data(), manifest_payload.size());
-        return make_iobuf_input_stream(std::move(out));
+        co_return storage::segment_reader_handle(
+          make_iobuf_input_stream(std::move(out)));
     };
     retry_chain_node fib(100ms, 20ms);
     auto res = remote
@@ -139,10 +140,11 @@ FIXTURE_TEST(test_upload_segment_timeout, s3_imposter_fixture) { // NOLINT
       manifest_ntp, manifest_revision, name, model::term_id{123});
     uint64_t clen = manifest_payload.size();
     auto action = ss::defer([&remote] { remote.stop().get(); });
-    auto reset_stream = [] {
+    auto reset_stream = []() -> ss::future<storage::segment_reader_handle> {
         iobuf out;
         out.append(manifest_payload.data(), manifest_payload.size());
-        return make_iobuf_input_stream(std::move(out));
+        co_return storage::segment_reader_handle(
+          make_iobuf_input_stream(std::move(out)));
     };
     retry_chain_node fib(100ms, 20ms);
     auto res = remote
@@ -162,10 +164,11 @@ FIXTURE_TEST(test_download_segment, s3_imposter_fixture) { // NOLINT
       manifest_ntp, manifest_revision, name, model::term_id{123});
     uint64_t clen = manifest_payload.size();
     auto action = ss::defer([&remote] { remote.stop().get(); });
-    auto reset_stream = [] {
+    auto reset_stream = []() -> ss::future<storage::segment_reader_handle> {
         iobuf out;
         out.append(manifest_payload.data(), manifest_payload.size());
-        return make_iobuf_input_stream(std::move(out));
+        co_return storage::segment_reader_handle(
+          make_iobuf_input_stream(std::move(out)));
     };
     retry_chain_node fib(100ms, 20ms);
     auto upl_res
@@ -219,11 +222,13 @@ FIXTURE_TEST(test_segment_exists, s3_imposter_fixture) { // NOLINT
       manifest_ntp, manifest_revision, name, model::term_id{123});
     uint64_t clen = manifest_payload.size();
     auto action = ss::defer([&remote] { remote.stop().get(); });
-    auto reset_stream = [] {
+    auto reset_stream = []() -> ss::future<storage::segment_reader_handle> {
         iobuf out;
         out.append(manifest_payload.data(), manifest_payload.size());
-        return make_iobuf_input_stream(std::move(out));
+        co_return storage::segment_reader_handle(
+          make_iobuf_input_stream(std::move(out)));
     };
+
     retry_chain_node fib(100ms, 20ms);
 
     auto expected_notfound = remote.segment_exists(bucket, path, fib).get();

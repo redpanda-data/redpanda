@@ -91,7 +91,7 @@ public:
     ss::future<bool> materialize_index();
 
     /// main read interface
-    ss::input_stream<char>
+    ss::future<segment_reader_handle>
       offset_data_stream(model::offset, ss::io_priority_class);
 
     const offset_tracker& offsets() const { return _tracker; }
@@ -112,7 +112,8 @@ public:
     // low level api's are discouraged and might be deprecated
     // please use higher level API's when possible
     segment_reader& reader();
-    const segment_reader& reader() const;
+    size_t file_size() const { return _reader.file_size(); }
+    const ss::sstring& filename() const { return _reader.filename(); }
     segment_index& index();
     const segment_index& index() const;
     segment_appender_ptr release_appender();
@@ -338,7 +339,6 @@ inline bool segment::is_closed() const {
     return (_flags & bitflags::closed) == bitflags::closed;
 }
 inline segment_reader& segment::reader() { return _reader; }
-inline const segment_reader& segment::reader() const { return _reader; }
 inline segment_index& segment::index() { return _idx; }
 inline const segment_index& segment::index() const { return _idx; }
 inline segment_appender_ptr segment::release_appender() {

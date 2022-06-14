@@ -92,8 +92,8 @@ data_segment_staging_name(const ss::lw_shared_ptr<segment>& s) {
 /// is not useful for logs and can cause issues.
 static ss::future<>
 maybe_disable_cow(const std::filesystem::path& path, ss::file& file) {
-    if (co_await ss::file_system_at(path.string()) == ss::fs_type::btrfs) {
-        try {
+    try {
+        if (co_await ss::file_system_at(path.string()) == ss::fs_type::btrfs) {
             int flags = -1;
             // ss::syscall_result throws on errors, so not checking returns.
             co_await file.ioctl(FS_IOC_GETFLAGS, (void*)&flags);
@@ -102,11 +102,14 @@ maybe_disable_cow(const std::filesystem::path& path, ss::file& file) {
                 co_await file.ioctl(FS_IOC_SETFLAGS, (void*)&flags);
                 vlog(stlog.trace, "Disabled COW on BTRFS segment {}", path);
             }
-        } catch (std::system_error& e) {
-            // Non-fatal, user will just get degraded behaviour
-            // when btrfs tries to COW on a journal.
-            vlog(stlog.info, "Error disabling COW on {}: {}", path, e);
         }
+    } catch (std::system_error& e) {
+        // Non-fatal, user will just get degraded behaviour
+        // when btrfs tries to COW on a journal.
+        vlog(stlog.info, "System error disabling COW on {}: {}", path, e);
+    } catch (std::filesystem::filesystem_error& e) {
+        // This can happen if e.g. our file open races with an unlink
+        vlog(stlog.info, "Filesystem error disabling COW on {}: {}", path, e);
     }
 }
 
@@ -142,9 +145,14 @@ static inline ss::file_open_options writer_opts() {
 
 /// make file handle with default opts
 ss::future<ss::file> make_writer_handle(
-  const std::filesystem::path& path, storage::debug_sanitize_files debug) {
-    return make_handle(
-      path, ss::open_flags::rw | ss::open_flags::create, writer_opts(), debug);
+  const std::filesystem::path& path,
+  storage::debug_sanitize_files debug,
+  bool truncate) {
+    auto flags = ss::open_flags::rw | ss::open_flags::create;
+    if (truncate) {
+        flags |= ss::open_flags::truncate;
+    }
+    return make_handle(path, flags, writer_opts(), debug);
 }
 /// make file handle with default opts
 ss::future<ss::file> make_reader_handle(
@@ -160,26 +168,15 @@ ss::future<compacted_index_writer> make_compacted_index_writer(
   const std::filesystem::path& path,
   debug_sanitize_files debug,
   ss::io_priority_class iopc) {
-    return internal::make_writer_handle(path, debug)
-      .then([iopc, path](ss::file writer) {
-          try {
-              // NOTE: This try-catch is needed to not uncover the real
-              // exception during an OOM condition, since the appender allocates
-              // 1MB of memory aligned buffers
-              return ss::make_ready_future<compacted_index_writer>(
-                make_file_backed_compacted_index(
-                  path.string(),
-                  writer,
-                  iopc,
-                  segment_appender::write_behind_memory / 2));
-          } catch (...) {
-              auto e = std::current_exception();
-              vlog(stlog.error, "could not allocate compacted-index: {}", e);
-              return writer.close().then_wrapped([writer, e = e](ss::future<>) {
-                  return ss::make_exception_future<compacted_index_writer>(e);
-              });
-          }
-      });
+    return ss::make_ready_future<compacted_index_writer>(
+      make_file_backed_compacted_index(
+        path.string(),
+        iopc,
+        debug,
+        false,
+        // TODO: replace hardcoded max_mem
+        // https://github.com/redpanda-data/redpanda/issues/4645
+        segment_appender::write_behind_memory / 2));
 }
 
 ss::future<segment_appender_ptr> make_segment_appender(
@@ -253,35 +250,28 @@ ss::future<> copy_filtered_entries(
 
 static ss::future<> do_write_clean_compacted_index(
   compacted_index_reader reader, compaction_config cfg) {
-    return natural_index_of_entries_to_keep(reader).then([reader,
-                                                          cfg](Roaring bitmap) {
-        const auto tmpname = std::filesystem::path(
-          fmt::format("{}.staging", reader.filename()));
-        return make_handle(
-                 tmpname,
-                 ss::open_flags::rw | ss::open_flags::truncate
-                   | ss::open_flags::create,
-                 writer_opts(),
-                 cfg.sanitize)
-          .then(
-            [tmpname, cfg, reader, bm = std::move(bitmap)](ss::file f) mutable {
-                auto writer = make_file_backed_compacted_index(
-                  tmpname.string(),
-                  std::move(f),
-                  cfg.iopc,
-                  // TODO: pass this memory from the cfg
-                  segment_appender::write_behind_memory / 2);
-                return copy_filtered_entries(
-                  reader, std::move(bm), std::move(writer));
-            })
-          .then([old_name = tmpname.string(), new_name = reader.filename()] {
-              // from glibc: If oldname is not a directory, then any
-              // existing file named newname is removed during the
-              // renaming operation
-              return ss::rename_file(old_name, new_name);
-          });
-    });
-}
+    const auto tmpname = std::filesystem::path(
+      fmt::format("{}.staging", reader.filename()));
+    return natural_index_of_entries_to_keep(reader)
+      .then([reader, cfg, tmpname](Roaring bitmap) -> ss::future<> {
+          auto truncating_writer = make_file_backed_compacted_index(
+            tmpname.string(),
+            cfg.iopc,
+            cfg.sanitize,
+            true,
+            segment_appender::write_behind_memory / 2);
+
+          return copy_filtered_entries(
+            reader, std::move(bitmap), std::move(truncating_writer));
+      })
+      .then(
+        [old_name = tmpname, new_name = reader.filename()]() -> ss::future<> {
+            // from glibc: If oldname is not a directory, then any
+            // existing file named newname is removed during the
+            // renaming operation
+            return ss::rename_file(std::string(old_name), new_name);
+        });
+};
 
 ss::future<> write_clean_compacted_index(
   compacted_index_reader reader, compaction_config cfg) {
@@ -427,41 +417,27 @@ ss::future<> do_swap_data_file_handles(
   ss::lw_shared_ptr<storage::segment> s,
   storage::compaction_config cfg,
   probe& pb) {
-    return s->reader()
-      .close()
-      .then([compacted, s] {
-          ss::sstring old_name = compacted.string();
-          vlog(
-            gclog.trace,
-            "swapping compacted segment temp file {} with the segment {}",
-            old_name,
-            s->reader().filename());
-          return ss::rename_file(old_name, s->reader().filename());
-      })
-      .then([s, cfg] {
-          auto to_open = std::filesystem::path(s->reader().filename().c_str());
-          return make_reader_handle(to_open, cfg.sanitize);
-      })
-      .then([s, &pb](ss::file f) mutable {
-          return f.stat()
-            .then([f](struct stat s) {
-                return ss::make_ready_future<std::tuple<uint64_t, ss::file>>(
-                  std::make_tuple(s.st_size, f));
-            })
-            .then([s, &pb](std::tuple<uint64_t, ss::file> t) {
-                auto& [size, fd] = t;
-                auto r = segment_reader(
-                  s->reader().filename(),
-                  std::move(fd),
-                  size,
-                  config::shard_local_cfg().storage_read_buffer_size(),
-                  config::shard_local_cfg().storage_read_readahead_count());
-                // update partition size probe
-                pb.delete_segment(*s.get());
-                std::swap(s->reader(), r);
-                pb.add_initial_segment(*s.get());
-            });
-      });
+    co_await s->reader().close();
+
+    ss::sstring old_name = compacted.string();
+    vlog(
+      gclog.trace,
+      "swapping compacted segment temp file {} with the segment {}",
+      old_name,
+      s->reader().filename());
+    co_await ss::rename_file(old_name, s->reader().filename());
+
+    auto r = segment_reader(
+      s->reader().filename(),
+      config::shard_local_cfg().storage_read_buffer_size(),
+      config::shard_local_cfg().storage_read_readahead_count(),
+      cfg.sanitize);
+    co_await r.load_size();
+
+    // update partition size probe
+    pb.delete_segment(*s.get());
+    std::swap(s->reader(), r);
+    pb.add_initial_segment(*s.get());
 }
 
 /**
@@ -638,9 +614,10 @@ ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
     auto writer = co_await make_writer_handle(path, cfg.sanitize);
     auto output = co_await ss::make_file_output_stream(std::move(writer));
     for (auto& segment : segments) {
-        auto input = segment->reader().data_stream(0, cfg.iopc);
-        co_await ss::copy(input, output);
-        co_await input.close();
+        auto reader_handle = co_await segment->reader().data_stream(
+          0, cfg.iopc);
+        co_await ss::copy(reader_handle.stream(), output);
+        co_await reader_handle.close();
     }
     co_await output.close();
 
@@ -653,14 +630,12 @@ ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
     offsets.stable_offset = segments.back()->offsets().stable_offset;
 
     // build segment reader over combined data
-    auto reader_fd = co_await internal::make_reader_handle(path, cfg.sanitize);
-    auto segment_size = (co_await reader_fd.stat()).st_size;
     segment_reader reader(
       path.string(),
-      std::move(reader_fd),
-      segment_size,
       config::shard_local_cfg().storage_read_buffer_size(),
-      config::shard_local_cfg().storage_read_readahead_count());
+      config::shard_local_cfg().storage_read_readahead_count(),
+      cfg.sanitize);
+    co_await reader.load_size();
 
     // build an empty index for the segment
     auto index_name = path;
@@ -668,16 +643,11 @@ ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
     if (co_await ss::file_exists(index_name.string())) {
         co_await ss::remove_file(index_name.string());
     }
-    auto index_fd = co_await make_handle(
-      index_name.string(),
-      ss::open_flags::create | ss::open_flags::rw,
-      {},
-      cfg.sanitize);
     segment_index index(
       index_name.string(),
-      index_fd,
       offsets.base_offset,
-      segment_index::default_data_buffer_step);
+      segment_index::default_data_buffer_step,
+      cfg.sanitize);
 
     co_return ss::make_lw_shared<segment>(
       offsets,

@@ -13,6 +13,7 @@
 #include "serde/serde.h"
 #include "storage/index_state.h"
 #include "storage/logger.h"
+#include "storage/segment_utils.h"
 #include "vassert.h"
 
 #include <seastar/core/coroutine.hh>
@@ -38,11 +39,35 @@ static inline segment_index::entry translate_index_entry(
 }
 
 segment_index::segment_index(
-  ss::sstring filename, ss::file f, model::offset base, size_t step)
+  ss::sstring filename,
+  model::offset base,
+  size_t step,
+  debug_sanitize_files sanitize)
   : _name(std::move(filename))
-  , _out(std::move(f))
-  , _step(step) {
+  , _step(step)
+  , _sanitize(sanitize) {
     _state.base_offset = base;
+}
+
+segment_index::segment_index(
+  ss::sstring filename, ss::file mock_file, model::offset base, size_t step)
+  : _name(std::move(filename))
+  , _step(step)
+  , _mock_file(mock_file) {
+    _state.base_offset = base;
+}
+
+ss::future<ss::file> segment_index::open() {
+    if (_mock_file) {
+        // Unit testing hook
+        return ss::make_ready_future<ss::file>(_mock_file.value());
+    }
+
+    return internal::make_handle(
+      std::filesystem::path{_name},
+      ss::open_flags::create | ss::open_flags::rw,
+      {},
+      _sanitize);
 }
 
 void segment_index::reset() {
@@ -155,49 +180,56 @@ ss::future<> segment_index::truncate(model::offset o) {
     co_return co_await flush();
 }
 
+/**
+ *
+ * @return true if decoded without errors, false on a serialization error
+ *         while loading.  On all other types of error (e.g. IO), throw.
+ */
 ss::future<bool> segment_index::materialize_index() {
-    auto size = co_await _out.size();
-    auto buf = co_await _out.dma_read_bulk<char>(0, size);
-    if (buf.empty()) {
-        co_return false;
-    }
-    iobuf b;
-    b.append(std::move(buf));
-    try {
-        _state = serde::from_iobuf<index_state>(std::move(b));
-        co_return true;
-    } catch (const serde::serde_exception& ex) {
-        vlog(
-          stlog.info,
-          "Rebuilding index_state after decoding failure: {}",
-          ex.what());
-        co_return false;
-    }
+    return ss::with_file(open(), [this](ss::file f) -> ss::future<bool> {
+        auto size = co_await f.size();
+        auto buf = co_await f.dma_read_bulk<char>(0, size);
+        if (buf.empty()) {
+            co_return false;
+        }
+        iobuf b;
+        b.append(std::move(buf));
+        try {
+            _state = serde::from_iobuf<index_state>(std::move(b));
+            co_return true;
+        } catch (const serde::serde_exception& ex) {
+            vlog(
+              stlog.info,
+              "Rebuilding index_state after decoding failure: {}",
+              ex.what());
+            co_return false;
+        }
+    });
 }
 
 ss::future<> segment_index::drop_all_data() {
     reset();
-    return _out.truncate(0);
+    return ss::with_file(open(), [](ss::file f) { return f.truncate(0); });
 }
 
 ss::future<> segment_index::flush() {
     if (!_needs_persistence) {
-        co_return;
+        return ss::now();
     }
     _needs_persistence = false;
-    co_await _out.truncate(0);
-    auto out = co_await ss::make_file_output_stream(ss::file(_out.dup()));
-    auto b = serde::to_iobuf(_state.copy());
-    for (const auto& f : b) {
-        co_await out.write(f.get(), f.size());
-    }
-    co_await out.flush();
-    co_await out.close();
+    return with_file(open(), [this](ss::file backing_file) -> ss::future<> {
+        co_await backing_file.truncate(0);
+        auto out = co_await ss::make_file_output_stream(
+          std::move(backing_file));
+
+        auto b = serde::to_iobuf(_state.copy());
+        for (const auto& f : b) {
+            co_await out.write(f.get(), f.size());
+        }
+        co_await out.flush();
+    });
 }
-ss::future<> segment_index::close() {
-    co_await flush();
-    co_await _out.close();
-}
+
 std::ostream& operator<<(std::ostream& o, const segment_index& i) {
     return o << "{file:" << i.filename() << ", offsets:" << i.base_offset()
              << ", index:" << i._state << ", step:" << i._step

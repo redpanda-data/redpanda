@@ -100,7 +100,8 @@ segment_appender::segment_appender(segment_appender&& o) noexcept
   , _stable_offset(o._stable_offset)
   , _inflight(std::move(o._inflight))
   , _callbacks(std::exchange(o._callbacks, nullptr))
-  , _inactive_timer([this] { handle_inactive_timer(); }) {
+  , _inactive_timer([this] { handle_inactive_timer(); })
+  , _chunk_size(o._chunk_size) {
     o._closed = true;
 }
 

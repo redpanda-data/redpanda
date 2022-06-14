@@ -13,6 +13,7 @@
 #include "bytes/bytes.h"
 #include "model/fundamental.h"
 #include "storage/compacted_index.h"
+#include "storage/types.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/future.hh>
@@ -144,6 +145,10 @@ inline ss::future<> compacted_index_writer::append(compacted_index::entry e) {
 inline ss::future<> compacted_index_writer::close() { return _impl->close(); }
 
 compacted_index_writer make_file_backed_compacted_index(
-  ss::sstring filename, ss::file, ss::io_priority_class p, size_t max_memory);
+  ss::sstring filename,
+  ss::io_priority_class p,
+  debug_sanitize_files debug,
+  bool truncate,
+  size_t max_memory);
 
 } // namespace storage

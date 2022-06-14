@@ -14,6 +14,7 @@
 #include "model/record.h"
 #include "model/timestamp.h"
 #include "storage/index_state.h"
+#include "storage/types.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/unaligned.hh>
@@ -49,7 +50,11 @@ public:
     static constexpr size_t default_data_buffer_step = 4096 * 8;
 
     segment_index(
-      ss::sstring filename, ss::file, model::offset base, size_t step);
+      ss::sstring filename,
+      model::offset base,
+      size_t step,
+      debug_sanitize_files);
+
     ~segment_index() noexcept = default;
     segment_index(segment_index&&) noexcept = default;
     segment_index& operator=(segment_index&&) noexcept = default;
@@ -67,9 +72,10 @@ public:
     const ss::sstring& filename() const { return _name; }
 
     ss::future<bool> materialize_index();
-    ss::future<> close();
     ss::future<> flush();
     ss::future<> truncate(model::offset);
+
+    ss::future<ss::file> open();
 
     /// \brief erases the underlying file and resets the index
     /// this is used during compacted index recovery, as we must first
@@ -85,11 +91,25 @@ public:
 
 private:
     ss::sstring _name;
-    ss::file _out;
     size_t _step;
     size_t _acc{0};
     bool _needs_persistence{false};
     index_state _state;
+    debug_sanitize_files _sanitize;
+
+    /** Constructor with mock file content for unit testing */
+    segment_index(
+      ss::sstring filename,
+      ss::file mock_file,
+      model::offset base,
+      size_t step);
+
+    // For unit testing only.  If this is set, then open() returns
+    // the contents of mock_file instead of opening the path in _name.
+    std::optional<ss::file> _mock_file;
+
+    friend class offset_index_utils_fixture;
+    friend class log_replayer_fixture;
 
     friend std::ostream& operator<<(std::ostream&, const segment_index&);
 };

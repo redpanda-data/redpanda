@@ -28,7 +28,9 @@
 
 using namespace storage; // NOLINT
 
-struct context {
+namespace storage {
+class log_replayer_fixture {
+public:
     ss::lw_shared_ptr<segment> _seg;
     std::optional<log_replayer> replayer_opt;
     ss::sstring base_name = "test."
@@ -52,11 +54,8 @@ struct context {
         auto indexer = segment_index(
           base_name + ".index", std::move(fidx), base, 4096);
         auto reader = segment_reader(
-          base_name,
-          ss::open_file_dma(base_name, ss::open_flags::ro).get0(),
-          appender->file_byte_offset(),
-          128_KiB,
-          10);
+          base_name, 128_KiB, 10, debug_sanitize_files::no);
+        reader.load_size().get();
         _seg = ss::make_lw_shared<segment>(
           segment::offset_tracker(model::term_id(0), base),
           std::move(reader),
@@ -67,7 +66,7 @@ struct context {
         replayer_opt = log_replayer(*_seg);
     }
 
-    ~context() { _seg->close().get(); }
+    ~log_replayer_fixture() { _seg->close().get(); }
 
     void write_garbage() { do_write_garbage(base_name); }
 
@@ -106,9 +105,10 @@ struct context {
 
     log_replayer& replayer() { return *replayer_opt; }
 };
+} // namespace storage
 
 SEASTAR_THREAD_TEST_CASE(test_can_recover_single_batch) {
-    context ctx;
+    log_replayer_fixture ctx;
     auto batches = model::test::make_random_batches(model::offset(1), 1);
     auto last_offset = batches.back().last_offset();
     ctx.write(batches);
@@ -120,7 +120,7 @@ SEASTAR_THREAD_TEST_CASE(test_can_recover_single_batch) {
 
 SEASTAR_THREAD_TEST_CASE(test_unrecovered_single_batch) {
     {
-        context ctx;
+        log_replayer_fixture ctx;
         auto batches = model::test::make_random_batches(model::offset(1), 1);
         batches.back().header().crc = 10;
         ctx.write(batches);
@@ -129,7 +129,7 @@ SEASTAR_THREAD_TEST_CASE(test_unrecovered_single_batch) {
         BOOST_CHECK(!bool(recovered));
     }
     {
-        context ctx;
+        log_replayer_fixture ctx;
         auto batches = model::test::make_random_batches(model::offset(1), 1);
         batches.back().header().first_timestamp = model::timestamp(10);
         ctx.write(batches);
@@ -140,7 +140,7 @@ SEASTAR_THREAD_TEST_CASE(test_unrecovered_single_batch) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_malformed_segment) {
-    context ctx;
+    log_replayer_fixture ctx;
     ctx.write_garbage();
     ctx.initialize(model::offset(0));
     auto recovered = ctx.replayer().recover_in_thread(
@@ -149,7 +149,7 @@ SEASTAR_THREAD_TEST_CASE(test_malformed_segment) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_can_recover_multiple_batches) {
-    context ctx;
+    log_replayer_fixture ctx;
     auto batches = model::test::make_random_batches(model::offset(1), 10);
     auto last_offset = batches.back().last_offset();
     ctx.write(batches);
@@ -162,7 +162,7 @@ SEASTAR_THREAD_TEST_CASE(test_can_recover_multiple_batches) {
 SEASTAR_THREAD_TEST_CASE(test_unrecovered_multiple_batches) {
     {
         // bad crc test
-        context ctx;
+        log_replayer_fixture ctx;
         auto batches = model::test::make_random_batches(model::offset(1), 10);
         batches.back().header().crc = 10;
         auto last_offset = (batches.end() - 2)->last_offset();
@@ -174,7 +174,7 @@ SEASTAR_THREAD_TEST_CASE(test_unrecovered_multiple_batches) {
     }
     {
         // timestamp test
-        context ctx;
+        log_replayer_fixture ctx;
         auto batches = model::test::make_random_batches(model::offset(1), 10);
         batches.back().header().first_timestamp = model::timestamp(10);
         auto last_offset = (batches.end() - 2)->last_offset();
@@ -187,7 +187,7 @@ SEASTAR_THREAD_TEST_CASE(test_unrecovered_multiple_batches) {
 }
 SEASTAR_THREAD_TEST_CASE(test_reset_index) {
     // bad crc test
-    context ctx;
+    log_replayer_fixture ctx;
     ctx.write_garbage_index(); // key
     auto batches = model::test::make_random_batches(model::offset(1), 10);
     auto last_offset = batches.back().last_offset();

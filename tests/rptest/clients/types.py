@@ -50,7 +50,7 @@ class TopicSpec:
                  cleanup_policy=CLEANUP_DELETE,
                  compression_type=COMPRESSION_PRODUCER,
                  message_timestamp_type=TIMESTAMP_CREATE_TIME,
-                 segment_bytes=1 * (2 ^ 30),
+                 segment_bytes=None,
                  retention_bytes=None,
                  retention_ms=None,
                  redpanda_datapolicy=None,
