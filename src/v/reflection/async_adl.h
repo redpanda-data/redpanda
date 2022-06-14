@@ -153,7 +153,7 @@ struct async_adl<std::optional<T>> {
 template<typename T>
 ss::future<T> from_iobuf_async(iobuf b) {
     iobuf_parser parser(std::move(b));
-    return async_adl<std::decay_t<T>>{}.from(parser);
+    co_return co_await async_adl<std::decay_t<T>>{}.from(parser);
 }
 
 } // namespace reflection
