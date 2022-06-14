@@ -46,7 +46,7 @@ public:
         _rate_binding.watch([this]() { update_rate(); });
     }
 
-    ss::future<> throttle(size_t size) {
+    ss::future<> throttle(size_t size, ss::abort_source& as) {
         _refresh_timer.cancel();
         refresh();
 
@@ -65,7 +65,7 @@ public:
             _refresh_timer.arm(refresh_interval - elapsed);
         }
 
-        return _sem.wait(size);
+        return _sem.wait(as, size);
     }
 
     void shutdown() {

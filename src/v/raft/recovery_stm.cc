@@ -250,7 +250,7 @@ recovery_stm::read_range_for_recovery(
               return acc + batch.size_bytes();
           });
         co_await _ptr->_recovery_throttle->get()
-          .throttle(size)
+          .throttle(size, _ptr->_as)
           .handle_exception_type([this](const ss::broken_semaphore&) {
               vlog(_ctxlog.info, "Recovery throttling has stopped");
           });
