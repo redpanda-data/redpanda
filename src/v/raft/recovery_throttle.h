@@ -105,7 +105,7 @@ private:
         refresh();
         /*
          * if a waiter exists continue refreshing since it is not guaranteed
-         * that throttle will be invoked (e.g. excactly one recovering group).
+         * that throttle will be invoked (e.g. exactly one recovering group).
          */
         if (_sem.waiters()) {
             _refresh_timer.arm(refresh_interval);
