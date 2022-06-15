@@ -170,13 +170,26 @@ ss::future<response_ptr> create_topics_handler::handle(
                         .get_default_cleanup_policy_bitflags();
               }
           }
+
+          // The time at which we started attempting to create
+          auto t_initial = model::timeout_clock::now();
+
           // Create the topics with controller on core 0
           return ctx.topics_frontend()
             .create_topics(
               std::move(to_create), to_timeout(request.data.timeout_ms))
-            .then([&ctx, tout = to_timeout(request.data.timeout_ms)](
+            .then([&ctx, tout = to_timeout(request.data.timeout_ms), t_initial](
                     std::vector<cluster::topic_result> c_res) mutable {
-                return wait_for_topics(c_res, ctx.controller_api(), tout)
+                // If we took some time to do the initial create, then
+                // subtract this from the overall timeout allowance, rather
+                // than starting from 0 again.  This is important to avoid
+                // clients failing if they request a timeout and also apply
+                // an equal client-side timeout.
+                auto elapsed = model::timeout_clock::now() - t_initial;
+                auto wait_timeout = tout - elapsed;
+
+                return wait_for_topics(
+                         c_res, ctx.controller_api(), wait_timeout)
                   .then([c_res = std::move(c_res)]() mutable { return c_res; });
             })
             .then([&ctx,
