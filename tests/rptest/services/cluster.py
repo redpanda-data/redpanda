@@ -13,7 +13,7 @@ from ducktape.mark.resource import ClusterUseMetadata
 from ducktape.mark._mark import Mark
 
 
-def cluster(log_allow_list=None, **kwargs):
+def cluster(log_allow_list=None, check_allowed_error_logs=True, **kwargs):
     """
     Drop-in replacement for Ducktape `cluster` that imposes additional
     redpanda-specific checks and defaults.
@@ -38,16 +38,18 @@ def cluster(log_allow_list=None, **kwargs):
                 self.redpanda.raise_on_crash()
                 raise
             else:
-                # Only do log inspections on tests that are otherwise
-                # successful.  This executes *before* the end-of-test shutdown,
-                # thereby avoiding having to add the various gate_closed etc
-                # errors to our allow list.
-                # TODO: extend this to cover shutdown logging too, and clean up
-                # redpanda to not log so many errors on shutdown.
-                self.redpanda.raise_on_bad_logs(allow_list=log_allow_list)
-                return r
+                if check_allowed_error_logs:
+                    # Only do log inspections on tests that are otherwise
+                    # successful.  This executes *before* the end-of-test
+                    # shutdown, thereby avoiding having to add the various
+                    # gate_closed etc errors to our allow list.
+                    # TODO: extend this to cover shutdown logging too, and
+                    # clean up redpanda to not log so many errors on shutdown.
+                    self.redpanda.raise_on_bad_logs(allow_list=log_allow_list)
+                    return r
 
-        # Propagate ducktape markers (e.g. parametrize) to our function wrapper
+        # Propagate ducktape markers (e.g. parameterize) to our function
+        # wrapper
         wrapped.marks = f.marks
         wrapped.mark_names = f.mark_names
 
