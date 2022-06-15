@@ -178,6 +178,14 @@ public:
     std::optional<model::initial_revision_id>
     get_initial_revision(const model::ntp& ntp) const;
 
+    /**
+     * returns previous replica set of partition if partition is currently being
+     * reconfigured. For reconfiguration from [1,2,3] to [2,3,4] this method
+     * will return [1,2,3].
+     */
+    std::optional<std::vector<model::broker_shard>>
+    get_previous_replica_set(const model::ntp&) const;
+
 private:
     struct waiter {
         explicit waiter(uint64_t id)
@@ -197,7 +205,8 @@ private:
     underlying_t _topics;
     hierarchy_t _topics_hierarchy;
 
-    absl::flat_hash_set<model::ntp> _update_in_progress;
+    absl::node_hash_map<model::ntp, std::vector<model::broker_shard>>
+      _update_in_progress;
 
     std::vector<delta> _pending_deltas;
     std::vector<std::unique_ptr<waiter>> _waiters;

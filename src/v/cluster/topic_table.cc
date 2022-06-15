@@ -169,7 +169,7 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
         return ss::make_ready_future<std::error_code>(errc::success);
     }
 
-    _update_in_progress.insert(cmd.key);
+    _update_in_progress.emplace(cmd.key, current_assignment_it->replicas);
     auto previous_assignment = *current_assignment_it;
     // replace partition replica set
     current_assignment_it->replicas = cmd.value;
@@ -179,8 +179,9 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
     if (found != _topics_hierarchy.end()) {
         for (const auto& cs : found->second) {
             /// Insert non-replicable topic into the 'update_in_progress' set
-            auto [_, success] = _update_in_progress.insert(
-              model::ntp(cs.ns, cs.tp, current_assignment_it->id));
+            auto [_, success] = _update_in_progress.emplace(
+              model::ntp(cs.ns, cs.tp, current_assignment_it->id),
+              current_assignment_it->replicas);
             vassert(
               success,
               "non_replicable topic {}-{} already in _update_in_progress set",
@@ -586,6 +587,15 @@ topic_table::get_initial_revision(model::topic_namespace_view tp) const {
 std::optional<model::initial_revision_id>
 topic_table::get_initial_revision(const model::ntp& ntp) const {
     return get_initial_revision(model::topic_namespace_view(ntp));
+}
+
+std::optional<std::vector<model::broker_shard>>
+topic_table::get_previous_replica_set(const model::ntp& ntp) const {
+    if (auto it = _update_in_progress.find(ntp);
+        it != _update_in_progress.end()) {
+        return it->second;
+    }
+    return std::nullopt;
 }
 
 } // namespace cluster
