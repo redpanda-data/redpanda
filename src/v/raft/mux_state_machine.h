@@ -30,7 +30,7 @@
 #include <seastar/util/bool_class.hh>
 #include <seastar/util/log.hh>
 
-#include <absl/container/node_hash_map.h>
+#include <absl/container/flat_hash_map.h>
 
 #include <optional>
 #include <system_error>
@@ -167,7 +167,7 @@ private:
     replicate_units get_units() { return replicate_units(this); }
 
     consensus* _c;
-    absl::node_hash_map<model::offset, std::error_code> _results;
+    absl::flat_hash_map<model::offset, std::error_code> _results;
     model::offset _last_applied;
     int64_t _pending = 0;
     const persistent_last_applied _persist_last_applied;
