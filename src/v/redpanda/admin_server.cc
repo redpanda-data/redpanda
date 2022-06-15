@@ -539,6 +539,7 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
               "redirect: {} did not match any kafka listeners, redirecting to "
               "peer's internal RPC address",
               req_hostname);
+            target_host = leader.broker.rpc_address().host();
         }
     }
 
