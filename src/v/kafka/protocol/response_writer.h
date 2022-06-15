@@ -138,6 +138,12 @@ public:
         return write(std::string_view(*v));
     }
 
+    uint32_t write(uuid uuid) {
+        /// This type is not prepended with its size
+        _out->append(uuid.view().data(), uuid::length);
+        return uuid::length;
+    }
+
     uint32_t write(bytes_view bv) {
         auto size = serialize_int<int32_t>(bv.size()) + bv.size();
         _out->append(reinterpret_cast<const char*>(bv.data()), bv.size());
@@ -334,8 +340,7 @@ public:
         for (auto& [id, tag] : tags) {
             // write tag id +  size in bytes + tag itself
             write_unsigned_varint(id);
-            write_unsigned_varint(tag.size_bytes());
-            write_direct(std::move(tag));
+            write_size_prepended(std::move(tag));
         }
         return _out->size_bytes() - start_size;
     }
@@ -344,6 +349,15 @@ public:
     // custom tag fields but must encode at least a 0 byte to be protocol
     // compliant
     uint32_t write_tags() { return write_unsigned_varint(0); }
+
+    /// Used when a size (in bytes) must be prepended before serializing the
+    /// object itself. So far only used for encoding tag headers.
+    uint32_t write_size_prepended(iobuf&& buf) {
+        const auto size = write_unsigned_varint(buf.size_bytes())
+                          + buf.size_bytes();
+        _out->append(std::move(buf));
+        return size;
+    }
 
 private:
     iobuf* _out;
