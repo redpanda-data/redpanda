@@ -240,7 +240,8 @@ func (r *ClusterReconciler) retrieveClusterState(
 		return nil, nil, nil, errorWithContext(err, "could not get current centralized configuration from cluster")
 	}
 
-	status, err := adminAPI.ClusterConfigStatus(ctx)
+	// We always send requests for config status to the leader to avoid inconsistencies due to config propagation delays.
+	status, err := adminAPI.ClusterConfigStatus(ctx, true)
 	if err != nil {
 		return nil, nil, nil, errorWithContext(err, "could not get current centralized configuration status from cluster")
 	}
@@ -312,8 +313,8 @@ func (r *ClusterReconciler) synchronizeStatusWithCluster(
 	log logr.Logger,
 ) (*redpandav1alpha1.ClusterCondition, error) {
 	errorWithContext := newErrorWithContext(redpandaCluster.Namespace, redpandaCluster.Name)
-	// Check status again using admin API
-	status, err := adminAPI.ClusterConfigStatus(ctx)
+	// Check status again on the leader using admin API
+	status, err := adminAPI.ClusterConfigStatus(ctx, true)
 	if err != nil {
 		return nil, errorWithContext(err, "could not get config status from admin API")
 	}
@@ -394,7 +395,9 @@ func mapStatusToCondition(
 	return *condition
 }
 
-func needsRestart(clusterStatus admin.ConfigStatusResponse, log logr.Logger) bool {
+func needsRestart(
+	clusterStatus admin.ConfigStatusResponse, log logr.Logger,
+) bool {
 	nodeNeedsRestart := false
 	for i := range clusterStatus {
 		log.Info(fmt.Sprintf("Node %d restart status is %v", clusterStatus[i].NodeID, clusterStatus[i].Restart))
@@ -405,7 +408,9 @@ func needsRestart(clusterStatus admin.ConfigStatusResponse, log logr.Logger) boo
 	return nodeNeedsRestart
 }
 
-func isSafeToRestart(clusterStatus admin.ConfigStatusResponse, log logr.Logger) bool {
+func isSafeToRestart(
+	clusterStatus admin.ConfigStatusResponse, log logr.Logger,
+) bool {
 	configVersions := make(map[int64]bool)
 	for i := range clusterStatus {
 		log.Info(fmt.Sprintf("Node %d is using config version %d", clusterStatus[i].NodeID, clusterStatus[i].ConfigVersion))
