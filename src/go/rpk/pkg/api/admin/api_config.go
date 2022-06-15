@@ -123,9 +123,15 @@ type ConfigStatus struct {
 
 type ConfigStatusResponse []ConfigStatus
 
-func (a *AdminAPI) ClusterConfigStatus() (ConfigStatusResponse, error) {
+func (a *AdminAPI) ClusterConfigStatus(sendToLeader bool) (ConfigStatusResponse, error) {
 	var result ConfigStatusResponse
-	err := a.sendAny(http.MethodGet, "/v1/cluster_config/status", nil, &result)
+	var err error
+	path := "/v1/cluster_config/status"
+	if sendToLeader {
+		err = a.sendToLeader(http.MethodGet, path, nil, &result)
+	} else {
+		err = a.sendAny(http.MethodGet, path, nil, &result)
+	}
 	if err != nil {
 		return nil, err
 	}
