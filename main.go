@@ -56,6 +56,7 @@ func main() {
 		configuratorBaseImage       string
 		configuratorTag             string
 		configuratorImagePullPolicy string
+		decommissionWaitInterval    time.Duration
 	)
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
@@ -68,6 +69,7 @@ func main() {
 	flag.StringVar(&configuratorBaseImage, "configurator-base-image", defaultConfiguratorContainerImage, "Set the configurator base image")
 	flag.StringVar(&configuratorTag, "configurator-tag", "latest", "Set the configurator tag")
 	flag.StringVar(&configuratorImagePullPolicy, "configurator-image-pull-policy", "Always", "Set the configurator image pull policy")
+	flag.DurationVar(&decommissionWaitInterval, "decommission-wait-interval", 8*time.Second, "Set the time to wait for a node decommission to happen in the cluster")
 
 	opts := zap.Options{
 		Development: true,
@@ -103,7 +105,7 @@ func main() {
 		Log:                      ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Cluster"),
 		Scheme:                   mgr.GetScheme(),
 		AdminAPIClientFactory:    adminutils.NewInternalAdminAPI,
-		DecommissionWaitInterval: 10 * time.Second,
+		DecommissionWaitInterval: decommissionWaitInterval,
 	}).WithClusterDomain(clusterDomain).WithConfiguratorSettings(configurator).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "Cluster")
 		os.Exit(1)
