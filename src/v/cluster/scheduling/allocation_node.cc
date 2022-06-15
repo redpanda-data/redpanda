@@ -114,14 +114,20 @@ std::ostream& operator<<(std::ostream& o, allocation_node::state s) {
 }
 
 std::ostream& operator<<(std::ostream& o, const allocation_node& n) {
-    o << "{node:" << n._id
-      << ", max_partitions_per_core: " << n._partitions_per_shard()
-      << ", state: " << n._state
-      << ", partition_capacity:" << n.partition_capacity() << ", weights: [";
+    fmt::print(
+      o,
+      "{{node: {}, max_partitions_per_core: {}, state: {}, partition_capacity: "
+      "{}, weights: [",
+      n._id,
+      n._partitions_per_shard(),
+      n._state,
+      n.partition_capacity());
+
     for (auto w : n._weights) {
-        o << "(" << w << ")";
+        fmt::print(o, "({})", w);
     }
-    return o << "]}";
+    fmt::print(o, "]}}");
+    return o;
 }
 
 } // namespace cluster
