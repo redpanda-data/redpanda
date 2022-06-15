@@ -167,8 +167,15 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 		return fmt.Errorf("error while fetching StatefulSet resource: %w", err)
 	}
 	r.LastObservedState = &sts
+
 	r.logger.Info("Running update", "resource name", r.Key().Name)
-	return r.runUpdate(ctx, &sts, obj.(*appsv1.StatefulSet))
+	err = r.runUpdate(ctx, &sts, obj.(*appsv1.StatefulSet))
+	if err != nil {
+		return err
+	}
+
+	r.logger.Info("Running scale handler", "resource name", r.Key().Name)
+	return r.handleScaling(ctx)
 }
 
 // GetCentralizedConfigurationHashFromCluster retrieves the current centralized configuratino hash from the statefulset
@@ -270,6 +277,14 @@ func (r *StatefulSetResource) obj(
 		externalAddressType = externalListener.External.PreferredAddressType
 	}
 	tlsVolumes, tlsVolumeMounts := r.volumeProvider.Volumes()
+
+	// We set statefulset replicas via status.currentReplicas in order to control it from the handleScaling function
+	replicas := r.pandaCluster.Status.CurrentReplicas
+	if replicas <= 0 {
+		// Until the state is initialized
+		replicas = *r.pandaCluster.Spec.Replicas
+	}
+
 	ss := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: r.Key().Namespace,
@@ -281,7 +296,7 @@ func (r *StatefulSetResource) obj(
 			APIVersion: "apps/v1",
 		},
 		Spec: appsv1.StatefulSetSpec{
-			Replicas:            r.pandaCluster.Spec.Replicas,
+			Replicas:            &replicas,
 			PodManagementPolicy: appsv1.ParallelPodManagement,
 			Selector:            clusterLabels.AsAPISelector(),
 			UpdateStrategy: appsv1.StatefulSetUpdateStrategy{
