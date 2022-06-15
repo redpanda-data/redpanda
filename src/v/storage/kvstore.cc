@@ -333,11 +333,6 @@ ss::future<> kvstore::save_snapshot() {
         co_return;
     }
 
-    vlog(
-      lg.debug,
-      "Creating snapshot at offset {}",
-      _next_offset - model::offset(1));
-
     // package up the db into a batch
     storage::record_batch_builder builder(
       model::record_batch_type::kvstore, model::offset(0));
@@ -355,6 +350,12 @@ ss::future<> kvstore::save_snapshot() {
       data, std::move(batch));
     auto size = ss::cpu_to_le(int32_t(data.size_bytes() - sizeof(int32_t)));
     ph.write((const char*)&size, sizeof(size));
+
+    vlog(
+      lg.debug,
+      "Creating snapshot at offset {} ({} bytes)",
+      _next_offset - model::offset(1),
+      size);
 
     auto wr = co_await _snap.start_snapshot();
     // the last log offset represented in the snapshot
