@@ -33,13 +33,6 @@ func TestEnsure(t *testing.T) {
 	cluster := pandaCluster()
 	stsResource := stsFromCluster(cluster)
 
-	var newReplicas int32 = 3333
-
-	replicasUpdatedCluster := cluster.DeepCopy()
-	replicasUpdatedCluster.Spec.Replicas = &newReplicas
-	replicasUpdatedSts := stsFromCluster(cluster).DeepCopy()
-	replicasUpdatedSts.Spec.Replicas = &newReplicas
-
 	newResources := corev1.ResourceList{
 		corev1.ResourceCPU:    resource.MustParse("1111"),
 		corev1.ResourceMemory: resource.MustParse("2222Gi"),
@@ -76,7 +69,6 @@ func TestEnsure(t *testing.T) {
 		expectedObject *v1.StatefulSet
 	}{
 		{"none existing", nil, cluster, stsResource},
-		{"update replicas", stsResource, replicasUpdatedCluster, replicasUpdatedSts},
 		{"update resources", stsResource, resourcesUpdatedCluster, resourcesUpdatedSts},
 		{"update redpanda resources", stsResource, resourcesUpdatedRedpandaCluster, resourcesUpdatedSts},
 		{"disabled sidecar", nil, noSidecarCluster, noSidecarSts},
