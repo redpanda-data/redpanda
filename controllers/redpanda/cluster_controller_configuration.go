@@ -240,7 +240,8 @@ func (r *ClusterReconciler) retrieveClusterState(
 		return nil, nil, nil, errorWithContext(err, "could not get current centralized configuration from cluster")
 	}
 
-	status, err := adminAPI.ClusterConfigStatus(ctx)
+	// We always send requests for config status to the leader to avoid inconsistencies due to config propagation delays.
+	status, err := adminAPI.ClusterConfigStatus(ctx, true)
 	if err != nil {
 		return nil, nil, nil, errorWithContext(err, "could not get current centralized configuration status from cluster")
 	}
@@ -312,8 +313,8 @@ func (r *ClusterReconciler) synchronizeStatusWithCluster(
 	log logr.Logger,
 ) (*redpandav1alpha1.ClusterCondition, error) {
 	errorWithContext := newErrorWithContext(redpandaCluster.Namespace, redpandaCluster.Name)
-	// Check status again using admin API
-	status, err := adminAPI.ClusterConfigStatus(ctx)
+	// Check status again on the leader using admin API
+	status, err := adminAPI.ClusterConfigStatus(ctx, true)
 	if err != nil {
 		return nil, errorWithContext(err, "could not get config status from admin API")
 	}

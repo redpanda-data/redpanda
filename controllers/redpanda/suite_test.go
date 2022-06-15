@@ -183,7 +183,7 @@ func (m *mockAdminAPI) Config(_ context.Context) (admin.Config, error) {
 }
 
 func (m *mockAdminAPI) ClusterConfigStatus(
-	_ context.Context,
+	_ context.Context, _ bool,
 ) (admin.ConfigStatusResponse, error) {
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
