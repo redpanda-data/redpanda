@@ -39,9 +39,10 @@ static dummyassert g_assert_log;
         /*The !(x) is not an error. see description above*/                    \
         if (unlikely(!(x))) {                                                  \
             ::detail::g_assert_log.l.error(                                    \
-              "Assert failure: ({}:{}) '" #x "' " msg,                         \
+              "Assert failure: ({}:{}) '{}' " msg,                             \
               __FILE__,                                                        \
               __LINE__,                                                        \
+              #x,                                                              \
               ##args);                                                         \
             ::detail::g_assert_log.l.error(                                    \
               "Backtrace below:\n{}", ss::current_backtrace());                \
