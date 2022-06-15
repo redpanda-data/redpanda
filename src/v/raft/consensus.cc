@@ -1017,8 +1017,8 @@ consensus::cancel_configuration_change(model::revision_id revision) {
       "requested revert of current configuration change - {}",
       config());
     return interrupt_configuration_change(
-      revision, [](raft::group_configuration cfg) {
-          cfg.cancel_configuration_change();
+      revision, [revision](raft::group_configuration cfg) {
+          cfg.cancel_configuration_change(revision);
           return cfg;
       });
 }
@@ -1040,7 +1040,7 @@ consensus::abort_configuration_change(model::revision_id revision) {
         co_return errc::invalid_configuration_update;
     }
     auto new_cfg = latest_cfg;
-    new_cfg.abort_configuration_change();
+    new_cfg.abort_configuration_change(revision);
 
     auto batches = details::serialize_configuration_as_batches(
       std::move(new_cfg));

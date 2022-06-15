@@ -137,14 +137,14 @@ public:
      * NOTE: may lead to data loss in some situations use only for cluster
      * recovery from critical failures
      */
-    void abort_configuration_change();
+    void abort_configuration_change(model::revision_id);
 
     /**
      * Reverts configuration change, the configuration is still in joint state
      * but the direction of change is being changed
      *
      */
-    void cancel_configuration_change();
+    void cancel_configuration_change(model::revision_id);
 
     /**
      * demotes all voters if they were removed from current configuration,
