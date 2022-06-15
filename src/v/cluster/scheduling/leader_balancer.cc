@@ -66,43 +66,57 @@ leader_balancer::leader_balancer(
     }
 }
 
+void leader_balancer::on_leadership_change(
+  raft::group_id group, model::term_id, std::optional<model::node_id>) {
+    // Don't bother doing anything if it's not enabled
+    if (!_enabled()) {
+        return;
+    }
+
+    if (group == _raft0->group()) {
+        // Active leader balancer again if leadership of
+        // raft0 is transfered to this node.
+        if (_raft0->is_elected_leader()) {
+            vlog(
+              clusterlog.info,
+              "Leader balancer: controller leadership detected. "
+              "Starting "
+              "rebalancer in {} seconds",
+              std::chrono::duration_cast<std::chrono::seconds>(
+                leader_activation_delay)
+                .count());
+
+            _timer.cancel();
+            _timer.arm(leader_activation_delay);
+        } else {
+            vlog(
+              clusterlog.info,
+              "Leader balancer: node is not controller leader");
+            _need_controller_refresh = true;
+            _timer.cancel();
+            _timer.arm(_idle_timeout());
+        }
+    }
+
+    if (!_raft0->is_elected_leader()) {
+        return;
+    }
+
+    // Update in flight state
+    if (auto it = _in_flight_changes.find(group);
+        it != _in_flight_changes.end()) {
+        _in_flight_changes.erase(it);
+    }
+}
+
 ss::future<> leader_balancer::start() {
     /*
      * register for raft0 leadership change notifications. shutdown the balancer
      * when we lose leadership, and start it when we gain leadership.
      */
     _leader_notify_handle
-      = _group_manager.local().register_leadership_notification(
-        [this](
-          raft::group_id group, model::term_id, std::optional<model::node_id>) {
-            if (group != _raft0->group()) {
-                return;
-            }
-            if (_raft0->is_elected_leader()) {
-                if (_enabled()) {
-                    vlog(
-                      clusterlog.info,
-                      "Leader balancer: controller leadership detected. "
-                      "Starting "
-                      "rebalancer in {} seconds",
-                      std::chrono::duration_cast<std::chrono::seconds>(
-                        leader_activation_delay)
-                        .count());
-                }
-                _timer.cancel();
-                _timer.arm(leader_activation_delay);
-            } else {
-                if (_enabled()) {
-                    vlog(
-                      clusterlog.info,
-                      "Leader balancer: node is not controller leader");
-                }
-                _need_controller_refresh = true;
-                _timer.cancel();
-                _timer.arm(_idle_timeout());
-            }
-        });
-
+      = _group_manager.local().register_leadership_notification(std::bind_front(
+        std::mem_fn(&leader_balancer::on_leadership_change), this));
     /*
      * register_leadership_notification above may run callbacks synchronously
      * during registration, so make sure the timer is unarmed before arming.
@@ -193,7 +207,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
     }
 
     /*
-     * GC the muted and last leader indices
+     * GC the muted, last leader, and in flight changes indices.
      */
     absl::erase_if(
       _muted, [now = clock_type::now()](auto g) { return now >= g.second; });
@@ -201,6 +215,26 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
     absl::erase_if(_last_leader, [now = clock_type::now()](auto g) {
         return now >= g.second.expires;
     });
+
+    absl::erase_if(
+      _in_flight_changes, [this, now = clock_type::now()](const auto& c) {
+          const auto& [group, change] = c;
+
+          if (now >= change.expires) {
+              _probe.leader_transfer_timeout();
+              vlog(
+                clusterlog.info,
+                "Metadata propagation for leadership movement of "
+                "group {} from {} to {} timed out",
+                change.value.group,
+                change.value.from,
+                change.value.to);
+
+              return true;
+          }
+
+          return false;
+      });
 
     if (!_raft0->is_elected_leader()) {
         vlog(clusterlog.debug, "Leadership balancer tick: not leader");
@@ -221,6 +255,10 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
      * after a short delay to account for transient issues on startup.
      */
     if (_need_controller_refresh) {
+        // Invalidate whatever in flight changes exist.
+        // They would not be accurate post-leadership loss.
+        _in_flight_changes.clear();
+
         auto res = co_await _raft0->linearizable_barrier();
         if (!res) {
             vlog(
@@ -298,91 +336,11 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
          */
         _probe.leader_transfer_error();
         co_await ss::sleep_abortable(5s, _as.local());
-        _muted.try_emplace(
-          transfer->group, clock_type::now() + _mute_timeout());
-        co_return ss::stop_iteration::no;
     }
 
-    if (_as.local().abort_requested()) {
-        co_return ss::stop_iteration::yes;
-    }
-
-    /*
-     * reverse the mapping from raft::group_id to model::ntp so that we can
-     * look up its leadership information in the metadata table. we should
-     * fix this with better indexing / interfaces.
-     *
-     *   See: https://github.com/redpanda-data/redpanda/issues/2032
-     */
-    std::optional<model::ntp> ntp;
-    for (const auto& topic : _topics.topics_map()) {
-        if (!topic.second.is_topic_replicable()) {
-            continue;
-        }
-        for (const auto& partition : topic.second.get_assignments()) {
-            if (partition.group == transfer->group) {
-                ntp = model::ntp(topic.first.ns, topic.first.tp, partition.id);
-                break;
-            }
-        }
-    }
-
-    /*
-     * if the group is now not found in the topics table it is probably
-     * something benign like we were racing with topic deletion.
-     */
-    if (!ntp) {
-        vlog(
-          clusterlog.info,
-          "Leadership balancer muting group {} not found in topics table",
-          transfer->group);
-        co_await ss::sleep_abortable(5s, _as.local());
-        _muted.try_emplace(
-          transfer->group, clock_type::now() + _mute_timeout());
-        co_return ss::stop_iteration::no;
-    }
-
-    /*
-     * leadership reported success. wait for the event to be propogated to the
-     * cluster and reflected in the local metadata.
-     */
-    int retries = 6;
-    auto delay = 300ms; // w/ doubling, about 20 second
-    std::optional<model::broker_shard> leader_shard;
-    while (retries--) {
-        co_await ss::sleep_abortable(delay, _as.local());
-        leader_shard = find_leader_shard(*ntp);
-
-        // no leader shard (possibly intermediate state) or no movement yet
-        if (!leader_shard || *leader_shard == transfer->from) {
-            delay *= 2;
-            continue;
-        }
-
-        break;
-    }
-
-    if (leader_shard && *leader_shard != transfer->from) {
-        _probe.leader_transfer_succeeded();
-        vlog(
-          clusterlog.info,
-          "Leadership for group {} moved from {} to {} (target {}). Delta {}",
-          transfer->group,
-          transfer->from,
-          *leader_shard,
-          transfer->to,
-          error);
-    } else {
-        _probe.leader_transfer_timeout();
-        vlog(
-          clusterlog.info,
-          "Leadership movement for group {} from {} to {} timed out "
-          "(leader_shard {})",
-          transfer->group,
-          transfer->from,
-          transfer->to,
-          leader_shard);
-    }
+    _in_flight_changes[transfer->group] = {
+      *transfer, clock_type::now() + _mute_timeout()};
+    _probe.leader_transfer_succeeded();
 
     /*
      * if leadership moved, or it timed out we'll mute the group for a while and
@@ -494,6 +452,27 @@ leader_balancer::index_type leader_balancer::build_index() {
             if (
               topic.first.ns == model::controller_ntp.ns
               && topic.first.tp == model::controller_ntp.tp.topic) {
+                continue;
+            }
+
+            /*
+             * if the partition group is a part of our in flight changes
+             * then assume that leadership will be transferred to the target
+             * node and balance based off of that.
+             */
+            if (auto it = _in_flight_changes.find(partition.group);
+                it != _in_flight_changes.end()) {
+                const auto& assignment = it->second.value;
+
+                std::vector<model::broker_shard> replicas = partition.replicas;
+                // Swap to and from in the replicas
+                if (auto r_it = std::find(
+                      replicas.begin(), replicas.end(), assignment.to);
+                    r_it != replicas.end()) {
+                    *r_it = assignment.from;
+                }
+
+                index[assignment.to][partition.group] = std::move(replicas);
                 continue;
             }
 

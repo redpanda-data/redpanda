@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
-#include "absl/container/node_hash_map.h"
+#include "absl/container/flat_hash_map.h"
 #include "cluster/partition_manager.h"
 #include "cluster/scheduling/leader_balancer_probe.h"
 #include "cluster/scheduling/leader_balancer_strategy.h"
@@ -95,6 +95,9 @@ private:
 
     void on_enable_changed();
 
+    void on_leadership_change(
+      raft::group_id, model::term_id, std::optional<model::node_id>);
+
     void trigger_balance();
     ss::future<ss::stop_iteration> balance();
 
@@ -157,6 +160,13 @@ private:
     consensus_ptr _raft0;
     ss::gate _gate;
     ss::timer<clock_type> _timer;
+
+    struct in_flight_reassignment {
+        reassignment value;
+        clock_type::time_point expires;
+    };
+    absl::flat_hash_map<raft::group_id, in_flight_reassignment>
+      _in_flight_changes;
 };
 
 } // namespace cluster
