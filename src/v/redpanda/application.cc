@@ -220,6 +220,9 @@ int application::run(int ac, char** av) {
     return app.run(ac, av, [this, &app] {
         auto& cfg = app.configuration();
         log_system_resources(_log, cfg);
+        // NOTE: we validate required args here instead of above because run()
+        // catches some Seastar-specific args like --help that may result in
+        // valid omissions of required args.
         validate_arguments(cfg);
         return ss::async([this, &cfg] {
             try {
