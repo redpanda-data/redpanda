@@ -1312,3 +1312,65 @@ class ClusterConfigClusterIdTest(RedpandaTest):
                                          expect_restart=False)
 
         assert rpk.cluster_metadata_id() == f"redpanda.{manual_id}"
+
+
+class ClusterConfigNoKafkaTest(RedpandaTest):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, extra_node_conf={'kafka_api': []}, **kwargs)
+
+    @cluster(num_nodes=3)
+    def test_no_kafka(self):
+        """
+        That a cluster may be started with no Kafka listeners at all, perhaps
+        to do some initial configuration before exposing its API to clients.
+        """
+
+        admin = Admin(self.redpanda)
+
+        rpk = RpkTool(self.redpanda)
+        try:
+            rpk.create_topic("testtopic")
+        except RpkException:
+            pass
+        else:
+            raise RuntimeError("Kafka API shouldn't be available")
+
+        user = "alice"
+        password = "sekrit"
+        admin.create_user(user, password, algorithm="SCRAM-SHA-256")
+
+        # It takes a moment for the user creation to propagate, we
+        # need it to have reached whichever node we next user to set
+        # configuration
+        time.sleep(5)
+
+        alice_admin = Admin(self.redpanda, auth=(user, password))
+        self.redpanda.set_cluster_config(
+            {
+                'superusers': [user],
+                'enable_sasl': True,
+                'admin_api_require_auth': True
+            },
+            expect_restart=False,
+            admin_client=alice_admin)
+
+        for n in self.redpanda.nodes:
+            # Removing config override, on restart it will get kafka_api populated
+            self.redpanda.set_extra_node_conf(n, {})
+
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+
+        # Auth should be switched on: anonymous Kafka client should not work
+        try:
+            rpk.create_topic("testtopic")
+        except RpkException:
+            pass
+        else:
+            raise RuntimeError("Kafka auth should fail")
+
+        # When I use the username+password I created, it should work.
+        rpk = RpkTool(self.redpanda,
+                      username=user,
+                      password=password,
+                      sasl_mechanism="SCRAM-SHA-256")
+        rpk.create_topic("testtopic")
