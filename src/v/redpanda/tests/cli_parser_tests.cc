@@ -52,7 +52,9 @@ BOOST_AUTO_TEST_CASE(test_positional_args_rejected) {
       cli_parser::app_opts{unused},
       cli_parser::ss_opts{unused},
       test_log};
-    BOOST_REQUIRE(!parser.validate());
+    po::variables_map vm;
+    BOOST_REQUIRE(!parser.validate_into(vm));
+    BOOST_REQUIRE(vm.empty());
 }
 
 BOOST_AUTO_TEST_CASE(test_help_flag) {
@@ -66,7 +68,9 @@ BOOST_AUTO_TEST_CASE(test_help_flag) {
 
     cli_parser parser{
       ac, av, cli_parser::app_opts{help}, cli_parser::ss_opts{ss}, test_log};
-    BOOST_REQUIRE(parser.validate());
+    po::variables_map vm;
+    BOOST_REQUIRE(parser.validate_into(vm));
+    BOOST_REQUIRE(!vm.empty());
 }
 
 BOOST_AUTO_TEST_CASE(test_help_mixed_with_bad_pos_arg) {
@@ -79,7 +83,9 @@ BOOST_AUTO_TEST_CASE(test_help_mixed_with_bad_pos_arg) {
     auto [ac, av] = a.args();
     cli_parser parser{
       ac, av, cli_parser::app_opts{help}, cli_parser::ss_opts{ss}, test_log};
-    BOOST_REQUIRE(!parser.validate());
+    po::variables_map vm;
+    BOOST_REQUIRE(!parser.validate_into(vm));
+    BOOST_REQUIRE(vm.empty());
 }
 
 BOOST_AUTO_TEST_CASE(test_flag_with_arguments) {
@@ -93,7 +99,9 @@ BOOST_AUTO_TEST_CASE(test_flag_with_arguments) {
         auto [ac, av] = a.args();
         cli_parser parser{
           ac, av, cli_parser::app_opts{cfg}, cli_parser::ss_opts{ss}, test_log};
-        BOOST_REQUIRE(parser.validate());
+        po::variables_map vm;
+        BOOST_REQUIRE(parser.validate_into(vm));
+        BOOST_REQUIRE(!vm.empty());
     }
 
     {
@@ -101,7 +109,9 @@ BOOST_AUTO_TEST_CASE(test_flag_with_arguments) {
         auto [ac, av] = a.args();
         cli_parser parser{
           ac, av, cli_parser::app_opts{cfg}, cli_parser::ss_opts{ss}, test_log};
-        BOOST_REQUIRE(parser.validate());
+        po::variables_map vm;
+        BOOST_REQUIRE(parser.validate_into(vm));
+        BOOST_REQUIRE(!vm.empty());
     }
 }
 
@@ -115,7 +125,9 @@ BOOST_AUTO_TEST_CASE(test_flags_with_arguments_and_bad_pos_arg) {
     auto [ac, av] = a.args();
     cli_parser parser{
       ac, av, cli_parser::app_opts{cfg}, cli_parser::ss_opts{ss}, test_log};
-    BOOST_REQUIRE(!parser.validate());
+    po::variables_map vm;
+    BOOST_REQUIRE(!parser.validate_into(vm));
+    BOOST_REQUIRE(vm.empty());
 }
 
 BOOST_AUTO_TEST_CASE(test_redpanda_and_ss_opts) {
@@ -131,7 +143,9 @@ BOOST_AUTO_TEST_CASE(test_redpanda_and_ss_opts) {
         auto [ac, av] = a.args();
         cli_parser parser{
           ac, av, cli_parser::app_opts{cfg}, cli_parser::ss_opts{ss}, test_log};
-        BOOST_REQUIRE(parser.validate());
+        po::variables_map vm;
+        BOOST_REQUIRE(parser.validate_into(vm));
+        BOOST_REQUIRE(!vm.empty());
     }
 
     {
@@ -139,6 +153,8 @@ BOOST_AUTO_TEST_CASE(test_redpanda_and_ss_opts) {
         auto [ac, av] = a.args();
         cli_parser parser{
           ac, av, cli_parser::app_opts{cfg}, cli_parser::ss_opts{ss}, test_log};
-        BOOST_REQUIRE(parser.validate());
+        po::variables_map vm;
+        BOOST_REQUIRE(parser.validate_into(vm));
+        BOOST_REQUIRE(!vm.empty());
     }
 }
