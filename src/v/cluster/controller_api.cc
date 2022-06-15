@@ -233,8 +233,12 @@ ss::future<std::error_code> controller_api::wait_for_topic(
         auto res = co_await are_ntps_ready(requests, timeout);
         ready = !res.has_error() && res.value();
         if (!ready) {
-            co_await ss::sleep_abortable(
-              std::chrono::milliseconds(100), _as.local());
+            static constexpr auto retry_period = std::chrono::milliseconds(100);
+            if (model::timeout_clock::now() + retry_period > timeout) {
+                co_return make_error_code(errc::timeout);
+            } else {
+                co_await ss::sleep_abortable(retry_period, _as.local());
+            }
         }
     }
 
