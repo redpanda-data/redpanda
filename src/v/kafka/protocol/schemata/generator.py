@@ -1146,24 +1146,18 @@ while(num_tags-- > 0) {
 {% macro conditional_tag_encode(tdef, vec) %}
 {%- if tdef.is_array %}
 {%- if tdef.nullable() %}
-{%- call tag_version_guard(tdef) %}
 if ({{ tdef.name }}) {
     {{ vec }}.push_back({{ tdef.tag() }});
 }
-{%- endcall %}
 {%- else %}
-{%- call tag_version_guard(tdef) %}
 if (!{{ tdef.name }}.empty()) {
     {{ vec }}.push_back({{ tdef.tag() }});
 }
-{%- endcall %}
 {%- endif %}
 {%- elif tdef.default_value() != "" %}
-{%- call tag_version_guard(tdef) %}
 if ({{ tdef.name }} != {{ tdef.default_value() }}) {
     {{ vec }}.push_back({{ tdef.tag() }});
 }
-{%- endcall %}
 {%- endif %}
 {%- endmacro %}
 
@@ -1171,7 +1165,9 @@ if ({{ tdef.name }} != {{ tdef.default_value() }}) {
 /// Tags encoding section
 std::vector<uint32_t> to_encode;
 {%- for tdef in tag_definitions -%}
+{%- call tag_version_guard(tdef) %}
 {{- conditional_tag_encode(tdef, "to_encode") }}
+{%- endcall %}
 {%- endfor %}
 writer.write_unsigned_varint(to_encode.size());
 for(size_t tag : to_encode) {
