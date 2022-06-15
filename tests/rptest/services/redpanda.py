@@ -150,7 +150,7 @@ class ResourceSettings:
         self._memory_mb = memory_mb
 
         if bypass_fsync is None:
-            self._bypass_fsync = False
+            self._bypass_fsync = True
         else:
             self._bypass_fsync = bypass_fsync
 
