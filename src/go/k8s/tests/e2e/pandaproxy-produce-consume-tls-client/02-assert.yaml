@@ -16,3 +16,9 @@ collectors:
 - type: pod
   selector: app.kubernetes.io/name=redpanda
   tail: -1
+- type: pod
+  selector: app.kubernetes.io/name=rpk
+  tail: -1
+- type: pod
+  namespace: pandaproxy-topic
+  tail: -1

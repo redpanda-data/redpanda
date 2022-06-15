@@ -4,6 +4,8 @@ metadata:
   name: create-test-topic
 spec:
   template:
+    metadata:
+      namespace: pandaproxy-topic
     spec:
       containers:
         - name: rpk
@@ -33,7 +35,7 @@ spec:
               --user $SCRAM_USERNAME \
               --password $SCRAM_PASSWORD \
               --sasl-mechanism SCRAM-SHA-256 \
-              --brokers cluster-proxy-0.cluster-proxy.$POD_NAMESPACE.svc.cluster.local:9092
+              --brokers cluster-proxy-0.cluster-proxy.$POD_NAMESPACE.svc.cluster.local:9092  > /dev/termination-log
       restartPolicy: Never
   backoffLimit: 6
   parallelism: 1

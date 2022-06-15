@@ -31,6 +31,7 @@
 #include <seastar/util/log.hh>
 
 #include <fmt/format.h>
+#include <yaml-cpp/yaml.h>
 
 #include <chrono>
 #include <exception>

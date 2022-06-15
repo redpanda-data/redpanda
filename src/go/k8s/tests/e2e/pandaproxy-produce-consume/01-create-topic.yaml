@@ -4,6 +4,8 @@ metadata:
   name: create-test-topic
 spec:
   template:
+    metadata:
+      namespace: pandaproxy-topic
     spec:
       containers:
         - name: rpk
@@ -17,7 +19,7 @@ spec:
             - /bin/bash
             - -c
           args:
-            - rpk topic create test --brokers cluster-proxy-0.cluster-proxy.$POD_NAMESPACE.svc.cluster.local:9092 -v
+            - rpk topic create test --brokers cluster-proxy-0.cluster-proxy.$POD_NAMESPACE.svc.cluster.local:9092 -v  > /dev/termination-log
       restartPolicy: Never
   backoffLimit: 6
   parallelism: 1
