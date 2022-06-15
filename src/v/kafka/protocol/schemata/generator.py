@@ -1144,16 +1144,14 @@ while(num_tags-- > 0) {
 {%- endmacro %}
 
 {% macro conditional_tag_encode(tdef, vec) %}
-{%- if tdef.is_array %}
 {%- if tdef.nullable() %}
 if ({{ tdef.name }}) {
     {{ vec }}.push_back({{ tdef.tag() }});
 }
-{%- else %}
+{%- elif tdef.is_array %}
 if (!{{ tdef.name }}.empty()) {
     {{ vec }}.push_back({{ tdef.tag() }});
 }
-{%- endif %}
 {%- elif tdef.default_value() != "" %}
 if ({{ tdef.name }} != {{ tdef.default_value() }}) {
     {{ vec }}.push_back({{ tdef.tag() }});
