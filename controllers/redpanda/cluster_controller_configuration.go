@@ -394,7 +394,9 @@ func mapStatusToCondition(
 	return *condition
 }
 
-func needsRestart(clusterStatus admin.ConfigStatusResponse, log logr.Logger) bool {
+func needsRestart(
+	clusterStatus admin.ConfigStatusResponse, log logr.Logger,
+) bool {
 	nodeNeedsRestart := false
 	for i := range clusterStatus {
 		log.Info(fmt.Sprintf("Node %d restart status is %v", clusterStatus[i].NodeID, clusterStatus[i].Restart))
@@ -405,7 +407,9 @@ func needsRestart(clusterStatus admin.ConfigStatusResponse, log logr.Logger) boo
 	return nodeNeedsRestart
 }
 
-func isSafeToRestart(clusterStatus admin.ConfigStatusResponse, log logr.Logger) bool {
+func isSafeToRestart(
+	clusterStatus admin.ConfigStatusResponse, log logr.Logger,
+) bool {
 	configVersions := make(map[int64]bool)
 	for i := range clusterStatus {
 		log.Info(fmt.Sprintf("Node %d is using config version %d", clusterStatus[i].NodeID, clusterStatus[i].ConfigVersion))
