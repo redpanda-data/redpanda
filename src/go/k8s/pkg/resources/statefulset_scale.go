@@ -22,7 +22,12 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+const (
+	decommissionWaitJitterFactor = 0.2
 )
 
 // handleScaling is responsible for managing the current number of replicas running for a cluster.
@@ -93,7 +98,7 @@ func (r *StatefulSetResource) handleScaling(ctx context.Context) error {
 			}
 			if !formed {
 				return &RequeueAfterError{
-					RequeueAfter: r.decommissionWaitInterval,
+					RequeueAfter: wait.Jitter(r.decommissionWaitInterval, decommissionWaitJitterFactor),
 					Msg:          fmt.Sprintf("Waiting for cluster to be formed before upscaling to %d replicas", *r.pandaCluster.Spec.Replicas),
 				}
 			}
@@ -155,7 +160,7 @@ func (r *StatefulSetResource) handleDecommission(ctx context.Context) error {
 
 		// Wait until the node is fully drained (or wait forever if the cluster does not allow decommissioning of that specific node)
 		return &RequeueAfterError{
-			RequeueAfter: r.decommissionWaitInterval,
+			RequeueAfter: wait.Jitter(r.decommissionWaitInterval, decommissionWaitJitterFactor),
 			Msg:          fmt.Sprintf("Waiting for node %d to be decommissioned from cluster", broker.NodeID),
 		}
 	}
@@ -174,7 +179,7 @@ func (r *StatefulSetResource) handleDecommission(ctx context.Context) error {
 	}
 	if !scaledDown {
 		return &RequeueAfterError{
-			RequeueAfter: r.decommissionWaitInterval,
+			RequeueAfter: wait.Jitter(r.decommissionWaitInterval, decommissionWaitJitterFactor),
 			Msg:          fmt.Sprintf("Waiting for statefulset to downscale to %d replicas", targetReplicas),
 		}
 	}
@@ -232,7 +237,7 @@ func (r *StatefulSetResource) handleRecommission(ctx context.Context) error {
 		r.logger.Info("Node marked for being recommissioned in cluster", "node_id", *r.pandaCluster.Status.DecommissioningNode)
 
 		return &RequeueAfterError{
-			RequeueAfter: r.decommissionWaitInterval,
+			RequeueAfter: wait.Jitter(r.decommissionWaitInterval, decommissionWaitJitterFactor),
 			Msg:          fmt.Sprintf("Waiting for node %d to be recommissioned into cluster %s", *r.pandaCluster.Status.DecommissioningNode, r.pandaCluster.Name),
 		}
 	}
