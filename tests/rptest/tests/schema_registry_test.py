@@ -173,6 +173,9 @@ class SchemaRegistryTest(RedpandaTest):
                              headers=headers,
                              data=data)
 
+    def _get_mode(self, headers=HTTP_GET_HEADERS):
+        return self._request("GET", "mode", headers=headers)
+
     def _get_schemas_types(self, headers=HTTP_GET_HEADERS):
         return self._request("GET", f"schemas/types", headers=headers)
 
@@ -621,6 +624,15 @@ class SchemaRegistryTest(RedpandaTest):
         self.logger.debug("Get subject config - should be overriden")
         result_raw = self._get_config_subject(subject=f"{topic}-key")
         assert result_raw.json()["compatibilityLevel"] == "BACKWARD_TRANSITIVE"
+
+    @cluster(num_nodes=3)
+    def test_mode(self):
+        """
+        Smoketest get_mode endpoint
+        """
+        self.logger.debug("Get initial global mode")
+        result_raw = self._get_mode()
+        assert result_raw.json()["mode"] == "READWRITE"
 
     @cluster(num_nodes=3)
     def test_post_compatibility_subject_version(self):
