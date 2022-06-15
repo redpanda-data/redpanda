@@ -261,6 +261,7 @@ private:
     bool check_seq(model::batch_identity);
     std::optional<model::offset> known_seq(model::batch_identity) const;
     void set_seq(model::batch_identity, model::offset);
+    void reset_seq(model::batch_identity);
 
     ss::future<result<raft::replicate_result>>
       replicate_tx(model::batch_identity, model::record_batch_reader);
@@ -363,6 +364,7 @@ private:
         absl::flat_hash_map<model::producer_identity, expiration_info>
           expiration;
         model::offset last_end_tx{-1};
+        absl::flat_hash_map<model::producer_identity, int64_t> inflight;
 
         void forget(model::producer_identity pid) {
             expected.erase(pid);

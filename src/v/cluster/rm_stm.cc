@@ -340,6 +340,13 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
 
     track_tx(pid, transaction_timeout_ms);
 
+    // a client may start new transaction only when the previous
+    // tx is committed. since a client commits a transacitons
+    // strictly after all records are written it means that it
+    // won't be retrying old writes and we may reset the seq cache
+    _log_state.seq_table.erase(pid);
+    _mem_state.inflight[pid] = 0;
+
     co_return synced_term;
 }
 
@@ -896,6 +903,17 @@ void rm_stm::set_seq(model::batch_identity bid, model::offset last_offset) {
     }
 }
 
+void rm_stm::reset_seq(model::batch_identity bid) {
+    _log_state.seq_table.erase(bid.pid);
+    auto& seq = _log_state.seq_table[bid.pid];
+    seq.seq = bid.last_seq;
+    seq.last_offset = model::offset{-1};
+    seq.pid = bid.pid;
+    seq.last_write_timestamp = model::timestamp::now().value();
+    _oldest_session = std::min(
+      _oldest_session, model::timestamp(seq.last_write_timestamp));
+}
+
 ss::future<result<raft::replicate_result>>
 rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
     if (!check_tx_permitted()) {
@@ -946,27 +964,37 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
         co_return errc::generic_tx_error;
     }
 
-    auto cached_offset = known_seq(bid);
-    if (cached_offset) {
-        if (cached_offset.value() < model::offset{0}) {
-            vlog(
-              clusterlog.warn,
-              "Status of the original attempt is unknown (still is in-flight "
-              "or failed). Failing a retried batch with the same pid:{} & "
-              "seq:{} to avoid duplicates",
-              bid.pid,
-              bid.last_seq);
-            // kafka clients don't automaticly handle fatal errors
-            // so when they encounter the error they will be forced
-            // to propagate it to the app layer
-            co_return errc::generic_tx_error;
+    if (_mem_state.inflight[bid.pid] > 0) {
+        // this isn't the first attempt in the tx we should try dedupe
+        auto cached_offset = known_seq(bid);
+        if (cached_offset) {
+            if (cached_offset.value() < model::offset{0}) {
+                vlog(
+                  clusterlog.warn,
+                  "Status of the original attempt is unknown (still is "
+                  "in-flight "
+                  "or failed). Failing a retried batch with the same pid:{} & "
+                  "seq:{} to avoid duplicates",
+                  bid.pid,
+                  bid.last_seq);
+                // kafka clients don't automaticly handle fatal errors
+                // so when they encounter the error they will be forced
+                // to propagate it to the app layer
+                co_return errc::generic_tx_error;
+            }
+            co_return raft::replicate_result{
+              .last_offset = cached_offset.value()};
         }
-        co_return raft::replicate_result{.last_offset = cached_offset.value()};
+
+        if (!check_seq(bid)) {
+            co_return errc::sequence_out_of_order;
+        }
+    } else {
+        // this is the first attempt in the tx, reset dedupe cache
+        reset_seq(bid);
     }
 
-    if (!check_seq(bid)) {
-        co_return errc::sequence_out_of_order;
-    }
+    _mem_state.inflight[bid.pid] = _mem_state.inflight[bid.pid] + 1;
 
     if (!_mem_state.tx_start.contains(bid.pid)) {
         _mem_state.estimated.emplace(bid.pid, _insync_offset);
