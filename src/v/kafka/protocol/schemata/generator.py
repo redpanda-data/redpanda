@@ -436,6 +436,13 @@ STRUCT_TYPES = [
     "FinalizedFeatureKey",
 ]
 
+# a list of struct types which are ineligible to have default-generated
+# `operator==()`, because one or more of its member variables are not
+# comparable
+WITHOUT_DEFAULT_EQUALITY_OPERATOR = {
+    'kafka::batch_reader', 'kafka::produce_request_record_data'
+}
+
 # The following is a list of tag types which contain fields where their
 # respective types are not prefixed with []. The generator special cases these
 # as ArrayTypes
@@ -632,6 +639,10 @@ class StructType(FieldType):
                 res += t.structs()
                 res.append(t)
         return res
+
+    @property
+    def is_default_comparable(self):
+        return all(field.is_default_comparable for field in self.fields)
 
 
 class ArrayType(FieldType):
@@ -844,6 +855,11 @@ class Field:
     def name(self):
         return snake_case(self._field["name"])
 
+    @property
+    def is_default_comparable(self):
+        type_name, _ = self._redpanda_type()
+        return type_name not in WITHOUT_DEFAULT_EQUALITY_OPERATOR
+
 
 HEADER_TEMPLATE = """
 #pragma once
@@ -892,6 +908,9 @@ struct {{ struct.name }} {
     // extra context not part of kafka protocol.
     // added by redpanda. see generator.py:make_context_field.
     {{ struct.context_field[0] }} {{ struct.context_field[1] -}};
+{%- endif %}
+{%- if struct.is_default_comparable %}
+    friend bool operator==(const {{ struct.name }}&, const {{ struct.name }}&) = default;
 {%- endif %}
 {% endmacro %}
 
