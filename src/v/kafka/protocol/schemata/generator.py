@@ -33,7 +33,6 @@
 #   make it easier to audit where sensitive information is used.
 import io
 import json
-import functools
 import pathlib
 import re
 import sys
