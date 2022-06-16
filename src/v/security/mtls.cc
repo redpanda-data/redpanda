@@ -147,6 +147,16 @@ std::optional<ss::sstring> rule::apply(std::string_view dn) const {
     return result;
 }
 
+std::optional<ss::sstring>
+validate_rules(const std::optional<ss::sstring>& r) noexcept {
+    try {
+        security::tls::detail::parse_rules(r);
+    } catch (const std::exception& e) {
+        return e.what();
+    }
+    return std::nullopt;
+}
+
 std::ostream& operator<<(std::ostream& os, const rule& r) {
     fmt::print(os, "{}", r);
     return os;
