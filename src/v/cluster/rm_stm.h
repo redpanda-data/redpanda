@@ -289,6 +289,11 @@ private:
       raft::replicate_options,
       ss::lw_shared_ptr<available_promise<>>);
 
+    ss::future<result<raft::replicate_result>> replicate_msg(
+      model::record_batch_reader,
+      raft::replicate_options,
+      ss::lw_shared_ptr<available_promise<>>);
+
     void compact_snapshot();
 
     ss::future<bool> sync(model::timeout_clock::duration);
