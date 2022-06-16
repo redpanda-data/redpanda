@@ -16,6 +16,7 @@ import collections
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
 from rptest.services.utils import BadLogLines, NodeCrash
+from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations
 
 
 # Benchmark worker that is used by benchmark process to run consumers and producers
@@ -113,82 +114,60 @@ class OpenMessagingBenchmarkWorkers(Service):
 # Benchmark process service
 class OpenMessagingBenchmark(Service):
     PERSISTENT_ROOT = "/var/lib/openmessaging"
+    RESULTS_DIR = os.path.join(PERSISTENT_ROOT, "results")
+    CHARTS_DIR = os.path.join(PERSISTENT_ROOT, "charts")
     STDOUT_STDERR_CAPTURE = os.path.join(PERSISTENT_ROOT, "benchmark.log")
     OPENMESSAGING_DIR = "/opt/openmessaging-benchmark"
     DRIVER_FILE = os.path.join(OPENMESSAGING_DIR,
                                "driver-redpanda/redpanda-ducktape.yaml")
     WORKLOAD_FILE = os.path.join(OPENMESSAGING_DIR, "workloads/ducktape.yaml")
-    OUTPUT_FILE = os.path.join(PERSISTENT_ROOT, "result.json")
+    NUM_WORKERS = 2
 
     logs = {
-        "open_messaging_benchmark_stdout_stderr": {
-            "path": STDOUT_STDERR_CAPTURE,
+        # Includes charts/ and results/ directories along with benchmark.log
+        "open_messaging_benchmark_root": {
+            "path": PERSISTENT_ROOT,
             "collect_default": True
         },
-        "open_messaging_benchmark_result": {
-            "path": OUTPUT_FILE,
-            "collect_default": True
-        }
     }
 
-    def __init__(self, ctx, redpanda):
+    def __init__(self,
+                 ctx,
+                 redpanda,
+                 driver="SIMPLE_DRIVER",
+                 workload="SIMPLE_WORKLOAD"):
+        """
+        Creates a utility that can run OpenMessagingBenchmark (OMB) tests in ducktape. See OMB
+        documentation for definitions of driver/workload files.
+        """
         super(OpenMessagingBenchmark, self).__init__(ctx, num_nodes=1)
         self._ctx = ctx
         self.redpanda = redpanda
-        self.set_default_configuration()
         self.workers = None
-
-    def set_default_configuration(self):
-        self.configuration = {
-            "topics": 1,
-            "partitions_per_topic": 3,
-            "subscriptions_per_topic": 1,
-            "producers_per_topic": 1,
-            "consumer_per_subscription": 1,
-            "consumer_backlog_size_GB": 0,
-        }
-        if self.redpanda.dedicated_nodes:
-            self.configuration["producer_rate"] = 0
-            self.configuration["test_duration_minutes"] = 10
-            self.configuration["warmup_duration_minutes"] = 5
-        elif os.environ.get('CI', None) == 'true':
-            self.configuration["producer_rate"] = 10
-            self.configuration["test_duration_minutes"] = 5
-            self.configuration["warmup_duration_minutes"] = 5
-        else:
-            self.configuration["producer_rate"] = 10
-            self.configuration["test_duration_minutes"] = 1
-            self.configuration["warmup_duration_minutes"] = 1
-
-    def set_configuration(self, config):
-        for key, value in config.items():
-            self.configuration[key] = value
+        self.driver = OMBSampleConfigurations.DRIVERS[driver]
+        self.workload = OMBSampleConfigurations.WORKLOADS[workload][0]
+        self.validator = OMBSampleConfigurations.WORKLOADS[workload][1]
+        output_file_name = "result-{}-{}.json".format(self.driver["name"],
+                                                      self.workload["name"])
+        self.output_file = os.path.join(OpenMessagingBenchmark.RESULTS_DIR,
+                                        output_file_name)
+        self.logger.info("Using driver: %s, workload: %s", self.driver["name"],
+                         self.workload["name"])
 
     def _create_benchmark_workload_file(self, node):
-        conf = self.render("omb_workload.yaml", **self.configuration)
-
-        self.logger.debug(
-            "Open Messaging Benchmark: Workload configuration: \n %s", conf)
+        conf = self.render("omb_workload.yaml", **self.workload)
+        self.logger.info("Rendered workload config: \n %s", conf)
         node.account.create_file(OpenMessagingBenchmark.WORKLOAD_FILE, conf)
 
     def _create_benchmark_driver_file(self, node):
-        rp_node = self.redpanda.nodes[0].account.hostname
-        conf = self.render("omb_driver.yaml", redpanda_node=rp_node)
-
-        self.logger.debug(
-            "Open Messaging Benchmark: Driver configuration: \n %s", conf)
+        self.driver["redpanda_node"] = self.redpanda.nodes[0].account.hostname
+        conf = self.render("omb_driver.yaml", **self.driver)
+        self.logger.info("Rendered driver config: \n %s", conf)
         node.account.create_file(OpenMessagingBenchmark.DRIVER_FILE, conf)
 
     def _create_workers(self):
-        consumer_workers_amount = self.configuration[
-            "topics"] * self.configuration[
-                "subscriptions_per_topic"] * self.configuration[
-                    "consumer_per_subscription"]
-        producer_workers_amount = self.configuration[
-            "topics"] * self.configuration["producers_per_topic"]
-        workers_amount = consumer_workers_amount + producer_workers_amount
         self.workers = OpenMessagingBenchmarkWorkers(
-            self._ctx, num_workers=workers_amount)
+            self._ctx, num_workers=OpenMessagingBenchmark.NUM_WORKERS)
         self.workers.start()
 
     def start_node(self, node):
@@ -212,11 +191,19 @@ class OpenMessagingBenchmark(Service):
                     bin/benchmark \
                     --drivers {OpenMessagingBenchmark.DRIVER_FILE} \
                     --workers {worker_nodes} \
-                    --output {OpenMessagingBenchmark.OUTPUT_FILE} \
+                    --output {self.output_file} \
                     {OpenMessagingBenchmark.WORKLOAD_FILE} >> {OpenMessagingBenchmark.STDOUT_STDERR_CAPTURE} 2>&1 \
                     & disown"
 
-        node.account.mkdirs(OpenMessagingBenchmark.PERSISTENT_ROOT)
+        # This command generates charts and returns some metrics data like latency quantiles and throughput that
+        # we can use to determine if they fall in the expected range.
+        self.chart_cmd = f"""cd {OpenMessagingBenchmark.OPENMESSAGING_DIR} &&
+            bin/generate_charts.py --results {OpenMessagingBenchmark.RESULTS_DIR} --output {OpenMessagingBenchmark.CHARTS_DIR}
+         """
+
+        node.account.mkdirs(OpenMessagingBenchmark.RESULTS_DIR)
+        node.account.mkdirs(OpenMessagingBenchmark.CHARTS_DIR)
+        self.node = node
 
         with node.account.monitor_log(
                 OpenMessagingBenchmark.STDOUT_STDERR_CAPTURE) as monitor:
@@ -250,10 +237,13 @@ class OpenMessagingBenchmark(Service):
         self.workers.check_has_errors()
         for node in self.nodes:
             # Here we check that OMB finished and put result in file
-            assert node.account.exists(
-                OpenMessagingBenchmark.OUTPUT_FILE
-            ), f"{node.account.hostname} OMB is not finished"
+            assert node.account.exists(\
+                self.output_file), f"{node.account.hostname} OMB is not finished"
             self.raise_on_bad_log_lines(node)
+        # Generate charts from the result
+        self.logger.info(f"Generating charts with command {self.chart_cmd}")
+        metrics = json.loads(self.node.account.ssh_output(self.chart_cmd))
+        OMBSampleConfigurations.validate_metrics(metrics, self.validator)
 
     def wait_node(self, node, timeout_sec):
         process_pid = node.account.java_pids("benchmark")
@@ -287,5 +277,5 @@ class OpenMessagingBenchmark(Service):
                             allow_fail=True)
 
     def benchmark_time(self):
-        return self.configuration["test_duration_minutes"] + self.configuration[
+        return self.workload["test_duration_minutes"] + self.workload[
             "warmup_duration_minutes"]

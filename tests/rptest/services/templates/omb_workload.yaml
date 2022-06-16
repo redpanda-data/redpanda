@@ -1,4 +1,4 @@
-name: Ducktape workload
+name: {{name}}
 
 topics: {{topics}}
 partitionsPerTopic: {{partitions_per_topic}}
