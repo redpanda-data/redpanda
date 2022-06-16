@@ -3182,6 +3182,10 @@ consensus::get_follower_metrics(model::node_id id) const {
       it->second);
 }
 
+size_t consensus::get_follower_count() const {
+    return is_elected_leader() ? _fstats.size() : 0;
+}
+
 ss::future<std::optional<storage::timequery_result>>
 consensus::timequery(storage::timequery_config cfg) {
     return _log.timequery(cfg).then(
