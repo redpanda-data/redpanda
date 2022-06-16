@@ -43,6 +43,11 @@ const (
 	defaultSchemaRegistryPort = 8081
 )
 
+// AllowDownscalingInWebhook controls the downscaling alpha feature in the Cluster custom resource.
+// Downscaling is not stable since nodeIDs are currently not reusable, so adding to a cluster a node
+// that has previously been decommissioned can cause issues.
+var AllowDownscalingInWebhook = false
+
 type resourceField struct {
 	resources *corev1.ResourceRequirements
 	path      *field.Path
@@ -177,6 +182,8 @@ func (r *Cluster) ValidateUpdate(old runtime.Object) error {
 
 	allErrs = append(allErrs, r.validateScaling()...)
 
+	allErrs = append(allErrs, r.validateDownscaling(oldCluster)...)
+
 	allErrs = append(allErrs, r.validateKafkaListeners()...)
 
 	allErrs = append(allErrs, r.validateAdminListeners()...)
@@ -224,6 +231,17 @@ func (r *Cluster) validateScaling() field.ErrorList {
 				"downscaling is not allowed to less than 1 instance"))
 	}
 
+	return allErrs
+}
+
+func (r *Cluster) validateDownscaling(old *Cluster) field.ErrorList {
+	var allErrs field.ErrorList
+	if !AllowDownscalingInWebhook && old.Spec.Replicas != nil && r.Spec.Replicas != nil && *r.Spec.Replicas < *old.Spec.Replicas {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("replicas"),
+				r.Spec.Replicas,
+				"downscaling is an alpha feature: set --allow-downscaling in the controller parameters to enable it"))
+	}
 	return allErrs
 }
 
