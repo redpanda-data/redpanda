@@ -1,16 +1,10 @@
-apiVersion: v1
-kind: Pod
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
 metadata:
-  labels:
-    job-name: wait-for-3-brokers
+  name: decommissioning
 status:
-  containerStatuses:
-    - name: curl
-      state:
-        terminated:
-          message: |
-            3
-  phase: Succeeded
+  replicas: 3
+  currentReplicas: 3
 ---
 
 apiVersion: kuttl.dev/v1beta1

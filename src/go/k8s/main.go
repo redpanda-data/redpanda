@@ -70,6 +70,7 @@ func main() {
 	flag.StringVar(&configuratorTag, "configurator-tag", "latest", "Set the configurator tag")
 	flag.StringVar(&configuratorImagePullPolicy, "configurator-image-pull-policy", "Always", "Set the configurator image pull policy")
 	flag.DurationVar(&decommissionWaitInterval, "decommission-wait-interval", 8*time.Second, "Set the time to wait for a node decommission to happen in the cluster")
+	flag.BoolVar(&redpandav1alpha1.AllowDownscalingInWebhook, "allow-downscaling", false, "Allow to reduce the number of replicas in existing clusters (alpha feature)")
 
 	opts := zap.Options{
 		Development: true,

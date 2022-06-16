@@ -1,10 +1,8 @@
-apiVersion: redpanda.vectorized.io/v1alpha1
-kind: Cluster
-metadata:
-  name: decommissioning
-status:
-  replicas: 3
-  currentReplicas: 3
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+commands:
+  - command: kubectl rollout status deployment redpanda-controller-manager -n redpanda-system
+  - command: hack/wait-for-webhook-ready.sh
 ---
 
 apiVersion: kuttl.dev/v1beta1

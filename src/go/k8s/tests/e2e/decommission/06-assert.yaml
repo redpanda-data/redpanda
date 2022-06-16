@@ -1,16 +1,9 @@
-apiVersion: v1
-kind: Pod
-metadata:
-  labels:
-    job-name: wait-for-3-brokers
-status:
-  containerStatuses:
-    - name: curl
-      state:
-        terminated:
-          message: |
-            3
-  phase: Succeeded
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+commands:
+  - command: kubectl rollout status deployment redpanda-controller-manager -n redpanda-system
+  - command: hack/wait-for-webhook-ready.sh
+
 ---
 
 apiVersion: kuttl.dev/v1beta1
