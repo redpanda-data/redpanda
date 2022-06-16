@@ -65,7 +65,9 @@ using validators = make_validator_types<
   compaction_strategy_validator,
   timestamp_type_validator,
   cleanup_policy_validator,
-  remote_read_and_write_are_not_supported_for_read_replica>;
+  remote_read_and_write_are_not_supported_for_read_replica,
+  s3_bucket_is_required_for_read_replica,
+  s3_bucket_is_supported_only_for_read_replica>;
 
 template<>
 ss::future<response_ptr> create_topics_handler::handle(
