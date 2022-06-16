@@ -183,10 +183,9 @@ func (m *mockAdminAPI) Config() (admin.Config, error) {
 	return res, nil
 }
 
-func (m *mockAdminAPI) ClusterConfigStatus() (
-	admin.ConfigStatusResponse,
-	error,
-) {
+func (m *mockAdminAPI) ClusterConfigStatus(
+	_ bool,
+) (admin.ConfigStatusResponse, error) {
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
 	if m.unavailable {

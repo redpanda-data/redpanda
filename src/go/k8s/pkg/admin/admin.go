@@ -71,7 +71,7 @@ func NewInternalAdminAPI(
 // nolint:revive // usually package is called adminutils
 type AdminAPIClient interface {
 	Config() (admin.Config, error)
-	ClusterConfigStatus() (admin.ConfigStatusResponse, error)
+	ClusterConfigStatus(sendToLeader bool) (admin.ConfigStatusResponse, error)
 	ClusterConfigSchema() (admin.ConfigSchema, error)
 	PatchClusterConfig(upsert map[string]interface{}, remove []string) (admin.ClusterConfigWriteResult, error)
 
