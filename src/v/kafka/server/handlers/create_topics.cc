@@ -33,7 +33,7 @@
 
 namespace kafka {
 
-static constexpr std::array<std::string_view, 10> supported_configs{
+static constexpr std::array<std::string_view, 12> supported_configs{
   {"compression.type",
    "cleanup.policy",
    "message.timestamp.type",
@@ -43,7 +43,9 @@ static constexpr std::array<std::string_view, 10> supported_configs{
    "retention.ms",
    "redpanda.remote.recovery",
    "redpanda.remote.write",
-   "redpanda.remote.read"}};
+   "redpanda.remote.read",
+   "redpanda.remote.readreplica",
+   "redpanda.remote.readreplica.bucket"}};
 
 bool is_supported(std::string_view name) {
     return std::any_of(
@@ -62,7 +64,10 @@ using validators = make_validator_types<
   compression_type_validator,
   compaction_strategy_validator,
   timestamp_type_validator,
-  cleanup_policy_validator>;
+  cleanup_policy_validator,
+  remote_read_and_write_are_not_supported_for_read_replica,
+  s3_bucket_is_required_for_read_replica,
+  s3_bucket_is_supported_only_for_read_replica>;
 
 template<>
 ss::future<response_ptr> create_topics_handler::handle(

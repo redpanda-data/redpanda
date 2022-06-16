@@ -141,6 +141,69 @@ struct unsupported_configuration_entries {
     }
 };
 
+struct remote_read_and_write_are_not_supported_for_read_replica {
+    static constexpr error_code ec = error_code::invalid_config;
+    static constexpr const char* error_message
+      = "remote read and write are not supported for read replicas";
+
+    static bool is_valid(const creatable_topic& c) {
+        auto config_entries = config_map(c.configs);
+        auto end = config_entries.end();
+        bool is_read_replica
+          = (config_entries.find(topic_property_read_replica) != end);
+        bool remote_read
+          = (config_entries.find(topic_property_remote_read) != end);
+        bool remote_write
+          = (config_entries.find(topic_property_remote_write) != end);
+
+        if (is_read_replica && (remote_read || remote_write)) {
+            return false;
+        }
+        return true;
+    }
+};
+
+struct s3_bucket_is_required_for_read_replica {
+    static constexpr error_code ec = error_code::invalid_config;
+    static constexpr const char* error_message
+      = "s3 bucket should be provided for read replica topic";
+
+    static bool is_valid(const creatable_topic& c) {
+        auto config_entries = config_map(c.configs);
+        auto end = config_entries.end();
+        bool is_read_replica
+          = (config_entries.find(topic_property_read_replica) != end);
+        bool s3_bucket_provided
+          = (config_entries.find(topic_property_read_replica_bucket) != end);
+
+        if (is_read_replica && !s3_bucket_provided) {
+            return false;
+        }
+        return true;
+    }
+};
+
+struct s3_bucket_is_supported_only_for_read_replica {
+    static constexpr error_code ec = error_code::invalid_config;
+    static constexpr const char* error_message
+      = "s3 bucket is supported only when redpanda.remote.readreplica is "
+        "enabled";
+
+    static bool is_valid(const creatable_topic& c) {
+        auto config_entries = config_map(c.configs);
+        auto end = config_entries.end();
+        bool is_read_replica
+          = (config_entries.find(topic_property_read_replica) != end);
+        bool s3_bucket_provided
+          = (config_entries.find(topic_property_read_replica_bucket) != end);
+
+        if (!is_read_replica && s3_bucket_provided) {
+            return false;
+        }
+        return true;
+    }
+};
+
 struct compression_type_validator_details {
     using validated_type = model::compression;
 
