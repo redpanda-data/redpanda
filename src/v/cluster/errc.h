@@ -59,6 +59,7 @@ enum class errc : int16_t {
     error_collecting_health_report,
     leadership_changed,
     feature_disabled,
+    invalid_request,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -167,6 +168,8 @@ struct errc_category final : public std::error_category {
                    "to finish";
         case errc::feature_disabled:
             return "Requested feature is disabled";
+        case errc::invalid_request:
+            return "Invalid request";
         }
         return "cluster::errc::unknown";
     }
