@@ -29,6 +29,8 @@ public:
 
     std::vector<broker_ptr> all_brokers() const;
 
+    size_t all_brokers_count() const;
+
     std::vector<model::node_id> all_broker_ids() const;
 
     /// Returns single broker if exists in cache

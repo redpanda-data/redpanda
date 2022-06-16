@@ -71,7 +71,8 @@ controller::controller(
   , _data_policy_manager(data_policy_table)
   , _raft_manager(raft_manager)
   , _feature_table(feature_table)
-  , _cloud_storage_api(cloud_storage_api) {}
+  , _cloud_storage_api(cloud_storage_api)
+  , _probe(*this) {}
 
 ss::future<> controller::wire_up() {
     return _as.start()

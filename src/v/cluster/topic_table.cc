@@ -628,6 +628,8 @@ std::vector<model::topic_namespace> topic_table::all_topics() const {
       [](const topic_metadata& tp) { return tp.get_configuration().tp_ns; });
 }
 
+size_t topic_table::all_topics_count() const { return _topics.size(); }
+
 std::optional<topic_metadata>
 topic_table::get_topic_metadata(model::topic_namespace_view tp) const {
     if (auto it = _topics.find(tp); it != _topics.end()) {
