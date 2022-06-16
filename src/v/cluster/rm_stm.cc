@@ -816,14 +816,7 @@ ss::future<result<raft::replicate_result>> rm_stm::do_replicate(
                 .finally([u = std::move(unit)] {});
           }
 
-          return sync(_sync_timeout)
-            .then([this, opts, b = std::move(b)](bool is_synced) mutable {
-                if (!is_synced) {
-                    return ss::make_ready_future<
-                      result<raft::replicate_result>>(errc::not_leader);
-                }
-                return _c->replicate(std::move(b), opts);
-            })
+          return replicate_msg(std::move(b), opts, enqueued)
             .finally([u = std::move(unit)] {});
       });
 }
@@ -1131,6 +1124,20 @@ ss::future<result<raft::replicate_result>> rm_stm::replicate_seq(
         set_seq(bid, r.value().last_offset);
     }
     co_return r;
+}
+
+ss::future<result<raft::replicate_result>> rm_stm::replicate_msg(
+  model::record_batch_reader br,
+  raft::replicate_options opts,
+  ss::lw_shared_ptr<available_promise<>> enqueued) {
+    if (!co_await sync(_sync_timeout)) {
+        co_return errc::not_leader;
+    }
+
+    auto ss = _c->replicate_in_stages(_insync_term, std::move(br), opts);
+    co_await std::move(ss.request_enqueued);
+    enqueued->set_value();
+    co_return co_await std::move(ss.replicate_finished);
 }
 
 model::offset rm_stm::last_stable_offset() {
