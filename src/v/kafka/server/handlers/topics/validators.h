@@ -141,6 +141,28 @@ struct unsupported_configuration_entries {
     }
 };
 
+struct remote_read_and_write_are_not_supported_for_read_replica {
+    static constexpr error_code ec = error_code::invalid_config;
+    static constexpr const char* error_message
+      = "remote read and write are not supported for read replicas";
+
+    static bool is_valid(const creatable_topic& c) {
+        auto config_entries = config_map(c.configs);
+        auto end = config_entries.end();
+        bool is_read_replica
+          = (config_entries.find(topic_property_read_replica) != end);
+        bool remote_read
+          = (config_entries.find(topic_property_remote_read) != end);
+        bool remote_write
+          = (config_entries.find(topic_property_remote_write) != end);
+
+        if (is_read_replica && (remote_read || remote_write)) {
+            return false;
+        }
+        return true;
+    }
+};
+
 struct compression_type_validator_details {
     using validated_type = model::compression;
 

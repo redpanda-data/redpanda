@@ -63,7 +63,8 @@ using validators = make_validator_types<
   compression_type_validator,
   compaction_strategy_validator,
   timestamp_type_validator,
-  cleanup_policy_validator>;
+  cleanup_policy_validator,
+  remote_read_and_write_are_not_supported_for_read_replica>;
 
 template<>
 ss::future<response_ptr> create_topics_handler::handle(
