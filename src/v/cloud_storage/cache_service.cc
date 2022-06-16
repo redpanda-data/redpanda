@@ -8,6 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "cloud_storage/access_time_tracker.h"
 #include "cloud_storage/logger.h"
 #include "ssx/future-util.h"
 #include "storage/segment.h"
@@ -121,6 +122,17 @@ ss::future<> cache::clean_up_at_start() {
     probe.set_size(cache_size);
     probe.set_num_files(candidates_for_deletion.size());
 
+    // The state of the _access_time_tracker and the actual content of the
+    // cache directory might diverge over time (if the user removes segment
+    // files manually). We need to take this into account.
+    access_time_tracker tmp;
+    for (const auto& it : candidates_for_deletion) {
+        tmp.add_timestamp(
+          it.path, std::chrono::system_clock::time_point::min());
+    }
+    _access_time_tracker.remove_others(tmp);
+    _current_cache_size = cache_size;
+
     for (auto& file_item : candidates_for_deletion) {
         auto filepath_to_remove = file_item.path;
 
@@ -147,15 +159,24 @@ ss::future<> cache::clean_up_at_start() {
 ss::future<> cache::clean_up_cache() {
     vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
     gate_guard guard{_gate};
-    auto [curr_cache_size, candidates_for_deletion] = co_await _walker.walk(
+    auto [_current_cache_size, candidates_for_deletion] = co_await _walker.walk(
       _cache_dir.native(), _access_time_tracker);
-    probe.set_size(curr_cache_size);
+    probe.set_size(_current_cache_size);
     probe.set_num_files(candidates_for_deletion.size());
 
+    // Updating the access time tracker in case if some files were removed
+    // from cache directory by the user manually.
+    access_time_tracker tmp;
+    for (const auto& it : candidates_for_deletion) {
+        tmp.add_timestamp(
+          it.path, std::chrono::system_clock::time_point::min());
+    }
+    _access_time_tracker.remove_others(tmp);
+
     uint64_t deleted_size = 0;
-    if (curr_cache_size >= _max_cache_size) {
+    if (_current_cache_size >= _max_cache_size) {
         auto size_to_delete
-          = curr_cache_size
+          = _current_cache_size
             - (_max_cache_size * (long double)_cache_size_low_watermark);
 
         size_t i_to_delete = 0;
@@ -185,13 +206,13 @@ ss::future<> cache::clean_up_cache() {
             i_to_delete++;
         }
         _total_cleaned += deleted_size;
+        _current_cache_size -= deleted_size;
         vlog(
           cst_log.debug,
           "Cache eviction deleted {} files of total size {}.",
           i_to_delete,
           deleted_size);
     }
-    _current_cache_size = curr_cache_size - deleted_size;
 }
 
 ss::future<> cache::load_access_time_tracker() {
@@ -449,6 +470,7 @@ ss::future<> cache::invalidate(const std::filesystem::path& key) {
       "Trying to invalidate {} from archival cache.",
       key.native());
     try {
+        _access_time_tracker.remove_timestamp(key.native());
         co_await recursive_delete_empty_directory((_cache_dir / key).native());
     } catch (std::filesystem::filesystem_error& e) {
         if (e.code() == std::errc::no_such_file_or_directory) {

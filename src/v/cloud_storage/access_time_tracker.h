@@ -61,6 +61,9 @@ public:
     /// to disk.
     bool is_dirty() const;
 
+    /// Remove every key which isn't present in 't'
+    void remove_others(const access_time_tracker& t);
+
 private:
     table_t _table;
     bool _dirty{false};

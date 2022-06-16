@@ -78,6 +78,16 @@ void access_time_tracker::remove_timestamp(std::string_view key) noexcept {
     }
 }
 
+void access_time_tracker::remove_others(const access_time_tracker& t) {
+    table_t tmp;
+    for (auto it : _table.data) {
+        if (t._table.data.contains(it.first)) {
+            tmp.data.insert(it);
+        }
+    }
+    _table = std::move(tmp);
+}
+
 std::optional<std::chrono::system_clock::time_point>
 access_time_tracker::estimate_timestamp(std::string_view key) const {
     uint32_t hash = xxhash_32(key.data(), key.size());
