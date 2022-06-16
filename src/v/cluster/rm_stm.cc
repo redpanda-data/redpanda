@@ -805,7 +805,7 @@ ss::future<result<raft::replicate_result>> rm_stm::do_replicate(
                     return replicate_tx(bid, std::move(b));
                 })
                 .finally([u = std::move(unit)] {});
-          } else if (bid.has_idempotent() && bid.first_seq <= bid.last_seq) {
+          } else if (bid.has_idempotent()) {
               request_id rid{.pid = bid.pid, .seq = bid.first_seq};
               return with_request_lock(
                        rid,
@@ -1097,6 +1097,15 @@ ss::future<result<raft::replicate_result>> rm_stm::replicate_seq(
         co_return errc::not_leader;
     }
     auto synced_term = _insync_term;
+
+    if (bid.first_seq > bid.last_seq) {
+        vlog(
+          clusterlog.warn,
+          "first_seq={} of the batch should be less or equal to last_seq={}",
+          bid.first_seq,
+          bid.last_seq);
+        co_return errc::invalid_request;
+    }
 
     auto cached_offset = known_seq(bid);
     if (cached_offset) {
