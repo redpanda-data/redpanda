@@ -159,7 +159,7 @@ class TestMirrorMakerService(EndToEndTest):
                                          source_cluster=self.source_broker,
                                          target_cluster=self.redpanda,
                                          consumer_group_pattern=consumer_group,
-                                         log_level="TRACE")
+                                         log_level="DEBUG")
         self.mirror_maker.start()
 
         msg_size = 512
