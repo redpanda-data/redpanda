@@ -1542,6 +1542,32 @@ void admin_server::register_features_routes() {
               co_return ss::json::json_void();
           }
       });
+
+    register_route<user>(
+      ss::httpd::features_json::get_license,
+      [this](std::unique_ptr<ss::httpd::request>)
+        -> ss::future<ss::json::json_return_type> {
+          if (!_controller->get_feature_table().local().is_active(
+                cluster::feature::license)) {
+              throw ss::httpd::bad_request_exception(
+                "Feature manager reports the cluster is not fully upgraded to "
+                "accept license get requests");
+          }
+          ss::httpd::features_json::license_response res;
+          res.loaded = false;
+          const auto& ft = _controller->get_feature_table().local();
+          const auto& license = ft.get_license();
+          if (license) {
+              res.loaded = true;
+              ss::httpd::features_json::license_contents lc;
+              lc.format_version = license->format_version;
+              lc.org = license->organization;
+              lc.type = security::license_type_to_string(license->type);
+              lc.expires = license->days_until_expires();
+              res.license = lc;
+          }
+          co_return std::move(res);
+      });
 }
 
 model::node_id parse_broker_id(const ss::httpd::request& req) {
