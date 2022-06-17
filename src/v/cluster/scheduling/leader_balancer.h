@@ -62,6 +62,13 @@ class leader_balancer {
      */
     static constexpr clock_type::duration leader_transfer_rpc_timeout = 30s;
 
+    /*
+     * limits the total in flight leadership transfers (those where the metadata
+     * has yet to propagate across the cluster) to this factor per shard in the
+     * cluster.
+     */
+    static constexpr size_t transfer_limit_per_shard = 10;
+
 public:
     leader_balancer(
       topic_table&,
@@ -95,8 +102,14 @@ private:
 
     void on_enable_changed();
 
-    void on_leadership_change(
+    void check_if_controller_leader(
       raft::group_id, model::term_id, std::optional<model::node_id>);
+
+    void on_leadership_change(
+      model::ntp, model::term_id, std::optional<model::node_id>);
+
+    void check_register_leadership_change_notification();
+    void check_unregister_leadership_change_notification();
 
     void trigger_balance();
     ss::future<ss::stop_iteration> balance();
@@ -150,6 +163,8 @@ private:
     bool _need_controller_refresh{true};
     absl::btree_map<raft::group_id, clock_type::time_point> _muted;
     cluster::notification_id_type _leader_notify_handle;
+    std::optional<cluster::notification_id_type>
+      _leadership_change_notify_handle;
     topic_table& _topics;
     partition_leaders_table& _leaders;
     raft::consensus_client_protocol _client;
