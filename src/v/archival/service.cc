@@ -381,4 +381,12 @@ uint64_t scheduler_service_impl::estimate_backlog_size() {
     return size;
 }
 
+ss::future<std::optional<cloud_storage::partition_manifest>>
+scheduler_service_impl::maybe_truncate_manifest(const model::ntp& ntp) {
+    if (auto it = _archivers.find(ntp); it != _archivers.end()) {
+        co_return co_await it->second->maybe_truncate_manifest(_rtcnode);
+    }
+    co_return std::nullopt;
+}
+
 } // namespace archival::internal

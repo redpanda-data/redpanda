@@ -12,6 +12,7 @@
 
 #include "archival/archival_policy.h"
 #include "archival/logger.h"
+#include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/types.h"
 #include "cluster/partition_manager.h"
@@ -539,6 +540,70 @@ uint64_t ntp_archiver::estimate_backlog_size() {
     // before it's sealed because the size of the individual segment is small
     // compared to the capacity of the data volume.
     return total_size;
+}
+
+ss::future<std::optional<cloud_storage::partition_manifest>>
+ntp_archiver::maybe_truncate_manifest(retry_chain_node& rtc) {
+    ss::gate::holder gh(_gate);
+    retry_chain_logger ctxlog(archival_log, rtc, _ntp.path());
+    vlog(ctxlog.info, "archival metadata cleanup started");
+    std::optional<cloud_storage::partition_manifest> result;
+    model::offset adjusted_start_offset = model::offset::min();
+    for (const auto& [key, meta] : _manifest) {
+        retry_chain_node fib(
+          _manifest_upload_timeout, _upload_loop_initial_backoff, &rtc);
+        auto sname = cloud_storage::generate_segment_name(
+          key.base_offset, key.term);
+        auto spath = cloud_storage::generate_remote_segment_path(
+          _ntp, _rev, sname, meta.archiver_term);
+        auto result = co_await _remote.segment_exists(_bucket, spath, fib);
+        if (result == cloud_storage::download_result::notfound) {
+            vlog(
+              ctxlog.info,
+              "archival metadata cleanup, found segment missing from the "
+              "bucket: {}",
+              spath);
+            adjusted_start_offset = meta.committed_offset + model::offset(1);
+        } else {
+            break;
+        }
+    }
+    if (
+      adjusted_start_offset != model::offset::min()
+      && _partition->archival_meta_stm()) {
+        vlog(
+          ctxlog.info,
+          "archival metadata cleanup, some segments will be removed from the "
+          "manifest, start offset before cleanup: {}",
+          _manifest.get_start_offset());
+        retry_chain_node rc_node(
+          _manifest_upload_timeout, _upload_loop_initial_backoff, &rtc);
+        auto error = co_await _partition->archival_meta_stm()->truncate(
+          adjusted_start_offset,
+          ss::lowres_clock::now() + _manifest_upload_timeout,
+          _as);
+        if (error != cluster::errc::success) {
+            vlog(ctxlog.warn, "archival metadata STM update failed: {}", error);
+            throw std::system_error(error);
+        } else {
+            vlog(
+              ctxlog.debug,
+              "archival metadata STM update passed, re-uploading manifest");
+            co_await upload_manifest();
+        }
+        result = _manifest.truncate(adjusted_start_offset);
+        vlog(
+          ctxlog.info,
+          "archival metadata cleanup completed, start offset after cleanup: {}",
+          _manifest.get_start_offset());
+    } else {
+        // Nothing to cleanup, return empty manifest
+        result = cloud_storage::partition_manifest(_ntp, _rev);
+        vlog(
+          ctxlog.info,
+          "archival metadata cleanup completed, nothing to clean up");
+    }
+    co_return result;
 }
 
 } // namespace archival
