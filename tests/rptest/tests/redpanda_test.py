@@ -34,6 +34,7 @@ class RedpandaTest(Test):
                  enable_pp=False,
                  enable_sr=False,
                  si_settings=None,
+                 enable_installer=False,
                  **kwargs):
         """
         Any trailing keyword arguments are passed through to the
@@ -42,6 +43,7 @@ class RedpandaTest(Test):
         super(RedpandaTest, self).__init__(test_context)
         self.scale = Scale(test_context)
         self.si_settings = si_settings
+        self.enable_installer = enable_installer
 
         if num_brokers is None:
             # Default to a 3 node cluster if sufficient nodes are available, else
@@ -63,6 +65,7 @@ class RedpandaTest(Test):
                                         enable_pp=enable_pp,
                                         enable_sr=enable_sr,
                                         si_settings=self.si_settings,
+                                        enable_installer=enable_installer,
                                         **kwargs)
         self._client = DefaultClient(self.redpanda)
 
