@@ -78,9 +78,6 @@ private:
     ss::future<> update_leaders_with_estimates(std::vector<ntp_leader> leaders);
     void update_allocations(std::vector<partition_assignment>);
     void deallocate_topic(const topic_metadata&);
-    void reallocate_partition(
-      const std::vector<model::broker_shard>&,
-      const std::vector<model::broker_shard>&);
 
     ss::sharded<partition_allocator>& _partition_allocator;
     ss::sharded<topic_table>& _topic_table;

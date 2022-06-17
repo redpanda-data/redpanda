@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "cluster/cluster_utils.h"
 #include "cluster/scheduling/types.h"
 #include "cluster/tests/partition_allocator_fixture.h"
 #include "model/metadata.h"
@@ -310,8 +311,10 @@ FIXTURE_TEST(
         new_assignment = reallocated.value().get_assignments().front();
     }
     // update allocation state after units left scope
-    allocator.update_allocation_state(
-      new_assignment.replicas, previous_assignment.replicas);
+    allocator.add_allocations(cluster::subtract_replica_sets(
+      new_assignment.replicas, previous_assignment.replicas));
+    allocator.remove_allocations(cluster::subtract_replica_sets(
+      previous_assignment.replicas, new_assignment.replicas));
 
     auto total_allocated = std::accumulate(
       allocator.state().allocation_nodes().begin(),
@@ -382,8 +385,10 @@ FIXTURE_TEST(test_decommissioned_realloc, partition_allocator_fixture) {
           cluster::allocation_node::allocation_capacity(1));
     }
     // update allocation state after units left scope
-    allocator.update_allocation_state(
-      new_assignment.replicas, previous_assignment.replicas);
+    allocator.add_allocations(cluster::subtract_replica_sets(
+      new_assignment.replicas, previous_assignment.replicas));
+    allocator.remove_allocations(cluster::subtract_replica_sets(
+      previous_assignment.replicas, new_assignment.replicas));
     BOOST_REQUIRE_EQUAL(
       allocator.state()
         .allocation_nodes()

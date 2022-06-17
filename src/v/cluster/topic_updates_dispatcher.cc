@@ -9,6 +9,7 @@
 
 #include "cluster/topic_updates_dispatcher.h"
 
+#include "cluster/cluster_utils.h"
 #include "cluster/commands.h"
 #include "cluster/partition_leaders_table.h"
 #include "model/metadata.h"
@@ -81,23 +82,46 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                 auto p_as = _topic_table.local().get_partition_assignment(
                   cmd.key);
                 return dispatch_updates_to_cores(cmd, base_offset)
-                  .then(
-                    [this, p_as = std::move(p_as), cmd](std::error_code ec) {
-                        if (!ec) {
-                            vassert(
-                              p_as.has_value(),
-                              "Partition {} have to exist before successful "
-                              "partition "
-                              "reallocation",
-                              cmd.key);
-
-                            reallocate_partition(p_as->replicas, cmd.value);
-                        }
-                        return ec;
-                    });
+                  .then([this, p_as = std::move(p_as), cmd = std::move(cmd)](
+                          std::error_code ec) {
+                      if (!ec) {
+                          vassert(
+                            p_as.has_value(),
+                            "Partition {} have to exist before successful "
+                            "partition reallocation",
+                            cmd.key);
+                          auto to_add = subtract_replica_sets(
+                            cmd.value, p_as->replicas);
+                          _partition_allocator.local().add_allocations(to_add);
+                      }
+                      return ec;
+                  });
             },
             [this, base_offset](finish_moving_partition_replicas_cmd cmd) {
-                return dispatch_updates_to_cores(std::move(cmd), base_offset);
+                auto previous_replicas
+                  = _topic_table.local().get_previous_replica_set(cmd.key);
+                return dispatch_updates_to_cores(cmd, base_offset)
+                  .then([this,
+                         ntp = std::move(cmd.key),
+                         previous_replicas = previous_replicas,
+                         current_replicas = std::move(cmd.value)](
+                          std::error_code ec) {
+                      if (ec) {
+                          return ec;
+                      }
+                      vassert(
+                        previous_replicas.has_value(),
+                        "Previous replicas for NTP {} must exists as finish "
+                        "update can only be applied to partition that is "
+                        "currently being updated",
+                        ntp);
+
+                      auto to_delete = subtract_replica_sets(
+                        *previous_replicas, current_replicas);
+                      _partition_allocator.local().remove_allocations(
+                        to_delete);
+                      return ec;
+                  });
             },
             [this, base_offset](update_topic_properties_cmd cmd) {
                 return dispatch_updates_to_cores(std::move(cmd), base_offset);
@@ -201,14 +225,6 @@ void topic_updates_dispatcher::deallocate_topic(const topic_metadata& tp_md) {
     for (auto& p : tp_md.get_assignments()) {
         _partition_allocator.local().deallocate(p.replicas);
     }
-}
-
-void topic_updates_dispatcher::reallocate_partition(
-  const std::vector<model::broker_shard>& previous,
-  const std::vector<model::broker_shard>& current) {
-    // we do not want to update group id in here as we are changing partition
-    // that already exists, hence group id doesn't have to be updated.
-    _partition_allocator.local().update_allocation_state(current, previous);
 }
 
 void topic_updates_dispatcher::update_allocations(

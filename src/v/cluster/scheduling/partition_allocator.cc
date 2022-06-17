@@ -398,31 +398,13 @@ void partition_allocator::update_allocation_state(
     _state->apply_update(shards, gid);
 }
 
-void partition_allocator::update_allocation_state(
-  const std::vector<model::broker_shard>& current,
-  const std::vector<model::broker_shard>& previous) {
-    std::vector<model::broker_shard> to_add;
-    std::vector<model::broker_shard> to_remove;
-
-    std::copy_if(
-      current.begin(),
-      current.end(),
-      std::back_inserter(to_add),
-      [&previous](const model::broker_shard& current_bs) {
-          auto it = std::find(previous.begin(), previous.end(), current_bs);
-          return it == previous.end();
-      });
-
-    std::copy_if(
-      previous.begin(),
-      previous.end(),
-      std::back_inserter(to_remove),
-      [&current](const model::broker_shard& prev_bs) {
-          auto it = std::find(current.begin(), current.end(), prev_bs);
-          return it == current.end();
-      });
-
+void partition_allocator::add_allocations(
+  const std::vector<model::broker_shard>& to_add) {
     _state->apply_update(to_add, raft::group_id{});
+}
+
+void partition_allocator::remove_allocations(
+  const std::vector<model::broker_shard>& to_remove) {
     for (const auto& bs : to_remove) {
         _state->deallocate(bs);
     }
