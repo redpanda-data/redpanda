@@ -363,6 +363,24 @@ ss::future<> feature_manager::do_maybe_update_active_version() {
 }
 
 ss::future<std::error_code>
+feature_manager::update_license(security::license&& license) {
+    static const auto timeout = model::timeout_clock::now() + 5s;
+
+    auto cmd = cluster::feature_update_license_update_cmd(
+      cluster::feature_update_license_update_cmd_data{
+        .redpanda_license = license},
+      0 // unused
+    );
+    auto err = co_await replicate_and_wait(
+      _stm, _feature_table, _as, std::move(cmd), timeout);
+    if (err) {
+        co_return err;
+    }
+    vlog(clusterlog.info, "Loaded new license into cluster: {}", license);
+    co_return make_error_code(errc::success);
+}
+
+ss::future<std::error_code>
 feature_manager::write_action(cluster::feature_update_action action) {
     auto feature_id_opt = _feature_table.local().resolve_name(
       action.feature_name);

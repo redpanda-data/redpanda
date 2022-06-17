@@ -17,19 +17,26 @@ namespace cluster {
 
 ss::future<std::error_code>
 feature_backend::apply_update(model::record_batch b) {
-    std::variant<feature_update_cmd> cmd = co_await cluster::deserialize(
-      std::move(b), accepted_commands);
+    auto cmd = co_await cluster::deserialize(std::move(b), accepted_commands);
 
-    feature_update_cmd update = std::get<feature_update_cmd>(cmd);
-    co_await _feature_table.invoke_on_all(
-      [v = update.key.logical_version](feature_table& t) mutable {
-          t.set_active_version(v);
+    co_await ss::visit(
+      cmd,
+      [this](feature_update_cmd update) -> ss::future<> {
+          co_await _feature_table.invoke_on_all(
+            [v = update.key.logical_version](feature_table& t) mutable {
+                t.set_active_version(v);
+            });
+
+          for (const auto& a : update.key.actions) {
+              co_await _feature_table.invoke_on_all(
+                [a](feature_table& t) mutable { t.apply_action(a); });
+          }
+      },
+      [this](feature_update_license_update_cmd update) {
+          return _feature_table.invoke_on_all(
+            [license = std::move(update.key.redpanda_license)](
+              feature_table& t) mutable { t.set_license(std::move(license)); });
       });
-
-    for (const auto& a : update.key.actions) {
-        co_await _feature_table.invoke_on_all(
-          [a](feature_table& t) mutable { t.apply_action(a); });
-    }
 
     co_return errc::success;
 }
