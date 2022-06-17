@@ -90,7 +90,7 @@ void members_backend::start() {
 ss::future<> members_backend::handle_updates() {
     /**
      * wait for updates from members manager, after update is received we
-     * translate it into realocation meta, reallocation meta represents a
+     * translate it into reallocation meta, reallocation meta represents a
      * partition that needs reallocation
      */
     using updates_t = std::vector<members_manager::node_update>;
