@@ -13,6 +13,7 @@ import time
 import requests
 
 from ducktape.mark import parametrize
+from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cat import KafkaCat
@@ -140,6 +141,10 @@ class NodeOperationFuzzyTest(EndToEndTest):
         self.start_producer(1, throughput=100)
         self.start_consumer(1)
         self.await_startup()
+        admin_fuzz = AdminOperationsFuzzer(self.redpanda,
+                                           operations_interval=3)
+
+        admin_fuzz.start()
         self.active_nodes = set(
             [self.redpanda.idx(n) for n in self.redpanda.nodes])
         # collect current mapping
@@ -359,6 +364,8 @@ class NodeOperationFuzzyTest(EndToEndTest):
                            backoff_sec=2)
 
         enable_failures = False
+        admin_fuzz.wait(20, 180)
+        admin_fuzz.stop()
         self.run_validation(enable_idempotence=False,
                             producer_timeout_sec=60,
                             consumer_timeout_sec=180)
