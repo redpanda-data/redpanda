@@ -511,6 +511,24 @@ class Admin:
         path = f"partitions/{namespace}/{topic}/{partition}/replicas"
         return self._request('post', path, node=node, json=replicas)
 
+    def cancel_partition_move(self,
+                              topic,
+                              partition,
+                              namespace="kafka",
+                              node=None):
+
+        path = f"partitions/{namespace}/{topic}/{partition}/cancel_reconfiguration"
+        return self._request('post', path, node=node)
+
+    def force_abort_partition_move(self,
+                                   topic,
+                                   partition,
+                                   namespace="kafka",
+                                   node=None):
+
+        path = f"partitions/{namespace}/{topic}/{partition}/unclean_abort_reconfiguration"
+        return self._request('post', path, node=node)
+
     def create_user(self, username, password, algorithm):
         self.redpanda.logger.info(
             f"Creating user {username}:{password}:{algorithm}")
