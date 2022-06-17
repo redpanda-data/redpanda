@@ -78,23 +78,20 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                   });
             },
             [this, base_offset](move_partition_replicas_cmd cmd) {
-                auto tp_md = _topic_table.local().get_topic_metadata(
-                  model::topic_namespace_view(cmd.key));
+                auto p_as = _topic_table.local().get_partition_assignment(
+                  cmd.key);
                 return dispatch_updates_to_cores(cmd, base_offset)
                   .then(
-                    [this, tp_md = std::move(tp_md), cmd](std::error_code ec) {
+                    [this, p_as = std::move(p_as), cmd](std::error_code ec) {
                         if (!ec) {
                             vassert(
-                              tp_md.has_value(),
-                              "Topic had to exist before successful partition "
-                              "reallocation");
-                            auto it = tp_md->get_assignments().find(
-                              cmd.key.tp.partition);
-                            vassert(
-                              it != tp_md->get_assignments().cend(),
-                              "Reassigned partition must exist");
+                              p_as.has_value(),
+                              "Partition {} have to exist before successful "
+                              "partition "
+                              "reallocation",
+                              cmd.key);
 
-                            reallocate_partition(it->replicas, cmd.value);
+                            reallocate_partition(p_as->replicas, cmd.value);
                         }
                         return ec;
                     });
