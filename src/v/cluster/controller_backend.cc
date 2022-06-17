@@ -517,6 +517,7 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
                      * partition to be shut down on the other core
                      */
                     if (ec == errc::wating_for_partition_shutdown) {
+                        stop = true;
                         continue;
                     }
                     /**
@@ -575,6 +576,9 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
               clusterlog.debug,
               "gate_closed-exception while executing partition operation: {}",
               *it);
+            stop = true;
+            continue;
+        } catch (ss::sleep_aborted const&) {
             stop = true;
             continue;
         } catch (...) {
