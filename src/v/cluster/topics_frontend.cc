@@ -640,6 +640,11 @@ ss::future<std::error_code> topics_frontend::finish_moving_partition_replicas(
         return ss::make_ready_future<std::error_code>(
           errc::no_leader_controller);
     }
+    // optimization: if update is not in progress return early
+    if (!_topics.local().is_update_in_progress(ntp)) {
+        return ss::make_ready_future<std::error_code>(
+          errc::no_update_in_progress);
+    }
     // current node is a leader, just replicate
     if (leader == _self) {
         finish_moving_partition_replicas_cmd cmd(
