@@ -127,10 +127,78 @@
                             "type": "integer"
                         },
                         {
-                            "name":"target",
-                            "in":"query",
-                            "required":false,
-                            "type":"integer"
+                            "name": "target",
+                            "in": "query",
+                            "required": false,
+                            "type": "integer"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "path": "/v1/partitions/{namespace}/{topic}/{partition}/cancel_reconfiguration",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Cancel ongoing partition reconfiguration",
+                    "type": "void",
+                    "nickname": "cancel_partition_reconfiguration",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "namespace",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "topic",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "partition",
+                            "in": "path",
+                            "required": true,
+                            "type": "integer"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "path": "/v1/partitions/{namespace}/{topic}/{partition}/unclean_abort_reconfiguration",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Forcibly abort ongoing partition reconfiguration",
+                    "type": "void",
+                    "nickname": "unclean_abort_partition_reconfiguration",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "namespace",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "topic",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "partition",
+                            "in": "path",
+                            "required": true,
+                            "type": "integer"
                         }
                     ]
                 }
