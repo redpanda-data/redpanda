@@ -1516,7 +1516,9 @@ struct topic_table_delta {
         update_finished,
         update_properties,
         add_non_replicable,
-        del_non_replicable
+        del_non_replicable,
+        cancel_update,
+        force_abort_update,
     };
 
     topic_table_delta(
@@ -1534,6 +1536,16 @@ struct topic_table_delta {
 
     model::topic_namespace_view tp_ns() const {
         return model::topic_namespace_view(ntp);
+    }
+
+    bool is_reconfiguration_operation() const {
+        return type == op_type::update || type == op_type::cancel_update
+               || type == op_type::force_abort_update;
+    }
+
+    bool is_reconfiguration_interrupt() const {
+        return type == op_type::cancel_update
+               || type == op_type::force_abort_update;
     }
 
     friend std::ostream& operator<<(std::ostream&, const topic_table_delta&);

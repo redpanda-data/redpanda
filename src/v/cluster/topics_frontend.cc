@@ -33,6 +33,7 @@
 #include "ssx/future-util.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/future.hh>
 
 #include <algorithm>
 #include <iterator>
@@ -627,6 +628,24 @@ ss::future<std::error_code> topics_frontend::move_partition_replicas(
     move_partition_replicas_cmd cmd(std::move(ntp), std::move(new_replica_set));
 
     return replicate_and_wait(_stm, _features, _as, std::move(cmd), tout);
+}
+
+ss::future<std::error_code> topics_frontend::cancel_moving_partition_replicas(
+  model::ntp ntp, model::timeout_clock::time_point timeout) {
+    cancel_moving_partition_replicas_cmd cmd(
+      std::move(ntp),
+      cancel_moving_partition_replicas_cmd_data(force_abort_update::no));
+
+    return replicate_and_wait(_stm, _features, _as, std::move(cmd), timeout);
+}
+
+ss::future<std::error_code> topics_frontend::abort_moving_partition_replicas(
+  model::ntp ntp, model::timeout_clock::time_point timeout) {
+    cancel_moving_partition_replicas_cmd cmd(
+      std::move(ntp),
+      cancel_moving_partition_replicas_cmd_data(force_abort_update::yes));
+
+    return replicate_and_wait(_stm, _features, _as, std::move(cmd), timeout);
 }
 
 ss::future<std::error_code> topics_frontend::finish_moving_partition_replicas(

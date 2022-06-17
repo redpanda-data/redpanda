@@ -107,27 +107,26 @@ bool are_assignments_equal(
     return are_replica_sets_equal(requested.replicas, previous);
 }
 
-model::node_id first_with_assignment_change(
-  const partition_assignment& requested,
-  const std::vector<model::broker_shard>& previous_replica_set) {
-    absl::node_hash_map<model::node_id, model::broker_shard> prev_map;
-    prev_map.reserve(previous_replica_set.size());
-    for (auto& replica : previous_replica_set) {
-        prev_map.emplace(replica.node_id, replica);
+bool are_configuration_replicas_up_to_date(
+  const raft::group_configuration& cfg,
+  const std::vector<model::broker_shard>& requested_replicas) {
+    absl::flat_hash_set<model::node_id> all_ids;
+    all_ids.reserve(requested_replicas.size());
+
+    for (auto& id : cfg.current_config().voters) {
+        all_ids.emplace(id.id());
     }
 
-    auto it = std::find_if(
-      requested.replicas.begin(),
-      requested.replicas.end(),
-      [&](const model::broker_shard& bs) {
-          auto it = prev_map.find(bs.node_id);
-          return it == prev_map.end() || it->second != bs;
-      });
-    // there are no changed assignements
-    if (it == requested.replicas.end()) {
-        return requested.replicas.begin()->node_id;
+    // there is different number of brokers in group configuration
+    if (all_ids.size() != requested_replicas.size()) {
+        return false;
     }
-    return it->node_id;
+
+    for (auto& b : requested_replicas) {
+        all_ids.emplace(b.node_id);
+    }
+
+    return all_ids.size() == requested_replicas.size();
 }
 } // namespace
 
@@ -199,26 +198,7 @@ std::error_code check_configuration_update(
      * at this point we just compare the configuration broker ids if they are
      * the same as expected, we claim configuration as being up to date
      */
-    absl::flat_hash_set<model::node_id> all_ids;
-    for (auto& id : group_cfg.current_config().voters) {
-        all_ids.emplace(id.id());
-    }
-
-    // there is different number of brokers in group configuration
-    if (all_ids.size() != bs.size()) {
-        vlog(
-          clusterlog.trace,
-          "requested replica set {} differs from partition replica set: {}",
-          bs,
-          group_cfg.brokers());
-        return errc::partition_configuration_differs;
-    }
-
-    for (auto& b : bs) {
-        all_ids.emplace(b.node_id);
-    }
-
-    if (all_ids.size() != bs.size()) {
+    if (!are_configuration_replicas_up_to_date(group_cfg, bs)) {
         vlog(
           clusterlog.trace,
           "requested replica set {} differs from partition replica set: {}",
@@ -493,6 +473,54 @@ void controller_backend::housekeeping() {
         });
 }
 
+namespace {
+using deltas_t = std::vector<cluster::topic_table_delta>;
+deltas_t::iterator
+find_interrupting_operation(deltas_t::iterator current_it, deltas_t& deltas) {
+    /**
+     * Find interrupting operation following the one that is currently
+     * processed. Following rules apply:
+     *
+     * - all operations i.e. update, cancel_update, and force abort must be
+     * interrupted by deletion
+     *
+     * - update & cancel update operations may be interrupted by
+     * force_abort_update operation
+     *
+     * - update operation may be interrupted by cancel_update operation or
+     * force_abort_update operation
+     *
+     */
+
+    // only reconfiguration operations may be interrupted
+    if (!current_it->is_reconfiguration_operation()) {
+        return deltas.end();
+    }
+
+    return std::find_if(
+      current_it, deltas.end(), [&current_it](const topic_table::delta& d) {
+          switch (d.type) {
+          case topic_table::delta::op_type::del:
+              return true;
+          case topic_table::delta::op_type::cancel_update:
+              return current_it->type == topic_table::delta::op_type::update
+                     && d.new_assignment.replicas
+                          == current_it->previous_replica_set;
+          case topic_table::delta::op_type::force_abort_update:
+              return (
+                current_it->type == topic_table::delta::op_type::update
+                && d.new_assignment.replicas
+                     == current_it->previous_replica_set) || (
+                current_it->type == topic_table::delta::op_type::cancel_update
+                && d.new_assignment.replicas
+                     == current_it->new_assignment.replicas);
+          default:
+              return false;
+          }
+      });
+}
+} // namespace
+
 ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
     bool stop = false;
     auto it = deltas.begin();
@@ -508,10 +536,25 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
             ++it;
             continue;
         }
+        auto interrupt_it = find_interrupting_operation(it, deltas);
+        if (interrupt_it != deltas.end()) {
+            vlog(
+              clusterlog.trace,
+              "cancelling current: {} operation with: {}",
+              *it,
+              *interrupt_it);
+            while (it != interrupt_it) {
+                if (it->type == topic_table_delta::op_type::update_properties) {
+                    co_await process_partition_properties_update(
+                      it->ntp, it->new_assignment);
+                }
+                ++it;
+            }
+        }
         try {
             auto ec = co_await execute_partition_op(*it);
             if (ec) {
-                if (it->type == topic_table_delta::op_type::update) {
+                if (it->is_reconfiguration_operation()) {
                     /**
                      * do not skip cross core partition updates waiting for
                      * partition to be shut down on the other core
@@ -533,10 +576,15 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
                                       == it->new_assignment.replicas;
                       });
 
-                    // The only delta types permitted between `update` and
-                    // `update_finished` are `update_properties` or `del`. Apply
-                    // any intervening deltas of these types and skip the cursor
-                    // ahead to the `update_finished`
+                    /**
+                     * Some of the deltas may exist in between reconfiguration
+                     * operation and update_finished command. Those are:
+                     * `update_properties`, `delete`, `cancel_update`, and
+                     * `force_abort_update`.
+                     *
+                     * Execute `update_properties` immediately or just skip
+                     * current reconfiguration update.
+                     */
                     if (fit != deltas.end()) {
                         while (++it != fit) {
                             vlog(
@@ -551,12 +599,18 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
                                 co_await process_partition_properties_update(
                                   it->ntp, it->new_assignment);
                             } else if (
-                              it->type == topic_table_delta::op_type::del) {
-                                co_await delete_partition(
-                                  it->ntp, model::revision_id{it->offset});
+                              it->type == topic_table_delta::op_type::del
+                              || it->type
+                                   == topic_table_delta::op_type::cancel_update
+                              || it->type
+                                   == topic_table_delta::op_type::
+                                     force_abort_update) {
+                                break;
                             } else {
                                 vassert(
-                                  false, "Invalid delta during topic update");
+                                  false,
+                                  "Invalid delta during topic update - {}",
+                                  *it);
                             }
                         }
                         continue;
@@ -660,12 +714,19 @@ controller_backend::execute_partition_op(const topic_table::delta& delta) {
             return std::error_code(errc::success);
         });
     case op_t::update:
+    case op_t::force_abort_update:
+    case op_t::cancel_update:
         vassert(
           delta.previous_replica_set,
-          "update delta must have previous replica set, current delta: {}",
+          "reconfiguration delta must have previous replica set, current "
+          "delta: {}",
           delta);
-        return process_partition_update(
-          delta.ntp, delta.new_assignment, *delta.previous_replica_set, rev);
+        return process_partition_reconfiguration(
+          delta.type,
+          delta.ntp,
+          delta.new_assignment,
+          *delta.previous_replica_set,
+          rev);
     case op_t::update_finished:
         return finish_partition_update(delta.ntp, delta.new_assignment, rev)
           .then([] { return std::error_code(errc::success); });
@@ -678,38 +739,49 @@ controller_backend::execute_partition_op(const topic_table::delta& delta) {
 }
 
 ss::future<std::optional<controller_backend::cross_shard_move_request>>
-controller_backend::ask_remote_shard_for_initial_rev(
+controller_backend::acquire_cross_shard_move_request(
   model::ntp ntp, ss::shard_id shard) {
     using ret_t = std::optional<controller_backend::cross_shard_move_request>;
     return container().invoke_on(
       shard, [ntp = std::move(ntp)](controller_backend& remote) {
           if (auto it = remote._cross_shard_requests.find(ntp);
               it != remote._cross_shard_requests.end()) {
-              ret_t ret{std::move(it->second)};
+              ret_t ret{it->second};
+              remote._cross_shard_requests.erase(it);
               return ret;
           }
           return ret_t{};
       });
 }
 
-ss::future<> controller_backend::ack_remote_shard_partition_created(
-  model::ntp ntp, ss::shard_id shard) {
+ss::future<> controller_backend::release_cross_shard_move_request(
+  model::ntp ntp,
+  ss::shard_id shard,
+  controller_backend::cross_shard_move_request token) {
     return container().invoke_on(
-      shard, [ntp = std::move(ntp)](controller_backend& remote) {
-          remote._cross_shard_requests.erase(ntp);
+      shard,
+      [ntp = std::move(ntp),
+       token = std::move(token)](controller_backend& remote) mutable {
+          remote._cross_shard_requests.emplace(ntp, std::move(token));
       });
 }
 
-ss::future<std::error_code> controller_backend::process_partition_update(
+ss::future<std::error_code>
+controller_backend::process_partition_reconfiguration(
+  topic_table_delta::op_type type,
   model::ntp ntp,
-  const partition_assignment& requested,
-  const std::vector<model::broker_shard>& previous_replica_set,
+  const partition_assignment& target_assignment,
+  const std::vector<model::broker_shard>& previous_replicas,
   model::revision_id rev) {
     vlog(
       clusterlog.trace,
-      "processing partition {} update command with replicas {}",
+      "processing partition {} reconfiguration {} command with target "
+      "replicas: {}, previous replica set: {}, revision: {}",
       ntp,
-      requested.replicas);
+      type,
+      target_assignment.replicas,
+      previous_replicas,
+      rev);
 
     auto partition = _partition_manager.local().get(ntp);
     /*
@@ -721,20 +793,15 @@ ss::future<std::error_code> controller_backend::process_partition_update(
     if (partition && partition->group_configuration().revision_id() > rev) {
         vlog(
           clusterlog.trace,
-          "found newer revision for {}, finishing update to: {}",
+          "found newer revision for {}, finishing reconfiguration to: {}",
           ntp,
-          requested.replicas);
+          target_assignment.replicas);
         co_return std::error_code(errc::success);
     }
     /**
-     * if there is no local replica in replica set but,
-     * partition with requested ntp exists on this broker core
-     * it has to be removed, we can not remove the partition immediately as it
-     * may be required for other nodes to recover. The partition is removed
-     * after update is finished on other nodes
+     * Check if target assignment has node and core local replicas
      */
-
-    if (!has_local_replicas(_self, requested.replicas)) {
+    if (!has_local_replicas(_self, target_assignment.replicas)) {
         /**
          * if no replicas are expected on current node/shard and partition
          * doesn't exists, the update is finished
@@ -751,42 +818,43 @@ ss::future<std::error_code> controller_backend::process_partition_update(
          * 1) shutdown partition instance
          * 2) create instance on target remote core
          */
-        if (contains_node(_self, requested.replicas)) {
+        if (contains_node(_self, target_assignment.replicas)) {
             co_return co_await shutdown_on_current_shard(std::move(ntp), rev);
         }
 
         /**
          * in this case the partition is moved away from this node/shard, we may
-         * have to update configuration as this node may be a leader. If update
-         * is successful we finish it, removal will be done after all nodes are
-         * caught up - if config is already up to date
-         * `update_partition_replica_set` will return success.
+         * have to execute reconfiguration as this node may be a leader.
+         * Reconfiguration may involve triggering, cancelling or aborting
+         * configuration change.
+         *
          */
-        auto ec = co_await update_partition_replica_set(
-          ntp, requested.replicas, rev);
-
-        co_return ec;
+        co_return co_await execute_reconfiguration(
+          type, ntp, target_assignment.replicas, rev);
     }
-
+    const auto cross_core_move = contains_node(_self, previous_replicas)
+                                 && !has_local_replicas(
+                                   _self, previous_replicas);
     /**
-     * in this situation partition is expected to exists on current
-     * broker/shard.
+     * in this situation partition is expected to
+     * exists on current broker/shard.
      *
-     * If partition already exists, update its configuration and wait for it to
-     * be applied
+     * If partition already exists, update its
+     * configuration and wait for it to be applied
      */
     if (partition) {
         // if requested assignment is equal to current one, just finish the
-        // update
-        if (are_assignments_equal(requested, previous_replica_set)) {
-            if (requested.replicas.front().node_id == _self) {
+        // update it is an noop
+        if (are_assignments_equal(target_assignment, previous_replicas)) {
+            if (target_assignment.replicas.front().node_id == _self) {
                 co_return co_await dispatch_update_finished(
-                  std::move(ntp), requested);
+                  std::move(ntp), target_assignment);
             }
         }
-        auto ec = co_await update_partition_replica_set(
-          ntp, requested.replicas, rev);
-
+        // try executing reconfiguration, this method will return success if
+        // partition configuration is up to date with requested assignment
+        auto ec = co_await execute_reconfiguration(
+          type, ntp, target_assignment.replicas, rev);
         if (!ec) {
             /**
              *  After one of the replicas find the configuration to be
@@ -798,10 +866,10 @@ ss::future<std::error_code> controller_backend::process_partition_update(
              * configuration so old replicas are not longer needed.
              */
             if (
-              first_with_assignment_change(requested, previous_replica_set)
-              == _self) {
+              !has_local_replicas(_self, previous_replicas)
+              || type == topic_table_delta::op_type::force_abort_update) {
                 co_return co_await dispatch_update_finished(
-                  std::move(ntp), requested);
+                  std::move(ntp), target_assignment);
             }
             co_return ec;
         }
@@ -812,81 +880,170 @@ ss::future<std::error_code> controller_backend::process_partition_update(
          */
         co_return ec;
     }
+    // partition is requested to exists on current shard and it is going to be
+    // moved from the other core
+    if (cross_core_move) {
+        auto previous_shard = get_target_shard(_self, previous_replicas);
 
-    /**
-     * Check if this NTP was moved from other shard on current broker, if so we
-     * have to wait for it to be shutdown. Partition creation will be dispatched
-     * to target partition manager from the core where the partition is
-     * currently present. On this core we will just wait for partition to be
-     * created.
-     */
-    if (
-      contains_node(_self, previous_replica_set)
-      && !has_local_replicas(_self, previous_replica_set)) {
-        auto previous_shard = get_target_shard(_self, previous_replica_set);
-        std::optional<model::revision_id> initial_revision;
-        std::vector<model::broker> initial_brokers;
-        if (auto it = _bootstrap_revisions.find(ntp);
-            it != _bootstrap_revisions.end()) {
-            initial_revision = it->second;
-        } else {
-            vlog(
-              clusterlog.trace,
-              "waiting for cross core move information from shard {}, for {}",
-              *previous_shard,
-              ntp);
-            // ask previous controller for partition initial revision
-            auto x_core_move_req = co_await ask_remote_shard_for_initial_rev(
-              ntp, *previous_shard);
-            if (!x_core_move_req) {
-                co_return errc::wating_for_partition_shutdown;
-            }
-            initial_revision = x_core_move_req->revision;
-            std::copy(
-              x_core_move_req->initial_configuration.brokers().begin(),
-              x_core_move_req->initial_configuration.brokers().end(),
-              std::back_inserter(initial_brokers));
-        }
-        if (initial_revision) {
-            vlog(
-              clusterlog.trace,
-              "creating partition {} from shard {}",
-              ntp,
-              previous_shard);
-            co_await raft::details::move_persistent_state(
-              requested.group, *previous_shard, ss::this_shard_id(), _storage);
-            co_await raft::offset_translator::move_persistent_state(
-              requested.group, *previous_shard, ss::this_shard_id(), _storage);
-
-            auto ec = co_await create_partition(
-              ntp,
-              requested.group,
-              *initial_revision,
-              std::move(initial_brokers));
-
-            if (ec) {
-                co_return ec;
-            }
-            // finally remove bootstrap revision
-            _bootstrap_revisions.erase(ntp);
-            // notify remote shard about success
-            co_await ack_remote_shard_partition_created(ntp, *previous_shard);
-        }
-
-        co_return errc::waiting_for_recovery;
+        co_return co_await create_partition_from_remote_shard(
+          ntp, *previous_shard, target_assignment);
     }
+    /**
+     * Cancelling partition movement may only be executed before the update
+     * finished. We only remove partition replicas when processing
+     * `update_finished` delta. This is why partitions will never have to be
+     * created with cancel/abort type of deltas.
+     */
+    vassert(
+      type == topic_table_delta::op_type::update,
+      "Invalid reconciliation loop state. Partition replicas should not be "
+      "removed before finishing update, ntp: {}, current operation: {}, "
+      "target_assignment: {}",
+      ntp,
+      type,
+      target_assignment);
     /**
      * We expect partition replica to exists on current broker/shard. Create
      * partition. we relay on raft recovery to populate partition
      * configuration.
      */
-    auto ec = co_await create_partition(ntp, requested.group, rev, {});
+    auto ec = co_await create_partition(ntp, target_assignment.group, rev, {});
     // wait for recovery, we will mark partition as updated in next
     // controller backend reconciliation loop pass
     if (!ec) {
         co_return errc::waiting_for_recovery;
     }
     co_return ec;
+}
+
+ss::future<std::error_code>
+controller_backend::create_partition_from_remote_shard(
+  model::ntp ntp,
+  ss::shard_id previous_shard,
+  partition_assignment requested_assignment) {
+    std::optional<model::revision_id> initial_revision;
+    std::vector<model::broker> initial_brokers;
+    std::optional<cross_shard_move_request> x_shard_req;
+
+    if (auto it = _bootstrap_revisions.find(ntp);
+        it != _bootstrap_revisions.end()) {
+        initial_revision = it->second;
+    } else {
+        vlog(
+          clusterlog.trace,
+          "waiting for cross core move information from "
+          "shard {}, for {}",
+          previous_shard,
+          ntp);
+        // ask previous controller for partition initial
+        // revision
+        x_shard_req = co_await acquire_cross_shard_move_request(
+          ntp, previous_shard);
+
+        /*
+         * Special case for cancelling x-core partitions movements
+         *
+         * We may hit a situation in which partition was shutdown on the current
+         * core but not yet created on the remote core and then the process was
+         * cancelled revision will not be available on the remote core. We must
+         * check the current core as this is the one that shutdown the
+         * partition.
+         */
+        if (!x_shard_req) {
+            x_shard_req = co_await acquire_cross_shard_move_request(
+              ntp, ss::this_shard_id());
+            if (x_shard_req) {
+                previous_shard = ss::this_shard_id();
+            }
+        }
+
+        if (!x_shard_req) {
+            co_return errc::wating_for_partition_shutdown;
+        }
+        initial_revision = x_shard_req->revision;
+        std::copy(
+          x_shard_req->initial_configuration.brokers().begin(),
+          x_shard_req->initial_configuration.brokers().end(),
+          std::back_inserter(initial_brokers));
+    }
+
+    if (!initial_revision) {
+        co_return errc::wating_for_partition_shutdown;
+    }
+
+    std::error_code result = errc::waiting_for_recovery;
+    bool has_error = false;
+    try {
+        vlog(
+          clusterlog.trace,
+          "creating partition {} from shard {}",
+          ntp,
+          previous_shard);
+        if (previous_shard != ss::this_shard_id()) {
+            co_await raft::details::move_persistent_state(
+              requested_assignment.group,
+              previous_shard,
+              ss::this_shard_id(),
+              _storage);
+            co_await raft::offset_translator::move_persistent_state(
+              requested_assignment.group,
+              previous_shard,
+              ss::this_shard_id(),
+              _storage);
+        }
+
+        auto ec = co_await create_partition(
+          ntp,
+          requested_assignment.group,
+          *initial_revision,
+          std::move(initial_brokers));
+
+        if (ec) {
+            has_error = true;
+            result = ec;
+        } else {
+            // finally remove bootstrap revision
+            _bootstrap_revisions.erase(ntp);
+        }
+    } catch (...) {
+        has_error = true;
+        vlog(
+          clusterlog.warn,
+          "failed to create partition {} from shard {}",
+          ntp,
+          previous_shard);
+    }
+    /**
+     * Release cross shard move request for subsequent retries
+     */
+    if (has_error) {
+        co_await release_cross_shard_move_request(
+          ntp, previous_shard, *x_shard_req);
+    }
+
+    co_return result;
+}
+
+ss::future<std::error_code> controller_backend::execute_reconfiguration(
+  topic_table_delta::op_type type,
+  const model::ntp& ntp,
+  const std::vector<model::broker_shard>& replica_set,
+  model::revision_id revision) {
+    switch (type) {
+    case topic_table_delta::op_type::update:
+        co_return co_await update_partition_replica_set(
+          ntp, replica_set, revision);
+    case topic_table_delta::op_type::cancel_update:
+        co_return co_await cancel_replica_set_update(
+          ntp, replica_set, revision);
+    case topic_table_delta::op_type::force_abort_update:
+        co_return co_await force_abort_replica_set_update(
+          ntp, replica_set, revision);
+    default:
+        vassert(
+          false, "delta of type {} is not partition reconfiguration", type);
+    }
+    __builtin_unreachable();
 }
 
 ss::future<> controller_backend::process_partition_properties_update(
@@ -900,7 +1057,8 @@ ss::future<> controller_backend::process_partition_properties_update(
 
     auto partition = _partition_manager.local().get(ntp);
 
-    // partition doesn't exists, it must already have been removed, do nothing
+    // partition doesn't exists, it must already have been removed, do
+    // nothing
     if (!partition) {
         co_return;
     }
@@ -919,7 +1077,8 @@ ss::future<> controller_backend::process_partition_properties_update(
 
 /**
  * notifies the topics frontend that partition update has been finished, all
- * the interested nodes can now safely remove unnecessary partition replicas.
+ * the interested nodes can now safely remove unnecessary partition
+ * replicas.
  */
 ss::future<std::error_code> controller_backend::dispatch_update_finished(
   model::ntp ntp, partition_assignment assignment) {
@@ -959,6 +1118,123 @@ ss::future<> controller_backend::finish_partition_update(
     return delete_partition(std::move(ntp), rev);
 }
 
+template<typename Func>
+ss::future<std::error_code>
+controller_backend::apply_configuration_change_on_leader(
+  const model::ntp& ntp,
+  const std::vector<model::broker_shard>& replicas,
+  model::revision_id rev,
+  Func&& func) {
+    auto partition = _partition_manager.local().get(ntp);
+    if (!partition) {
+        co_return errc::partition_not_exists;
+    }
+    // wait for configuration update, only declare success
+    // when configuration was actually updated
+    auto update_ec = check_configuration_update(
+      _self, partition, replicas, rev);
+
+    if (!update_ec) {
+        co_return errc::success;
+    }
+    // we are the leader, update configuration
+    if (partition->is_leader()) {
+        auto f = func(partition);
+        try {
+            // TODO: use configurable timeout here
+            auto err = co_await ss::with_timeout(
+              model::timeout_clock::now() + std::chrono::seconds(5),
+              std::move(f));
+            if (err) {
+                co_return err;
+            }
+        } catch (const ss::timed_out_error& e) {
+            co_return make_error_code(errc::timeout);
+        }
+        co_return check_configuration_update(_self, partition, replicas, rev);
+    }
+
+    co_return errc::not_leader;
+}
+
+ss::future<std::error_code> controller_backend::cancel_replica_set_update(
+  const model::ntp& ntp,
+  const std::vector<model::broker_shard>& replicas,
+  model::revision_id rev) {
+    /**
+     * Following scenarios can happen in here:
+     * - node is a leader for current partition => cancel raft group
+     * reconfiguration
+     * - node is not a leader for current partition => check if config is
+     *   equal to requested, if not return failure
+     */
+
+    return apply_configuration_change_on_leader(
+      ntp,
+      replicas,
+      rev,
+      [this, &ntp, rev, replicas](ss::lw_shared_ptr<partition> p) {
+          const auto raft_cfg_update_finished
+            = are_configuration_replicas_up_to_date(
+              p->group_configuration(), replicas);
+
+          // raft already finished its part, we need to move replica back
+          if (raft_cfg_update_finished) {
+              auto brokers = create_brokers_set(
+                replicas, _members_table.local());
+              vlog(
+                clusterlog.debug,
+                "raft reconfiguration finished, moving partition {} "
+                "configuration back to requested state: {}",
+                ntp,
+                replicas);
+              return p->update_replica_set(std::move(brokers), rev);
+          } else {
+              vlog(
+                clusterlog.debug,
+                "cancelling partition {} reconfiguration",
+                ntp);
+              return p->cancel_replica_set_update(rev);
+          }
+      });
+}
+
+ss::future<std::error_code> controller_backend::force_abort_replica_set_update(
+  const model::ntp& ntp,
+  const std::vector<model::broker_shard>& replicas,
+  model::revision_id rev) {
+    /**
+     * Force abort configuration change for each of the partition replicas.
+     */
+    auto partition = _partition_manager.local().get(ntp);
+    if (!partition) {
+        co_return errc::partition_not_exists;
+    }
+
+    const auto raft_cfg_update_finished = are_configuration_replicas_up_to_date(
+      partition->group_configuration(), replicas);
+    if (raft_cfg_update_finished) {
+        co_return co_await update_partition_replica_set(ntp, replicas, rev);
+    } else {
+        // wait for configuration update, only declare success
+        // when configuration was actually updated
+        auto update_ec = check_configuration_update(
+          _self, partition, replicas, rev);
+
+        if (!update_ec) {
+            co_return errc::success;
+        }
+
+        auto ec = co_await partition->force_abort_replica_set_update(rev);
+
+        if (ec) {
+            co_return ec;
+        }
+
+        co_return check_configuration_update(_self, partition, replicas, rev);
+    }
+}
+
 ss::future<std::error_code> controller_backend::update_partition_replica_set(
   const model::ntp& ntp,
   const std::vector<model::broker_shard>& replicas,
@@ -969,41 +1245,20 @@ ss::future<std::error_code> controller_backend::update_partition_replica_set(
      * - node is not a leader for current partition => check if config is
      *   equal to requested, if not return failure
      */
-    auto partition = _partition_manager.local().get(ntp);
-    // wait for configuration update, only declare success
-    // when configuration was actually updated
-    auto update_ec = check_configuration_update(
-      _self, partition, replicas, rev);
-    if (!update_ec) {
-        return ss::make_ready_future<std::error_code>(errc::success);
-    }
-    // we are the leader, update configuration
-    if (partition->is_elected_leader()) {
-        auto brokers = create_brokers_set(replicas, _members_table.local());
-        vlog(
-          clusterlog.debug,
-          "updating partition {} replica set with {}",
-          ntp,
-          replicas);
+    return apply_configuration_change_on_leader(
+      ntp,
+      replicas,
+      rev,
+      [this, rev, &replicas, &ntp](ss::lw_shared_ptr<partition> p) {
+          auto brokers = create_brokers_set(replicas, _members_table.local());
+          vlog(
+            clusterlog.debug,
+            "updating partition {} replica set with {}",
+            ntp,
+            replicas);
 
-        auto f = partition->update_replica_set(std::move(brokers), rev);
-        return ss::with_timeout(
-                 model::timeout_clock::now() + std::chrono::seconds(5),
-                 std::move(f))
-          .then_wrapped([](ss::future<std::error_code> f) {
-              try {
-                  return f.get0();
-              } catch (const ss::timed_out_error& e) {
-                  return make_error_code(errc::timeout);
-              }
-          })
-          .then([this, partition, replicas, rev](std::error_code) {
-              return check_configuration_update(
-                _self, partition, replicas, rev);
-          });
-    }
-
-    return ss::make_ready_future<std::error_code>(errc::not_leader);
+          return p->update_replica_set(std::move(brokers), rev);
+      });
 }
 
 ss::future<> controller_backend::add_to_shard_table(
@@ -1049,7 +1304,8 @@ ss::future<std::error_code> controller_backend::create_partition(
 
     // initial revision of the partition on the moment when it was created
     // the value is used by shadow indexing
-    // if topic is read replica, the value from remote topic manifest is used
+    // if topic is read replica, the value from remote topic manifest is
+    // used
     auto initial_rev = _topics.local().get_initial_revision(ntp);
     if (!initial_rev) {
         return ss::make_ready_future<std::error_code>(errc::topic_not_exists);
@@ -1109,7 +1365,8 @@ ss::future<std::error_code> controller_backend::shutdown_on_current_shard(
         vlog(clusterlog.trace, "cross core move, partition {} stopped", ntp);
         vassert(
           success,
-          "only one cross shard request is allowed to be pending for single "
+          "only one cross shard request is allowed to be pending for "
+          "single "
           "ntp, current request: {}, ntp: {}, revision: {}",
           it->second,
           ntp,

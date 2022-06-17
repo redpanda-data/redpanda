@@ -234,6 +234,10 @@ operator<<(std::ostream& o, const topic_table_delta::op_type& tp) {
         return o << "add_non_replicable_addition";
     case topic_table_delta::op_type::del_non_replicable:
         return o << "del_non_replicable_deletion";
+    case topic_table_delta::op_type::cancel_update:
+        return o << "cancel_update";
+    case topic_table_delta::op_type::force_abort_update:
+        return o << "force_abort_update";
     }
     __builtin_unreachable();
 }

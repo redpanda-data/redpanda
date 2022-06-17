@@ -20,7 +20,7 @@
 #include "utils/expiring_promise.h"
 
 #include <absl/container/flat_hash_map.h>
-#include <absl/container/flat_hash_set.h>
+#include <absl/container/node_hash_map.h>
 
 namespace cluster {
 
@@ -94,6 +94,8 @@ public:
     ss::future<std::error_code> apply(create_partition_cmd, model::offset);
     ss::future<std::error_code>
       apply(create_non_replicable_topic_cmd, model::offset);
+    ss::future<std::error_code>
+      apply(cancel_moving_partition_replicas_cmd, model::offset);
     ss::future<> stop();
 
     /// Delta API
@@ -205,8 +207,17 @@ private:
     underlying_t _topics;
     hierarchy_t _topics_hierarchy;
 
-    absl::node_hash_map<model::ntp, std::vector<model::broker_shard>>
-      _update_in_progress;
+    enum class in_progress_state {
+        update_requested,
+        cancel_requested,
+        force_cancel_requested
+    };
+
+    struct in_progress_update {
+        std::vector<model::broker_shard> previous_replicas;
+        in_progress_state state;
+    };
+    absl::node_hash_map<model::ntp, in_progress_update> _update_in_progress;
 
     std::vector<delta> _pending_deltas;
     std::vector<std::unique_ptr<waiter>> _waiters;

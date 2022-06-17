@@ -245,6 +245,8 @@ inline bool has_non_replicable_op_type(const topic_table_delta& d) {
     case op_t::update:
     case op_t::update_finished:
     case op_t::update_properties:
+    case op_t::cancel_update:
+    case op_t::force_abort_update:
         return false;
     }
     __builtin_unreachable();

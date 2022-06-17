@@ -215,6 +215,8 @@ reconciliation_backend::process_update(model::ntp ntp, update_t delta) {
           delta.ntp, ntp, rev, delta.new_assignment.replicas);
     case op_t::add:
     case op_t::del:
+    case op_t::cancel_update:
+    case op_t::force_abort_update:
     case op_t::update_properties:
         /// All other case statements are no-ops because those events are
         /// expected to be handled in cluster::controller_backend. Convsersely

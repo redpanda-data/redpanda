@@ -11,6 +11,7 @@
 
 #include "cluster/cluster_utils.h"
 #include "cluster/commands.h"
+#include "cluster/errc.h"
 #include "cluster/fwd.h"
 #include "cluster/logger.h"
 #include "cluster/types.h"
@@ -169,7 +170,12 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
         return ss::make_ready_future<std::error_code>(errc::success);
     }
 
-    _update_in_progress.emplace(cmd.key, current_assignment_it->replicas);
+    _update_in_progress.emplace(
+      cmd.key,
+      in_progress_update{
+        .previous_replicas = current_assignment_it->replicas,
+        .state = in_progress_state::update_requested,
+      });
     auto previous_assignment = *current_assignment_it;
     // replace partition replica set
     current_assignment_it->replicas = cmd.value;
@@ -181,7 +187,10 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
             /// Insert non-replicable topic into the 'update_in_progress' set
             auto [_, success] = _update_in_progress.emplace(
               model::ntp(cs.ns, cs.tp, current_assignment_it->id),
-              current_assignment_it->replicas);
+              in_progress_update{
+                .previous_replicas = current_assignment_it->replicas,
+                .state = in_progress_state::update_requested,
+              });
             vassert(
               success,
               "non_replicable topic {}-{} already in _update_in_progress set",
@@ -245,8 +254,13 @@ topic_table::apply(finish_moving_partition_replicas_cmd cmd, model::offset o) {
         return ss::make_ready_future<std::error_code>(
           errc::invalid_node_operation);
     }
+    auto it = _update_in_progress.find(cmd.key);
+    if (it == _update_in_progress.end()) {
+        return ss::make_ready_future<std::error_code>(
+          errc::no_update_in_progress);
+    }
 
-    _update_in_progress.erase(cmd.key);
+    _update_in_progress.erase(it);
 
     partition_assignment delta_assignment{
       current_assignment_it->group,
@@ -280,6 +294,116 @@ topic_table::apply(finish_moving_partition_replicas_cmd cmd, model::offset o) {
     notify_waiters();
 
     return ss::make_ready_future<std::error_code>(errc::success);
+}
+
+ss::future<std::error_code>
+topic_table::apply(cancel_moving_partition_replicas_cmd cmd, model::offset o) {
+    vlog(
+      clusterlog.trace,
+      "applying cancel moving partition replicas command ntp: {}, "
+      "force_cancel: {}",
+      cmd.key,
+      cmd.value.force);
+
+    /**
+     * Validate partition exists
+     */
+    auto tp = _topics.find(model::topic_namespace_view(cmd.key));
+    if (tp == _topics.end()) {
+        co_return errc::topic_not_exists;
+    }
+    if (!tp->second.is_topic_replicable()) {
+        co_return errc::topic_operation_error;
+    }
+
+    auto current_assignment_it = tp->second.get_assignments().find(
+      cmd.key.tp.partition);
+
+    if (current_assignment_it == tp->second.get_assignments().end()) {
+        co_return errc::partition_not_exists;
+    }
+
+    // update must be in progress to be able to cancel it
+    auto in_progress_it = _update_in_progress.find(cmd.key);
+    if (in_progress_it == _update_in_progress.end()) {
+        co_return errc::no_update_in_progress;
+    }
+    switch (in_progress_it->second.state) {
+    case in_progress_state::update_requested:
+        break;
+    case in_progress_state::cancel_requested:
+        // partition reconfiguration already cancelled, only allow force
+        // cancelling it
+        if (cmd.value.force == force_abort_update::no) {
+            co_return errc::no_update_in_progress;
+        }
+        break;
+    case in_progress_state::force_cancel_requested:
+        // partition reconfiguration already cancelled forcibly
+        co_return errc::no_update_in_progress;
+    }
+
+    in_progress_it->second.state = cmd.value.force
+                                     ? in_progress_state::force_cancel_requested
+                                     : in_progress_state::cancel_requested;
+
+    auto replicas = current_assignment_it->replicas;
+    // replace replica set with set from in progress operation
+    current_assignment_it->replicas = in_progress_it->second.previous_replicas;
+
+    /// Update all non_replicable topics to have the same 'in-progress' state
+    auto found = _topics_hierarchy.find(model::topic_namespace_view(cmd.key));
+    if (found != _topics_hierarchy.end()) {
+        for (const auto& cs : found->second) {
+            auto child_it = _update_in_progress.find(
+              model::ntp(cs.ns, cs.tp, current_assignment_it->id));
+
+            vassert(
+              child_it != _update_in_progress.end(),
+              "non_replicable topic {} in progress state inconsistent with its "
+              "parent {}",
+              cs,
+              cmd.key);
+
+            auto sfound = _topics.find(cs);
+            vassert(
+              sfound != _topics.end(),
+              "Non replicable topic must exist: {} as it was found in "
+              "hierarchy",
+              cs);
+            auto assignment_it = sfound->second.get_assignments().find(
+              current_assignment_it->id);
+            vassert(
+              assignment_it != sfound->second.get_assignments().end(),
+              "Non replicable partition {}/{} assignment must exists",
+              cs,
+              current_assignment_it->id);
+            /// The new assignments of the non_replicable topic/partition must
+            /// match the source topic
+            assignment_it->replicas = in_progress_it->second.previous_replicas;
+        }
+    }
+    /**
+     * Cancel/force abort delta contains two assignments new_assignment is set
+     * to the one the partition is currently being moved from. Previous
+     * assignment is set to an assignment which is target assignment from
+     * current move.
+     */
+
+    _pending_deltas.emplace_back(
+      std::move(cmd.key),
+      partition_assignment{
+        current_assignment_it->group,
+        current_assignment_it->id,
+        in_progress_it->second.previous_replicas},
+      o,
+      cmd.value.force ? delta::op_type::force_abort_update
+                      : delta::op_type::cancel_update,
+      std::move(replicas));
+
+    notify_waiters();
+
+    co_return errc::success;
 }
 
 template<typename T>
@@ -593,7 +717,7 @@ std::optional<std::vector<model::broker_shard>>
 topic_table::get_previous_replica_set(const model::ntp& ntp) const {
     if (auto it = _update_in_progress.find(ntp);
         it != _update_in_progress.end()) {
-        return it->second;
+        return it->second.previous_replicas;
     }
     return std::nullopt;
 }

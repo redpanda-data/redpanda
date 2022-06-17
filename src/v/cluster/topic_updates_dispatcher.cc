@@ -97,6 +97,36 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                       return ec;
                   });
             },
+            [this, base_offset](cancel_moving_partition_replicas_cmd cmd) {
+                auto current_assignment
+                  = _topic_table.local().get_partition_assignment(cmd.key);
+                auto new_target_replicas
+                  = _topic_table.local().get_previous_replica_set(cmd.key);
+                auto ntp = cmd.key;
+                return dispatch_updates_to_cores(std::move(cmd), base_offset)
+                  .then([this,
+                         ntp = std::move(ntp),
+                         current_assignment = std::move(current_assignment),
+                         new_target_replicas = std::move(new_target_replicas)](
+                          std::error_code ec) {
+                      if (ec) {
+                          return ec;
+                      }
+                      vassert(
+                        current_assignment.has_value()
+                          && new_target_replicas.has_value(),
+                        "Previous replicas for NTP {} must exists as finish "
+                        "update can only be applied to partition that is "
+                        "currently being updated",
+                        ntp);
+
+                      auto to_delete = subtract_replica_sets(
+                        current_assignment->replicas, *new_target_replicas);
+                      _partition_allocator.local().remove_allocations(
+                        to_delete);
+                      return ec;
+                  });
+            },
             [this, base_offset](finish_moving_partition_replicas_cmd cmd) {
                 auto previous_replicas
                   = _topic_table.local().get_previous_replica_set(cmd.key);

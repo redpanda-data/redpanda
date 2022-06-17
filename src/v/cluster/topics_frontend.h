@@ -67,6 +67,21 @@ public:
       std::vector<model::broker_shard>,
       model::timeout_clock::time_point);
 
+    /**
+     * Cancelling partition replicas move will use graceful path i.e. will never
+     * allow data loss but it may require to be able to contact majority nodes
+     * in the target(new) quorum.
+     */
+    ss::future<std::error_code> cancel_moving_partition_replicas(
+      model::ntp, model::timeout_clock::time_point);
+    /**
+     * Aborting partition replicas move is an operation that allow force reset
+     * of Raft group configuration to previous state. In some cases it may lead
+     * to data loss but it does not require target(new) quorum to be available.
+     */
+    ss::future<std::error_code> abort_moving_partition_replicas(
+      model::ntp, model::timeout_clock::time_point);
+
     ss::future<std::vector<topic_result>> update_topic_properties(
       std::vector<topic_properties_update>, model::timeout_clock::time_point);
 
