@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import re
+from packaging.version import Version
 
 from ducktape.utils.util import wait_until
 from rptest.tests.redpanda_test import RedpandaTest
@@ -77,3 +78,38 @@ class UpgradeFromSpecificVersion(RedpandaTest):
         self.redpanda.restart_nodes(self.redpanda.nodes)
         unique_versions = wait_for_num_versions(self.redpanda, 1)
         assert "v22.1.3" not in unique_versions, unique_versions
+
+
+class UpgradeFromPriorFeatureVersionTest(RedpandaTest):
+    """
+    Basic test that installs the previous feature version and performs an
+    upgrade.
+    """
+    def __init__(self, test_context):
+        super(UpgradeFromPriorFeatureVersionTest,
+              self).__init__(test_context=test_context,
+                             num_brokers=1,
+                             enable_installer=True)
+        self.installer = self.redpanda._installer
+
+    def setUp(self):
+        self.prev_version = \
+            self.installer.highest_from_prior_feature_version(RedpandaInstaller.HEAD)
+        self.installer.install(self.redpanda.nodes, self.prev_version)
+        super(UpgradeFromPriorFeatureVersionTest, self).setUp()
+
+    @cluster(num_nodes=1,
+             log_allow_list=RESTART_LOG_ALLOW_LIST +
+             [re.compile("cluster - .*Error while reconciling topic.*")])
+    def test_basic_upgrade(self):
+        node = self.redpanda.nodes[0]
+        initial_version = Version(self.redpanda.get_version(node))
+        self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
+
+        self.redpanda.restart_nodes([node])
+        head_version_str = self.redpanda.get_version(node)
+        head_version = Version(head_version_str)
+        assert initial_version < head_version, f"{initial_version} vs {head_version}"
+
+        unique_versions = wait_for_num_versions(self.redpanda, 1)
+        assert head_version_str in unique_versions, unique_versions

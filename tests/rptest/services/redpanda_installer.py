@@ -123,6 +123,13 @@ class RedpandaInstaller:
         def int_tuple(str_tuple):
             return (int(str_tuple[0]), int(str_tuple[1]), int(str_tuple[2]))
 
+        # Keep track of the logical version of the head installation so we can
+        # use it to get older versions relative to the head version.
+        # NOTE: installing this version may not yield the same binaries being
+        # as 'head', e.g. if an unreleased source is checked out.
+        self._head_version: tuple = int_tuple(
+            VERSION_RE.findall(initial_version)[0])
+
         # Initialize and order the releases so we can iterate to previous
         # releases when requested.
         releases_resp = requests.get(
@@ -133,6 +140,22 @@ class RedpandaInstaller:
         ]
         self._released_versions.sort(reverse=True)
         self._started = True
+
+    def highest_from_prior_feature_version(self, version):
+        """
+        Returns the highest version that is of a lower feature version than the
+        given version, or None if one does not exist.
+        """
+        if not self._started:
+            self.start()
+        if version == RedpandaInstaller.HEAD:
+            version = self._head_version
+        # NOTE: the released versions are sorted highest first.
+        for v in self._released_versions:
+            if (v[0] == version[0]
+                    and v[1] < version[1]) or (v[0] < version[0]):
+                return v
+        return None
 
     def install(self, nodes, version):
         """
