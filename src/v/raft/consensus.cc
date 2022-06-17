@@ -515,6 +515,16 @@ void consensus::dispatch_recovery(follower_index_metadata& idx) {
               this, node_id, _scheduling, _recovery_mem_quota);
             auto ptr = recovery.get();
             return ptr->apply()
+              .handle_exception_type(
+                [this, node_id](const std::system_error& syserr) {
+                    // Likely to contain an rpc::errc such as
+                    // client_request_timeout
+                    vlog(
+                      _ctxlog.info,
+                      "Node {} recovery cancelled ({})",
+                      node_id,
+                      syserr.code().message());
+                })
               .handle_exception([this, node_id](const std::exception_ptr& e) {
                   vlog(
                     _ctxlog.warn, "Node {} recovery failed - {}", node_id, e);
@@ -836,6 +846,8 @@ void consensus::dispatch_vote(bool leadership_transfer) {
                                     ss::future<> vote_f) mutable {
                         try {
                             vote_f.get();
+                        } catch (const ss::gate_closed_exception&) {
+                            // Shutting down, don't log.
                         } catch (...) {
                             vlog(
                               _ctxlog.warn,

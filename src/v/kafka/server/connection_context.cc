@@ -68,9 +68,20 @@ ss::future<> connection_context::process_one_request() {
                       _rs.probe().header_corrupted();
                       return ss::make_ready_future<>();
                   }
-                  return handle_mtls_auth().then(
-                    [this, h = std::move(h.value()), s]() mutable {
+                  return handle_mtls_auth()
+                    .then([this, h = std::move(h.value()), s]() mutable {
                         return dispatch_method_once(std::move(h), s);
+                    })
+                    .handle_exception_type([this](const std::bad_alloc&) {
+                        // In general, dispatch_method_once does not throw,
+                        // but bad_allocs are an exception.  Log it cleanly
+                        // to avoid this bubbling up as an unhandled
+                        // exceptional future.
+                        vlog(
+                          klog.error,
+                          "Request from {} failed on memory exhaustion "
+                          "(std::bad_alloc)",
+                          _rs.conn->addr);
                     });
               });
       });
@@ -368,10 +379,22 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                               // on any future reader to check the abort
                               // source before considering reading the
                               // connection.
-                              vlog(
-                                klog.info,
-                                "Detected error processing request: {}",
+
+                              auto disconnected = net::is_disconnect_exception(
                                 e);
+                              if (disconnected) {
+                                  vlog(
+                                    klog.info,
+                                    "Disconnected {} ({})",
+                                    self->_rs.conn->addr,
+                                    disconnected.value());
+                              } else {
+                                  vlog(
+                                    klog.warn,
+                                    "Error processing request: {}",
+                                    e);
+                              }
+
                               self->_rs.probe().service_error();
                               self->_rs.conn->shutdown_input();
                           })

@@ -121,23 +121,57 @@ ss::future<> protocol::apply(net::server::resources rs) {
              [ctx] { return ctx->is_finished_parsing(); },
              [ctx] { return ctx->process_one_request(); })
       .handle_exception([ctx](std::exception_ptr eptr) {
+          auto disconnected = net::is_disconnect_exception(eptr);
           if (config::shard_local_cfg().enable_sasl()) {
-              vlog(
-                klog.info,
-                "{}:{} errored, proto: {}, sasl state: {} - {}",
-                ctx->client_host(),
-                ctx->client_port(),
-                ctx->server().name(),
-                security::sasl_state_to_str(ctx->sasl().state()),
-                eptr);
+              /*
+               * This block is a 2x2 matrix of:
+               * - sasl enabled or disabled
+               * - message looks like a disconnect or internal error
+               *
+               * Disconnects are logged at DEBUG level, because they are
+               * already recorded at INFO level by the outer RPC layer,
+               * so we don't want to log two INFO logs for each client
+               * disconnect.
+               */
+              if (disconnected) {
+                  vlog(
+                    klog.debug,
+                    "Disconnected {} {}:{} ({}, sasl state: {})",
+                    ctx->server().name(),
+                    ctx->client_host(),
+                    ctx->client_port(),
+                    disconnected.value(),
+                    security::sasl_state_to_str(ctx->sasl().state()));
+
+              } else {
+                  vlog(
+                    klog.warn,
+                    "Error {} {}:{}: {} (sasl state: {})",
+                    ctx->server().name(),
+                    ctx->client_host(),
+                    ctx->client_port(),
+                    eptr,
+                    security::sasl_state_to_str(ctx->sasl().state()));
+              }
           } else {
-              vlog(
-                klog.info,
-                "{}:{} errored, proto: {} - {}",
-                ctx->client_host(),
-                ctx->client_port(),
-                ctx->server().name(),
-                eptr);
+              if (disconnected) {
+                  vlog(
+                    klog.debug,
+                    "Disconnected {} {}:{} ({})",
+                    ctx->server().name(),
+                    ctx->client_host(),
+                    ctx->client_port(),
+                    disconnected.value());
+
+              } else {
+                  vlog(
+                    klog.warn,
+                    "Error {} {}:{}: {}",
+                    ctx->server().name(),
+                    ctx->client_host(),
+                    ctx->client_port(),
+                    eptr);
+              }
           }
           return ss::make_exception_future(eptr);
       })

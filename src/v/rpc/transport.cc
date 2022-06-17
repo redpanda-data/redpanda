@@ -135,7 +135,12 @@ transport::make_response_handler(netbuf& b, const rpc::client_opts& opts) {
     item_raw_ptr->with_timeout(opts.timeout, [this, idx] {
         auto it = _correlations.find(idx);
         if (likely(it != _correlations.end())) {
-            vlog(rpclog.info, "Request timeout, correlation id: {}", idx);
+            vlog(
+              rpclog.info,
+              "Request timeout to {}, correlation id: {} ({} in flight)",
+              server_address(),
+              idx,
+              _correlations.size());
             _probe.request_timeout();
             _correlations.erase(it);
         }
