@@ -11,6 +11,8 @@
 
 #include "redpanda/admin_server.h"
 
+#include "archival/service.h"
+#include "cloud_storage/partition_manifest.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/config_frontend.h"
 #include "cluster/controller.h"
@@ -54,6 +56,7 @@
 #include "redpanda/admin/api-doc/partition.json.h"
 #include "redpanda/admin/api-doc/raft.json.h"
 #include "redpanda/admin/api-doc/security.json.h"
+#include "redpanda/admin/api-doc/shadow_indexing.json.h"
 #include "redpanda/admin/api-doc/status.json.h"
 #include "redpanda/admin/api-doc/transaction.json.h"
 #include "redpanda/request_auth.h"
@@ -90,7 +93,8 @@ admin_server::admin_server(
   ss::sharded<coproc::partition_manager>& cpm,
   cluster::controller* controller,
   ss::sharded<cluster::shard_table>& st,
-  ss::sharded<cluster::metadata_cache>& metadata_cache)
+  ss::sharded<cluster::metadata_cache>& metadata_cache,
+  ss::sharded<archival::scheduler_service>& archival_service)
   : _log_level_timer([this] { log_level_timer_handler(); })
   , _server("admin")
   , _cfg(std::move(cfg))
@@ -99,8 +103,8 @@ admin_server::admin_server(
   , _controller(controller)
   , _shard_table(st)
   , _metadata_cache(metadata_cache)
-  , _auth(
-      config::shard_local_cfg().admin_api_require_auth.bind(), _controller) {}
+  , _auth(config::shard_local_cfg().admin_api_require_auth.bind(), _controller)
+  , _archival_service(archival_service) {}
 
 ss::future<> admin_server::start() {
     configure_metrics_route();
@@ -163,6 +167,7 @@ void admin_server::configure_admin_routes() {
     register_transaction_routes();
     register_debug_routes();
     register_cluster_routes();
+    register_shadow_indexing_routes();
 }
 
 struct json_validator {
@@ -2623,5 +2628,51 @@ void admin_server::register_cluster_routes() {
           }
 
           co_return ss::json::json_return_type(ret);
+      });
+}
+
+void admin_server::register_shadow_indexing_routes() {
+    struct manifest_reducer {
+        ss::future<>
+        operator()(std::optional<cloud_storage::partition_manifest>&& value) {
+            _manifest = std::move(value);
+            return ss::make_ready_future<>();
+        }
+        std::optional<cloud_storage::partition_manifest> get() && {
+            return std::move(_manifest);
+        }
+        std::optional<cloud_storage::partition_manifest> _manifest;
+    };
+    register_route<superuser>(
+      ss::httpd::shadow_indexing_json::validate_remote_partition,
+      [this](std::unique_ptr<ss::httpd::request> request)
+        -> ss::future<ss::json::json_return_type> {
+          vlog(logger.info, "Requested bucket syncup");
+          auto topic = model::topic(request->param["topic"]);
+          auto partition = model::partition_id(
+            boost::lexical_cast<int32_t>(request->param["partition"]));
+          auto ntp = model::ntp(model::kafka_namespace, topic, partition);
+          if (need_redirect_to_leader(ntp, _metadata_cache)) {
+              vlog(logger.info, "Need to redirect bucket syncup request");
+              co_await redirect_to_leader(*request, ntp);
+          } else {
+              auto result = co_await _archival_service.map_reduce(
+                manifest_reducer(),
+                [ntp](archival::scheduler_service& service) {
+                    return service.maybe_truncate_manifest(ntp);
+                });
+              vlog(logger.info, "Requested bucket syncup completed");
+              if (result) {
+                  std::stringstream sts;
+                  result->serialize(sts);
+                  vlog(
+                    logger.info,
+                    "Requested bucket syncup result {}",
+                    sts.str());
+              } else {
+                  vlog(logger.info, "Requested bucket syncup result empty");
+              }
+          }
+          co_return ss::json::json_return_type(ss::json::json_void());
       });
 }

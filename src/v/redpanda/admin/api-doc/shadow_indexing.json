@@ -1,0 +1,25 @@
+"/v1/shadow_indexing/validate_remote_partition/{topic}/{partition}": {
+  "post": {
+    "summary": "Check content of the bucket",
+    "operationId": "validate_remote_partition",
+    "parameters": [
+        {
+            "name": "topic",
+            "in": "path",
+            "required": true,
+            "type": "string"
+        },
+        {
+            "name":"partition",
+            "in":"path",
+            "required":true,
+            "type":"integer"
+        }
+    ],
+    "responses": {
+      "200": {
+        "description": "Checking content of the remote bucket"
+      }
+    }
+  }
+}
