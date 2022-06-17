@@ -38,6 +38,29 @@
             ]
         },
         {
+            "path": "/v1/features/license",
+            "operations": [
+                {
+                    "method": "PUT",
+                    "summary": "Upload a new license to redpanda",
+                    "nickname": "put_license",
+                    "type": "void",
+                    "produces": ["application/json"],
+                    "responses": {
+                        "200": {
+                            "description": "OK"
+                        },
+                        "400": {
+                            "description": "Invalid or malformed license",
+                            "schema": {
+                                "type": "json"
+                            }
+                        }
+                    }
+                }
+            ]
+        },
+        {
             "path": "/v1/features/{feature_name}",
             "operations": [
                 {

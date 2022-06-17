@@ -1568,6 +1568,46 @@ void admin_server::register_features_routes() {
           }
           co_return std::move(res);
       });
+
+    register_route<superuser>(
+      ss::httpd::features_json::put_license,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          auto& raw_license = req->content;
+          if (raw_license.empty()) {
+              throw ss::httpd::bad_request_exception(
+                "Missing redpanda license from request body");
+          }
+          if (!_controller->get_feature_table().local().is_active(
+                cluster::feature::license)) {
+              throw ss::httpd::bad_request_exception(
+                "Feature manager reports the cluster is not fully upgraded to "
+                "accept license put requests");
+          }
+
+          try {
+              auto license = security::make_license(raw_license);
+              if (license.is_expired()) {
+                  throw ss::httpd::bad_request_exception(
+                    fmt::format("License is expired: {}", license));
+              }
+              auto& fm = _controller->get_feature_manager();
+              auto err = co_await fm.invoke_on(
+                cluster::feature_manager::backend_shard,
+                [license = std::move(license)](
+                  cluster::feature_manager& fm) mutable {
+                    return fm.update_license(std::move(license));
+                });
+              co_await throw_on_error(*req, err, model::controller_ntp);
+          } catch (const security::license_malformed_exception& ex) {
+              throw ss::httpd::bad_request_exception(
+                fmt::format("License is malformed: {}", ex.what()));
+          } catch (const security::license_invalid_exception& ex) {
+              throw ss::httpd::bad_request_exception(
+                fmt::format("License is invalid: {}", ex.what()));
+          }
+          co_return ss::json::json_void();
+      });
 }
 
 model::node_id parse_broker_id(const ss::httpd::request& req) {
