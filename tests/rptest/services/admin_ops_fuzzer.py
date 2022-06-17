@@ -164,7 +164,7 @@ class AddPartitionsOperation(Operation):
     def __init__(self, prefix):
         self.prefix = prefix
         self.topic = None
-        self.total_partitions = None
+        self.total = None
 
     def execute(self, redpanda):
         rpk = RpkTool(redpanda)
@@ -410,8 +410,8 @@ class AdminOperationsFuzzer():
     def stop(self):
         self._stopping.set()
         self.thread.join()
-        if self.error:
-            raise self.error
+
+        assert self.error is None, f"Encountered an error in admin operations fuzzer: {self.error}"
 
     def wait(self, count, timeout):
         wait_until(lambda: self.executed > count, timeout, 2)
