@@ -279,6 +279,16 @@ public:
     std::optional<model::offset>
     get_cloud_term_last_offset(model::term_id term) const;
 
+    ss::future<std::error_code>
+    cancel_replica_set_update(model::revision_id rev) {
+        return _raft->cancel_configuration_change(rev);
+    }
+
+    ss::future<std::error_code>
+    force_abort_replica_set_update(model::revision_id rev) {
+        return _raft->abort_configuration_change(rev);
+    }
+
 private:
     friend partition_manager;
     friend replicated_partition_probe;
