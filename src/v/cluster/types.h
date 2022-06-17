@@ -22,6 +22,7 @@
 #include "model/timeout_clock.h"
 #include "raft/types.h"
 #include "security/acl.h"
+#include "security/license.h"
 #include "serde/envelope.h"
 #include "serde/serde.h"
 #include "storage/ntp_config.h"
@@ -1872,6 +1873,19 @@ struct cancel_moving_partition_replicas_cmd_data
     auto serde_fields() { return std::tie(force); }
 };
 
+struct feature_update_license_update_cmd_data
+  : serde::envelope<feature_update_license_update_cmd_data, serde::version<0>> {
+    // Struct encoding version
+    static constexpr int8_t current_version = 1;
+
+    security::license redpanda_license;
+
+    auto serde_fields() { return std::tie(redpanda_license); }
+
+    friend std::ostream&
+    operator<<(std::ostream&, const feature_update_license_update_cmd_data&);
+};
+
 enum class reconciliation_status : int8_t {
     done,
     in_progress,
@@ -2468,6 +2482,12 @@ template<>
 struct adl<cluster::feature_update_cmd_data> {
     void to(iobuf&, cluster::feature_update_cmd_data&&);
     cluster::feature_update_cmd_data from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::feature_update_license_update_cmd_data> {
+    void to(iobuf& out, cluster::feature_update_license_update_cmd_data&&);
+    cluster::feature_update_license_update_cmd_data from(iobuf_parser&);
 };
 
 template<>

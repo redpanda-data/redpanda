@@ -162,6 +162,13 @@ def decode_feature_command(record):
         cmd['v'] = k_rdr.read_int8()
         cmd['cluster_version'] = k_rdr.read_int64()
         cmd['actions'] = k_rdr.read_vector(decode_feature_update_action)
+    elif cmd['type'] == 1:
+        cmd['type_name'] = 'license_update'
+        k_rdr.read_envelope()
+        cmd['format_v'] = k_rdr.read_uint8()
+        cmd['license_type'] = k_rdr.read_uint8()
+        cmd['org'] = k_rdr.read_string()
+        cmd['expiry'] = k_rdr.read_string()
     else:
         cmd['type_name'] = 'unknown'
     return cmd
