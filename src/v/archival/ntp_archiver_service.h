@@ -114,6 +114,10 @@ public:
 
     uint64_t estimate_backlog_size();
 
+    /// \brief Probe remote storage and truncate the manifest if needed
+    ss::future<std::optional<cloud_storage::partition_manifest>>
+    maybe_truncate_manifest(retry_chain_node& rtc);
+
 private:
     /// Information about started upload
     struct scheduled_upload {
