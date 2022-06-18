@@ -23,6 +23,7 @@
 #include "raft/state_machine.h"
 #include "raft/types.h"
 #include "storage/snapshot.h"
+#include "utils/available_promise.h"
 #include "utils/expiring_promise.h"
 #include "utils/mutex.h"
 
@@ -169,6 +170,11 @@ public:
     ss::future<std::vector<rm_stm::tx_range>>
       aborted_transactions(model::offset, model::offset);
 
+    raft::replicate_stages replicate_in_stages(
+      model::batch_identity,
+      model::record_batch_reader,
+      raft::replicate_options);
+
     ss::future<result<raft::replicate_result>> replicate(
       model::batch_identity,
       model::record_batch_reader,
@@ -269,13 +275,20 @@ private:
     void set_seq(model::batch_identity, model::offset);
     void reset_seq(model::batch_identity);
 
+    ss::future<result<raft::replicate_result>> do_replicate(
+      model::batch_identity,
+      model::record_batch_reader,
+      raft::replicate_options,
+      ss::lw_shared_ptr<available_promise<>>);
+
     ss::future<result<raft::replicate_result>>
       replicate_tx(model::batch_identity, model::record_batch_reader);
 
     ss::future<result<raft::replicate_result>> replicate_seq(
       model::batch_identity,
       model::record_batch_reader,
-      raft::replicate_options);
+      raft::replicate_options,
+      ss::lw_shared_ptr<available_promise<>>);
 
     void compact_snapshot();
 
