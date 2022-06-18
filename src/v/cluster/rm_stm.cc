@@ -760,12 +760,43 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
     co_return tx_errc::none;
 }
 
+raft::replicate_stages rm_stm::replicate_in_stages(
+  model::batch_identity bid,
+  model::record_batch_reader r,
+  raft::replicate_options opts) {
+    auto enqueued = ss::make_lw_shared<available_promise<>>();
+    auto f = enqueued->get_future();
+    auto replicate_finished
+      = do_replicate(bid, std::move(r), opts, enqueued).finally([enqueued] {
+            // we should avoid situations when replicate_finished is set while
+            // enqueued isn't because it leads to hanging produce requests and
+            // the resource leaks. since staged replication is an optimization
+            // and setting enqueued only after replicate_finished is already
+            // set doesn't have sematic implications adding this post
+            // replicate_finished as a safety measure in case enqueued isn't
+            // set explicitly
+            if (!enqueued->available()) {
+                enqueued->set_value();
+            }
+        });
+    return raft::replicate_stages(std::move(f), std::move(replicate_finished));
+}
+
 ss::future<result<raft::replicate_result>> rm_stm::replicate(
   model::batch_identity bid,
-  model::record_batch_reader b,
+  model::record_batch_reader r,
   raft::replicate_options opts) {
+    auto enqueued = ss::make_lw_shared<available_promise<>>();
+    return do_replicate(bid, std::move(r), opts, enqueued);
+}
+
+ss::future<result<raft::replicate_result>> rm_stm::do_replicate(
+  model::batch_identity bid,
+  model::record_batch_reader b,
+  raft::replicate_options opts,
+  ss::lw_shared_ptr<available_promise<>> enqueued) {
     return _state_lock.hold_read_lock().then(
-      [this, bid, opts, b = std::move(b)](
+      [this, enqueued, bid, opts, b = std::move(b)](
         ss::basic_rwlock<>::holder unit) mutable {
           if (bid.is_transactional) {
               auto pid = bid.pid.get_id();
@@ -778,8 +809,9 @@ ss::future<result<raft::replicate_result>> rm_stm::replicate(
               request_id rid{.pid = bid.pid, .seq = bid.first_seq};
               return with_request_lock(
                        rid,
-                       [this, bid, opts, b = std::move(b)]() mutable {
-                           return replicate_seq(bid, std::move(b), opts);
+                       [this, enqueued, bid, opts, b = std::move(b)]() mutable {
+                           return replicate_seq(
+                             bid, std::move(b), opts, enqueued);
                        })
                 .finally([u = std::move(unit)] {});
           }
@@ -1064,8 +1096,11 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
 ss::future<result<raft::replicate_result>> rm_stm::replicate_seq(
   model::batch_identity bid,
   model::record_batch_reader br,
-  raft::replicate_options opts) {
+  raft::replicate_options opts,
+  [[maybe_unused]] ss::lw_shared_ptr<available_promise<>> enqueued) {
     if (!co_await sync(_sync_timeout)) {
+        // it's ok not to set enqueued on early return because
+        // the safety check in replicate_in_stages sets it automatically
         co_return errc::not_leader;
     }
     auto synced_term = _insync_term;
