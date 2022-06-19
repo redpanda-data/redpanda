@@ -125,7 +125,7 @@ class TxAdminTest(RedpandaTest):
                 self.admin.transfer_leadership_to(namespace="kafka",
                                                   topic=topic,
                                                   partition=partition,
-                                                  target=None)
+                                                  target_id=None)
 
                 def leader_is_changed():
                     new_leader = self.admin.get_partition_leader(
