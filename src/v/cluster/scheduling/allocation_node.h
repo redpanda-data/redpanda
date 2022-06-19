@@ -13,6 +13,7 @@
 
 #include "cluster/scheduling/types.h"
 #include "cluster/types.h"
+#include "config/property.h"
 #include "model/fundamental.h"
 
 #include <absl/container/node_hash_map.h>
@@ -20,6 +21,7 @@
 namespace cluster {
 
 class allocation_state;
+
 /**
  * Allocation node represent a node where partitions may be allocated
  */
@@ -29,15 +31,13 @@ public:
     using allocation_capacity
       = named_type<uint32_t, struct allocation_node_slot_tag>;
 
-    static constexpr const allocation_capacity core0_extra_weight{2};
-    // TODO make configurable
-    static constexpr const allocation_capacity max_allocations_per_core{7000};
-
     allocation_node(
       model::node_id,
       uint32_t,
       absl::node_hash_map<ss::sstring, ss::sstring>,
-      std::optional<model::rack_id>);
+      std::optional<model::rack_id>,
+      config::binding<uint32_t>,
+      config::binding<uint32_t>);
 
     allocation_node(allocation_node&& o) noexcept = default;
     allocation_node& operator=(allocation_node&&) = delete;
@@ -107,6 +107,13 @@ private:
     absl::node_hash_map<ss::sstring, ss::sstring> _machine_labels;
     state _state = state::active;
     std::optional<model::rack_id> _rack;
+
+    config::binding<uint32_t> _partitions_per_shard;
+    config::binding<uint32_t> _partitions_reserve_shard0;
+    // Keep track of how much weight we applied to shard0,
+    // to enable runtime updates
+    int32_t _shard0_reserved{0};
+    uint32_t _cpus;
 
     friend std::ostream& operator<<(std::ostream&, const allocation_node&);
     friend std::ostream& operator<<(std::ostream& o, state s);

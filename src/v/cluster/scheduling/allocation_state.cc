@@ -107,7 +107,9 @@ void allocation_state::update_allocation_nodes(
                 b.id(),
                 b.properties().cores,
                 absl::node_hash_map<ss::sstring, ss::sstring>{},
-                b.rack()));
+                b.rack(),
+                _partitions_per_shard,
+                _partitions_reserve_shard0));
         } else {
             it->second->update_core_count(b.properties().cores);
             // node was added back to the cluster

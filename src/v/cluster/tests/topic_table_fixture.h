@@ -20,15 +20,6 @@
 #include "test_utils/fixture.h"
 #include "units.h"
 
-static std::unique_ptr<cluster::allocation_node>
-create_allocation_node(model::node_id nid, uint32_t cores) {
-    return std::make_unique<cluster::allocation_node>(
-      nid,
-      cores,
-      absl::node_hash_map<ss::sstring, ss::sstring>{},
-      std::nullopt);
-}
-
 static void validate_delta(
   const std::vector<cluster::topic_table::delta>& d,
   int new_partitions,
@@ -46,6 +37,9 @@ static void validate_delta(
 }
 
 struct topic_table_fixture {
+    static constexpr uint32_t partitions_per_shard = 7000;
+    static constexpr uint32_t partitions_reserve_shard0 = 2;
+
     topic_table_fixture() {
         table.start().get0();
         members.start_single().get0();
@@ -54,6 +48,8 @@ struct topic_table_fixture {
             std::ref(members),
             config::mock_binding<std::optional<size_t>>(std::nullopt),
             config::mock_binding<std::optional<int32_t>>(std::nullopt),
+            config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
+            config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0}),
             config::mock_binding<size_t>(32_MiB),
             config::mock_binding<bool>(false))
           .get0();
@@ -70,6 +66,17 @@ struct topic_table_fixture {
         allocator.stop().get0();
         members.stop().get0();
         as.request_abort();
+    }
+
+    static std::unique_ptr<cluster::allocation_node>
+    create_allocation_node(model::node_id nid, uint32_t cores) {
+        return std::make_unique<cluster::allocation_node>(
+          nid,
+          cores,
+          absl::node_hash_map<ss::sstring, ss::sstring>{},
+          std::nullopt,
+          config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
+          config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0}));
     }
 
     cluster::topic_configuration_assignment make_tp_configuration(
