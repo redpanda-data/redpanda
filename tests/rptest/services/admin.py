@@ -542,15 +542,18 @@ class Admin:
 
         return partition_info['leader_id']
 
-    def transfer_leadership_to(self, *, namespace, topic, partition, target):
+    def transfer_leadership_to(self,
+                               *,
+                               namespace,
+                               topic,
+                               partition,
+                               target_id=None):
         """
         Looks up current ntp leader and transfer leadership to target node, 
         this operations is NOP when current leader is the same as target.
         If user pass None for target this function will choose next replica for new leader.
         If leadership transfer was performed this function return True
         """
-        target_id = self.redpanda.idx(target) if isinstance(
-            target, ClusterNode) else target
 
         #  check which node is current leader
 
