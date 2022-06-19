@@ -2445,7 +2445,7 @@ void admin_server::register_partition_routes() {
           using reconfiguration = ss::httpd::partition_json::reconfiguration;
           std::vector<reconfiguration> ret;
           auto in_progress
-            = _controller->get_topics_state().local().in_progress_updates();
+            = _controller->get_topics_state().local().updates_in_progress();
 
           ret.reserve(in_progress.size());
           for (auto& [ntp, status] : in_progress) {

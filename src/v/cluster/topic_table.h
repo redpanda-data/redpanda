@@ -77,6 +77,8 @@ public:
           });
     }
 
+    using updates_t = absl::node_hash_map<model::ntp, in_progress_update>;
+
     bool is_batch_applicable(const model::record_batch& b) const {
         return b.header().type
                == model::record_batch_type::topic_management_cmd;
@@ -183,7 +185,11 @@ public:
     bool is_update_in_progress(const model::ntp&) const;
 
     bool has_updates_in_progress() const {
-        return !_update_in_progress.empty();
+        return !_updates_in_progress.empty();
+    }
+
+    const updates_t& updates_in_progress() const {
+        return _updates_in_progress;
     }
 
     ///\brief Returns initial revision id of the topic
@@ -201,11 +207,6 @@ public:
      */
     std::optional<std::vector<model::broker_shard>>
     get_previous_replica_set(const model::ntp&) const;
-
-    const absl::node_hash_map<model::ntp, in_progress_update>&
-    in_progress_updates() const {
-        return _update_in_progress;
-    }
 
 private:
     struct waiter {
@@ -226,7 +227,7 @@ private:
     underlying_t _topics;
     hierarchy_t _topics_hierarchy;
 
-    absl::node_hash_map<model::ntp, in_progress_update> _update_in_progress;
+    updates_t _updates_in_progress;
 
     std::vector<delta> _pending_deltas;
     std::vector<std::unique_ptr<waiter>> _waiters;
