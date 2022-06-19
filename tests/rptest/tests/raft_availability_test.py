@@ -16,7 +16,7 @@ from typing import Optional
 import requests
 
 from ducktape.mark import parametrize
-from ducktape.utils.util import wait_until
+from rptest.util import wait_until
 
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.rpk import RpkTool, RpkException
