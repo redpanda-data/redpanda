@@ -626,8 +626,8 @@ leader_balancer::do_transfer_local(reassignment transfer) const {
     }
     auto shard = _shard_table.local().shard_for(transfer.group);
     auto func = [transfer, shard](cluster::partition_manager& pm) {
-        auto consensus = pm.consensus_for(transfer.group);
-        if (!consensus) {
+        auto partition = pm.partition_for(transfer.group);
+        if (!partition) {
             vlog(
               clusterlog.info,
               "Cannot complete group {} leader transfer: group instance "
@@ -636,7 +636,7 @@ leader_balancer::do_transfer_local(reassignment transfer) const {
               shard);
             return ss::make_ready_future<bool>(false);
         }
-        return consensus->do_transfer_leadership(transfer.to.node_id)
+        return partition->transfer_leadership(transfer.to.node_id)
           .then([group = transfer.group](std::error_code err) {
               if (err) {
                   vlog(

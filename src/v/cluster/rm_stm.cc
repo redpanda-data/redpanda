@@ -790,6 +790,15 @@ ss::future<result<raft::replicate_result>> rm_stm::replicate(
     return do_replicate(bid, std::move(r), opts, enqueued);
 }
 
+ss::future<std::error_code>
+rm_stm::transfer_leadership(std::optional<model::node_id> target) {
+    return _state_lock.hold_write_lock().then(
+      [this, target](ss::basic_rwlock<>::holder unit) {
+          return _c->do_transfer_leadership(target).finally(
+            [u = std::move(unit)] {});
+      });
+}
+
 ss::future<result<raft::replicate_result>> rm_stm::do_replicate(
   model::batch_identity bid,
   model::record_batch_reader b,
