@@ -120,7 +120,11 @@ copy_data_segment_reducer::filter(model::record_batch&& batch) {
     // offset translation
     if (
       batch.header().type == model::record_batch_type::raft_configuration
-      || batch.header().type == model::record_batch_type::archival_metadata) {
+      || batch.header().type == model::record_batch_type::archival_metadata
+      || batch.header().type == model::record_batch_type::archival_metadata
+      || batch.header().type == model::record_batch_type::group_abort_tx
+      || batch.header().type == model::record_batch_type::group_commit_tx
+      || batch.header().type == model::record_batch_type::group_prepare_tx) {
         return std::move(batch);
     }
 
