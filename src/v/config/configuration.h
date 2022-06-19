@@ -58,6 +58,8 @@ struct configuration final : public config_store {
     // Controller
     bounded_property<std::optional<std::size_t>> topic_memory_per_partition;
     bounded_property<std::optional<int32_t>> topic_fds_per_partition;
+    bounded_property<uint32_t> topic_partitions_per_shard;
+    bounded_property<uint32_t> topic_partitions_reserve_shard0;
 
     // Admin API
     property<bool> admin_api_require_auth;

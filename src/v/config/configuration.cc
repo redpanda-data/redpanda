@@ -36,6 +36,10 @@ uint32_t default_raft_non_local_requests() {
      *         ^                                 ^
      * append entries requests          additional requests
      */
+
+    // TODO: this is no longer hardcoded, this function should
+    // be updated to respect topic_partitions_per_shard configuration
+    // property.
     static constexpr uint32_t max_partitions_per_core = 7000;
     static constexpr uint32_t max_append_requests_per_follower = 256;
     static constexpr uint32_t additional_requests_per_follower = 10;
@@ -143,6 +147,33 @@ configuration::configuration()
         .min = 1,   // At least one FD per partition, required for appender.
         .max = 1000 // A system with 1M ulimit should be allowed to create at
                     // least 1000 partitions
+      })
+  , topic_partitions_per_shard(
+      *this,
+      "topic_partitions_per_shard",
+      "Maximum number of partitions which may be allocated to one shard (CPU "
+      "core)",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      7000,
+      {
+        .min = 16,    // Forbid absurdly small values that would prevent most
+                      // practical workloads from running
+        .max = 131072 // An upper bound to prevent pathological values, although
+                      // systems will most likely hit issues far before reaching
+                      // this.  This property is principally intended to be
+                      // tuned downward from the default, not upward.
+      })
+  , topic_partitions_reserve_shard0(
+      *this,
+      "topic_reserve_shard0",
+      "Reserved partition slots on shard (CPU core) 0 on each node.  If this "
+      "is >= topic_partitions_per_core, no data partitions will be scheduled "
+      "on shard 0",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      2,
+      {
+        .min = 0,     // It is not mandatory to reserve any capacity
+        .max = 131072 // Same max as topic_partitions_per_shard
       })
   , admin_api_require_auth(
       *this,
