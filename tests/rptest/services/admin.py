@@ -14,7 +14,6 @@ from time import sleep
 from requests.adapters import HTTPAdapter
 from requests.exceptions import RequestException
 from requests.packages.urllib3.util.retry import Retry
-from ducktape.utils.util import wait_until
 from ducktape.cluster.cluster import ClusterNode
 from typing import Optional, Callable, NamedTuple
 from rptest.util import wait_until_result
