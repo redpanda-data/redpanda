@@ -180,6 +180,9 @@ public:
       model::record_batch_reader,
       raft::replicate_options);
 
+    ss::future<std::error_code>
+      transfer_leadership(std::optional<model::node_id>);
+
     ss::future<> stop() override;
 
     void testing_only_disable_auto_abort() { _is_autoabort_enabled = false; }
