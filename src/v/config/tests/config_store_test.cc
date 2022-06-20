@@ -37,8 +37,8 @@ struct test_config : public config::config_store {
     config::property<std::chrono::seconds> seconds;
     config::property<std::optional<std::chrono::seconds>> optional_seconds;
     config::property<std::chrono::milliseconds> milliseconds;
-    config::property<ss::sstring> secret_string;
     config::property<ss::sstring> default_secret_string;
+    config::property<ss::sstring> secret_string;
 
     test_config()
       : optional_int(
