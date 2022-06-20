@@ -134,6 +134,17 @@ public:
       const remote_segment_path& path,
       retry_chain_node& parent);
 
+    /// \brief Delete segment from S3
+    ///
+    /// The method deletes the segment. It can retry after some errors.
+    ///
+    /// \param segment_path is a segment's name in S3
+    /// \param manifest is a manifest that should have the segment metadata
+    ss::future<upload_result> delete_segment(
+      const s3::bucket_name& bucket,
+      const remote_segment_path& segment_path,
+      retry_chain_node& parent);
+
 private:
     s3::client_pool _pool;
     ss::gate _gate;

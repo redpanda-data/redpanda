@@ -548,4 +548,74 @@ ss::future<download_result> remote::segment_exists(
     co_return *result;
 }
 
+ss::future<upload_result> remote::delete_segment(
+  const s3::bucket_name& bucket,
+  const remote_segment_path& segment_path,
+  retry_chain_node& parent) {
+    ss::gate::holder gh{_gate};
+    retry_chain_node fib(&parent);
+    retry_chain_logger ctxlog(cst_log, fib);
+    auto path = s3::object_key(segment_path());
+    auto [client, deleter] = co_await _pool.acquire();
+    auto permit = fib.retry();
+    vlog(ctxlog.debug, "Delete segment {}", path);
+    std::optional<upload_result> result;
+    while (!_gate.is_closed() && permit.is_allowed && !result) {
+        std::exception_ptr eptr = nullptr;
+        try {
+            // NOTE: DeleteObject in S3 doesn't return an error
+            // if the object doesn't exist. Because of that we're
+            // using 'upload_result' type as a return type. No need
+            // to handle NoSuchKey error. The 'upload_result' represents
+            // any mutable operation.
+            co_await client->delete_object(bucket, path, fib.get_timeout());
+            vlog(ctxlog.debug, "Receive OK DeleteObject {} response", path);
+            co_return upload_result::success;
+        } catch (...) {
+            eptr = std::current_exception();
+        }
+        co_await client->shutdown();
+        auto outcome = categorize_error(eptr, fib, bucket, path);
+        switch (outcome) {
+        case error_outcome::retry_slowdown:
+            [[fallthrough]];
+        case error_outcome::retry:
+            vlog(
+              ctxlog.debug,
+              "DeleteObject {}, {} backoff required",
+              bucket,
+              std::chrono::duration_cast<std::chrono::milliseconds>(
+                permit.delay));
+            co_await ss::sleep_abortable(permit.delay, _as);
+            permit = fib.retry();
+            break;
+        case error_outcome::fail:
+            result = upload_result::failed;
+            break;
+        case error_outcome::notfound:
+            vassert(
+              false,
+              "Unexpected NoSuchKey error response from DeleteObject {}",
+              path);
+            break;
+        }
+    }
+    if (!result) {
+        vlog(
+          ctxlog.warn,
+          "DeleteObject {}, {}, backoff quota exceded, segment not deleted",
+          path,
+          bucket);
+        result = upload_result::timedout;
+    } else {
+        vlog(
+          ctxlog.warn,
+          "DeleteObject {}, {}, segment not deleted, error: {}",
+          path,
+          bucket,
+          *result);
+    }
+    co_return *result;
+}
+
 } // namespace cloud_storage

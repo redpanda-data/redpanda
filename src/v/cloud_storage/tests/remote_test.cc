@@ -255,3 +255,32 @@ FIXTURE_TEST(test_segment_exists_timeout, s3_imposter_fixture) { // NOLINT
     auto expect_timeout = remote.segment_exists(bucket, path, fib).get();
     BOOST_REQUIRE(expect_timeout == download_result::timedout);
 }
+
+FIXTURE_TEST(test_segment_delete, s3_imposter_fixture) { // NOLINT
+    set_expectations_and_listen({});
+    auto conf = get_configuration();
+    auto bucket = s3::bucket_name("bucket");
+    remote remote(s3_connection_limit(10), conf);
+    auto name = segment_name("0-1-v1.log");
+    auto path = generate_remote_segment_path(
+      manifest_ntp, manifest_revision, name, model::term_id{1});
+
+    retry_chain_node fib(100ms, 20ms);
+    uint64_t clen = manifest_payload.size();
+    auto action = ss::defer([&remote] { remote.stop().get(); });
+    auto reset_stream = []() -> ss::future<storage::segment_reader_handle> {
+        iobuf out;
+        out.append(manifest_payload.data(), manifest_payload.size());
+        co_return storage::segment_reader_handle(
+          make_iobuf_input_stream(std::move(out)));
+    };
+    auto upl_res
+      = remote.upload_segment(bucket, path, clen, reset_stream, fib).get();
+    BOOST_REQUIRE(upl_res == upload_result::success);
+
+    // NOTE: we have to upload something as segment in order for the mock to
+    // work correctly.
+
+    auto expected_notfound = remote.delete_segment(bucket, path, fib).get();
+    BOOST_REQUIRE(expected_notfound == upload_result::success);
+}
