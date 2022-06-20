@@ -1,0 +1,6 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Console
+metadata:
+  name: console-sample
+spec:
+  # TODO(user): Add fields here

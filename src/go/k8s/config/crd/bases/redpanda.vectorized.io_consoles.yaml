@@ -1,0 +1,545 @@
+
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.4.1
+  creationTimestamp: null
+  name: consoles.redpanda.vectorized.io
+spec:
+  group: redpanda.vectorized.io
+  names:
+    kind: Console
+    listKind: ConsoleList
+    plural: consoles
+    singular: console
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Console is the Schema for the consoles API
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ConsoleSpec defines the desired state of Console
+            properties:
+              connect:
+                properties:
+                  clusters:
+                    items:
+                      properties:
+                        name:
+                          description: Name will be shown in the Frontend to identify
+                            a connect cluster
+                          type: string
+                        password:
+                          type: string
+                        tls:
+                          description: Authentication configuration
+                          properties:
+                            caFilepath:
+                              type: string
+                            certFilepath:
+                              type: string
+                            enabled:
+                              type: boolean
+                            insecureSkipTLSVerify:
+                              type: boolean
+                            keyFilepath:
+                              type: string
+                          required:
+                          - caFilepath
+                          - certFilepath
+                          - enabled
+                          - insecureSkipTLSVerify
+                          - keyFilepath
+                          type: object
+                        token:
+                          type: string
+                        url:
+                          description: URL is the HTTP address that will be set as
+                            base url for all requests
+                          type: string
+                        username:
+                          type: string
+                      required:
+                      - name
+                      - password
+                      - tls
+                      - token
+                      - url
+                      - username
+                      type: object
+                    type: array
+                  connectTimeout:
+                    description: A Duration represents the elapsed time between two
+                      instants as an int64 nanosecond count. The representation limits
+                      the largest representable duration to approximately 290 years.
+                    format: int64
+                    type: integer
+                  enabled:
+                    type: boolean
+                  readTimeout:
+                    description: A Duration represents the elapsed time between two
+                      instants as an int64 nanosecond count. The representation limits
+                      the largest representable duration to approximately 290 years.
+                    format: int64
+                    type: integer
+                  requestTimeout:
+                    description: A Duration represents the elapsed time between two
+                      instants as an int64 nanosecond count. The representation limits
+                      the largest representable duration to approximately 290 years.
+                    format: int64
+                    type: integer
+                required:
+                - clusters
+                - connectTimeout
+                - enabled
+                - readTimeout
+                - requestTimeout
+                type: object
+              console:
+                description: 'INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
+                  Important: Run "make" to regenerate code after modifying this file'
+                properties:
+                  topicDocumentation:
+                    properties:
+                      enabled:
+                        type: boolean
+                      git:
+                        description: Config for Git Service
+                        properties:
+                          basicAuth:
+                            description: Authentication Configs
+                            properties:
+                              enabled:
+                                type: boolean
+                              password:
+                                type: string
+                              username:
+                                type: string
+                            required:
+                            - enabled
+                            - password
+                            - username
+                            type: object
+                          enabled:
+                            type: boolean
+                          refreshInterval:
+                            description: RefreshInterval specifies how often the repository
+                              shall be pulled to check for new changes.
+                            format: int64
+                            type: integer
+                          repository:
+                            description: Repository that contains markdown files that
+                              document a Kafka topic.
+                            properties:
+                              baseDirectory:
+                                type: string
+                              branch:
+                                type: string
+                              url:
+                                type: string
+                            required:
+                            - baseDirectory
+                            - branch
+                            - url
+                            type: object
+                          ssh:
+                            properties:
+                              enabled:
+                                type: boolean
+                              passphrase:
+                                type: string
+                              privateKey:
+                                type: string
+                              privateKeyFilePath:
+                                type: string
+                              username:
+                                type: string
+                            required:
+                            - enabled
+                            - passphrase
+                            - privateKey
+                            - privateKeyFilePath
+                            - username
+                            type: object
+                        required:
+                        - basicAuth
+                        - enabled
+                        - refreshInterval
+                        - repository
+                        - ssh
+                        type: object
+                    required:
+                    - enabled
+                    - git
+                    type: object
+                required:
+                - topicDocumentation
+                type: object
+              kafka:
+                description: Config required for opening a connection to Kafka
+                properties:
+                  brokers:
+                    description: General
+                    items:
+                      type: string
+                    type: array
+                  clientID:
+                    type: string
+                  messagePack:
+                    description: Config represents the message pack config.
+                    properties:
+                      enabled:
+                        type: boolean
+                      topicNames:
+                        description: TopicNames is a list of topic names that shall
+                          be considered for messagepack decoding. These names can
+                          be provided as regex string (e. g. "/.*/" or "/prefix-.*/")
+                          or as plain topic name such as "frontend-activities". This
+                          defaults to `/.*/`
+                        items:
+                          type: string
+                        type: array
+                    required:
+                    - enabled
+                    - topicNames
+                    type: object
+                  protobuf:
+                    properties:
+                      enabled:
+                        type: boolean
+                      fileSystem:
+                        description: Config for Filesystem service
+                        properties:
+                          enabled:
+                            type: boolean
+                          paths:
+                            description: Paths whose files shall be watched. Subdirectories
+                              and their files will be included.
+                            items:
+                              type: string
+                            type: array
+                          refreshInterval:
+                            description: RefreshInterval specifies how often the repository
+                              shall be pulled to check for new changes.
+                            format: int64
+                            type: integer
+                        required:
+                        - enabled
+                        - paths
+                        - refreshInterval
+                        type: object
+                      git:
+                        description: Config for Git Service
+                        properties:
+                          basicAuth:
+                            description: Authentication Configs
+                            properties:
+                              enabled:
+                                type: boolean
+                              password:
+                                type: string
+                              username:
+                                type: string
+                            required:
+                            - enabled
+                            - password
+                            - username
+                            type: object
+                          enabled:
+                            type: boolean
+                          refreshInterval:
+                            description: RefreshInterval specifies how often the repository
+                              shall be pulled to check for new changes.
+                            format: int64
+                            type: integer
+                          repository:
+                            description: Repository that contains markdown files that
+                              document a Kafka topic.
+                            properties:
+                              baseDirectory:
+                                type: string
+                              branch:
+                                type: string
+                              url:
+                                type: string
+                            required:
+                            - baseDirectory
+                            - branch
+                            - url
+                            type: object
+                          ssh:
+                            properties:
+                              enabled:
+                                type: boolean
+                              passphrase:
+                                type: string
+                              privateKey:
+                                type: string
+                              privateKeyFilePath:
+                                type: string
+                              username:
+                                type: string
+                            required:
+                            - enabled
+                            - passphrase
+                            - privateKey
+                            - privateKeyFilePath
+                            - username
+                            type: object
+                        required:
+                        - basicAuth
+                        - enabled
+                        - refreshInterval
+                        - repository
+                        - ssh
+                        type: object
+                      mappings:
+                        description: Mappings define what proto types shall be used
+                          for each Kafka topic. If SchemaRegistry is used, no mappings
+                          are required.
+                        items:
+                          properties:
+                            keyProtoType:
+                              description: KeyProtoType is the proto's fully qualified
+                                name that shall be used for a Kafka record's key
+                              type: string
+                            topicName:
+                              type: string
+                            valueProtoType:
+                              description: ValueProtoType is the proto's fully qualified
+                                name that shall be used for a Kafka record's value
+                              type: string
+                          required:
+                          - keyProtoType
+                          - topicName
+                          - valueProtoType
+                          type: object
+                        type: array
+                      schemaRegistry:
+                        description: The required proto definitions can be provided
+                          via SchemaRegistry, Git or Filesystem
+                        properties:
+                          enabled:
+                            type: boolean
+                          refreshInterval:
+                            description: A Duration represents the elapsed time between
+                              two instants as an int64 nanosecond count. The representation
+                              limits the largest representable duration to approximately
+                              290 years.
+                            format: int64
+                            type: integer
+                        required:
+                        - enabled
+                        - refreshInterval
+                        type: object
+                    required:
+                    - enabled
+                    - fileSystem
+                    - git
+                    - mappings
+                    - schemaRegistry
+                    type: object
+                  rackID:
+                    type: string
+                  sasl:
+                    description: SASLConfig for Kafka client
+                    properties:
+                      awsMskIam:
+                        description: 'SASLAwsMskIam is the config for AWS IAM SASL
+                          mechanism, see: https://docs.aws.amazon.com/msk/latest/developerguide/iam-access-control.html'
+                        properties:
+                          accessKey:
+                            type: string
+                          secretKey:
+                            type: string
+                          sessionToken:
+                            description: 'SessionToken, if non-empty, is a session
+                              / security token to use for authentication. See: https://docs.aws.amazon.com/STS/latest/APIReference/welcome.html'
+                            type: string
+                          userAgent:
+                            description: "UserAgent is the user agent to for the client
+                              to use when connecting to Kafka, overriding the default
+                              \"franz-go/<runtime.Version()>/<hostname>\". \n Setting
+                              a UserAgent allows authorizing based on the aws:UserAgent
+                              condition key; see the following link for more details:
+                              https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_condition-keys.html#condition-keys-useragent"
+                            type: string
+                        required:
+                        - accessKey
+                        - secretKey
+                        - sessionToken
+                        - userAgent
+                        type: object
+                      enabled:
+                        type: boolean
+                      gssapi:
+                        description: SASLGSSAPIConfig represents the Kafka Kerberos
+                          config
+                        properties:
+                          authType:
+                            type: string
+                          enableFast:
+                            description: EnableFAST enables FAST, which is a pre-authentication
+                              framework for Kerberos. It includes a mechanism for
+                              tunneling pre-authentication exchanges using armoured
+                              KDC messages. FAST provides increased resistance to
+                              passive password guessing attacks.
+                            type: boolean
+                          kerberosConfigPath:
+                            type: string
+                          keyTabPath:
+                            type: string
+                          password:
+                            type: string
+                          realm:
+                            type: string
+                          serviceName:
+                            type: string
+                          username:
+                            type: string
+                        required:
+                        - authType
+                        - enableFast
+                        - kerberosConfigPath
+                        - keyTabPath
+                        - password
+                        - realm
+                        - serviceName
+                        - username
+                        type: object
+                      mechanism:
+                        type: string
+                      oauth:
+                        description: SASLOAuthBearer is the config struct for the
+                          SASL OAuthBearer mechanism
+                        properties:
+                          token:
+                            type: string
+                        required:
+                        - token
+                        type: object
+                      password:
+                        type: string
+                      username:
+                        type: string
+                    required:
+                    - awsMskIam
+                    - enabled
+                    - gssapi
+                    - mechanism
+                    - oauth
+                    - password
+                    - username
+                    type: object
+                  schemaRegistry:
+                    description: Schema Registry
+                    properties:
+                      bearerToken:
+                        type: string
+                      enabled:
+                        type: boolean
+                      password:
+                        type: string
+                      tls:
+                        description: TLS / Custom CA
+                        properties:
+                          caFilepath:
+                            type: string
+                          certFilepath:
+                            type: string
+                          enabled:
+                            type: boolean
+                          insecureSkipTLSVerify:
+                            type: boolean
+                          keyFilepath:
+                            type: string
+                        required:
+                        - caFilepath
+                        - certFilepath
+                        - enabled
+                        - insecureSkipTLSVerify
+                        - keyFilepath
+                        type: object
+                      urls:
+                        items:
+                          type: string
+                        type: array
+                      username:
+                        description: Credentials
+                        type: string
+                    required:
+                    - bearerToken
+                    - enabled
+                    - password
+                    - tls
+                    - urls
+                    - username
+                    type: object
+                  tls:
+                    description: TLSConfig to connect to Kafka via TLS
+                    properties:
+                      caFilepath:
+                        type: string
+                      certFilepath:
+                        type: string
+                      enabled:
+                        type: boolean
+                      insecureSkipTLSVerify:
+                        type: boolean
+                      keyFilepath:
+                        type: string
+                      passphrase:
+                        type: string
+                    required:
+                    - caFilepath
+                    - certFilepath
+                    - enabled
+                    - insecureSkipTLSVerify
+                    - keyFilepath
+                    - passphrase
+                    type: object
+                required:
+                - brokers
+                - clientID
+                - messagePack
+                - protobuf
+                - rackID
+                - sasl
+                - schemaRegistry
+                - tls
+                type: object
+            required:
+            - connect
+            - console
+            - kafka
+            type: object
+          status:
+            description: ConsoleStatus defines the observed state of Console
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: []
+  storedVersions: []

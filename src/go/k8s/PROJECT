@@ -1,14 +1,28 @@
 domain: vectorized.io
-layout: go.kubebuilder.io/v3
+layout:
+- go.kubebuilder.io/v3
 multigroup: true
 projectName: redpanda-operator
 repo: github.com/redpanda-data/redpanda/src/go/k8s
 resources:
 - api:
     crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: vectorized.io
   group: redpanda
   kind: Cluster
+  path: github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1
   version: v1alpha1
   webhooks:
     webhookVersion: v1
-version: 3-alpha
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: vectorized.io
+  group: redpanda
+  kind: Console
+  path: github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1
+  version: v1alpha1
+version: "3"
