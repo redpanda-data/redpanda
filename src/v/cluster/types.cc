@@ -91,7 +91,12 @@ storage::ntp_config topic_configuration::make_ntp_config(
               properties.recovery ? *properties.recovery : false),
             .shadow_indexing_mode = properties.shadow_indexing
                                       ? *properties.shadow_indexing
-                                      : model::shadow_indexing_mode::disabled});
+                                      : model::shadow_indexing_mode::disabled,
+            .remote_cleanup_policy_bitflags
+            = properties.remote_cleanup_policy_bitflags,
+            .remote_retention_bytes = properties.remote_retention_bytes,
+            .remote_retention_time = properties.remote_retention_duration,
+          });
     }
     return {
       model::ntp(tp_ns.ns, tp_ns.tp, p_id),
@@ -176,7 +181,9 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       "{}, retention_bytes: {}, retention_duration_ms: {}, segment_size: "
       "{}, "
       "timestamp_type: {}, recovery_enabled: {}, shadow_indexing: {}, "
-      "read_replica: {}, read_replica_bucket: {} }}",
+      "read_replica: {}, read_replica_bucket: {}, "
+      "remote_cleanup_policy_bitflags: {}, remote_retention_bytes: {}, "
+      "remote_retention_ms: {} }}",
       properties.compression,
       properties.cleanup_policy_bitflags,
       properties.compaction_strategy,
@@ -187,7 +194,10 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       properties.recovery,
       properties.shadow_indexing,
       properties.read_replica,
-      properties.read_replica_bucket);
+      properties.read_replica_bucket,
+      properties.remote_cleanup_policy_bitflags,
+      properties.remote_retention_bytes,
+      properties.remote_retention_duration);
 
     return o;
 }
@@ -1100,6 +1110,8 @@ adl<cluster::non_replicable_topic>::from(iobuf_parser& in) {
       .source = std::move(source), .name = std::move(name)};
 }
 
+// remote_retention_duration & remote_retention_bytes are not added here
+// because they will be serialized/deserialized using serde
 void adl<cluster::incremental_topic_updates>::to(
   iobuf& out, cluster::incremental_topic_updates&& t) {
     reflection::serialize(
@@ -1423,7 +1435,10 @@ void adl<cluster::topic_properties>::to(
       p.shadow_indexing,
       p.read_replica,
       p.read_replica_bucket,
-      p.remote_topic_properties);
+      p.remote_topic_properties,
+      p.remote_cleanup_policy_bitflags,
+      p.remote_retention_bytes,
+      p.remote_retention_duration);
 }
 
 cluster::topic_properties
@@ -1452,6 +1467,13 @@ adl<cluster::topic_properties>::from(iobuf_parser& parser) {
     auto remote_topic_properties
       = reflection::adl<std::optional<cluster::remote_topic_properties>>{}.from(
         parser);
+    auto remote_cleanup_policy_bitflags
+      = reflection::adl<std::optional<model::cleanup_policy_bitflags>>{}.from(
+        parser);
+    auto remote_retention_bytes = reflection::adl<tristate<size_t>>{}.from(
+      parser);
+    auto remote_retention_duration
+      = reflection::adl<tristate<std::chrono::milliseconds>>{}.from(parser);
 
     return {
       compression,
@@ -1465,7 +1487,10 @@ adl<cluster::topic_properties>::from(iobuf_parser& parser) {
       shadow_indexing,
       read_replica,
       read_replica_bucket,
-      remote_topic_properties};
+      remote_topic_properties,
+      remote_cleanup_policy_bitflags,
+      remote_retention_bytes,
+      remote_retention_duration};
 }
 
 void adl<cluster::cluster_property_kv>::to(

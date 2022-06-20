@@ -921,7 +921,7 @@ struct remote_topic_properties
  */
 struct topic_properties
   : serde::
-      envelope<topic_properties, serde::version<1>, serde::compat_version<0>> {
+      envelope<topic_properties, serde::version<2>, serde::compat_version<0>> {
     topic_properties() noexcept = default;
     topic_properties(
       std::optional<model::compression> compression,
@@ -935,7 +935,11 @@ struct topic_properties
       std::optional<model::shadow_indexing_mode> shadow_indexing,
       std::optional<bool> read_replica,
       std::optional<ss::sstring> read_replica_bucket,
-      std::optional<remote_topic_properties> remote_topic_properties)
+      std::optional<remote_topic_properties> remote_topic_properties,
+      std::optional<model::cleanup_policy_bitflags>
+        remote_cleanup_policy_bitflags,
+      tristate<size_t> remote_retention_bytes,
+      tristate<std::chrono::milliseconds> remote_retention_duration)
       : compression(compression)
       , cleanup_policy_bitflags(cleanup_policy_bitflags)
       , compaction_strategy(compaction_strategy)
@@ -947,7 +951,10 @@ struct topic_properties
       , shadow_indexing(shadow_indexing)
       , read_replica(read_replica)
       , read_replica_bucket(read_replica_bucket)
-      , remote_topic_properties(remote_topic_properties) {}
+      , remote_topic_properties(remote_topic_properties)
+      , remote_cleanup_policy_bitflags(remote_cleanup_policy_bitflags)
+      , remote_retention_bytes(remote_retention_bytes)
+      , remote_retention_duration(remote_retention_duration) {}
 
     std::optional<model::compression> compression;
     std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags;
@@ -961,6 +968,10 @@ struct topic_properties
     std::optional<bool> read_replica;
     std::optional<ss::sstring> read_replica_bucket;
     std::optional<remote_topic_properties> remote_topic_properties;
+    std::optional<model::cleanup_policy_bitflags>
+      remote_cleanup_policy_bitflags;
+    tristate<size_t> remote_retention_bytes{std::nullopt};
+    tristate<std::chrono::milliseconds> remote_retention_duration{std::nullopt};
 
     bool is_compacted() const;
     bool has_overrides() const;
@@ -981,7 +992,10 @@ struct topic_properties
           shadow_indexing,
           read_replica,
           read_replica_bucket,
-          remote_topic_properties);
+          remote_topic_properties,
+          remote_cleanup_policy_bitflags,
+          remote_retention_bytes,
+          remote_retention_duration);
     }
 
     friend bool operator==(const topic_properties&, const topic_properties&)
@@ -1027,7 +1041,10 @@ struct property_update<tristate<T>>
 };
 
 struct incremental_topic_updates
-  : serde::envelope<incremental_topic_updates, serde::version<0>> {
+  : serde::envelope<
+      incremental_topic_updates,
+      serde::version<1>,
+      serde::compat_version<0>> {
     static constexpr int8_t version_with_data_policy = -1;
     static constexpr int8_t version_with_shadow_indexing = -3;
     // negative version indicating different format:
@@ -1045,6 +1062,11 @@ struct incremental_topic_updates
     property_update<tristate<size_t>> retention_bytes;
     property_update<tristate<std::chrono::milliseconds>> retention_duration;
     property_update<std::optional<model::shadow_indexing_mode>> shadow_indexing;
+    property_update<std::optional<model::cleanup_policy_bitflags>>
+      remote_cleanup_policy_bitflags;
+    property_update<tristate<size_t>> remote_retention_bytes;
+    property_update<tristate<std::chrono::milliseconds>>
+      remote_retention_duration;
 
     auto serde_fields() {
         return std::tie(
@@ -1055,7 +1077,10 @@ struct incremental_topic_updates
           segment_size,
           retention_bytes,
           retention_duration,
-          shadow_indexing);
+          shadow_indexing,
+          remote_cleanup_policy_bitflags,
+          remote_retention_bytes,
+          remote_retention_duration);
     }
 
     friend bool operator==(
