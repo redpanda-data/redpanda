@@ -1,5 +1,15 @@
 subdir('admin/api-doc')
 
+libclient_util = library('client_util',
+  'cluster_config_schema_util.cc',
+  admin_api_h,
+  implicit_include_directories: false,
+  dependencies: [common, config])
+
+client_util = declare_dependency(
+  dependencies: [common, config],
+  link_with: libclient_util)
+
 libredpanda_app = library('redpanda_app',
   'admin_server.cc',
   'cli_parser.cc',
