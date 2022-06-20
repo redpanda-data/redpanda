@@ -35,7 +35,12 @@ class RpkProducer(BackgroundThreadService):
         self._produce_timeout = produce_timeout
 
     def _worker(self, _idx, node):
-        rpk_binary = self._redpanda.find_binary("rpk")
+        # NOTE: since this runs on separate nodes from the service, the binary
+        # path used by each node may differ from that returned by
+        # redpanda.find_binary(), e.g. if using a RedpandaInstaller.
+        rp_install_path_root = self._redpanda._context.globals.get(
+            "rp_install_path_root", None)
+        rpk_binary = f"{rp_install_path_root}/bin/rpk"
         key_size = 16
         cmd = f"dd if=/dev/urandom bs={self._msg_size + key_size} count={self._msg_count}"
 
