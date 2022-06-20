@@ -41,13 +41,9 @@ public:
 
     static void advance(duration d) { _now += d.count(); }
 
-    static void set(duration d) {
-        _now = d.count();
-    }
+    static void set(duration d) { _now = d.count(); }
 
-    static void poison() {
-        _now = bad_value;
-    }
+    static void poison() { _now = bad_value; }
 };
 
 thread_local mock_clock::rep mock_clock::_now = mock_clock::bad_value;

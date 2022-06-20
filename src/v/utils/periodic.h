@@ -18,7 +18,7 @@
 template <typename CLOCK>
 struct periodic {
     using clock = CLOCK;
-    using duration_type = std::chrono::milliseconds;
+    using duration_type = typename clock::duration;
     using time_point = std::chrono::time_point<clock, duration_type>;
 
     explicit periodic(duration_type period) : _period(period), _next(time_point::min()) {}
