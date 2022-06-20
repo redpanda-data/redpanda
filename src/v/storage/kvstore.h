@@ -35,7 +35,7 @@ namespace storage {
  * Manages a mapping between string and blob values. All mutating operates are
  * written to a write-ahead log and flushed before being applied in-memory.
  * Flushing is controlled by a commit interval configuration setting that allows
- * operations to be batched, amatorizing the cost of flushing to disk.
+ * operations to be batched, amortizing the cost of flushing to disk.
  *
  * Operation
  * =========
