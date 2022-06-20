@@ -80,6 +80,7 @@ public:
 
     server(
       const ss::sstring& server_name,
+      const ss::sstring& public_metrics_group_name,
       ss::api_registry_builder20&& api20,
       const ss::sstring& header,
       const ss::sstring& definitions,
@@ -97,6 +98,7 @@ public:
 
 private:
     ss::httpd::http_server _server;
+    ss::sstring _public_metrics_group_name;
     ss::gate _pending_reqs;
     ss::api_registry_builder20 _api20;
     bool _has_routes;
