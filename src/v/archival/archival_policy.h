@@ -54,7 +54,7 @@ public:
     /// \param end_exclusive is an exclusive end of the range
     /// \param lm is a log manager
     /// \return initializd struct on success, empty struct on failure
-    ss::future<upload_candidate> get_next_candidate(
+    ss::future<upload_candidate> get_next_upload_candidate(
       model::offset begin_inclusive,
       model::offset end_exclusive,
       storage::log,

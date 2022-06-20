@@ -248,7 +248,7 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
         co_return scheduled_upload{.stop = ss::stop_iteration::yes};
     }
 
-    auto upload = co_await _policy.get_next_candidate(
+    auto upload = co_await _policy.get_next_upload_candidate(
       start_upload_offset,
       last_stable_offset,
       *log,

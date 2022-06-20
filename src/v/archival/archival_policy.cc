@@ -450,7 +450,7 @@ static ss::future<upload_candidate> create_upload_candidate(
     co_return result;
 }
 
-ss::future<upload_candidate> archival_policy::get_next_candidate(
+ss::future<upload_candidate> archival_policy::get_next_upload_candidate(
   model::offset begin_inclusive,
   model::offset end_exclusive,
   storage::log log,
