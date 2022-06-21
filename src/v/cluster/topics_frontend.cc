@@ -440,6 +440,16 @@ ss::future<topic_result> topics_frontend::do_create_topic(
             co_return make_error_result(
               assignable_config.cfg.tp_ns, errc::topic_operation_error);
         }
+
+        if (!assignable_config.cfg.properties.remote_topic_properties) {
+            vassert(
+              assignable_config.cfg.properties.remote_topic_properties,
+              "remote_topic_properties not set after successful download of "
+              "valid topic manifest");
+        }
+        assignable_config.cfg.partition_count
+          = assignable_config.cfg.properties.remote_topic_properties
+              ->remote_partition_count;
     }
 
     auto units = co_await _allocator.invoke_on(
