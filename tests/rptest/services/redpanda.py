@@ -1659,10 +1659,16 @@ class RedpandaService(Service):
             f"Saving executable as {os.path.basename(self.EXECUTABLE_SAVE_PATH)}"
         )
 
-        # Any node will do, they all run the same binary.  May cease to be true
-        # for future mixed-version rolling upgrade testing.
+        # Any node will do. Even in a mixed-version upgrade test, we should
+        # still have the original binaries available.
         node = self.nodes[0]
-        binary = self.find_raw_binary('redpanda')
+        if self._installer and self._installer._started:
+            head_root_path = self._installer.path_for_version(
+                RedpandaInstaller.HEAD)
+            binary = f"{head_root_path}/libexec/redpanda"
+        else:
+            binary = self.find_raw_binary('redpanda')
+
         save_to = self.EXECUTABLE_SAVE_PATH
         try:
             node.account.ssh(f"cd /tmp ; gzip -c {binary} > {save_to}")
