@@ -24,6 +24,7 @@
 #include "cluster/tx_helpers.h"
 #include "config/configuration.h"
 #include "errc.h"
+#include "model/record.h"
 #include "rpc/connection_cache.h"
 #include "types.h"
 
@@ -674,6 +675,77 @@ ss::future<init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
       });
 }
 
+namespace {
+
+bool is_epoch_overflow(int16_t epoch) {
+    return epoch >= std::numeric_limits<int16_t>::max();
+}
+
+bool is_valid_expected_pid(
+  const tm_transaction& tx, const model::producer_identity& expected_pid) {
+    if (expected_pid == model::unknow_pid) {
+        return true;
+    }
+
+    return tx.pid.id == expected_pid.id || ((tx.last_pid.id == expected_pid.id) && is_epoch_overflow(expected_pid.epoch));
+}
+
+bool is_valid_overflow(
+  const tm_transaction& tx, model::producer_identity expected_pid) {
+    if (!is_epoch_overflow(tx.pid.epoch)) {
+        return false;
+    }
+
+    if (expected_pid == model::unknow_pid) {
+        return true;
+    }
+
+    return tx.pid.epoch == expected_pid.epoch;
+}
+
+using current_and_last_epoch
+  = std::pair<model::producer_epoch, model::producer_epoch>;
+
+checked<current_and_last_epoch> increment_epoch(
+  const tm_transaction& tx,
+  std::optional<model::producer_identity> expected_pid_opt) {
+    current_and_last_epoch ans{-1, -1};
+
+    model::producer_epoch bumped_epoch{tx.pid.epoch + 1};
+    if (!expected_pid_opt.has_value()) {
+        // If no expected epoch was provided by the producer, bump the current
+        // epoch and set the last epoch to -1
+        ans.first = bumped_epoch;
+        ans.second = model::producer_epoch(-1);
+        return ans;
+    }
+
+    if (tx.pid.epoch == expected_pid_opt->epoch) {
+        // If the expected epoch matches the current epoch, the producer is
+        // attempting to continue after an error and no other producer has been
+        // initialized. Bump the current and last epochs.
+        ans.first = bumped_epoch;
+        ans.second = tx.pid.get_epoch();
+        return ans;
+    }
+
+    if (tx.last_pid.epoch == expected_pid_opt->epoch) {
+        // If the expected epoch matches the previous epoch, it is a retry of a
+        // successful call, so just return the
+        // current epoch without bumping. There is no danger of this producer
+        // being fenced, because a new producer calling InitProducerId would
+        // have caused the last epoch to be set to -1.
+        ans.first = ans.second = tx.pid.get_epoch();
+        ans.second = tx.last_pid.get_epoch();
+        return ans;
+    }
+
+    // Add logging
+    return tx_errc::invalid_producer_epoch;
+}
+
+} // namespace
+
 ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
   ss::shared_ptr<tm_stm> stm,
   kafka::transactional_id tx_id,
@@ -741,6 +813,10 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
 
     auto tx = tx_opt.value();
 
+    if (!is_valid_expected_pid(tx, expected_pid)) {
+        co_return init_tm_tx_reply{tx_errc::invalid_producer_epoch};
+    }
+
     checked<tm_transaction, tx_errc> r(tx);
 
     if (tx.status == tm_transaction::tx_status::ready) {
@@ -784,17 +860,30 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
 
     tx = r.value();
     init_tm_tx_reply reply;
-    if (tx.pid.epoch < std::numeric_limits<int16_t>::max()) {
-        reply.pid = model::producer_identity{
-          tx.pid.id, static_cast<int16_t>(tx.pid.epoch + 1)};
-    } else {
+    model::producer_identity last_pid;
+
+    if (is_valid_overflow(tx, expected_pid)) {
         allocate_id_reply pid_reply
           = co_await _id_allocator_frontend.local().allocate_id(timeout);
         reply.pid = model::producer_identity{pid_reply.id, 0};
+        last_pid = model::producer_identity{
+          tx.pid.id,
+          expected_pid != model::unknow_pid ? tx.pid.epoch
+                                            : static_cast<int16_t>(-1)};
+    } else {
+        auto increment_res = increment_epoch(tx, expected_pid);
+        if (!increment_res.has_value()) {
+            co_return init_tm_tx_reply{tx_errc::invalid_producer_epoch};
+        }
+
+        reply.pid = model::producer_identity{
+          tx.pid.id, increment_res.value().first};
+        last_pid = model::producer_identity{
+          tx.pid.id, increment_res.value().second};
     }
 
     auto op_status = co_await stm->re_register_producer(
-      term, tx.id, transaction_timeout_ms, reply.pid);
+      term, tx.id, transaction_timeout_ms, reply.pid, last_pid);
     if (op_status == tm_stm::op_status::success) {
         reply.ec = tx_errc::none;
     } else if (op_status == tm_stm::op_status::conflict) {

@@ -67,7 +67,8 @@ struct tm_transaction {
     // session of transactional_id'ed application as any given
     // moment there maybe only one session per tx.id
     model::producer_identity pid;
-
+    // Inforamtion about last producer_identity who worked with this
+    // transaction. It is needed for restore producer after redpanda failures
     model::producer_identity last_pid;
     // tx_seq identifues a transactions within a session so a
     // triple (transactional_id, producer_identity, tx_seq) uniquely
@@ -192,6 +193,7 @@ public:
       model::term_id,
       kafka::transactional_id,
       std::chrono::milliseconds,
+      model::producer_identity,
       model::producer_identity);
     ss::future<tm_stm::op_status> register_new_producer(
       model::term_id,

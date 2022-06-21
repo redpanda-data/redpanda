@@ -176,7 +176,11 @@ FIXTURE_TEST(test_tm_stm_re_tx, mux_state_machine_fixture) {
     auto pid2 = model::producer_identity{1, 1};
     op_code = stm
                 .re_register_producer(
-                  c->term(), tx_id, std::chrono::milliseconds(0), pid2)
+                  c->term(),
+                  tx_id,
+                  std::chrono::milliseconds(0),
+                  pid2,
+                  model::unknow_pid)
                 .get0();
     BOOST_REQUIRE_EQUAL(op_code, op_status::success);
     auto tx7 = expect_tx(stm.get_tx(tx_id));

@@ -270,7 +270,8 @@ ss::future<tm_stm::op_status> tm_stm::re_register_producer(
   model::term_id expected_term,
   kafka::transactional_id tx_id,
   std::chrono::milliseconds transaction_timeout_ms,
-  model::producer_identity pid) {
+  model::producer_identity pid,
+  model::producer_identity last_pid) {
     vlog(
       clusterlog.trace, "Registering existing tx: id={}, pid={}", tx_id, pid);
 
@@ -281,6 +282,7 @@ ss::future<tm_stm::op_status> tm_stm::re_register_producer(
     tm_transaction tx = tx_opt.value();
     tx.status = tm_transaction::tx_status::ready;
     tx.pid = pid;
+    tx.last_pid = last_pid;
     tx.tx_seq += 1;
     tx.etag = expected_term;
     tx.timeout_ms = transaction_timeout_ms;
