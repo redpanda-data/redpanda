@@ -13,6 +13,7 @@
 #include "config/node_config.h"
 #include "config/validators.h"
 #include "model/metadata.h"
+#include "security/mtls.h"
 #include "storage/chunk_cache.h"
 #include "storage/segment_appender.h"
 #include "units.h"
@@ -795,6 +796,13 @@ configuration::configuration()
       ". See also: `enable_sasl` and `kafka_api[].authentication_method`",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       std::nullopt)
+  , kafka_mtls_principal_mapping_rules(
+      *this,
+      "kafka_mtls_principal_mapping_rules",
+      "Principal Mapping Rules for mTLS Authentication on the Kafka API",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt,
+      security::tls::validate_rules)
   , controller_backend_housekeeping_interval_ms(
       *this,
       "controller_backend_housekeeping_interval_ms",
