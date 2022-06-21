@@ -63,7 +63,9 @@ node_config::node_config() noexcept
       "kafka_api",
       "Address and port of an interface to listen for Kafka API requests",
       {.visibility = visibility::user},
-      {model::broker_endpoint(net::unresolved_address("127.0.0.1", 9092))})
+      {config::broker_authn_endpoint{
+        .address = net::unresolved_address("127.0.0.1", 9092),
+        .authn_method = std::nullopt}})
   , kafka_api_tls(
       *this,
       "kafka_api_tls",

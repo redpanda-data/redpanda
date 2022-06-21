@@ -19,6 +19,7 @@
 #include "cluster/shard_table.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
+#include "config/broker_authn_endpoint.h"
 #include "config/node_config.h"
 #include "coproc/api.h"
 #include "kafka/client/transport.h"
@@ -183,9 +184,10 @@ public:
             node_config.get("rpc_server")
               .set_value(net::unresolved_address("127.0.0.1", rpc_port));
             node_config.get("kafka_api")
-              .set_value(
-                std::vector<model::broker_endpoint>{model::broker_endpoint(
-                  net::unresolved_address("127.0.0.1", kafka_port))});
+              .set_value(std::vector<config::broker_authn_endpoint>{
+                config::broker_authn_endpoint{
+                  .address = net::unresolved_address(
+                    "127.0.0.1", kafka_port)}});
             node_config.get("data_directory")
               .set_value(config::data_directory_path{.path = base_path});
             node_config.get("coproc_supervisor_server")

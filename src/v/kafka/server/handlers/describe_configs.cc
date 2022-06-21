@@ -265,6 +265,24 @@ kafka_endpoint_format(const std::vector<model::broker_endpoint>& endpoints) {
     return ssx::sformat("{}", fmt::join(uris, ","));
 }
 
+static ss::sstring kafka_authn_endpoint_format(
+  const std::vector<config::broker_authn_endpoint>& endpoints) {
+    std::vector<ss::sstring> uris;
+    uris.reserve(endpoints.size());
+    std::transform(
+      endpoints.cbegin(),
+      endpoints.cend(),
+      std::back_inserter(uris),
+      [](const config::broker_authn_endpoint& ep) {
+          return ssx::sformat(
+            "{}://{}:{}",
+            (ep.name.empty() ? "plain" : ep.name),
+            ep.address.host(),
+            ep.address.port());
+      });
+    return ssx::sformat("{}", fmt::join(uris, ","));
+}
+
 static void report_broker_config(
   const describe_configs_resource& resource,
   describe_configs_result& result,
@@ -299,7 +317,7 @@ static void report_broker_config(
       "listeners",
       config::node().kafka_api,
       include_synonyms,
-      &kafka_endpoint_format);
+      &kafka_authn_endpoint_format);
 
     add_broker_config_if_requested(
       resource,
