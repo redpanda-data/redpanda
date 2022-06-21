@@ -17,11 +17,14 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
+	resourcetypes "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -84,16 +87,18 @@ type StatefulSetResource struct {
 	serviceName            string
 	nodePortName           types.NamespacedName
 	nodePortSvc            corev1.Service
-	volumeProvider         StatefulsetTLSVolumeProvider
-	adminTLSConfigProvider AdminTLSConfigProvider
+	volumeProvider         resourcetypes.StatefulsetTLSVolumeProvider
+	adminTLSConfigProvider resourcetypes.AdminTLSConfigProvider
 	serviceAccountName     string
 	configuratorSettings   ConfiguratorSettings
 	// hash of configmap containing configuration for redpanda (node config only), it's injected to
 	// annotation to ensure the pods get restarted when configuration changes
 	// this has to be retrieved lazily to achieve the correct order of resources
 	// being applied
-	nodeConfigMapHashGetter func(context.Context) (string, error)
-	logger                  logr.Logger
+	nodeConfigMapHashGetter  func(context.Context) (string, error)
+	adminAPIClientFactory    adminutils.AdminAPIClientFactory
+	decommissionWaitInterval time.Duration
+	logger                   logr.Logger
 
 	LastObservedState *appsv1.StatefulSet
 }
@@ -106,11 +111,13 @@ func NewStatefulSet(
 	serviceFQDN string,
 	serviceName string,
 	nodePortName types.NamespacedName,
-	volumeProvider StatefulsetTLSVolumeProvider,
-	adminTLSConfigProvider AdminTLSConfigProvider,
+	volumeProvider resourcetypes.StatefulsetTLSVolumeProvider,
+	adminTLSConfigProvider resourcetypes.AdminTLSConfigProvider,
 	serviceAccountName string,
 	configuratorSettings ConfiguratorSettings,
 	nodeConfigMapHashGetter func(context.Context) (string, error),
+	adminAPIClientFactory adminutils.AdminAPIClientFactory,
+	decommissionWaitInterval time.Duration,
 	logger logr.Logger,
 ) *StatefulSetResource {
 	return &StatefulSetResource{
@@ -126,6 +133,8 @@ func NewStatefulSet(
 		serviceAccountName,
 		configuratorSettings,
 		nodeConfigMapHashGetter,
+		adminAPIClientFactory,
+		decommissionWaitInterval,
 		logger.WithValues("Kind", statefulSetKind()),
 		nil,
 	}
@@ -166,8 +175,21 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 		return fmt.Errorf("error while fetching StatefulSet resource: %w", err)
 	}
 	r.LastObservedState = &sts
+
+	// Hack for: https://github.com/redpanda-data/redpanda/issues/4999
+	err = r.disableMaintenanceModeOnDecommissionedNodes(ctx)
+	if err != nil {
+		return err
+	}
+
 	r.logger.Info("Running update", "resource name", r.Key().Name)
-	return r.runUpdate(ctx, &sts, obj.(*appsv1.StatefulSet))
+	err = r.runUpdate(ctx, &sts, obj.(*appsv1.StatefulSet))
+	if err != nil {
+		return err
+	}
+
+	r.logger.Info("Running scale handler", "resource name", r.Key().Name)
+	return r.handleScaling(ctx)
 }
 
 // GetCentralizedConfigurationHashFromCluster retrieves the current centralized configuratino hash from the statefulset
@@ -269,6 +291,10 @@ func (r *StatefulSetResource) obj(
 		externalAddressType = externalListener.External.PreferredAddressType
 	}
 	tlsVolumes, tlsVolumeMounts := r.volumeProvider.Volumes()
+
+	// We set statefulset replicas via status.currentReplicas in order to control it from the handleScaling function
+	replicas := r.pandaCluster.GetCurrentReplicas()
+
 	ss := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: r.Key().Namespace,
@@ -280,7 +306,7 @@ func (r *StatefulSetResource) obj(
 			APIVersion: "apps/v1",
 		},
 		Spec: appsv1.StatefulSetSpec{
-			Replicas:            r.pandaCluster.Spec.Replicas,
+			Replicas:            &replicas,
 			PodManagementPolicy: appsv1.ParallelPodManagement,
 			Selector:            clusterLabels.AsAPISelector(),
 			UpdateStrategy: appsv1.StatefulSetUpdateStrategy{
@@ -487,7 +513,8 @@ func (r *StatefulSetResource) obj(
 	}
 
 	// Only multi-replica clusters should use maintenance mode. See: https://github.com/redpanda-data/redpanda/issues/4338
-	multiReplica := r.pandaCluster.Spec.Replicas != nil && *r.pandaCluster.Spec.Replicas > 1
+	// Startup of a fresh cluster would let the first pod restart, until dynamic hooks are implemented. See: https://github.com/redpanda-data/redpanda/pull/4907
+	multiReplica := r.pandaCluster.GetCurrentReplicas() > 1
 	if featuregates.MaintenanceMode(r.pandaCluster.Spec.Version) && r.pandaCluster.IsUsingMaintenanceModeHooks() && multiReplica {
 		ss.Spec.Template.Spec.Containers[0].Lifecycle = &corev1.Lifecycle{
 			PreStop:   r.getPreStopHook(),
@@ -526,7 +553,7 @@ func (r *StatefulSetResource) getPreStopHook() *corev1.Handler {
 	curlGetCommand := r.composeCURLMaintenanceCommand(`--silent`, &genericMaintenancePath)
 	cmd := fmt.Sprintf(`until [ "${status:-}" = "200" ]; do status=$(%s); sleep 0.5; done`, curlCommand) +
 		" && " +
-		fmt.Sprintf(`until [ "${finished:-}" = "true" ]; do finished=$(%s | grep -o '\"finished\":[^,}]*' | grep -o '[^: ]*$'); sleep 0.5; done`, curlGetCommand)
+		fmt.Sprintf(`until [ "${finished:-}" = "true" ] || [ "${draining:-}" = "false" ]; do res=$(%s); finished=$(echo $res | grep -o '\"finished\":[^,}]*' | grep -o '[^: ]*$'); draining=$(echo $res | grep -o '\"draining\":[^,}]*' | grep -o '[^: ]*$'); sleep 0.5; done`, curlGetCommand)
 
 	return &corev1.Handler{
 		Exec: &corev1.ExecAction{

@@ -1,0 +1,30 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: wait-for-3-brokers
+spec:
+  backoffLimit: 10
+  template:
+    spec:
+      activeDeadlineSeconds: 90
+      containers:
+        - name: curl
+          image: curlimages/curl:latest
+          env:
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          command:
+            - /bin/sh
+            - -c
+            - -ex
+          args:
+            - >
+              url=http://decommissioning-0.decommissioning.$NAMESPACE.svc.cluster.local:9644/v1/brokers
+              res=$(curl --silent -L $url | tr '{' '\n' | grep node_id | wc -l) &&
+              echo $res > /dev/termination-log &&
+              if [[ "$res" != "3" ]]; then
+                exit 1;
+              fi
+      restartPolicy: Never

@@ -31,11 +31,21 @@ type MaintenanceStatus struct {
 	Failed       int  `json:"failed"`
 }
 
+// MembershipStatus enumerates possible membership states for brokers.
+type MembershipStatus string
+
+const (
+	// MembershipStatusActive indicates an active broker.
+	MembershipStatusActive MembershipStatus = "active"
+	// MembershipStatusDraining indicates that the broker is being drained, e.g. for decommission.
+	MembershipStatusDraining MembershipStatus = "draining"
+)
+
 // Broker is the information returned from the Redpanda admin broker endpoints.
 type Broker struct {
 	NodeID           int                `json:"node_id"`
 	NumCores         int                `json:"num_cores"`
-	MembershipStatus string             `json:"membership_status"`
+	MembershipStatus MembershipStatus   `json:"membership_status"`
 	IsAlive          *bool              `json:"is_alive"`
 	Version          string             `json:"version"`
 	Maintenance      *MaintenanceStatus `json:"maintenance_status"`

@@ -17,6 +17,7 @@ import (
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
+	resourcetypes "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -83,11 +84,11 @@ func (r *PkiReconciler) Ensure(ctx context.Context) error {
 }
 
 // StatefulSetVolumeProvider returns volume provider for all TLS certificates
-func (r *PkiReconciler) StatefulSetVolumeProvider() resources.StatefulsetTLSVolumeProvider {
+func (r *PkiReconciler) StatefulSetVolumeProvider() resourcetypes.StatefulsetTLSVolumeProvider {
 	return r.clusterCertificates
 }
 
 // AdminAPIConfigProvider returns provider of admin TLS configuration
-func (r *PkiReconciler) AdminAPIConfigProvider() resources.AdminTLSConfigProvider {
+func (r *PkiReconciler) AdminAPIConfigProvider() resourcetypes.AdminTLSConfigProvider {
 	return r.clusterCertificates
 }

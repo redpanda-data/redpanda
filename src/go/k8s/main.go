@@ -11,6 +11,7 @@ package main
 import (
 	"flag"
 	"os"
+	"time"
 
 	cmapiv1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
@@ -55,6 +56,7 @@ func main() {
 		configuratorBaseImage       string
 		configuratorTag             string
 		configuratorImagePullPolicy string
+		decommissionWaitInterval    time.Duration
 	)
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
@@ -67,6 +69,8 @@ func main() {
 	flag.StringVar(&configuratorBaseImage, "configurator-base-image", defaultConfiguratorContainerImage, "Set the configurator base image")
 	flag.StringVar(&configuratorTag, "configurator-tag", "latest", "Set the configurator tag")
 	flag.StringVar(&configuratorImagePullPolicy, "configurator-image-pull-policy", "Always", "Set the configurator image pull policy")
+	flag.DurationVar(&decommissionWaitInterval, "decommission-wait-interval", 8*time.Second, "Set the time to wait for a node decommission to happen in the cluster")
+	flag.BoolVar(&redpandav1alpha1.AllowDownscalingInWebhook, "allow-downscaling", false, "Allow to reduce the number of replicas in existing clusters (alpha feature)")
 
 	opts := zap.Options{
 		Development: true,
@@ -98,10 +102,11 @@ func main() {
 	}
 
 	if err = (&redpandacontrollers.ClusterReconciler{
-		Client:                mgr.GetClient(),
-		Log:                   ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Cluster"),
-		Scheme:                mgr.GetScheme(),
-		AdminAPIClientFactory: adminutils.NewInternalAdminAPI,
+		Client:                   mgr.GetClient(),
+		Log:                      ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Cluster"),
+		Scheme:                   mgr.GetScheme(),
+		AdminAPIClientFactory:    adminutils.NewInternalAdminAPI,
+		DecommissionWaitInterval: decommissionWaitInterval,
 	}).WithClusterDomain(clusterDomain).WithConfiguratorSettings(configurator).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "Cluster")
 		os.Exit(1)

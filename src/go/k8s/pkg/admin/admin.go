@@ -16,7 +16,7 @@ import (
 	"fmt"
 
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -35,7 +35,8 @@ func NewInternalAdminAPI(
 	k8sClient client.Reader,
 	redpandaCluster *redpandav1alpha1.Cluster,
 	fqdn string,
-	adminTLSProvider resources.AdminTLSConfigProvider,
+	adminTLSProvider types.AdminTLSConfigProvider,
+	ordinals ...int32,
 ) (AdminAPIClient, error) {
 	adminInternal := redpandaCluster.AdminAPIInternal()
 	if adminInternal == nil {
@@ -53,11 +54,17 @@ func NewInternalAdminAPI(
 
 	adminInternalPort := adminInternal.Port
 
-	var urls []string
-	replicas := *redpandaCluster.Spec.Replicas
+	if len(ordinals) == 0 {
+		// Not a specific node, just go through all them
+		replicas := redpandaCluster.GetCurrentReplicas()
 
-	for i := int32(0); i < replicas; i++ {
-		urls = append(urls, fmt.Sprintf("%s-%d.%s:%d", redpandaCluster.Name, i, fqdn, adminInternalPort))
+		for i := int32(0); i < replicas; i++ {
+			ordinals = append(ordinals, i)
+		}
+	}
+	urls := make([]string, 0, len(ordinals))
+	for _, on := range ordinals {
+		urls = append(urls, fmt.Sprintf("%s-%d.%s:%d", redpandaCluster.Name, on, fqdn, adminInternalPort))
 	}
 
 	adminAPI, err := admin.NewAdminAPI(urls, admin.BasicCredentials{}, tlsConfig)
@@ -74,10 +81,18 @@ type AdminAPIClient interface {
 	ClusterConfigStatus(ctx context.Context, sendToLeader bool) (admin.ConfigStatusResponse, error)
 	ClusterConfigSchema(ctx context.Context) (admin.ConfigSchema, error)
 	PatchClusterConfig(ctx context.Context, upsert map[string]interface{}, remove []string) (admin.ClusterConfigWriteResult, error)
+	GetNodeConfig(ctx context.Context) (admin.NodeConfig, error)
 
 	CreateUser(ctx context.Context, username, password, mechanism string) error
 
 	GetFeatures(ctx context.Context) (admin.FeaturesResponse, error)
+
+	Brokers(ctx context.Context) ([]admin.Broker, error)
+	DecommissionBroker(ctx context.Context, node int) error
+	RecommissionBroker(ctx context.Context, node int) error
+
+	EnableMaintenanceMode(ctx context.Context, node int) error
+	DisableMaintenanceMode(ctx context.Context, node int) error
 }
 
 var _ AdminAPIClient = &admin.AdminAPI{}
@@ -89,7 +104,8 @@ type AdminAPIClientFactory func(
 	k8sClient client.Reader,
 	redpandaCluster *redpandav1alpha1.Cluster,
 	fqdn string,
-	adminTLSProvider resources.AdminTLSConfigProvider,
+	adminTLSProvider types.AdminTLSConfigProvider,
+	ordinals ...int32,
 ) (AdminAPIClient, error)
 
 var _ AdminAPIClientFactory = NewInternalAdminAPI

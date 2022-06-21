@@ -17,10 +17,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	res "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -76,6 +79,8 @@ func TestEnsure_StatefulSet(t *testing.T) {
 	cluster := pandaCluster()
 	cluster = cluster.DeepCopy()
 	cluster.Name = "ensure-integration-cluster"
+	err := c.Create(context.Background(), cluster)
+	require.NoError(t, err)
 
 	sts := res.NewStatefulSet(
 		c,
@@ -93,9 +98,11 @@ func TestEnsure_StatefulSet(t *testing.T) {
 			ImagePullPolicy:       "Always",
 		},
 		func(ctx context.Context) (string, error) { return hash, nil },
+		adminutils.NewInternalAdminAPI,
+		time.Second,
 		ctrl.Log.WithName("test"))
 
-	err := sts.Ensure(context.Background())
+	err = sts.Ensure(context.Background())
 	assert.NoError(t, err)
 
 	actual := &v1.StatefulSet{}

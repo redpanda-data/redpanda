@@ -12,8 +12,10 @@ package resources_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	res "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/apps/v1"
@@ -32,13 +34,6 @@ import (
 func TestEnsure(t *testing.T) {
 	cluster := pandaCluster()
 	stsResource := stsFromCluster(cluster)
-
-	var newReplicas int32 = 3333
-
-	replicasUpdatedCluster := cluster.DeepCopy()
-	replicasUpdatedCluster.Spec.Replicas = &newReplicas
-	replicasUpdatedSts := stsFromCluster(cluster).DeepCopy()
-	replicasUpdatedSts.Spec.Replicas = &newReplicas
 
 	newResources := corev1.ResourceList{
 		corev1.ResourceCPU:    resource.MustParse("1111"),
@@ -76,7 +71,6 @@ func TestEnsure(t *testing.T) {
 		expectedObject *v1.StatefulSet
 	}{
 		{"none existing", nil, cluster, stsResource},
-		{"update replicas", stsResource, replicasUpdatedCluster, replicasUpdatedSts},
 		{"update resources", stsResource, resourcesUpdatedCluster, resourcesUpdatedSts},
 		{"update redpanda resources", stsResource, resourcesUpdatedRedpandaCluster, resourcesUpdatedSts},
 		{"disabled sidecar", nil, noSidecarCluster, noSidecarSts},
@@ -116,6 +110,8 @@ func TestEnsure(t *testing.T) {
 					ImagePullPolicy:       "Always",
 				},
 				func(ctx context.Context) (string, error) { return hash, nil },
+				adminutils.NewInternalAdminAPI,
+				time.Second,
 				ctrl.Log.WithName("test"))
 
 			err = sts.Ensure(context.Background())

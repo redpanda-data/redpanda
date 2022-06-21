@@ -17,6 +17,7 @@ import (
 	cmmeta "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -200,8 +201,8 @@ func TestDefault(t *testing.T) {
 }
 
 func TestValidateUpdate(t *testing.T) {
-	var replicas1 int32 = 1
-	var replicas2 int32 = 2
+	var replicas0 int32
+	var replicas3 int32 = 3
 
 	redpandaCluster := &v1alpha1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
@@ -209,7 +210,7 @@ func TestValidateUpdate(t *testing.T) {
 			Namespace: "",
 		},
 		Spec: v1alpha1.ClusterSpec{
-			Replicas:      pointer.Int32Ptr(replicas2),
+			Replicas:      pointer.Int32Ptr(replicas3),
 			Configuration: v1alpha1.RedpandaConfig{},
 			Resources: v1alpha1.RedpandaResourceRequirements{
 				ResourceRequirements: corev1.ResourceRequirements{
@@ -224,7 +225,7 @@ func TestValidateUpdate(t *testing.T) {
 	}
 
 	updatedCluster := redpandaCluster.DeepCopy()
-	updatedCluster.Spec.Replicas = &replicas1
+	updatedCluster.Spec.Replicas = &replicas0
 	updatedCluster.Spec.Configuration = v1alpha1.RedpandaConfig{
 		KafkaAPI: []v1alpha1.KafkaAPI{
 			{
@@ -270,6 +271,15 @@ func TestValidateUpdate(t *testing.T) {
 			t.Errorf("expecting failure on field %s but have %v", ef, statusError.Status().Details.Causes)
 		}
 	}
+}
+
+func TestNilReplicasIsNotAllowed(t *testing.T) {
+	rpCluster := validRedpandaCluster()
+	err := rpCluster.ValidateCreate()
+	require.Nil(t, err, "Initial cluster is not valid")
+	rpCluster.Spec.Replicas = nil
+	err = rpCluster.ValidateCreate()
+	assert.Error(t, err)
 }
 
 //nolint:funlen // this is ok for a test
@@ -1097,6 +1107,7 @@ func validRedpandaCluster() *v1alpha1.Cluster {
 			Namespace: "",
 		},
 		Spec: v1alpha1.ClusterSpec{
+			Replicas: pointer.Int32Ptr(1),
 			Configuration: v1alpha1.RedpandaConfig{
 				KafkaAPI:       []v1alpha1.KafkaAPI{{Port: 124}},
 				AdminAPI:       []v1alpha1.AdminAPI{{Port: 126}},
