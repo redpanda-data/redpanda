@@ -97,6 +97,8 @@ private:
     ss::future<> do_maybe_update_active_version();
     ss::future<> maybe_update_active_version();
 
+    ss::future<> maybe_log_license_check_info();
+
     ss::sharded<controller_stm>& _stm;
     ss::sharded<ss::abort_source>& _as;
     ss::gate _gate;
