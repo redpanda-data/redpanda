@@ -23,6 +23,7 @@
 #include <bits/stdint-intn.h>
 #include <boost/functional/hash.hpp>
 
+#include <compare>
 #include <optional>
 #include <unordered_map>
 #include <unordered_set>
@@ -203,6 +204,7 @@ struct broker_shard {
     uint32_t shard;
     friend std::ostream& operator<<(std::ostream&, const broker_shard&);
     bool operator==(const broker_shard&) const = default;
+    auto operator<=>(const model::broker_shard&) const = default;
 
     template<typename H>
     friend H AbslHashValue(H h, const broker_shard& s) {
