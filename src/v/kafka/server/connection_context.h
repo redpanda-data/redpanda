@@ -68,6 +68,10 @@ public:
     template<typename T>
     bool authorized(
       security::acl_operation operation, const T& name, authz_quiet quiet) {
+        // authorization disabled?
+        if (!_enable_authorizer) {
+            return true;
+        }
         // mtls configured?
         if (_use_mtls) {
             if (_mtls_principal.has_value()) {
@@ -76,12 +80,8 @@ public:
             }
             return false;
         }
-        // sasl configured?
-        if (!_enable_authorizer) {
-            return true;
-        }
-        auto user = sasl().principal();
-        return authorized_user(std::move(user), operation, name, quiet);
+        // use sasl
+        return authorized_user(sasl().principal(), operation, name, quiet);
     }
 
     template<typename T>

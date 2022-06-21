@@ -12,6 +12,7 @@
 #include "cluster/topics_frontend.h"
 #include "config/broker_authn_endpoint.h"
 #include "config/configuration.h"
+#include "config/node_config.h"
 #include "kafka/server/connection_context.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/group_router.h"
@@ -95,10 +96,36 @@ coordinator_ntp_mapper& protocol::coordinator_mapper() {
 }
 
 config::broker_authn_method get_authn_method(const net::connection& conn) {
+    // If authn_method is set on the endpoint
+    //    Use it
+    // Else if kafka_enable_authorization is not set
+    //    Use sasl if enable_sasl
+    // Else if has mtls mapping rules
+    //    Use mtls_identity
+    // Else
+    //    Disable AuthN
+
+    std::optional<config::broker_authn_method> authn_method;
+    auto n = conn.name();
+    const auto& kafka_api = config::node().kafka_api.value();
+    auto ep_it = std::find_if(
+      kafka_api.begin(),
+      kafka_api.end(),
+      [&n](const config::broker_authn_endpoint& ep) { return ep.name == n; });
+    if (ep_it != kafka_api.end()) {
+        authn_method = ep_it->authn_method;
+    }
+    if (authn_method.has_value()) {
+        return *authn_method;
+    }
     const auto& config = config::shard_local_cfg();
-    if (config.enable_sasl()) {
+    // if kafka_enable_authorization is not set, use sasl iff enable_sasl
+    if (
+      !config.kafka_enable_authorization().has_value()
+      && config.enable_sasl()) {
         return config::broker_authn_method::sasl;
     }
+    // mtls_identity is currently predicated on having mapping rules
     if (conn.get_principal_mapping().has_value()) {
         return config::broker_authn_method::mtls_identity;
     }
@@ -106,6 +133,9 @@ config::broker_authn_method get_authn_method(const net::connection& conn) {
 }
 
 ss::future<> protocol::apply(net::server::resources rs) {
+    const bool authz_enabled
+      = config::shard_local_cfg().kafka_enable_authorization().value_or(
+        config::shard_local_cfg().enable_sasl());
     const auto authn_method = get_authn_method(*rs.conn);
 
     /*
@@ -121,7 +151,7 @@ ss::future<> protocol::apply(net::server::resources rs) {
       *this,
       std::move(rs),
       std::move(sasl),
-      authn_method != config::broker_authn_method::none,
+      authz_enabled,
       authn_method == config::broker_authn_method::mtls_identity);
 
     return ss::do_until(
