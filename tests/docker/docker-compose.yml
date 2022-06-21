@@ -38,6 +38,12 @@ services:
     - redpanda-test
   rp:
     image: vectorized/redpanda-test-node
+    deploy:
+      resources:
+        limits:
+          cpus: '0.75'
+        reservations:
+          cpus: '1'
     privileged: true
     pids_limit: 32768
     ulimits:
