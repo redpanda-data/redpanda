@@ -2,6 +2,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: consume-message
+  namespace: default
 spec:
   template:
     spec:
