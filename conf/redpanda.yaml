@@ -51,17 +51,6 @@ pandaproxy:
 schema_registry:
 
 rpk:
-  # TLS configuration.
-  tls:
-    # The path to the root CA certificate (PEM)
-    truststore_file: ""
-
-    # The path to the client certificate (PEM)
-    cert_file: ""
-
-    # The path to the client certificate key (PEM)
-    key_file: ""
-
   # Enables sending environment and resource usage data to Vectorized.
   enable_usage_stats: true
 
