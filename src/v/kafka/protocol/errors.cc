@@ -191,15 +191,8 @@ std::string_view error_code_to_str(error_code error) {
 }
 
 std::ostream& operator<<(std::ostream& o, error_code code) {
-    o << "{ error_code: ";
-    // special case as unknown_server_error = -1
-    if (code == error_code::unknown_server_error) {
-        o << "unknown_server_error";
-    } else {
-        o << error_code_to_str(code);
-    }
-    o << " [" << (int16_t)code << "] }";
-    return o;
+    return o << "{ error_code: " << error_code_to_str(code) << " ["
+             << (int16_t)code << "] }";
 }
 
 struct error_category final : std::error_category {
