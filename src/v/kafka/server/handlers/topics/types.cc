@@ -144,6 +144,15 @@ to_cluster_type(const creatable_topic& t) {
     cfg.properties.read_replica_bucket = get_string_value(
       config_entries, topic_property_read_replica_bucket);
 
+    cfg.properties.remote_cleanup_policy_bitflags
+      = get_config_value<model::cleanup_policy_bitflags>(
+        config_entries, topic_property_remote_cleanup_policy);
+    cfg.properties.remote_retention_bytes = get_tristate_value<size_t>(
+      config_entries, topic_property_remote_retention_bytes);
+    cfg.properties.remote_retention_duration
+      = get_tristate_value<std::chrono::milliseconds>(
+        config_entries, topic_property_remote_retention_duration);
+
     auto ret = cluster::custom_assignable_topic_configuration(cfg);
     /**
      * handle custom assignments
