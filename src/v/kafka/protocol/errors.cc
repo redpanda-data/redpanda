@@ -15,6 +15,8 @@ namespace kafka {
 
 std::string_view error_code_to_str(error_code error) {
     switch (error) {
+    case error_code::unknown_server_error:
+        return "unknown_server_error";
     case error_code::none:
         return "none";
     case error_code::offset_out_of_range:
@@ -181,8 +183,6 @@ std::string_view error_code_to_str(error_code error) {
         return "group_max_size_reached";
     case error_code::fenced_instance_id:
         return "fenced_instance_id";
-    case error_code::unknown_server_error:
-        return "unknown_server_error";
     case error_code::invalid_record:
         return "invalid_record";
     default:
