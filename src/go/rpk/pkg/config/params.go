@@ -240,6 +240,7 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 	// If we have a config path loaded (through --config flag) the user
 	// expect to load or create the file from this directory.
 	if p.ConfigPath != "" {
+		fmt.Println("ConfigPath is not null: ", p.ConfigPath)
 		if exist, _ := afero.Exists(fs, p.ConfigPath); !exist {
 			err := fs.MkdirAll(filepath.Dir(p.ConfigPath), 0o755)
 			if err != nil {
@@ -372,10 +373,11 @@ func (p *Params) LocateConfig(fs afero.Fs) (string, error) {
 		// stat() errors are not interesting.
 		exists, _ := afero.Exists(fs, path)
 		if exists {
+			fmt.Println("Existent path: ", path)
 			return path, nil
 		}
 	}
-
+	fmt.Println("Using default config! ")
 	return "", fmt.Errorf("%w: unable to find config in searched paths %v", afero.ErrFileNotFound, paths)
 }
 
@@ -389,7 +391,7 @@ func (p *Params) readConfig(fs afero.Fs, c *Config) error {
 	if err != nil {
 		return err
 	}
-
+	fmt.Printf("[readConfig] reading from path %q, config: %s", path, string(file))
 	if err := yaml.Unmarshal(file, c); err != nil {
 		return fmt.Errorf("unable to yaml decode %s: %v", path, err)
 	}
