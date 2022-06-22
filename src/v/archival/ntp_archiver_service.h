@@ -73,6 +73,10 @@ public:
     /// storage. Can be started only once.
     void run_upload_loop();
 
+    /// Start the fiber that will apply retention rules to the data in the
+    /// cloud.
+    void run_retention_loop();
+
     /// Stop archiver.
     ///
     /// \return future that will become ready when all async operation will be
@@ -160,13 +164,26 @@ private:
     ss::future<cloud_storage::upload_result>
     upload_segment(upload_candidate candidate);
 
+    /// Truncate uploaded data in S3
+    ss::future<> truncate_uploaded_data(model::offset o);
+
     /// Upload manifest to the pre-defined S3 location
     ss::future<cloud_storage::upload_result> upload_manifest();
 
     /// Launch the upload loop fiber.
     ss::future<> upload_loop();
 
-    bool upload_loop_can_continue() const;
+    bool bg_loop_can_continue() const;
+
+    /// Launch the upload loop fiber.
+    ss::future<> retention_loop();
+
+    /// \brief Truncate the manifest and snapshot
+    ///
+    /// This method truncates local data (manifest & the archival snapshot).
+    /// It doesn't delete remote data (data in S3 bucket).
+    ss::future<std::optional<cloud_storage::partition_manifest>>
+    do_truncate_manifest(model::offset o, retry_chain_node& rtc);
 
     ntp_level_probe _probe;
     model::ntp _ntp;
@@ -197,6 +214,8 @@ private:
     ss::io_priority_class _io_priority;
     bool _upload_loop_started = false;
     bool _upload_loop_stopped = false;
+    bool _retention_loop_started = false;
+    bool _retention_loop_stopped = false;
 };
 
 } // namespace archival

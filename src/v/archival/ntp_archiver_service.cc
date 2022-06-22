@@ -16,13 +16,16 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage/types.h"
 #include "cluster/partition_manager.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/timestamp.h"
 #include "s3/client.h"
 #include "s3/error.h"
 #include "storage/disk_log_impl.h"
 #include "storage/fs_utils.h"
 #include "storage/parser.h"
 #include "utils/gate_guard.h"
+#include "utils/retry_chain_node.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
@@ -38,11 +41,16 @@
 
 #include <fmt/format.h>
 
+#include <chrono>
 #include <exception>
 #include <numeric>
 #include <stdexcept>
 
 namespace archival {
+
+static constexpr size_t default_remote_retention_bytes = 1_TiB;
+static constexpr std::chrono::milliseconds default_remote_retention_ms
+  = 3153600000ms;
 
 ntp_archiver::ntp_archiver(
   const storage::ntp_config& ntp,
@@ -107,7 +115,7 @@ void ntp_archiver::run_upload_loop() {
 ss::future<> ntp_archiver::upload_loop() {
     ss::lowres_clock::duration backoff = _upload_loop_initial_backoff;
 
-    while (upload_loop_can_continue()) {
+    while (bg_loop_can_continue()) {
         auto result = co_await upload_next_candidates();
         if (result.num_failed != 0) {
             // The logic in class `remote` already does retries: if we get here,
@@ -125,7 +133,7 @@ ss::future<> ntp_archiver::upload_loop() {
               result.num_succeded);
         }
 
-        if (!upload_loop_can_continue()) {
+        if (!bg_loop_can_continue()) {
             break;
         }
 
@@ -150,7 +158,149 @@ ss::future<> ntp_archiver::upload_loop() {
     }
 }
 
-bool ntp_archiver::upload_loop_can_continue() const {
+void ntp_archiver::run_retention_loop() {
+    vassert(
+      !_retention_loop_started,
+      "retention loop for ntp {} already started",
+      _ntp);
+    _retention_loop_started = true;
+
+    ssx::spawn_with_gate(_gate, [this] {
+        return ss::with_scheduling_group(
+                 _upload_sg, [this] { return retention_loop(); })
+          .handle_exception_type([](const ss::abort_requested_exception&) {})
+          .handle_exception_type([](const ss::sleep_aborted&) {})
+          .handle_exception_type([](const ss::gate_closed_exception&) {})
+          .handle_exception([this](std::exception_ptr e) {
+              vlog(_rtclog.error, "retention loop error: {}", e);
+          })
+          .finally([this] {
+              vlog(_rtclog.debug, "retention loop stopped");
+              _retention_loop_stopped = true;
+          });
+    });
+}
+
+ss::future<> ntp_archiver::retention_loop() {
+    ss::lowres_clock::duration backoff = _upload_loop_initial_backoff;
+
+    while (bg_loop_can_continue()) {
+        auto flags = _partition->get_ntp_config()
+                       .get_overrides()
+                       .remote_cleanup_policy_bitflags;
+
+        auto maybe_retention_bytes
+          = _partition->get_ntp_config().get_overrides().remote_retention_bytes;
+        auto maybe_retention_ms
+          = _partition->get_ntp_config().get_overrides().remote_retention_time;
+        auto start_offset = model::offset::min();
+        if (
+          flags.has_value()
+          && flags.value() == model::cleanup_policy_bitflags::deletion
+          && !maybe_retention_bytes.is_disabled()) {
+            auto retention_bytes = maybe_retention_bytes.has_value()
+                                     ? maybe_retention_bytes.value()
+                                     : default_remote_retention_bytes;
+            size_t current_size = 0;
+            for (const auto& it : _manifest) {
+                current_size += it.second.size_bytes;
+            }
+            if (current_size > retention_bytes) {
+                size_t overshoot = current_size - retention_bytes;
+                vlog(
+                  _rtclog.info,
+                  "Cloud storage retention will remove up to {} bytes, current "
+                  "size: {}, retention.bytes: {}",
+                  overshoot,
+                  current_size,
+                  retention_bytes);
+                size_t tail_size = 0;
+                for (const auto& it : _manifest) {
+                    tail_size += it.second.size_bytes;
+                    if (tail_size < overshoot) {
+                        start_offset = it.second.committed_offset
+                                       + model::offset(1);
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+        if (
+          flags.has_value()
+          && flags.value() == model::cleanup_policy_bitflags::deletion
+          && !maybe_retention_ms.is_disabled()) {
+            auto now = model::timestamp::now();
+            auto retention_ms = maybe_retention_ms.has_value()
+                                  ? maybe_retention_ms.value()
+                                  : default_remote_retention_ms;
+            for (const auto& it : _manifest) {
+                auto delta = std::chrono::milliseconds(
+                  now.value() - it.second.max_timestamp.value());
+                if (delta > retention_ms) {
+                    start_offset = std::max(
+                      start_offset,
+                      it.second.committed_offset + model::offset(1));
+                    vlog(
+                      _rtclog.info,
+                      "Segment {} need to be removed from the bucket {} due to "
+                      "retention, New start offset in the cloud: {}",
+                      it.first.base_offset,
+                      _bucket,
+                      start_offset);
+                }
+            }
+        }
+        if (start_offset != model::offset::min()) {
+            vlog(
+              _rtclog.info,
+              "Going to truncate uploaded data up to offset {}",
+              start_offset);
+            co_await truncate_uploaded_data(start_offset);
+            backoff = _upload_loop_initial_backoff;
+        } else {
+            vlog(
+              _rtclog.debug, "Nothing to delete, applying backoff algorithm");
+            co_await ss::sleep_abortable(
+              backoff + _backoff_jitter.next_jitter_duration(), _as);
+            backoff = std::min(backoff * 2, _upload_loop_max_backoff);
+        }
+    }
+}
+
+ss::future<> ntp_archiver::truncate_uploaded_data(model::offset o) {
+    struct offset_path {
+        cloud_storage::remote_segment_path path;
+        model::offset max_offset;
+    };
+    std::vector<offset_path> to_delete;
+    for (const auto& it : _manifest) {
+        if (it.second.committed_offset < o) {
+            auto sname = cloud_storage::generate_segment_name(
+              it.first.base_offset, it.first.term);
+            auto path = cloud_storage::generate_remote_segment_path(
+              _ntp, _rev, sname, it.second.archiver_term);
+            vlog(_rtclog.debug, "Found a candidate for deletion {}", path);
+            to_delete.push_back(
+              {.path = path, .max_offset = it.second.committed_offset});
+        }
+    }
+    // truncate remote data and local data in lock-step
+    for (const auto& off_path : to_delete) {
+        vlog(_rtclog.info, "Delete segment {}", off_path.path);
+        retry_chain_node del_fib(
+          _manifest_upload_timeout, _upload_loop_initial_backoff, &_rtcnode);
+        co_await _remote.delete_segment(_bucket, off_path.path, del_fib);
+
+        vlog(_rtclog.info, "Truncate metadata up to {}", off_path.max_offset);
+        retry_chain_node trunc_fib(
+          _manifest_upload_timeout, _upload_loop_initial_backoff, &_rtcnode);
+        co_await do_truncate_manifest(
+          off_path.max_offset + model::offset(1), trunc_fib);
+    }
+}
+
+bool ntp_archiver::bg_loop_can_continue() const {
     return !_as.abort_requested() && !_gate.is_closed()
            && _partition->is_elected_leader()
            && _partition->term() == _start_term;
@@ -383,7 +533,7 @@ ntp_archiver::schedule_uploads(model::offset last_stable_offset) {
                            ss::stop_iteration::yes);
                      }
 
-                     if (!upload_loop_can_continue()) {
+                     if (!bg_loop_can_continue()) {
                          return ss::make_ready_future<ss::stop_iteration>(
                            ss::stop_iteration::yes);
                      }
@@ -425,7 +575,7 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
     }
     auto results = co_await ss::when_all_succeed(begin(flist), end(flist));
 
-    if (!upload_loop_can_continue()) {
+    if (!bg_loop_can_continue()) {
         // We exit early even if we have successfully uploaded some segments to
         // avoid interfering with an archiver that could have started on another
         // node.
@@ -495,6 +645,7 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
 ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
   std::optional<model::offset> lso_override) {
     vlog(_rtclog.debug, "Uploading next candidates called for {}", _ntp);
+    _partition->get_ntp_config().get_overrides();
     auto last_stable_offset = lso_override ? *lso_override
                                            : _partition->last_stable_offset();
     return ss::with_gate(
@@ -545,8 +696,7 @@ uint64_t ntp_archiver::estimate_backlog_size() {
 ss::future<std::optional<cloud_storage::partition_manifest>>
 ntp_archiver::maybe_truncate_manifest(retry_chain_node& rtc) {
     ss::gate::holder gh(_gate);
-    retry_chain_logger ctxlog(archival_log, rtc, _ntp.path());
-    vlog(ctxlog.info, "archival metadata cleanup started");
+    vlog(_rtclog.info, "archival metadata cleanup started");
     std::optional<cloud_storage::partition_manifest> result;
     model::offset adjusted_start_offset = model::offset::min();
     for (const auto& [key, meta] : _manifest) {
@@ -559,7 +709,7 @@ ntp_archiver::maybe_truncate_manifest(retry_chain_node& rtc) {
         auto result = co_await _remote.segment_exists(_bucket, spath, fib);
         if (result == cloud_storage::download_result::notfound) {
             vlog(
-              ctxlog.info,
+              _rtclog.info,
               "archival metadata cleanup, found segment missing from the "
               "bucket: {}",
               spath);
@@ -571,38 +721,45 @@ ntp_archiver::maybe_truncate_manifest(retry_chain_node& rtc) {
     if (
       adjusted_start_offset != model::offset::min()
       && _partition->archival_meta_stm()) {
-        vlog(
-          ctxlog.info,
-          "archival metadata cleanup, some segments will be removed from the "
-          "manifest, start offset before cleanup: {}",
-          _manifest.get_start_offset());
-        retry_chain_node rc_node(
-          _manifest_upload_timeout, _upload_loop_initial_backoff, &rtc);
-        auto error = co_await _partition->archival_meta_stm()->truncate(
-          adjusted_start_offset,
-          ss::lowres_clock::now() + _manifest_upload_timeout,
-          _as);
-        if (error != cluster::errc::success) {
-            vlog(ctxlog.warn, "archival metadata STM update failed: {}", error);
-            throw std::system_error(error);
-        } else {
-            vlog(
-              ctxlog.debug,
-              "archival metadata STM update passed, re-uploading manifest");
-            co_await upload_manifest();
-        }
-        result = _manifest.truncate(adjusted_start_offset);
-        vlog(
-          ctxlog.info,
-          "archival metadata cleanup completed, start offset after cleanup: {}",
-          _manifest.get_start_offset());
+        result = co_await do_truncate_manifest(adjusted_start_offset, rtc);
     } else {
         // Nothing to cleanup, return empty manifest
         result = cloud_storage::partition_manifest(_ntp, _rev);
         vlog(
-          ctxlog.info,
+          _rtclog.info,
           "archival metadata cleanup completed, nothing to clean up");
     }
+    co_return result;
+}
+
+ss::future<std::optional<cloud_storage::partition_manifest>>
+ntp_archiver::do_truncate_manifest(
+  model::offset start_offset, retry_chain_node& rtc) {
+    ss::gate::holder gh(_gate);
+    std::optional<cloud_storage::partition_manifest> result;
+    vlog(
+      _rtclog.info,
+      "archival metadata cleanup, some segments will be removed from the "
+      "manifest, start offset before cleanup: {}",
+      _manifest.get_start_offset());
+    retry_chain_node rc_node(
+      _manifest_upload_timeout, _upload_loop_initial_backoff, &rtc);
+    auto error = co_await _partition->archival_meta_stm()->truncate(
+      start_offset, ss::lowres_clock::now() + _manifest_upload_timeout, _as);
+    if (error != cluster::errc::success) {
+        vlog(_rtclog.warn, "archival metadata STM update failed: {}", error);
+        throw std::system_error(error);
+    } else {
+        vlog(
+          _rtclog.debug,
+          "archival metadata STM update passed, re-uploading manifest");
+        co_await upload_manifest();
+    }
+    result = _manifest.truncate(start_offset);
+    vlog(
+      _rtclog.info,
+      "archival metadata cleanup completed, start offset after cleanup: {}",
+      _manifest.get_start_offset());
     co_return result;
 }
 

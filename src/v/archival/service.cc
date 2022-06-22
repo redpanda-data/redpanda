@@ -244,6 +244,7 @@ ss::future<> scheduler_service_impl::add_ntp_archiver(
 
               _archivers.emplace(archiver->get_ntp(), archiver);
               archiver->run_upload_loop();
+              archiver->run_retention_loop();
 
               return ss::now();
           case cloud_storage::download_result::notfound:
@@ -264,6 +265,7 @@ ss::future<> scheduler_service_impl::add_ntp_archiver(
 
               _archivers.emplace(archiver->get_ntp(), archiver);
               archiver->run_upload_loop();
+              archiver->run_retention_loop();
 
               return ss::now();
           case cloud_storage::download_result::failed:
