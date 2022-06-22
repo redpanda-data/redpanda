@@ -203,10 +203,10 @@ struct error_category final : std::error_category {
     }
 };
 
-const error_category error_category{};
+const error_category kafka_error_category{};
 
 std::error_code make_error_code(kafka::error_code ec) {
-    return {static_cast<int>(ec), error_category};
+    return {static_cast<int>(ec), kafka_error_category};
 }
 
 } // namespace kafka
