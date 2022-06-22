@@ -182,8 +182,13 @@ public:
     struct expiration_info {
         duration_type timeout;
         time_point_type last_update;
+        bool is_expiration_requested;
 
         time_point_type deadline() const { return last_update + timeout; }
+
+        bool is_expired(time_point_type now) const {
+            return is_expiration_requested || deadline() <= now;
+        }
     };
 
     struct transaction_info {
