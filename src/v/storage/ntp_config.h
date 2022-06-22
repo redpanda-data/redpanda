@@ -47,6 +47,12 @@ public:
         model::shadow_indexing_mode shadow_indexing_mode
           = model::shadow_indexing_mode::disabled;
 
+        // cloud based retention flags
+        std::optional<model::cleanup_policy_bitflags>
+          remote_cleanup_policy_bitflags;
+        tristate<size_t> remote_retention_bytes{std::nullopt};
+        tristate<std::chrono::milliseconds> remote_retention_time{std::nullopt};
+
         friend std::ostream&
         operator<<(std::ostream&, const default_overrides&);
     };
