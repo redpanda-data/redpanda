@@ -22,6 +22,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kmsg"
+	yaml "gopkg.in/yaml.v3"
 )
 
 func NewCreateCommand(fs afero.Fs) *cobra.Command {
@@ -57,6 +58,9 @@ the cleanup.policy=compact config option set.
 			cl, err := kafka.NewFranzClient(fs, p, cfg)
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
 			defer cl.Close()
+
+			b, _ := yaml.Marshal(cfg)
+			fmt.Println("[create topic] Config: ", string(b))
 
 			configs, err := parseKVs(configKVs)
 			out.MaybeDie(err, "unable to parse configs: %v", err)
