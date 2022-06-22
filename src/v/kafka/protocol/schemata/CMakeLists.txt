@@ -94,6 +94,7 @@ v_cc_library(
     Seastar::seastar
     v::bytes
     v::rpc
+    v::kafka
     absl::flat_hash_map
     absl::flat_hash_set
 )
