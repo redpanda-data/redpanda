@@ -46,10 +46,15 @@ class AccessControlListTest(RedpandaTest):
         # it with custom security settings
         return
 
-    def prepare_cluster(self, use_tls, use_sasl):
+    def prepare_cluster(self,
+                        use_tls,
+                        use_sasl,
+                        enable_authz=None,
+                        authn_method=None):
         self.security = SecurityConfig()
         self.security.enable_sasl = use_sasl
-        self.security.enable_mtls_identity = use_tls and not use_sasl
+        self.security.kafka_enable_authorization = enable_authz
+        self.security.endpoint_authn_method = authn_method
 
         if use_tls:
             self.tls = tls.TLSCertManager(self.logger)
@@ -78,7 +83,7 @@ class AccessControlListTest(RedpandaTest):
 
         admin = Admin(self.redpanda)
 
-        if self.security.enable_mtls_identity:
+        if self.security.mtls_identity_enabled():
             feature_name = "mtls_authentication"
             admin.put_feature(feature_name, {"state": "active"})
 
@@ -92,11 +97,11 @@ class AccessControlListTest(RedpandaTest):
             wait_until(check_feature_active, timeout_sec=10, backoff_sec=1)
 
         # base case user is not a superuser and has no configured ACLs
-        if use_sasl:
+        if use_sasl or enable_authz:
             admin.create_user("base", self.password, self.algorithm)
 
         # only grant cluster describe permission to user cluster_describe
-        if use_sasl:
+        if use_sasl or enable_authz:
             admin.create_user("cluster_describe", self.password,
                               self.algorithm)
         client = self.get_super_client()
@@ -105,7 +110,7 @@ class AccessControlListTest(RedpandaTest):
         # there is not a convenient interface for waiting for acls to propogate
         # to all nodes so when we are using mtls only for identity we inject a
         # sleep here to try to avoid any acl propogation races.
-        if self.security.enable_mtls_identity:
+        if self.security.mtls_identity_enabled():
             time.sleep(5)
             return
 
@@ -120,7 +125,7 @@ class AccessControlListTest(RedpandaTest):
         wait_until(users_propogated, timeout_sec=10, backoff_sec=1)
 
     def get_client(self, username):
-        if self.security.enable_mtls_identity:
+        if self.security.mtls_identity_enabled():
             if username == "base":
                 cert = self.base_user_cert
             elif username == "cluster_describe":
@@ -140,7 +145,7 @@ class AccessControlListTest(RedpandaTest):
                        tls_cert=cert)
 
     def get_super_client(self):
-        if self.security.enable_mtls_identity:
+        if self.security.mtls_identity_enabled():
             return RpkTool(self.redpanda, tls_cert=self.admin_user_cert)
 
         username, password, _ = self.redpanda.SUPERUSER_CREDENTIALS
@@ -154,16 +159,31 @@ class AccessControlListTest(RedpandaTest):
                        sasl_mechanism=self.algorithm,
                        tls_cert=cert)
 
+    # The old config style has use_sasl at the top level, which enables
+    # authorization. New config style has kafka_enable_authorization at the
+    # top-level, with authentication_method on the listener.
     @cluster(num_nodes=3)
+    # plaintext conn + sasl for authn (global sasl config)
     @parametrize(use_tls=False,
-                 use_sasl=True)  # plaintext conn + sasl for authn
-    @parametrize(use_tls=True, use_sasl=True)  # ssl/tls conn + sasl for authn
-    @parametrize(use_tls=True, use_sasl=False)  # ssl/tls conn + mtls for authn
-    def test_describe_acls(self, use_tls, use_sasl):
+                 use_sasl=True,
+                 enable_authz=None,
+                 authn_method=None)
+    # ssl/tls conn + sasl for authn (global sasl config)
+    @parametrize(use_tls=True,
+                 use_sasl=True,
+                 enable_authz=None,
+                 authn_method=None)
+    # ssl/tls conn + mtls for authn (listener mtls config)
+    @parametrize(use_tls=True,
+                 use_sasl=False,
+                 enable_authz=True,
+                 authn_method="mtls_identity")
+    def test_describe_acls(self, use_tls, use_sasl, enable_authz,
+                           authn_method):
         """
         security::acl_operation::describe, security::default_cluster_name
         """
-        self.prepare_cluster(use_tls, use_sasl)
+        self.prepare_cluster(use_tls, use_sasl, enable_authz, authn_method)
 
         # run a few times for good health
         for _ in range(5):
