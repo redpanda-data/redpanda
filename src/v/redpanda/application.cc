@@ -707,7 +707,8 @@ void application::wire_up_redpanda_services() {
       storage,
       storage_node,
       std::ref(raft_group_manager),
-      data_policies);
+      data_policies,
+      std::ref(cloud_storage_api));
 
     controller->wire_up().get0();
     syschecks::systemd_message("Creating kafka metadata cache").get();

@@ -11,10 +11,12 @@
 
 #pragma once
 
+#include "cloud_storage/remote.h"
 #include "cluster/controller_stm.h"
 #include "cluster/data_policy_frontend.h"
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
+#include "cluster/read_replica_manager.h"
 #include "cluster/scheduling/types.h"
 #include "cluster/topic_table.h"
 #include "model/metadata.h"
@@ -41,7 +43,8 @@ public:
       ss::sharded<partition_leaders_table>&,
       ss::sharded<topic_table>&,
       ss::sharded<data_policy_frontend>&,
-      ss::sharded<ss::abort_source>&);
+      ss::sharded<ss::abort_source>&,
+      ss::sharded<cloud_storage::remote>&);
 
     ss::future<std::vector<topic_result>> create_topics(
       std::vector<custom_assignable_topic_configuration>,
@@ -133,6 +136,7 @@ private:
     ss::sharded<topic_table>& _topics;
     ss::sharded<data_policy_frontend>& _dp_frontend;
     ss::sharded<ss::abort_source>& _as;
+    ss::sharded<cloud_storage::remote>& _cloud_storage_api;
     bool _partition_movement_disabled = false;
 };
 

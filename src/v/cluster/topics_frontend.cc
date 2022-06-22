@@ -49,7 +49,8 @@ topics_frontend::topics_frontend(
   ss::sharded<partition_leaders_table>& l,
   ss::sharded<topic_table>& topics,
   ss::sharded<data_policy_frontend>& dp_frontend,
-  ss::sharded<ss::abort_source>& as)
+  ss::sharded<ss::abort_source>& as,
+  ss::sharded<cloud_storage::remote>& cloud_storage_api)
   : _self(self)
   , _stm(s)
   , _allocator(pal)
@@ -57,7 +58,8 @@ topics_frontend::topics_frontend(
   , _leaders(l)
   , _topics(topics)
   , _dp_frontend(dp_frontend)
-  , _as(as) {}
+  , _as(as)
+  , _cloud_storage_api(cloud_storage_api) {}
 
 static bool
 needs_linearizable_barrier(const std::vector<topic_result>& results) {
@@ -418,34 +420,38 @@ ss::future<topic_result> topics_frontend::do_create_topic(
     auto validation_err = validate_topic_configuration(assignable_config);
 
     if (validation_err != errc::success) {
-        return ss::make_ready_future<topic_result>(
-          topic_result(assignable_config.cfg.tp_ns, validation_err));
+        co_return topic_result(assignable_config.cfg.tp_ns, validation_err);
     }
 
-    // TODO: implement read replicas, see
-    // https://github.com/redpanda-data/redpanda/issues/4736
     if (assignable_config.is_read_replica()) {
-        return ss::make_ready_future<topic_result>(topic_result(
-          assignable_config.cfg.tp_ns, errc::topic_invalid_config));
+        if (!assignable_config.cfg.properties.read_replica_bucket) {
+            co_return make_error_result(
+              assignable_config.cfg.tp_ns, errc::topic_invalid_config);
+        }
+        auto rr_manager = read_replica_manager(_cloud_storage_api.local());
+
+        errc download_res = co_await rr_manager.set_remote_properties_in_config(
+          assignable_config,
+          s3::bucket_name(
+            assignable_config.cfg.properties.read_replica_bucket.value()),
+          _as.local());
+
+        if (download_res != errc::success) {
+            co_return make_error_result(
+              assignable_config.cfg.tp_ns, errc::topic_operation_error);
+        }
     }
 
-    return _allocator
-      .invoke_on(
-        partition_allocator::shard,
-        [assignable_config](partition_allocator& al) {
-            return al.allocate(make_allocation_request(assignable_config));
-        })
-      .then([this, t_cfg = std::move(assignable_config.cfg), timeout](
-              result<allocation_units> units) mutable {
-          // no assignments, error
-          if (!units) {
-              return ss::make_ready_future<topic_result>(
-                make_error_result(t_cfg.tp_ns, units.error()));
-          }
-
-          return replicate_create_topic(
-            std::move(t_cfg), std::move(units.value()), timeout);
+    auto units = co_await _allocator.invoke_on(
+      partition_allocator::shard, [assignable_config](partition_allocator& al) {
+          return al.allocate(make_allocation_request(assignable_config));
       });
+
+    if (!units) {
+        co_return make_error_result(assignable_config.cfg.tp_ns, units.error());
+    }
+    co_return co_await replicate_create_topic(
+      std::move(assignable_config.cfg), std::move(units.value()), timeout);
 }
 
 ss::future<topic_result> topics_frontend::replicate_create_topic(
