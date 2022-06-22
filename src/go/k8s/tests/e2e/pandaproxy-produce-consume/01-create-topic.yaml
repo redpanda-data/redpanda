@@ -19,7 +19,7 @@ spec:
             - /bin/bash
             - -c
           args:
-            - rpk topic create test --brokers cluster-proxy-0.cluster-proxy.$POD_NAMESPACE.svc.cluster.local:9092 -v  > /dev/termination-log
+            - rpk topic create test --brokers cluster-proxy-0.cluster-proxy.$POD_NAMESPACE.svc.cluster.local:9092 -v
       restartPolicy: Never
   backoffLimit: 6
   parallelism: 1
