@@ -22,33 +22,6 @@
 namespace config {
 using namespace std::chrono_literals;
 
-uint32_t default_raft_non_local_requests() {
-    /**
-     * raft max non local requests
-     * - up to 7000 groups per core
-     * - up to 256 concurrent append entries per group
-     * - additional requests like (vote, snapshot, timeout now)
-     *
-     * All the values have to be multiplied by core count minus one since
-     * part of the requests will be core local
-     *
-     * 7000*256 * (number of cores-1) + 10 * 7000 * (number of cores-1)
-     *         ^                                 ^
-     * append entries requests          additional requests
-     */
-
-    // TODO: this is no longer hardcoded, this function should
-    // be updated to respect topic_partitions_per_shard configuration
-    // property.
-    static constexpr uint32_t max_partitions_per_core = 7000;
-    static constexpr uint32_t max_append_requests_per_follower = 256;
-    static constexpr uint32_t additional_requests_per_follower = 10;
-
-    return max_partitions_per_core
-           * (max_append_requests_per_follower + additional_requests_per_follower)
-           * (ss::smp::count - 1);
-}
-
 configuration::configuration()
   : log_segment_size(
     *this,
@@ -593,7 +566,7 @@ configuration::configuration()
       "Maximum number of x-core requests pending in Raft seastar::smp group. "
       "(for more details look at `seastar::smp_service_group` documentation)",
       {.visibility = visibility::tunable},
-      default_raft_non_local_requests())
+      std::nullopt)
   , raft_max_concurrent_append_requests_per_follower(
       *this,
       "raft_max_concurrent_append_requests_per_follower",
