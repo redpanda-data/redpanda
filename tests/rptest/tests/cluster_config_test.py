@@ -7,8 +7,8 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from collections import namedtuple
 import time
+from typing import Any, NamedTuple
 import requests
 import json
 import re
@@ -861,8 +861,10 @@ class ClusterConfigTest(RedpandaTest):
         """
         Test RPK's getter+setter helpers
         """
-
-        Example = namedtuple('Example', ['key', 'strval', 'yamlval'])
+        class Example(NamedTuple):
+            key: str
+            strval: str
+            yamlval: Any
 
         valid_examples = [
             Example("kafka_qdc_enable", "true", True),
@@ -870,7 +872,7 @@ class ClusterConfigTest(RedpandaTest):
             Example("superusers", "['bob','alice']", ["bob", "alice"])
         ]
 
-        def yamlize(input):
+        def yamlize(input) -> str:
             """Create a YAML representation that matches
             what yaml-cpp produces: PyYAML includes trailing
             ellipsis lines that must be removed."""
