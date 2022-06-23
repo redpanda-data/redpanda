@@ -161,10 +161,10 @@ public:
         /// KIP-511 bumps api_versions_request/response to 3, past the first
         /// supported flex version for this API, and makes an exception
         /// that there will be no tags in the response header.
-        bool is_flexible = header().is_flexible();
+        auto is_flexible = flex_enabled(header().is_flexible());
         api_version version = header().version;
         if constexpr (std::is_same_v<ResponseType, api_versions_response>) {
-            is_flexible = false;
+            is_flexible = flex_enabled::no;
             if (r.data.error_code == kafka::error_code::unsupported_version) {
                 /// Furthermore if the client has made an api_versions_request
                 /// outside of the max supported version, any assumptions about
