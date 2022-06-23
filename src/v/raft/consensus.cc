@@ -33,6 +33,7 @@
 #include "storage/api.h"
 #include "vlog.h"
 
+#include <seastar/core/condition-variable.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/fstream.hh>
 #include <seastar/core/future.hh>
@@ -2581,24 +2582,36 @@ ss::future<timeout_now_reply> consensus::timeout_now(timeout_now_request&& r) {
 ss::future<transfer_leadership_reply>
 consensus::transfer_leadership(transfer_leadership_request req) {
     transfer_leadership_reply reply;
-    auto err = co_await do_transfer_leadership(req.target);
-    if (err) {
+    try {
+        auto err = co_await do_transfer_leadership(req.target);
+        if (err) {
+            vlog(
+              _ctxlog.warn,
+              "Unable to transfer leadership to {}: {}",
+              req.target,
+              err.message());
+
+            reply.success = false;
+            if (err.category() == raft::error_category()) {
+                reply.result = static_cast<errc>(err.value());
+            }
+            co_return reply;
+        }
+
+        reply.success = true;
+        reply.result = errc::success;
+        co_return reply;
+
+    } catch (const ss::condition_variable_timed_out& e) {
         vlog(
           _ctxlog.warn,
           "Unable to transfer leadership to {}: {}",
           req.target,
-          err.message());
-
+          e);
         reply.success = false;
-        if (err.category() == raft::error_category()) {
-            reply.result = static_cast<errc>(err.value());
-        }
+        reply.result = errc::timeout;
         co_return reply;
     }
-
-    reply.success = true;
-    reply.result = errc::success;
-    co_return reply;
 }
 
 ss::future<std::error_code>
