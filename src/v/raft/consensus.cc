@@ -136,13 +136,17 @@ consensus::consensus(
 }
 
 void consensus::setup_metrics() {
+    namespace sm = ss::metrics;
+
     if (config::shard_local_cfg().disable_metrics()) {
         return;
     }
 
     _probe.setup_metrics(_log.config().ntp());
     auto labels = probe::create_metric_labels(_log.config().ntp());
-    namespace sm = ss::metrics;
+    auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
+                              ? std::vector<sm::label>{sm::shard_label}
+                              : std::vector<sm::label>{};
 
     _metrics.add_group(
       prometheus_sanitize::metrics_name("raft"),
@@ -150,7 +154,8 @@ void consensus::setup_metrics() {
          "leader_for",
          [this] { return is_elected_leader(); },
          sm::description("Number of groups for which node is a leader"),
-         labels),
+         labels)
+         .aggregate(aggregate_labels),
        sm::make_gauge(
          "configuration_change_in_progress",
          [this] {
@@ -160,7 +165,8 @@ void consensus::setup_metrics() {
          },
          sm::description("Indicates if current raft group configuration is in "
                          "joint state i.e. configuration is being changed"),
-         labels)});
+         labels)
+         .aggregate(aggregate_labels)});
 }
 
 void consensus::do_step_down(std::string_view ctx) {
