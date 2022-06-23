@@ -174,7 +174,7 @@ class Admin:
                 self.redpanda.logger.debug(f"doesn't have leader")
                 return None
             if last_leader < 0:
-                last_leader = meta["leader_id"]
+                last_leader = int(meta["leader_id"])
                 self.redpanda.logger.debug(f"get leader:{last_leader}")
             if last_leader not in replicas:
                 self.redpanda.logger.debug(
@@ -255,9 +255,11 @@ class Admin:
             info = self.wait_stable_configuration(topic, partition, namespace,
                                                   replication, timeout_s,
                                                   hosts)
-            return check(info.leader)
+            if check(info.leader):
+                return True, info.leader
+            return False
 
-        wait_until(
+        return wait_until_result(
             is_leader_stable,
             timeout_sec=timeout_s,
             backoff_sec=1,
