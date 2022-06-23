@@ -7,7 +7,9 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import os
 import time
+import datetime
 
 from rptest.services.admin import Admin
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
@@ -205,6 +207,47 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
         state = self._get_features_map()[feature_alpha_name]
         assert state['state'] == 'disabled'
         assert state['was_active'] == True
+
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_license_upload_and_query(self):
+        """
+        Test uploading and retrieval of license
+        """
+        license = os.environ.get("REDPANDA_SAMPLE_LICENSE", None)
+        if license is None:
+            is_ci = os.environ.get("CI", "false")
+            assert is_ci == "false"
+            self.logger.info(
+                "Skipping test, REDPANDA_SAMPLE_LICENSE env var not found")
+            return
+        license_contents = {
+            'expires': datetime.date(2122, 6, 6),
+            'format_version': 0,
+            'org': 'redpanda-testing',
+            'type': 'enterprise'
+        }
+
+        assert self.admin.put_license(license).status_code == 200
+        wait_until(lambda: self.admin.get_license()['loaded'] is True,
+                   timeout_sec=5,
+                   backoff_sec=1)
+        resp = self.admin.get_license()
+        assert resp['loaded'] is True
+        assert resp['license'] is not None
+
+        def is_equal_to_license_properties(license_contents,
+                                           license_properties):
+            """Compares the values within first parameters map to a response
+            from the redpanda admin server"""
+            days_left = (license_contents['expires'] -
+                         datetime.date.today()).days
+            return license_properties['format_version'] == license_contents['format_version'] and \
+                license_properties['org'] == license_contents['org'] and \
+                license_properties['type'] == license_contents['type'] and \
+                license_properties['expires'] == days_left
+
+        assert is_equal_to_license_properties(license_contents,
+                                              resp['license']) is True
 
 
 class FeaturesSingleNodeTest(FeaturesTestBase):
