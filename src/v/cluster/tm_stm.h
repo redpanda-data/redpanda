@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cluster/feature_table.h"
 #include "cluster/persisted_stm.h"
 #include "config/configuration.h"
 #include "kafka/protocol/errors.h"
@@ -144,7 +145,7 @@ public:
         partition_not_found
     };
 
-    explicit tm_stm(ss::logger&, raft::consensus*);
+    explicit tm_stm(ss::logger&, raft::consensus*, ss::sharded<feature_table>&);
 
     std::optional<tm_transaction> get_tx(kafka::transactional_id);
     checked<tm_transaction, tm_stm::op_status>
@@ -267,6 +268,8 @@ private:
           model::make_memory_record_batch_reader(std::move(batch)),
           raft::replicate_options{raft::consistency_level::quorum_ack});
     }
+
+    ss::sharded<feature_table>& _feature_table;
 };
 
 // Version 1 added last_update_ts to tx lod record. And new status tombstone to
