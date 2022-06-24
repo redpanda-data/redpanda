@@ -56,7 +56,8 @@ controller::controller(
   ss::sharded<storage::api>& storage,
   ss::sharded<storage::node_api>& storage_node,
   ss::sharded<raft::group_manager>& raft_manager,
-  ss::sharded<v8_engine::data_policy_table>& data_policy_table)
+  ss::sharded<v8_engine::data_policy_table>& data_policy_table,
+  ss::sharded<feature_table>& feature_table)
   : _config_preload(std::move(config_preload))
   , _connections(ccache)
   , _partition_manager(pm)
@@ -66,12 +67,12 @@ controller::controller(
   , _tp_updates_dispatcher(_partition_allocator, _tp_state, _partition_leaders)
   , _security_manager(_credentials, _authorizer)
   , _data_policy_manager(data_policy_table)
-  , _raft_manager(raft_manager) {}
+  , _raft_manager(raft_manager)
+  , _feature_table(feature_table) {}
 
 ss::future<> controller::wire_up() {
     return _as.start()
       .then([this] { return _members_table.start(); })
-      .then([this] { return _feature_table.start(); })
       .then([this] {
           return _partition_allocator.start_single(
             std::ref(_members_table),
@@ -362,7 +363,6 @@ ss::future<> controller::stop() {
           .then([this] { return _drain_manager.stop(); })
           .then([this] { return _partition_allocator.stop(); })
           .then([this] { return _partition_leaders.stop(); })
-          .then([this] { return _feature_table.stop(); })
           .then([this] { return _members_table.stop(); })
           .then([this] { return _as.stop(); });
     });

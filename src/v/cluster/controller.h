@@ -44,7 +44,8 @@ public:
       ss::sharded<storage::api>& storage,
       ss::sharded<storage::node_api>& storage_node,
       ss::sharded<raft::group_manager>&,
-      ss::sharded<v8_engine::data_policy_table>&);
+      ss::sharded<v8_engine::data_policy_table>&,
+      ss::sharded<feature_table>&);
 
     model::node_id self() { return _raft0->self().id(); }
     ss::sharded<topics_frontend>& get_topics_frontend() { return _tp_frontend; }
@@ -158,7 +159,7 @@ private:
     ss::sharded<metrics_reporter> _metrics_reporter;
     ss::sharded<feature_manager> _feature_manager; // single instance
     ss::sharded<feature_backend> _feature_backend; // instance per core
-    ss::sharded<feature_table> _feature_table;     // instance per core
+    ss::sharded<feature_table>& _feature_table;    // instance per core
     std::unique_ptr<leader_balancer> _leader_balancer;
     consensus_ptr _raft0;
 };
