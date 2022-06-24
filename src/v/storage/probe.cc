@@ -70,87 +70,104 @@ void probe::setup_metrics(const model::ntp& ntp) {
       topic_label(ntp.tp.topic()),
       partition_label(ntp.tp.partition()),
     };
+    auto aggregate_labels
+      = config::shard_local_cfg().aggregate_metrics()
+          ? std::vector<sm::label>{sm::shard_label, partition_label}
+          : std::vector<sm::label>{};
 
     _metrics.add_group(
       prometheus_sanitize::metrics_name("storage:log"),
-      {
-        sm::make_total_bytes(
-          "written_bytes",
-          [this] { return _bytes_written; },
-          sm::description("Total number of bytes written"),
-          labels),
-        sm::make_counter(
-          "batches_written",
-          [this] { return _batches_written; },
-          sm::description("Total number of batches written"),
-          labels),
-        sm::make_total_bytes(
-          "read_bytes",
-          [this] { return _bytes_read; },
-          sm::description("Total number of bytes read"),
-          labels),
-        sm::make_total_bytes(
-          "cached_read_bytes",
-          [this] { return _cached_bytes_read; },
-          sm::description("Total number of cached bytes read"),
-          labels),
-        sm::make_counter(
-          "batches_read",
-          [this] { return _batches_read; },
-          sm::description("Total number of batches read"),
-          labels),
-        sm::make_counter(
-          "cached_batches_read",
-          [this] { return _cached_batches_read; },
-          sm::description("Total number of cached batches read"),
-          labels),
-        sm::make_counter(
-          "log_segments_created",
-          [this] { return _log_segments_created; },
-          sm::description("Number of created log segments"),
-          labels),
-        sm::make_counter(
-          "log_segments_removed",
-          [this] { return _log_segments_removed; },
-          sm::description("Number of removed log segments"),
-          labels),
-        sm::make_counter(
-          "log_segments_active",
-          [this] { return _log_segments_active; },
-          sm::description("Number of active log segments"),
-          labels),
-        sm::make_counter(
-          "batch_parse_errors",
-          [this] { return _batch_parse_errors; },
-          sm::description("Number of batch parsing (reading) errors"),
-          labels),
-        sm::make_counter(
-          "batch_write_errors",
-          [this] { return _batch_write_errors; },
-          sm::description("Number of batch write errors"),
-          labels),
-        sm::make_counter(
-          "corrupted_compaction_indices",
-          [this] { return _corrupted_compaction_index; },
-          sm::description("Number of times we had to re-construct the "
-                          ".compaction index on a segment"),
-          labels),
-        sm::make_counter(
-          "compacted_segment",
-          [this] { return _segment_compacted; },
-          sm::description("Number of compacted segments"),
-          labels),
-        sm::make_gauge(
-          "partition_size",
-          [this] { return _partition_bytes; },
-          sm::description("Current size of partition in bytes"),
-          labels),
-        sm::make_total_bytes(
-          "compaction_ratio",
-          [this] { return _compaction_ratio; },
-          sm::description("Average segment compaction ratio"),
-          labels),
-      });
+      {sm::make_total_bytes(
+         "written_bytes",
+         [this] { return _bytes_written; },
+         sm::description("Total number of bytes written"),
+         labels)
+         .aggregate(aggregate_labels),
+       sm::make_counter(
+         "batches_written",
+         [this] { return _batches_written; },
+         sm::description("Total number of batches written"),
+         labels)
+         .aggregate(aggregate_labels),
+       sm::make_total_bytes(
+         "read_bytes",
+         [this] { return _bytes_read; },
+         sm::description("Total number of bytes read"),
+         labels)
+         .aggregate(aggregate_labels),
+       sm::make_total_bytes(
+         "cached_read_bytes",
+         [this] { return _cached_bytes_read; },
+         sm::description("Total number of cached bytes read"),
+         labels)
+         .aggregate(aggregate_labels),
+       sm::make_counter(
+         "batches_read",
+         [this] { return _batches_read; },
+         sm::description("Total number of batches read"),
+         labels)
+         .aggregate(aggregate_labels),
+       sm::make_counter(
+         "cached_batches_read",
+         [this] { return _cached_batches_read; },
+         sm::description("Total number of cached batches read"),
+         labels)
+         .aggregate(aggregate_labels),
+       sm::make_counter(
+         "log_segments_created",
+         [this] { return _log_segments_created; },
+         sm::description("Number of created log segments"),
+         labels)
+         .aggregate(aggregate_labels),
+       sm::make_counter(
+         "log_segments_removed",
+         [this] { return _log_segments_removed; },
+         sm::description("Number of removed log segments"),
+         labels)
+         .aggregate(aggregate_labels),
+       sm::make_counter(
+         "log_segments_active",
+         [this] { return _log_segments_active; },
+         sm::description("Number of active log segments"),
+         labels)
+         .aggregate(aggregate_labels),
+       sm::make_counter(
+         "batch_parse_errors",
+         [this] { return _batch_parse_errors; },
+         sm::description("Number of batch parsing (reading) errors"),
+         labels)
+         .aggregate(aggregate_labels),
+       sm::make_counter(
+         "batch_write_errors",
+         [this] { return _batch_write_errors; },
+         sm::description("Number of batch write errors"),
+         labels)
+         .aggregate(aggregate_labels),
+       sm::make_counter(
+         "corrupted_compaction_indices",
+         [this] { return _corrupted_compaction_index; },
+         sm::description("Number of times we had to re-construct the "
+                         ".compaction index on a segment"),
+         labels)
+         .aggregate(aggregate_labels),
+       sm::make_counter(
+         "compacted_segment",
+         [this] { return _segment_compacted; },
+         sm::description("Number of compacted segments"),
+         labels)
+         .aggregate(aggregate_labels),
+       sm::make_gauge(
+         "partition_size",
+         [this] { return _partition_bytes; },
+         sm::description("Current size of partition in bytes"),
+         labels)
+         .aggregate(aggregate_labels),
+       sm::make_total_bytes(
+         "compaction_ratio",
+         [this] { return _compaction_ratio; },
+         sm::description("Average segment compaction ratio"),
+         labels)
+         .aggregate({sm::shard_label})});
 }
 
 void probe::add_initial_segment(const segment& s) {
@@ -168,6 +185,11 @@ void readers_cache_probe::setup_metrics(const model::ntp& ntp) {
     auto ns_label = sm::label("namespace");
     auto topic_label = sm::label("topic");
     auto partition_label = sm::label("partition");
+    auto aggregate_labels
+      = config::shard_local_cfg().aggregate_metrics()
+          ? std::vector<sm::label>{sm::shard_label, partition_label}
+          : std::vector<sm::label>{};
+
     const std::vector<sm::label_instance> labels = {
       ns_label(ntp.ns()),
       topic_label(ntp.tp.topic()),
@@ -181,22 +203,26 @@ void readers_cache_probe::setup_metrics(const model::ntp& ntp) {
           "readers_added",
           [this] { return _readers_added; },
           sm::description("Number of readers added to cache"),
-          labels),
+          labels)
+          .aggregate(aggregate_labels),
         sm::make_counter(
           "readers_evicted",
           [this] { return _readers_evicted; },
           sm::description("Number of readers evicted from cache"),
-          labels),
+          labels)
+          .aggregate(aggregate_labels),
         sm::make_counter(
           "cache_hits",
           [this] { return _cache_hits; },
           sm::description("Reader cache hits"),
-          labels),
+          labels)
+          .aggregate(aggregate_labels),
         sm::make_counter(
           "cache_misses",
           [this] { return _cache_misses; },
           sm::description("Reader cache misses"),
-          labels),
+          labels)
+          .aggregate(aggregate_labels),
       });
 }
 } // namespace storage

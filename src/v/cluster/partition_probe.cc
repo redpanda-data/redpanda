@@ -63,8 +63,8 @@ void replicated_partition_probe::setup_metrics(const model::ntp& ntp) {
           [this] { return _partition.committed_offset(); },
           sm::description("Partition commited offset. i.e. safely persisted on "
                           "majority of replicas"),
-          labels,
-          aggregate_labels),
+          labels)
+          .aggregate(aggregate_labels),
         sm::make_gauge(
           "end_offset",
           [this] { return _partition.dirty_offset(); },
@@ -106,8 +106,8 @@ void replicated_partition_probe::setup_metrics(const model::ntp& ntp) {
           "records_produced",
           [this] { return _records_produced; },
           sm::description("Total number of records produced"),
-          labels,
-          aggregate_labels),
+          labels)
+          .aggregate(aggregate_labels),
         sm::make_counter(
           "records_fetched",
           [this] { return _records_fetched; },
