@@ -64,12 +64,13 @@ private:
     virtual void check_server() = 0;
 };
 
-class rpc_simple_integration_fixture : public rpc_base_integration_fixture {
+template<std::derived_from<net::server::protocol> T>
+class rpc_fixture_swappable_proto : public rpc_base_integration_fixture {
 public:
-    explicit rpc_simple_integration_fixture(uint16_t port)
+    explicit rpc_fixture_swappable_proto(uint16_t port)
       : rpc_base_integration_fixture(port) {}
 
-    ~rpc_simple_integration_fixture() override { stop_server(); }
+    ~rpc_fixture_swappable_proto() override { stop_server(); }
 
     void start_server() override {
         check_server();
@@ -98,13 +99,13 @@ public:
         scfg.max_service_memory_per_core = static_cast<int64_t>(
           ss::memory::stats().total_memory() / 10);
         _server = std::make_unique<net::server>(std::move(scfg));
-        _proto = std::make_unique<rpc::simple_protocol>();
+        _proto = std::make_unique<T>();
     }
 
     template<typename Service, typename... Args>
     void register_service(Args&&... args) {
         check_server();
-        _proto->register_service<Service>(
+        _proto->template register_service<Service>(
           _sg, _ssg, std::forward<Args>(args)...);
     }
 
@@ -115,9 +116,12 @@ private:
         }
     }
 
-    std::unique_ptr<rpc::simple_protocol> _proto;
+    std::unique_ptr<T> _proto;
     std::unique_ptr<net::server> _server;
 };
+
+using rpc_simple_integration_fixture
+  = rpc_fixture_swappable_proto<rpc::simple_protocol>;
 
 class rpc_sharded_integration_fixture : public rpc_base_integration_fixture {
 public:

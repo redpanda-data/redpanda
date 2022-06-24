@@ -598,3 +598,58 @@ FIXTURE_TEST(version_not_supported, rpc_integration_fixture) {
 
     t.stop().get();
 }
+
+class erroneous_protocol_exception : public std::exception {};
+
+class erroneous_protocol final : public net::server::protocol {
+public:
+    template<std::derived_from<rpc::service> T, typename... Args>
+    void register_service(Args&&... args) {
+        _services.push_back(std::make_unique<T>(std::forward<Args>(args)...));
+    }
+
+    const char* name() const final { return "redpanda erraneous proto"; };
+
+    ss::future<> apply(net::server::resources rs) final {
+        return ss::do_until(
+          [rs] { return rs.conn->input().eof() || rs.abort_requested(); },
+          [this, rs]() mutable {
+              return ss::make_exception_future<>(
+                erroneous_protocol_exception());
+          });
+    }
+
+private:
+    std::vector<std::unique_ptr<rpc::service>> _services;
+};
+
+class erroneous_service_fixture
+  : public rpc_fixture_swappable_proto<erroneous_protocol> {
+public:
+    erroneous_service_fixture()
+      : rpc_fixture_swappable_proto(redpanda_rpc_port) {}
+
+    void register_services() {
+        register_service<movistar>();
+        register_service<echo_impl>();
+    }
+
+    static constexpr uint16_t redpanda_rpc_port = 32147;
+};
+
+FIXTURE_TEST(unhandled_throw_in_proto_apply, erroneous_service_fixture) {
+    configure_server();
+    register_services();
+    start_server();
+
+    rpc::transport t(client_config());
+    t.connect(model::no_timeout).get();
+    auto client = echo::echo_client_protocol(t);
+
+    /// Server should not crash at this line
+    client
+      .echo(
+        echo::echo_req{.str = "testing..."}, rpc::client_opts(rpc::no_timeout))
+      .get();
+    t.stop().get();
+}

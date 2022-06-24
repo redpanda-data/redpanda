@@ -40,6 +40,11 @@ std::optional<ss::sstring> is_disconnect_exception(std::exception_ptr e) {
         // Happens on unclean client disconnect, typically wrapping
         // an out_of_range
         return "parse error";
+    } catch (...) {
+        // Global catch-all prevents stranded/non-handled exceptional futures.
+        // In all other non-explicity handled cases, the exception will not be
+        // related to disconnect issues, therefore fallthrough to return nullopt
+        // is acceptable.
     }
 
     return std::nullopt;
