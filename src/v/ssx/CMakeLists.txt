@@ -3,6 +3,7 @@ v_cc_library(
     ssx
   HDRS
     "future-util.h"
+    "metrics.h"
   DEPS
     Seastar::seastar
   )
