@@ -29,14 +29,15 @@ struct cloud_storage_fixture : s3_imposter_fixture {
     cloud_storage_fixture() {
         tmp_directory.create().get();
         constexpr size_t cache_size = 1024 * 1024 * 1024;
-        const ss::lowres_clock::duration cache_duration = 1000s;
-        cache = ss::make_shared<cloud_storage::cache>(
-          tmp_directory.get_path(), cache_size, cache_duration);
-        cache->start().get();
+
+        cache.start(tmp_directory.get_path(), cache_size).get();
+
+        cache.invoke_on_all([](cloud_storage::cache& c) { return c.start(); })
+          .get();
     }
 
     ~cloud_storage_fixture() {
-        cache->stop().get();
+        cache.stop().get();
         tmp_directory.remove().get();
     }
 
@@ -46,5 +47,5 @@ struct cloud_storage_fixture : s3_imposter_fixture {
     cloud_storage_fixture operator=(cloud_storage_fixture&&) = delete;
 
     ss::tmp_dir tmp_directory;
-    ss::shared_ptr<cloud_storage::cache> cache;
+    ss::sharded<cloud_storage::cache> cache;
 };

@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "cloud_storage/access_time_tracker.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
@@ -30,7 +31,7 @@ public:
     // recursively walks start_dir, returns the total size of files in this
     // directory and a list of files sorted by access time from oldest to newest
     ss::future<std::pair<uint64_t, std::vector<file_list_item>>>
-    walk(ss::sstring start_dir);
+    walk(ss::sstring start_dir, const access_time_tracker& tracker);
 
 private:
     ss::gate _gate;

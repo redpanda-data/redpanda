@@ -17,6 +17,7 @@
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/seastar.hh>
+#include <seastar/core/sharded.hh>
 #include <seastar/core/sstring.hh>
 
 #include <boost/filesystem/operations.hpp>
@@ -41,18 +42,19 @@ public:
 
     temporary_dir test_dir;
     const std::filesystem::path CACHE_DIR;
-    cloud_storage::cache cache_service;
+    ss::sharded<cloud_storage::cache> sharded_cache;
 
     cache_test_fixture()
       : test_dir("test_cache_dir")
-      , CACHE_DIR(get_cache_dir(test_dir.get_path()))
-      , cache_service(
-          CACHE_DIR, 1_MiB + 500_KiB, ss::lowres_clock::duration(1s)) {
-        cache_service.start().get();
+      , CACHE_DIR(get_cache_dir(test_dir.get_path())) {
+        sharded_cache.start(CACHE_DIR, 1_MiB + 500_KiB).get();
+        sharded_cache
+          .invoke_on_all([](cloud_storage::cache& c) { return c.start(); })
+          .get();
     }
 
     ~cache_test_fixture() {
-        cache_service.stop().get();
+        sharded_cache.stop().get();
         test_dir.remove().get();
     }
 
@@ -68,6 +70,6 @@ public:
         buf.append(data_string.data(), data_string.length());
 
         auto input = make_iobuf_input_stream(std::move(buf));
-        cache_service.put(key, input).get();
+        sharded_cache.local().put(key, input).get();
     }
 };
