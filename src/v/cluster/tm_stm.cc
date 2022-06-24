@@ -28,8 +28,6 @@ namespace cluster {
 
 namespace {
 
-using use_new_version_tx_bool = ss::bool_class<struct use_new_version_tx_tag>;
-
 tm_transaction_v1::tx_status
 downgrade_status(tm_transaction::tx_status status) {
     switch (status) {
@@ -184,7 +182,7 @@ tm_stm::sync(model::timeout_clock::duration timeout) {
 
 ss::future<checked<tm_transaction, tm_stm::op_status>>
 tm_stm::update_tx(tm_transaction tx, model::term_id term) {
-    auto batch = serialize_tx(tx, use_new_version_tx_bool::yes);
+    auto batch = serialize_tx(tx, use_new_tx_version());
 
     auto r = co_await replicate_quorum_ack(term, std::move(batch));
     if (!r) {
@@ -381,7 +379,7 @@ ss::future<tm_stm::op_status> tm_stm::register_new_producer(
       .status = tm_transaction::tx_status::ready,
       .timeout_ms = transaction_timeout_ms,
       .last_update_ts = clock_type::now()};
-    auto batch = serialize_tx(tx, use_new_version_tx_bool::yes);
+    auto batch = serialize_tx(tx, use_new_tx_version());
 
     _pid_tx_id[pid] = tx_id;
 

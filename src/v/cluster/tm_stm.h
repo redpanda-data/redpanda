@@ -35,6 +35,8 @@
 
 namespace cluster {
 
+using use_new_version_tx_bool = ss::bool_class<struct use_new_version_tx_tag>;
+
 struct tm_transaction {
     static constexpr uint8_t version = 2;
 
@@ -254,6 +256,12 @@ private:
           term,
           model::make_memory_record_batch_reader(std::move(batch)),
           raft::replicate_options{raft::consistency_level::quorum_ack});
+    }
+
+    use_new_version_tx_bool use_new_tx_version() {
+        return _feature_table.local().is_active(feature::kip_360)
+                 ? use_new_version_tx_bool::yes
+                 : use_new_version_tx_bool::no;
     }
 
     ss::sharded<feature_table>& _feature_table;
