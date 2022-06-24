@@ -1142,12 +1142,12 @@ void admin_server::register_raft_routes() {
             shard,
             [group_id, target, this, req = std::move(req)](
               cluster::partition_manager& pm) mutable {
-                auto consensus = pm.consensus_for(group_id);
-                if (!consensus) {
+                auto partition = pm.partition_for(group_id);
+                if (!partition) {
                     throw ss::httpd::not_found_exception();
                 }
-                const auto ntp = consensus->ntp();
-                return consensus->do_transfer_leadership(target).then(
+                const auto ntp = partition->ntp();
+                return partition->transfer_leadership(target).then(
                   [this, req = std::move(req), ntp](std::error_code err)
                     -> ss::future<ss::json::json_return_type> {
                       co_await throw_on_error(*req, err, ntp);

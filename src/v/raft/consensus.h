@@ -255,6 +255,16 @@ public:
         });
     }
 
+    ss::future<> step_down() {
+        return _op_lock.with([this] {
+            do_step_down("external_stepdown");
+            if (_leader_id) {
+                _leader_id = std::nullopt;
+                trigger_leadership_notification();
+            }
+        });
+    }
+
     ss::future<std::optional<storage::timequery_result>>
     timequery(storage::timequery_config cfg);
 

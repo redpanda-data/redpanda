@@ -150,7 +150,11 @@ public:
 
     ss::future<std::error_code>
     transfer_leadership(std::optional<model::node_id> target) {
-        return _raft->do_transfer_leadership(target);
+        if (_rm_stm) {
+            return _rm_stm->transfer_leadership(target);
+        } else {
+            return _raft->do_transfer_leadership(target);
+        }
     }
 
     ss::future<std::error_code>

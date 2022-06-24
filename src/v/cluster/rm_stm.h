@@ -22,6 +22,7 @@
 #include "raft/state_machine.h"
 #include "raft/types.h"
 #include "storage/snapshot.h"
+#include "utils/available_promise.h"
 #include "utils/expiring_promise.h"
 #include "utils/mutex.h"
 
@@ -168,10 +169,18 @@ public:
     ss::future<std::vector<rm_stm::tx_range>>
       aborted_transactions(model::offset, model::offset);
 
+    raft::replicate_stages replicate_in_stages(
+      model::batch_identity,
+      model::record_batch_reader,
+      raft::replicate_options);
+
     ss::future<result<raft::replicate_result>> replicate(
       model::batch_identity,
       model::record_batch_reader,
       raft::replicate_options);
+
+    ss::future<std::error_code>
+      transfer_leadership(std::optional<model::node_id>);
 
     ss::future<> stop() override;
 
@@ -267,6 +276,13 @@ private:
     std::optional<model::offset> known_seq(model::batch_identity) const;
     void set_seq(model::batch_identity, model::offset);
     void reset_seq(model::batch_identity);
+    std::optional<int32_t> tail_seq(model::producer_identity) const;
+
+    ss::future<result<raft::replicate_result>> do_replicate(
+      model::batch_identity,
+      model::record_batch_reader,
+      raft::replicate_options,
+      ss::lw_shared_ptr<available_promise<>>);
 
     ss::future<result<raft::replicate_result>>
       replicate_tx(model::batch_identity, model::record_batch_reader);
@@ -274,7 +290,13 @@ private:
     ss::future<result<raft::replicate_result>> replicate_seq(
       model::batch_identity,
       model::record_batch_reader,
-      raft::replicate_options);
+      raft::replicate_options,
+      ss::lw_shared_ptr<available_promise<>>);
+
+    ss::future<result<raft::replicate_result>> replicate_msg(
+      model::record_batch_reader,
+      raft::replicate_options,
+      ss::lw_shared_ptr<available_promise<>>);
 
     void compact_snapshot();
 
@@ -396,22 +418,64 @@ private:
         }
     };
 
-    template<typename Func>
-    auto with_request_lock(request_id rid, Func&& f) {
-        auto lock_it = _request_locks.find(rid);
-        if (lock_it == _request_locks.end()) {
-            lock_it
-              = _request_locks.emplace(rid, ss::make_lw_shared<mutex>()).first;
+    // When a request is retried while the first appempt is still
+    // being replicated the retried request is parked until the
+    // original request is replicated.
+    struct inflight_request {
+        int32_t last_seq{-1};
+        result<raft::replicate_result> r = errc::success;
+        bool is_processing;
+        std::vector<
+          ss::lw_shared_ptr<available_promise<result<raft::replicate_result>>>>
+          parked;
+    };
+
+    // Redpanda uses optimistic replication to implement pipelining of
+    // idempotent replication requests. Just like with non-idempotent
+    // requests redpanda doesn't wait until previous request is replicated
+    // before processing the next.
+    //
+    // However with idempotency the requests are causally related: seq
+    // numbers should increase without gaps. So we need to prevent a
+    // case when a request A's replication starts before a request's B
+    // replication but then it fails while B's replication passes.
+    //
+    // We reply on conditional replication to guarantee that A and B
+    // share the same term and then on ours Raft's guarantees about order
+    // if A was enqueued before B within the same term then if A fails
+    // then B should fail too.
+    //
+    // inflight_requests hosts inflight requests before they are resolved
+    // and form a monotonicly increasing continuation without gaps of
+    // log_state's seq_table
+    struct inflight_requests {
+        mutex lock;
+        int32_t tail_seq{-1};
+        model::term_id term;
+        ss::circular_buffer<ss::lw_shared_ptr<inflight_request>> cache;
+
+        void forget() {
+            for (auto& inflight : cache) {
+                if (inflight->is_processing) {
+                    for (auto& pending : inflight->parked) {
+                        pending->set_value(errc::generic_tx_error);
+                    }
+                }
+            }
+            cache.clear();
+            tail_seq = -1;
         }
-        auto r_lock = lock_it->second;
-        return r_lock->with(std::forward<Func>(f))
-          .finally([this, r_lock, rid]() {
-              if (r_lock->waiters() == 0) {
-                  // this fiber is the last holder of the lock
-                  _request_locks.erase(rid);
-              }
-          });
-    }
+
+        std::optional<result<raft::replicate_result>>
+        known_seq(int32_t last_seq) const {
+            for (auto& seq : cache) {
+                if (seq->last_seq == last_seq && !seq->is_processing) {
+                    return seq->r;
+                }
+            }
+            return std::nullopt;
+        }
+    };
 
     ss::lw_shared_ptr<mutex> get_tx_lock(model::producer_id pid) {
         auto lock_it = _tx_locks.find(pid);
@@ -430,7 +494,10 @@ private:
 
     ss::basic_rwlock<> _state_lock;
     absl::flat_hash_map<model::producer_id, ss::lw_shared_ptr<mutex>> _tx_locks;
-    absl::flat_hash_map<request_id, ss::lw_shared_ptr<mutex>> _request_locks;
+    absl::flat_hash_map<
+      model::producer_identity,
+      ss::lw_shared_ptr<inflight_requests>>
+      _inflight_requests;
     log_state _log_state;
     mem_state _mem_state;
     ss::timer<clock_type> auto_abort_timer;

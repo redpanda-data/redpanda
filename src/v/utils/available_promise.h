@@ -14,19 +14,20 @@
 
 #include <seastar/core/future.hh>
 
-template<typename T>
+template<class... T>
 class available_promise {
 public:
-    ss::future<T> get_future() { return _promise.get_future(); }
+    ss::future<T...> get_future() { return _promise.get_future(); }
 
-    void set_value(T&& value) {
+    template<typename... A>
+    void set_value(A&&... a) {
         _available = true;
-        _promise.set_value(std::move(value));
+        _promise.set_value(std::forward<A>(a)...);
     }
 
     bool available() { return _available; }
 
 private:
     bool _available{false};
-    ss::promise<T> _promise;
+    ss::promise<T...> _promise;
 };
