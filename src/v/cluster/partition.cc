@@ -32,7 +32,8 @@ partition::partition(
   consensus_ptr r,
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
   ss::sharded<cloud_storage::remote>& cloud_storage_api,
-  ss::sharded<cloud_storage::cache>& cloud_storage_cache)
+  ss::sharded<cloud_storage::cache>& cloud_storage_cache,
+  ss::sharded<feature_table>& feature_table)
   : _raft(r)
   , _probe(std::make_unique<replicated_partition_probe>(*this))
   , _tx_gateway_frontend(tx_gateway_frontend)
@@ -51,7 +52,8 @@ partition::partition(
         }
 
         if (_is_tx_enabled) {
-            _tm_stm = ss::make_shared<cluster::tm_stm>(clusterlog, _raft.get());
+            _tm_stm = ss::make_shared<cluster::tm_stm>(
+              clusterlog, _raft.get(), feature_table);
             stm_manager->add_stm(_tm_stm);
         }
     } else {

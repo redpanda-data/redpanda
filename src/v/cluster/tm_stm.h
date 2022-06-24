@@ -13,6 +13,7 @@
 
 #include "cluster/persisted_stm.h"
 #include "config/configuration.h"
+#include "feature_table.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
@@ -143,7 +144,7 @@ public:
         partition_not_found
     };
 
-    explicit tm_stm(ss::logger&, raft::consensus*);
+    explicit tm_stm(ss::logger&, raft::consensus*, ss::sharded<feature_table>&);
 
     std::optional<tm_transaction> get_tx(kafka::transactional_id);
     checked<tm_transaction, tm_stm::op_status>
@@ -254,6 +255,8 @@ private:
           model::make_memory_record_batch_reader(std::move(batch)),
           raft::replicate_options{raft::consistency_level::quorum_ack});
     }
+
+    ss::sharded<feature_table>& _feature_table;
 };
 
 struct tm_transaction_v1 {

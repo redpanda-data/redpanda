@@ -44,7 +44,8 @@ public:
       consensus_ptr r,
       ss::sharded<cluster::tx_gateway_frontend>&,
       ss::sharded<cloud_storage::remote>&,
-      ss::sharded<cloud_storage::cache>&);
+      ss::sharded<cloud_storage::cache>&,
+      ss::sharded<feature_table>&);
 
     raft::group_id group() const { return _raft->group(); }
     ss::future<> start();

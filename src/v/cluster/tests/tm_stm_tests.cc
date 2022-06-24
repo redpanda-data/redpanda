@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "cluster/feature_table.h"
 #include "cluster/tm_stm.h"
 #include "finjector/hbadger.h"
 #include "model/fundamental.h"
@@ -28,6 +29,14 @@
 
 static ss::logger tm_logger{"tm_stm-test"};
 
+struct ftable_struct {
+    ftable_struct() { table.start().get(); }
+
+    ~ftable_struct() { table.stop().get(); }
+
+    ss::sharded<cluster::feature_table> table;
+};
+
 using op_status = cluster::tm_stm::op_status;
 using tm_transaction = cluster::tm_transaction;
 using tx_status = cluster::tm_transaction::tx_status;
@@ -44,8 +53,9 @@ static tm_transaction expect_tx(checked<tm_transaction, op_status> maybe_tx) {
 
 FIXTURE_TEST(test_tm_stm_new_tx, mux_state_machine_fixture) {
     start_raft();
+    ftable_struct ftable;
 
-    cluster::tm_stm stm(tm_logger, _raft.get());
+    cluster::tm_stm stm(tm_logger, _raft.get(), std::ref(ftable.table));
     auto c = _raft.get();
 
     stm.start().get0();
@@ -103,8 +113,9 @@ FIXTURE_TEST(test_tm_stm_new_tx, mux_state_machine_fixture) {
 
 FIXTURE_TEST(test_tm_stm_seq_tx, mux_state_machine_fixture) {
     start_raft();
+    ftable_struct ftable;
 
-    cluster::tm_stm stm(tm_logger, _raft.get());
+    cluster::tm_stm stm(tm_logger, _raft.get(), std::ref(ftable.table));
     auto c = _raft.get();
 
     stm.start().get0();
@@ -142,8 +153,9 @@ FIXTURE_TEST(test_tm_stm_seq_tx, mux_state_machine_fixture) {
 
 FIXTURE_TEST(test_tm_stm_re_tx, mux_state_machine_fixture) {
     start_raft();
+    ftable_struct ftable;
 
-    cluster::tm_stm stm(tm_logger, _raft.get());
+    cluster::tm_stm stm(tm_logger, _raft.get(), std::ref(ftable.table));
     auto c = _raft.get();
 
     stm.start().get0();
