@@ -19,7 +19,8 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
 from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.services.admin import Admin
-from rptest.services.redpanda import SecurityConfig
+from rptest.services.redpanda import SecurityConfig, SaslCredentials, SecurityConfig
+from rptest.util import expect_http_error
 
 
 class ScramTest(RedpandaTest):
@@ -299,3 +300,66 @@ class ScramLiveUpdateTest(RedpandaTest):
 
         # An unauthenticated client should be accepted again
         assert len(unauthenticated_client.topics()) == 1
+
+
+class ScramBootstrapUserTest(RedpandaTest):
+    BOOTSTRAP_USERNAME = 'bob'
+    BOOTSTRAP_PASSWORD = 'sekrit'
+
+    def __init__(self, *args, **kwargs):
+        # Configure the cluster as a user might configure it for secure
+        # bootstrap: i.e. all auth turned on from moment of creation.
+
+        security_config = SecurityConfig()
+        security_config.enable_sasl = True
+
+        super().__init__(
+            *args,
+            environment={
+                'RP_BOOTSTRAP_USER':
+                f'{self.BOOTSTRAP_USERNAME}:{self.BOOTSTRAP_PASSWORD}'
+            },
+            extra_rp_conf={
+                'enable_sasl': True,
+                'admin_api_require_auth': True,
+                'superusers': ['bob']
+            },
+            security=security_config,
+            superuser=SaslCredentials(self.BOOTSTRAP_USERNAME,
+                                      self.BOOTSTRAP_PASSWORD,
+                                      "SCRAM-SHA-256"),
+            **kwargs)
+
+    @cluster(num_nodes=3)
+    def test_bootstrap_user(self):
+        # Anonymous access should be refused
+        admin = Admin(self.redpanda)
+        with expect_http_error(403):
+            admin.list_users()
+
+        # Access using the bootstrap credentials should succeed
+        admin = Admin(self.redpanda,
+                      auth=(self.BOOTSTRAP_USERNAME, self.BOOTSTRAP_PASSWORD))
+        assert self.BOOTSTRAP_USERNAME in admin.list_users()
+
+        # Modify the bootstrap user's credential
+        admin.update_user(self.BOOTSTRAP_USERNAME, "newpassword",
+                          "SCRAM-SHA-256")
+
+        # We do not have a hook for synchronously waiting for a credential update to propagate
+        time.sleep(5)
+
+        # Using old password should fail
+        with expect_http_error(401):
+            admin.list_users()
+
+        # Using new credential should succeed
+        admin = Admin(self.redpanda,
+                      auth=(self.BOOTSTRAP_USERNAME, 'newpassword'))
+        admin.list_users()
+
+        # Modified credential should survive a restart: this verifies that
+        # the RP_BOOTSTRAP_USER setting does not fight with changes made
+        # by other means.
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        admin.list_users()
