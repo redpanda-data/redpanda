@@ -371,9 +371,9 @@ ss::future<> metadata_dissemination_service::dispatch_disseminate_leadership() {
 
 ss::future<> metadata_dissemination_service::update_leaders_with_health_report(
   cluster_health_report report) {
-    for (auto& node_report : report.node_reports) {
+    for (const auto& node_report : report.node_reports) {
         co_await _leaders.invoke_on_all(
-          [node_report](partition_leaders_table& leaders) {
+          [&node_report](partition_leaders_table& leaders) {
               for (auto& tp : node_report.topics) {
                   for (auto& p : tp.partitions) {
                       // Nodes may report a null leader if they're out of
