@@ -34,6 +34,8 @@ std::string_view to_string_view(feature f) {
         return "license";
     case feature::raft_improved_configuration:
         return "raft_improved_configuration";
+    case feature::transaction_ga:
+        return "transaction_ga";
     case feature::test_alpha:
         return "__test_alpha";
     }
@@ -62,7 +64,7 @@ std::string_view to_string_view(feature_state::state s) {
 
 // The version that this redpanda node will report: increment this
 // on protocol changes to raft0 structures, like adding new services.
-static constexpr cluster_version latest_version = cluster_version{5};
+static constexpr cluster_version latest_version = cluster_version{6};
 
 feature_table::feature_table() {
     // Intentionally undocumented environment variable, only for use
