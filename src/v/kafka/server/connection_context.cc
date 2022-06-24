@@ -159,7 +159,7 @@ ss::future<> connection_context::handle_auth_v0(const size_t size) {
      */
     if (unlikely(size > 256_KiB)) {
         throw std::runtime_error(fmt_with_ctx(
-          fmt::format, "Auth (handshake_v0) message too large", size));
+          fmt::format, "Auth (handshake_v0) message too large: {}", size));
     }
 
     const api_version version(0);
