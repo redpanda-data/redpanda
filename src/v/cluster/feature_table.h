@@ -25,6 +25,7 @@ enum class feature : std::uint64_t {
     maintenance_mode = 0x4,
     mtls_authentication = 0x8,
     serde_raft_0 = 0x10,
+    kip_360 = 0x20,
 
     // Dummy features for testing only
     test_alpha = uint64_t(1) << 63,
@@ -105,6 +106,12 @@ constexpr static std::array feature_schema{
     cluster_version{4},
     "serde_raft_0",
     feature::serde_raft_0,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+  feature_spec{
+    cluster_version{4},
+    "kip-360",
+    feature::kip_360,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
