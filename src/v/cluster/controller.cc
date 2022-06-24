@@ -233,6 +233,7 @@ ss::future<> controller::start() {
               return stm.wait(stm.bootstrap_last_applied(), model::no_timeout);
           });
       })
+      .then([this] { return cluster_creation_hook(); })
       .then(
         [this] { return _backend.invoke_on_all(&controller_backend::start); })
       .then([this] {
@@ -382,6 +383,41 @@ ss::future<> controller::stop() {
           .then([this] { return _members_table.stop(); })
           .then([this] { return _as.stop(); });
     });
+}
+
+/**
+ * This function provides for writing the controller log immediately
+ * after it has been created, before anything else has been written
+ * to it, and before we have started communicating with peers.
+ */
+ss::future<> controller::cluster_creation_hook() {
+    if (!config::node().seed_servers().empty()) {
+        // We are not on the root node
+        co_return;
+    } else if (
+      _raft0->last_visible_index() > model::offset{}
+      || _raft0->config().brokers().size() > 1) {
+        // The controller log has already been written to
+        co_return;
+    }
+
+    // Internal RPC does not start until after controller startup
+    // is complete (we are called during controller startup), so
+    // it is guaranteed that if we were single node/empty controller
+    // log at start of this function, we will still be in that state
+    // here.  The wait for leadership is really just a wait for the
+    // consensus object to finish writing its last_voted_for from
+    // its self-vote.
+    while (!_raft0->is_leader()) {
+        co_await ss::sleep(100ms);
+    }
+
+    auto err
+      = co_await _security_frontend.local().maybe_create_bootstrap_user();
+    vassert(
+      err == errc::success,
+      "Controller write should always succeed in single replica state during "
+      "creation");
 }
 
 } // namespace cluster
