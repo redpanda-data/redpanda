@@ -19,13 +19,61 @@
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
+#include <seastar/util/bool_class.hh>
 
 #include <filesystem>
 #include <optional>
 
 namespace cluster {
 
-static model::record_batch serialize_tx(tm_transaction tx) {
+namespace {
+
+using use_new_version_tx_bool = ss::bool_class<struct use_new_version_tx_tag>;
+
+tm_transaction_v1::tx_status
+downgrade_status(tm_transaction::tx_status status) {
+    switch (status) {
+    case tm_transaction::tx_status::ongoing:
+        return tm_transaction_v1::tx_status::ongoing;
+    case tm_transaction::tx_status::preparing:
+        return tm_transaction_v1::tx_status::preparing;
+    case tm_transaction::tx_status::prepared:
+        return tm_transaction_v1::tx_status::prepared;
+    case tm_transaction::tx_status::aborting:
+        return tm_transaction_v1::tx_status::aborting;
+    case tm_transaction::tx_status::killed:
+        return tm_transaction_v1::tx_status::killed;
+    case tm_transaction::tx_status::ready:
+        return tm_transaction_v1::tx_status::ready;
+    case tm_transaction::tx_status::tombstone:
+        return tm_transaction_v1::tx_status::tombstone;
+    default:
+        vassert(false, "unknown status: {}", status);
+    }
+}
+
+tm_transaction_v1 downgrade_tx(const tm_transaction& tx) {
+    tm_transaction_v1 result;
+    result.id = tx.id;
+    result.pid = tx.pid;
+    result.tx_seq = tx.tx_seq;
+    result.etag = tx.etag;
+    result.status = downgrade_status(tx.status);
+    result.timeout_ms = tx.timeout_ms;
+    result.last_update_ts = tx.last_update_ts;
+    for (auto& partition : tx.partitions) {
+        result.partitions.push_back(tm_transaction_v1::tx_partition{
+          .ntp = partition.ntp, .etag = partition.etag});
+    }
+    for (auto& group : tx.groups) {
+        result.groups.push_back(tm_transaction_v1::tx_group{
+          .group_id = group.group_id, .etag = group.etag});
+    }
+    return result;
+}
+
+model::record_batch
+serialize_tx(tm_transaction tx, use_new_version_tx_bool use_new_version_tx) {
     iobuf key;
     reflection::serialize(key, model::record_batch_type::tm_update);
     auto pid_id = tx.pid.id;
@@ -33,14 +81,22 @@ static model::record_batch serialize_tx(tm_transaction tx) {
     reflection::serialize(key, pid_id, tx_id);
 
     iobuf value;
-    reflection::serialize(value, tm_transaction::version);
-    reflection::serialize(value, std::move(tx));
+    if (use_new_version_tx == use_new_version_tx_bool::yes) {
+        reflection::serialize(value, tm_transaction::version);
+        reflection::serialize(value, std::move(tx));
+    } else {
+        auto old_tx = downgrade_tx(tx);
+        reflection::serialize(value, tm_transaction_v1::version);
+        reflection::serialize(value, std::move(old_tx));
+    }
 
     storage::record_batch_builder b(
       model::record_batch_type::tm_update, model::offset(0));
     b.add_raw_kv(std::move(key), std::move(value));
     return std::move(b).build();
 }
+
+} // namespace
 
 std::ostream& operator<<(std::ostream& o, const tm_transaction& tx) {
     return o << "{tm_transaction: id=" << tx.id << ", status=" << tx.status
@@ -128,7 +184,7 @@ tm_stm::sync(model::timeout_clock::duration timeout) {
 
 ss::future<checked<tm_transaction, tm_stm::op_status>>
 tm_stm::update_tx(tm_transaction tx, model::term_id term) {
-    auto batch = serialize_tx(tx);
+    auto batch = serialize_tx(tx, use_new_version_tx_bool::yes);
 
     auto r = co_await replicate_quorum_ack(term, std::move(batch));
     if (!r) {
@@ -325,7 +381,7 @@ ss::future<tm_stm::op_status> tm_stm::register_new_producer(
       .status = tm_transaction::tx_status::ready,
       .timeout_ms = transaction_timeout_ms,
       .last_update_ts = clock_type::now()};
-    auto batch = serialize_tx(tx);
+    auto batch = serialize_tx(tx, use_new_version_tx_bool::yes);
 
     _pid_tx_id[pid] = tx_id;
 
