@@ -66,7 +66,7 @@ controller::controller(
   ss::sharded<partition_manager>& pm,
   ss::sharded<shard_table>& st,
   ss::sharded<storage::api>& storage,
-  ss::sharded<storage::node_api>& storage_node,
+  ss::sharded<node::local_monitor>& local_monitor,
   ss::sharded<raft::group_manager>& raft_manager,
   ss::sharded<v8_engine::data_policy_table>& data_policy_table,
   ss::sharded<features::feature_table>& feature_table,
@@ -76,7 +76,7 @@ controller::controller(
   , _partition_manager(pm)
   , _shard_table(st)
   , _storage(storage)
-  , _storage_node(storage_node)
+  , _local_monitor(local_monitor)
   , _tp_updates_dispatcher(
       _partition_allocator,
       _tp_state,
@@ -433,15 +433,9 @@ ss::future<> controller::start(cluster_discovery& discovery) {
             std::ref(_partition_manager),
             std::ref(_raft_manager),
             std::ref(_as),
-            std::ref(_storage_node),
-            std::ref(_storage),
+            std::ref(_local_monitor),
             std::ref(_drain_manager),
-            std::ref(_feature_table),
-            config::shard_local_cfg()
-              .storage_space_alert_free_threshold_bytes.bind(),
-            config::shard_local_cfg()
-              .storage_space_alert_free_threshold_percent.bind(),
-            config::shard_local_cfg().storage_min_free_bytes.bind());
+            std::ref(_feature_table));
       })
       .then([this] { return _hm_frontend.start(std::ref(_hm_backend)); })
       .then([this] {

@@ -898,7 +898,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       partition_manager,
       shard_table,
       storage,
-      storage_node,
+      local_monitor,
       std::ref(raft_group_manager),
       data_policies,
       std::ref(feature_table),

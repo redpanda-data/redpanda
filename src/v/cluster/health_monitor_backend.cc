@@ -55,13 +55,9 @@ health_monitor_backend::health_monitor_backend(
   ss::sharded<partition_manager>& partition_manager,
   ss::sharded<raft::group_manager>& raft_manager,
   ss::sharded<ss::abort_source>& as,
-  ss::sharded<storage::node_api>& storage_node_api,
-  ss::sharded<storage::api>& storage_api,
+  ss::sharded<node::local_monitor>& local_monitor,
   ss::sharded<drain_manager>& drain_manager,
-  ss::sharded<features::feature_table>& feature_table,
-  config::binding<size_t> storage_min_bytes_alert,
-  config::binding<unsigned> storage_min_percent_alert,
-  config::binding<size_t> storage_min_bytes)
+  ss::sharded<features::feature_table>& feature_table)
   : _raft0(std::move(raft0))
   , _members(mt)
   , _connections(connections)
@@ -70,12 +66,7 @@ health_monitor_backend::health_monitor_backend(
   , _as(as)
   , _drain_manager(drain_manager)
   , _feature_table(feature_table)
-  , _local_monitor(
-      std::move(storage_min_bytes_alert),
-      std::move(storage_min_percent_alert),
-      std::move(storage_min_bytes),
-      storage_node_api,
-      storage_api) {
+  , _local_monitor(local_monitor) {
     _leadership_notification_handle
       = _raft_manager.local().register_leadership_notification(
         [this](
@@ -622,8 +613,8 @@ health_monitor_backend::collect_current_node_health(node_report_filter filter) {
     node_health_report ret;
     ret.id = _raft0->self().id();
 
-    co_await _local_monitor.update_state();
-    ret.local_state = _local_monitor.get_state_cached();
+    co_await _local_monitor.local().update_state();
+    ret.local_state = _local_monitor.local().get_state_cached();
     ret.local_state.logical_version
       = features::feature_table::get_latest_logical_version();
 
