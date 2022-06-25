@@ -92,7 +92,7 @@ def main():
                                 'kafka_records'
                             ],
                             required=True,
-                            help='opertion to execute')
+                            help='operation to execute')
         parser.add_argument(
             '--topic',
             type=str,
