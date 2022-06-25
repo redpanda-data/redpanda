@@ -15,6 +15,7 @@
 #include "cloud_storage/fwd.h"
 #include "cluster/config_manager.h"
 #include "cluster/fwd.h"
+#include "cluster/node/local_monitor.h"
 #include "cluster/node_status_backend.h"
 #include "cluster/node_status_table.h"
 #include "config/node_config.h"
@@ -117,6 +118,7 @@ public:
 
     ss::sharded<storage::api> storage;
     ss::sharded<storage::node_api> storage_node;
+    ss::sharded<cluster::node::local_monitor> local_monitor;
 
     ss::sharded<v8_engine::data_policy_table> data_policies;
 

@@ -1248,6 +1248,16 @@ void application::wire_up_bootstrap_services() {
     }).get();
     syschecks::systemd_message("Constructing storage services").get();
     construct_single_service_sharded(storage_node).get();
+    construct_single_service_sharded(
+      local_monitor,
+      config::shard_local_cfg().storage_space_alert_free_threshold_bytes.bind(),
+      config::shard_local_cfg()
+        .storage_space_alert_free_threshold_percent.bind(),
+      config::shard_local_cfg().storage_min_free_bytes.bind(),
+      std::ref(storage_node),
+      std::ref(storage))
+      .get();
+
     construct_service(
       storage,
       []() { return kvstore_config_from_global_config(); },
