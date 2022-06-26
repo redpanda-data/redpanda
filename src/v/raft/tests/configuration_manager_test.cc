@@ -10,6 +10,7 @@
 #include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/tests/randoms.h"
 #include "raft/configuration_manager.h"
 #include "raft/group_configuration.h"
 #include "raft/logger.h"
@@ -75,10 +76,10 @@ struct config_manager_fixture {
         std::vector<model::broker> learners;
         learners.reserve(2);
         for (auto i = 0; i < 3; ++i) {
-            nodes.push_back(tests::random_broker(i, i));
+            nodes.push_back(model::random_broker(i, i));
         }
         for (auto i = 0; i < 2; ++i) {
-            learners.push_back(tests::random_broker(i, i));
+            learners.push_back(model::random_broker(i, i));
         }
         return raft::group_configuration(
           std::move(nodes), model::revision_id(0));
@@ -267,7 +268,7 @@ FIXTURE_TEST(test_assigning_initial_revision, config_manager_fixture) {
 
     raft::configuration_manager mgr(
       raft::group_configuration(
-        {tests::random_broker(0, 0), tests::random_broker(1, 1)},
+        {model::random_broker(0, 0), model::random_broker(1, 1)},
         raft::group_nodes{
           .voters = {raft::vnode(model::node_id(0), raft::no_revision)},
           .learners = {raft::vnode(model::node_id(1), raft::no_revision)},

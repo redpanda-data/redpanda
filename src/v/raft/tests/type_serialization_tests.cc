@@ -12,6 +12,7 @@
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/tests/random_batch.h"
+#include "model/tests/randoms.h"
 #include "model/timeout_clock.h"
 #include "raft/consensus_utils.h"
 #include "raft/group_configuration.h"
@@ -298,9 +299,9 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_response_negatives) {
 }
 
 SEASTAR_THREAD_TEST_CASE(snapshot_metadata_roundtrip) {
-    auto n1 = tests::random_broker(0, 100);
-    auto n2 = tests::random_broker(0, 100);
-    auto n3 = tests::random_broker(0, 100);
+    auto n1 = model::random_broker(0, 100);
+    auto n2 = model::random_broker(0, 100);
+    auto n3 = model::random_broker(0, 100);
     std::vector<model::broker> nodes{n1, n2, n3};
     raft::group_nodes current{
       .voters
@@ -331,9 +332,9 @@ SEASTAR_THREAD_TEST_CASE(snapshot_metadata_roundtrip) {
 }
 
 SEASTAR_THREAD_TEST_CASE(snapshot_metadata_backward_compatibility) {
-    auto n1 = tests::random_broker(0, 100);
-    auto n2 = tests::random_broker(0, 100);
-    auto n3 = tests::random_broker(0, 100);
+    auto n1 = model::random_broker(0, 100);
+    auto n2 = model::random_broker(0, 100);
+    auto n3 = model::random_broker(0, 100);
     std::vector<model::broker> nodes{n1, n2, n3};
     raft::group_nodes current{
       .voters

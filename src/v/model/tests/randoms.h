@@ -102,4 +102,16 @@ inline model::broker_properties random_broker_properties() {
       .etc_props = std::move(etc_props),
     };
 }
+
+inline model::broker
+random_broker(int32_t id_low_bound, int32_t id_upper_bound) {
+    return model::broker(
+      model::node_id(
+        random_generators::get_int(id_low_bound, id_upper_bound)), // id
+      tests::random_net_address(), // kafka api address
+      tests::random_net_address(), // rpc address
+      std::nullopt,
+      model::broker_properties{
+        .cores = random_generators::get_int<uint32_t>(96)});
+}
 } // namespace model

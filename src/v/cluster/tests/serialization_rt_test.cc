@@ -194,7 +194,7 @@ SEASTAR_THREAD_TEST_CASE(config_invariants_test) {
 }
 
 SEASTAR_THREAD_TEST_CASE(config_update_req_resp_test) {
-    auto req_broker = tests::random_broker(0, 10);
+    auto req_broker = model::random_broker(0, 10);
     auto target_node = model::node_id(23);
 
     cluster::configuration_update_request req(req_broker, target_node);
