@@ -9,7 +9,7 @@
 
 import random
 from rptest.services.admin import Admin
-from ducktape.utils.util import wait_until
+from rptest.util import wait_until
 
 
 class PartitionMovementMixin():

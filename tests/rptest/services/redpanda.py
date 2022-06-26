@@ -26,7 +26,7 @@ import yaml
 from ducktape.services.service import Service
 from rptest.archival.s3_client import S3Client
 from ducktape.cluster.remoteaccount import RemoteCommandError
-from ducktape.utils.util import wait_until
+from rptest.util import wait_until
 from ducktape.cluster.cluster import ClusterNode
 from prometheus_client.parser import text_string_to_metric_families
 

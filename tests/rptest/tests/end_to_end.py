@@ -21,7 +21,7 @@
 from collections import namedtuple
 import os
 from ducktape.tests.test import Test
-from ducktape.utils.util import wait_until
+from rptest.util import wait_until
 from rptest.services.redpanda import RedpandaService
 from rptest.clients.default import DefaultClient
 from rptest.services.verifiable_consumer import VerifiableConsumer
