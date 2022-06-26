@@ -1,4 +1,4 @@
-package io.vectorized.kafka;
+package io.vectorized.tx_verifier;
 
 import java.util.Properties;
 import org.apache.kafka.clients.producer.KafkaProducer;

@@ -119,8 +119,8 @@ COPY --chown=0:0 tools/consumer_offsets_recovery /opt/scripts/consumer_offsets_r
 RUN python3 -m pip install --force --no-cache-dir -r  /opt/scripts/consumer_offsets_recovery/requirements.txt
 
 # Install our in-tree Java test clients / workloads
-COPY --chown=0:0 tests/java/tx-verifier /opt/redpanda-tests/java/tx-verifier
-RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/tx-verifier --define buildDir=/opt/tx-verifier
+COPY --chown=0:0 tests/java/verifiers /opt/redpanda-tests/java/verifiers
+RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/verifiers --define buildDir=/opt/verifiers
 
 # Install remote_scripts
 RUN mkdir -p /opt/remote
