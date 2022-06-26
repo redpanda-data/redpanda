@@ -848,12 +848,21 @@ struct join_node_reply {
     model::node_id id{-1};
 };
 
-struct configuration_update_request {
+struct configuration_update_request
+  : serde::envelope<configuration_update_request, serde::version<0>> {
+    configuration_update_request() noexcept = default;
     explicit configuration_update_request(model::broker b, model::node_id tid)
       : node(std::move(b))
       , target_node(tid) {}
+
     model::broker node;
     model::node_id target_node;
+
+    friend bool operator==(
+      const configuration_update_request&, const configuration_update_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(node, target_node); }
 };
 
 struct configuration_update_reply {
