@@ -32,12 +32,13 @@ RUN apt update && \
 RUN git -C /opt clone --branch ducktape2 https://github.com/redpanda-data/kafka-streams-examples.git && \
     cd /opt/kafka-streams-examples && mvn -DskipTests=true clean package
 
-# Install our in-tree Java test clientst
-RUN mkdir -p /opt/redpanda-tests
-COPY --chown=0:0 tests/java /opt/redpanda-tests/java
-RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/kafka-verifier --define buildDir=/opt/kafka-verifier/
-RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/compacted-log-verifier --define buildDir=/opt/compacted-log-verifier
-RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/tx-verifier --define buildDir=/opt/tx-verifier
+# Install the OMB tool
+RUN git -C /opt clone https://github.com/redpanda-data/openmessaging-benchmark.git && \
+    cd /opt/openmessaging-benchmark && git reset --hard cde313756faa1ebd0114a35d6fc3b09198559738 && mvn package
+
+# Install Kafka Java test clients / workloads
+RUN mkdir -p /opt/redpanda-tests/java
+COPY --chown=0:0 tests/java/e2e-verifiers /opt/redpanda-tests/java/e2e-verifiers
 RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/e2e-verifiers --define buildDir=/opt/e2e-verifiers
 
 # - install distro-packaged depedencies
@@ -62,6 +63,7 @@ RUN apt update && \
       pciutils \
       nodejs \
       npm \
+      vim \
       openssh-server \
       netcat \
       sudo \
@@ -141,10 +143,6 @@ COPY --chown=0:0 tests/setup.py /root/tests/
 RUN python3 -m pip install --upgrade --force pip && \
     python3 -m pip install --force --no-cache-dir -e /root/tests/
 
-# Install the OMB tool
-RUN git -C /opt clone https://github.com/redpanda-data/openmessaging-benchmark.git && \
-    cd /opt/openmessaging-benchmark && git reset --hard cde313756faa1ebd0114a35d6fc3b09198559738 && mvn package
-
 # Compile and install rust-based workload generator.
 # Install & remove compiler in the same step, to avoid bulking
 # out the resulting container image.
@@ -167,6 +165,14 @@ RUN mkdir -p /opt/scripts && \
     curl https://raw.githubusercontent.com/redpanda-data/seastar/2a9504b3238cba4150be59353bf8d0b3a01fe39c/scripts/addr2line.py -o /opt/scripts/addr2line.py && \
     curl https://raw.githubusercontent.com/redpanda-data/seastar/2a9504b3238cba4150be59353bf8d0b3a01fe39c/scripts/seastar-addr2line -o /opt/scripts/seastar-addr2line && \
     chmod +x /opt/scripts/seastar-addr2line
+
+# Install our in-tree Java test clients / workloads
+COPY --chown=0:0 tests/java/kafka-verifier /opt/redpanda-tests/java/kafka-verifier
+COPY --chown=0:0 tests/java/compacted-log-verifier /opt/redpanda-tests/java/compacted-log-verifier
+COPY --chown=0:0 tests/java/tx-verifier /opt/redpanda-tests/java/tx-verifier
+RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/kafka-verifier --define buildDir=/opt/kafka-verifier/
+RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/compacted-log-verifier --define buildDir=/opt/compacted-log-verifier
+RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/tx-verifier --define buildDir=/opt/tx-verifier
 
 # Install remote_scripts
 RUN mkdir -p /opt/remote
