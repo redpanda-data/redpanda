@@ -1037,8 +1037,10 @@ ss::future<std::error_code> controller_backend::create_partition(
     auto f = ss::now();
     // handle partially created topic
     auto partition = _partition_manager.local().get(ntp);
+
     // initial revision of the partition on the moment when it was created
     // the value is used by shadow indexing
+    // if topic is read replica, the value from remote topic manifest is used
     auto initial_rev = _topics.local().get_initial_revision(ntp);
     if (!initial_rev) {
         return ss::make_ready_future<std::error_code>(errc::topic_not_exists);

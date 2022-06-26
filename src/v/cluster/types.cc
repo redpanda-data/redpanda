@@ -303,21 +303,26 @@ cluster::assignments_set to_assignments_map(
 } // namespace
 
 topic_metadata::topic_metadata(
-  topic_configuration_assignment c, model::revision_id rid) noexcept
+  topic_configuration_assignment c,
+  model::revision_id rid,
+  std::optional<model::initial_revision_id> remote_revision_id) noexcept
   : _configuration(std::move(c.cfg))
   , _assignments(to_assignments_map(std::move(c.assignments)))
   , _source_topic(std::nullopt)
-  , _revision(rid) {}
+  , _revision(rid)
+  , _remote_revision(remote_revision_id) {}
 
 topic_metadata::topic_metadata(
   topic_configuration cfg,
   assignments_set assignments,
   model::revision_id rid,
-  model::topic st) noexcept
+  model::topic st,
+  std::optional<model::initial_revision_id> remote_revision_id) noexcept
   : _configuration(std::move(cfg))
   , _assignments(std::move(assignments))
   , _source_topic(st)
-  , _revision(rid) {}
+  , _revision(rid)
+  , _remote_revision(remote_revision_id) {}
 
 bool topic_metadata::is_topic_replicable() const {
     return _source_topic.has_value() == false;
@@ -327,6 +332,13 @@ model::revision_id topic_metadata::get_revision() const {
     vassert(
       is_topic_replicable(), "Query for revision_id on a non-replicable topic");
     return _revision;
+}
+
+std::optional<model::initial_revision_id>
+topic_metadata::get_remote_revision() const {
+    vassert(
+      is_topic_replicable(), "Query for revision_id on a non-replicable topic");
+    return _remote_revision;
 }
 
 const model::topic& topic_metadata::get_source_topic() const {
