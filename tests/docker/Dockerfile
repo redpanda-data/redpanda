@@ -119,10 +119,8 @@ COPY --chown=0:0 tools/consumer_offsets_recovery /opt/scripts/consumer_offsets_r
 RUN python3 -m pip install --force --no-cache-dir -r  /opt/scripts/consumer_offsets_recovery/requirements.txt
 
 # Install our in-tree Java test clients / workloads
-COPY --chown=0:0 tests/java/kafka-verifier /opt/redpanda-tests/java/kafka-verifier
 COPY --chown=0:0 tests/java/compacted-log-verifier /opt/redpanda-tests/java/compacted-log-verifier
 COPY --chown=0:0 tests/java/tx-verifier /opt/redpanda-tests/java/tx-verifier
-RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/kafka-verifier --define buildDir=/opt/kafka-verifier/
 RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/compacted-log-verifier --define buildDir=/opt/compacted-log-verifier
 RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/tx-verifier --define buildDir=/opt/tx-verifier
 
