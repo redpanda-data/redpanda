@@ -8,17 +8,10 @@
 # by the Apache License, Version 2.0
 
 import random
-from rptest.services.admin import Admin
 from rptest.util import wait_until
 
 
 class PartitionMovementMixin():
-    @staticmethod
-    def _random_partition(metadata):
-        topic = random.choice(metadata)
-        partition = random.choice(topic.partitions)
-        return topic.name, partition.id
-
     @staticmethod
     def _choose_replacement(admin, assignments):
         """
@@ -86,43 +79,50 @@ class PartitionMovementMixin():
         return result
 
     def _wait_post_move(self, topic, partition, assignments, timeout_sec):
-        admin = Admin(self.redpanda)
-
-        def status_done():
-            info = admin.get_partitions(topic, partition)
-            self.logger.info(
-                f"current assignments for {topic}-{partition}: {info}")
-            converged = self._equal_assignments(info["replicas"], assignments)
-            return converged and info["status"] == "done"
-
-        # wait until redpanda reports complete
-        wait_until(status_done, timeout_sec=timeout_sec, backoff_sec=2)
-
+        # wait until all nodes see new assignment
         def derived_done():
-            info = self._get_current_partitions(admin, topic, partition)
+            info = self._get_current_partitions(self._admin_client, topic,
+                                                partition)
             self.logger.info(
                 f"derived assignments for {topic}-{partition}: {info}")
             return self._equal_assignments(info, assignments)
 
-        wait_until(derived_done, timeout_sec=timeout_sec, backoff_sec=2)
+        wait_until(derived_done, timeout_sec=timeout_sec, backoff_sec=1)
+
+        def status_done():
+            for node in self.redpanda.nodes:
+                info = self._admin_client.get_partitions(topic,
+                                                         partition,
+                                                         node=node)
+                self.logger.info(
+                    f"current assignments for {topic}-{partition}: {info}")
+                converged = self._equal_assignments(info["replicas"],
+                                                    assignments)
+                if converged and info["status"] == "done":
+                    return True
+            return False
+
+        # wait until redpanda reports complete
+        wait_until(status_done, timeout_sec=timeout_sec, backoff_sec=1)
 
     def _do_move_and_verify(self, topic, partition, timeout_sec):
-        admin = Admin(self.redpanda)
-
         # get the partition's replica set, including core assignments. the kafka
         # api doesn't expose core information, so we use the redpanda admin api.
-        assignments = self._get_assignments(admin, topic, partition)
+        assignments = self._get_assignments(self._admin_client, topic,
+                                            partition)
         self.logger.info(f"assignments for {topic}-{partition}: {assignments}")
 
         # build new replica set by replacing a random assignment
-        selected, replacements = self._choose_replacement(admin, assignments)
+        selected, replacements = self._choose_replacement(
+            self._admin_client, assignments)
         self.logger.info(
             f"replacement for {topic}-{partition}:{len(selected)}: {selected} -> {replacements}"
         )
         self.logger.info(
             f"new assignments for {topic}-{partition}: {assignments}")
 
-        r = admin.set_partition_replicas(topic, partition, assignments)
+        self._admin_client.set_partition_replicas(topic, partition,
+                                                  assignments)
 
         self._wait_post_move(topic, partition, assignments, timeout_sec)
 
@@ -130,8 +130,12 @@ class PartitionMovementMixin():
 
     def _move_and_verify(self):
         # choose a random topic-partition
-        metadata = self.client().describe_topics()
-        topic, partition = self._random_partition(metadata)
+        partitions = []
+        for p in self._admin_client.get_partitions():
+            if p["ns"] != "kafka":
+                continue
+            partitions.append((p["topic"], p["partition_id"]))
+        topic, partition = random.choice(partitions)
         # timeout for __consumer_offsets topic has to be long enough
         # to wait for compaction to finish. For resource constrained machines
         # and redpanda debug builds it may take a very long time
