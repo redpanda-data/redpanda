@@ -146,6 +146,5 @@ find_package(Valgrind REQUIRED)
 
 # add code
 include(testing)
-include(set_option)
 include(v_library)
 add_subdirectory(src)
