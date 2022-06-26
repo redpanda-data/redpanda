@@ -48,7 +48,8 @@ using initial_revision_id
 
 /// Rack id type
 using rack_id = named_type<ss::sstring, struct rack_id_model_type>;
-struct broker_properties {
+struct broker_properties
+  : serde::envelope<broker_properties, serde::version<0>> {
     uint32_t cores;
     uint32_t available_memory_gb;
     uint32_t available_disk_gb;
@@ -62,6 +63,15 @@ struct broker_properties {
                && available_disk_gb == other.available_disk_gb
                && mount_paths == other.mount_paths
                && etc_props == other.etc_props;
+    }
+
+    auto serde_fields() {
+        return std::tie(
+          cores,
+          available_memory_gb,
+          available_disk_gb,
+          mount_paths,
+          etc_props);
     }
 };
 
