@@ -168,4 +168,8 @@ RUN mkdir -p /opt/scripts && \
     curl https://raw.githubusercontent.com/redpanda-data/seastar/2a9504b3238cba4150be59353bf8d0b3a01fe39c/scripts/seastar-addr2line -o /opt/scripts/seastar-addr2line && \
     chmod +x /opt/scripts/seastar-addr2line
 
+# Install remote_scripts
+RUN mkdir -p /opt/remote
+COPY --chown=0:0 tests/rptest/remote_scripts /opt/remote
+
 CMD service ssh start && tail -f /dev/null

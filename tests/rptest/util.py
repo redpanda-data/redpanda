@@ -169,26 +169,6 @@ def expect_http_error(status_code: int):
                             lambda e: e.response.status_code == status_code)
 
 
-def inject_remote_script(node, script_name):
-    """
-    Copy a script from the remote_scripts/ directory onto
-    a remote node, ready for execution.
-
-    :return: The path of the script on the remote node
-    """
-    this_dir = os.path.dirname(os.path.realpath(__file__))
-
-    scripts_dir = os.path.join(this_dir, "remote_scripts")
-    assert os.path.exists(scripts_dir)
-    script_path = os.path.join(scripts_dir, script_name)
-    assert os.path.exists(script_path)
-
-    remote_path = os.path.join("/tmp", script_name)
-    node.account.copy_to(script_path, remote_path)
-
-    return remote_path
-
-
 class firewall_blocked:
     """Temporary firewall barrier that isolates set of redpanda
     nodes from the ip-address"""

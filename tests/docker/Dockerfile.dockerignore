@@ -4,3 +4,4 @@
 !tests/setup.py
 !tests/python
 !tests/go
+!tests/rptest/remote_scripts
