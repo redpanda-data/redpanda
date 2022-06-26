@@ -1208,6 +1208,19 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         cluster::abort_group_tx_reply data{random_tx_errc()};
         roundtrip_test(data);
     }
+    {
+        std::vector<std::optional<ss::net::inet_address::family>> families = {
+          std::nullopt,
+          ss::net::inet_address::family::INET,
+          ss::net::inet_address::family::INET6};
+        net::unresolved_address data{
+          random_generators::gen_alphanum_string(
+            random_generators::get_int(0, 100)),
+          random_generators::get_int<uint16_t>(0, 16000),
+          random_generators::random_choice(families)};
+        serde_roundtrip_test(data);
+        // adl roundtrip doesn't work because family is not serialized
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {
