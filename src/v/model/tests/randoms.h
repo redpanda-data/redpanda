@@ -103,15 +103,34 @@ inline model::broker_properties random_broker_properties() {
     };
 }
 
+inline model::broker random_broker(model::node_id node_id) {
+    std::vector<model::broker_endpoint> kafka_advertised_listeners;
+    for (int i = 0; i < random_generators::get_int(10); i++) {
+        kafka_advertised_listeners.push_back(random_broker_endpoint());
+    }
+
+    std::optional<model::rack_id> rack;
+    if (tests::random_bool()) {
+        rack = tests::random_named_string<model::rack_id>();
+    }
+
+    return {
+      node_id,
+      std::move(kafka_advertised_listeners),
+      tests::random_net_address(),
+      rack,
+      random_broker_properties(),
+    };
+}
+
 inline model::broker
 random_broker(int32_t id_low_bound, int32_t id_upper_bound) {
-    return model::broker(
-      model::node_id(
-        random_generators::get_int(id_low_bound, id_upper_bound)), // id
-      tests::random_net_address(), // kafka api address
-      tests::random_net_address(), // rpc address
-      std::nullopt,
-      model::broker_properties{
-        .cores = random_generators::get_int<uint32_t>(96)});
+    return random_broker(
+      model::node_id(random_generators::get_int(id_low_bound, id_upper_bound)));
 }
+
+inline model::broker random_broker() {
+    return random_broker(tests::random_named_int<model::node_id>());
+}
+
 } // namespace model
