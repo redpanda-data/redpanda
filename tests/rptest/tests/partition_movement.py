@@ -106,6 +106,14 @@ class PartitionMovementMixin():
     def _wait_post_move(self, topic, partition, assignments, timeout_sec):
         admin = Admin(self.redpanda)
 
+        def derived_done():
+            info = self._get_current_partitions(admin, topic, partition)
+            self.logger.info(
+                f"derived assignments for {topic}-{partition}: {info}")
+            return self._equal_assignments(info, assignments)
+
+        wait_until(derived_done, timeout_sec=timeout_sec, backoff_sec=1)
+
         def status_done():
             results = []
             for n in self.redpanda._started:
@@ -121,17 +129,7 @@ class PartitionMovementMixin():
         # wait until redpanda reports complete
         wait_until(status_done, timeout_sec=timeout_sec, backoff_sec=2)
 
-        def derived_done():
-            info = self._get_current_partitions(admin, topic, partition)
-            self.logger.info(
-                f"derived assignments for {topic}-{partition}: {info}")
-            return self._equal_assignments(info, assignments)
-
-        wait_until(derived_done, timeout_sec=timeout_sec, backoff_sec=2)
-
     def _do_move_and_verify(self, topic, partition, timeout_sec):
-        admin = Admin(self.redpanda)
-
         _, new_assignment = self._dispatch_random_partition_move(
             topic=topic, partition=partition)
 
