@@ -141,8 +141,10 @@ enum class maintenance_state { active, inactive };
 
 std::ostream& operator<<(std::ostream&, membership_state);
 
-class broker {
+class broker : public serde::envelope<broker, serde::version<0>> {
 public:
+    broker() noexcept = default;
+
     broker(
       node_id id,
       std::vector<broker_endpoint> kafka_advertised_listeners,
@@ -192,6 +194,11 @@ public:
 
     bool operator==(const model::broker& other) const = default;
     bool operator<(const model::broker& other) const { return _id < other._id; }
+
+    auto serde_fields() {
+        return std::tie(
+          _id, _kafka_advertised_listeners, _rpc_address, _rack, _properties);
+    }
 
 private:
     node_id _id;
