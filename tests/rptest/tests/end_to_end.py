@@ -156,6 +156,14 @@ class EndToEndTest(Test):
         assert self._client is not None
         return self._client
 
+    def rpk_client(self):
+        assert self._rpk_client is not None
+        return self._rpk_client
+
+    def admin_client(self):
+        assert self._admin_client is not None
+        return self._admin_client
+
     @property
     def debug_mode(self):
         """
