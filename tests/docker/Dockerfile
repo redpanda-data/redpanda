@@ -31,12 +31,13 @@ RUN git -C /opt clone https://github.com/redpanda-data/kafka-streams-examples.gi
     cd /opt/kafka-streams-examples && git reset --hard 913d08c8351c74ee454b79f8e0c1f48ca9b562a5 && \
     mvn -DskipTests=true clean package
 
-# Install our in-tree Java test clientst
-RUN mkdir -p /opt/redpanda-tests
-COPY --chown=0:0 tests/java /opt/redpanda-tests/java
-RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/kafka-verifier --define buildDir=/opt/kafka-verifier/
-RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/compacted-log-verifier --define buildDir=/opt/compacted-log-verifier
-RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/tx-verifier --define buildDir=/opt/tx-verifier
+# Install the OMB tool
+RUN /opt/ducktape-deps.sh install_omb
+
+
+# Install Kafka Java test clients / workloads
+RUN mkdir -p /opt/redpanda-tests/java
+COPY --chown=0:0 tests/java/e2e-verifiers /opt/redpanda-tests/java/e2e-verifiers
 RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/e2e-verifiers --define buildDir=/opt/e2e-verifiers
 
 # - install distro-packaged depedencies
@@ -48,10 +49,6 @@ RUN /opt/ducktape-deps.sh install_system_deps && \
     echo 'UsePAM yes' >> /etc/ssh/sshd_config && \
     echo 'root soft nofile 65535' >> /etc/security/limits.conf && \
     echo 'root hard nofile 65535' >> /etc/security/limits.conf
-
-
-# Install the OMB tool
-RUN /opt/ducktape-deps.sh install_omb
 
 # install kafka binary dependencies, librdkafka dev, kcat and kaf tools
 ENV KAFKA_MIRROR="https://s3-us-west-2.amazonaws.com/kafka-packages"
@@ -120,6 +117,14 @@ COPY --chown=0:0 tools/offline_log_viewer /opt/scripts/offline_log_viewer
 RUN mkdir -p /opt/scripts/consumer_offsets_recovery
 COPY --chown=0:0 tools/consumer_offsets_recovery /opt/scripts/consumer_offsets_recovery
 RUN python3 -m pip install --force --no-cache-dir -r  /opt/scripts/consumer_offsets_recovery/requirements.txt
+
+# Install our in-tree Java test clients / workloads
+COPY --chown=0:0 tests/java/kafka-verifier /opt/redpanda-tests/java/kafka-verifier
+COPY --chown=0:0 tests/java/compacted-log-verifier /opt/redpanda-tests/java/compacted-log-verifier
+COPY --chown=0:0 tests/java/tx-verifier /opt/redpanda-tests/java/tx-verifier
+RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/kafka-verifier --define buildDir=/opt/kafka-verifier/
+RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/compacted-log-verifier --define buildDir=/opt/compacted-log-verifier
+RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/tx-verifier --define buildDir=/opt/tx-verifier
 
 # Install remote_scripts
 RUN mkdir -p /opt/remote
