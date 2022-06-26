@@ -79,4 +79,27 @@ inline model::broker_endpoint random_broker_endpoint() {
       tests::random_net_address(),
     };
 }
+
+inline model::broker_properties random_broker_properties() {
+    std::vector<ss::sstring> mount_paths;
+    for (int i = 0; i < random_generators::get_int(10); i++) {
+        mount_paths.push_back(random_generators::gen_alphanum_string(
+          random_generators::get_int(1, 100)));
+    }
+    std::unordered_map<ss::sstring, ss::sstring> etc_props;
+    for (int i = 0; i < random_generators::get_int(10); i++) {
+        etc_props.emplace(
+          random_generators::gen_alphanum_string(
+            random_generators::get_int(1, 100)),
+          random_generators::gen_alphanum_string(
+            random_generators::get_int(1, 100)));
+    }
+    return {
+      .cores = random_generators::get_int<uint32_t>(1, 100),
+      .available_memory_gb = random_generators::get_int<uint32_t>(1, 100),
+      .available_disk_gb = random_generators::get_int<uint32_t>(1, 100),
+      .mount_paths = std::move(mount_paths),
+      .etc_props = std::move(etc_props),
+    };
+}
 } // namespace model
