@@ -1776,6 +1776,12 @@ struct adl<cluster::configuration_update_request> {
 };
 
 template<>
+struct adl<cluster::configuration_update_reply> {
+    void to(iobuf&, cluster::configuration_update_reply&&);
+    cluster::configuration_update_reply from(iobuf_parser&);
+};
+
+template<>
 struct adl<cluster::topic_result> {
     void to(iobuf&, cluster::topic_result&&);
     cluster::topic_result from(iobuf_parser&);
