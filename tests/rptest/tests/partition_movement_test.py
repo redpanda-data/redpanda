@@ -12,9 +12,10 @@ import time
 import requests
 
 from rptest.services.cluster import cluster
-from ducktape.utils.util import wait_until
+from rptest.util import wait_until
 from rptest.clients.kafka_cat import KafkaCat
 from ducktape.mark import ok_to_fail
+from rptest.services.rw_workload import RWWorkload
 
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
@@ -23,7 +24,7 @@ from rptest.services.admin import Admin
 from rptest.tests.partition_movement import PartitionMovementMixin
 from rptest.services.honey_badger import HoneyBadger
 from rptest.services.rpk_producer import RpkProducer
-from rptest.services.kaf_producer import KafProducer
+from rptest.services.w_workload import WWorkload
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, SISettings
 
@@ -77,19 +78,18 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
             hb.set_exception(n, 'raftgen_service::failure_probes', 'vote')
         topic = "topic-1"
         partition = 0
-        spec = TopicSpec(name=topic, partition_count=1, replication_factor=3)
-        self.client().create_topic(spec)
-        admin = Admin(self.redpanda)
+        self._rpk_client.create_topic(topic, 1, 3)
 
         # choose a random topic-partition
         self.logger.info(f"selected topic-partition: {topic}-{partition}")
 
         # get the partition's replica set, including core assignments. the kafka
         # api doesn't expose core information, so we use the redpanda admin api.
-        assignments = self._get_assignments(admin, topic, partition)
+        assignments = self._get_assignments(self._admin_client, topic,
+                                            partition)
         self.logger.info(f"assignments for {topic}-{partition}: {assignments}")
 
-        brokers = admin.get_brokers()
+        brokers = self._admin_client.get_brokers()
         # replace all node cores in assignment
         for assignment in assignments:
             for broker in brokers:
@@ -99,10 +99,11 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         self.logger.info(
             f"new assignments for {topic}-{partition}: {assignments}")
 
-        r = admin.set_partition_replicas(topic, partition, assignments)
+        self._admin_client.set_partition_replicas(topic, partition,
+                                                  assignments)
 
         def status_done():
-            info = admin.get_partitions(topic, partition)
+            info = self._admin_client.get_partitions(topic, partition)
             self.logger.info(
                 f"current assignments for {topic}-{partition}: {info}")
             converged = self._equal_assignments(info["replicas"], assignments)
@@ -115,7 +116,8 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         wait_until(status_done, timeout_sec=60, backoff_sec=2)
 
         def derived_done():
-            info = self._get_current_partitions(admin, topic, partition)
+            info = self._get_current_partitions(self._admin_client, topic,
+                                                partition)
             self.logger.info(
                 f"derived assignments for {topic}-{partition}: {info}")
             return self._equal_assignments(info, assignments)
@@ -132,14 +134,9 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         topics = []
         for partition_count in range(1, 5):
             for replication_factor in (1, 3):
-                name = f"topic{len(topics)}"
-                spec = TopicSpec(name=name,
-                                 partition_count=partition_count,
-                                 replication_factor=replication_factor)
-                topics.append(spec)
-
-        for spec in topics:
-            self.client().create_topic(spec)
+                name = f"topic_{partition_count}_{replication_factor}"
+                self._rpk_client.create_topic(name, partition_count,
+                                              replication_factor)
 
         for _ in range(25):
             self._move_and_verify()
@@ -163,64 +160,27 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
 
         self.logger.info(f"Creating topics...")
         for spec in topics:
-            self.client().create_topic(spec)
+            self._rpk_client.create_topic(spec.name, spec.partition_count,
+                                          spec.replication_factor)
 
         num_records = 1000
-        produced = set(
-            ((f"key-{i:08d}", f"record-{i:08d}") for i in range(num_records)))
 
+        w_workload = WWorkload(self.test_context, self.redpanda)
+        w_workload.start()
         for spec in topics:
             self.logger.info(f"Producing to {spec}")
-            producer = KafProducer(self.test_context, self.redpanda, spec.name,
-                                   num_records)
-            producer.start()
+            w_workload.remote_start(spec.name, self.redpanda.brokers(),
+                                    spec.name, num_records, True)
+            w_workload.remote_wait(spec.name)
             self.logger.info(
                 f"Finished producing to {spec}, waiting for producer...")
-            producer.wait()
-            producer.free()
-            self.logger.info(f"Producer stop complete.")
 
         for _ in range(25):
             self._move_and_verify()
 
         for spec in topics:
             self.logger.info(f"Verifying records in {spec}")
-
-            consumer = RpkConsumer(self.test_context,
-                                   self.redpanda,
-                                   spec.name,
-                                   ignore_errors=False,
-                                   retries=0)
-            consumer.start()
-            timeout = 30
-            t1 = time.time()
-            consumed = set()
-            while consumed != produced:
-                if time.time() > t1 + timeout:
-                    self.logger.error(
-                        f"Validation failed for topic {spec.name}.  Produced {len(produced)}, consumed {len(consumed)}"
-                    )
-                    self.logger.error(
-                        f"Messages consumed but not produced: {sorted(consumed - produced)}"
-                    )
-                    self.logger.error(
-                        f"Messages produced but not consumed: {sorted(produced - consumed)}"
-                    )
-                    assert set(consumed) == produced
-                else:
-                    time.sleep(5)
-                    for m in consumer.messages:
-                        self.logger.info(f"message: {m}")
-                    consumed = set([(m['key'], m['value'])
-                                    for m in consumer.messages])
-
-            self.logger.info(f"Stopping consumer...")
-            consumer.stop()
-            self.logger.info(f"Awaiting consumer...")
-            consumer.wait()
-            self.logger.info(f"Freeing consumer...")
-            consumer.free()
-
+            w_workload.remote_validate(spec.name, 10)
             self.logger.info(f"Finished verifying records in {spec}")
 
     def _get_scale_params(self):
@@ -234,27 +194,36 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
 
         return throughput, records, moves
 
-    @cluster(num_nodes=5, log_allow_list=PARTITION_MOVEMENT_LOG_ERRORS)
+    @cluster(num_nodes=4, log_allow_list=PARTITION_MOVEMENT_LOG_ERRORS)
     def test_dynamic(self):
         """
         Move partitions with active consumer / producer
         """
-        throughput, records, moves = self._get_scale_params()
+        _, records, moves = self._get_scale_params()
 
         self.start_redpanda(num_nodes=3,
                             extra_rp_conf={"default_topic_replications": 3})
-        spec = TopicSpec(name="topic", partition_count=3, replication_factor=3)
-        self.client().create_topic(spec)
-        self.topic = spec.name
+        topic = "topic"
+        self._rpk_client.create_topic(topic, 3, 3)
 
-        self.start_producer(1, throughput=throughput)
-        self.start_consumer(1)
-        self.await_startup()
+        rw_workload = RWWorkload(self.test_context, self.redpanda)
+        rw_workload.start()
+        rw_workload.remote_start(self.redpanda.brokers(), topic, 3)
+        self.logger.info(f"waiting for 100 r&w operations to warm up")
+        rw_workload.ensure_progress(100, 10)
+
+        self.logger.info(f"initiate movement")
         for _ in range(moves):
             self._move_and_verify()
-        self.run_validation(enable_idempotence=False,
-                            consumer_timeout_sec=45,
-                            min_records=records)
+
+        self.logger.info(f"waiting for 100 r&w operations")
+        rw_workload.ensure_progress(100, 10)
+        self.logger.info(f"checkin if cleared {records} operations")
+        rw_workload.has_cleared(records, 45)
+
+        self.logger.info(f"stopping the workload")
+        rw_workload.remote_stop()
+        rw_workload.remote_wait()
 
     @cluster(num_nodes=5, log_allow_list=PARTITION_MOVEMENT_LOG_ERRORS)
     def test_move_consumer_offsets_intranode(self):
@@ -290,7 +259,7 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
                             consumer_timeout_sec=45,
                             min_records=records)
 
-    @cluster(num_nodes=5,
+    @cluster(num_nodes=4,
              log_allow_list=PARTITION_MOVEMENT_LOG_ERRORS +
              RESTART_LOG_ALLOW_LIST)
     def test_bootstrapping_after_move(self):
@@ -298,19 +267,24 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         Move partitions with active consumer / producer
         """
         self.start_redpanda(num_nodes=3)
-        spec = TopicSpec(name="topic", partition_count=3, replication_factor=3)
-        self.client().create_topic(spec)
-        self.topic = spec.name
-        self.start_producer(1)
-        self.start_consumer(1)
-        self.await_startup()
+        topic = "topic"
+        self._rpk_client.create_topic(topic, 3, 3)
+        rw_workload = RWWorkload(self.test_context, self.redpanda)
+        rw_workload.start()
+        rw_workload.remote_start(self.redpanda.brokers(), topic, 3)
+        self.logger.info(f"waiting for 100 r&w operations to warm up")
         # execute single move
         self._move_and_verify()
-        self.run_validation(enable_idempotence=False, consumer_timeout_sec=45)
+        self.logger.info(f"waiting for 100 r&w operations")
+        rw_workload.ensure_progress(100, 10)
+        self.logger.info(f"checkin if cleared 1000 operations")
+        rw_workload.has_cleared(1000, 45)
+        rw_workload.remote_stop()
+        rw_workload.remote_wait()
 
         # snapshot offsets
         rpk = RpkTool(self.redpanda)
-        partitions = rpk.describe_topic(spec.name)
+        partitions = rpk.describe_topic(topic)
         offset_map = {}
         for p in partitions:
             offset_map[p.id] = p.high_watermark
@@ -319,10 +293,9 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         self.redpanda.restart_nodes(self.redpanda.nodes)
 
         def offsets_are_recovered():
-
             return all([
                 offset_map[p.id] == p.high_watermark
-                for p in rpk.describe_topic(spec.name)
+                for p in rpk.describe_topic(topic)
             ])
 
         wait_until(offsets_are_recovered, 30, 2)
@@ -334,9 +307,8 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         """
 
         self.start_redpanda(num_nodes=3)
-        spec = TopicSpec(name="topic", partition_count=1, replication_factor=1)
-        self.client().create_topic(spec)
-        topic = spec.name
+        topic = "topic"
+        self._rpk_client.create_topic(topic, 1, 1)
         partition = 0
 
         admin = Admin(self.redpanda)
@@ -422,38 +394,24 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         # Create topic with enough data that inter-node movement
         # will take a while.
         name = f"movetest"
-        spec = TopicSpec(name=name, partition_count=1, replication_factor=3)
-        self.client().create_topic(spec)
+        self._rpk_client.create_topic(name, 1, 3)
 
-        # Wait for the partition to have a leader (`rpk produce` errors
-        # out if it tries to write data before this)
-        def partition_ready():
-            return KafkaCat(self.redpanda).get_partition_leader(
-                name, 0)[0] is not None
+        self._admin_client.await_stable_leader(name,
+                                               partition=0,
+                                               replication=3,
+                                               timeout_s=10,
+                                               backoff_s=0.5)
 
-        wait_until(partition_ready, timeout_sec=10, backoff_sec=0.5)
-
-        # Write a substantial amount of data to the topic
-        msg_size = 512 * 1024
-        write_bytes = 512 * 1024 * 1024
-        producer = RpkProducer(self._ctx,
-                               self.redpanda,
-                               name,
-                               msg_size=msg_size,
-                               msg_count=int(write_bytes / msg_size))
+        msgs = 1024
+        w_workload = WWorkload(self.test_context, self.redpanda)
+        w_workload.start()
+        self.logger.info(f"Producing to {name}")
         t1 = time.time()
-        producer.start()
-
-        # This is an absurdly low expected throughput, but necessarily
-        # so to run reliably on current test runners, which share an EBS
-        # backend among many parallel tests.  10MB/s has been empirically
-        # shown to be too high an expectation.
-        expect_bps = 1 * 1024 * 1024
-        expect_runtime = write_bytes / expect_bps
-        producer.wait(timeout_sec=expect_runtime)
-
+        w_workload.remote_start(name, self.redpanda.brokers(), name, msgs,
+                                False)
+        w_workload.remote_wait(name)
         self.logger.info(
-            f"Write complete {write_bytes} in {time.time() - t1} seconds")
+            f"Write complete {msgs} in {time.time() - t1} seconds")
 
         # - Admin API redirects writes but not reads.  Because we want synchronous
         #   status after submitting operations, send all operations to the controller
@@ -488,15 +446,14 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
 
         # An update to partition properties should succeed
         # (issue https://github.com/redpanda-data/redpanda/issues/2300)
-        rpk = RpkTool(self.redpanda)
         assert admin.get_partitions(name, 0)['status'] == "in_progress"
-        rpk.alter_topic_config(name, "retention.ms", "3600000")
+        self._rpk_client.alter_topic_config(name, "retention.ms", "3600000")
 
         # A deletion should succeed
-        assert name in rpk.list_topics()
+        assert name in self._rpk_client.list_topics()
         assert admin.get_partitions(name, 0)['status'] == "in_progress"
-        rpk.delete_topic(name)
-        assert name not in rpk.list_topics()
+        self._rpk_client.delete_topic(name)
+        assert name not in self._rpk_client.list_topics()
 
     @cluster(num_nodes=4)
     def test_deletion_stops_move(self):
@@ -509,19 +466,16 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
 
         # create a single topic with replication factor of 1
         topic = 'test-topic'
-        rpk = RpkTool(self.redpanda)
-        rpk.create_topic(topic, 1, 1)
+        self._rpk_client.create_topic(topic, 1, 1)
         partition = 0
         num_records = 1000
 
         self.logger.info(f"Producing to {topic}")
-        producer = KafProducer(self.test_context, self.redpanda, topic,
-                               num_records)
-        producer.start()
-        self.logger.info(
-            f"Finished producing to {topic}, waiting for producer...")
-        producer.wait()
-        producer.free()
+        w_workload = WWorkload(self.test_context, self.redpanda)
+        w_workload.start()
+        w_workload.remote_start(topic, self.redpanda.brokers(), topic,
+                                num_records, False)
+        w_workload.remote_wait(topic)
         self.logger.info(f"Producer stop complete.")
 
         admin = Admin(self.redpanda)
@@ -572,11 +526,11 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
 
         wait_until(lambda: get_status() == 'in_progress', 10, 1)
         # delete the topic
-        rpk.delete_topic(topic)
+        self._rpk_client.delete_topic(topic)
         # start the node back up
         self.redpanda.start_node(node)
         # create topic again
-        rpk.create_topic(topic, 1, 1)
+        self._rpk_client.create_topic(topic, 1, 1)
         wait_until(lambda: get_status() == 'done', 10, 1)
 
 
@@ -616,7 +570,7 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         partitions = 1 if self.debug_mode else 10
         return throughput, records, moves, partitions
 
-    @cluster(num_nodes=5)
+    @cluster(num_nodes=4)
     def test_shadow_indexing(self):
         """
         Test interaction between the shadow indexing and the partition movement.
@@ -627,21 +581,27 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         throughput, records, moves, partitions = self._get_scale_params()
 
         self.start_redpanda(num_nodes=3)
-        spec = TopicSpec(name="topic",
-                         partition_count=partitions,
-                         replication_factor=3)
-        self.client().create_topic(spec)
-        self.topic = spec.name
-        self.start_producer(1, throughput=throughput)
-        self.start_consumer(1)
-        self.await_startup()
+        self.topic = "topic"
+        self._rpk_client.create_topic(self.topic, partitions, 3)
+
+        rw_workload = RWWorkload(self.test_context, self.redpanda)
+        rw_workload.start()
+        rw_workload.remote_start(self.redpanda.brokers(), self.topic, 3)
+        self.logger.info(f"waiting for 100 r&w operations to warm up")
+        rw_workload.ensure_progress(100, 10)
+
         for _ in range(moves):
             self._move_and_verify()
-        self.run_validation(enable_idempotence=False,
-                            consumer_timeout_sec=45,
-                            min_records=records)
 
-    @cluster(num_nodes=5)
+        self.logger.info(f"waiting for 100 r&w operations")
+        rw_workload.ensure_progress(100, 10)
+        self.logger.info(f"checkin if cleared {records} operations")
+        rw_workload.has_cleared(records, 45)
+        self.logger.info(f"stopping the workload")
+        rw_workload.remote_stop()
+        rw_workload.remote_wait()
+
+    @cluster(num_nodes=4)
     def test_cross_shard(self):
         """
         Test interaction between the shadow indexing and the partition movement.
@@ -650,14 +610,14 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         throughput, records, moves, partitions = self._get_scale_params()
 
         self.start_redpanda(num_nodes=3)
-        spec = TopicSpec(name="topic",
-                         partition_count=partitions,
-                         replication_factor=3)
-        self.client().create_topic(spec)
-        self.topic = spec.name
-        self.start_producer(1, throughput=throughput)
-        self.start_consumer(1)
-        self.await_startup()
+        self.topic = "topic"
+        self._rpk_client.create_topic(self.topic, partitions, 3)
+
+        rw_workload = RWWorkload(self.test_context, self.redpanda)
+        rw_workload.start()
+        rw_workload.remote_start(self.redpanda.brokers(), self.topic, 3)
+        self.logger.info(f"waiting for 100 r&w operations to warm up")
+        rw_workload.ensure_progress(100, 10)
 
         admin = Admin(self.redpanda)
         topic = self.topic
@@ -671,6 +631,10 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
             admin.set_partition_replicas(topic, partition, assignments)
             self._wait_post_move(topic, partition, assignments, 360)
 
-        self.run_validation(enable_idempotence=False,
-                            consumer_timeout_sec=45,
-                            min_records=records)
+        self.logger.info(f"waiting for 100 r&w operations")
+        rw_workload.ensure_progress(100, 10)
+        self.logger.info(f"checkin if cleared {records} operations")
+        rw_workload.has_cleared(records, 45)
+        self.logger.info(f"stopping the workload")
+        rw_workload.remote_stop()
+        rw_workload.remote_wait()
