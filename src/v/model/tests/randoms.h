@@ -13,6 +13,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"
+#include "random/generators.h"
 #include "test_utils/randoms.h"
 
 namespace model {
@@ -69,5 +70,13 @@ inline model::shadow_indexing_mode random_shadow_indexing_mode() {
 inline model::timestamp_type random_timestamp_type() {
     return random_generators::random_choice(std::vector<model::timestamp_type>{
       model::timestamp_type::append_time, model::timestamp_type::create_time});
+}
+
+inline model::broker_endpoint random_broker_endpoint() {
+    return {
+      random_generators::gen_alphanum_string(
+        random_generators::get_int(1, 100)),
+      tests::random_net_address(),
+    };
 }
 } // namespace model
