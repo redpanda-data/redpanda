@@ -43,7 +43,7 @@ class TxVerifierTest(RedpandaTest):
                                              extra_rp_conf=extra_rp_conf)
 
     def verify(self, tests):
-        verifier_jar = "/opt/tx-verifier/tx-verifier.jar"
+        verifier_jar = "/opt/verifiers/verifiers.jar"
 
         self.redpanda.logger.info("creating topics")
 
@@ -57,7 +57,7 @@ class TxVerifierTest(RedpandaTest):
             self.redpanda.logger.info(
                 "testing txn test \"{test}\"".format(test=test))
             try:
-                cmd = "{java} -jar {verifier_jar} {test} {brokers}".format(
+                cmd = "{java} -cp {verifier_jar} io.vectorized.tx_verifier.Verifier {test} {brokers}".format(
                     java="java",
                     verifier_jar=verifier_jar,
                     test=test,

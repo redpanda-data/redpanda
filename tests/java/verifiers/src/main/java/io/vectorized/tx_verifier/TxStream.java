@@ -1,4 +1,4 @@
-package io.vectorized.kafka;
+package io.vectorized.tx_verifier;
 
 import java.lang.Math;
 import java.util.ArrayList;

@@ -37,7 +37,7 @@ class TxReadsWritesTest(RedpandaTest):
 
     @cluster(num_nodes=3)
     def test_reads_writes(self):
-        verifier_jar = "/opt/tx-verifier/tx-verifier.jar"
+        verifier_jar = "/opt/verifiers/verifiers.jar"
 
         self.redpanda.logger.info("creating topics")
 
@@ -47,7 +47,7 @@ class TxReadsWritesTest(RedpandaTest):
         test = "concurrent-reads-writes"
 
         try:
-            cmd = "{java} -jar {verifier_jar} {test} {brokers}".format(
+            cmd = "{java} -cp {verifier_jar} io.vectorized.tx_verifier.Verifier {test} {brokers}".format(
                 java="java",
                 verifier_jar=verifier_jar,
                 test=test,
