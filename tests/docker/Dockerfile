@@ -167,10 +167,8 @@ RUN mkdir -p /opt/scripts && \
     chmod +x /opt/scripts/seastar-addr2line
 
 # Install our in-tree Java test clients / workloads
-COPY --chown=0:0 tests/java/kafka-verifier /opt/redpanda-tests/java/kafka-verifier
 COPY --chown=0:0 tests/java/compacted-log-verifier /opt/redpanda-tests/java/compacted-log-verifier
 COPY --chown=0:0 tests/java/tx-verifier /opt/redpanda-tests/java/tx-verifier
-RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/kafka-verifier --define buildDir=/opt/kafka-verifier/
 RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/compacted-log-verifier --define buildDir=/opt/compacted-log-verifier
 RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/tx-verifier --define buildDir=/opt/tx-verifier
 
