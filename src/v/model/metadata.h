@@ -65,11 +65,11 @@ struct broker_properties {
     }
 };
 
-struct broker_endpoint final {
+struct broker_endpoint final
+  : serde::envelope<broker_endpoint, serde::version<0>> {
     ss::sstring name;
     net::unresolved_address address;
 
-    // required for yaml serde
     broker_endpoint() = default;
 
     broker_endpoint(ss::sstring name, net::unresolved_address address) noexcept
@@ -81,6 +81,8 @@ struct broker_endpoint final {
 
     bool operator==(const broker_endpoint&) const = default;
     friend std::ostream& operator<<(std::ostream&, const broker_endpoint&);
+
+    auto serde_fields() { return std::tie(name, address); }
 };
 
 enum class violation_recovery_policy { crash = 0, best_effort };

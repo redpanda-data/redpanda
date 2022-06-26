@@ -1221,6 +1221,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         serde_roundtrip_test(data);
         // adl roundtrip doesn't work because family is not serialized
     }
+    { roundtrip_test(model::random_broker_endpoint()); }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {
