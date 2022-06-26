@@ -865,8 +865,19 @@ struct configuration_update_request
     auto serde_fields() { return std::tie(node, target_node); }
 };
 
-struct configuration_update_reply {
+struct configuration_update_reply
+  : serde::envelope<configuration_update_reply, serde::version<0>> {
+    configuration_update_reply() noexcept = default;
+    explicit configuration_update_reply(bool success)
+      : success(success) {}
+
     bool success;
+
+    friend bool operator==(
+      const configuration_update_reply&, const configuration_update_reply&)
+      = default;
+
+    auto serde_fields() { return std::tie(success); }
 };
 
 /// Partition assignment describes an assignment of all replicas for single NTP.
