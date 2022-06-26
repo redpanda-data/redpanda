@@ -27,7 +27,8 @@ namespace tests {
 
 inline net::unresolved_address random_net_address() {
     return net::unresolved_address(
-      random_generators::gen_alphanum_string(8),
+      random_generators::gen_alphanum_string(
+        random_generators::get_int(1, 100)),
       random_generators::get_int(1025, 65535));
 }
 
