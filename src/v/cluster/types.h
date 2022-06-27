@@ -2412,4 +2412,15 @@ struct adl<cluster::config_status_request> {
         return {.status = status};
     }
 };
+
+template<>
+struct adl<cluster::config_status_reply> {
+    void to(iobuf& out, cluster::config_status_reply&& r) {
+        serialize(out, r.error);
+    }
+    cluster::config_status_reply from(iobuf_parser& in) {
+        auto error = adl<cluster::errc>{}.from(in);
+        return {.error = error};
+    }
+};
 } // namespace reflection
