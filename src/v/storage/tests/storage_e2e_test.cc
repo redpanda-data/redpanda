@@ -22,6 +22,7 @@
 #include "storage/tests/storage_test_fixture.h"
 #include "storage/tests/utils/disk_log_builder.h"
 #include "storage/types.h"
+#include "test_utils/async.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/io_priority_class.hh>
@@ -1734,7 +1735,9 @@ FIXTURE_TEST(disposing_in_use_reader, storage_test_fixture) {
         ss::sleep(200ms).get();
     }
     // yield again to allow truncate fiber to finish
-    ss::sleep(200ms).get();
+    tests::cooperative_spin_wait_with_timeout(200ms, [&truncate_f]() {
+        return truncate_f.available();
+    }).get();
 
     // we should be able to finish truncate immediately since reader was
     // destroyed
