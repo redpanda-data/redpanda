@@ -146,7 +146,7 @@ def decode_acl_resource(r):
 
 def decode_acl_pattern_type(p):
     if p == 0:
-        return 'litteral'
+        return 'literal'
     elif p == 1:
         return 'prefixed'
 

@@ -179,7 +179,7 @@ def read_vnode(rdr):
     return ret
 
 
-def read_confiugrations_map(rdr):
+def read_configurations_map(rdr):
     ret = {}
     sz = rdr.read_uint64()
     for _ in range(0, sz):
@@ -303,7 +303,7 @@ def decode_raft_value(type, v):
         ret['term'] = rdr.read_int64()
         return ret
     elif type == 1:  # config map
-        return read_confiugrations_map(rdr)
+        return read_configurations_map(rdr)
     elif type == 2:  # config_latest_known_offset
         return rdr.read_int64()
     elif type == 3:  # last_applied_offset
