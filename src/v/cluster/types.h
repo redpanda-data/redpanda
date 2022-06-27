@@ -2364,4 +2364,16 @@ struct adl<cluster::config_update_reply> {
         return {.error = error, .latest_version = latest_version};
     }
 };
+
+template<>
+struct adl<cluster::hello_request> {
+    void to(iobuf& out, cluster::hello_request&& r) {
+        serialize(out, r.peer, r.start_time);
+    }
+    cluster::hello_request from(iobuf_parser& in) {
+        auto peer = adl<model::node_id>{}.from(in);
+        auto start_time = adl<std::chrono::milliseconds>{}.from(in);
+        return {.peer = peer, .start_time = start_time};
+    }
+};
 } // namespace reflection
