@@ -1683,9 +1683,16 @@ struct create_non_replicable_topics_reply {
     std::vector<topic_result> results;
 };
 
-struct config_update_request final {
+struct config_update_request final
+  : serde::envelope<config_update_request, serde::version<0>> {
     std::vector<cluster_property_kv> upsert;
     std::vector<ss::sstring> remove;
+
+    friend bool
+    operator==(const config_update_request&, const config_update_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(upsert, remove); }
 };
 
 struct config_update_reply {

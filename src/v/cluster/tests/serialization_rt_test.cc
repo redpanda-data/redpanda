@@ -1261,6 +1261,26 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         };
         roundtrip_test(data);
     }
+    {
+        std::vector<cluster::cluster_property_kv> upsert;
+        for (int i = 0; i < random_generators::get_int(10); i++) {
+            upsert.emplace_back(
+              random_generators::gen_alphanum_string(
+                random_generators::get_int(100)),
+              random_generators::gen_alphanum_string(
+                random_generators::get_int(100)));
+        }
+        std::vector<ss::sstring> remove;
+        for (int i = 0; i < random_generators::get_int(10); i++) {
+            remove.push_back(random_generators::gen_alphanum_string(
+              random_generators::get_int(100)));
+        }
+        cluster::config_update_request data{
+          .upsert = upsert,
+          .remove = remove,
+        };
+        roundtrip_test(data);
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {
