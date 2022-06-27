@@ -123,6 +123,8 @@ public:
         return uuid(ul);
     }
 
+    uuid() = default;
+
     explicit uuid(const underlying_t& uuid)
       : _uuid(uuid) {}
 
@@ -133,6 +135,8 @@ public:
     friend std::ostream& operator<<(std::ostream& os, const uuid& u) {
         return os << u.to_string();
     }
+
+    friend bool operator==(const uuid&, const uuid&) = default;
 
 private:
     underlying_t _uuid{};
