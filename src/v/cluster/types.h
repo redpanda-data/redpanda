@@ -18,6 +18,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
+#include "model/record.h"
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
 #include "raft/types.h"
@@ -251,9 +252,12 @@ struct try_abort_reply : serde::envelope<try_abort_reply, serde::version<0>> {
 };
 
 struct init_tm_tx_request
-  : serde::envelope<init_tm_tx_request, serde::version<0>> {
+  : serde::envelope<init_tm_tx_request, serde::version<1>> {
+    static constexpr uint8_t version_with_expected_pid = 1;
+
     kafka::transactional_id tx_id;
     std::chrono::milliseconds transaction_timeout_ms;
+    model::producer_identity expected_pid;
     model::timeout_clock::duration timeout;
 
     init_tm_tx_request() noexcept = default;
@@ -261,9 +265,11 @@ struct init_tm_tx_request
     init_tm_tx_request(
       kafka::transactional_id tx_id,
       std::chrono::milliseconds tx_timeout,
+      model::producer_identity expected_pid,
       model::timeout_clock::duration timeout)
       : tx_id(std::move(tx_id))
       , transaction_timeout_ms(tx_timeout)
+      , expected_pid(expected_pid)
       , timeout(timeout) {}
 
     friend bool operator==(const init_tm_tx_request&, const init_tm_tx_request&)
@@ -274,6 +280,14 @@ struct init_tm_tx_request
         tx_id = read_nested<kafka::transactional_id>(in, h._bytes_left_limit);
         transaction_timeout_ms = read_nested<std::chrono::milliseconds>(
           in, h._bytes_left_limit);
+        if (h._version >= version_with_expected_pid) {
+            expected_pid.id = read_nested<model::producer_id>(
+              in, h._bytes_left_limit);
+            expected_pid.epoch = read_nested<model::producer_epoch>(
+              in, h._bytes_left_limit);
+        } else {
+            expected_pid = model::unknow_pid;
+        }
         timeout = std::chrono::duration_cast<model::timeout_clock::duration>(
           read_nested<std::chrono::milliseconds>(in, h._bytes_left_limit));
     }
@@ -282,6 +296,8 @@ struct init_tm_tx_request
         using serde::write;
         write(out, tx_id);
         write(out, transaction_timeout_ms);
+        write(out, expected_pid.get_id());
+        write(out, expected_pid.get_epoch());
         write(
           out, std::chrono::duration_cast<std::chrono::milliseconds>(timeout));
     }
@@ -2826,7 +2842,8 @@ struct adl<cluster::init_tm_tx_request> {
         auto tx_id = adl<kafka::transactional_id>{}.from(in);
         auto tx_timeout = adl<std::chrono::milliseconds>{}.from(in);
         auto timeout = adl<model::timeout_clock::duration>{}.from(in);
-        return {std::move(tx_id), tx_timeout, timeout};
+        // For idl we do not support new request version.
+        return {std::move(tx_id), tx_timeout, model::unknow_pid, timeout};
     }
 };
 

@@ -15,6 +15,7 @@
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/record.h"
 #include "model/tests/randoms.h"
 #include "model/timestamp.h"
 #include "random/generators.h"
@@ -1161,6 +1162,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           tests::random_named_string<kafka::transactional_id>(),
           std::chrono::duration_cast<std::chrono::milliseconds>(
             random_timeout_clock_duration()),
+          model::unknow_pid,
           random_timeout_clock_duration()};
 
         roundtrip_test(data);

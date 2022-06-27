@@ -538,7 +538,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
       leader);
 
     auto reply = co_await dispatch_init_tm_tx(
-      leader, tx_id, transaction_timeout_ms, timeout);
+      leader, tx_id, transaction_timeout_ms, timeout, expected_pid);
 
     vlog(
       txlog.trace,
@@ -593,17 +593,19 @@ ss::future<init_tm_tx_reply> tx_gateway_frontend::dispatch_init_tm_tx(
   model::node_id leader,
   kafka::transactional_id tx_id,
   std::chrono::milliseconds transaction_timeout_ms,
-  model::timeout_clock::duration timeout) {
+  model::timeout_clock::duration timeout,
+  model::producer_identity expected_pid) {
     return _connection_cache.local()
       .with_node_client<cluster::tx_gateway_client_protocol>(
         _controller->self(),
         ss::this_shard_id(),
         leader,
         timeout,
-        [tx_id, transaction_timeout_ms, timeout](
+        [tx_id, transaction_timeout_ms, expected_pid, timeout](
           tx_gateway_client_protocol cp) {
             return cp.init_tm_tx(
-              init_tm_tx_request{tx_id, transaction_timeout_ms, timeout},
+              init_tm_tx_request{
+                tx_id, transaction_timeout_ms, expected_pid, timeout},
               rpc::client_opts(model::timeout_clock::now() + timeout));
         })
       .then(&rpc::get_ctx_data<init_tm_tx_reply>)

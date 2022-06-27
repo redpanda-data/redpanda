@@ -15,6 +15,7 @@
 #include "cluster/tm_stm.h"
 #include "cluster/types.h"
 #include "model/metadata.h"
+#include "model/record.h"
 #include "rpc/fwd.h"
 #include "seastarx.h"
 #include "utils/available_promise.h"
@@ -137,7 +138,8 @@ private:
       model::node_id,
       kafka::transactional_id,
       std::chrono::milliseconds,
-      model::timeout_clock::duration);
+      model::timeout_clock::duration,
+      model::producer_identity);
     ss::future<cluster::init_tm_tx_reply> do_init_tm_tx(
       ss::shard_id,
       kafka::transactional_id,
