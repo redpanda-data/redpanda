@@ -159,8 +159,54 @@ static void log_system_resources(
     }
 }
 
+namespace {
+
+static constexpr std::string_view community_msg = R"banner(
+
+Welcome to the Redpanda community!
+
+Documentation: https://docs.redpanda.com - Product documentation site
+GitHub Discussion: https://github.com/redpanda-data/redpanda/discussions - Longer, more involved discussions
+GitHub Issues: https://github.com/redpanda-data/redpanda/issues - Report and track issues with the codebase
+Support: https://support.redpanda.com - Contact the support team privately
+Product Feedback: https://redpanda.com/feedback - Let us know how we can improve your experience
+Slack: https://redpanda.com/slack - Chat about all things Redpanda. Join the conversation!
+Twitter: https://twitter.com/redpandadata - All the latest Redpanda news!
+
+)banner";
+
+} // anonymous namespace
+
 int application::run(int ac, char** av) {
-    init_env();
+    std::setvbuf(stdout, nullptr, _IOLBF, 1024);
+    ss::app_template app(setup_app_config());
+    app.add_options()("version", po::bool_switch(), "print version and exit");
+    app.add_options()(
+      "redpanda-cfg",
+      po::value<std::string>(),
+      ".yaml file config for redpanda");
+
+    // Validate command line args using options registered by the app and
+    // seastar. Keep the resulting variables in a temporary map so they don't
+    // live for the lifetime of the application.
+    {
+        po::variables_map vm;
+        if (!cli_parser{
+              ac,
+              av,
+              cli_parser::app_opts{app.get_options_description()},
+              cli_parser::ss_opts{app.get_conf_file_options_description()},
+              _log}
+               .validate_into(vm)) {
+            return 1;
+        }
+        if (vm["version"].as<bool>()) {
+            std::cout << redpanda_version() << std::endl;
+            return 0;
+        }
+    }
+    // use endl for explicit flushing
+    std::cout << community_msg << std::endl;
     vlog(_log.info, "Redpanda {}", redpanda_version());
     struct ::utsname buf;
     ::uname(&buf);
@@ -170,27 +216,13 @@ int application::run(int ac, char** av) {
       buf.release,
       buf.nodename,
       buf.machine);
-    ss::app_template app(setup_app_config());
-    app.add_options()(
-      "redpanda-cfg",
-      po::value<std::string>(),
-      ".yaml file config for redpanda");
-
-    // Validate command line args using options registered by the app and
-    // seastar
-    if (!cli_parser{
-          ac,
-          av,
-          cli_parser::app_opts{app.get_options_description()},
-          cli_parser::ss_opts{app.get_conf_file_options_description()},
-          _log}
-           .validate()) {
-        return 1;
-    }
 
     return app.run(ac, av, [this, &app] {
         auto& cfg = app.configuration();
         log_system_resources(_log, cfg);
+        // NOTE: we validate required args here instead of above because run()
+        // catches some Seastar-specific args like --help that may result in
+        // valid omissions of required args.
         validate_arguments(cfg);
         return ss::async([this, &cfg] {
             try {
@@ -316,8 +348,6 @@ void application::validate_arguments(const po::variables_map& cfg) {
         throw std::invalid_argument("Missing redpanda-cfg flag");
     }
 }
-
-void application::init_env() { std::setvbuf(stdout, nullptr, _IOLBF, 1024); }
 
 ss::app_template::config application::setup_app_config() {
     ss::app_template::config app_cfg;

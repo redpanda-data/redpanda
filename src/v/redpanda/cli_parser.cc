@@ -30,7 +30,7 @@ cli_parser::cli_parser(
   , _seastar_opts_desc{std::move(seastar_opts)}
   , _log{log} {}
 
-bool cli_parser::validate() {
+bool cli_parser::validate_into(po::variables_map& vm) {
     po::options_description desc;
     // Copy the cli options added by redpanda, plus
     desc.add(_opts_desc);
@@ -39,7 +39,6 @@ bool cli_parser::validate() {
     desc.add(_seastar_opts_desc);
 
     try {
-        po::variables_map vm;
         po::store(
           po::command_line_parser{_ac, _av}.options(desc).positional({}).run(),
           vm);
