@@ -73,6 +73,8 @@ public:
     /// storage. Can be started only once.
     void run_upload_loop();
 
+    void run_sync_manifest_loop();
+
     /// Stop archiver.
     ///
     /// \return future that will become ready when all async operation will be
@@ -80,6 +82,9 @@ public:
     ss::future<> stop();
 
     bool upload_loop_stopped() const { return _upload_loop_stopped; }
+    bool sync_manifest_loop_stopped() const {
+        return _sync_manifest_loop_stopped;
+    }
 
     /// Get NTP
     const model::ntp& get_ntp() const;
@@ -111,6 +116,8 @@ public:
     /// \return future that returns number of uploaded/failed segments
     ss::future<batch_result> upload_next_candidates(
       std::optional<model::offset> last_stable_offset_override = std::nullopt);
+
+    ss::future<cloud_storage::download_result> sync_manifest();
 
     uint64_t estimate_backlog_size();
 
@@ -162,7 +169,11 @@ private:
     /// Launch the upload loop fiber.
     ss::future<> upload_loop();
 
+    /// Launch the sync manifest loop fiber.
+    ss::future<> sync_manifest_loop();
+
     bool upload_loop_can_continue() const;
+    bool sync_manifest_loop_can_continue() const;
 
     ntp_level_probe _probe;
     model::ntp _ntp;
@@ -194,6 +205,9 @@ private:
     ss::io_priority_class _io_priority;
     bool _upload_loop_started = false;
     bool _upload_loop_stopped = false;
+
+    bool _sync_manifest_loop_started = false;
+    bool _sync_manifest_loop_stopped = false;
 };
 
 } // namespace archival
