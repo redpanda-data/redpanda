@@ -1288,6 +1288,14 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         };
         roundtrip_test(data);
     }
+    {
+        cluster::hello_request data{
+          .peer = model::node_id(random_generators::get_int(100)),
+          .start_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+            random_timeout_clock_duration()),
+        };
+        roundtrip_test(data);
+    };
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {

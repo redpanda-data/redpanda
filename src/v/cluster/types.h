@@ -1707,11 +1707,16 @@ struct config_update_reply
     auto serde_fields() { return std::tie(error, latest_version); }
 };
 
-struct hello_request final {
+struct hello_request final : serde::envelope<hello_request, serde::version<0>> {
     model::node_id peer;
 
     // milliseconds since epoch
     std::chrono::milliseconds start_time;
+
+    friend bool operator==(const hello_request&, const hello_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(peer, start_time); }
 };
 
 struct hello_reply {
