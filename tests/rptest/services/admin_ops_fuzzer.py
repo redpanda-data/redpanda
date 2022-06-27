@@ -7,11 +7,13 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 from enum import Enum, auto, unique
+import json
 import random
 import re
 import string
 from threading import Event
 import threading
+import time
 from ducktape.utils.util import wait_until
 from rptest.clients.types import TopicSpec
 from time import sleep
@@ -85,6 +87,16 @@ class CreateTopicOperation(Operation):
         topics = rpk.list_topics()
         return self.topic in topics
 
+    def describe(self):
+        return {
+            "type": "create_topic",
+            "properties": {
+                "name": self.topic,
+                "replication_factor": self.topic,
+                "partitions": self.topic,
+            }
+        }
+
 
 class DeleteTopicOperation(Operation):
     def __init__(self, prefix):
@@ -108,6 +120,14 @@ class DeleteTopicOperation(Operation):
         rpk = RpkTool(redpanda)
         topics = rpk.list_topics()
         return self.topic not in topics
+
+    def describe(self):
+        return {
+            "type": "delete_topic",
+            "properties": {
+                "name": self.topic,
+            }
+        }
 
 
 class UpdateTopicOperation(Operation):
@@ -159,6 +179,16 @@ class UpdateTopicOperation(Operation):
         desc = rpk.describe_topic_configs(self.topic)
         return desc[self.property][0] == str(self.value)
 
+    def describe(self):
+        return {
+            "type": "update_topic_properties",
+            "properties": {
+                "name": self.topic,
+                "key": self.property,
+                "value": self.value,
+            }
+        }
+
 
 class AddPartitionsOperation(Operation):
     def __init__(self, prefix):
@@ -190,6 +220,15 @@ class AddPartitionsOperation(Operation):
         current = len(list(rpk.describe_topic(self.topic)))
         return current == self.total
 
+    def describe(self):
+        return {
+            "type": "add_topic_partitions",
+            "properties": {
+                "name": self.topic,
+                "total": self.total
+            }
+        }
+
 
 class CreateUserOperation(Operation):
     def __init__(self, prefix):
@@ -211,6 +250,15 @@ class CreateUserOperation(Operation):
         redpanda.logger.info(f"Validating user {self.user} is present")
         users = admin.list_users()
         return self.user in users
+
+    def describe(self):
+        return {
+            "type": "create_user",
+            "properties": {
+                "name": self.user,
+                "password": self.password
+            }
+        }
 
 
 class DeleteUserOperation(Operation):
@@ -234,6 +282,14 @@ class DeleteUserOperation(Operation):
         redpanda.logger.info(f"Validating user {self.user} is deleted")
         users = admin.list_users()
         return self.user not in users
+
+    def describe(self):
+        return {
+            "type": "delete_user",
+            "properties": {
+                "name": self.user,
+            }
+        }
 
 
 class CreateAclOperation(Operation):
@@ -265,6 +321,14 @@ class CreateAclOperation(Operation):
             if self.user in l and "ALLOW" in l:
                 return True
         return False
+
+    def describe(self):
+        return {
+            "type": "create_acl",
+            "properties": {
+                "principal": self.user,
+            }
+        }
 
 
 class UpdateConfigOperation(Operation):
@@ -299,6 +363,15 @@ class UpdateConfigOperation(Operation):
         )
         return rpk.cluster_config_get(self.property) == str(self.value)
 
+    def describe(self):
+        return {
+            "type": "update_config",
+            "properties": {
+                "key": self.property,
+                "value": self.value
+            }
+        }
+
 
 class AdminOperationsFuzzer():
     def __init__(self,
@@ -322,7 +395,7 @@ class AdminOperationsFuzzer():
         self.prefix = f'fuzzy-operator-{random.randint(0,10000)}'
         self._stopping = Event()
         self.executed = 0
-
+        self.history = []
         self.error = None
 
     def start(self):
@@ -330,14 +403,25 @@ class AdminOperationsFuzzer():
                                        args=())
         # pre-populate cluster with users and topics
         for i in range(0, self.initial_entities):
-            CreateTopicOperation(self.prefix, 1,
-                                 self.max_replication).execute(self.redpanda)
-            CreateUserOperation(self.prefix).execute(self.redpanda)
+            tp = CreateTopicOperation(self.prefix, 1, self.max_replication)
+            self.append_to_history(tp)
+            tp.execute(self.redpanda)
+
+            user = CreateUserOperation(self.prefix)
+            self.append_to_history(user)
+            user.execute(self.redpanda)
+
         self.thread.start()
+
+    def append_to_history(self, op):
+        d = op.describe()
+        d['timestamp'] = int(time.time())
+        self.history.append(d)
 
     def thread_loop(self):
         while not self._stopping.is_set():
             op_type, op = self.make_random_operation()
+            self.append_to_history(op)
 
             def validate_result():
                 try:
@@ -408,6 +492,8 @@ class AdminOperationsFuzzer():
         return (op, actions[op]())
 
     def stop(self):
+        self.redpanda.logger.info(
+            f"operations history: {json.dumps(self.history)}")
         self._stopping.set()
         self.thread.join()
 
