@@ -1637,8 +1637,15 @@ struct config_status_request
     auto serde_fields() { return std::tie(status); }
 };
 
-struct config_status_reply {
+struct config_status_reply
+  : serde::envelope<config_status_reply, serde::version<0>> {
     errc error;
+
+    friend bool
+    operator==(const config_status_reply&, const config_status_reply&)
+      = default;
+
+    auto serde_fields() { return std::tie(error); }
 };
 
 struct feature_action_request {
