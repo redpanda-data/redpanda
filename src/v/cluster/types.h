@@ -848,16 +848,36 @@ struct join_node_reply {
     model::node_id id{-1};
 };
 
-struct configuration_update_request {
+struct configuration_update_request
+  : serde::envelope<configuration_update_request, serde::version<0>> {
+    configuration_update_request() noexcept = default;
     explicit configuration_update_request(model::broker b, model::node_id tid)
       : node(std::move(b))
       , target_node(tid) {}
+
     model::broker node;
     model::node_id target_node;
+
+    friend bool operator==(
+      const configuration_update_request&, const configuration_update_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(node, target_node); }
 };
 
-struct configuration_update_reply {
+struct configuration_update_reply
+  : serde::envelope<configuration_update_reply, serde::version<0>> {
+    configuration_update_reply() noexcept = default;
+    explicit configuration_update_reply(bool success)
+      : success(success) {}
+
     bool success;
+
+    friend bool operator==(
+      const configuration_update_reply&, const configuration_update_reply&)
+      = default;
+
+    auto serde_fields() { return std::tie(success); }
 };
 
 /// Partition assignment describes an assignment of all replicas for single NTP.
@@ -1764,6 +1784,12 @@ template<>
 struct adl<cluster::configuration_update_request> {
     void to(iobuf&, cluster::configuration_update_request&&);
     cluster::configuration_update_request from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::configuration_update_reply> {
+    void to(iobuf&, cluster::configuration_update_reply&&);
+    cluster::configuration_update_reply from(iobuf_parser&);
 };
 
 template<>

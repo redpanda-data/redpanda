@@ -92,7 +92,11 @@ model::broker_properties adl<model::broker_properties>::from(iobuf_parser& in) {
     auto props = std::unordered_map<ss::sstring, ss::sstring>(
       vec.begin(), vec.end());
     return model::broker_properties{
-      cores, mem, disk, std::move(paths), std::move(props)};
+      .cores = cores,
+      .available_memory_gb = mem,
+      .available_disk_gb = disk,
+      .mount_paths = std::move(paths),
+      .etc_props = std::move(props)};
 }
 
 model::broker_endpoint adl<model::broker_endpoint>::from(iobuf_parser& in) {

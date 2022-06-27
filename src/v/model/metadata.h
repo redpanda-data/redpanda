@@ -48,7 +48,8 @@ using initial_revision_id
 
 /// Rack id type
 using rack_id = named_type<ss::sstring, struct rack_id_model_type>;
-struct broker_properties {
+struct broker_properties
+  : serde::envelope<broker_properties, serde::version<0>> {
     uint32_t cores;
     uint32_t available_memory_gb;
     uint32_t available_disk_gb;
@@ -63,13 +64,22 @@ struct broker_properties {
                && mount_paths == other.mount_paths
                && etc_props == other.etc_props;
     }
+
+    auto serde_fields() {
+        return std::tie(
+          cores,
+          available_memory_gb,
+          available_disk_gb,
+          mount_paths,
+          etc_props);
+    }
 };
 
-struct broker_endpoint final {
+struct broker_endpoint final
+  : serde::envelope<broker_endpoint, serde::version<0>> {
     ss::sstring name;
     net::unresolved_address address;
 
-    // required for yaml serde
     broker_endpoint() = default;
 
     broker_endpoint(ss::sstring name, net::unresolved_address address) noexcept
@@ -81,6 +91,8 @@ struct broker_endpoint final {
 
     bool operator==(const broker_endpoint&) const = default;
     friend std::ostream& operator<<(std::ostream&, const broker_endpoint&);
+
+    auto serde_fields() { return std::tie(name, address); }
 };
 
 enum class violation_recovery_policy { crash = 0, best_effort };
@@ -129,8 +141,10 @@ enum class maintenance_state { active, inactive };
 
 std::ostream& operator<<(std::ostream&, membership_state);
 
-class broker {
+class broker : public serde::envelope<broker, serde::version<0>> {
 public:
+    broker() noexcept = default;
+
     broker(
       node_id id,
       std::vector<broker_endpoint> kafka_advertised_listeners,
@@ -180,6 +194,11 @@ public:
 
     bool operator==(const model::broker& other) const = default;
     bool operator<(const model::broker& other) const { return _id < other._id; }
+
+    auto serde_fields() {
+        return std::tie(
+          _id, _kafka_advertised_listeners, _rpc_address, _rack, _properties);
+    }
 
 private:
     node_id _id;

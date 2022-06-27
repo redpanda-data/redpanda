@@ -194,7 +194,7 @@ SEASTAR_THREAD_TEST_CASE(config_invariants_test) {
 }
 
 SEASTAR_THREAD_TEST_CASE(config_update_req_resp_test) {
-    auto req_broker = tests::random_broker(0, 10);
+    auto req_broker = model::random_broker(0, 10);
     auto target_node = model::node_id(23);
 
     cluster::configuration_update_request req(req_broker, target_node);
@@ -1206,6 +1206,31 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     }
     {
         cluster::abort_group_tx_reply data{random_tx_errc()};
+        roundtrip_test(data);
+    }
+    {
+        std::vector<std::optional<ss::net::inet_address::family>> families = {
+          std::nullopt,
+          ss::net::inet_address::family::INET,
+          ss::net::inet_address::family::INET6};
+        net::unresolved_address data{
+          random_generators::gen_alphanum_string(
+            random_generators::get_int(0, 100)),
+          random_generators::get_int<uint16_t>(0, 16000),
+          random_generators::random_choice(families)};
+        serde_roundtrip_test(data);
+        // adl roundtrip doesn't work because family is not serialized
+    }
+    { roundtrip_test(model::random_broker_endpoint()); }
+    { roundtrip_test(model::random_broker_properties()); }
+    { roundtrip_test(model::random_broker()); }
+    {
+        cluster::configuration_update_request data{
+          model::random_broker(), tests::random_named_int<model::node_id>()};
+        roundtrip_test(data);
+    }
+    {
+        cluster::configuration_update_reply data{tests::random_bool()};
         roundtrip_test(data);
     }
 }

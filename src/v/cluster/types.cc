@@ -571,6 +571,17 @@ adl<cluster::configuration_update_request>::from(iobuf_parser& in) {
     return cluster::configuration_update_request(broker, target_id);
 }
 
+void adl<cluster::configuration_update_reply>::to(
+  iobuf& out, cluster::configuration_update_reply&& r) {
+    serialize(out, r.success);
+}
+
+cluster::configuration_update_reply
+adl<cluster::configuration_update_reply>::from(iobuf_parser& in) {
+    auto success = adl<bool>().from(in);
+    return cluster::configuration_update_reply(success);
+}
+
 void adl<cluster::topic_result>::to(iobuf& out, cluster::topic_result&& t) {
     reflection::serialize(out, std::move(t.tp_ns), t.ec);
 }

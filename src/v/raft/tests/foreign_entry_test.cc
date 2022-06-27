@@ -13,6 +13,7 @@
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/tests/random_batch.h"
+#include "model/tests/randoms.h"
 #include "model/timeout_clock.h"
 #include "raft/configuration_bootstrap_state.h"
 #include "raft/consensus_utils.h"
@@ -120,8 +121,8 @@ struct foreign_entry_fixture {
         std::vector<model::broker> nodes;
         std::vector<model::broker> learners;
         for (auto i = 0; i < active_nodes; ++i) {
-            nodes.push_back(tests::random_broker(i, i));
-            learners.push_back(tests::random_broker(
+            nodes.push_back(model::random_broker(i, i));
+            learners.push_back(model::random_broker(
               active_nodes + 1, active_nodes * active_nodes));
         }
         return raft::group_configuration(

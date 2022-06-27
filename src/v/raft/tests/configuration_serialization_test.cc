@@ -9,6 +9,7 @@
 
 #include "model/metadata.h"
 #include "model/tests/random_batch.h"
+#include "model/tests/randoms.h"
 #include "raft/consensus_utils.h"
 #include "raft/group_configuration.h"
 #include "random/generators.h"
@@ -26,7 +27,7 @@
 std::vector<model::broker> random_brokers() {
     std::vector<model::broker> ret;
     for (auto i = 0; i < random_generators::get_int(5, 10); ++i) {
-        ret.push_back(tests::random_broker(i, i));
+        ret.push_back(model::random_broker(i, i));
     }
     return ret;
 }
