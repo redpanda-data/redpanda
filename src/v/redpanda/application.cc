@@ -1329,6 +1329,7 @@ void application::start_bootstrap_services() {
 
     // single instance
     storage_node.invoke_on_all(&storage::node_api::start).get0();
+    local_monitor.invoke_on_all(&cluster::node::local_monitor::start).get0();
 
     // Early initialization of disk stats, so that logic for e.g. picking
     // falloc sizes works without having to wait for a local_monitor tick.

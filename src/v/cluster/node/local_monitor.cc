@@ -35,7 +35,12 @@
 #include <chrono>
 #include <seastarx.h>
 
+using namespace std::chrono_literals;
+
 namespace cluster::node {
+
+// Period between updates where we will issue system call to get free space
+constexpr ss::lowres_clock::duration tick_period = 1s;
 
 local_monitor::local_monitor(
   config::binding<size_t> alert_bytes,
@@ -54,6 +59,29 @@ local_monitor::local_monitor(
     if (test_disk_size_str) {
         _disk_size_for_test = std::stoul(std::string(test_disk_size_str));
     }
+}
+
+ss::future<> local_monitor::_update_loop() {
+    while (!_abort_source.abort_requested()) {
+        co_await update_state();
+        co_await ss::sleep_abortable(tick_period, _abort_source);
+    }
+}
+
+ss::future<> local_monitor::start() {
+    // Load disk stats inline on start, so that anything relying on these
+    // stats downstream can get them without waiting for our first tick.
+    co_await update_state();
+
+    ssx::spawn_with_gate(_gate, [this]() { return _update_loop(); });
+
+    co_return;
+}
+
+ss::future<> local_monitor::stop() {
+    _abort_source.request_abort();
+
+    co_await _gate.close();
 }
 
 ss::future<> local_monitor::update_state() {

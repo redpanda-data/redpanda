@@ -613,7 +613,6 @@ health_monitor_backend::collect_current_node_health(node_report_filter filter) {
     node_health_report ret;
     ret.id = _raft0->self().id();
 
-    co_await _local_monitor.local().update_state();
     ret.local_state = _local_monitor.local().get_state_cached();
     ret.local_state.logical_version
       = features::feature_table::get_latest_logical_version();

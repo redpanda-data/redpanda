@@ -39,6 +39,9 @@ public:
     local_monitor& operator=(local_monitor const&) = delete;
     local_monitor& operator=(local_monitor&&) = delete;
 
+    ss::future<> start();
+    ss::future<> stop();
+
     ss::future<> update_state();
     const local_state& get_state_cached() const;
     static storage::disk_space_alert
@@ -55,6 +58,9 @@ private:
     // helpers
     static size_t
     alert_percent_in_bytes(unsigned alert_percent, size_t bytes_available);
+
+    /// Periodically check node status until stopped by abort source
+    ss::future<> _update_loop();
 
     ss::future<std::vector<storage::disk>> get_disks();
     ss::future<struct statvfs> get_statvfs(const ss::sstring);
@@ -85,6 +91,9 @@ private:
     std::function<struct statvfs(const ss::sstring)> _statvfs_for_test;
 
     std::optional<size_t> _disk_size_for_test;
+
+    ss::gate _gate;
+    ss::abort_source _abort_source;
 };
 
 } // namespace cluster::node
