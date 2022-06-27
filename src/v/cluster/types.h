@@ -2381,4 +2381,13 @@ struct adl<cluster::hello_request> {
         return {.peer = peer, .start_time = start_time};
     }
 };
+
+template<>
+struct adl<cluster::hello_reply> {
+    void to(iobuf& out, cluster::hello_reply&& r) { serialize(out, r.error); }
+    cluster::hello_reply from(iobuf_parser& in) {
+        auto error = adl<cluster::errc>{}.from(in);
+        return {.error = error};
+    }
+};
 } // namespace reflection
