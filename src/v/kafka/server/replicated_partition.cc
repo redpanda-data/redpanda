@@ -38,6 +38,15 @@ replicated_partition::replicated_partition(
 ss::future<storage::translating_reader> replicated_partition::make_reader(
   storage::log_reader_config cfg,
   std::optional<model::timeout_clock::time_point> deadline) {
+    if (
+      _partition->is_read_replica_mode_enabled()
+      && _partition->cloud_data_available()) {
+        // No need to translate the offsets in this case since all fetch
+        // requests in read replica are served via remote_partition which
+        // does its own translation.
+        co_return co_await _partition->make_cloud_reader(cfg);
+    }
+
     auto local_kafka_start_offset = _translator->from_log_offset(
       _partition->start_offset());
     if (
