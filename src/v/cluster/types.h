@@ -1695,9 +1695,16 @@ struct config_update_request final
     auto serde_fields() { return std::tie(upsert, remove); }
 };
 
-struct config_update_reply {
+struct config_update_reply
+  : serde::envelope<config_update_reply, serde::version<0>> {
     errc error;
     cluster::config_version latest_version{config_version_unset};
+
+    friend bool
+    operator==(const config_update_reply&, const config_update_reply&)
+      = default;
+
+    auto serde_fields() { return std::tie(error, latest_version); }
 };
 
 struct hello_request final {
