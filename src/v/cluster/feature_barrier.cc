@@ -163,7 +163,7 @@ feature_barrier_response feature_barrier_state_base::update_barrier(
     if (i == _barrier_state.end()) {
         _barrier_state.erase(tag);
         _barrier_state.emplace(tag, std::make_pair(peer, entered));
-        return {false, false};
+        return {.entered = false, .complete = false};
     } else {
         i->second.node_enter(peer, entered);
         bool all_in = true;
@@ -183,7 +183,10 @@ feature_barrier_response feature_barrier_state_base::update_barrier(
             i->second.complete();
         }
 
-        return {i->second.is_node_entered(_self), i->second.is_complete()};
+        return {
+          .entered = i->second.is_node_entered(_self),
+          .complete = i->second.is_complete(),
+        };
     }
 }
 

@@ -1241,6 +1241,13 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         };
         roundtrip_test(data);
     }
+    {
+        cluster::feature_barrier_response data{
+          .entered = tests::random_bool(),
+          .complete = tests::random_bool(),
+        };
+        roundtrip_test(data);
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {

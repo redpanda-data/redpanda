@@ -1645,10 +1645,17 @@ struct feature_barrier_request
     auto serde_fields() { return std::tie(tag, peer, entered); }
 };
 
-struct feature_barrier_response {
+struct feature_barrier_response
+  : serde::envelope<feature_barrier_response, serde::version<0>> {
     static constexpr int8_t current_version = 1;
     bool entered;  // Has the respondent entered?
     bool complete; // Has the respondent exited?
+
+    friend bool
+    operator==(const feature_barrier_response&, const feature_barrier_response&)
+      = default;
+
+    auto serde_fields() { return std::tie(entered, complete); }
 };
 
 struct create_non_replicable_topics_request {
