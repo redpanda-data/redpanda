@@ -288,7 +288,7 @@ void write(iobuf& out, T t) {
         write(out, static_cast<serde_size_t>(t.size()));
         for (auto& v : t) {
             write(out, v.first);
-            write(out, v.second);
+            write(out, std::move(v.second));
         }
     } else if constexpr (is_fragmented_vector_v<Type>) {
         if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
