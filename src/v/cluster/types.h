@@ -1631,11 +1631,18 @@ struct feature_action_response {
 using feature_barrier_tag
   = named_type<ss::sstring, struct feature_barrier_tag_type>;
 
-struct feature_barrier_request {
+struct feature_barrier_request
+  : serde::envelope<feature_barrier_request, serde::version<0>> {
     static constexpr int8_t current_version = 1;
     feature_barrier_tag tag; // Each cooperative barrier must use a unique tag
     model::node_id peer;
     bool entered; // Has the requester entered?
+
+    friend bool
+    operator==(const feature_barrier_request&, const feature_barrier_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(tag, peer, entered); }
 };
 
 struct feature_barrier_response {
