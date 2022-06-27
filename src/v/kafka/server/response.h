@@ -23,10 +23,12 @@
 
 namespace kafka {
 
+using flex_enabled = ss::bool_class<struct flex_response_tag>;
+
 class response {
 public:
-    explicit response(bool flexible) noexcept
-      : _flexible(flexible)
+    explicit response(flex_enabled flex) noexcept
+      : _flex(flex)
       , _writer(_buf) {}
 
     response_writer& writer() { return _writer; }
@@ -38,7 +40,7 @@ public:
     correlation_id correlation() const { return _correlation; }
     void set_correlation(correlation_id c) { _correlation = c; }
 
-    bool is_flexible() const { return _flexible; }
+    flex_enabled is_flexible() const { return _flex; }
 
     /// Currently unused
     const std::optional<tagged_fields>& tags() const { return _tags; }
@@ -56,7 +58,7 @@ public:
 private:
     bool _noop{false};
     correlation_id _correlation;
-    bool _flexible{false};
+    flex_enabled _flex{flex_enabled::no};
     std::optional<tagged_fields> _tags;
     iobuf _buf;
     response_writer _writer;
