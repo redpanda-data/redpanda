@@ -1626,8 +1626,15 @@ struct set_maintenance_mode_reply
     auto serde_fields() { return std::tie(error); }
 };
 
-struct config_status_request {
+struct config_status_request
+  : serde::envelope<config_status_request, serde::version<0>> {
     config_status status;
+
+    friend bool
+    operator==(const config_status_request&, const config_status_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(status); }
 };
 
 struct config_status_reply {

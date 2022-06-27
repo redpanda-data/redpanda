@@ -1302,6 +1302,20 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         };
         roundtrip_test(data);
     }
+    {
+        cluster::config_status status;
+        status.node = tests::random_named_int<model::node_id>();
+        status.restart = tests::random_bool();
+        status.version = tests::random_named_int<cluster::config_version>();
+        status.invalid = random_strings();
+        status.unknown = random_strings();
+
+        cluster::config_status_request data{
+          .status = status,
+        };
+
+        roundtrip_test(data);
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {
