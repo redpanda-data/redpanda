@@ -1601,10 +1601,17 @@ struct finish_reallocation_reply {
     errc error;
 };
 
-struct set_maintenance_mode_request {
+struct set_maintenance_mode_request
+  : serde::envelope<set_maintenance_mode_request, serde::version<0>> {
     static constexpr int8_t current_version = 1;
     model::node_id id;
     bool enabled;
+
+    friend bool operator==(
+      const set_maintenance_mode_request&, const set_maintenance_mode_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(id, enabled); }
 };
 
 struct set_maintenance_mode_reply {
