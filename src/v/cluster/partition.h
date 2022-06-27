@@ -220,6 +220,11 @@ public:
         return _archival_meta_stm;
     }
 
+    bool is_read_replica_mode_enabled() const {
+        const auto& cfg = _raft->log_config();
+        return cfg.is_read_replica_mode_enabled();
+    }
+
     /// Return true if shadow indexing is enabled for the partition
     bool is_remote_fetch_enabled() const {
         const auto& cfg = _raft->log_config();
