@@ -53,7 +53,11 @@ private:
     template<typename T>
     ss::future<std::error_code> do_replicate_node_command(model::node_id id) {
         return replicate_and_wait(
-          _stm, _as, T(id, 0), _node_op_timeout + model::timeout_clock::now());
+          _stm,
+          _feature_table,
+          _as,
+          T(id, 0),
+          _node_op_timeout + model::timeout_clock::now());
     }
 
     model::node_id _self;

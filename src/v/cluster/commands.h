@@ -19,11 +19,14 @@
 #include "reflection/async_adl.h"
 #include "security/credential_store.h"
 #include "security/scram_credential.h"
+#include "serde/serde.h"
 #include "utils/named_type.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/when_all.hh>
 
 namespace cluster {
 
@@ -39,6 +42,11 @@ using command_type = named_type<int8_t, struct command_type_tag>;
 // Generic controller command, this type is base for all commands
 template<typename K, typename V, int8_t tp, model::record_batch_type bt>
 struct controller_command {
+    static_assert(
+      tp >= 0,
+      "Command type must be greater than 0. Negative values are used to "
+      "determine serialization type");
+
     using key_t = K;
     using value_t = V;
 
@@ -264,27 +272,59 @@ serialize_cmd(Cmd cmd) {
             });
       });
 }
+// flag indicating tha the command was serialized using serde serialization
+static constexpr int8_t serde_serialized_cmd_flag = -1;
+
+template<typename Cmd>
+requires ControllerCommand<Cmd> model::record_batch
+serde_serialize_cmd(Cmd cmd) {
+    iobuf key_buf;
+    iobuf value_buf;
+    /**
+     * We leverage the fact that all reflection::adl serialized commands have
+     * command type that is >= 0. To indicate the new format we will use single
+     * byte set to -1. This will allow choosing appropriate deserializer.
+     */
+    using serde::write;
+    write<int8_t>(value_buf, serde_serialized_cmd_flag);
+    write<int8_t>(value_buf, Cmd::type);
+
+    write(value_buf, std::move(cmd.value));
+    write(key_buf, std::move(cmd.key));
+
+    simple_batch_builder builder(Cmd::batch_type, model::offset(0));
+    builder.add_raw_kv(std::move(key_buf), std::move(value_buf));
+    return std::move(builder).build();
+}
 
 namespace internal {
 template<typename Cmd>
 struct deserializer {
-    ss::future<Cmd> deserialize(iobuf_parser k_parser, iobuf_parser v_parser) {
-        using key_t = typename Cmd::key_t;
-        using value_t = typename Cmd::value_t;
-        return ss::do_with(
-          std::move(k_parser),
-          std::move(v_parser),
-          [](iobuf_parser& k_parser, iobuf_parser& v_parser) {
-              return ss::when_all(
-                       reflection::async_adl<key_t>{}.from(k_parser),
-                       reflection::async_adl<value_t>{}.from(v_parser))
-                .then(
-                  [](std::tuple<ss::future<key_t>, ss::future<value_t>> res) {
-                      // futures are already completed here
-                      return Cmd(
-                        std::get<0>(res).get0(), std::get<1>(res).get0());
-                  });
-          });
+    using key_t = typename Cmd::key_t;
+    using value_t = typename Cmd::value_t;
+    ss::future<Cmd>
+    deserialize(iobuf_parser k_parser, iobuf_parser v_parser, bool use_serde) {
+        if (likely(use_serde)) {
+            co_return serde_deserialize(
+              std::move(k_parser), std::move(v_parser));
+        }
+        co_return co_await adl_deserialize(
+          std::move(k_parser), std::move(v_parser));
+    }
+
+    ss::future<Cmd>
+    adl_deserialize(iobuf_parser k_parser, iobuf_parser v_parser) {
+        auto results = co_await ss::when_all_succeed(
+          reflection::async_adl<key_t>{}.from(k_parser),
+          reflection::async_adl<value_t>{}.from(v_parser));
+
+        co_return Cmd(std::get<0>(results), std::get<1>(results));
+    }
+
+    Cmd serde_deserialize(iobuf_parser k_parser, iobuf_parser v_parser) {
+        using serde::read;
+
+        return Cmd(read<key_t>(k_parser), read<value_t>(v_parser));
     }
 };
 
@@ -307,6 +347,14 @@ deserialize(model::record_batch b, commands_type_list<Commands...>) {
     auto records = b.copy_records();
     iobuf_parser v_parser(records.begin()->release_value());
     iobuf_parser k_parser(records.begin()->release_key());
+    const bool use_serde_serialization = reflection::adl<int8_t>{}.from(
+                                           v_parser.peek(1))
+                                         == serde_serialized_cmd_flag;
+    if (likely(use_serde_serialization)) {
+        // skip over indicator field
+        v_parser.skip(1);
+    }
+
     // chose deserializer
     auto cmd_type = reflection::adl<command_type>{}.from(v_parser);
     std::optional<std::variant<internal::deserializer<Commands>...>> ret;
@@ -314,8 +362,11 @@ deserialize(model::record_batch b, commands_type_list<Commands...>) {
 
     return std::visit(
       [k_parser = std::move(k_parser),
-       v_parser = std::move(v_parser)](auto& d) mutable {
-          return d.deserialize(std::move(k_parser), std::move(v_parser))
+       v_parser = std::move(v_parser),
+       use_serde_serialization](auto& d) mutable {
+          return d
+            .deserialize(
+              std::move(k_parser), std::move(v_parser), use_serde_serialization)
             .then([](auto cmd) {
                 return std::variant<Commands...>(std::move(cmd));
             });

@@ -50,7 +50,8 @@ topics_frontend::topics_frontend(
   ss::sharded<topic_table>& topics,
   ss::sharded<data_policy_frontend>& dp_frontend,
   ss::sharded<ss::abort_source>& as,
-  ss::sharded<cloud_storage::remote>& cloud_storage_api)
+  ss::sharded<cloud_storage::remote>& cloud_storage_api,
+  ss::sharded<feature_table>& features)
   : _self(self)
   , _stm(s)
   , _allocator(pal)
@@ -59,7 +60,8 @@ topics_frontend::topics_frontend(
   , _topics(topics)
   , _dp_frontend(dp_frontend)
   , _as(as)
-  , _cloud_storage_api(cloud_storage_api) {}
+  , _cloud_storage_api(cloud_storage_api)
+  , _features(features) {}
 
 static bool
 needs_linearizable_barrier(const std::vector<topic_result>& results) {
@@ -235,7 +237,7 @@ ss::future<topic_result> topics_frontend::do_update_topic_properties(
               std::move(update.tp_ns), cluster::errc(update_dp_res.value()));
         }
         auto ec = co_await replicate_and_wait(
-          _stm, _as, std::move(cmd), timeout);
+          _stm, _features, _as, std::move(cmd), timeout);
         co_return topic_result(std::move(update.tp_ns), map_errc(ec));
     } catch (...) {
         vlog(
@@ -259,7 +261,7 @@ ss::future<topic_result> topics_frontend::do_create_non_replicable_topic(
     create_non_replicable_topic_cmd cmd(data, 0);
     try {
         auto ec = co_await replicate_and_wait(
-          _stm, _as, std::move(cmd), timeout);
+          _stm, _features, _as, std::move(cmd), timeout);
         co_return topic_result(data.name, map_errc(ec));
     } catch (const std::exception& ex) {
         vlog(
@@ -480,7 +482,7 @@ ss::future<topic_result> topics_frontend::replicate_create_topic(
           random_generators::internal::gen);
     }
 
-    return replicate_and_wait(_stm, _as, std::move(cmd), timeout)
+    return replicate_and_wait(_stm, _features, _as, std::move(cmd), timeout)
       .then_wrapped([tp_ns = std::move(tp_ns), units = std::move(units)](
                       ss::future<std::error_code> f) mutable {
           try {
@@ -535,7 +537,7 @@ ss::future<topic_result> topics_frontend::do_delete_topic(
   model::topic_namespace tp_ns, model::timeout_clock::time_point timeout) {
     delete_topic_cmd cmd(tp_ns, tp_ns);
 
-    return replicate_and_wait(_stm, _as, std::move(cmd), timeout)
+    return replicate_and_wait(_stm, _features, _as, std::move(cmd), timeout)
       .then_wrapped(
         [tp_ns = std::move(tp_ns)](ss::future<std::error_code> f) mutable {
             try {
@@ -624,7 +626,7 @@ ss::future<std::error_code> topics_frontend::move_partition_replicas(
     }
     move_partition_replicas_cmd cmd(std::move(ntp), std::move(new_replica_set));
 
-    return replicate_and_wait(_stm, _as, std::move(cmd), tout);
+    return replicate_and_wait(_stm, _features, _as, std::move(cmd), tout);
 }
 
 ss::future<std::error_code> topics_frontend::finish_moving_partition_replicas(
@@ -643,7 +645,7 @@ ss::future<std::error_code> topics_frontend::finish_moving_partition_replicas(
         finish_moving_partition_replicas_cmd cmd(
           std::move(ntp), std::move(new_replica_set));
 
-        return replicate_and_wait(_stm, _as, std::move(cmd), tout);
+        return replicate_and_wait(_stm, _features, _as, std::move(cmd), tout);
     }
 
     return _connections.local()
@@ -756,7 +758,7 @@ ss::future<topic_result> topics_frontend::do_create_partition(
 
     try {
         auto ec = co_await replicate_and_wait(
-          _stm, _as, std::move(cmd), timeout);
+          _stm, _features, _as, std::move(cmd), timeout);
         co_return topic_result(tp_ns, map_errc(ec));
     } catch (...) {
         vlog(
