@@ -1719,8 +1719,12 @@ struct hello_request final : serde::envelope<hello_request, serde::version<0>> {
     auto serde_fields() { return std::tie(peer, start_time); }
 };
 
-struct hello_reply {
+struct hello_reply : serde::envelope<hello_reply, serde::version<0>> {
     errc error;
+
+    friend bool operator==(const hello_reply&, const hello_reply&) = default;
+
+    auto serde_fields() { return std::tie(error); }
 };
 
 struct leader_term {
