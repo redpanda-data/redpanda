@@ -32,6 +32,7 @@
 #include <absl/container/flat_hash_map.h>
 #include <bits/stdint-uintn.h>
 
+#include <concepts>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -210,9 +211,7 @@ transport::send_typed_versioned(
 }
 
 template<typename Protocol>
-concept RpcClientProtocol = requires(rpc::transport& t) {
-    { Protocol(t) } -> std::same_as<Protocol>;
-};
+concept RpcClientProtocol = std::constructible_from<Protocol, rpc::transport&>;
 
 template<typename... Protocol>
 requires(RpcClientProtocol<Protocol>&&...) class client : public Protocol... {
