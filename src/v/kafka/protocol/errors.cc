@@ -15,6 +15,8 @@ namespace kafka {
 
 std::string_view error_code_to_str(error_code error) {
     switch (error) {
+    case error_code::unknown_server_error:
+        return "unknown_server_error";
     case error_code::none:
         return "none";
     case error_code::offset_out_of_range:
@@ -181,8 +183,6 @@ std::string_view error_code_to_str(error_code error) {
         return "group_max_size_reached";
     case error_code::fenced_instance_id:
         return "fenced_instance_id";
-    case error_code::unknown_server_error:
-        return "unknown_server_error";
     case error_code::invalid_record:
         return "invalid_record";
     default:
@@ -191,15 +191,8 @@ std::string_view error_code_to_str(error_code error) {
 }
 
 std::ostream& operator<<(std::ostream& o, error_code code) {
-    o << "{ error_code: ";
-    // special case as unknown_server_error = -1
-    if (code == error_code::unknown_server_error) {
-        o << "unknown_server_error";
-    } else {
-        o << error_code_to_str(code);
-    }
-    o << " [" << (int16_t)code << "] }";
-    return o;
+    return o << "{ error_code: " << error_code_to_str(code) << " ["
+             << (int16_t)code << "] }";
 }
 
 struct error_category final : std::error_category {
@@ -210,10 +203,10 @@ struct error_category final : std::error_category {
     }
 };
 
-const error_category error_category{};
+const error_category kafka_error_category{};
 
 std::error_code make_error_code(kafka::error_code ec) {
-    return {static_cast<int>(ec), error_category};
+    return {static_cast<int>(ec), kafka_error_category};
 }
 
 } // namespace kafka
