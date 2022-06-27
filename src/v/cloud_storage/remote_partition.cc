@@ -469,6 +469,14 @@ model::offset remote_partition::first_uploaded_offset() {
     }
 }
 
+model::offset remote_partition::last_uploaded_offset() {
+    vassert(
+      _manifest.size() > 0,
+      "The manifest for {} is not expected to be empty",
+      _manifest.get_ntp());
+    return _manifest.get_last_offset();
+}
+
 const model::ntp& remote_partition::get_ntp() const {
     return _manifest.get_ntp();
 }
