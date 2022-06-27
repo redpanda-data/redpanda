@@ -2345,4 +2345,16 @@ struct adl<cluster::config_update_request> {
         return {.upsert = upsert, .remove = remove};
     }
 };
+
+template<>
+struct adl<cluster::config_update_reply> {
+    void to(iobuf& out, cluster::config_update_reply&& r) {
+        serialize(out, r.error, r.latest_version);
+    }
+    cluster::config_update_reply from(iobuf_parser& in) {
+        auto error = adl<cluster::errc>{}.from(in);
+        auto latest_version = adl<cluster::config_version>{}.from(in);
+        return {.error = error, .latest_version = latest_version};
+    }
+};
 } // namespace reflection
