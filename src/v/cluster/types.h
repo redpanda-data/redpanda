@@ -2394,4 +2394,15 @@ struct adl<cluster::hello_reply> {
         return {.error = error};
     }
 };
+
+template<>
+struct adl<cluster::config_status_request> {
+    void to(iobuf& out, cluster::config_status_request&& r) {
+        serialize(out, r.status);
+    }
+    cluster::config_status_request from(iobuf_parser& in) {
+        auto status = adl<cluster::config_status>{}.from(in);
+        return {.status = status};
+    }
+};
 } // namespace reflection
