@@ -15,6 +15,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"
+#include "utils/string_switch.h"
 
 #include <boost/lexical_cast.hpp>
 #include <yaml-cpp/yaml.h>
@@ -237,6 +238,56 @@ struct convert<model::timestamp_type> {
     static bool decode(const Node& node, type& rhs) {
         auto value = node.as<std::string>();
         rhs = boost::lexical_cast<type>(value);
+
+        return true;
+    }
+};
+
+template<>
+struct convert<model::cloud_credentials_source> {
+    using type = model::cloud_credentials_source;
+
+    static constexpr std::array<const char*, 4> acceptable_values{
+      "config_file", "aws_instance_metadata", "gcp_instance_metadata", "sts"};
+
+    static Node encode(const type& rhs) {
+        Node node;
+        switch (rhs) {
+        case model::cloud_credentials_source::config_file:
+            node = "config_file";
+            break;
+        case model::cloud_credentials_source::aws_instance_metadata:
+            node = "aws_instance_metadata";
+            break;
+        case model::cloud_credentials_source::sts:
+            node = "sts";
+            break;
+        case model::cloud_credentials_source::gcp_instance_metadata:
+            node = "gcp_instance_metadata";
+            break;
+        }
+        return node;
+    }
+
+    static bool decode(const Node& node, type& rhs) {
+        auto value = node.as<std::string>();
+
+        if (
+          std::find(acceptable_values.begin(), acceptable_values.end(), value)
+          == acceptable_values.end()) {
+            return false;
+        }
+
+        rhs = string_switch<type>(std::string_view{value})
+                .match(
+                  "config_file", model::cloud_credentials_source::config_file)
+                .match(
+                  "aws_instance_metadata",
+                  model::cloud_credentials_source::aws_instance_metadata)
+                .match(
+                  "gcp_instance_metadata",
+                  model::cloud_credentials_source::gcp_instance_metadata)
+                .match("sts", model::cloud_credentials_source::sts);
 
         return true;
     }

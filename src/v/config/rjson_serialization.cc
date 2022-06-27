@@ -149,4 +149,10 @@ void rjson_serialize(
     stringize(w, v);
 }
 
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const model::cloud_credentials_source& v) {
+    stringize(w, v);
+}
+
 } // namespace json

@@ -369,6 +369,19 @@ std::ostream& operator<<(std::ostream& o, membership_state st) {
     return o << "unknown membership state {" << static_cast<int>(st) << "}";
 }
 
+std::ostream& operator<<(std::ostream& os, const cloud_credentials_source& cs) {
+    switch (cs) {
+    case cloud_credentials_source::config_file:
+        return os << "config_file";
+    case cloud_credentials_source::aws_instance_metadata:
+        return os << "aws_instance_metadata";
+    case cloud_credentials_source::sts:
+        return os << "sts";
+    case cloud_credentials_source::gcp_instance_metadata:
+        return os << "gcp_instance_metadata";
+    }
+}
+
 std::ostream& operator<<(std::ostream& o, const shadow_indexing_mode& si) {
     switch (si) {
     case shadow_indexing_mode::disabled:

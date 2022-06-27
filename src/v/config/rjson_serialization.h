@@ -64,4 +64,7 @@ void rjson_serialize(
   json::Writer<json::StringBuffer>& w,
   const model::violation_recovery_policy& v);
 
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const model::cloud_credentials_source& v);
 } // namespace json
