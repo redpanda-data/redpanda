@@ -2326,4 +2326,16 @@ struct adl<cluster::init_tm_tx_reply> {
         return {pid, ec};
     }
 };
+
+template<>
+struct adl<cluster::config_update_request> {
+    void to(iobuf& out, cluster::config_update_request&& r) {
+        serialize(out, r.upsert, r.remove);
+    }
+    cluster::config_update_request from(iobuf_parser& in) {
+        auto upsert = adl<std::vector<cluster::cluster_property_kv>>{}.from(in);
+        auto remove = adl<std::vector<ss::sstring>>{}.from(in);
+        return {.upsert = upsert, .remove = remove};
+    }
+};
 } // namespace reflection
