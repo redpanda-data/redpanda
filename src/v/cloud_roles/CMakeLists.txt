@@ -4,6 +4,7 @@ v_cc_library(
     apply_aws_credentials.cc
     apply_credentials.cc
     apply_gcp_credentials.cc
+    aws_refresh_impl.cc
     probe.cc
     refresh_credentials.cc
     request_response_helpers.cc
