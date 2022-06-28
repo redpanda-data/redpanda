@@ -11,6 +11,7 @@
 #include "cloud_roles/apply_credentials.h"
 
 #include "cloud_roles/apply_aws_credentials.h"
+#include "cloud_roles/apply_gcp_credentials.h"
 
 cloud_roles::apply_credentials
 cloud_roles::make_credentials_applier(cloud_roles::credentials creds) {
@@ -20,6 +21,11 @@ cloud_roles::make_credentials_applier(cloud_roles::credentials creds) {
         -> std::unique_ptr<apply_credentials::impl> {
           return std::make_unique<cloud_roles::apply_aws_credentials>(
             std::move(ac));
+      },
+      [](cloud_roles::gcp_credentials gc)
+        -> std::unique_ptr<apply_credentials::impl> {
+          return std::make_unique<cloud_roles::apply_gcp_credentials>(
+            std::move(gc));
       })};
 }
 
