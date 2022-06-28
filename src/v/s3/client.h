@@ -289,4 +289,6 @@ private:
     ss::gate _gate;
 };
 
+ss::future<iobuf> drain_response_stream(http::client::response_stream_ref resp);
+
 } // namespace s3

@@ -465,7 +465,7 @@ ss::future<ResultT> parse_head_error_response(
     }
 }
 
-static ss::future<iobuf>
+ss::future<iobuf>
 drain_response_stream(http::client::response_stream_ref resp) {
     return ss::do_with(
       iobuf(), [resp = std::move(resp)](iobuf& outbuf) mutable {
