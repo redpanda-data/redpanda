@@ -12,7 +12,7 @@
 
 #include "seastarx.h"
 
-#include <seastar/core/metrics.hh>
+#include <seastar/core/metrics_registration.hh>
 
 namespace cloud_roles {
 
@@ -26,7 +26,7 @@ public:
 private:
     uint64_t _successful_fetches{0};
     uint64_t _fetch_errors{0};
-    ss::metrics::metric_group _metrics;
+    ss::metrics::metric_groups _metrics;
 };
 
 } // namespace cloud_roles

@@ -56,6 +56,12 @@ struct malformed_api_response_error {
 std::ostream&
 operator<<(std::ostream& os, const malformed_api_response_error& err);
 
+struct api_response_parse_error {
+    ss::sstring reason;
+};
+
+std::ostream& operator<<(std::ostream& os, const api_response_parse_error& err);
+
 using oauth_token_str = named_type<ss::sstring, struct oauth_token_str_tag>;
 
 struct gcp_credentials {
@@ -82,5 +88,14 @@ std::ostream& operator<<(std::ostream& os, const aws_credentials& ac);
 using credentials = std::variant<aws_credentials, gcp_credentials>;
 
 std::ostream& operator<<(std::ostream& os, const credentials& c);
+
+using api_response_parse_result = std::variant<
+  malformed_api_response_error,
+  api_response_parse_error,
+  api_request_error,
+  credentials>;
+
+using credentials_update_cb_t
+  = ss::noncopyable_function<ss::future<>(credentials)>;
 
 } // namespace cloud_roles

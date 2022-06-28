@@ -62,4 +62,10 @@ std::ostream& operator<<(std::ostream& os, const credentials& c) {
     return os;
 }
 
+std::ostream&
+operator<<(std::ostream& os, const api_response_parse_error& err) {
+    fmt::print(os, "api_response_parse_error{{reason:{}}}", err.reason);
+    return os;
+}
+
 } // namespace cloud_roles
