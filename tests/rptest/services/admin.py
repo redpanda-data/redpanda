@@ -564,6 +564,18 @@ class Admin:
 
         self._request("delete", path)
 
+    def update_user(self, username, password, algorithm):
+        self.redpanda.logger.info(
+            f"Updating user {username}:{password}:{algorithm}")
+
+        self._request("PUT",
+                      f"security/users/{username}",
+                      json=dict(
+                          username=username,
+                          password=password,
+                          algorithm=algorithm,
+                      ))
+
     def list_users(self, node=None):
         return self._request("get", "security/users", node=node).json()
 
