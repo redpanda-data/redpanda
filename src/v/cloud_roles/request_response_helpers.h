@@ -14,6 +14,8 @@
 #include "http/client.h"
 #include "json/document.h"
 
+#include <boost/property_tree/ptree.hpp>
+
 namespace cloud_roles {
 
 inline constexpr std::chrono::milliseconds default_request_timeout{5000};
@@ -39,5 +41,7 @@ ss::future<boost::beast::http::status>
 get_status(http::client::response_stream_ref& resp);
 
 json::Document parse_json_response(iobuf resp);
+
+std::chrono::system_clock::time_point parse_timestamp(std::string_view sv);
 
 } // namespace cloud_roles

@@ -26,14 +26,6 @@ cloud_roles::aws_refresh_impl::aws_refresh_impl(
   : refresh_credentials::impl(
     std::move(api_host), api_port, std::move(region), as, retry_params) {}
 
-static std::chrono::system_clock::time_point
-parse_timestamp(std::string_view sv) {
-    std::tm tm = {};
-    std::stringstream ss({sv.data(), sv.size()});
-    ss >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%S.Z%Z");
-    return std::chrono::system_clock::from_time_t(timegm(&tm));
-}
-
 ss::future<cloud_roles::api_response>
 cloud_roles::aws_refresh_impl::fetch_credentials() {
     if (unlikely(!_role)) {
