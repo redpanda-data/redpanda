@@ -724,6 +724,58 @@ topic_table::get_previous_replica_set(const model::ntp& ntp) const {
     return std::nullopt;
 }
 
+std::vector<model::ntp>
+topic_table::ntps_moving_to_node(model::node_id node) const {
+    std::vector<model::ntp> ret;
+
+    for (const auto& [ntp, state] : _updates_in_progress) {
+        if (contains_node(state.previous_replicas, node)) {
+            continue;
+        }
+
+        auto current_assignment = get_partition_assignment(ntp);
+        if (unlikely(!current_assignment)) {
+            continue;
+        }
+
+        if (contains_node(current_assignment->replicas, node)) {
+            ret.push_back(ntp);
+        }
+    }
+    return ret;
+}
+
+std::vector<model::ntp>
+topic_table::ntps_moving_from_node(model::node_id node) const {
+    std::vector<model::ntp> ret;
+
+    for (const auto& [ntp, state] : _updates_in_progress) {
+        if (!contains_node(state.previous_replicas, node)) {
+            continue;
+        }
+
+        auto current_assignment = get_partition_assignment(ntp);
+        if (unlikely(!current_assignment)) {
+            continue;
+        }
+
+        if (!contains_node(current_assignment->replicas, node)) {
+            ret.push_back(ntp);
+        }
+    }
+    return ret;
+}
+
+std::vector<model::ntp> topic_table::all_updates_in_progress() const {
+    std::vector<model::ntp> ret;
+    ret.reserve(_updates_in_progress.size());
+    for (const auto& [ntp, _] : _updates_in_progress) {
+        ret.push_back(ntp);
+    }
+
+    return ret;
+}
+
 std::ostream&
 operator<<(std::ostream& o, topic_table::in_progress_state update) {
     switch (update) {
@@ -736,4 +788,5 @@ operator<<(std::ostream& o, topic_table::in_progress_state update) {
     }
     __builtin_unreachable();
 }
+
 } // namespace cluster
