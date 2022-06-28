@@ -18,7 +18,14 @@ namespace cluster {
 
 class members_backend {
 public:
-    enum class reallocation_state { initial, reassigned, requested, finished };
+    enum class reallocation_state {
+        initial,
+        reassigned,
+        requested,
+        finished,
+        request_cancel,
+        cancelled
+    };
 
     struct partition_reallocation {
         explicit partition_reallocation(
@@ -86,9 +93,11 @@ private:
     void handle_single_update(members_manager::node_update);
     void handle_recommissioned(const members_manager::node_update&);
     void stop_node_decommissioning(model::node_id);
+    void stop_node_addition(model::node_id id);
     void handle_reallocation_finished(model::node_id);
     void reassign_replicas(partition_assignment&, partition_reallocation&);
     void calculate_reallocations_after_node_added(update_meta&) const;
+    void calculate_reallocations_after_decommissioned(update_meta&) const;
     void setup_metrics();
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<topic_table>& _topics;

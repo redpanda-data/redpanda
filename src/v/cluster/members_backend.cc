@@ -130,10 +130,13 @@ void members_backend::handle_single_update(
         _updates.emplace_back(update);
         _new_updates.signal();
         return;
-    default:
+    case update_t::decommissioned:
+        stop_node_addition(update.id);
         _updates.emplace_back(update);
         _new_updates.signal();
+        return;
     }
+    __builtin_unreachable();
 }
 
 void members_backend::start_reconciliation_loop() {
@@ -163,23 +166,7 @@ bool is_in_replica_set(
 void members_backend::calculate_reallocations(update_meta& meta) {
     switch (meta.update.type) {
     case members_manager::node_update_type::decommissioned:
-        // reallocate all partitions for which any of replicas is placed on
-        // decommissioned node
-        for (const auto& [tp_ns, cfg] : _topics.local().topics_map()) {
-            if (!cfg.is_topic_replicable()) {
-                continue;
-            }
-            for (const auto& pas : cfg.get_assignments()) {
-                if (is_in_replica_set(pas.replicas, meta.update.id)) {
-                    partition_reallocation reallocation(
-                      model::ntp(tp_ns.ns, tp_ns.tp, pas.id),
-                      pas.replicas.size());
-                    reallocation.replicas_to_remove.emplace(meta.update.id);
-                    meta.partition_reallocations.push_back(
-                      std::move(reallocation));
-                }
-            }
-        }
+        calculate_reallocations_after_decommissioned(meta);
         return;
     case members_manager::node_update_type::added:
         calculate_reallocations_after_node_added(meta);
@@ -206,6 +193,39 @@ struct replicas_to_move {
     }
 };
 
+void members_backend::calculate_reallocations_after_decommissioned(
+  members_backend::update_meta& meta) const {
+    // reallocate all partitions for which any of replicas is placed on
+    // decommissioned node
+    for (const auto& [tp_ns, cfg] : _topics.local().topics_map()) {
+        if (!cfg.is_topic_replicable()) {
+            continue;
+        }
+
+        for (const auto& pas : cfg.get_assignments()) {
+            model::ntp ntp(tp_ns.ns, tp_ns.tp, pas.id);
+            if (is_in_replica_set(pas.replicas, meta.update.id)) {
+                auto previous_replica_set
+                  = _topics.local().get_previous_replica_set(ntp);
+                // update in progress, request cancel
+                if (previous_replica_set) {
+                    partition_reallocation reallocation(std::move(ntp));
+                    reallocation.state = reallocation_state::request_cancel;
+                    reallocation.current_replica_set = pas.replicas;
+                    reallocation.new_replica_set = previous_replica_set.value();
+                    meta.partition_reallocations.push_back(
+                      std::move(reallocation));
+                } else {
+                    partition_reallocation reallocation(
+                      std::move(ntp), pas.replicas.size());
+                    reallocation.replicas_to_remove.emplace(meta.update.id);
+                    meta.partition_reallocations.push_back(
+                      std::move(reallocation));
+                }
+            }
+        }
+    }
+}
 void members_backend::calculate_reallocations_after_node_added(
   members_backend::update_meta& meta) const {
     if (!config::shard_local_cfg().enable_auto_rebalance_on_node_add()) {
@@ -234,8 +254,8 @@ void members_backend::calculate_reallocations_after_node_added(
         total_replicas += n->allocated_partitions();
     }
 
-    // 2. calculate number of replicas per node leading to even replica per node
-    // distribution
+    // 2. calculate number of replicas per node leading to even replica per
+    // node distribution
     auto target_replicas_per_node
       = total_replicas / _allocator.local().state().available_nodes();
 
@@ -606,7 +626,44 @@ ss::future<> members_backend::reallocate_replica_set(
     }
     case reallocation_state::finished:
         co_return;
+    case reallocation_state::request_cancel: {
+        std::error_code error
+          = co_await _topics_frontend.local().cancel_moving_partition_replicas(
+            meta.ntp, model::timeout_clock::now() + _retry_timeout);
+        if (error) {
+            vlog(
+              clusterlog.info,
+              "[ntp: {}, {} -> {}] partition reconfiguration cancellation "
+              "error: {}",
+              meta.ntp,
+              meta.current_replica_set,
+              meta.new_replica_set,
+              error.message());
+            co_return;
+        }
+        // success, update state and move on
+        meta.state = reallocation_state::cancelled;
+        [[fallthrough]];
+    }
+    case reallocation_state::cancelled: {
+        auto reconciliation_state
+          = co_await _api.local().get_reconciliation_state(meta.ntp);
+        vlog(
+          clusterlog.info,
+          "[ntp: {}, {} -> {}] reconciliation state: {}, pending operations: "
+          "{}",
+          meta.ntp,
+          meta.current_replica_set,
+          meta.new_replica_set,
+          reconciliation_state.status(),
+          reconciliation_state.pending_operations());
+        if (reconciliation_state.status() != reconciliation_status::done) {
+            co_return;
+        }
+        meta.state = reallocation_state::finished;
+        co_return;
     };
+    }
 }
 
 void members_backend::handle_recommissioned(
@@ -623,6 +680,14 @@ void members_backend::stop_node_decommissioning(model::node_id id) {
         return meta.update.id == id
                && meta.update.type
                     == members_manager::node_update_type::decommissioned;
+    });
+}
+
+void members_backend::stop_node_addition(model::node_id id) {
+    // remove all pending added updates for current node
+    std::erase_if(_updates, [id](update_meta& meta) {
+        return meta.update.id == id
+               && meta.update.type == members_manager::node_update_type::added;
     });
 }
 
@@ -667,6 +732,10 @@ operator<<(std::ostream& o, const members_backend::reallocation_state& state) {
         return o << "requested";
     case members_backend::reallocation_state::finished:
         return o << "finished";
+    case members_backend::reallocation_state::request_cancel:
+        return o << "request_cancel";
+    case members_backend::reallocation_state::cancelled:
+        return o << "cancelled";
     }
 
     __builtin_unreachable();
