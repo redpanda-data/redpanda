@@ -26,11 +26,20 @@ public:
           : ntp(std::move(ntp))
           , constraints(ntp.tp.partition, replication_factor) {}
 
+        void set_new_replicas(allocation_units units) {
+            allocation_units = std::move(units);
+            new_replica_set
+              = allocation_units->get_assignments().front().replicas;
+        }
+
+        void release_assignment_units() { allocation_units.reset(); }
+
         model::ntp ntp;
         partition_constraints constraints;
         absl::node_hash_set<model::node_id> replicas_to_remove;
-        std::optional<allocation_units> new_assignment;
-        std::vector<model::broker_shard> initial_assignment;
+        std::optional<allocation_units> allocation_units;
+        std::vector<model::broker_shard> new_replica_set;
+        std::vector<model::broker_shard> current_replica_set;
         reallocation_state state = reallocation_state::initial;
         friend std::ostream&
         operator<<(std::ostream&, const partition_reallocation&);

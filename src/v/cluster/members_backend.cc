@@ -354,7 +354,8 @@ ss::future<> members_backend::reconcile() {
     if (_last_term != current_term) {
         for (auto& reallocation : meta.partition_reallocations) {
             if (reallocation.state == reallocation_state::reassigned) {
-                reallocation.new_assignment.reset();
+                reallocation.release_assignment_units();
+                reallocation.new_replica_set.clear();
                 reallocation.state = reallocation_state::initial;
             }
         }
@@ -517,19 +518,10 @@ void members_backend::reassign_replicas(
     auto res = _allocator.local().reallocate_partition(
       reallocation.constraints, current_assignment);
     if (res.has_value()) {
-        reallocation.new_assignment = std::move(res.value());
+        reallocation.set_new_replicas(std::move(res.value()));
     }
 }
-namespace {
 
-std::optional<std::vector<model::broker_shard>>
-get_new_replicas(const members_backend::partition_reallocation& r) {
-    if (r.new_assignment) {
-        return r.new_assignment->get_assignments().front().replicas;
-    }
-    return std::nullopt;
-}
-} // namespace
 ss::future<> members_backend::reallocate_replica_set(
   members_backend::partition_reallocation& meta) {
     auto current_assignment = _topics.local().get_partition_assignment(
@@ -542,11 +534,11 @@ ss::future<> members_backend::reallocate_replica_set(
 
     switch (meta.state) {
     case reallocation_state::initial: {
-        meta.initial_assignment = current_assignment->replicas;
+        meta.current_replica_set = current_assignment->replicas;
         // initial state, try to reassign partition replicas
 
         reassign_replicas(*current_assignment, meta);
-        if (!meta.new_assignment) {
+        if (meta.new_replica_set.empty()) {
             // if partiton allocator failed to reassign partitions return
             // and wait for next retry
             co_return;
@@ -558,38 +550,39 @@ ss::future<> members_backend::reallocate_replica_set(
           "[ntp: {}, {} -> {}] new partition assignment calculated "
           "successfully",
           meta.ntp,
-          meta.initial_assignment,
-          get_new_replicas(meta));
+          meta.current_replica_set,
+          meta.new_replica_set);
         [[fallthrough]];
     }
     case reallocation_state::reassigned: {
         vassert(
-          meta.new_assignment,
+          !meta.new_replica_set.empty(),
           "reallocation meta in reassigned state must have new_assignment");
         vlog(
           clusterlog.info,
           "[ntp: {}, {} -> {}] dispatching request to move partition",
           meta.ntp,
-          meta.initial_assignment,
-          get_new_replicas(meta));
+          meta.current_replica_set,
+          meta.new_replica_set);
         // request topic partition move
         std::error_code error
           = co_await _topics_frontend.local().move_partition_replicas(
             meta.ntp,
-            meta.new_assignment->get_assignments().begin()->replicas,
+            meta.new_replica_set,
             model::timeout_clock::now() + _retry_timeout);
         if (error) {
             vlog(
               clusterlog.info,
               "[ntp: {}, {} -> {}] partition move error: {}",
               meta.ntp,
-              meta.initial_assignment,
-              get_new_replicas(meta),
+              meta.current_replica_set,
+              meta.new_replica_set,
               error.message());
             co_return;
         }
         // success, update state and move on
         meta.state = reallocation_state::requested;
+        meta.release_assignment_units();
         [[fallthrough]];
     }
     case reallocation_state::requested: {
@@ -601,8 +594,8 @@ ss::future<> members_backend::reallocate_replica_set(
           "[ntp: {}, {} -> {}] reconciliation state: {}, pending operations: "
           "{}",
           meta.ntp,
-          meta.initial_assignment,
-          get_new_replicas(meta),
+          meta.current_replica_set,
+          meta.new_replica_set,
           reconciliation_state.status(),
           reconciliation_state.pending_operations());
         if (reconciliation_state.status() != reconciliation_status::done) {
@@ -649,7 +642,7 @@ operator<<(std::ostream& o, const members_backend::partition_reallocation& r) {
       "{},replicas_to_remove: [}}",
       r.ntp,
       r.constraints,
-      r.new_assignment.has_value(),
+      !r.new_replica_set.empty(),
       r.state);
 
     if (!r.replicas_to_remove.empty()) {
