@@ -541,7 +541,12 @@ class RpkTool:
         return output
 
     def _rpk_binary(self):
-        return self._redpanda.find_binary("rpk")
+        # NOTE: since this runs on separate nodes from the service, the binary
+        # path used by each node may differ from that returned by
+        # redpanda.find_binary(), e.g. if using a RedpandaInstaller.
+        rp_install_path_root = self._redpanda._context.globals.get(
+            "rp_install_path_root", None)
+        return f"{rp_install_path_root}/bin/rpk"
 
     def cluster_maintenance_enable(self, node, wait=False):
         node_id = self._redpanda.idx(node) if isinstance(node,

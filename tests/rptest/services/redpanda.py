@@ -31,8 +31,9 @@ from ducktape.cluster.cluster import ClusterNode
 from prometheus_client.parser import text_string_to_metric_families
 
 from rptest.clients.kafka_cat import KafkaCat
-from rptest.services.storage import ClusterStorage, NodeStorage
 from rptest.services.admin import Admin
+from rptest.services.redpanda_installer import RedpandaInstaller
+from rptest.services.storage import ClusterStorage, NodeStorage
 from rptest.services.utils import BadLogLines, NodeCrash
 from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.services import tls
@@ -434,7 +435,8 @@ class RedpandaService(Service):
                  log_level: Optional[str] = None,
                  environment: Optional[dict[str, str]] = None,
                  security: SecurityConfig = SecurityConfig(),
-                 node_ready_timeout_s=None):
+                 node_ready_timeout_s=None,
+                 enable_installer=False):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
         self._context = context
         self._enable_rp = enable_rp
@@ -442,6 +444,9 @@ class RedpandaService(Service):
         self._enable_pp = enable_pp
         self._enable_sr = enable_sr
         self._security = security
+        self._installer: Optional[RedpandaInstaller] = None
+        if enable_installer:
+            self._installer = RedpandaInstaller(self)
 
         if node_ready_timeout_s is None:
             node_ready_timeout_s = RedpandaService.DEFAULT_NODE_READY_TIMEOUT_SEC
@@ -572,7 +577,10 @@ class RedpandaService(Service):
 
             try:
                 if clean_nodes:
-                    self.clean_node(node)
+                    # Expected usage is that we may install new binaries before
+                    # starting the cluster, and installation-cleaning happened
+                    # when we started the installer.
+                    self.clean_node(node, clean_installs=False)
                 else:
                     self.logger.debug("%s: skip cleaning node" %
                                       self.who_am_i(node))
@@ -1096,14 +1104,18 @@ class RedpandaService(Service):
                 # the original exception that caused the failure.
                 self.logger.exception("Failed to run seastar-addr2line")
 
+    def rp_install_path(self):
+        if self._installer and self._installer._started:
+            # The installer sets up binaries to always use /opt/redpanda.
+            return "/opt/redpanda"
+        return self._context.globals.get("rp_install_path_root", None)
+
     def find_wasm_root(self):
-        rp_install_path_root = self._context.globals.get(
-            "rp_install_path_root", None)
+        rp_install_path_root = self.rp_install_path()
         return f"{rp_install_path_root}/opt/wasm"
 
     def find_binary(self, name):
-        rp_install_path_root = self._context.globals.get(
-            "rp_install_path_root", None)
+        rp_install_path_root = self.rp_install_path()
         return f"{rp_install_path_root}/bin/{name}"
 
     def find_raw_binary(self, name):
@@ -1111,9 +1123,23 @@ class RedpandaService(Service):
         Like `find_binary`, but find the underlying executable rather tha
         a shell wrapper.
         """
-        rp_install_path_root = self._context.globals.get(
-            "rp_install_path_root", None)
+        rp_install_path_root = self.rp_install_path()
         return f"{rp_install_path_root}/libexec/{name}"
+
+    def get_version(self, node):
+        """
+        Returns the version as a string.
+        """
+        version_cmd = f"{self.find_binary('redpanda')} --version"
+        VERSION_LINE_RE = re.compile(".*(v\\d+\\.\\d+\\.\\d+).*")
+        # NOTE: not all versions of Redpanda support the --version field, even
+        # though they print out the version.
+        version_lines = [
+            l for l in node.account.ssh_capture(version_cmd, allow_fail=True) \
+                if VERSION_LINE_RE.match(l)
+        ]
+        assert len(version_lines) == 1, version_lines
+        return VERSION_LINE_RE.findall(version_lines[0])[0]
 
     def stop_node(self, node, timeout=None):
         pids = self.pids(node)
@@ -1145,7 +1171,7 @@ class RedpandaService(Service):
         if self._s3client:
             self.delete_bucket_from_si()
 
-    def clean_node(self, node, preserve_logs=False):
+    def clean_node(self, node, preserve_logs=False, clean_installs=True):
         node.account.kill_process("redpanda", clean_shutdown=False)
         node.account.kill_process("bin/node", clean_shutdown=False)
         if node.account.exists(RedpandaService.PERSISTENT_ROOT):
@@ -1164,6 +1190,10 @@ class RedpandaService(Service):
         if not preserve_logs and node.account.exists(
                 self.EXECUTABLE_SAVE_PATH):
             node.account.remove(self.EXECUTABLE_SAVE_PATH)
+
+        if clean_installs and self._installer is not None:
+            # Get rid of any installed packages.
+            self._installer.clean(node)
 
     def remove_local_data(self, node):
         node.account.remove(f"{RedpandaService.PERSISTENT_ROOT}/data/*")
@@ -1629,10 +1659,16 @@ class RedpandaService(Service):
             f"Saving executable as {os.path.basename(self.EXECUTABLE_SAVE_PATH)}"
         )
 
-        # Any node will do, they all run the same binary.  May cease to be true
-        # for future mixed-version rolling upgrade testing.
+        # Any node will do. Even in a mixed-version upgrade test, we should
+        # still have the original binaries available.
         node = self.nodes[0]
-        binary = self.find_raw_binary('redpanda')
+        if self._installer and self._installer._started:
+            head_root_path = self._installer.path_for_version(
+                RedpandaInstaller.HEAD)
+            binary = f"{head_root_path}/libexec/redpanda"
+        else:
+            binary = self.find_raw_binary('redpanda')
+
         save_to = self.EXECUTABLE_SAVE_PATH
         try:
             node.account.ssh(f"cd /tmp ; gzip -c {binary} > {save_to}")

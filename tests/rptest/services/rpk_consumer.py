@@ -90,10 +90,16 @@ class RpkConsumer(BackgroundThreadService):
                 raise
 
     def _consume(self, node):
+        # NOTE: since this runs on separate nodes from the service, the binary
+        # path used by each node may differ from that returned by
+        # redpanda.find_binary(), e.g. if using a RedpandaInstaller.
+        rp_install_path_root = self._redpanda._context.globals.get(
+            "rp_install_path_root", None)
+        rpk_binary = f"{rp_install_path_root}/bin/rpk"
         # Important to use --read-committed, because otherwise the output parsing would have
         # to somehow handle when rpk errors out on a rewind of the consumed offset
         cmd = '%s topic consume --read-committed --offset %s --pretty-print=false --brokers %s %s' % (
-            self._redpanda.find_binary('rpk'),
+            rpk_binary,
             self._offset,
             self._redpanda.brokers(),
             self._topic,
