@@ -443,7 +443,8 @@ class RedpandaService(Service):
                  environment: Optional[dict[str, str]] = None,
                  security: SecurityConfig = SecurityConfig(),
                  node_ready_timeout_s=None,
-                 enable_installer=False):
+                 enable_installer=False,
+                 superuser: Optional[SaslCredentials] = None):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
         self._context = context
         self._enable_rp = enable_rp
@@ -454,6 +455,16 @@ class RedpandaService(Service):
         self._installer: Optional[RedpandaInstaller] = None
         if enable_installer:
             self._installer = RedpandaInstaller(self)
+
+        if superuser is None:
+            superuser = self.SUPERUSER_CREDENTIALS
+            self._skip_create_superuser = False
+        else:
+            # When we are passed explicit superuser credentials, presume that the caller
+            # is taking care of user creation themselves (e.g. when testing credential bootstrap)
+            self._skip_create_superuser = True
+
+        self._superuser = superuser
 
         if node_ready_timeout_s is None:
             node_ready_timeout_s = RedpandaService.DEFAULT_NODE_READY_TIMEOUT_SEC
@@ -469,10 +480,9 @@ class RedpandaService(Service):
         else:
             self._log_level = log_level
 
-        self._admin = Admin(self)
         self._admin = Admin(self,
-                            auth=(self.SUPERUSER_CREDENTIALS.username,
-                                  self.SUPERUSER_CREDENTIALS.password))
+                            auth=(self._superuser.username,
+                                  self._superuser.password))
         self._started = []
         self._security_config = dict()
 
@@ -607,7 +617,8 @@ class RedpandaService(Service):
         if self._start_duration_seconds < 0:
             self._start_duration_seconds = time.time() - self._start_time
 
-        self._admin.create_user(*self.SUPERUSER_CREDENTIALS)
+        if not self._skip_create_superuser:
+            self._admin.create_user(*self._superuser)
 
         self.logger.info("Waiting for all brokers to join cluster")
         expected = set(self._started)
@@ -629,7 +640,7 @@ class RedpandaService(Service):
                 raise RuntimeError("Unexpected files in data directory")
 
         if self.sasl_enabled():
-            username, password, algorithm = self.SUPERUSER_CREDENTIALS
+            username, password, algorithm = self._superuser
             self._security_config = dict(security_protocol='SASL_PLAINTEXT',
                                          sasl_mechanism=algorithm,
                                          sasl_plain_username=username,
@@ -1268,7 +1279,7 @@ class RedpandaService(Service):
                            enable_rp=self._enable_rp,
                            enable_pp=self._enable_pp,
                            enable_sr=self._enable_sr,
-                           superuser=self.SUPERUSER_CREDENTIALS,
+                           superuser=self._superuser,
                            sasl_enabled=self.sasl_enabled())
 
         if override_cfg_params or self._extra_node_conf[node]:
@@ -1355,10 +1366,9 @@ class RedpandaService(Service):
         # the node is stored in raft0 AND has been replayed on all nodes.  Otherwise
         # a kafka metadata request to the last node to join could return incomplete
         # metadata and cause strange issues within a test.
-        admin = Admin(self)
         for peer in self._started:
             try:
-                admin_brokers = admin.get_brokers(node=peer)
+                admin_brokers = self._admin.get_brokers(node=peer)
             except requests.exceptions.RequestException as e:
                 # We run during startup, when admin API may not even be listening yet: tolerate
                 # API errors but presume that if some APIs are not up yet, then node registration
@@ -1388,7 +1398,16 @@ class RedpandaService(Service):
                     f"registered: node {node.name} now visible in peer {peer.name}'s broker list ({admin_brokers})"
                 )
 
-        client = PythonLibrdkafka(self, tls_cert=self._tls_cert)
+        auth_args = {}
+        if self.sasl_enabled():
+            auth_args = {
+                'username': self._superuser.username,
+                'password': self._superuser.password,
+                'algorithm': self._superuser.algorithm
+            }
+
+        client = PythonLibrdkafka(self, tls_cert=self._tls_cert, **auth_args)
+
         brokers = client.brokers()
         broker = brokers.get(idx, None)
         if broker is None:
