@@ -116,7 +116,7 @@ inline void append_hex_utf8(ss::sstring& result, char ch) {
     result.append(h.data(), h.size());
 }
 
-static ss::sstring uri_encode(const ss::sstring& input, bool encode_slash) {
+ss::sstring uri_encode(const ss::sstring& input, bool encode_slash) {
     // The function defined here:
     //     https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
     ss::sstring result;

@@ -358,8 +358,7 @@ static void log_buffer_with_rate_limiting(const char* msg, iobuf& buf) {
     vlog(log_with_rate_limit, "{}: {}", msg, sview);
 }
 
-/// Convert iobuf that contains xml data to boost::property_tree
-static boost::property_tree::ptree iobuf_to_ptree(iobuf&& buf) {
+boost::property_tree::ptree iobuf_to_ptree(iobuf&& buf) {
     namespace pt = boost::property_tree;
     try {
         iobuf_istreambuf strbuf(buf);
@@ -374,9 +373,7 @@ static boost::property_tree::ptree iobuf_to_ptree(iobuf&& buf) {
     }
 }
 
-/// Parse timestamp in format that S3 uses
-static std::chrono::system_clock::time_point
-parse_timestamp(std::string_view sv) {
+std::chrono::system_clock::time_point parse_timestamp(std::string_view sv) {
     std::tm tm = {};
     std::stringstream ss({sv.data(), sv.size()});
     ss >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%S.Z%Z");
@@ -465,7 +462,7 @@ ss::future<ResultT> parse_head_error_response(
     }
 }
 
-static ss::future<iobuf>
+ss::future<iobuf>
 drain_response_stream(http::client::response_stream_ref resp) {
     return ss::do_with(
       iobuf(), [resp = std::move(resp)](iobuf& outbuf) mutable {

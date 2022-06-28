@@ -55,6 +55,14 @@ struct default_overrides {
     bool disable_tls = false;
 };
 
+/// Parse timestamp in format that S3 uses
+std::chrono::system_clock::time_point parse_timestamp(std::string_view sv);
+
+/// Convert iobuf that contains xml data to boost::property_tree
+boost::property_tree::ptree iobuf_to_ptree(iobuf&& buf);
+
+ss::future<iobuf> drain_response_stream(http::client::response_stream_ref resp);
+
 /// S3 client configuration
 struct configuration : net::base_transport::configuration {
     /// URI of the S3 access point
@@ -288,5 +296,7 @@ private:
     ss::abort_source _as;
     ss::gate _gate;
 };
+
+ss::future<iobuf> drain_response_stream(http::client::response_stream_ref resp);
 
 } // namespace s3
