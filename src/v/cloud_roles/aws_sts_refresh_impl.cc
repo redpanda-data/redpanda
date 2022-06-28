@@ -15,6 +15,7 @@
 
 #include <boost/property_tree/ptree.hpp>
 
+namespace cloud_roles {
 /// The path to credentials in the XML response returned by STS
 static constexpr std::string_view response_node_credential_path
   = "AssumeRoleWithWebIdentityResponse.AssumeRoleWithWebIdentityResult."
@@ -68,7 +69,7 @@ static ss::sstring load_from_env(std::string_view env_var) {
     return env_value;
 }
 
-cloud_roles::aws_sts_refresh_impl::aws_sts_refresh_impl(
+aws_sts_refresh_impl::aws_sts_refresh_impl(
   seastar::sstring api_host,
   uint16_t api_port,
   s3::aws_region_name region,
@@ -79,8 +80,7 @@ cloud_roles::aws_sts_refresh_impl::aws_sts_refresh_impl(
   , _role{load_from_env(aws_injected_env_vars::role_arn)}
   , _token_file_path{load_from_env(aws_injected_env_vars::token_file_path)} {}
 
-ss::future<cloud_roles::api_response>
-cloud_roles::aws_sts_refresh_impl::fetch_credentials() {
+ss::future<api_response> aws_sts_refresh_impl::fetch_credentials() {
     // The content of the token file is periodically rotated by k8s, so we
     // read it fully each time to avoid stale tokens
 
@@ -113,8 +113,7 @@ cloud_roles::aws_sts_refresh_impl::fetch_credentials() {
       make_api_client(), std::move(assume_req), std::move(body));
 }
 
-cloud_roles::api_response_parse_result
-cloud_roles::aws_sts_refresh_impl::parse_response(iobuf resp) {
+api_response_parse_result aws_sts_refresh_impl::parse_response(iobuf resp) {
     auto root = s3::iobuf_to_ptree(std::move(resp));
 
     auto creds_node_maybe = root.get_child_optional(
@@ -159,8 +158,10 @@ cloud_roles::aws_sts_refresh_impl::parse_response(iobuf resp) {
     };
 }
 
-std::ostream& cloud_roles::aws_sts_refresh_impl::print(std::ostream& os) const {
+std::ostream& aws_sts_refresh_impl::print(std::ostream& os) const {
     fmt::print(
       os, "aws_sts_refresh_impl{{host:{}, port:{}}}", api_host(), api_port());
     return os;
 }
+
+} // namespace cloud_roles
