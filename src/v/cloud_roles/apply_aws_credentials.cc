@@ -91,7 +91,7 @@ void cloud_roles::apply_aws_credentials::reset_creds(
           creds));
     }
     auto aws_creds = std::get<aws_credentials>(creds);
-    _signature = s3::signature_v4(
+    _signature = signature_v4(
       aws_creds.region, aws_creds.access_key_id, aws_creds.secret_access_key);
     _session_token = aws_creds.session_token;
 }

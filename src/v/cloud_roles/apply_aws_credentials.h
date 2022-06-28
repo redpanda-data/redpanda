@@ -11,7 +11,7 @@
 #pragma once
 
 #include "cloud_roles/apply_credentials.h"
-#include "s3/signature.h"
+#include "cloud_roles/signature.h"
 
 namespace cloud_roles {
 
@@ -26,7 +26,7 @@ public:
     std::ostream& print(std::ostream& os) const override;
 
 private:
-    s3::signature_v4 _signature;
+    signature_v4 _signature;
     std::optional<s3_session_token> _session_token;
 };
 

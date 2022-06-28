@@ -8,9 +8,8 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "cloud_roles/signature.h"
 #include "http/client.h"
-#include "s3/signature.h"
-#include "seastarx.h"
 
 #include <seastar/core/temporary_buffer.hh>
 #include <seastar/testing/thread_test_case.hh>
@@ -18,7 +17,6 @@
 #include <boost/test/unit_test.hpp>
 
 #include <chrono>
-#include <cstdlib>
 #include <sstream>
 
 std::chrono::time_point<std::chrono::system_clock>
@@ -32,16 +30,18 @@ parse_time(std::string const& timestr) {
 /// Test is based on 1st example here
 /// https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
 SEASTAR_THREAD_TEST_CASE(test_signature_computation_1) {
-    s3::public_key_str access_key("AKIAIOSFODNN7EXAMPLE");
-    s3::private_key_str secret_key("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY");
-    s3::aws_region_name region("us-east-1");
+    cloud_roles::public_key_str access_key("AKIAIOSFODNN7EXAMPLE");
+    cloud_roles::private_key_str secret_key(
+      "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY");
+    cloud_roles::aws_region_name region("us-east-1");
     std::string host = "examplebucket.s3.amazonaws.com";
     std::string target = "/test.txt";
     std::string sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca4959"
                          "91b7852b855"; // empty hash
 
     auto tp = parse_time("20130524T000000Z");
-    s3::signature_v4 sign(region, access_key, secret_key, s3::time_source(tp));
+    cloud_roles::signature_v4 sign(
+      region, access_key, secret_key, cloud_roles::time_source(tp));
 
     http::client::request_header header;
     header.method(boost::beast::http::verb::get);
@@ -65,16 +65,18 @@ SEASTAR_THREAD_TEST_CASE(test_signature_computation_1) {
 /// Test is based on 2nd example here
 /// https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
 SEASTAR_THREAD_TEST_CASE(test_signature_computation_2) {
-    s3::public_key_str access_key("AKIAIOSFODNN7EXAMPLE");
-    s3::private_key_str secret_key("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY");
-    s3::aws_region_name region("us-east-1");
+    cloud_roles::public_key_str access_key("AKIAIOSFODNN7EXAMPLE");
+    cloud_roles::private_key_str secret_key(
+      "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY");
+    cloud_roles::aws_region_name region("us-east-1");
     std::string host = "examplebucket.s3.amazonaws.com";
     std::string target = "test$file.text";
     std::string sha256
       = "44ce7dd67c959e0d3524ffac1771dfbba87d2b6b4b4e99e42034a8b803f8b072";
 
     auto tp = parse_time("20130524T000000Z");
-    s3::signature_v4 sign(region, access_key, secret_key, s3::time_source(tp));
+    cloud_roles::signature_v4 sign(
+      region, access_key, secret_key, cloud_roles::time_source(tp));
 
     http::client::request_header header;
     header.method(boost::beast::http::verb::put);
@@ -101,16 +103,18 @@ SEASTAR_THREAD_TEST_CASE(test_signature_computation_2) {
 /// Test is based on 3rd example here
 /// https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
 SEASTAR_THREAD_TEST_CASE(test_signature_computation_3) {
-    s3::public_key_str access_key("AKIAIOSFODNN7EXAMPLE");
-    s3::private_key_str secret_key("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY");
-    s3::aws_region_name region("us-east-1");
+    cloud_roles::public_key_str access_key("AKIAIOSFODNN7EXAMPLE");
+    cloud_roles::private_key_str secret_key(
+      "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY");
+    cloud_roles::aws_region_name region("us-east-1");
     std::string host = "examplebucket.s3.amazonaws.com";
     std::string target = "?lifecycle";
     std::string sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca4959"
                          "91b7852b855"; // empty hash
 
     auto tp = parse_time("20130524T000000Z");
-    s3::signature_v4 sign(region, access_key, secret_key, s3::time_source(tp));
+    cloud_roles::signature_v4 sign(
+      region, access_key, secret_key, cloud_roles::time_source(tp));
 
     http::client::request_header header;
     header.method(boost::beast::http::verb::get);
@@ -132,16 +136,18 @@ SEASTAR_THREAD_TEST_CASE(test_signature_computation_3) {
 /// Test is based on 4th example here
 /// https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
 SEASTAR_THREAD_TEST_CASE(test_signature_computation_4) {
-    s3::public_key_str access_key("AKIAIOSFODNN7EXAMPLE");
-    s3::private_key_str secret_key("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY");
-    s3::aws_region_name region("us-east-1");
+    cloud_roles::public_key_str access_key("AKIAIOSFODNN7EXAMPLE");
+    cloud_roles::private_key_str secret_key(
+      "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY");
+    cloud_roles::aws_region_name region("us-east-1");
     std::string host = "examplebucket.s3.amazonaws.com";
     std::string target = "?max-keys=2&prefix=J";
     std::string sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca4959"
                          "91b7852b855"; // empty hash
 
     auto tp = parse_time("20130524T000000Z");
-    s3::signature_v4 sign(region, access_key, secret_key, s3::time_source(tp));
+    cloud_roles::signature_v4 sign(
+      region, access_key, secret_key, cloud_roles::time_source(tp));
 
     http::client::request_header header;
     header.method(boost::beast::http::verb::get);
@@ -167,7 +173,8 @@ SEASTAR_THREAD_TEST_CASE(test_gnutls) {
     std::string date = "20150830";
     std::string region = "us-east-1";
     std::string service = "iam";
-    auto digest = s3::signature_v4::gen_sig_key(ksecret, date, region, service);
+    auto digest = cloud_roles::signature_v4::gen_sig_key(
+      ksecret, date, region, service);
     std::array<uint8_t, 32> result{};
     std::memcpy(result.data(), digest.data(), 32);
     BOOST_REQUIRE_EQUAL(

@@ -26,5 +26,6 @@ v_cc_library(
     v::model
     v::cluster
     v::rphashing
+    v::cloud_roles
 )
 add_subdirectory(tests)

@@ -11,8 +11,8 @@
 #pragma once
 
 #include "bytes/iobuf.h"
-#include "s3/signature.h"
 #include "seastarx.h"
+#include "utils/named_type.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -30,13 +30,17 @@ struct gcp_credentials {
 
 std::ostream& operator<<(std::ostream& os, const gcp_credentials& gc);
 
+using aws_region_name = named_type<ss::sstring, struct s3_aws_region_name>;
+using public_key_str = named_type<ss::sstring, struct s3_public_key_str>;
+using private_key_str = named_type<ss::sstring, struct s3_private_key_str>;
+using timestamp = std::chrono::time_point<std::chrono::system_clock>;
 using s3_session_token = named_type<ss::sstring, struct s3_session_token_str>;
 
 struct aws_credentials {
-    s3::public_key_str access_key_id;
-    s3::private_key_str secret_access_key;
+    public_key_str access_key_id;
+    private_key_str secret_access_key;
     std::optional<s3_session_token> session_token;
-    s3::aws_region_name region;
+    aws_region_name region;
 };
 
 std::ostream& operator<<(std::ostream& os, const aws_credentials& ac);

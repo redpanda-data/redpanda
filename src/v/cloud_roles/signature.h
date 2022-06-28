@@ -10,22 +10,27 @@
 
 #pragma once
 
+#include "cloud_roles/types.h"
 #include "http/client.h"
 #include "outcome.h"
+#include "seastarx.h"
 #include "units.h"
 #include "utils/named_type.h"
 #include "vassert.h"
 
 #include <chrono>
-#include <seastarx.h>
 #include <string_view>
 
-namespace s3 {
+namespace cloud_roles {
 
-using aws_region_name = named_type<ss::sstring, struct s3_aws_region_name>;
-using public_key_str = named_type<ss::sstring, struct s3_public_key_str>;
-using private_key_str = named_type<ss::sstring, struct s3_private_key_str>;
-using timestamp = std::chrono::time_point<std::chrono::system_clock>;
+/// \brief Internal s3 client error code
+enum class s3_client_error_code : int {
+    invalid_uri,
+    invalid_uri_params,
+    not_enough_arguments,
+};
+
+std::error_code make_error_code(s3_client_error_code ec) noexcept;
 
 /// Time source for the signature_v4.
 /// Can be used to get and format current time or to
@@ -124,4 +129,4 @@ time_source::time_source(Fn&& fn, int)
 
 ss::sstring uri_encode(const ss::sstring& input, bool encode_slash);
 
-} // namespace s3
+} // namespace cloud_roles

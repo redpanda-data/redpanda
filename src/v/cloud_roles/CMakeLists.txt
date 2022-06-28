@@ -6,9 +6,11 @@ v_cc_library(
     apply_gcp_credentials.cc
     probe.cc
     types.cc
+    signature.cc
     DEPS
     Seastar::seastar
     v::http
-    v::s3
     v::model
 )
+
+add_subdirectory(tests)

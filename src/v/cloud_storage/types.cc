@@ -82,8 +82,8 @@ ss::future<configuration> configuration::get_config() {
     auto cloud_credentials_source
       = config::shard_local_cfg().cloud_storage_credentials_source.value();
 
-    std::optional<s3::private_key_str> secret_key;
-    std::optional<s3::public_key_str> access_key;
+    std::optional<cloud_roles::private_key_str> secret_key;
+    std::optional<cloud_roles::public_key_str> access_key;
 
     // If the credentials are sourced from config file, the keys must be present
     // in the file. If the credentials are sourced from infrastructure APIs, the
@@ -93,15 +93,15 @@ ss::future<configuration> configuration::get_config() {
     if (
       cloud_credentials_source
       == model::cloud_credentials_source::config_file) {
-        secret_key = s3::private_key_str(get_value_or_throw(
+        secret_key = cloud_roles::private_key_str(get_value_or_throw(
           config::shard_local_cfg().cloud_storage_secret_key,
           "cloud_storage_secret_key"));
-        access_key = s3::public_key_str(get_value_or_throw(
+        access_key = cloud_roles::public_key_str(get_value_or_throw(
           config::shard_local_cfg().cloud_storage_access_key,
           "cloud_storage_access_key"));
     }
 
-    auto region = s3::aws_region_name(get_value_or_throw(
+    auto region = cloud_roles::aws_region_name(get_value_or_throw(
       config::shard_local_cfg().cloud_storage_region, "cloud_storage_region"));
     auto disable_metrics = net::metrics_disabled(
       config::shard_local_cfg().disable_metrics());

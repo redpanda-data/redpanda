@@ -10,12 +10,12 @@
 
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
+#include "cloud_roles/signature.h"
 #include "net/dns.h"
 #include "net/types.h"
 #include "net/unresolved_address.h"
 #include "s3/client.h"
 #include "s3/error.h"
-#include "s3/signature.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
@@ -171,9 +171,9 @@ s3::configuration transport_configuration() {
     net::unresolved_address server_addr(httpd_host_name, httpd_port_number);
     s3::configuration conf{
       .uri = s3::access_point_uri(httpd_host_name),
-      .access_key = s3::public_key_str("acess-key"),
-      .secret_key = s3::private_key_str("secret-key"),
-      .region = s3::aws_region_name("us-east-1"),
+      .access_key = cloud_roles::public_key_str("acess-key"),
+      .secret_key = cloud_roles::private_key_str("secret-key"),
+      .region = cloud_roles::aws_region_name("us-east-1"),
     };
     conf.server_addr = server_addr;
     conf._probe = ss::make_shared<s3::client_probe>(
@@ -181,10 +181,20 @@ s3::configuration transport_configuration() {
     return conf;
 }
 
+static ss::lw_shared_ptr<cloud_roles::apply_credentials>
+make_credentials(const s3::configuration& cfg) {
+    return ss::make_lw_shared(
+      cloud_roles::make_credentials_applier(cloud_roles::aws_credentials{
+        cfg.access_key.value(),
+        cfg.secret_key.value(),
+        std::nullopt,
+        cfg.region}));
+}
+
 /// Create server and client, server is initialized with default
 /// testing paths and listening.
 configured_test_pair started_client_and_server(const s3::configuration& conf) {
-    auto client = ss::make_shared<s3::client>(conf);
+    auto client = ss::make_shared<s3::client>(conf, make_credentials(conf));
     auto server = ss::make_shared<ss::httpd::http_server_control>();
     server->start().get();
     server->set_routes(set_routes).get();
