@@ -175,4 +175,31 @@ std::ostream& operator<<(std::ostream& os, const refresh_credentials& rc);
 static constexpr retry_params default_retry_params{
   .backoff_ms = std::chrono::milliseconds{500}, .max_retries = 8};
 
+template<typename CredentialsProvider>
+refresh_credentials make_refresh_credentials(
+  ss::gate& gate,
+  ss::abort_source& as,
+  credentials_update_cb_t creds_update_cb,
+  aws_region_name region,
+  std::optional<net::unresolved_address> endpoint = std::nullopt,
+  retry_params retry_params = default_retry_params) {
+    auto host = endpoint ? endpoint->host() : CredentialsProvider::default_host;
+    auto port = endpoint ? endpoint->port() : CredentialsProvider::default_port;
+    auto impl = std::make_unique<CredentialsProvider>(
+      host.data(), port, region, as, retry_params);
+    return cloud_roles::refresh_credentials{
+      std::move(impl), gate, as, std::move(creds_update_cb), std::move(region)};
+}
+
+/// Builds a refresh_credentials object based on the credentials source set in
+/// configuration.
+refresh_credentials make_refresh_credentials(
+  model::cloud_credentials_source cloud_credentials_source,
+  ss::gate& gate,
+  ss::abort_source& as,
+  credentials_update_cb_t creds_update_cb,
+  aws_region_name region,
+  std::optional<net::unresolved_address> endpoint = std::nullopt,
+  retry_params retry_params = default_retry_params);
+
 } // namespace cloud_roles

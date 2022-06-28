@@ -10,6 +10,7 @@
 
 #include "cloud_roles/refresh_credentials.h"
 
+#include "cloud_roles/aws_refresh_impl.h"
 #include "cloud_roles/logger.h"
 #include "config/node_config.h"
 #include "model/metadata.h"
@@ -216,6 +217,42 @@ http::client cloud_roles::refresh_credentials::impl::make_api_client() const {
         .disable_metrics = net::metrics_disabled::yes,
         .tls_sni_hostname = std::nullopt},
       _as};
+}
+
+cloud_roles::refresh_credentials cloud_roles::make_refresh_credentials(
+  model::cloud_credentials_source cloud_credentials_source,
+  ss::gate& gate,
+  ss::abort_source& as,
+  credentials_update_cb_t creds_update_cb,
+  aws_region_name region,
+  std::optional<net::unresolved_address> endpoint,
+  retry_params retry_params) {
+    switch (cloud_credentials_source) {
+    case model::cloud_credentials_source::config_file:
+        vlog(
+          clrl_log.error,
+          "invalid request to create refresh_credentials for static "
+          "credentials");
+        throw std::invalid_argument(fmt_with_ctx(
+          fmt::format, "cannot generate refresh with static credentials"));
+    case model::cloud_credentials_source::aws_instance_metadata:
+        return make_refresh_credentials<aws_refresh_impl>(
+          gate,
+          as,
+          std::move(creds_update_cb),
+          std::move(region),
+          std::move(endpoint),
+          retry_params);
+    default:
+        vlog(
+          clrl_log.error,
+          "unsupported source type {}",
+          cloud_credentials_source);
+        throw std::invalid_argument(fmt_with_ctx(
+          fmt::format,
+          "cannot generate implementation for {}",
+          cloud_credentials_source));
+    }
 }
 
 std::ostream& cloud_roles::operator<<(
