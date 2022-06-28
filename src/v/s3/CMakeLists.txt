@@ -9,6 +9,7 @@ v_cc_library(
   DEPS
     Seastar::seastar
     v::bytes
+    v::cloud_roles
     v::net
   DEFINES
     -DBOOST_ASIO_HAS_STD_INVOKE_RESULT

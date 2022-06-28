@@ -146,6 +146,16 @@ static ss::sstring time_to_string(std::chrono::system_clock::time_point tp) {
     return s.str();
 }
 
+static ss::lw_shared_ptr<cloud_roles::apply_credentials>
+make_credentials(const s3::configuration& cfg) {
+    return ss::make_lw_shared(
+      cloud_roles::make_credentials_applier(cloud_roles::aws_credentials{
+        cfg.access_key.value(),
+        cfg.secret_key.value(),
+        std::nullopt,
+        cfg.region}));
+}
+
 static ss::output_stream<char>
 get_output_file_as_stream(const std::filesystem::path& path) {
     auto file = ss::open_file_dma(
@@ -167,7 +177,8 @@ int main(int args, char** argv, char** env) {
             s3::configuration s3_cfg = lcfg.client_cfg;
             vlog(test_log.info, "config:{}", lcfg);
             vlog(test_log.info, "constructing client");
-            client.start(s3_cfg).get();
+            auto credentials_applier = make_credentials(s3_cfg);
+            client.start(s3_cfg, credentials_applier).get();
             vlog(test_log.info, "connecting");
             client
               .invoke_on(

@@ -181,10 +181,20 @@ s3::configuration transport_configuration() {
     return conf;
 }
 
+static ss::lw_shared_ptr<cloud_roles::apply_credentials>
+make_credentials(const s3::configuration& cfg) {
+    return ss::make_lw_shared(
+      cloud_roles::make_credentials_applier(cloud_roles::aws_credentials{
+        cfg.access_key.value(),
+        cfg.secret_key.value(),
+        std::nullopt,
+        cfg.region}));
+}
+
 /// Create server and client, server is initialized with default
 /// testing paths and listening.
 configured_test_pair started_client_and_server(const s3::configuration& conf) {
-    auto client = ss::make_shared<s3::client>(conf);
+    auto client = ss::make_shared<s3::client>(conf, make_credentials(conf));
     auto server = ss::make_shared<ss::httpd::http_server_control>();
     server->start().get();
     server->set_routes(set_routes).get();
