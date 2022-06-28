@@ -12,6 +12,12 @@
 
 namespace cloud_roles {
 
+std::ostream& operator<<(std::ostream& os, const gcp_credentials& gc) {
+    fmt::print(
+      os, "gcp_credentials{{oauth_token:**{}**}}", gc.oauth_token().size());
+    return os;
+}
+
 std::ostream& operator<<(std::ostream& os, const aws_credentials& ac) {
     fmt::print(
       os,

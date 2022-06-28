@@ -3,6 +3,7 @@ v_cc_library(
     SRCS
     apply_aws_credentials.cc
     apply_credentials.cc
+    apply_gcp_credentials.cc
     probe.cc
     types.cc
     DEPS

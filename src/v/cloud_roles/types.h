@@ -22,6 +22,14 @@
 
 namespace cloud_roles {
 
+using oauth_token_str = named_type<ss::sstring, struct oauth_token_str_tag>;
+
+struct gcp_credentials {
+    oauth_token_str oauth_token;
+};
+
+std::ostream& operator<<(std::ostream& os, const gcp_credentials& gc);
+
 using s3_session_token = named_type<ss::sstring, struct s3_session_token_str>;
 
 struct aws_credentials {
@@ -33,7 +41,7 @@ struct aws_credentials {
 
 std::ostream& operator<<(std::ostream& os, const aws_credentials& ac);
 
-using credentials = std::variant<aws_credentials>;
+using credentials = std::variant<aws_credentials, gcp_credentials>;
 
 std::ostream& operator<<(std::ostream& os, const credentials& c);
 
