@@ -1233,6 +1233,95 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         cluster::configuration_update_reply data{tests::random_bool()};
         roundtrip_test(data);
     }
+    {
+        cluster::feature_barrier_request data{
+          .tag = tests::random_named_string<cluster::feature_barrier_tag>(),
+          .peer = model::node_id(random_generators::get_int(100)),
+          .entered = tests::random_bool(),
+        };
+        roundtrip_test(data);
+    }
+    {
+        cluster::feature_barrier_response data{
+          .entered = tests::random_bool(),
+          .complete = tests::random_bool(),
+        };
+        roundtrip_test(data);
+    }
+    {
+        cluster::set_maintenance_mode_request data{
+          .id = model::node_id(random_generators::get_int(100)),
+          .enabled = tests::random_bool(),
+        };
+        roundtrip_test(data);
+    }
+    {
+        cluster::set_maintenance_mode_reply data{
+          .error = cluster::errc::join_request_dispatch_error,
+        };
+        roundtrip_test(data);
+    }
+    {
+        std::vector<cluster::cluster_property_kv> upsert;
+        for (int i = 0; i < random_generators::get_int(10); i++) {
+            upsert.emplace_back(
+              random_generators::gen_alphanum_string(
+                random_generators::get_int(100)),
+              random_generators::gen_alphanum_string(
+                random_generators::get_int(100)));
+        }
+        std::vector<ss::sstring> remove;
+        for (int i = 0; i < random_generators::get_int(10); i++) {
+            remove.push_back(random_generators::gen_alphanum_string(
+              random_generators::get_int(100)));
+        }
+        cluster::config_update_request data{
+          .upsert = upsert,
+          .remove = remove,
+        };
+        roundtrip_test(data);
+    }
+    {
+        cluster::config_update_reply data{
+          .error = cluster::errc::allocation_error,
+          .latest_version = tests::random_named_int<cluster::config_version>(),
+        };
+        roundtrip_test(data);
+    }
+    {
+        cluster::hello_request data{
+          .peer = model::node_id(random_generators::get_int(100)),
+          .start_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+            random_timeout_clock_duration()),
+        };
+        roundtrip_test(data);
+    };
+    {
+        cluster::hello_reply data{
+          .error = cluster::errc::allocation_error,
+        };
+        roundtrip_test(data);
+    }
+    {
+        cluster::config_status status;
+        status.node = tests::random_named_int<model::node_id>();
+        status.restart = tests::random_bool();
+        status.version = tests::random_named_int<cluster::config_version>();
+        status.invalid = random_strings();
+        status.unknown = random_strings();
+
+        cluster::config_status_request data{
+          .status = status,
+        };
+
+        roundtrip_test(data);
+    }
+    {
+        cluster::config_status_reply data{
+          .error = cluster::errc::allocation_error,
+        };
+        roundtrip_test(data);
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {

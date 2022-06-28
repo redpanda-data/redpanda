@@ -1601,23 +1601,51 @@ struct finish_reallocation_reply {
     errc error;
 };
 
-struct set_maintenance_mode_request {
+struct set_maintenance_mode_request
+  : serde::envelope<set_maintenance_mode_request, serde::version<0>> {
     static constexpr int8_t current_version = 1;
     model::node_id id;
     bool enabled;
+
+    friend bool operator==(
+      const set_maintenance_mode_request&, const set_maintenance_mode_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(id, enabled); }
 };
 
-struct set_maintenance_mode_reply {
+struct set_maintenance_mode_reply
+  : serde::envelope<set_maintenance_mode_reply, serde::version<0>> {
     static constexpr int8_t current_version = 1;
     errc error;
+
+    friend bool operator==(
+      const set_maintenance_mode_reply&, const set_maintenance_mode_reply&)
+      = default;
+
+    auto serde_fields() { return std::tie(error); }
 };
 
-struct config_status_request {
+struct config_status_request
+  : serde::envelope<config_status_request, serde::version<0>> {
     config_status status;
+
+    friend bool
+    operator==(const config_status_request&, const config_status_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(status); }
 };
 
-struct config_status_reply {
+struct config_status_reply
+  : serde::envelope<config_status_reply, serde::version<0>> {
     errc error;
+
+    friend bool
+    operator==(const config_status_reply&, const config_status_reply&)
+      = default;
+
+    auto serde_fields() { return std::tie(error); }
 };
 
 struct feature_action_request {
@@ -1631,17 +1659,31 @@ struct feature_action_response {
 using feature_barrier_tag
   = named_type<ss::sstring, struct feature_barrier_tag_type>;
 
-struct feature_barrier_request {
+struct feature_barrier_request
+  : serde::envelope<feature_barrier_request, serde::version<0>> {
     static constexpr int8_t current_version = 1;
     feature_barrier_tag tag; // Each cooperative barrier must use a unique tag
     model::node_id peer;
     bool entered; // Has the requester entered?
+
+    friend bool
+    operator==(const feature_barrier_request&, const feature_barrier_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(tag, peer, entered); }
 };
 
-struct feature_barrier_response {
+struct feature_barrier_response
+  : serde::envelope<feature_barrier_response, serde::version<0>> {
     static constexpr int8_t current_version = 1;
     bool entered;  // Has the respondent entered?
     bool complete; // Has the respondent exited?
+
+    friend bool
+    operator==(const feature_barrier_response&, const feature_barrier_response&)
+      = default;
+
+    auto serde_fields() { return std::tie(entered, complete); }
 };
 
 struct create_non_replicable_topics_request {
@@ -1655,25 +1697,48 @@ struct create_non_replicable_topics_reply {
     std::vector<topic_result> results;
 };
 
-struct config_update_request final {
+struct config_update_request final
+  : serde::envelope<config_update_request, serde::version<0>> {
     std::vector<cluster_property_kv> upsert;
     std::vector<ss::sstring> remove;
+
+    friend bool
+    operator==(const config_update_request&, const config_update_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(upsert, remove); }
 };
 
-struct config_update_reply {
+struct config_update_reply
+  : serde::envelope<config_update_reply, serde::version<0>> {
     errc error;
     cluster::config_version latest_version{config_version_unset};
+
+    friend bool
+    operator==(const config_update_reply&, const config_update_reply&)
+      = default;
+
+    auto serde_fields() { return std::tie(error, latest_version); }
 };
 
-struct hello_request final {
+struct hello_request final : serde::envelope<hello_request, serde::version<0>> {
     model::node_id peer;
 
     // milliseconds since epoch
     std::chrono::milliseconds start_time;
+
+    friend bool operator==(const hello_request&, const hello_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(peer, start_time); }
 };
 
-struct hello_reply {
+struct hello_reply : serde::envelope<hello_reply, serde::version<0>> {
     errc error;
+
+    friend bool operator==(const hello_reply&, const hello_reply&) = default;
+
+    auto serde_fields() { return std::tie(error); }
 };
 
 struct leader_term {
@@ -2296,6 +2361,73 @@ struct adl<cluster::init_tm_tx_reply> {
         auto pid = adl<model::producer_identity>{}.from(in);
         auto ec = adl<cluster::tx_errc>{}.from(in);
         return {pid, ec};
+    }
+};
+
+template<>
+struct adl<cluster::config_update_request> {
+    void to(iobuf& out, cluster::config_update_request&& r) {
+        serialize(out, r.upsert, r.remove);
+    }
+    cluster::config_update_request from(iobuf_parser& in) {
+        auto upsert = adl<std::vector<cluster::cluster_property_kv>>{}.from(in);
+        auto remove = adl<std::vector<ss::sstring>>{}.from(in);
+        return {.upsert = upsert, .remove = remove};
+    }
+};
+
+template<>
+struct adl<cluster::config_update_reply> {
+    void to(iobuf& out, cluster::config_update_reply&& r) {
+        serialize(out, r.error, r.latest_version);
+    }
+    cluster::config_update_reply from(iobuf_parser& in) {
+        auto error = adl<cluster::errc>{}.from(in);
+        auto latest_version = adl<cluster::config_version>{}.from(in);
+        return {.error = error, .latest_version = latest_version};
+    }
+};
+
+template<>
+struct adl<cluster::hello_request> {
+    void to(iobuf& out, cluster::hello_request&& r) {
+        serialize(out, r.peer, r.start_time);
+    }
+    cluster::hello_request from(iobuf_parser& in) {
+        auto peer = adl<model::node_id>{}.from(in);
+        auto start_time = adl<std::chrono::milliseconds>{}.from(in);
+        return {.peer = peer, .start_time = start_time};
+    }
+};
+
+template<>
+struct adl<cluster::hello_reply> {
+    void to(iobuf& out, cluster::hello_reply&& r) { serialize(out, r.error); }
+    cluster::hello_reply from(iobuf_parser& in) {
+        auto error = adl<cluster::errc>{}.from(in);
+        return {.error = error};
+    }
+};
+
+template<>
+struct adl<cluster::config_status_request> {
+    void to(iobuf& out, cluster::config_status_request&& r) {
+        serialize(out, r.status);
+    }
+    cluster::config_status_request from(iobuf_parser& in) {
+        auto status = adl<cluster::config_status>{}.from(in);
+        return {.status = status};
+    }
+};
+
+template<>
+struct adl<cluster::config_status_reply> {
+    void to(iobuf& out, cluster::config_status_reply&& r) {
+        serialize(out, r.error);
+    }
+    cluster::config_status_reply from(iobuf_parser& in) {
+        auto error = adl<cluster::errc>{}.from(in);
+        return {.error = error};
     }
 };
 } // namespace reflection
