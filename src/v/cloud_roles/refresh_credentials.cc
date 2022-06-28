@@ -12,6 +12,7 @@
 
 #include "cloud_roles/aws_refresh_impl.h"
 #include "cloud_roles/aws_sts_refresh_impl.h"
+#include "cloud_roles/gcp_refresh_impl.h"
 #include "cloud_roles/logger.h"
 #include "config/node_config.h"
 #include "model/metadata.h"
@@ -263,6 +264,14 @@ cloud_roles::refresh_credentials cloud_roles::make_refresh_credentials(
           retry_params);
     case model::cloud_credentials_source::sts:
         return make_refresh_credentials<aws_sts_refresh_impl>(
+          gate,
+          as,
+          std::move(creds_update_cb),
+          std::move(region),
+          std::move(endpoint),
+          retry_params);
+    case model::cloud_credentials_source::gcp_instance_metadata:
+        return make_refresh_credentials<gcp_refresh_impl>(
           gate,
           as,
           std::move(creds_update_cb),
