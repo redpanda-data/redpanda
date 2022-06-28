@@ -19,7 +19,6 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/spf13/afero"
@@ -336,14 +335,9 @@ func (c *Config) Write(fs afero.Fs) (rerr error) {
 			return fmt.Errorf("unable to chmod temp config file: %v", err)
 		}
 
-		// Stat_t is only valid in unix not on Windows.
-		if stat, ok := stat.Sys().(*syscall.Stat_t); ok {
-			gid := int(stat.Gid)
-			uid := int(stat.Uid)
-			err = fs.Chown(temp, uid, gid)
-			if err != nil {
-				return fmt.Errorf("unable to chown temp config file: %v", err)
-			}
+		err = preserveUnixOwnership(fs, stat, temp)
+		if err != nil {
+			return err
 		}
 	}
 
