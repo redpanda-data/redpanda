@@ -12,6 +12,7 @@
 
 #include "cloud_roles/aws_refresh_impl.h"
 #include "cloud_roles/aws_sts_refresh_impl.h"
+#include "cloud_roles/gcp_refresh_impl.h"
 #include "cloud_roles/logger.h"
 #include "config/node_config.h"
 #include "model/metadata.h"
@@ -252,15 +253,14 @@ cloud_roles::refresh_credentials cloud_roles::make_refresh_credentials(
           std::move(region),
           std::move(endpoint),
           retry_params);
-    default:
-        vlog(
-          clrl_log.error,
-          "unsupported source type {}",
-          cloud_credentials_source);
-        throw std::invalid_argument(fmt_with_ctx(
-          fmt::format,
-          "cannot generate implementation for {}",
-          cloud_credentials_source));
+    case model::cloud_credentials_source::gcp_instance_metadata:
+        return make_refresh_credentials<gcp_refresh_impl>(
+          gate,
+          as,
+          std::move(creds_update_cb),
+          std::move(region),
+          std::move(endpoint),
+          retry_params);
     }
 }
 
