@@ -118,7 +118,7 @@ void members_backend::handle_single_update(
     vlog(clusterlog.debug, "membership update received: {}", update);
     switch (update.type) {
     case update_t::recommissioned:
-        // if node was recommissioned simply remove all decomissioning
+        // if node was recommissioned simply remove all decommissioning
         // updates
         handle_recommissioned(update);
         return;
@@ -163,7 +163,7 @@ bool is_in_replica_set(
 void members_backend::calculate_reallocations(update_meta& meta) {
     switch (meta.update.type) {
     case members_manager::node_update_type::decommissioned:
-        // reallocate all partitons for which any of replicas is placed on
+        // reallocate all partitions for which any of replicas is placed on
         // decommissioned node
         for (const auto& [tp_ns, cfg] : _topics.local().topics_map()) {
             if (!cfg.is_topic_replicable()) {
@@ -189,7 +189,7 @@ void members_backend::calculate_reallocations(update_meta& meta) {
     }
 }
 /**
- * Simple helper class represeting how many replicas have to be moved from the
+ * Simple helper class representing how many replicas have to be moved from the
  * node.
  */
 struct replicas_to_move {
@@ -262,7 +262,7 @@ void members_backend::calculate_reallocations_after_node_added(
     };
 
     // 4. Pass over all partition metadata once, try to move until we reach even
-    // number of partitons per core on each node
+    // number of partitions per core on each node
     for (auto& [tp_ns, metadata] : topics) {
         // do not try to move internal partitions
         if (
@@ -539,7 +539,7 @@ ss::future<> members_backend::reallocate_replica_set(
 
         reassign_replicas(*current_assignment, meta);
         if (meta.new_replica_set.empty()) {
-            // if partiton allocator failed to reassign partitions return
+            // if partition allocator failed to reassign partitions return
             // and wait for next retry
             co_return;
         }
