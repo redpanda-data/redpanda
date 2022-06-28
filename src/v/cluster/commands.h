@@ -69,6 +69,7 @@ static constexpr int8_t finish_moving_partition_replicas_cmd_type = 3;
 static constexpr int8_t update_topic_properties_cmd_type = 4;
 static constexpr int8_t create_partition_cmd_type = 5;
 static constexpr int8_t create_non_replicable_topic_cmd_type = 6;
+static constexpr int8_t cancel_moving_partition_replicas_cmd_type = 7;
 
 static constexpr int8_t create_user_cmd_type = 5;
 static constexpr int8_t delete_user_cmd_type = 6;
@@ -133,6 +134,12 @@ using create_non_replicable_topic_cmd = controller_command<
   non_replicable_topic,
   int8_t, // unused
   create_non_replicable_topic_cmd_type,
+  model::record_batch_type::topic_management_cmd>;
+
+using cancel_moving_partition_replicas_cmd = controller_command<
+  model::ntp,
+  cancel_moving_partition_replicas_cmd_data,
+  cancel_moving_partition_replicas_cmd_type,
   model::record_batch_type::topic_management_cmd>;
 
 using create_user_cmd = controller_command<
