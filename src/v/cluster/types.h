@@ -2616,4 +2616,21 @@ struct adl<cluster::reconciliation_state_request> {
         return {.ntps = std::move(ntps)};
     }
 };
+
+template<>
+struct adl<cluster::backend_operation> {
+    void to(iobuf& out, cluster::backend_operation&& r) {
+        serialize(out, r.source_shard, r.p_as, r.type);
+    }
+    cluster::backend_operation from(iobuf_parser& in) {
+        auto source_shard = adl<ss::shard_id>{}.from(in);
+        auto p_as = adl<cluster::partition_assignment>{}.from(in);
+        auto type = adl<cluster::topic_table_delta::op_type>{}.from(in);
+        return {
+          .source_shard = source_shard,
+          .p_as = std::move(p_as),
+          .type = type,
+        };
+    }
+};
 } // namespace reflection
