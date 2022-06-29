@@ -1317,8 +1317,16 @@ struct finish_partition_update_request
     auto serde_fields() { return std::tie(ntp, new_replica_set); }
 };
 
-struct finish_partition_update_reply {
+struct finish_partition_update_reply
+  : serde::envelope<finish_partition_update_reply, serde::version<0>> {
     cluster::errc result;
+
+    friend bool operator==(
+      const finish_partition_update_reply&,
+      const finish_partition_update_reply&)
+      = default;
+
+    auto serde_fields() { return std::tie(result); }
 };
 
 struct update_topic_properties_request {
