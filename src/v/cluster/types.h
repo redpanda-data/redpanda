@@ -2579,4 +2579,15 @@ struct adl<cluster::update_topic_properties_request> {
         return {.updates = std::move(updates)};
     }
 };
+
+template<>
+struct adl<cluster::update_topic_properties_reply> {
+    void to(iobuf& out, cluster::update_topic_properties_reply&& r) {
+        serialize(out, r.results);
+    }
+    cluster::update_topic_properties_reply from(iobuf_parser& in) {
+        auto results = adl<std::vector<cluster::topic_result>>{}.from(in);
+        return {.results = std::move(results)};
+    }
+};
 } // namespace reflection
