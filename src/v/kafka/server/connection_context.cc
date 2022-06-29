@@ -367,7 +367,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                                               response_ptr r) mutable {
                                   r->set_correlation(correlation);
                                   _responses.insert({seq, std::move(r)});
-                                  return process_next_response();
+                                  return maybe_process_responses();
                               });
                           })
                           .handle_exception([self](std::exception_ptr e) {
@@ -410,7 +410,20 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
     });
 }
 
-ss::future<> connection_context::process_next_response() {
+/**
+ * This method processes as many responses as possible, in request order. Since
+ * we proces the second stage asynchronously within a given connection, reponses
+ * may become ready out of order, but Kafka clients expect responses exactly in
+ * request order.
+ *
+ * The _responses queue handles that: responses are enqueued there in completion
+ * order, but only sent to the client in response order. So this method, called
+ * after every response is ready, may end up sending zero, one or more requests,
+ * depending on the completion order.
+ *
+ * @return ss::future<>
+ */
+ss::future<> connection_context::maybe_process_responses() {
     return ss::repeat([this]() mutable {
         auto it = _responses.find(_next_response);
         if (it == _responses.end()) {
