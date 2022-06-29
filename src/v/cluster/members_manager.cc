@@ -522,8 +522,7 @@ members_manager::handle_join_request(join_node_request const req) {
                   if (r) {
                       auto success = r.value().success;
                       return ret_t(join_node_reply{
-                        .success = success,
-                        .id = success ? node_id : model::node_id{-1}});
+                        success, success ? node_id : model::node_id{-1}});
                   }
                   return ret_t(r.error());
               });
@@ -536,7 +535,7 @@ members_manager::handle_join_request(join_node_request const req) {
               "node",
               req.node.id(),
               req.node.rpc_address());
-            co_return ret_t(join_node_reply{.success = false});
+            co_return ret_t(join_node_reply{false, model::node_id(-1)});
         }
         if (req.node.id() != _self.id()) {
             co_await update_broker_client(

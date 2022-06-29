@@ -1341,6 +1341,13 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           model::random_broker()};
         roundtrip_test(data);
     }
+    {
+        cluster::join_node_reply data{
+          tests::random_bool(),
+          tests::random_named_int<model::node_id>(),
+        };
+        roundtrip_test(data);
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {

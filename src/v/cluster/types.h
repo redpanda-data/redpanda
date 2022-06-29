@@ -866,9 +866,20 @@ struct join_node_request
     auto serde_fields() { return std::tie(logical_version, node_uuid, node); }
 };
 
-struct join_node_reply {
+struct join_node_reply : serde::envelope<join_node_reply, serde::version<0>> {
     bool success{false};
     model::node_id id{-1};
+
+    join_node_reply() noexcept = default;
+
+    join_node_reply(bool success, model::node_id id)
+      : success(success)
+      , id(id) {}
+
+    friend bool operator==(const join_node_reply&, const join_node_reply&)
+      = default;
+
+    auto serde_fields() { return std::tie(success, id); }
 };
 
 struct configuration_update_request
