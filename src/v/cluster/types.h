@@ -1355,8 +1355,16 @@ struct finish_partition_update_reply
     auto serde_fields() { return std::tie(result); }
 };
 
-struct update_topic_properties_request {
+struct update_topic_properties_request
+  : serde::envelope<update_topic_properties_request, serde::version<0>> {
     std::vector<topic_properties_update> updates;
+
+    friend bool operator==(
+      const update_topic_properties_request&,
+      const update_topic_properties_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(updates); }
 };
 
 struct update_topic_properties_reply {
