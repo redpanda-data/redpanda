@@ -2553,4 +2553,16 @@ struct adl<cluster::finish_partition_update_reply> {
         return {.result = result};
     }
 };
+
+template<>
+struct adl<cluster::update_topic_properties_request> {
+    void to(iobuf& out, cluster::update_topic_properties_request&& r) {
+        serialize(out, r.updates);
+    }
+    cluster::update_topic_properties_request from(iobuf_parser& in) {
+        auto updates
+          = adl<std::vector<cluster::topic_properties_update>>{}.from(in);
+        return {.updates = std::move(updates)};
+    }
+};
 } // namespace reflection
