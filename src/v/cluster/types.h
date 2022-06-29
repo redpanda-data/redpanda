@@ -1136,11 +1136,21 @@ struct incremental_topic_custom_updates
 /**
  * Struct representing single topic properties update
  */
-struct topic_properties_update {
+struct topic_properties_update
+  : serde::envelope<topic_properties_update, serde::version<0>> {
     // We need version to indetify request with custom_properties
     static constexpr int32_t version = -1;
+    topic_properties_update() noexcept = default;
     explicit topic_properties_update(model::topic_namespace tp_ns)
       : tp_ns(std::move(tp_ns)) {}
+
+    topic_properties_update(
+      model::topic_namespace tp_ns,
+      incremental_topic_updates properties,
+      incremental_topic_custom_updates custom_properties)
+      : tp_ns(std::move(tp_ns))
+      , properties(properties)
+      , custom_properties(std::move(custom_properties)) {}
 
     model::topic_namespace tp_ns;
 
@@ -1151,6 +1161,14 @@ struct topic_properties_update {
     // This properties is not serialized to update_topic_properties_cmd, because
     // they have custom services for replication.
     incremental_topic_custom_updates custom_properties;
+
+    friend bool
+    operator==(const topic_properties_update&, const topic_properties_update&)
+      = default;
+
+    auto serde_fields() {
+        return std::tie(tp_ns, properties, custom_properties);
+    }
 };
 
 // Structure holding topic configuration, optionals will be replaced by broker
