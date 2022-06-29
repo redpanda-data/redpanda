@@ -10,25 +10,18 @@
 package config
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
-	vyaml "github.com/redpanda-data/redpanda/src/go/rpk/pkg/yaml"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v2"
 )
 
 func getValidConfig() *Config {
 	conf := Default()
 	conf.Redpanda.SeedServers = []SeedServer{
-		{
-			SocketAddress{"127.0.0.1", 33145},
-		},
-		{
-			SocketAddress{"127.0.0.1", 33146},
-		},
+		{SocketAddress{"127.0.0.1", 33145}},
+		{SocketAddress{"127.0.0.1", 33146}},
 	}
 	conf.Redpanda.DeveloperMode = false
 	conf.Rpk = RpkConfig{
@@ -59,94 +52,129 @@ func TestSet(t *testing.T) {
 		key       string
 		value     string
 		format    string
-		check     func(st *testing.T, c *Config, mgr *manager)
+		check     func(st *testing.T, c *Config)
 		expectErr bool
 	}{
 		{
-			name:   "it should parse '1' as an int and not as bool (true)",
-			key:    "redpanda.node_id",
-			value:  "1",
-			format: "single",
-			check: func(st *testing.T, c *Config, _ *manager) {
+			name:  "parse '1' as an int and not as bool (true)",
+			key:   "redpanda.node_id",
+			value: "1",
+			check: func(st *testing.T, c *Config) {
 				require.Exactly(st, 1, c.Redpanda.ID)
 			},
 		},
 		{
-			name:   "it should set single integer fields",
-			key:    "redpanda.node_id",
-			value:  "54312",
-			format: "single",
-			check: func(st *testing.T, c *Config, _ *manager) {
-				require.Exactly(st, 54312, c.Redpanda.ID)
-			},
-		},
-		{
-			name:  "it should detect single integer fields if format isn't passed",
+			name:  "set single integer fields",
 			key:   "redpanda.node_id",
 			value: "54312",
-			check: func(st *testing.T, c *Config, _ *manager) {
+			check: func(st *testing.T, c *Config) {
 				require.Exactly(st, 54312, c.Redpanda.ID)
 			},
 		},
 		{
-			name:   "it should set single float fields",
-			key:    "redpanda.float_field",
-			value:  "42.3",
-			format: "single",
-			check: func(st *testing.T, _ *Config, mgr *manager) {
-				// require.True(st, ok, "Config map is of the wrong type")
-				require.Exactly(st, 42.3, mgr.v.Get("redpanda.float_field"))
+			name:  "detect single integer fields if format isn't passed",
+			key:   "redpanda.node_id",
+			value: "54312",
+			check: func(st *testing.T, c *Config) {
+				require.Exactly(st, 54312, c.Redpanda.ID)
 			},
 		},
 		{
-			name:  "it should detect single float fields if format isn't passed",
+			name:  "set single float fields",
 			key:   "redpanda.float_field",
 			value: "42.3",
-			check: func(st *testing.T, _ *Config, mgr *manager) {
-				// require.True(st, ok, "Config map is of the wrong type")
-				require.Exactly(st, 42.3, mgr.v.Get("redpanda.float_field"))
+			check: func(st *testing.T, cfg *Config) {
+				require.Exactly(st, 42.3, cfg.Redpanda.Other["float_field"])
 			},
 		},
 		{
-			name:   "it should set single string fields",
-			key:    "redpanda.data_directory",
-			value:  "'/var/lib/differentdir'",
-			format: "single",
-			check: func(st *testing.T, c *Config, _ *manager) {
-				require.Exactly(st, "'/var/lib/differentdir'", c.Redpanda.Directory)
+			name:  "detect single float fields if format isn't passed",
+			key:   "redpanda.float_field",
+			value: "42.3",
+			check: func(st *testing.T, cfg *Config) {
+				require.Exactly(st, 42.3, cfg.Redpanda.Other["float_field"])
 			},
 		},
 		{
-			name:  "it should detect single string fields if format isn't passed",
+			name:  "set single string fields",
 			key:   "redpanda.data_directory",
 			value: "/var/lib/differentdir",
-			check: func(st *testing.T, c *Config, _ *manager) {
+			check: func(st *testing.T, c *Config) {
 				require.Exactly(st, "/var/lib/differentdir", c.Redpanda.Directory)
 			},
 		},
 		{
-			name:   "it should set single bool fields",
-			key:    "rpk.enable_usage_stats",
-			value:  "true",
-			format: "single",
-			check: func(st *testing.T, c *Config, _ *manager) {
-				require.Exactly(st, true, c.Rpk.EnableUsageStats)
+			name:  "detect single string fields if format isn't passed",
+			key:   "redpanda.data_directory",
+			value: "/var/lib/differentdir",
+			check: func(st *testing.T, c *Config) {
+				require.Exactly(st, "/var/lib/differentdir", c.Redpanda.Directory)
 			},
 		},
 		{
-			name:  "it should detect single bool fields if format isn't passed",
+			name:  "set single bool fields",
 			key:   "rpk.enable_usage_stats",
 			value: "true",
-			check: func(st *testing.T, c *Config, _ *manager) {
+			check: func(st *testing.T, c *Config) {
 				require.Exactly(st, true, c.Rpk.EnableUsageStats)
 			},
 		},
 		{
-			name:   "it should partially set map fields (yaml)",
-			key:    "rpk",
-			value:  `tune_disk_irq: true`,
+			name:   "set single bool fields in Other fields (json)",
+			key:    "redpanda.enable_metrics_test",
+			value:  "true",
+			format: "json",
+			check: func(st *testing.T, c *Config) {
+				require.Exactly(st, true, c.Redpanda.Other["enable_metrics_test"])
+			},
+		},
+		{
+			name:   "set single number in Other fields (json)",
+			key:    "redpanda.timeout_test",
+			value:  "123991",
+			format: "json",
+			check: func(st *testing.T, c *Config) {
+				// json.unmarshal stores numbers as float 64.
+				// see https://pkg.go.dev/encoding/json#Unmarshal
+				require.Exactly(st, float64(123991), c.Redpanda.Other["timeout_test"])
+			},
+		},
+		{
+			name:   "set single strings in Other fields (json)",
+			key:    "redpanda.test_name",
+			value:  `"my_name"`,
+			format: "json",
+			check: func(st *testing.T, c *Config) {
+				require.Exactly(st, "my_name", c.Redpanda.Other["test_name"])
+			},
+		},
+		{
+			name:   "set objects in Other fields (json)",
+			key:    "redpanda.my_object",
+			value:  `{"name":"test","enabled":true}`,
+			format: "json",
+			check: func(st *testing.T, c *Config) {
+				require.Exactly(st, map[string]interface{}{
+					"name":    "test",
+					"enabled": true,
+				}, c.Redpanda.Other["my_object"])
+			},
+		},
+		{
+			name:  "detect single bool fields if format isn't passed",
+			key:   "rpk.enable_usage_stats",
+			value: "true",
+			check: func(st *testing.T, c *Config) {
+				require.Exactly(st, true, c.Rpk.EnableUsageStats)
+			},
+		},
+		{
+			name: "partially set map fields (yaml)",
+			key:  "rpk",
+			value: `tune_disk_irq: true
+tune_cpu: true`,
 			format: "yaml",
-			check: func(st *testing.T, c *Config, _ *manager) {
+			check: func(st *testing.T, c *Config) {
 				expected := RpkConfig{
 					EnableUsageStats:         false,
 					Overprovisioned:          false,
@@ -154,7 +182,7 @@ func TestSet(t *testing.T) {
 					TuneDiskScheduler:        false,
 					TuneNomerges:             false,
 					TuneDiskIrq:              true,
-					TuneCPU:                  false,
+					TuneCPU:                  true,
 					TuneAioEvents:            false,
 					TuneClocksource:          false,
 					TuneSwappiness:           false,
@@ -163,21 +191,20 @@ func TestSet(t *testing.T) {
 					TuneFstrim:               false,
 					TuneCoredump:             false,
 					TuneDiskWriteCache:       false,
-					CoredumpDir:              "/var/lib/redpanda/coredump",
 				}
 				require.Exactly(st, expected, c.Rpk)
 			},
 		},
 		{
-			name:  "it should detect pandaproxy client single field if format isn't passed",
+			name:  "detect pandaproxy client single field if format isn't passed",
 			key:   "pandaproxy_client.retries",
 			value: "42",
-			check: func(st *testing.T, c *Config, mgr *manager) {
-				require.Exactly(st, 42.0, c.PandaproxyClient.Other["retries"])
+			check: func(st *testing.T, c *Config) {
+				require.Exactly(st, 42, c.PandaproxyClient.Other["retries"])
 			},
 		},
 		{
-			name: "it should detect yaml-formatted values if format isn't passed",
+			name: "detect yaml-formatted values if format isn't passed",
 			key:  "redpanda.kafka_api",
 			value: `- name: external
   address: 192.168.73.45
@@ -186,7 +213,7 @@ func TestSet(t *testing.T) {
   address: 10.21.34.58
   port: 9092
 `,
-			check: func(st *testing.T, c *Config, _ *manager) {
+			check: func(st *testing.T, c *Config) {
 				expected := []NamedSocketAddress{{
 					Name:    "external",
 					Address: "192.168.73.45",
@@ -200,14 +227,14 @@ func TestSet(t *testing.T) {
 			},
 		},
 		{
-			name: "it should partially set map fields (json)",
+			name: "partially set map fields (json)",
 			key:  "redpanda.kafka_api",
 			value: `[{
 		  "address": "192.168.54.2",
 		  "port": 9092
 		}]`,
 			format: "json",
-			check: func(st *testing.T, c *Config, _ *manager) {
+			check: func(st *testing.T, c *Config) {
 				expected := []NamedSocketAddress{{
 					Port:    9092,
 					Address: "192.168.54.2",
@@ -216,13 +243,13 @@ func TestSet(t *testing.T) {
 			},
 		},
 		{
-			name: "it should detect json-formatted values if format isn't passed",
+			name: "detect json-formatted values if format isn't passed",
 			key:  "redpanda.advertised_kafka_api",
 			value: `[{
 		  "address": "192.168.54.2",
 		  "port": 9092
 		}]`,
-			check: func(st *testing.T, c *Config, _ *manager) {
+			check: func(st *testing.T, c *Config) {
 				expected := []NamedSocketAddress{{
 					Port:    9092,
 					Address: "192.168.54.2",
@@ -231,14 +258,41 @@ func TestSet(t *testing.T) {
 			},
 		},
 		{
-			name:      "it should fail if the value isn't well formatted (json)",
+			name:  "set value of a slice",
+			key:   "redpanda.admin.port",
+			value: "9641",
+			check: func(st *testing.T, c *Config) {
+				require.Exactly(st, 9641, c.Redpanda.AdminAPI[0].Port)
+			},
+		},
+		{
+			name:   "set slice single values",
+			key:    "redpanda.seed_servers.host.address",
+			value:  "foo",
+			format: "yaml",
+			check: func(st *testing.T, c *Config) {
+				require.Exactly(st, "foo", c.Redpanda.SeedServers[0].Host.Address)
+			},
+		},
+		{
+			name:   "set slice object",
+			key:    "redpanda.seed_servers.host",
+			value:  `{address: 0.0.0.0, port: 80}`,
+			format: "yaml",
+			check: func(st *testing.T, c *Config) {
+				require.Exactly(st, "0.0.0.0", c.Redpanda.SeedServers[0].Host.Address)
+				require.Exactly(st, 80, c.Redpanda.SeedServers[0].Host.Port)
+			},
+		},
+		{
+			name:      "fail if the value isn't well formatted (json)",
 			key:       "redpanda",
 			value:     `{"seed_servers": []`,
 			format:    "json",
 			expectErr: true,
 		},
 		{
-			name: "it should fail if the value isn't well formatted (yaml)",
+			name: "fail if the value isn't well formatted (yaml)",
 			key:  "redpanda",
 			value: `seed_servers:
 		- host:
@@ -247,15 +301,21 @@ func TestSet(t *testing.T) {
 			expectErr: true,
 		},
 		{
-			name:      "it should fail if the format isn't supported",
+			name:      "fail if the format isn't supported",
 			key:       "redpanda",
 			value:     "node_id=1",
 			format:    "toml",
 			expectErr: true,
 		},
 		{
-			name:      "it should fail if no key is passed",
+			name:      "fail if no key is passed",
 			value:     `node_id=1`,
+			expectErr: true,
+		},
+		{
+			name:      "fail if deep unrecognized value is passed",
+			key:       "redpanda.unrecognized.name",
+			value:     "foo",
 			expectErr: true,
 		},
 	}
@@ -263,80 +323,16 @@ func TestSet(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fs := afero.NewMemMapFs()
-			mgr := NewManager(fs)
-			err := mgr.Set(tt.key, tt.value, tt.format)
+			cfg, err := new(Params).Load(fs)
+			require.NoError(t, err)
+			err = cfg.Set(tt.key, tt.value, tt.format)
 			if tt.expectErr {
 				require.Error(t, err)
 				return
 			}
 			require.NoError(t, err)
 			if tt.check != nil {
-				conf, err := mgr.Get()
-				require.NoError(t, err)
-				m, _ := mgr.(*manager)
-				tt.check(t, conf, m)
-			}
-		})
-	}
-}
-
-func TestMerge(t *testing.T) {
-	tests := []struct {
-		name      string
-		config    Config
-		check     func(st *testing.T, c *Config, mgr *manager)
-		expectErr bool
-	}{
-		{
-			name: "it should merge Kafka API spec",
-			config: Config{
-				Redpanda: RedpandaConfig{
-					KafkaAPI: []NamedSocketAddress{{
-						Name:    "kafka-api-name",
-						Address: "1.2.3.4",
-						Port:    9123,
-					}},
-				},
-			},
-			check: func(st *testing.T, c *Config, _ *manager) {
-				require.Exactly(st, "kafka-api-name", c.Redpanda.KafkaAPI[0].Name)
-				require.Exactly(st, "1.2.3.4", c.Redpanda.KafkaAPI[0].Address)
-				require.Exactly(st, 9123, c.Redpanda.KafkaAPI[0].Port)
-			},
-		},
-		{
-			name: "it should merge Pandaproxy API spec",
-			config: Config{
-				Pandaproxy: &Pandaproxy{
-					PandaproxyAPI: []NamedSocketAddress{{
-						Name:    "proxy-api-name",
-						Address: "1.2.3.4",
-						Port:    8123,
-					}},
-				},
-			},
-			check: func(st *testing.T, c *Config, _ *manager) {
-				require.Exactly(st, "proxy-api-name", c.Pandaproxy.PandaproxyAPI[0].Name)
-				require.Exactly(st, "1.2.3.4", c.Pandaproxy.PandaproxyAPI[0].Address)
-				require.Exactly(st, 8123, c.Pandaproxy.PandaproxyAPI[0].Port)
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			fs := afero.NewMemMapFs()
-			mgr := NewManager(fs)
-			err := mgr.Merge(&tt.config)
-			if tt.expectErr {
-				require.Error(t, err)
-				return
-			}
-			require.NoError(t, err)
-			if tt.check != nil {
-				conf, err := mgr.Get()
-				require.NoError(t, err)
-				m, _ := mgr.(*manager)
-				tt.check(t, conf, m)
+				tt.check(t, cfg)
 			}
 		})
 	}
@@ -370,53 +366,6 @@ func TestDefault(t *testing.T) {
 	require.Exactly(t, expected, defaultConfig)
 }
 
-func TestRead(t *testing.T) {
-	const baseDir string = "/etc/redpanda"
-	tests := []struct {
-		name    string
-		path    string
-		before  func(afero.Fs, string) error
-		want    func() *Config
-		wantErr bool
-	}{
-		{
-			name: "shall return a config struct filled with values from the file",
-			before: func(fs afero.Fs, path string) error {
-				bs, err := yaml.Marshal(getValidConfig())
-				if err != nil {
-					return err
-				}
-				if err = fs.MkdirAll(baseDir, 0o755); err != nil {
-					return err
-				}
-				_, err = utils.WriteBytes(fs, bs, path)
-				return err
-			},
-			path:    baseDir + "/redpanda.yaml",
-			want:    getValidConfig,
-			wantErr: false,
-		},
-		// TODO: Add tests for when the config file has missing objects
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			fs := afero.NewMemMapFs()
-			mgr := NewManager(fs)
-			err := tt.before(fs, tt.path)
-			require.NoError(t, err)
-			got, err := mgr.Read(tt.path)
-			want := tt.want()
-			if tt.wantErr {
-				require.Error(t, err)
-				return
-			}
-			require.NoError(t, err)
-			require.True(t, filepath.IsAbs(got.ConfigFile))
-			require.Exactly(t, want, got)
-		})
-	}
-}
-
 func TestWrite(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -426,103 +375,54 @@ func TestWrite(t *testing.T) {
 		expected     string
 	}{
 		{
-			name:    "it should write the default values for redpanda.kafka_api if it's null",
-			conf:    getValidConfig,
-			wantErr: false,
+			name: "write default values",
+			conf: getValidConfig,
 			expected: `config_file: /etc/redpanda/redpanda.yaml
-pandaproxy: {}
 redpanda:
-  admin:
-  - address: 0.0.0.0
-    port: 9644
-  data_directory: /var/lib/redpanda/data
-  developer_mode: false
-  kafka_api:
-  - address: 0.0.0.0
-    port: 9092
-  node_id: 0
-  rpc_server:
-    address: 0.0.0.0
-    port: 33145
-  seed_servers:
-  - host:
-      address: 127.0.0.1
-      port: 33145
-  - host:
-      address: 127.0.0.1
-      port: 33146
+    data_directory: /var/lib/redpanda/data
+    node_id: 0
+    seed_servers:
+        - host:
+            address: 127.0.0.1
+            port: 33145
+        - host:
+            address: 127.0.0.1
+            port: 33146
+    rpc_server:
+        address: 0.0.0.0
+        port: 33145
+    kafka_api:
+        - address: 0.0.0.0
+          port: 9092
+    admin:
+        - address: 0.0.0.0
+          port: 9644
+    developer_mode: false
 rpk:
-  coredump_dir: /var/lib/redpanda/coredumps
-  enable_memory_locking: true
-  enable_usage_stats: true
-  overprovisioned: false
-  tune_aio_events: true
-  tune_ballast_file: true
-  tune_clocksource: true
-  tune_coredump: true
-  tune_cpu: true
-  tune_disk_irq: true
-  tune_disk_nomerges: true
-  tune_disk_scheduler: true
-  tune_disk_write_cache: true
-  tune_fstrim: true
-  tune_network: true
-  tune_swappiness: true
-  tune_transparent_hugepages: true
-  well_known_io: vendor:vm:storage
+    enable_usage_stats: true
+    tune_network: true
+    tune_disk_scheduler: true
+    tune_disk_nomerges: true
+    tune_disk_write_cache: true
+    tune_disk_irq: true
+    tune_fstrim: true
+    tune_cpu: true
+    tune_aio_events: true
+    tune_clocksource: true
+    tune_swappiness: true
+    tune_transparent_hugepages: true
+    enable_memory_locking: true
+    tune_coredump: true
+    coredump_dir: /var/lib/redpanda/coredumps
+    tune_ballast_file: true
+    well_known_io: vendor:vm:storage
+    overprovisioned: false
+pandaproxy: {}
 schema_registry: {}
 `,
 		},
 		{
-			name:    "it should write the default values if redpanda.kafka_api is missing",
-			conf:    getValidConfig,
-			wantErr: false,
-			expected: `config_file: /etc/redpanda/redpanda.yaml
-pandaproxy: {}
-redpanda:
-  admin:
-  - address: 0.0.0.0
-    port: 9644
-  data_directory: /var/lib/redpanda/data
-  developer_mode: false
-  kafka_api:
-  - address: 0.0.0.0
-    port: 9092
-  node_id: 0
-  rpc_server:
-    address: 0.0.0.0
-    port: 33145
-  seed_servers:
-  - host:
-      address: 127.0.0.1
-      port: 33145
-  - host:
-      address: 127.0.0.1
-      port: 33146
-rpk:
-  coredump_dir: /var/lib/redpanda/coredumps
-  enable_memory_locking: true
-  enable_usage_stats: true
-  overprovisioned: false
-  tune_aio_events: true
-  tune_ballast_file: true
-  tune_clocksource: true
-  tune_coredump: true
-  tune_cpu: true
-  tune_disk_irq: true
-  tune_disk_nomerges: true
-  tune_disk_scheduler: true
-  tune_disk_write_cache: true
-  tune_fstrim: true
-  tune_network: true
-  tune_swappiness: true
-  tune_transparent_hugepages: true
-  well_known_io: vendor:vm:storage
-schema_registry: {}
-`,
-		},
-		{
-			name: "shall write a valid config file without advertised_kafka_api",
+			name: "write additional values",
 			conf: func() *Config {
 				c := getValidConfig()
 				c.Redpanda.AdvertisedRPCAPI = &SocketAddress{
@@ -531,114 +431,55 @@ schema_registry: {}
 				}
 				return c
 			},
-			wantErr: false,
 			expected: `config_file: /etc/redpanda/redpanda.yaml
-pandaproxy: {}
 redpanda:
-  admin:
-  - address: 0.0.0.0
-    port: 9644
-  advertised_rpc_api:
-    address: 174.32.64.2
-    port: 33145
-  data_directory: /var/lib/redpanda/data
-  developer_mode: false
-  kafka_api:
-  - address: 0.0.0.0
-    port: 9092
-  node_id: 0
-  rpc_server:
-    address: 0.0.0.0
-    port: 33145
-  seed_servers:
-  - host:
-      address: 127.0.0.1
-      port: 33145
-  - host:
-      address: 127.0.0.1
-      port: 33146
+    data_directory: /var/lib/redpanda/data
+    node_id: 0
+    seed_servers:
+        - host:
+            address: 127.0.0.1
+            port: 33145
+        - host:
+            address: 127.0.0.1
+            port: 33146
+    rpc_server:
+        address: 0.0.0.0
+        port: 33145
+    kafka_api:
+        - address: 0.0.0.0
+          port: 9092
+    admin:
+        - address: 0.0.0.0
+          port: 9644
+    advertised_rpc_api:
+        address: 174.32.64.2
+        port: 33145
+    developer_mode: false
 rpk:
-  coredump_dir: /var/lib/redpanda/coredumps
-  enable_memory_locking: true
-  enable_usage_stats: true
-  overprovisioned: false
-  tune_aio_events: true
-  tune_ballast_file: true
-  tune_clocksource: true
-  tune_coredump: true
-  tune_cpu: true
-  tune_disk_irq: true
-  tune_disk_nomerges: true
-  tune_disk_scheduler: true
-  tune_disk_write_cache: true
-  tune_fstrim: true
-  tune_network: true
-  tune_swappiness: true
-  tune_transparent_hugepages: true
-  well_known_io: vendor:vm:storage
+    enable_usage_stats: true
+    tune_network: true
+    tune_disk_scheduler: true
+    tune_disk_nomerges: true
+    tune_disk_write_cache: true
+    tune_disk_irq: true
+    tune_fstrim: true
+    tune_cpu: true
+    tune_aio_events: true
+    tune_clocksource: true
+    tune_swappiness: true
+    tune_transparent_hugepages: true
+    enable_memory_locking: true
+    tune_coredump: true
+    coredump_dir: /var/lib/redpanda/coredumps
+    tune_ballast_file: true
+    well_known_io: vendor:vm:storage
+    overprovisioned: false
+pandaproxy: {}
 schema_registry: {}
 `,
 		},
 		{
-			name: "shall write a valid config file without advertised_rpc_api",
-			conf: func() *Config {
-				c := getValidConfig()
-				c.Redpanda.AdvertisedKafkaAPI = []NamedSocketAddress{{
-					Address: "174.32.64.2",
-					Port:    9092,
-				}}
-				return c
-			},
-			wantErr: false,
-			expected: `config_file: /etc/redpanda/redpanda.yaml
-pandaproxy: {}
-redpanda:
-  admin:
-  - address: 0.0.0.0
-    port: 9644
-  advertised_kafka_api:
-  - address: 174.32.64.2
-    port: 9092
-  data_directory: /var/lib/redpanda/data
-  developer_mode: false
-  kafka_api:
-  - address: 0.0.0.0
-    port: 9092
-  node_id: 0
-  rpc_server:
-    address: 0.0.0.0
-    port: 33145
-  seed_servers:
-  - host:
-      address: 127.0.0.1
-      port: 33145
-  - host:
-      address: 127.0.0.1
-      port: 33146
-rpk:
-  coredump_dir: /var/lib/redpanda/coredumps
-  enable_memory_locking: true
-  enable_usage_stats: true
-  overprovisioned: false
-  tune_aio_events: true
-  tune_ballast_file: true
-  tune_clocksource: true
-  tune_coredump: true
-  tune_cpu: true
-  tune_disk_irq: true
-  tune_disk_nomerges: true
-  tune_disk_scheduler: true
-  tune_disk_write_cache: true
-  tune_fstrim: true
-  tune_network: true
-  tune_swappiness: true
-  tune_transparent_hugepages: true
-  well_known_io: vendor:vm:storage
-schema_registry: {}
-`,
-		},
-		{
-			name: "shall write a valid config file without an rpk config object",
+			name: "write if empty struct is passed",
 			conf: func() *Config {
 				c := getValidConfig()
 				c.Rpk = RpkConfig{}
@@ -646,393 +487,49 @@ schema_registry: {}
 			},
 			wantErr: false,
 			expected: `config_file: /etc/redpanda/redpanda.yaml
-pandaproxy: {}
 redpanda:
-  admin:
-  - address: 0.0.0.0
-    port: 9644
-  data_directory: /var/lib/redpanda/data
-  developer_mode: false
-  kafka_api:
-  - address: 0.0.0.0
-    port: 9092
-  node_id: 0
-  rpc_server:
-    address: 0.0.0.0
-    port: 33145
-  seed_servers:
-  - host:
-      address: 127.0.0.1
-      port: 33145
-  - host:
-      address: 127.0.0.1
-      port: 33146
+    data_directory: /var/lib/redpanda/data
+    node_id: 0
+    seed_servers:
+        - host:
+            address: 127.0.0.1
+            port: 33145
+        - host:
+            address: 127.0.0.1
+            port: 33146
+    rpc_server:
+        address: 0.0.0.0
+        port: 33145
+    kafka_api:
+        - address: 0.0.0.0
+          port: 9092
+    admin:
+        - address: 0.0.0.0
+          port: 9644
+    developer_mode: false
 rpk:
-  coredump_dir: /var/lib/redpanda/coredump
-  enable_memory_locking: false
-  enable_usage_stats: false
-  overprovisioned: false
-  tune_aio_events: false
-  tune_ballast_file: false
-  tune_clocksource: false
-  tune_coredump: false
-  tune_cpu: false
-  tune_disk_irq: false
-  tune_disk_nomerges: false
-  tune_disk_scheduler: false
-  tune_disk_write_cache: false
-  tune_fstrim: false
-  tune_network: false
-  tune_swappiness: false
-  tune_transparent_hugepages: false
+    enable_usage_stats: false
+    tune_network: false
+    tune_disk_scheduler: false
+    tune_disk_nomerges: false
+    tune_disk_write_cache: false
+    tune_disk_irq: false
+    tune_fstrim: false
+    tune_cpu: false
+    tune_aio_events: false
+    tune_clocksource: false
+    tune_swappiness: false
+    tune_transparent_hugepages: false
+    enable_memory_locking: false
+    tune_coredump: false
+    tune_ballast_file: false
+    overprovisioned: false
+pandaproxy: {}
 schema_registry: {}
 `,
 		},
 		{
-			name: "shall fail with an invalid config",
-			conf: func() *Config {
-				c := getValidConfig()
-				c.Redpanda.Directory = ""
-				return c
-			},
-			wantErr: true,
-		},
-		{
-			name:    "shall write a valid config file with an rpk config object",
-			conf:    getValidConfig,
-			wantErr: false,
-			expected: `config_file: /etc/redpanda/redpanda.yaml
-pandaproxy: {}
-redpanda:
-  admin:
-  - address: 0.0.0.0
-    port: 9644
-  data_directory: /var/lib/redpanda/data
-  developer_mode: false
-  kafka_api:
-  - address: 0.0.0.0
-    port: 9092
-  node_id: 0
-  rpc_server:
-    address: 0.0.0.0
-    port: 33145
-  seed_servers:
-  - host:
-      address: 127.0.0.1
-      port: 33145
-  - host:
-      address: 127.0.0.1
-      port: 33146
-rpk:
-  coredump_dir: /var/lib/redpanda/coredumps
-  enable_memory_locking: true
-  enable_usage_stats: true
-  overprovisioned: false
-  tune_aio_events: true
-  tune_ballast_file: true
-  tune_clocksource: true
-  tune_coredump: true
-  tune_cpu: true
-  tune_disk_irq: true
-  tune_disk_nomerges: true
-  tune_disk_scheduler: true
-  tune_disk_write_cache: true
-  tune_fstrim: true
-  tune_network: true
-  tune_swappiness: true
-  tune_transparent_hugepages: true
-  well_known_io: vendor:vm:storage
-schema_registry: {}
-`,
-		},
-		{
-			name: "shall leave unrecognized fields untouched",
-			existingConf: `config_file: /etc/redpanda/redpanda.yaml
-pandaproxy: {}
-redpanda:
-  admin:
-  - address: 0.0.0.0
-    port: 9644
-  admin_api_doc_dir: /usr/share/redpanda/admin-api-doc
-  data_directory: /var/lib/redpanda/data
-  default_window_sec: 100
-  kafka_api:
-  - address: 0.0.0.0
-    port: 9092
-  node_id: 0
-  rpc_server:
-    address: 0.0.0.0
-    port: 33145
-  seed_servers:
-  - host:
-      address: 127.0.0.1
-      port: 33145
-    node_id: 1
-  - host:
-      address: 127.0.0.1
-      port: 33146
-    node_id: 2
-  target_quota_byte_rate: 1000000
-unrecognized_top_field:
-  child: true
-`,
-			conf:    getValidConfig,
-			wantErr: false,
-			expected: `config_file: /etc/redpanda/redpanda.yaml
-pandaproxy: {}
-redpanda:
-  admin:
-  - address: 0.0.0.0
-    port: 9644
-  admin_api_doc_dir: /usr/share/redpanda/admin-api-doc
-  data_directory: /var/lib/redpanda/data
-  default_window_sec: 100
-  developer_mode: false
-  kafka_api:
-  - address: 0.0.0.0
-    port: 9092
-  node_id: 0
-  rpc_server:
-    address: 0.0.0.0
-    port: 33145
-  seed_servers:
-  - host:
-      address: 127.0.0.1
-      port: 33145
-  - host:
-      address: 127.0.0.1
-      port: 33146
-  target_quota_byte_rate: 1000000
-rpk:
-  coredump_dir: /var/lib/redpanda/coredumps
-  enable_memory_locking: true
-  enable_usage_stats: true
-  overprovisioned: false
-  tune_aio_events: true
-  tune_ballast_file: true
-  tune_clocksource: true
-  tune_coredump: true
-  tune_cpu: true
-  tune_disk_irq: true
-  tune_disk_nomerges: true
-  tune_disk_scheduler: true
-  tune_disk_write_cache: true
-  tune_fstrim: true
-  tune_network: true
-  tune_swappiness: true
-  tune_transparent_hugepages: true
-  well_known_io: vendor:vm:storage
-schema_registry: {}
-unrecognized_top_field:
-  child: true
-`,
-		},
-		{
-			name: "should merge the new config onto the current one, not just overwrite it",
-			existingConf: `config_file: /etc/redpanda/redpanda.yaml
-pandaproxy: {}
-redpanda:
-  admin:
-  - address: 0.0.0.0
-    port: 9644
-  admin_api_doc_dir: /usr/share/redpanda/admin-api-doc
-  auto_create_topics_enabled: true
-  data_directory: /var/lib/redpanda/data
-  default_window_sec: 100
-  kafka_api:
-  - address: 0.0.0.0
-    port: 9092
-  node_id: 0
-  rpc_server:
-    address: 0.0.0.0
-    port: 33145
-  target_quota_byte_rate: 1000000
-`,
-			conf: func() *Config {
-				conf := getValidConfig()
-				conf.Redpanda.SeedServers = []SeedServer{}
-				conf.Redpanda.Directory = "/different/path"
-				return conf
-			},
-			wantErr: false,
-			expected: `config_file: /etc/redpanda/redpanda.yaml
-pandaproxy: {}
-redpanda:
-  admin:
-  - address: 0.0.0.0
-    port: 9644
-  admin_api_doc_dir: /usr/share/redpanda/admin-api-doc
-  auto_create_topics_enabled: true
-  data_directory: /different/path
-  default_window_sec: 100
-  developer_mode: false
-  kafka_api:
-  - address: 0.0.0.0
-    port: 9092
-  node_id: 0
-  rpc_server:
-    address: 0.0.0.0
-    port: 33145
-  seed_servers: []
-  target_quota_byte_rate: 1000000
-rpk:
-  coredump_dir: /var/lib/redpanda/coredumps
-  enable_memory_locking: true
-  enable_usage_stats: true
-  overprovisioned: false
-  tune_aio_events: true
-  tune_ballast_file: true
-  tune_clocksource: true
-  tune_coredump: true
-  tune_cpu: true
-  tune_disk_irq: true
-  tune_disk_nomerges: true
-  tune_disk_scheduler: true
-  tune_disk_write_cache: true
-  tune_fstrim: true
-  tune_network: true
-  tune_swappiness: true
-  tune_transparent_hugepages: true
-  well_known_io: vendor:vm:storage
-schema_registry: {}
-`,
-		},
-		{
-			name: "shall write config with tls configuration",
-			conf: func() *Config {
-				c := getValidConfig()
-				c.Redpanda.KafkaAPI[0].Name = "outside"
-				c.Redpanda.KafkaAPITLS = []ServerTLS{{
-					Name:              "outside",
-					KeyFile:           "/etc/certs/cert.key",
-					TruststoreFile:    "/etc/certs/ca.crt",
-					CertFile:          "/etc/certs/cert.crt",
-					Enabled:           true,
-					RequireClientAuth: true,
-					Other:             map[string]interface{}{"principal_mapping_rules": "DEFAULT"},
-				}}
-				return c
-			},
-			wantErr: false,
-			expected: `config_file: /etc/redpanda/redpanda.yaml
-pandaproxy: {}
-redpanda:
-  admin:
-  - address: 0.0.0.0
-    port: 9644
-  data_directory: /var/lib/redpanda/data
-  developer_mode: false
-  kafka_api:
-  - address: 0.0.0.0
-    name: outside
-    port: 9092
-  kafka_api_tls:
-  - cert_file: /etc/certs/cert.crt
-    enabled: true
-    key_file: /etc/certs/cert.key
-    name: outside
-    principal_mapping_rules: DEFAULT
-    require_client_auth: true
-    truststore_file: /etc/certs/ca.crt
-  node_id: 0
-  rpc_server:
-    address: 0.0.0.0
-    port: 33145
-  seed_servers:
-  - host:
-      address: 127.0.0.1
-      port: 33145
-  - host:
-      address: 127.0.0.1
-      port: 33146
-rpk:
-  coredump_dir: /var/lib/redpanda/coredumps
-  enable_memory_locking: true
-  enable_usage_stats: true
-  overprovisioned: false
-  tune_aio_events: true
-  tune_ballast_file: true
-  tune_clocksource: true
-  tune_coredump: true
-  tune_cpu: true
-  tune_disk_irq: true
-  tune_disk_nomerges: true
-  tune_disk_scheduler: true
-  tune_disk_write_cache: true
-  tune_fstrim: true
-  tune_network: true
-  tune_swappiness: true
-  tune_transparent_hugepages: true
-  well_known_io: vendor:vm:storage
-schema_registry: {}
-`,
-		},
-		{
-			name: "shall write config with admin tls configuration",
-			conf: func() *Config {
-				c := getValidConfig()
-				c.Redpanda.AdminAPITLS = []ServerTLS{{
-					KeyFile:           "/etc/certs/admin/cert.key",
-					TruststoreFile:    "/etc/certs/admin/ca.crt",
-					CertFile:          "/etc/certs/admin/cert.crt",
-					Enabled:           true,
-					RequireClientAuth: true,
-				}}
-				return c
-			},
-			wantErr: false,
-			expected: `config_file: /etc/redpanda/redpanda.yaml
-pandaproxy: {}
-redpanda:
-  admin:
-  - address: 0.0.0.0
-    port: 9644
-  admin_api_tls:
-  - cert_file: /etc/certs/admin/cert.crt
-    enabled: true
-    key_file: /etc/certs/admin/cert.key
-    require_client_auth: true
-    truststore_file: /etc/certs/admin/ca.crt
-  data_directory: /var/lib/redpanda/data
-  developer_mode: false
-  kafka_api:
-  - address: 0.0.0.0
-    port: 9092
-  node_id: 0
-  rpc_server:
-    address: 0.0.0.0
-    port: 33145
-  seed_servers:
-  - host:
-      address: 127.0.0.1
-      port: 33145
-  - host:
-      address: 127.0.0.1
-      port: 33146
-rpk:
-  coredump_dir: /var/lib/redpanda/coredumps
-  enable_memory_locking: true
-  enable_usage_stats: true
-  overprovisioned: false
-  tune_aio_events: true
-  tune_ballast_file: true
-  tune_clocksource: true
-  tune_coredump: true
-  tune_cpu: true
-  tune_disk_irq: true
-  tune_disk_nomerges: true
-  tune_disk_scheduler: true
-  tune_disk_write_cache: true
-  tune_fstrim: true
-  tune_network: true
-  tune_swappiness: true
-  tune_transparent_hugepages: true
-  well_known_io: vendor:vm:storage
-schema_registry: {}
-`,
-		},
-		{
-			name: "shall write config with log_segment_size configuration",
+			name: "write unrecognized values ('Other' map).",
 			conf: func() *Config {
 				c := getValidConfig()
 				size := 536870912
@@ -1044,469 +541,47 @@ schema_registry: {}
 			},
 			wantErr: false,
 			expected: `config_file: /etc/redpanda/redpanda.yaml
+redpanda:
+    data_directory: /var/lib/redpanda/data
+    node_id: 0
+    seed_servers:
+        - host:
+            address: 127.0.0.1
+            port: 33145
+        - host:
+            address: 127.0.0.1
+            port: 33146
+    rpc_server:
+        address: 0.0.0.0
+        port: 33145
+    kafka_api:
+        - address: 0.0.0.0
+          port: 9092
+    admin:
+        - address: 0.0.0.0
+          port: 9644
+    developer_mode: false
+    log_segment_size: 536870912
+rpk:
+    enable_usage_stats: true
+    tune_network: true
+    tune_disk_scheduler: true
+    tune_disk_nomerges: true
+    tune_disk_write_cache: true
+    tune_disk_irq: true
+    tune_fstrim: true
+    tune_cpu: true
+    tune_aio_events: true
+    tune_clocksource: true
+    tune_swappiness: true
+    tune_transparent_hugepages: true
+    enable_memory_locking: true
+    tune_coredump: true
+    coredump_dir: /var/lib/redpanda/coredumps
+    tune_ballast_file: true
+    well_known_io: vendor:vm:storage
+    overprovisioned: false
 pandaproxy: {}
-redpanda:
-  admin:
-  - address: 0.0.0.0
-    port: 9644
-  data_directory: /var/lib/redpanda/data
-  developer_mode: false
-  kafka_api:
-  - address: 0.0.0.0
-    port: 9092
-  log_segment_size: 536870912
-  node_id: 0
-  rpc_server:
-    address: 0.0.0.0
-    port: 33145
-  seed_servers:
-  - host:
-      address: 127.0.0.1
-      port: 33145
-  - host:
-      address: 127.0.0.1
-      port: 33146
-rpk:
-  coredump_dir: /var/lib/redpanda/coredumps
-  enable_memory_locking: true
-  enable_usage_stats: true
-  overprovisioned: false
-  tune_aio_events: true
-  tune_ballast_file: true
-  tune_clocksource: true
-  tune_coredump: true
-  tune_cpu: true
-  tune_disk_irq: true
-  tune_disk_nomerges: true
-  tune_disk_scheduler: true
-  tune_disk_write_cache: true
-  tune_fstrim: true
-  tune_network: true
-  tune_swappiness: true
-  tune_transparent_hugepages: true
-  well_known_io: vendor:vm:storage
-schema_registry: {}
-`,
-		},
-		{
-			name: "shall write config with full pandaproxy configuration",
-			conf: func() *Config {
-				c := getValidConfig()
-				c.Pandaproxy = &Pandaproxy{
-					PandaproxyAPI: []NamedSocketAddress{
-						{
-							Name:    "first",
-							Address: "1.2.3.4",
-							Port:    1234,
-						},
-					},
-					PandaproxyAPITLS: []ServerTLS{{
-						KeyFile:           "/etc/certs/cert.key",
-						TruststoreFile:    "/etc/certs/ca.crt",
-						CertFile:          "/etc/certs/cert.crt",
-						Enabled:           true,
-						RequireClientAuth: true,
-					}},
-					AdvertisedPandaproxyAPI: []NamedSocketAddress{
-						{
-							Name:    "advertised",
-							Address: "2.3.4.1",
-							Port:    2341,
-						},
-					},
-				}
-				return c
-			},
-			wantErr: false,
-			expected: `config_file: /etc/redpanda/redpanda.yaml
-pandaproxy:
-  advertised_pandaproxy_api:
-  - address: 2.3.4.1
-    name: advertised
-    port: 2341
-  pandaproxy_api:
-  - address: 1.2.3.4
-    name: first
-    port: 1234
-  pandaproxy_api_tls:
-  - cert_file: /etc/certs/cert.crt
-    enabled: true
-    key_file: /etc/certs/cert.key
-    require_client_auth: true
-    truststore_file: /etc/certs/ca.crt
-redpanda:
-  admin:
-  - address: 0.0.0.0
-    port: 9644
-  data_directory: /var/lib/redpanda/data
-  developer_mode: false
-  kafka_api:
-  - address: 0.0.0.0
-    port: 9092
-  node_id: 0
-  rpc_server:
-    address: 0.0.0.0
-    port: 33145
-  seed_servers:
-  - host:
-      address: 127.0.0.1
-      port: 33145
-  - host:
-      address: 127.0.0.1
-      port: 33146
-rpk:
-  coredump_dir: /var/lib/redpanda/coredumps
-  enable_memory_locking: true
-  enable_usage_stats: true
-  overprovisioned: false
-  tune_aio_events: true
-  tune_ballast_file: true
-  tune_clocksource: true
-  tune_coredump: true
-  tune_cpu: true
-  tune_disk_irq: true
-  tune_disk_nomerges: true
-  tune_disk_scheduler: true
-  tune_disk_write_cache: true
-  tune_fstrim: true
-  tune_network: true
-  tune_swappiness: true
-  tune_transparent_hugepages: true
-  well_known_io: vendor:vm:storage
-schema_registry: {}
-`,
-		},
-		{
-			name: "shall write config with pandaproxy api only configuration",
-			conf: func() *Config {
-				c := getValidConfig()
-				c.Pandaproxy = &Pandaproxy{
-					PandaproxyAPI: []NamedSocketAddress{
-						{
-							Name:    "first",
-							Address: "1.2.3.4",
-							Port:    1234,
-						},
-					},
-				}
-				return c
-			},
-			wantErr: false,
-			expected: `config_file: /etc/redpanda/redpanda.yaml
-pandaproxy:
-  pandaproxy_api:
-  - address: 1.2.3.4
-    name: first
-    port: 1234
-redpanda:
-  admin:
-  - address: 0.0.0.0
-    port: 9644
-  data_directory: /var/lib/redpanda/data
-  developer_mode: false
-  kafka_api:
-  - address: 0.0.0.0
-    port: 9092
-  node_id: 0
-  rpc_server:
-    address: 0.0.0.0
-    port: 33145
-  seed_servers:
-  - host:
-      address: 127.0.0.1
-      port: 33145
-  - host:
-      address: 127.0.0.1
-      port: 33146
-rpk:
-  coredump_dir: /var/lib/redpanda/coredumps
-  enable_memory_locking: true
-  enable_usage_stats: true
-  overprovisioned: false
-  tune_aio_events: true
-  tune_ballast_file: true
-  tune_clocksource: true
-  tune_coredump: true
-  tune_cpu: true
-  tune_disk_irq: true
-  tune_disk_nomerges: true
-  tune_disk_scheduler: true
-  tune_disk_write_cache: true
-  tune_fstrim: true
-  tune_network: true
-  tune_swappiness: true
-  tune_transparent_hugepages: true
-  well_known_io: vendor:vm:storage
-schema_registry: {}
-`,
-		},
-		{
-			name: "shall write config with pandaproxy client configuration",
-			conf: func() *Config {
-				c := getValidConfig()
-				c.PandaproxyClient = &KafkaClient{
-					Brokers: []SocketAddress{
-						{
-							Address: "1.2.3.4",
-							Port:    1234,
-						},
-					},
-					BrokerTLS: ServerTLS{
-						KeyFile:           "/etc/certs/cert.key",
-						TruststoreFile:    "/etc/certs/ca.crt",
-						CertFile:          "/etc/certs/cert.crt",
-						Enabled:           true,
-						RequireClientAuth: true,
-					},
-				}
-				return c
-			},
-			wantErr: false,
-			expected: `config_file: /etc/redpanda/redpanda.yaml
-pandaproxy: {}
-pandaproxy_client:
-  broker_tls:
-    cert_file: /etc/certs/cert.crt
-    enabled: true
-    key_file: /etc/certs/cert.key
-    require_client_auth: true
-    truststore_file: /etc/certs/ca.crt
-  brokers:
-  - address: 1.2.3.4
-    port: 1234
-redpanda:
-  admin:
-  - address: 0.0.0.0
-    port: 9644
-  data_directory: /var/lib/redpanda/data
-  developer_mode: false
-  kafka_api:
-  - address: 0.0.0.0
-    port: 9092
-  node_id: 0
-  rpc_server:
-    address: 0.0.0.0
-    port: 33145
-  seed_servers:
-  - host:
-      address: 127.0.0.1
-      port: 33145
-  - host:
-      address: 127.0.0.1
-      port: 33146
-rpk:
-  coredump_dir: /var/lib/redpanda/coredumps
-  enable_memory_locking: true
-  enable_usage_stats: true
-  overprovisioned: false
-  tune_aio_events: true
-  tune_ballast_file: true
-  tune_clocksource: true
-  tune_coredump: true
-  tune_cpu: true
-  tune_disk_irq: true
-  tune_disk_nomerges: true
-  tune_disk_scheduler: true
-  tune_disk_write_cache: true
-  tune_fstrim: true
-  tune_network: true
-  tune_swappiness: true
-  tune_transparent_hugepages: true
-  well_known_io: vendor:vm:storage
-schema_registry: {}
-`,
-		},
-		{
-			name: "shall write config with pandproxy client SASL mechanism and SCRAM credentials",
-			conf: func() *Config {
-				c := getValidConfig()
-				mechanism := "abc"
-				username := "user"
-				password := "pass"
-				c.PandaproxyClient = &KafkaClient{
-					SASLMechanism: &mechanism,
-					SCRAMUsername: &username,
-					SCRAMPassword: &password,
-				}
-				return c
-			},
-			wantErr: false,
-			expected: `config_file: /etc/redpanda/redpanda.yaml
-pandaproxy: {}
-pandaproxy_client:
-  sasl_mechanism: abc
-  scram_password: pass
-  scram_username: user
-redpanda:
-  admin:
-  - address: 0.0.0.0
-    port: 9644
-  data_directory: /var/lib/redpanda/data
-  developer_mode: false
-  kafka_api:
-  - address: 0.0.0.0
-    port: 9092
-  node_id: 0
-  rpc_server:
-    address: 0.0.0.0
-    port: 33145
-  seed_servers:
-  - host:
-      address: 127.0.0.1
-      port: 33145
-  - host:
-      address: 127.0.0.1
-      port: 33146
-rpk:
-  coredump_dir: /var/lib/redpanda/coredumps
-  enable_memory_locking: true
-  enable_usage_stats: true
-  overprovisioned: false
-  tune_aio_events: true
-  tune_ballast_file: true
-  tune_clocksource: true
-  tune_coredump: true
-  tune_cpu: true
-  tune_disk_irq: true
-  tune_disk_nomerges: true
-  tune_disk_scheduler: true
-  tune_disk_write_cache: true
-  tune_fstrim: true
-  tune_network: true
-  tune_swappiness: true
-  tune_transparent_hugepages: true
-  well_known_io: vendor:vm:storage
-schema_registry: {}
-`,
-		},
-		{
-			name: "shall write a valid config file with scram configured",
-			conf: func() *Config {
-				c := getValidConfig()
-				c.Rpk.KafkaAPI.SASL = &SASL{
-					User:      "scram_user",
-					Password:  "scram_password",
-					Mechanism: "SCRAM-SHA-256",
-				}
-				return c
-			},
-			wantErr: false,
-			expected: `config_file: /etc/redpanda/redpanda.yaml
-pandaproxy: {}
-redpanda:
-  admin:
-  - address: 0.0.0.0
-    port: 9644
-  data_directory: /var/lib/redpanda/data
-  developer_mode: false
-  kafka_api:
-  - address: 0.0.0.0
-    port: 9092
-  node_id: 0
-  rpc_server:
-    address: 0.0.0.0
-    port: 33145
-  seed_servers:
-  - host:
-      address: 127.0.0.1
-      port: 33145
-  - host:
-      address: 127.0.0.1
-      port: 33146
-rpk:
-  coredump_dir: /var/lib/redpanda/coredumps
-  enable_memory_locking: true
-  enable_usage_stats: true
-  kafka_api:
-    sasl:
-      password: scram_password
-      type: SCRAM-SHA-256
-      user: scram_user
-  overprovisioned: false
-  tune_aio_events: true
-  tune_ballast_file: true
-  tune_clocksource: true
-  tune_coredump: true
-  tune_cpu: true
-  tune_disk_irq: true
-  tune_disk_nomerges: true
-  tune_disk_scheduler: true
-  tune_disk_write_cache: true
-  tune_fstrim: true
-  tune_network: true
-  tune_swappiness: true
-  tune_transparent_hugepages: true
-  well_known_io: vendor:vm:storage
-schema_registry: {}
-`,
-		},
-		{
-			name: "should update an existing config with single kafka_api & advertised_kafka_api obj to a list",
-			existingConf: `config_file: /etc/redpanda/redpanda.yaml
-pandaproxy: {}
-redpanda:
-  admin:
-  - address: 0.0.0.0
-    port: 9644
-  admin_api_doc_dir: /usr/share/redpanda/admin-api-doc
-  auto_create_topics_enabled: true
-  data_directory: /var/lib/redpanda/data
-  default_window_sec: 100
-  kafka_api:
-    address: 0.0.0.0
-    port: 9092
-  advertised_kafka_api:
-    address: 1.cluster.redpanda.io
-    port: 9092
-  node_id: 0
-  rpc_server:
-    address: 0.0.0.0
-    port: 33145
-  target_quota_byte_rate: 1000000
-`,
-			conf:    Default,
-			wantErr: false,
-			expected: `config_file: /etc/redpanda/redpanda.yaml
-pandaproxy: {}
-redpanda:
-  admin:
-  - address: 0.0.0.0
-    port: 9644
-  admin_api_doc_dir: /usr/share/redpanda/admin-api-doc
-  advertised_kafka_api:
-  - address: 1.cluster.redpanda.io
-    port: 9092
-  auto_create_topics_enabled: true
-  data_directory: /var/lib/redpanda/data
-  default_window_sec: 100
-  developer_mode: true
-  kafka_api:
-  - address: 0.0.0.0
-    port: 9092
-  node_id: 0
-  rpc_server:
-    address: 0.0.0.0
-    port: 33145
-  seed_servers: []
-  target_quota_byte_rate: 1000000
-rpk:
-  coredump_dir: /var/lib/redpanda/coredump
-  enable_memory_locking: false
-  enable_usage_stats: false
-  overprovisioned: false
-  tune_aio_events: false
-  tune_ballast_file: false
-  tune_clocksource: false
-  tune_coredump: false
-  tune_cpu: false
-  tune_disk_irq: false
-  tune_disk_nomerges: false
-  tune_disk_scheduler: false
-  tune_disk_write_cache: false
-  tune_fstrim: false
-  tune_network: false
-  tune_swappiness: false
-  tune_transparent_hugepages: false
 schema_registry: {}
 `,
 		},
@@ -1515,19 +590,12 @@ schema_registry: {}
 		t.Run(tt.name, func(t *testing.T) {
 			path := tt.conf().ConfigFile
 			fs := afero.NewMemMapFs()
-			mgr := NewManager(fs)
 			if tt.existingConf != "" {
 				_, err := utils.WriteBytes(fs, []byte(tt.existingConf), path)
 				require.NoError(t, err)
-			} else {
-				// Write the config file so that WriteConfig backs it up
-				// when the new one is written.
-				err := vyaml.Persist(fs, tt.conf(), path)
-				require.NoError(t, err)
 			}
-			_, err := mgr.Read(path)
-			require.NoError(t, err)
-			err = mgr.Write(tt.conf())
+
+			err := tt.conf().Write(fs)
 			if tt.wantErr {
 				require.Error(t, err)
 				return
@@ -1538,96 +606,6 @@ schema_registry: {}
 			require.NoError(t, err)
 			content := string(contentBytes)
 			require.Equal(t, tt.expected, content)
-			backup, err := findBackup(fs, filepath.Dir(path))
-			require.NoError(t, err)
-			_, err = fs.Stat(backup)
-			require.NoError(t, err)
-		})
-	}
-}
-
-func TestWriteLoaded(t *testing.T) {
-	fs := afero.NewMemMapFs()
-	mgr := NewManager(fs)
-	err := mgr.Set(
-		"rpk.admin",
-		`[{"address": "192.168.54.2","port": 9092}]`,
-		"json",
-	)
-	require.NoError(t, err)
-
-	mgr.WriteLoaded()
-	conf, err := mgr.Get()
-	require.NoError(t, err)
-
-	newMgr := NewManager(fs)
-	newConf, err := newMgr.Read(Default().ConfigFile)
-	require.NoError(t, err)
-
-	require.Exactly(t, conf, newConf)
-}
-
-func TestReadOrGenerate(t *testing.T) {
-	tests := []struct {
-		name        string
-		setup       func(afero.Fs) error
-		configFile  string
-		check       func(st *testing.T, conf *Config)
-		expectError bool
-	}{
-		{
-			name:       "it should generate a config file at the given location",
-			configFile: Default().ConfigFile,
-		},
-		{
-			name: "it shouldn't fail if there's a config file already",
-			setup: func(fs afero.Fs) error {
-				conf := Default()
-				mgr := NewManager(fs)
-				return mgr.Write(conf)
-			},
-			configFile: Default().ConfigFile,
-		},
-		{
-			name: "it should fail if the existing config file's content isn't valid yaml",
-			setup: func(fs afero.Fs) error {
-				bs := []byte(`redpanda:
-- something`)
-				return vyaml.Persist(fs, bs, Default().ConfigFile)
-			},
-			configFile:  Default().ConfigFile,
-			expectError: true,
-		},
-		{
-			name:       "it should set config_file to the right value",
-			configFile: "./redpanda.yaml",
-			check: func(st *testing.T, conf *Config) {
-				path, err := filepath.Abs("./redpanda.yaml")
-				require.NoError(st, err)
-				require.Exactly(st, conf.ConfigFile, path)
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			fs := afero.NewMemMapFs()
-			mgr := NewManager(fs)
-			if tt.setup != nil {
-				err := tt.setup(fs)
-				require.NoError(t, err)
-			}
-			_, err := readOrGenerate(fs, InitViper(fs), tt.configFile)
-			if tt.expectError {
-				require.Error(t, err)
-				return
-			}
-			require.NoError(t, err)
-			conf, err := mgr.Read(tt.configFile)
-			require.NoError(t, err)
-			if tt.check != nil {
-				tt.check(t, conf)
-			}
 		})
 	}
 }
@@ -1801,7 +779,7 @@ func TestCheckConfig(t *testing.T) {
 				c.Redpanda.KafkaAPI[0].Port = 0
 				return c
 			},
-			expected: []string{"redpanda.kafka_api.0.port can't be 0"},
+			expected: []string{"redpanda.kafka_api[0].port can't be 0"},
 		},
 		{
 			name: "shall return an error when the Kafka API address is empty",
@@ -1810,7 +788,7 @@ func TestCheckConfig(t *testing.T) {
 				c.Redpanda.KafkaAPI[0].Address = ""
 				return c
 			},
-			expected: []string{"redpanda.kafka_api.0.address can't be empty"},
+			expected: []string{"redpanda.kafka_api[0].address can't be empty"},
 		},
 		{
 			name: "shall return an error when one of the seed servers' address is empty",
@@ -1819,7 +797,7 @@ func TestCheckConfig(t *testing.T) {
 				c.Redpanda.SeedServers[0].Host.Address = ""
 				return c
 			},
-			expected: []string{"redpanda.seed_servers.0.host.address can't be empty"},
+			expected: []string{"redpanda.seed_servers[0].host.address can't be empty"},
 		},
 		{
 			name: "shall return an error when one of the seed servers' port is 0",
@@ -1828,7 +806,7 @@ func TestCheckConfig(t *testing.T) {
 				c.Redpanda.SeedServers[1].Host.Port = 0
 				return c
 			},
-			expected: []string{"redpanda.seed_servers.1.host.port can't be 0"},
+			expected: []string{"redpanda.seed_servers[1].host.port can't be 0"},
 		},
 		{
 			name: "shall return no errors when tune_coredump is set to false," +
@@ -1849,8 +827,7 @@ func TestCheckConfig(t *testing.T) {
 				c.Rpk.CoredumpDir = ""
 				return c
 			},
-			expected: []string{"if rpk.tune_coredump is set to true," +
-				"rpk.coredump_dir can't be empty"},
+			expected: []string{"if rpk.tune_coredump is set to true, rpk.coredump_dir can't be empty"},
 		},
 		{
 			name: "shall return no error if setup is empty," +
@@ -1865,7 +842,7 @@ func TestCheckConfig(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, got := Check(tt.conf())
+			_, got := tt.conf().Check()
 			errMsgs := []string{}
 			for _, err := range got {
 				errMsgs = append(errMsgs, err.Error())
@@ -1873,32 +850,4 @@ func TestCheckConfig(t *testing.T) {
 			require.Exactly(t, tt.expected, errMsgs)
 		})
 	}
-}
-
-func TestWriteAndGenerateNodeUuid(t *testing.T) {
-	fs := afero.NewMemMapFs()
-	mgr := NewManager(fs)
-	baseDir := "/etc/redpanda"
-	path := baseDir + "/redpanda.yaml"
-	conf := getValidConfig()
-	conf.ConfigFile = path
-	bs, err := yaml.Marshal(conf)
-	require.NoError(t, err)
-	err = fs.MkdirAll(baseDir, 0o755)
-	require.NoError(t, err)
-	_, err = utils.WriteBytes(fs, bs, path)
-	require.NoError(t, err)
-	err = mgr.WriteNodeUUID(conf)
-	require.NoError(t, err)
-	require.NotEqual(t, "", conf.NodeUUID)
-	readConf, err := mgr.Read(path)
-	require.NoError(t, err)
-	require.Exactly(t, conf, readConf)
-}
-
-func TestGet(t *testing.T) {
-	mgr := NewManager(afero.NewMemMapFs())
-	conf, err := mgr.Get()
-	require.NoError(t, err)
-	require.Exactly(t, Default(), conf)
 }

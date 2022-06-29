@@ -21,19 +21,19 @@ type Config struct {
 	file       *Config
 	loadedPath string
 
-	NodeUUID             string          `yaml:"node_uuid,omitempty" mapstructure:"node_uuid,omitempty" json:"nodeUuid"`
-	Organization         string          `yaml:"organization,omitempty" mapstructure:"organization,omitempty" json:"organization"`
-	LicenseKey           string          `yaml:"license_key,omitempty" mapstructure:"license_key,omitempty" json:"licenseKey"`
-	ClusterID            string          `yaml:"cluster_id,omitempty" mapstructure:"cluster_id,omitempty" json:"clusterId"`
-	ConfigFile           string          `yaml:"config_file" mapstructure:"config_file" json:"configFile"`
-	Redpanda             RedpandaConfig  `yaml:"redpanda" mapstructure:"redpanda" json:"redpanda"`
-	Rpk                  RpkConfig       `yaml:"rpk" mapstructure:"rpk" json:"rpk"`
-	Pandaproxy           *Pandaproxy     `yaml:"pandaproxy,omitempty" mapstructure:"pandaproxy,omitempty" json:"pandaproxy,omitempty"`
-	PandaproxyClient     *KafkaClient    `yaml:"pandaproxy_client,omitempty" mapstructure:"pandaproxy_client,omitempty" json:"pandaproxyClient,omitempty"`
-	SchemaRegistry       *SchemaRegistry `yaml:"schema_registry,omitempty" mapstructure:"schema_registry,omitempty" json:"schemaRegistry,omitempty"`
-	SchemaRegistryClient *KafkaClient    `yaml:"schema_registry_client,omitempty" mapstructure:"schema_registry_client,omitempty" json:"schemaRegistryClient,omitempty"`
+	NodeUUID             string          `yaml:"node_uuid,omitempty" json:"node_uuid"`
+	Organization         string          `yaml:"organization,omitempty" json:"organization"`
+	LicenseKey           string          `yaml:"license_key,omitempty" json:"license_key"`
+	ClusterID            string          `yaml:"cluster_id,omitempty" json:"cluster_id"`
+	ConfigFile           string          `yaml:"config_file" json:"config_file"`
+	Redpanda             RedpandaConfig  `yaml:"redpanda" json:"redpanda"`
+	Rpk                  RpkConfig       `yaml:"rpk" json:"rpk"`
+	Pandaproxy           *Pandaproxy     `yaml:"pandaproxy,omitempty" json:"pandaproxy,omitempty"`
+	PandaproxyClient     *KafkaClient    `yaml:"pandaproxy_client,omitempty" json:"pandaproxy_client,omitempty"`
+	SchemaRegistry       *SchemaRegistry `yaml:"schema_registry,omitempty" json:"schema_registry,omitempty"`
+	SchemaRegistryClient *KafkaClient    `yaml:"schema_registry_client,omitempty" json:"schema_registry_client,omitempty"`
 
-	Other map[string]interface{} `yaml:",inline" mapstructure:",remain"`
+	Other map[string]interface{} `yaml:",inline"`
 }
 
 // File returns the configuration as read from a file, with no defaults
@@ -44,67 +44,67 @@ func (c *Config) File() *Config {
 }
 
 type RedpandaConfig struct {
-	Directory                  string                 `yaml:"data_directory" mapstructure:"data_directory" json:"dataDirectory"`
-	ID                         int                    `yaml:"node_id" mapstructure:"node_id" json:"id"`
-	Rack                       string                 `yaml:"rack,omitempty" mapstructure:"rack" json:"rack"`
-	SeedServers                []SeedServer           `yaml:"seed_servers" mapstructure:"seed_servers" json:"seedServers"`
-	RPCServer                  SocketAddress          `yaml:"rpc_server" mapstructure:"rpc_server" json:"rpcServer"`
-	RPCServerTLS               []ServerTLS            `yaml:"rpc_server_tls,omitempty" mapstructure:"rpc_server_tls,omitempty" json:"rpcServerTls"`
-	KafkaAPI                   []NamedSocketAddress   `yaml:"kafka_api" mapstructure:"kafka_api" json:"kafkaApi"`
-	KafkaAPITLS                []ServerTLS            `yaml:"kafka_api_tls,omitempty" mapstructure:"kafka_api_tls,omitempty" json:"kafkaApiTls"`
-	AdminAPI                   []NamedSocketAddress   `yaml:"admin" mapstructure:"admin" json:"admin"`
-	AdminAPITLS                []ServerTLS            `yaml:"admin_api_tls,omitempty" mapstructure:"admin_api_tls,omitempty" json:"adminApiTls"`
-	CoprocSupervisorServer     SocketAddress          `yaml:"coproc_supervisor_server,omitempty" mapstructure:"coproc_supervisor_server" json:"coprocSupervisorServer"`
-	AdminAPIDocDir             string                 `yaml:"admin_api_doc_dir,omitempty" mapstructure:"admin_api_doc_dir" json:"adminApiDocDir"`
-	DashboardDir               string                 `yaml:"dashboard_dir,omitempty" mapstructure:"dashboard_dir" json:"dashboardDir"`
-	CloudStorageCacheDirectory string                 `yaml:"cloud_storage_cache_directory,omitempty" mapstructure:"cloud_storage_cache_directory" json:"CloudStorageCacheDirectory"`
-	AdvertisedRPCAPI           *SocketAddress         `yaml:"advertised_rpc_api,omitempty" mapstructure:"advertised_rpc_api,omitempty" json:"advertisedRpcApi,omitempty"`
-	AdvertisedKafkaAPI         []NamedSocketAddress   `yaml:"advertised_kafka_api,omitempty" mapstructure:"advertised_kafka_api,omitempty" json:"advertisedKafkaApi,omitempty"`
-	DeveloperMode              bool                   `yaml:"developer_mode" mapstructure:"developer_mode" json:"developerMode"`
-	Other                      map[string]interface{} `yaml:",inline" mapstructure:",remain"`
+	Directory                  string                 `yaml:"data_directory" json:"data_directory"`
+	ID                         int                    `yaml:"node_id" json:"node_id"`
+	Rack                       string                 `yaml:"rack,omitempty" json:"rack"`
+	SeedServers                []SeedServer           `yaml:"seed_servers" json:"seed_servers"`
+	RPCServer                  SocketAddress          `yaml:"rpc_server" json:"rpc_server"`
+	RPCServerTLS               []ServerTLS            `yaml:"rpc_server_tls,omitempty" json:"rpc_server_tls"`
+	KafkaAPI                   []NamedSocketAddress   `yaml:"kafka_api" json:"kafka_api"`
+	KafkaAPITLS                []ServerTLS            `yaml:"kafka_api_tls,omitempty" json:"kafka_api_tls"`
+	AdminAPI                   []NamedSocketAddress   `yaml:"admin" json:"admin"`
+	AdminAPITLS                []ServerTLS            `yaml:"admin_api_tls,omitempty" json:"admin_api_tls"`
+	CoprocSupervisorServer     SocketAddress          `yaml:"coproc_supervisor_server,omitempty" json:"coproc_supervisor_server"`
+	AdminAPIDocDir             string                 `yaml:"admin_api_doc_dir,omitempty" json:"admin_api_doc_dir"`
+	DashboardDir               string                 `yaml:"dashboard_dir,omitempty" json:"dashboard_dir"`
+	CloudStorageCacheDirectory string                 `yaml:"cloud_storage_cache_directory,omitempty" json:"cloud_storage_cache_directory"`
+	AdvertisedRPCAPI           *SocketAddress         `yaml:"advertised_rpc_api,omitempty" json:"advertised_rpc_api,omitempty"`
+	AdvertisedKafkaAPI         []NamedSocketAddress   `yaml:"advertised_kafka_api,omitempty" json:"advertised_kafka_api,omitempty"`
+	DeveloperMode              bool                   `yaml:"developer_mode" json:"developer_mode"`
+	Other                      map[string]interface{} `yaml:",inline"`
 }
 
 type Pandaproxy struct {
-	PandaproxyAPI           []NamedSocketAddress   `yaml:"pandaproxy_api,omitempty" mapstructure:"pandaproxy_api,omitempty" json:"pandaproxyApi,omitempty"`
-	PandaproxyAPITLS        []ServerTLS            `yaml:"pandaproxy_api_tls,omitempty" mapstructure:"pandaproxy_api_tls,omitempty" json:"pandaproxyApiTls,omitempty"`
-	AdvertisedPandaproxyAPI []NamedSocketAddress   `yaml:"advertised_pandaproxy_api,omitempty" mapstructure:"advertised_pandaproxy_api,omitempty" json:"advertisedPandaproxyApi,omitempty"`
-	Other                   map[string]interface{} `yaml:",inline" mapstructure:",remain"`
+	PandaproxyAPI           []NamedSocketAddress   `yaml:"pandaproxy_api,omitempty" json:"pandaproxy_api,omitempty"`
+	PandaproxyAPITLS        []ServerTLS            `yaml:"pandaproxy_api_tls,omitempty" json:"pandaproxy_api_tls,omitempty"`
+	AdvertisedPandaproxyAPI []NamedSocketAddress   `yaml:"advertised_pandaproxy_api,omitempty" json:"advertised_pandaproxy_api,omitempty"`
+	Other                   map[string]interface{} `yaml:",inline"`
 }
 
 type SchemaRegistry struct {
-	SchemaRegistryAPI               []NamedSocketAddress `yaml:"schema_registry_api,omitempty" mapstructure:"schema_registry_api,omitempty" json:"schemaRegistryApi,omitempty"`
-	SchemaRegistryAPITLS            []ServerTLS          `yaml:"schema_registry_api_tls,omitempty" mapstructure:"schema_registry_api_tls,omitempty" json:"schemaRegistryApiTls,omitempty"`
-	SchemaRegistryReplicationFactor *int                 `yaml:"schema_registry_replication_factor,omitempty" mapstructure:"schema_registry_replication_factor,omitempty" json:"schemaRegistryReplicationFactor,omitempty"`
+	SchemaRegistryAPI               []NamedSocketAddress `yaml:"schema_registry_api,omitempty" json:"schema_registry_api,omitempty"`
+	SchemaRegistryAPITLS            []ServerTLS          `yaml:"schema_registry_api_tls,omitempty" json:"schema_registry_api_tls,omitempty"`
+	SchemaRegistryReplicationFactor *int                 `yaml:"schema_registry_replication_factor,omitempty" json:"schema_registry_replication_factor,omitempty"`
 }
 
 type KafkaClient struct {
-	Brokers       []SocketAddress        `yaml:"brokers,omitempty" mapstructure:"brokers,omitempty" json:"brokers,omitempty"`
-	BrokerTLS     ServerTLS              `yaml:"broker_tls,omitempty" mapstructure:"broker_tls,omitempty" json:"brokerTls,omitempty"`
-	SASLMechanism *string                `yaml:"sasl_mechanism,omitempty" mapstructure:"sasl_mechanism,omitempty" json:"saslMechanism,omitempty"`
-	SCRAMUsername *string                `yaml:"scram_username,omitempty" mapstructure:"scram_username,omitempty" json:"scramUsername,omitempty"`
-	SCRAMPassword *string                `yaml:"scram_password,omitempty" mapstructure:"scram_password,omitempty" json:"scramPassword,omitempty"`
-	Other         map[string]interface{} `yaml:",inline" mapstructure:",remain"`
+	Brokers       []SocketAddress        `yaml:"brokers,omitempty" json:"brokers,omitempty"`
+	BrokerTLS     ServerTLS              `yaml:"broker_tls,omitempty" json:"broker_tls,omitempty"`
+	SASLMechanism *string                `yaml:"sasl_mechanism,omitempty" json:"sasl_mechanism,omitempty"`
+	SCRAMUsername *string                `yaml:"scram_username,omitempty" json:"scram_username,omitempty"`
+	SCRAMPassword *string                `yaml:"scram_password,omitempty" json:"scram_password,omitempty"`
+	Other         map[string]interface{} `yaml:",inline"`
 }
 
 type SeedServer struct {
-	Host SocketAddress `yaml:"host" mapstructure:"host" json:"host"`
+	Host SocketAddress `yaml:"host" json:"host"`
 }
 
 type SocketAddress struct {
-	Address string `yaml:"address" mapstructure:"address" json:"address"`
-	Port    int    `yaml:"port" mapstructure:"port" json:"port"`
+	Address string `yaml:"address" json:"address"`
+	Port    int    `yaml:"port" json:"port"`
 }
 
 type NamedSocketAddress struct {
-	Address string `yaml:"address" mapstructure:"address" json:"address"`
-	Port    int    `yaml:"port" mapstructure:"port" json:"port"`
-	Name    string `yaml:"name,omitempty" mapstructure:"name,omitempty" json:"name,omitempty"`
+	Address string `yaml:"address" json:"address"`
+	Port    int    `yaml:"port" json:"port"`
+	Name    string `yaml:"name,omitempty" json:"name,omitempty"`
 }
 
 type TLS struct {
-	KeyFile        string `yaml:"key_file,omitempty" mapstructure:"key_file,omitempty" json:"keyFile"`
-	CertFile       string `yaml:"cert_file,omitempty" mapstructure:"cert_file,omitempty" json:"certFile"`
-	TruststoreFile string `yaml:"truststore_file,omitempty" mapstructure:"truststore_file,omitempty" json:"truststoreFile"`
+	KeyFile        string `yaml:"key_file,omitempty" json:"key_file"`
+	CertFile       string `yaml:"cert_file,omitempty" json:"cert_file"`
+	TruststoreFile string `yaml:"truststore_file,omitempty" json:"truststore_file"`
 }
 
 func (t *TLS) Config(fs afero.Fs) (*tls.Config, error) {
@@ -129,62 +129,62 @@ func (t *TLS) Config(fs afero.Fs) (*tls.Config, error) {
 }
 
 type ServerTLS struct {
-	Name              string                 `yaml:"name,omitempty" mapstructure:"name,omitempty" json:"name"`
-	KeyFile           string                 `yaml:"key_file,omitempty" mapstructure:"key_file,omitempty" json:"keyFile"`
-	CertFile          string                 `yaml:"cert_file,omitempty" mapstructure:"cert_file,omitempty" json:"certFile"`
-	TruststoreFile    string                 `yaml:"truststore_file,omitempty" mapstructure:"truststore_file,omitempty" json:"truststoreFile"`
-	Enabled           bool                   `yaml:"enabled,omitempty" mapstructure:"enabled,omitempty" json:"enabled"`
-	RequireClientAuth bool                   `yaml:"require_client_auth,omitempty" mapstructure:"require_client_auth,omitempty" json:"requireClientAuth"`
-	Other             map[string]interface{} `yaml:",inline" mapstructure:",remain"`
+	Name              string                 `yaml:"name,omitempty" json:"name"`
+	KeyFile           string                 `yaml:"key_file,omitempty" json:"key_file"`
+	CertFile          string                 `yaml:"cert_file,omitempty" json:"cert_file"`
+	TruststoreFile    string                 `yaml:"truststore_file,omitempty" json:"truststore_file"`
+	Enabled           bool                   `yaml:"enabled,omitempty" json:"enabled"`
+	RequireClientAuth bool                   `yaml:"require_client_auth,omitempty" json:"require_client_auth"`
+	Other             map[string]interface{} `yaml:",inline" `
 }
 
 type RpkConfig struct {
 	// Deprecated 2021-07-1
-	TLS *TLS `yaml:"tls,omitempty" mapstructure:"tls,omitempty" json:"tls"`
+	TLS *TLS `yaml:"tls,omitempty" json:"tls"`
 	// Deprecated 2021-07-1
-	SASL *SASL `yaml:"sasl,omitempty" mapstructure:"sasl,omitempty" json:"sasl,omitempty"`
+	SASL *SASL `yaml:"sasl,omitempty" json:"sasl,omitempty"`
 
-	KafkaAPI                 RpkKafkaAPI `yaml:"kafka_api,omitempty" mapstructure:"kafka_api,omitempty" json:"kafkaApi"`
-	AdminAPI                 RpkAdminAPI `yaml:"admin_api,omitempty" mapstructure:"admin_api,omitempty" json:"adminApi"`
-	AdditionalStartFlags     []string    `yaml:"additional_start_flags,omitempty" mapstructure:"additional_start_flags,omitempty" json:"additionalStartFlags"`
-	EnableUsageStats         bool        `yaml:"enable_usage_stats" mapstructure:"enable_usage_stats" json:"enableUsageStats"`
-	TuneNetwork              bool        `yaml:"tune_network" mapstructure:"tune_network" json:"tuneNetwork"`
-	TuneDiskScheduler        bool        `yaml:"tune_disk_scheduler" mapstructure:"tune_disk_scheduler" json:"tuneDiskScheduler"`
-	TuneNomerges             bool        `yaml:"tune_disk_nomerges" mapstructure:"tune_disk_nomerges" json:"tuneNomerges"`
-	TuneDiskWriteCache       bool        `yaml:"tune_disk_write_cache" mapstructure:"tune_disk_write_cache" json:"tuneDiskWriteCache"`
-	TuneDiskIrq              bool        `yaml:"tune_disk_irq" mapstructure:"tune_disk_irq" json:"tuneDiskIrq"`
-	TuneFstrim               bool        `yaml:"tune_fstrim" mapstructure:"tune_fstrim" json:"tuneFstrim"`
-	TuneCPU                  bool        `yaml:"tune_cpu" mapstructure:"tune_cpu" json:"tuneCpu"`
-	TuneAioEvents            bool        `yaml:"tune_aio_events" mapstructure:"tune_aio_events" json:"tuneAioEvents"`
-	TuneClocksource          bool        `yaml:"tune_clocksource" mapstructure:"tune_clocksource" json:"tuneClocksource"`
-	TuneSwappiness           bool        `yaml:"tune_swappiness" mapstructure:"tune_swappiness" json:"tuneSwappiness"`
-	TuneTransparentHugePages bool        `yaml:"tune_transparent_hugepages" mapstructure:"tune_transparent_hugepages" json:"tuneTransparentHugePages"`
-	EnableMemoryLocking      bool        `yaml:"enable_memory_locking" mapstructure:"enable_memory_locking" json:"enableMemoryLocking"`
-	TuneCoredump             bool        `yaml:"tune_coredump" mapstructure:"tune_coredump" json:"tuneCoredump"`
-	CoredumpDir              string      `yaml:"coredump_dir,omitempty" mapstructure:"coredump_dir,omitempty" json:"coredumpDir"`
-	TuneBallastFile          bool        `yaml:"tune_ballast_file" mapstructure:"tune_ballast_file" json:"tuneBallastFile"`
-	BallastFilePath          string      `yaml:"ballast_file_path,omitempty" mapstructure:"ballast_file_path,omitempty" json:"ballastFilePath"`
-	BallastFileSize          string      `yaml:"ballast_file_size,omitempty" mapstructure:"ballast_file_size,omitempty" json:"ballastFileSize"`
-	WellKnownIo              string      `yaml:"well_known_io,omitempty" mapstructure:"well_known_io,omitempty" json:"wellKnownIo"`
-	Overprovisioned          bool        `yaml:"overprovisioned" mapstructure:"overprovisioned" json:"overprovisioned"`
-	SMP                      *int        `yaml:"smp,omitempty" mapstructure:"smp,omitempty" json:"smp,omitempty"`
+	KafkaAPI                 RpkKafkaAPI `yaml:"kafka_api,omitempty" json:"kafka_api"`
+	AdminAPI                 RpkAdminAPI `yaml:"admin_api,omitempty" json:"admin_api"`
+	AdditionalStartFlags     []string    `yaml:"additional_start_flags,omitempty"  json:"additional_start_flags"`
+	EnableUsageStats         bool        `yaml:"enable_usage_stats" json:"enable_usage_stats"`
+	TuneNetwork              bool        `yaml:"tune_network" json:"tune_network"`
+	TuneDiskScheduler        bool        `yaml:"tune_disk_scheduler" json:"tune_disk_scheduler"`
+	TuneNomerges             bool        `yaml:"tune_disk_nomerges" json:"tune_disk_nomerges"`
+	TuneDiskWriteCache       bool        `yaml:"tune_disk_write_cache" json:"tune_disk_write_cache"`
+	TuneDiskIrq              bool        `yaml:"tune_disk_irq" json:"tune_disk_irq"`
+	TuneFstrim               bool        `yaml:"tune_fstrim" json:"tune_fstrim"`
+	TuneCPU                  bool        `yaml:"tune_cpu" json:"tune_cpu"`
+	TuneAioEvents            bool        `yaml:"tune_aio_events" json:"tune_aio_events"`
+	TuneClocksource          bool        `yaml:"tune_clocksource" json:"tune_clocksource"`
+	TuneSwappiness           bool        `yaml:"tune_swappiness" json:"tune_swappiness"`
+	TuneTransparentHugePages bool        `yaml:"tune_transparent_hugepages" json:"tune_transparent_hugepages"`
+	EnableMemoryLocking      bool        `yaml:"enable_memory_locking" json:"enable_memory_locking"`
+	TuneCoredump             bool        `yaml:"tune_coredump" json:"tune_coredump"`
+	CoredumpDir              string      `yaml:"coredump_dir,omitempty" json:"coredump_dir"`
+	TuneBallastFile          bool        `yaml:"tune_ballast_file" json:"tune_ballast_file"`
+	BallastFilePath          string      `yaml:"ballast_file_path,omitempty" json:"ballast_file_path"`
+	BallastFileSize          string      `yaml:"ballast_file_size,omitempty" json:"ballast_file_size"`
+	WellKnownIo              string      `yaml:"well_known_io,omitempty" json:"well_known_io"`
+	Overprovisioned          bool        `yaml:"overprovisioned" json:"overprovisioned"`
+	SMP                      *int        `yaml:"smp,omitempty" json:"smp,omitempty"`
 }
 
 type RpkKafkaAPI struct {
-	Brokers []string `yaml:"brokers,omitempty" mapstructure:"brokers,omitempty" json:"brokers"`
-	TLS     *TLS     `yaml:"tls,omitempty" mapstructure:"tls,omitempty" json:"tls"`
-	SASL    *SASL    `yaml:"sasl,omitempty" mapstructure:"sasl,omitempty" json:"sasl,omitempty"`
+	Brokers []string `yaml:"brokers,omitempty" json:"brokers"`
+	TLS     *TLS     `yaml:"tls,omitempty" json:"tls"`
+	SASL    *SASL    `yaml:"sasl,omitempty" json:"sasl,omitempty"`
 }
 
 type RpkAdminAPI struct {
-	Addresses []string `yaml:"addresses,omitempty" mapstructure:"addresses,omitempty" json:"addresses"`
-	TLS       *TLS     `yaml:"tls,omitempty" mapstructure:"tls,omitempty" json:"tls"`
+	Addresses []string `yaml:"addresses,omitempty" json:"addresses"`
+	TLS       *TLS     `yaml:"tls,omitempty" json:"tls"`
 }
 
 type SASL struct {
-	User      string `yaml:"user,omitempty" mapstructure:"user,omitempty" json:"user,omitempty"`
-	Password  string `yaml:"password,omitempty" mapstructure:"password,omitempty" json:"password,omitempty"`
-	Mechanism string `yaml:"type,omitempty" mapstructure:"type,omitempty" json:"type,omitempty"`
+	User      string `yaml:"user,omitempty" json:"user,omitempty"`
+	Password  string `yaml:"password,omitempty" json:"password,omitempty"`
+	Mechanism string `yaml:"type,omitempty" json:"type,omitempty"`
 }
 
 func (c *Config) PIDFile() string {

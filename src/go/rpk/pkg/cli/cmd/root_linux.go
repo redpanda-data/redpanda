@@ -10,23 +10,20 @@
 package cmd
 
 import (
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/redpanda"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func addPlatformDependentCmds(
-	fs afero.Fs, mgr config.Manager, cmd *cobra.Command,
-) {
-	cmd.AddCommand(NewRedpandaCommand(fs, mgr, redpanda.NewLauncher()))
+func addPlatformDependentCmds(fs afero.Fs, cmd *cobra.Command) {
+	cmd.AddCommand(NewRedpandaCommand(fs, redpanda.NewLauncher()))
 
 	cmd.AddCommand(NewTuneCommand(fs))
 	cmd.AddCommand(NewCheckCommand(fs))
 	cmd.AddCommand(NewIoTuneCmd(fs))
-	cmd.AddCommand(NewStartCommand(fs, mgr, redpanda.NewLauncher()))
-	cmd.AddCommand(NewStopCommand(fs, mgr))
-	cmd.AddCommand(NewConfigCommand(fs, mgr))
+	cmd.AddCommand(NewStartCommand(fs, redpanda.NewLauncher()))
+	cmd.AddCommand(NewStopCommand(fs))
+	cmd.AddCommand(NewConfigCommand(fs))
 	cmd.AddCommand(NewStatusCommand(fs))
-	cmd.AddCommand(NewModeCommand(mgr))
+	cmd.AddCommand(NewModeCommand(fs))
 }

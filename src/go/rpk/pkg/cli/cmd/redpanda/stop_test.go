@@ -55,7 +55,6 @@ func TestStopCommand(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fs := afero.NewMemMapFs()
-			mgr := config.NewManager(fs)
 			conf := config.Default()
 			command := baseCommand
 			// trap the signals we want to ignore, to check that the
@@ -76,11 +75,11 @@ func TestStopCommand(t *testing.T) {
 				conf.PIDFile(),
 			)
 			require.NoError(t, err)
-			err = mgr.Write(conf)
+			err = conf.Write(fs)
 			require.NoError(t, err)
 
 			var out bytes.Buffer
-			c := cmd.NewStopCommand(fs, mgr)
+			c := cmd.NewStopCommand(fs)
 			args := append([]string{"--config", conf.ConfigFile}, tt.args...)
 			c.SetArgs(args)
 

@@ -52,15 +52,15 @@ schema_registry:
 
 rpk:
   # TLS configuration.
-  tls:
+  #tls:
     # The path to the root CA certificate (PEM)
-    truststore_file: ""
+    #truststore_file: ""
 
     # The path to the client certificate (PEM)
-    cert_file: ""
+    #cert_file: ""
 
     # The path to the client certificate key (PEM)
-    key_file: ""
+    #key_file: ""
 
   # Enables sending environment and resource usage data to Vectorized.
   enable_usage_stats: true
