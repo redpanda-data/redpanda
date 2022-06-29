@@ -1373,8 +1373,16 @@ struct update_topic_properties_request
     auto serde_fields() { return std::tie(updates); }
 };
 
-struct update_topic_properties_reply {
+struct update_topic_properties_reply
+  : serde::envelope<update_topic_properties_reply, serde::version<0>> {
     std::vector<topic_result> results;
+
+    friend bool operator==(
+      const update_topic_properties_reply&,
+      const update_topic_properties_reply&)
+      = default;
+
+    auto serde_fields() { return std::tie(results); }
 };
 
 template<typename T>
