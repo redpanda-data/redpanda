@@ -91,22 +91,3 @@ bool http_imposter_fixture::has_call(std::string_view url) const {
              [&url](const auto& r) { return r._url == url; })
            != _requests.cend();
 }
-
-bool http_imposter_fixture::has_calls_in_order(
-  const std::vector<std::string_view>& urls) const {
-    auto beg = _requests.cbegin();
-    auto end = _requests.cend();
-
-    for (const auto& url : urls) {
-        auto found = std::find_if(
-          beg, end, [&url](const auto& r) { return r._url == url; });
-
-        if (found == end) {
-            return false;
-        }
-
-        beg = found;
-    }
-
-    return true;
-}

@@ -55,6 +55,34 @@ FIXTURE_TEST(test_post, http_imposter_fixture) {
       .with_method(ss::httpd::POST)
       .then_reply_with("bar", ss::httpd::reply::status_type::ok);
 
+    listen();
+
+    auto client = http::client{
+      {.server_addr = {httpd_host_name.data(), httpd_port_number}}};
+
+    http::client::request_header header;
+    header.method(boost::beast::http::verb::post);
+    header.target("/foo");
+    header.insert(
+      bh::field::host, {httpd_host_name.data(), httpd_host_name.size()});
+
+    auto response = client.request(std::move(header)).get0();
+    iobuf response_data;
+    while (!response->is_done()) {
+        response_data.append(response->recv_some().get0());
+    }
+
+    auto headers = response->get_headers();
+    iobuf_parser p(std::move(response_data));
+    auto data = p.read_string(p.bytes_left());
+
+    BOOST_REQUIRE_EQUAL(headers.result(), bh::status::ok);
+    BOOST_REQUIRE_EQUAL(data, "bar");
+
+    BOOST_REQUIRE(has_call("/foo"));
+}
+
+FIXTURE_TEST(test_forbidden, http_imposter_fixture) {
     when()
       .request("/super-secret-area")
       .with_method(ss::httpd::GET)
@@ -67,8 +95,8 @@ FIXTURE_TEST(test_post, http_imposter_fixture) {
 
     {
         http::client::request_header header;
-        header.method(boost::beast::http::verb::post);
-        header.target("/foo");
+        header.method(boost::beast::http::verb::get);
+        header.target("/super-secret-area");
         header.insert(
           bh::field::host, {httpd_host_name.data(), httpd_host_name.size()});
 
@@ -78,12 +106,8 @@ FIXTURE_TEST(test_post, http_imposter_fixture) {
             response_data.append(response->recv_some().get0());
         }
 
-        auto headers = response->get_headers();
-        iobuf_parser p(std::move(response_data));
-        auto data = p.read_string(p.bytes_left());
-
-        BOOST_REQUIRE_EQUAL(headers.result(), bh::status::ok);
-        BOOST_REQUIRE_EQUAL(data, "bar");
+        BOOST_REQUIRE_EQUAL(
+          response->get_headers().result(), bh::status::forbidden);
     }
 
     {
@@ -103,5 +127,7 @@ FIXTURE_TEST(test_post, http_imposter_fixture) {
           response->get_headers().result(), bh::status::forbidden);
     }
 
-    BOOST_REQUIRE(has_calls_in_order({"/foo", "/super-secret-area"}));
+    // test the calls in order api
+    BOOST_REQUIRE(
+      has_calls_in_order("/super-secret-area", "/super-secret-area"));
 }
