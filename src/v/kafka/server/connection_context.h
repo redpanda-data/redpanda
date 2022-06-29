@@ -191,8 +191,16 @@ private:
     ss::future<> handle_auth_v0(size_t);
 
 private:
+    /**
+     * Bundles together a response and its associated resources.
+     */
+    struct response_and_resources {
+        response_ptr response;
+        session_resources resources;
+    };
+
     using sequence_id = named_type<uint64_t, struct kafka_protocol_sequence>;
-    using map_t = absl::flat_hash_map<sequence_id, response_ptr>;
+    using map_t = absl::flat_hash_map<sequence_id, response_and_resources>;
 
     class ctx_log {
     public:
