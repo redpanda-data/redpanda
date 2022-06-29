@@ -1119,10 +1119,18 @@ struct incremental_topic_updates
 
 // This class contains updates for topic properties which are replicates not by
 // topic_frontend
-struct incremental_topic_custom_updates {
+struct incremental_topic_custom_updates
+  : serde::envelope<incremental_topic_custom_updates, serde::version<0>> {
     // Data-policy property is replicated by data_policy_frontend and handled by
     // data_policy_manager.
     property_update<std::optional<v8_engine::data_policy>> data_policy;
+
+    friend bool operator==(
+      const incremental_topic_custom_updates&,
+      const incremental_topic_custom_updates&)
+      = default;
+
+    auto serde_fields() { return std::tie(data_policy); }
 };
 
 /**
