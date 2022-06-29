@@ -42,7 +42,10 @@ class InstallOptions:
     """
     Options with which to configure the installation of Redpanda in a cluster.
     """
-    def __init__(self, install_previous_version=False, version=None):
+    def __init__(self,
+                 install_previous_version=False,
+                 version=None,
+                 num_to_upgrade=0):
         # If true, install the highest version of the prior feature version
         # before HEAD.
         self.install_previous_version = install_previous_version
@@ -50,6 +53,11 @@ class InstallOptions:
         # Either RedpandaInstaller.HEAD or a numeric tuple representing the
         # version to install (e.g. (22, 1, 3)).
         self.version = version
+
+        # Number of nodes in a cluster to upgrade to HEAD after starting the
+        # cluster on an older version, e.g. to simulate a mixed-version
+        # environment.
+        self.num_to_upgrade = num_to_upgrade
 
 
 class RedpandaInstaller:

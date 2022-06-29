@@ -104,6 +104,18 @@ class EndToEndTest(Test):
             self.redpanda._installer.install(self.redpanda.nodes,
                                              version_to_install)
         self.redpanda.start()
+        if version_to_install and install_opts.num_to_upgrade > 0:
+            # Perform the upgrade rather than starting each node on the
+            # appropriate version. Redpanda may not start up if starting a new
+            # cluster with mixed-versions.
+            nodes_to_upgrade = [
+                self.redpanda.get_node(i + 1)
+                for i in range(install_opts.num_to_upgrade)
+            ]
+            self.redpanda._installer.install(nodes_to_upgrade,
+                                             RedpandaInstaller.HEAD)
+            self.redpanda.restart_nodes(nodes_to_upgrade)
+
         self._client = DefaultClient(self.redpanda)
 
     @property
