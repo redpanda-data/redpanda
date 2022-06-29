@@ -1640,8 +1640,11 @@ enum class reconciliation_status : int8_t {
 };
 std::ostream& operator<<(std::ostream&, const reconciliation_status&);
 
-class ntp_reconciliation_state {
+class ntp_reconciliation_state
+  : public serde::envelope<ntp_reconciliation_state, serde::version<0>> {
 public:
+    ntp_reconciliation_state() noexcept = default;
+
     // success case
     ntp_reconciliation_state(
       model::ntp, std::vector<backend_operation>, reconciliation_status);
@@ -1664,8 +1667,16 @@ public:
     std::error_code error() const { return make_error_code(_error); }
     errc cluster_errc() const { return _error; }
 
+    friend bool
+    operator==(const ntp_reconciliation_state&, const ntp_reconciliation_state&)
+      = default;
+
     friend std::ostream&
     operator<<(std::ostream&, const ntp_reconciliation_state&);
+
+    auto serde_fields() {
+        return std::tie(_ntp, _backend_operations, _status, _error);
+    }
 
 private:
     model::ntp _ntp;
