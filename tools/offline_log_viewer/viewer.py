@@ -53,7 +53,7 @@ def print_kafka_records(store, topic):
             log = KafkaLog(ntp)
             logger.info(f'topic: {ntp.topic}, partition: {ntp.partition}')
             for batch in log.batches():
-                logger.info(json.dumps(batch.header._asdict(), indent=2))
+                logger.info(json.dumps(batch.header_dict(), indent=2))
                 for record in batch:
                     logger.info(
                         json.dumps(

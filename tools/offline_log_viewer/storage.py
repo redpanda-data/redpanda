@@ -105,6 +105,23 @@ class RecordIter:
 
 
 class Batch:
+    class CompressionType(Enum):
+        none = 0
+        gzip = 1
+        snappy = 2
+        lz4 = 3
+        zstd = 4
+        unknown = -1
+
+        @classmethod
+        def _missing_(e, value):
+            return e.unknown
+
+    compression_mask = 0x7
+    ts_type_mask = 0x8
+    transactional_mask = 0x10
+    control_mask = 0x20
+
     def __init__(self, index, header, records):
         self.index = index
         self.header = header
@@ -120,6 +137,19 @@ class Batch:
         crc = crc32c.crc32c(records, crc)
         if self.header.crc != crc:
             raise CorruptBatchError(self)
+
+    def header_dict(self):
+        header = self.header._asdict()
+        attrs = header['attrs']
+        header['expanded_attrs'] = {
+            'compression':
+            Batch.CompressionType(attrs & Batch.compression_mask).name,
+            'transactional':
+            attrs & Batch.transactional_mask == Batch.transactional_mask,
+            'control_batch': attrs & Batch.control_mask == Batch.control_mask,
+            'timestamp_type': attrs & Batch.ts_type_mask == Batch.ts_type_mask
+        }
+        return header
 
     def last_offset(self):
         return self.header.base_offset + self.header.record_count - 1
