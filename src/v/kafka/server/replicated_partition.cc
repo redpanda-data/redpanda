@@ -10,12 +10,14 @@
  */
 #include "kafka/server/replicated_partition.h"
 
+#include "cluster/errc.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/server/logger.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"
 #include "raft/consensus_utils.h"
+#include "raft/errc.h"
 #include "raft/types.h"
 #include "storage/types.h"
 
@@ -209,7 +211,7 @@ std::optional<model::offset> replicated_partition::get_leader_epoch_last_offset(
     return std::nullopt;
 }
 
-ss::future<bool> replicated_partition::is_fetch_offset_valid(
+ss::future<error_code> replicated_partition::validate_fetch_offset(
   model::offset fetch_offset, model::timeout_clock::time_point deadline) {
     /**
      * Make sure that we will update high watermark offset if it isn't yet
@@ -234,6 +236,18 @@ ss::future<bool> replicated_partition::is_fetch_offset_valid(
         // retry linearizable barrier to make sure node is still a leader
         auto ec = co_await linearizable_barrier();
         if (ec) {
+            /**
+             * when partition is shutting down we may not be able to correctly
+             * validate consumer requested offset. Return
+             * not_leader_for_partition error to force client to retry instead
+             * of out of range error that is forcing consumers to reset their
+             * offset.
+             */
+            if (
+              ec == raft::errc::shutting_down
+              || ec == cluster::errc::shutting_down) {
+                co_return error_code::not_leader_for_partition;
+            }
             vlog(
               klog.warn,
               "error updating partition high watermark with linearizable "
@@ -249,8 +263,9 @@ ss::future<bool> replicated_partition::is_fetch_offset_valid(
           _partition->high_watermark());
     }
 
-    co_return fetch_offset >= start_offset()
-      && fetch_offset <= high_watermark();
+    co_return fetch_offset >= start_offset() && fetch_offset <= high_watermark()
+      ? error_code::none
+      : error_code::offset_out_of_range;
 }
 
 } // namespace kafka

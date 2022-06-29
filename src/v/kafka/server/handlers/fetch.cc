@@ -160,7 +160,7 @@ static ss::future<read_result> do_read_from_ntp(
     if (leader_epoch_err != error_code::none) {
         co_return read_result(leader_epoch_err);
     }
-    auto is_offset_valid = co_await kafka_partition->is_fetch_offset_valid(
+    auto offset_ec = co_await kafka_partition->validate_fetch_offset(
       ntp_config.cfg.start_offset,
       default_fetch_timeout + model::timeout_clock::now());
 
@@ -176,16 +176,17 @@ static ss::future<read_result> do_read_from_ntp(
         }
     }
 
-    if (!is_offset_valid) {
+    if (offset_ec != error_code::none) {
         vlog(
           klog.warn,
           "fetch offset out of range for {}, requested offset: {}, "
-          "partition start offset: {}, high watermark: {}",
+          "partition start offset: {}, high watermark: {}, ec: {}",
           ntp_config.ntp(),
           ntp_config.cfg.start_offset,
           kafka_partition->start_offset(),
-          kafka_partition->high_watermark());
-        co_return read_result(error_code::offset_out_of_range);
+          kafka_partition->high_watermark(),
+          offset_ec);
+        co_return read_result(offset_ec);
     }
     co_return co_await read_from_partition(
       std::move(*kafka_partition), ntp_config.cfg, foreign_read, deadline);

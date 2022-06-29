@@ -13,6 +13,7 @@
 #include "cluster/metadata_cache.h"
 #include "cluster/partition.h"
 #include "coproc/fwd.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "storage/translating_reader.h"
@@ -52,8 +53,8 @@ public:
             model::offset,
             ss::lw_shared_ptr<const storage::offset_translator_state>)
           = 0;
-        virtual ss::future<bool>
-          is_fetch_offset_valid(model::offset, model::timeout_clock::time_point)
+        virtual ss::future<error_code>
+          validate_fetch_offset(model::offset, model::timeout_clock::time_point)
           = 0;
         virtual cluster::partition_probe& probe() = 0;
         virtual ~impl() noexcept = default;
@@ -107,9 +108,9 @@ public:
         return _impl->get_leader_epoch_last_offset(epoch);
     }
 
-    ss::future<bool> is_fetch_offset_valid(
+    ss::future<error_code> validate_fetch_offset(
       model::offset o, model::timeout_clock::time_point deadline) {
-        return _impl->is_fetch_offset_valid(o, deadline);
+        return _impl->validate_fetch_offset(o, deadline);
     }
 
 private:
