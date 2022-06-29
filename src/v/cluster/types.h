@@ -819,8 +819,17 @@ struct join_request : serde::envelope<join_request, serde::version<0>> {
     auto serde_fields() { return std::tie(node); }
 };
 
-struct join_reply {
+struct join_reply : serde::envelope<join_reply, serde::version<0>> {
     bool success;
+
+    join_reply() noexcept = default;
+
+    explicit join_reply(bool success)
+      : success(success) {}
+
+    friend bool operator==(const join_reply&, const join_reply&) = default;
+
+    auto serde_fields() { return std::tie(success); }
 };
 
 /// Successor to join_request:
