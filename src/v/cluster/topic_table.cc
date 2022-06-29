@@ -722,4 +722,16 @@ topic_table::get_previous_replica_set(const model::ntp& ntp) const {
     return std::nullopt;
 }
 
+std::ostream&
+operator<<(std::ostream& o, topic_table::in_progress_state update) {
+    switch (update) {
+    case topic_table::in_progress_state::update_requested:
+        return o << "update_requested";
+    case topic_table::in_progress_state::cancel_requested:
+        return o << "cancel_requested";
+    case topic_table::in_progress_state::force_cancel_requested:
+        return o << "force_cancel_requested";
+    }
+    __builtin_unreachable();
+}
 } // namespace cluster
