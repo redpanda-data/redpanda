@@ -173,6 +173,11 @@ class AccessControlListTest(RedpandaTest):
                  use_sasl=True,
                  enable_authz=None,
                  authn_method=None)
+    # ssl/tls conn + sasl for authn (listener sasl config)
+    @parametrize(use_tls=True,
+                 use_sasl=False,
+                 enable_authz=True,
+                 authn_method="sasl")
     # ssl/tls conn + mtls for authn (listener mtls config)
     @parametrize(use_tls=True,
                  use_sasl=False,
