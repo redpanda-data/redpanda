@@ -1845,6 +1845,15 @@ struct adl<cluster::join_request> {
 };
 
 template<>
+struct adl<cluster::join_reply> {
+    void to(iobuf& out, cluster::join_reply&& r) { serialize(out, r.success); }
+    cluster::join_reply from(iobuf_parser& in) {
+        auto success = adl<bool>{}.from(in);
+        return cluster::join_reply{success};
+    }
+};
+
+template<>
 struct adl<cluster::join_node_request> {
     void to(iobuf&, cluster::join_node_request&&);
     cluster::join_node_request from(iobuf);
