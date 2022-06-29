@@ -46,6 +46,7 @@
 #include <gnutls/crypto.h>
 
 #include <exception>
+#include <utility>
 
 namespace s3 {
 
@@ -101,8 +102,8 @@ static ss::sstring make_endpoint_url(
 }
 
 ss::future<configuration> configuration::make_configuration(
-  const public_key_str& pkey,
-  const private_key_str& skey,
+  const std::optional<public_key_str>& pkey,
+  const std::optional<private_key_str>& skey,
   const aws_region_name& region,
   const default_overrides& overrides,
   net::metrics_disabled disable_metrics) {
@@ -164,8 +165,8 @@ ss::future<configuration> configuration::make_configuration(
 }
 
 std::ostream& operator<<(std::ostream& o, const configuration& c) {
-    o << "{access_key:" << c.access_key << ",region:" << c.region()
-      << ",secret_key:****"
+    o << "{access_key:" << c.access_key.value_or(public_key_str{""})
+      << ",region:" << c.region() << ",secret_key:****"
       << ",access_point_uri:" << c.uri() << ",server_addr:" << c.server_addr
       << ",max_idle_time:"
       << std::chrono::duration_cast<std::chrono::milliseconds>(c.max_idle_time)
@@ -178,7 +179,7 @@ std::ostream& operator<<(std::ostream& o, const configuration& c) {
 
 request_creator::request_creator(const configuration& conf)
   : _ap(conf.uri)
-  , _sign(conf.region, conf.access_key, conf.secret_key) {}
+  , _sign(conf.region, conf.access_key.value(), conf.secret_key.value()) {}
 
 result<http::client::request_header> request_creator::make_get_object_request(
   bucket_name const& name, object_key const& key) {

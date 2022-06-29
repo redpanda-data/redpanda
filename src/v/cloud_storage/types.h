@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "model/metadata.h"
 #include "s3/client.h"
 #include "seastarx.h"
 #include "utils/named_type.h"
@@ -74,6 +75,8 @@ struct configuration {
     remote_metrics_disabled metrics_disabled;
     /// The bucket to use
     s3::bucket_name bucket_name;
+
+    model::cloud_credentials_source cloud_credentials_source;
 
     friend std::ostream& operator<<(std::ostream& o, const configuration& cfg);
 

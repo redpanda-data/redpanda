@@ -59,10 +59,10 @@ struct default_overrides {
 struct configuration : net::base_transport::configuration {
     /// URI of the S3 access point
     access_point_uri uri;
-    /// AWS access key
-    public_key_str access_key;
-    /// AWS secret key
-    private_key_str secret_key;
+    /// AWS access key, optional if configuration uses temporary credentials
+    std::optional<public_key_str> access_key;
+    /// AWS secret key, optional if configuration uses temporary credentials
+    std::optional<private_key_str> secret_key;
     /// AWS region
     aws_region_name region;
     /// Max time that connection can spend idle
@@ -82,8 +82,8 @@ struct configuration : net::base_transport::configuration {
     ///        truststore
     /// \return future that returns initialized configuration
     static ss::future<configuration> make_configuration(
-      const public_key_str& pkey,
-      const private_key_str& skey,
+      const std::optional<public_key_str>& pkey,
+      const std::optional<private_key_str>& skey,
       const aws_region_name& region,
       const default_overrides& overrides = {},
       net::metrics_disabled disable_metrics = net::metrics_disabled::yes);
