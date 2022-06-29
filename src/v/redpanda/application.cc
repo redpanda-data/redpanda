@@ -708,6 +708,9 @@ void application::wire_up_redpanda_services() {
         cloud_configs.stop().get();
     }
 
+    syschecks::systemd_message("Creating feature table").get();
+    construct_service(_feature_table).get();
+
     syschecks::systemd_message("Adding partition manager").get();
     construct_service(
       partition_manager,
@@ -738,6 +741,7 @@ void application::wire_up_redpanda_services() {
       storage_node,
       std::ref(raft_group_manager),
       data_policies,
+      std::ref(_feature_table),
       std::ref(cloud_storage_api));
 
     controller->wire_up().get0();
@@ -847,6 +851,7 @@ void application::wire_up_redpanda_services() {
           make_upload_controller_config(_scheduling_groups.archival_upload()))
           .get();
     }
+
     // group membership
     syschecks::systemd_message("Creating partition manager").get();
     construct_service(
