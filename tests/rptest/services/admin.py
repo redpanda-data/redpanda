@@ -432,6 +432,14 @@ class Admin:
         self.redpanda.logger.debug(f"decommissioning {path}")
         return self._request('put', path, node=node)
 
+    def list_reconfigurations(self, node=None):
+        """
+        List pending reconfigurations
+        """
+        path = f"partitions/reconfigurations"
+
+        return self._request('get', path, node=node).json()
+
     def get_partitions(self,
                        topic=None,
                        partition=None,
