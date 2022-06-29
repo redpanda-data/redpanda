@@ -1696,8 +1696,15 @@ struct reconciliation_state_request
     auto serde_fields() { return std::tie(ntps); }
 };
 
-struct reconciliation_state_reply {
+struct reconciliation_state_reply
+  : serde::envelope<reconciliation_state_reply, serde::version<0>> {
     std::vector<ntp_reconciliation_state> results;
+
+    friend bool operator==(
+      const reconciliation_state_reply&, const reconciliation_state_reply&)
+      = default;
+
+    auto serde_fields() { return std::tie(results); }
 };
 
 struct decommission_node_request {
