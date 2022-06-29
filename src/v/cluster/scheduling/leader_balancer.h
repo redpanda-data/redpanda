@@ -63,11 +63,11 @@ class leader_balancer {
     static constexpr clock_type::duration leader_transfer_rpc_timeout = 30s;
 
     /*
-     * limits the total in flight leadership transfers (those where the metadata
-     * has yet to propagate across the cluster) to this factor per shard in the
-     * cluster.
+     * Used to reschedule the balancer after it has been throttled due to it
+     * hitting its max in flight limit. This delay will occur after one of the
+     * in flight transfers successfully completes.
      */
-    static constexpr size_t transfer_limit_per_shard = 10;
+    static constexpr clock_type::duration throttle_reactivation_delay = 5s;
 
 public:
     leader_balancer(
@@ -82,6 +82,7 @@ public:
       config::binding<std::chrono::milliseconds>&&,
       config::binding<std::chrono::milliseconds>&&,
       config::binding<std::chrono::milliseconds>&&,
+      config::binding<size_t>&&,
       consensus_ptr);
 
     ss::future<> start();
@@ -153,6 +154,13 @@ private:
      */
     config::binding<std::chrono::milliseconds> _node_mute_timeout;
 
+    /*
+     * limits the total in flight leadership transfers (those where the metadata
+     * has yet to propagate across the cluster) to this factor per shard in the
+     * cluster.
+     */
+    config::binding<size_t> _transfer_limit_per_shard;
+
     struct last_known_leader {
         model::broker_shard shard;
         clock_type::time_point expires;
@@ -161,6 +169,7 @@ private:
 
     leader_balancer_probe _probe;
     bool _need_controller_refresh{true};
+    bool _throttled{false};
     absl::btree_map<raft::group_id, clock_type::time_point> _muted;
     cluster::notification_id_type _leader_notify_handle;
     std::optional<cluster::notification_id_type>

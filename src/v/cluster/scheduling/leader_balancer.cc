@@ -47,11 +47,13 @@ leader_balancer::leader_balancer(
   config::binding<std::chrono::milliseconds>&& idle_timeout,
   config::binding<std::chrono::milliseconds>&& mute_timeout,
   config::binding<std::chrono::milliseconds>&& node_mute_timeout,
+  config::binding<size_t>&& transfer_limit_per_shard,
   consensus_ptr raft0)
   : _enabled(std::move(enabled))
   , _idle_timeout(std::move(idle_timeout))
   , _mute_timeout(std::move(mute_timeout))
   , _node_mute_timeout(std::move(node_mute_timeout))
+  , _transfer_limit_per_shard(std::move(transfer_limit_per_shard))
   , _topics(topics)
   , _leaders(leaders)
   , _client(std::move(client))
@@ -216,6 +218,12 @@ void leader_balancer::trigger_balance() {
         return;
     }
 
+    // If the balancer is resumed after being throttled
+    // reset the flag.
+    if (_throttled) {
+        _throttled = false;
+    }
+
     ssx::spawn_with_gate(_gate, [this] {
         return ss::repeat([this] {
                    if (_as.local().abort_requested()) {
@@ -354,14 +362,16 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
         co_return ss::stop_iteration::yes;
     }
 
-    if (_in_flight_changes.size() >= transfer_limit_per_shard * cores.size()) {
+    if (
+      _in_flight_changes.size() >= _transfer_limit_per_shard() * cores.size()) {
         vlog(
           clusterlog.debug,
           "Leadership balancer tick: number of in flight changes is at max "
           "allowable. Current in flight {}. Max allowable {}.",
-
           _in_flight_changes.size(),
-          transfer_limit_per_shard * cores.size());
+          _transfer_limit_per_shard() * cores.size());
+
+        _throttled = true;
 
         if (_timer.armed()) {
             co_return ss::stop_iteration::yes;

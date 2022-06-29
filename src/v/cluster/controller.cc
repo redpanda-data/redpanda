@@ -267,6 +267,8 @@ ss::future<> controller::start() {
             config::shard_local_cfg().leader_balancer_idle_timeout.bind(),
             config::shard_local_cfg().leader_balancer_mute_timeout.bind(),
             config::shard_local_cfg().leader_balancer_node_mute_timeout.bind(),
+            config::shard_local_cfg()
+              .leader_balancer_transfer_limit_per_shard.bind(),
             _raft0);
           return _leader_balancer->start();
       })

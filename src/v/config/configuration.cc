@@ -1099,6 +1099,13 @@ configuration::configuration()
       "Leadership rebalancing node mute timeout",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       20s)
+  , leader_balancer_transfer_limit_per_shard(
+      *this,
+      "leader_balancer_transfer_limit_per_shard",
+      "Per shard limit for in progress leadership transfers",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      512,
+      {.min = 1, .max = 2048})
   , internal_topic_replication_factor(
       *this,
       "internal_topic_replication_factor",
