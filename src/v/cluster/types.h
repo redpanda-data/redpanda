@@ -2508,4 +2508,15 @@ struct adl<cluster::finish_partition_update_request> {
         };
     }
 };
+
+template<>
+struct adl<cluster::finish_partition_update_reply> {
+    void to(iobuf& out, cluster::finish_partition_update_reply&& r) {
+        serialize(out, r.result);
+    }
+    cluster::finish_partition_update_reply from(iobuf_parser& in) {
+        auto result = adl<cluster::errc>{}.from(in);
+        return {.result = result};
+    }
+};
 } // namespace reflection
