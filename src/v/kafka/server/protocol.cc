@@ -10,6 +10,7 @@
 #include "protocol.h"
 
 #include "cluster/topics_frontend.h"
+#include "config/broker_authn_endpoint.h"
 #include "config/configuration.h"
 #include "kafka/server/connection_context.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
@@ -17,6 +18,7 @@
 #include "kafka/server/logger.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
+#include "net/connection.h"
 #include "security/mtls.h"
 #include "security/scram_algorithm.h"
 #include "utils/utf8.h"
@@ -92,31 +94,35 @@ coordinator_ntp_mapper& protocol::coordinator_mapper() {
     return _group_router.local().coordinator_mapper().local();
 }
 
+config::broker_authn_method get_authn_method(const net::connection& conn) {
+    const auto& config = config::shard_local_cfg();
+    if (config.enable_sasl()) {
+        return config::broker_authn_method::sasl;
+    }
+    if (conn.get_principal_mapping().has_value()) {
+        return config::broker_authn_method::mtls_identity;
+    }
+    return config::broker_authn_method::none;
+}
+
 ss::future<> protocol::apply(net::server::resources rs) {
+    const auto authn_method = get_authn_method(*rs.conn);
+
     /*
      * if sasl authentication is not enabled then initialize the sasl state to
      * complete. this will cause auth to be skipped during request processing.
-     *
-     * TODO: temporarily acl authorization is enabled/disabled based on sasl
-     * being enabled/disabled. it may be useful to configure them separately,
-     * but this will come when identity management is introduced.
      */
     security::sasl_server sasl(
-      config::shard_local_cfg().enable_sasl()
+      authn_method == config::broker_authn_method::sasl
         ? security::sasl_server::sasl_state::initial
         : security::sasl_server::sasl_state::complete);
-
-    const auto enable_mtls_authentication
-      = rs.conn->get_principal_mapping().has_value()
-        && feature_table().local().is_active(
-          cluster::feature::mtls_authentication);
 
     auto ctx = ss::make_lw_shared<connection_context>(
       *this,
       std::move(rs),
       std::move(sasl),
-      config::shard_local_cfg().enable_sasl(),
-      enable_mtls_authentication);
+      authn_method != config::broker_authn_method::none,
+      authn_method == config::broker_authn_method::mtls_identity);
 
     return ss::do_until(
              [ctx] { return ctx->is_finished_parsing(); },
