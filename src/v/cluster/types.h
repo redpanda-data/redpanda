@@ -806,11 +806,17 @@ struct abort_group_tx_reply
 /// - Always specifies node_id
 /// (remove this RPC two versions after join_node_request was
 ///  added to replace it)
-struct join_request {
+struct join_request : serde::envelope<join_request, serde::version<0>> {
+    join_request() noexcept = default;
+
     explicit join_request(model::broker b)
       : node(std::move(b)) {}
 
     model::broker node;
+
+    friend bool operator==(const join_request&, const join_request&) = default;
+
+    auto serde_fields() { return std::tie(node); }
 };
 
 struct join_reply {
