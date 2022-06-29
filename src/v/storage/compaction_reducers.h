@@ -113,7 +113,7 @@ public:
       : _list(std::move(l))
       , _appender(a) {}
 
-    ss::future<ss::stop_iteration> operator()(model::record_batch&&);
+    ss::future<ss::stop_iteration> operator()(model::record_batch);
     storage::index_state end_of_stream() { return std::move(_idx); }
 
 private:

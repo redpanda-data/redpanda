@@ -259,15 +259,14 @@ ss::future<ss::stop_iteration> copy_data_segment_reducer::do_compaction(
 }
 
 ss::future<ss::stop_iteration>
-copy_data_segment_reducer::operator()(model::record_batch&& b) {
+copy_data_segment_reducer::operator()(model::record_batch b) {
     const auto comp = b.header().attrs.compression();
     if (!b.compressed()) {
-        return do_compaction(comp, std::move(b));
+        co_return co_await do_compaction(comp, std::move(b));
     }
-    return decompress_batch(std::move(b))
-      .then([comp, this](model::record_batch&& b) {
-          return do_compaction(comp, std::move(b));
-      });
+    auto batch = co_await decompress_batch(std::move(b));
+
+    co_return co_await do_compaction(comp, std::move(batch));
 }
 
 ss::future<ss::stop_iteration>
