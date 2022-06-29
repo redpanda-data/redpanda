@@ -118,9 +118,9 @@ void members_backend::handle_single_update(
     vlog(clusterlog.debug, "membership update received: {}", update);
     switch (update.type) {
     case update_t::recommissioned:
-        // if node was recommissioned simply remove all decommissioning
-        // updates
         handle_recommissioned(update);
+        _updates.emplace_back(update);
+        _new_updates.signal();
         return;
     case update_t::reallocation_finished:
         handle_reallocation_finished(update.id);
@@ -172,6 +172,9 @@ void members_backend::calculate_reallocations(update_meta& meta) {
         return;
     case members_manager::node_update_type::added:
         calculate_reallocations_after_node_added(meta);
+        return;
+    case members_manager::node_update_type::recommissioned:
+        calculate_reallocations_after_recommissioned(meta);
         return;
     default:
         return;
@@ -330,6 +333,61 @@ void members_backend::calculate_reallocations_after_node_added(
                 }
             }
         }
+    }
+}
+
+std::vector<model::ntp> members_backend::ntps_moving_from_node_older_than(
+  model::node_id node, model::revision_id revision) const {
+    std::vector<model::ntp> ret;
+
+    for (const auto& [ntp, state] : _topics.local().in_progress_updates()) {
+        if (state.update_revision < revision) {
+            continue;
+        }
+        if (!contains_node(state.previous_replicas, node)) {
+            continue;
+        }
+
+        auto current_assignment = _topics.local().get_partition_assignment(ntp);
+        if (unlikely(!current_assignment)) {
+            continue;
+        }
+
+        if (!contains_node(current_assignment->replicas, node)) {
+            ret.push_back(ntp);
+        }
+    }
+    return ret;
+}
+
+void members_backend::calculate_reallocations_after_recommissioned(
+  update_meta& meta) const {
+    auto it = _decommission_command_revision.find(meta.update.id);
+    vassert(
+      it != _decommission_command_revision.end(),
+      "members backend should hold a revision of nodes being decommissioned, "
+      "node_id: {}",
+      meta.update.id);
+    auto ntps = ntps_moving_from_node_older_than(meta.update.id, it->second);
+    // reallocate all partitions for which any of replicas is placed on
+    // decommissioned node
+    meta.partition_reallocations.reserve(ntps.size());
+    for (auto& ntp : ntps) {
+        partition_reallocation reallocation(ntp);
+        reallocation.state = reallocation_state::request_cancel;
+        auto current_assignment = _topics.local().get_partition_assignment(ntp);
+        auto previous_replica_set = _topics.local().get_previous_replica_set(
+          ntp);
+        if (
+          !current_assignment.has_value()
+          || !previous_replica_set.has_value()) {
+            continue;
+        }
+        reallocation.current_replica_set = std::move(
+          current_assignment->replicas);
+        reallocation.new_replica_set = std::move(*previous_replica_set);
+
+        meta.partition_reallocations.push_back(std::move(reallocation));
     }
 }
 

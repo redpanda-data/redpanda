@@ -99,6 +99,9 @@ private:
     void reassign_replicas(partition_assignment&, partition_reallocation&);
     void calculate_reallocations_after_node_added(update_meta&) const;
     void calculate_reallocations_after_decommissioned(update_meta&) const;
+    void calculate_reallocations_after_recommissioned(update_meta&) const;
+    std::vector<model::ntp> ntps_moving_from_node_older_than(
+      model::node_id, model::revision_id) const;
     void setup_metrics();
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<topic_table>& _topics;
