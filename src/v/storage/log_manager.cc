@@ -216,15 +216,21 @@ ss::future<log> log_manager::manage(ntp_config cfg) {
 
 ss::future<> log_manager::recover_log_state(const ntp_config& cfg) {
     return ss::file_exists(cfg.work_directory())
-      .then(
-        [this, key = internal::start_offset_key(cfg.ntp())](bool dir_exists) {
-            if (dir_exists) {
-                return ss::now();
-            }
-            // directory was deleted, make sure we do not have any state in KV
-            // store.
-            return _kvstore.remove(kvstore::key_space::storage, key);
-        });
+      .then([this,
+             offset_key = internal::start_offset_key(cfg.ntp()),
+             segment_key = internal::clean_segment_key(cfg.ntp())](
+              bool dir_exists) {
+          if (dir_exists) {
+              return ss::now();
+          }
+          // directory was deleted, make sure we do not have any state in KV
+          // store.
+          return _kvstore.remove(kvstore::key_space::storage, offset_key)
+            .then([this, segment_key] {
+                return _kvstore.remove(
+                  kvstore::key_space::storage, segment_key);
+            });
+      });
 }
 
 ss::future<log> log_manager::do_manage(ntp_config cfg) {

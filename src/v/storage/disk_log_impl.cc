@@ -106,6 +106,11 @@ ss::future<> disk_log_impl::remove() {
                 return _kvstore.remove(
                   kvstore::key_space::storage,
                   internal::start_offset_key(config().ntp()));
+            })
+            .then([this] {
+                return _kvstore.remove(
+                  kvstore::key_space::storage,
+                  internal::clean_segment_key(config().ntp()));
             });
       });
 }
