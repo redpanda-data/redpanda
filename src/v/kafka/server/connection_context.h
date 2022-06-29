@@ -148,7 +148,14 @@ private:
     private:
         net::server_probe& _probe;
     };
-    // used to pass around some internal state
+
+    // Used to hold resources associated with a given request until
+    // the response has been send, as well as to track some statistics
+    // about the request.
+    //
+    // The resources in particular should be not be destroyed until
+    // the request is complete (e.g., all the information written to
+    // the socket so that no userspace buffers remain).
     struct session_resources {
         ss::lowres_clock::duration backpressure_delay;
         ss::semaphore_units<> memlocks;
