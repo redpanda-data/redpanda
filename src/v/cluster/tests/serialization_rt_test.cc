@@ -1348,6 +1348,20 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         };
         roundtrip_test(data);
     }
+    {
+        std::vector<model::broker_shard> new_replica_set;
+        for (int i = 0; i < random_generators::get_int(50); i++) {
+            new_replica_set.push_back(model::broker_shard{
+              .node_id = tests::random_named_int<model::node_id>(),
+              .shard = random_generators::get_int<uint32_t>(),
+            });
+        }
+        cluster::finish_partition_update_request data{
+          .ntp = model::random_ntp(),
+          .new_replica_set = new_replica_set,
+        };
+        roundtrip_test(data);
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {

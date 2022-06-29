@@ -1304,9 +1304,17 @@ struct create_topics_reply {
     std::vector<topic_configuration> configs;
 };
 
-struct finish_partition_update_request {
+struct finish_partition_update_request
+  : serde::envelope<finish_partition_update_request, serde::version<0>> {
     model::ntp ntp;
     std::vector<model::broker_shard> new_replica_set;
+
+    friend bool operator==(
+      const finish_partition_update_request&,
+      const finish_partition_update_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(ntp, new_replica_set); }
 };
 
 struct finish_partition_update_reply {
