@@ -1668,8 +1668,15 @@ private:
     errc _error;
 };
 
-struct reconciliation_state_request {
+struct reconciliation_state_request
+  : serde::envelope<reconciliation_state_request, serde::version<0>> {
     std::vector<model::ntp> ntps;
+
+    friend bool operator==(
+      const reconciliation_state_request&, const reconciliation_state_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(ntps); }
 };
 
 struct reconciliation_state_reply {

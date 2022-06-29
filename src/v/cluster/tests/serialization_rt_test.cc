@@ -1448,6 +1448,16 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         };
         roundtrip_test(data);
     }
+    {
+        std::vector<model::ntp> ntps;
+        for (int i = 0; i < random_generators::get_int(10); i++) {
+            ntps.push_back(model::random_ntp());
+        }
+        cluster::reconciliation_state_request data{
+          .ntps = ntps,
+        };
+        roundtrip_test(data);
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {
