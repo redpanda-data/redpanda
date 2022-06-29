@@ -166,7 +166,19 @@ private:
 
     ss::future<> handle_mtls_auth();
     ss::future<> dispatch_method_once(request_header, size_t sz);
-    ss::future<> process_next_response();
+
+    /**
+     * Process zero or more ready responses in request order.
+     *
+     * The future<> returned by this method resolves when all ready *and*
+     * in-order responses have been processed, which is not the same as all
+     * ready responses. In particular, responses which are ready may not be
+     * processed if there are earlier (lower sequence number) responses which
+     * are not yet ready: they will be processed by a future invocation.
+     *
+     * @return ss::future<> a future which as described above.
+     */
+    ss::future<> maybe_process_responses();
     ss::future<> do_process(request_context);
 
     ss::future<> handle_auth_v0(size_t);
