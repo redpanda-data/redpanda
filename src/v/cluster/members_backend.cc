@@ -132,6 +132,8 @@ void members_backend::handle_single_update(
         return;
     case update_t::decommissioned:
         stop_node_addition(update.id);
+        _decommission_command_revision.emplace(
+          update.id, model::revision_id(update.offset));
         _updates.emplace_back(update);
         _new_updates.signal();
         return;
@@ -335,7 +337,21 @@ ss::future<> members_backend::reconcile() {
     // if nothing to do, wait
     co_await _new_updates.wait([this] { return !_updates.empty(); });
     auto u = co_await _lock.get_units();
+    // remove stored revisions of previous decommissioning nodes, this will only
+    // happen when update is finished and it is either decommissioning or
+    // recommissioning of a node
+    for (const auto& meta : _updates) {
+        const bool is_decommission
+          = meta.update.type
+            == members_manager::node_update_type::decommissioned;
+        const bool is_recommission
+          = meta.update.type
+            == members_manager::node_update_type::recommissioned;
 
+        if (meta.finished && (is_decommission || is_recommission)) {
+            _decommission_command_revision.erase(meta.update.id);
+        }
+    }
     // remove finished updates
     std::erase_if(
       _updates, [](const update_meta& meta) { return meta.finished; });
