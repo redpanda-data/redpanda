@@ -1330,6 +1330,17 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         cluster::join_reply data{tests::random_bool()};
         roundtrip_test(data);
     }
+    {
+        std::vector<uint8_t> node_uuid;
+        for (int i = 0; i < random_generators::get_int(100); i++) {
+            node_uuid.push_back(random_generators::get_int(255));
+        }
+        cluster::join_node_request data{
+          tests::random_named_int<cluster::cluster_version>(),
+          node_uuid,
+          model::random_broker()};
+        roundtrip_test(data);
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {

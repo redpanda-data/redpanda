@@ -837,7 +837,10 @@ struct join_reply : serde::envelope<join_reply, serde::version<0>> {
 /// - Has fields for implementing auto-selection of
 ///   node_id (https://github.com/redpanda-data/redpanda/issues/2793)
 ///   in future.
-struct join_node_request {
+struct join_node_request
+  : serde::envelope<join_node_request, serde::version<0>> {
+    join_node_request() noexcept = default;
+
     explicit join_node_request(
       cluster_version lv, std::vector<uint8_t> nuuid, model::broker b)
       : logical_version(lv)
@@ -856,6 +859,11 @@ struct join_node_request {
     // the vector is just to reserve the on-disk layout.
     std::vector<uint8_t> node_uuid;
     model::broker node;
+
+    friend bool operator==(const join_node_request&, const join_node_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(logical_version, node_uuid, node); }
 };
 
 struct join_node_reply {
