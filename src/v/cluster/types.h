@@ -1310,13 +1310,19 @@ struct create_partitions_configuration_assignment
       = default;
 };
 
-struct topic_result {
+struct topic_result : serde::envelope<topic_result, serde::version<0>> {
+    topic_result() noexcept = default;
     explicit topic_result(model::topic_namespace t, errc ec = errc::success)
       : tp_ns(std::move(t))
       , ec(ec) {}
     model::topic_namespace tp_ns;
     errc ec;
+
+    friend bool operator==(const topic_result&, const topic_result&) = default;
+
     friend std::ostream& operator<<(std::ostream& o, const topic_result& r);
+
+    auto serde_fields() { return std::tie(tp_ns, ec); }
 };
 
 struct create_topics_request {
