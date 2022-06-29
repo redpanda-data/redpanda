@@ -2485,4 +2485,19 @@ struct adl<cluster::config_status_reply> {
         return {.error = error};
     }
 };
+
+template<>
+struct adl<cluster::finish_partition_update_request> {
+    void to(iobuf& out, cluster::finish_partition_update_request&& r) {
+        serialize(out, r.ntp, r.new_replica_set);
+    }
+    cluster::finish_partition_update_request from(iobuf_parser& in) {
+        auto ntp = adl<model::ntp>{}.from(in);
+        auto new_replica_set = adl<std::vector<model::broker_shard>>{}.from(in);
+        return {
+          .ntp = std::move(ntp),
+          .new_replica_set = std::move(new_replica_set),
+        };
+    }
+};
 } // namespace reflection
