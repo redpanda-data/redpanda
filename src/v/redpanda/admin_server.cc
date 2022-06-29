@@ -69,6 +69,7 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/core/with_scheduling_group.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/http/api_docs.hh>
 #include <seastar/http/httpd.hh>
 
@@ -2356,6 +2357,35 @@ void admin_server::register_partition_routes() {
 
           co_await throw_on_error(*req, err, model::controller_ntp);
           co_return ss::json::json_void();
+      });
+
+    register_route<user>(
+      ss::httpd::partition_json::get_partition_reconfigurations,
+      [this](std::unique_ptr<ss::httpd::request>)
+        -> ss::future<ss::json::json_return_type> {
+          using reconfiguration = ss::httpd::partition_json::reconfiguration;
+          std::vector<reconfiguration> ret;
+          auto in_progress
+            = _controller->get_topics_state().local().in_progress_updates();
+
+          ret.reserve(in_progress.size());
+          for (auto& [ntp, status] : in_progress) {
+              reconfiguration r;
+              r.ns = ntp.ns;
+              r.topic = ntp.tp.topic;
+              r.partition = ntp.tp.partition;
+              r.status = fmt::format("{}", status.state);
+
+              for (auto& bs : status.previous_replicas) {
+                  ss::httpd::partition_json::assignment replica;
+                  replica.node_id = bs.node_id;
+                  replica.core = bs.shard;
+                  r.previous_replicas.push(replica);
+              }
+              co_await ss::coroutine::maybe_yield();
+              ret.push_back(std::move(r));
+          }
+          co_return std::move(ret);
       });
 }
 

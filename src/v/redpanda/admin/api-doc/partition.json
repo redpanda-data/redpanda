@@ -171,6 +171,21 @@
             ]
         },
         {
+            "path": "/v1/partitions/reconfigurations",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "List ongoing partition reconfigurations",
+                    "type": "void",
+                    "nickname": "get_partition_reconfigurations",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
+        },
+        {
             "path": "/v1/partitions/{namespace}/{topic}/{partition}/unclean_abort_reconfiguration",
             "operations": [
                 {
@@ -424,6 +439,35 @@
                         "type": "transaction"
                     },
                     "description": "Expired transactions"
+                }
+            }
+        },
+        "reconfiguration": {
+            "id": "reconfiguration",
+            "description": "Partition reconfiguration details",
+            "properties": {
+                "ns": {
+                    "type": "string",
+                    "description": "Namespace"
+                },
+                "topic": {
+                    "type": "string",
+                    "description": "Topic"
+                },
+                "partition": {
+                    "type": "long",
+                    "description": "Partition id"
+                },
+                "previous_replicas": {
+                    "type": "array",
+                    "items": {
+                        "type": "assignment"
+                    },
+                    "description": "Previous replica set"
+                },
+                "status": {
+                    "type": "string",
+                    "description": "Reconfiguration status"
                 }
             }
         }
