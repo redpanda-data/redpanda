@@ -2650,4 +2650,16 @@ struct adl<cluster::backend_operation> {
         };
     }
 };
+
+template<>
+struct adl<cluster::reconciliation_state_reply> {
+    void to(iobuf& out, cluster::reconciliation_state_reply&& r) {
+        serialize(out, r.results);
+    }
+    cluster::reconciliation_state_reply from(iobuf_parser& in) {
+        auto results
+          = adl<std::vector<cluster::ntp_reconciliation_state>>{}.from(in);
+        return {.results = std::move(results)};
+    }
+};
 } // namespace reflection
