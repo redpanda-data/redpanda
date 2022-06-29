@@ -2598,4 +2598,15 @@ struct adl<cluster::update_topic_properties_reply> {
         return {.results = std::move(results)};
     }
 };
+
+template<>
+struct adl<cluster::reconciliation_state_request> {
+    void to(iobuf& out, cluster::reconciliation_state_request&& r) {
+        serialize(out, r.ntps);
+    }
+    cluster::reconciliation_state_request from(iobuf_parser& in) {
+        auto ntps = adl<std::vector<model::ntp>>{}.from(in);
+        return {.ntps = std::move(ntps)};
+    }
+};
 } // namespace reflection
