@@ -10,6 +10,19 @@
 
 #include "cloud_roles/apply_credentials.h"
 
+#include "cloud_roles/apply_aws_credentials.h"
+
+cloud_roles::apply_credentials
+cloud_roles::make_credentials_applier(cloud_roles::credentials creds) {
+    return apply_credentials{ss::visit(
+      std::move(creds),
+      [](cloud_roles::aws_credentials ac)
+        -> std::unique_ptr<apply_credentials::impl> {
+          return std::make_unique<cloud_roles::apply_aws_credentials>(
+            std::move(ac));
+      })};
+}
+
 std::ostream& cloud_roles::operator<<(
   std::ostream& os, const cloud_roles::apply_credentials& ac) {
     return ac.print(os);

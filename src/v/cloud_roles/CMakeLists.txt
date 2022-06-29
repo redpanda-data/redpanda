@@ -1,6 +1,7 @@
 v_cc_library(
     NAME cloud_roles
     SRCS
+    apply_aws_credentials.cc
     apply_credentials.cc
     probe.cc
     types.cc

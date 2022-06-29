@@ -59,4 +59,11 @@ private:
 
 std::ostream& operator<<(std::ostream& os, const apply_credentials& ac);
 
+/// Creates a credential applier based on the kind of credentials passed in. The
+/// input credentials object is a sum type, and it can contain any one of the
+/// variants for all supported credentials sources. This function uses the
+/// underlying type to create the corresponding credential applier. If the input
+/// is a gcp credential, then a gcp credential applier is created, and so on.
+apply_credentials make_credentials_applier(credentials creds);
+
 } // namespace cloud_roles

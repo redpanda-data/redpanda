@@ -19,7 +19,7 @@ std::ostream& operator<<(std::ostream& os, const aws_credentials& ac) {
       "session_token: **{}**}}",
       ac.access_key_id().size(),
       ac.secret_access_key().size(),
-      ac.session_token.value_or(session_token_str{})().size());
+      ac.session_token.value_or(s3_session_token{})().size());
     return os;
 }
 

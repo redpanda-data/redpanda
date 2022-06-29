@@ -22,12 +22,12 @@
 
 namespace cloud_roles {
 
-using session_token_str = named_type<ss::sstring, struct s3_session_token_str>;
+using s3_session_token = named_type<ss::sstring, struct s3_session_token_str>;
 
 struct aws_credentials {
     s3::public_key_str access_key_id;
     s3::private_key_str secret_access_key;
-    std::optional<session_token_str> session_token;
+    std::optional<s3_session_token> session_token;
     s3::aws_region_name region;
 };
 
