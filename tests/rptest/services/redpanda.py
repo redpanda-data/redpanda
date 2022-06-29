@@ -1755,7 +1755,7 @@ class RedpandaService(Service):
         # still have the original binaries available.
         node = self.nodes[0]
         if self._installer._started:
-            head_root_path = self._installer.path_for_version(
+            head_root_path = self._installer.root_for_version(
                 RedpandaInstaller.HEAD)
             binary = f"{head_root_path}/libexec/redpanda"
         else:
