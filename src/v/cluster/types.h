@@ -1878,6 +1878,18 @@ struct adl<cluster::join_node_request> {
 };
 
 template<>
+struct adl<cluster::join_node_reply> {
+    void to(iobuf& out, cluster::join_node_reply&& r) {
+        serialize(out, r.success, r.id);
+    }
+    cluster::join_node_reply from(iobuf_parser& in) {
+        auto success = adl<bool>{}.from(in);
+        auto id = adl<model::node_id>{}.from(in);
+        return {success, id};
+    }
+};
+
+template<>
 struct adl<cluster::configuration_update_request> {
     void to(iobuf&, cluster::configuration_update_request&&);
     cluster::configuration_update_request from(iobuf_parser&);
