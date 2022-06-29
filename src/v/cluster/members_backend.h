@@ -24,7 +24,11 @@ public:
         explicit partition_reallocation(
           model::ntp ntp, uint16_t replication_factor)
           : ntp(std::move(ntp))
-          , constraints(ntp.tp.partition, replication_factor) {}
+          , constraints(
+              partition_constraints(ntp.tp.partition, replication_factor)) {}
+
+        explicit partition_reallocation(model::ntp ntp)
+          : ntp(std::move(ntp)) {}
 
         void set_new_replicas(allocation_units units) {
             allocation_units = std::move(units);
@@ -35,7 +39,7 @@ public:
         void release_assignment_units() { allocation_units.reset(); }
 
         model::ntp ntp;
-        partition_constraints constraints;
+        std::optional<partition_constraints> constraints;
         absl::node_hash_set<model::node_id> replicas_to_remove;
         std::optional<allocation_units> allocation_units;
         std::vector<model::broker_shard> new_replica_set;
