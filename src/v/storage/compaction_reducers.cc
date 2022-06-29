@@ -226,41 +226,36 @@ copy_data_segment_reducer::filter(model::record_batch&& batch) {
       h, std::move(ret), model::record_batch::tag_ctor_ng{});
     return new_batch;
 }
+
 ss::future<ss::stop_iteration> copy_data_segment_reducer::do_compaction(
-  model::compression original, model::record_batch&& b) {
+  model::compression original, model::record_batch b) {
     using stop_t = ss::stop_iteration;
     auto to_copy = filter(std::move(b));
     if (to_copy == std::nullopt) {
-        return ss::make_ready_future<stop_t>(stop_t::no);
+        co_return stop_t::no;
     }
-    return compress_batch(original, std::move(to_copy.value()))
-      .then([this](model::record_batch&& b) {
-          return ss::do_with(std::move(b), [this](model::record_batch& batch) {
-              auto const start_offset = _appender->file_byte_offset();
-              auto const header_size = batch.header().size_bytes;
-              _acc += header_size;
-              if (_idx.maybe_index(
-                    _acc,
-                    32_KiB,
-                    start_offset,
-                    batch.base_offset(),
-                    batch.last_offset(),
-                    batch.header().first_timestamp,
-                    batch.header().max_timestamp)) {
-                  _acc = 0;
-              }
-              return storage::write(*_appender, batch)
-                .then([this, start_offset, header_size] {
-                    vassert(
-                      _appender->file_byte_offset()
-                        == start_offset + header_size,
-                      "Size must be deterministic. Expected:{} == {}",
-                      _appender->file_byte_offset(),
-                      start_offset + header_size);
-                });
-          });
-      })
-      .then([] { return ss::make_ready_future<stop_t>(stop_t::no); });
+    auto batch = co_await compress_batch(original, std::move(to_copy.value()));
+    auto const start_offset = _appender->file_byte_offset();
+    auto const header_size = batch.header().size_bytes;
+    _acc += header_size;
+    if (_idx.maybe_index(
+          _acc,
+          32_KiB,
+          start_offset,
+          batch.base_offset(),
+          batch.last_offset(),
+          batch.header().first_timestamp,
+          batch.header().max_timestamp)) {
+        _acc = 0;
+    }
+    co_await storage::write(*_appender, batch);
+    vassert(
+      _appender->file_byte_offset() == start_offset + header_size,
+      "Size must be deterministic. Expected:{} == {}",
+      _appender->file_byte_offset(),
+      start_offset + header_size);
+
+    co_return stop_t::no;
 }
 
 ss::future<ss::stop_iteration>

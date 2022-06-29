@@ -118,7 +118,7 @@ public:
 
 private:
     ss::future<ss::stop_iteration>
-    do_compaction(model::compression, model::record_batch&&);
+      do_compaction(model::compression, model::record_batch);
 
     bool should_keep(model::offset base, int32_t delta) const {
         const auto o = base + model::offset(delta);
