@@ -20,7 +20,7 @@ class PartitionMovementMixin():
         return topic.name, partition.id
 
     @staticmethod
-    def _choose_replacement(admin, assignments):
+    def _choose_replacement(admin, assignments, allow_no_ops=True):
         """
         Does not produce assignments that contain duplicate nodes. This is a
         limitation in redpanda raft implementation.
@@ -33,15 +33,16 @@ class PartitionMovementMixin():
 
         # remove random assignment(s). we allow no changes to be made to
         # exercise the code paths responsible for dealing with no-ops.
-        num_replacements = random.randint(0, replication_factor)
+        num_replacements = random.randint(0 if allow_no_ops else 1,
+                                          replication_factor)
         selected = random.sample(assignments, num_replacements)
         for assignment in selected:
             assignments.remove(assignment)
 
         # choose a valid random replacement
         replacements = []
-        brokers = admin.get_brokers()
         while len(assignments) != replication_factor:
+            brokers = admin.get_brokers()
             broker = random.choice(brokers)
             node_id = broker["node_id"]
             if node_id in node_ids(assignments):
@@ -77,7 +78,7 @@ class PartitionMovementMixin():
                 "partition_id"] == partition_id
 
         result = []
-        for node in self.redpanda.nodes:
+        for node in self.redpanda._started:
             node_id = self.redpanda.idx(node)
             partitions = admin.get_partitions(node=node)
             partitions = filter(keep, partitions)
