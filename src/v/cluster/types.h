@@ -2779,4 +2779,16 @@ struct adl<cluster::reconciliation_state_reply> {
         return {.results = std::move(results)};
     }
 };
+
+template<>
+struct adl<cluster::create_acls_request> {
+    void to(iobuf& out, cluster::create_acls_request&& r) {
+        serialize(out, std::move(r.data), r.timeout);
+    }
+    cluster::create_acls_request from(iobuf_parser& in) {
+        auto data = adl<cluster::create_acls_cmd_data>{}.from(in);
+        auto timeout = adl<model::timeout_clock::duration>{}.from(in);
+        return {std::move(data), timeout};
+    }
+};
 } // namespace reflection
