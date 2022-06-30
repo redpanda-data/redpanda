@@ -1543,6 +1543,23 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         };
         roundtrip_test(data);
     }
+    {
+        std::vector<cluster::delete_acls_result> results;
+        for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
+            std::vector<security::acl_binding> bindings;
+            for (auto j = 0, mj = random_generators::get_int(20); j < mj; ++j) {
+                bindings.push_back(random_acl_binding());
+            }
+            results.push_back(cluster::delete_acls_result{
+              .error = cluster::errc::join_request_dispatch_error,
+              .bindings = bindings,
+            });
+        }
+        cluster::delete_acls_reply data{
+          .results = results,
+        };
+        roundtrip_test(data);
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {

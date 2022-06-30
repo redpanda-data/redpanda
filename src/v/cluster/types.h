@@ -1646,8 +1646,14 @@ struct delete_acls_request
     }
 };
 
-struct delete_acls_reply {
+struct delete_acls_reply
+  : serde::envelope<delete_acls_reply, serde::version<0>> {
     std::vector<delete_acls_result> results;
+
+    friend bool operator==(const delete_acls_reply&, const delete_acls_reply&)
+      = default;
+
+    auto serde_fields() { return std::tie(results); }
 };
 
 struct backend_operation
