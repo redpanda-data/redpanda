@@ -2816,4 +2816,15 @@ struct adl<cluster::create_acls_request> {
         return {std::move(data), timeout};
     }
 };
+
+template<>
+struct adl<cluster::create_acls_reply> {
+    void to(iobuf& out, cluster::create_acls_reply&& r) {
+        serialize(out, std::move(r.results));
+    }
+    cluster::create_acls_reply from(iobuf_parser& in) {
+        auto results = adl<std::vector<cluster::errc>>{}.from(in);
+        return {.results = std::move(results)};
+    }
+};
 } // namespace reflection
