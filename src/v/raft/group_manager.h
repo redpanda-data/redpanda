@@ -18,6 +18,7 @@
 #include "raft/types.h"
 #include "rpc/fwd.h"
 #include "storage/fwd.h"
+#include "utils/notification_list.h"
 
 #include <seastar/core/metrics_registration.hh>
 #include <seastar/core/scheduling.hh>
@@ -67,25 +68,15 @@ public:
 
     cluster::notification_id_type
     register_leadership_notification(leader_cb_t cb) {
-        auto id = _notification_id++;
-        // call notification for all the groups
         for (auto& gr : _groups) {
             cb(gr->group(), gr->term(), gr->get_leader_id());
         }
-        _notifications.emplace_back(id, std::move(cb));
+        auto id = _notifications.register_cb(std::move(cb));
         return id;
     }
 
     void unregister_leadership_notification(cluster::notification_id_type id) {
-        auto it = std::find_if(
-          _notifications.begin(),
-          _notifications.end(),
-          [id](const std::pair<cluster::notification_id_type, leader_cb_t>& n) {
-              return n.first == id;
-          });
-        if (it != _notifications.end()) {
-            _notifications.erase(it);
-        }
+        _notifications.unregister_cb(id);
     }
 
     consensus_client_protocol raft_client() const { return _client; }
@@ -101,8 +92,7 @@ private:
     raft::heartbeat_manager _heartbeats;
     ss::gate _gate;
     std::vector<ss::lw_shared_ptr<raft::consensus>> _groups;
-    cluster::notification_id_type _notification_id{0};
-    std::vector<std::pair<cluster::notification_id_type, leader_cb_t>>
+    notification_list<leader_cb_t, cluster::notification_id_type>
       _notifications;
     ss::metrics::metric_groups _metrics;
     storage::api& _storage;
