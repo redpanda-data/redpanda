@@ -609,12 +609,12 @@ cluster::topic_properties random_topic_properties() {
 std::vector<cluster::partition_assignment> random_partition_assignments() {
     std::vector<cluster::partition_assignment> ret;
 
-    for (auto a = 0; a < random_generators::get_int(1, 10); a++) {
+    for (auto a = 0, ma = random_generators::get_int(1, 10); a < ma; a++) {
         cluster::partition_assignment p_as;
         p_as.group = tests::random_named_int<raft::group_id>();
         p_as.id = tests::random_named_int<model::partition_id>();
 
-        for (int i = 0; i < random_generators::get_int(1, 10); ++i) {
+        for (int i = 0, mi = random_generators::get_int(1, 10); i < mi; ++i) {
             p_as.replicas.push_back(model::broker_shard{
               .node_id = tests::random_named_int<model::node_id>(),
               .shard = random_generators::get_int<uint16_t>(1, 128),
@@ -943,14 +943,14 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     }
     {
         cluster::create_acls_cmd_data data;
-        for (auto i = 0; i < random_generators::get_int(5, 25); ++i) {
+        for (auto i = 0, mi = random_generators::get_int(5, 25); i < mi; ++i) {
             data.bindings.push_back(random_acl_binding());
         }
         roundtrip_test(data);
     }
     {
         cluster::delete_acls_cmd_data data;
-        for (auto i = 0; i < random_generators::get_int(5, 25); ++i) {
+        for (auto i = 0, mi = random_generators::get_int(5, 25); i < mi; ++i) {
             data.filters.push_back(random_acl_binding_filter());
         }
         roundtrip_test(data);
@@ -1263,7 +1263,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     }
     {
         std::vector<cluster::cluster_property_kv> upsert;
-        for (int i = 0; i < random_generators::get_int(10); i++) {
+        for (int i = 0, mi = random_generators::get_int(10); i < mi; i++) {
             upsert.emplace_back(
               random_generators::gen_alphanum_string(
                 random_generators::get_int(100)),
@@ -1271,7 +1271,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
                 random_generators::get_int(100)));
         }
         std::vector<ss::sstring> remove;
-        for (int i = 0; i < random_generators::get_int(10); i++) {
+        for (int i = 0, mi = random_generators::get_int(10); i < mi; i++) {
             remove.push_back(random_generators::gen_alphanum_string(
               random_generators::get_int(100)));
         }
@@ -1332,7 +1332,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     }
     {
         std::vector<uint8_t> node_uuid;
-        for (int i = 0; i < random_generators::get_int(100); i++) {
+        for (int i = 0, mi = random_generators::get_int(100); i < mi; i++) {
             node_uuid.push_back(random_generators::get_int(255));
         }
         cluster::join_node_request data{
@@ -1350,7 +1350,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     }
     {
         std::vector<model::broker_shard> new_replica_set;
-        for (int i = 0; i < random_generators::get_int(50); i++) {
+        for (int i = 0, mi = random_generators::get_int(50); i < mi; i++) {
             new_replica_set.push_back(model::broker_shard{
               .node_id = tests::random_named_int<model::node_id>(),
               .shard = random_generators::get_int<uint32_t>(),
@@ -1405,7 +1405,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     }
     {
         std::vector<cluster::topic_properties_update> updates;
-        for (int i = 0; i < random_generators::get_int(10); i++) {
+        for (int i = 0, mi = random_generators::get_int(10); i < mi; i++) {
             cluster::property_update<std::optional<v8_engine::data_policy>>
               data_policy;
             if (tests::random_bool()) {
@@ -1437,7 +1437,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     }
     {
         std::vector<cluster::topic_result> results;
-        for (int i = 0; i < random_generators::get_int(10); i++) {
+        for (int i = 0, mi = random_generators::get_int(10); i < mi; i++) {
             results.push_back(cluster::topic_result{
               model::random_topic_namespace(),
               cluster::errc::source_topic_not_exists,
@@ -1450,7 +1450,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     }
     {
         std::vector<model::ntp> ntps;
-        for (int i = 0; i < random_generators::get_int(10); i++) {
+        for (int i = 0, mi = random_generators::get_int(10); i < mi; i++) {
             ntps.push_back(model::random_ntp());
         }
         cluster::reconciliation_state_request data{
@@ -1468,7 +1468,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     }
     {
         std::vector<cluster::backend_operation> backend_operations;
-        for (int i = 0; i < random_generators::get_int(10); i++) {
+        for (int i = 0, mi = random_generators::get_int(10); i < mi; i++) {
             backend_operations.push_back(cluster::backend_operation{
               .source_shard = random_generators::get_int<unsigned>(1000),
               .p_as = random_partition_assignments().front(),
@@ -1485,9 +1485,9 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     }
     {
         std::vector<cluster::ntp_reconciliation_state> results;
-        for (int i = 0; i < random_generators::get_int(10); i++) {
+        for (int i = 0, mi = random_generators::get_int(10); i < mi; i++) {
             std::vector<cluster::backend_operation> backend_operations;
-            for (int j = 0; j < random_generators::get_int(10); j++) {
+            for (int j = 0, mj = random_generators::get_int(10); j < mj; j++) {
                 backend_operations.push_back(cluster::backend_operation{
                   .source_shard = random_generators::get_int<unsigned>(1000),
                   .p_as = random_partition_assignments().front(),
@@ -1636,7 +1636,7 @@ SEASTAR_THREAD_TEST_CASE(commands_serialization_test) {
           random_credential());
 
         cluster::create_acls_cmd_data create_acls_data{};
-        for (auto i = 0; i < random_generators::get_int(1, 20); ++i) {
+        for (auto i = 0, mi = random_generators::get_int(1, 20); i < mi; ++i) {
             create_acls_data.bindings.push_back(random_acl_binding());
         }
 
@@ -1644,7 +1644,7 @@ SEASTAR_THREAD_TEST_CASE(commands_serialization_test) {
 
         cluster::delete_acls_cmd_data delete_acl_data;
 
-        for (auto i = 0; i < random_generators::get_int(1, 20); ++i) {
+        for (auto i = 0, mi = random_generators::get_int(1, 20); i < mi; ++i) {
             delete_acl_data.filters.push_back(random_acl_binding_filter());
         }
 
@@ -1674,7 +1674,7 @@ SEASTAR_THREAD_TEST_CASE(commands_serialization_test) {
           tests::random_named_int<model::node_id>(), 0);
 
         cluster::cluster_config_delta_cmd_data config_delta;
-        for (auto i = 0; i < random_generators::get_int(1, 20); ++i) {
+        for (auto i = 0, mi = random_generators::get_int(1, 20); i < mi; ++i) {
             config_delta.upsert.push_back(random_property_kv());
         }
         config_delta.remove = random_strings();
@@ -1696,7 +1696,7 @@ SEASTAR_THREAD_TEST_CASE(commands_serialization_test) {
           tests::random_named_int<model::node_id>(), std::move(config_status));
 
         cluster::feature_update_cmd_data feature_update_data;
-        for (auto i = 0; i < random_generators::get_int(1, 20); ++i) {
+        for (auto i = 0, mi = random_generators::get_int(1, 20); i < mi; ++i) {
             feature_update_data.actions.push_back(
               random_feature_update_action());
         }
