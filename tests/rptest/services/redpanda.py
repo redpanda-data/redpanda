@@ -20,6 +20,7 @@ import threading
 import collections
 import re
 import uuid
+from enum import Enum
 from typing import Mapping, Optional, Union, Any
 
 import yaml
@@ -110,6 +111,11 @@ class MetricSamples:
                 return sample.labels[key] == value
 
         return MetricSamples([s for s in filter(f, self.samples)])
+
+
+class MetricsEndpoint(Enum):
+    METRICS = 1
+    PUBLIC_METRICS = 2
 
 
 def one_or_many(value):
@@ -1519,16 +1525,24 @@ class RedpandaService(Service):
         ]
         return ",".join(schema_reg)
 
-    def metrics(self, node):
+    def metrics(self,
+                node,
+                metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS):
         assert node in self._started
-        url = f"http://{node.account.hostname}:9644/metrics"
+
+        metrics_endpoint = ("/metrics" if metrics_endpoint
+                            == MetricsEndpoint.METRICS else "/public_metrics")
+        url = f"http://{node.account.hostname}:9644{metrics_endpoint}"
         resp = requests.get(url)
         assert resp.status_code == 200
         return text_string_to_metric_families(resp.text)
 
-    def metrics_sample(self,
-                       sample_pattern,
-                       nodes=None) -> Optional[MetricSamples]:
+    def metrics_sample(
+        self,
+        sample_pattern,
+        nodes=None,
+        metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
+    ) -> Optional[MetricSamples]:
         """
         Query metrics for a single sample using fuzzy name matching. This
         interface matches the sample pattern against sample names, and requires
@@ -1554,7 +1568,7 @@ class RedpandaService(Service):
         found_sample = None
         sample_values = []
         for node in nodes:
-            metrics = self.metrics(node)
+            metrics = self.metrics(node, metrics_endpoint)
             for family in metrics:
                 for sample in family.samples:
                     if sample_pattern not in sample.name:
