@@ -88,9 +88,13 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
         assert initial_version == self.admin.get_features()['cluster_version']
 
         self.redpanda.restart_nodes([self.redpanda.nodes[2]])
+
+        # Node logical versions are transmitted as part of health messages, so we may
+        # have to wait for the next health tick (health_monitor_tick_interval=10s) before
+        # the controller leader fetches health from the last restarted peer.
         wait_until(lambda: new_version == self.admin.get_features()[
             'cluster_version'],
-                   timeout_sec=5,
+                   timeout_sec=15,
                    backoff_sec=1)
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
