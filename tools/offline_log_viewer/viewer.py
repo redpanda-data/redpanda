@@ -34,7 +34,7 @@ def print_controller(store):
 
 def print_kafka(store, topic):
     for ntp in store.ntps:
-        if ntp.nspace == "kafka":
+        if ntp.nspace.startswith("kafka"):
             if topic and ntp.topic != topic:
                 continue
 
@@ -46,7 +46,7 @@ def print_kafka(store, topic):
 
 def print_kafka_records(store, topic):
     for ntp in store.ntps:
-        if ntp.nspace == "kafka":
+        if ntp.nspace.startswith("kafka"):
             if topic and ntp.topic != topic:
                 continue
 
