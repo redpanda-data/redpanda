@@ -144,6 +144,28 @@ def decode_config_command(record):
     return cmd
 
 
+def decode_feature_command(record):
+    def decode_feature_update_action(r):
+        action = {}
+        action['v'] = r.read_int8()
+        action['feature_name'] = r.read_string()
+        action['action'] = r.read_int16()
+        return action
+
+    rdr = Reader(BytesIO(record.value))
+    k_rdr = Reader(BytesIO(record.key))
+    cmd = {}
+    cmd['type'] = rdr.read_int8()
+    if cmd['type'] == 0:
+        cmd['type_name'] = 'feature_update'
+        cmd['v'] = k_rdr.read_int8()
+        cmd['cluster_version'] = k_rdr.read_int64()
+        cmd['actions'] = k_rdr.read_vector(decode_feature_update_action)
+    else:
+        cmd['type_name'] = 'unknown'
+    return cmd
+
+
 def decode_record(header, record):
     ret = {}
     ret['type'] = type_str(header)
@@ -163,6 +185,8 @@ def decode_record(header, record):
         ret['data'] = decode_acl_command(record)
     if header.type == 20:
         ret['data'] = decode_config_command(record)
+    if header.type == 21:
+        ret['data'] = decode_feature_command(record)
     return ret
 
 
