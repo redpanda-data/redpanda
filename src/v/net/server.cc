@@ -278,8 +278,8 @@ ss::future<> server::wait_for_shutdown() {
     }
 
     return _conn_gate.close().then([this] {
-        return seastar::do_for_each(
-          _connections, [](net::connection& c) { return c.shutdown(); });
+        return ss::max_concurrent_for_each(
+          _connections, 64, [](net::connection& c) { return c.shutdown(); });
     });
 }
 
