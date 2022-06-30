@@ -74,9 +74,9 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 			}
 			return nil
 		},
-		RunE: func(cmd *cobra.Command, args []string) error {
+		Run: func(cmd *cobra.Command, args []string) {
 			if !tunerParamsEmpty(&tunerParams) && configFile != "" {
-				return errors.New("use either tuner params or redpanda config file")
+				out.Die("use either tuner params or redpanda config file")
 			}
 			var tuners []string
 			p := config.ParamsFromCommand(cmd)
@@ -86,9 +86,8 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 				tuners = strings.Split(args[0], ",")
 			}
 			cpuMask, err := hwloc.TranslateToHwLocCPUSet(cpuSet)
-			if err != nil {
-				return err
-			}
+			out.MaybeDieErr(err)
+
 			tunerParams.CPUMask = cpuMask
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
@@ -100,7 +99,11 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 				tunerFactory = factory.NewDirectExecutorTunersFactory(
 					fs, *cfg, timeout)
 			}
-			return tune(cfg, tuners, tunerFactory, &tunerParams)
+			exit1, err := tune(cfg, tuners, tunerFactory, &tunerParams)
+			out.MaybeDieErr(err)
+			if exit1 {
+				os.Exit(1)
+			}
 		},
 	}
 	command.Flags().StringVarP(&tunerParams.Mode,
@@ -160,16 +163,17 @@ func tune(
 	tunerNames []string,
 	tunersFactory factory.TunersFactory,
 	params *factory.TunerParams,
-) error {
+) (bool, error) {
 	params, err := factory.MergeTunerParamsConfig(params, conf)
 	if err != nil {
-		return err
+		return false, err
 	}
-	rebootRequired := false
+	var (
+		rebootRequired, includeErr, exit1 bool
+		results                           []result
+		allDisabled                       = true
+	)
 
-	results := []result{}
-	includeErr := false
-	allDisabled := true
 	for _, tunerName := range tunerNames {
 		enabled := factory.IsTunerEnabled(tunerName, conf.Rpk)
 		allDisabled = allDisabled && !enabled
@@ -177,6 +181,7 @@ func tune(
 		supported, reason := tuner.CheckIfSupported()
 		if !enabled || !supported {
 			includeErr = includeErr || !supported
+			exit1 = exit1 || enabled && !supported
 			results = append(results, result{tunerName, false, enabled, supported, reason})
 			continue
 		}
@@ -187,6 +192,9 @@ func tune(
 		errMsg := ""
 		if res.IsFailed() {
 			errMsg = res.Error().Error()
+			// We exit with code 1 when it's enabled and not supported
+			// or when one tuner fails.
+			exit1 = true
 		}
 		results = append(results, result{tunerName, !res.IsFailed(), enabled, supported, errMsg})
 	}
@@ -209,7 +217,7 @@ func tune(
 			strings.Join(tunerNames, ","),
 		)
 	}
-	return nil
+	return exit1, nil
 }
 
 func tunerParamsEmpty(params *factory.TunerParams) bool {
