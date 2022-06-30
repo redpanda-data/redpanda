@@ -57,6 +57,10 @@ struct allocate_id_request
     explicit allocate_id_request(model::timeout_clock::duration timeout)
       : timeout(timeout) {}
 
+    friend bool
+    operator==(const allocate_id_request&, const allocate_id_request&)
+      = default;
+
     auto serde_read(iobuf_parser& in, const serde::header& h) {
         using serde::read_nested;
         timeout = std::chrono::duration_cast<model::timeout_clock::duration>(
@@ -80,6 +84,9 @@ struct allocate_id_reply
     allocate_id_reply(int64_t id, errc ec)
       : id(id)
       , ec(ec) {}
+
+    friend bool operator==(const allocate_id_reply&, const allocate_id_reply&)
+      = default;
 
     auto serde_fields() { return std::tie(id, ec); }
 };
@@ -186,6 +193,9 @@ struct try_abort_request
       , tx_seq(tx_seq)
       , timeout(timeout) {}
 
+    friend bool operator==(const try_abort_request&, const try_abort_request&)
+      = default;
+
     auto serde_read(iobuf_parser& in, const serde::header& h) {
         using serde::read_nested;
         tm = read_nested<model::partition_id>(in, h._bytes_left_limit);
@@ -223,6 +233,9 @@ struct try_abort_reply : serde::envelope<try_abort_reply, serde::version<0>> {
     explicit try_abort_reply(tx_errc ec)
       : ec(ec) {}
 
+    friend bool operator==(const try_abort_reply&, const try_abort_reply&)
+      = default;
+
     static try_abort_reply make_aborted() {
         return {committed_type::no, aborted_type::yes, tx_errc::none};
     }
@@ -249,6 +262,9 @@ struct init_tm_tx_request
       : tx_id(std::move(tx_id))
       , transaction_timeout_ms(tx_timeout)
       , timeout(timeout) {}
+
+    friend bool operator==(const init_tm_tx_request&, const init_tm_tx_request&)
+      = default;
 
     auto serde_read(iobuf_parser& in, const serde::header& h) {
         using serde::read_nested;
@@ -278,6 +294,9 @@ struct init_tm_tx_reply : serde::envelope<init_tm_tx_reply, serde::version<0>> {
     init_tm_tx_reply(model::producer_identity pid, tx_errc ec)
       : pid(pid)
       , ec(ec) {}
+
+    friend bool operator==(const init_tm_tx_reply&, const init_tm_tx_reply&)
+      = default;
 
     explicit init_tm_tx_reply(tx_errc ec)
       : ec(ec) {}
@@ -342,6 +361,9 @@ struct begin_tx_request : serde::envelope<begin_tx_request, serde::version<0>> {
       , tx_seq(tx_seq)
       , transaction_timeout_ms(transaction_timeout_ms) {}
 
+    friend bool operator==(const begin_tx_request&, const begin_tx_request&)
+      = default;
+
     auto serde_fields() {
         return std::tie(ntp, pid, tx_seq, transaction_timeout_ms);
     }
@@ -362,6 +384,9 @@ struct begin_tx_reply : serde::envelope<begin_tx_reply, serde::version<0>> {
     begin_tx_reply(model::ntp ntp, tx_errc ec)
       : ntp(std::move(ntp))
       , ec(ec) {}
+
+    friend bool operator==(const begin_tx_reply&, const begin_tx_reply&)
+      = default;
 
     auto serde_fields() { return std::tie(ntp, etag, ec); }
 };
@@ -390,6 +415,9 @@ struct prepare_tx_request
       , pid(pid)
       , tx_seq(tx_seq)
       , timeout(timeout) {}
+
+    friend bool operator==(const prepare_tx_request&, const prepare_tx_request&)
+      = default;
 
     auto serde_read(iobuf_parser& in, const serde::header& h) {
         using serde::read_nested;
@@ -422,6 +450,9 @@ struct prepare_tx_reply : serde::envelope<prepare_tx_reply, serde::version<0>> {
     explicit prepare_tx_reply(tx_errc ec)
       : ec(ec) {}
 
+    friend bool operator==(const prepare_tx_reply&, const prepare_tx_reply&)
+      = default;
+
     auto serde_fields() { return std::tie(ec); }
 };
 
@@ -443,6 +474,9 @@ struct commit_tx_request
       , pid(pid)
       , tx_seq(tx_seq)
       , timeout(timeout) {}
+
+    friend bool operator==(const commit_tx_request&, const commit_tx_request&)
+      = default;
 
     auto serde_read(iobuf_parser& in, const serde::header& h) {
         using serde::read_nested;
@@ -471,6 +505,9 @@ struct commit_tx_reply : serde::envelope<commit_tx_reply, serde::version<0>> {
     explicit commit_tx_reply(tx_errc ec)
       : ec(ec) {}
 
+    friend bool operator==(const commit_tx_reply&, const commit_tx_reply&)
+      = default;
+
     auto serde_fields() { return std::tie(ec); }
 };
 
@@ -491,6 +528,9 @@ struct abort_tx_request : serde::envelope<abort_tx_request, serde::version<0>> {
       , pid(pid)
       , tx_seq(tx_seq)
       , timeout(timeout) {}
+
+    friend bool operator==(const abort_tx_request&, const abort_tx_request&)
+      = default;
 
     auto serde_read(iobuf_parser& in, const serde::header& h) {
         using serde::read_nested;
@@ -518,6 +558,9 @@ struct abort_tx_reply : serde::envelope<abort_tx_reply, serde::version<0>> {
 
     explicit abort_tx_reply(tx_errc ec)
       : ec(ec) {}
+
+    friend bool operator==(const abort_tx_reply&, const abort_tx_reply&)
+      = default;
 
     auto serde_fields() { return std::tie(ec); }
 };
@@ -556,6 +599,10 @@ struct begin_group_tx_request
       : begin_group_tx_request(
         model::ntp(), std::move(group_id), pid, tx_seq, timeout) {}
 
+    friend bool
+    operator==(const begin_group_tx_request&, const begin_group_tx_request&)
+      = default;
+
     auto serde_read(iobuf_parser& in, const serde::header& h) {
         using serde::read_nested;
         ntp = read_nested<model::ntp>(in, h._bytes_left_limit);
@@ -590,6 +637,10 @@ struct begin_group_tx_reply
     begin_group_tx_reply(model::term_id etag, tx_errc ec)
       : etag(etag)
       , ec(ec) {}
+
+    friend bool
+    operator==(const begin_group_tx_reply&, const begin_group_tx_reply&)
+      = default;
 
     auto serde_fields() { return std::tie(etag, ec); }
 };
@@ -664,6 +715,10 @@ struct prepare_group_tx_reply
     explicit prepare_group_tx_reply(tx_errc ec)
       : ec(ec) {}
 
+    friend bool
+    operator==(const prepare_group_tx_reply&, const prepare_group_tx_reply&)
+      = default;
+
     auto serde_fields() { return std::tie(ec); }
 };
 
@@ -701,6 +756,10 @@ struct commit_group_tx_request
       : commit_group_tx_request(
         model::ntp(), pid, tx_seq, std::move(group_id), timeout) {}
 
+    friend bool
+    operator==(const commit_group_tx_request&, const commit_group_tx_request&)
+      = default;
+
     auto serde_read(iobuf_parser& in, const serde::header& h) {
         using serde::read_nested;
         ntp = read_nested<model::ntp>(in, h._bytes_left_limit);
@@ -730,6 +789,10 @@ struct commit_group_tx_reply
 
     explicit commit_group_tx_reply(tx_errc ec)
       : ec(ec) {}
+
+    friend bool
+    operator==(const commit_group_tx_reply&, const commit_group_tx_reply&)
+      = default;
 
     auto serde_fields() { return std::tie(ec); }
 };
@@ -768,6 +831,10 @@ struct abort_group_tx_request
       : abort_group_tx_request(
         model::ntp(), std::move(group_id), pid, tx_seq, timeout) {}
 
+    friend bool
+    operator==(const abort_group_tx_request&, const abort_group_tx_request&)
+      = default;
+
     auto serde_read(iobuf_parser& in, const serde::header& h) {
         using serde::read_nested;
         ntp = read_nested<model::ntp>(in, h._bytes_left_limit);
@@ -797,6 +864,10 @@ struct abort_group_tx_reply
 
     explicit abort_group_tx_reply(tx_errc ec)
       : ec(ec) {}
+
+    friend bool
+    operator==(const abort_group_tx_reply&, const abort_group_tx_reply&)
+      = default;
 
     auto serde_fields() { return std::tie(ec); }
 };
@@ -1256,6 +1327,11 @@ struct create_partitions_configuration
     // TODO: use when we will start supporting custom partitions assignment
     std::vector<custom_assignment> custom_assignments;
 
+    friend bool operator==(
+      const create_partitions_configuration&,
+      const create_partitions_configuration&)
+      = default;
+
     auto serde_fields() {
         return std::tie(tp_ns, new_total_partition_count, custom_assignments);
     }
@@ -1469,6 +1545,10 @@ struct create_acls_cmd_data
     static constexpr int8_t current_version = 1;
     std::vector<security::acl_binding> bindings;
 
+    friend bool
+    operator==(const create_acls_cmd_data&, const create_acls_cmd_data&)
+      = default;
+
     auto serde_fields() { return std::tie(bindings); }
 };
 
@@ -1485,6 +1565,10 @@ struct delete_acls_cmd_data
   : serde::envelope<delete_acls_cmd_data, serde::version<0>> {
     static constexpr int8_t current_version = 1;
     std::vector<security::acl_binding_filter> filters;
+
+    friend bool
+    operator==(const delete_acls_cmd_data&, const delete_acls_cmd_data&)
+      = default;
 
     auto serde_fields() { return std::tie(filters); }
 };
@@ -1524,6 +1608,10 @@ struct create_data_policy_cmd_data
     auto serde_fields() { return std::tie(dp); }
 
     v8_engine::data_policy dp;
+
+    friend bool operator==(
+      const create_data_policy_cmd_data&, const create_data_policy_cmd_data&)
+      = default;
 };
 
 struct non_replicable_topic
@@ -1531,6 +1619,10 @@ struct non_replicable_topic
     static constexpr int8_t current_version = 1;
     model::topic_namespace source;
     model::topic_namespace name;
+
+    friend bool
+    operator==(const non_replicable_topic&, const non_replicable_topic&)
+      = default;
 
     auto serde_fields() { return std::tie(source, name); }
 
@@ -1578,6 +1670,11 @@ struct cluster_config_delta_cmd_data
     std::vector<cluster_property_kv> upsert;
     std::vector<ss::sstring> remove;
 
+    friend bool operator==(
+      const cluster_config_delta_cmd_data&,
+      const cluster_config_delta_cmd_data&)
+      = default;
+
     auto serde_fields() { return std::tie(upsert, remove); }
 
     friend std::ostream&
@@ -1587,6 +1684,11 @@ struct cluster_config_delta_cmd_data
 struct cluster_config_status_cmd_data
   : serde::envelope<cluster_config_status_cmd_data, serde::version<0>> {
     static constexpr int8_t current_version = 0;
+
+    friend bool operator==(
+      const cluster_config_status_cmd_data&,
+      const cluster_config_status_cmd_data&)
+      = default;
 
     auto serde_fields() { return std::tie(status); }
 
@@ -1611,6 +1713,10 @@ struct feature_update_action
     ss::sstring feature_name;
     action_t action;
 
+    friend bool
+    operator==(const feature_update_action&, const feature_update_action&)
+      = default;
+
     auto serde_fields() { return std::tie(feature_name, action); }
 
     friend std::ostream&
@@ -1626,6 +1732,10 @@ struct feature_update_cmd_data
 
     cluster_version logical_version;
     std::vector<feature_update_action> actions;
+
+    friend bool
+    operator==(const feature_update_cmd_data&, const feature_update_cmd_data&)
+      = default;
 
     auto serde_fields() { return std::tie(logical_version, actions); }
 

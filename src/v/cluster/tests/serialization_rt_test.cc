@@ -802,7 +802,7 @@ model::producer_identity random_producer_identity() {
 
 model::timeout_clock::duration random_timeout_clock_duration() {
     return model::timeout_clock::duration(
-      random_generators::get_int(-100000, 100000));
+      random_generators::get_int<int64_t>(-100000, 100000) * 1000000);
 }
 
 cluster::tx_errc random_tx_errc() {
@@ -868,7 +868,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     }));
 
     roundtrip_test(
-      cluster::allocate_id_request(model::timeout_clock::duration(234234)));
+      cluster::allocate_id_request(random_timeout_clock_duration()));
 
     roundtrip_test(
       cluster::allocate_id_reply(23433, cluster::errc::invalid_node_operation));
