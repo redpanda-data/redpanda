@@ -2876,4 +2876,15 @@ struct adl<cluster::delete_acls_request> {
         return {std::move(data), timeout};
     }
 };
+
+template<>
+struct adl<cluster::delete_acls_reply> {
+    void to(iobuf& out, cluster::delete_acls_reply&& r) {
+        serialize(out, std::move(r.results));
+    }
+    cluster::delete_acls_reply from(iobuf_parser& in) {
+        auto results = adl<std::vector<cluster::delete_acls_result>>{}.from(in);
+        return {.results = std::move(results)};
+    }
+};
 } // namespace reflection
