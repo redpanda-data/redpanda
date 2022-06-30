@@ -2584,7 +2584,7 @@ struct adl<cluster::config_status_reply> {
 template<>
 struct adl<cluster::finish_partition_update_request> {
     void to(iobuf& out, cluster::finish_partition_update_request&& r) {
-        serialize(out, r.ntp, r.new_replica_set);
+        serialize(out, std::move(r.ntp), std::move(r.new_replica_set));
     }
     cluster::finish_partition_update_request from(iobuf_parser& in) {
         auto ntp = adl<model::ntp>{}.from(in);
@@ -2610,7 +2610,7 @@ struct adl<cluster::finish_partition_update_reply> {
 template<>
 struct adl<cluster::update_topic_properties_request> {
     void to(iobuf& out, cluster::update_topic_properties_request&& r) {
-        serialize(out, r.updates);
+        serialize(out, std::move(r.updates));
     }
     cluster::update_topic_properties_request from(iobuf_parser& in) {
         auto updates
@@ -2622,7 +2622,7 @@ struct adl<cluster::update_topic_properties_request> {
 template<>
 struct adl<cluster::update_topic_properties_reply> {
     void to(iobuf& out, cluster::update_topic_properties_reply&& r) {
-        serialize(out, r.results);
+        serialize(out, std::move(r.results));
     }
     cluster::update_topic_properties_reply from(iobuf_parser& in) {
         auto results = adl<std::vector<cluster::topic_result>>{}.from(in);
@@ -2633,7 +2633,7 @@ struct adl<cluster::update_topic_properties_reply> {
 template<>
 struct adl<cluster::reconciliation_state_request> {
     void to(iobuf& out, cluster::reconciliation_state_request&& r) {
-        serialize(out, r.ntps);
+        serialize(out, std::move(r.ntps));
     }
     cluster::reconciliation_state_request from(iobuf_parser& in) {
         auto ntps = adl<std::vector<model::ntp>>{}.from(in);
