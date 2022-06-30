@@ -1,4 +1,5 @@
 import collections
+from enum import Enum
 import os
 
 import struct
@@ -104,6 +105,36 @@ class RecordIter:
                       headers)
 
 
+class BatchType(Enum):
+    """Keep this in sync with model/record_batch_types.h"""
+    raft_data = 1
+    raft_configuration = 2
+    controller = 3
+    kvstore = 4
+    checkpoint = 5
+    topic_management_cmd = 6
+    ghost_batch = 7
+    id_allocator = 8
+    tx_prepare = 9
+    tx_fence = 10
+    tm_update = 11
+    user_management_cmd = 12
+    acl_management_cmd = 13
+    group_prepare_tx = 14
+    group_commit_tx = 15
+    group_abort_tx = 16
+    node_management_cmd = 17
+    data_policy_management_cmd = 18
+    archival_metadata = 19
+    cluster_config_cmd = 20
+    feature_update = 21
+    unknown = -1
+
+    @classmethod
+    def _missing_(e, value):
+        return e.unknown
+
+
 class Batch:
     class CompressionType(Enum):
         none = 0
@@ -141,6 +172,7 @@ class Batch:
     def header_dict(self):
         header = self.header._asdict()
         attrs = header['attrs']
+        header["type_name"] = BatchType(header["type"]).name
         header['expanded_attrs'] = {
             'compression':
             Batch.CompressionType(attrs & Batch.compression_mask).name,
