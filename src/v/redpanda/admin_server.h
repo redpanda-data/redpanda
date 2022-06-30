@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "archival/service.h"
 #include "cluster/fwd.h"
 #include "config/endpoint_tls_config.h"
 #include "coproc/partition_manager.h"
@@ -48,7 +49,8 @@ public:
       ss::sharded<coproc::partition_manager>&,
       cluster::controller*,
       ss::sharded<cluster::shard_table>&,
-      ss::sharded<cluster::metadata_cache>&);
+      ss::sharded<cluster::metadata_cache>&,
+      ss::sharded<archival::scheduler_service>&);
 
     ss::future<> start();
     ss::future<> stop();
@@ -162,6 +164,7 @@ private:
     void register_transaction_routes();
     void register_debug_routes();
     void register_cluster_routes();
+    void register_shadow_indexing_routes();
 
     ss::future<> throw_on_error(
       ss::httpd::request& req,
@@ -197,4 +200,5 @@ private:
     ss::sharded<cluster::metadata_cache>& _metadata_cache;
     request_authenticator _auth;
     bool _ready{false};
+    ss::sharded<archival::scheduler_service>& _archival_service;
 };

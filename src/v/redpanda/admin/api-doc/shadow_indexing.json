@@ -1,0 +1,25 @@
+"/v1/shadow_indexing/sync_local_state/{topic}/{partition}": {
+  "post": {
+    "summary": "Sync content of the bucket with local partition metadata",
+    "operationId": "sync_local_state",
+    "parameters": [
+        {
+            "name": "topic",
+            "in": "path",
+            "required": true,
+            "type": "string"
+        },
+        {
+            "name":"partition",
+            "in":"path",
+            "required":true,
+            "type":"integer"
+        }
+    ],
+    "responses": {
+      "200": {
+        "description": "Partition metadata is up to date"
+      }
+    }
+  }
+}

@@ -10,7 +10,8 @@ set(swags
   hbadger
   transaction
   cluster
-  debug)
+  debug
+  shadow_indexing)
 
 set(swag_files)
 foreach(swag ${swags})

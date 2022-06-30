@@ -47,10 +47,22 @@ struct archival_metadata_stm::segment
     cloud_storage::partition_manifest::segment_meta meta;
 };
 
+struct archival_metadata_stm::start_offset
+  : public serde::
+      envelope<segment, serde::version<0>, serde::compat_version<0>> {
+    model::offset start_offset;
+};
+
 struct archival_metadata_stm::add_segment_cmd {
     static constexpr cmd_key key{0};
 
     using value = segment;
+};
+
+struct archival_metadata_stm::truncate_cmd {
+    static constexpr cmd_key key{1};
+
+    using value = start_offset;
 };
 
 struct archival_metadata_stm::snapshot
@@ -111,50 +123,21 @@ archival_metadata_stm::archival_metadata_stm(
   , _manifest(raft->ntp(), raft->log_config().get_initial_revision())
   , _cloud_storage_api(remote) {}
 
-// todo: return result
-ss::future<std::error_code> archival_metadata_stm::add_segments(
-  const cloud_storage::partition_manifest& manifest,
+ss::future<std::error_code> archival_metadata_stm::truncate(
+  model::offset start_rp_offset,
   ss::lowres_clock::time_point deadline,
   std::optional<std::reference_wrapper<ss::abort_source>> as) {
     auto now = ss::lowres_clock::now();
     auto timeout = now < deadline ? deadline - now : 0ms;
-    return _lock.with(timeout, [this, &manifest, deadline, as] {
-        return do_add_segments(manifest, deadline, as);
+    return _lock.with(timeout, [this, start_rp_offset, deadline, as] {
+        return do_truncate(start_rp_offset, deadline, as);
     });
 }
 
-// todo: return result
-ss::future<std::error_code> archival_metadata_stm::do_add_segments(
-  const cloud_storage::partition_manifest& new_manifest,
+ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
+  model::record_batch batch,
   ss::lowres_clock::time_point deadline,
   std::optional<std::reference_wrapper<ss::abort_source>> as) {
-    {
-        auto now = ss::lowres_clock::now();
-        auto timeout = now < deadline ? deadline - now : 0ms;
-        if (!co_await sync(timeout)) {
-            co_return errc::timeout;
-        }
-    }
-
-    if (as) {
-        as->get().check();
-    }
-
-    auto segments = segments_from_manifest(new_manifest.difference(_manifest));
-    if (segments.empty()) {
-        co_return errc::success;
-    }
-
-    storage::record_batch_builder b(
-      model::record_batch_type::archival_metadata, model::offset(0));
-    for (const auto& segment : segments) {
-        iobuf key_buf = serde::to_iobuf(add_segment_cmd::key);
-        auto record_val = add_segment_cmd::value{segment};
-        iobuf val_buf = serde::to_iobuf(std::move(record_val));
-        b.add_raw_kv(std::move(key_buf), std::move(val_buf));
-    }
-
-    auto batch = std::move(b).build();
     auto fut = _raft->replicate(
       _insync_term,
       model::make_memory_record_batch_reader(std::move(batch)),
@@ -192,7 +175,104 @@ ss::future<std::error_code> archival_metadata_stm::do_add_segments(
         co_return errc::replication_error;
     }
 
-    for (const auto& segment : segments) {
+    co_return errc::success;
+}
+
+ss::future<std::error_code> archival_metadata_stm::do_truncate(
+  model::offset start_rp_offset,
+  ss::lowres_clock::time_point deadline,
+  std::optional<std::reference_wrapper<ss::abort_source>> as) {
+    {
+        auto now = ss::lowres_clock::now();
+        auto timeout = now < deadline ? deadline - now : 0ms;
+        if (!co_await sync(timeout)) {
+            co_return errc::timeout;
+        }
+    }
+
+    if (as) {
+        as->get().check();
+    }
+
+    auto so = _manifest.get_start_offset();
+    if (so && so.value() > start_rp_offset) {
+        co_return errc::success;
+    }
+
+    storage::record_batch_builder b(
+      model::record_batch_type::archival_metadata, model::offset(0));
+    iobuf key_buf = serde::to_iobuf(truncate_cmd::key);
+    auto record_val = truncate_cmd::value{.start_offset = start_rp_offset};
+    iobuf val_buf = serde::to_iobuf(record_val);
+    b.add_raw_kv(std::move(key_buf), std::move(val_buf));
+
+    auto batch = std::move(b).build();
+
+    auto ec = co_await do_replicate_commands(std::move(batch), deadline, as);
+    if (!ec) {
+        co_return ec;
+    }
+
+    vlog(
+      _logger.info,
+      "truncate command replicated, truncated up to {}, remote start_offset: "
+      "{}, last_offset: {}",
+      start_rp_offset,
+      _start_offset,
+      _last_offset);
+
+    co_return errc::success;
+}
+
+ss::future<std::error_code> archival_metadata_stm::add_segments(
+  const cloud_storage::partition_manifest& manifest,
+  ss::lowres_clock::time_point deadline,
+  std::optional<std::reference_wrapper<ss::abort_source>> as) {
+    auto now = ss::lowres_clock::now();
+    auto timeout = now < deadline ? deadline - now : 0ms;
+    return _lock.with(timeout, [this, &manifest, deadline, as] {
+        return do_add_segments(manifest, deadline, as);
+    });
+}
+
+ss::future<std::error_code> archival_metadata_stm::do_add_segments(
+  const cloud_storage::partition_manifest& new_manifest,
+  ss::lowres_clock::time_point deadline,
+  std::optional<std::reference_wrapper<ss::abort_source>> as) {
+    {
+        auto now = ss::lowres_clock::now();
+        auto timeout = now < deadline ? deadline - now : 0ms;
+        if (!co_await sync(timeout)) {
+            co_return errc::timeout;
+        }
+    }
+
+    if (as) {
+        as->get().check();
+    }
+
+    auto add_segments = segments_from_manifest(
+      new_manifest.difference(_manifest));
+    if (add_segments.empty()) {
+        co_return errc::success;
+    }
+
+    storage::record_batch_builder b(
+      model::record_batch_type::archival_metadata, model::offset(0));
+    for (const auto& segment : add_segments) {
+        iobuf key_buf = serde::to_iobuf(add_segment_cmd::key);
+        auto record_val = add_segment_cmd::value{segment};
+        iobuf val_buf = serde::to_iobuf(std::move(record_val));
+        b.add_raw_kv(std::move(key_buf), std::move(val_buf));
+    }
+
+    auto batch = std::move(b).build();
+    auto ec = co_await do_replicate_commands(std::move(batch), deadline, as);
+    if (!ec) {
+        co_return ec;
+    }
+
+    for (const auto& segment : add_segments) {
         vlog(
           _logger.info,
           "new remote segment added (name: {}, base_offset: {} last_offset: "
@@ -220,6 +300,10 @@ ss::future<> archival_metadata_stm::apply(model::record_batch b) {
             auto value = serde::from_iobuf<add_segment_cmd::value>(
               r.release_value());
             apply_add_segment(value);
+        } else if (key == truncate_cmd::key) {
+            auto value = serde::from_iobuf<truncate_cmd::value>(
+              r.release_value());
+            apply_truncate(value);
         }
     });
 
@@ -364,6 +448,20 @@ void archival_metadata_stm::apply_add_segment(const segment& segment) {
         }
 
         _last_offset = meta.committed_offset;
+    }
+}
+
+void archival_metadata_stm::apply_truncate(const start_offset& so) {
+    auto removed = _manifest.truncate(so.start_offset);
+    vlog(
+      _logger.debug,
+      "Truncate command applied, new start offset: {}",
+      _manifest.get_start_offset());
+    if (_manifest.size()) {
+        _start_offset = *_manifest.get_start_offset();
+    } else {
+        _start_offset = model::offset{};
+        _last_offset = model::offset{};
     }
 }
 
