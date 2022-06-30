@@ -806,15 +806,30 @@ struct abort_group_tx_reply
 /// - Always specifies node_id
 /// (remove this RPC two versions after join_node_request was
 ///  added to replace it)
-struct join_request {
+struct join_request : serde::envelope<join_request, serde::version<0>> {
+    join_request() noexcept = default;
+
     explicit join_request(model::broker b)
       : node(std::move(b)) {}
 
     model::broker node;
+
+    friend bool operator==(const join_request&, const join_request&) = default;
+
+    auto serde_fields() { return std::tie(node); }
 };
 
-struct join_reply {
+struct join_reply : serde::envelope<join_reply, serde::version<0>> {
     bool success;
+
+    join_reply() noexcept = default;
+
+    explicit join_reply(bool success)
+      : success(success) {}
+
+    friend bool operator==(const join_reply&, const join_reply&) = default;
+
+    auto serde_fields() { return std::tie(success); }
 };
 
 /// Successor to join_request:
@@ -822,7 +837,10 @@ struct join_reply {
 /// - Has fields for implementing auto-selection of
 ///   node_id (https://github.com/redpanda-data/redpanda/issues/2793)
 ///   in future.
-struct join_node_request {
+struct join_node_request
+  : serde::envelope<join_node_request, serde::version<0>> {
+    join_node_request() noexcept = default;
+
     explicit join_node_request(
       cluster_version lv, std::vector<uint8_t> nuuid, model::broker b)
       : logical_version(lv)
@@ -841,11 +859,27 @@ struct join_node_request {
     // the vector is just to reserve the on-disk layout.
     std::vector<uint8_t> node_uuid;
     model::broker node;
+
+    friend bool operator==(const join_node_request&, const join_node_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(logical_version, node_uuid, node); }
 };
 
-struct join_node_reply {
+struct join_node_reply : serde::envelope<join_node_reply, serde::version<0>> {
     bool success{false};
     model::node_id id{-1};
+
+    join_node_reply() noexcept = default;
+
+    join_node_reply(bool success, model::node_id id)
+      : success(success)
+      , id(id) {}
+
+    friend bool operator==(const join_node_reply&, const join_node_reply&)
+      = default;
+
+    auto serde_fields() { return std::tie(success, id); }
 };
 
 struct configuration_update_request
@@ -1085,20 +1119,38 @@ struct incremental_topic_updates
 
 // This class contains updates for topic properties which are replicates not by
 // topic_frontend
-struct incremental_topic_custom_updates {
+struct incremental_topic_custom_updates
+  : serde::envelope<incremental_topic_custom_updates, serde::version<0>> {
     // Data-policy property is replicated by data_policy_frontend and handled by
     // data_policy_manager.
     property_update<std::optional<v8_engine::data_policy>> data_policy;
+
+    friend bool operator==(
+      const incremental_topic_custom_updates&,
+      const incremental_topic_custom_updates&)
+      = default;
+
+    auto serde_fields() { return std::tie(data_policy); }
 };
 
 /**
  * Struct representing single topic properties update
  */
-struct topic_properties_update {
+struct topic_properties_update
+  : serde::envelope<topic_properties_update, serde::version<0>> {
     // We need version to indetify request with custom_properties
     static constexpr int32_t version = -1;
+    topic_properties_update() noexcept = default;
     explicit topic_properties_update(model::topic_namespace tp_ns)
       : tp_ns(std::move(tp_ns)) {}
+
+    topic_properties_update(
+      model::topic_namespace tp_ns,
+      incremental_topic_updates properties,
+      incremental_topic_custom_updates custom_properties)
+      : tp_ns(std::move(tp_ns))
+      , properties(properties)
+      , custom_properties(std::move(custom_properties)) {}
 
     model::topic_namespace tp_ns;
 
@@ -1109,6 +1161,14 @@ struct topic_properties_update {
     // This properties is not serialized to update_topic_properties_cmd, because
     // they have custom services for replication.
     incremental_topic_custom_updates custom_properties;
+
+    friend bool
+    operator==(const topic_properties_update&, const topic_properties_update&)
+      = default;
+
+    auto serde_fields() {
+        return std::tie(tp_ns, properties, custom_properties);
+    }
 };
 
 // Structure holding topic configuration, optionals will be replaced by broker
@@ -1250,13 +1310,19 @@ struct create_partitions_configuration_assignment
       = default;
 };
 
-struct topic_result {
+struct topic_result : serde::envelope<topic_result, serde::version<0>> {
+    topic_result() noexcept = default;
     explicit topic_result(model::topic_namespace t, errc ec = errc::success)
       : tp_ns(std::move(t))
       , ec(ec) {}
     model::topic_namespace tp_ns;
     errc ec;
+
+    friend bool operator==(const topic_result&, const topic_result&) = default;
+
     friend std::ostream& operator<<(std::ostream& o, const topic_result& r);
+
+    auto serde_fields() { return std::tie(tp_ns, ec); }
 };
 
 struct create_topics_request {
@@ -1270,21 +1336,53 @@ struct create_topics_reply {
     std::vector<topic_configuration> configs;
 };
 
-struct finish_partition_update_request {
+struct finish_partition_update_request
+  : serde::envelope<finish_partition_update_request, serde::version<0>> {
     model::ntp ntp;
     std::vector<model::broker_shard> new_replica_set;
+
+    friend bool operator==(
+      const finish_partition_update_request&,
+      const finish_partition_update_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(ntp, new_replica_set); }
 };
 
-struct finish_partition_update_reply {
+struct finish_partition_update_reply
+  : serde::envelope<finish_partition_update_reply, serde::version<0>> {
     cluster::errc result;
+
+    friend bool operator==(
+      const finish_partition_update_reply&,
+      const finish_partition_update_reply&)
+      = default;
+
+    auto serde_fields() { return std::tie(result); }
 };
 
-struct update_topic_properties_request {
+struct update_topic_properties_request
+  : serde::envelope<update_topic_properties_request, serde::version<0>> {
     std::vector<topic_properties_update> updates;
+
+    friend bool operator==(
+      const update_topic_properties_request&,
+      const update_topic_properties_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(updates); }
 };
 
-struct update_topic_properties_reply {
+struct update_topic_properties_reply
+  : serde::envelope<update_topic_properties_reply, serde::version<0>> {
     std::vector<topic_result> results;
+
+    friend bool operator==(
+      const update_topic_properties_reply&,
+      const update_topic_properties_reply&)
+      = default;
+
+    auto serde_fields() { return std::tie(results); }
 };
 
 template<typename T>
@@ -1406,11 +1504,17 @@ struct delete_acls_reply {
     std::vector<delete_acls_result> results;
 };
 
-struct backend_operation {
+struct backend_operation
+  : serde::envelope<backend_operation, serde::version<0>> {
     ss::shard_id source_shard;
     partition_assignment p_as;
     topic_table_delta::op_type type;
     friend std::ostream& operator<<(std::ostream&, const backend_operation&);
+
+    friend bool operator==(const backend_operation&, const backend_operation&)
+      = default;
+
+    auto serde_fields() { return std::tie(source_shard, p_as, type); }
 };
 
 struct create_data_policy_cmd_data
@@ -1536,8 +1640,11 @@ enum class reconciliation_status : int8_t {
 };
 std::ostream& operator<<(std::ostream&, const reconciliation_status&);
 
-class ntp_reconciliation_state {
+class ntp_reconciliation_state
+  : public serde::envelope<ntp_reconciliation_state, serde::version<0>> {
 public:
+    ntp_reconciliation_state() noexcept = default;
+
     // success case
     ntp_reconciliation_state(
       model::ntp, std::vector<backend_operation>, reconciliation_status);
@@ -1560,8 +1667,16 @@ public:
     std::error_code error() const { return make_error_code(_error); }
     errc cluster_errc() const { return _error; }
 
+    friend bool
+    operator==(const ntp_reconciliation_state&, const ntp_reconciliation_state&)
+      = default;
+
     friend std::ostream&
     operator<<(std::ostream&, const ntp_reconciliation_state&);
+
+    auto serde_fields() {
+        return std::tie(_ntp, _backend_operations, _status, _error);
+    }
 
 private:
     model::ntp _ntp;
@@ -1570,12 +1685,26 @@ private:
     errc _error;
 };
 
-struct reconciliation_state_request {
+struct reconciliation_state_request
+  : serde::envelope<reconciliation_state_request, serde::version<0>> {
     std::vector<model::ntp> ntps;
+
+    friend bool operator==(
+      const reconciliation_state_request&, const reconciliation_state_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(ntps); }
 };
 
-struct reconciliation_state_reply {
+struct reconciliation_state_reply
+  : serde::envelope<reconciliation_state_reply, serde::version<0>> {
     std::vector<ntp_reconciliation_state> results;
+
+    friend bool operator==(
+      const reconciliation_state_reply&, const reconciliation_state_reply&)
+      = default;
+
+    auto serde_fields() { return std::tie(results); }
 };
 
 struct decommission_node_request {
@@ -1839,10 +1968,31 @@ struct adl<cluster::join_request> {
 };
 
 template<>
+struct adl<cluster::join_reply> {
+    void to(iobuf& out, cluster::join_reply&& r) { serialize(out, r.success); }
+    cluster::join_reply from(iobuf_parser& in) {
+        auto success = adl<bool>{}.from(in);
+        return cluster::join_reply{success};
+    }
+};
+
+template<>
 struct adl<cluster::join_node_request> {
     void to(iobuf&, cluster::join_node_request&&);
     cluster::join_node_request from(iobuf);
     cluster::join_node_request from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::join_node_reply> {
+    void to(iobuf& out, cluster::join_node_reply&& r) {
+        serialize(out, r.success, r.id);
+    }
+    cluster::join_node_reply from(iobuf_parser& in) {
+        auto success = adl<bool>{}.from(in);
+        auto id = adl<model::node_id>{}.from(in);
+        return {success, id};
+    }
 };
 
 template<>
@@ -2428,6 +2578,95 @@ struct adl<cluster::config_status_reply> {
     cluster::config_status_reply from(iobuf_parser& in) {
         auto error = adl<cluster::errc>{}.from(in);
         return {.error = error};
+    }
+};
+
+template<>
+struct adl<cluster::finish_partition_update_request> {
+    void to(iobuf& out, cluster::finish_partition_update_request&& r) {
+        serialize(out, std::move(r.ntp), std::move(r.new_replica_set));
+    }
+    cluster::finish_partition_update_request from(iobuf_parser& in) {
+        auto ntp = adl<model::ntp>{}.from(in);
+        auto new_replica_set = adl<std::vector<model::broker_shard>>{}.from(in);
+        return {
+          .ntp = std::move(ntp),
+          .new_replica_set = std::move(new_replica_set),
+        };
+    }
+};
+
+template<>
+struct adl<cluster::finish_partition_update_reply> {
+    void to(iobuf& out, cluster::finish_partition_update_reply&& r) {
+        serialize(out, r.result);
+    }
+    cluster::finish_partition_update_reply from(iobuf_parser& in) {
+        auto result = adl<cluster::errc>{}.from(in);
+        return {.result = result};
+    }
+};
+
+template<>
+struct adl<cluster::update_topic_properties_request> {
+    void to(iobuf& out, cluster::update_topic_properties_request&& r) {
+        serialize(out, std::move(r.updates));
+    }
+    cluster::update_topic_properties_request from(iobuf_parser& in) {
+        auto updates
+          = adl<std::vector<cluster::topic_properties_update>>{}.from(in);
+        return {.updates = std::move(updates)};
+    }
+};
+
+template<>
+struct adl<cluster::update_topic_properties_reply> {
+    void to(iobuf& out, cluster::update_topic_properties_reply&& r) {
+        serialize(out, std::move(r.results));
+    }
+    cluster::update_topic_properties_reply from(iobuf_parser& in) {
+        auto results = adl<std::vector<cluster::topic_result>>{}.from(in);
+        return {.results = std::move(results)};
+    }
+};
+
+template<>
+struct adl<cluster::reconciliation_state_request> {
+    void to(iobuf& out, cluster::reconciliation_state_request&& r) {
+        serialize(out, std::move(r.ntps));
+    }
+    cluster::reconciliation_state_request from(iobuf_parser& in) {
+        auto ntps = adl<std::vector<model::ntp>>{}.from(in);
+        return {.ntps = std::move(ntps)};
+    }
+};
+
+template<>
+struct adl<cluster::backend_operation> {
+    void to(iobuf& out, cluster::backend_operation&& r) {
+        serialize(out, r.source_shard, r.p_as, r.type);
+    }
+    cluster::backend_operation from(iobuf_parser& in) {
+        auto source_shard = adl<ss::shard_id>{}.from(in);
+        auto p_as = adl<cluster::partition_assignment>{}.from(in);
+        auto type = adl<cluster::topic_table_delta::op_type>{}.from(in);
+        return {
+          .source_shard = source_shard,
+          .p_as = std::move(p_as),
+          .type = type,
+        };
+    }
+};
+
+template<>
+struct adl<cluster::reconciliation_state_reply> {
+    void to(iobuf& out, cluster::reconciliation_state_reply&& r) {
+        serialize(out, r.results);
+    }
+    cluster::reconciliation_state_reply from(iobuf_parser& in) {
+        auto results
+          = adl<std::vector<cluster::ntp_reconciliation_state>>{}.from(in);
+        return {.results = std::move(results)};
     }
 };
 } // namespace reflection
