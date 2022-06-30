@@ -41,17 +41,28 @@ class Trimmer:
 
             if r['test_status'] == "PASS":
                 for service in r['services']:
-                    if service['cls_name'] == "RedpandaService":
-                        service_dir = os.path.join(results_dir,
-                                                   service['service_id'])
-                        for node in service['nodes']:
-                            hostname = node.split("@")[-1]
-                            log_path = os.path.join(
-                                service_dir, f"{hostname}/redpanda.log")
-                            if os.path.exists(log_path):
-                                log_paths.append(log_path)
-                            else:
-                                log.debug(f"No service log for {log_path}")
+                    service_logs = {
+                        "RedpandaService": "redpanda.log",
+                        "MirrorMaker2": "mirror_maker2.log",
+                        "KafkaService": "server-start-stdout-stderr.log"
+                    }
+
+                    try:
+                        log_file = service_logs[service['cls_name']]
+                    except KeyError:
+                        # Not a service we know how to trim
+                        continue
+
+                    service_dir = os.path.join(results_dir,
+                                               service['service_id'])
+                    for node in service['nodes']:
+                        hostname = node.split("@")[-1]
+                        log_path = os.path.join(service_dir,
+                                                f"{hostname}/{log_file}")
+                        if os.path.exists(log_path):
+                            log_paths.append(log_path)
+                        else:
+                            log.debug(f"No service log for {log_path}")
             else:
                 log.info(
                     f"Preserving log for non-passing ({r['test_status']}) test {r['relative_results_dir']}"
