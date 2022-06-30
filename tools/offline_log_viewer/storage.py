@@ -57,6 +57,11 @@ class Record:
         self.value = value
         self.headers = headers
 
+    def kv_dict(self):
+        key = None if self.key == None else self.key.hex()
+        val = None if self.value == None else self.value.hex()
+        return {"k": key, "v": val}
+
 
 class RecordHeader:
     def __init__(self, key, value):

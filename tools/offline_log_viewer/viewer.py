@@ -32,40 +32,16 @@ def print_controller(store):
             logger.info(json.dumps(ctrl.records, indent=2))
 
 
-def print_kafka(store, topic):
+def print_kafka(store, topic, headers_only):
     for ntp in store.ntps:
-        if ntp.nspace.startswith("kafka"):
+        if ntp.nspace in ["kafka", "kafka_internal"]:
             if topic and ntp.topic != topic:
                 continue
 
-            log = KafkaLog(ntp)
             logger.info(f'topic: {ntp.topic}, partition: {ntp.partition}')
-            for header in log.batch_headers():
-                logger.info(json.dumps(header, indent=2))
-
-
-def print_kafka_records(store, topic):
-    for ntp in store.ntps:
-        if ntp.nspace.startswith("kafka"):
-            if topic and ntp.topic != topic:
-                continue
-
-            log = KafkaLog(ntp)
-            logger.info(f'topic: {ntp.topic}, partition: {ntp.partition}')
-            for batch in log.batches():
-                logger.info(json.dumps(batch.header_dict(), indent=2))
-                for record in batch:
-                    logger.info(
-                        json.dumps(
-                            {
-                                "key":
-                                None
-                                if record.key == None else record.key.hex(),
-                                "value":
-                                None if record.value == None else
-                                record.value.hex(),
-                            },
-                            indent=2))
+            log = KafkaLog(ntp, headers_only=headers_only)
+            for result in log.decode():
+                logger.info(json.dumps(result, indent=2))
 
 
 def print_groups(store):
@@ -118,9 +94,9 @@ def main():
     elif options.type == "controller":
         print_controller(store)
     elif options.type == "kafka":
-        print_kafka(store, options.topic)
+        print_kafka(store, options.topic, headers_only=True)
     elif options.type == "kafka_records":
-        print_kafka_records(store, options.topic)
+        print_kafka(store, options.topic, headers_only=False)
     elif options.type == "group":
         print_groups(store)
 
