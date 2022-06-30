@@ -164,10 +164,18 @@ private:
         std::unique_ptr<request_tracker> tracker;
     };
 
-    /// called by throttle_request
+    // Reserve units from memory from the memory semaphore in proportion
+    // to the number of bytes the request procesisng is expected to
+    // take.
     ss::future<ss::semaphore_units<>> reserve_request_units(size_t size);
 
-    /// apply correct backpressure sequence
+    // Apply backpressure sequence, where the request processing may be
+    // delayed for various reasons, including throttling but also because
+    // too few server resources are available to accomodate the request
+    // currently.
+    // When the returned future resolves, the throttling period is over and
+    // the associated resouces have been obtained and are tracked by the
+    // contained session_resources object.
     ss::future<session_resources>
     throttle_request(const request_header&, size_t sz);
 
