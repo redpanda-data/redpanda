@@ -1582,8 +1582,14 @@ struct create_acls_request
     }
 };
 
-struct create_acls_reply {
+struct create_acls_reply
+  : serde::envelope<create_acls_reply, serde::version<0>> {
     std::vector<errc> results;
+
+    friend bool operator==(const create_acls_reply&, const create_acls_reply&)
+      = default;
+
+    auto serde_fields() { return std::tie(results); }
 };
 
 struct delete_acls_cmd_data

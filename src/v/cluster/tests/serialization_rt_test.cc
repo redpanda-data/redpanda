@@ -1515,6 +1515,14 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           create_acls_data, random_timeout_clock_duration()};
         roundtrip_test(data);
     }
+    {
+        std::vector<cluster::errc> results;
+        for (int i = 0, mi = random_generators::get_int(20); i < mi; i++) {
+            results.push_back(cluster::errc::invalid_node_operation);
+        }
+        cluster::create_acls_reply data;
+        roundtrip_test(data);
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {
