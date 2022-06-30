@@ -1742,8 +1742,9 @@ class RedpandaService(Service):
             # the same binaries.
             return
 
+        # Assume that if 'CI' isn't explicitly set to false, we do want to keep
+        # the executable.
         if os.environ.get('CI', None) == 'false':
-            # We are on a developer workstation
             self.logger.info("Skipping saving executable, not in CI")
             return
 
