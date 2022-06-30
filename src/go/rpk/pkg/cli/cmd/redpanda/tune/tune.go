@@ -1,4 +1,4 @@
-// Copyright 2021 Redpanda Data, Inc.
+// Copyright 2022 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -8,9 +8,8 @@
 // by the Apache License, Version 2.0
 
 //go:build linux
-// +build linux
 
-package redpanda
+package tune
 
 import (
 	"errors"
@@ -22,7 +21,6 @@ import (
 	"time"
 
 	"github.com/fatih/color"
-	tunecmd "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/redpanda/tune"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/ui"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -41,7 +39,7 @@ type result struct {
 	errMsg    string
 }
 
-func NewTuneCommand(fs afero.Fs) *cobra.Command {
+func NewCommand(fs afero.Fs) *cobra.Command {
 	tunerParams := factory.TunerParams{}
 	var (
 		configFile        string
@@ -49,14 +47,20 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 		cpuSet            string
 		timeout           time.Duration
 	)
-	baseMsg := "Sets the OS parameters to tune system performance." +
-		" Available tuners: all, " +
-		strings.Join(factory.AvailableTuners(), ", ")
+	baseMsg := "Sets the OS parameters to tune system performance"
+	longMsg := fmt.Sprintf(`Sets the OS parameters to tune system performance.
+
+Available tuners:
+
+  - all.
+  - %s
+
+To learn more about a tuner, run 'rpk redpanda tune help <tuner name>'.
+`, strings.Join(factory.AvailableTuners(), "\n  - "))
 	command := &cobra.Command{
 		Use:   "tune <list of elements to tune>",
 		Short: baseMsg,
-		Long: baseMsg + ".\n In order to get more information about the" +
-			" tuners, run `rpk redpanda tune help <tuner name>`",
+		Long:  longMsg,
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) < 1 {
 				return errors.New("requires the list of elements to tune")
@@ -106,37 +110,21 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 			}
 		},
 	}
-	command.Flags().StringVarP(&tunerParams.Mode,
-		"mode", "m", "",
-		"Operation Mode: one of: [sq, sq_split, mq]")
+	addTunerParamsFlags(command, &tunerParams)
 	command.Flags().StringVar(&cpuSet,
 		"cpu-set",
-		"all", "Set of CPUs for tuner to use in cpuset(7) format "+
-			"if not specified tuner will use all available CPUs")
-	command.Flags().StringSliceVarP(&tunerParams.Disks,
-		"disks", "d",
-		[]string{}, "Lists of devices to tune f.e. 'sda1'")
-	command.Flags().StringSliceVarP(&tunerParams.Nics,
-		"nic", "n",
-		[]string{}, "Network Interface Controllers to tune")
-	command.Flags().StringSliceVarP(&tunerParams.Directories,
-		"dirs", "r",
-		[]string{}, "List of *data* directories or places to store data,"+
-			" i.e.: '/var/vectorized/redpanda/',"+
-			" usually your XFS filesystem on an NVMe SSD device.")
-	command.Flags().BoolVar(&tunerParams.RebootAllowed,
-		"reboot-allowed", false, "If set will allow tuners to tune boot parameters"+
-			" and request system reboot.")
+		"all",
+		"Set of CPUs for tuner to use in cpuset(7) format if not specified tuner will use all available CPUs")
 	command.Flags().StringVar(
 		&configFile,
-		"config",
+		config.FlagConfig,
 		"",
-		"Redpanda config file, if not set the file will be searched for"+
-			" in the default locations.",
+		"Redpanda config file, if not set the file will be searched for in the default locations.",
 	)
 	command.Flags().StringVar(&outTuneScriptFile,
-		"output-script", "", "If set tuners will generate tuning file that "+
-			"can later be used to tune the system")
+		"output-script",
+		"",
+		"If set tuners will generate tuning file that can later be used to tune the system")
 	command.Flags().DurationVar(
 		&timeout,
 		"timeout",
@@ -154,8 +142,30 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 		"Ask for confirmation on every step (e.g. configuration generation)",
 	)
 	command.Flags().MarkDeprecated("interactive", "not needed: tune will use default configuration if config file is not found.")
-	command.AddCommand(tunecmd.NewHelpCommand())
+
+	command.AddCommand(newHelpCommand())
+	command.AddCommand(newListCommand(fs))
 	return command
+}
+
+func addTunerParamsFlags(command *cobra.Command, tunerParams *factory.TunerParams) {
+	command.Flags().StringVarP(&tunerParams.Mode,
+		"mode", "m", "",
+		"Operation Mode: one of: [sq, sq_split, mq]")
+	command.Flags().StringSliceVarP(&tunerParams.Disks,
+		"disks", "d",
+		[]string{}, "Lists of devices to tune f.e. 'sda1'")
+	command.Flags().StringSliceVarP(&tunerParams.Nics,
+		"nic", "n",
+		[]string{}, "Network Interface Controllers to tune")
+	command.Flags().StringSliceVarP(&tunerParams.Directories,
+		"dirs", "r",
+		[]string{}, "List of *data* directories or places to store data,"+
+			" i.e.: '/var/vectorized/redpanda/',"+
+			" usually your XFS filesystem on an NVMe SSD device.")
+	command.Flags().BoolVar(&tunerParams.RebootAllowed,
+		"reboot-allowed", false, "If set will allow tuners to tune boot parameters"+
+			" and request system reboot.")
 }
 
 func tune(
@@ -200,19 +210,15 @@ func tune(
 	}
 
 	if allDisabled {
-		log.Warn(
-			"All tuners were disabled, so none were applied. You may run " +
-				" `rpk redpanda mode prod` to enable the recommended set of tuners " +
-				" for non-containerized production use.",
-		)
+		fmt.Println("All tuners were disabled, so none were applied. You may run `rpk redpanda mode prod` to enable the recommended set of tuners for non-containerized production use.")
 	}
 
 	printTuneResult(results, includeErr)
 
 	if rebootRequired {
 		red := color.New(color.FgRed).SprintFunc()
-		log.Infof(
-			"%s: Reboot system and run 'rpk tune %s' again",
+		fmt.Printf(
+			"%s: Reboot system and run 'rpk tune %s' again\n",
 			red("IMPORTANT"),
 			strings.Join(tunerNames, ","),
 		)
