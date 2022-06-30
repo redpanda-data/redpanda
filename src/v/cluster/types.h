@@ -1605,9 +1605,15 @@ struct delete_acls_cmd_data
 };
 
 // result for a single filter
-struct delete_acls_result {
+struct delete_acls_result
+  : serde::envelope<delete_acls_result, serde::version<0>> {
     errc error;
     std::vector<security::acl_binding> bindings;
+
+    friend bool operator==(const delete_acls_result&, const delete_acls_result&)
+      = default;
+
+    auto serde_fields() { return std::tie(error, bindings); }
 };
 
 struct delete_acls_request

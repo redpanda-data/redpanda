@@ -1532,6 +1532,17 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           delete_acls_data, random_timeout_clock_duration()};
         roundtrip_test(data);
     }
+    {
+        std::vector<security::acl_binding> bindings;
+        for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
+            bindings.push_back(random_acl_binding());
+        }
+        cluster::delete_acls_result data{
+          .error = cluster::errc::join_request_dispatch_error,
+          .bindings = bindings,
+        };
+        roundtrip_test(data);
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {
