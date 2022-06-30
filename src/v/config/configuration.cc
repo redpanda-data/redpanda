@@ -238,7 +238,15 @@ configuration::configuration()
   , disable_metrics(
       *this,
       "disable_metrics",
-      "Disable registering metrics",
+      "Disable registering metrics exposed on the internal metrics endpoint "
+      "(/metrics)",
+      base_property::metadata{},
+      false)
+  , disable_public_metrics(
+      *this,
+      "disable_public_metrics",
+      "Disable registering metrics exposed on the public metrics endpoint "
+      "(/public_metrics)",
       base_property::metadata{},
       false)
   , aggregate_metrics(
