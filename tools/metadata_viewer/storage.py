@@ -139,6 +139,12 @@ class Batch:
                 return
             records_size = header.batch_size - HEADER_SIZE
             data = f.read(records_size)
+            if len(data) < records_size:
+                # Short read, probably end of a partially written log.
+                logger.info(
+                    "Stopping batch parse on short read (this is normal if the log was not from a clean shutdown)"
+                )
+                return None
             assert len(data) == records_size
             return Batch(index, header, data)
         assert len(data) == 0
@@ -149,12 +155,18 @@ class Batch:
 
 class BatchIterator:
     def __init__(self, path):
+        self.path = path
         self.file = open(path, "rb")
         self.idx = 0
 
     def __next__(self):
         b = Batch.from_stream(self.file, self.idx)
         if not b:
+            fsize = os.stat(self.path).st_size
+            if fsize != self.file.tell():
+                logger.warn(
+                    f"Incomplete read of {self.path}: {self.file.tell()}/{fsize}"
+                )
             raise StopIteration()
         self.idx += 1
         return b
@@ -208,6 +220,10 @@ class Store:
             [part, ntp_id] = part_ntp_id.split("_")
             head, topic = os.path.split(head)
             head, nspace = os.path.split(head)
+            if head != self.base_dir:
+                logger.warn(
+                    "Unexpected directory layout (should be <namespace>/<topic>/<partition>, and use top of tree as your --path"
+                )
             assert head == self.base_dir
             ntp = Ntp(self.base_dir, nspace, topic, int(part), int(ntp_id))
             self.ntps.append(ntp)
