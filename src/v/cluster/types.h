@@ -1552,9 +1552,34 @@ struct create_acls_cmd_data
     auto serde_fields() { return std::tie(bindings); }
 };
 
-struct create_acls_request {
+struct create_acls_request
+  : serde::envelope<create_acls_request, serde::version<0>> {
     create_acls_cmd_data data;
     model::timeout_clock::duration timeout;
+
+    create_acls_request() noexcept = default;
+    create_acls_request(
+      create_acls_cmd_data data, model::timeout_clock::duration timeout)
+      : data(std::move(data))
+      , timeout(timeout) {}
+
+    friend bool
+    operator==(const create_acls_request&, const create_acls_request&)
+      = default;
+
+    void serde_read(iobuf_parser& in, const serde::header& h) {
+        using serde::read_nested;
+        data = read_nested<create_acls_cmd_data>(in, h._bytes_left_limit);
+        timeout = std::chrono::duration_cast<model::timeout_clock::duration>(
+          read_nested<std::chrono::milliseconds>(in, h._bytes_left_limit));
+    }
+
+    void serde_write(iobuf& out) {
+        using serde::write;
+        write(out, data);
+        write(
+          out, std::chrono::duration_cast<std::chrono::milliseconds>(timeout));
+    }
 };
 
 struct create_acls_reply {

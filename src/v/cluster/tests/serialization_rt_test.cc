@@ -1506,6 +1506,15 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         };
         roundtrip_test(data);
     }
+    {
+        cluster::create_acls_cmd_data create_acls_data{};
+        for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
+            create_acls_data.bindings.push_back(random_acl_binding());
+        }
+        cluster::create_acls_request data{
+          create_acls_data, random_timeout_clock_duration()};
+        roundtrip_test(data);
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {
