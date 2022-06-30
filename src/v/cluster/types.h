@@ -1610,9 +1610,34 @@ struct delete_acls_result {
     std::vector<security::acl_binding> bindings;
 };
 
-struct delete_acls_request {
+struct delete_acls_request
+  : serde::envelope<delete_acls_request, serde::version<0>> {
     delete_acls_cmd_data data;
     model::timeout_clock::duration timeout;
+
+    delete_acls_request() noexcept = default;
+    delete_acls_request(
+      delete_acls_cmd_data data, model::timeout_clock::duration timeout)
+      : data(std::move(data))
+      , timeout(timeout) {}
+
+    friend bool
+    operator==(const delete_acls_request&, const delete_acls_request&)
+      = default;
+
+    void serde_read(iobuf_parser& in, const serde::header& h) {
+        using serde::read_nested;
+        data = read_nested<delete_acls_cmd_data>(in, h._bytes_left_limit);
+        timeout = std::chrono::duration_cast<model::timeout_clock::duration>(
+          read_nested<std::chrono::milliseconds>(in, h._bytes_left_limit));
+    }
+
+    void serde_write(iobuf& out) {
+        using serde::write;
+        write(out, data);
+        write(
+          out, std::chrono::duration_cast<std::chrono::milliseconds>(timeout));
+    }
 };
 
 struct delete_acls_reply {
