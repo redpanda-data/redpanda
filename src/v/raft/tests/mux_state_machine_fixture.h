@@ -53,7 +53,10 @@ struct mux_state_machine_fixture {
           .get0();
         _storage.invoke_on_all(&storage::api::start).get0();
         _connections.start().get0();
-        _recovery_throttle.start(100_MiB).get();
+        _recovery_throttle
+          .start(
+            ss::sharded_parameter([] { return config::mock_binding(100_MiB); }))
+          .get();
 
         _group_mgr
           .start(

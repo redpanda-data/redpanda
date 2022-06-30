@@ -179,7 +179,7 @@ recovery_stm::should_flush(model::offset follower_committed_match_index) const {
      * will be able to update committed_index up to the last offset
      * of last batch replicated with quorum_acks consistency level. Recovery STM
      * works outside of the Raft mutex. It is possible that it read batches that
-     * were appendend with quorum consistency level but the
+     * were appended with quorum consistency level but the
      * _last_quorum_replicated_index wasn't yet updated, hence we have to check
      * if last log append was executed with quorum write and if this is true
      * force the flush on follower.
@@ -250,7 +250,7 @@ recovery_stm::read_range_for_recovery(
               return acc + batch.size_bytes();
           });
         co_await _ptr->_recovery_throttle->get()
-          .throttle(size)
+          .throttle(size, _ptr->_as)
           .handle_exception_type([this](const ss::broken_semaphore&) {
               vlog(_ctxlog.info, "Recovery throttling has stopped");
           });
@@ -452,7 +452,7 @@ ss::future<> recovery_stm::replicate(
               return;
           }
           // move the follower next index backward if recovery were not
-          // successfull
+          // successful
           //
           // Raft paper:
           // If AppendEntries fails because of log inconsistency: decrement
