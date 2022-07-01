@@ -1885,8 +1885,15 @@ struct reconciliation_state_reply
     auto serde_fields() { return std::tie(results); }
 };
 
-struct decommission_node_request {
+struct decommission_node_request
+  : serde::envelope<decommission_node_request, serde::version<0>> {
     model::node_id id;
+
+    friend bool operator==(
+      const decommission_node_request&, const decommission_node_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(id); }
 };
 
 struct decommission_node_reply {
