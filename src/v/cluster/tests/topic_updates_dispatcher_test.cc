@@ -56,8 +56,8 @@ struct topic_table_updates_dispatcher_fixture : topic_table_fixture {
 };
 
 constexpr uint64_t node_initial_capacity(uint32_t cores) {
-    return (cluster::allocation_node::max_allocations_per_core * cores)
-           - cluster::allocation_node::core0_extra_weight;
+    return (topic_table_fixture::partitions_per_shard * cores)
+           - topic_table_fixture::partitions_reserve_shard0;
 }
 
 uint64_t

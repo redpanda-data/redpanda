@@ -36,13 +36,18 @@ partition_allocator::partition_allocator(
   ss::sharded<members_table>& members,
   config::binding<std::optional<size_t>> memory_per_partition,
   config::binding<std::optional<int32_t>> fds_per_partition,
+  config::binding<uint32_t> partitions_per_shard,
+  config::binding<uint32_t> partitions_reserve_shard0,
   config::binding<size_t> fallocation_step,
   config::binding<bool> enable_rack_awareness)
-  : _state(std::make_unique<allocation_state>())
+  : _state(std::make_unique<allocation_state>(
+    partitions_per_shard, partitions_reserve_shard0))
   , _allocation_strategy(simple_allocation_strategy())
   , _members(members)
   , _memory_per_partition(memory_per_partition)
   , _fds_per_partition(fds_per_partition)
+  , _partitions_per_shard(partitions_per_shard)
+  , _partitions_reserve_shard0(partitions_reserve_shard0)
   , _fallocation_step(fallocation_step)
   , _enable_rack_awareness(enable_rack_awareness) {}
 
@@ -190,14 +195,14 @@ std::error_code partition_allocator::check_cluster_limits(
 
     // Refuse to create a partition count that would violate the per-core
     // limit.
-    const uint64_t core_limit = effective_cpu_count
-                                * allocation_node::max_allocations_per_core;
+    const uint64_t core_limit
+      = (effective_cpu_count * _partitions_per_shard() - all_brokers.size() * _partitions_reserve_shard0());
     if (proposed_total_partitions > core_limit) {
         vlog(
           clusterlog.warn,
           "Refusing to create {} partitions, exceeds core limit {}",
           create_count,
-          effective_cpu_count * allocation_node::max_allocations_per_core);
+          effective_cpu_count * _partitions_per_shard());
         return errc::topic_invalid_partitions;
     }
 

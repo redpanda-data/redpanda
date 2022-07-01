@@ -277,8 +277,9 @@ void application::initialize(
     }
     smp_groups::config smp_groups_cfg{
       .raft_group_max_non_local_requests
-      = config::shard_local_cfg().raft_smp_max_non_local_requests(),
-    };
+      = config::shard_local_cfg().raft_smp_max_non_local_requests().value_or(
+        smp_groups::default_raft_non_local_requests(
+          config::shard_local_cfg().topic_partitions_per_shard()))};
 
     smp_service_groups.create_groups(smp_groups_cfg).get();
     _deferred.emplace_back(

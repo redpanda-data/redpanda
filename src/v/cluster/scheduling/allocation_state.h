@@ -25,6 +25,12 @@ public:
     // we use ordered container to achieve deterministic ordering of nodes
     using underlying_t = absl::btree_map<model::node_id, node_ptr>;
 
+    allocation_state(
+      config::binding<uint32_t> partitions_per_shard,
+      config::binding<uint32_t> partitions_reserve_shard0)
+      : _partitions_per_shard(partitions_per_shard)
+      , _partitions_reserve_shard0(partitions_reserve_shard0) {}
+
     // Allocation nodes
     void register_node(node_ptr);
     void update_allocation_nodes(const std::vector<model::broker>&);
@@ -56,6 +62,9 @@ public:
     std::optional<model::rack_id> get_rack_id(model::node_id) const;
 
 private:
+    config::binding<uint32_t> _partitions_per_shard;
+    config::binding<uint32_t> _partitions_reserve_shard0;
+
     raft::group_id _highest_group{0};
     underlying_t _nodes;
 };

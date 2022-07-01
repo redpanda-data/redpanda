@@ -28,6 +28,8 @@ public:
       ss::sharded<members_table>&,
       config::binding<std::optional<size_t>>,
       config::binding<std::optional<int32_t>>,
+      config::binding<uint32_t>,
+      config::binding<uint32_t>,
       config::binding<size_t>,
       config::binding<bool>);
 
@@ -122,6 +124,8 @@ private:
 
     config::binding<std::optional<size_t>> _memory_per_partition;
     config::binding<std::optional<int32_t>> _fds_per_partition;
+    config::binding<uint32_t> _partitions_per_shard;
+    config::binding<uint32_t> _partitions_reserve_shard0;
     config::binding<size_t> _fallocation_step;
     config::binding<bool> _enable_rack_awareness;
 };

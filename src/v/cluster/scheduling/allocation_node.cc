@@ -16,14 +16,36 @@ allocation_node::allocation_node(
   model::node_id id,
   uint32_t cpus,
   absl::node_hash_map<ss::sstring, ss::sstring> labels,
-  std::optional<model::rack_id> rack)
+  std::optional<model::rack_id> rack,
+  config::binding<uint32_t> partitions_per_shard,
+  config::binding<uint32_t> partitions_reserve_shard0)
   : _id(id)
   , _weights(cpus)
-  , _max_capacity((cpus * max_allocations_per_core) - core0_extra_weight)
+  , _max_capacity((cpus * partitions_per_shard()) - partitions_reserve_shard0())
   , _machine_labels(std::move(labels))
-  , _rack(std::move(rack)) {
+  , _rack(std::move(rack))
+  , _partitions_per_shard(std::move(partitions_per_shard))
+  , _partitions_reserve_shard0(std::move(partitions_reserve_shard0))
+  , _cpus(cpus) {
     // add extra weights to core 0
-    _weights[0] = core0_extra_weight;
+    _weights[0] = _partitions_reserve_shard0();
+    _shard0_reserved = _partitions_reserve_shard0();
+    _partitions_reserve_shard0.watch([this]() {
+        int32_t delta = static_cast<int32_t>(_partitions_reserve_shard0())
+                        - static_cast<int32_t>(_shard0_reserved);
+        _weights[0] += delta;
+        _shard0_reserved += delta;
+    });
+
+    _partitions_per_shard.watch([this]() {
+        _max_capacity = allocation_capacity{
+          (_cpus * _partitions_per_shard()) - _partitions_reserve_shard0()};
+    });
+
+    _partitions_reserve_shard0.watch([this]() {
+        _max_capacity = allocation_capacity{
+          (_cpus * _partitions_per_shard()) - _partitions_reserve_shard0()};
+    });
 }
 
 ss::shard_id allocation_node::allocate() {
@@ -76,7 +98,7 @@ void allocation_node::update_core_count(uint32_t core_count) {
         _weights.push_back(0);
     }
     _max_capacity = allocation_capacity(
-      (core_count * max_allocations_per_core) - core0_extra_weight);
+      (core_count * _partitions_per_shard()) - _partitions_reserve_shard0());
 }
 
 std::ostream& operator<<(std::ostream& o, allocation_node::state s) {
@@ -92,8 +114,9 @@ std::ostream& operator<<(std::ostream& o, allocation_node::state s) {
 }
 
 std::ostream& operator<<(std::ostream& o, const allocation_node& n) {
-    o << "{node:" << n._id << ", max_partitions_per_core: "
-      << allocation_node::max_allocations_per_core << ", state: " << n._state
+    o << "{node:" << n._id
+      << ", max_partitions_per_core: " << n._partitions_per_shard()
+      << ", state: " << n._state
       << ", partition_capacity:" << n.partition_capacity() << ", weights: [";
     for (auto w : n._weights) {
         o << "(" << w << ")";
