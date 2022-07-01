@@ -802,7 +802,7 @@ model::producer_identity random_producer_identity() {
 
 model::timeout_clock::duration random_timeout_clock_duration() {
     return model::timeout_clock::duration(
-      random_generators::get_int(-100000, 100000));
+      random_generators::get_int<int64_t>(-100000, 100000) * 1000000);
 }
 
 cluster::tx_errc random_tx_errc() {
@@ -827,6 +827,24 @@ cluster::tx_errc random_tx_errc() {
       cluster::tx_errc::request_rejected,
       cluster::tx_errc::invalid_producer_id_mapping,
       cluster::tx_errc::invalid_txn_state});
+}
+
+cluster::partitions_filter random_partitions_filter() {
+    cluster::partitions_filter::ns_map_t ret;
+    for (int i = 0, mi = random_generators::get_int(10); i < mi; i++) {
+        cluster::partitions_filter::topic_map_t topics;
+        for (int j = 0, mj = random_generators::get_int(10); j < mj; j++) {
+            cluster::partitions_filter::partitions_set_t partitions;
+            for (int k = 0, mk = random_generators::get_int(10); k < mk; k++) {
+                partitions.emplace(
+                  tests::random_named_int<model::partition_id>());
+            }
+            topics.emplace(
+              tests::random_named_string<model::topic>(), partitions);
+        }
+        ret.emplace(tests::random_named_string<model::ns>(), topics);
+    }
+    return {.namespaces = ret};
 }
 
 SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
@@ -868,7 +886,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     }));
 
     roundtrip_test(
-      cluster::allocate_id_request(model::timeout_clock::duration(234234)));
+      cluster::allocate_id_request(random_timeout_clock_duration()));
 
     roundtrip_test(
       cluster::allocate_id_reply(23433, cluster::errc::invalid_node_operation));
@@ -1503,6 +1521,128 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         }
         cluster::reconciliation_state_reply data{
           .results = results,
+        };
+        roundtrip_test(data);
+    }
+    {
+        cluster::create_acls_cmd_data create_acls_data{};
+        for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
+            create_acls_data.bindings.push_back(random_acl_binding());
+        }
+        cluster::create_acls_request data{
+          create_acls_data, random_timeout_clock_duration()};
+        roundtrip_test(data);
+    }
+    {
+        std::vector<cluster::errc> results;
+        for (int i = 0, mi = random_generators::get_int(20); i < mi; i++) {
+            results.push_back(cluster::errc::invalid_node_operation);
+        }
+        cluster::create_acls_reply data;
+        roundtrip_test(data);
+    }
+    {
+        cluster::delete_acls_cmd_data delete_acls_data{};
+        for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
+            delete_acls_data.filters.push_back(random_acl_binding_filter());
+        }
+        cluster::delete_acls_request data{
+          delete_acls_data, random_timeout_clock_duration()};
+        roundtrip_test(data);
+    }
+    {
+        std::vector<security::acl_binding> bindings;
+        for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
+            bindings.push_back(random_acl_binding());
+        }
+        cluster::delete_acls_result data{
+          .error = cluster::errc::join_request_dispatch_error,
+          .bindings = bindings,
+        };
+        roundtrip_test(data);
+    }
+    {
+        std::vector<cluster::delete_acls_result> results;
+        for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
+            std::vector<security::acl_binding> bindings;
+            for (auto j = 0, mj = random_generators::get_int(20); j < mj; ++j) {
+                bindings.push_back(random_acl_binding());
+            }
+            results.push_back(cluster::delete_acls_result{
+              .error = cluster::errc::join_request_dispatch_error,
+              .bindings = bindings,
+            });
+        }
+        cluster::delete_acls_reply data{
+          .results = results,
+        };
+        roundtrip_test(data);
+    }
+    {
+        cluster::decommission_node_request data{
+          .id = tests::random_named_int<model::node_id>(),
+        };
+        roundtrip_test(data);
+    }
+    {
+        cluster::decommission_node_reply data{
+          .error = cluster::errc::no_eligible_allocation_nodes,
+        };
+        roundtrip_test(data);
+    }
+    {
+        cluster::recommission_node_request data{
+          .id = tests::random_named_int<model::node_id>(),
+        };
+        roundtrip_test(data);
+    }
+    {
+        cluster::recommission_node_reply data{
+          .error = cluster::errc::no_eligible_allocation_nodes,
+        };
+        roundtrip_test(data);
+    }
+    {
+        cluster::finish_reallocation_request data{
+          .id = tests::random_named_int<model::node_id>(),
+        };
+        roundtrip_test(data);
+    }
+    {
+        cluster::finish_reallocation_reply data{
+          .error = cluster::errc::no_eligible_allocation_nodes,
+        };
+        roundtrip_test(data);
+    }
+    {
+        cluster::feature_action_request data{
+          .action = random_feature_update_action(),
+        };
+        roundtrip_test(data);
+    }
+    {
+        cluster::feature_action_response data{
+          .error = cluster::errc::no_eligible_allocation_nodes,
+        };
+        roundtrip_test(data);
+    }
+    {
+        cluster::partitions_filter data = random_partitions_filter();
+        roundtrip_test(data);
+    }
+    {
+        cluster::node_report_filter data{
+          .include_partitions = cluster::include_partitions_info(
+            tests::random_bool()),
+          .ntp_filters = random_partitions_filter(),
+        };
+        roundtrip_test(data);
+    }
+    {
+        cluster::get_node_health_request data{
+          .filter = {
+            .ntp_filters = random_partitions_filter(),
+          },
         };
         roundtrip_test(data);
     }

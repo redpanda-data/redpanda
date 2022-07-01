@@ -164,7 +164,8 @@ using include_partitions_info = ss::bool_class<struct include_partitions_tag>;
 /**
  * Filters are used to limit amout of data returned in health reports
  */
-struct partitions_filter {
+struct partitions_filter
+  : serde::envelope<partitions_filter, serde::version<0>> {
     static constexpr int8_t current_version = 0;
 
     using partitions_set_t = absl::node_hash_set<model::partition_id>;
@@ -175,16 +176,27 @@ struct partitions_filter {
     bool matches(model::topic_namespace_view, model::partition_id) const;
 
     ns_map_t namespaces;
+
+    friend bool operator==(const partitions_filter&, const partitions_filter&)
+      = default;
+
+    auto serde_fields() { return std::tie(namespaces); }
 };
 
-struct node_report_filter {
+struct node_report_filter
+  : serde::envelope<node_report_filter, serde::version<0>> {
     static constexpr int8_t current_version = 0;
 
     include_partitions_info include_partitions = include_partitions_info::yes;
 
     partitions_filter ntp_filters;
 
+    friend bool operator==(const node_report_filter&, const node_report_filter&)
+      = default;
+
     friend std::ostream& operator<<(std::ostream&, const node_report_filter&);
+
+    auto serde_fields() { return std::tie(include_partitions, ntp_filters); }
 };
 
 struct cluster_report_filter {
@@ -204,7 +216,8 @@ using force_refresh = ss::bool_class<struct hm_force_refresh_tag>;
  * RPC requests
  */
 
-struct get_node_health_request {
+struct get_node_health_request
+  : serde::envelope<get_node_health_request, serde::version<0>> {
     static constexpr int8_t initial_version = 0;
     // version -1: included revision id in partition status
     static constexpr int8_t revision_id_version = -1;
@@ -216,6 +229,12 @@ struct get_node_health_request {
     node_report_filter filter;
     // this field is not serialized
     int8_t decoded_version = current_version;
+
+    friend bool
+    operator==(const get_node_health_request&, const get_node_health_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(filter); }
 };
 
 struct get_node_health_reply {

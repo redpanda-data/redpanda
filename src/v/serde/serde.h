@@ -27,6 +27,9 @@
 
 #include <seastar/net/inet_address.hh>
 
+#include <absl/container/node_hash_map.h>
+#include <absl/container/node_hash_set.h>
+
 #include <iosfwd>
 #include <numeric>
 #include <string>
@@ -141,6 +144,20 @@ template<typename T>
 inline constexpr bool is_std_unordered_map_v = is_std_unordered_map<T>::value;
 
 template<typename T>
+struct is_absl_node_hash_set : std::false_type {};
+template<typename... Args>
+struct is_absl_node_hash_set<absl::node_hash_set<Args...>> : std::true_type {};
+template<typename T>
+inline constexpr bool is_absl_node_hash_set_v = is_absl_node_hash_set<T>::value;
+
+template<typename T>
+struct is_absl_node_hash_map : std::false_type {};
+template<typename... Args>
+struct is_absl_node_hash_map<absl::node_hash_map<Args...>> : std::true_type {};
+template<typename T>
+inline constexpr bool is_absl_node_hash_map_v = is_absl_node_hash_map<T>::value;
+
+template<typename T>
 inline constexpr auto const is_serde_compatible_v
   = is_envelope_v<T>
     || (std::is_scalar_v<T>  //
@@ -155,6 +172,8 @@ inline constexpr auto const is_serde_compatible_v
     || std::is_same_v<T, iobuf>
     || std::is_same_v<T, ss::sstring>
     || std::is_same_v<T, bytes>
+    || is_absl_node_hash_set_v<T>
+    || is_absl_node_hash_map_v<T>
     || is_std_unordered_map_v<T>
     || is_fragmented_vector_v<T> || reflection::is_tristate_v<T> || std::is_same_v<T, ss::net::inet_address>;
 
@@ -277,6 +296,29 @@ void write(iobuf& out, T t) {
             write(out, std::move(t.value()));
         } else {
             write(out, false);
+        }
+    } else if constexpr (is_absl_node_hash_set_v<Type>) {
+        if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
+            throw serde_exception(fmt_with_ctx(
+              ssx::sformat,
+              "serde: absl::node_hash_set size {} exceeds serde_size_t",
+              t.size()));
+        }
+        write(out, static_cast<serde_size_t>(t.size()));
+        for (auto& e : t) {
+            write(out, e);
+        }
+    } else if constexpr (is_absl_node_hash_map_v<Type>) {
+        if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
+            throw serde_exception(fmt_with_ctx(
+              ssx::sformat,
+              "serde: absl::node_hash_map size {} exceeds serde_size_t",
+              t.size()));
+        }
+        write(out, static_cast<serde_size_t>(t.size()));
+        for (auto& v : t) {
+            write(out, v.first);
+            write(out, std::move(v.second));
         }
     } else if constexpr (is_std_unordered_map_v<Type>) {
         if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
@@ -515,6 +557,24 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
               ? Type{read_nested<typename Type::value_type>(
                 in, bytes_left_limit)}
               : std::nullopt;
+    } else if constexpr (is_absl_node_hash_set_v<Type>) {
+        const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
+        t.reserve(size);
+        for (auto i = 0U; i < size; ++i) {
+            auto elem = read_nested<typename Type::key_type>(
+              in, bytes_left_limit);
+            t.emplace(std::move(elem));
+        }
+    } else if constexpr (is_absl_node_hash_map_v<Type>) {
+        const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
+        t.reserve(size);
+        for (auto i = 0U; i < size; ++i) {
+            auto key = read_nested<typename Type::key_type>(
+              in, bytes_left_limit);
+            auto value = read_nested<typename Type::mapped_type>(
+              in, bytes_left_limit);
+            t.emplace(std::move(key), std::move(value));
+        }
     } else if constexpr (is_std_unordered_map_v<Type>) {
         const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
         t.reserve(size);
