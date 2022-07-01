@@ -163,6 +163,7 @@ class Batch:
         self.header = header
         self.term = None
         self.records = records
+        self.type = BatchType(header[3])
 
         header_crc_bytes = struct.pack(
             "<" + HDR_FMT_RP_PREFIX_NO_CRC + HDR_FMT_CRC, *self.header[1:])
@@ -177,7 +178,7 @@ class Batch:
     def header_dict(self):
         header = self.header._asdict()
         attrs = header['attrs']
-        header["type_name"] = BatchType(header["type"]).name
+        header["type_name"] = self.type.name
         header['expanded_attrs'] = {
             'compression':
             Batch.CompressionType(attrs & Batch.compression_mask).name,

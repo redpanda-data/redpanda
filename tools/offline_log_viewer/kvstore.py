@@ -4,7 +4,7 @@ import os
 import struct
 from model import *
 from reader import Reader
-from storage import Header, Record, Segment
+from storage import BatchType, Header, Record, Segment
 import collections
 import datetime
 
@@ -15,6 +15,7 @@ class SnapshotBatch:
     def __init__(self, header, records):
         self.header = header
         self.records = records
+        self.type = BatchType(header[3])
 
     def __iter__(self):
         for r in self.records:
@@ -61,10 +62,10 @@ class SnapshotBatch:
 
 
 class KvStoreRecordDecoder:
-    def __init__(self, record, header, value_is_optional_type):
+    def __init__(self, record, batch, value_is_optional_type):
         self.record = record
-        self.header = header
-        self.batch_type = header.type
+        self.header = batch.header
+        self.batch_type = batch.type
         self.offset_delta = record.offset_delta
         self.v_stream = BytesIO(self.record.value)
         self.k_stream = BytesIO(self.record.key)
@@ -85,7 +86,7 @@ class KvStoreRecordDecoder:
 
     def decode(self):
 
-        assert self.batch_type == 4
+        assert self.batch_type == BatchType.kvstore
         ret = {}
         ret['epoch'] = self.header.first_ts
         ret['offset'] = self.header.base_offset + self.offset_delta
@@ -336,7 +337,7 @@ class KvStore:
             logger.info(f"snapshot last offset: {snap.last_offset}")
             for r in snap.data_batch:
                 d = KvStoreRecordDecoder(r,
-                                         snap.data_batch.header,
+                                         snap.data_batch,
                                          value_is_optional_type=False)
                 self._apply(d.decode())
         else:
@@ -347,7 +348,7 @@ class KvStore:
             for batch in s:
                 for r in batch:
                     d = KvStoreRecordDecoder(r,
-                                             batch.header,
+                                             batch,
                                              value_is_optional_type=True)
                     self._apply(d.decode())
 
