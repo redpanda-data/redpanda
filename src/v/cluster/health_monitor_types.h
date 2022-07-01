@@ -164,7 +164,8 @@ using include_partitions_info = ss::bool_class<struct include_partitions_tag>;
 /**
  * Filters are used to limit amout of data returned in health reports
  */
-struct partitions_filter {
+struct partitions_filter
+  : serde::envelope<partitions_filter, serde::version<0>> {
     static constexpr int8_t current_version = 0;
 
     using partitions_set_t = absl::node_hash_set<model::partition_id>;
@@ -175,6 +176,11 @@ struct partitions_filter {
     bool matches(model::topic_namespace_view, model::partition_id) const;
 
     ns_map_t namespaces;
+
+    friend bool operator==(const partitions_filter&, const partitions_filter&)
+      = default;
+
+    auto serde_fields() { return std::tie(namespaces); }
 };
 
 struct node_report_filter {

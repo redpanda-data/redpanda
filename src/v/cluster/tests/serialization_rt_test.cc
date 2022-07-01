@@ -829,6 +829,24 @@ cluster::tx_errc random_tx_errc() {
       cluster::tx_errc::invalid_txn_state});
 }
 
+cluster::partitions_filter random_partitions_filter() {
+    cluster::partitions_filter::ns_map_t ret;
+    for (int i = 0, mi = random_generators::get_int(10); i < mi; i++) {
+        cluster::partitions_filter::topic_map_t topics;
+        for (int j = 0, mj = random_generators::get_int(10); j < mj; j++) {
+            cluster::partitions_filter::partitions_set_t partitions;
+            for (int k = 0, mk = random_generators::get_int(10); k < mk; k++) {
+                partitions.emplace(
+                  tests::random_named_int<model::partition_id>());
+            }
+            topics.emplace(
+              tests::random_named_string<model::topic>(), partitions);
+        }
+        ret.emplace(tests::random_named_string<model::ns>(), topics);
+    }
+    return {.namespaces = ret};
+}
+
 SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     roundtrip_test(cluster::ntp_leader(
       model::random_ntp(),
@@ -1606,6 +1624,10 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         cluster::feature_action_response data{
           .error = cluster::errc::no_eligible_allocation_nodes,
         };
+        roundtrip_test(data);
+    }
+    {
+        cluster::partitions_filter data = random_partitions_filter();
         roundtrip_test(data);
     }
 }
