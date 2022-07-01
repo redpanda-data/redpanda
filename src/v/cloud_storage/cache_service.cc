@@ -285,8 +285,10 @@ ss::future<> cache::start() {
         co_await load_access_time_tracker();
         co_await clean_up_at_start();
 
-        _tracker_timer.set_callback(
-          [this] { return maybe_save_access_time_tracker(); });
+        _tracker_timer.set_callback([this] {
+            ssx::spawn_with_gate(
+              _gate, [this] { return maybe_save_access_time_tracker(); });
+        });
         _tracker_timer.arm_periodic(access_timer_period);
     }
 }
