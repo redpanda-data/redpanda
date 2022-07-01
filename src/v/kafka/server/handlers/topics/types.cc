@@ -85,7 +85,7 @@ get_shadow_indexing_mode(const config_map_t& config) {
     if (si_enabled && *si_enabled) {
         mode = mode == model::shadow_indexing_mode::archival
                  ? model::shadow_indexing_mode::full
-                 : mode = model::shadow_indexing_mode::fetch;
+                 : model::shadow_indexing_mode::fetch;
     }
     return mode;
 }
