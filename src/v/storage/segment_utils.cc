@@ -103,13 +103,13 @@ maybe_disable_cow(const std::filesystem::path& path, ss::file& file) {
                 vlog(stlog.trace, "Disabled COW on BTRFS segment {}", path);
             }
         }
+    } catch (std::filesystem::filesystem_error& e) {
+        // This can happen if e.g. our file open races with an unlink
+        vlog(stlog.info, "Filesystem error disabling COW on {}: {}", path, e);
     } catch (std::system_error& e) {
         // Non-fatal, user will just get degraded behaviour
         // when btrfs tries to COW on a journal.
         vlog(stlog.info, "System error disabling COW on {}: {}", path, e);
-    } catch (std::filesystem::filesystem_error& e) {
-        // This can happen if e.g. our file open races with an unlink
-        vlog(stlog.info, "Filesystem error disabling COW on {}: {}", path, e);
     }
 }
 
