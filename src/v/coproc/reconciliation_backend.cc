@@ -229,7 +229,7 @@ ss::future<std::error_code> reconciliation_backend::process_shutdown(
   model::ntp src,
   model::ntp ntp,
   model::revision_id rev,
-  std::vector<model::broker_shard> new_replicas) {
+  std::vector<model::broker_shard>) {
     vlog(coproclog.info, "Processing shutdown of: {}", ntp);
     auto ids = co_await _pacemaker.local().shutdown_partition(src);
     vlog(coproclog.debug, "Ids {} shutdown", ids);
