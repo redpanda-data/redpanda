@@ -2893,4 +2893,15 @@ struct adl<cluster::delete_acls_reply> {
         return {.results = std::move(results)};
     }
 };
+
+template<>
+struct adl<cluster::decommission_node_request> {
+    void to(iobuf& out, cluster::decommission_node_request&& r) {
+        serialize(out, r.id);
+    }
+    cluster::decommission_node_request from(iobuf_parser& in) {
+        auto id = adl<model::node_id>{}.from(in);
+        return {.id = id};
+    }
+};
 } // namespace reflection
