@@ -66,11 +66,10 @@ struct stm_snapshot {
  *
  * How does it work?
  *
- * When persisted_stm becomes a leader it syncs its state with the tip
- * of the log (by writing a checkout batch checkpoint_batch_type and
- * reading/executing the commands up to its offset) and caches the
- * current raft's term. Then it uses the cached term for conditional
- * replication so in a case when its state becomes stale (a new leader
+ * When persisted_stm becomes a leader it replicates the configuration batch and
+ * uses its offset `last_term_start_offset` as a limit, up to which we read
+ * and execute the commands. It caches the current raft term, and uses that for
+ * conditional replication: In a case when its state becomes stale (a new leader
  * with higher term has been chosen) the conditional replication fails
  * preventing an operation on the stale state.
  *

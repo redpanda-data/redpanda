@@ -92,15 +92,12 @@ public:
      *
      * There are two important pieces in this comment:
      *
-     *   1) "non-transaction message are considered decided immediately". Since
-     *   redpanda doesn't have transactional messages, that's what we're
-     *   interested in.
+     *   1) "non-transaction message are considered decided immediately".
+     *   Since we currently use the commited_offset to report the end of log to
+     *   kafka clients, simply report the next offset.
      *
      *   2) "first offset such that all lower offsets have been decided". this
      *   is describing a strictly greater than relationship.
-     *
-     * Since we currently use the commited_offset to report the end of log to
-     * kafka clients, simply report the next offset.
      */
     model::offset last_stable_offset() const {
         if (_rm_stm) {
