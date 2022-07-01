@@ -24,4 +24,6 @@ spec:
     kind: Issuer
     name: {{ include "redpanda-operator.fullname" . }}-selfsigned-issuer
   secretName: {{ include "redpanda-operator.webhook-cert" . }}
+  privateKey:
+    rotationPolicy: Never
 {{- end }}
