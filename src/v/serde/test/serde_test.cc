@@ -90,10 +90,10 @@ struct test_msg1_new_manual {
 };
 
 struct not_an_envelope {};
-static_assert(!serde::is_envelope_v<not_an_envelope>);
-static_assert(serde::is_envelope_v<test_msg1>);
-static_assert(serde::inherits_from_envelope_v<test_msg1_new>);
-static_assert(!serde::inherits_from_envelope_v<test_msg1_new_manual>);
+static_assert(!serde::is_envelope<not_an_envelope>);
+static_assert(serde::is_envelope<test_msg1>);
+static_assert(serde::inherits_from_envelope<test_msg1_new>);
+static_assert(!serde::inherits_from_envelope<test_msg1_new_manual>);
 static_assert(test_msg1::redpanda_serde_version == 4);
 static_assert(test_msg1::redpanda_serde_compat_version == 0);
 
@@ -234,7 +234,7 @@ struct complex_msg : serde::envelope<complex_msg, serde::version<3>> {
     int32_t _x;
 };
 
-static_assert(serde::is_envelope_v<complex_msg>);
+static_assert(serde::is_envelope<complex_msg>);
 
 SEASTAR_THREAD_TEST_CASE(complex_msg_test) {
     auto b = iobuf();
@@ -386,7 +386,7 @@ struct test_snapshot_header
     int32_t metadata_size;
 };
 
-static_assert(serde::is_envelope_v<test_snapshot_header>);
+static_assert(serde::is_envelope<test_snapshot_header>);
 static_assert(serde::has_serde_async_read<test_snapshot_header>);
 static_assert(serde::has_serde_async_write<test_snapshot_header>);
 

@@ -18,12 +18,7 @@ bool eq(
     return ((std::get<I>(a) == std::get<I>(b)) && ...);
 }
 
-template<
-  typename T1,
-  typename T2,
-  typename std::enable_if_t<
-    serde::is_envelope_v<T1> && serde::is_envelope_v<T2>,
-    void*> = nullptr>
+template<serde::is_envelope T1, serde::is_envelope T2>
 bool operator==(T1 const& a, T2 const& b) {
     return eq(
       envelope_to_tuple(a),
@@ -69,7 +64,7 @@ void init(
   data_gen& gen,
   std::index_sequence<Generation...> generations,
   int depth = 0) {
-    if constexpr (serde::is_envelope_v<T>) {
+    if constexpr (serde::is_envelope<T>) {
         ((std::apply(
            [&](auto&&... args) {
                (init(args, gen, generations, depth + 1), ...);
