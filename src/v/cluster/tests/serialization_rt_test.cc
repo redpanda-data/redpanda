@@ -1630,6 +1630,14 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         cluster::partitions_filter data = random_partitions_filter();
         roundtrip_test(data);
     }
+    {
+        cluster::node_report_filter data{
+          .include_partitions = cluster::include_partitions_info(
+            tests::random_bool()),
+          .ntp_filters = random_partitions_filter(),
+        };
+        roundtrip_test(data);
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {

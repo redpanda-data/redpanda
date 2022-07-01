@@ -183,14 +183,20 @@ struct partitions_filter
     auto serde_fields() { return std::tie(namespaces); }
 };
 
-struct node_report_filter {
+struct node_report_filter
+  : serde::envelope<node_report_filter, serde::version<0>> {
     static constexpr int8_t current_version = 0;
 
     include_partitions_info include_partitions = include_partitions_info::yes;
 
     partitions_filter ntp_filters;
 
+    friend bool operator==(const node_report_filter&, const node_report_filter&)
+      = default;
+
     friend std::ostream& operator<<(std::ostream&, const node_report_filter&);
+
+    auto serde_fields() { return std::tie(include_partitions, ntp_filters); }
 };
 
 struct cluster_report_filter {
