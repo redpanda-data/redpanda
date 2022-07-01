@@ -31,17 +31,15 @@ struct handler {
 };
 
 template<typename T>
-concept KafkaApiHandler
-  = requires(T h, request_context&& ctx, ss::smp_service_group g) {
-    KafkaApi<typename T::api>;
+concept KafkaApiHandler = KafkaApi<typename T::api> && requires(
+  T h, request_context&& ctx, ss::smp_service_group g) {
     { T::min_supported } -> std::convertible_to<const api_version&>;
     { T::max_supported } -> std::convertible_to<const api_version&>;
     { T::handle(std::move(ctx), g) } -> std::same_as<ss::future<response_ptr>>;
 };
 template<typename T>
-concept KafkaApiTwoPhaseHandler
-  = requires(T h, request_context&& ctx, ss::smp_service_group g) {
-    KafkaApi<typename T::api>;
+concept KafkaApiTwoPhaseHandler = KafkaApi<typename T::api> && requires(
+  T h, request_context&& ctx, ss::smp_service_group g) {
     { T::min_supported } -> std::convertible_to<const api_version&>;
     { T::max_supported } -> std::convertible_to<const api_version&>;
     { T::handle(std::move(ctx), g) } -> std::same_as<process_result_stages>;
