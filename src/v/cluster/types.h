@@ -1906,8 +1906,16 @@ struct decommission_node_reply
 
     auto serde_fields() { return std::tie(error); }
 };
-struct recommission_node_request {
+
+struct recommission_node_request
+  : serde::envelope<recommission_node_request, serde::version<0>> {
     model::node_id id;
+
+    friend bool operator==(
+      const recommission_node_request&, const recommission_node_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(id); }
 };
 
 struct recommission_node_reply {
