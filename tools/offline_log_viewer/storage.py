@@ -218,7 +218,10 @@ class Batch:
                 return None
             assert len(data) == records_size
             return Batch(index, header, data)
-        assert len(data) == 0
+
+        if len(data) < HEADER_SIZE:
+            # Short read, probably log being actively written or unclean shutdown
+            return None
 
     def __len__(self):
         return self.header.record_count
