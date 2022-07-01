@@ -58,14 +58,14 @@ configuration::configuration()
   , rpc_server_tcp_recv_buf(
       *this,
       "rpc_server_tcp_recv_buf",
-      "TCP receive buffer size in bytes.",
+      "Internal RPC TCP receive buffer size in bytes.",
       {.example = "65536"},
       std::nullopt,
       {.min = 32_KiB, .align = 4_KiB})
   , rpc_server_tcp_send_buf(
       *this,
       "rpc_server_tcp_send_buf",
-      "TCP transmit buffer size in bytes.",
+      "Internal RPC TCP transmit buffer size in bytes.",
       {.example = "65536"},
       std::nullopt,
       {.min = 32_KiB, .align = 4_KiB})
@@ -406,6 +406,7 @@ configuration::configuration()
        .visibility = visibility::user},
       {},
       validate_connection_rate)
+
   , transactional_id_expiration_ms(
       *this,
       "transactional_id_expiration_ms",
@@ -829,6 +830,20 @@ configuration::configuration()
        .visibility = visibility::user},
       {},
       validate_connection_rate)
+  , kafka_rpc_server_tcp_recv_buf(
+      *this,
+      "kafka_rpc_server_tcp_recv_buf",
+      "Kafka server TCP receive buffer size in bytes.",
+      {.example = "65536"},
+      std::nullopt,
+      {.min = 32_KiB, .align = 4_KiB})
+  , kafka_rpc_server_tcp_send_buf(
+      *this,
+      "kafka_rpc_server_tcp_send_buf",
+      "Kafka server TCP transmit buffer size in bytes.",
+      {.example = "65536"},
+      std::nullopt,
+      {.min = 32_KiB, .align = 4_KiB})
   , cloud_storage_enabled(
       *this,
       "cloud_storage_enabled",

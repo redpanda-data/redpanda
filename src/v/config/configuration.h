@@ -182,6 +182,8 @@ struct configuration final : public config_store {
     property<std::optional<uint32_t>> kafka_connections_max;
     property<std::optional<uint32_t>> kafka_connections_max_per_ip;
     property<std::vector<ss::sstring>> kafka_connections_max_overrides;
+    bounded_property<std::optional<int>> kafka_rpc_server_tcp_recv_buf;
+    bounded_property<std::optional<int>> kafka_rpc_server_tcp_send_buf;
 
     // Archival storage
     property<bool> cloud_storage_enabled;
