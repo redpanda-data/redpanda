@@ -216,7 +216,8 @@ using force_refresh = ss::bool_class<struct hm_force_refresh_tag>;
  * RPC requests
  */
 
-struct get_node_health_request {
+struct get_node_health_request
+  : serde::envelope<get_node_health_request, serde::version<0>> {
     static constexpr int8_t initial_version = 0;
     // version -1: included revision id in partition status
     static constexpr int8_t revision_id_version = -1;
@@ -228,6 +229,12 @@ struct get_node_health_request {
     node_report_filter filter;
     // this field is not serialized
     int8_t decoded_version = current_version;
+
+    friend bool
+    operator==(const get_node_health_request&, const get_node_health_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(filter); }
 };
 
 struct get_node_health_reply {
