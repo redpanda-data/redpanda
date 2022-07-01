@@ -33,6 +33,12 @@ public:
       : std::runtime_error(msg) {}
 };
 
+class unsupported_request_exception : public std::runtime_error {
+public:
+    explicit unsupported_request_exception(const std::string& msg)
+      : std::runtime_error(msg) {}
+};
+
 /**
  * \brief Kafka client.
  *
@@ -128,9 +134,17 @@ public:
                      write_header(wr, T::api_type::key, request_version);
                      r.encode(wr, request_version);
                  })
-          .then([response_version](iobuf buf) {
+          .then([response_version](iobuf buf) mutable {
               using response_type = typename T::api_type::response_type;
               response_type r;
+              if constexpr (std::is_same_v<T, api_versions_request>) {
+                  request_reader rdr(buf.copy());
+                  if (
+                    (kafka::error_code)rdr.read_int16()
+                    == kafka::error_code::unsupported_version) {
+                      response_version = api_version(0);
+                  }
+              }
               r.decode(std::move(buf), response_version);
               return ss::make_ready_future<response_type>(std::move(r));
           });
@@ -145,55 +159,32 @@ public:
 
     /*
      * Invokes dispatch with the given request type at the max supported level
-     * of the redpanda kafka server.
-     *
-     * TODO: this will go away once the kafka client implements version
-     * negotiation and can track on a per-broker basis the supported version
-     * range.
+     * between the client and server. If its not desired to perform automatic
+     * version negotiation, then use the 2 or 3 argument version of dispatch
      */
     template<typename T>
     requires(KafkaApi<typename T::api_type>)
       ss::future<typename T::api_type::response_type> dispatch(T r) {
-        using type = std::remove_reference_t<std::decay_t<T>>;
-        if constexpr (std::is_same_v<type, offset_fetch_request>) {
-            return dispatch(std::move(r), api_version(4));
-        } else if constexpr (std::is_same_v<type, fetch_request>) {
-            return dispatch(std::move(r), api_version(10));
-        } else if constexpr (std::is_same_v<type, list_offsets_request>) {
-            return dispatch(std::move(r), api_version(3));
-        } else if constexpr (std::is_same_v<type, produce_request>) {
-            return dispatch(std::move(r), api_version(7));
-        } else if constexpr (std::is_same_v<type, offset_commit_request>) {
-            return dispatch(std::move(r), api_version(7));
-        } else if constexpr (std::is_same_v<type, describe_groups_request>) {
-            return dispatch(std::move(r), api_version(2));
-        } else if constexpr (std::is_same_v<type, heartbeat_request>) {
-            return dispatch(std::move(r), api_version(3));
-        } else if constexpr (std::is_same_v<type, join_group_request>) {
-            return dispatch(std::move(r), api_version(4));
-        } else if constexpr (std::is_same_v<type, sync_group_request>) {
-            return dispatch(std::move(r), api_version(3));
-        } else if constexpr (std::is_same_v<type, leave_group_request>) {
-            return dispatch(std::move(r), api_version(2));
-        } else if constexpr (std::is_same_v<type, metadata_request>) {
-            return dispatch(std::move(r), api_version(7));
-        } else if constexpr (std::is_same_v<type, find_coordinator_request>) {
-            return dispatch(std::move(r), api_version(2));
-        } else if constexpr (std::is_same_v<type, list_groups_request>) {
-            return dispatch(std::move(r), api_version(2));
-        } else if constexpr (std::is_same_v<type, create_topics_request>) {
-            return dispatch(std::move(r), api_version(4));
-        } else if constexpr (std::is_same_v<type, sasl_handshake_request>) {
-            return dispatch(std::move(r), api_version(1));
-        } else if constexpr (std::is_same_v<type, sasl_authenticate_request>) {
-            return dispatch(std::move(r), api_version(1));
+        if (!_max_versions) {
+            /// If request fails, this throws
+            _max_versions = co_await get_api_versions();
         }
+        co_return co_await dispatch(
+          std::move(r), negotiate_version(T::api_type::key));
     }
+
+    void force_api_refresh() { _max_versions = std::nullopt; }
 
 private:
     void write_header(response_writer& wr, api_key key, api_version version);
 
+    api_version negotiate_version(api_key key) const;
+
+    ss::future<std::vector<api_version>> get_api_versions();
+
+private:
     correlation_id _correlation{0};
+    std::optional<std::vector<api_version>> _max_versions;
 };
 
 } // namespace kafka::client
