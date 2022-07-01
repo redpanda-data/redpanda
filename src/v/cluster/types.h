@@ -2009,8 +2009,15 @@ struct feature_action_request
     auto serde_fields() { return std::tie(action); }
 };
 
-struct feature_action_response {
+struct feature_action_response
+  : serde::envelope<feature_action_response, serde::version<0>> {
     errc error;
+
+    friend bool
+    operator==(const feature_action_response&, const feature_action_response&)
+      = default;
+
+    auto serde_fields() { return std::tie(error); }
 };
 
 using feature_barrier_tag
