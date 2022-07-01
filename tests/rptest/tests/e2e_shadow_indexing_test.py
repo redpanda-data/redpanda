@@ -134,7 +134,7 @@ class EndToEndShadowIndexingTestWithDisruptions(EndToEndShadowIndexingBase):
                                       partition_idx=0,
                                       count=6)
             self.start_consumer()
-            self.run_validation()
+            self.run_validation(consumer_timeout_sec=100)
         ctx.assert_actions_triggered()
 
 
