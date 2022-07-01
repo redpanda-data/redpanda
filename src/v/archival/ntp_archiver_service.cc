@@ -14,6 +14,7 @@
 #include "archival/logger.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
+#include "cloud_storage/tx_range_manifest.h"
 #include "cloud_storage/types.h"
 #include "cluster/partition_manager.h"
 #include "model/metadata.h"
@@ -327,6 +328,34 @@ ntp_archiver::upload_segment(upload_candidate candidate) {
       _bucket, path, candidate.content_length, reset_func, fib);
 }
 
+ss::future<cloud_storage::upload_result>
+ntp_archiver::upload_tx(upload_candidate candidate) {
+    gate_guard guard{_gate};
+    retry_chain_node fib(
+      _segment_upload_timeout, _cloud_storage_initial_backoff, &_rtcnode);
+    retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
+
+    vlog(
+      ctxlog.debug, "Uploading segment's tx range {}", candidate.exposed_name);
+
+    auto tx_range = co_await _partition->aborted_transactions(
+      candidate.starting_offset, candidate.final_offset);
+
+    if (tx_range.empty()) {
+        // The actual upload only happens if tx_range is not empty.
+        // The remote_segment should act as if the tx_range is empty if the
+        // request returned NoSuchKey error.
+        co_return cloud_storage::upload_result::success;
+    }
+
+    auto path = cloud_storage::generate_remote_segment_path(
+      _ntp, _rev, candidate.exposed_name, _start_term);
+
+    cloud_storage::tx_range_manifest manifest(path, tx_range);
+
+    co_return co_await _remote.upload_manifest(_bucket, manifest, fib);
+}
+
 ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
   model::offset start_upload_offset, model::offset last_stable_offset) {
     std::optional<storage::log> log = _partition_manager.log(_ntp);
@@ -415,8 +444,24 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
     start_upload_offset = offset + model::offset(1);
     auto delta
       = base - _partition->get_offset_translator_state()->from_log_offset(base);
+    // The upload is successful only if both segment and tx_range are uploaded.
+    auto upl_fut
+      = ss::when_all(upload_segment(upload), upload_tx(upload))
+          .then([](auto tup) {
+              auto [fs, ftx] = std::move(tup);
+              auto rs = fs.get();
+              auto rtx = ftx.get();
+              if (
+                rs == cloud_storage::upload_result::success
+                && rtx == cloud_storage::upload_result::success) {
+                  return rs;
+              } else if (rs != cloud_storage::upload_result::success) {
+                  return rs;
+              }
+              return rtx;
+          });
     co_return scheduled_upload{
-      .result = upload_segment(upload),
+      .result = std::move(upl_fut),
       .inclusive_last_offset = offset,
       .meta = cloud_storage::partition_manifest::segment_meta{
         .is_compacted = upload.source->is_compacted_segment(),
