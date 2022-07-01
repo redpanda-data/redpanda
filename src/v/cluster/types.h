@@ -2911,4 +2911,15 @@ struct adl<cluster::decommission_node_request> {
         return {.id = id};
     }
 };
+
+template<>
+struct adl<cluster::decommission_node_reply> {
+    void to(iobuf& out, cluster::decommission_node_reply&& r) {
+        serialize(out, r.error);
+    }
+    cluster::decommission_node_reply from(iobuf_parser& in) {
+        auto error = adl<cluster::errc>{}.from(in);
+        return {.error = error};
+    }
+};
 } // namespace reflection
