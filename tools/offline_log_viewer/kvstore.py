@@ -331,6 +331,12 @@ class KvStore:
 
         if entry['data'] is not None:
             self.kv[key] = entry['data']
+        else:
+            try:
+                del self.kv[key]
+            except KeyError:
+                # Missing key, that's okay for a deletion
+                pass
 
     def decode(self):
         snapshot_offset = None
