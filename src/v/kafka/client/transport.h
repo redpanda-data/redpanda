@@ -27,6 +27,12 @@
 
 namespace kafka::client {
 
+class kafka_request_disconnected_exception : public std::runtime_error {
+public:
+    explicit kafka_request_disconnected_exception(const std::string& msg)
+      : std::runtime_error(msg) {}
+};
+
 /**
  * \brief Kafka client.
  *
@@ -75,6 +81,11 @@ private:
           .then([this, is_flexible] {
               return parse_size(_in).then([this, is_flexible](
                                             std::optional<size_t> sz) {
+                  if (!sz) {
+                      return ss::make_exception_future<iobuf>(
+                        kafka_request_disconnected_exception(
+                          "Request disconnected, no response recieved"));
+                  }
                   auto size = sz.value();
                   return _in.read_exactly(sizeof(correlation_id))
                     .then([this, size, is_flexible](

@@ -12,6 +12,7 @@
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/produce.h"
 #include "kafka/protocol/request_reader.h"
+#include "kafka/server/handlers/produce.h"
 #include "model/fundamental.h"
 #include "random/generators.h"
 #include "redpanda/tests/fixture.h"
@@ -159,3 +160,21 @@ FIXTURE_TEST(test_produce_consume_small_batches, prod_consume_fixture) {
       resp_2.data.topics.begin()->partitions.begin()->records->last_offset(),
       offset_2);
 };
+
+FIXTURE_TEST(test_version_handler, prod_consume_fixture) {
+    wait_for_controller_leadership().get();
+    start();
+    std::vector<kafka::produce_request::topic> topics;
+    topics.push_back(kafka::produce_request::topic{
+      .name = model::topic{"abc123"}, .partitions = small_batches(10)});
+
+    const auto unsupported_version = kafka::api_version(
+      kafka::produce_handler::max_supported() + 1);
+    BOOST_CHECK_THROW(
+      producer
+        ->dispatch(
+          kafka::produce_request(std::nullopt, 1, std::move(topics)),
+          unsupported_version)
+        .get(),
+      kafka::client::kafka_request_disconnected_exception);
+}
