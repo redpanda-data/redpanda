@@ -1,4 +1,5 @@
 import collections
+from enum import Enum
 import os
 
 import struct
@@ -56,6 +57,11 @@ class Record:
         self.value = value
         self.headers = headers
 
+    def kv_dict(self):
+        key = None if self.key == None else self.key.hex()
+        val = None if self.value == None else self.value.hex()
+        return {"k": key, "v": val}
+
 
 class RecordHeader:
     def __init__(self, key, value):
@@ -104,12 +110,60 @@ class RecordIter:
                       headers)
 
 
+class BatchType(Enum):
+    """Keep this in sync with model/record_batch_types.h"""
+    raft_data = 1
+    raft_configuration = 2
+    controller = 3
+    kvstore = 4
+    checkpoint = 5
+    topic_management_cmd = 6
+    ghost_batch = 7
+    id_allocator = 8
+    tx_prepare = 9
+    tx_fence = 10
+    tm_update = 11
+    user_management_cmd = 12
+    acl_management_cmd = 13
+    group_prepare_tx = 14
+    group_commit_tx = 15
+    group_abort_tx = 16
+    node_management_cmd = 17
+    data_policy_management_cmd = 18
+    archival_metadata = 19
+    cluster_config_cmd = 20
+    feature_update = 21
+    unknown = -1
+
+    @classmethod
+    def _missing_(e, value):
+        return e.unknown
+
+
 class Batch:
+    class CompressionType(Enum):
+        none = 0
+        gzip = 1
+        snappy = 2
+        lz4 = 3
+        zstd = 4
+        unknown = -1
+
+        @classmethod
+        def _missing_(e, value):
+            return e.unknown
+
+    compression_mask = 0x7
+    ts_type_mask = 0x8
+    transactional_mask = 0x10
+    control_mask = 0x20
+
     def __init__(self, index, header, records):
         self.index = index
         self.header = header
         self.term = None
         self.records = records
+        self.type = BatchType(header[3])
 
         header_crc_bytes = struct.pack(
             "<" + HDR_FMT_RP_PREFIX_NO_CRC + HDR_FMT_CRC, *self.header[1:])
@@ -120,6 +174,20 @@ class Batch:
         crc = crc32c.crc32c(records, crc)
         if self.header.crc != crc:
             raise CorruptBatchError(self)
+
+    def header_dict(self):
+        header = self.header._asdict()
+        attrs = header['attrs']
+        header["type_name"] = self.type.name
+        header['expanded_attrs'] = {
+            'compression':
+            Batch.CompressionType(attrs & Batch.compression_mask).name,
+            'transactional':
+            attrs & Batch.transactional_mask == Batch.transactional_mask,
+            'control_batch': attrs & Batch.control_mask == Batch.control_mask,
+            'timestamp_type': attrs & Batch.ts_type_mask == Batch.ts_type_mask
+        }
+        return header
 
     def last_offset(self):
         return self.header.base_offset + self.header.record_count - 1

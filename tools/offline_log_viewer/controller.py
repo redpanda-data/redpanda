@@ -1,7 +1,8 @@
 from io import BufferedReader, BytesIO
 from model import *
 from reader import Reader
-from storage import Segment
+from storage import Batch, Segment
+from storage import BatchType
 import datetime
 
 
@@ -166,55 +167,29 @@ def decode_feature_command(record):
     return cmd
 
 
-def decode_record(header, record):
+def decode_record(batch, record):
     ret = {}
-    ret['type'] = type_str(header)
+    header = batch.header
+    ret['type'] = batch.type.name
     ret['epoch'] = header.first_ts
     ret['offset'] = header.base_offset + record.offset_delta
     ret['ts'] = datetime.datetime.utcfromtimestamp(
         header.first_ts / 1000.0).strftime('%Y-%m-%d %H:%M:%S')
     ret['data'] = None
 
-    if header.type == 2:
+    if batch.type == BatchType.raft_configuration:
         ret['data'] = decode_config(record)
-    if header.type == 6:
+    if batch.type == BatchType.topic_management_cmd:
         ret['data'] = decode_topic_command(record)
-    if header.type == 12:
+    if batch.type == BatchType.user_management_cmd:
         ret['data'] = decode_user_command(record)
-    if header.type == 13:
+    if batch.type == BatchType.acl_management_cmd:
         ret['data'] = decode_acl_command(record)
-    if header.type == 20:
+    if header.type == BatchType.cluster_config_cmd:
         ret['data'] = decode_config_command(record)
-    if header.type == 21:
+    if header.type == BatchType.feature_update:
         ret['data'] = decode_feature_command(record)
     return ret
-
-
-def type_str(header):
-    if header.type == 1:
-        return "data"
-    if header.type == 2:
-        return "configuration"
-    if header.type == 3:
-        return "old controller"
-    if header.type == 4:
-        return "kv store"
-    if header.type == 5:
-        return "checkpoint"
-    if header.type == 6:
-        return "topic command"
-    if header.type == 12:
-        return "user management command"
-    if header.type == 13:
-        return "acl management command"
-    if header.type == 17:
-        return "node management command"
-    if header.type == 20:
-        return "cluster config management command"
-    if header.type == 21:
-        return "feature management command"
-
-    return f"unknown {header.type}"
 
 
 class ControllerLog:
@@ -227,4 +202,4 @@ class ControllerLog:
             s = Segment(path)
             for b in s:
                 for r in b:
-                    self.records.append(decode_record(b.header, r))
+                    self.records.append(decode_record(b, r))
