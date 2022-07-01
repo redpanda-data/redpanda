@@ -53,7 +53,12 @@ public:
       : _sgroups(create_scheduling_groups())
       , _group_deleter([this] { _sgroups.destroy_groups().get(); })
       , _base_dir("cluster_test." + random_generators::gen_alphanum_string(6)) {
+        // Disable all metrics to guard against double_registration errors
+        // thrown by seastar. These are simulated nodes which use the same
+        // internal metrics implementation, so the usual metrics registration
+        // process won't work.
         set_configuration("disable_metrics", true);
+        set_configuration("disable_public_metrics", true);
     }
 
     virtual ~cluster_test_fixture() {
