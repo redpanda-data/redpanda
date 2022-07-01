@@ -3020,4 +3020,15 @@ struct adl<cluster::feature_action_request> {
         return {.action = std::move(action)};
     }
 };
+
+template<>
+struct adl<cluster::feature_action_response> {
+    void to(iobuf& out, cluster::feature_action_response&& r) {
+        serialize(out, r.error);
+    }
+    cluster::feature_action_response from(iobuf_parser& in) {
+        auto error = adl<cluster::errc>{}.from(in);
+        return {.error = error};
+    }
+};
 } // namespace reflection
