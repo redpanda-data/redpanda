@@ -3002,4 +3002,15 @@ struct adl<cluster::finish_reallocation_reply> {
         return {.error = error};
     }
 };
+
+template<>
+struct adl<cluster::feature_action_request> {
+    void to(iobuf& out, cluster::feature_action_request&& r) {
+        serialize(out, std::move(r.action));
+    }
+    cluster::feature_action_request from(iobuf_parser& in) {
+        auto action = adl<cluster::feature_update_action>{}.from(in);
+        return {.action = std::move(action)};
+    }
+};
 } // namespace reflection
