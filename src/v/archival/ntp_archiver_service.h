@@ -105,6 +105,7 @@ public:
     struct batch_result {
         size_t num_succeded;
         size_t num_failed;
+        size_t num_cancelled;
     };
 
     /// \brief Upload next set of segments to S3 (if any)

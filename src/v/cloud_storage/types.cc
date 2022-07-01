@@ -45,6 +45,9 @@ std::ostream& operator<<(std::ostream& o, const upload_result& r) {
     case upload_result::failed:
         o << "{failed}";
         break;
+    case upload_result::cancelled:
+        o << "{cancelled}";
+        break;
     };
     return o;
 }

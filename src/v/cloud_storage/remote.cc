@@ -385,7 +385,7 @@ ss::future<upload_result> remote::upload_segment(
               segment_path,
               bucket);
             _probe.failed_upload();
-            co_return upload_result::failed;
+            co_return upload_result::cancelled;
         }
 
         auto reader_handle = co_await reset_str();

@@ -147,7 +147,7 @@ FIXTURE_TEST(
   test_upload_segment_lost_leadership, s3_imposter_fixture) { // NOLINT
     set_expectations_and_listen({});
     auto conf = get_configuration();
-    remote remote(s3_connection_limit(10), conf);
+    remote remote(s3_connection_limit(10), conf, config_file);
     auto name = segment_name("1-2-v1.log");
     auto path = generate_remote_segment_path(
       manifest_ntp, manifest_revision, name, model::term_id{123});
@@ -171,7 +171,7 @@ FIXTURE_TEST(
                    fib,
                    lost_leadership)
                  .get();
-    BOOST_REQUIRE(res == upload_result::failed);
+    BOOST_REQUIRE_EQUAL(res, upload_result::cancelled);
     BOOST_REQUIRE(get_requests().empty());
 }
 

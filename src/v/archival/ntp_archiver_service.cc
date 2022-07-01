@@ -145,11 +145,18 @@ ss::future<> ntp_archiver::upload_loop() {
               _rtclog.error,
               "Failed to upload {} segments out of {}",
               result.num_failed,
-              result.num_succeded + result.num_failed);
+              result.num_succeded + result.num_failed + result.num_cancelled);
         } else if (result.num_succeded != 0) {
             vlog(
               _rtclog.debug,
               "Successfuly uploaded {} segments",
+              result.num_succeded);
+        }
+
+        if (result.num_cancelled != 0) {
+            vlog(
+              _rtclog.debug,
+              "Cancelled upload of {} segments",
               result.num_succeded);
         }
 
@@ -596,9 +603,17 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
         co_return batch_result{};
     }
 
-    total.num_succeded = std::count(
-      begin(results), end(results), cloud_storage::upload_result::success);
-    total.num_failed = flist.size() - total.num_succeded;
+    absl::flat_hash_map<cloud_storage::upload_result, size_t> upload_results;
+    for (auto result : results) {
+        ++upload_results[result];
+    }
+
+    total.num_succeded = upload_results[cloud_storage::upload_result::success];
+    total.num_cancelled
+      = upload_results[cloud_storage::upload_result::cancelled];
+    total.num_failed = results.size()
+                       - (total.num_succeded + total.num_cancelled);
+
     for (size_t i = 0; i < results.size(); i++) {
         if (results[i] != cloud_storage::upload_result::success) {
             break;

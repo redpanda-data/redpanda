@@ -54,6 +54,7 @@ enum class upload_result : int32_t {
     success,
     timedout,
     failed,
+    cancelled,
 };
 
 enum class manifest_version : int32_t {
