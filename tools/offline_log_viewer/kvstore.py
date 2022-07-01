@@ -216,6 +216,8 @@ def decode_offset_translator_key(k):
 def decode_storage_key_name(key_type):
     if key_type == 0:
         return "start offset"
+    elif key_type == 1:
+        return "clean segment"
 
     return "unknown"
 
