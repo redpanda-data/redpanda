@@ -1998,8 +1998,15 @@ struct config_status_reply
     auto serde_fields() { return std::tie(error); }
 };
 
-struct feature_action_request {
+struct feature_action_request
+  : serde::envelope<feature_action_request, serde::version<0>> {
     feature_update_action action;
+
+    friend bool
+    operator==(const feature_action_request&, const feature_action_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(action); }
 };
 
 struct feature_action_response {
