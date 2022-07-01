@@ -2984,4 +2984,15 @@ struct adl<cluster::finish_reallocation_request> {
         return {.id = id};
     }
 };
+
+template<>
+struct adl<cluster::finish_reallocation_reply> {
+    void to(iobuf& out, cluster::finish_reallocation_reply&& r) {
+        serialize(out, r.error);
+    }
+    cluster::finish_reallocation_reply from(iobuf_parser& in) {
+        auto error = adl<cluster::errc>{}.from(in);
+        return {.error = error};
+    }
+};
 } // namespace reflection
