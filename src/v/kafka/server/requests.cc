@@ -25,29 +25,18 @@ namespace kafka {
 // clang-format off
 template<typename Request>
 requires(KafkaApiHandler<Request> || KafkaApiTwoPhaseHandler<Request>)
-  // clang-format on
-  struct process_dispatch {
+struct process_dispatch { // clang-format on
     static process_result_stages
     process(request_context&& ctx, ss::smp_service_group g) {
-        if (
-          ctx.header().version < Request::min_supported
-          || ctx.header().version > Request::max_supported) {
-            throw std::runtime_error(fmt::format(
-              "Unsupported version {} for {} API",
-              ctx.header().version,
-              Request::api::name));
-        }
         return process_result_stages::single_stage(
           Request::handle(std::move(ctx), g));
     }
 };
 
 /**
- * Dispatch API versions request without version checks.
- *
- * The version bounds checks are not applied to this request because the client
- * does not yet know what versions this server supports. The api versions
- * request is used by a client to query this information.
+ * api_versions request processed in one stage however this template
+ * specialization exists so that the return value of the request can be examined
+ * by the connection layer.
  */
 template<>
 struct process_dispatch<api_versions_handler> {
@@ -57,6 +46,7 @@ struct process_dispatch<api_versions_handler> {
           api_versions_handler::handle(std::move(ctx), g));
     }
 };
+
 /**
  * Requests processed in two stages
  */
@@ -90,6 +80,12 @@ struct process_dispatch<sync_group_handler> {
     }
 };
 
+class kafka_api_version_not_supported_exception : public std::runtime_error {
+public:
+    explicit kafka_api_version_not_supported_exception(const std::string& m)
+      : std::runtime_error(m) {}
+};
+
 template<typename Request>
 requires(KafkaApiHandler<Request> || KafkaApiTwoPhaseHandler<Request>)
   process_result_stages
@@ -103,6 +99,24 @@ requires(KafkaApiHandler<Request> || KafkaApiTwoPhaseHandler<Request>)
       ctx.header().key,
       ctx.header().version,
       ctx.header().client_id.value_or(std::string_view("unset-client-id")));
+
+    /**
+     * Dispatch API versions request without version checks.
+     *
+     * The version bounds checks are not applied to this request because the
+     * client does not yet know what versions this server supports. The api
+     * versions request is used by a client to query this information.
+     */
+    if constexpr (!std::same_as<Request, api_versions_handler>) {
+        if (
+          ctx.header().version < Request::min_supported
+          || ctx.header().version > Request::max_supported) {
+            throw kafka_api_version_not_supported_exception(fmt::format(
+              "Unsupported version {} for {} API",
+              ctx.header().version,
+              Request::api::name));
+        }
+    }
 
     return process_dispatch<Request>::process(std::move(ctx), g);
 }
