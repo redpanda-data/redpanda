@@ -333,10 +333,12 @@ class KvStore:
             self.kv[key] = entry['data']
 
     def decode(self):
+        snapshot_offset = None
         if os.path.exists(f"{self.ntp.path}/snapshot"):
             snap = KvSnapshot(f"{self.ntp.path}/snapshot")
             snap.decode()
             logger.info(f"snapshot last offset: {snap.last_offset}")
+            snapshot_offset = snap.last_offset
             for r in snap.data_batch:
                 d = KvStoreRecordDecoder(r,
                                          snap.data_batch,
@@ -349,6 +351,10 @@ class KvStore:
             s = Segment(path)
             for batch in s:
                 for r in batch:
+                    offset = batch.header.base_offset + r.offset_delta
+                    if snapshot_offset is not None and offset <= snapshot_offset:
+                        continue
+
                     d = KvStoreRecordDecoder(r,
                                              batch,
                                              value_is_optional_type=True)
