@@ -1918,8 +1918,15 @@ struct recommission_node_request
     auto serde_fields() { return std::tie(id); }
 };
 
-struct recommission_node_reply {
+struct recommission_node_reply
+  : serde::envelope<recommission_node_reply, serde::version<0>> {
     errc error;
+
+    friend bool
+    operator==(const recommission_node_reply&, const recommission_node_reply&)
+      = default;
+
+    auto serde_fields() { return std::tie(error); }
 };
 
 struct finish_reallocation_request {
