@@ -58,6 +58,8 @@ public:
         model::producer_identity pid;
         model::offset first;
         model::offset last;
+
+        auto operator<=>(const tx_range&) const = default;
     };
 
     struct abort_index {

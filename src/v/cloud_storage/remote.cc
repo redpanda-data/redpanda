@@ -216,6 +216,9 @@ ss::future<download_result> remote::download_manifest(
             case manifest_type::topic:
                 _probe.topic_manifest_download();
                 break;
+            case manifest_type::tx_range:
+                _probe.txrange_manifest_download();
+                break;
             }
             co_return download_result::success;
         } catch (...) {
@@ -297,6 +300,9 @@ ss::future<upload_result> remote::upload_manifest(
                 break;
             case manifest_type::topic:
                 _probe.topic_manifest_upload();
+                break;
+            case manifest_type::tx_range:
+                _probe.txrange_manifest_upload();
                 break;
             }
             _probe.register_upload_size(size);
