@@ -2929,4 +2929,15 @@ struct adl<cluster::decommission_node_reply> {
         return {.error = error};
     }
 };
+
+template<>
+struct adl<cluster::recommission_node_request> {
+    void to(iobuf& out, cluster::recommission_node_request&& r) {
+        serialize(out, r.id);
+    }
+    cluster::recommission_node_request from(iobuf_parser& in) {
+        auto id = adl<model::node_id>{}.from(in);
+        return {.id = id};
+    }
+};
 } // namespace reflection
