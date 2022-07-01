@@ -1929,8 +1929,15 @@ struct recommission_node_reply
     auto serde_fields() { return std::tie(error); }
 };
 
-struct finish_reallocation_request {
+struct finish_reallocation_request
+  : serde::envelope<finish_reallocation_request, serde::version<0>> {
     model::node_id id;
+
+    friend bool operator==(
+      const finish_reallocation_request&, const finish_reallocation_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(id); }
 };
 
 struct finish_reallocation_reply {
