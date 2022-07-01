@@ -1940,8 +1940,15 @@ struct finish_reallocation_request
     auto serde_fields() { return std::tie(id); }
 };
 
-struct finish_reallocation_reply {
+struct finish_reallocation_reply
+  : serde::envelope<finish_reallocation_reply, serde::version<0>> {
     errc error;
+
+    friend bool operator==(
+      const finish_reallocation_reply&, const finish_reallocation_reply&)
+      = default;
+
+    auto serde_fields() { return std::tie(error); }
 };
 
 struct set_maintenance_mode_request
