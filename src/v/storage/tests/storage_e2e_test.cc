@@ -1162,13 +1162,40 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
       ntp, mgr.config().base_dir, std::make_unique<overrides_t>(ov));
     auto log = mgr.manage(std::move(ntp_cfg)).get0();
 
-    auto result = append_exactly(log, 100, 1_KiB, "key").get0(); // 100*1_KiB
+    auto sz_initial = get_disk_log(log)->get_probe().partition_size();
+    info("sz_initial={}", sz_initial);
+    BOOST_REQUIRE_EQUAL(sz_initial, 0);
 
-    auto sz_before = get_disk_log(log)->get_probe().partition_size();
+    // Add 100 batches with one event each, all events having the same key
+    static constexpr size_t batch_size = 1_KiB; // Size visible to Kafka API
+    static constexpr size_t batch_size_ondisk = 1033; // Size internally
+    static constexpr size_t input_batch_count = 100;
+
+    auto result = append_exactly(log, input_batch_count, batch_size, "key")
+                    .get0(); // 100*1_KiB
+
+    // Test becomes non-deterministic if we allow flush in background: flush
+    // explicitly instead.
+    log.flush().get();
+
+    // Read back and validate content of log pre-compaction.
+    BOOST_REQUIRE_EQUAL(
+      get_disk_log(log)->get_probe().partition_size(),
+      input_batch_count * batch_size_ondisk);
+    BOOST_REQUIRE_EQUAL(
+      read_and_validate_all_batches(log).size(), input_batch_count);
+    auto lstats_before = log.offsets();
+    BOOST_REQUIRE_EQUAL(
+      lstats_before.committed_offset, model::offset{input_batch_count - 1});
+    BOOST_REQUIRE_EQUAL(lstats_before.start_offset, model::offset{0});
+
     log.set_collectible_offset(log.offsets().dirty_offset);
     storage::compaction_config ccfg(
       model::timestamp::min(), 60_KiB, ss::default_priority_class(), as);
 
+    // Compact 10 times, with a configuration calling for 60kiB max log size.
+    // This results in approximately prefix truncating at offset 50, although
+    // this is nondeterministic due to max_segment_size jitter.
     for (int i = 0; i < 10; ++i) {
         log.compact(ccfg).get0();
     }
@@ -1176,6 +1203,11 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
 
     as.request_abort();
     auto lstats_after = log.offsets();
+    BOOST_REQUIRE_EQUAL(
+      lstats_after.committed_offset, lstats_before.committed_offset);
+
+    // Cannot assert on lstats_after.start_offset: its value depends on
+    // the jitter applied in disk_log_impl::_max_segment_size
 
     auto batches = read_and_validate_all_batches(log);
     auto total_batch_size = std::accumulate(
@@ -1186,13 +1218,16 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
           return sum + b.size_bytes();
       });
 
-    // Expected size is equal to size of 4 batches (compacted one) plus batches
-    // being present in active segment that is not compacted
+    auto& segments = get_disk_log(log)->segments();
+    // One historic segment (all historic batches compacted down to 1), plus
+    // one active segment.
+    BOOST_REQUIRE_EQUAL(segments.size(), 2);
 
-    auto expected_size = total_batch_size
-                         + get_disk_log(log)->segments().back()->size_bytes();
-    BOOST_REQUIRE_EQUAL(
-      get_disk_log(log)->get_probe().partition_size(), expected_size);
+    // The log-scope reported size must be equal to the sum of the batch sizes
+    auto expected_size = total_batch_size;
+    auto actual_size = get_disk_log(log)->get_probe().partition_size();
+    info("expected_size={}, actual_size={}", expected_size, actual_size);
+    BOOST_REQUIRE_EQUAL(actual_size, expected_size);
 };
 
 FIXTURE_TEST(check_segment_size_jitter, storage_test_fixture) {
