@@ -17,13 +17,21 @@ logger = logging.getLogger('viewer')
 
 
 def print_kv_store(store):
+    # Map of partition ID to list of kvstore items
+    result = {}
+
     for ntp in store.ntps:
         if ntp.nspace == "redpanda" and ntp.topic == "kvstore":
             logger.info(f"inspecting {ntp}")
             kv = KvStore(ntp)
             kv.decode()
             items = kv.items()
-            logger.info(json.dumps(items, indent=2))
+
+            result[ntp.partition] = items
+
+    # Send JSON output to stdout in case caller wants to parse it, other
+    # CLI output goes to stderr via logger
+    print(json.dumps(result, indent=2))
 
 
 def print_controller(store, bin_dump: bool):
@@ -31,7 +39,10 @@ def print_controller(store, bin_dump: bool):
         if ntp.nspace == "redpanda" and ntp.topic == "controller":
             ctrl = ControllerLog(ntp)
             ctrl.decode(bin_dump)
-            logger.info(json.dumps(ctrl.records, indent=2))
+
+            # Send JSON output to stdout in case caller wants to parse it, other
+            # CLI output goes to stderr via logger
+            print(json.dumps(ctrl.records, indent=2))
 
 
 def print_kafka(store, topic, headers_only):
