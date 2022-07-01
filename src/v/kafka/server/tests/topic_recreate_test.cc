@@ -266,7 +266,7 @@ FIXTURE_TEST(test_recreated_topic_does_not_lose_data, recreate_test_fixture) {
                 auto rdr = model::make_memory_record_batch_reader(
                   std::move(batches));
                 auto p = pm.get(ntp);
-                return p
+                return p->raft()
                   ->replicate(
                     std::move(rdr),
                     raft::replicate_options(
