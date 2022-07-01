@@ -802,3 +802,28 @@ SEASTAR_THREAD_TEST_CASE(absl_node_hash_set) {
     BOOST_REQUIRE(a == a_from);
     BOOST_REQUIRE(b == b_from);
 }
+
+SEASTAR_THREAD_TEST_CASE(absl_node_hash_map) {
+    absl::node_hash_map<ss::sstring, int32_t> a = {
+      {"asdf", 33},
+      {"fooo", 44},
+    };
+
+    absl::node_hash_map<int32_t, int32_t> b = {
+      {123, 32},
+      {456, 66},
+      {959, 11},
+    };
+
+    iobuf a_buf = serde::to_iobuf(a);
+    iobuf b_buf = serde::to_iobuf(b);
+
+    auto a_from = serde::from_iobuf<absl::node_hash_map<ss::sstring, int32_t>>(
+      std::move(a_buf));
+
+    auto b_from = serde::from_iobuf<absl::node_hash_map<int32_t, int32_t>>(
+      std::move(b_buf));
+
+    BOOST_REQUIRE(a == a_from);
+    BOOST_REQUIRE(b == b_from);
+}
