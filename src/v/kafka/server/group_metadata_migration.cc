@@ -332,6 +332,7 @@ ss::future<std::error_code> replicate(
       [ntp = std::move(ntp),
        f_reader = std::move(f_reader)](cluster::partition_manager& pm) mutable {
           return pm.get(ntp)
+            ->raft()
             ->replicate(
               std::move(f_reader),
               raft::replicate_options(raft::consistency_level::quorum_ack))

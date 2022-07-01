@@ -1438,7 +1438,7 @@ group::commit_tx(cluster::commit_group_tx_request r) {
 
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
-    auto e = co_await _partition->replicate(
+    auto e = co_await _partition->raft()->replicate(
       _term,
       std::move(reader),
       raft::replicate_options(raft::consistency_level::quorum_ack));
@@ -1521,7 +1521,7 @@ group::begin_tx(cluster::begin_group_tx_request r) {
           r.pid,
           std::move(fence));
         auto reader = model::make_memory_record_batch_reader(std::move(batch));
-        auto e = co_await _partition->replicate(
+        auto e = co_await _partition->raft()->replicate(
           _term,
           std::move(reader),
           raft::replicate_options(raft::consistency_level::quorum_ack));
@@ -1636,7 +1636,7 @@ group::prepare_tx(cluster::prepare_group_tx_request r) {
       std::move(tx_entry));
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
-    auto e = co_await _partition->replicate(
+    auto e = co_await _partition->raft()->replicate(
       _term,
       std::move(reader),
       raft::replicate_options(raft::consistency_level::quorum_ack));
@@ -1732,7 +1732,7 @@ group::abort_tx(cluster::abort_group_tx_request r) {
       std::move(tx));
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
-    auto e = co_await _partition->replicate(
+    auto e = co_await _partition->raft()->replicate(
       _term,
       std::move(reader),
       raft::replicate_options(raft::consistency_level::quorum_ack));
@@ -1853,7 +1853,7 @@ group::offset_commit_stages group::store_offsets(offset_commit_request&& r) {
     auto batch = std::move(builder).build();
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
-    auto replicate_stages = _partition->replicate_in_stages(
+    auto replicate_stages = _partition->raft()->replicate_in_stages(
       std::move(reader),
       raft::replicate_options(raft::consistency_level::quorum_ack));
 
@@ -2202,7 +2202,7 @@ ss::future<error_code> group::remove() {
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
     try {
-        auto result = co_await _partition->replicate(
+        auto result = co_await _partition->raft()->replicate(
           std::move(reader),
           raft::replicate_options(raft::consistency_level::quorum_ack));
         if (result) {
@@ -2282,7 +2282,7 @@ group::remove_topic_partitions(const std::vector<model::topic_partition>& tps) {
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
     try {
-        auto result = co_await _partition->replicate(
+        auto result = co_await _partition->raft()->replicate(
           std::move(reader),
           raft::replicate_options(raft::consistency_level::quorum_ack));
         if (result) {

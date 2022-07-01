@@ -74,7 +74,7 @@ void replicated_partition_probe::setup_metrics(const model::ntp& ntp) {
         sm::make_gauge(
           "leader_id",
           [this] {
-              return _partition._raft->get_leader_id().value_or(
+              return _partition.raft()->get_leader_id().value_or(
                 model::node_id(-1));
           },
           sm::description("Id of current partition leader"),
@@ -82,7 +82,7 @@ void replicated_partition_probe::setup_metrics(const model::ntp& ntp) {
         sm::make_gauge(
           "under_replicated_replicas",
           [this] {
-              auto metrics = _partition._raft->get_follower_metrics();
+              auto metrics = _partition.raft()->get_follower_metrics();
               return std::count_if(
                 metrics.cbegin(),
                 metrics.cend(),
@@ -114,6 +114,7 @@ void replicated_partition_probe::setup_metrics(const model::ntp& ntp) {
           labels),
       });
 }
+
 partition_probe make_materialized_partition_probe() {
     // TODO: implement partition probe for materialized partitions
     class impl : public partition_probe::impl {

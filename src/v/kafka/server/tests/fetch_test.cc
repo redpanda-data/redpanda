@@ -418,7 +418,7 @@ FIXTURE_TEST(fetch_multi_partitions_debounce, redpanda_thread_fixture) {
                            model::offset(0), 5);
                          auto rdr = model::make_memory_record_batch_reader(
                            std::move(batches));
-                         return partition->replicate(
+                         return partition->raft()->replicate(
                            std::move(rdr),
                            raft::replicate_options(
                              raft::consistency_level::quorum_ack));
@@ -483,7 +483,7 @@ FIXTURE_TEST(fetch_one_debounce, redpanda_thread_fixture) {
                        model::offset(0), 5);
                      auto rdr = model::make_memory_record_batch_reader(
                        std::move(batches));
-                     return partition->replicate(
+                     return partition->raft()->replicate(
                        std::move(rdr),
                        raft::replicate_options(
                          raft::consistency_level::quorum_ack));
@@ -563,7 +563,7 @@ FIXTURE_TEST(fetch_multi_topics, redpanda_thread_fixture) {
                            model::offset(0), 5);
                          auto rdr = model::make_memory_record_batch_reader(
                            std::move(batches));
-                         return partition->replicate(
+                         return partition->raft()->replicate(
                            std::move(rdr),
                            raft::replicate_options(
                              raft::consistency_level::quorum_ack));
@@ -615,7 +615,7 @@ FIXTURE_TEST(fetch_request_max_bytes, redpanda_thread_fixture) {
               model::offset(0), 20);
             auto rdr = model::make_memory_record_batch_reader(
               std::move(batches));
-            return partition->replicate(
+            return partition->raft()->replicate(
               std::move(rdr),
               raft::replicate_options(raft::consistency_level::quorum_ack));
         })

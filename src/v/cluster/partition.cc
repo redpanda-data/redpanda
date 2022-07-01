@@ -107,18 +107,6 @@ ss::future<result<raft::replicate_result>> partition::replicate(
     return _raft->replicate(std::move(r), opts);
 }
 
-raft::replicate_stages partition::replicate_in_stages(
-  model::record_batch_reader&& r, raft::replicate_options opts) {
-    return _raft->replicate_in_stages(std::move(r), opts);
-}
-
-ss::future<result<raft::replicate_result>> partition::replicate(
-  model::term_id term,
-  model::record_batch_reader&& r,
-  raft::replicate_options opts) {
-    return _raft->replicate(term, std::move(r), opts);
-}
-
 ss::shared_ptr<cluster::rm_stm> partition::rm_stm() {
     if (!_rm_stm) {
         if (!_is_tx_enabled && !_is_idempotence_enabled) {

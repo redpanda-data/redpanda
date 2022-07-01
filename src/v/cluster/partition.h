@@ -53,12 +53,6 @@ public:
     ss::future<result<raft::replicate_result>>
     replicate(model::record_batch_reader&&, raft::replicate_options);
 
-    raft::replicate_stages
-    replicate_in_stages(model::record_batch_reader&&, raft::replicate_options);
-
-    ss::future<result<raft::replicate_result>> replicate(
-      model::term_id, model::record_batch_reader&&, raft::replicate_options);
-
     raft::replicate_stages replicate_in_stages(
       model::batch_identity,
       model::record_batch_reader&&,
@@ -274,11 +268,7 @@ public:
     std::optional<model::offset>
     get_cloud_term_last_offset(model::term_id term) const;
 
-private:
-    friend partition_manager;
-    friend replicated_partition_probe;
-
-    consensus_ptr raft() { return _raft; }
+    consensus_ptr raft() const { return _raft; }
 
 private:
     consensus_ptr _raft;
