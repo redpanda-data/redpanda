@@ -1172,8 +1172,16 @@ class RedpandaService(Service):
             self.delete_bucket_from_si()
 
     def clean_node(self, node, preserve_logs=False, clean_installs=True):
-        node.account.kill_process("redpanda", clean_shutdown=False)
-        node.account.kill_process("bin/node", clean_shutdown=False)
+        # These are allow_fail=True to allow for a race where kill_process finds
+        # the PID, but then the process has died before it sends the SIGKILL.  This
+        # should be safe against actual failures to of the process to stop, because
+        # we're using SIGKILL which does not require the process's cooperation.
+        node.account.kill_process("redpanda",
+                                  clean_shutdown=False,
+                                  allow_fail=True)
+        node.account.kill_process("bin/node",
+                                  clean_shutdown=False,
+                                  allow_fail=True)
         if node.account.exists(RedpandaService.PERSISTENT_ROOT):
             if node.account.sftp_client.listdir(
                     RedpandaService.PERSISTENT_ROOT):
