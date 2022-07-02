@@ -1656,6 +1656,34 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         };
         roundtrip_test(data);
     }
+    {
+        std::vector<storage::disk> disks;
+        for (int i = 0, mi = random_generators::get_int(10); i < mi; i++) {
+            disks.push_back(storage::disk{
+              .path = random_generators::gen_alphanum_string(
+                random_generators::get_int(20)),
+              .free = random_generators::get_int<uint64_t>(),
+              .total = random_generators::get_int<uint64_t>(),
+            });
+        }
+        cluster::node::local_state data{
+          .redpanda_version
+          = tests::random_named_string<cluster::node::application_version>(),
+          .logical_version
+          = tests::random_named_int<cluster::cluster_version>(),
+          .uptime = tests::random_duration_ms(),
+          .disks = disks,
+        };
+        // local_state isn't adl encoded directly but is rather embedded
+        // explicitly in the adl serialization of node_health_report's adl
+        // encoding. with serde we are going to serialize the entire type tree,
+        // but don't need to add adl encoding in this case.
+        //
+        // use a non-default value here for serde test. tests that use adl need
+        // to keep the default value because thsi field isn't seiralized in adl.
+        data.storage_space_alert = storage::disk_space_alert::degraded;
+        serde_roundtrip_test(data);
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {
