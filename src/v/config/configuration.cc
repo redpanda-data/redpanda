@@ -1164,7 +1164,7 @@ configuration::configuration()
       "Threshold of minimim bytes free space before rejecting producers.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       1_GiB,
-      {.min = 1_GiB})
+      {.min = 10_MiB})
   , enable_metrics_reporter(
       *this,
       "enable_metrics_reporter",
