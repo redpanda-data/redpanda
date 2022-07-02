@@ -1714,6 +1714,25 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         };
         roundtrip_test(data);
     }
+    {
+        cluster::drain_manager::drain_status data{
+          .finished = tests::random_bool(),
+          .errors = tests::random_bool(),
+        };
+        if (tests::random_bool()) {
+            data.partitions = random_generators::get_int<size_t>();
+        }
+        if (tests::random_bool()) {
+            data.eligible = random_generators::get_int<size_t>();
+        }
+        if (tests::random_bool()) {
+            data.transferring = random_generators::get_int<size_t>();
+        }
+        if (tests::random_bool()) {
+            data.failed = random_generators::get_int<size_t>();
+        }
+        roundtrip_test(data);
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {

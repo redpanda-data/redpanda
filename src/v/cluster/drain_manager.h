@@ -12,6 +12,7 @@
 #include "cluster/fwd.h"
 #include "reflection/adl.h"
 #include "seastarx.h"
+#include "serde/serde.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
@@ -43,7 +44,7 @@ public:
      * the optional fields may not be set if draining has been requested, but
      * not yet started. in this case the values are not yet known.
      */
-    struct drain_status {
+    struct drain_status : serde::envelope<drain_status, serde::version<0>> {
         bool finished{false};
         bool errors{false};
         std::optional<size_t> partitions;
@@ -52,6 +53,13 @@ public:
         std::optional<size_t> failed;
 
         friend std::ostream& operator<<(std::ostream&, const drain_status&);
+        friend bool operator==(const drain_status&, const drain_status&)
+          = default;
+
+        auto serde_fields() {
+            return std::tie(
+              finished, errors, partitions, eligible, transferring, failed);
+        }
     };
 
     explicit drain_manager(ss::sharded<cluster::partition_manager>&);
