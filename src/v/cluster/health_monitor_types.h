@@ -154,7 +154,8 @@ struct node_health_report
     }
 };
 
-struct cluster_health_report {
+struct cluster_health_report
+  : serde::envelope<cluster_health_report, serde::version<0>> {
     static constexpr int8_t current_version = 0;
 
     std::optional<model::node_id> raft0_leader;
@@ -167,6 +168,14 @@ struct cluster_health_report {
     std::vector<node_health_report> node_reports;
     friend std::ostream&
     operator<<(std::ostream&, const cluster_health_report&);
+
+    friend bool
+    operator==(const cluster_health_report&, const cluster_health_report&)
+      = default;
+
+    auto serde_fields() {
+        return std::tie(raft0_leader, node_states, node_reports);
+    }
 };
 
 struct cluster_health_overview {

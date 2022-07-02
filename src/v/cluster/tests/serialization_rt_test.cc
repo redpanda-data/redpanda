@@ -906,6 +906,40 @@ cluster::node::local_state random_local_state() {
     return data;
 }
 
+cluster::cluster_health_report random_cluster_health_report() {
+    std::vector<cluster::node_state> node_states;
+    for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
+        node_states.push_back(cluster::node_state{
+          .id = tests::random_named_int<model::node_id>(),
+          .membership_state = model::membership_state::draining,
+          .is_alive = cluster::alive(tests::random_bool()),
+        });
+    }
+    std::vector<cluster::node_health_report> node_reports;
+    for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
+        std::vector<cluster::topic_status> topics;
+        for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
+            topics.push_back(random_topic_status());
+        }
+        node_reports.push_back(cluster::node_health_report{
+          .id = tests::random_named_int<model::node_id>(),
+          .local_state = random_local_state(),
+          .topics = topics,
+          .include_drain_status = true, // so adl considers drain status
+          .drain_status = random_drain_status(),
+        });
+    }
+    cluster::cluster_health_report data{
+      .raft0_leader = std::nullopt,
+      .node_states = node_states,
+      .node_reports = node_reports,
+    };
+    if (tests::random_bool()) {
+        data.raft0_leader = tests::random_named_int<model::node_id>();
+    }
+    return data;
+}
+
 SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     roundtrip_test(cluster::ntp_leader(
       model::random_ntp(),
@@ -1820,6 +1854,10 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           .membership_state = model::membership_state::draining,
           .is_alive = cluster::alive(tests::random_bool()),
         };
+        roundtrip_test(data);
+    }
+    {
+        auto data = random_cluster_health_report();
         roundtrip_test(data);
     }
 }
