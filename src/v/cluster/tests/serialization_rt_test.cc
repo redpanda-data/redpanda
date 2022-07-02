@@ -19,6 +19,7 @@
 #include "model/timestamp.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
+#include "storage/types.h"
 #include "test_utils/randoms.h"
 #include "test_utils/rpc.h"
 #include "tristate.h"
@@ -1643,6 +1644,15 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           .filter = {
             .ntp_filters = random_partitions_filter(),
           },
+        };
+        roundtrip_test(data);
+    }
+    {
+        storage::disk data{
+          .path = random_generators::gen_alphanum_string(
+            random_generators::get_int(20)),
+          .free = random_generators::get_int<uint64_t>(),
+          .total = random_generators::get_int<uint64_t>(),
         };
         roundtrip_test(data);
     }
