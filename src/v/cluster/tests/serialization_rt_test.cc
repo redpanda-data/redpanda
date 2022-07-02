@@ -848,6 +848,64 @@ cluster::partitions_filter random_partitions_filter() {
     return {.namespaces = ret};
 }
 
+cluster::drain_manager::drain_status random_drain_status() {
+    cluster::drain_manager::drain_status data{
+      .finished = tests::random_bool(),
+      .errors = tests::random_bool(),
+    };
+    if (tests::random_bool()) {
+        data.partitions = random_generators::get_int<size_t>();
+    }
+    if (tests::random_bool()) {
+        data.eligible = random_generators::get_int<size_t>();
+    }
+    if (tests::random_bool()) {
+        data.transferring = random_generators::get_int<size_t>();
+    }
+    if (tests::random_bool()) {
+        data.failed = random_generators::get_int<size_t>();
+    }
+    return data;
+}
+
+cluster::topic_status random_topic_status() {
+    std::vector<cluster::partition_status> partitions;
+    for (int i = 0, mi = random_generators::get_int(10); i < mi; i++) {
+        partitions.push_back(cluster::partition_status{
+          .id = tests::random_named_int<model::partition_id>(),
+          .term = tests::random_named_int<model::term_id>(),
+          .leader_id = std::nullopt,
+          .revision_id = tests::random_named_int<model::revision_id>(),
+          .size_bytes = random_generators::get_int<size_t>(),
+        });
+    }
+    cluster::topic_status data{
+      .tp_ns = model::random_topic_namespace(),
+      .partitions = partitions,
+    };
+    return data;
+}
+
+cluster::node::local_state random_local_state() {
+    std::vector<storage::disk> disks;
+    for (int i = 0, mi = random_generators::get_int(10); i < mi; i++) {
+        disks.push_back(storage::disk{
+          .path = random_generators::gen_alphanum_string(
+            random_generators::get_int(20)),
+          .free = random_generators::get_int<uint64_t>(),
+          .total = random_generators::get_int<uint64_t>(),
+        });
+    }
+    cluster::node::local_state data{
+      .redpanda_version
+      = tests::random_named_string<cluster::node::application_version>(),
+      .logical_version = tests::random_named_int<cluster::cluster_version>(),
+      .uptime = tests::random_duration_ms(),
+      .disks = disks,
+    };
+    return data;
+}
+
 SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     roundtrip_test(cluster::ntp_leader(
       model::random_ntp(),
@@ -1657,23 +1715,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         roundtrip_test(data);
     }
     {
-        std::vector<storage::disk> disks;
-        for (int i = 0, mi = random_generators::get_int(10); i < mi; i++) {
-            disks.push_back(storage::disk{
-              .path = random_generators::gen_alphanum_string(
-                random_generators::get_int(20)),
-              .free = random_generators::get_int<uint64_t>(),
-              .total = random_generators::get_int<uint64_t>(),
-            });
-        }
-        cluster::node::local_state data{
-          .redpanda_version
-          = tests::random_named_string<cluster::node::application_version>(),
-          .logical_version
-          = tests::random_named_int<cluster::cluster_version>(),
-          .uptime = tests::random_duration_ms(),
-          .disks = disks,
-        };
+        auto data = random_local_state();
         // local_state isn't adl encoded directly but is rather embedded
         // explicitly in the adl serialization of node_health_report's adl
         // encoding. with serde we are going to serialize the entire type tree,
@@ -1698,39 +1740,11 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         roundtrip_test(data);
     }
     {
-        std::vector<cluster::partition_status> partitions;
-        for (int i = 0, mi = random_generators::get_int(10); i < mi; i++) {
-            partitions.push_back(cluster::partition_status{
-              .id = tests::random_named_int<model::partition_id>(),
-              .term = tests::random_named_int<model::term_id>(),
-              .leader_id = std::nullopt,
-              .revision_id = tests::random_named_int<model::revision_id>(),
-              .size_bytes = random_generators::get_int<size_t>(),
-            });
-        }
-        cluster::topic_status data{
-          .tp_ns = model::random_topic_namespace(),
-          .partitions = partitions,
-        };
+        auto data = random_topic_status();
         roundtrip_test(data);
     }
     {
-        cluster::drain_manager::drain_status data{
-          .finished = tests::random_bool(),
-          .errors = tests::random_bool(),
-        };
-        if (tests::random_bool()) {
-            data.partitions = random_generators::get_int<size_t>();
-        }
-        if (tests::random_bool()) {
-            data.eligible = random_generators::get_int<size_t>();
-        }
-        if (tests::random_bool()) {
-            data.transferring = random_generators::get_int<size_t>();
-        }
-        if (tests::random_bool()) {
-            data.failed = random_generators::get_int<size_t>();
-        }
+        auto data = random_drain_status();
         roundtrip_test(data);
     }
 }
