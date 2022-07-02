@@ -175,14 +175,12 @@ kafka_stages partition::replicate_in_stages(
         }
     }
 
-    ss::lw_shared_ptr<raft::replicate_stages> res;
     if (_rm_stm) {
-        res = _rm_stm->replicate_in_stages(bid, std::move(r), opts);
-    } else {
-        res = _raft->replicate_in_stages(std::move(r), opts);
+        return _rm_stm->replicate_in_stages(bid, std::move(r), opts);
     }
 
-    auto replicate_finished = res->replicate_finished.then(
+    auto res = _raft->replicate_in_stages(std::move(r), opts);
+    auto replicate_finished = res.replicate_finished.then(
       [this](result<raft::replicate_result> r) {
           if (!r) {
               return ret_t(r.error());
@@ -193,7 +191,7 @@ kafka_stages partition::replicate_in_stages(
           return ret_t(kafka_result{new_offset});
       });
     return kafka_stages(
-      std::move(res->request_enqueued), std::move(replicate_finished));
+      std::move(res.request_enqueued), std::move(replicate_finished));
 }
 
 ss::future<> partition::start() {

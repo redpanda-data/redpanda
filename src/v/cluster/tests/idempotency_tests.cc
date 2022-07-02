@@ -150,7 +150,7 @@ FIXTURE_TEST(test_rm_stm_caches_last_5_offsets, mux_state_machine_fixture) {
     wait_for_confirmed_leader();
     wait_for_meta_initialized();
 
-    std::vector<model::offset> offsets;
+    std::vector<kafka::offset> offsets;
 
     auto count = 5;
 

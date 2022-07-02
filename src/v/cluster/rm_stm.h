@@ -22,6 +22,7 @@
 #include "raft/logger.h"
 #include "raft/state_machine.h"
 #include "raft/types.h"
+#include "storage/offset_translator_state.h"
 #include "storage/snapshot.h"
 #include "utils/available_promise.h"
 #include "utils/expiring_promise.h"
@@ -75,14 +76,14 @@ public:
 
     struct seq_cache_entry {
         int32_t seq{-1};
-        model::offset offset;
+        kafka::offset offset;
     };
 
     struct seq_entry {
         static const int seq_cache_size = 5;
         model::producer_identity pid;
         int32_t seq{-1};
-        model::offset last_offset{-1};
+        kafka::offset last_offset{-1};
         ss::circular_buffer<seq_cache_entry> seq_cache;
         model::timestamp::type last_write_timestamp;
 
@@ -100,7 +101,7 @@ public:
             return ret;
         }
 
-        void update(int32_t new_seq, model::offset new_offset) {
+        void update(int32_t new_seq, kafka::offset new_offset) {
             if (new_seq < seq) {
                 return;
             }
@@ -110,7 +111,7 @@ public:
                 return;
             }
 
-            if (seq >= 0 && last_offset >= model::offset{0}) {
+            if (seq >= 0 && last_offset >= kafka::offset{0}) {
                 auto entry = seq_cache_entry{.seq = seq, .offset = last_offset};
                 seq_cache.push_back(entry);
                 while (seq_cache.size() >= seq_entry::seq_cache_size) {
@@ -170,12 +171,12 @@ public:
     ss::future<std::vector<rm_stm::tx_range>>
       aborted_transactions(model::offset, model::offset);
 
-    raft::replicate_stages replicate_in_stages(
+    kafka_stages replicate_in_stages(
       model::batch_identity,
       model::record_batch_reader,
       raft::replicate_options);
 
-    ss::future<result<raft::replicate_result>> replicate(
+    ss::future<result<kafka_result>> replicate(
       model::batch_identity,
       model::record_batch_reader,
       raft::replicate_options);
@@ -184,6 +185,8 @@ public:
       transfer_leadership(std::optional<model::node_id>);
 
     ss::future<> stop() override;
+
+    ss::future<> start() override;
 
     void testing_only_disable_auto_abort() { _is_autoabort_enabled = false; }
 
@@ -274,27 +277,27 @@ private:
     ss::future<> save_abort_snapshot(abort_snapshot);
 
     bool check_seq(model::batch_identity);
-    std::optional<model::offset> known_seq(model::batch_identity) const;
-    void set_seq(model::batch_identity, model::offset);
+    std::optional<kafka::offset> known_seq(model::batch_identity) const;
+    void set_seq(model::batch_identity, kafka::offset);
     void reset_seq(model::batch_identity);
     std::optional<int32_t> tail_seq(model::producer_identity) const;
 
-    ss::future<result<raft::replicate_result>> do_replicate(
+    ss::future<result<kafka_result>> do_replicate(
       model::batch_identity,
       model::record_batch_reader,
       raft::replicate_options,
       ss::lw_shared_ptr<available_promise<>>);
 
-    ss::future<result<raft::replicate_result>>
+    ss::future<result<kafka_result>>
       replicate_tx(model::batch_identity, model::record_batch_reader);
 
-    ss::future<result<raft::replicate_result>> replicate_seq(
+    ss::future<result<kafka_result>> replicate_seq(
       model::batch_identity,
       model::record_batch_reader,
       raft::replicate_options,
       ss::lw_shared_ptr<available_promise<>>);
 
-    ss::future<result<raft::replicate_result>> replicate_msg(
+    ss::future<result<kafka_result>> replicate_msg(
       model::record_batch_reader,
       raft::replicate_options,
       ss::lw_shared_ptr<available_promise<>>);
@@ -424,10 +427,9 @@ private:
     // original request is replicated.
     struct inflight_request {
         int32_t last_seq{-1};
-        result<raft::replicate_result> r = errc::success;
+        result<kafka_result> r = errc::success;
         bool is_processing;
-        std::vector<
-          ss::lw_shared_ptr<available_promise<result<raft::replicate_result>>>>
+        std::vector<ss::lw_shared_ptr<available_promise<result<kafka_result>>>>
           parked;
     };
 
@@ -467,8 +469,7 @@ private:
             tail_seq = -1;
         }
 
-        std::optional<result<raft::replicate_result>>
-        known_seq(int32_t last_seq) const {
+        std::optional<result<kafka_result>> known_seq(int32_t last_seq) const {
             for (auto& seq : cache) {
                 if (seq->last_seq == last_seq && !seq->is_processing) {
                     return seq->r;
@@ -486,6 +487,20 @@ private:
             lock_it = new_it;
         }
         return lock_it->second;
+    }
+
+    kafka::offset from_log_offset(model::offset old_offset) {
+        if (old_offset > model::offset{-1}) {
+            return kafka::offset(_translator->from_log_offset(old_offset)());
+        }
+        return kafka::offset(old_offset());
+    }
+
+    model::offset to_log_offset(kafka::offset new_offset) {
+        if (new_offset > model::offset{-1}) {
+            return _translator->to_log_offset(model::offset(new_offset()));
+        }
+        return model::offset(new_offset());
     }
 
     transaction_info::status_t
@@ -520,6 +535,7 @@ private:
     bool _is_tx_enabled{false};
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
     storage::snapshot_manager _abort_snapshot_mgr;
+    ss::lw_shared_ptr<const storage::offset_translator_state> _translator;
 };
 
 } // namespace cluster
