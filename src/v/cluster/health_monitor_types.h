@@ -329,11 +329,18 @@ struct get_cluster_health_request
     }
 };
 
-struct get_cluster_health_reply {
+struct get_cluster_health_reply
+  : serde::envelope<get_cluster_health_reply, serde::version<0>> {
     static constexpr int8_t current_version = 0;
 
     errc error = cluster::errc::success;
     std::optional<cluster_health_report> report;
+
+    friend bool
+    operator==(const get_cluster_health_reply&, const get_cluster_health_reply&)
+      = default;
+
+    auto serde_fields() { return std::tie(error, report); }
 };
 
 } // namespace cluster

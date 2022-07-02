@@ -1860,6 +1860,15 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         auto data = random_cluster_health_report();
         roundtrip_test(data);
     }
+    {
+        cluster::get_cluster_health_reply data{
+          .error = cluster::errc::join_request_dispatch_error,
+        };
+        if (tests::random_bool()) {
+            data.report = random_cluster_health_report();
+        }
+        roundtrip_test(data);
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {
