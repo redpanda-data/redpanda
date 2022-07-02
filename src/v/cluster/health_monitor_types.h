@@ -39,13 +39,17 @@ using application_version = named_type<ss::sstring, struct version_number_tag>;
  * node state is determined from controller, and it doesn't require contacting
  * with the node directly
  */
-struct node_state {
+struct node_state : serde::envelope<node_state, serde::version<0>> {
     static constexpr int8_t current_version = 0;
 
     model::node_id id;
     model::membership_state membership_state;
     alive is_alive;
     friend std::ostream& operator<<(std::ostream&, const node_state&);
+
+    friend bool operator==(const node_state&, const node_state&) = default;
+
+    auto serde_fields() { return std::tie(id, membership_state, is_alive); }
 };
 
 struct partition_status : serde::envelope<partition_status, serde::version<0>> {

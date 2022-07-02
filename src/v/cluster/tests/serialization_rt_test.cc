@@ -1814,6 +1814,14 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         };
         roundtrip_test(data);
     }
+    {
+        cluster::node_state data{
+          .id = tests::random_named_int<model::node_id>(),
+          .membership_state = model::membership_state::draining,
+          .is_alive = cluster::alive(tests::random_bool()),
+        };
+        roundtrip_test(data);
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {
