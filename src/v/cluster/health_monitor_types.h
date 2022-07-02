@@ -278,7 +278,8 @@ struct get_node_health_reply
     auto serde_fields() { return std::tie(error, report); }
 };
 
-struct get_cluster_health_request {
+struct get_cluster_health_request
+  : serde::envelope<get_cluster_health_request, serde::version<0>> {
     static constexpr int8_t initial_version = 0;
     // version -1: included revision id in partition status
     static constexpr int8_t revision_id_version = -1;
@@ -292,6 +293,27 @@ struct get_cluster_health_request {
     force_refresh refresh = force_refresh::no;
     // this field is not serialized
     int8_t decoded_version = current_version;
+
+    friend bool operator==(
+      const get_cluster_health_request&, const get_cluster_health_request&)
+      = default;
+
+    void serde_write(iobuf& out) {
+        using serde::write;
+        // the current version decodes into the decoded version and is used in
+        // request handling--that is, it is used at layer above serialization so
+        // without further changes we'll need to preserve that behavior.
+        write(out, current_version);
+        write(out, filter);
+        write(out, refresh);
+    }
+
+    void serde_read(iobuf_parser& in, const serde::header& h) {
+        using serde::read_nested;
+        decoded_version = read_nested<int8_t>(in, h._bytes_left_limit);
+        filter = read_nested<cluster_report_filter>(in, h._bytes_left_limit);
+        refresh = read_nested<force_refresh>(in, h._bytes_left_limit);
+    }
 };
 
 struct get_cluster_health_reply {
