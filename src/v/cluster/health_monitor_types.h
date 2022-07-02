@@ -82,13 +82,15 @@ struct partition_status : serde::envelope<partition_status, serde::version<0>> {
       = default;
 };
 
-struct topic_status {
+struct topic_status : serde::envelope<topic_status, serde::version<0>> {
     static constexpr int8_t current_version = 0;
 
     model::topic_namespace tp_ns;
     std::vector<partition_status> partitions;
     friend std::ostream& operator<<(std::ostream&, const topic_status&);
     friend bool operator==(const topic_status&, const topic_status&) = default;
+
+    auto serde_fields() { return std::tie(tp_ns, partitions); }
 };
 
 /**
