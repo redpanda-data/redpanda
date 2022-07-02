@@ -48,7 +48,7 @@ struct node_state {
     friend std::ostream& operator<<(std::ostream&, const node_state&);
 };
 
-struct partition_status {
+struct partition_status : serde::envelope<partition_status, serde::version<0>> {
     /**
      * We increase a version here 'backward' since incorrect assertion would
      * cause older redpanda versions to crash.
@@ -72,6 +72,10 @@ struct partition_status {
     std::optional<model::node_id> leader_id;
     model::revision_id revision_id;
     size_t size_bytes;
+
+    auto serde_fields() {
+        return std::tie(id, term, leader_id, revision_id, size_bytes);
+    }
 
     friend std::ostream& operator<<(std::ostream&, const partition_status&);
     friend bool operator==(const partition_status&, const partition_status&)
