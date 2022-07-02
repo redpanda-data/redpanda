@@ -257,11 +257,18 @@ struct get_node_health_request
     auto serde_fields() { return std::tie(filter); }
 };
 
-struct get_node_health_reply {
+struct get_node_health_reply
+  : serde::envelope<get_node_health_reply, serde::version<0>> {
     static constexpr int8_t current_version = 0;
 
     errc error = cluster::errc::success;
     std::optional<node_health_report> report;
+
+    friend bool
+    operator==(const get_node_health_reply&, const get_node_health_reply&)
+      = default;
+
+    auto serde_fields() { return std::tie(error, report); }
 };
 
 struct get_cluster_health_request {
