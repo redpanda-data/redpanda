@@ -121,7 +121,7 @@ public:
             // Extract inner value if we are an optional<>,
             // and pass through into numeric_bounds::validate
             using outer_type = std::decay_t<T>;
-            if constexpr (reflection::is_std_optional_v<outer_type>) {
+            if constexpr (reflection::is_std_optional<outer_type>) {
                 if (new_value.has_value()) {
                     return _bounds.validate(new_value.value());
                 } else {
@@ -147,7 +147,7 @@ public:
         // rather than via admin API.
 
         // If T is a std::optional, then need to unpack the value.
-        if constexpr (reflection::is_std_optional_v<outer_type>) {
+        if constexpr (reflection::is_std_optional<outer_type>) {
             if (val.has_value()) {
                 return property<T>::update_value(
                   std::move(_bounds.clamp(val.value())));
@@ -189,7 +189,7 @@ private:
                 guess -= guess % _bounds.align.value();
             }
         } else {
-            if constexpr (reflection::is_std_optional_v<T>) {
+            if constexpr (reflection::is_std_optional<T>) {
                 if (property<T>::_default.has_value()) {
                     guess = property<T>::_default.value();
                 } else {

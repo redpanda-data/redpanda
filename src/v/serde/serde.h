@@ -107,25 +107,16 @@ template<typename T>
 inline constexpr bool is_fragmented_vector_v = is_fragmented_vector<T>::value;
 
 template<typename T>
-struct is_std_unordered_map : std::false_type {};
-template<typename... Args>
-struct is_std_unordered_map<std::unordered_map<Args...>> : std::true_type {};
-template<typename T>
-inline constexpr bool is_std_unordered_map_v = is_std_unordered_map<T>::value;
+concept is_std_unordered_map
+  = ::detail::is_specialization_of_v<T, std::unordered_map>;
 
 template<typename T>
-struct is_absl_node_hash_set : std::false_type {};
-template<typename... Args>
-struct is_absl_node_hash_set<absl::node_hash_set<Args...>> : std::true_type {};
-template<typename T>
-inline constexpr bool is_absl_node_hash_set_v = is_absl_node_hash_set<T>::value;
+concept is_absl_node_hash_set
+  = ::detail::is_specialization_of_v<T, absl::node_hash_set>;
 
 template<typename T>
-struct is_absl_node_hash_map : std::false_type {};
-template<typename... Args>
-struct is_absl_node_hash_map<absl::node_hash_map<Args...>> : std::true_type {};
-template<typename T>
-inline constexpr bool is_absl_node_hash_map_v = is_absl_node_hash_map<T>::value;
+concept is_absl_node_hash_map
+  = ::detail::is_specialization_of_v<T, absl::node_hash_map>;
 
 template<typename T>
 inline constexpr auto const is_serde_compatible_v
@@ -134,18 +125,18 @@ inline constexpr auto const is_serde_compatible_v
          && (!std::is_same_v<float, T> || std::numeric_limits<float>::is_iec559)
          && (!std::is_same_v<double, T> || std::numeric_limits<double>::is_iec559)
          && (!serde_is_enum_v<T> || sizeof(std::decay_t<T>) <= sizeof(serde_enum_serialized_t)))
-    || reflection::is_std_vector_v<T>
-    || reflection::is_named_type_v<T>
-    || reflection::is_ss_bool_v<T>
-    || reflection::is_std_optional_v<T>
+    || reflection::is_std_vector<T>
+    || reflection::is_rp_named_type<T>
+    || reflection::is_ss_bool_class<T>
+    || reflection::is_std_optional<T>
     || std::is_same_v<T, std::chrono::milliseconds>
     || std::is_same_v<T, iobuf>
     || std::is_same_v<T, ss::sstring>
     || std::is_same_v<T, bytes>
-    || is_absl_node_hash_set_v<T>
-    || is_absl_node_hash_map_v<T>
-    || is_std_unordered_map_v<T>
-    || is_fragmented_vector_v<T> || reflection::is_tristate_v<T> || std::is_same_v<T, ss::net::inet_address>;
+    || is_absl_node_hash_set<T>
+    || is_absl_node_hash_map<T>
+    || is_std_unordered_map<T>
+    || is_fragmented_vector_v<T> || reflection::is_tristate<T> || std::is_same_v<T, ss::net::inet_address>;
 
 template<typename T>
 inline constexpr auto const are_bytes_and_string_different = !(
@@ -234,7 +225,7 @@ void write(iobuf& out, T t) {
             static_assert(sizeof(le_t) == sizeof(Type));
             out.append(reinterpret_cast<char const*>(&le_t), sizeof(le_t));
         }
-    } else if constexpr (reflection::is_std_vector_v<Type>) {
+    } else if constexpr (reflection::is_std_vector<Type>) {
         if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
             throw serde_exception(fmt_with_ctx(
               ssx::sformat,
@@ -245,9 +236,9 @@ void write(iobuf& out, T t) {
         for (auto& el : t) {
             write(out, std::move(el));
         }
-    } else if constexpr (reflection::is_named_type_v<Type>) {
+    } else if constexpr (reflection::is_rp_named_type<Type>) {
         return write(out, static_cast<typename Type::type>(t));
-    } else if constexpr (reflection::is_ss_bool_v<Type>) {
+    } else if constexpr (reflection::is_ss_bool_class<Type>) {
         write(out, static_cast<int8_t>(bool(t)));
     } else if constexpr (std::is_same_v<Type, std::chrono::milliseconds>) {
         write<int64_t>(out, t.count());
@@ -260,14 +251,14 @@ void write(iobuf& out, T t) {
     } else if constexpr (std::is_same_v<Type, bytes>) {
         write<serde_size_t>(out, t.size());
         out.append(t.data(), t.size());
-    } else if constexpr (reflection::is_std_optional_v<Type>) {
+    } else if constexpr (reflection::is_std_optional<Type>) {
         if (t) {
             write(out, true);
             write(out, std::move(t.value()));
         } else {
             write(out, false);
         }
-    } else if constexpr (is_absl_node_hash_set_v<Type>) {
+    } else if constexpr (is_absl_node_hash_set<Type>) {
         if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
             throw serde_exception(fmt_with_ctx(
               ssx::sformat,
@@ -278,7 +269,7 @@ void write(iobuf& out, T t) {
         for (auto& e : t) {
             write(out, e);
         }
-    } else if constexpr (is_absl_node_hash_map_v<Type>) {
+    } else if constexpr (is_absl_node_hash_map<Type>) {
         if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
             throw serde_exception(fmt_with_ctx(
               ssx::sformat,
@@ -290,7 +281,7 @@ void write(iobuf& out, T t) {
             write(out, v.first);
             write(out, std::move(v.second));
         }
-    } else if constexpr (is_std_unordered_map_v<Type>) {
+    } else if constexpr (is_std_unordered_map<Type>) {
         if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
             throw serde_exception(fmt_with_ctx(
               ssx::sformat,
@@ -313,7 +304,7 @@ void write(iobuf& out, T t) {
         for (auto& el : t) {
             write(out, std::move(el));
         }
-    } else if constexpr (reflection::is_tristate_v<T>) {
+    } else if constexpr (reflection::is_tristate<T>) {
         if (t.is_disabled()) {
             write<int8_t>(out, -1);
         } else if (!t.has_value()) {
@@ -496,16 +487,16 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
         } else {
             t = ss::le_to_cpu(in.consume_type<Type>());
         }
-    } else if constexpr (reflection::is_std_vector_v<Type>) {
+    } else if constexpr (reflection::is_std_vector<Type>) {
         using value_type = typename Type::value_type;
         const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
         t.reserve(size);
         for (auto i = 0U; i < size; ++i) {
             t.push_back(read_nested<value_type>(in, bytes_left_limit));
         }
-    } else if constexpr (reflection::is_named_type_v<Type>) {
+    } else if constexpr (reflection::is_rp_named_type<Type>) {
         t = Type{read_nested<typename Type::type>(in, bytes_left_limit)};
-    } else if constexpr (reflection::is_ss_bool_v<Type>) {
+    } else if constexpr (reflection::is_ss_bool_class<Type>) {
         t = Type{read_nested<int8_t>(in, bytes_left_limit) != 0};
     } else if constexpr (std::is_same_v<Type, std::chrono::milliseconds>) {
         t = std::chrono::milliseconds{
@@ -522,12 +513,12 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
           read_nested<serde_size_t>(in, bytes_left_limit));
         in.consume_to(str.size(), str.begin());
         t = str;
-    } else if constexpr (reflection::is_std_optional_v<Type>) {
+    } else if constexpr (reflection::is_std_optional<Type>) {
         t = read_nested<bool>(in, bytes_left_limit)
               ? Type{read_nested<typename Type::value_type>(
                 in, bytes_left_limit)}
               : std::nullopt;
-    } else if constexpr (is_absl_node_hash_set_v<Type>) {
+    } else if constexpr (is_absl_node_hash_set<Type>) {
         const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
         t.reserve(size);
         for (auto i = 0U; i < size; ++i) {
@@ -535,7 +526,7 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
               in, bytes_left_limit);
             t.emplace(std::move(elem));
         }
-    } else if constexpr (is_absl_node_hash_map_v<Type>) {
+    } else if constexpr (is_absl_node_hash_map<Type>) {
         const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
         t.reserve(size);
         for (auto i = 0U; i < size; ++i) {
@@ -545,7 +536,7 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
               in, bytes_left_limit);
             t.emplace(std::move(key), std::move(value));
         }
-    } else if constexpr (is_std_unordered_map_v<Type>) {
+    } else if constexpr (is_std_unordered_map<Type>) {
         const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
         t.reserve(size);
         for (auto i = 0U; i < size; ++i) {
@@ -562,7 +553,7 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
             t.push_back(read_nested<value_type>(in, bytes_left_limit));
         }
         t.shrink_to_fit();
-    } else if constexpr (reflection::is_tristate_v<T>) {
+    } else if constexpr (reflection::is_tristate<T>) {
         int8_t flag = read_nested<int8_t>(in, bytes_left_limit);
         if (flag == -1) {
             // disabled
