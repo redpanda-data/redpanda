@@ -1747,6 +1747,20 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         auto data = random_drain_status();
         roundtrip_test(data);
     }
+    {
+        std::vector<cluster::topic_status> topics;
+        for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
+            topics.push_back(random_topic_status());
+        }
+        cluster::node_health_report data{
+          .id = tests::random_named_int<model::node_id>(),
+          .local_state = random_local_state(),
+          .topics = topics,
+          .drain_status = random_drain_status(),
+        };
+        data.include_drain_status = true; // so adl considers drain status
+        roundtrip_test(data);
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {

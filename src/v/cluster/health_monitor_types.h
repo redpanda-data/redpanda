@@ -97,7 +97,8 @@ struct topic_status : serde::envelope<topic_status, serde::version<0>> {
  * Node health report is collected built based on node local state at given
  * instance of time
  */
-struct node_health_report {
+struct node_health_report
+  : serde::envelope<node_health_report, serde::version<0>> {
     static constexpr int8_t current_version = 2;
 
     model::node_id id;
@@ -133,7 +134,20 @@ struct node_health_report {
     bool include_drain_status{false}; // not serialized
     std::optional<drain_manager::drain_status> drain_status;
 
+    auto serde_fields() {
+        return std::tie(id, local_state, topics, drain_status);
+    }
+
     friend std::ostream& operator<<(std::ostream&, const node_health_report&);
+
+    friend bool
+    operator==(const node_health_report& a, const node_health_report& b) {
+        // include_drain_status is not serialized and is a signal to adl
+        // encoding. once adl is fully deprecated, the field can be removed and
+        // this changed to defaulted operator==.
+        return a.id == b.id && a.local_state == b.local_state
+               && a.topics == b.topics && a.drain_status == b.drain_status;
+    }
 };
 
 struct cluster_health_report {
