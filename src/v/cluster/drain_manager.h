@@ -10,6 +10,7 @@
  */
 #pragma once
 #include "cluster/fwd.h"
+#include "reflection/adl.h"
 #include "seastarx.h"
 
 #include <seastar/core/abort_source.hh>
@@ -93,3 +94,35 @@ private:
 };
 
 } // namespace cluster
+
+namespace reflection {
+template<>
+struct adl<cluster::drain_manager::drain_status> {
+    void to(iobuf& out, cluster::drain_manager::drain_status&& r) {
+        serialize(
+          out,
+          r.finished,
+          r.errors,
+          r.partitions,
+          r.eligible,
+          r.transferring,
+          r.failed);
+    }
+    cluster::drain_manager::drain_status from(iobuf_parser& in) {
+        auto finished = adl<bool>{}.from(in);
+        auto errors = adl<bool>{}.from(in);
+        auto partitions = adl<std::optional<size_t>>{}.from(in);
+        auto eligible = adl<std::optional<size_t>>{}.from(in);
+        auto transferring = adl<std::optional<size_t>>{}.from(in);
+        auto failed = adl<std::optional<size_t>>{}.from(in);
+        return {
+          .finished = finished,
+          .errors = errors,
+          .partitions = partitions,
+          .eligible = eligible,
+          .transferring = transferring,
+          .failed = failed,
+        };
+    }
+};
+} // namespace reflection
