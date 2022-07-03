@@ -1882,6 +1882,19 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         };
         roundtrip_test(data);
     }
+    {
+        std::vector<cluster::topic_result> results;
+        for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
+            results.push_back(cluster::topic_result{
+              model::random_topic_namespace(),
+              cluster::errc::source_topic_not_exists,
+            });
+        }
+        cluster::create_non_replicable_topics_reply data{
+          .results = results,
+        };
+        roundtrip_test(data);
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {

@@ -2077,9 +2077,17 @@ struct create_non_replicable_topics_request
     }
 };
 
-struct create_non_replicable_topics_reply {
+struct create_non_replicable_topics_reply
+  : serde::envelope<create_non_replicable_topics_reply, serde::version<0>> {
     static constexpr int8_t current_version = 1;
     std::vector<topic_result> results;
+
+    friend bool operator==(
+      const create_non_replicable_topics_reply&,
+      const create_non_replicable_topics_reply&)
+      = default;
+
+    auto serde_fields() { return std::tie(results); }
 };
 
 struct config_update_request final
