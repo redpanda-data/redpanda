@@ -468,7 +468,8 @@ void application::configure_admin_server() {
       controller.get(),
       std::ref(shard_table),
       std::ref(metadata_cache),
-      std::ref(archival_scheduler))
+      std::ref(archival_scheduler),
+      std::ref(_connection_cache))
       .get();
 }
 

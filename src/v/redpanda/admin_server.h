@@ -16,6 +16,7 @@
 #include "coproc/partition_manager.h"
 #include "model/metadata.h"
 #include "request_auth.h"
+#include "rpc/connection_cache.h"
 #include "seastarx.h"
 
 #include <seastar/core/scheduling.hh>
@@ -50,7 +51,8 @@ public:
       cluster::controller*,
       ss::sharded<cluster::shard_table>&,
       ss::sharded<cluster::metadata_cache>&,
-      ss::sharded<archival::scheduler_service>&);
+      ss::sharded<archival::scheduler_service>&,
+      ss::sharded<rpc::connection_cache>&);
 
     ss::future<> start();
     ss::future<> stop();
@@ -198,6 +200,7 @@ private:
     cluster::controller* _controller;
     ss::sharded<cluster::shard_table>& _shard_table;
     ss::sharded<cluster::metadata_cache>& _metadata_cache;
+    ss::sharded<rpc::connection_cache>& _connection_cache;
     request_authenticator _auth;
     bool _ready{false};
     ss::sharded<archival::scheduler_service>& _archival_service;
