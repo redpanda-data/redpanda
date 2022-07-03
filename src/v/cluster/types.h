@@ -1426,10 +1426,26 @@ struct create_topics_request
     }
 };
 
-struct create_topics_reply {
+struct create_topics_reply
+  : serde::envelope<create_topics_reply, serde::version<0>> {
     std::vector<topic_result> results;
     std::vector<model::topic_metadata> metadata;
     std::vector<topic_configuration> configs;
+
+    create_topics_reply() noexcept = default;
+    create_topics_reply(
+      std::vector<topic_result> results,
+      std::vector<model::topic_metadata> metadata,
+      std::vector<topic_configuration> configs)
+      : results(std::move(results))
+      , metadata(std::move(metadata))
+      , configs(std::move(configs)) {}
+
+    friend bool
+    operator==(const create_topics_reply&, const create_topics_reply&)
+      = default;
+
+    auto serde_fields() { return std::tie(results, metadata, configs); }
 };
 
 struct finish_partition_update_request

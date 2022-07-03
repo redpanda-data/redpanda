@@ -147,14 +147,13 @@ SEASTAR_THREAD_TEST_CASE(create_topics_reply) {
     md1.partitions = {pmd1};
     // clang-format off
     cluster::create_topics_reply req{
-      .results
-      = {cluster::topic_result(
+       {cluster::topic_result(
            model::topic_namespace(model::ns("default"), model::topic("tp-1")),
            cluster::errc::success),
          cluster::topic_result(
            model::topic_namespace(model::ns("default"), model::topic("tp-2")),
            cluster::errc::notification_wait_timeout)},
-      .metadata = {md1}};
+       {md1}, {}};
     // clang-format on
     auto res = serialize_roundtrip_rpc(std::move(req));
 
@@ -1935,6 +1934,29 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
             data.partitions.push_back(random_partition_metadata());
         }
         roundtrip_test(data);
+    }
+    {
+        cluster::create_topics_reply data;
+        for (auto i = 0, mi = random_generators::get_int(10); i < mi; ++i) {
+            data.results.push_back(cluster::topic_result{
+              model::random_topic_namespace(),
+              cluster::errc::source_topic_not_exists,
+            });
+        }
+        for (auto i = 0, mi = random_generators::get_int(10); i < mi; ++i) {
+            model::topic_metadata tm{model::random_topic_namespace()};
+            for (auto i = 0, mi = random_generators::get_int(10); i < mi; ++i) {
+                tm.partitions.push_back(random_partition_metadata());
+            }
+            data.metadata.push_back(tm);
+        }
+        for (auto i = 0, mi = random_generators::get_int(10); i < mi; ++i) {
+            data.configs.push_back(random_topic_configuration());
+        }
+        // adl serialization doesn't preserve equality for topic_configuration.
+        // serde serialization does and was added after support for adl so adl
+        // semantics are preserved.
+        serde_roundtrip_test(data);
     }
 }
 
