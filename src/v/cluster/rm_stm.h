@@ -335,16 +335,18 @@ private:
     abort_origin
     get_abort_origin(const model::producer_identity&, model::tx_seq) const;
 
+    ss::future<> checkpoint_in_memory_state() const;
+
     ss::future<> apply(model::record_batch) override;
     void apply_fence(model::record_batch&&);
     void apply_prepare(rm_stm::prepare_marker);
     ss::future<>
       apply_control(model::producer_identity, model::control_record_type);
     void apply_data(model::batch_identity, model::offset);
+    void apply_checkpoint(const model::record_batch&);
 
     ss::future<> reduce_aborted_list();
     ss::future<> offload_aborted_txns();
-
     // The state of this state machine maybe change via two paths
     //
     //   - by reading the already replicated commands from raft and

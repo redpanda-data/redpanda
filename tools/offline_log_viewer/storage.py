@@ -135,6 +135,7 @@ class BatchType(Enum):
     archival_metadata = 19
     cluster_config_cmd = 20
     feature_update = 21
+    tx_checkpoint = 22
     unknown = -1
 
     @classmethod
