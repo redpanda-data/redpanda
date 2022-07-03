@@ -1929,6 +1929,13 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         auto data = random_partition_metadata();
         roundtrip_test(data);
     }
+    {
+        model::topic_metadata data{model::random_topic_namespace()};
+        for (auto i = 0, mi = random_generators::get_int(10); i < mi; ++i) {
+            data.partitions.push_back(random_partition_metadata());
+        }
+        roundtrip_test(data);
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {

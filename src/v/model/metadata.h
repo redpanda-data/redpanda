@@ -369,13 +369,18 @@ struct topic_namespace_eq {
     }
 };
 
-struct topic_metadata {
+struct topic_metadata : serde::envelope<topic_metadata, serde::version<0>> {
+    topic_metadata() noexcept = default;
     explicit topic_metadata(topic_namespace v) noexcept
       : tp_ns(std::move(v)) {}
     topic_namespace tp_ns;
     std::vector<partition_metadata> partitions;
 
     friend std::ostream& operator<<(std::ostream&, const topic_metadata&);
+    friend bool operator==(const topic_metadata&, const topic_metadata&)
+      = default;
+
+    auto serde_fields() { return std::tie(tp_ns, partitions); }
 };
 
 inline std::ostream&
