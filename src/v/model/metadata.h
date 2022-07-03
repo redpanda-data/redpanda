@@ -244,7 +244,8 @@ struct broker_shard {
     }
 };
 
-struct partition_metadata {
+struct partition_metadata
+  : serde::envelope<partition_metadata, serde::version<0>> {
     partition_metadata() noexcept = default;
     explicit partition_metadata(partition_id p) noexcept
       : id(p) {}
@@ -253,6 +254,10 @@ struct partition_metadata {
     std::optional<model::node_id> leader_node;
 
     friend std::ostream& operator<<(std::ostream&, const partition_metadata&);
+    friend bool operator==(const partition_metadata&, const partition_metadata&)
+      = default;
+
+    auto serde_fields() { return std::tie(id, replicas, leader_node); }
 };
 
 enum class isolation_level : int8_t {

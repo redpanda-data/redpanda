@@ -940,6 +940,22 @@ cluster::cluster_health_report random_cluster_health_report() {
     return data;
 }
 
+model::partition_metadata random_partition_metadata() {
+    model::partition_metadata data{
+      tests::random_named_int<model::partition_id>(),
+    };
+    for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
+        data.replicas.push_back(model::broker_shard{
+          .node_id = tests::random_named_int<model::node_id>(),
+          .shard = random_generators::get_int<uint16_t>(128),
+        });
+    }
+    if (tests::random_bool()) {
+        data.leader_node = tests::random_named_int<model::node_id>();
+    }
+    return data;
+}
+
 SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     roundtrip_test(cluster::ntp_leader(
       model::random_ntp(),
@@ -1908,6 +1924,10 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         // equality, but also already existed prior to serde support being added
         // so only testing the serde case.
         serde_roundtrip_test(data);
+    }
+    {
+        auto data = random_partition_metadata();
+        roundtrip_test(data);
     }
 }
 
