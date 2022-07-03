@@ -631,7 +631,7 @@ adl<cluster::create_non_replicable_topics_request>::from(iobuf_parser& in) {
     auto topics = adl<std::vector<cluster::non_replicable_topic>>().from(in);
     auto timeout = adl<model::timeout_clock::duration>().from(in);
     return cluster::create_non_replicable_topics_request{
-      std::move(topics), timeout};
+      .topics = std::move(topics), .timeout = timeout};
 }
 
 void adl<cluster::create_non_replicable_topics_reply>::to(

@@ -2050,10 +2050,31 @@ struct feature_barrier_response
     auto serde_fields() { return std::tie(entered, complete); }
 };
 
-struct create_non_replicable_topics_request {
+struct create_non_replicable_topics_request
+  : serde::envelope<create_non_replicable_topics_request, serde::version<0>> {
     static constexpr int8_t current_version = 1;
     std::vector<non_replicable_topic> topics;
     model::timeout_clock::duration timeout;
+
+    friend bool operator==(
+      const create_non_replicable_topics_request&,
+      const create_non_replicable_topics_request&)
+      = default;
+
+    void serde_write(iobuf& out) {
+        using serde::write;
+        write(out, topics);
+        write(
+          out, std::chrono::duration_cast<std::chrono::milliseconds>(timeout));
+    }
+
+    void serde_read(iobuf_parser& in, const serde::header& h) {
+        using serde::read_nested;
+        topics = read_nested<std::vector<non_replicable_topic>>(
+          in, h._bytes_left_limit);
+        timeout = std::chrono::duration_cast<model::timeout_clock::duration>(
+          read_nested<std::chrono::milliseconds>(in, h._bytes_left_limit));
+    }
 };
 
 struct create_non_replicable_topics_reply {
