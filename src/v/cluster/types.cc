@@ -608,7 +608,8 @@ adl<cluster::create_topics_request>::from(iobuf_parser& in) {
     using underlying_t = std::vector<cluster::topic_configuration>;
     auto configs = adl<underlying_t>().from(in);
     auto timeout = adl<model::timeout_clock::duration>().from(in);
-    return cluster::create_topics_request{std::move(configs), timeout};
+    return cluster::create_topics_request{
+      .topics = std::move(configs), .timeout = timeout};
 }
 
 void adl<cluster::create_non_replicable_topics_request>::to(
