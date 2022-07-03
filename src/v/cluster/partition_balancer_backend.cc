@@ -139,6 +139,19 @@ ss::future<> partition_balancer_backend::do_tick() {
           plan_data.reassignments.size());
     }
 
+    _last_leader_term = _raft0->term();
+    _last_tick_time = ss::lowres_clock::now();
+    _last_violations = std::move(plan_data.violations);
+    if (
+      _topic_table.has_updates_in_progress()
+      || !plan_data.reassignments.empty()) {
+        _last_status = partition_balancer_status::in_progress;
+    } else if (plan_data.failed_reassignments_count > 0) {
+        _last_status = partition_balancer_status::stalled;
+    } else {
+        _last_status = partition_balancer_status::ready;
+    }
+
     co_await ss::max_concurrent_for_each(
       plan_data.reassignments,
       32,
@@ -163,6 +176,43 @@ ss::future<> partition_balancer_backend::do_tick() {
                   errc);
             });
       });
+}
+
+partition_balancer_overview_reply partition_balancer_backend::overview() const {
+    vassert(ss::this_shard_id() == shard, "called on a wrong shard");
+
+    partition_balancer_overview_reply ret;
+
+    if (_mode() != model::partition_autobalancing_mode::continuous) {
+        ret.status = partition_balancer_status::off;
+        ret.error = errc::feature_disabled;
+        return ret;
+    }
+
+    if (!is_leader()) {
+        ret.error = errc::not_leader;
+        return ret;
+    }
+
+    if (_raft0->term() != _last_leader_term) {
+        // we haven't done a single tick in this term yet, return empty response
+        ret.status = partition_balancer_status::starting;
+        ret.error = errc::success;
+        return ret;
+    }
+
+    ret.status = _last_status;
+    ret.violations = _last_violations;
+
+    auto now = ss::lowres_clock::now();
+    auto time_since_last_tick = now - _last_tick_time;
+    ret.last_tick_time = model::to_timestamp(
+      model::timestamp_clock::now()
+      - std::chrono::duration_cast<model::timestamp_clock::duration>(
+        time_since_last_tick));
+
+    ret.error = errc::success;
+    return ret;
 }
 
 } // namespace cluster

@@ -28,6 +28,13 @@ rpcgen(
   INCLUDES ${CMAKE_BINARY_DIR}/src/v
 )
 
+rpcgen(
+  TARGET partition_balancer_rpc
+  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/partition_balancer_rpc.json
+  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/partition_balancer_rpc_service.h
+  INCLUDES ${CMAKE_BINARY_DIR}/src/v
+)
+
 v_cc_library(
   NAME cluster
   SRCS
@@ -96,12 +103,14 @@ v_cc_library(
     read_replica_manager.cc
     partition_balancer_planner.cc
     partition_balancer_backend.cc
+    partition_balancer_rpc_handler.cc
   DEPS
     Seastar::seastar
     controller_rpc
     metadata_rpc
     id_allocator_rpc
     tx_gateway_rpc
+    partition_balancer_rpc
     v::raft
     Roaring::roaring
     absl::flat_hash_map

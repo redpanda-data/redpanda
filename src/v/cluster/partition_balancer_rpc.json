@@ -1,0 +1,14 @@
+{
+    "namespace": "cluster",
+    "service_name": "partition_balancer_rpc",
+    "includes": [
+        "cluster/partition_balancer_types.h"
+    ],
+    "methods": [
+        {
+            "name": "overview",
+            "input_type": "partition_balancer_overview_request",
+            "output_type": "partition_balancer_overview_reply"
+        }
+    ]
+}

@@ -12,6 +12,7 @@
 
 #include "cluster/controller_stm.h"
 #include "cluster/fwd.h"
+#include "cluster/partition_balancer_types.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "raft/consensus.h"
@@ -41,15 +42,23 @@ public:
     void start();
     ss::future<> stop();
 
+    bool is_enabled() const {
+        return _mode() == model::partition_autobalancing_mode::continuous;
+    }
+
+    bool is_leader() const { return _raft0->is_leader(); }
+
+    std::optional<model::node_id> leader_id() const {
+        return _raft0->get_leader_id();
+    }
+
+    partition_balancer_overview_reply overview() const;
+
 private:
     void tick();
     ss::future<> do_tick();
 
     void on_mode_changed();
-
-    bool is_enabled() const {
-        return _mode() == model::partition_autobalancing_mode::continuous;
-    }
 
 private:
     consensus_ptr _raft0;
@@ -65,6 +74,11 @@ private:
     config::binding<unsigned> _max_disk_usage_percent;
     config::binding<std::chrono::milliseconds> _tick_interval;
     config::binding<size_t> _movement_batch_size_bytes;
+
+    model::term_id _last_leader_term;
+    ss::lowres_clock::time_point _last_tick_time;
+    partition_balancer_violations _last_violations;
+    partition_balancer_status _last_status;
 
     ss::gate _gate;
     ss::timer<ss::lowres_clock> _timer;

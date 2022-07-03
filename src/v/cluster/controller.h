@@ -99,6 +99,10 @@ public:
 
     ss::sharded<shard_table>& get_shard_table() { return _shard_table; }
 
+    ss::sharded<partition_balancer_backend>& get_partition_balancer() {
+        return _partition_balancer;
+    }
+
     ss::sharded<ss::abort_source>& get_abort_source() { return _as; }
 
     bool is_raft0_leader() const {
