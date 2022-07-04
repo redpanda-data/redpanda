@@ -16,6 +16,28 @@ static ss::logger logger("partition_balancer_planner");
 
 using namespace std::chrono_literals;
 
+void check_violations(
+  const cluster::partition_balancer_planner::plan_data& plan_data,
+  const std::set<size_t>& expected_unavailable,
+  const std::set<size_t>& expected_full) {
+    std::vector<size_t> actual_unavailable;
+    for (const auto& n : plan_data.violations.unavailable_nodes) {
+        actual_unavailable.push_back(n.id());
+    }
+    std::sort(actual_unavailable.begin(), actual_unavailable.end());
+    BOOST_REQUIRE_EQUAL(
+      std::vector(expected_unavailable.begin(), expected_unavailable.end()),
+      actual_unavailable);
+
+    std::vector<size_t> actual_full;
+    for (const auto& n : plan_data.violations.full_nodes) {
+        actual_full.push_back(n.id);
+    }
+    std::sort(actual_full.begin(), actual_full.end());
+    BOOST_REQUIRE_EQUAL(
+      std::vector(expected_full.begin(), expected_full.end()), actual_full);
+}
+
 void check_expected_assignments(
   const std::vector<model::broker_shard>& replicas,
   const std::unordered_set<model::node_id>& expected_nodes) {
@@ -46,8 +68,9 @@ FIXTURE_TEST(test_stable, partition_balancer_planner_fixture) {
     auto hr = create_health_report();
     auto fm = create_follower_metrics();
 
-    auto reassignments = planner.get_ntp_reassignments(hr, fm);
-    BOOST_REQUIRE(reassignments.empty());
+    auto plan_data = planner.plan_reassignments(hr, fm);
+    check_violations(plan_data, {}, {});
+    BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 0);
 }
 
 /*
@@ -74,14 +97,16 @@ FIXTURE_TEST(test_node_down, partition_balancer_planner_fixture) {
     std::set<size_t> unavailable_nodes = {0};
     auto fm = create_follower_metrics(unavailable_nodes);
 
-    auto reassignments = planner.get_ntp_reassignments(hr, fm);
+    auto plan_data = planner.plan_reassignments(hr, fm);
 
-    BOOST_REQUIRE_EQUAL(reassignments.size(), 1);
+    check_violations(plan_data, unavailable_nodes, {});
+
+    BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 1);
 
     std::unordered_set<model::node_id> expected_nodes(
       {model::node_id(1), model::node_id(2), model::node_id(3)});
 
-    auto new_replicas = reassignments.front()
+    auto new_replicas = plan_data.reassignments.front()
                           .allocation_units.get_assignments()
                           .front()
                           .replicas;
@@ -112,8 +137,8 @@ FIXTURE_TEST(test_no_quorum_for_partition, partition_balancer_planner_fixture) {
     std::set<size_t> unavailable_nodes = {0, 1};
     auto fm = create_follower_metrics(unavailable_nodes);
 
-    auto reassignments = planner.get_ntp_reassignments(hr, fm);
-    BOOST_REQUIRE_EQUAL(reassignments.size(), 0);
+    auto plan_data = planner.plan_reassignments(hr, fm);
+    BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 0);
 }
 
 /*
@@ -145,14 +170,16 @@ FIXTURE_TEST(
     std::set<size_t> unavailable_nodes = {0};
     auto fm = create_follower_metrics(unavailable_nodes);
 
-    auto reassignments = planner.get_ntp_reassignments(hr, fm);
+    auto plan_data = planner.plan_reassignments(hr, fm);
 
-    BOOST_REQUIRE_EQUAL(reassignments.size(), 1);
+    check_violations(plan_data, unavailable_nodes, {});
+
+    BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 1);
 
     std::unordered_set<model::node_id> expected_nodes(
       {model::node_id(1), model::node_id(2), model::node_id(4)});
 
-    auto new_replicas = reassignments.front()
+    auto new_replicas = plan_data.reassignments.front()
                           .allocation_units.get_assignments()
                           .front()
                           .replicas;
@@ -184,13 +211,15 @@ FIXTURE_TEST(
     std::set<size_t> unavailable_nodes = {0};
     auto fm = create_follower_metrics(unavailable_nodes);
 
-    auto reassignments = planner.get_ntp_reassignments(hr, fm);
+    auto plan_data = planner.plan_reassignments(hr, fm);
 
-    BOOST_REQUIRE_EQUAL(reassignments.size(), 1);
+    check_violations(plan_data, unavailable_nodes, {});
+
+    BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 1);
 
     std::unordered_set<model::node_id> expected_nodes(
       {model::node_id(1), model::node_id(2), model::node_id(3)});
-    auto new_replicas = reassignments.front()
+    auto new_replicas = plan_data.reassignments.front()
                           .allocation_units.get_assignments()
                           .front()
                           .replicas;
@@ -223,9 +252,11 @@ FIXTURE_TEST(
     std::set<size_t> unavailable_nodes = {0};
     auto fm = create_follower_metrics(unavailable_nodes);
 
-    auto reassignments = planner.get_ntp_reassignments(hr, fm);
+    auto plan_data = planner.plan_reassignments(hr, fm);
 
-    BOOST_REQUIRE_EQUAL(reassignments.size(), 0);
+    check_violations(plan_data, unavailable_nodes, full_nodes);
+
+    BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 0);
 }
 
 /*
@@ -252,14 +283,16 @@ FIXTURE_TEST(test_move_from_full_node, partition_balancer_planner_fixture) {
 
     auto fm = create_follower_metrics();
 
-    auto reassignments = planner.get_ntp_reassignments(hr, fm);
+    auto plan_data = planner.plan_reassignments(hr, fm);
 
-    BOOST_REQUIRE_EQUAL(reassignments.size(), 1);
+    check_violations(plan_data, {}, full_nodes);
+
+    BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 1);
 
     std::unordered_set<model::node_id> expected_nodes(
       {model::node_id(1), model::node_id(2), model::node_id(3)});
 
-    auto new_replicas = reassignments.front()
+    auto new_replicas = plan_data.reassignments.front()
                           .allocation_units.get_assignments()
                           .front()
                           .replicas;
@@ -293,8 +326,11 @@ FIXTURE_TEST(
     std::set<size_t> unavailable_nodes = {0};
     auto fm = create_follower_metrics(unavailable_nodes);
 
-    auto reassignments = planner.get_ntp_reassignments(hr, fm);
+    auto plan_data = planner.plan_reassignments(hr, fm);
 
+    check_violations(plan_data, unavailable_nodes, {});
+
+    const auto& reassignments = plan_data.reassignments;
     BOOST_REQUIRE_EQUAL(reassignments.size(), 2);
 
     std::unordered_set<model::node_id> expected_nodes(
@@ -339,8 +375,10 @@ FIXTURE_TEST(
     auto hr = create_health_report(full_nodes);
     auto fm = create_follower_metrics();
 
-    auto reassignments = planner.get_ntp_reassignments(hr, fm);
+    auto plan_data = planner.plan_reassignments(hr, fm);
+    check_violations(plan_data, {}, full_nodes);
 
+    const auto& reassignments = plan_data.reassignments;
     BOOST_REQUIRE_EQUAL(reassignments.size(), 2);
 
     std::unordered_set<model::node_id> expected_nodes(
@@ -385,8 +423,10 @@ FIXTURE_TEST(
     std::set<size_t> unavailable_nodes = {0};
     auto fm = create_follower_metrics(unavailable_nodes);
 
-    auto reassignments = planner.get_ntp_reassignments(hr, fm);
+    auto plan_data = planner.plan_reassignments(hr, fm);
+    check_violations(plan_data, unavailable_nodes, full_nodes);
 
+    const auto& reassignments = plan_data.reassignments;
     BOOST_REQUIRE_EQUAL(reassignments.size(), 1);
 
     std::unordered_set<model::node_id> expected_nodes(
@@ -428,7 +468,11 @@ FIXTURE_TEST(test_move_part_of_replicas, partition_balancer_planner_fixture) {
     hr.node_reports[1].local_state.disks[0].free -= 1_MiB;
     hr.node_reports[2].local_state.disks[0].free -= 2_MiB;
 
-    auto reassignments = planner.get_ntp_reassignments(hr, fm);
+    auto plan_data = planner.plan_reassignments(hr, fm);
+
+    check_violations(plan_data, {}, full_nodes);
+
+    const auto& reassignments = plan_data.reassignments;
 
     BOOST_REQUIRE_EQUAL(reassignments.size(), 1);
 
@@ -482,9 +526,12 @@ FIXTURE_TEST(
         }
     }
 
-    auto reassignments = planner.get_ntp_reassignments(hr, fm);
+    auto plan_data = planner.plan_reassignments(hr, fm);
 
-    BOOST_REQUIRE_EQUAL(reassignments.size(), 2);
+    check_violations(plan_data, {}, full_nodes);
+
+    const auto& reassignments = plan_data.reassignments;
+    BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 2);
     std::unordered_set<model::node_id> expected_nodes({model::node_id(2)});
 
     auto new_replicas_1
@@ -536,7 +583,10 @@ FIXTURE_TEST(test_lot_of_partitions, partition_balancer_planner_fixture) {
     std::set<size_t> unavailable_nodes = {0};
     auto fm = create_follower_metrics(unavailable_nodes);
 
-    auto reassignments = planner.get_ntp_reassignments(hr, fm);
+    auto plan_data = planner.plan_reassignments(hr, fm);
+    check_violations(plan_data, unavailable_nodes, {});
+
+    const auto& reassignments = plan_data.reassignments;
     BOOST_REQUIRE_EQUAL(reassignments.size(), movement_batch_partitions_amount);
 
     std::unordered_set<model::node_id> expected_nodes(

@@ -118,7 +118,7 @@ ss::future<> partition_balancer_backend::do_tick() {
       = co_await _health_monitor.get_current_cluster_health_snapshot(
         cluster_report_filter{});
 
-    auto reassignments
+    auto plan_data
       = partition_balancer_planner(
           planner_config{
             .max_disk_usage_ratio = _max_disk_usage_percent() / 100.0,
@@ -127,10 +127,22 @@ ss::future<> partition_balancer_backend::do_tick() {
           },
           _topic_table,
           _partition_allocator)
-          .get_ntp_reassignments(health_report, _raft0->get_follower_metrics());
+          .plan_reassignments(health_report, _raft0->get_follower_metrics());
+
+    if (!plan_data.violations.is_empty()) {
+        vlog(
+          clusterlog.info,
+          "violations: {} unavailable nodes, {} full nodes; planned {} "
+          "reassignments",
+          plan_data.violations.unavailable_nodes.size(),
+          plan_data.violations.full_nodes.size(),
+          plan_data.reassignments.size());
+    }
 
     co_await ss::max_concurrent_for_each(
-      reassignments, 32, [this, current_term](ntp_reassignments& reassignment) {
+      plan_data.reassignments,
+      32,
+      [this, current_term](ntp_reassignments& reassignment) {
           vlog(
             clusterlog.info,
             "moving {} to {}",

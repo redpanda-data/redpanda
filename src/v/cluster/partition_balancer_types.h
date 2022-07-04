@@ -12,6 +12,7 @@
 
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/timestamp.h"
 
 namespace cluster {
 
@@ -34,6 +35,33 @@ struct node_disk_space {
 
     bool operator<(const node_disk_space& other) const {
         return free_space_rate < other.free_space_rate;
+    }
+};
+
+struct partition_balancer_violations {
+    struct unavailable_node {
+        model::node_id id;
+        model::timestamp unavailable_since;
+
+        unavailable_node(model::node_id id, model::timestamp unavailable_since)
+          : id(id)
+          , unavailable_since(unavailable_since) {}
+    };
+
+    struct full_node {
+        model::node_id id;
+        uint32_t disk_used_percent;
+
+        full_node(model::node_id id, uint32_t disk_used_percent)
+          : id(id)
+          , disk_used_percent(disk_used_percent) {}
+    };
+
+    std::vector<unavailable_node> unavailable_nodes;
+    std::vector<full_node> full_nodes;
+
+    bool is_empty() const {
+        return unavailable_nodes.empty() && full_nodes.empty();
     }
 };
 

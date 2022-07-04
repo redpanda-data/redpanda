@@ -38,7 +38,12 @@ public:
       topic_table& topic_table,
       partition_allocator& partition_allocator);
 
-    std::vector<ntp_reassignments> get_ntp_reassignments(
+    struct plan_data {
+        partition_balancer_violations violations;
+        std::vector<ntp_reassignments> reassignments;
+    };
+
+    plan_data plan_reassignments(
       const cluster_health_report&, const std::vector<raft::follower_metrics>&);
 
 private:
@@ -73,10 +78,12 @@ private:
       std::vector<ntp_reassignments>&, reallocation_request_state&);
 
     void calculate_nodes_with_disk_constraints_violation(
-      reallocation_request_state&);
+      reallocation_request_state&, partition_balancer_violations&);
 
     void calculate_unavailable_nodes(
-      const std::vector<raft::follower_metrics>&, reallocation_request_state&);
+      const std::vector<raft::follower_metrics>&,
+      reallocation_request_state&,
+      partition_balancer_violations&);
 
     size_t get_full_nodes_amount(
       const std::vector<model::broker_shard>& replicas,
@@ -91,7 +98,10 @@ private:
       const std::vector<model::broker_shard>& current_replicas,
       const reallocation_request_state&);
 
-    void init_ntp_sizes_and_node_disk_reports_from_health_report(
+    void init_node_disk_reports_from_health_report(
+      const cluster_health_report& health_report, reallocation_request_state&);
+
+    void init_ntp_sizes_from_health_report(
       const cluster_health_report& health_report, reallocation_request_state&);
 
     std::optional<size_t> get_partition_size(
