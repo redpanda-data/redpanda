@@ -118,7 +118,7 @@ else ()
 endif()
 ExternalProject_Add(boost
   # Boost outcome is only installed on boost 1.70.0+
-  URL https://storage.googleapis.com/vectorizedio-public/dependencies/boost_1_75_0.tar.gz
+  URL https://boostorg.jfrog.io/artifactory/main/release/1.75.0/source/boost_1_75_0.tar.gz
   URL_MD5 38813f6feb40387dfe90160debd71251
   INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
   PATCH_COMMAND
@@ -149,6 +149,19 @@ ExternalProject_Add(boost
     hardcode-dll-paths=true
     dll-path=@REDPANDA_DEPS_INSTALL_DIR@/lib)
 
+ExternalProject_Add(cryptopp
+  URL https://github.com/weidai11/cryptopp/archive/refs/tags/CRYPTOPP_8_5_0.tar.gz
+  URL_MD5 5968e6014dc6ae5199e3987fb39cf8d3
+  PATCH_COMMAND
+    COMMAND curl -s -o CMakeLists.txt https://raw.githubusercontent.com/noloader/cryptopp-cmake/CRYPTOPP_8_5_0/CMakeLists.txt
+    COMMAND curl -s -o cryptopp-config.cmake https://raw.githubusercontent.com/noloader/cryptopp-cmake/CRYPTOPP_8_5_0/cryptopp-config.cmake
+  INSTALL_DIR @REDPANDA_DEPS_INSTALL_DIR@
+  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  DEPENDS ${default_depends}
+  CMAKE_ARGS
+     ${common_cmake_args}
+    -DBUILD_TESTING=OFF)
+
 ExternalProject_Add(seastar
   GIT_REPOSITORY https://github.com/vectorizedio/seastar.git
   GIT_TAG a65207afcbaae84d4bc720a7d22995f21f5ff7b2
@@ -171,10 +184,10 @@ ExternalProject_Add(seastar
     -DSeastar_CXX_DIALECT=c++20
     -DSeastar_UNUSED_RESULT_ERROR=ON
   INSTALL_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --target install
-  DEPENDS ${default_depends} boost)
+  DEPENDS ${default_depends} boost cryptopp)
 
 ExternalProject_Add(HdrHistogram
-  URL https://storage.googleapis.com/vectorizedio-public/dependencies/HdrHistogram_c-0.11.2.tar.gz
+  URL https://github.com/HdrHistogram/HdrHistogram_c/archive/refs/tags/0.11.2.tar.gz
   URL_MD5 95970dea64f1a7a8d199aeb9f7c15e60
   INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}

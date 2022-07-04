@@ -27,7 +27,7 @@ docker run \
 If you need rebuild the toolchain image locally:
 
 ```bash
-docker build \
+DOCKER_BUILDKIT=1 docker build \
   -t vectorized/redpanda-toolchain \
   -f tools/docker/Dockerfile \
   .
