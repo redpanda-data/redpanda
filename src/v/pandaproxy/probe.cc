@@ -23,15 +23,26 @@ probe::probe(ss::httpd::path_description& path_desc)
         return;
     }
     namespace sm = ss::metrics;
+
+    auto operation_label = sm::label("operation");
     std::vector<sm::label_instance> labels{
-      sm::label("operation")(path_desc.operations.nickname)};
+      operation_label(path_desc.operations.nickname)};
+
+    auto aggregate_labels = std::vector<sm::label>{
+      sm::shard_label, operation_label};
+    auto internal_aggregate_labels
+      = config::shard_local_cfg().aggregate_metrics()
+          ? aggregate_labels
+          : std::vector<sm::label>{};
+
     _metrics.add_group(
       "pandaproxy",
       {sm::make_histogram(
-        "request_latency",
-        sm::description("Request latency"),
-        std::move(labels),
-        [this] { return _request_hist.seastar_histogram_logform(); })});
+         "request_latency",
+         sm::description("Request latency"),
+         labels,
+         [this] { return _request_hist.seastar_histogram_logform(); })
+         .aggregate(internal_aggregate_labels)});
 }
 
 } // namespace pandaproxy

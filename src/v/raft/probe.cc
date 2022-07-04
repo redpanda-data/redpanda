@@ -33,6 +33,11 @@ probe::create_metric_labels(const model::ntp& ntp) {
 void probe::setup_metrics(const model::ntp& ntp) {
     namespace sm = ss::metrics;
     auto labels = create_metric_labels(ntp);
+    auto aggregate_labels
+      = config::shard_local_cfg().aggregate_metrics()
+          ? std::vector<sm::label>{sm::shard_label, sm::label("partition")}
+          : std::vector<sm::label>{};
+    ;
 
     _metrics.add_group(
       prometheus_sanitize::metrics_name("raft"),
@@ -40,70 +45,83 @@ void probe::setup_metrics(const model::ntp& ntp) {
          "received_vote_requests",
          [this] { return _vote_requests; },
          sm::description("Number of vote requests received"),
-         labels),
+         labels)
+         .aggregate(aggregate_labels),
        sm::make_counter(
          "received_append_requests",
          [this] { return _append_requests; },
          sm::description("Number of append requests received"),
-         labels),
+         labels)
+         .aggregate(aggregate_labels),
        sm::make_counter(
          "sent_vote_requests",
          [this] { return _vote_requests_sent; },
          sm::description("Number of vote requests sent"),
-         labels),
+         labels)
+         .aggregate(aggregate_labels),
        sm::make_counter(
          "replicate_ack_all_requests",
          [this] { return _replicate_requests_ack_all; },
          sm::description(
            "Number of replicate requests with quorum ack consistency"),
-         labels),
+         labels)
+         .aggregate(aggregate_labels),
        sm::make_counter(
          "replicate_ack_leader_requests",
          [this] { return _replicate_requests_ack_leader; },
          sm::description(
            "Number of replicate requests with leader ack consistency"),
-         labels),
+         labels)
+         .aggregate(aggregate_labels),
        sm::make_counter(
          "replicate_ack_none_requests",
          [this] { return _replicate_requests_ack_none; },
          sm::description(
            "Number of replicate requests with no ack consistency"),
-         labels),
+         labels)
+         .aggregate(aggregate_labels),
        sm::make_counter(
          "done_replicate_requests",
          [this] { return _replicate_requests_done; },
          sm::description("Number of finished replicate requests"),
-         labels),
+         labels)
+         .aggregate(aggregate_labels),
        sm::make_counter(
          "log_flushes",
          [this] { return _log_flushes; },
          sm::description("Number of log flushes"),
-         labels),
+         labels)
+         .aggregate(aggregate_labels),
        sm::make_counter(
          "log_truncations",
          [this] { return _log_truncations; },
          sm::description("Number of log truncations"),
-         labels),
+         labels)
+         .aggregate(aggregate_labels),
        sm::make_counter(
          "leadership_changes",
          [this] { return _leadership_changes; },
          sm::description("Number of leadership changes"),
-         labels),
+         labels)
+         .aggregate(aggregate_labels),
        sm::make_counter(
          "replicate_request_errors",
          [this] { return _replicate_request_error; },
          sm::description("Number of failed replicate requests"),
-         labels),
+         labels)
+         .aggregate(aggregate_labels),
        sm::make_counter(
          "heartbeat_requests_errors",
          [this] { return _heartbeat_request_error; },
          sm::description("Number of failed heartbeat requests"),
-         labels),
+         labels)
+         .aggregate(aggregate_labels),
        sm::make_counter(
          "recovery_requests_errors",
          [this] { return _recovery_request_error; },
          sm::description("Number of failed recovery requests"),
-         labels)});
+         labels)
+         .aggregate(aggregate_labels)});
 }
 
 } // namespace raft

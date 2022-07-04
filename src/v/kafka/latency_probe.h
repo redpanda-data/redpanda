@@ -28,18 +28,23 @@ public:
         }
         std::vector<sm::label_instance> labels{
           sm::label("latency_metric")("microseconds")};
+        auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
+                                  ? std::vector<sm::label>{sm::shard_label}
+                                  : std::vector<sm::label>{};
         _metrics.add_group(
           prometheus_sanitize::metrics_name("kafka:latency"),
           {sm::make_histogram(
              "fetch_latency_us",
              sm::description("Fetch Latency"),
              labels,
-             [this] { return _fetch_latency.seastar_histogram_logform(); }),
+             [this] { return _fetch_latency.seastar_histogram_logform(); })
+             .aggregate(aggregate_labels),
            sm::make_histogram(
              "produce_latency_us",
              sm::description("Produce Latency"),
              labels,
-             [this] { return _produce_latency.seastar_histogram_logform(); })});
+             [this] { return _produce_latency.seastar_histogram_logform(); })
+             .aggregate(aggregate_labels)});
     }
 
     std::unique_ptr<hdr_hist::measurement> auto_produce_measurement() {
