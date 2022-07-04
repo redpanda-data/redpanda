@@ -2104,6 +2104,7 @@ group::offset_commit_stages group::store_offsets(offset_commit_request&& r) {
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
     auto replicate_stages = _partition->raft()->replicate_in_stages(
+      _term,
       std::move(reader),
       raft::replicate_options(raft::consistency_level::quorum_ack));
 
@@ -2493,6 +2494,7 @@ ss::future<error_code> group::remove() {
 
     try {
         auto result = co_await _partition->raft()->replicate(
+          _term,
           std::move(reader),
           raft::replicate_options(raft::consistency_level::quorum_ack));
         if (result) {
@@ -2573,6 +2575,7 @@ group::remove_topic_partitions(const std::vector<model::topic_partition>& tps) {
 
     try {
         auto result = co_await _partition->raft()->replicate(
+          _term,
           std::move(reader),
           raft::replicate_options(raft::consistency_level::quorum_ack));
         if (result) {
@@ -2600,6 +2603,7 @@ group::remove_topic_partitions(const std::vector<model::topic_partition>& tps) {
 ss::future<result<raft::replicate_result>>
 group::store_group(model::record_batch batch) {
     return _partition->raft()->replicate(
+      _term,
       model::make_memory_record_batch_reader(std::move(batch)),
       raft::replicate_options(raft::consistency_level::quorum_ack));
 }
