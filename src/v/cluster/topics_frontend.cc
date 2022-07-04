@@ -34,6 +34,7 @@
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/loop.hh>
 
 #include <algorithm>
 #include <iterator>
@@ -801,6 +802,104 @@ ss::future<topic_result> topics_frontend::do_create_partition(
           std::current_exception());
         co_return topic_result(std::move(tp_ns), errc::replication_error);
     }
+}
+
+ss::future<result<std::vector<move_cancellation_result>>>
+topics_frontend::cancel_moving_partition_replicas_node(
+  model::node_id node_id,
+  partition_move_direction dir,
+  model::timeout_clock::time_point timeout) {
+    using ret_t = result<std::vector<move_cancellation_result>>;
+    auto leader = _leaders.local().get_leader(model::controller_ntp);
+
+    // no leader available
+    if (!leader) {
+        co_return errc::no_leader_controller;
+    }
+    if (leader == _self) {
+        switch (dir) {
+        case partition_move_direction::from_node:
+            co_return co_await do_cancel_moving_partition_replicas(
+              _topics.local().ntps_moving_from_node(node_id), timeout);
+        case partition_move_direction::to_node:
+            co_return co_await do_cancel_moving_partition_replicas(
+              _topics.local().ntps_moving_to_node(node_id), timeout);
+        case partition_move_direction::all:
+            co_return co_await do_cancel_moving_partition_replicas(
+              _topics.local().all_ntps_moving_per_node(node_id), timeout);
+        }
+        __builtin_unreachable();
+    }
+
+    co_return co_await _connections.local()
+      .with_node_client<controller_client_protocol>(
+        _self,
+        ss::this_shard_id(),
+        *leader,
+        timeout,
+        [timeout, node_id, dir](controller_client_protocol client) mutable {
+            return client
+              .cancel_node_partition_movements(
+                cancel_node_partition_movements_request{
+                  .node_id = node_id, .direction = dir},
+                rpc::client_opts(timeout))
+              .then(&rpc::get_ctx_data<cancel_partition_movements_reply>);
+        })
+      .then([](result<cancel_partition_movements_reply> r) {
+          return r.has_error() ? ret_t(r.error())
+                               : std::move(r.value().partition_results);
+      });
+}
+
+ss::future<result<std::vector<move_cancellation_result>>>
+topics_frontend::cancel_moving_all_partition_replicas(
+  model::timeout_clock::time_point timeout) {
+    using ret_t = result<std::vector<move_cancellation_result>>;
+    auto leader = _leaders.local().get_leader(model::controller_ntp);
+
+    // no leader available
+    if (!leader) {
+        co_return errc::no_leader_controller;
+    }
+    if (leader == _self) {
+        co_return co_await do_cancel_moving_partition_replicas(
+          _topics.local().all_updates_in_progress(), timeout);
+    }
+
+    co_return co_await _connections.local()
+      .with_node_client<controller_client_protocol>(
+        _self,
+        ss::this_shard_id(),
+        *leader,
+        timeout,
+        [timeout](controller_client_protocol client) mutable {
+            return client
+              .cancel_all_partition_movements(
+                cancel_all_partition_movements_request{},
+                rpc::client_opts(timeout))
+              .then(&rpc::get_ctx_data<cancel_partition_movements_reply>);
+        })
+      .then([](result<cancel_partition_movements_reply> r) {
+          return r.has_error() ? ret_t(r.error())
+                               : std::move(r.value().partition_results);
+      });
+}
+
+ss::future<std::vector<move_cancellation_result>>
+topics_frontend::do_cancel_moving_partition_replicas(
+  std::vector<model::ntp> ntps, model::timeout_clock::time_point timeout) {
+    std::vector<move_cancellation_result> results;
+    results.reserve(ntps.size());
+    co_await ss::max_concurrent_for_each(
+      ntps, 32, [this, &results, timeout](model::ntp& ntp) {
+          return cancel_moving_partition_replicas(ntp, timeout)
+            .then([ntp = std::move(ntp), &results](std::error_code ec) mutable {
+                results.emplace_back(
+                  std::move(ntp), map_update_interruption_error_code(ec));
+            });
+      });
+
+    co_return results;
 }
 
 } // namespace cluster

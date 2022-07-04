@@ -19,6 +19,7 @@
 #include "cluster/read_replica_manager.h"
 #include "cluster/scheduling/types.h"
 #include "cluster/topic_table.h"
+#include "cluster/types.h"
 #include "model/metadata.h"
 #include "model/record.h"
 #include "model/timeout_clock.h"
@@ -107,6 +108,15 @@ public:
     void disable_partition_movement() { _partition_movement_disabled = true; }
     void enable_partition_movement() { _partition_movement_disabled = false; }
 
+    ss::future<result<std::vector<move_cancellation_result>>>
+      cancel_moving_partition_replicas_node(
+        model::node_id,
+        partition_move_direction,
+        model::timeout_clock::time_point);
+
+    ss::future<result<std::vector<move_cancellation_result>>>
+      cancel_moving_all_partition_replicas(model::timeout_clock::time_point);
+
 private:
     using ntp_leader = std::pair<model::ntp, model::node_id>;
 
@@ -149,6 +159,10 @@ private:
 
     ss::future<topic_result> do_create_partition(
       create_partitions_configuration, model::timeout_clock::time_point);
+
+    ss::future<std::vector<move_cancellation_result>>
+      do_cancel_moving_partition_replicas(
+        std::vector<model::ntp>, model::timeout_clock::time_point);
 
     model::node_id _self;
     ss::sharded<controller_stm>& _stm;

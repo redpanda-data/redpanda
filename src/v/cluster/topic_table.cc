@@ -775,6 +775,28 @@ topic_table::get_previous_replica_set(const model::ntp& ntp) const {
 }
 
 std::vector<model::ntp>
+topic_table::all_ntps_moving_per_node(model::node_id node) const {
+    std::vector<model::ntp> ret;
+
+    for (const auto& [ntp, state] : _updates_in_progress) {
+        auto current_assignment = get_partition_assignment(ntp);
+        if (unlikely(!current_assignment)) {
+            continue;
+        }
+        const auto in_previous = contains_node(state.previous_replicas, node);
+        const auto in_current = contains_node(
+          current_assignment->replicas, node);
+
+        if ((in_previous && in_current) || (!in_previous && !in_current)) {
+            continue;
+        }
+
+        ret.push_back(ntp);
+    }
+    return ret;
+}
+
+std::vector<model::ntp>
 topic_table::ntps_moving_to_node(model::node_id node) const {
     std::vector<model::ntp> ret;
 

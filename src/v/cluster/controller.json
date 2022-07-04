@@ -110,6 +110,16 @@
             "name": "hello",
             "input_type": "hello_request",
             "output_type": "hello_reply"
+        },
+        {
+            "name": "cancel_all_partition_movements",
+            "input_type": "cancel_all_partition_movements_request",
+            "output_type": "cancel_partition_movements_reply"
+        },
+        {
+            "name": "cancel_node_partition_movements",
+            "input_type": "cancel_node_partition_movements_request",
+            "output_type": "cancel_partition_movements_reply"
         }
     ]
 }

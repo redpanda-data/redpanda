@@ -37,6 +37,7 @@
 #include <chrono>
 #include <cstdint>
 #include <optional>
+#include <vector>
 
 using namespace std::chrono_literals; // NOLINT
 
@@ -2293,6 +2294,17 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           .result = raft::append_entries_reply::status::group_unavailable,
         };
         roundtrip_test(data);
+    }
+    {
+        cluster::cancel_node_partition_movements_request request{
+          .node_id = tests::random_named_int<model::node_id>(),
+          .direction = random_generators::random_choice(
+            std::vector<cluster::partition_move_direction>{
+              cluster::partition_move_direction::from_node,
+              cluster::partition_move_direction::to_node,
+              cluster::partition_move_direction::all}),
+        };
+        roundtrip_test(request);
     }
 }
 

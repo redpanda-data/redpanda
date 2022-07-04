@@ -101,7 +101,14 @@ public:
     ss::future<hello_reply>
     hello(hello_request&&, rpc::streaming_context&) final;
 
+    ss::future<cancel_partition_movements_reply> cancel_all_partition_movements(
+      cancel_all_partition_movements_request&&, rpc::streaming_context&) final;
+    ss::future<cancel_partition_movements_reply>
+    cancel_node_partition_movements(
+      cancel_node_partition_movements_request&&, rpc::streaming_context&) final;
+
 private:
+    static constexpr auto default_move_interruption_timeout = 10s;
     std::
       pair<std::vector<model::topic_metadata>, std::vector<topic_configuration>>
       fetch_metadata_and_cfg(const std::vector<topic_result>&);
@@ -123,6 +130,13 @@ private:
 
     ss::future<get_cluster_health_reply>
       do_get_cluster_health_report(get_cluster_health_request);
+
+    ss::future<cancel_partition_movements_reply>
+      do_cancel_all_partition_movements(cancel_all_partition_movements_request);
+
+    ss::future<cancel_partition_movements_reply>
+      do_cancel_node_partition_movements(
+        cancel_node_partition_movements_request);
 
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<members_manager>& _members_manager;
