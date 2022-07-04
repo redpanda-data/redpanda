@@ -12,6 +12,34 @@
 
 namespace cloud_roles {
 
+std::ostream& operator<<(std::ostream& os, api_request_error_kind kind) {
+    switch (kind) {
+    case api_request_error_kind::failed_abort:
+        return os << "failed_abort";
+    case api_request_error_kind::failed_retryable:
+        return os << "failed_retryable";
+    }
+}
+
+std::ostream&
+operator<<(std::ostream& os, const api_request_error& request_error) {
+    fmt::print(
+      os,
+      "api_request_error{{reason:{}, error_kind:{}}}",
+      request_error.reason,
+      request_error.error_kind);
+    return os;
+}
+
+std::ostream&
+operator<<(std::ostream& os, const malformed_api_response_error& err) {
+    fmt::print(
+      os,
+      "malformed_api_response_error{{missing_fields:{}}}",
+      err.missing_fields);
+    return os;
+}
+
 std::ostream& operator<<(std::ostream& os, const gcp_credentials& gc) {
     fmt::print(
       os, "gcp_credentials{{oauth_token:**{}**}}", gc.oauth_token().size());

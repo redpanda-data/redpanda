@@ -14,6 +14,7 @@
 #include "seastarx.h"
 #include "utils/named_type.h"
 
+#include <seastar/core/metrics.hh>
 #include <seastar/core/sstring.hh>
 
 #include <boost/beast/http/status.hpp>
@@ -21,6 +22,39 @@
 #include <unordered_set>
 
 namespace cloud_roles {
+
+static constexpr auto retryable_system_error_codes = std::to_array(
+  {ECONNREFUSED, ENETUNREACH, ETIMEDOUT, ECONNRESET, EPIPE});
+
+static constexpr auto retryable_http_status = std::to_array({
+  boost::beast::http::status::request_timeout,
+  boost::beast::http::status::gateway_timeout,
+  boost::beast::http::status::bad_gateway,
+  boost::beast::http::status::service_unavailable,
+  boost::beast::http::status::internal_server_error,
+  boost::beast::http::status::network_connect_timeout_error,
+});
+
+enum class api_request_error_kind { failed_abort, failed_retryable };
+
+std::ostream& operator<<(std::ostream& os, api_request_error_kind kind);
+
+struct api_request_error {
+    ss::sstring reason;
+    api_request_error_kind error_kind;
+};
+
+std::ostream&
+operator<<(std::ostream& os, const api_request_error& request_error);
+
+using api_response = std::variant<iobuf, api_request_error>;
+
+struct malformed_api_response_error {
+    std::vector<ss::sstring> missing_fields;
+};
+
+std::ostream&
+operator<<(std::ostream& os, const malformed_api_response_error& err);
 
 using oauth_token_str = named_type<ss::sstring, struct oauth_token_str_tag>;
 
