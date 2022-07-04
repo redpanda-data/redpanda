@@ -29,6 +29,16 @@
 
 namespace cluster {
 
+kafka_stages::kafka_stages(
+  ss::future<> enq, ss::future<result<kafka_result>> offset_future)
+  : request_enqueued(std::move(enq))
+  , replicate_finished(std::move(offset_future)) {}
+
+kafka_stages::kafka_stages(raft::errc ec)
+  : request_enqueued(ss::now())
+  , replicate_finished(
+      ss::make_ready_future<result<kafka_result>>(make_error_code(ec))){};
+
 bool topic_properties::is_compacted() const {
     if (!cleanup_policy_bitflags) {
         return false;
