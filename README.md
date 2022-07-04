@@ -1,7 +1,7 @@
 
 # Redpanda
 [![Documentation](https://img.shields.io/badge/documentation-black)](https://redpanda.com/documentation)
-[![Slack](https://img.shields.io/badge/slack-purple)](https://redpanda.com/slack)
+[![Slack](https://img.shields.io/badge/slack-purple)](https://join.slack.com/t/redpandacommunity/shared_invite/zt-ng2ze1uv-l5VMWSGQHB9gp47~kNnYGA/)
 [![Twitter](https://img.shields.io/twitter/follow/redpandadata.svg?style=social&label=Follow)](https://twitter.com/intent/follow?screen_name=redpandadata)
 ![Go](https://github.com/redpanda-data/redpanda/workflows/Go/badge.svg)
 ![C++](https://github.com/redpanda-data/redpanda/workflows/build-test/badge.svg)
