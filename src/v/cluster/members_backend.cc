@@ -704,7 +704,7 @@ operator<<(std::ostream& o, const members_backend::partition_reallocation& r) {
     fmt::print(
       o,
       "{{ntp: {}, constraints: {},  allocated: {}, state: "
-      "{},replicas_to_remove: [}}",
+      "{},replicas_to_remove: [",
       r.ntp,
       r.constraints,
       !r.new_replica_set.empty(),
@@ -718,7 +718,7 @@ operator<<(std::ostream& o, const members_backend::partition_reallocation& r) {
             fmt::print(o, ", {}", *it);
         }
     }
-    fmt::print(o, "]");
+    fmt::print(o, "]}}");
     return o;
 }
 std::ostream&
