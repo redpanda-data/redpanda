@@ -47,6 +47,7 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/record.h"
+#include "model/timeout_clock.h"
 #include "net/dns.h"
 #include "raft/types.h"
 #include "redpanda/admin/api-doc/broker.json.h"
@@ -649,6 +650,24 @@ ss::future<> admin_server::throw_on_error(
         throw ss::httpd::server_error_exception(
           fmt::format("Unexpected error: {}", ec.message()));
     }
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::cancel_node_partition_moves(
+  ss::httpd::request& req, cluster::partition_move_direction direction) {
+    auto node_id = parse_broker_id(req);
+    auto res = co_await _controller->get_topics_frontend()
+                 .local()
+                 .cancel_moving_partition_replicas_node(
+                   node_id, direction, model::timeout_clock::now() + 5s);
+
+    if (res.has_error()) {
+        co_await throw_on_error(
+          req, res.error(), model::controller_ntp, node_id);
+    }
+
+    co_return ss::json::json_return_type(
+      co_await map_partition_results(std::move(res.value())));
 }
 
 bool str_to_bool(std::string_view s) {
@@ -1955,6 +1974,12 @@ void admin_server::register_broker_routes() {
               }
           }
           co_return res;
+      });
+    register_route<superuser>(
+      ss::httpd::broker_json::cancel_partition_moves,
+      [this](std::unique_ptr<ss::httpd::request> req) {
+          return cancel_node_partition_moves(
+            *req, cluster::partition_move_direction::all);
       });
 }
 
