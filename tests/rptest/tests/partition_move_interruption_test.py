@@ -1,5 +1,7 @@
+from copyreg import dispatch_table
 import random
 from urllib.error import HTTPError
+from numpy import partition
 
 import requests
 from rptest.services.cluster import cluster
@@ -16,6 +18,10 @@ from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, SISettings
 
 NO_RECOVERY = "no_recovery"
 RESTART_RECOVERY = "restart_recovery"
+
+
+def is_in_replica_set(replicas, id):
+    return next((r for r in replicas if r['node_id'] == id), None) is not None
 
 
 class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
@@ -53,9 +59,8 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
 
         return selected, replacements
 
-    def _random_move(self, unclean_abort):
+    def _dispatch_move(self, partition):
         admin = Admin(self.redpanda)
-        partition = random.randint(0, self.partition_count - 1)
 
         assignments = self._get_assignments(admin, self.topic, partition)
         prev_assignments = assignments.copy()
@@ -74,12 +79,16 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
 
         admin.set_partition_replicas(self.topic, partition, assignments)
 
+        return prev_assignments, assignments
+
+    def _cancel_move(self, unclean_abort, partition, previous_assignment):
+        admin = Admin(self.redpanda)
+
         def move_in_progress():
             p = admin.get_partitions(self.topic, partition)
             return p['status'] == 'in_progress'
 
         wait_until(move_in_progress, 10, 1)
-
         try:
             if unclean_abort:
                 admin.force_abort_partition_move(self.topic, partition)
@@ -91,7 +100,15 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
             return
 
         # wait for previous assignment
-        self._wait_post_move(self.topic, partition, prev_assignments, 60)
+        self._wait_post_move(self.topic, partition, previous_assignment, 60)
+
+    def _random_move(self, unclean_abort):
+        partition = random.randint(0, self.partition_count - 1)
+        prev_assignment, _ = self._dispatch_move(partition)
+
+        self._cancel_move(unclean_abort=unclean_abort,
+                          partition=partition,
+                          previous_assignment=prev_assignment)
 
     def _throttle_recovery(self, new_value):
         self.redpanda.set_cluster_config(
@@ -243,3 +260,123 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
 
         self.producer.stop()
         self.consumer.stop()
+
+    @cluster(num_nodes=7)
+    def test_cancelling_all_moves_in_cluster(self):
+        """
+        Cancel all partition moves in the cluster
+        """
+        self.start_redpanda(num_nodes=5,
+                            extra_rp_conf={
+                                "default_topic_replications": 3,
+                            })
+
+        spec = TopicSpec(partition_count=self.partition_count,
+                         replication_factor=3)
+
+        self.client().create_topic(spec)
+        self.topic = spec.name
+
+        self.start_producer(1, throughput=self.throughput)
+        self.start_consumer(1)
+        self.await_startup()
+        # throttle recovery to prevent partition move from finishing
+        self._throttle_recovery(10)
+        current_movements = {}
+        partitions = list(range(0, self.partition_count))
+        for _ in range(self.partition_count - 1):
+            partition = random.choice(partitions)
+            partitions.remove(partition)
+            current_movements[partition] = self._dispatch_move(partition)
+
+        self.logger.info(f"moving {current_movements}")
+
+        admin = Admin(self.redpanda)
+        ongoing = admin.list_reconfigurations()
+        assert len(ongoing) > 0
+
+        admin.cancel_all_reconfigurations()
+
+        wait_until(lambda: len(admin.list_reconfigurations()) == 0, 60, 1)
+
+        self.run_validation(enable_idempotence=False,
+                            consumer_timeout_sec=60,
+                            min_records=self.min_records)
+
+    def is_moving_to_node(previous_replicas, current_replicas, id):
+        return is_in_replica_set(
+            current_replicas,
+            id) and not is_in_replica_set(previous_replicas, id)
+
+    def is_moving_from_node(previous_replicas, current_replicas, id):
+        return is_in_replica_set(
+            previous_replicas,
+            id) and not is_in_replica_set(current_replicas, id)
+
+    @cluster(num_nodes=7)
+    def test_cancelling_all_moves_from_node(self):
+        """
+        Cancel all partition moves directed to/from given node
+        """
+        self.start_redpanda(num_nodes=5,
+                            extra_rp_conf={
+                                "default_topic_replications": 3,
+                            })
+
+        spec = TopicSpec(partition_count=self.partition_count,
+                         replication_factor=3)
+
+        self.client().create_topic(spec)
+        self.topic = spec.name
+
+        self.start_producer(1, throughput=self.throughput)
+        self.start_consumer(1)
+        self.await_startup()
+        # throttle recovery to prevent partition move from finishing
+        self._throttle_recovery(10)
+        current_movements = {}
+        partitions = list(range(0, self.partition_count))
+        for _ in range(self.partition_count - 1):
+            partition = random.choice(partitions)
+            partitions.remove(partition)
+            current_movements[partition] = self._dispatch_move(partition)
+
+        self.logger.info(f"moving {current_movements}")
+
+        admin = Admin(self.redpanda)
+        ongoing = admin.list_reconfigurations()
+        assert len(ongoing) > 0
+
+        target_node_id = self.redpanda.idx(
+            (random.choice(self.redpanda.nodes)))
+
+        self.logger.info(
+            "cancelling all node {target_node_id} reconfigurations")
+
+        admin.cancel_all_node_reconfigurations(target_id=target_node_id)
+
+        def is_node_reconfiguration(reconfiguration):
+            current_replicas = admin.get_partitions(
+                topic=reconfiguration['topic'],
+                partition=reconfiguration['partition'])['replicas']
+            previous_replicas = reconfiguration['previous_replicas']
+
+            return PartitionMoveInterruption.is_moving_to_node(
+                id=target_node_id,
+                previous_replicas=previous_replicas,
+                current_replicas=current_replicas
+            ) or PartitionMoveInterruption.is_moving_from_node(
+                id=target_node_id,
+                previous_replicas=previous_replicas,
+                current_replicas=current_replicas)
+
+        def has_no_node_reconfigurations():
+            ongoing = admin.list_reconfigurations()
+
+            return len([o for o in ongoing if is_node_reconfiguration(o)]) == 0
+
+        wait_until(has_no_node_reconfigurations, 60, 1)
+
+        self.run_validation(enable_idempotence=False,
+                            consumer_timeout_sec=60,
+                            min_records=self.min_records)
