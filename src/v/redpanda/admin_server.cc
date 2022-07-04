@@ -543,6 +543,22 @@ model::node_id parse_broker_id(const ss::httpd::request& req) {
     }
 }
 
+ss::future<std::vector<ss::httpd::partition_json::partition_result>>
+map_partition_results(std::vector<cluster::move_cancellation_result> results) {
+    std::vector<ss::httpd::partition_json::partition_result> ret;
+    ret.reserve(results.size());
+
+    for (cluster::move_cancellation_result& r : results) {
+        ss::httpd::partition_json::partition_result result;
+        result.ns = std::move(r.ntp.ns)();
+        result.topic = std::move(r.ntp.tp.topic)();
+        result.partition = r.ntp.tp.partition;
+        result.result = fmt::format("{}", r.result);
+        ret.push_back(std::move(result));
+        co_await ss::maybe_yield();
+    }
+    co_return ret;
+}
 } // namespace
 
 /**
@@ -2893,6 +2909,26 @@ void admin_server::register_cluster_routes() {
                                               .size();
 
           co_return ss::json::json_return_type(ret);
+      });
+
+    register_route<superuser>(
+      ss::httpd::cluster_json::cancel_all_partitions_reconfigurations,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          vlog(
+            logger.info,
+            "Requested cancellation of all ongoing partition movements");
+
+          auto res = co_await _controller->get_topics_frontend()
+                       .local()
+                       .cancel_moving_all_partition_replicas(
+                         model::timeout_clock::now() + 5s);
+          if (res.has_error()) {
+              co_await throw_on_error(*req, res.error(), model::controller_ntp);
+          }
+
+          co_return ss::json::json_return_type(
+            co_await map_partition_results(std::move(res.value())));
       });
 }
 
