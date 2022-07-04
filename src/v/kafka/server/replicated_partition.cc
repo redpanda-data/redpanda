@@ -163,11 +163,11 @@ ss::future<result<model::offset>> replicated_partition::replicate(
   model::record_batch_reader rdr, raft::replicate_options opts) {
     using ret_t = result<model::offset>;
     return _partition->replicate(std::move(rdr), opts)
-      .then([this](result<raft::replicate_result> r) {
+      .then([](result<cluster::kafka_result> r) {
           if (!r) {
               return ret_t(r.error());
           }
-          return ret_t(_translator->from_log_offset(r.value().last_offset));
+          return ret_t(model::offset(r.value().last_offset()));
       });
 }
 
@@ -177,15 +177,18 @@ raft::replicate_stages replicated_partition::replicate(
   raft::replicate_options opts) {
     using ret_t = result<raft::replicate_result>;
     auto res = _partition->replicate_in_stages(batch_id, std::move(rdr), opts);
-    res.replicate_finished = res.replicate_finished.then(
-      [this](result<raft::replicate_result> r) {
+
+    raft::replicate_stages out(raft::errc::success);
+    out.request_enqueued = std::move(res.request_enqueued);
+    out.replicate_finished = res.replicate_finished.then(
+      [](result<cluster::kafka_result> r) {
           if (!r) {
               return ret_t(r.error());
           }
-          return ret_t(raft::replicate_result{
-            _translator->from_log_offset(r.value().last_offset)});
+          return ret_t(
+            raft::replicate_result{model::offset(r.value().last_offset())});
       });
-    return res;
+    return out;
 }
 
 std::optional<model::offset> replicated_partition::get_leader_epoch_last_offset(

@@ -50,10 +50,10 @@ public:
     ss::future<> start();
     ss::future<> stop();
 
-    ss::future<result<raft::replicate_result>>
+    ss::future<result<kafka_result>>
     replicate(model::record_batch_reader&&, raft::replicate_options);
 
-    raft::replicate_stages replicate_in_stages(
+    kafka_stages replicate_in_stages(
       model::batch_identity,
       model::record_batch_reader&&,
       raft::replicate_options);
@@ -283,6 +283,7 @@ private:
     bool _is_tx_enabled{false};
     bool _is_idempotence_enabled{false};
     ss::lw_shared_ptr<cloud_storage::remote_partition> _cloud_storage_partition;
+    ss::lw_shared_ptr<const storage::offset_translator_state> _translator;
 
     friend std::ostream& operator<<(std::ostream& o, const partition& x);
 };

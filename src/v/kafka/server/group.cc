@@ -861,7 +861,7 @@ void group::complete_join() {
             auto batch = checkpoint(assignments_type{});
             auto reader = model::make_memory_record_batch_reader(
               std::move(batch));
-            (void)_partition
+            (void)_partition->raft()
               ->replicate(
                 _term,
                 std::move(reader),
@@ -1208,7 +1208,7 @@ ss::future<sync_group_response> group::sync_group_completing_rebalance(
     auto batch = checkpoint(assignments);
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
-    return _partition
+    return _partition->raft()
       ->replicate(
         _term,
         std::move(reader),
