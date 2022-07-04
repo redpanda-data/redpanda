@@ -23,6 +23,7 @@
 #include "raft/rpc_client_protocol.h"
 #include "raft/types.h"
 #include "resource_mgmt/io_priority.h"
+#include "ssx/async-clear.h"
 #include "storage/offset_translator_state.h"
 #include "storage/segment_utils.h"
 #include "storage/snapshot.h"
@@ -162,10 +163,14 @@ ss::future<> partition_manager::stop_partitions() {
     co_await _gate.close();
     // prevent partitions from being accessed
     auto partitions = std::exchange(_ntp_table, {});
-    _raft_table.clear();
+
+    co_await ssx::async_clear(_raft_table)();
+
     // shutdown all partitions
-    co_await ss::parallel_for_each(
-      partitions, [this](auto& e) { return do_shutdown(e.second); });
+    co_await ss::max_concurrent_for_each(
+      partitions, 1024, [this](auto& e) { return do_shutdown(e.second); });
+
+    co_await ssx::async_clear(partitions)();
 }
 
 ss::future<>
