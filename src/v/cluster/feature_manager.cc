@@ -179,11 +179,11 @@ ss::future<> feature_manager::maybe_update_active_version() {
             // Sleep until we have some updates to process
             co_await _update_wait.wait([this]() { return !_updates.empty(); });
         }
-    } catch (ss::condition_variable_timed_out) {
+    } catch (ss::condition_variable_timed_out&) {
         // Wait complete - proceed around next loop of do_until
-    } catch (ss::broken_condition_variable) {
+    } catch (ss::broken_condition_variable&) {
         // Shutting down - nextiteration will drop out
-    } catch (ss::sleep_aborted) {
+    } catch (ss::sleep_aborted&) {
         // Shutting down - next iteration will drop out
     }
 }

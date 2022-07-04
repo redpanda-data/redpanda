@@ -16,7 +16,6 @@
 #include <fmt/format.h>
 #include <fmt/ostream.h>
 
-namespace fmt {
 template<>
 struct fmt::formatter<seastar::sstring> final : fmt::formatter<string_view> {
     template<typename FormatContext>
@@ -26,7 +25,7 @@ struct fmt::formatter<seastar::sstring> final : fmt::formatter<string_view> {
     }
 };
 
-namespace detail {
+namespace fmt::detail {
 
 // TODO(BenP): Remove this hack with next libfmt upgrade
 //
@@ -52,9 +51,7 @@ namespace detail {
 template<>
 struct is_streamable<seastar::sstring, char> : std::false_type {};
 
-} // namespace detail
-
-} // namespace fmt
+} // namespace fmt::detail
 
 namespace ssx {
 

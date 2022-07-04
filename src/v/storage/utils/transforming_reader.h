@@ -80,7 +80,7 @@ make_transforming_reader(
 
         storage_t make_slice(const storage_t& source, data_t new_data) {
             if (std::holds_alternative<data_t>(source)) {
-                return std::move(new_data);
+                return new_data;
             } else {
                 return foreign_t{
                   .buffer = ss::make_foreign(

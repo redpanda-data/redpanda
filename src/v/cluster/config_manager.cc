@@ -529,11 +529,11 @@ ss::future<> config_manager::reconcile_status() {
             // We are clean: sleep until signalled.
             co_await _reconcile_wait.wait();
         }
-    } catch (ss::condition_variable_timed_out) {
+    } catch (ss::condition_variable_timed_out&) {
         // Wait complete - proceed around next loop of do_until
-    } catch (ss::broken_condition_variable) {
+    } catch (ss::broken_condition_variable&) {
         // Shutting down - nextiteration will drop out
-    } catch (ss::sleep_aborted) {
+    } catch (ss::sleep_aborted&) {
         // Shutting down - next iteration will drop out
     }
 }
@@ -597,7 +597,7 @@ apply_local(cluster_config_delta_cmd_data const& data, bool silent) {
 
             bool changed = property.set_value(val);
             result.restart |= (property.needs_restart() && changed);
-        } catch (YAML::ParserException) {
+        } catch (YAML::ParserException&) {
             if (!silent) {
                 vlog(
                   clusterlog.warn,
@@ -607,7 +607,7 @@ apply_local(cluster_config_delta_cmd_data const& data, bool silent) {
             }
             result.invalid.push_back(u.key);
             continue;
-        } catch (YAML::BadConversion) {
+        } catch (YAML::BadConversion&) {
             if (!silent) {
                 vlog(
                   clusterlog.warn,
@@ -617,7 +617,7 @@ apply_local(cluster_config_delta_cmd_data const& data, bool silent) {
             }
             result.invalid.push_back(u.key);
             continue;
-        } catch (std::bad_alloc) {
+        } catch (std::bad_alloc&) {
             // Don't include bad_alloc in the catch-all below
             throw;
         } catch (...) {

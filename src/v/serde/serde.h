@@ -376,7 +376,7 @@ std::decay_t<T> read(iobuf_parser& in) {
           type_str<T>(),
           in.bytes_left())};
     }
-    return std::move(ret);
+    return ret;
 }
 
 template<typename T>
