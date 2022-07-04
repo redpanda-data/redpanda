@@ -187,6 +187,31 @@ struct tx_snapshot_v0 {
     std::vector<seq_entry_v0> seqs;
 };
 
+struct seq_cache_entry_v1 {
+    int32_t seq{-1};
+    model::offset offset;
+};
+
+struct seq_entry_v1 {
+    model::producer_identity pid;
+    int32_t seq{-1};
+    model::offset last_offset{-1};
+    ss::circular_buffer<seq_cache_entry_v1> seq_cache;
+    model::timestamp::type last_write_timestamp;
+};
+
+struct tx_snapshot_v1 {
+    static constexpr uint8_t version = 1;
+
+    std::vector<model::producer_identity> fenced;
+    std::vector<rm_stm::tx_range> ongoing;
+    std::vector<rm_stm::prepare_marker> prepared;
+    std::vector<rm_stm::tx_range> aborted;
+    std::vector<rm_stm::abort_index> abort_indexes;
+    model::offset offset;
+    std::vector<seq_entry_v1> seqs;
+};
+
 rm_stm::rm_stm(
   ss::logger& logger,
   raft::consensus* c,
@@ -1812,14 +1837,35 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
     iobuf_parser data_parser(std::move(tx_ss_buf));
     if (hdr.version == tx_snapshot::version) {
         data = reflection::adl<tx_snapshot>{}.from(data_parser);
+    } else if (hdr.version == tx_snapshot_v1::version) {
+        auto data_v1 = reflection::adl<tx_snapshot_v1>{}.from(data_parser);
+        data.fenced = std::move(data_v1.fenced);
+        data.ongoing = std::move(data_v1.ongoing);
+        data.prepared = std::move(data_v1.prepared);
+        data.aborted = std::move(data_v1.aborted);
+        data.abort_indexes = std::move(data_v1.abort_indexes);
+        data.offset = std::move(data_v1.offset);
+        for (auto& seq_v1 : data_v1.seqs) {
+            seq_entry seq;
+            seq.pid = seq_v1.pid;
+            seq.seq = seq_v1.seq;
+            seq.last_offset = seq_v1.last_offset;
+            seq.seq_cache.reserve(seq_v1.seq_cache.size());
+            for (auto& item : seq_v1.seq_cache) {
+                seq.seq_cache.push_back(
+                  seq_cache_entry{.seq = item.seq, .offset = item.offset});
+            }
+            seq.last_write_timestamp = seq_v1.last_write_timestamp;
+            data.seqs.push_back(std::move(seq));
+        }
     } else if (hdr.version == tx_snapshot_v0::version) {
         auto data_v0 = reflection::adl<tx_snapshot_v0>{}.from(data_parser);
-        data.fenced = data_v0.fenced;
-        data.ongoing = data_v0.ongoing;
-        data.prepared = data_v0.prepared;
-        data.aborted = data_v0.aborted;
-        data.abort_indexes = data_v0.abort_indexes;
-        data.offset = data_v0.offset;
+        data.fenced = std::move(data_v0.fenced);
+        data.ongoing = std::move(data_v0.ongoing);
+        data.prepared = std::move(data_v0.prepared);
+        data.aborted = std::move(data_v0.aborted);
+        data.abort_indexes = std::move(data_v0.abort_indexes);
+        data.offset = std::move(data_v0.offset);
         for (auto seq_v0 : data_v0.seqs) {
             auto seq = seq_entry{
               .pid = seq_v0.pid,
@@ -1879,6 +1925,27 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
     _insync_offset = data.offset;
 }
 
+uint8_t rm_stm::active_snapshot_version() { return tx_snapshot_v1::version; }
+
+template<class T>
+void rm_stm::fill_snapshot_wo_seqs(T& snapshot) {
+    for (auto const& [k, v] : _log_state.fence_pid_epoch) {
+        snapshot.fenced.push_back(model::producer_identity{k(), v()});
+    }
+    for (auto& entry : _log_state.ongoing_map) {
+        snapshot.ongoing.push_back(entry.second);
+    }
+    for (auto& entry : _log_state.prepared) {
+        snapshot.prepared.push_back(entry.second);
+    }
+    for (auto& entry : _log_state.aborted) {
+        snapshot.aborted.push_back(entry);
+    }
+    for (auto& entry : _log_state.abort_indexes) {
+        snapshot.abort_indexes.push_back(entry);
+    }
+}
+
 ss::future<stm_snapshot> rm_stm::take_snapshot() {
     if (_log_state.aborted.size() > _abort_index_segment_size) {
         std::sort(
@@ -1904,34 +1971,41 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
         _log_state.aborted = snapshot.aborted;
     }
 
-    tx_snapshot tx_ss;
-
-    for (auto const& [k, v] : _log_state.fence_pid_epoch) {
-        tx_ss.fenced.push_back(
-          model::producer_identity{.id = k(), .epoch = v()});
-    }
-    for (auto& entry : _log_state.ongoing_map) {
-        tx_ss.ongoing.push_back(entry.second);
-    }
-    for (auto& entry : _log_state.prepared) {
-        tx_ss.prepared.push_back(entry.second);
-    }
-    for (auto& entry : _log_state.aborted) {
-        tx_ss.aborted.push_back(entry);
-    }
-    for (auto& entry : _log_state.abort_indexes) {
-        tx_ss.abort_indexes.push_back(entry);
-    }
-    for (const auto& entry : _log_state.seq_table) {
-        tx_ss.seqs.push_back(entry.second.copy());
-    }
-    tx_ss.offset = _insync_offset;
-
     iobuf tx_ss_buf;
-    reflection::adl<tx_snapshot>{}.to(tx_ss_buf, std::move(tx_ss));
+    auto version = active_snapshot_version();
+    if (version == tx_snapshot::version) {
+        tx_snapshot tx_ss;
+        fill_snapshot_wo_seqs(tx_ss);
+        for (const auto& entry : _log_state.seq_table) {
+            tx_ss.seqs.push_back(entry.second.copy());
+        }
+        tx_ss.offset = _insync_offset;
+        reflection::adl<tx_snapshot>{}.to(tx_ss_buf, std::move(tx_ss));
+    } else if (version == tx_snapshot_v1::version) {
+        tx_snapshot_v1 tx_ss;
+        fill_snapshot_wo_seqs(tx_ss);
+        for (const auto& it : _log_state.seq_table) {
+            auto& entry = it.second;
+            seq_entry_v1 seqs;
+            seqs.pid = entry.pid;
+            seqs.seq = entry.seq;
+            seqs.last_offset = entry.last_offset;
+            seqs.last_write_timestamp = entry.last_write_timestamp;
+            seqs.seq_cache.reserve(seqs.seq_cache.size());
+            for (auto& item : entry.seq_cache) {
+                seqs.seq_cache.push_back(
+                  seq_cache_entry_v1{.seq = item.seq, .offset = item.offset});
+            }
+            tx_ss.seqs.push_back(std::move(seqs));
+        }
+        tx_ss.offset = _insync_offset;
+        reflection::adl<tx_snapshot_v1>{}.to(tx_ss_buf, std::move(tx_ss));
+    } else {
+        vassert(false, "unsupported tx_snapshot version {}", version);
+    }
 
     co_return stm_snapshot::create(
-      tx_snapshot::version, _insync_offset, std::move(tx_ss_buf));
+      version, _insync_offset, std::move(tx_ss_buf));
 }
 
 ss::future<> rm_stm::save_abort_snapshot(abort_snapshot snapshot) {
