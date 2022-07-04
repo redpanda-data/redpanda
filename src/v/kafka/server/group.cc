@@ -863,6 +863,7 @@ void group::complete_join() {
               std::move(batch));
             (void)_partition
               ->replicate(
+                _term,
                 std::move(reader),
                 raft::replicate_options(raft::consistency_level::quorum_ack))
               .then([]([[maybe_unused]] result<raft::replicate_result> r) {});
@@ -1209,6 +1210,7 @@ ss::future<sync_group_response> group::sync_group_completing_rebalance(
 
     return _partition
       ->replicate(
+        _term,
         std::move(reader),
         raft::replicate_options(raft::consistency_level::quorum_ack))
       .then([this,
@@ -1854,6 +1856,7 @@ group::offset_commit_stages group::store_offsets(offset_commit_request&& r) {
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
     auto replicate_stages = _partition->raft()->replicate_in_stages(
+      _term,
       std::move(reader),
       raft::replicate_options(raft::consistency_level::quorum_ack));
 
@@ -2203,6 +2206,7 @@ ss::future<error_code> group::remove() {
 
     try {
         auto result = co_await _partition->raft()->replicate(
+          _term,
           std::move(reader),
           raft::replicate_options(raft::consistency_level::quorum_ack));
         if (result) {
@@ -2283,6 +2287,7 @@ group::remove_topic_partitions(const std::vector<model::topic_partition>& tps) {
 
     try {
         auto result = co_await _partition->raft()->replicate(
+          _term,
           std::move(reader),
           raft::replicate_options(raft::consistency_level::quorum_ack));
         if (result) {
