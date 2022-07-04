@@ -25,6 +25,7 @@
 #include "utils/named_type.h"
 #include "vlog.h"
 
+#include <seastar/core/future.hh>
 #include <seastar/net/inet_address.hh>
 
 #include <absl/container/node_hash_map.h>
@@ -82,12 +83,12 @@ concept has_serde_write = requires(T t, iobuf& out) {
 template<typename T>
 concept has_serde_async_read
   = requires(T t, iobuf_parser& in, const header& h) {
-    t.serde_async_read(in, h);
+    { t.serde_async_read(in, h) } -> seastar::Future;
 };
 
 template<typename T>
 concept has_serde_async_write = requires(T t, iobuf& out) {
-    t.serde_async_write(out);
+    { t.serde_async_write(out) } -> seastar::Future;
 };
 
 using serde_enum_serialized_t = int32_t;
