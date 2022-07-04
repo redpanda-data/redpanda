@@ -61,6 +61,7 @@ enum class errc : int16_t {
     feature_disabled,
     invalid_request,
     no_update_in_progress,
+    unknown_update_interruption_error
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -173,6 +174,8 @@ struct errc_category final : public std::error_category {
             return "Invalid request";
         case errc::no_update_in_progress:
             return "Partition configuration is not being updated";
+        case errc::unknown_update_interruption_error:
+            return "Error while cancelling partition reconfiguration";
         }
         return "cluster::errc::unknown";
     }
