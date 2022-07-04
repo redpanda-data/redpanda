@@ -2888,7 +2888,7 @@ consensus::do_transfer_leadership(std::optional<model::node_id> target) {
                *   - shutdown may be in progress
                *   - other: identified by follower not caught-up
                */
-              if (!is_elected_leader()) {
+              if (!is_leader()) {
                   vlog(
                     _ctxlog.warn, "Cannot transfer leadership from non-leader");
                   return seastar::make_ready_future<std::error_code>(
