@@ -195,7 +195,11 @@ public:
 
     void testing_only_enable_transactions() { _is_tx_enabled = true; }
 
-    struct expiration_info {
+    struct expiration_info
+      : public serde::envelope<
+          expiration_info,
+          serde::version<0>,
+          serde::compat_version<0>> {
         duration_type timeout;
         time_point_type last_update;
         bool is_expiration_requested;
@@ -204,6 +208,14 @@ public:
 
         bool is_expired(time_point_type now) const {
             return is_expiration_requested || deadline() <= now;
+        }
+
+        void serde_write(iobuf& out) { serde::write(out, timeout); }
+
+        void serde_read(iobuf_parser& in, const serde::header& h) {
+            last_update = time_point_type::clock::now();
+            timeout = serde::read_nested<duration_type>(
+              in, h._bytes_left_limit);
         }
     };
 
@@ -335,7 +347,7 @@ private:
     abort_origin
     get_abort_origin(const model::producer_identity&, model::tx_seq) const;
 
-    ss::future<> checkpoint_in_memory_state() const;
+    ss::future<> checkpoint_in_memory_state();
 
     ss::future<> apply(model::record_batch) override;
     void apply_fence(model::record_batch&&);
@@ -384,7 +396,9 @@ private:
         absl::flat_hash_map<model::producer_identity, seq_entry> seq_table;
     };
 
-    struct mem_state {
+    struct mem_state
+      : public serde::
+          envelope<mem_state, serde::version<0>, serde::compat_version<0>> {
         // once raft's term has passed mem_state::term we wipe mem_state
         // and wait until log_state catches up with current committed index.
         // with this approach a combination of mem_state and log_state is
@@ -420,6 +434,18 @@ private:
                 tx_starts.erase(tx_start_it->second);
                 tx_start.erase(pid);
             }
+        }
+
+        auto serde_fields() {
+            return std::tie(
+              term,
+              tx_start,
+              tx_starts,
+              estimated,
+              expiration,
+              expected,
+              last_end_tx,
+              inflight);
         }
     };
 
@@ -513,6 +539,8 @@ private:
 
     template<class T>
     void fill_snapshot_wo_seqs(T&);
+
+    ss::future<model::record_batch> make_checkpoint_batch();
 
     ss::basic_rwlock<> _state_lock;
     bool _is_abort_idx_reduction_requested{false};

@@ -1886,10 +1886,36 @@ void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
     }
 }
 
-void rm_stm::apply_checkpoint([
-  [maybe_unused]] const model::record_batch& batch) {}
+void rm_stm::apply_checkpoint(
+  [[maybe_unused]] const model::record_batch& batch) {}
 
-ss::future<> rm_stm::checkpoint_in_memory_state() const { co_return; }
+ss::future<model::record_batch> rm_stm::make_checkpoint_batch() {
+    iobuf key;
+    co_await serde::write_async(key, _insync_term);
+    iobuf val;
+    co_await serde::write_async(val, std::move(_mem_state));
+    storage::record_batch_builder builder(
+      model::record_batch_type::tx_checkpoint, model::offset(0));
+    builder.set_control_type();
+    builder.add_raw_kv(std::move(key), std::move(val));
+    co_return std::move(builder).build();
+}
+
+ss::future<> rm_stm::checkpoint_in_memory_state() {
+    auto batch = co_await make_checkpoint_batch();
+    _mem_state = {}; // reset
+    auto reader = model::make_memory_record_batch_reader(std::move(batch));
+    auto result = co_await _c->replicate(
+      _insync_term,
+      std::move(reader),
+      raft::replicate_options(raft::consistency_level::quorum_ack));
+    if (!result) {
+        // This is on a best effort basis, if we do not replicate, txns are
+        // aborted on the new leader and the client is expected to retry.
+        vlog(clusterlog.warn, "Error replicating checkpoint batch: {}", result.error());
+    }
+    co_return;
+}
 
 ss::future<>
 rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
