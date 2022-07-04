@@ -123,7 +123,7 @@ public:
     };
 
     struct tx_snapshot {
-        static constexpr uint8_t version = 1;
+        static constexpr uint8_t version = 2;
 
         std::vector<model::producer_identity> fenced;
         std::vector<tx_range> ongoing;
@@ -491,6 +491,11 @@ private:
     get_tx_status(model::producer_identity pid) const;
     std::optional<expiration_info>
     get_expiration_info(model::producer_identity pid) const;
+
+    uint8_t active_snapshot_version();
+
+    template<class T>
+    void fill_snapshot_wo_seqs(T&);
 
     ss::basic_rwlock<> _state_lock;
     absl::flat_hash_map<model::producer_id, ss::lw_shared_ptr<mutex>> _tx_locks;
