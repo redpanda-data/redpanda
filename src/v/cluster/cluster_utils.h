@@ -24,6 +24,7 @@
 
 #include <seastar/core/sharded.hh>
 
+#include <system_error>
 #include <utility>
 
 namespace detail {
@@ -304,4 +305,7 @@ inline bool contains_node(
              [id](const model::broker_shard& bs) { return bs.node_id == id; })
            != replicas.end();
 }
+
+cluster::errc map_update_interruption_error_code(std::error_code);
+
 } // namespace cluster
