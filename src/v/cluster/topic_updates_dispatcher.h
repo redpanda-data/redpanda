@@ -62,7 +62,8 @@ public:
       finish_moving_partition_replicas_cmd,
       update_topic_properties_cmd,
       create_partition_cmd,
-      create_non_replicable_topic_cmd>();
+      create_non_replicable_topic_cmd,
+      cancel_moving_partition_replicas_cmd>();
 
     bool is_batch_applicable(const model::record_batch& batch) const {
         return batch.header().type
@@ -78,9 +79,6 @@ private:
     ss::future<> update_leaders_with_estimates(std::vector<ntp_leader> leaders);
     void update_allocations(std::vector<partition_assignment>);
     void deallocate_topic(const topic_metadata&);
-    void reallocate_partition(
-      const std::vector<model::broker_shard>&,
-      const std::vector<model::broker_shard>&);
 
     ss::sharded<partition_allocator>& _partition_allocator;
     ss::sharded<topic_table>& _topic_table;

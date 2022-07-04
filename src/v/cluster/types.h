@@ -1516,7 +1516,9 @@ struct topic_table_delta {
         update_finished,
         update_properties,
         add_non_replicable,
-        del_non_replicable
+        del_non_replicable,
+        cancel_update,
+        force_abort_update,
     };
 
     topic_table_delta(
@@ -1524,16 +1526,26 @@ struct topic_table_delta {
       cluster::partition_assignment,
       model::offset,
       op_type,
-      std::optional<partition_assignment> = std::nullopt);
+      std::optional<std::vector<model::broker_shard>> = std::nullopt);
 
     model::ntp ntp;
     cluster::partition_assignment new_assignment;
     model::offset offset;
     op_type type;
-    std::optional<partition_assignment> previous_assignment;
+    std::optional<std::vector<model::broker_shard>> previous_replica_set;
 
     model::topic_namespace_view tp_ns() const {
         return model::topic_namespace_view(ntp);
+    }
+
+    bool is_reconfiguration_operation() const {
+        return type == op_type::update || type == op_type::cancel_update
+               || type == op_type::force_abort_update;
+    }
+
+    bool is_reconfiguration_interrupt() const {
+        return type == op_type::cancel_update
+               || type == op_type::force_abort_update;
     }
 
     friend std::ostream& operator<<(std::ostream&, const topic_table_delta&);
@@ -1809,6 +1821,19 @@ struct feature_update_cmd_data
 
     friend std::ostream&
     operator<<(std::ostream&, const feature_update_cmd_data&);
+};
+
+using force_abort_update = ss::bool_class<struct force_abort_update_tag>;
+
+struct cancel_moving_partition_replicas_cmd_data
+  : serde::
+      envelope<cancel_moving_partition_replicas_cmd_data, serde::version<0>> {
+    cancel_moving_partition_replicas_cmd_data() = default;
+    explicit cancel_moving_partition_replicas_cmd_data(force_abort_update force)
+      : force(force) {}
+    force_abort_update force;
+
+    auto serde_fields() { return std::tie(force); }
 };
 
 enum class reconciliation_status : int8_t {
@@ -3036,6 +3061,18 @@ struct adl<cluster::feature_action_response> {
     cluster::feature_action_response from(iobuf_parser& in) {
         auto error = adl<cluster::errc>{}.from(in);
         return {.error = error};
+    }
+};
+
+template<>
+struct adl<cluster::cancel_moving_partition_replicas_cmd_data> {
+    void
+    to(iobuf& out, cluster::cancel_moving_partition_replicas_cmd_data&& d) {
+        serialize(out, d.force);
+    }
+    cluster::cancel_moving_partition_replicas_cmd_data from(iobuf_parser& in) {
+        auto force = adl<cluster::force_abort_update>{}.from(in);
+        return cluster::cancel_moving_partition_replicas_cmd_data(force);
     }
 };
 } // namespace reflection

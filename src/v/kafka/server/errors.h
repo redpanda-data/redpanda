@@ -75,6 +75,7 @@ constexpr error_code map_topic_error_code(cluster::errc code) {
     case cluster::errc::error_collecting_health_report:
     case cluster::errc::leadership_changed:
     case cluster::errc::feature_disabled:
+    case cluster::errc::no_update_in_progress:
         break;
     }
     return error_code::unknown_server_error;

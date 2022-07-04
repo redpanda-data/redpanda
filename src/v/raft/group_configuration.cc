@@ -352,7 +352,7 @@ bool group_configuration::maybe_demote_removed_voters() {
     return true;
 }
 
-void group_configuration::abort_configuration_change() {
+void group_configuration::abort_configuration_change(model::revision_id rev) {
     vassert(
       _old,
       "can not abort configuration change if it is of simple type - "
@@ -378,9 +378,10 @@ void group_configuration::abort_configuration_change() {
     for (auto id : _current.learners) {
         promote_to_voter(id);
     }
+    _revision = rev;
 }
 
-void group_configuration::revert_configuration_change() {
+void group_configuration::cancel_configuration_change(model::revision_id rev) {
     vassert(
       _old,
       "can not abort configuration change if it is of simple type - "
@@ -390,6 +391,7 @@ void group_configuration::revert_configuration_change() {
     auto tmp = _current;
     _current = *_old;
     _old = std::move(tmp);
+    _revision = rev;
 }
 
 void group_configuration::discard_old_config() {

@@ -435,7 +435,7 @@ FIXTURE_TEST(revert_configuration_change, raft_test_fixture) {
 
     res = retry_with_leader(gr, 5, 5s, [new_members](raft_node& leader) {
               return leader.consensus
-                ->revert_configuration_change(model::revision_id(0))
+                ->cancel_configuration_change(model::revision_id(0))
                 .then([](std::error_code ec) {
                     info("configuration revert result: {}", ec.message());
                     return !ec;

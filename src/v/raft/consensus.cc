@@ -14,6 +14,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
+#include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "raft/consensus_client_protocol.h"
@@ -33,6 +34,7 @@
 #include "storage/api.h"
 #include "vlog.h"
 
+#include <seastar/core/condition-variable.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/fstream.hh>
 #include <seastar/core/future.hh>
@@ -1009,14 +1011,14 @@ consensus::interrupt_configuration_change(model::revision_id revision, Func f) {
 }
 
 ss::future<std::error_code>
-consensus::revert_configuration_change(model::revision_id revision) {
+consensus::cancel_configuration_change(model::revision_id revision) {
     vlog(
       _ctxlog.info,
       "requested revert of current configuration change - {}",
       config());
     return interrupt_configuration_change(
-      revision, [](raft::group_configuration cfg) {
-          cfg.revert_configuration_change();
+      revision, [revision](raft::group_configuration cfg) {
+          cfg.cancel_configuration_change(revision);
           return cfg;
       });
 }
@@ -1027,11 +1029,41 @@ consensus::abort_configuration_change(model::revision_id revision) {
       _ctxlog.info,
       "requested abort of current configuration change - {}",
       config());
-    return interrupt_configuration_change(
-      revision, [](raft::group_configuration cfg) {
-          cfg.abort_configuration_change();
-          return cfg;
-      });
+    auto u = co_await _op_lock.get_units();
+    auto latest_cfg = config();
+    // latest configuration must be of joint type
+    if (latest_cfg.type() == configuration_type::simple) {
+        vlog(_ctxlog.info, "no configuration changes in progress");
+        co_return errc::invalid_configuration_update;
+    }
+    if (latest_cfg.revision_id() > revision) {
+        co_return errc::invalid_configuration_update;
+    }
+    auto new_cfg = latest_cfg;
+    new_cfg.abort_configuration_change(revision);
+
+    auto batches = details::serialize_configuration_as_batches(
+      std::move(new_cfg));
+    for (auto& b : batches) {
+        b.set_term(_term);
+    };
+    /**
+     * Aborting configuration change is an operation that may lead to data loss.
+     * It must be possible to abort configuration change even if there is no
+     * leader elected. We simply append new configuration to each of the
+     * replicas log. If new leader will be elected using new configuration it
+     * will eventually propagate valid configuration to all the followers.
+     */
+    auto append_result = co_await disk_append(
+      model::make_memory_record_batch_reader(std::move(batches)),
+      update_last_quorum_index::yes);
+    vlog(
+      _ctxlog.info,
+      "appended reconfiguration aborting configuration at offset {}",
+      append_result.base_offset);
+    // flush log as all configuration changes must eventually be committed.
+    co_await flush_log();
+    co_return errc::success;
 }
 
 ss::future<> consensus::start() {
@@ -2581,24 +2613,36 @@ ss::future<timeout_now_reply> consensus::timeout_now(timeout_now_request&& r) {
 ss::future<transfer_leadership_reply>
 consensus::transfer_leadership(transfer_leadership_request req) {
     transfer_leadership_reply reply;
-    auto err = co_await do_transfer_leadership(req.target);
-    if (err) {
+    try {
+        auto err = co_await do_transfer_leadership(req.target);
+        if (err) {
+            vlog(
+              _ctxlog.warn,
+              "Unable to transfer leadership to {}: {}",
+              req.target,
+              err.message());
+
+            reply.success = false;
+            if (err.category() == raft::error_category()) {
+                reply.result = static_cast<errc>(err.value());
+            }
+            co_return reply;
+        }
+
+        reply.success = true;
+        reply.result = errc::success;
+        co_return reply;
+
+    } catch (const ss::condition_variable_timed_out& e) {
         vlog(
           _ctxlog.warn,
           "Unable to transfer leadership to {}: {}",
           req.target,
-          err.message());
-
+          e);
         reply.success = false;
-        if (err.category() == raft::error_category()) {
-            reply.result = static_cast<errc>(err.value());
-        }
+        reply.result = errc::timeout;
         co_return reply;
     }
-
-    reply.success = true;
-    reply.result = errc::success;
-    co_return reply;
 }
 
 ss::future<std::error_code>

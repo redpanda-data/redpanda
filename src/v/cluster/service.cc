@@ -198,10 +198,16 @@ service::do_finish_partition_update(finish_partition_update_request&& req) {
         req.new_replica_set,
         config::shard_local_cfg().replicate_append_timeout_ms()
           + model::timeout_clock::now());
+    finish_partition_update_reply reply{.result = errc::success};
+    if (ec) {
+        if (ec.category() == cluster::error_category()) {
+            reply.result = errc(ec.value());
+        } else {
+            reply.result = errc::not_leader;
+        }
+    }
 
-    errc e = ec ? errc::not_leader : errc::success;
-
-    co_return finish_partition_update_reply{.result = e};
+    co_return reply;
 }
 
 ss::future<update_topic_properties_reply> service::update_topic_properties(

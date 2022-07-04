@@ -245,9 +245,27 @@ inline bool has_non_replicable_op_type(const topic_table_delta& d) {
     case op_t::update:
     case op_t::update_finished:
     case op_t::update_properties:
+    case op_t::cancel_update:
+    case op_t::force_abort_update:
         return false;
     }
     __builtin_unreachable();
 }
-
+/**
+ * Subtracts second replica set from the first one. Result contains only brokers
+ * shards that are present in first replica set but not in the second one.
+ */
+inline std::vector<model::broker_shard> subtract_replica_sets(
+  const std::vector<model::broker_shard>& lhs,
+  const std::vector<model::broker_shard>& rhs) {
+    std::vector<model::broker_shard> ret;
+    std::copy_if(
+      lhs.begin(),
+      lhs.end(),
+      std::back_inserter(ret),
+      [&rhs](const model::broker_shard& bs) {
+          return std::find(rhs.begin(), rhs.end(), bs) == rhs.end();
+      });
+    return ret;
+}
 } // namespace cluster

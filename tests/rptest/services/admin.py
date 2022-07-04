@@ -432,6 +432,14 @@ class Admin:
         self.redpanda.logger.debug(f"decommissioning {path}")
         return self._request('put', path, node=node)
 
+    def list_reconfigurations(self, node=None):
+        """
+        List pending reconfigurations
+        """
+        path = f"partitions/reconfigurations"
+
+        return self._request('get', path, node=node).json()
+
     def get_partitions(self,
                        topic=None,
                        partition=None,
@@ -510,6 +518,24 @@ class Admin:
         """
         path = f"partitions/{namespace}/{topic}/{partition}/replicas"
         return self._request('post', path, node=node, json=replicas)
+
+    def cancel_partition_move(self,
+                              topic,
+                              partition,
+                              namespace="kafka",
+                              node=None):
+
+        path = f"partitions/{namespace}/{topic}/{partition}/cancel_reconfiguration"
+        return self._request('post', path, node=node)
+
+    def force_abort_partition_move(self,
+                                   topic,
+                                   partition,
+                                   namespace="kafka",
+                                   node=None):
+
+        path = f"partitions/{namespace}/{topic}/{partition}/unclean_abort_reconfiguration"
+        return self._request('post', path, node=node)
 
     def create_user(self, username, password, algorithm):
         self.redpanda.logger.info(

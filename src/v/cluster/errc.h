@@ -60,6 +60,7 @@ enum class errc : int16_t {
     leadership_changed,
     feature_disabled,
     invalid_request,
+    no_update_in_progress,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -170,6 +171,8 @@ struct errc_category final : public std::error_category {
             return "Requested feature is disabled";
         case errc::invalid_request:
             return "Invalid request";
+        case errc::no_update_in_progress:
+            return "Partition configuration is not being updated";
         }
         return "cluster::errc::unknown";
     }

@@ -1845,5 +1845,10 @@ SEASTAR_THREAD_TEST_CASE(commands_serialization_test) {
 
         roundtrip_cmd<cluster::feature_update_cmd>(
           std::move(feature_update_data), 0);
+
+        roundtrip_cmd<cluster::cancel_moving_partition_replicas_cmd>(
+          model::random_ntp(),
+          cluster::cancel_moving_partition_replicas_cmd_data(
+            cluster::force_abort_update(tests::random_bool())));
     }
 }

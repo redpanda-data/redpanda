@@ -69,6 +69,7 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/core/with_scheduling_group.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/http/api_docs.hh>
 #include <seastar/http/httpd.hh>
 
@@ -555,6 +556,10 @@ ss::future<> admin_server::throw_on_error(
             throw co_await redirect_to_leader(req, ntp);
         case cluster::errc::not_leader_controller:
             throw co_await redirect_to_leader(req, model::controller_ntp);
+        case cluster::errc::no_update_in_progress:
+            throw ss::httpd::bad_request_exception(
+              "can not cancel partition move operation as there is no move "
+              "in progress");
         default:
             throw ss::httpd::server_error_exception(
               fmt::format("Unexpected cluster error: {}", ec.message()));
@@ -2178,7 +2183,58 @@ void admin_server::register_partition_routes() {
                 co_return ss::json::json_return_type(ss::json::json_void());
             });
       });
+    register_route<superuser>(
+      ss::httpd::partition_json::cancel_partition_reconfiguration,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          const auto ntp = parse_ntp_from_request(req->param);
 
+          if (ntp == model::controller_ntp) {
+              throw ss::httpd::bad_request_exception(
+                fmt::format("Can't cancel controller reconfiguration"));
+          }
+          vlog(
+            logger.debug,
+            "Requesting cancelling of {} partition reconfiguration",
+            ntp);
+
+          auto err
+            = co_await _controller->get_topics_frontend()
+                .local()
+                .cancel_moving_partition_replicas(
+                  ntp,
+                  model::timeout_clock::now()
+                    + 10s); // NOLINT(cppcoreguidelines-avoid-magic-numbers)
+
+          co_await throw_on_error(*req, err, model::controller_ntp);
+          co_return ss::json::json_void();
+      });
+    register_route<superuser>(
+      ss::httpd::partition_json::unclean_abort_partition_reconfiguration,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          const auto ntp = parse_ntp_from_request(req->param);
+
+          if (ntp == model::controller_ntp) {
+              throw ss::httpd::bad_request_exception(
+                "Can't unclean abort controller reconfiguration");
+          }
+          vlog(
+            logger.warn,
+            "Requesting unclean abort of {} partition reconfiguration",
+            ntp);
+
+          auto err
+            = co_await _controller->get_topics_frontend()
+                .local()
+                .abort_moving_partition_replicas(
+                  ntp,
+                  model::timeout_clock::now()
+                    + 10s); // NOLINT(cppcoreguidelines-avoid-magic-numbers)
+
+          co_await throw_on_error(*req, err, model::controller_ntp);
+          co_return ss::json::json_void();
+      });
     // make sure to call reset() before each use
     static thread_local json_validator set_replicas_validator(
       make_set_replicas_validator());
@@ -2301,6 +2357,35 @@ void admin_server::register_partition_routes() {
 
           co_await throw_on_error(*req, err, model::controller_ntp);
           co_return ss::json::json_void();
+      });
+
+    register_route<user>(
+      ss::httpd::partition_json::get_partition_reconfigurations,
+      [this](std::unique_ptr<ss::httpd::request>)
+        -> ss::future<ss::json::json_return_type> {
+          using reconfiguration = ss::httpd::partition_json::reconfiguration;
+          std::vector<reconfiguration> ret;
+          auto in_progress
+            = _controller->get_topics_state().local().in_progress_updates();
+
+          ret.reserve(in_progress.size());
+          for (auto& [ntp, status] : in_progress) {
+              reconfiguration r;
+              r.ns = ntp.ns;
+              r.topic = ntp.tp.topic;
+              r.partition = ntp.tp.partition;
+              r.status = fmt::format("{}", status.state);
+
+              for (auto& bs : status.previous_replicas) {
+                  ss::httpd::partition_json::assignment replica;
+                  replica.node_id = bs.node_id;
+                  replica.core = bs.shard;
+                  r.previous_replicas.push(replica);
+              }
+              co_await ss::coroutine::maybe_yield();
+              ret.push_back(std::move(r));
+          }
+          co_return std::move(ret);
       });
 }
 

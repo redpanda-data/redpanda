@@ -81,14 +81,20 @@ private:
     ss::future<> reconcile_topics();
     ss::future<> reconcile_ntp(deltas_t&);
 
-    ss::future<std::error_code>
-    execute_partitition_op(const topic_table::delta&);
-
-    ss::future<std::error_code> process_partition_update(
+    ss::future<std::error_code> execute_partition_op(const topic_table::delta&);
+    ss::future<std::error_code> process_partition_reconfiguration(
+      topic_table_delta::op_type,
       model::ntp,
       const partition_assignment&,
-      const partition_assignment&,
+      const std::vector<model::broker_shard>&,
       model::revision_id);
+
+    ss::future<std::error_code> execute_reconfiguration(
+      topic_table_delta::op_type,
+      const model::ntp&,
+      const std::vector<model::broker_shard>&,
+      model::revision_id);
+
     ss::future<> finish_partition_update(
       model::ntp, const partition_assignment&, model::revision_id);
 
@@ -105,10 +111,26 @@ private:
     ss::future<>
       remove_from_shard_table(model::ntp, raft::group_id, model::revision_id);
     ss::future<> delete_partition(model::ntp, model::revision_id);
+    template<typename Func>
+    ss::future<std::error_code> apply_configuration_change_on_leader(
+      const model::ntp&,
+      const std::vector<model::broker_shard>&,
+      model::revision_id,
+      Func&& f);
     ss::future<std::error_code> update_partition_replica_set(
       const model::ntp&,
       const std::vector<model::broker_shard>&,
       model::revision_id);
+    ss::future<std::error_code> cancel_replica_set_update(
+      const model::ntp&,
+      const std::vector<model::broker_shard>&,
+      model::revision_id);
+
+    ss::future<std::error_code> force_abort_replica_set_update(
+      const model::ntp&,
+      const std::vector<model::broker_shard>&,
+      model::revision_id);
+
     ss::future<std::error_code>
       dispatch_update_finished(model::ntp, partition_assignment);
 
@@ -119,9 +141,13 @@ private:
       shutdown_on_current_shard(model::ntp, model::revision_id);
 
     ss::future<std::optional<cross_shard_move_request>>
-      ask_remote_shard_for_initail_rev(model::ntp, ss::shard_id);
+      acquire_cross_shard_move_request(model::ntp, ss::shard_id);
 
-    ss::future<> ack_remote_shard_partition_created(model::ntp, ss::shard_id);
+    ss::future<> release_cross_shard_move_request(
+      model::ntp, ss::shard_id, cross_shard_move_request);
+
+    ss::future<std::error_code> create_partition_from_remote_shard(
+      model::ntp, ss::shard_id, partition_assignment);
 
     void housekeeping();
     void setup_metrics();

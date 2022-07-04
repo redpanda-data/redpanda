@@ -127,10 +127,93 @@
                             "type": "integer"
                         },
                         {
-                            "name":"target",
-                            "in":"query",
-                            "required":false,
-                            "type":"integer"
+                            "name": "target",
+                            "in": "query",
+                            "required": false,
+                            "type": "integer"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "path": "/v1/partitions/{namespace}/{topic}/{partition}/cancel_reconfiguration",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Cancel ongoing partition reconfiguration",
+                    "type": "void",
+                    "nickname": "cancel_partition_reconfiguration",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "namespace",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "topic",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "partition",
+                            "in": "path",
+                            "required": true,
+                            "type": "integer"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "path": "/v1/partitions/reconfigurations",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "List ongoing partition reconfigurations",
+                    "type": "void",
+                    "nickname": "get_partition_reconfigurations",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
+        },
+        {
+            "path": "/v1/partitions/{namespace}/{topic}/{partition}/unclean_abort_reconfiguration",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Forcibly abort ongoing partition reconfiguration",
+                    "type": "void",
+                    "nickname": "unclean_abort_partition_reconfiguration",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "namespace",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "topic",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "partition",
+                            "in": "path",
+                            "required": true,
+                            "type": "integer"
                         }
                     ]
                 }
@@ -356,6 +439,35 @@
                         "type": "transaction"
                     },
                     "description": "Expired transactions"
+                }
+            }
+        },
+        "reconfiguration": {
+            "id": "reconfiguration",
+            "description": "Partition reconfiguration details",
+            "properties": {
+                "ns": {
+                    "type": "string",
+                    "description": "Namespace"
+                },
+                "topic": {
+                    "type": "string",
+                    "description": "Topic"
+                },
+                "partition": {
+                    "type": "long",
+                    "description": "Partition id"
+                },
+                "previous_replicas": {
+                    "type": "array",
+                    "items": {
+                        "type": "assignment"
+                    },
+                    "description": "Previous replica set"
+                },
+                "status": {
+                    "type": "string",
+                    "description": "Reconfiguration status"
                 }
             }
         }

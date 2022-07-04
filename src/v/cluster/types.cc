@@ -120,12 +120,12 @@ topic_table_delta::topic_table_delta(
   cluster::partition_assignment new_assignment,
   model::offset o,
   op_type tp,
-  std::optional<partition_assignment> previous)
+  std::optional<std::vector<model::broker_shard>> previous)
   : ntp(std::move(ntp))
   , new_assignment(std::move(new_assignment))
   , offset(o)
   , type(tp)
-  , previous_assignment(std::move(previous)) {}
+  , previous_replica_set(std::move(previous)) {}
 
 ntp_reconciliation_state::ntp_reconciliation_state(
   model::ntp ntp,
@@ -234,6 +234,10 @@ operator<<(std::ostream& o, const topic_table_delta::op_type& tp) {
         return o << "add_non_replicable_addition";
     case topic_table_delta::op_type::del_non_replicable:
         return o << "del_non_replicable_deletion";
+    case topic_table_delta::op_type::cancel_update:
+        return o << "cancel_update";
+    case topic_table_delta::op_type::force_abort_update:
+        return o << "force_abort_update";
     }
     __builtin_unreachable();
 }
@@ -242,12 +246,12 @@ std::ostream& operator<<(std::ostream& o, const topic_table_delta& d) {
     fmt::print(
       o,
       "{{type: {}, ntp: {}, offset: {}, new_assignment: {}, "
-      "previous_assignment: {}}}",
+      "previous_replica_set: {}}}",
       d.type,
       d.ntp,
       d.offset,
       d.new_assignment,
-      d.previous_assignment);
+      d.previous_replica_set);
 
     return o;
 }

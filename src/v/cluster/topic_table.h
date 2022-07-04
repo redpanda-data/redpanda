@@ -20,7 +20,7 @@
 #include "utils/expiring_promise.h"
 
 #include <absl/container/flat_hash_map.h>
-#include <absl/container/flat_hash_set.h>
+#include <absl/container/node_hash_map.h>
 
 namespace cluster {
 
@@ -36,6 +36,17 @@ namespace cluster {
 
 class topic_table {
 public:
+    enum class in_progress_state {
+        update_requested,
+        cancel_requested,
+        force_cancel_requested
+    };
+
+    struct in_progress_update {
+        std::vector<model::broker_shard> previous_replicas;
+        in_progress_state state;
+        model::revision_id update_revision;
+    };
     using delta = topic_table_delta;
 
     using underlying_t = absl::flat_hash_map<
@@ -94,6 +105,8 @@ public:
     ss::future<std::error_code> apply(create_partition_cmd, model::offset);
     ss::future<std::error_code>
       apply(create_non_replicable_topic_cmd, model::offset);
+    ss::future<std::error_code>
+      apply(cancel_moving_partition_replicas_cmd, model::offset);
     ss::future<> stop();
 
     /// Delta API
@@ -178,6 +191,19 @@ public:
     std::optional<model::initial_revision_id>
     get_initial_revision(const model::ntp& ntp) const;
 
+    /**
+     * returns previous replica set of partition if partition is currently being
+     * reconfigured. For reconfiguration from [1,2,3] to [2,3,4] this method
+     * will return [1,2,3].
+     */
+    std::optional<std::vector<model::broker_shard>>
+    get_previous_replica_set(const model::ntp&) const;
+
+    const absl::node_hash_map<model::ntp, in_progress_update>&
+    in_progress_updates() const {
+        return _update_in_progress;
+    }
+
 private:
     struct waiter {
         explicit waiter(uint64_t id)
@@ -197,7 +223,7 @@ private:
     underlying_t _topics;
     hierarchy_t _topics_hierarchy;
 
-    absl::flat_hash_set<model::ntp> _update_in_progress;
+    absl::node_hash_map<model::ntp, in_progress_update> _update_in_progress;
 
     std::vector<delta> _pending_deltas;
     std::vector<std::unique_ptr<waiter>> _waiters;
@@ -208,4 +234,6 @@ private:
     model::offset _last_consumed_by_notifier{
       model::model_limits<model::offset>::min()};
 };
+
+std::ostream& operator<<(std::ostream&, topic_table::in_progress_state);
 } // namespace cluster

@@ -68,11 +68,8 @@ public:
     void update_allocation_state(
       const std::vector<model::broker_shard>&, raft::group_id);
 
-    /// updates the state of allocation, it is used during recovery and
-    /// when processing raft0 committed notifications
-    void update_allocation_state(
-      const std::vector<model::broker_shard>&,
-      const std::vector<model::broker_shard>&);
+    void add_allocations(const std::vector<model::broker_shard>&);
+    void remove_allocations(const std::vector<model::broker_shard>&);
 
     allocation_state& state() { return *_state; }
 
