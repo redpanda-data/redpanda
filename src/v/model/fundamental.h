@@ -29,6 +29,12 @@
 #include <string_view>
 #include <type_traits>
 
+namespace kafka {
+
+using offset = named_type<int64_t, struct kafka_offset_type>;
+
+} // namespace kafka
+
 namespace model {
 
 // Named after Kafka cleanup.policy topic property
