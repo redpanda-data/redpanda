@@ -712,4 +712,23 @@ struct adl<raft::install_snapshot_request> {
         };
     }
 };
+
+template<>
+struct adl<raft::install_snapshot_reply> {
+    void to(iobuf& out, raft::install_snapshot_reply&& r) {
+        serialize(out, r.target_node_id, r.term, r.bytes_stored, r.success);
+    }
+    raft::install_snapshot_reply from(iobuf_parser& in) {
+        auto target_node_id = adl<raft::vnode>{}.from(in);
+        auto term = adl<model::term_id>{}.from(in);
+        auto bytes_stored = adl<uint64_t>{}.from(in);
+        auto success = adl<bool>{}.from(in);
+        return {
+          .target_node_id = target_node_id,
+          .term = term,
+          .bytes_stored = bytes_stored,
+          .success = success,
+        };
+    }
+};
 } // namespace reflection
