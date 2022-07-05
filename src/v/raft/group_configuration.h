@@ -24,7 +24,7 @@
 namespace raft {
 
 static constexpr model::revision_id no_revision{};
-class vnode {
+class vnode : public serde::envelope<vnode, serde::version<0>> {
 public:
     constexpr vnode() = default;
 
@@ -44,6 +44,8 @@ public:
 
     constexpr model::node_id id() const { return _node_id; }
     constexpr model::revision_id revision() const { return _revision; }
+
+    auto serde_fields() { return std::tie(_node_id, _revision); }
 
 private:
     model::node_id _node_id;

@@ -1975,6 +1975,12 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         };
         roundtrip_test(data);
     }
+    {
+        raft::vnode data{
+          tests::random_named_int<model::node_id>(),
+          tests::random_named_int<model::revision_id>()};
+        roundtrip_test(data);
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {
