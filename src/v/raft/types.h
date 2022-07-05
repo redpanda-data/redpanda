@@ -496,9 +496,16 @@ struct transfer_leadership_request
     auto serde_fields() { return std::tie(group, target); }
 };
 
-struct transfer_leadership_reply {
+struct transfer_leadership_reply
+  : serde::envelope<transfer_leadership_reply, serde::version<0>> {
     bool success{false};
     raft::errc result;
+
+    friend bool operator==(
+      const transfer_leadership_reply&, const transfer_leadership_reply&)
+      = default;
+
+    auto serde_fields() { return std::tie(success, result); }
 };
 
 // key types used to store data in key-value store

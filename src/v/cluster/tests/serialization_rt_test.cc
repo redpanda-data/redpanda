@@ -1968,6 +1968,13 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         }
         roundtrip_test(data);
     }
+    {
+        raft::transfer_leadership_reply data{
+          .success = tests::random_bool(),
+          .result = raft::errc::append_entries_dispatch_error,
+        };
+        roundtrip_test(data);
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {
