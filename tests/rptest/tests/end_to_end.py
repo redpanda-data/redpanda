@@ -19,10 +19,13 @@
 # - Imported annotate_missing_msgs helper from kafka test suite
 
 from collections import namedtuple
+from typing import Optional
 import os
 from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
 from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda_installer import InstallOptions
+from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.clients.default import DefaultClient
 from rptest.services.verifiable_consumer import VerifiableConsumer
 from rptest.services.verifiable_producer import VerifiableProducer, is_int_with_prefix
@@ -72,7 +75,8 @@ class EndToEndTest(Test):
     def start_redpanda(self,
                        num_nodes=1,
                        extra_rp_conf=None,
-                       si_settings=None):
+                       si_settings=None,
+                       install_opts: Optional[InstallOptions] = None):
         self.si_settings = si_settings
         if self.si_settings:
             self.si_settings.load_context(self.logger, self.test_context)
@@ -88,6 +92,17 @@ class EndToEndTest(Test):
                                         extra_rp_conf=self._extra_rp_conf,
                                         extra_node_conf=self._extra_node_conf,
                                         si_settings=self.si_settings)
+        version_to_install = None
+        if install_opts:
+            if install_opts.install_previous_version:
+                version_to_install = \
+                    self.redpanda._installer.highest_from_prior_feature_version(RedpandaInstaller.HEAD)
+            if install_opts.version:
+                version_to_install = install_opts.version
+
+        if version_to_install:
+            self.redpanda._installer.install(self.redpanda.nodes,
+                                             version_to_install)
         self.redpanda.start()
         self._client = DefaultClient(self.redpanda)
 

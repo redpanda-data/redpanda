@@ -38,6 +38,20 @@ def wait_for_num_versions(redpanda, num_versions):
     return unique_versions
 
 
+class InstallOptions:
+    """
+    Options with which to configure the installation of Redpanda in a cluster.
+    """
+    def __init__(self, install_previous_version=False, version=None):
+        # If true, install the highest version of the prior feature version
+        # before HEAD.
+        self.install_previous_version = install_previous_version
+
+        # Either RedpandaInstaller.HEAD or a numeric tuple representing the
+        # version to install (e.g. (22, 1, 3)).
+        self.version = version
+
+
 class RedpandaInstaller:
     """
     Provides mechanisms to install multiple Redpanda binaries on a cluster.
