@@ -461,7 +461,8 @@ struct write_snapshot_cfg {
     iobuf data;
 };
 
-struct timeout_now_request {
+struct timeout_now_request
+  : serde::envelope<timeout_now_request, serde::version<0>> {
     // node id to validate on receiver
     vnode target_node_id;
 
@@ -471,6 +472,14 @@ struct timeout_now_request {
 
     raft::group_id target_group() const { return group; }
     vnode target_node() const { return target_node_id; }
+
+    friend bool
+    operator==(const timeout_now_request&, const timeout_now_request&)
+      = default;
+
+    auto serde_fields() {
+        return std::tie(target_node_id, node_id, group, term);
+    }
 };
 
 struct timeout_now_reply {
