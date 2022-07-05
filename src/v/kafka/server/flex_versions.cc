@@ -18,13 +18,6 @@ namespace kafka {
 static constexpr api_version invalid_api = api_version(-2);
 
 template<typename... RequestTypes>
-static constexpr size_t max_api_key(type_list<RequestTypes...>) {
-    /// Black magic here is an overload of std::max() that takes an
-    /// std::initializer_list
-    return std::max({RequestTypes::api::key()...});
-}
-
-template<typename... RequestTypes>
 static constexpr auto
 get_flexible_request_min_versions_list(type_list<RequestTypes...> r) {
     /// An std::array where the indicies map to api_keys and values at an index
