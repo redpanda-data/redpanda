@@ -194,4 +194,13 @@ struct clean_segment_value
     ss::sstring segment_name;
 };
 
+inline bool is_compactible(const model::record_batch& b) {
+    return !(
+      b.header().type == model::record_batch_type::raft_configuration
+      || b.header().type == model::record_batch_type::archival_metadata
+      || b.header().type == model::record_batch_type::group_abort_tx
+      || b.header().type == model::record_batch_type::group_commit_tx
+      || b.header().type == model::record_batch_type::group_prepare_tx);
+}
+
 } // namespace storage::internal

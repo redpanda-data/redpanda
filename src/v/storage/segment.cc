@@ -365,6 +365,11 @@ ss::future<> segment::compaction_index_batch(const model::record_batch& b) {
     if (!has_compaction_index()) {
         return ss::now();
     }
+    // do not index not compactible batches
+    if (!internal::is_compactible(b)) {
+        return ss::now();
+    }
+
     if (!b.compressed()) {
         return do_compaction_index_batch(b);
     }
