@@ -56,6 +56,7 @@ connection::connection(
   ss::connected_socket f,
   ss::socket_address a,
   server_probe& p,
+  std::optional<size_t> in_max_buffer_size,
   std::optional<security::tls::principal_mapper> tls_pm)
   : addr(a)
   , _hook(hook)
@@ -65,6 +66,14 @@ connection::connection(
   , _out(_fd.output())
   , _probe(p)
   , _tls_pm(std::move(tls_pm)) {
+    if (in_max_buffer_size.has_value()) {
+        auto in_config = ss::connected_socket_input_stream_config{};
+        in_config.max_buffer_size = in_max_buffer_size.value();
+        _in = _fd.input(std::move(in_config));
+    } else {
+        _in = _fd.input();
+    }
+
     _hook.push_back(*this);
     _probe.connection_established();
 }

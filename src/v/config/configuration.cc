@@ -855,6 +855,16 @@ configuration::configuration()
       {.example = "65536"},
       std::nullopt,
       {.min = 32_KiB, .align = 4_KiB})
+  , kafka_rpc_server_stream_recv_buf(
+      *this,
+      "kafka_rpc_server_stream_recv_buf",
+      "Userspace receive buffer max size in bytes",
+      {.example = "65536", .visibility = visibility::tunable},
+      std::nullopt,
+      // The minimum is set to match seastar's min_buffer_size (i.e. don't
+      // permit setting a max below the min).  The maximum is set to forbid
+      // contiguous allocations beyond that size.
+      {.min = 512, .max = 512_KiB, .align = 4_KiB})
   , cloud_storage_enabled(
       *this,
       "cloud_storage_enabled",

@@ -96,6 +96,7 @@ struct server_configuration {
     std::optional<int> listen_backlog;
     std::optional<int> tcp_recv_buf;
     std::optional<int> tcp_send_buf;
+    std::optional<size_t> stream_recv_buf;
     net::metrics_disabled disable_metrics = net::metrics_disabled::no;
     ss::sstring name;
     std::optional<config_connection_rate_bindings> connection_rate_bindings;

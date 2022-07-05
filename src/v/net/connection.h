@@ -39,6 +39,7 @@ public:
       ss::connected_socket f,
       ss::socket_address a,
       server_probe& p,
+      std::optional<size_t> in_max_buffer_size,
       std::optional<security::tls::principal_mapper> tls_pm);
     ~connection() noexcept;
     connection(const connection&) = delete;
