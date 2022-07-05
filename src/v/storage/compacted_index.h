@@ -55,14 +55,23 @@ struct compacted_index {
         }
     };
     enum class recovery_state {
-        // happens during a crash
-        missing,
-        // needs rebuilding - when user 'touch' a file or during a crash
-        needsrebuild,
-        // already recovered - nothing to do - after a reboot
-        recovered,
-        // we need to compact next
-        nonrecovered
+        /**
+         * Index may be missing when either was deleted or not stored when
+         * redpanda crashed
+         */
+        index_missing,
+        /**
+         * Index may needs a rebuild when it is corrupted
+         */
+        index_needs_rebuild,
+        /**
+         * Segment is already compacted
+         */
+        already_compacted,
+        /**
+         * Compaction index is recovered, ready to compaction
+         */
+        index_recovered
     };
     static constexpr size_t footer_size = sizeof(footer::size)
                                           + sizeof(footer::keys)
@@ -83,6 +92,9 @@ struct compacted_index {
         int32_t delta;
     };
 };
+
+std::ostream& operator<<(std::ostream&, compacted_index::recovery_state);
+
 [[gnu::always_inline]] inline compacted_index::footer_flags
 operator|(compacted_index::footer_flags a, compacted_index::footer_flags b) {
     return compacted_index::footer_flags(

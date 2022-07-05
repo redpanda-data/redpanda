@@ -54,31 +54,6 @@
 #include <fmt/format.h>
 #include <roaring/roaring.hh>
 
-template<>
-struct fmt::formatter<storage::compacted_index::recovery_state> {
-    using recovery_state = storage::compacted_index::recovery_state;
-    constexpr auto parse(format_parse_context& ctx) { return ctx.end(); }
-    template<typename FormatContext>
-    auto format(const recovery_state& s, FormatContext& ctx) const {
-        std::string_view str = "unknown";
-        switch (s) {
-        case recovery_state::missing:
-            str = "missing";
-            break;
-        case recovery_state::needsrebuild:
-            str = "needsrebuild";
-            break;
-        case recovery_state::recovered:
-            str = "recovered";
-            break;
-        case recovery_state::nonrecovered:
-            str = "nonrecovered";
-            break;
-        }
-        return format_to(ctx.out(), "{}", str);
-    }
-};
-
 namespace storage::internal {
 using namespace storage; // NOLINT
 
@@ -306,9 +281,9 @@ ss::future<compacted_index::recovery_state> do_detect_compaction_index_state(
             .then([reader]() mutable { return reader.load_footer(); })
             .then([](compacted_index::footer footer) {
                 if (bool(footer.flags & flags::self_compaction)) {
-                    return compacted_index::recovery_state::recovered;
+                    return compacted_index::recovery_state::already_compacted;
                 }
-                return compacted_index::recovery_state::nonrecovered;
+                return compacted_index::recovery_state::index_recovered;
             })
             .finally([reader]() mutable { return reader.close(); });
       })
@@ -318,7 +293,7 @@ ss::future<compacted_index::recovery_state> do_detect_compaction_index_state(
             "detected error while attempting recovery, {}. marking as 'needs "
             "rebuild'. Common situation during crashes or hard shutdowns.",
             e);
-          return compacted_index::recovery_state::needsrebuild;
+          return compacted_index::recovery_state::index_needs_rebuild;
       });
 }
 
@@ -329,7 +304,7 @@ detect_compaction_index_state(std::filesystem::path p, compaction_config cfg) {
             return do_detect_compaction_index_state(p, cfg);
         }
         return ss::make_ready_future<compacted_index::recovery_state>(
-          compacted_index::recovery_state::missing);
+          compacted_index::recovery_state::index_missing);
     });
 }
 
@@ -560,20 +535,20 @@ ss::future<compaction_result> self_compact_segment(
               compacted_index::recovery_state state) mutable {
           vlog(gclog.trace, "segment {} compaction state: {}", idx_path, state);
           switch (state) {
-          case compacted_index::recovery_state::recovered: {
+          case compacted_index::recovery_state::already_compacted: {
               vlog(gclog.debug, "detected {} is already compacted", idx_path);
               return ss::make_ready_future<compaction_result>(s->size_bytes());
           }
-          case compacted_index::recovery_state::nonrecovered:
+          case compacted_index::recovery_state::index_recovered:
               return do_self_compact_segment(
                        s, cfg, pb, readers_cache, resources)
                 .then([before = s->size_bytes(), &pb](size_t sz_after) {
                     pb.segment_compacted();
                     return compaction_result(before, sz_after);
                 });
-          case compacted_index::recovery_state::missing:
+          case compacted_index::recovery_state::index_missing:
               [[fallthrough]];
-          case compacted_index::recovery_state::needsrebuild: {
+          case compacted_index::recovery_state::index_needs_rebuild: {
               vlog(gclog.info, "Rebuilding index file... ({})", idx_path);
               pb.corrupted_compaction_index();
               return s->read_lock()
