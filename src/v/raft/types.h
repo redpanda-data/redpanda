@@ -482,13 +482,19 @@ struct timeout_now_request
     }
 };
 
-struct timeout_now_reply {
+struct timeout_now_reply
+  : serde::envelope<timeout_now_reply, serde::version<0>> {
     enum class status : uint8_t { success, failure };
     // node id to validate on receiver
     vnode target_node_id;
 
     model::term_id term;
     status result;
+
+    friend bool operator==(const timeout_now_reply&, const timeout_now_reply&)
+      = default;
+
+    auto serde_fields() { return std::tie(target_node_id, term, result); }
 };
 
 // if not target is specified then the most up-to-date node will be selected
