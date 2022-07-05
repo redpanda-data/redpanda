@@ -659,4 +659,40 @@ struct adl<raft::timeout_now_reply> {
         };
     }
 };
+
+template<>
+struct adl<raft::install_snapshot_request> {
+    void to(iobuf& out, raft::install_snapshot_request&& r) {
+        serialize(
+          out,
+          r.target_node_id,
+          r.term,
+          r.group,
+          r.node_id,
+          r.last_included_index,
+          r.file_offset,
+          std::move(r.chunk),
+          r.done);
+    }
+    raft::install_snapshot_request from(iobuf_parser& in) {
+        auto target_node_id = adl<raft::vnode>{}.from(in);
+        auto term = adl<model::term_id>{}.from(in);
+        auto group = adl<raft::group_id>{}.from(in);
+        auto node_id = adl<raft::vnode>{}.from(in);
+        auto last_included_index = adl<model::offset>{}.from(in);
+        auto file_offset = adl<uint64_t>{}.from(in);
+        auto chunk = adl<iobuf>{}.from(in);
+        auto done = adl<bool>{}.from(in);
+        return {
+          .target_node_id = target_node_id,
+          .term = term,
+          .group = group,
+          .node_id = node_id,
+          .last_included_index = last_included_index,
+          .file_offset = file_offset,
+          .chunk = std::move(chunk),
+          .done = done,
+        };
+    }
+};
 } // namespace reflection
