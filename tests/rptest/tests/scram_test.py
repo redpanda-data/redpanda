@@ -10,9 +10,11 @@ import random
 import socket
 import string
 import requests
+from requests.exceptions import HTTPError
 import time
 
 from ducktape.mark import parametrize
+from ducktape.utils.util import wait_until
 
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
@@ -330,6 +332,26 @@ class ScramBootstrapUserTest(RedpandaTest):
                                       "SCRAM-SHA-256"),
             **kwargs)
 
+    def _check_http_status_everywhere(self, expect_status, callable):
+        """
+        Check that the callback results in an HTTP error with the
+        given status code from all nodes in the cluster.  This enables
+        checking that auth state has propagated as expected.
+
+        :returns: true if all nodes throw an error with the expected status code
+        """
+
+        for n in self.redpanda.nodes:
+            try:
+                callable(n)
+            except HTTPError as e:
+                if e.response.status_code != expect_status:
+                    return False
+            else:
+                return False
+
+        return True
+
     @cluster(num_nodes=3)
     def test_bootstrap_user(self):
         # Anonymous access should be refused
@@ -346,8 +368,12 @@ class ScramBootstrapUserTest(RedpandaTest):
         admin.update_user(self.BOOTSTRAP_USERNAME, "newpassword",
                           "SCRAM-SHA-256")
 
-        # We do not have a hook for synchronously waiting for a credential update to propagate
-        time.sleep(5)
+        # Getting 401 with old credentials everywhere will show that the
+        # credential update has propagated to all nodes
+        wait_until(lambda: self._check_http_status_everywhere(
+            401, lambda n: admin.list_users(node=n)),
+                   timeout_sec=10,
+                   backoff_sec=0.5)
 
         # Using old password should fail
         with expect_http_error(401):
