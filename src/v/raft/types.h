@@ -589,4 +589,16 @@ struct adl<raft::transfer_leadership_request> {
         return {.group = group, .target = target};
     }
 };
+
+template<>
+struct adl<raft::transfer_leadership_reply> {
+    void to(iobuf& out, raft::transfer_leadership_reply&& r) {
+        serialize(out, r.success, r.result);
+    }
+    raft::transfer_leadership_reply from(iobuf_parser& in) {
+        auto success = adl<bool>{}.from(in);
+        auto result = adl<raft::errc>{}.from(in);
+        return {.success = success, .result = result};
+    }
+};
 } // namespace reflection
