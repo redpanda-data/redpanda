@@ -193,4 +193,5 @@ class NodesDecommissioningTest(EndToEndTest):
         wait_until(lambda: self._node_removed(to_decommission, survivor_node),
                    timeout_sec=120,
                    backoff_sec=2)
-        self.run_validation(enable_idempotence=False, consumer_timeout_sec=45)
+
+        self.run_validation(enable_idempotence=False, consumer_timeout_sec=90)
