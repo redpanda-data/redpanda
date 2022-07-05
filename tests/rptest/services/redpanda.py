@@ -29,6 +29,7 @@ from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.utils.util import wait_until
 from ducktape.cluster.cluster import ClusterNode
 from prometheus_client.parser import text_string_to_metric_families
+from ducktape.errors import TimeoutError
 
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.services.admin import Admin
@@ -819,16 +820,21 @@ class RedpandaService(Service):
         self.start_service(node, start_rp)
         self._started.append(node)
 
-    def start_service(self, node, start):
-        def log_node_stats():
-            for line in node.account.ssh_capture("ps aux"):
-                self.logger.debug(line.strip())
-            for line in node.account.ssh_capture("netstat -ant"):
-                self.logger.debug(line.strip())
+    def _log_node_process_state(self, node):
+        """
+        For debugging issues around starting and stopping processes: log
+        which processes are running and which ports are in use.
+        """
 
+        for line in node.account.ssh_capture("ps aux"):
+            self.logger.debug(line.strip())
+        for line in node.account.ssh_capture("netstat -ant"):
+            self.logger.debug(line.strip())
+
+    def start_service(self, node, start):
         # Maybe the service collides with something that wasn't cleaned up
         # properly: let's peek at what's going on on the node before starting it.
-        log_node_stats()
+        self._log_node_process_state(node)
 
         try:
             start()
@@ -838,7 +844,7 @@ class RedpandaService(Service):
             self.logger.warn(
                 f"Failed to start on {node.name}, gathering node ps and netstat..."
             )
-            log_node_stats()
+            self._log_node_process_state(node)
             raise
 
     def coproc_enabled(self):
@@ -1150,12 +1156,19 @@ class RedpandaService(Service):
         if timeout is None:
             timeout = 30
 
-        wait_until(
-            lambda: len(self.pids(node)) == 0,
-            timeout_sec=timeout,
-            err_msg=
-            f"Redpanda node {node.account.hostname} failed to stop in {timeout} seconds"
-        )
+        try:
+            wait_until(
+                lambda: len(self.pids(node)) == 0,
+                timeout_sec=timeout,
+                err_msg=
+                f"Redpanda node {node.account.hostname} failed to stop in {timeout} seconds"
+            )
+        except TimeoutError:
+            self.logger.warn(
+                f"Timed out waiting for stop on {node.name}, status:")
+            self._log_node_process_state(node)
+            raise
+
         self.remove_from_started_nodes(node)
 
     def remove_from_started_nodes(self, node):
