@@ -2001,6 +2001,59 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         };
         roundtrip_test(data);
     }
+    {
+        const raft::install_snapshot_request orig{
+          .target_node_id = raft::
+            vnode{tests::random_named_int<model::node_id>(), tests::random_named_int<model::revision_id>()},
+          .term = tests::random_named_int<model::term_id>(),
+          .group = tests::random_named_int<raft::group_id>(),
+          .node_id = raft::
+            vnode{tests::random_named_int<model::node_id>(), tests::random_named_int<model::revision_id>()},
+          .last_included_index = tests::random_named_int<model::offset>(),
+          .file_offset = random_generators::get_int<uint64_t>(),
+          .chunk = bytes_to_iobuf(
+            random_generators::get_bytes(random_generators::get_int(1024))),
+          .done = tests::random_bool(),
+        };
+        /*
+         * manual adl/serde test to workaround iobuf being move-only
+         */
+        {
+            raft::install_snapshot_request serde_in{
+              .target_node_id = orig.target_node_id,
+              .term = orig.term,
+              .group = orig.group,
+              .node_id = orig.node_id,
+              .last_included_index = orig.last_included_index,
+              .file_offset = orig.file_offset,
+              .chunk = orig.chunk.copy(),
+              .done = orig.done,
+            };
+            auto serde_out = serde::to_iobuf(std::move(serde_in));
+            auto from_serde = serde::from_iobuf<raft::install_snapshot_request>(
+              std::move(serde_out));
+
+            BOOST_REQUIRE(orig == from_serde);
+        }
+        {
+            raft::install_snapshot_request adl_in{
+              .target_node_id = orig.target_node_id,
+              .term = orig.term,
+              .group = orig.group,
+              .node_id = orig.node_id,
+              .last_included_index = orig.last_included_index,
+              .file_offset = orig.file_offset,
+              .chunk = orig.chunk.copy(),
+              .done = orig.done,
+            };
+            auto adl_out = reflection::to_iobuf(std::move(adl_in));
+            auto from_adl
+              = reflection::from_iobuf<raft::install_snapshot_request>(
+                std::move(adl_out));
+
+            BOOST_REQUIRE(orig == from_adl);
+        }
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {

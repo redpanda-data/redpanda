@@ -374,7 +374,8 @@ struct snapshot_metadata {
       "version is equal to 3, please change it accordignly");
 };
 
-struct install_snapshot_request {
+struct install_snapshot_request
+  : serde::envelope<install_snapshot_request, serde::version<0>> {
     // node id to validate on receiver
     vnode target_node_id;
     // leader’s term
@@ -396,6 +397,22 @@ struct install_snapshot_request {
     vnode target_node() const { return target_node_id; }
     friend std::ostream&
     operator<<(std::ostream&, const install_snapshot_request&);
+
+    friend bool
+    operator==(const install_snapshot_request&, const install_snapshot_request&)
+      = default;
+
+    auto serde_fields() {
+        return std::tie(
+          target_node_id,
+          term,
+          group,
+          node_id,
+          last_included_index,
+          file_offset,
+          chunk,
+          done);
+    }
 };
 
 class install_snapshot_request_foreign_wrapper {
