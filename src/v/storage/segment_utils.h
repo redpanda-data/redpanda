@@ -170,8 +170,18 @@ size_t
 // key types used to store data in key-value store
 enum class kvstore_key_type : int8_t {
     start_offset = 0,
+    clean_segment = 1,
 };
 
 bytes start_offset_key(model::ntp ntp);
+bytes clean_segment_key(model::ntp ntp);
+
+struct clean_segment_value
+  : serde::envelope<
+      clean_segment_value,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    ss::sstring segment_name;
+};
 
 } // namespace storage::internal

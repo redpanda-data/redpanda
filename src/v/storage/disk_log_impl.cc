@@ -106,10 +106,16 @@ ss::future<> disk_log_impl::remove() {
                 return _kvstore.remove(
                   kvstore::key_space::storage,
                   internal::start_offset_key(config().ntp()));
+            })
+            .then([this] {
+                return _kvstore.remove(
+                  kvstore::key_space::storage,
+                  internal::clean_segment_key(config().ntp()));
             });
       });
 }
-ss::future<> disk_log_impl::close() {
+
+ss::future<std::optional<ss::sstring>> disk_log_impl::close() {
     vassert(!_closed, "Invalid double closing of log - {}", *this);
     vlog(stlog.debug, "closing log {}", *this);
     _closed = true;
@@ -122,13 +128,38 @@ ss::future<> disk_log_impl::close() {
     vlog(stlog.trace, "waiting for {} compaction to finish", config().ntp());
     co_await _compaction_gate.close();
     vlog(stlog.trace, "stopping {} readers cache", config().ntp());
-    co_await _readers_cache->stop().then([this] {
-        return ss::parallel_for_each(_segs, [](ss::lw_shared_ptr<segment>& h) {
-            return h->close().handle_exception([h](std::exception_ptr e) {
-                vlog(stlog.error, "Error closing segment:{} - {}", e, h);
-            });
-        });
+
+    // close() on the segments is not expected to fail, but it might
+    // encounter I/O errors (e.g. ENOSPC, EIO, out of file handles)
+    // when trying to flush.  If that happens, all bets are off and
+    // we will not mark our latest segment as clean (even if that
+    // particular segment didn't report an I/O error)
+    bool errors = false;
+
+    co_await _readers_cache->stop().then([this, &errors] {
+        return ss::parallel_for_each(
+          _segs, [&errors](ss::lw_shared_ptr<segment>& h) {
+              return h->close().handle_exception(
+                [&errors, h](std::exception_ptr e) {
+                    vlog(stlog.error, "Error closing segment:{} - {}", e, h);
+                    errors = true;
+                });
+          });
     });
+
+    if (_segs.size() && !errors) {
+        auto clean_seg = _segs.back()->filename();
+        vlog(
+          stlog.debug,
+          "closed {}, last clean segment is {}",
+          config().ntp(),
+          clean_seg);
+        co_return clean_seg;
+    }
+
+    // Avoid assuming there will always be a segment: it is legal to
+    // open a log + close it without writing anything.
+    co_return std::nullopt;
 }
 
 model::offset disk_log_impl::size_based_gc_max_offset(size_t max_size) {

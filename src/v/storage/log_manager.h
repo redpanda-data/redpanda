@@ -234,6 +234,7 @@ private:
       = intrusive_list<log_housekeeping_meta, &log_housekeeping_meta::link>;
 
     ss::future<log> do_manage(ntp_config);
+    ss::future<> clean_close(storage::log&);
 
     /**
      * \brief delete old segments and trigger compacted segments

@@ -43,6 +43,7 @@
 #include <seastar/core/thread.hh>
 #include <seastar/core/with_scheduling_group.hh>
 #include <seastar/coroutine/maybe_yield.hh>
+#include <seastar/coroutine/parallel_for_each.hh>
 
 #include <fmt/format.h>
 
@@ -84,17 +85,36 @@ void log_manager::trigger_housekeeping() {
     });
 }
 
+ss::future<> log_manager::clean_close(storage::log& log) {
+    auto clean_segment = co_await log.close();
+
+    if (clean_segment) {
+        vlog(
+          stlog.debug,
+          "writing clean record for: {} {}",
+          log.config().ntp(),
+          clean_segment.value());
+        co_await _kvstore.put(
+          kvstore::key_space::storage,
+          internal::clean_segment_key(log.config().ntp()),
+          serde::to_iobuf(internal::clean_segment_value{
+            .segment_name = std::filesystem::path(clean_segment.value())
+                              .filename()
+                              .string()}));
+    }
+}
+
 ss::future<> log_manager::stop() {
     _compaction_timer.cancel();
     _abort_source.request_abort();
-    return _open_gate.close()
-      .then([this] {
-          return ss::parallel_for_each(_logs, [](logs_type::value_type& entry) {
-              return entry.second->handle.close();
-          });
-      })
-      .then([this] { return _batch_cache.stop(); })
-      .then([this] { return ssx::async_clear(_logs)(); });
+
+    co_await _open_gate.close();
+    co_await ss::coroutine::parallel_for_each(
+      _logs, [this](logs_type::value_type& entry) {
+          return clean_close(entry.second->handle);
+      });
+    co_await _batch_cache.stop();
+    co_await ssx::async_clear(_logs)();
 }
 
 /**
@@ -189,28 +209,34 @@ log_manager::create_cache(with_cache ntp_cache_enabled) {
 }
 
 ss::future<log> log_manager::manage(ntp_config cfg) {
-    return ss::with_gate(_open_gate, [this, cfg = std::move(cfg)]() mutable {
-        return do_manage(std::move(cfg));
-    });
+    auto gate = _open_gate.hold();
+
+    co_return co_await do_manage(std::move(cfg));
 }
 
 ss::future<> log_manager::recover_log_state(const ntp_config& cfg) {
     return ss::file_exists(cfg.work_directory())
-      .then(
-        [this, key = internal::start_offset_key(cfg.ntp())](bool dir_exists) {
-            if (dir_exists) {
-                return ss::now();
-            }
-            // directory was deleted, make sure we do not have any state in KV
-            // store.
-            return _kvstore.remove(kvstore::key_space::storage, key);
-        });
+      .then([this,
+             offset_key = internal::start_offset_key(cfg.ntp()),
+             segment_key = internal::clean_segment_key(cfg.ntp())](
+              bool dir_exists) {
+          if (dir_exists) {
+              return ss::now();
+          }
+          // directory was deleted, make sure we do not have any state in KV
+          // store.
+          return _kvstore.remove(kvstore::key_space::storage, offset_key)
+            .then([this, segment_key] {
+                return _kvstore.remove(
+                  kvstore::key_space::storage, segment_key);
+            });
+      });
 }
 
 ss::future<log> log_manager::do_manage(ntp_config cfg) {
     if (_config.base_dir.empty()) {
-        return ss::make_exception_future<log>(std::runtime_error(
-          "log_manager:: cannot have empty config.base_dir"));
+        throw std::runtime_error(
+          "log_manager:: cannot have empty config.base_dir");
     }
 
     vassert(
@@ -223,43 +249,50 @@ ss::future<log> log_manager::do_manage(ntp_config cfg) {
           l.config().ntp(), std::make_unique<log_housekeeping_meta>(l));
         _logs_list.push_back(*it->second);
         // in-memory needs to write vote_for configuration
-        return ss::recursive_touch_directory(path).then([l] { return l; });
+        co_await ss::recursive_touch_directory(path);
+        co_return l;
     }
 
-    return recover_log_state(cfg).then([this, cfg = std::move(cfg)]() mutable {
-        ss::sstring path = cfg.work_directory();
-        with_cache cache_enabled = cfg.cache_enabled();
-        return recover_segments(
-                 std::filesystem::path(path),
-                 _config.sanitize_fileops,
-                 cfg.is_compacted(),
-                 [this, cache_enabled] { return create_cache(cache_enabled); },
-                 _abort_source,
-                 config::shard_local_cfg().storage_read_buffer_size(),
-                 config::shard_local_cfg().storage_read_readahead_count())
-          .then([this, cfg = std::move(cfg)](segment_set segments) mutable {
-              auto l = storage::make_disk_backed_log(
-                std::move(cfg), *this, std::move(segments), _kvstore);
-              auto [it, success] = _logs.emplace(
-                l.config().ntp(), std::make_unique<log_housekeeping_meta>(l));
-              _logs_list.push_back(*it->second);
-              vassert(
-                success, "Could not keep track of:{} - concurrency issue", l);
-              return l;
-          });
-    });
+    std::optional<ss::sstring> last_clean_segment;
+    auto clean_iobuf = _kvstore.get(
+      kvstore::key_space::storage, internal::clean_segment_key(cfg.ntp()));
+    if (clean_iobuf) {
+        last_clean_segment = serde::from_iobuf<internal::clean_segment_value>(
+                               std::move(clean_iobuf.value()))
+                               .segment_name;
+    }
+
+    co_await recover_log_state(cfg);
+
+    ss::sstring path = cfg.work_directory();
+    with_cache cache_enabled = cfg.cache_enabled();
+    auto segments = co_await recover_segments(
+      std::filesystem::path(path),
+      _config.sanitize_fileops,
+      cfg.is_compacted(),
+      [this, cache_enabled] { return create_cache(cache_enabled); },
+      _abort_source,
+      config::shard_local_cfg().storage_read_buffer_size(),
+      config::shard_local_cfg().storage_read_readahead_count(),
+      last_clean_segment);
+
+    auto l = storage::make_disk_backed_log(
+      std::move(cfg), *this, std::move(segments), _kvstore);
+    auto [it, success] = _logs.emplace(
+      l.config().ntp(), std::make_unique<log_housekeeping_meta>(l));
+    _logs_list.push_back(*it->second);
+    vassert(success, "Could not keep track of:{} - concurrency issue", l);
+    co_return l;
 }
 
 ss::future<> log_manager::shutdown(model::ntp ntp) {
     vlog(stlog.debug, "Asked to shutdown: {}", ntp);
-    return ss::with_gate(_open_gate, [this, ntp = std::move(ntp)] {
-        auto handle = _logs.extract(ntp);
-        if (handle.empty()) {
-            return ss::make_ready_future<>();
-        }
-        storage::log lg = handle.mapped()->handle;
-        return lg.close().finally([lg] {});
-    });
+    auto gate = _open_gate.hold();
+    auto handle = _logs.extract(ntp);
+    if (handle.empty()) {
+        co_return;
+    }
+    co_await clean_close(handle.mapped()->handle);
 }
 
 ss::future<> log_manager::remove(model::ntp ntp) {
