@@ -87,4 +87,11 @@ using request_types = make_request_types<
   end_txn_handler,
   create_partitions_handler,
   offset_for_leader_epoch_handler>;
+
+template<typename... RequestTypes>
+static constexpr size_t max_api_key(type_list<RequestTypes...>) {
+    /// Black magic here is an overload of std::max() that takes an
+    /// std::initializer_list
+    return std::max({RequestTypes::api::key()...});
+}
 } // namespace kafka
