@@ -70,6 +70,7 @@ proxy::proxy(
   , _ctx{{{}, _mem_sem, {}, smp_sg}, *this}
   , _server(
       "pandaproxy",
+      "rest_proxy",
       ss::api_registry_builder20(_config.api_doc_dir(), "/v1"),
       "header",
       "/definitions",

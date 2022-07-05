@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cluster/controller_probe.h"
 #include "cluster/controller_stm.h"
 #include "cluster/fwd.h"
 #include "cluster/scheduling/leader_balancer.h"
@@ -115,6 +116,9 @@ public:
     ss::future<> stop();
 
 private:
+    friend controller_probe;
+
+private:
     config_manager::preload_result _config_preload;
 
     ss::sharded<ss::abort_source> _as;                     // instance per core
@@ -157,6 +161,7 @@ private:
     std::unique_ptr<leader_balancer> _leader_balancer;
     consensus_ptr _raft0;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
+    controller_probe _probe;
 };
 
 } // namespace cluster

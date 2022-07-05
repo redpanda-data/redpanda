@@ -11,17 +11,19 @@
 
 #include "config/configuration.h"
 #include "prometheus/prometheus_sanitize.h"
+#include "ssx/metrics.h"
+#include "ssx/sformat.h"
 
 #include <seastar/core/metrics.hh>
+#include <seastar/core/metrics_registration.hh>
 
 namespace pandaproxy {
 
-probe::probe(ss::httpd::path_description& path_desc)
+probe::probe(
+  ss::httpd::path_description& path_desc, const ss::sstring& group_name)
   : _request_hist()
-  , _metrics() {
-    if (config::shard_local_cfg().disable_metrics()) {
-        return;
-    }
+  , _metrics()
+  , _public_metrics(ssx::metrics::public_metrics_handle) {
     namespace sm = ss::metrics;
 
     auto operation_label = sm::label("operation");
@@ -30,19 +32,36 @@ probe::probe(ss::httpd::path_description& path_desc)
 
     auto aggregate_labels = std::vector<sm::label>{
       sm::shard_label, operation_label};
-    auto internal_aggregate_labels
-      = config::shard_local_cfg().aggregate_metrics()
-          ? aggregate_labels
-          : std::vector<sm::label>{};
 
-    _metrics.add_group(
-      "pandaproxy",
-      {sm::make_histogram(
-         "request_latency",
-         sm::description("Request latency"),
-         labels,
-         [this] { return _request_hist.seastar_histogram_logform(); })
-         .aggregate(internal_aggregate_labels)});
+    if (!config::shard_local_cfg().disable_metrics()) {
+        auto internal_aggregate_labels
+          = config::shard_local_cfg().aggregate_metrics()
+              ? aggregate_labels
+              : std::vector<sm::label>{};
+
+        _metrics.add_group(
+          "pandaproxy",
+          {sm::make_histogram(
+             "request_latency",
+             sm::description("Request latency"),
+             labels,
+             [this] { return _request_hist.seastar_histogram_logform(); })
+             .aggregate(internal_aggregate_labels)});
+    }
+
+    if (!config::shard_local_cfg().disable_public_metrics()) {
+        _public_metrics.add_group(
+          group_name,
+          {sm::make_histogram(
+             "request_latency_seconds",
+             sm::description(
+               ssx::sformat("Internal latency of request for {}", group_name)),
+             labels,
+             [this] {
+                 return ssx::metrics::report_default_histogram(_request_hist);
+             })
+             .aggregate(aggregate_labels)});
+    }
 }
 
 } // namespace pandaproxy

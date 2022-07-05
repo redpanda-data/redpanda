@@ -9,6 +9,8 @@
 
 import re
 
+from rptest.services.redpanda import MetricsEndpoint
+
 
 class MetricCheckFailed(Exception):
     def __init__(self, metric, old_value, new_value):
@@ -26,7 +28,14 @@ class MetricCheck(object):
     call `expect` or `evaluate` later to measure how your metrics of
     interest have changed over that region.
     """
-    def __init__(self, logger, redpanda, node, metrics, labels, reduce=None):
+    def __init__(self,
+                 logger,
+                 redpanda,
+                 node,
+                 metrics,
+                 labels=None,
+                 reduce=None,
+                 metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS):
         """
         :param redpanda: a RedpandaService
         :param logger: a Logger
@@ -34,6 +43,8 @@ class MetricCheck(object):
         :param metrics: a list of metric names, or a single compiled regex (use re.compile())
         :param labels: dict, to filter metrics as we capture and check.
         :param reduce: reduction function (e.g. sum) if multiple samples match metrics+labels
+        :param metrics_endpoint: MetricsEndpoint enumeration instance specifies which
+        Prometheus endpoint to query
         """
         self.redpanda = redpanda
         self.node = node
@@ -41,10 +52,11 @@ class MetricCheck(object):
         self.logger = logger
 
         self._reduce = reduce
+        self._metrics_endpoint = metrics_endpoint
         self._initial_samples = self._capture(metrics)
 
     def _capture(self, check_metrics):
-        metrics = self.redpanda.metrics(self.node)
+        metrics = self.redpanda.metrics(self.node, self._metrics_endpoint)
 
         samples = {}
         for family in metrics:
@@ -57,14 +69,15 @@ class MetricCheck(object):
                 if not include:
                     continue
 
-                label_mismatch = False
-                for k, v in self.labels.items():
-                    if sample.labels.get(k, None) != v:
-                        label_mismatch = True
-                        continue
+                if self.labels:
+                    label_mismatch = False
+                    for k, v in self.labels.items():
+                        if sample.labels.get(k, None) != v:
+                            label_mismatch = True
+                            continue
 
-                if label_mismatch:
-                    continue
+                    if label_mismatch:
+                        continue
 
                 self.logger.info(
                     f"  Read {sample.name}={sample.value} {sample.labels}")
@@ -84,7 +97,10 @@ class MetricCheck(object):
             self.logger.info(f"  Captured {k}={v}")
 
         if len(samples) == 0:
-            url = f"http://{self.node.account.hostname}:9644/metrics"
+            metrics_endpoint = ("/metrics" if self._metrics_endpoint
+                                == MetricsEndpoint.METRICS else
+                                "/public_metrics")
+            url = f"http://{self.node.account.hostname}:9644{metrics_endpoint}"
             import requests
             dump = requests.get(url).text
             self.logger.warn(f"Metrics dump: {dump}")

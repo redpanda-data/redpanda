@@ -338,6 +338,7 @@ public:
 
     std::vector<follower_metrics> get_follower_metrics() const;
     result<follower_metrics> get_follower_metrics(model::node_id) const;
+    size_t get_follower_count() const;
     bool has_followers() const { return _fstats.size() > 0; }
 
     offset_monitor& visible_offset_monitor() {

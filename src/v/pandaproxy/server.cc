@@ -69,11 +69,12 @@ struct handler_adaptor : ss::httpd::handler_base {
       ss::gate& pending_requests,
       server::context_t& ctx,
       server::function_handler&& handler,
-      ss::httpd::path_description& path_desc)
+      ss::httpd::path_description& path_desc,
+      const ss::sstring& metrics_group_name)
       : _pending_requests(pending_requests)
       , _ctx(ctx)
       , _handler(std::move(handler))
-      , _probe(path_desc) {}
+      , _probe(path_desc, metrics_group_name) {}
 
     ss::future<std::unique_ptr<ss::reply>> handle(
       const ss::sstring&,
@@ -116,11 +117,13 @@ struct handler_adaptor : ss::httpd::handler_base {
 
 server::server(
   const ss::sstring& server_name,
+  const ss::sstring& public_metrics_group_name,
   ss::api_registry_builder20&& api20,
   const ss::sstring& header,
   const ss::sstring& definitions,
   context_t& ctx)
   : _server(server_name)
+  , _public_metrics_group_name(public_metrics_group_name)
   , _pending_reqs()
   , _api20(std::move(api20))
   , _has_routes(false)
@@ -137,7 +140,11 @@ void server::route(server::route_t r) {
     // NOTE: this pointer will be owned by data member _routes of
     // ss::httpd:server. seastar didn't use any unique ptr to express that.
     auto* handler = new handler_adaptor(
-      _pending_reqs, _ctx, std::move(r.handler), r.path_desc);
+      _pending_reqs,
+      _ctx,
+      std::move(r.handler),
+      r.path_desc,
+      _public_metrics_group_name);
     r.path_desc.set(_server._routes, handler);
 }
 

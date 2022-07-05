@@ -13,6 +13,7 @@
 #include "config/configuration.h"
 #include "model/metadata.h"
 #include "prometheus/prometheus_sanitize.h"
+#include "ssx/metrics.h"
 
 #include <seastar/core/metrics.hh>
 
@@ -20,9 +21,15 @@ namespace cluster {
 
 replicated_partition_probe::replicated_partition_probe(
   const partition& p) noexcept
-  : _partition(p) {}
+  : _partition(p)
+  , _public_metrics(ssx::metrics::public_metrics_handle) {}
 
 void replicated_partition_probe::setup_metrics(const model::ntp& ntp) {
+    setup_internal_metrics(ntp);
+    setup_public_metrics(ntp);
+}
+
+void replicated_partition_probe::setup_internal_metrics(const model::ntp& ntp) {
     namespace sm = ss::metrics;
 
     if (config::shard_local_cfg().disable_metrics()) {
@@ -128,6 +135,92 @@ void replicated_partition_probe::setup_metrics(const model::ntp& ntp) {
           .aggregate(aggregate_labels),
       });
 }
+
+void replicated_partition_probe::setup_public_metrics(const model::ntp& ntp) {
+    namespace sm = ss::metrics;
+
+    if (config::shard_local_cfg().disable_public_metrics()) {
+        return;
+    }
+
+    auto request_label = sm::label("request");
+    auto ns_label = sm::label("namespace");
+    auto topic_label = sm::label("topic");
+    auto partition_label = sm::label("partition");
+
+    const std::vector<sm::label_instance> labels = {
+      ns_label(ntp.ns()),
+      topic_label(ntp.tp.topic()),
+      partition_label(ntp.tp.partition()),
+    };
+
+    _public_metrics.add_group(
+      prometheus_sanitize::metrics_name("kafka"),
+      {
+        // Partition Level Metrics
+        sm::make_gauge(
+          "max_offset",
+          [this] {
+              auto log_offset = _partition.committed_offset();
+              auto translator = _partition.get_offset_translator_state();
+
+              try {
+                  return translator->from_log_offset(log_offset);
+              } catch (std::runtime_error& e) {
+                  // Offset translation will throw if nothing was committed
+                  // to the partition or if the offset is outside the
+                  // translation range for any other reason.
+                  return model::offset(-1);
+              }
+          },
+          sm::description(
+            "Latest committed offset for the partition (i.e. the offset of the "
+            "last message safely persisted on most replicas)"),
+          labels)
+          .aggregate({sm::shard_label}),
+        sm::make_gauge(
+          "under_replicated_replicas",
+          [this] {
+              auto metrics = _partition._raft->get_follower_metrics();
+              return std::count_if(
+                metrics.cbegin(),
+                metrics.cend(),
+                [](const raft::follower_metrics& fm) {
+                    return fm.under_replicated;
+                });
+          },
+          sm::description("Number of under replicated replicas (i.e. replicas "
+                          "that are live, but not at the latest offest)"),
+          labels)
+          .aggregate({sm::shard_label}),
+        // Topic Level Metrics
+        sm::make_total_bytes(
+          "request_bytes_total",
+          [this] { return _bytes_produced; },
+          sm::description("Total number of bytes produced per topic"),
+          {request_label("produce"),
+           ns_label(ntp.ns()),
+           topic_label(ntp.tp.topic()),
+           partition_label(ntp.tp.partition())})
+          .aggregate({sm::shard_label, partition_label}),
+        sm::make_total_bytes(
+          "request_bytes_total",
+          [this] { return _bytes_fetched; },
+          sm::description("Total number of bytes consumed per topic"),
+          {request_label("consume"),
+           ns_label(ntp.ns()),
+           topic_label(ntp.tp.topic()),
+           partition_label(ntp.tp.partition())})
+          .aggregate({sm::shard_label, partition_label}),
+        sm::make_gauge(
+          "replicas",
+          [this] { return _partition._raft->get_follower_count(); },
+          sm::description("Number of replicas per topic"),
+          labels)
+          .aggregate({sm::shard_label, partition_label}),
+      });
+}
+
 partition_probe make_materialized_partition_probe() {
     // TODO: implement partition probe for materialized partitions
     class impl : public partition_probe::impl {

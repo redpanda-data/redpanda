@@ -69,12 +69,17 @@ public:
     void add_bytes_produced(uint64_t cnt) final { _bytes_produced += cnt; }
 
 private:
+    void setup_public_metrics(const model::ntp&);
+    void setup_internal_metrics(const model::ntp&);
+
+private:
     const partition& _partition;
     uint64_t _records_produced{0};
     uint64_t _records_fetched{0};
     uint64_t _bytes_produced{0};
     uint64_t _bytes_fetched{0};
     ss::metrics::metric_groups _metrics;
+    ss::metrics::metric_groups _public_metrics;
 };
 
 partition_probe make_materialized_partition_probe();

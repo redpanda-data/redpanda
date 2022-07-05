@@ -224,7 +224,8 @@ service::service(
   , _client(client)
   , _ctx{{{}, _mem_sem, {}, smp_sg}, *this}
   , _server(
-      "schema_registry",
+      "schema_registry", // server_name
+      "schema_registry", // public_metric_group_name
       ss::api_registry_builder20(_config.api_doc_dir(), "/v1"),
       "schema_registry_header",
       "/schema_registry_definitions",

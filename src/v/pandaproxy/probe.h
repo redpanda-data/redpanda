@@ -20,12 +20,14 @@ namespace pandaproxy {
 
 class probe {
 public:
-    probe(ss::httpd::path_description& path_desc);
+    probe(
+      ss::httpd::path_description& path_desc, const ss::sstring& group_name);
     hdr_hist& hist() { return _request_hist; }
 
 private:
     hdr_hist _request_hist;
     ss::metrics::metric_groups _metrics;
+    ss::metrics::metric_groups _public_metrics;
 };
 
 } // namespace pandaproxy

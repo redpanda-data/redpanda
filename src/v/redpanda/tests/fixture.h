@@ -170,6 +170,7 @@ public:
             config.get("join_retry_timeout_ms").set_value(100ms);
             config.get("members_backend_retry_ms").set_value(1000ms);
             config.get("disable_metrics").set_value(true);
+            config.get("disable_public_metrics").set_value(true);
 
             auto& node_config = config::node();
             node_config.get("admin").set_value(

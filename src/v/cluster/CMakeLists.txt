@@ -57,6 +57,7 @@ v_cc_library(
     partition_leaders_table.cc
     topics_frontend.cc
     controller_backend.cc
+    controller_probe.cc
     controller.cc
     partition.cc
     partition_probe.cc

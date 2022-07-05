@@ -32,6 +32,14 @@ std::vector<broker_ptr> members_table::all_brokers() const {
 
     return brokers;
 }
+
+size_t members_table::all_brokers_count() const {
+    return std::count_if(_brokers.begin(), _brokers.end(), [](auto entry) {
+        return entry.second->get_membership_state()
+               != model::membership_state::removed;
+    });
+}
+
 std::vector<model::node_id> members_table::all_broker_ids() const {
     std::vector<model::node_id> ids;
     ids.reserve(_brokers.size());
