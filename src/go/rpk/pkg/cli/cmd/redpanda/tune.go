@@ -181,8 +181,10 @@ func tune(
 		supported, reason := tuner.CheckIfSupported()
 		if !enabled || !supported {
 			includeErr = includeErr || !supported
-			exit1 = exit1 || enabled && !supported
 			results = append(results, result{tunerName, false, enabled, supported, reason})
+			// We exit with code 1 when it's enabled and not supported except
+			// for disk_write_cache since it's only supported for GCP.
+			exit1 = exit1 || enabled && !supported && tunerName != "disk_write_cache"
 			continue
 		}
 		log.Debugf("Tuner parameters %+v", params)
@@ -192,8 +194,6 @@ func tune(
 		errMsg := ""
 		if res.IsFailed() {
 			errMsg = res.Error().Error()
-			// We exit with code 1 when it's enabled and not supported
-			// or when one tuner fails.
 			exit1 = true
 		}
 		results = append(results, result{tunerName, !res.IsFailed(), enabled, supported, errMsg})
