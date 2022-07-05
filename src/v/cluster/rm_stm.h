@@ -409,18 +409,6 @@ private:
         }
     };
 
-    struct request_id {
-        model::producer_identity pid;
-        int32_t seq;
-
-        auto operator<=>(const request_id&) const = default;
-
-        template<typename H>
-        friend H AbslHashValue(H h, const request_id& bid) {
-            return H::combine(std::move(h), bid.pid, bid.seq);
-        }
-    };
-
     // When a request is retried while the first appempt is still
     // being replicated the retried request is parked until the
     // original request is replicated.
