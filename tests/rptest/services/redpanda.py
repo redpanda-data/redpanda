@@ -389,7 +389,7 @@ class RedpandaService(Service):
     DEFAULT_COV_OPT = False
 
     # Where we put a compressed binary if saving it after failure
-    EXECUTABLE_SAVE_PATH = "/tmp/redpanda.tar.gz"
+    EXECUTABLE_SAVE_PATH = "/tmp/redpanda.gz"
 
     # When configuring multiple listeners for testing, a secondary port to use
     # instead of the default.
