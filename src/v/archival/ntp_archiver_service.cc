@@ -66,6 +66,9 @@ ntp_archiver::ntp_archiver(
   , _manifest_upload_timeout(conf.manifest_upload_timeout)
   , _upload_loop_initial_backoff(conf.upload_loop_initial_backoff)
   , _upload_loop_max_backoff(conf.upload_loop_max_backoff)
+  , _sync_manifest_timeout(
+      config::shard_local_cfg()
+        .cloud_storage_readreplica_manifest_sync_timeout_ms.bind())
   , _upload_sg(conf.upload_scheduling_group)
   , _io_priority(conf.upload_io_priority) {
     vassert(

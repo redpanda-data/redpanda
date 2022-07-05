@@ -186,6 +186,7 @@ private:
     ss::semaphore _mutex{1};
     ss::lowres_clock::duration _upload_loop_initial_backoff;
     ss::lowres_clock::duration _upload_loop_max_backoff;
+    config::binding<std::chrono::milliseconds> _sync_manifest_timeout;
     simple_time_jitter<ss::lowres_clock> _backoff_jitter{100ms};
     size_t _concurrency{4};
     ss::lowres_clock::time_point _last_upload_time;

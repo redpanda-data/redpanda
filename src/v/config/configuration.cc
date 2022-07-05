@@ -949,6 +949,13 @@ configuration::configuration()
       "remote storage (sec)",
       {.visibility = visibility::tunable},
       std::nullopt)
+  , cloud_storage_readreplica_manifest_sync_timeout_ms(
+      *this,
+      "cloud_storage_readreplica_manifest_sync_timeout_ms",
+      "Timeout to check if new data is available for partition in S3 for read "
+      "replica",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      30s)
   , cloud_storage_upload_ctrl_update_interval_ms(
       *this,
       "cloud_storage_upload_ctrl_update_interval_ms",
