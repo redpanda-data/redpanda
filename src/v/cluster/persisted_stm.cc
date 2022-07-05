@@ -12,6 +12,7 @@
 #include "cluster/logger.h"
 #include "raft/consensus.h"
 #include "raft/errc.h"
+#include "raft/offset_monitor.h"
 #include "raft/types.h"
 #include "storage/record_batch_builder.h"
 #include "storage/snapshot.h"
@@ -228,6 +229,8 @@ ss::future<bool> persisted_stm::do_sync(
         } catch (const ss::abort_requested_exception&) {
             co_return false;
         } catch (const ss::condition_variable_timed_out&) {
+            co_return false;
+        } catch (const raft::offset_monitor::wait_aborted&) {
             co_return false;
         } catch (...) {
             vlog(
