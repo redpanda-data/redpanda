@@ -20,6 +20,14 @@
 namespace storage {
 // simple types shared among readers and writers
 
+/**
+ * Type representing a record key prefixed with batch_type
+ */
+struct compaction_key : bytes {
+    explicit compaction_key(bytes b)
+      : bytes(std::move(b)) {}
+};
+
 struct compacted_index {
     static constexpr const size_t max_entry_size = size_t(
       std::numeric_limits<uint16_t>::max());
