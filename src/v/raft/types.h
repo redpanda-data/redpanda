@@ -608,4 +608,23 @@ struct adl<raft::transfer_leadership_reply> {
         return {.success = success, .result = result};
     }
 };
+
+template<>
+struct adl<raft::timeout_now_request> {
+    void to(iobuf& out, raft::timeout_now_request&& r) {
+        serialize(out, r.target_node_id, r.node_id, r.group, r.term);
+    }
+    raft::timeout_now_request from(iobuf_parser& in) {
+        auto target_node_id = adl<raft::vnode>{}.from(in);
+        auto node_id = adl<raft::vnode>{}.from(in);
+        auto group = adl<raft::group_id>{}.from(in);
+        auto term = adl<model::term_id>{}.from(in);
+        return {
+          .target_node_id = target_node_id,
+          .node_id = node_id,
+          .group = group,
+          .term = term,
+        };
+    }
+};
 } // namespace reflection
