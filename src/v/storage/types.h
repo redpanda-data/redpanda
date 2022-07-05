@@ -33,17 +33,18 @@ using debug_sanitize_files = ss::bool_class<struct debug_sanitize_files_tag>;
 
 enum class disk_space_alert { ok = 0, low_space = 1, degraded = 2 };
 
-static inline disk_space_alert
-max_severity(disk_space_alert a, disk_space_alert b) {
+inline disk_space_alert max_severity(disk_space_alert a, disk_space_alert b) {
     return std::max(a, b);
 }
 
-struct disk {
+struct disk : serde::envelope<disk, serde::version<0>> {
     static constexpr int8_t current_version = 0;
 
     ss::sstring path;
     uint64_t free;
     uint64_t total;
+
+    auto serde_fields() { return std::tie(path, free, total); }
 
     friend std::ostream& operator<<(std::ostream&, const disk&);
     friend bool operator==(const disk&, const disk&) = default;

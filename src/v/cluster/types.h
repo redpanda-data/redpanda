@@ -1401,15 +1401,51 @@ struct topic_result : serde::envelope<topic_result, serde::version<0>> {
     auto serde_fields() { return std::tie(tp_ns, ec); }
 };
 
-struct create_topics_request {
+struct create_topics_request
+  : serde::envelope<create_topics_request, serde::version<0>> {
     std::vector<topic_configuration> topics;
     model::timeout_clock::duration timeout;
+
+    friend bool
+    operator==(const create_topics_request&, const create_topics_request&)
+      = default;
+
+    void serde_write(iobuf& out) {
+        using serde::write;
+        write(out, topics);
+        write(
+          out, std::chrono::duration_cast<std::chrono::milliseconds>(timeout));
+    }
+
+    void serde_read(iobuf_parser& in, const serde::header& h) {
+        using serde::read_nested;
+        topics = read_nested<std::vector<topic_configuration>>(
+          in, h._bytes_left_limit);
+        timeout = std::chrono::duration_cast<model::timeout_clock::duration>(
+          read_nested<std::chrono::milliseconds>(in, h._bytes_left_limit));
+    }
 };
 
-struct create_topics_reply {
+struct create_topics_reply
+  : serde::envelope<create_topics_reply, serde::version<0>> {
     std::vector<topic_result> results;
     std::vector<model::topic_metadata> metadata;
     std::vector<topic_configuration> configs;
+
+    create_topics_reply() noexcept = default;
+    create_topics_reply(
+      std::vector<topic_result> results,
+      std::vector<model::topic_metadata> metadata,
+      std::vector<topic_configuration> configs)
+      : results(std::move(results))
+      , metadata(std::move(metadata))
+      , configs(std::move(configs)) {}
+
+    friend bool
+    operator==(const create_topics_reply&, const create_topics_reply&)
+      = default;
+
+    auto serde_fields() { return std::tie(results, metadata, configs); }
 };
 
 struct finish_partition_update_request
@@ -2075,15 +2111,44 @@ struct feature_barrier_response
     auto serde_fields() { return std::tie(entered, complete); }
 };
 
-struct create_non_replicable_topics_request {
+struct create_non_replicable_topics_request
+  : serde::envelope<create_non_replicable_topics_request, serde::version<0>> {
     static constexpr int8_t current_version = 1;
     std::vector<non_replicable_topic> topics;
     model::timeout_clock::duration timeout;
+
+    friend bool operator==(
+      const create_non_replicable_topics_request&,
+      const create_non_replicable_topics_request&)
+      = default;
+
+    void serde_write(iobuf& out) {
+        using serde::write;
+        write(out, topics);
+        write(
+          out, std::chrono::duration_cast<std::chrono::milliseconds>(timeout));
+    }
+
+    void serde_read(iobuf_parser& in, const serde::header& h) {
+        using serde::read_nested;
+        topics = read_nested<std::vector<non_replicable_topic>>(
+          in, h._bytes_left_limit);
+        timeout = std::chrono::duration_cast<model::timeout_clock::duration>(
+          read_nested<std::chrono::milliseconds>(in, h._bytes_left_limit));
+    }
 };
 
-struct create_non_replicable_topics_reply {
+struct create_non_replicable_topics_reply
+  : serde::envelope<create_non_replicable_topics_reply, serde::version<0>> {
     static constexpr int8_t current_version = 1;
     std::vector<topic_result> results;
+
+    friend bool operator==(
+      const create_non_replicable_topics_reply&,
+      const create_non_replicable_topics_reply&)
+      = default;
+
+    auto serde_fields() { return std::tie(results); }
 };
 
 struct config_update_request final

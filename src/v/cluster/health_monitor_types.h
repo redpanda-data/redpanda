@@ -39,16 +39,20 @@ using application_version = named_type<ss::sstring, struct version_number_tag>;
  * node state is determined from controller, and it doesn't require contacting
  * with the node directly
  */
-struct node_state {
+struct node_state : serde::envelope<node_state, serde::version<0>> {
     static constexpr int8_t current_version = 0;
 
     model::node_id id;
     model::membership_state membership_state;
     alive is_alive;
     friend std::ostream& operator<<(std::ostream&, const node_state&);
+
+    friend bool operator==(const node_state&, const node_state&) = default;
+
+    auto serde_fields() { return std::tie(id, membership_state, is_alive); }
 };
 
-struct partition_status {
+struct partition_status : serde::envelope<partition_status, serde::version<0>> {
     /**
      * We increase a version here 'backward' since incorrect assertion would
      * cause older redpanda versions to crash.
@@ -73,25 +77,32 @@ struct partition_status {
     model::revision_id revision_id;
     size_t size_bytes;
 
+    auto serde_fields() {
+        return std::tie(id, term, leader_id, revision_id, size_bytes);
+    }
+
     friend std::ostream& operator<<(std::ostream&, const partition_status&);
     friend bool operator==(const partition_status&, const partition_status&)
       = default;
 };
 
-struct topic_status {
+struct topic_status : serde::envelope<topic_status, serde::version<0>> {
     static constexpr int8_t current_version = 0;
 
     model::topic_namespace tp_ns;
     std::vector<partition_status> partitions;
     friend std::ostream& operator<<(std::ostream&, const topic_status&);
     friend bool operator==(const topic_status&, const topic_status&) = default;
+
+    auto serde_fields() { return std::tie(tp_ns, partitions); }
 };
 
 /**
  * Node health report is collected built based on node local state at given
  * instance of time
  */
-struct node_health_report {
+struct node_health_report
+  : serde::envelope<node_health_report, serde::version<0>> {
     static constexpr int8_t current_version = 2;
 
     model::node_id id;
@@ -127,10 +138,24 @@ struct node_health_report {
     bool include_drain_status{false}; // not serialized
     std::optional<drain_manager::drain_status> drain_status;
 
+    auto serde_fields() {
+        return std::tie(id, local_state, topics, drain_status);
+    }
+
     friend std::ostream& operator<<(std::ostream&, const node_health_report&);
+
+    friend bool
+    operator==(const node_health_report& a, const node_health_report& b) {
+        // include_drain_status is not serialized and is a signal to adl
+        // encoding. once adl is fully deprecated, the field can be removed and
+        // this changed to defaulted operator==.
+        return a.id == b.id && a.local_state == b.local_state
+               && a.topics == b.topics && a.drain_status == b.drain_status;
+    }
 };
 
-struct cluster_health_report {
+struct cluster_health_report
+  : serde::envelope<cluster_health_report, serde::version<0>> {
     static constexpr int8_t current_version = 0;
 
     std::optional<model::node_id> raft0_leader;
@@ -143,6 +168,14 @@ struct cluster_health_report {
     std::vector<node_health_report> node_reports;
     friend std::ostream&
     operator<<(std::ostream&, const cluster_health_report&);
+
+    friend bool
+    operator==(const cluster_health_report&, const cluster_health_report&)
+      = default;
+
+    auto serde_fields() {
+        return std::tie(raft0_leader, node_states, node_reports);
+    }
 };
 
 struct cluster_health_overview {
@@ -199,7 +232,8 @@ struct node_report_filter
     auto serde_fields() { return std::tie(include_partitions, ntp_filters); }
 };
 
-struct cluster_report_filter {
+struct cluster_report_filter
+  : serde::envelope<cluster_report_filter, serde::version<0>> {
     static constexpr int8_t current_version = 0;
     // filtering that will be applied to node reports
     node_report_filter node_report_filter;
@@ -208,6 +242,12 @@ struct cluster_report_filter {
 
     friend std::ostream&
     operator<<(std::ostream&, const cluster_report_filter&);
+
+    friend bool
+    operator==(const cluster_report_filter&, const cluster_report_filter&)
+      = default;
+
+    auto serde_fields() { return std::tie(node_report_filter, nodes); }
 };
 
 using force_refresh = ss::bool_class<struct hm_force_refresh_tag>;
@@ -237,14 +277,22 @@ struct get_node_health_request
     auto serde_fields() { return std::tie(filter); }
 };
 
-struct get_node_health_reply {
+struct get_node_health_reply
+  : serde::envelope<get_node_health_reply, serde::version<0>> {
     static constexpr int8_t current_version = 0;
 
     errc error = cluster::errc::success;
     std::optional<node_health_report> report;
+
+    friend bool
+    operator==(const get_node_health_reply&, const get_node_health_reply&)
+      = default;
+
+    auto serde_fields() { return std::tie(error, report); }
 };
 
-struct get_cluster_health_request {
+struct get_cluster_health_request
+  : serde::envelope<get_cluster_health_request, serde::version<0>> {
     static constexpr int8_t initial_version = 0;
     // version -1: included revision id in partition status
     static constexpr int8_t revision_id_version = -1;
@@ -258,13 +306,41 @@ struct get_cluster_health_request {
     force_refresh refresh = force_refresh::no;
     // this field is not serialized
     int8_t decoded_version = current_version;
+
+    friend bool operator==(
+      const get_cluster_health_request&, const get_cluster_health_request&)
+      = default;
+
+    void serde_write(iobuf& out) {
+        using serde::write;
+        // the current version decodes into the decoded version and is used in
+        // request handling--that is, it is used at layer above serialization so
+        // without further changes we'll need to preserve that behavior.
+        write(out, current_version);
+        write(out, filter);
+        write(out, refresh);
+    }
+
+    void serde_read(iobuf_parser& in, const serde::header& h) {
+        using serde::read_nested;
+        decoded_version = read_nested<int8_t>(in, h._bytes_left_limit);
+        filter = read_nested<cluster_report_filter>(in, h._bytes_left_limit);
+        refresh = read_nested<force_refresh>(in, h._bytes_left_limit);
+    }
 };
 
-struct get_cluster_health_reply {
+struct get_cluster_health_reply
+  : serde::envelope<get_cluster_health_reply, serde::version<0>> {
     static constexpr int8_t current_version = 0;
 
     errc error = cluster::errc::success;
     std::optional<cluster_health_report> report;
+
+    friend bool
+    operator==(const get_cluster_health_reply&, const get_cluster_health_reply&)
+      = default;
+
+    auto serde_fields() { return std::tie(error, report); }
 };
 
 } // namespace cluster

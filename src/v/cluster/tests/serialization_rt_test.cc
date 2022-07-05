@@ -19,6 +19,7 @@
 #include "model/timestamp.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
+#include "storage/types.h"
 #include "test_utils/randoms.h"
 #include "test_utils/rpc.h"
 #include "tristate.h"
@@ -146,14 +147,13 @@ SEASTAR_THREAD_TEST_CASE(create_topics_reply) {
     md1.partitions = {pmd1};
     // clang-format off
     cluster::create_topics_reply req{
-      .results
-      = {cluster::topic_result(
+       {cluster::topic_result(
            model::topic_namespace(model::ns("default"), model::topic("tp-1")),
            cluster::errc::success),
          cluster::topic_result(
            model::topic_namespace(model::ns("default"), model::topic("tp-2")),
            cluster::errc::notification_wait_timeout)},
-      .metadata = {md1}};
+       {md1}, {}};
     // clang-format on
     auto res = serialize_roundtrip_rpc(std::move(req));
 
@@ -845,6 +845,114 @@ cluster::partitions_filter random_partitions_filter() {
         ret.emplace(tests::random_named_string<model::ns>(), topics);
     }
     return {.namespaces = ret};
+}
+
+cluster::drain_manager::drain_status random_drain_status() {
+    cluster::drain_manager::drain_status data{
+      .finished = tests::random_bool(),
+      .errors = tests::random_bool(),
+    };
+    if (tests::random_bool()) {
+        data.partitions = random_generators::get_int<size_t>();
+    }
+    if (tests::random_bool()) {
+        data.eligible = random_generators::get_int<size_t>();
+    }
+    if (tests::random_bool()) {
+        data.transferring = random_generators::get_int<size_t>();
+    }
+    if (tests::random_bool()) {
+        data.failed = random_generators::get_int<size_t>();
+    }
+    return data;
+}
+
+cluster::topic_status random_topic_status() {
+    std::vector<cluster::partition_status> partitions;
+    for (int i = 0, mi = random_generators::get_int(10); i < mi; i++) {
+        partitions.push_back(cluster::partition_status{
+          .id = tests::random_named_int<model::partition_id>(),
+          .term = tests::random_named_int<model::term_id>(),
+          .leader_id = std::nullopt,
+          .revision_id = tests::random_named_int<model::revision_id>(),
+          .size_bytes = random_generators::get_int<size_t>(),
+        });
+    }
+    cluster::topic_status data{
+      .tp_ns = model::random_topic_namespace(),
+      .partitions = partitions,
+    };
+    return data;
+}
+
+cluster::node::local_state random_local_state() {
+    std::vector<storage::disk> disks;
+    for (int i = 0, mi = random_generators::get_int(10); i < mi; i++) {
+        disks.push_back(storage::disk{
+          .path = random_generators::gen_alphanum_string(
+            random_generators::get_int(20)),
+          .free = random_generators::get_int<uint64_t>(),
+          .total = random_generators::get_int<uint64_t>(),
+        });
+    }
+    cluster::node::local_state data{
+      .redpanda_version
+      = tests::random_named_string<cluster::node::application_version>(),
+      .logical_version = tests::random_named_int<cluster::cluster_version>(),
+      .uptime = tests::random_duration_ms(),
+      .disks = disks,
+    };
+    return data;
+}
+
+cluster::cluster_health_report random_cluster_health_report() {
+    std::vector<cluster::node_state> node_states;
+    for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
+        node_states.push_back(cluster::node_state{
+          .id = tests::random_named_int<model::node_id>(),
+          .membership_state = model::membership_state::draining,
+          .is_alive = cluster::alive(tests::random_bool()),
+        });
+    }
+    std::vector<cluster::node_health_report> node_reports;
+    for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
+        std::vector<cluster::topic_status> topics;
+        for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
+            topics.push_back(random_topic_status());
+        }
+        node_reports.push_back(cluster::node_health_report{
+          .id = tests::random_named_int<model::node_id>(),
+          .local_state = random_local_state(),
+          .topics = topics,
+          .include_drain_status = true, // so adl considers drain status
+          .drain_status = random_drain_status(),
+        });
+    }
+    cluster::cluster_health_report data{
+      .raft0_leader = std::nullopt,
+      .node_states = node_states,
+      .node_reports = node_reports,
+    };
+    if (tests::random_bool()) {
+        data.raft0_leader = tests::random_named_int<model::node_id>();
+    }
+    return data;
+}
+
+model::partition_metadata random_partition_metadata() {
+    model::partition_metadata data{
+      tests::random_named_int<model::partition_id>(),
+    };
+    for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
+        data.replicas.push_back(model::broker_shard{
+          .node_id = tests::random_named_int<model::node_id>(),
+          .shard = random_generators::get_int<uint16_t>(128),
+        });
+    }
+    if (tests::random_bool()) {
+        data.leader_node = tests::random_named_int<model::node_id>();
+    }
+    return data;
 }
 
 SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
@@ -1645,6 +1753,210 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           },
         };
         roundtrip_test(data);
+    }
+    {
+        storage::disk data{
+          .path = random_generators::gen_alphanum_string(
+            random_generators::get_int(20)),
+          .free = random_generators::get_int<uint64_t>(),
+          .total = random_generators::get_int<uint64_t>(),
+        };
+        roundtrip_test(data);
+    }
+    {
+        auto data = random_local_state();
+        // local_state isn't adl encoded directly but is rather embedded
+        // explicitly in the adl serialization of node_health_report's adl
+        // encoding. with serde we are going to serialize the entire type tree,
+        // but don't need to add adl encoding in this case.
+        //
+        // use a non-default value here for serde test. tests that use adl need
+        // to keep the default value because thsi field isn't seiralized in adl.
+        data.storage_space_alert = storage::disk_space_alert::degraded;
+        serde_roundtrip_test(data);
+    }
+    {
+        cluster::partition_status data{
+          .id = tests::random_named_int<model::partition_id>(),
+          .term = tests::random_named_int<model::term_id>(),
+          .leader_id = std::nullopt,
+          .revision_id = tests::random_named_int<model::revision_id>(),
+          .size_bytes = random_generators::get_int<size_t>(),
+        };
+        if (tests::random_bool()) {
+            data.leader_id = tests::random_named_int<model::node_id>();
+        }
+        roundtrip_test(data);
+    }
+    {
+        auto data = random_topic_status();
+        roundtrip_test(data);
+    }
+    {
+        auto data = random_drain_status();
+        roundtrip_test(data);
+    }
+    {
+        std::vector<cluster::topic_status> topics;
+        for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
+            topics.push_back(random_topic_status());
+        }
+        cluster::node_health_report data{
+          .id = tests::random_named_int<model::node_id>(),
+          .local_state = random_local_state(),
+          .topics = topics,
+          .drain_status = random_drain_status(),
+        };
+        data.include_drain_status = true; // so adl considers drain status
+        roundtrip_test(data);
+    }
+    {
+        std::vector<cluster::topic_status> topics;
+        for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
+            topics.push_back(random_topic_status());
+        }
+        cluster::node_health_report report{
+          .id = tests::random_named_int<model::node_id>(),
+          .local_state = random_local_state(),
+          .topics = topics,
+          .drain_status = random_drain_status(),
+        };
+        report.include_drain_status = true; // so adl considers drain status
+        cluster::get_node_health_reply data{
+          .report = report,
+        };
+        roundtrip_test(data);
+        // try serde with non-default error code. adl doesn't encode error so
+        // this is a serde only test.
+        data.error = cluster::errc::error_collecting_health_report;
+        serde_roundtrip_test(data);
+    }
+    {
+        std::vector<model::node_id> nodes;
+        for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
+            nodes.push_back(tests::random_named_int<model::node_id>());
+        }
+        cluster::cluster_report_filter data{
+          .node_report_filter = cluster::
+            node_report_filter{
+              .include_partitions = cluster::include_partitions_info(tests::random_bool()),
+              .ntp_filters = random_partitions_filter(),},
+          .nodes = nodes,
+        };
+        roundtrip_test(data);
+    }
+    {
+        std::vector<model::node_id> nodes;
+        for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
+            nodes.push_back(tests::random_named_int<model::node_id>());
+        }
+        cluster::cluster_report_filter filter{
+          .node_report_filter = cluster::
+            node_report_filter{
+              .include_partitions = cluster::include_partitions_info(tests::random_bool()),
+              .ntp_filters = random_partitions_filter(),},
+          .nodes = nodes,
+        };
+        cluster::get_cluster_health_request data{
+          .filter = filter,
+          .refresh = cluster::force_refresh(tests::random_bool()),
+        };
+        roundtrip_test(data);
+    }
+    {
+        cluster::node_state data{
+          .id = tests::random_named_int<model::node_id>(),
+          .membership_state = model::membership_state::draining,
+          .is_alive = cluster::alive(tests::random_bool()),
+        };
+        roundtrip_test(data);
+    }
+    {
+        auto data = random_cluster_health_report();
+        roundtrip_test(data);
+    }
+    {
+        cluster::get_cluster_health_reply data{
+          .error = cluster::errc::join_request_dispatch_error,
+        };
+        if (tests::random_bool()) {
+            data.report = random_cluster_health_report();
+        }
+        roundtrip_test(data);
+    }
+    {
+        std::vector<cluster::non_replicable_topic> topics;
+        for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
+            topics.push_back(cluster::non_replicable_topic{
+              .source = model::random_topic_namespace(),
+              .name = model::random_topic_namespace()});
+        }
+        cluster::create_non_replicable_topics_request data{
+          .topics = topics,
+          .timeout = random_timeout_clock_duration(),
+        };
+        roundtrip_test(data);
+    }
+    {
+        std::vector<cluster::topic_result> results;
+        for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
+            results.push_back(cluster::topic_result{
+              model::random_topic_namespace(),
+              cluster::errc::source_topic_not_exists,
+            });
+        }
+        cluster::create_non_replicable_topics_reply data{
+          .results = results,
+        };
+        roundtrip_test(data);
+    }
+    {
+        std::vector<cluster::topic_configuration> topics;
+        for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
+            topics.push_back(random_topic_configuration());
+        }
+        cluster::create_topics_request data{
+          .topics = topics,
+          .timeout = random_timeout_clock_duration(),
+        };
+        // adl encoding for topic_configuration doesn't encode/decode to exact
+        // equality, but also already existed prior to serde support being added
+        // so only testing the serde case.
+        serde_roundtrip_test(data);
+    }
+    {
+        auto data = random_partition_metadata();
+        roundtrip_test(data);
+    }
+    {
+        model::topic_metadata data{model::random_topic_namespace()};
+        for (auto i = 0, mi = random_generators::get_int(10); i < mi; ++i) {
+            data.partitions.push_back(random_partition_metadata());
+        }
+        roundtrip_test(data);
+    }
+    {
+        cluster::create_topics_reply data;
+        for (auto i = 0, mi = random_generators::get_int(10); i < mi; ++i) {
+            data.results.push_back(cluster::topic_result{
+              model::random_topic_namespace(),
+              cluster::errc::source_topic_not_exists,
+            });
+        }
+        for (auto i = 0, mi = random_generators::get_int(10); i < mi; ++i) {
+            model::topic_metadata tm{model::random_topic_namespace()};
+            for (auto i = 0, mi = random_generators::get_int(10); i < mi; ++i) {
+                tm.partitions.push_back(random_partition_metadata());
+            }
+            data.metadata.push_back(tm);
+        }
+        for (auto i = 0, mi = random_generators::get_int(10); i < mi; ++i) {
+            data.configs.push_back(random_topic_configuration());
+        }
+        // adl serialization doesn't preserve equality for topic_configuration.
+        // serde serialization does and was added after support for adl so adl
+        // semantics are preserved.
+        serde_roundtrip_test(data);
     }
 }
 

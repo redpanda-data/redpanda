@@ -140,7 +140,7 @@ service::create_non_replicable_topics(
                    std::move(r.topics), model::time_from_now(r.timeout));
              })
       .then([](std::vector<topic_result> res) {
-          return create_non_replicable_topics_reply{std::move(res)};
+          return create_non_replicable_topics_reply{.results = std::move(res)};
       });
 }
 

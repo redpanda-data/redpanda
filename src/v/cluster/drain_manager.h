@@ -10,7 +10,9 @@
  */
 #pragma once
 #include "cluster/fwd.h"
+#include "reflection/adl.h"
 #include "seastarx.h"
+#include "serde/serde.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
@@ -42,7 +44,7 @@ public:
      * the optional fields may not be set if draining has been requested, but
      * not yet started. in this case the values are not yet known.
      */
-    struct drain_status {
+    struct drain_status : serde::envelope<drain_status, serde::version<0>> {
         bool finished{false};
         bool errors{false};
         std::optional<size_t> partitions;
@@ -51,6 +53,13 @@ public:
         std::optional<size_t> failed;
 
         friend std::ostream& operator<<(std::ostream&, const drain_status&);
+        friend bool operator==(const drain_status&, const drain_status&)
+          = default;
+
+        auto serde_fields() {
+            return std::tie(
+              finished, errors, partitions, eligible, transferring, failed);
+        }
     };
 
     explicit drain_manager(ss::sharded<cluster::partition_manager>&);
@@ -93,3 +102,35 @@ private:
 };
 
 } // namespace cluster
+
+namespace reflection {
+template<>
+struct adl<cluster::drain_manager::drain_status> {
+    void to(iobuf& out, cluster::drain_manager::drain_status&& r) {
+        serialize(
+          out,
+          r.finished,
+          r.errors,
+          r.partitions,
+          r.eligible,
+          r.transferring,
+          r.failed);
+    }
+    cluster::drain_manager::drain_status from(iobuf_parser& in) {
+        auto finished = adl<bool>{}.from(in);
+        auto errors = adl<bool>{}.from(in);
+        auto partitions = adl<std::optional<size_t>>{}.from(in);
+        auto eligible = adl<std::optional<size_t>>{}.from(in);
+        auto transferring = adl<std::optional<size_t>>{}.from(in);
+        auto failed = adl<std::optional<size_t>>{}.from(in);
+        return {
+          .finished = finished,
+          .errors = errors,
+          .partitions = partitions,
+          .eligible = eligible,
+          .transferring = transferring,
+          .failed = failed,
+        };
+    }
+};
+} // namespace reflection
