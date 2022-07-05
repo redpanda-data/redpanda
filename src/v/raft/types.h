@@ -483,10 +483,17 @@ struct timeout_now_reply {
 };
 
 // if not target is specified then the most up-to-date node will be selected
-struct transfer_leadership_request {
+struct transfer_leadership_request
+  : serde::envelope<transfer_leadership_request, serde::version<0>> {
     group_id group;
     std::optional<model::node_id> target;
     raft::group_id target_group() const { return group; }
+
+    friend bool operator==(
+      const transfer_leadership_request&, const transfer_leadership_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(group, target); }
 };
 
 struct transfer_leadership_reply {

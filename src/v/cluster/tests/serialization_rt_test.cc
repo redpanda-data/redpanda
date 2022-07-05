@@ -17,6 +17,7 @@
 #include "model/metadata.h"
 #include "model/tests/randoms.h"
 #include "model/timestamp.h"
+#include "raft/types.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
 #include "storage/types.h"
@@ -1957,6 +1958,15 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         // serde serialization does and was added after support for adl so adl
         // semantics are preserved.
         serde_roundtrip_test(data);
+    }
+    {
+        raft::transfer_leadership_request data{
+          .group = tests::random_named_int<raft::group_id>(),
+        };
+        if (tests::random_bool()) {
+            data.target = tests::random_named_int<model::node_id>();
+        }
+        roundtrip_test(data);
     }
 }
 
