@@ -14,6 +14,7 @@
 #include "hashing/crc32c.h"
 #include "hashing/xx.h"
 #include "model/fundamental.h"
+#include "model/record_batch_types.h"
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/segment_appender.h"
@@ -38,7 +39,7 @@ public:
     static constexpr size_t max_key_size = compacted_index::max_entry_size
                                            - (2 * vint::max_length);
     using underlying_t = absl::node_hash_map<
-      bytes,
+      compaction_key,
       value_type,
       bytes_hasher<uint64_t, xxhash_64>,
       bytes_type_eq>;
@@ -66,9 +67,11 @@ public:
 
     ss::future<> maybe_open();
     ss::future<> open();
-    ss::future<> index(const iobuf& key, model::offset, int32_t) final;
-    ss::future<> index(bytes_view, model::offset, int32_t) final;
-    ss::future<> index(bytes&&, model::offset, int32_t) final;
+    ss::future<> index(
+      model::record_batch_type, const iobuf& key, model::offset, int32_t) final;
+    ss::future<> index(const compaction_key& b, model::offset, int32_t) final;
+    ss::future<>
+    index(model::record_batch_type, bytes&&, model::offset, int32_t) final;
     ss::future<> truncate(model::offset) final;
     ss::future<> append(compacted_index::entry) final;
     ss::future<> close() final;
@@ -88,7 +91,7 @@ private:
         return debug::AllocatedByteSize(_midx);
     }
     ss::future<> drain_all_keys();
-    ss::future<> add_key(bytes b, value_type);
+    ss::future<> add_key(compaction_key, value_type);
     ss::future<> spill(compacted_index::entry_type, bytes_view, value_type);
 
     storage::debug_sanitize_files _debug;
