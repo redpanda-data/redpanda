@@ -571,4 +571,15 @@ struct adl<raft::snapshot_metadata> {
     raft::snapshot_metadata from(iobuf_parser& in);
 };
 
+template<>
+struct adl<raft::transfer_leadership_request> {
+    void to(iobuf& out, raft::transfer_leadership_request&& r) {
+        serialize(out, r.group, r.target);
+    }
+    raft::transfer_leadership_request from(iobuf_parser& in) {
+        auto group = adl<raft::group_id>{}.from(in);
+        auto target = adl<std::optional<model::node_id>>{}.from(in);
+        return {.group = group, .target = target};
+    }
+};
 } // namespace reflection
