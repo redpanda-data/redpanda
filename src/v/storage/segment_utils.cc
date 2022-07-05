@@ -283,6 +283,13 @@ ss::future<compacted_index::recovery_state> do_detect_compaction_index_state(
                 if (bool(footer.flags & flags::self_compaction)) {
                     return compacted_index::recovery_state::already_compacted;
                 }
+                // if we deal with old version of index that is not yet
+                // compacted request a rebuild
+                if (
+                  footer.version
+                  < compacted_index::footer::key_prefixed_with_batch_type) {
+                    return compacted_index::recovery_state::index_needs_rebuild;
+                }
                 return compacted_index::recovery_state::index_recovered;
             })
             .finally([reader]() mutable { return reader.close(); });
