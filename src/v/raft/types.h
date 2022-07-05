@@ -443,7 +443,8 @@ private:
     ptr_t _ptr;
 };
 
-struct install_snapshot_reply {
+struct install_snapshot_reply
+  : serde::envelope<install_snapshot_reply, serde::version<0>> {
     // node id to validate on receiver
     vnode target_node_id;
     // current term, for leader to update itself
@@ -462,6 +463,14 @@ struct install_snapshot_reply {
 
     friend std::ostream&
     operator<<(std::ostream&, const install_snapshot_reply&);
+
+    friend bool
+    operator==(const install_snapshot_reply&, const install_snapshot_reply&)
+      = default;
+
+    auto serde_fields() {
+        return std::tie(target_node_id, term, bytes_stored, success);
+    }
 };
 
 /**

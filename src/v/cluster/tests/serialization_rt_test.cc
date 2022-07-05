@@ -2054,6 +2054,16 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
             BOOST_REQUIRE(orig == from_adl);
         }
     }
+    {
+        raft::install_snapshot_reply data{
+          .target_node_id = raft::
+            vnode{tests::random_named_int<model::node_id>(), tests::random_named_int<model::revision_id>()},
+          .term = tests::random_named_int<model::term_id>(),
+          .bytes_stored = random_generators::get_int<uint64_t>(),
+          .success = tests::random_bool(),
+        };
+        roundtrip_test(data);
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {
