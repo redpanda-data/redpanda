@@ -1069,6 +1069,12 @@ consensus::abort_configuration_change(model::revision_id revision) {
       append_result.base_offset);
     // flush log as all configuration changes must eventually be committed.
     co_await flush_log();
+    // if current node is a leader make sure we will try to update committed
+    // index, it may be required for single participant raft groups
+    if (is_leader()) {
+        maybe_update_majority_replicated_index();
+        maybe_update_leader_commit_idx();
+    }
     co_return errc::success;
 }
 
