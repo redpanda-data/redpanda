@@ -636,4 +636,21 @@ struct adl<raft::timeout_now_request> {
         };
     }
 };
+
+template<>
+struct adl<raft::timeout_now_reply> {
+    void to(iobuf& out, raft::timeout_now_reply&& r) {
+        serialize(out, r.target_node_id, r.term, r.result);
+    }
+    raft::timeout_now_reply from(iobuf_parser& in) {
+        auto target_node_id = adl<raft::vnode>{}.from(in);
+        auto term = adl<model::term_id>{}.from(in);
+        auto result = adl<raft::timeout_now_reply::status>{}.from(in);
+        return {
+          .target_node_id = target_node_id,
+          .term = term,
+          .result = result,
+        };
+    }
+};
 } // namespace reflection
