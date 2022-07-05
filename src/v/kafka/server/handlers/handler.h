@@ -45,4 +45,7 @@ concept KafkaApiTwoPhaseHandler = KafkaApi<typename T::api> && requires(
     { T::handle(std::move(ctx), g) } -> std::same_as<process_result_stages>;
 };
 
+template<typename T>
+concept KafkaApiHandlerAny = KafkaApiHandler<T> || KafkaApiTwoPhaseHandler<T>;
+
 } // namespace kafka
