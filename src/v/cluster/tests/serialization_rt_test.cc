@@ -17,6 +17,7 @@
 #include "model/metadata.h"
 #include "model/tests/randoms.h"
 #include "model/timestamp.h"
+#include "raft/types.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
 #include "storage/types.h"
@@ -1957,6 +1958,135 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         // serde serialization does and was added after support for adl so adl
         // semantics are preserved.
         serde_roundtrip_test(data);
+    }
+    {
+        raft::transfer_leadership_request data{
+          .group = tests::random_named_int<raft::group_id>(),
+        };
+        if (tests::random_bool()) {
+            data.target = tests::random_named_int<model::node_id>();
+        }
+        roundtrip_test(data);
+    }
+    {
+        raft::transfer_leadership_reply data{
+          .success = tests::random_bool(),
+          .result = raft::errc::append_entries_dispatch_error,
+        };
+        roundtrip_test(data);
+    }
+    {
+        raft::vnode data{
+          tests::random_named_int<model::node_id>(),
+          tests::random_named_int<model::revision_id>()};
+        roundtrip_test(data);
+    }
+    {
+        raft::timeout_now_request data{
+          .target_node_id = raft::
+            vnode{tests::random_named_int<model::node_id>(), tests::random_named_int<model::revision_id>()},
+          .node_id = raft::
+            vnode{tests::random_named_int<model::node_id>(), tests::random_named_int<model::revision_id>()},
+          .group = tests::random_named_int<raft::group_id>(),
+          .term = tests::random_named_int<model::term_id>(),
+        };
+        roundtrip_test(data);
+    }
+    {
+        raft::timeout_now_reply data{
+          .target_node_id = raft::
+            vnode{tests::random_named_int<model::node_id>(), tests::random_named_int<model::revision_id>()},
+          .term = tests::random_named_int<model::term_id>(),
+          .result = raft::timeout_now_reply::status::failure,
+        };
+        roundtrip_test(data);
+    }
+    {
+        const raft::install_snapshot_request orig{
+          .target_node_id = raft::
+            vnode{tests::random_named_int<model::node_id>(), tests::random_named_int<model::revision_id>()},
+          .term = tests::random_named_int<model::term_id>(),
+          .group = tests::random_named_int<raft::group_id>(),
+          .node_id = raft::
+            vnode{tests::random_named_int<model::node_id>(), tests::random_named_int<model::revision_id>()},
+          .last_included_index = tests::random_named_int<model::offset>(),
+          .file_offset = random_generators::get_int<uint64_t>(),
+          .chunk = bytes_to_iobuf(
+            random_generators::get_bytes(random_generators::get_int(1024))),
+          .done = tests::random_bool(),
+        };
+        /*
+         * manual adl/serde test to workaround iobuf being move-only
+         */
+        {
+            raft::install_snapshot_request serde_in{
+              .target_node_id = orig.target_node_id,
+              .term = orig.term,
+              .group = orig.group,
+              .node_id = orig.node_id,
+              .last_included_index = orig.last_included_index,
+              .file_offset = orig.file_offset,
+              .chunk = orig.chunk.copy(),
+              .done = orig.done,
+            };
+            auto serde_out = serde::to_iobuf(std::move(serde_in));
+            auto from_serde = serde::from_iobuf<raft::install_snapshot_request>(
+              std::move(serde_out));
+
+            BOOST_REQUIRE(orig == from_serde);
+        }
+        {
+            raft::install_snapshot_request adl_in{
+              .target_node_id = orig.target_node_id,
+              .term = orig.term,
+              .group = orig.group,
+              .node_id = orig.node_id,
+              .last_included_index = orig.last_included_index,
+              .file_offset = orig.file_offset,
+              .chunk = orig.chunk.copy(),
+              .done = orig.done,
+            };
+            auto adl_out = reflection::to_iobuf(std::move(adl_in));
+            auto from_adl
+              = reflection::from_iobuf<raft::install_snapshot_request>(
+                std::move(adl_out));
+
+            BOOST_REQUIRE(orig == from_adl);
+        }
+    }
+    {
+        raft::install_snapshot_reply data{
+          .target_node_id = raft::
+            vnode{tests::random_named_int<model::node_id>(), tests::random_named_int<model::revision_id>()},
+          .term = tests::random_named_int<model::term_id>(),
+          .bytes_stored = random_generators::get_int<uint64_t>(),
+          .success = tests::random_bool(),
+        };
+        roundtrip_test(data);
+    }
+    {
+        raft::vote_request data{
+          .node_id = raft::
+            vnode{tests::random_named_int<model::node_id>(), tests::random_named_int<model::revision_id>()},
+          .target_node_id = raft::
+            vnode{tests::random_named_int<model::node_id>(), tests::random_named_int<model::revision_id>()},
+          .group = tests::random_named_int<raft::group_id>(),
+          .term = tests::random_named_int<model::term_id>(),
+          .prev_log_index = tests::random_named_int<model::offset>(),
+          .prev_log_term = tests::random_named_int<model::term_id>(),
+          .leadership_transfer = tests::random_bool(),
+        };
+        roundtrip_test(data);
+    }
+    {
+        raft::vote_reply data{
+          .target_node_id = raft::
+            vnode{tests::random_named_int<model::node_id>(), tests::random_named_int<model::revision_id>()},
+          .term = tests::random_named_int<model::term_id>(),
+          .granted = tests::random_bool(),
+          .log_ok = tests::random_bool(),
+        };
+        roundtrip_test(data);
     }
 }
 
