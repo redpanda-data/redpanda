@@ -27,6 +27,7 @@ from rptest.tests.end_to_end import EndToEndTest
 
 DECOMMISSION = "decommission"
 ADD = "add"
+ADD_NO_WAIT = "add_no_wait"
 
 ALLOWED_REPLICATION = [1, 3]
 
@@ -37,7 +38,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
     max_inter_failure_time = 60
 
     def generate_random_workload(self, count, available_nodes):
-        op_types = [ADD, DECOMMISSION]
+        op_types = [ADD, ADD_NO_WAIT, DECOMMISSION]
         # current state
         active_nodes = list(available_nodes)
         decommissioned_nodes = []
@@ -66,9 +67,9 @@ class NodeOperationFuzzyTest(EndToEndTest):
                     id = random.choice(active_nodes)
                     operations.append((DECOMMISSION, id))
                     decommission(id)
-                elif op == ADD:
+                elif op == ADD or op == ADD_NO_WAIT:
                     id = random.choice(decommissioned_nodes)
-                    operations.append((ADD, id))
+                    operations.append((op, id))
                     add(id)
 
         return operations
@@ -272,7 +273,9 @@ class NodeOperationFuzzyTest(EndToEndTest):
                     "seed_servers": seed_servers_for(idx)
                 })
 
+        def wait_for_new_replicas(idx):
             def has_new_replicas():
+                id = self.ids_mapping[idx]
                 per_node = replicas_per_node()
                 self.logger.info(f"replicas per node: {per_node}")
                 return id in per_node
@@ -281,7 +284,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
                        timeout_sec=NODE_OP_TIMEOUT,
                        backoff_sec=2)
 
-        work = self.generate_random_workload(10,
+        work = self.generate_random_workload(30,
                                              available_nodes=self.active_nodes)
 
         self.redpanda.logger.info(f"node operations to execute: {work}")
@@ -290,6 +293,11 @@ class NodeOperationFuzzyTest(EndToEndTest):
             self.logger.info(
                 f"executing - {op} - current ids: {self.ids_mapping}")
             if op_type == ADD:
+                idx = op[1]
+                self.active_nodes.add(idx)
+                add_node(idx)
+                wait_for_new_replicas(idx)
+            if op_type == ADD_NO_WAIT:
                 idx = op[1]
                 self.active_nodes.add(idx)
                 add_node(idx)
