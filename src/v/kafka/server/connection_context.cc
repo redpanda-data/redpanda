@@ -13,10 +13,12 @@
 #include "bytes/iobuf.h"
 #include "config/configuration.h"
 #include "kafka/protocol/sasl_authenticate.h"
+#include "kafka/server/handlers/details/any_handler.h"
 #include "kafka/server/protocol.h"
 #include "kafka/server/protocol_utils.h"
 #include "kafka/server/quota_manager.h"
 #include "kafka/server/request_context.h"
+#include "kafka/server/response.h"
 #include "security/exceptions.h"
 #include "units.h"
 #include "vlog.h"
@@ -236,8 +238,9 @@ connection_context::throttle_request(
     }
     auto track = track_latency(hdr.key);
     return fut
-      .then(
-        [this, request_size] { return reserve_request_units(request_size); })
+      .then([this, key = hdr.key, request_size] {
+          return reserve_request_units(key, request_size);
+      })
       .then([this, delay, track, tracker = std::move(tracker)](
               ss::semaphore_units<> units) mutable {
           return server().get_request_unit().then(
@@ -262,15 +265,21 @@ connection_context::throttle_request(
 }
 
 ss::future<ss::semaphore_units<>>
-connection_context::reserve_request_units(size_t size) {
-    // Allow for extra copies and bookkeeping
-    auto mem_estimate = size * 2 + 8000; // NOLINT
-    if (mem_estimate >= (size_t)std::numeric_limits<int32_t>::max()) {
+connection_context::reserve_request_units(api_key key, size_t size) {
+    // Defer to the handler for the request type for the memory estimate, but
+    // if the request isn't found, use the default estimate (although in that
+    // case the request is likely for an API we don't support or malformed, so
+    // it is likely to fail shortly anyway).
+    auto handler = handler_for_key(key);
+    auto mem_estimate = handler ? (*handler)->memory_estimate(size)
+                                : default_memory_estimate(size);
+    if (unlikely(mem_estimate >= (size_t)std::numeric_limits<int32_t>::max())) {
         // TODO: Create error response using the specific API?
         throw std::runtime_error(fmt::format(
-          "request too large > 1GB (size: {}; estimate: {})",
+          "request too large > 1GB (size: {}, estimate: {}, API: {})",
           size,
-          mem_estimate));
+          mem_estimate,
+          handler ? (*handler)->name() : "<bad key>"));
     }
     auto fut = ss::get_units(_rs.memory(), mem_estimate);
     if (_rs.memory().waiters()) {
