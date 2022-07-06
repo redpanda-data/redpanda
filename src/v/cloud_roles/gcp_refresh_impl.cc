@@ -19,6 +19,7 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/sleep.hh>
 
+namespace cloud_roles {
 static constexpr std::string_view token_path
   = "/computeMetadata/v1/instance/service-accounts/default/token";
 
@@ -34,7 +35,7 @@ struct gcp_response_schema {
     static constexpr std::string_view token_field = "access_token";
 };
 
-cloud_roles::gcp_refresh_impl::gcp_refresh_impl(
+gcp_refresh_impl::gcp_refresh_impl(
   ss::sstring api_host,
   uint16_t api_port,
   aws_region_name region,
@@ -43,8 +44,7 @@ cloud_roles::gcp_refresh_impl::gcp_refresh_impl(
   : refresh_credentials::impl(
     std::move(api_host), api_port, std::move(region), as, retry_params) {}
 
-ss::future<cloud_roles::api_response>
-cloud_roles::gcp_refresh_impl::fetch_credentials() {
+ss::future<api_response> gcp_refresh_impl::fetch_credentials() {
     http::client::request_header oauth_req;
 
     oauth_req.method(boost::beast::http::verb::get);
@@ -55,9 +55,8 @@ cloud_roles::gcp_refresh_impl::fetch_credentials() {
     co_return co_await make_request(make_api_client(), std::move(oauth_req));
 }
 
-cloud_roles::api_response_parse_result
-cloud_roles::gcp_refresh_impl::parse_response(iobuf response) {
-    auto doc = cloud_roles::parse_json_response(std::move(response));
+api_response_parse_result gcp_refresh_impl::parse_response(iobuf response) {
+    auto doc = parse_json_response(std::move(response));
     std::vector<ss::sstring> missing_fields;
     if (!doc.HasMember(gcp_response_schema::expiry_field.data())) {
         missing_fields.emplace_back(gcp_response_schema::expiry_field);
@@ -79,8 +78,10 @@ cloud_roles::gcp_refresh_impl::parse_response(iobuf response) {
         doc[gcp_response_schema::token_field.data()].GetString()}};
 }
 
-std::ostream& cloud_roles::gcp_refresh_impl::print(std::ostream& os) const {
+std::ostream& gcp_refresh_impl::print(std::ostream& os) const {
     fmt::print(
       os, "gcp_refresh_impl{{host:{}, port:{}}}", api_host(), api_port());
     return os;
 }
+
+} // namespace cloud_roles

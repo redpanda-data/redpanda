@@ -13,23 +13,19 @@
 #include "cloud_roles/apply_aws_credentials.h"
 #include "cloud_roles/apply_gcp_credentials.h"
 
-cloud_roles::apply_credentials
-cloud_roles::make_credentials_applier(cloud_roles::credentials creds) {
+namespace cloud_roles {
+apply_credentials make_credentials_applier(credentials creds) {
     return apply_credentials{ss::visit(
       std::move(creds),
-      [](cloud_roles::aws_credentials ac)
-        -> std::unique_ptr<apply_credentials::impl> {
-          return std::make_unique<cloud_roles::apply_aws_credentials>(
-            std::move(ac));
+      [](aws_credentials ac) -> std::unique_ptr<apply_credentials::impl> {
+          return std::make_unique<apply_aws_credentials>(std::move(ac));
       },
-      [](cloud_roles::gcp_credentials gc)
-        -> std::unique_ptr<apply_credentials::impl> {
-          return std::make_unique<cloud_roles::apply_gcp_credentials>(
-            std::move(gc));
+      [](gcp_credentials gc) -> std::unique_ptr<apply_credentials::impl> {
+          return std::make_unique<apply_gcp_credentials>(std::move(gc));
       })};
 }
 
-std::ostream& cloud_roles::operator<<(
-  std::ostream& os, const cloud_roles::apply_credentials& ac) {
+std::ostream& operator<<(std::ostream& os, const apply_credentials& ac) {
     return ac.print(os);
 }
+} // namespace cloud_roles

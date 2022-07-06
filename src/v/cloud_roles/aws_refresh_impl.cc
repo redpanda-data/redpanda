@@ -10,6 +10,8 @@
 
 #include "cloud_roles/aws_refresh_impl.h"
 
+namespace cloud_roles {
+
 struct ec2_response_schema {
     static constexpr std::string_view expiry = "Expiration";
     static constexpr std::string_view access_key_id = "AccessKeyId";
@@ -17,7 +19,7 @@ struct ec2_response_schema {
     static constexpr std::string_view session_token = "Token";
 };
 
-cloud_roles::aws_refresh_impl::aws_refresh_impl(
+aws_refresh_impl::aws_refresh_impl(
   seastar::sstring api_host,
   uint16_t api_port,
   aws_region_name region,
@@ -26,8 +28,7 @@ cloud_roles::aws_refresh_impl::aws_refresh_impl(
   : refresh_credentials::impl(
     std::move(api_host), api_port, std::move(region), as, retry_params) {}
 
-ss::future<cloud_roles::api_response>
-cloud_roles::aws_refresh_impl::fetch_credentials() {
+ss::future<api_response> aws_refresh_impl::fetch_credentials() {
     if (unlikely(!_role)) {
         vlog(clrl_log.info, "initializing role name");
         auto response = co_await fetch_role_name();
@@ -65,8 +66,7 @@ cloud_roles::aws_refresh_impl::fetch_credentials() {
     co_return co_await make_request(make_api_client(), std::move(creds_req));
 }
 
-cloud_roles::api_response_parse_result
-cloud_roles::aws_refresh_impl::parse_response(iobuf resp) {
+api_response_parse_result aws_refresh_impl::parse_response(iobuf resp) {
     auto doc = parse_json_response(std::move(resp));
     std::vector<ss::sstring> missing_fields;
     for (const auto& key :
@@ -101,16 +101,17 @@ cloud_roles::aws_refresh_impl::parse_response(iobuf resp) {
     };
 }
 
-ss::future<cloud_roles::api_response>
-cloud_roles::aws_refresh_impl::fetch_role_name() {
+ss::future<api_response> aws_refresh_impl::fetch_role_name() {
     http::client::request_header role_req;
     role_req.method(boost::beast::http::verb::get);
     role_req.target("/latest/meta-data/iam/security-credentials/");
     co_return co_await make_request(make_api_client(), std::move(role_req));
 }
 
-std::ostream& cloud_roles::aws_refresh_impl::print(std::ostream& os) const {
+std::ostream& aws_refresh_impl::print(std::ostream& os) const {
     fmt::print(
       os, "aws_refresh_impl{{host:{}, port:{}}}", api_host(), api_port());
     return os;
 }
+
+} // namespace cloud_roles

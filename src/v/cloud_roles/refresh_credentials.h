@@ -188,7 +188,7 @@ refresh_credentials make_refresh_credentials(
     auto port = endpoint ? endpoint->port() : CredentialsProvider::default_port;
     auto impl = std::make_unique<CredentialsProvider>(
       host.data(), port, region, as, retry_params);
-    return cloud_roles::refresh_credentials{
+    return refresh_credentials{
       std::move(impl), gate, as, std::move(creds_update_cb), std::move(region)};
 }
 

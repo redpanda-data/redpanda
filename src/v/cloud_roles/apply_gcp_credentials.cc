@@ -10,32 +10,32 @@
 
 #include "apply_gcp_credentials.h"
 
-cloud_roles::apply_gcp_credentials::apply_gcp_credentials(
-  cloud_roles::gcp_credentials credentials)
+namespace cloud_roles {
+apply_gcp_credentials::apply_gcp_credentials(gcp_credentials credentials)
   : _oauth_token{fmt::format("Bearer {}", credentials.oauth_token())} {}
 
-std::error_code cloud_roles::apply_gcp_credentials::add_auth(
-  http::client::request_header& header) const {
+std::error_code
+apply_gcp_credentials::add_auth(http::client::request_header& header) const {
     auto token = _oauth_token();
     header.insert(
       boost::beast::http::field::authorization, {token.data(), token.size()});
     return {};
 }
 
-void cloud_roles::apply_gcp_credentials::reset_creds(
-  cloud_roles::credentials creds) {
+void apply_gcp_credentials::reset_creds(credentials creds) {
     if (!std::holds_alternative<gcp_credentials>(creds)) {
         throw std::runtime_error(fmt_with_ctx(
           fmt::format,
           "credential applier reset with incorrect credential type {}",
           creds));
     }
-    _oauth_token = cloud_roles::oauth_token_str{
+    _oauth_token = oauth_token_str{
       fmt::format("Bearer {}", std::get<gcp_credentials>(creds).oauth_token())};
 }
 
-std::ostream&
-cloud_roles::apply_gcp_credentials::print(std::ostream& os) const {
+std::ostream& apply_gcp_credentials::print(std::ostream& os) const {
     fmt::print(os, "apply_gcp_credentials");
     return os;
 }
+
+} // namespace cloud_roles

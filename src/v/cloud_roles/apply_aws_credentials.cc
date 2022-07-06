@@ -13,6 +13,8 @@
 #include "cloud_roles/logger.h"
 #include "vlog.h"
 
+namespace cloud_roles {
+
 struct aws_header_names {
     static constexpr boost::beast::string_view x_amz_security_token
       = "x-amz-security-token";
@@ -57,13 +59,12 @@ static std::string_view sha_for_verb(boost::beast::http::verb verb) {
     }
 }
 
-cloud_roles::apply_aws_credentials::apply_aws_credentials(
-  cloud_roles::aws_credentials credentials)
+apply_aws_credentials::apply_aws_credentials(aws_credentials credentials)
   : _signature{credentials.region, credentials.access_key_id, credentials.secret_access_key}
   , _session_token{credentials.session_token} {}
 
-std::error_code cloud_roles::apply_aws_credentials::add_auth(
-  http::client::request_header& header) const {
+std::error_code
+apply_aws_credentials::add_auth(http::client::request_header& header) const {
     if (_session_token) {
         std::string_view token = (*_session_token)();
         if (!is_test_token(token)) {
@@ -82,8 +83,7 @@ std::error_code cloud_roles::apply_aws_credentials::add_auth(
     return _signature.sign_header(header, sha256);
 }
 
-void cloud_roles::apply_aws_credentials::reset_creds(
-  cloud_roles::credentials creds) {
+void apply_aws_credentials::reset_creds(credentials creds) {
     if (!std::holds_alternative<aws_credentials>(creds)) {
         throw std::runtime_error(fmt_with_ctx(
           fmt::format,
@@ -96,8 +96,9 @@ void cloud_roles::apply_aws_credentials::reset_creds(
     _session_token = aws_creds.session_token;
 }
 
-std::ostream&
-cloud_roles::apply_aws_credentials::print(std::ostream& os) const {
+std::ostream& apply_aws_credentials::print(std::ostream& os) const {
     fmt::print(os, "apply_aws_credentials");
     return os;
 }
+
+} // namespace cloud_roles

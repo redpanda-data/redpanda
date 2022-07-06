@@ -14,10 +14,9 @@
 
 namespace cloud_roles {
 
-class apply_gcp_credentials final
-  : public cloud_roles::apply_credentials::impl {
+class apply_gcp_credentials final : public apply_credentials::impl {
 public:
-    explicit apply_gcp_credentials(cloud_roles::gcp_credentials credentials);
+    explicit apply_gcp_credentials(gcp_credentials credentials);
 
     std::error_code
     add_auth(http::client::request_header& header) const override;

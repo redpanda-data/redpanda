@@ -21,6 +21,8 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/loop.hh>
 
+namespace cloud_roles {
+
 /// These environment variables can be used to override the default hostname and
 /// port for fetching temporary credentials for testing.
 struct override_api_endpoint_env_vars {
@@ -33,7 +35,7 @@ struct override_api_endpoint_env_vars {
 /// results in a fetch after 54 minutes.
 static constexpr float sleep_from_expiry_multiplier = 0.9;
 
-cloud_roles::refresh_credentials::refresh_credentials(
+refresh_credentials::refresh_credentials(
   std::unique_ptr<impl> impl,
   ss::gate& gate,
   ss::abort_source& as,
@@ -45,12 +47,12 @@ cloud_roles::refresh_credentials::refresh_credentials(
   , _credentials_update(std::move(creds_update))
   , _region{std::move(region)} {}
 
-void cloud_roles::refresh_credentials::start() {
+void refresh_credentials::start() {
     ssx::background = ssx::spawn_with_gate_then(
       _gate, [this]() { return do_start(); });
 }
 
-ss::future<> cloud_roles::refresh_credentials::do_start() {
+ss::future<> refresh_credentials::do_start() {
     return ss::do_until(
       [this] { return _gate.is_closed() || _as.abort_requested(); },
       [this] { return fetch_and_update_credentials(); });
@@ -66,14 +68,14 @@ load_and_validate_env_var(std::string_view env_var) {
         }
 
         vlog(
-          cloud_roles::clrl_log.warn,
+          clrl_log.warn,
           "override environment variable {} is set but empty, ignoring",
           env_var);
     }
     return std::nullopt;
 }
 
-cloud_roles::refresh_credentials::impl::impl(
+refresh_credentials::impl::impl(
   ss::sstring api_host,
   uint16_t api_port,
   aws_region_name region,
@@ -114,7 +116,7 @@ cloud_roles::refresh_credentials::impl::impl(
     }
 }
 
-ss::future<> cloud_roles::refresh_credentials::fetch_and_update_credentials() {
+ss::future<> refresh_credentials::fetch_and_update_credentials() {
     // Before fetching new credentials, either:
     // 1. do not sleep - this is an initial call to API
     // 2. sleep until we are close to expiry of credentials
@@ -161,15 +163,13 @@ ss::future<> cloud_roles::refresh_credentials::fetch_and_update_credentials() {
 }
 
 std::chrono::milliseconds
-cloud_roles::refresh_credentials::impl::calculate_sleep_duration(
-  uint32_t expiry_sec) const {
+refresh_credentials::impl::calculate_sleep_duration(uint32_t expiry_sec) const {
     int sleep = std::floor(expiry_sec * sleep_from_expiry_multiplier);
     return std::chrono::duration_cast<std::chrono::milliseconds>(
       std::chrono::seconds{sleep});
 }
 
-std::chrono::milliseconds
-cloud_roles::refresh_credentials::impl::calculate_sleep_duration(
+std::chrono::milliseconds refresh_credentials::impl::calculate_sleep_duration(
   std::chrono::system_clock::time_point expires_at) const {
     auto now = std::chrono::system_clock::now();
     auto diff = std::chrono::duration_cast<std::chrono::seconds>(
@@ -178,16 +178,15 @@ cloud_roles::refresh_credentials::impl::calculate_sleep_duration(
     return calculate_sleep_duration(diff);
 }
 
-void cloud_roles::refresh_credentials::impl::increment_retries() {
+void refresh_credentials::impl::increment_retries() {
     _retries += 1;
     auto sleep_ms = _retry_params.backoff_ms * (2 * _retries);
     vlog(clrl_log.info, "retry after {} ms", sleep_ms);
     _sleep_duration = sleep_ms;
 }
 
-cloud_roles::api_response_parse_result
-cloud_roles::refresh_credentials::impl::handle_response(
-  cloud_roles::api_response resp) {
+api_response_parse_result
+refresh_credentials::impl::handle_response(api_response resp) {
     if (std::holds_alternative<iobuf>(resp)) {
         try {
             return parse_response(std::move(std::get<iobuf>(resp)));
@@ -204,14 +203,13 @@ cloud_roles::refresh_credentials::impl::handle_response(
     }
 }
 
-ss::future<>
-cloud_roles::refresh_credentials::impl::sleep_until_expiry() const {
+ss::future<> refresh_credentials::impl::sleep_until_expiry() const {
     if (_sleep_duration) {
         co_await ss::sleep_abortable(*_sleep_duration, _as);
     }
 }
 
-http::client cloud_roles::refresh_credentials::impl::make_api_client() const {
+http::client refresh_credentials::impl::make_api_client() const {
     return http::client{
       net::base_transport::configuration{
         .server_addr = net::unresolved_address{_api_host, _api_port},
@@ -221,7 +219,7 @@ http::client cloud_roles::refresh_credentials::impl::make_api_client() const {
       _as};
 }
 
-cloud_roles::refresh_credentials cloud_roles::make_refresh_credentials(
+refresh_credentials make_refresh_credentials(
   model::cloud_credentials_source cloud_credentials_source,
   ss::gate& gate,
   ss::abort_source& as,
@@ -264,7 +262,8 @@ cloud_roles::refresh_credentials cloud_roles::make_refresh_credentials(
     }
 }
 
-std::ostream& cloud_roles::operator<<(
-  std::ostream& os, const cloud_roles::refresh_credentials& rc) {
+std::ostream& operator<<(std::ostream& os, const refresh_credentials& rc) {
     return rc.print(os);
 }
+
+} // namespace cloud_roles
