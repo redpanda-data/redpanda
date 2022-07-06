@@ -27,6 +27,7 @@ enum class feature : std::uint64_t {
     mtls_authentication = 0x8,
     serde_raft_0 = 0x10,
     license = 0x20,
+    rm_stm_kafka_cache = 0x40,
 
     // Dummy features for testing only
     test_alpha = uint64_t(1) << 63,
@@ -113,6 +114,12 @@ constexpr static std::array feature_schema{
     cluster_version{4},
     "license",
     feature::license,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+  feature_spec{
+    cluster_version{5},
+    "rm_stm_kafka_cache",
+    feature::rm_stm_kafka_cache,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{

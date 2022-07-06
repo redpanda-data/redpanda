@@ -1959,7 +1959,12 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
     _insync_offset = data.offset;
 }
 
-uint8_t rm_stm::active_snapshot_version() { return tx_snapshot_v1::version; }
+uint8_t rm_stm::active_snapshot_version() {
+    if (_feature_table.local().is_active(feature::rm_stm_kafka_cache)) {
+        return tx_snapshot::version;
+    }
+    return tx_snapshot_v1::version;
+}
 
 template<class T>
 void rm_stm::fill_snapshot_wo_seqs(T& snapshot) {
