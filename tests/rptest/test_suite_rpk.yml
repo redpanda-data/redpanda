@@ -12,3 +12,4 @@ quick:
   - tests/rpk_topic_test.py
   - tests/rpk_cluster_test.py
   - tests/rpk_config_test.py
+  - tests/rpk_tuner_test.py
