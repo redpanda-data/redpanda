@@ -29,7 +29,7 @@ class TxReadsWritesTest(RedpandaTest):
             "default_topic_replications": 1,
             "default_topic_partitions": 1,
             "enable_leader_balancer": False,
-            "enable_auto_rebalance_on_node_add": False
+            "partition_autobalancing_mode": "off",
         }
 
         super(TxReadsWritesTest, self).__init__(test_context=test_context,

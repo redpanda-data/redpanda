@@ -97,14 +97,14 @@ class NodeOperationFuzzyTest(EndToEndTest):
     @parametrize(enable_failures=False)
     def test_node_operations(self, enable_failures):
         # allocate 5 nodes for the cluster
-        self.redpanda = RedpandaService(
-            self.test_context,
-            5,
-            extra_rp_conf={
-                "enable_auto_rebalance_on_node_add": True,
-                "group_topic_partitions": 3,
-                "default_topic_replications": 3,
-            })
+        self.redpanda = RedpandaService(self.test_context,
+                                        5,
+                                        extra_rp_conf={
+                                            "partition_autobalancing_mode":
+                                            "node_add_remove",
+                                            "group_topic_partitions": 3,
+                                            "default_topic_replications": 3,
+                                        })
 
         self.redpanda.start()
         # create some topics

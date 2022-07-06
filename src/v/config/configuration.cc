@@ -1153,7 +1153,8 @@ configuration::configuration()
       *this,
       "enable_auto_rebalance_on_node_add",
       "Enable automatic partition rebalancing when new nodes are added",
-      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      {.needs_restart = needs_restart::no,
+       .visibility = visibility::deprecated},
       false)
 
   , partition_autobalancing_mode(

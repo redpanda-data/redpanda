@@ -37,7 +37,7 @@ class ShadowIndexingTxTest(RedpandaTest):
             enable_idempotence=True,
             enable_transactions=True,
             enable_leader_balancer=False,
-            enable_auto_rebalance_on_node_add=False,
+            partition_autobalancing_mode="off",
             group_initial_rebalance_delay=300,
         )
 
