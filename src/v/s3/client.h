@@ -87,7 +87,9 @@ struct configuration : net::base_transport::configuration {
       const std::optional<cloud_roles::private_key_str>& skey,
       const cloud_roles::aws_region_name& region,
       const default_overrides& overrides = {},
-      net::metrics_disabled disable_metrics = net::metrics_disabled::yes);
+      net::metrics_disabled disable_metrics = net::metrics_disabled::yes,
+      net::public_metrics_disabled disable_public_metrics
+      = net::public_metrics_disabled::yes);
 
     friend std::ostream& operator<<(std::ostream& o, const configuration& c);
 };
