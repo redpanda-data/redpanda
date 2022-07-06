@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "cluster/errc.h"
+#include "cluster/feature_table.h"
 #include "cluster/rm_stm.h"
 #include "finjector/hbadger.h"
 #include "model/fundamental.h"
@@ -65,7 +66,10 @@ FIXTURE_TEST(test_tx_happy_tx, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    cluster::rm_stm stm(logger, _raft.get(), tx_gateway_frontend);
+    ss::sharded<cluster::feature_table> feature_table;
+    feature_table.start().get0();
+    cluster::rm_stm stm(
+      logger, _raft.get(), tx_gateway_frontend, feature_table);
     stm.testing_only_disable_auto_abort();
     stm.testing_only_enable_transactions();
 
@@ -129,6 +133,7 @@ FIXTURE_TEST(test_tx_happy_tx, mux_state_machine_fixture) {
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
 
     BOOST_REQUIRE_LT(tx_offset, stm.last_stable_offset());
+    feature_table.stop().get0();
 }
 
 // tests:
@@ -138,7 +143,10 @@ FIXTURE_TEST(test_tx_aborted_tx_1, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    cluster::rm_stm stm(logger, _raft.get(), tx_gateway_frontend);
+    ss::sharded<cluster::feature_table> feature_table;
+    feature_table.start().get0();
+    cluster::rm_stm stm(
+      logger, _raft.get(), tx_gateway_frontend, feature_table);
     stm.testing_only_disable_auto_abort();
     stm.testing_only_enable_transactions();
 
@@ -204,6 +212,7 @@ FIXTURE_TEST(test_tx_aborted_tx_1, mux_state_machine_fixture) {
       }));
 
     BOOST_REQUIRE_LT(tx_offset, stm.last_stable_offset());
+    feature_table.stop().get0();
 }
 
 // tests:
@@ -213,7 +222,10 @@ FIXTURE_TEST(test_tx_aborted_tx_2, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    cluster::rm_stm stm(logger, _raft.get(), tx_gateway_frontend);
+    ss::sharded<cluster::feature_table> feature_table;
+    feature_table.start().get0();
+    cluster::rm_stm stm(
+      logger, _raft.get(), tx_gateway_frontend, feature_table);
     stm.testing_only_disable_auto_abort();
     stm.testing_only_enable_transactions();
 
@@ -285,6 +297,7 @@ FIXTURE_TEST(test_tx_aborted_tx_2, mux_state_machine_fixture) {
       }));
 
     BOOST_REQUIRE_LT(tx_offset, stm.last_stable_offset());
+    feature_table.stop().get0();
 }
 
 // transactional writes of an unknown tx are rejected
@@ -292,7 +305,10 @@ FIXTURE_TEST(test_tx_unknown_produce, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    cluster::rm_stm stm(logger, _raft.get(), tx_gateway_frontend);
+    ss::sharded<cluster::feature_table> feature_table;
+    feature_table.start().get0();
+    cluster::rm_stm stm(
+      logger, _raft.get(), tx_gateway_frontend, feature_table);
     stm.testing_only_disable_auto_abort();
     stm.testing_only_enable_transactions();
 
@@ -322,6 +338,7 @@ FIXTURE_TEST(test_tx_unknown_produce, mux_state_machine_fixture) {
                    raft::replicate_options(raft::consistency_level::quorum_ack))
                  .get0();
     BOOST_REQUIRE(offset_r == invalid_producer_epoch);
+    feature_table.stop().get0();
 }
 
 // begin fences off old transactions
@@ -329,7 +346,10 @@ FIXTURE_TEST(test_tx_begin_fences_produce, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    cluster::rm_stm stm(logger, _raft.get(), tx_gateway_frontend);
+    ss::sharded<cluster::feature_table> feature_table;
+    feature_table.start().get0();
+    cluster::rm_stm stm(
+      logger, _raft.get(), tx_gateway_frontend, feature_table);
     stm.testing_only_disable_auto_abort();
     stm.testing_only_enable_transactions();
 
@@ -379,6 +399,7 @@ FIXTURE_TEST(test_tx_begin_fences_produce, mux_state_machine_fixture) {
                    raft::replicate_options(raft::consistency_level::quorum_ack))
                  .get0();
     BOOST_REQUIRE(!(bool)offset_r);
+    feature_table.stop().get0();
 }
 
 // transactional writes of an aborted tx are rejected
@@ -386,7 +407,10 @@ FIXTURE_TEST(test_tx_post_aborted_produce, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    cluster::rm_stm stm(logger, _raft.get(), tx_gateway_frontend);
+    ss::sharded<cluster::feature_table> feature_table;
+    feature_table.start().get0();
+    cluster::rm_stm stm(
+      logger, _raft.get(), tx_gateway_frontend, feature_table);
     stm.testing_only_disable_auto_abort();
     stm.testing_only_enable_transactions();
 
@@ -438,4 +462,5 @@ FIXTURE_TEST(test_tx_post_aborted_produce, mux_state_machine_fixture) {
                    raft::replicate_options(raft::consistency_level::quorum_ack))
                  .get0();
     BOOST_REQUIRE(offset_r == invalid_producer_epoch);
+    feature_table.stop().get0();
 }
