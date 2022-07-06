@@ -740,4 +740,37 @@ struct adl<raft::install_snapshot_reply> {
         };
     }
 };
+
+template<>
+struct adl<raft::vote_request> {
+    void to(iobuf& out, raft::vote_request&& r) {
+        serialize(
+          out,
+          r.node_id,
+          r.target_node_id,
+          r.group,
+          r.term,
+          r.prev_log_index,
+          r.prev_log_term,
+          r.leadership_transfer);
+    }
+    raft::vote_request from(iobuf_parser& in) {
+        auto node_id = adl<raft::vnode>{}.from(in);
+        auto target_node_id = adl<raft::vnode>{}.from(in);
+        auto group = adl<raft::group_id>{}.from(in);
+        auto term = adl<model::term_id>{}.from(in);
+        auto prev_log_index = adl<model::offset>{}.from(in);
+        auto prev_log_term = adl<model::term_id>{}.from(in);
+        auto leadership_transfer = adl<bool>{}.from(in);
+        return {
+          .node_id = node_id,
+          .target_node_id = target_node_id,
+          .group = group,
+          .term = term,
+          .prev_log_index = prev_log_index,
+          .prev_log_term = prev_log_term,
+          .leadership_transfer = leadership_transfer,
+        };
+    }
+};
 } // namespace reflection
