@@ -310,7 +310,7 @@ struct vote_request : serde::envelope<vote_request, serde::version<0>> {
     }
 };
 
-struct vote_reply {
+struct vote_reply : serde::envelope<vote_reply, serde::version<0>> {
     // node id to validate on receiver
     vnode target_node_id;
     /// \brief callee's term, for the caller to upate itself
@@ -325,6 +325,12 @@ struct vote_reply {
     bool log_ok = false;
 
     friend std::ostream& operator<<(std::ostream& o, const vote_reply& r);
+
+    friend bool operator==(const vote_reply&, const vote_reply&) = default;
+
+    auto serde_fields() {
+        return std::tie(target_node_id, term, granted, log_ok);
+    }
 };
 
 /// This structure is used by consensus to notify other systems about group
