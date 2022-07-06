@@ -197,7 +197,7 @@ class VerifiableConsumer(BackgroundThreadService):
                  session_timeout_sec=30,
                  enable_autocommit=False,
                  assignment_strategy=None,
-                 stop_timeout_sec=30,
+                 stop_timeout_sec=45,
                  on_record_consumed=None,
                  reset_policy="earliest",
                  verify_offsets=True):
