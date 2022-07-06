@@ -72,6 +72,21 @@ ss::future<response_ptr> find_coordinator_handler::handle(
     find_coordinator_request request;
     request.decode(ctx.reader(), ctx.header().version);
 
+    if (request.data.key_type == coordinator_type::group) {
+        if (!ctx.authorized(
+              security::acl_operation::describe, group_id(request.data.key))) {
+            return ctx.respond(find_coordinator_response(
+              error_code::group_authorization_failed));
+        }
+    } else if (request.data.key_type == coordinator_type::transaction) {
+        if (!ctx.authorized(
+              security::acl_operation::describe,
+              transactional_id(request.data.key))) {
+            return ctx.respond(find_coordinator_response(
+              error_code::transactional_id_authorization_failed));
+        }
+    }
+
     if (request.data.key_type == coordinator_type::transaction) {
         if (!ctx.are_transactions_enabled()) {
             return ctx.respond(
@@ -96,21 +111,6 @@ ss::future<response_ptr> find_coordinator_handler::handle(
     if (request.data.key_type != coordinator_type::group) {
         return ctx.respond(
           find_coordinator_response(error_code::unsupported_version));
-    }
-
-    if (request.data.key_type == coordinator_type::group) {
-        if (!ctx.authorized(
-              security::acl_operation::describe, group_id(request.data.key))) {
-            return ctx.respond(find_coordinator_response(
-              error_code::group_authorization_failed));
-        }
-    } else if (request.data.key_type == coordinator_type::transaction) {
-        if (!ctx.authorized(
-              security::acl_operation::describe,
-              transactional_id(request.data.key))) {
-            return ctx.respond(find_coordinator_response(
-              error_code::transactional_id_authorization_failed));
-        }
     }
 
     return ss::do_with(
