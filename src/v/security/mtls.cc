@@ -26,7 +26,7 @@ namespace detail {
 static constexpr const char* const rule_pattern{
   R"((DEFAULT)|RULE:((\\.|[^\\/])*)\/((\\.|[^\\/])*)\/([LU]?).*?|(.*?))"};
 static constexpr const char* const rule_pattern_splitter{
-  R"(\s*((DEFAULT)|RULE:((\\.|[^\\/])*)\/((\\.|[^\\/])*)\/([LU]?).*?|(.*?))\s*(,\s*|$))"};
+  R"(\s*((DEFAULT)|RULE:((\\.|[^\\/])*)\/((\\.|[^\\/])*)\/([LU]?).*?|(.*?))\s*([,\n]\s*|$))"};
 
 std::regex make_regex(std::string_view sv) {
     return std::regex{

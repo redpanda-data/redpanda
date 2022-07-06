@@ -101,7 +101,7 @@ BOOST_DATA_TEST_CASE(
     BOOST_REQUIRE_EQUAL(c.expected, *mapper.apply(c.input));
 }
 
-static std::array<record, 17> mtls_rule_splitting_data{
+static std::array<record, 18> mtls_rule_splitting_data{
   record{"[]", ""},
   {"[DEFAULT]", "DEFAULT"},
   {"[RULE:/]", "RULE://"},
@@ -124,6 +124,7 @@ static std::array<record, 17> mtls_rule_splitting_data{
    "DEFAULT, /DEFAULT, DEFAULT]",
    "RULE:,RULE:,/,RULE:,\\//U,RULE:,/RULE:,/,RULE:,RULE:,/L,RULE:,/L,RULE:, "
    "DEFAULT, /DEFAULT/,DEFAULT"},
+  {"[RULE:/, DEFAULT]", "RULE://\nDEFAULT"},
 };
 BOOST_DATA_TEST_CASE(
   test_mtls_rule_splitting, bdata::make(mtls_rule_splitting_data), c) {
@@ -151,6 +152,16 @@ BOOST_AUTO_TEST_CASE(test_mtls_parsing_with_multiline) {
       principal_mapper(
         config::mock_binding(std::optional<std::vector<ss::sstring>>{
           {{"RULE:^OU=(.*)/$1/"}, {"RULE:^CN=(.*)/$1/"}}}))
+        .apply("CN=test_cn")
+        .value_or(""));
+}
+
+BOOST_AUTO_TEST_CASE(test_mtls_parsing_with_newline) {
+    BOOST_CHECK_EQUAL(
+      "test_cn",
+      principal_mapper(
+        config::mock_binding(std::optional<std::vector<ss::sstring>>{
+          {"RULE:^OU=(.*)/$1/\nRULE:^CN=(.*)/$1/"}}))
         .apply("CN=test_cn")
         .value_or(""));
 }
