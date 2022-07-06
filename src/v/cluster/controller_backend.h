@@ -149,6 +149,11 @@ private:
     ss::future<std::error_code> create_partition_from_remote_shard(
       model::ntp, ss::shard_id, partition_assignment);
 
+    bool can_finish_update(
+      topic_table_delta::op_type,
+      const std::vector<model::broker_shard>&,
+      const std::vector<model::broker_shard>&);
+
     void housekeeping();
     void setup_metrics();
     ss::sharded<topic_table>& _topics;
