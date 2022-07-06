@@ -865,9 +865,8 @@ controller_backend::process_partition_reconfiguration(
              * NOTE: deletion is safe as we are already running with new
              * configuration so old replicas are not longer needed.
              */
-            if (
-              !has_local_replicas(_self, previous_replicas)
-              || type == topic_table_delta::op_type::force_abort_update) {
+            if (can_finish_update(
+                  type, target_assignment.replicas, previous_replicas)) {
                 co_return co_await dispatch_update_finished(
                   std::move(ntp), target_assignment);
             }
@@ -914,6 +913,30 @@ controller_backend::process_partition_reconfiguration(
         co_return errc::waiting_for_recovery;
     }
     co_return ec;
+}
+
+bool controller_backend::can_finish_update(
+  topic_table_delta::op_type update_type,
+  const std::vector<model::broker_shard>& current_replicas,
+  const std::vector<model::broker_shard>& previous_replicas) {
+    // force abort update may be finished by any node
+    if (update_type == topic_table_delta::op_type::force_abort_update) {
+        return true;
+    }
+    // update may be finished by a node that was added to replica set
+    if (!has_local_replicas(_self, previous_replicas)) {
+        return true;
+    }
+    // finally if no nodes were added to replica set one of the current replicas
+    // may finish an update
+
+    auto added_nodes = subtract_replica_sets(
+      current_replicas, previous_replicas);
+    if (added_nodes.empty()) {
+        return has_local_replicas(_self, current_replicas);
+    }
+
+    return false;
 }
 
 ss::future<std::error_code>
