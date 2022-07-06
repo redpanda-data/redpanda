@@ -148,7 +148,9 @@ remote::remote(
   const s3::configuration& conf,
   model::cloud_credentials_source cloud_credentials_source)
   : _pool(limit(), conf)
-  , _probe(remote_metrics_disabled(static_cast<bool>(conf.disable_metrics)))
+  , _probe(
+      remote_metrics_disabled(static_cast<bool>(conf.disable_metrics)),
+      remote_metrics_disabled(static_cast<bool>(conf.disable_public_metrics)))
   , _auth_refresh_bg_op{_gate, _as, conf, cloud_credentials_source} {
     // If the credentials source is from config file, bypass the background op
     // to refresh credentials periodically, and load pool with static
