@@ -34,7 +34,7 @@ namespace security::tls {
 
 namespace bdata = boost::unit_test::data;
 
-std::array<std::string_view, 8> mtls_valid_rules{
+std::array<ss::sstring, 8> mtls_valid_rules{
   "DEFAULT",
   "RULE:^CN=(.*?),OU=ServiceUsers.*$/$1/",
   "RULE:^CN=(.*?),OU=ServiceUsers.*$/$1/L, DEFAULT",
@@ -45,11 +45,11 @@ std::array<std::string_view, 8> mtls_valid_rules{
   "RULE:^CN=([^,DEFAULT,]+)(,.*|$)/$1/"};
 
 BOOST_DATA_TEST_CASE(test_mtls_valid_rules, bdata::make(mtls_valid_rules), c) {
-    BOOST_REQUIRE_NO_THROW(
-      principal_mapper{config::mock_binding(std::optional<ss::sstring>{c})});
+    BOOST_REQUIRE_NO_THROW(principal_mapper{
+      config::mock_binding(std::optional<std::vector<ss::sstring>>{{c}})});
 }
 
-std::array<std::string_view, 10> mtls_invalid_rules{
+std::array<ss::sstring, 10> mtls_invalid_rules{
   "default",
   "DEFAUL",
   "DEFAULT/L",
@@ -64,7 +64,8 @@ std::array<std::string_view, 10> mtls_invalid_rules{
 BOOST_DATA_TEST_CASE(
   test_mtls_invalid_rules, bdata::make(mtls_invalid_rules), c) {
     BOOST_REQUIRE_THROW(
-      principal_mapper{config::mock_binding(std::optional<ss::sstring>{c})},
+      principal_mapper{
+        config::mock_binding(std::optional<std::vector<ss::sstring>>{{c}})},
       std::runtime_error);
 }
 
@@ -91,12 +92,12 @@ static std::array<record, 5> mtls_principal_mapper_data{
 BOOST_DATA_TEST_CASE(
   test_mtls_principal_mapper, bdata::make(mtls_principal_mapper_data), c) {
     security::tls::principal_mapper mapper{
-      config::mock_binding(std::optional<ss::sstring>{
-        "RULE:^CN=(.*?),OU=ServiceUsers.*$/$1/L, "
-        "RULE:^CN=(.*?),OU=(.*?),O=(.*?),L=(.*?),ST=(.*?),C=(.*?)$/$1@$2/L, "
-        "RULE:^cn=(.*?),ou=(.*?),dc=(.*?),dc=(.*?)$/$1@$2/U, "
-        "RULE:^.*[Cc][Nn]=([a-zA-Z0-9.]*).*$/$1/U, "
-        "DEFAULT"})};
+      config::mock_binding(std::optional<std::vector<ss::sstring>>{
+        {"RULE:^CN=(.*?),OU=ServiceUsers.*$/$1/L, "
+         "RULE:^CN=(.*?),OU=(.*?),O=(.*?),L=(.*?),ST=(.*?),C=(.*?)$/$1@$2/L, "
+         "RULE:^cn=(.*?),ou=(.*?),dc=(.*?),dc=(.*?)$/$1@$2/U, "
+         "RULE:^.*[Cc][Nn]=([a-zA-Z0-9.]*).*$/$1/U, "
+         "DEFAULT"}})};
     BOOST_REQUIRE_EQUAL(c.expected, *mapper.apply(c.input));
 }
 
@@ -130,16 +131,27 @@ BOOST_DATA_TEST_CASE(
       c.expected,
       fmt::format(
         "{}",
-        principal_mapper(
-          config::mock_binding(std::optional<ss::sstring>{c.input}))));
+        principal_mapper(config::mock_binding(
+          std::optional<std::vector<ss::sstring>>{{ss::sstring{c.input}}}))));
 }
 
 BOOST_AUTO_TEST_CASE(test_mtls_comma_with_whitespace) {
     BOOST_CHECK_EQUAL(
       "Tkac\\, Adam",
-      principal_mapper(config::mock_binding(std::optional<ss::sstring>{
-                         "RULE:^CN=((\\\\, *|\\w)+)(,.*|$)/$1/,DEFAULT"}))
+      principal_mapper(
+        config::mock_binding(std::optional<std::vector<ss::sstring>>{
+          {"RULE:^CN=((\\\\, *|\\w)+)(,.*|$)/$1/,DEFAULT"}}))
         .apply("CN=Tkac\\, Adam,OU=ITZ,DC=geodis,DC=cz")
+        .value_or(""));
+}
+
+BOOST_AUTO_TEST_CASE(test_mtls_parsing_with_multiline) {
+    BOOST_CHECK_EQUAL(
+      "test_cn",
+      principal_mapper(
+        config::mock_binding(std::optional<std::vector<ss::sstring>>{
+          {{"RULE:^OU=(.*)/$1/"}, {"RULE:^CN=(.*)/$1/"}}}))
+        .apply("CN=test_cn")
         .value_or(""));
 }
 

@@ -68,11 +68,15 @@ constexpr std::optional<std::string_view> make_sv(const std::csub_match& sm) {
              : std::optional<std::string_view>{std::nullopt};
 }
 
-std::vector<rule> parse_rules(std::optional<std::string_view> unparsed_rules) {
+std::vector<rule>
+parse_rules(std::optional<std::vector<ss::sstring>> unparsed_rules) {
     static const std::regex rule_splitter = make_regex(rule_pattern_splitter);
     static const std::regex rule_parser = make_regex(rule_pattern);
 
-    std::string_view rules{trim(unparsed_rules.value_or("DEFAULT"))};
+    std::string rules
+      = unparsed_rules.has_value() ? fmt::format(
+          "{}", fmt::join(unparsed_rules->begin(), unparsed_rules->end(), ","))
+                                   : "DEFAULT";
 
     std::vector<rule> result;
     std::cmatch rules_match;
@@ -148,7 +152,7 @@ std::optional<ss::sstring> rule::apply(std::string_view dn) const {
 }
 
 std::optional<ss::sstring>
-validate_rules(const std::optional<ss::sstring>& r) noexcept {
+validate_rules(const std::optional<std::vector<ss::sstring>>& r) noexcept {
     try {
         security::tls::detail::parse_rules(r);
     } catch (const std::exception& e) {
@@ -168,7 +172,7 @@ std::ostream& operator<<(std::ostream& os, const principal_mapper& p) {
 }
 
 principal_mapper::principal_mapper(
-  config::binding<std::optional<ss::sstring>> cb)
+  config::binding<std::optional<std::vector<ss::sstring>>> cb)
   : _binding(std::move(cb))
   , _rules{detail::parse_rules(_binding())} {
     _binding.watch([this]() { _rules = detail::parse_rules(_binding()); });

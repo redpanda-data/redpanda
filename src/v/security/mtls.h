@@ -55,7 +55,8 @@ private:
 
 class principal_mapper {
 public:
-    explicit principal_mapper(config::binding<std::optional<ss::sstring>> cb);
+    explicit principal_mapper(
+      config::binding<std::optional<std::vector<ss::sstring>>> cb);
     std::optional<ss::sstring> apply(std::string_view sv) const;
 
 private:
@@ -64,7 +65,7 @@ private:
     friend std::ostream&
     operator<<(std::ostream& os, const principal_mapper& p);
 
-    config::binding<std::optional<ss::sstring>> _binding;
+    config::binding<std::optional<std::vector<ss::sstring>>> _binding;
     std::vector<rule> _rules;
 };
 
@@ -80,7 +81,7 @@ private:
 };
 
 std::optional<ss::sstring>
-validate_rules(const std::optional<ss::sstring>& r) noexcept;
+validate_rules(const std::optional<std::vector<ss::sstring>>& r) noexcept;
 
 } // namespace security::tls
 

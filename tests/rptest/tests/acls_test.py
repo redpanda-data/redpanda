@@ -86,7 +86,7 @@ class AccessControlListTest(RedpandaTest):
                 self.security.principal_mapping_rules = principal_mapping_rules
             self.redpanda.add_extra_rp_conf({
                 'kafka_mtls_principal_mapping_rules':
-                self.security.principal_mapping_rules
+                [self.security.principal_mapping_rules]
             })
 
         self.redpanda.set_security_settings(self.security)
@@ -258,6 +258,11 @@ class AccessControlListTest(RedpandaTest):
         rules=
         "RULE:^O=Redpanda,CN=(cluster_describe|redpanda.service.admin|admin)$/$1/",
         fail=False)
+    # Match admin or empty
+    @parametrize(
+        rules=
+        "RULE:^O=Redpanda,CN=(admin|redpanda.service.admin)$/$1/, RULE:^O=Redpanda,CN=()$/$1/L",
+        fail=True)
     def test_mtls_principal(self, rules=None, fail=False):
         """
         security::acl_operation::describe, security::default_cluster_name
