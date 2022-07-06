@@ -172,16 +172,25 @@ class EndToEndTest(Test):
                    err_msg="Consumer failed to consume up to offsets %s after waiting %ds, last consumed offsets: %s." %\
                    (str(last_acked_offsets), timeout_sec, list(self.last_consumed_offsets)))
 
+    def await_num_produced(self, min_records, timeout_sec=30):
+        wait_until(lambda: self.producer.num_acked > min_records,
+                   timeout_sec=timeout_sec,
+                   err_msg="Producer failed to produce messages for %ds." %\
+                   timeout_sec)
+
+    def await_num_consumed(self, min_records, timeout_sec=30):
+        wait_until(lambda: self.consumer.total_consumed() >= min_records,
+                   timeout_sec=timeout_sec,
+                   err_msg="Timed out after %ds while awaiting record consumption of %d records" %\
+                   (timeout_sec, min_records))
+
     def _collect_all_logs(self):
         for s in self.test_context.services:
             self.mark_for_collect(s)
 
     def await_startup(self, min_records=5, timeout_sec=30):
         try:
-            wait_until(lambda: self.consumer.total_consumed() >= min_records,
-                       timeout_sec=timeout_sec,
-                       err_msg="Timed out after %ds while awaiting initial record delivery of %d records" %\
-                       (timeout_sec, min_records))
+            self.await_num_consumed(min_records, timeout_sec)
         except BaseException:
             self._collect_all_logs()
             raise
@@ -192,10 +201,7 @@ class EndToEndTest(Test):
                        consumer_timeout_sec=30,
                        enable_idempotence=False):
         try:
-            wait_until(lambda: self.producer.num_acked > min_records,
-                       timeout_sec=producer_timeout_sec,
-                       err_msg="Producer failed to produce messages for %ds." %\
-                       producer_timeout_sec)
+            self.await_num_produced(min_records, producer_timeout_sec)
 
             self.logger.info("Stopping producer after writing up to offsets %s" %\
                          str(self.producer.last_acked_offsets))

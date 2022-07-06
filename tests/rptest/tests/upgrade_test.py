@@ -10,6 +10,7 @@
 import re
 from packaging.version import Version
 
+from ducktape.mark import parametrize
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.end_to_end import EndToEndTest
@@ -127,3 +128,45 @@ class UpgradeWithWorkloadTest(EndToEndTest):
         post_upgrade_num_msgs = self.producer.num_acked
         self.run_validation(min_records=post_upgrade_num_msgs +
                             (self.producer_msgs_per_sec * 3))
+
+    @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    @parametrize(upgrade_after_rollback=True)
+    @parametrize(upgrade_after_rollback=False)
+    def test_rolling_upgrade_with_rollback(self, upgrade_after_rollback):
+        self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
+
+        # Upgrade one node.
+        first_node = self.redpanda.nodes[0]
+        # Give ample time to restart, given the running workload.
+        self.redpanda.rolling_restart_nodes([first_node],
+                                            start_timeout=90,
+                                            stop_timeout=90)
+
+        def await_progress():
+            num_msgs = self.producer.num_acked
+            self.await_num_produced(num_msgs +
+                                    (self.producer_msgs_per_sec * 3))
+            self.await_num_consumed(num_msgs +
+                                    (self.producer_msgs_per_sec * 3))
+
+        # Ensure that after we upgrade a node, we're still able to make
+        # progress.
+        await_progress()
+
+        # Then roll it back; we should still be able to make progress.
+        self.installer.install([first_node], self.initial_version)
+        self.redpanda.rolling_restart_nodes([first_node],
+                                            start_timeout=90,
+                                            stop_timeout=90)
+        await_progress()
+
+        if upgrade_after_rollback:
+            self.installer.install([first_node], RedpandaInstaller.HEAD)
+            self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
+                                                start_timeout=90,
+                                                stop_timeout=90)
+
+        post_rollback_num_msgs = self.producer.num_acked
+        self.run_validation(min_records=post_rollback_num_msgs +
+                            (self.producer_msgs_per_sec * 3),
+                            enable_idempotence=True)
