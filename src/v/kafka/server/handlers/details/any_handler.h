@@ -45,6 +45,27 @@ struct any_handler_t {
     virtual api_key key() const = 0;
 
     /**
+     * @brief Estimates the memory used to process the request.
+     *
+     * Returns an esimate of the memory needed to process a request. This is
+     * used to block the request until sufficient memory is available using the
+     * "memory units" semaphore. Ideally this should be a conservative request
+     * (i.e., a possible overestimate in cases where the memory use may vary
+     * significantly) as the result of a too-small estimate may be an
+     * out-of-memory condition, while a too-large estimate will "merely" reduce
+     * performance.
+     *
+     * Handers may also return an initial, small estimate here covering the
+     * first part of processing, then dynamically increase their memory
+     * allocation later on during processing when the full memory size is known.
+     *
+     * Unfortunately, this estimate happens early in the decoding process, after
+     * only the request size and header has been read, so handlers don't have
+     * as much information as they may like to make this decision.
+     */
+    virtual size_t memory_estimate(size_t request_size) const = 0;
+
+    /**
      * @brief Handles the request.
      *
      * Invokes the request handler with the given request context

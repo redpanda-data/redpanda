@@ -11,6 +11,7 @@
 #pragma once
 #include "kafka/protocol/offset_commit.h"
 #include "kafka/server/handlers/handler.h"
+#include "kafka/server/response.h"
 
 namespace kafka {
 
@@ -22,5 +23,8 @@ struct offset_commit_handler {
     static constexpr api_version min_supported = api_version(1);
     static constexpr api_version max_supported = api_version(7);
     static process_result_stages handle(request_context, ss::smp_service_group);
+    static size_t memory_estimate(size_t request_size) {
+        return default_memory_estimate(request_size);
+    }
 };
 } // namespace kafka

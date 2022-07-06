@@ -12,6 +12,7 @@
 
 #include "kafka/server/handlers/handlers.h"
 #include "kafka/server/handlers/produce.h"
+#include "kafka/server/response.h"
 #include "kafka/types.h"
 
 #include <optional>
@@ -26,15 +27,18 @@ struct handler_info {
       api_key key,
       const char* name,
       api_version min_api,
-      api_version max_api) noexcept
+      api_version max_api,
+      memory_estimate_fn* mem_estimate) noexcept
       : _key(key)
       , _name(name)
       , _min_api(min_api)
-      , _max_api(max_api) {}
+      , _max_api(max_api)
+      , _mem_estimate(mem_estimate) {}
 
     api_key _key;
     const char* _name;
     api_version _min_api, _max_api;
+    memory_estimate_fn* _mem_estimate;
 };
 
 /**
@@ -67,6 +71,9 @@ struct any_handler_base final : public any_handler_t {
     api_key key() const override { return _info._key; }
     const char* name() const override { return _info._name; }
 
+    size_t memory_estimate(size_t request_size) const override {
+        return _info._mem_estimate(request_size);
+    }
     /**
      * Only handle varies with one or two pass, since one pass handlers
      * must pass through single_stage() to covert them to two-pass.
@@ -98,7 +105,11 @@ template<KafkaApiHandlerAny H>
 struct any_handler_adaptor {
     static const inline any_handler_base<KafkaApiTwoPhaseHandler<H>> instance{
       handler_info{
-        H::api::key, H::api::name, H::min_supported, H::max_supported},
+        H::api::key,
+        H::api::name,
+        H::min_supported,
+        H::max_supported,
+        H::memory_estimate},
       H::handle};
 };
 

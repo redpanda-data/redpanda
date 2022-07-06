@@ -105,4 +105,26 @@ struct process_result_stages {
     ss::future<response_ptr> response;
 };
 
+/**
+ * @brief The default memory size estimate.
+ *
+ * Request must make an up-front estimate of the amount of memory they will use,
+ * in order to obtain the corresponding number of units from the memory
+ * semaphore (blocking if they are not available). Each request type can use
+ * their own estimation approach, but if not specified this default estimator
+ * will be used.
+ *
+ * Now, this estimator is very poor for many request types: it only applies a
+ * multiplier to the request size, so only makes
+ * sense for requests (such as produce) where the size of the request is a
+ * good indicator of the total memory size. For requests with a small request
+ * but a large response (fetch, metadata, etc), it is not appropriate.
+ *
+ * @return size_t the estimated size required to process the request
+ */
+constexpr size_t default_memory_estimate(size_t request_size) {
+    // Allow for extra copies and bookkeeping
+    return request_size * 2 + 8000; // NOLINT
+}
+
 } // namespace kafka
