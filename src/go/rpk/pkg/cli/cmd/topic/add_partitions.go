@@ -62,7 +62,7 @@ func NewAddPartitionsCommand(fs afero.Fs) *cobra.Command {
 					if errors.Is(e, kerr.InvalidPartitions) && num > 0 {
 						msg = fmt.Sprintf("INVALID_PARTITIONS: unable to add %d partitions due to hardware constraints", num)
 					} else {
-						msg = err.Error()
+						msg = e.Error()
 					}
 					exit1 = true
 				}
