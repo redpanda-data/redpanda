@@ -786,4 +786,23 @@ struct adl<raft::vote_request> {
         };
     }
 };
+
+template<>
+struct adl<raft::vote_reply> {
+    void to(iobuf& out, raft::vote_reply&& r) {
+        serialize(out, r.target_node_id, r.term, r.granted, r.log_ok);
+    }
+    raft::vote_reply from(iobuf_parser& in) {
+        auto target_node_id = adl<raft::vnode>{}.from(in);
+        auto term = adl<model::term_id>{}.from(in);
+        auto granted = adl<bool>{}.from(in);
+        auto log_ok = adl<bool>{}.from(in);
+        return {
+          .target_node_id = target_node_id,
+          .term = term,
+          .granted = granted,
+          .log_ok = log_ok,
+        };
+    }
+};
 } // namespace reflection
