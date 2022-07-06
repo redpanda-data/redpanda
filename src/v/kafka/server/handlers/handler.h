@@ -18,16 +18,26 @@
 
 namespace kafka {
 
+using memory_estimate_fn = size_t(size_t);
+
 template<
   typename RequestApi,
   api_version::type MinSupported,
-  api_version::type MaxSupported>
+  api_version::type MaxSupported,
+  memory_estimate_fn MemEstimator = default_memory_estimate>
 struct single_stage_handler {
     using api = RequestApi;
     static constexpr api_version min_supported = api_version(MinSupported);
     static constexpr api_version max_supported = api_version(MaxSupported);
     static ss::future<response_ptr>
       handle(request_context, ss::smp_service_group);
+    /**
+     * See handler_interface::memory_estimate for a description of this
+     * function.
+     */
+    static size_t memory_estimate(size_t request_size) {
+        return MemEstimator(request_size);
+    }
 };
 
 template<typename T>

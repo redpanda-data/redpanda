@@ -19,6 +19,9 @@ struct sync_group_handler {
     static constexpr api_version min_supported = api_version(0);
     static constexpr api_version max_supported = api_version(3);
     static process_result_stages handle(request_context, ss::smp_service_group);
+    static size_t memory_estimate(size_t request_size) {
+        return default_memory_estimate(request_size);
+    }
 };
 
 } // namespace kafka
