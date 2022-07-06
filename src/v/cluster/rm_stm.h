@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cluster/feature_table.h"
 #include "cluster/persisted_stm.h"
 #include "cluster/tx_utils.h"
 #include "cluster/types.h"
@@ -152,7 +153,8 @@ public:
     explicit rm_stm(
       ss::logger&,
       raft::consensus*,
-      ss::sharded<cluster::tx_gateway_frontend>&);
+      ss::sharded<cluster::tx_gateway_frontend>&,
+      ss::sharded<feature_table>&);
 
     ss::future<checked<model::term_id, tx_errc>> begin_tx(
       model::producer_identity, model::tx_seq, std::chrono::milliseconds);
@@ -524,6 +526,7 @@ private:
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
     storage::snapshot_manager _abort_snapshot_mgr;
     ss::lw_shared_ptr<const storage::offset_translator_state> _translator;
+    ss::sharded<feature_table>& _feature_table;
 };
 
 } // namespace cluster

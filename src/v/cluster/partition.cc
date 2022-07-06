@@ -32,10 +32,12 @@ partition::partition(
   consensus_ptr r,
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
   ss::sharded<cloud_storage::remote>& cloud_storage_api,
-  ss::sharded<cloud_storage::cache>& cloud_storage_cache)
+  ss::sharded<cloud_storage::cache>& cloud_storage_cache,
+  ss::sharded<feature_table>& feature_table)
   : _raft(r)
   , _probe(std::make_unique<replicated_partition_probe>(*this))
   , _tx_gateway_frontend(tx_gateway_frontend)
+  , _feature_table(feature_table)
   , _is_tx_enabled(config::shard_local_cfg().enable_transactions.value())
   , _is_idempotence_enabled(
       config::shard_local_cfg().enable_idempotence.value()) {
@@ -70,7 +72,7 @@ partition::partition(
 
         if (has_rm_stm) {
             _rm_stm = ss::make_shared<cluster::rm_stm>(
-              clusterlog, _raft.get(), _tx_gateway_frontend);
+              clusterlog, _raft.get(), _tx_gateway_frontend, _feature_table);
             stm_manager->add_stm(_rm_stm);
         }
 

@@ -215,7 +215,8 @@ struct tx_snapshot_v1 {
 rm_stm::rm_stm(
   ss::logger& logger,
   raft::consensus* c,
-  ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend)
+  ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
+  ss::sharded<feature_table>& feature_table)
   : persisted_stm("tx.snapshot", logger, c)
   , _oldest_session(model::timestamp::now())
   , _sync_timeout(config::shard_local_cfg().rm_sync_timeout_ms.value())
@@ -234,7 +235,8 @@ rm_stm::rm_stm(
   , _abort_snapshot_mgr(
       "abort.idx",
       std::filesystem::path(c->log_config().work_directory()),
-      ss::default_priority_class()) {
+      ss::default_priority_class())
+  , _feature_table(feature_table) {
     if (!_is_tx_enabled) {
         _is_autoabort_enabled = false;
     }

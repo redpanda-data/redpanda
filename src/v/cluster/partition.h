@@ -13,6 +13,7 @@
 
 #include "cloud_storage/remote_partition.h"
 #include "cluster/archival_metadata_stm.h"
+#include "cluster/feature_table.h"
 #include "cluster/id_allocator_stm.h"
 #include "cluster/partition_probe.h"
 #include "cluster/rm_stm.h"
@@ -44,7 +45,8 @@ public:
       consensus_ptr r,
       ss::sharded<cluster::tx_gateway_frontend>&,
       ss::sharded<cloud_storage::remote>&,
-      ss::sharded<cloud_storage::cache>&);
+      ss::sharded<cloud_storage::cache>&,
+      ss::sharded<feature_table>&);
 
     raft::group_id group() const { return _raft->group(); }
     ss::future<> start();
@@ -280,6 +282,7 @@ private:
     ss::abort_source _as;
     partition_probe _probe;
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
+    ss::sharded<feature_table>& _feature_table;
     bool _is_tx_enabled{false};
     bool _is_idempotence_enabled{false};
     ss::lw_shared_ptr<cloud_storage::remote_partition> _cloud_storage_partition;
