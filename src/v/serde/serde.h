@@ -69,57 +69,26 @@ struct header {
     checksum_t _checksum;
 };
 
-template<typename T, typename = void>
-struct help_has_serde_read : std::false_type {};
+template<typename T>
+concept has_serde_read = requires(T t, iobuf_parser& in, const header& h) {
+    t.serde_read(in, h);
+};
 
 template<typename T>
-struct help_has_serde_read<
-  T,
-  std::void_t<decltype(std::declval<T>().serde_read(
-    std::declval<std::add_lvalue_reference_t<iobuf_parser>>(),
-    std::declval<header>()))>> : std::true_type {};
+concept has_serde_write = requires(T t, iobuf& out) {
+    t.serde_write(out);
+};
 
 template<typename T>
-inline constexpr auto const has_serde_read = help_has_serde_read<T>::value;
-
-template<typename T, typename = void>
-struct help_has_serde_write : std::false_type {};
-
-template<typename T>
-struct help_has_serde_write<
-  T,
-  std::void_t<decltype(std::declval<T>().serde_write(
-    std::declval<std::add_lvalue_reference_t<iobuf>>()))>> : std::true_type {};
+concept has_serde_async_read
+  = requires(T t, iobuf_parser& in, const header& h) {
+    t.serde_async_read(in, h);
+};
 
 template<typename T>
-inline constexpr auto const has_serde_write = help_has_serde_write<T>::value;
-
-template<typename T, typename = void>
-struct help_has_serde_async_read : std::false_type {};
-
-template<typename T>
-struct help_has_serde_async_read<
-  T,
-  std::void_t<decltype(std::declval<T>().serde_async_read(
-    std::declval<std::add_lvalue_reference_t<iobuf_parser>>(),
-    std::declval<header>()))>> : std::true_type {};
-
-template<typename T>
-inline constexpr auto const has_serde_async_read
-  = help_has_serde_async_read<T>::value;
-
-template<typename T, typename = void>
-struct help_has_serde_async_write : std::false_type {};
-
-template<typename T>
-struct help_has_serde_async_write<
-  T,
-  std::void_t<decltype(std::declval<T>().serde_async_write(
-    std::declval<std::add_lvalue_reference_t<iobuf>>()))>> : std::true_type {};
-
-template<typename T>
-inline constexpr auto const has_serde_async_write
-  = help_has_serde_async_write<T>::value;
+concept has_serde_async_write = requires(T t, iobuf& out) {
+    t.serde_async_write(out);
+};
 
 using serde_enum_serialized_t = int32_t;
 
