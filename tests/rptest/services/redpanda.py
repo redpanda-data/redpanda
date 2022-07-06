@@ -172,6 +172,10 @@ class ResourceSettings:
     def memory_mb(self):
         return self._memory_mb
 
+    @property
+    def num_cpus(self):
+        return self._num_cpus
+
     def to_cli(self, *, dedicated_node):
         """
 
@@ -632,6 +636,46 @@ class RedpandaService(Service):
             # Output line is like "MemTotal:       32552236 kB"
             memory_kb = int(line.strip().split()[1])
             return memory_kb / 1024
+
+    def get_node_cpu_count(self):
+        if self._resource_settings.num_cpus is not None:
+            self.logger.info(f"get_node_cpu_count: got from ResourceSettings")
+            return self._resource_settings.num_cpus
+        elif self._dedicated_nodes is False:
+            self.logger.info(
+                f"get_node_cpu_count: using ResourceSettings default")
+            return self._resource_settings.DEFAULT_NUM_CPUS
+        else:
+            self.logger.info(f"get_node_cpu_count: fetching from node")
+
+            # Assume nodes are symmetric, so we can just ask one
+            node = self.nodes[0]
+            core_count_str = node.account.ssh_output(
+                "cat /proc/cpuinfo | grep ^processor | wc -l")
+            return int(core_count_str.strip())
+
+    def get_node_disk_free(self):
+        # Assume nodes are symmetric, so we can just ask one
+        node = self.nodes[0]
+
+        if node.account.exists(self.PERSISTENT_ROOT):
+            df_path = self.PERSISTENT_ROOT
+        else:
+            # If dir doesn't exist yet, use the parent.
+            df_path = os.path.dirname(self.PERSISTENT_ROOT)
+
+        df_out = node.account.ssh_output(f"df --output=avail {df_path}")
+
+        avail_kb = int(df_out.strip().split(b"\n")[1].strip())
+
+        if not self.dedicated_nodes:
+            # Assume docker images share a filesystem.  This may not
+            # be the truth (e.g. in CI they get indepdendent XFS
+            # filesystems), but it's the safe assumption on e.g.
+            # a workstation.
+            avail_kb = int(avail_kb / len(self.nodes))
+
+        return avail_kb * 1024
 
     def _for_nodes(self, nodes, cb: callable, *, parallel: bool):
         if not parallel:
