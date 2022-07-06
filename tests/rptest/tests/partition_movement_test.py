@@ -9,6 +9,7 @@
 
 import random
 import time
+from numpy import record
 import requests
 
 from rptest.services.cluster import cluster
@@ -578,6 +579,33 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         # create topic again
         rpk.create_topic(topic, 1, 1)
         wait_until(lambda: get_status() == 'done', 10, 1)
+
+    @cluster(num_nodes=5)
+    def test_down_replicate(self):
+        """
+        Test changing replication factor from 3 -> 1
+        """
+        throughput, records, _ = self._get_scale_params()
+        partition_count = 5
+        self.start_redpanda(num_nodes=3)
+        admin = Admin(self.redpanda)
+
+        spec = TopicSpec(partition_count=partition_count, replication_factor=3)
+        self.client().create_topic(spec)
+        self.topic = spec.name
+        self.start_producer(1, throughput=throughput)
+        self.start_consumer(1)
+        self.await_startup()
+
+        for partition in range(0, partition_count):
+            assignments = self._get_assignments(admin, self.topic, partition)
+            new_assignment = [assignments[0]]
+            admin.set_partition_replicas(self.topic, partition, new_assignment)
+            self._wait_post_move(self.topic, partition, new_assignment, 60)
+
+        self.run_validation(enable_idempotence=False,
+                            consumer_timeout_sec=45,
+                            min_records=records)
 
 
 class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
