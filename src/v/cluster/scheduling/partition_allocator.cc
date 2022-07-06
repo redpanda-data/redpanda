@@ -195,8 +195,7 @@ std::error_code partition_allocator::check_cluster_limits(
 
     // Refuse to create a partition count that would violate the per-core
     // limit.
-    const uint64_t core_limit
-      = (effective_cpu_count * _partitions_per_shard() - all_brokers.size() * _partitions_reserve_shard0());
+    const uint64_t core_limit = (effective_cpu_count * _partitions_per_shard());
     if (proposed_total_partitions > core_limit) {
         vlog(
           clusterlog.warn,
