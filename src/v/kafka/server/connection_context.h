@@ -167,7 +167,8 @@ private:
     // Reserve units from memory from the memory semaphore in proportion
     // to the number of bytes the request procesisng is expected to
     // take.
-    ss::future<ss::semaphore_units<>> reserve_request_units(size_t size);
+    ss::future<ss::semaphore_units<>>
+    reserve_request_units(api_key key, size_t size);
 
     // Apply backpressure sequence, where the request processing may be
     // delayed for various reasons, including throttling but also because
