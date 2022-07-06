@@ -132,6 +132,10 @@ class RpkTool:
         self._check_stdout_success(output)
         return output
 
+    def add_partitions(self, topic, partitions):
+        cmd = ["add-partitions", topic, "-n", str(partitions)]
+        return self._run_topic(cmd)
+
     def _check_stdout_success(self, output):
         """
         Helper for topic operations where rpk does not surface errors
