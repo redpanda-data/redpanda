@@ -202,10 +202,13 @@ requires(!detail::has_serde_fields<T>) constexpr inline auto envelope_to_tuple(
     }
 }
 
-template<typename T, typename Fn>
-inline auto envelope_for_each_field(T& t, Fn&& fn) -> std::enable_if_t<
-  !std::is_convertible_v<decltype(fn(std::declval<int&>())), bool>> {
-    static_assert(is_envelope<std::decay_t<T>>);
+template<typename Fn>
+concept check_for_more_fn = requires(Fn&& fn, int& f) {
+    { fn(f) } -> std::convertible_to<bool>;
+};
+
+template<is_envelope T, typename Fn>
+inline auto envelope_for_each_field(T& t, Fn&& fn) {
     if constexpr (inherits_from_envelope<std::decay_t<T>>) {
         std::apply(
           [&](auto&&... args) { (fn(args), ...); }, envelope_to_tuple(t));
@@ -215,10 +218,8 @@ inline auto envelope_for_each_field(T& t, Fn&& fn) -> std::enable_if_t<
     }
 }
 
-template<typename T, typename Fn>
-inline auto envelope_for_each_field(T& t, Fn&& fn) -> std::enable_if_t<
-  std::is_convertible_v<decltype(fn(std::declval<int&>())), bool>> {
-    static_assert(is_envelope<std::decay_t<T>>);
+template<is_envelope T, check_for_more_fn Fn>
+inline auto envelope_for_each_field(T& t, Fn&& fn) {
     if constexpr (inherits_from_envelope<std::decay_t<T>>) {
         std::apply(
           [&](auto&&... args) { (void)(fn(args) && ...); },
