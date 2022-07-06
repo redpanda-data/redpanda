@@ -18,4 +18,3 @@ v_cc_library(
     v::net
   )
 add_subdirectory(test)
-add_subdirectory(demo)
