@@ -278,7 +278,7 @@ struct heartbeat_reply {
     friend std::ostream& operator<<(std::ostream& o, const heartbeat_reply& r);
 };
 
-struct vote_request {
+struct vote_request : serde::envelope<vote_request, serde::version<0>> {
     vnode node_id;
     // node id to validate on receiver
     vnode target_node_id;
@@ -295,6 +295,19 @@ struct vote_request {
     vnode target_node() const { return target_node_id; }
 
     friend std::ostream& operator<<(std::ostream& o, const vote_request& r);
+
+    friend bool operator==(const vote_request&, const vote_request&) = default;
+
+    auto serde_fields() {
+        return std::tie(
+          node_id,
+          target_node_id,
+          group,
+          term,
+          prev_log_index,
+          prev_log_term,
+          leadership_transfer);
+    }
 };
 
 struct vote_reply {
