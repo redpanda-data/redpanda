@@ -210,23 +210,26 @@ ss::future<std::error_code> replicate_and_wait(
   ss::sharded<feature_table>& feature_table,
   ss::sharded<ss::abort_source>& as,
   Cmd&& cmd,
-  model::timeout_clock::time_point timeout) {
+  model::timeout_clock::time_point timeout,
+  std::optional<model::term_id> term = std::nullopt) {
     const bool use_serde_serialization = feature_table.local().is_active(
       feature::serde_raft_0);
     return stm.invoke_on(
       controller_stm_shard,
       [cmd = std::forward<Cmd>(cmd),
+       term,
        &as = as,
        timeout,
        use_serde_serialization](controller_stm& stm) mutable {
           if (likely(use_serde_serialization)) {
               auto b = serde_serialize_cmd(std::forward<Cmd>(cmd));
-              return stm.replicate_and_wait(std::move(b), timeout, as.local());
+              return stm.replicate_and_wait(
+                std::move(b), timeout, as.local(), term);
           }
           return serialize_cmd(std::forward<Cmd>(cmd))
-            .then([&stm, timeout, &as](model::record_batch b) {
+            .then([&stm, timeout, term, &as](model::record_batch b) {
                 return stm.replicate_and_wait(
-                  std::move(b), timeout, as.local());
+                  std::move(b), timeout, as.local(), term);
             });
       });
 }

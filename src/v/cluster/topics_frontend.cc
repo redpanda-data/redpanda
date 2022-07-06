@@ -623,31 +623,38 @@ bool topics_frontend::validate_topic_name(const model::topic_namespace& topic) {
 ss::future<std::error_code> topics_frontend::move_partition_replicas(
   model::ntp ntp,
   std::vector<model::broker_shard> new_replica_set,
-  model::timeout_clock::time_point tout) {
+  model::timeout_clock::time_point tout,
+  std::optional<model::term_id> term) {
     if (_partition_movement_disabled) {
         return ss::make_ready_future<std::error_code>(errc::feature_disabled);
     }
     move_partition_replicas_cmd cmd(std::move(ntp), std::move(new_replica_set));
 
-    return replicate_and_wait(_stm, _features, _as, std::move(cmd), tout);
+    return replicate_and_wait(_stm, _features, _as, std::move(cmd), tout, term);
 }
 
 ss::future<std::error_code> topics_frontend::cancel_moving_partition_replicas(
-  model::ntp ntp, model::timeout_clock::time_point timeout) {
+  model::ntp ntp,
+  model::timeout_clock::time_point timeout,
+  std::optional<model::term_id> term) {
     cancel_moving_partition_replicas_cmd cmd(
       std::move(ntp),
       cancel_moving_partition_replicas_cmd_data(force_abort_update::no));
 
-    return replicate_and_wait(_stm, _features, _as, std::move(cmd), timeout);
+    return replicate_and_wait(
+      _stm, _features, _as, std::move(cmd), timeout, term);
 }
 
 ss::future<std::error_code> topics_frontend::abort_moving_partition_replicas(
-  model::ntp ntp, model::timeout_clock::time_point timeout) {
+  model::ntp ntp,
+  model::timeout_clock::time_point timeout,
+  std::optional<model::term_id> term) {
     cancel_moving_partition_replicas_cmd cmd(
       std::move(ntp),
       cancel_moving_partition_replicas_cmd_data(force_abort_update::yes));
 
-    return replicate_and_wait(_stm, _features, _as, std::move(cmd), timeout);
+    return replicate_and_wait(
+      _stm, _features, _as, std::move(cmd), timeout, term);
 }
 
 ss::future<std::error_code> topics_frontend::finish_moving_partition_replicas(
