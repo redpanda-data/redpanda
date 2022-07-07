@@ -60,12 +60,17 @@ group::group(
   , _new_member_added(false)
   , _conf(conf)
   , _partition(std::move(partition))
+  , _probe(_members, _static_members, _offsets)
   , _recovery_policy(
       config::shard_local_cfg().rm_violation_recovery_policy.value())
   , _ctxlog(klog, *this)
   , _ctx_txlog(cluster::txlog, *this)
   , _md_serializer(std::move(serializer))
-  , _enable_group_metrics(group_metrics) {}
+  , _enable_group_metrics(group_metrics) {
+    if (_enable_group_metrics) {
+        _probe.setup_public_metrics(_id);
+    }
+}
 
 group::group(
   kafka::group_id id,
@@ -79,6 +84,7 @@ group::group(
   , _new_member_added(false)
   , _conf(conf)
   , _partition(std::move(partition))
+  , _probe(_members, _static_members, _offsets)
   , _recovery_policy(
       config::shard_local_cfg().rm_violation_recovery_policy.value())
   , _ctxlog(klog, *this)
@@ -102,6 +108,10 @@ group::group(
           }});
         vlog(_ctxlog.trace, "Initializing group with member {}", member);
         add_member_no_join(member);
+    }
+
+    if (_enable_group_metrics) {
+        _probe.setup_public_metrics(_id);
     }
 }
 

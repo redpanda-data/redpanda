@@ -23,6 +23,7 @@
 #include "kafka/server/member.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
+#include "model/namespace.h"
 #include "model/record.h"
 #include "seastarx.h"
 #include "utils/mutex.h"
@@ -167,6 +168,7 @@ public:
           , probe(metadata.offset) {
             if (enable_metrics) {
                 probe.setup_metrics(group_id, tp);
+                probe.setup_public_metrics(group_id, tp);
             }
         }
     };
@@ -734,6 +736,10 @@ private:
       model::topic_partition,
       std::unique_ptr<offset_metadata_with_probe>>
       _offsets;
+    group_probe<
+      model::topic_partition,
+      std::unique_ptr<offset_metadata_with_probe>>
+      _probe;
     model::violation_recovery_policy _recovery_policy;
     ctx_log _ctxlog;
     ctx_log _ctx_txlog;
