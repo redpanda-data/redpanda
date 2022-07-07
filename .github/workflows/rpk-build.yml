@@ -24,7 +24,7 @@ jobs:
     name: Test and Build
     strategy:
       matrix:
-        os: [linux, darwin]
+        os: [linux, darwin, windows]
         arch: [amd64, arm64]
     runs-on: ubuntu-latest
     steps:
@@ -56,6 +56,7 @@ jobs:
         GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} ./build.sh $tag ${{ github.sha }}
 
     - name: Package
+      if: ${{ ! matrix.os == 'windows'}}
       working-directory: src/go/rpk/
       run: |
         zip -j rpk-${{ matrix.os }}-${{ matrix.arch }}.zip ./${{ matrix.os }}-${{ matrix.arch }}/rpk
