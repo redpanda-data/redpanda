@@ -159,14 +159,15 @@ private:
 
 private:
     size_t max_segment_size() const;
-    // Recomputes the segment size based of latest max_segment_size
-    // configuration. This is needed to take into effect configuration changes
-    // since last roll.
-    void recompute_max_segment_size();
+    // Computes the segment size based on the latest max_segment_size
+    // configuration. This takes into consideration any segment size
+    // overrides since the last time it was called.
+    size_t compute_max_segment_size();
     struct eviction_monitor {
         ss::promise<model::offset> promise;
         ss::abort_source::subscription subscription;
     };
+    float _segment_size_jitter;
     bool _closed{false};
     ss::gate _compaction_gate;
     log_manager& _manager;

@@ -56,13 +56,13 @@ namespace storage {
 disk_log_impl::disk_log_impl(
   ntp_config cfg, log_manager& manager, segment_set segs, kvstore& kvstore)
   : log::impl(std::move(cfg))
+  , _segment_size_jitter(storage::internal::random_jitter())
   , _manager(manager)
   , _segs(std::move(segs))
   , _kvstore(kvstore)
   , _start_offset(read_start_offset())
   , _lock_mngr(_segs)
-  , _max_segment_size(internal::jitter_segment_size(
-      std::min(max_segment_size(), segment_size_hard_limit)))
+  , _max_segment_size(compute_max_segment_size())
   , _readers_cache(std::make_unique<readers_cache>(
       config().ntp(), _manager.config().readers_cache_eviction_timeout)) {
     const bool is_compacted = config().is_compacted();
@@ -79,9 +79,9 @@ disk_log_impl::~disk_log_impl() {
     vassert(_closed, "log segment must be closed before deleting:{}", *this);
 }
 
-void disk_log_impl::recompute_max_segment_size() {
-    _max_segment_size = internal::jitter_segment_size(
-      std::min(max_segment_size(), segment_size_hard_limit));
+size_t disk_log_impl::compute_max_segment_size() {
+    auto segment_size = std::min(max_segment_size(), segment_size_hard_limit);
+    return segment_size * (1 + _segment_size_jitter);
 }
 
 ss::future<> disk_log_impl::remove() {
@@ -721,7 +721,7 @@ ss::future<> disk_log_impl::new_segment(
       o() >= 0 && t() >= 0, "offset:{} and term:{} must be initialized", o, t);
     // Recomputing here means that any roll size checks after this takes into
     // account updated segment size.
-    recompute_max_segment_size();
+    _max_segment_size = compute_max_segment_size();
     return _manager
       .make_log_segment(
         config(),
