@@ -1175,8 +1175,8 @@ ss::future<std::error_code> controller_backend::cancel_replica_set_update(
       rev,
       [this, &ntp, rev, replicas](ss::lw_shared_ptr<partition> p) {
           const auto raft_cfg_update_finished
-            = are_configuration_replicas_up_to_date(
-              p->group_configuration(), replicas);
+            = p->group_configuration().type()
+              == raft::configuration_type::simple;
 
           // raft already finished its part, we need to move replica back
           if (raft_cfg_update_finished) {
@@ -1211,8 +1211,9 @@ ss::future<std::error_code> controller_backend::force_abort_replica_set_update(
         co_return errc::partition_not_exists;
     }
 
-    const auto raft_cfg_update_finished = are_configuration_replicas_up_to_date(
-      partition->group_configuration(), replicas);
+    const auto raft_cfg_update_finished
+      = partition->group_configuration().type()
+        == raft::configuration_type::simple;
     if (raft_cfg_update_finished) {
         co_return co_await update_partition_replica_set(ntp, replicas, rev);
     } else {
