@@ -92,11 +92,6 @@ class NodeOperationFuzzyTest(EndToEndTest):
 
         return topics
 
-    """
-    Adding nodes to the cluster should result in partition reallocations to new
-    nodes
-    """
-
     @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     @parametrize(enable_failures=True)
     @parametrize(enable_failures=False)
