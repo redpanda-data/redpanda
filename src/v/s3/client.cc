@@ -86,7 +86,8 @@ ss::future<configuration> configuration::make_configuration(
   const std::optional<cloud_roles::private_key_str>& skey,
   const cloud_roles::aws_region_name& region,
   const default_overrides& overrides,
-  net::metrics_disabled disable_metrics) {
+  net::metrics_disabled disable_metrics,
+  net::public_metrics_disabled disable_public_metrics) {
     configuration client_cfg;
     const auto endpoint_uri = make_endpoint_url(region, overrides.endpoint);
     client_cfg.tls_sni_hostname = endpoint_uri;
@@ -136,6 +137,7 @@ ss::future<configuration> configuration::make_configuration(
       overrides.port ? *overrides.port : default_port,
       ss::net::inet_address::family::INET);
     client_cfg.disable_metrics = disable_metrics;
+    client_cfg.disable_public_metrics = disable_public_metrics;
     client_cfg._probe = ss::make_shared<client_probe>(
       disable_metrics, region(), endpoint_uri);
     client_cfg.max_idle_time = overrides.max_idle_time

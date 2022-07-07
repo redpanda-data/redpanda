@@ -23,7 +23,9 @@ namespace cloud_storage {
 /// Cloud storage endpoint level probe
 class remote_probe {
 public:
-    explicit remote_probe(remote_metrics_disabled disabled);
+    explicit remote_probe(
+      remote_metrics_disabled disabled,
+      remote_metrics_disabled public_disabled);
 
     /// Register topic manifest upload
     void topic_manifest_upload() { _cnt_topic_manifest_uploads++; }
@@ -166,6 +168,7 @@ private:
     uint64_t _cnt_bytes_received{0};
 
     ss::metrics::metric_groups _metrics;
+    ss::metrics::metric_groups _public_metrics;
 };
 
 } // namespace cloud_storage

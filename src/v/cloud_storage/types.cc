@@ -105,6 +105,8 @@ ss::future<configuration> configuration::get_config() {
       config::shard_local_cfg().cloud_storage_region, "cloud_storage_region"));
     auto disable_metrics = net::metrics_disabled(
       config::shard_local_cfg().disable_metrics());
+    auto disable_public_metrics = net::public_metrics_disabled(
+      config::shard_local_cfg().disable_public_metrics());
 
     // Set default overrides
     s3::default_overrides overrides;
@@ -124,7 +126,12 @@ ss::future<configuration> configuration::get_config() {
     overrides.port = config::shard_local_cfg().cloud_storage_api_endpoint_port;
 
     auto s3_conf = co_await s3::configuration::make_configuration(
-      access_key, secret_key, region, overrides, disable_metrics);
+      access_key,
+      secret_key,
+      region,
+      overrides,
+      disable_metrics,
+      disable_public_metrics);
 
     configuration cfg{
       .client_config = std::move(s3_conf),

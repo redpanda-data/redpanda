@@ -38,6 +38,8 @@ public:
         unresolved_address server_addr;
         ss::shared_ptr<ss::tls::certificate_credentials> credentials;
         net::metrics_disabled disable_metrics = net::metrics_disabled::no;
+        net::public_metrics_disabled disable_public_metrics
+          = net::public_metrics_disabled::no;
         /// Optional server name indication (SNI) for TLS connection
         std::optional<ss::sstring> tls_sni_hostname;
     };
