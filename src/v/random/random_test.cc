@@ -11,6 +11,7 @@
 #include "random/fast_prng.h"
 #include "random/generators.h"
 
+#include <absl/container/flat_hash_set.h>
 #include <boost/test/unit_test.hpp>
 
 #include <set>
@@ -33,4 +34,19 @@ BOOST_AUTO_TEST_CASE(alphanum_generator) {
             BOOST_REQUIRE('\0' != s[j]);
         }
     }
+}
+
+BOOST_AUTO_TEST_CASE(alphanum_max_distinct_generator) {
+    constexpr size_t cardinality = 11;
+    absl::flat_hash_set<ss::sstring> strings;
+    for (auto i = 0; i < 100; i++) {
+        auto s = random_generators::gen_alphanum_max_distinct(cardinality);
+        // ensure no \0 in size
+        for (auto j = 0; j < random_generators::alphanum_max_distinct_strlen;
+             j++) {
+            BOOST_REQUIRE('\0' != s[j]);
+        }
+        strings.emplace(s);
+    }
+    BOOST_REQUIRE(strings.size() <= cardinality);
 }

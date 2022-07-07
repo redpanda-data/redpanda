@@ -32,4 +32,18 @@ ss::sstring gen_alphanum_string(size_t n) {
     return s;
 }
 
+ss::sstring gen_alphanum_max_distinct(size_t cardinality) {
+    static constexpr std::size_t num_chars = chars.size() - 1;
+    // everything is deterministic once you choose key_num
+    auto key_num = get_int(cardinality - 1);
+    auto next_index = key_num % num_chars;
+    auto s = ss::uninitialized_string(alphanum_max_distinct_strlen);
+    std::generate_n(s.begin(), alphanum_max_distinct_strlen, [&] {
+        auto c = chars[next_index];
+        next_index = (next_index + key_num) % num_chars;
+        return c;
+    });
+    return s;
+}
+
 } // namespace random_generators

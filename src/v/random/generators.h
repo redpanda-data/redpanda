@@ -33,7 +33,23 @@ static thread_local std::default_random_engine gen(internal::get_seed());
 } // namespace internal
 
 bytes get_bytes(size_t n = 128 * 1024);
+
+/**
+ * Random string generator. Total number of distinct values that may be
+ * generated is unlimited (within all possible values of given size).
+ */
 ss::sstring gen_alphanum_string(size_t n);
+
+static constexpr size_t alphanum_max_distinct_strlen = 32;
+/**
+ * Random string generator that limits the maximum number of distinct values
+ * that will be returned. That is, this function is a generator, which creates
+ * members of a set of strings, one at a time. Each generated string has maximum
+ * length `alphanum_max_distinct_strlen`. The total set of generated strings
+ * will have a maximum cardinality of `max_cardinality`. See the unit test
+ * `alphanum_max_distinct_generator` for an example.
+ */
+ss::sstring gen_alphanum_max_distinct(size_t max_cardinality);
 
 template<typename T>
 T get_int() {
