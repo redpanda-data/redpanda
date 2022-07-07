@@ -23,6 +23,44 @@
             ]
         },
         {
+            "path": "/v1/features/license",
+            "operations":[
+                {
+                    "method": "GET",
+                    "summary": "Get currently loaded license information",
+                    "type": "license_response",
+                    "nickname": "get_license",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
+        },
+        {
+            "path": "/v1/features/license",
+            "operations": [
+                {
+                    "method": "PUT",
+                    "summary": "Upload a new license to redpanda",
+                    "nickname": "put_license",
+                    "type": "void",
+                    "produces": ["application/json"],
+                    "responses": {
+                        "200": {
+                            "description": "OK"
+                        },
+                        "400": {
+                            "description": "Invalid or malformed license",
+                            "schema": {
+                                "type": "json"
+                            }
+                        }
+                    }
+                }
+            ]
+        },
+        {
             "path": "/v1/features/{feature_name}",
             "operations": [
                 {
@@ -84,6 +122,43 @@
                     "type": "array",
                     "description": "list of feature_state for each feature",
                     "items": {"type": "feature_state"}
+                }
+            }
+        },
+        "license_contents" :{
+            "id": "license_contents",
+            "description": "Parameters belonging to a valid, signed redpanda license",
+            "properties": {
+                "format_version": {
+                    "type": "int",
+                    "description": "license schema version evolution number"
+                },
+                "org": {
+                    "type": "string",
+                    "description": "client the license was generated for"
+                },
+                "type": {
+                    "type": "string",
+                    "description": "type of license, free, enterprise, etc."
+                },
+                "expires": {
+                    "type": "int",
+                    "description": "Number of days the license is valid until, -1 if is expired"
+                }
+            }
+        },
+        "license_response": {
+            "id": "license_response",
+            "description": "Describe properties of currently loaded license file",
+            "properties": {
+                "loaded": {
+                    "type": "boolean",
+                    "description": "true if a non-expired license is loaded"
+                },
+                "license":{
+                    "type": "license_contents",
+                    "nullable": "true",
+                    "description": "Contents of a valid, signed license if loaded"
                 }
             }
         }

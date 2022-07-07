@@ -28,6 +28,8 @@ std::string_view to_string_view(feature f) {
         return "mtls_authentication";
     case feature::serde_raft_0:
         return "serde_raft_0";
+    case feature::license:
+        return "license";
     case feature::test_alpha:
         return "__test_alpha";
     }
@@ -292,6 +294,16 @@ feature_table::resolve_name(std::string_view feature_name) const {
     }
 
     return std::nullopt;
+}
+
+void feature_table::set_license(security::license license) {
+    _license = std::move(license);
+}
+
+void feature_table::revoke_license() { _license = std::nullopt; }
+
+const std::optional<security::license>& feature_table::get_license() const {
+    return _license;
 }
 
 } // namespace cluster

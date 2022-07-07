@@ -6,6 +6,7 @@ rp_test(
     credential_store_test.cc
     authorizer_test.cc
     mtls_test.cc
+    license_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Boost::unit_test_framework v::kafka
   LABELS kafka

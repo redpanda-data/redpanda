@@ -145,6 +145,13 @@ ss::future<> feature_manager::start() {
         vlog(clusterlog.warn, "Exception from updater: {}", e);
     });
 
+    // Detach fiber for alerts of possible license violations or notifications
+    ssx::background = ssx::spawn_with_gate_then(_gate, [this] {
+        return ss::do_until(
+          [this] { return _as.local().abort_requested(); },
+          [this] { return maybe_log_license_check_info(); });
+    });
+
     co_return;
 }
 ss::future<> feature_manager::stop() {
@@ -153,6 +160,32 @@ ss::future<> feature_manager::stop() {
     _hm_backend.local().unregister_node_callback(_health_notify_handle);
     _update_wait.broken();
     co_await _gate.close();
+}
+
+ss::future<> feature_manager::maybe_log_license_check_info() {
+    static constexpr std::chrono::seconds license_check_retry = 5min;
+    const auto& cfg = config::shard_local_cfg();
+    std::stringstream warn_ss;
+    if (cfg.cloud_storage_enabled) {
+        fmt::print(warn_ss, "{}", "Tired Storage(cloud_storage)");
+    }
+    const auto& warn_log = warn_ss.str();
+    if (!warn_log.empty()) {
+        const auto& license = _feature_table.local().get_license();
+        if (!license || license->is_expired()) {
+            vlog(
+              clusterlog.warn,
+              "Enterprise feature(s) {} detected as enabled without a valid "
+              "license, please contact support and/or upload a valid redpanda "
+              "license",
+              warn_log);
+        }
+    }
+    try {
+        co_await ss::sleep_abortable(license_check_retry, _as.local());
+    } catch (ss::sleep_aborted) {
+        // Shutting down - next iteration will drop out
+    }
 }
 
 ss::future<> feature_manager::maybe_update_active_version() {
@@ -360,6 +393,24 @@ ss::future<> feature_manager::do_maybe_update_active_version() {
     }
 
     vlog(clusterlog.info, "Updated cluster (logical version {})", max_version);
+}
+
+ss::future<std::error_code>
+feature_manager::update_license(security::license&& license) {
+    static const auto timeout = model::timeout_clock::now() + 5s;
+
+    auto cmd = cluster::feature_update_license_update_cmd(
+      cluster::feature_update_license_update_cmd_data{
+        .redpanda_license = license},
+      0 // unused
+    );
+    auto err = co_await replicate_and_wait(
+      _stm, _feature_table, _as, std::move(cmd), timeout);
+    if (err) {
+        co_return err;
+    }
+    vlog(clusterlog.info, "Loaded new license into cluster: {}", license);
+    co_return make_error_code(errc::success);
 }
 
 ss::future<std::error_code>

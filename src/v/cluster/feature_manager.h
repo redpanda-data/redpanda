@@ -89,11 +89,15 @@ public:
         return _barrier_state.barrier(tag);
     }
 
+    ss::future<std::error_code> update_license(security::license&& license);
+
 private:
     void update_node_version(model::node_id, cluster_version v);
 
     ss::future<> do_maybe_update_active_version();
     ss::future<> maybe_update_active_version();
+
+    ss::future<> maybe_log_license_check_info();
 
     ss::sharded<controller_stm>& _stm;
     ss::sharded<ss::abort_source>& _as;

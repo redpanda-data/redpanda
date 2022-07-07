@@ -452,6 +452,12 @@ std::ostream& operator<<(std::ostream& o, const feature_update_action& fua) {
     return o;
 }
 
+std::ostream& operator<<(
+  std::ostream& o, const feature_update_license_update_cmd_data& fulu) {
+    fmt::print(o, "{{redpanda_license {}}}", fulu.redpanda_license);
+    return o;
+}
+
 } // namespace cluster
 
 namespace reflection {
@@ -1323,6 +1329,20 @@ adl<cluster::feature_update_cmd_data>::from(iobuf_parser& in) {
     auto logical_version = adl<cluster::cluster_version>{}.from(in);
     auto actions = adl<std::vector<cluster::feature_update_action>>{}.from(in);
     return {.logical_version = logical_version, .actions = std::move(actions)};
+}
+
+void adl<cluster::feature_update_license_update_cmd_data>::to(
+  iobuf& out, cluster::feature_update_license_update_cmd_data&& data) {
+    reflection::serialize(out, data.current_version, data.redpanda_license);
+}
+
+cluster::feature_update_license_update_cmd_data
+adl<cluster::feature_update_license_update_cmd_data>::from(iobuf_parser& in) {
+    auto version = adl<int8_t>{}.from(in);
+    std::ignore = version;
+    auto license = adl<security::license>{}.from(in);
+    return cluster::feature_update_license_update_cmd_data{
+      .redpanda_license = std::move(license)};
 }
 
 void adl<cluster::feature_barrier_request>::to(

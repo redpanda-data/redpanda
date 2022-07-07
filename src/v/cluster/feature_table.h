@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster/types.h"
+#include "security/license.h"
 #include "utils/waiter_queue.h"
 
 #include <array>
@@ -25,6 +26,7 @@ enum class feature : std::uint64_t {
     maintenance_mode = 0x4,
     mtls_authentication = 0x8,
     serde_raft_0 = 0x10,
+    license = 0x20,
 
     // Dummy features for testing only
     test_alpha = uint64_t(1) << 63,
@@ -105,6 +107,12 @@ constexpr static std::array feature_schema{
     cluster_version{4},
     "serde_raft_0",
     feature::serde_raft_0,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+  feature_spec{
+    cluster_version{4},
+    "license",
+    feature::license,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
@@ -283,6 +291,12 @@ public:
 
     std::optional<feature> resolve_name(std::string_view feature_name) const;
 
+    void set_license(security::license license);
+
+    void revoke_license();
+
+    const std::optional<security::license>& get_license() const;
+
 private:
     // Only for use by our friends feature backend & manager
     void set_active_version(cluster_version);
@@ -303,6 +317,9 @@ private:
 
     // Waiting for a particular feature to be preparing
     waiter_queue<feature> _waiters_preparing;
+
+    // Currently loaded redpanda license details
+    std::optional<security::license> _license;
 
     // feature_manager is a friend so that they can initialize
     // the active version on single-node first start.
