@@ -5,6 +5,7 @@ rp_test(
     directory_walker_test.cc
     partition_manifest_test.cc
     topic_manifest_test.cc
+    tx_range_manifest_test.cc
     s3_imposter.cc
     remote_test.cc
     offset_translation_layer_test.cc
