@@ -524,7 +524,6 @@ ss::future<> members_backend::reconcile() {
 
         const auto allocator_empty = _allocator.local().is_empty(
           meta.update.id);
-
         if (
           is_draining && all_reallocations_finished && allocator_empty
           && !updates_in_progress) {
@@ -552,6 +551,15 @@ ss::future<> members_backend::reconcile() {
               all_reallocations_finished,
               allocator_empty,
               updates_in_progress);
+            if (!allocator_empty && all_reallocations_finished) {
+                // recalculate reallocations
+                vlog(
+                  clusterlog.info,
+                  "[update: {}] decommissioning in progress. recalculating "
+                  "reallocations",
+                  meta.update);
+                calculate_reallocations(meta);
+            }
         }
     }
 }
