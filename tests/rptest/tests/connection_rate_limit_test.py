@@ -31,18 +31,19 @@ class ConnectionRateLimitTest(PreallocNodesTest):
     PRODUCE_COUNT = 10
     READ_COUNT = 10
     RANDOM_READ_PARALLEL = 3
-    REFRESH_TOKENS_TIME_SEC = 2.0
+    RATE_LIMIT = 4
+    REFRESH_TOKENS_TIME_SEC = 2
 
     topics = (TopicSpec(partition_count=1, replication_factor=1), )
 
     def __init__(self, test_context):
         resource_setting = ResourceSettings(num_cpus=1)
-        super(ConnectionRateLimitTest,
-              self).__init__(test_context=test_context,
-                             num_brokers=1,
-                             node_prealloc_count=1,
-                             extra_rp_conf={"kafka_connection_rate_limit": 6},
-                             resource_settings=resource_setting)
+        super(ConnectionRateLimitTest, self).__init__(
+            test_context=test_context,
+            num_brokers=1,
+            node_prealloc_count=1,
+            extra_rp_conf={"kafka_connection_rate_limit": self.RATE_LIMIT},
+            resource_settings=resource_setting)
 
         self._producer = FranzGoVerifiableProducer(test_context, self.redpanda,
                                                    self.topics[0],
@@ -90,7 +91,9 @@ class ConnectionRateLimitTest(PreallocNodesTest):
 
             return need_finish
 
-        wait_until(consumed, timeout_sec=190, backoff_sec=0.1)
+        wait_until(consumed,
+                   timeout_sec=190,
+                   backoff_sec=(1 / self.RATE_LIMIT))
 
         finish = time.time()
 
@@ -119,8 +122,8 @@ class ConnectionRateLimitTest(PreallocNodesTest):
         time1 = self.get_read_time(self.RANDOM_READ_PARALLEL)
         time2 = self.get_read_time(self.RANDOM_READ_PARALLEL * 2)
 
-        assert time2 >= time1 * 1.7
-
         metrics = MetricCheck(self.logger, self.redpanda,
                               self.redpanda.nodes[0], RATE_METRIC, {})
         metrics.evaluate([(RATE_METRIC, lambda a, b: b > 0)])
+
+        assert time2 >= time1 * 1.7, f'Time for first iteration:{time1} Time for second iteration:{time2}'
