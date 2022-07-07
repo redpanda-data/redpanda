@@ -95,6 +95,8 @@ path_type_map = {
         }
     },
     "TxnOffsetCommitRequestData": {
+        "MemberId": ("kafka::member_id", "string"),
+        "GroupInstanceId": ("kafka::group_instance_id", "string"),
         "Topics": {
             "Partitions": {
                 "PartitionIndex": ("model::partition_id", "int32"),

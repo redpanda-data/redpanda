@@ -21,6 +21,7 @@
 #include "kafka/server/group_manager.h"
 #include "kafka/server/group_metadata.h"
 #include "kafka/server/logger.h"
+#include "kafka/server/member.h"
 #include "kafka/types.h"
 #include "likely.h"
 #include "model/fundamental.h"
@@ -2159,6 +2160,31 @@ group::handle_commit_tx(cluster::commit_group_tx_request r) {
     }
 }
 
+error_code
+group::validate_expected_group(const txn_offset_commit_request& r) const {
+    if (r.data.group_instance_id.has_value()) {
+        auto static_member_it = _static_members.find(
+          r.data.group_instance_id.value());
+        if (
+          static_member_it != _static_members.end()
+          && static_member_it->second != r.data.member_id) {
+            return error_code::fenced_instance_id;
+        }
+    }
+
+    if (
+      r.data.member_id != unknown_member_id
+      && !_members.contains(r.data.member_id)) {
+        return error_code::unknown_member_id;
+    }
+
+    if (r.data.generation_id >= 0 && r.data.generation_id != _generation) {
+        return error_code::illegal_generation;
+    }
+
+    return error_code::none;
+}
+
 ss::future<txn_offset_commit_response>
 group::handle_txn_offset_commit(txn_offset_commit_request r) {
     if (in_state(group_state::dead)) {
@@ -2167,6 +2193,11 @@ group::handle_txn_offset_commit(txn_offset_commit_request r) {
     } else if (
       in_state(group_state::empty) || in_state(group_state::stable)
       || in_state(group_state::preparing_rebalance)) {
+        auto check_res = validate_expected_group(r);
+        if (check_res != error_code::none) {
+            co_return txn_offset_commit_response(r, check_res);
+        }
+
         auto id = model::producer_id(r.data.producer_id());
         co_return co_await with_pid_lock(
           id, [this, r = std::move(r)]() mutable {
@@ -2316,14 +2347,22 @@ group::handle_offset_fetch(offset_fetch_request&& r) {
         for (const auto& e : _offsets) {
             offset_fetch_response_partition p = {
               .partition_index = e.first.partition,
-              .committed_offset = e.second->metadata.offset,
-              .committed_leader_epoch
-              = e.second->metadata.committed_leader_epoch,
-              .metadata = e.second->metadata.metadata,
+              .committed_offset = model::offset(-1),
+              .metadata = "",
               .error_code = error_code::none,
             };
+
+            if (r.data.require_stable && has_pending_transaction(e.first)) {
+                p.error_code = error_code::unstable_offset_commit;
+            } else {
+                p.committed_offset = e.second->metadata.offset;
+                p.committed_leader_epoch
+                  = e.second->metadata.committed_leader_epoch;
+                p.metadata = e.second->metadata.metadata;
+            }
             tmp[e.first.topic].push_back(std::move(p));
         }
+
         for (auto& e : tmp) {
             resp.data.topics.push_back(
               {.name = e.first, .partitions = std::move(e.second)});
@@ -2338,24 +2377,26 @@ group::handle_offset_fetch(offset_fetch_request&& r) {
         t.name = topic.name;
         for (auto id : topic.partition_indexes) {
             model::topic_partition tp(topic.name, id);
-            auto res = offset(tp);
-            if (res) {
-                offset_fetch_response_partition p = {
-                  .partition_index = id,
-                  .committed_offset = res->offset,
-                  .metadata = res->metadata,
-                  .error_code = error_code::none,
-                };
-                t.partitions.push_back(std::move(p));
+
+            offset_fetch_response_partition p = {
+              .partition_index = id,
+              .committed_offset = model::offset(-1),
+              .metadata = "",
+              .error_code = error_code::none,
+            };
+
+            if (r.data.require_stable && has_pending_transaction(tp)) {
+                p.error_code = error_code::unstable_offset_commit;
             } else {
-                offset_fetch_response_partition p = {
-                  .partition_index = id,
-                  .committed_offset = model::offset(-1),
-                  .metadata = "",
-                  .error_code = error_code::none,
-                };
-                t.partitions.push_back(std::move(p));
+                auto res = offset(tp);
+                if (res) {
+                    p.partition_index = id;
+                    p.committed_offset = res->offset;
+                    p.metadata = res->metadata;
+                    p.error_code = error_code::none;
+                }
             }
+            t.partitions.push_back(std::move(p));
         }
         resp.data.topics.push_back(std::move(t));
     }

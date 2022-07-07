@@ -14,6 +14,6 @@
 
 namespace kafka {
 
-using txn_offset_commit_handler = handler<txn_offset_commit_api, 0, 2>;
+using txn_offset_commit_handler = handler<txn_offset_commit_api, 0, 3>;
 
 }
