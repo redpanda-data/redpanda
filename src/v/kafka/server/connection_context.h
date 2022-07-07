@@ -234,6 +234,7 @@ private:
     const ss::net::inet_address _client_addr;
     const bool _enable_authorizer;
     ctx_log _authlog;
+    bool _response_loop_running{false};
     bool _use_mtls{false};
     std::optional<ss::sstring> _mtls_principal;
 };
