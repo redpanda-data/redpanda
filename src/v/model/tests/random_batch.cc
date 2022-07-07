@@ -17,6 +17,7 @@
 #include "model/record_utils.h"
 #include "random/generators.h"
 #include "utils/vint.h"
+#include "vassert.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/smp.hh>
@@ -46,10 +47,15 @@ std::vector<model::record_header> make_headers(int n = 2) {
     return ret;
 }
 
-model::record
-make_random_record(int index, std::optional<size_t> rec_size = std::nullopt) {
+static model::record _make_random_record(
+  int index,
+  std::optional<iobuf> key,
+  std::optional<size_t> rec_size = std::nullopt) {
     iobuf k;
-    if (rec_size) {
+    vassert(!key || !rec_size, "Cannot specify both key and record size.");
+    if (key) {
+        k = std::move(*key);
+    } else if (rec_size) {
         k = make_iobuf(*rec_size);
     } else {
         k = make_iobuf();
@@ -80,6 +86,15 @@ make_random_record(int index, std::optional<size_t> rec_size = std::nullopt) {
       v_z,
       std::move(v),
       std::move(headers));
+}
+
+static model::record make_random_record(int index, iobuf key) {
+    return _make_random_record(
+      index, std::make_optional<iobuf>(std::move(key)));
+}
+
+static model::record make_random_record(int index, std::optional<size_t> size) {
+    return _make_random_record(index, std::nullopt, size);
 }
 
 model::record_batch make_random_batch(
@@ -143,7 +158,13 @@ model::record_batch make_random_batch(record_batch_spec spec) {
         if (spec.record_sizes) {
             sz = spec.record_sizes->at(i);
         }
-        rs.emplace_back(make_random_record(i, sz));
+        if (spec.max_key_cardinality) {
+            auto keystr = gen_alphanum_max_distinct(*spec.max_key_cardinality);
+            auto key = bytes_to_iobuf(keystr.c_str());
+            rs.emplace_back(make_random_record(i, std::move(key)));
+        } else {
+            rs.emplace_back(make_random_record(i, sz));
+        }
     }
     if (header.attrs.compression() != model::compression::none) {
         iobuf body;
