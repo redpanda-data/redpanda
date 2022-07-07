@@ -13,6 +13,7 @@ v_cc_library(
     partitioners.cc
     producer.cc
     topic_cache.cc
+    transport.cc
     sasl_client.cc
   DEPS
     v::kafka
