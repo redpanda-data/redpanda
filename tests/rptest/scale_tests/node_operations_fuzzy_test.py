@@ -146,7 +146,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
                         1, NodeOperationFuzzyTest.max_suspend_duration_seconds)
                     node = random.choice(self.redpanda.nodes)
                 else:
-                    #kill/termianate only active nodes (not to influence the test outcome)
+                    #kill/terminate only active nodes (not to influence the test outcome)
                     idx = random.choice(list(self.active_nodes))
                     node = self.redpanda.get_node(idx)
 
@@ -173,7 +173,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
             def decommissioned():
                 try:
                     admin = Admin(self.redpanda)
-                    # if broker is already draining, it is suceess
+                    # if broker is already draining, it is success
 
                     brokers = admin.get_brokers()
                     for b in brokers:
