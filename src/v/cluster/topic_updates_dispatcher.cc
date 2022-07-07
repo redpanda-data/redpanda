@@ -12,8 +12,11 @@
 #include "cluster/cluster_utils.h"
 #include "cluster/commands.h"
 #include "cluster/partition_leaders_table.h"
+#include "cluster/topic_table.h"
 #include "model/metadata.h"
 #include "raft/types.h"
+
+#include <absl/container/node_hash_map.h>
 
 #include <iterator>
 #include <system_error>
@@ -37,19 +40,45 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
           return ss::visit(
             std::move(cmd),
             [this, base_offset](delete_topic_cmd del_cmd) {
-                // delete case - we need state copy to
-                auto tp_md = _topic_table.local().get_topic_metadata(
-                  del_cmd.value);
+                auto tp_ns = del_cmd.key;
+                auto topic_assignments
+                  = _topic_table.local().get_topic_assignments(del_cmd.value);
+                in_progress_map in_progress;
+
+                if (topic_assignments) {
+                    in_progress = collect_in_progress(
+                      del_cmd.key, *topic_assignments);
+                }
                 return dispatch_updates_to_cores(del_cmd, base_offset)
-                  .then([this, tp_md = std::move(tp_md)](std::error_code ec) {
-                      if (ec == errc::success) {
-                          vassert(
-                            tp_md.has_value(),
-                            "Topic had to exist before successful delete");
-                          deallocate_topic(*tp_md);
-                      }
-                      return ec;
-                  });
+                  .then(
+                    [this,
+                     tp_ns = std::move(tp_ns),
+                     topic_assignments = std::move(topic_assignments),
+                     in_progress = std::move(in_progress)](std::error_code ec) {
+                        if (ec == errc::success) {
+                            vassert(
+                              topic_assignments.has_value(),
+                              "Topic had to exist before successful delete");
+                        }
+
+                        for (auto& p_as : *topic_assignments) {
+                            _partition_allocator.local().deallocate(
+                              p_as.replicas);
+                            auto it = in_progress.find(
+                              model::ntp(tp_ns.ns, tp_ns.tp, p_as.id));
+
+                            // we must remove the allocation that would normally
+                            // be removed with update_finished request
+                            if (it != in_progress.end()) {
+                                auto to_delete = subtract_replica_sets(
+                                  it->second, p_as.replicas);
+                                _partition_allocator.local().remove_allocations(
+                                  to_delete);
+                            }
+                        }
+
+                        return ec;
+                    });
             },
             [this, base_offset](create_topic_cmd create_cmd) {
                 return dispatch_updates_to_cores(create_cmd, base_offset)
@@ -187,6 +216,23 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
             });
       });
 }
+topic_updates_dispatcher::in_progress_map
+topic_updates_dispatcher::collect_in_progress(
+  const model::topic_namespace& tp_ns,
+  const assignments_set& current_assignments) {
+    absl::node_hash_map<model::ntp, std::vector<model::broker_shard>>
+      in_progress;
+    in_progress.reserve(current_assignments.size());
+    // collect in progress assignments
+    for (auto& p : current_assignments) {
+        model::ntp ntp(tp_ns.ns, tp_ns.tp, p.id);
+        auto previous = _topic_table.local().get_previous_replica_set(ntp);
+        if (previous) {
+            in_progress.emplace(std::move(ntp), std::move(previous.value()));
+        }
+    }
+    return in_progress;
+}
 
 ss::future<> topic_updates_dispatcher::update_leaders_with_estimates(
   std::vector<ntp_leader> leaders) {
@@ -250,10 +296,20 @@ topic_updates_dispatcher::dispatch_updates_to_cores(Cmd cmd, model::offset o) {
       });
 }
 
-void topic_updates_dispatcher::deallocate_topic(const topic_metadata& tp_md) {
-    // we have to deallocate topics
-    for (auto& p : tp_md.get_assignments()) {
-        _partition_allocator.local().deallocate(p.replicas);
+void topic_updates_dispatcher::deallocate_topic(
+  const model::topic_namespace& tp_ns,
+  const assignments_set& topic_assignments,
+  const in_progress_map& in_progress) {
+    for (auto& p_as : topic_assignments) {
+        _partition_allocator.local().deallocate(p_as.replicas);
+        auto it = in_progress.find(model::ntp(tp_ns.ns, tp_ns.tp, p_as.id));
+
+        // we must remove the allocation that would normally
+        // be removed with update_finished request
+        if (it != in_progress.end()) {
+            auto to_delete = subtract_replica_sets(it->second, p_as.replicas);
+            _partition_allocator.local().remove_allocations(to_delete);
+        }
     }
 }
 

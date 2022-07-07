@@ -13,6 +13,7 @@
 #include "cluster/commands.h"
 #include "cluster/scheduling/partition_allocator.h"
 #include "cluster/topic_table.h"
+#include "cluster/types.h"
 #include "model/record.h"
 
 #include <seastar/core/sharded.hh>
@@ -71,6 +72,8 @@ public:
     }
 
 private:
+    using in_progress_map
+      = absl::node_hash_map<model::ntp, std::vector<model::broker_shard>>;
     template<typename Cmd>
     ss::future<std::error_code> dispatch_updates_to_cores(Cmd, model::offset);
 
@@ -78,7 +81,14 @@ private:
 
     ss::future<> update_leaders_with_estimates(std::vector<ntp_leader> leaders);
     void update_allocations(std::vector<partition_assignment>);
-    void deallocate_topic(const topic_metadata&);
+
+    void deallocate_topic(
+      const model::topic_namespace&,
+      const assignments_set&,
+      const in_progress_map&);
+
+    in_progress_map
+    collect_in_progress(const model::topic_namespace&, const assignments_set&);
 
     ss::sharded<partition_allocator>& _partition_allocator;
     ss::sharded<topic_table>& _topic_table;
