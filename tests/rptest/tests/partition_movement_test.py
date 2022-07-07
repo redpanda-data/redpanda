@@ -23,6 +23,7 @@ from rptest.tests.end_to_end import EndToEndTest
 from rptest.services.admin import Admin
 from rptest.services.redpanda_installer import InstallOptions
 from rptest.tests.partition_movement import PartitionMovementMixin
+from rptest.util import wait_until_result
 from rptest.services.honey_badger import HoneyBadger
 from rptest.services.rpk_producer import RpkProducer
 from rptest.services.kaf_producer import KafProducer
@@ -370,7 +371,17 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
 
         # snapshot offsets
         rpk = RpkTool(self.redpanda)
-        partitions = rpk.describe_topic(spec.name)
+
+        def has_offsets_for_all_partitions():
+            # NOTE: partitions may not be returned if their fields can't be
+            # populated, e.g. during leadership changes.
+            partitions = list(rpk.describe_topic(spec.name))
+            if len(partitions) == 3:
+                return (True, partitions)
+            return (False, None)
+
+        partitions = wait_until_result(has_offsets_for_all_partitions, 30, 2)
+
         offset_map = {}
         for p in partitions:
             offset_map[p.id] = p.high_watermark
@@ -379,10 +390,11 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         self.redpanda.restart_nodes(self.redpanda.nodes)
 
         def offsets_are_recovered():
-
+            partitions_after = list(rpk.describe_topic(spec.name))
+            if len(partitions_after) != 3:
+                return False
             return all([
-                offset_map[p.id] == p.high_watermark
-                for p in rpk.describe_topic(spec.name)
+                offset_map[p.id] == p.high_watermark for p in partitions_after
             ])
 
         wait_until(offsets_are_recovered, 30, 2)
