@@ -178,6 +178,10 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds>
       controller_backend_housekeeping_interval_ms;
     property<std::chrono::milliseconds> node_management_operation_timeout_ms;
+
+    // System/process resources
+    property<uint32_t> nofiles_rlimit;
+
     // Compaction controller
     property<std::chrono::milliseconds> compaction_ctrl_update_interval_ms;
     property<double> compaction_ctrl_p_coeff;

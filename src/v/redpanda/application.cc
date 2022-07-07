@@ -150,17 +150,6 @@ static void log_system_resources(
       ss::smp::count,
       human::bytes(total_mem),
       human::bytes(reserve));
-
-    struct rlimit nofile = {0, 0};
-    if (getrlimit(RLIMIT_NOFILE, &nofile) == 0) {
-        vlog(
-          log.info,
-          "File handle limit: {}/{}",
-          nofile.rlim_cur,
-          nofile.rlim_max);
-    } else {
-        vlog(log.warn, "Error {} querying file handle limit", errno);
-    }
 }
 
 static void seastar_arg_hack(ss::logger& log, int ac, char** av) {
@@ -290,6 +279,34 @@ void application::initialize(
         compression::stream_zstd::init_workspace(
           config::shard_local_cfg().zstd_decompress_workspace_bytes());
     }).get0();
+
+    // Set the open files limit to some reasonable value
+    struct rlimit nofile = {0, 0};
+    if (getrlimit(RLIMIT_NOFILE, &nofile) == 0) {
+        vlog(
+          _log.warn,
+          "Initial handle limit: {}/{}",
+          nofile.rlim_cur,
+          nofile.rlim_max);
+
+        auto nofiles_limit = config::shard_local_cfg().nofiles_rlimit();
+
+        if (nofiles_limit) {
+            // set a specific soft limit based on configuration
+            struct rlimit nofileset = {nofiles_limit, nofile.rlim_max};
+            if (setrlimit(RLIMIT_NOFILE, &nofileset) == 0) {
+                vlog(
+                  _log.warn,
+                  "Updated fd (nofiles) limit to {}/{}",
+                  nofileset.rlim_cur,
+                  nofileset.rlim_max);
+            } else {
+                vlog(_log.warn, "Error {} setting file handle limit", errno);
+            }
+        }
+    } else {
+        vlog(_log.warn, "Error {} querying file handle limit", errno);
+    }
 
     ss::smp::invoke_on_all([] {
         ss::memory::set_large_allocation_warning_threshold(10 * 1000 * 1000);
@@ -564,17 +581,18 @@ static storage::backlog_controller_config compaction_controller_config(
         / ss::smp::count);
 
     /**
-     * We normalize internals using disk capacity to make controller settings
-     * independent from disk space. After normalization all values equal to disk
-     * capacity will be represented in the controller with value equal 1000.
+     * We normalize internals using disk capacity to make controller
+     * settings independent from disk space. After normalization all values
+     * equal to disk capacity will be represented in the controller with
+     * value equal 1000.
      *
      * Set point = 10% of disk capacity will always be equal to 100.
      *
      * This way we can calculate proportional coefficient.
      *
-     * We assume that when error is greater than 80% of setpoint we should be
-     * running compaction with maximum allowed shares.
-     * This way we can calculate proportional coefficient as
+     * We assume that when error is greater than 80% of setpoint we should
+     * be running compaction with maximum allowed shares. This way we can
+     * calculate proportional coefficient as
      *
      *  k_p = 1000 / 80 = 12.5
      *
@@ -598,15 +616,14 @@ static storage::backlog_controller_config compaction_controller_config(
 static storage::backlog_controller_config
 make_upload_controller_config(ss::scheduling_group sg) {
     // This settings are similar to compaction_controller_config.
-    // The desired setpoint for archival is set to 0 since the goal is to upload
-    // all data that we have.
-    // If the size of the backlog (the data which should be uploaded to S3) is
-    // larger than this value we need to bump the scheduling priority.
-    // Otherwise, we're good with the minimal.
+    // The desired setpoint for archival is set to 0 since the goal is to
+    // upload all data that we have. If the size of the backlog (the data
+    // which should be uploaded to S3) is larger than this value we need to
+    // bump the scheduling priority. Otherwise, we're good with the minimal.
     // Since the setpoint is 0 we can't really use integral component of the
-    // controller. This is because upload backlog size never gets negative so
-    // once integral part will rump up high enough it won't be able to go down
-    // even if everything is uploaded.
+    // controller. This is because upload backlog size never gets negative
+    // so once integral part will rump up high enough it won't be able to go
+    // down even if everything is uploaded.
 
     auto available
       = ss::fs_avail(config::node().data_directory().path.string()).get();
@@ -715,10 +732,10 @@ void application::wire_up_redpanda_services() {
         std::ref(recovery_throttle))
       .get();
 
-    // custom handling for recovery_throttle and raft group manager shutdown.
-    // the former needs to happen first in order to ensure that any raft groups
-    // that are being throttled are released so that they can make be quickly
-    // shutdown by the group manager.
+    // custom handling for recovery_throttle and raft group manager
+    // shutdown. the former needs to happen first in order to ensure that
+    // any raft groups that are being throttled are released so that they
+    // can make be quickly shutdown by the group manager.
     _deferred.emplace_back([this] {
         recovery_throttle.invoke_on_all(&raft::recovery_throttle::shutdown)
           .get();
@@ -822,9 +839,10 @@ void application::wire_up_redpanda_services() {
           .get();
     });
     _deferred.emplace_back([this] {
-        // Prior to shutting down partition manager (which clears out all the
-        // raft `consensus` instances), stop processing heartbeats.  Otherwise
-        // we are receiving heartbeats that we can't match up to raft groups.
+        // Prior to shutting down partition manager (which clears out all
+        // the raft `consensus` instances), stop processing heartbeats.
+        // Otherwise we are receiving heartbeats that we can't match up to
+        // raft groups.
         raft_group_manager.invoke_on_all(&raft::group_manager::stop_heartbeats)
           .get();
     });
@@ -1088,7 +1106,8 @@ void application::wire_up_redpanda_services() {
                     = config::shard_local_cfg().kafka_rpc_server_tcp_recv_buf;
               } else {
                   // Backward compat: prior to Redpanda 22.2, rpc_server_*
-                  // settings applied to both Kafka and Internal RPC listeners.
+                  // settings applied to both Kafka and Internal RPC
+                  // listeners.
                   c.tcp_recv_buf
                     = config::shard_local_cfg().rpc_server_tcp_recv_buf;
               };
@@ -1097,7 +1116,8 @@ void application::wire_up_redpanda_services() {
                     = config::shard_local_cfg().kafka_rpc_server_tcp_send_buf;
               } else {
                   // Backward compat: prior to Redpanda 22.2, rpc_server_*
-                  // settings applied to both Kafka and Internal RPC listeners.
+                  // settings applied to both Kafka and Internal RPC
+                  // listeners.
                   c.tcp_send_buf
                     = config::shard_local_cfg().rpc_server_tcp_send_buf;
               }
@@ -1280,9 +1300,9 @@ void application::start_redpanda(::stop_signal& app_signal) {
     /**
      * We schedule shutting down controller input and aborting its operation
      * as a first shutdown step. (other services are stopeed in
-     * an order reverse to the startup sequence.) This way we terminate all long
-     * running opertions before shutting down the RPC server, preventing it to
-     * wait on background dispatch gate `close` call.
+     * an order reverse to the startup sequence.) This way we terminate all
+     * long running opertions before shutting down the RPC server,
+     * preventing it to wait on background dispatch gate `close` call.
      *
      * NOTE controller has to be stopped only after it was started
      */
@@ -1398,9 +1418,9 @@ void application::start_redpanda(::stop_signal& app_signal) {
 
 /**
  * The Kafka protocol listener startup is separate to the rest of Redpanda,
- * because it includes a wait for this node to be a full member of a redpanda
- * cluster -- this is expected to be run last, after everything else is
- * started.
+ * because it includes a wait for this node to be a full member of a
+ * redpanda cluster -- this is expected to be run last, after everything
+ * else is started.
  */
 void application::start_kafka(::stop_signal& app_signal) {
     // Kafka API

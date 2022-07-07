@@ -825,6 +825,13 @@ configuration::configuration()
       "Timeout for executing node management operations",
       {.visibility = visibility::tunable},
       5s)
+  , nofiles_rlimit(
+      *this,
+      "nofiles_rlimit",
+      "Desired value for the number of files rlimit, 0 indicates no change "
+      "from defaul",
+      {.visibility = visibility::tunable},
+      0)
   , compaction_ctrl_update_interval_ms(
       *this,
       "compaction_ctrl_update_interval_ms",
