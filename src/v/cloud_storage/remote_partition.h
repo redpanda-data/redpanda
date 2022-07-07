@@ -133,6 +133,13 @@ private:
 
 } // namespace details
 
+struct offset_range {
+    model::offset begin;
+    model::offset end;
+    model::offset begin_rp;
+    model::offset end_rp;
+};
+
 /// Remote partition manintains list of remote segments
 /// and list of active readers. Only one reader can be
 /// maintained per segment. The idea here is that the
@@ -191,6 +198,10 @@ public:
 
     // returns term last kafka offset
     std::optional<model::offset> get_term_last_offset(model::term_id) const;
+
+    // Get list of aborted transactions that overlap with the offset range
+    ss::future<std::vector<cluster::rm_stm::tx_range>>
+    aborted_transactions(offset_range offsets);
 
 private:
     /// Create new remote_segment instances for all new

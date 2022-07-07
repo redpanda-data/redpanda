@@ -213,6 +213,11 @@ public:
         return _rm_stm->aborted_transactions(from, to);
     }
 
+    ss::future<std::vector<rm_stm::tx_range>>
+    aborted_transactions_cloud(cloud_storage::offset_range offsets) {
+        return _cloud_storage_partition->aborted_transactions(offsets);
+    }
+
     const ss::shared_ptr<cluster::archival_metadata_stm>&
     archival_meta_stm() const {
         return _archival_meta_stm;
