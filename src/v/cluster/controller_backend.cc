@@ -90,6 +90,31 @@ std::vector<model::broker> create_brokers_set(
     return brokers;
 }
 
+std::vector<raft::broker_revision> create_brokers_set(
+  const std::vector<model::broker_shard>& replicas,
+  const absl::flat_hash_map<model::node_id, model::revision_id>&
+    replica_revisions,
+  cluster::members_table& members) {
+    std::vector<raft::broker_revision> brokers;
+    brokers.reserve(replicas.size());
+
+    std::transform(
+      std::cbegin(replicas),
+      std::cend(replicas),
+      std::back_inserter(brokers),
+      [&members, &replica_revisions](const model::broker_shard& bs) {
+          auto br = members.get_broker(bs.node_id);
+          if (!br) {
+              throw std::logic_error(
+                fmt::format("Replica node {} is not available", bs.node_id));
+          }
+          return raft::broker_revision{
+            .broker = *br->get(),
+            .rev = replica_revisions.find(bs.node_id)->second};
+      });
+    return brokers;
+}
+
 std::optional<ss::shard_id> get_target_shard(
   model::node_id id, const std::vector<model::broker_shard>& replicas) {
     auto it = std::find_if(
@@ -518,6 +543,29 @@ find_interrupting_operation(deltas_t::iterator current_it, deltas_t& deltas) {
               return false;
           }
       });
+}
+ss::future<std::error_code> revert_configuration_update(
+  const model::ntp& ntp,
+  const std::vector<model::broker_shard>& replicas,
+  model::revision_id rev,
+  ss::lw_shared_ptr<partition> p,
+  members_table& members,
+  topic_table& topics) {
+    auto in_progress_it = topics.in_progress_updates().find(ntp);
+    // no longer in progress
+    if (in_progress_it == topics.in_progress_updates().end()) {
+        co_return errc::success;
+    }
+    auto brokers = create_brokers_set(
+      replicas, in_progress_it->second.replicas_revisions, members);
+    vlog(
+      clusterlog.debug,
+      "reverting already finished reconfiguration of {}, revision: {}. Replica "
+      "set: {} ",
+      ntp,
+      rev,
+      replicas);
+    co_return co_await p->update_replica_set(std::move(brokers), rev);
 }
 } // namespace
 
@@ -1197,21 +1245,25 @@ ss::future<std::error_code> controller_backend::cancel_replica_set_update(
       replicas,
       rev,
       [this, &ntp, rev, replicas](ss::lw_shared_ptr<partition> p) {
+          const auto current_cfg = p->group_configuration();
+          // we do not have to request update/cancellation twice
+          if (current_cfg.revision_id() == rev) {
+              return ss::make_ready_future<std::error_code>(
+                errc::waiting_for_recovery);
+          }
+
           const auto raft_cfg_update_finished
-            = are_configuration_replicas_up_to_date(
-              p->group_configuration(), replicas);
+            = current_cfg.type() == raft::configuration_type::simple;
 
           // raft already finished its part, we need to move replica back
           if (raft_cfg_update_finished) {
-              auto brokers = create_brokers_set(
-                replicas, _members_table.local());
-              vlog(
-                clusterlog.debug,
-                "raft reconfiguration finished, moving partition {} "
-                "configuration back to requested state: {}",
+              return revert_configuration_update(
                 ntp,
-                replicas);
-              return p->update_replica_set(std::move(brokers), rev);
+                replicas,
+                rev,
+                std::move(p),
+                _members_table.local(),
+                _topics.local());
           } else {
               vlog(
                 clusterlog.debug,
@@ -1233,21 +1285,42 @@ ss::future<std::error_code> controller_backend::force_abort_replica_set_update(
     if (!partition) {
         co_return errc::partition_not_exists;
     }
+    const auto current_cfg = partition->group_configuration();
 
-    const auto raft_cfg_update_finished = are_configuration_replicas_up_to_date(
-      partition->group_configuration(), replicas);
+    // wait for configuration update, only declare success
+    // when configuration was actually updated
+    auto update_ec = check_configuration_update(
+      _self, partition, replicas, rev);
+
+    if (!update_ec) {
+        co_return errc::success;
+    }
+
+    // we do not have to request update/cancellation twice
+    if (current_cfg.revision_id() == rev) {
+        co_return errc::waiting_for_recovery;
+    }
+
+    const auto raft_cfg_update_finished = current_cfg.type()
+                                          == raft::configuration_type::simple;
+
     if (raft_cfg_update_finished) {
-        co_return co_await update_partition_replica_set(ntp, replicas, rev);
+        co_return co_await apply_configuration_change_on_leader(
+          ntp,
+          replicas,
+          rev,
+          [this, rev, &replicas, &ntp](
+            ss::lw_shared_ptr<cluster::partition> p) {
+              return revert_configuration_update(
+                ntp,
+                replicas,
+                rev,
+                std::move(p),
+                _members_table.local(),
+                _topics.local());
+          });
+
     } else {
-        // wait for configuration update, only declare success
-        // when configuration was actually updated
-        auto update_ec = check_configuration_update(
-          _self, partition, replicas, rev);
-
-        if (!update_ec) {
-            co_return errc::success;
-        }
-
         auto ec = co_await partition->force_abort_replica_set_update(rev);
 
         if (ec) {
