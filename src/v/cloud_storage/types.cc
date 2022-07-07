@@ -53,11 +53,12 @@ std::ostream& operator<<(std::ostream& o, const configuration& cfg) {
     fmt::print(
       o,
       "{{connection_limit: {}, client_config: {}, metrics_disabled: {}, "
-      "bucket_name: {}",
+      "bucket_name: {}, cloud_credentials_source: {}}}",
       cfg.connection_limit,
       cfg.client_config,
       cfg.metrics_disabled,
-      cfg.bucket_name);
+      cfg.bucket_name,
+      cfg.cloud_credentials_source);
     return o;
 }
 
@@ -77,13 +78,30 @@ static ss::sstring get_value_or_throw(
 
 ss::future<configuration> configuration::get_config() {
     vlog(cst_log.debug, "Generating archival configuration");
-    auto secret_key = s3::private_key_str(get_value_or_throw(
-      config::shard_local_cfg().cloud_storage_secret_key,
-      "cloud_storage_secret_key"));
-    auto access_key = s3::public_key_str(get_value_or_throw(
-      config::shard_local_cfg().cloud_storage_access_key,
-      "cloud_storage_access_key"));
-    auto region = s3::aws_region_name(get_value_or_throw(
+
+    auto cloud_credentials_source
+      = config::shard_local_cfg().cloud_storage_credentials_source.value();
+
+    std::optional<cloud_roles::private_key_str> secret_key;
+    std::optional<cloud_roles::public_key_str> access_key;
+
+    // If the credentials are sourced from config file, the keys must be present
+    // in the file. If the credentials are sourced from infrastructure APIs, the
+    // keys must be absent in the file.
+    // TODO (abhijat) validate and fail if source is not static file and the
+    //  keys are still supplied with the config.
+    if (
+      cloud_credentials_source
+      == model::cloud_credentials_source::config_file) {
+        secret_key = cloud_roles::private_key_str(get_value_or_throw(
+          config::shard_local_cfg().cloud_storage_secret_key,
+          "cloud_storage_secret_key"));
+        access_key = cloud_roles::public_key_str(get_value_or_throw(
+          config::shard_local_cfg().cloud_storage_access_key,
+          "cloud_storage_access_key"));
+    }
+
+    auto region = cloud_roles::aws_region_name(get_value_or_throw(
       config::shard_local_cfg().cloud_storage_region, "cloud_storage_region"));
     auto disable_metrics = net::metrics_disabled(
       config::shard_local_cfg().disable_metrics());
@@ -117,6 +135,7 @@ ss::future<configuration> configuration::get_config() {
       .bucket_name = s3::bucket_name(get_value_or_throw(
         config::shard_local_cfg().cloud_storage_bucket,
         "cloud_storage_bucket")),
+      .cloud_credentials_source = cloud_credentials_source,
     };
     vlog(cst_log.debug, "Cloud storage configuration generated: {}", cfg);
     co_return cfg;

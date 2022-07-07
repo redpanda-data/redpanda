@@ -8,12 +8,11 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "s3/signature.h"
+#include "cloud_roles/signature.h"
 
 #include "bytes/bytes.h"
+#include "cloud_roles/logger.h"
 #include "hashing/secure.h"
-#include "s3/error.h"
-#include "s3/logger.h"
 #include "ssx/sformat.h"
 #include "vlog.h"
 
@@ -24,15 +23,34 @@
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 
-#include <memory>
 #include <system_error>
 
-namespace s3 {
+namespace cloud_roles {
 
 constexpr int sha256_digest_length = 32;
 using hmac_digest = std::array<char, sha256_digest_length>;
 
 constexpr std::string_view algorithm = "AWS4-HMAC-SHA256";
+
+struct s3_error_category final : std::error_category {
+    const char* name() const noexcept final { return "s3"; }
+    std::string message(int ec) const final {
+        switch (static_cast<s3_client_error_code>(ec)) {
+        case s3_client_error_code::invalid_uri:
+            return "Target URI shouldn't be empty or include domain name";
+        case s3_client_error_code::invalid_uri_params:
+            return "Target URI contains invalid query parameters";
+        case s3_client_error_code::not_enough_arguments:
+            return "Can't make request, not enough arguments";
+        }
+        return "unknown";
+    }
+};
+
+std::error_code make_error_code(s3_client_error_code ec) noexcept {
+    static s3_error_category ecat;
+    return {static_cast<int>(ec), ecat};
+}
 
 // time_source //
 
@@ -116,7 +134,7 @@ inline void append_hex_utf8(ss::sstring& result, char ch) {
     result.append(h.data(), h.size());
 }
 
-static ss::sstring uri_encode(const ss::sstring& input, bool encode_slash) {
+ss::sstring uri_encode(const ss::sstring& input, bool encode_slash) {
     // The function defined here:
     //     https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
     ss::sstring result;
@@ -148,7 +166,7 @@ static ss::sstring uri_encode(const ss::sstring& input, bool encode_slash) {
 /// name)
 static result<ss::sstring> get_canonical_uri(ss::sstring target) {
     if (target.empty() || target[0] != '/') {
-        vlog(s3_log.error, "invalid URI {}", target);
+        vlog(clrl_log.error, "invalid URI {}", target);
         return make_error_code(s3_client_error_code::invalid_uri);
     }
     auto pos = target.find('?');
@@ -174,7 +192,7 @@ static result<ss::sstring> get_canonical_uri(ss::sstring target) {
 /// \param target is a target of the http query (url - domain name)
 static result<ss::sstring> get_canonical_query_string(ss::sstring target) {
     if (target.empty() || target[0] != '/') {
-        vlog(s3_log.error, "invalid URI {}", target);
+        vlog(clrl_log.error, "invalid URI {}", target);
         return make_error_code(s3_client_error_code::invalid_uri);
     }
     auto pos = target.find('?');
@@ -335,7 +353,7 @@ std::error_code signature_v4::sign_header(
     auto sign_key = gen_sig_key(_private_key(), date_str, _region(), service);
     auto cred_scope = ssx::sformat(
       "{}/{}/{}/aws4_request", date_str, _region(), service);
-    vlog(s3_log.trace, "Credentials updated:\n[scope]\n{}\n", cred_scope);
+    vlog(clrl_log.trace, "Credentials updated:\n[scope]\n{}\n", cred_scope);
     auto amz_date = _sig_time.format_datetime();
     header.set("x-amz-date", {amz_date.data(), amz_date.size()});
     header.set("x-amz-content-sha256", {sha256.data(), sha256.size()});
@@ -348,7 +366,7 @@ std::error_code signature_v4::sign_header(
     if (!canonical_req) {
         return canonical_req.error();
     }
-    vlog(s3_log.trace, "\n[canonical-request]\n{}\n", canonical_req.value());
+    vlog(clrl_log.trace, "\n[canonical-request]\n{}\n", canonical_req.value());
     auto str_to_sign = get_string_to_sign(
       amz_date, cred_scope, canonical_req.value());
     auto digest = hmac(sign_key, str_to_sign);
@@ -361,7 +379,7 @@ std::error_code signature_v4::sign_header(
       hexdigest(digest));
     header.set(boost::beast::http::field::authorization, auth_header);
     vlog(
-      s3_log.trace, "\n[signed-header]\n\n{}", http::redacted_header(header));
+      clrl_log.trace, "\n[signed-header]\n\n{}", http::redacted_header(header));
     return {};
 }
 
@@ -374,4 +392,4 @@ signature_v4::signature_v4(
   , _region(std::move(region))
   , _access_key(std::move(access_key))
   , _private_key(std::move(private_key)) {}
-} // namespace s3
+} // namespace cloud_roles

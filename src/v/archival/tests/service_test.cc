@@ -35,6 +35,10 @@ inline seastar::logger arch_svc_log("SVC-TEST");
 static const model::ns test_ns = model::ns("test-namespace");
 using namespace std::chrono_literals;
 
+static ss::future<> launch_remote(ss::sharded<cloud_storage::remote>& r) {
+    return r.invoke_on(0, [](auto& s) { return s.start(); });
+}
+
 FIXTURE_TEST(test_reconciliation_manifest_download, archiver_fixture) {
     wait_for_controller_leadership().get();
     auto topic1 = model::topic("topic_1");
@@ -78,8 +82,12 @@ FIXTURE_TEST(test_reconciliation_manifest_download, archiver_fixture) {
     auto& topics = app.controller->get_topics_state();
     ss::sharded<cloud_storage::remote> remote;
     remote
-      .start_single(remote_config.connection_limit, remote_config.client_config)
+      .start_single(
+        remote_config.connection_limit,
+        remote_config.client_config,
+        remote_config.cloud_credentials_source)
       .get();
+    launch_remote(remote).get();
     archival::internal::scheduler_service_impl service(
       arch_config, remote, pm, topics);
     service.reconcile_archivers().get();
@@ -112,8 +120,13 @@ FIXTURE_TEST(test_reconciliation_drop_ntp, archiver_fixture) {
     auto& topics = app.controller->get_topics_state();
     ss::sharded<cloud_storage::remote> remote;
     remote
-      .start_single(remote_config.connection_limit, remote_config.client_config)
+      .start_single(
+        remote_config.connection_limit,
+        remote_config.client_config,
+        remote_config.cloud_credentials_source)
       .get();
+    launch_remote(remote).get();
+
     archival::internal::scheduler_service_impl service(
       arch_config, remote, pm, topics);
 
@@ -176,8 +189,13 @@ FIXTURE_TEST(test_segment_upload, archiver_fixture) {
     auto& topics = app.controller->get_topics_state();
     ss::sharded<cloud_storage::remote> remote;
     remote
-      .start_single(remote_config.connection_limit, remote_config.client_config)
+      .start_single(
+        remote_config.connection_limit,
+        remote_config.client_config,
+        remote_config.cloud_credentials_source)
       .get();
+    launch_remote(remote).get();
+
     archival::internal::scheduler_service_impl service(
       arch_config, remote, pm, topics);
 

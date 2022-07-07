@@ -393,6 +393,15 @@ operator<<(std::ostream& o, const model::violation_recovery_policy& x) {
     }
 }
 
+enum class cloud_credentials_source {
+    config_file = 0,
+    aws_instance_metadata = 1,
+    sts = 2,
+    gcp_instance_metadata = 3,
+};
+
+std::ostream& operator<<(std::ostream& os, const cloud_credentials_source& cs);
+
 namespace internal {
 /*
  * Old version for use in backwards compatibility serialization /

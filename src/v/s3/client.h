@@ -10,11 +10,12 @@
 
 #pragma once
 
+#include "cloud_roles/apply_credentials.h"
 #include "http/client.h"
 #include "net/transport.h"
 #include "net/types.h"
+#include "outcome.h"
 #include "s3/client_probe.h"
-#include "s3/signature.h"
 #include "utils/gate_guard.h"
 
 #include <seastar/core/condition-variable.hh>
@@ -59,12 +60,12 @@ struct default_overrides {
 struct configuration : net::base_transport::configuration {
     /// URI of the S3 access point
     access_point_uri uri;
-    /// AWS access key
-    public_key_str access_key;
-    /// AWS secret key
-    private_key_str secret_key;
+    /// AWS access key, optional if configuration uses temporary credentials
+    std::optional<cloud_roles::public_key_str> access_key;
+    /// AWS secret key, optional if configuration uses temporary credentials
+    std::optional<cloud_roles::private_key_str> secret_key;
     /// AWS region
-    aws_region_name region;
+    cloud_roles::aws_region_name region;
     /// Max time that connection can spend idle
     ss::lowres_clock::duration max_idle_time;
     /// Metrics probe (should be created for every aws account on every shard)
@@ -82,9 +83,9 @@ struct configuration : net::base_transport::configuration {
     ///        truststore
     /// \return future that returns initialized configuration
     static ss::future<configuration> make_configuration(
-      const public_key_str& pkey,
-      const private_key_str& skey,
-      const aws_region_name& region,
+      const std::optional<cloud_roles::public_key_str>& pkey,
+      const std::optional<cloud_roles::private_key_str>& skey,
+      const cloud_roles::aws_region_name& region,
       const default_overrides& overrides = {},
       net::metrics_disabled disable_metrics = net::metrics_disabled::yes);
 
@@ -96,7 +97,10 @@ class request_creator {
 public:
     /// C-tor
     /// \param conf is a configuration container
-    explicit request_creator(const configuration& conf);
+    explicit request_creator(
+      const configuration& conf,
+      ss::lw_shared_ptr<const cloud_roles::apply_credentials>
+        apply_credentials);
 
     /// \brief Create unsigned 'PutObject' request header
     /// The payload is unsigned which means that we don't need to calculate
@@ -151,14 +155,24 @@ public:
 
 private:
     access_point_uri _ap;
-    signature_v4 _sign;
+    /// Applies credentials to http requests by adding headers and signing
+    /// request payload. Shared pointer so that the credentials can be rotated
+    /// through the client pool.
+    ss::lw_shared_ptr<const cloud_roles::apply_credentials> _apply_credentials;
 };
 
 /// S3 REST-API client
 class client {
 public:
-    explicit client(const configuration& conf);
-    client(const configuration& conf, const ss::abort_source& as);
+    client(
+      const configuration& conf,
+      ss::lw_shared_ptr<const cloud_roles::apply_credentials>
+        apply_credentials);
+    client(
+      const configuration& conf,
+      const ss::abort_source& as,
+      ss::lw_shared_ptr<const cloud_roles::apply_credentials>
+        apply_credentials);
 
     /// Stop the client
     ss::future<> stop();
@@ -262,6 +276,11 @@ public:
 
     ss::future<> stop();
 
+    /// Performs the dual functions of loading refreshed credentials into
+    /// apply_credentials object, as well as initializing the client pool
+    /// the first time this function is called.
+    void load_credentials(cloud_roles::credentials credentials);
+
     /// \brief Acquire http client from the pool.
     ///
     /// \note it's guaranteed that the client can only be acquired once
@@ -277,8 +296,12 @@ public:
     size_t max_size() const noexcept;
 
 private:
-    void init();
+    void populate_client_pool();
     void release(ss::shared_ptr<client> leased);
+
+    ///  Wait for credentials to be acquired. Once credentials are acquired,
+    ///  based on the policy, optionally wait for client pool to initialize.
+    ss::future<> wait_for_credentials();
 
     const size_t _max_size;
     configuration _config;
@@ -287,6 +310,11 @@ private:
     ss::condition_variable _cvar;
     ss::abort_source _as;
     ss::gate _gate;
+
+    /// Holds and applies the credentials for requests to S3. Shared pointer to
+    /// enable rotating credentials to all clients.
+    ss::lw_shared_ptr<cloud_roles::apply_credentials> _apply_credentials;
+    ss::condition_variable _credentials_var;
 };
 
 } // namespace s3

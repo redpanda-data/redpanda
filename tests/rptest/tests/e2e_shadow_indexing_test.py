@@ -43,17 +43,17 @@ class EndToEndShadowIndexingBase(EndToEndTest):
         replication_factor=3,
     ), )
 
-    def __init__(self, test_context, extra_rp_conf=None):
+    def __init__(self, test_context, extra_rp_conf=None, environment=None):
         super(EndToEndShadowIndexingBase,
               self).__init__(test_context=test_context)
 
         self.test_context = test_context
-        self.topic = EndToEndShadowIndexingTest.s3_topic_name
+        self.topic = self.s3_topic_name
 
         self.si_settings = SISettings(
             cloud_storage_reconciliation_interval_ms=500,
             cloud_storage_max_connections=5,
-            log_segment_size=EndToEndShadowIndexingTest.segment_size,  # 1MB
+            log_segment_size=self.segment_size,  # 1MB
         )
         self.s3_bucket_name = self.si_settings.cloud_storage_bucket
         self.si_settings.load_context(self.logger, test_context)
@@ -62,12 +62,13 @@ class EndToEndShadowIndexingBase(EndToEndTest):
         self.redpanda = RedpandaService(context=self.test_context,
                                         num_brokers=self.num_brokers,
                                         si_settings=self.si_settings,
-                                        extra_rp_conf=extra_rp_conf)
+                                        extra_rp_conf=extra_rp_conf,
+                                        environment=environment)
         self.kafka_tools = KafkaCliTools(self.redpanda)
 
     def setUp(self):
         self.redpanda.start()
-        for topic in EndToEndShadowIndexingBase.topics:
+        for topic in self.topics:
             self.kafka_tools.create_topic(topic)
 
     def tearDown(self):
@@ -91,8 +92,7 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
         self.kafka_tools.alter_topic_config(
             self.topic,
             {
-                TopicSpec.PROPERTY_RETENTION_BYTES:
-                5 * EndToEndShadowIndexingTest.segment_size,
+                TopicSpec.PROPERTY_RETENTION_BYTES: 5 * self.segment_size,
             },
         )
         wait_for_segments_removal(redpanda=self.redpanda,
@@ -122,10 +122,7 @@ class EndToEndShadowIndexingTestWithDisruptions(EndToEndShadowIndexingBase):
 
         self.kafka_tools.alter_topic_config(
             self.topic,
-            {
-                TopicSpec.PROPERTY_RETENTION_BYTES:
-                5 * EndToEndShadowIndexingTest.segment_size
-            },
+            {TopicSpec.PROPERTY_RETENTION_BYTES: 5 * self.segment_size},
         )
 
         with random_process_kills(self.redpanda) as ctx:

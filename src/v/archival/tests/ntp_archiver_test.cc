@@ -14,7 +14,6 @@
 #include "bytes/iobuf.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/types.h"
-#include "cluster/types.h"
 #include "model/metadata.h"
 #include "net/unresolved_address.h"
 #include "raft/offset_translator.h"
@@ -26,10 +25,8 @@
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/future-util.hh>
-#include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>
 
-#include <boost/algorithm/string.hpp>
 #include <boost/test/tools/old/interface.hpp>
 
 using namespace std::chrono_literals;
@@ -105,7 +102,9 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
     set_expectations_and_listen({});
     auto [arch_conf, remote_conf] = get_configurations();
     cloud_storage::remote remote(
-      remote_conf.connection_limit, remote_conf.client_config);
+      remote_conf.connection_limit,
+      remote_conf.client_config,
+      remote_conf.cloud_credentials_source);
 
     std::vector<segment_desc> segments = {
       {manifest_ntp, model::offset(0), model::term_id(1)},
@@ -363,7 +362,10 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     set_expectations_and_listen(expectations);
     auto [arch_conf, remote_conf] = get_configurations();
     cloud_storage::remote remote(
-      remote_conf.connection_limit, remote_conf.client_config);
+      remote_conf.connection_limit,
+      remote_conf.client_config,
+      remote_conf.cloud_credentials_source);
+
     archival::ntp_archiver archiver(
       get_ntp_conf(), app.partition_manager.local(), arch_conf, remote, part);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
@@ -577,7 +579,11 @@ static void test_partial_upload_impl(
     test.set_expectations_and_listen(expectations);
 
     auto [aconf, cconf] = get_configurations();
-    cloud_storage::remote remote(cconf.connection_limit, cconf.client_config);
+    cloud_storage::remote remote(
+      cconf.connection_limit,
+      cconf.client_config,
+      cconf.cloud_credentials_source);
+
     aconf.time_limit = segment_time_limit(0s);
     archival::ntp_archiver archiver(
       get_ntp_conf(), test.app.partition_manager.local(), aconf, remote, part);

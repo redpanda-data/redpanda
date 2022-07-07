@@ -67,12 +67,15 @@ make_reset_fn(iobuf& segment_bytes) {
     };
 }
 
+static constexpr model::cloud_credentials_source config_file{
+  model::cloud_credentials_source::config_file};
+
 FIXTURE_TEST(
   test_remote_segment_successful_download, cloud_storage_fixture) { // NOLINT
     set_expectations_and_listen({});
     auto conf = get_configuration();
     auto bucket = s3::bucket_name("bucket");
-    remote remote(s3_connection_limit(10), conf);
+    remote remote(s3_connection_limit(10), conf, config_file);
     partition_manifest m(manifest_ntp, manifest_revision);
     auto key = partition_manifest::key{
       .base_offset = model::offset(1), .term = model::term_id(2)};
@@ -115,7 +118,7 @@ FIXTURE_TEST(
 FIXTURE_TEST(test_remote_segment_timeout, cloud_storage_fixture) { // NOLINT
     auto conf = get_configuration();
     auto bucket = s3::bucket_name("bucket");
-    remote remote(s3_connection_limit(10), conf);
+    remote remote(s3_connection_limit(10), conf, config_file);
     partition_manifest m(manifest_ntp, manifest_revision);
     auto name = segment_name("7-8-v1.log");
     partition_manifest::key key = parse_segment_name(name).value();
@@ -145,7 +148,7 @@ FIXTURE_TEST(
     set_expectations_and_listen({});
     auto conf = get_configuration();
     auto bucket = s3::bucket_name("bucket");
-    remote remote(s3_connection_limit(10), conf);
+    remote remote(s3_connection_limit(10), conf, config_file);
     partition_manifest m(manifest_ntp, manifest_revision);
     auto key = partition_manifest::key{
       .base_offset = model::offset(1), .term = model::term_id(2)};
@@ -229,7 +232,7 @@ void test_remote_segment_batch_reader(
     fixture.set_expectations_and_listen({});
     auto conf = fixture.get_configuration();
     auto bucket = s3::bucket_name("bucket");
-    remote remote(s3_connection_limit(10), conf);
+    remote remote(s3_connection_limit(10), conf, config_file);
     auto action = ss::defer([&remote] { remote.stop().get(); });
 
     partition_manifest m(manifest_ntp, manifest_revision);
@@ -339,7 +342,7 @@ FIXTURE_TEST(
     set_expectations_and_listen({});
     auto conf = get_configuration();
     auto bucket = s3::bucket_name("bucket");
-    remote remote(s3_connection_limit(10), conf);
+    remote remote(s3_connection_limit(10), conf, config_file);
     auto action = ss::defer([&remote] { remote.stop().get(); });
 
     partition_manifest m(manifest_ntp, manifest_revision);

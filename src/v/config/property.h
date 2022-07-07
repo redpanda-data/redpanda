@@ -421,6 +421,9 @@ consteval std::string_view property_type_name() {
         return "number";
     } else if constexpr (std::is_integral_v<type>) {
         return "integer";
+    } else if constexpr (std::
+                           is_same_v<type, model::cloud_credentials_source>) {
+        return "string";
     } else {
         static_assert(dependent_false<T>::value, "Type name not defined");
     }
