@@ -9,6 +9,7 @@
 import datetime
 import json
 import os
+import pprint
 import time
 from collections import namedtuple, defaultdict
 from typing import Optional, Callable
@@ -147,6 +148,27 @@ def _verify_file_layout(baseline_per_host,
     restored_ntps = get_ntp_sizes(restored_per_host, hosts_can_vary=False)
     baseline_ntps = get_ntp_sizes(baseline_per_host, hosts_can_vary=True)
 
+    def gather_last_segment_sizes(fdata_per_host: dict) -> dict:
+        """
+        Collects last segment sizes for all ntps. The last segment may be open
+        and miss being uploaded to tiered storage. In this case we need to reduce
+        the size of the restored partition in our assertions accordingly.
+        """
+        last_segment_size = {}
+        ntp_max_base_offset = defaultdict(lambda: 0)
+        for segment_data in fdata_per_host.values():
+            for path, entry in segment_data.items():
+                it = _parse_checksum_entry(path, entry, ignore_rev=True)
+                if it.ntp.topic in expected_topics and it.base_offset >= ntp_max_base_offset[
+                        it.ntp]:
+                    last_segment_size[it.ntp] = it.size
+                    ntp_max_base_offset[it.ntp] = it.base_offset
+        return last_segment_size
+
+    baseline_last_segment_sizes = gather_last_segment_sizes(baseline_per_host)
+    logger.info(
+        f'baseline_last_segment_sizes: {pprint.pformat(baseline_last_segment_sizes)}'
+    )
     logger.info(
         f"before matching\nrestored ntps: {restored_ntps}baseline ntps: {baseline_ntps}\nexpected topics: {expected_topics}"
     )
@@ -164,10 +186,8 @@ def _verify_file_layout(baseline_per_host,
         rest_ntp_size = restored_ntps[ntp]
         assert rest_ntp_size <= orig_ntp_size, f"NTP {ntp} the restored partition is larger {rest_ntp_size} than the original one {orig_ntp_size}."
         delta = orig_ntp_size - rest_ntp_size
-        # NOTE: 1.5x is because the segments can be larger than default_log_segment_size
-        assert delta <= int(
-            1.5 * default_log_segment_size
-        ), f"NTP {ntp} the restored partition is too small {rest_ntp_size}. The original is {orig_ntp_size} bytes which {delta} bytes larger."
+        assert delta <= baseline_last_segment_sizes[
+            ntp], f"NTP {ntp} the restored partition is too small {rest_ntp_size}. The original is {orig_ntp_size} bytes which {delta} bytes larger."
 
 
 def _gen_manifest_path(ntp, rev):
@@ -1314,7 +1334,6 @@ class TopicRecoveryTest(RedpandaTest):
                               self.rpk_producer_maker, topics)
         self.do_run(test_case)
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/4972
     @cluster(num_nodes=4, log_allow_list=TRANSIENT_ERRORS)
     def test_fast3(self):
         """Basic recovery test. This test stresses successful recovery
