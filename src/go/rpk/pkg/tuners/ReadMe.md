@@ -10,7 +10,7 @@ The following tuners are supported
 
 The disk IRQs tuner binds all disk IRQs to requested set of CPUs. This tuner uses `hwloc` library to compute CPU masks. Prevent IRQ Balance from moving tuned devices IRQs. CPU set that is used by the tuner can be limited by CPU mask parameter. If mask parameter is provided then only those CPUs that are masked will be considered as available. Mask covering all host CPUs is used as a default.
 
-IRQs are disstributed according to the following rules:
+IRQs are distributed according to the following rules:
 
 - Distribute NVMe disks IRQs equally among all available CPUs.
 - Distribute non-NVMe disks IRQs equally among designated CPUs or among all available CPUs in the `mq` mode.
