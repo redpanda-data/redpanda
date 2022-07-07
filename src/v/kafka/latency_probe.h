@@ -46,7 +46,14 @@ public:
              labels,
              [this] { return _produce_latency.seastar_histogram_logform(); })
              .aggregate(aggregate_labels)});
+    }
 
+    void setup_public_metrics() {
+        namespace sm = ss::metrics;
+
+        if (config::shard_local_cfg().disable_public_metrics()) {
+            return;
+        }
         _public_metrics.add_group(
           prometheus_sanitize::metrics_name("kafka"),
           {

@@ -85,6 +85,7 @@ protocol::protocol(
         _qdc_mon.emplace(*qdc_config);
     }
     _probe.setup_metrics();
+    _probe.setup_public_metrics();
 }
 
 coordinator_ntp_mapper& protocol::coordinator_mapper() {
