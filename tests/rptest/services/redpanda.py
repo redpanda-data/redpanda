@@ -35,6 +35,7 @@ from ducktape.errors import TimeoutError
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.services.admin import Admin
 from rptest.services.redpanda_installer import RedpandaInstaller
+from rptest.services.rolling_restarter import RollingRestarter
 from rptest.services.storage import ClusterStorage, NodeStorage
 from rptest.services.utils import BadLogLines, NodeCrash
 from rptest.clients.python_librdkafka import PythonLibrdkafka
@@ -1189,7 +1190,6 @@ class RedpandaService(Service):
 
     def stop_node(self, node, timeout=None):
         pids = self.pids(node)
-
         for pid in pids:
             node.account.signal(pid, signal.SIGTERM, allow_fail=False)
 
@@ -1388,6 +1388,18 @@ class RedpandaService(Service):
             self.stop_node(node, timeout=stop_timeout)
         for node in nodes:
             self.start_node(node, override_cfg_params, timeout=start_timeout)
+
+    def rolling_restart_nodes(self,
+                              nodes,
+                              override_cfg_params=None,
+                              start_timeout=None,
+                              stop_timeout=None):
+        nodes = [nodes] if isinstance(nodes, ClusterNode) else nodes
+        restarter = RollingRestarter(self)
+        restarter.restart_nodes(nodes,
+                                override_cfg_params=override_cfg_params,
+                                start_timeout=start_timeout,
+                                stop_timeout=stop_timeout)
 
     def registered(self, node):
         """
