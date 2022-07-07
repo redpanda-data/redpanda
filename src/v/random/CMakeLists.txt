@@ -3,8 +3,11 @@ v_cc_library(
   HRDS
     fast_prng.h
     generators.h
+  SRCS
+    "generators.cc"
   DEPS
     absl::random_seed_sequences
+    Seastar::seastar
 )
 rp_test(
   UNIT_TEST
