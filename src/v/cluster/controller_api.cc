@@ -53,6 +53,54 @@ controller_api::get_reconciliation_state(std::vector<model::ntp> ntps) {
     });
 }
 
+ss::future<result<bool>>
+controller_api::all_reconciliations_done(std::vector<model::ntp> ntps) {
+    const size_t batch_size = 8192;
+    // For a huge topic with e.g. 100k partitions, this will be a huge loop:
+    // that means we need parallelism, but not so much that we totally
+    // saturate inter-core queues.
+    for (size_t i = 0; i < ntps.size(); i += batch_size) {
+        auto this_batch = std::min(ntps.size() - i, batch_size);
+        // Avoid allocating a vector of results, we only care about
+        // the reduced values of 'were any unready' and 'did any error'.
+        // Use a smart pointer to avoid tricky reasoning about
+        // coroutines and captured references.
+        struct reduced_state {
+            bool complete{true};
+            errc err{errc::success};
+        };
+        auto reduced = ss::make_lw_shared<reduced_state>();
+
+        co_await ss::parallel_for_each(
+          ntps.begin() + i,
+          ntps.begin() + i + this_batch,
+          [this, reduced](const model::ntp& ntp) -> ss::future<> {
+              auto status = co_await get_reconciliation_state(ntp);
+              if (
+                status.cluster_errc() != errc::success
+                && reduced->err == errc::success) {
+                  reduced->err = status.cluster_errc();
+              }
+              if (status.status() != reconciliation_status::done) {
+                  reduced->complete = false;
+              }
+          });
+
+        // Return as soon as we have a conclusive result, avoid
+        // spending CPU time hitting subsequent batches of partitions
+        if (reduced->err != errc::success) {
+            co_return reduced->err;
+        } else {
+            if (reduced->complete != true) {
+                co_return false;
+            }
+        }
+    }
+
+    // Fall through: no ntps were incomplete
+    co_return true;
+}
+
 bool has_node_local_replicas(
   model::node_id self, const partition_assignment& assignment) {
     return std::any_of(
@@ -248,19 +296,7 @@ ss::future<result<bool>> controller_api::are_ntps_ready(
     replies.reserve(requests.size());
 
     for (auto& [id, ntps] : requests) {
-        auto f = get_reconciliation_state(id, std::move(ntps), timeout)
-                   .then([](result<std::vector<ntp_reconciliation_state>> res) {
-                       if (!res) {
-                           return result<bool>(res.error());
-                       }
-                       return result<bool>(std::all_of(
-                         res.value().begin(),
-                         res.value().end(),
-                         [](const ntp_reconciliation_state& state) {
-                             return state.status()
-                                    == reconciliation_status::done;
-                         }));
-                   });
+        auto f = all_reconciliations_done(std::move(ntps));
         replies.push_back(std::move(f));
     }
 

@@ -47,6 +47,8 @@ public:
 
     ss::future<ntp_reconciliation_state> get_reconciliation_state(model::ntp);
 
+    ss::future<result<bool>> all_reconciliations_done(std::vector<model::ntp>);
+
     /**
      * API to access both remote and local state
      */
