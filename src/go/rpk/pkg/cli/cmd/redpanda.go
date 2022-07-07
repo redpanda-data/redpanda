@@ -15,6 +15,7 @@ package cmd
 import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/redpanda"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/redpanda/admin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/redpanda/tune"
 	rp "github.com/redpanda-data/redpanda/src/go/rpk/pkg/redpanda"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
@@ -29,10 +30,10 @@ func NewRedpandaCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 	command.AddCommand(redpanda.NewStartCommand(fs, launcher))
 	command.AddCommand(redpanda.NewStopCommand(fs))
 	command.AddCommand(redpanda.NewCheckCommand(fs))
-	command.AddCommand(redpanda.NewTuneCommand(fs))
 	command.AddCommand(redpanda.NewModeCommand(fs))
 	command.AddCommand(redpanda.NewConfigCommand(fs))
 
+	command.AddCommand(tune.NewCommand(fs))
 	command.AddCommand(admin.NewCommand(fs))
 
 	return command

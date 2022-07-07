@@ -73,8 +73,7 @@ func (tuner *disksIRQsTuner) CheckIfSupported() (
 		return false, "Directories or devices are required for Disks IRQs Tuner"
 	}
 	if !tuner.cpuMasks.IsSupported() {
-		return false, `Unable to calculate CPU masks required for IRQs tuner.
-		 Please install 'hwloc'`
+		return false, `Unable to calculate CPU masks required for IRQs tuner. Please install 'hwloc'`
 	}
 	return true, ""
 }

@@ -18,7 +18,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewHelpCommand() *cobra.Command {
+func newHelpCommand() *cobra.Command {
 	tunersHelp := map[string]string{
 		"cpu":                   cpuTunerHelp,
 		"disk_irq":              diskIrqTunerHelp,
@@ -35,7 +35,7 @@ func NewHelpCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "help <tuner>",
 		Short: "Display detailed information about the tuner.",
-		Args: func(cmd *cobra.Command, args []string) error {
+		Args: func(_ *cobra.Command, args []string) error {
 			if len(args) != 1 {
 				return errors.New("requires the tuner name")
 			}
@@ -45,20 +45,13 @@ func NewHelpCommand() *cobra.Command {
 				", ",
 			)
 			if _, contains := tunersHelp[tuner]; !contains {
-				return fmt.Errorf(
-					"No help found for tuner '%s'."+
-						" Available: %s.",
-					tuner,
-					tunerList,
-				)
+				return fmt.Errorf("no help found for tuner '%s'. Available: %s", tuner, tunerList)
 			}
 			return nil
 		},
-		Run: func(ccmd *cobra.Command, args []string) {
+		Run: func(_ *cobra.Command, args []string) {
 			tuner := args[0]
-			fmt.Printf("'%s' tuner description", tuner)
-			fmt.Println()
-			fmt.Print(tunersHelp[tuner])
+			fmt.Printf("%q tuner description\n%s\n", tuner, tunersHelp[tuner])
 		},
 	}
 }
