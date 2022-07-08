@@ -25,7 +25,9 @@ class MaintenanceTest(RedpandaTest):
               TopicSpec(partition_count=20, replication_factor=3))
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        super().__init__(*args,
+                         extra_rp_conf={'enable_leader_balancer': False},
+                         **kwargs)
         self.admin = Admin(self.redpanda)
         self.rpk = RpkTool(self.redpanda)
         self._use_rpk = True
