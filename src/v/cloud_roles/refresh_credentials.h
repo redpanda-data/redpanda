@@ -68,9 +68,13 @@ public:
         void increment_retries();
 
         void reset_retries() {
-            vlog(
-              clrl_log.info, "resetting retry counter from {} to 0", _retries);
-            _retries = 0;
+            if (unlikely(_retries != 0)) {
+                vlog(
+                  clrl_log.info,
+                  "resetting retry counter from {} to 0",
+                  _retries);
+                _retries = 0;
+            }
         }
 
     protected:

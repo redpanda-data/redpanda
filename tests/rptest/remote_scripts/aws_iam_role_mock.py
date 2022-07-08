@@ -36,13 +36,11 @@ def make_aws_handler(token_ttl):
             'Code': 'Success',
             'LastUpdated': '2012-04-26T16:39:16Z',
             'Type': 'AWS-HMAC',
-            'AccessKeyId': 'panda-user',
-            'SecretAccessKey': 'panda-secret',
             'Token': '__REDPANDA_SKIP_IAM_TOKEN_x',
         }
 
         def get_canned_credentials(self):
-            future = datetime.datetime.now() + datetime.timedelta(
+            future = datetime.datetime.utcnow() + datetime.timedelta(
                 seconds=self.token_expiry)
             cc = self.canned_credentials
             cc['Expiration'] = future.isoformat()
@@ -101,7 +99,7 @@ def make_sts_handler(token_ttl):
         """
 
         def get_canned_credentials(self):
-            future = datetime.datetime.now() + datetime.timedelta(
+            future = datetime.datetime.utcnow() + datetime.timedelta(
                 seconds=self.token_expiry)
             return self.canned_credentials.format(future.isoformat())
 
