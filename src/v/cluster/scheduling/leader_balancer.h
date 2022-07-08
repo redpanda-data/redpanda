@@ -62,6 +62,13 @@ class leader_balancer {
      */
     static constexpr clock_type::duration leader_transfer_rpc_timeout = 30s;
 
+    /*
+     * Used to reschedule the balancer after it has been throttled due to it
+     * hitting its max in flight limit. This delay will occur after one of the
+     * in flight transfers successfully completes.
+     */
+    static constexpr clock_type::duration throttle_reactivation_delay = 5s;
+
 public:
     leader_balancer(
       topic_table&,
@@ -69,12 +76,12 @@ public:
       raft::consensus_client_protocol,
       ss::sharded<shard_table>&,
       ss::sharded<partition_manager>&,
-      ss::sharded<raft::group_manager>&,
       ss::sharded<ss::abort_source>&,
       config::binding<bool>&&,
       config::binding<std::chrono::milliseconds>&&,
       config::binding<std::chrono::milliseconds>&&,
       config::binding<std::chrono::milliseconds>&&,
+      config::binding<size_t>&&,
       consensus_ptr);
 
     ss::future<> start();
@@ -95,8 +102,14 @@ private:
 
     void on_enable_changed();
 
+    void check_if_controller_leader(
+      model::ntp, model::term_id, std::optional<model::node_id>);
+
     void on_leadership_change(
-      raft::group_id, model::term_id, std::optional<model::node_id>);
+      model::ntp, model::term_id, std::optional<model::node_id>);
+
+    void check_register_leadership_change_notification();
+    void check_unregister_leadership_change_notification();
 
     void trigger_balance();
     ss::future<ss::stop_iteration> balance();
@@ -140,6 +153,13 @@ private:
      */
     config::binding<std::chrono::milliseconds> _node_mute_timeout;
 
+    /*
+     * limits the total in flight leadership transfers (those where the metadata
+     * has yet to propagate across the cluster) to this factor per shard in the
+     * cluster.
+     */
+    config::binding<size_t> _transfer_limit_per_shard;
+
     struct last_known_leader {
         model::broker_shard shard;
         clock_type::time_point expires;
@@ -148,14 +168,16 @@ private:
 
     leader_balancer_probe _probe;
     bool _need_controller_refresh{true};
+    bool _throttled{false};
     absl::btree_map<raft::group_id, clock_type::time_point> _muted;
     cluster::notification_id_type _leader_notify_handle;
+    std::optional<cluster::notification_id_type>
+      _leadership_change_notify_handle;
     topic_table& _topics;
     partition_leaders_table& _leaders;
     raft::consensus_client_protocol _client;
     ss::sharded<shard_table>& _shard_table;
     ss::sharded<partition_manager>& _partition_manager;
-    ss::sharded<raft::group_manager>& _group_manager;
     ss::sharded<ss::abort_source>& _as;
     consensus_ptr _raft0;
     ss::gate _gate;

@@ -272,12 +272,13 @@ ss::future<> controller::start() {
             _raft_manager.local().raft_client(),
             std::ref(_shard_table),
             std::ref(_partition_manager),
-            std::ref(_raft_manager),
             std::ref(_as),
             config::shard_local_cfg().enable_leader_balancer.bind(),
             config::shard_local_cfg().leader_balancer_idle_timeout.bind(),
             config::shard_local_cfg().leader_balancer_mute_timeout.bind(),
             config::shard_local_cfg().leader_balancer_node_mute_timeout.bind(),
+            config::shard_local_cfg()
+              .leader_balancer_transfer_limit_per_shard.bind(),
             _raft0);
           return _leader_balancer->start();
       })

@@ -110,6 +110,30 @@ public:
         }
     }
 
+    // A quicker way to remove a callback for a given id when the ntp is known.
+    void unregister_notify(const model::ntp& ntp, notification_id_type id) {
+        const auto& ns = ntp.ns;
+        const auto& topic = ntp.tp.topic;
+        const auto& part = ntp.tp.partition;
+
+        auto ns_iter = _root.next.find(ns);
+        if (ns_iter == _root.next.end()) {
+            return;
+        }
+
+        auto topic_iter = ns_iter->second.next.find(topic);
+        if (topic_iter == ns_iter->second.next.end()) {
+            return;
+        }
+
+        auto part_iter = topic_iter->second.next.find(part);
+        if (part_iter == topic_iter->second.next.end()) {
+            return;
+        }
+
+        part_iter->second.erase(id);
+    }
+
 private:
     using callbacks_t = absl::flat_hash_map<notification_id_type, Callback>;
 
@@ -129,8 +153,8 @@ private:
 
     template<typename... Args>
     void notify(const callbacks_t& callbacks, Args&&... args) const {
-        for (auto& cb : callbacks) {
-            cb.second(std::forward<Args>(args)...);
+        for (auto cb_i = callbacks.cbegin(); cb_i != callbacks.cend();) {
+            (cb_i++)->second(std::forward<Args>(args)...);
         }
     }
 

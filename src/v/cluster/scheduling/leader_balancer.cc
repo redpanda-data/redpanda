@@ -41,23 +41,23 @@ leader_balancer::leader_balancer(
   raft::consensus_client_protocol client,
   ss::sharded<shard_table>& shard_table,
   ss::sharded<partition_manager>& partition_manager,
-  ss::sharded<raft::group_manager>& group_manager,
   ss::sharded<ss::abort_source>& as,
   config::binding<bool>&& enabled,
   config::binding<std::chrono::milliseconds>&& idle_timeout,
   config::binding<std::chrono::milliseconds>&& mute_timeout,
   config::binding<std::chrono::milliseconds>&& node_mute_timeout,
+  config::binding<size_t>&& transfer_limit_per_shard,
   consensus_ptr raft0)
   : _enabled(std::move(enabled))
   , _idle_timeout(std::move(idle_timeout))
   , _mute_timeout(std::move(mute_timeout))
   , _node_mute_timeout(std::move(node_mute_timeout))
+  , _transfer_limit_per_shard(std::move(transfer_limit_per_shard))
   , _topics(topics)
   , _leaders(leaders)
   , _client(std::move(client))
   , _shard_table(shard_table)
   , _partition_manager(partition_manager)
-  , _group_manager(group_manager)
   , _as(as)
   , _raft0(std::move(raft0))
   , _timer([this] { trigger_balance(); }) {
@@ -66,46 +66,80 @@ leader_balancer::leader_balancer(
     }
 }
 
-void leader_balancer::on_leadership_change(
-  raft::group_id group, model::term_id, std::optional<model::node_id>) {
+void leader_balancer::check_if_controller_leader(
+  model::ntp, model::term_id, std::optional<model::node_id>) {
     // Don't bother doing anything if it's not enabled
     if (!_enabled()) {
         return;
     }
 
-    if (group == _raft0->group()) {
-        // Active leader balancer again if leadership of
-        // raft0 is transfered to this node.
-        if (_raft0->is_elected_leader()) {
-            vlog(
-              clusterlog.info,
-              "Leader balancer: controller leadership detected. "
-              "Starting "
-              "rebalancer in {} seconds",
-              std::chrono::duration_cast<std::chrono::seconds>(
-                leader_activation_delay)
-                .count());
+    // Active leader balancer again if leadership of
+    // raft0 is transfered to this node.
+    if (_raft0->is_elected_leader()) {
+        vlog(
+          clusterlog.info,
+          "Leader balancer: controller leadership detected. "
+          "Starting "
+          "rebalancer in {} seconds",
+          std::chrono::duration_cast<std::chrono::seconds>(
+            leader_activation_delay)
+            .count());
 
-            _timer.cancel();
-            _timer.arm(leader_activation_delay);
-        } else {
-            vlog(
-              clusterlog.info,
-              "Leader balancer: node is not controller leader");
-            _need_controller_refresh = true;
-            _timer.cancel();
-            _timer.arm(_idle_timeout());
-        }
+        _timer.cancel();
+        _timer.arm(leader_activation_delay);
+    } else {
+        vlog(clusterlog.info, "Leader balancer: node is not controller leader");
+        _need_controller_refresh = true;
+        _timer.cancel();
+        _timer.arm(_idle_timeout());
+    }
+}
+
+void leader_balancer::on_leadership_change(
+  model::ntp ntp, model::term_id, std::optional<model::node_id>) {
+    if (!_enabled()) {
+        return;
     }
 
     if (!_raft0->is_elected_leader()) {
         return;
     }
 
+    const auto assignment = _topics.get_partition_assignment(ntp);
+
+    if (!assignment.has_value()) {
+        return;
+    }
+
+    const auto& group = assignment->group;
+
     // Update in flight state
     if (auto it = _in_flight_changes.find(group);
         it != _in_flight_changes.end()) {
         _in_flight_changes.erase(it);
+        check_unregister_leadership_change_notification();
+
+        if (_throttled) {
+            _throttled = false;
+            _timer.cancel();
+            _timer.arm(throttle_reactivation_delay);
+        }
+    }
+}
+
+void leader_balancer::check_register_leadership_change_notification() {
+    if (!_leadership_change_notify_handle && _in_flight_changes.size() > 0) {
+        _leadership_change_notify_handle
+          = _leaders.register_leadership_change_notification(std::bind_front(
+            std::mem_fn(&leader_balancer::on_leadership_change), this));
+    }
+}
+
+void leader_balancer::check_unregister_leadership_change_notification() {
+    if (_leadership_change_notify_handle && _in_flight_changes.size() == 0) {
+        _leaders.unregister_leadership_change_notification(
+          *_leadership_change_notify_handle);
+        _leadership_change_notify_handle.reset();
     }
 }
 
@@ -114,9 +148,11 @@ ss::future<> leader_balancer::start() {
      * register for raft0 leadership change notifications. shutdown the balancer
      * when we lose leadership, and start it when we gain leadership.
      */
-    _leader_notify_handle
-      = _group_manager.local().register_leadership_notification(std::bind_front(
-        std::mem_fn(&leader_balancer::on_leadership_change), this));
+    _leader_notify_handle = _leaders.register_leadership_change_notification(
+      _raft0->ntp(),
+      std::bind_front(
+        std::mem_fn(&leader_balancer::check_if_controller_leader), this));
+
     /*
      * register_leadership_notification above may run callbacks synchronously
      * during registration, so make sure the timer is unarmed before arming.
@@ -131,8 +167,8 @@ ss::future<> leader_balancer::start() {
 }
 
 ss::future<> leader_balancer::stop() {
-    _group_manager.local().unregister_leadership_notification(
-      _leader_notify_handle);
+    _leaders.unregister_leadership_change_notification(
+      _raft0->ntp(), _leader_notify_handle);
     _timer.cancel();
     return _gate.close();
 }
@@ -175,6 +211,12 @@ void leader_balancer::trigger_balance() {
 
     if (!_enabled()) {
         return;
+    }
+
+    // If the balancer is resumed after being throttled
+    // reset the flag.
+    if (_throttled) {
+        _throttled = false;
     }
 
     ssx::spawn_with_gate(_gate, [this] {
@@ -236,6 +278,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
 
           return false;
       });
+    check_unregister_leadership_change_notification();
 
     if (!_raft0->is_elected_leader()) {
         vlog(clusterlog.debug, "Leadership balancer tick: not leader");
@@ -259,6 +302,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
         // Invalidate whatever in flight changes exist.
         // They would not be accurate post-leadership loss.
         _in_flight_changes.clear();
+        check_unregister_leadership_change_notification();
 
         auto res = co_await _raft0->linearizable_barrier();
         if (!res) {
@@ -291,9 +335,9 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
      * search for leader moves.
      */
     greedy_balanced_shards strategy(build_index(), muted_nodes());
+    auto cores = strategy.stats();
 
     if (clusterlog.is_enabled(ss::log_level::trace)) {
-        auto cores = strategy.stats();
         for (const auto& core : cores) {
             vlog(
               clusterlog.trace,
@@ -301,6 +345,51 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
               core.shard,
               core.leaders);
         }
+    }
+
+    if (cores.size() == 0) {
+        vlog(
+          clusterlog.debug, "Leadership balancer tick: no topics to balance.");
+
+        if (!_timer.armed()) {
+            _timer.arm(_idle_timeout());
+        }
+
+        co_return ss::stop_iteration::yes;
+    }
+
+    if (
+      _in_flight_changes.size() >= _transfer_limit_per_shard() * cores.size()) {
+        vlog(
+          clusterlog.debug,
+          "Leadership balancer tick: number of in flight changes is at max "
+          "allowable. Current in flight {}. Max allowable {}.",
+          _in_flight_changes.size(),
+          _transfer_limit_per_shard() * cores.size());
+
+        _throttled = true;
+
+        if (_timer.armed()) {
+            co_return ss::stop_iteration::yes;
+        }
+
+        // Find change that will time out the soonest and wait for it to timeout
+        // before running the balancer again.
+        auto min_timeout = std::min_element(
+          _in_flight_changes.begin(),
+          _in_flight_changes.end(),
+          [](const auto& a, const auto& b) {
+              return a.second.expires < b.second.expires;
+          });
+
+        if (min_timeout != _in_flight_changes.end()) {
+            _timer.arm(std::chrono::abs(
+              min_timeout->second.expires - clock_type::now()));
+        } else {
+            _timer.arm(_mute_timeout());
+        }
+
+        co_return ss::stop_iteration::yes;
     }
 
     auto error = strategy.error();
@@ -319,6 +408,10 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
         co_return ss::stop_iteration::yes;
     }
 
+    _in_flight_changes[transfer->group] = {
+      *transfer, clock_type::now() + _mute_timeout()};
+    check_register_leadership_change_notification();
+
     auto success = co_await do_transfer(*transfer);
     if (!success) {
         vlog(
@@ -327,6 +420,10 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
           transfer->group,
           transfer->from,
           transfer->to);
+
+        _in_flight_changes.erase(transfer->group);
+        check_unregister_leadership_change_notification();
+
         /*
          * a common scenario is that a node loses all its leadership (e.g.
          * restarts) and then it is recognized as having lots of extra capacity
@@ -339,8 +436,6 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
         co_await ss::sleep_abortable(5s, _as.local());
     }
 
-    _in_flight_changes[transfer->group] = {
-      *transfer, clock_type::now() + _mute_timeout()};
     _probe.leader_transfer_succeeded();
 
     /*
