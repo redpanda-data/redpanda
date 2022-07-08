@@ -3,8 +3,10 @@ v_cc_library(
     storage_test_utils
   HDRS
     "utils/disk_log_builder.h"
+    "utils/log_gap_analysis.h"
   SRCS
     "utils/disk_log_builder.cc"
+    "utils/log_gap_analysis.cc"
   DEPS
     v::storage v::model_test_utils
 )
