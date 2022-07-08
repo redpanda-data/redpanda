@@ -36,6 +36,8 @@ def make_aws_handler(token_ttl):
             'Code': 'Success',
             'LastUpdated': '2012-04-26T16:39:16Z',
             'Type': 'AWS-HMAC',
+            'AccessKeyId': 'panda-user',
+            'SecretAccessKey': 'panda-secret',
             'Token': '__REDPANDA_SKIP_IAM_TOKEN_x',
         }
 
