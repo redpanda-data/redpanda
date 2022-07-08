@@ -25,7 +25,22 @@ class MaintenanceTest(RedpandaTest):
               TopicSpec(partition_count=20, replication_factor=3))
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        super().__init__(
+            *args,
+            extra_rp_conf={
+                # Leader balancer configuration changes are a workaround
+                # to https://github.com/redpanda-data/redpanda/issues/4772
+
+                # Faster leader balancer iteration to get partitions moved
+                # back to nodes leaving maintenance mode promptly.
+                'leader_balancer_idle_timeout': 5000,
+
+                # Mute timeout shorter than idle timeout: effectvely disable
+                # node muting.  This enables nodes leaving maintenance mode
+                # to get leaderships moved to them promptly.
+                'leader_balancer_mute_timeout': 1000,
+            },
+            **kwargs)
         self.admin = Admin(self.redpanda)
         self.rpk = RpkTool(self.redpanda)
         self._use_rpk = True
