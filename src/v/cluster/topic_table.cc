@@ -175,6 +175,7 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
       in_progress_update{
         .previous_replicas = current_assignment_it->replicas,
         .state = in_progress_state::update_requested,
+        .update_revision = model::revision_id(o),
       });
     auto previous_assignment = *current_assignment_it;
     // replace partition replica set
@@ -190,6 +191,7 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
               in_progress_update{
                 .previous_replicas = current_assignment_it->replicas,
                 .state = in_progress_state::update_requested,
+                .update_revision = model::revision_id(o),
               });
             vassert(
               success,
