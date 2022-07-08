@@ -153,8 +153,8 @@ private:
 
     template<typename... Args>
     void notify(const callbacks_t& callbacks, Args&&... args) const {
-        for (auto& cb : callbacks) {
-            cb.second(std::forward<Args>(args)...);
+        for (auto cb_i = callbacks.cbegin(); cb_i != callbacks.cend();) {
+            (cb_i++)->second(std::forward<Args>(args)...);
         }
     }
 
