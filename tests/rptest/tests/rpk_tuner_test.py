@@ -52,3 +52,37 @@ class RpkTunerTest(RedpandaTest):
         rpk.config_set('rpk.tune_transparent_hugepages', 'true')
 
         rpk.tune("transparent_hugepages")
+
+    @cluster(num_nodes=1)
+    def test_tune_list(self):
+        """
+        Forward compatible test, the purpose is to check if available
+        tuners match our current setup, if a new tuner gets added we
+        will catch it here.
+        """
+        node = self.redpanda.nodes[0]
+        rpk = RpkRemoteTool(self.redpanda, node)
+        # Set all tuners:
+        rpk.mode_set("prod")
+        rpk.config_set('rpk.tune_fstrim', 'true')
+        rpk.config_set('rpk.tune_transparent_hugepages', 'true')
+        rpk.config_set('rpk.tune_coredump', 'true')
+
+        expected = '''TUNER                  ENABLED  SUPPORTED  UNSUPPORTED-REASON
+aio_events             true     true       
+ballast_file           true     true       
+clocksource            true     true       
+coredump               true     true       
+cpu                    true     true       
+disk_irq               true     true       
+disk_nomerges          true     true       
+disk_scheduler         true     true       
+disk_write_cache       true     false      Disk write cache tuner is only supported in GCP
+fstrim                 true     true       
+net                    true     true       
+swappiness             true     true       
+transparent_hugepages  true     true       
+'''
+        output = rpk.tune("list")
+
+        assert output == expected
