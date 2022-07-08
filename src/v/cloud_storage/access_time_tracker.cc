@@ -10,8 +10,10 @@
 
 #include "cloud_storage/access_time_tracker.h"
 
+#include "cloud_storage/logger.h"
 #include "serde/serde.h"
 #include "units.h"
+#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/smp.hh>
@@ -39,8 +41,8 @@ void access_time_tracker::remove_timestamp(std::string_view key) noexcept {
         _table.data.erase(hash);
         _dirty = true;
     } catch (...) {
-        vassert(
-          false,
+        vlog(
+          cst_log.debug,
           "Can't remove key {} from access_time_tracker, exception: {}",
           key,
           std::current_exception());
