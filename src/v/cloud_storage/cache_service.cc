@@ -107,7 +107,7 @@ ss::future<> cache::consume_cache_space(size_t sz) {
     vassert(ss::this_shard_id() == 0, "This method can only run on shard 0");
     _current_cache_size += sz;
     if (_current_cache_size > _max_cache_size) {
-        auto units = ss::try_get_units(_cleanup_sm, 1);
+        auto units = _cleanup_mutex.try_get_units();
         if (units) {
             co_await clean_up_cache();
         }
