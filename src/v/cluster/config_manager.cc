@@ -191,7 +191,7 @@ ss::future<> config_manager::start() {
     if (_seen_version == config_version_unset) {
         vlog(clusterlog.trace, "Starting config_manager... (initial)");
 
-        // Background: wait til we have a leader. If this node is leader
+        // Background: wait till we have a leader. If this node is leader
         // then bootstrap cluster configuration from local config.
         start_bootstrap();
     } else {

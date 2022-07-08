@@ -835,7 +835,7 @@ std::filesystem::path compacted_index_path(std::filesystem::path segment_path) {
     return segment_path.replace_extension(".compaction_index");
 }
 
-size_t jitter_segment_size(size_t sz, jitter_percents jitter_percents) {
+float random_jitter(jitter_percents jitter_percents) {
     vassert(
       jitter_percents >= 0 || jitter_percents <= 100,
       "jitter percents should be in range [0,100]. Requested {}",
@@ -843,9 +843,7 @@ size_t jitter_segment_size(size_t sz, jitter_percents jitter_percents) {
     // multiply by 10 to increase resolution
     auto p = jitter_percents() * 10;
     auto jit = random_generators::get_int<int64_t>(-p, p);
-
-    int64_t jitter = jit * static_cast<int64_t>(sz) / 1000;
-    return jitter + sz;
+    return jit / 1000.0f;
 }
 
 bytes start_offset_key(model::ntp ntp) {

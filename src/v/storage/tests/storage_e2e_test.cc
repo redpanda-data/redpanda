@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "bytes/bytes.h"
+#include "config/mock_property.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
@@ -1115,27 +1116,45 @@ FIXTURE_TEST(
 FIXTURE_TEST(check_max_segment_size, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
 
+    auto mock = config::mock_property<size_t>(20_GiB);
     // defaults
-    cfg.max_segment_size = config::mock_binding<size_t>(10_GiB);
+    cfg.max_segment_size = mock.bind();
     cfg.stype = storage::log_config::storage_type::disk;
     ss::abort_source as;
     storage::log_manager mgr = make_log_manager(cfg);
     using overrides_t = storage::ntp_config::default_overrides;
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+    storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
+    auto log = mgr.manage(std::move(ntp_cfg)).get0();
+    auto disk_log = get_disk_log(log);
+
+    BOOST_REQUIRE_EQUAL(disk_log->segments().size(), 0);
+
+    // Write 100 * 1_KiB batches, should yield only 1 segment
+    auto result = append_exactly(log, 100, 1_KiB).get0(); // 100*1_KiB
+    int size1 = disk_log->segments().size();
+    BOOST_REQUIRE_EQUAL(size1, 1);
+
+    // Update cluster level configuration and force a roll.
+    mock.update(20_KiB);
+    disk_log->force_roll(ss::default_priority_class()).get();
+
+    // 30 * 1_KiB should yield 2 new segments.
+    result = append_exactly(log, 30, 1_KiB).get0();
+    int size2 = disk_log->segments().size();
+    BOOST_REQUIRE_EQUAL(size2 - size1, 2);
 
     // override segment size with ntp_config
     overrides_t ov;
-    ov.segment_size = 10_KiB;
+    ov.segment_size = 40_KiB;
+    disk_log->update_configuration(ov).get();
+    disk_log->force_roll(ss::default_priority_class()).get();
 
-    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
-    auto ntp = model::ntp("default", "test", 0);
-
-    storage::ntp_config ntp_cfg(
-      ntp, mgr.config().base_dir, std::make_unique<overrides_t>(ov));
-    auto log = mgr.manage(std::move(ntp_cfg)).get0();
-    // 101 * 1_KiB batches should yield 10 segments
-    auto result = append_exactly(log, 100, 1_KiB).get0(); // 100*1_KiB
-
-    BOOST_REQUIRE_EQUAL(get_disk_log(log)->segments().size(), 10);
+    // 60 * 1_KiB batches should yield 2 segments.
+    result = append_exactly(log, 60, 1_KiB).get0(); // 60*1_KiB
+    int size3 = disk_log->segments().size();
+    BOOST_REQUIRE_EQUAL(size3 - size2, 2);
 }
 
 FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {

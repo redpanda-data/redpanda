@@ -19,9 +19,9 @@ class config_frontend final {
 public:
     // Shard ID that will track the next available version and serialize
     // writes to hand out sequential versions.
-    // Setting this to the same as controller_stm shard simplfies implementation
-    // by letting all state machine appliers assume they are running
-    // on the same shard that should keep its version state up to date.
+    // Setting this to be the same as controller_stm shard simplifies
+    // implementation by letting all state machine appliers assume they are
+    // running on the same shard that should keep its version state up to date.
     static constexpr ss::shard_id version_shard = cluster::controller_stm_shard;
 
     struct patch_result {

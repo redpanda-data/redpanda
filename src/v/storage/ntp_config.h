@@ -40,7 +40,7 @@ public:
         tristate<std::chrono::milliseconds> retention_time{std::nullopt};
         // if set, log will not use batch cache
         with_cache cache_enabled = with_cache::yes;
-        // if set the value will be used during parititon recovery
+        // if set the value will be used during partition recovery
         topic_recovery_enabled recovery_enabled = topic_recovery_enabled::yes;
         // if set the value will control how data is uploaded and retrieved
         // to/from S3

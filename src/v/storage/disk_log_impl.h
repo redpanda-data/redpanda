@@ -44,10 +44,10 @@ public:
      * in a segment exists. by placing a hard limit on segment size we can avoid
      * those overflows because a segment with more than 4-billion records would
      * be larger than 4gb even when the records are empty. other practical but
-     * not fundmental limits exist for large segment sizes like our current
+     * not fundamental limits exist for large segment sizes like our current
      * in-memory representation of indices.
      *
-     * the hard limit here is a slight mischaracterization. we apply this hard
+     * the hard limit here is a slight mis-characterization. we apply this hard
      * limit to the user requested size. max segment size fuzzing is still
      * applied.
      */
@@ -159,10 +159,15 @@ private:
 
 private:
     size_t max_segment_size() const;
+    // Computes the segment size based on the latest max_segment_size
+    // configuration. This takes into consideration any segment size
+    // overrides since the last time it was called.
+    size_t compute_max_segment_size();
     struct eviction_monitor {
         ss::promise<model::offset> promise;
         ss::abort_source::subscription subscription;
     };
+    float _segment_size_jitter;
     bool _closed{false};
     ss::gate _compaction_gate;
     log_manager& _manager;

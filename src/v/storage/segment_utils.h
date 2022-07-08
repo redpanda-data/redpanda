@@ -164,8 +164,9 @@ std::filesystem::path compacted_index_path(std::filesystem::path segment_path);
 using jitter_percents = named_type<int, struct jitter_percents_tag>;
 static constexpr jitter_percents default_segment_size_jitter(5);
 
-size_t
-  jitter_segment_size(size_t, jitter_percents = default_segment_size_jitter);
+// Generates a random jitter percentage [as a fraction] with in the passed
+// percents range.
+float random_jitter(jitter_percents = default_segment_size_jitter);
 
 // key types used to store data in key-value store
 enum class kvstore_key_type : int8_t {

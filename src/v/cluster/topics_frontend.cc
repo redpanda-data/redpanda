@@ -174,8 +174,8 @@ ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
               return do_update_topic_properties(std::move(update), timeout);
           });
 
-        // we are not really interested in the result comming from the
-        // linearizable barrier, results comming from the previous steps will be
+        // we are not really interested in the result coming from the
+        // linearizable barrier, results coming from the previous steps will be
         // propagated to clients, this is just an optimization, this doesn't
         // affect correctness of the protocol
         if (needs_linearizable_barrier(results)) {

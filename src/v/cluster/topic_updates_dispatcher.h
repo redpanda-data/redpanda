@@ -19,9 +19,9 @@
 
 namespace cluster {
 
-// The topic updates dispatcher is resposible for receiving update_apply upcalls
-// from controller state machine and propagating updates to topic state core
-// local copies. The dispatcher handles partition_allocator updates. The
+// The topic updates dispatcher is responsible for receiving update_apply
+// upcalls from controller state machine and propagating updates to topic state
+// core local copies. The dispatcher handles partition_allocator updates. The
 // partition allocator exists only on core 0 hence the updates have to be
 // executed at the same core.
 //

@@ -71,7 +71,7 @@ constexpr error_code map_topic_error_code(cluster::errc code) {
     case cluster::errc::partition_configuration_differs:
     case cluster::errc::data_policy_already_exists:
     case cluster::errc::data_policy_not_exists:
-    case cluster::errc::wating_for_partition_shutdown:
+    case cluster::errc::waiting_for_partition_shutdown:
     case cluster::errc::error_collecting_health_report:
     case cluster::errc::leadership_changed:
     case cluster::errc::feature_disabled:
