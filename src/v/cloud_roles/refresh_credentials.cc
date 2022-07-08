@@ -164,17 +164,33 @@ ss::future<> refresh_credentials::fetch_and_update_credentials() {
 
 std::chrono::milliseconds
 refresh_credentials::impl::calculate_sleep_duration(uint32_t expiry_sec) const {
+    vlog(
+      clrl_log.trace, "calculating sleep duration from {} seconds", expiry_sec);
     int sleep = std::floor(expiry_sec * sleep_from_expiry_multiplier);
+    vlog(
+      clrl_log.trace, "sleep duration adjusted with buffer: {} seconds", sleep);
     return std::chrono::duration_cast<std::chrono::milliseconds>(
       std::chrono::seconds{sleep});
 }
 
 std::chrono::milliseconds refresh_credentials::impl::calculate_sleep_duration(
   std::chrono::system_clock::time_point expires_at) const {
+    vlog(
+      clrl_log.trace,
+      "calculating sleep duration for credential expiry at: {}",
+      expires_at.time_since_epoch());
     auto now = std::chrono::system_clock::now();
     auto diff = std::chrono::duration_cast<std::chrono::seconds>(
                   expires_at - now)
                   .count();
+    vlog(
+      clrl_log.trace,
+      "calculating sleep duration for credential expiry at: {}, now: {}, diff "
+      "{} seconds",
+      expires_at.time_since_epoch(),
+      now.time_since_epoch(),
+      diff);
+
     return calculate_sleep_duration(diff);
 }
 
