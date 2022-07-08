@@ -76,7 +76,6 @@ public:
       raft::consensus_client_protocol,
       ss::sharded<shard_table>&,
       ss::sharded<partition_manager>&,
-      ss::sharded<raft::group_manager>&,
       ss::sharded<ss::abort_source>&,
       config::binding<bool>&&,
       config::binding<std::chrono::milliseconds>&&,
@@ -104,7 +103,7 @@ private:
     void on_enable_changed();
 
     void check_if_controller_leader(
-      raft::group_id, model::term_id, std::optional<model::node_id>);
+      model::ntp, model::term_id, std::optional<model::node_id>);
 
     void on_leadership_change(
       model::ntp, model::term_id, std::optional<model::node_id>);
@@ -179,7 +178,6 @@ private:
     raft::consensus_client_protocol _client;
     ss::sharded<shard_table>& _shard_table;
     ss::sharded<partition_manager>& _partition_manager;
-    ss::sharded<raft::group_manager>& _group_manager;
     ss::sharded<ss::abort_source>& _as;
     consensus_ptr _raft0;
     ss::gate _gate;

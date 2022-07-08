@@ -41,7 +41,6 @@ leader_balancer::leader_balancer(
   raft::consensus_client_protocol client,
   ss::sharded<shard_table>& shard_table,
   ss::sharded<partition_manager>& partition_manager,
-  ss::sharded<raft::group_manager>& group_manager,
   ss::sharded<ss::abort_source>& as,
   config::binding<bool>&& enabled,
   config::binding<std::chrono::milliseconds>&& idle_timeout,
@@ -59,7 +58,6 @@ leader_balancer::leader_balancer(
   , _client(std::move(client))
   , _shard_table(shard_table)
   , _partition_manager(partition_manager)
-  , _group_manager(group_manager)
   , _as(as)
   , _raft0(std::move(raft0))
   , _timer([this] { trigger_balance(); }) {
@@ -69,35 +67,31 @@ leader_balancer::leader_balancer(
 }
 
 void leader_balancer::check_if_controller_leader(
-  raft::group_id group, model::term_id, std::optional<model::node_id>) {
+  model::ntp, model::term_id, std::optional<model::node_id>) {
     // Don't bother doing anything if it's not enabled
     if (!_enabled()) {
         return;
     }
 
-    if (group == _raft0->group()) {
-        // Active leader balancer again if leadership of
-        // raft0 is transfered to this node.
-        if (_raft0->is_elected_leader()) {
-            vlog(
-              clusterlog.info,
-              "Leader balancer: controller leadership detected. "
-              "Starting "
-              "rebalancer in {} seconds",
-              std::chrono::duration_cast<std::chrono::seconds>(
-                leader_activation_delay)
-                .count());
+    // Active leader balancer again if leadership of
+    // raft0 is transfered to this node.
+    if (_raft0->is_elected_leader()) {
+        vlog(
+          clusterlog.info,
+          "Leader balancer: controller leadership detected. "
+          "Starting "
+          "rebalancer in {} seconds",
+          std::chrono::duration_cast<std::chrono::seconds>(
+            leader_activation_delay)
+            .count());
 
-            _timer.cancel();
-            _timer.arm(leader_activation_delay);
-        } else {
-            vlog(
-              clusterlog.info,
-              "Leader balancer: node is not controller leader");
-            _need_controller_refresh = true;
-            _timer.cancel();
-            _timer.arm(_idle_timeout());
-        }
+        _timer.cancel();
+        _timer.arm(leader_activation_delay);
+    } else {
+        vlog(clusterlog.info, "Leader balancer: node is not controller leader");
+        _need_controller_refresh = true;
+        _timer.cancel();
+        _timer.arm(_idle_timeout());
     }
 }
 
@@ -154,8 +148,9 @@ ss::future<> leader_balancer::start() {
      * register for raft0 leadership change notifications. shutdown the balancer
      * when we lose leadership, and start it when we gain leadership.
      */
-    _leader_notify_handle
-      = _group_manager.local().register_leadership_notification(std::bind_front(
+    _leader_notify_handle = _leaders.register_leadership_change_notification(
+      _raft0->ntp(),
+      std::bind_front(
         std::mem_fn(&leader_balancer::check_if_controller_leader), this));
 
     /*
@@ -172,8 +167,8 @@ ss::future<> leader_balancer::start() {
 }
 
 ss::future<> leader_balancer::stop() {
-    _group_manager.local().unregister_leadership_notification(
-      _leader_notify_handle);
+    _leaders.unregister_leadership_change_notification(
+      _raft0->ntp(), _leader_notify_handle);
     _timer.cancel();
     return _gate.close();
 }
