@@ -31,7 +31,7 @@ namespace cloud_storage {
 
 static constexpr size_t default_write_buffer_size = 128_KiB;
 static constexpr unsigned default_writebehind = 10;
-static constexpr const char* access_time_tracker_file_name = "accesstime";
+static constexpr std::string_view access_time_tracker_file_name = "accesstime";
 
 struct cache_item {
     ss::file body;
