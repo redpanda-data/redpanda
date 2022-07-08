@@ -195,6 +195,7 @@ private:
     friend resources;
     ss::future<> accept(listener&);
     void setup_metrics();
+    void setup_public_metrics();
 
     std::unique_ptr<protocol> _proto;
     ss::semaphore _memory;
