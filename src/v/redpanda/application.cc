@@ -247,7 +247,7 @@ int application::run(int ac, char** av) {
                 vlog(_log.info, "Stopping...");
             } catch (...) {
                 vlog(
-                  _log.info,
+                  _log.error,
                   "Failure during startup: {}",
                   std::current_exception());
                 return 1;
