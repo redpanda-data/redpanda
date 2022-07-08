@@ -12,6 +12,7 @@ import statistics
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
+from ducktape.mark import matrix
 
 
 class OpenBenchmarkTest(RedpandaTest):
@@ -23,41 +24,11 @@ class OpenBenchmarkTest(RedpandaTest):
                                                 num_brokers=3)
 
     @cluster(num_nodes=6)
-    def test_default_omb_configuration(self):
-        benchmark = OpenMessagingBenchmark(self._ctx, self.redpanda)
-        benchmark.start()
-        benchmark_time_min = benchmark.benchmark_time(
-        ) + OpenBenchmarkTest.BENCHMARK_WAIT_TIME_MIN
-        benchmark.wait(timeout_sec=benchmark_time_min * 60)
-        benchmark.check_succeed()
-
-    @cluster(num_nodes=8)
-    def test_multiple_topics_omb(self):
-        benchmark = OpenMessagingBenchmark(self._ctx, self.redpanda)
-        benchmark.set_configuration({"topics": 2})
-        benchmark.start()
-        benchmark_time_min = benchmark.benchmark_time(
-        ) + OpenBenchmarkTest.BENCHMARK_WAIT_TIME_MIN
-        benchmark.wait(timeout_sec=benchmark_time_min * 60)
-        benchmark.check_succeed()
-
-    @cluster(num_nodes=8)
-    def test_multiple_producers_consumers_omb(self):
-        benchmark = OpenMessagingBenchmark(self._ctx, self.redpanda)
-        benchmark.set_configuration({
-            "producers_per_topic": 2,
-            "consumer_per_subscription": 2
-        })
-        benchmark.start()
-        benchmark_time_min = benchmark.benchmark_time(
-        ) + OpenBenchmarkTest.BENCHMARK_WAIT_TIME_MIN
-        benchmark.wait(timeout_sec=benchmark_time_min * 60)
-        benchmark.check_succeed()
-
-    @cluster(num_nodes=7)
-    def test_multiple_subscriptions_omb(self):
-        benchmark = OpenMessagingBenchmark(self._ctx, self.redpanda)
-        benchmark.set_configuration({"subscriptions_per_topic": 2})
+    @matrix(driver=["SIMPLE_DRIVER", "ACK_ALL_GROUP_LINGER_1MS"],
+            workload=["SIMPLE_WORKLOAD"])
+    def test_default_omb_configuration(self, driver, workload):
+        benchmark = OpenMessagingBenchmark(self._ctx, self.redpanda, driver,
+                                           workload)
         benchmark.start()
         benchmark_time_min = benchmark.benchmark_time(
         ) + OpenBenchmarkTest.BENCHMARK_WAIT_TIME_MIN
