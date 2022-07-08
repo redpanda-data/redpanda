@@ -927,6 +927,8 @@ void application::wire_up_redpanda_services() {
               c.max_service_memory_per_core = memory_groups::rpc_total_memory();
               c.disable_metrics = net::metrics_disabled(
                 config::shard_local_cfg().disable_metrics());
+              c.disable_public_metrics = net::public_metrics_disabled(
+                config::shard_local_cfg().disable_public_metrics());
               c.listen_backlog
                 = config::shard_local_cfg().rpc_server_listen_backlog;
               c.tcp_recv_buf
@@ -1116,6 +1118,8 @@ void application::wire_up_redpanda_services() {
 
               c.disable_metrics = net::metrics_disabled(
                 config::shard_local_cfg().disable_metrics());
+              c.disable_public_metrics = net::public_metrics_disabled(
+                config::shard_local_cfg().disable_public_metrics());
 
               net::config_connection_rate_bindings bindings{
                 .config_general_rate
@@ -1287,6 +1291,7 @@ void application::start_redpanda(::stop_signal& app_signal) {
           if (!config::shard_local_cfg().disable_metrics()) {
               proto->setup_metrics();
           }
+
           s.set_protocol(std::move(proto));
       })
       .get();

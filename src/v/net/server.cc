@@ -16,6 +16,7 @@
 #include "rpc/service.h"
 #include "seastar/core/coroutine.hh"
 #include "ssx/future-util.h"
+#include "ssx/metrics.h"
 #include "ssx/sformat.h"
 #include "vassert.h"
 #include "vlog.h"
@@ -31,7 +32,8 @@ namespace net {
 
 server::server(server_configuration c)
   : cfg(std::move(c))
-  , _memory(cfg.max_service_memory_per_core) {}
+  , _memory(cfg.max_service_memory_per_core)
+  , _public_metrics(ssx::metrics::public_metrics_handle) {}
 
 server::server(ss::sharded<server_configuration>* s)
   : server(s->local()) {}
@@ -43,6 +45,10 @@ void server::start() {
     if (!cfg.disable_metrics) {
         setup_metrics();
         _probe.setup_metrics(_metrics, cfg.name.c_str());
+    }
+
+    if (!cfg.disable_public_metrics) {
+        _probe.setup_public_metrics(_public_metrics, cfg.name.c_str());
     }
 
     if (cfg.connection_rate_bindings) {

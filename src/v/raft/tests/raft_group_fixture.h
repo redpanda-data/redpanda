@@ -184,6 +184,7 @@ struct raft_node {
         scfg.addrs.emplace_back(net::resolve_dns(broker.rpc_address()).get());
         scfg.max_service_memory_per_core = 1024 * 1024 * 1024;
         scfg.disable_metrics = net::metrics_disabled::yes;
+        scfg.disable_public_metrics = net::public_metrics_disabled::yes;
         server.start(std::move(scfg)).get0();
         raft_manager.start().get0();
         raft_manager

@@ -11,6 +11,7 @@
 #include "net/client_probe.h"
 #include "net/server_probe.h"
 #include "prometheus/prometheus_sanitize.h"
+#include "ssx/metrics.h"
 #include "ssx/sformat.h"
 
 #include <seastar/core/metrics.hh>
@@ -20,13 +21,13 @@
 
 namespace net {
 void server_probe::setup_metrics(
-  ss::metrics::metric_groups& mgs, const char* proto) {
+  ss::metrics::metric_groups& mgs, std::string_view proto) {
     namespace sm = ss::metrics;
     auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
                               ? std::vector<sm::label>{sm::shard_label}
                               : std::vector<sm::label>{};
     mgs.add_group(
-      prometheus_sanitize::metrics_name(proto),
+      prometheus_sanitize::metrics_name(ss::sstring{proto}),
       {
         sm::make_gauge(
           "active_connections",
@@ -108,6 +109,26 @@ void server_probe::setup_metrics(
             "{}: Number of connections are blocked by connection rate", proto)))
           .aggregate(aggregate_labels),
       });
+}
+
+void server_probe::setup_public_metrics(
+  ss::metrics::metric_groups& mgs, std::string_view proto) {
+    namespace sm = ss::metrics;
+
+    if (proto.ends_with("_rpc")) {
+        proto.remove_suffix(4);
+    }
+
+    auto server_label = sm::label("server");
+
+    mgs.add_group(
+      "rpc",
+      {sm::make_counter(
+         "request_errors_total",
+         [this] { return _service_errors; },
+         sm::description("Number of rpc errors"),
+         {server_label(proto)})
+         .aggregate({sm::shard_label})});
 }
 
 std::ostream& operator<<(std::ostream& o, const server_probe& p) {

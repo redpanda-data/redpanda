@@ -98,6 +98,8 @@ struct server_configuration {
     std::optional<int> tcp_send_buf;
     std::optional<size_t> stream_recv_buf;
     net::metrics_disabled disable_metrics = net::metrics_disabled::no;
+    net::public_metrics_disabled disable_public_metrics
+      = net::public_metrics_disabled::no;
     ss::sstring name;
     std::optional<config_connection_rate_bindings> connection_rate_bindings;
     // we use the same default as seastar for load balancing algorithm
@@ -203,6 +205,7 @@ private:
     hdr_hist _hist;
     server_probe _probe;
     ss::metrics::metric_groups _metrics;
+    ss::metrics::metric_groups _public_metrics;
 
     std::optional<config_connection_rate_bindings> connection_rate_bindings;
     std::optional<connection_rate<>> _connection_rates;
