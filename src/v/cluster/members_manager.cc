@@ -226,12 +226,15 @@ members_manager::apply_update(model::record_batch b) {
       [this, update_offset](decommission_node_cmd cmd) mutable {
           auto id = cmd.key;
           return dispatch_updates_to_cores(update_offset, cmd)
-            .then([this, id](std::error_code error) {
+            .then([this, id, update_offset](std::error_code error) {
                 auto f = ss::now();
                 if (!error) {
                     _allocator.local().decommission_node(id);
                     f = _update_queue.push_eventually(node_update{
-                      .id = id, .type = node_update_type::decommissioned});
+                      .id = id,
+                      .type = node_update_type::decommissioned,
+                      .offset = update_offset,
+                    });
                 }
                 return f.then([error] { return error; });
             });
@@ -239,23 +242,27 @@ members_manager::apply_update(model::record_batch b) {
       [this, update_offset](recommission_node_cmd cmd) mutable {
           auto id = cmd.key;
           return dispatch_updates_to_cores(update_offset, cmd)
-            .then([this, id](std::error_code error) {
+            .then([this, id, update_offset](std::error_code error) {
                 auto f = ss::now();
                 if (!error) {
                     _allocator.local().recommission_node(id);
                     f = _update_queue.push_eventually(node_update{
-                      .id = id, .type = node_update_type::recommissioned});
+                      .id = id,
+                      .type = node_update_type::recommissioned,
+                      .offset = update_offset});
                 }
                 return f.then([error] { return error; });
             });
       },
-      [this](finish_reallocations_cmd cmd) mutable {
+      [this, update_offset](finish_reallocations_cmd cmd) mutable {
           // we do not have to dispatch this command to members table since this
           // command is only used by a backend to signal successfully finished
           // node reallocations
           return _update_queue
             .push_eventually(node_update{
-              .id = cmd.key, .type = node_update_type::reallocation_finished})
+              .id = cmd.key,
+              .type = node_update_type::reallocation_finished,
+              .offset = update_offset})
             .then([] { return make_error_code(errc::success); });
       },
       [this, update_offset](maintenance_mode_cmd cmd) {
