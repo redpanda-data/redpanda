@@ -286,7 +286,7 @@ scheduler_service_impl::create_archivers(std::vector<model::ntp> to_create) {
           auto part = _partition_manager.local().get(ntp);
           if (log.has_value() && part && part->is_elected_leader()
               && (part->get_ntp_config().is_archival_enabled()
-                  || config::shard_local_cfg().cloud_storage_enable_remote_read())) {
+                  || config::shard_local_cfg().cloud_storage_enable_remote_write())) {
               auto archiver = ss::make_lw_shared<ntp_archiver>(
                 log->config(),
                 _partition_manager.local(),
