@@ -397,7 +397,7 @@ ss::future<> feature_manager::do_maybe_update_active_version() {
 
 ss::future<std::error_code>
 feature_manager::update_license(security::license&& license) {
-    static const auto timeout = model::timeout_clock::now() + 5s;
+    const auto timeout = model::timeout_clock::now() + 5s;
 
     auto cmd = cluster::feature_update_license_update_cmd(
       cluster::feature_update_license_update_cmd_data{
