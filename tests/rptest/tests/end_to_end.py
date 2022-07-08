@@ -86,7 +86,8 @@ class EndToEndTest(Test):
         self.redpanda = RedpandaService(self.test_context,
                                         num_nodes,
                                         extra_rp_conf=self._extra_rp_conf,
-                                        extra_node_conf=self._extra_node_conf)
+                                        extra_node_conf=self._extra_node_conf,
+                                        si_settings=self.si_settings)
         self.redpanda.start()
         self._client = DefaultClient(self.redpanda)
 
