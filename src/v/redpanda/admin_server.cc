@@ -76,6 +76,7 @@
 
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/trim.hpp>
 #include <boost/lexical_cast.hpp>
 #include <boost/lexical_cast/bad_lexical_cast.hpp>
 #include <fmt/core.h>
@@ -1586,6 +1587,7 @@ void admin_server::register_features_routes() {
           }
 
           try {
+              boost::trim_if(raw_license, boost::is_any_of(" \n"));
               auto license = security::make_license(raw_license);
               if (license.is_expired()) {
                   throw ss::httpd::bad_request_exception(
