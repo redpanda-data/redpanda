@@ -59,11 +59,6 @@ public:
     ss::future<result<raft::replicate_result>> replicate(
       model::term_id, model::record_batch_reader&&, raft::replicate_options);
 
-    ss::future<result<raft::replicate_result>> replicate(
-      model::batch_identity,
-      model::record_batch_reader&&,
-      raft::replicate_options);
-
     raft::replicate_stages replicate_in_stages(
       model::batch_identity,
       model::record_batch_reader&&,
