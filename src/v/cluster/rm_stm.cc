@@ -1502,6 +1502,12 @@ ss::future<bool> rm_stm::sync(model::timeout_clock::duration timeout) {
     auto ready = co_await persisted_stm::sync(timeout);
     if (ready) {
         if (_mem_state.term != _insync_term) {
+            // There is a term change, issue a checkpoint purge to followers
+            // All other replicate ops need to wait until this finishes, this is
+            // so that the followers clean up the state before we start applying
+            // changes to the in memory state.
+            co_await _checkpoint_applied_replicate.with(
+              [this]() { return replicate_checkpoint_applied(_insync_term); });
             _mem_state = mem_state{.term = _insync_term};
         }
     }
@@ -1914,6 +1920,41 @@ ss::future<model::record_batch> rm_stm::make_checkpoint_batch() {
     co_return std::move(builder).build();
 }
 
+ss::future<model::record_batch>
+rm_stm::make_checkpoint_applied_batch(model::term_id term) {
+    iobuf key;
+    co_await serde::write_async(key, term);
+    storage::record_batch_builder builder(
+      model::record_batch_type::tx_checkpoint_applied, model::offset(0));
+    builder.set_control_type();
+    builder.add_raw_kv(std::move(key), iobuf{});
+    co_return std::move(builder).build();
+}
+
+ss::future<> rm_stm::replicate_checkpoint_applied(model::term_id term) {
+    if (!_parked_checkpointed_mem_state) {
+        // This can happen in a couple of cases
+        // 1. Checkpoint applied batch already replicated by another fiber
+        // 2. There is nothing to checkpoint, so no point in replicating the
+        //    applied batch.
+        co_return;
+    }
+    auto batch = co_await make_checkpoint_applied_batch(term);
+    auto reader = model::make_memory_record_batch_reader(std::move(batch));
+    auto result = co_await _c->replicate(
+      term,
+      std::move(reader),
+      raft::replicate_options(raft::consistency_level::quorum_ack));
+    if (!result) {
+        vassert(
+          false,
+          "Unable to issue checkpoint applied notification to followers, "
+          "aborting..");
+    }
+    vlog(clusterlog.info, "Issued checkpoint applied batch with term {}", term);
+    co_return;
+}
+
 ss::future<> rm_stm::checkpoint_in_memory_state() {
     auto batch = co_await make_checkpoint_batch();
     _mem_state = {}; // reset
@@ -1927,6 +1968,10 @@ ss::future<> rm_stm::checkpoint_in_memory_state() {
         // aborted on the new leader and the client is expected to retry.
         vlog(clusterlog.warn, "Error replicating checkpoint batch: {}", result.error());
     }
+    vlog(
+      clusterlog.info,
+      "Replicated checkpoint state with term {}",
+      _insync_term);
     co_return;
 }
 

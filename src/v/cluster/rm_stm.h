@@ -348,6 +348,7 @@ private:
     get_abort_origin(const model::producer_identity&, model::tx_seq) const;
 
     ss::future<> checkpoint_in_memory_state();
+    ss::future<> replicate_checkpoint_applied(model::term_id);
 
     ss::future<> apply(model::record_batch) override;
     void apply_fence(model::record_batch&&);
@@ -542,6 +543,9 @@ private:
 
     ss::future<model::record_batch> make_checkpoint_batch();
 
+    ss::future<model::record_batch>
+      make_checkpoint_applied_batch(model::term_id);
+
     ss::basic_rwlock<> _state_lock;
     bool _is_abort_idx_reduction_requested{false};
     absl::flat_hash_map<model::producer_id, ss::lw_shared_ptr<mutex>> _tx_locks;
@@ -555,6 +559,9 @@ private:
     // promote this to _mem_state only if the current node becomes the partition
     // leader. Otherwise a purge batch will clean it up.
     std::optional<mem_state> _parked_checkpointed_mem_state;
+    // On assuming leadership, wait for followers to purge their in memory state
+    // before accepting new requests.
+    mutex _checkpoint_applied_replicate;
     ss::timer<clock_type> auto_abort_timer;
     model::timestamp _oldest_session;
     std::chrono::milliseconds _sync_timeout;

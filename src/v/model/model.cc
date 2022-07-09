@@ -354,6 +354,8 @@ std::ostream& operator<<(std::ostream& o, record_batch_type bt) {
         return o << "batch_type::feature_update";
     case record_batch_type::tx_checkpoint:
         return o << "batch_type::tx_checkpoint";
+    case record_batch_type::tx_checkpoint_applied:
+        return o << "batch_type::tx_checkpoint_applied";
     }
 
     return o << "batch_type::unknown{" << static_cast<int>(bt) << "}";
