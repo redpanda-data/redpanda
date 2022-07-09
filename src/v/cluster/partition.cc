@@ -187,59 +187,6 @@ raft::replicate_stages partition::replicate_in_stages(
     }
 }
 
-ss::future<result<raft::replicate_result>> partition::replicate(
-  model::batch_identity bid,
-  model::record_batch_reader&& r,
-  raft::replicate_options opts) {
-    if (bid.is_transactional) {
-        if (!_is_tx_enabled) {
-            vlog(
-              clusterlog.error,
-              "Can't process a transactional request to {}. Transactional "
-              "processing isn't enabled.",
-              _raft->ntp());
-            return ss::make_ready_future<result<raft::replicate_result>>(
-              raft::errc::timeout);
-        }
-
-        if (!_rm_stm) {
-            vlog(
-              clusterlog.error,
-              "Topic {} doesn't support transactional processing.",
-              _raft->ntp());
-            return ss::make_ready_future<result<raft::replicate_result>>(
-              raft::errc::timeout);
-        }
-    }
-
-    if (bid.has_idempotent()) {
-        if (!_is_idempotence_enabled) {
-            vlog(
-              clusterlog.error,
-              "Can't process an idempotent request to {}. Idempotency isn't "
-              "enabled.",
-              _raft->ntp());
-            return ss::make_ready_future<result<raft::replicate_result>>(
-              raft::errc::timeout);
-        }
-
-        if (!_rm_stm) {
-            vlog(
-              clusterlog.error,
-              "Topic {} doesn't support idempotency.",
-              _raft->ntp());
-            return ss::make_ready_future<result<raft::replicate_result>>(
-              raft::errc::timeout);
-        }
-    }
-
-    if (_rm_stm) {
-        return _rm_stm->replicate(bid, std::move(r), opts);
-    } else {
-        return _raft->replicate(std::move(r), opts);
-    }
-}
-
 ss::future<> partition::start() {
     auto ntp = _raft->ntp();
 
