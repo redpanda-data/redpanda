@@ -24,8 +24,8 @@ class RedPandaOpenMessagingBenchmarkPerf(RedpandaTest):
 
     def __init__(self, ctx):
         self._ctx = ctx
-        super(OpenBenchmarkTest, self).__init__(test_context=ctx,
-                                                num_brokers=3)
+        super(RedPandaOpenMessagingBenchmarkPerf,
+              self).__init__(test_context=ctx, num_brokers=3)
 
     @cluster(num_nodes=9)
     @parametrize(driver_idx="ACK_ALL_GROUP_LINGER_1MS_IDEM_MAX_IN_FLIGHT",
@@ -45,6 +45,6 @@ class RedPandaOpenMessagingBenchmarkPerf(RedpandaTest):
                                            driver_idx, workload_idx)
         benchmark.start()
         benchmark_time_min = benchmark.benchmark_time(
-        ) + OpenBenchmarkTest.BENCHMARK_WAIT_TIME_MIN
+        ) + RedPandaOpenMessagingBenchmarkPerf.BENCHMARK_WAIT_TIME_MIN
         benchmark.wait(timeout_sec=benchmark_time_min * 60)
         benchmark.check_succeed()
