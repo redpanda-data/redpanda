@@ -55,14 +55,13 @@ void partition_balancer_planner::init_ntp_sizes_from_health_report(
 
 void partition_balancer_planner::
   calculate_nodes_with_disk_constraints_violation(
-    reallocation_request_state& rrs,
-    partition_balancer_violations& violations) {
+    reallocation_request_state& rrs, plan_data& result) {
     for (const auto& n : rrs.node_disk_reports) {
         double used_space_ratio = 1.0 - n.second.free_space_rate;
         if (used_space_ratio > _config.max_disk_usage_ratio) {
             rrs.nodes_with_disk_constraints_violation.insert(n.first);
             rrs.full_nodes_disk_sizes.insert(n.second);
-            violations.full_nodes.emplace_back(
+            result.violations.full_nodes.emplace_back(
               n.first, uint32_t(used_space_ratio * 100.0));
         }
     }
@@ -71,7 +70,7 @@ void partition_balancer_planner::
 void partition_balancer_planner::calculate_unavailable_nodes(
   const std::vector<raft::follower_metrics>& follower_metrics,
   reallocation_request_state& rrs,
-  partition_balancer_violations& violations) {
+  plan_data& result) {
     const auto now = raft::clock_type::now();
     for (const auto& follower : follower_metrics) {
         auto unavailable_dur = now - follower.last_heartbeat;
@@ -81,7 +80,7 @@ void partition_balancer_planner::calculate_unavailable_nodes(
               model::timestamp_clock::now()
               - std::chrono::duration_cast<model::timestamp_clock::duration>(
                 unavailable_dur));
-            violations.unavailable_nodes.emplace_back(
+            result.violations.unavailable_nodes.emplace_back(
               follower.id, unavailable_since);
         }
     }
@@ -161,7 +160,7 @@ std::optional<size_t> partition_balancer_planner::get_partition_size(
     const auto ntp_data = rrs.ntp_sizes.find(ntp);
     if (ntp_data == rrs.ntp_sizes.end()) {
         vlog(
-          clusterlog.error,
+          clusterlog.info,
           "Partition {} status was not found in cluster health "
           "report",
           ntp);
@@ -287,8 +286,7 @@ result<allocation_units> partition_balancer_planner::get_reallocation(
  * It can move to nodes that are violating max_disk_usage_ratio constraint
  */
 void partition_balancer_planner::get_unavailable_nodes_reassignments(
-  std::vector<ntp_reassignments>& reassignments,
-  reallocation_request_state& rrs) {
+  plan_data& result, reallocation_request_state& rrs) {
     for (const auto& t : _topic_table.topics_map()) {
         for (const auto& a : t.second.get_assignments()) {
             auto ntp = model::ntp(t.first.ns, t.first.tp, a.id);
@@ -303,20 +301,18 @@ void partition_balancer_planner::get_unavailable_nodes_reassignments(
                 if (
                   !partition_size.has_value()
                   || !is_partition_movement_possible(a.replicas, rrs)) {
+                    result.failed_reassignments_count += 1;
                     continue;
                 }
                 auto new_allocation_units = get_reallocation(
                   a, t.second, partition_size.value(), false, rrs);
-                if (!new_allocation_units) {
-                    vlog(
-                      clusterlog.info,
-                      "Can't reallocate {} from down node",
-                      ntp);
-                } else {
-                    reassignments.emplace_back(ntp_reassignments{
+                if (new_allocation_units) {
+                    result.reassignments.emplace_back(ntp_reassignments{
                       .ntp = ntp,
                       .allocation_units = std::move(
                         new_allocation_units.value())});
+                } else {
+                    result.failed_reassignments_count += 1;
                 }
             }
 
@@ -337,8 +333,7 @@ void partition_balancer_planner::get_unavailable_nodes_reassignments(
  * ascending order of their size.
  */
 void partition_balancer_planner::get_full_node_reassignments(
-  std::vector<ntp_reassignments>& reassignments,
-  reallocation_request_state& rrs) {
+  plan_data& result, reallocation_request_state& rrs) {
     absl::flat_hash_map<model::node_id, std::vector<model::ntp>> ntp_on_nodes;
     for (const auto& t : _topic_table.topics_map()) {
         for (const auto& a : t.second.get_assignments()) {
@@ -359,6 +354,8 @@ void partition_balancer_planner::get_full_node_reassignments(
             auto partition_size_opt = get_partition_size(ntp, rrs);
             if (partition_size_opt.has_value()) {
                 ntp_on_node_sizes.emplace(partition_size_opt.value(), ntp);
+            } else {
+                result.failed_reassignments_count += 1;
             }
         }
         auto ntp_size_it = ntp_on_node_sizes.begin();
@@ -381,6 +378,7 @@ void partition_balancer_planner::get_full_node_reassignments(
                 partition_to_move.tp.partition);
             if (!is_partition_movement_possible(
                   current_assignments->replicas, rrs)) {
+                result.failed_reassignments_count += 1;
                 ntp_size_it++;
                 continue;
             }
@@ -390,12 +388,12 @@ void partition_balancer_planner::get_full_node_reassignments(
               ntp_size_it->first,
               true,
               rrs);
-            if (!new_allocation_units) {
-                vlog(clusterlog.info, "Can't reallocate {}", partition_to_move);
-            } else {
-                reassignments.emplace_back(ntp_reassignments{
+            if (new_allocation_units) {
+                result.reassignments.emplace_back(ntp_reassignments{
                   .ntp = partition_to_move,
                   .allocation_units = std::move(new_allocation_units.value())});
+            } else {
+                result.failed_reassignments_count += 1;
             }
             ntp_size_it++;
             if (
@@ -412,20 +410,21 @@ partition_balancer_planner::plan_reassignments(
   const cluster_health_report& health_report,
   const std::vector<raft::follower_metrics>& follower_metrics) {
     reallocation_request_state rrs;
-    partition_balancer_violations violations;
-    std::vector<ntp_reassignments> reassignments;
+    plan_data result;
 
     init_node_disk_reports_from_health_report(health_report, rrs);
-    calculate_unavailable_nodes(follower_metrics, rrs, violations);
-    calculate_nodes_with_disk_constraints_violation(rrs, violations);
+    calculate_unavailable_nodes(follower_metrics, rrs, result);
+    calculate_nodes_with_disk_constraints_violation(rrs, result);
 
-    if (!_topic_table.has_updates_in_progress() && !violations.is_empty()) {
+    if (
+      !_topic_table.has_updates_in_progress()
+      && !result.violations.is_empty()) {
         init_ntp_sizes_from_health_report(health_report, rrs);
-        get_unavailable_nodes_reassignments(reassignments, rrs);
-        get_full_node_reassignments(reassignments, rrs);
+        get_unavailable_nodes_reassignments(result, rrs);
+        get_full_node_reassignments(result, rrs);
     }
 
-    return {violations, std::move(reassignments)};
+    return result;
 }
 
 } // namespace cluster

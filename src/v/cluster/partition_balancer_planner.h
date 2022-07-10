@@ -41,6 +41,7 @@ public:
     struct plan_data {
         partition_balancer_violations violations;
         std::vector<ntp_reassignments> reassignments;
+        size_t failed_reassignments_count = 0;
     };
 
     plan_data plan_reassignments(
@@ -72,18 +73,17 @@ private:
       reallocation_request_state&);
 
     void get_unavailable_nodes_reassignments(
-      std::vector<ntp_reassignments>&, reallocation_request_state&);
+      plan_data&, reallocation_request_state&);
 
-    void get_full_node_reassignments(
-      std::vector<ntp_reassignments>&, reallocation_request_state&);
+    void get_full_node_reassignments(plan_data&, reallocation_request_state&);
 
     void calculate_nodes_with_disk_constraints_violation(
-      reallocation_request_state&, partition_balancer_violations&);
+      reallocation_request_state&, plan_data&);
 
     void calculate_unavailable_nodes(
       const std::vector<raft::follower_metrics>&,
       reallocation_request_state&,
-      partition_balancer_violations&);
+      plan_data&);
 
     size_t get_full_nodes_amount(
       const std::vector<model::broker_shard>& replicas,
