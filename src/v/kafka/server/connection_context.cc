@@ -25,6 +25,7 @@
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/scattered_message.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/with_timeout.hh>
 
@@ -184,8 +185,9 @@ ss::future<> connection_context::handle_auth_v0(const size_t size) {
           },
           std::move(request_buf),
           0s);
+        auto sres = session_resources{};
         auto resp = co_await kafka::process_request(
-                      std::move(ctx), _proto.smp_group())
+                      std::move(ctx), _proto.smp_group(), sres)
                       .response;
         auto data = std::move(*resp).release();
         response.decode(std::move(data), version);
@@ -215,8 +217,7 @@ bool connection_context::is_finished_parsing() const {
     return _rs.conn->input().eof() || _rs.abort_requested();
 }
 
-ss::future<connection_context::session_resources>
-connection_context::throttle_request(
+ss::future<session_resources> connection_context::throttle_request(
   const request_header& hdr, size_t request_size) {
     // update the throughput tracker for this client using the
     // size of the current request and return any computed delay
@@ -291,11 +292,15 @@ connection_context::reserve_request_units(api_key key, size_t size) {
 ss::future<>
 connection_context::dispatch_method_once(request_header hdr, size_t size) {
     return throttle_request(hdr, size).then([this, hdr = std::move(hdr), size](
-                                              session_resources sres) mutable {
+                                              session_resources
+                                                sres_in) mutable {
         if (_rs.abort_requested()) {
             // protect against shutdown behavior
             return ss::make_ready_future<>();
         }
+
+        auto sres = ss::make_lw_shared(std::move(sres_in));
+
         auto remaining = size - request_header_size
                          - hdr.client_id_buffer.size() - hdr.tags_size_bytes;
         return read_iobuf_exactly(_rs.conn->input(), remaining)
@@ -307,7 +312,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
               }
               auto self = shared_from_this();
               auto rctx = request_context(
-                self, std::move(hdr), std::move(buf), sres.backpressure_delay);
+                self, std::move(hdr), std::move(buf), sres->backpressure_delay);
               /*
                * we process requests in order since all subsequent requests
                * are dependent on authentication having completed.
@@ -332,7 +337,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
               const sequence_id seq = _seq_idx;
               _seq_idx = _seq_idx + sequence_id(1);
               auto res = kafka::process_request(
-                std::move(rctx), _proto.smp_group());
+                std::move(rctx), _proto.smp_group(), *sres);
               /**
                * first stage processed in a foreground.
                */

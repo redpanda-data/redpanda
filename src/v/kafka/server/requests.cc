@@ -10,6 +10,7 @@
 #include "kafka/protocol/schemata/api_versions_request.h"
 #include "kafka/protocol/schemata/fetch_request.h"
 #include "kafka/protocol/schemata/produce_request.h"
+#include "kafka/server/connection_context.h"
 #include "kafka/server/handlers/api_versions.h"
 #include "kafka/server/handlers/details/any_handler.h"
 #include "kafka/server/handlers/sasl_authenticate.h"
@@ -80,16 +81,20 @@ requires(KafkaApiHandler<Request> || KafkaApiTwoPhaseHandler<Request>)
 }
 
 process_result_stages process_generic(
-  any_handler handler, request_context&& ctx, ss::smp_service_group g) {
+  any_handler handler,
+  request_context&& ctx,
+  ss::smp_service_group g,
+  const session_resources& sres) {
     vlog(
       klog.trace,
-      "[{}:{}] processing name:{}, key:{}, version:{} for {}",
+      "[{}:{}] processing name:{}, key:{}, version:{} for {}, mem_units: {}",
       ctx.connection()->client_host(),
       ctx.connection()->client_port(),
       handler->name(),
       ctx.header().key,
       ctx.header().version,
-      ctx.header().client_id.value_or(std::string_view("unset-client-id")));
+      ctx.header().client_id.value_or(std::string_view("unset-client-id")),
+      sres.memlocks.count());
 
     // We do a version check for most API requests, but for api_version
     // requests we skip them. We do not apply them for api_versions,
@@ -242,8 +247,10 @@ bool track_latency(api_key key) {
     }
 }
 
-process_result_stages
-process_request(request_context&& ctx, ss::smp_service_group g) {
+process_result_stages process_request(
+  request_context&& ctx,
+  ss::smp_service_group g,
+  const session_resources& sres) {
     /*
      * requests are handled as normal when auth is disabled. otherwise no
      * request is handled until the auth process has completed.
@@ -278,7 +285,7 @@ process_request(request_context&& ctx, ss::smp_service_group g) {
     }
 
     if (auto handler = handler_for_key(key)) {
-        return process_generic(*handler, std::move(ctx), g);
+        return process_generic(*handler, std::move(ctx), g, sres);
     }
 
     throw std::runtime_error(
