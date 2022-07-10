@@ -203,7 +203,7 @@ class Admin:
             hosts: Optional[list[str]] = None) -> PartitionDetails:
         """
         Method waits for timeout_s until the configuration is stable and returns it.
-        
+
         When the timeout is exhaust it throws TimeoutException
         """
         if hosts == None:
@@ -589,7 +589,7 @@ class Admin:
                                target_id=None,
                                leader_id=None):
         """
-        Looks up current ntp leader and transfer leadership to target node, 
+        Looks up current ntp leader and transfer leadership to target node,
         this operations is NOP when current leader is the same as target.
         If user pass None for target this function will choose next replica for new leader.
         If leadership transfer was performed this function return True
@@ -677,3 +677,9 @@ class Admin:
         """
         path = f"shadow_indexing/sync_local_state/{topic}/{partition}"
         return self._request('post', path, node=node)
+
+    def get_partition_balancer_status(self, node=None, **kwargs):
+        return self._request("GET",
+                             "cluster/partition_balancer/status",
+                             node=node,
+                             **kwargs).json()
