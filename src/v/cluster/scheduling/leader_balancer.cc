@@ -15,6 +15,7 @@
 #include "cluster/scheduling/leader_balancer_greedy.h"
 #include "cluster/shard_table.h"
 #include "cluster/topic_table.h"
+#include "cluster/members_table.h"
 #include "model/namespace.h"
 #include "random/generators.h"
 #include "rpc/types.h"
@@ -38,6 +39,7 @@ namespace cluster {
 leader_balancer::leader_balancer(
   topic_table& topics,
   partition_leaders_table& leaders,
+  members_table& members,
   raft::consensus_client_protocol client,
   ss::sharded<shard_table>& shard_table,
   ss::sharded<partition_manager>& partition_manager,
@@ -55,6 +57,7 @@ leader_balancer::leader_balancer(
   , _transfer_limit_per_shard(std::move(transfer_limit_per_shard))
   , _topics(topics)
   , _leaders(leaders)
+  , _members(members)
   , _client(std::move(client))
   , _shard_table(shard_table)
   , _partition_manager(partition_manager)
@@ -463,6 +466,18 @@ absl::flat_hash_set<model::node_id> leader_balancer::muted_nodes() const {
               std::chrono::duration_cast<std::chrono::milliseconds>(
                 last_hbeat_age)
                 .count());
+        }
+
+        if (auto broker_ptr = _members.get_broker(follower.id); broker_ptr) {
+            auto maintenance_state = (*broker_ptr)->get_maintenance_state();
+
+            if (maintenance_state == model::maintenance_state::active) {
+                nodes.insert(follower.id);
+                vlog(
+                  clusterlog.info,
+                  "Leadership rebalancer muting node {} in a maintenance state.",
+                  follower.id);
+            }
         }
     }
     return nodes;

@@ -73,6 +73,7 @@ public:
     leader_balancer(
       topic_table&,
       partition_leaders_table&,
+      members_table&,
       raft::consensus_client_protocol,
       ss::sharded<shard_table>&,
       ss::sharded<partition_manager>&,
@@ -175,6 +176,7 @@ private:
       _leadership_change_notify_handle;
     topic_table& _topics;
     partition_leaders_table& _leaders;
+    members_table& _members;
     raft::consensus_client_protocol _client;
     ss::sharded<shard_table>& _shard_table;
     ss::sharded<partition_manager>& _partition_manager;
