@@ -101,7 +101,18 @@ void feature_state::transition_available() {
 
 void feature_state::notify_version(cluster_version v) {
     if (_state == state::unavailable && v >= spec.require_version) {
+        vlog(
+          clusterlog.info,
+          "notify_version feature {} version {} going available",
+          spec.name,
+          v);
         transition_available();
+    } else {
+        vlog(
+          clusterlog.info,
+          "notify_version feature {} version {} no op",
+          spec.name,
+          v);
     }
 }
 
@@ -122,20 +133,47 @@ void feature_table::set_active_version(cluster_version v) {
  */
 void feature_table::on_update() {
     // Update mask for fast is_active() lookup
+    vlog(clusterlog.info, "on_update entry mask={:x}", _active_features_mask);
     _active_features_mask = 0x0;
     for (const auto& fs : _feature_state) {
         if (fs.get_state() == feature_state::state::active) {
+            vlog(clusterlog.info, "on_update ORing {}", fs.spec.name);
             _active_features_mask |= uint64_t(fs.spec.bits);
-            _waiters_active.notify(fs.spec.bits);
+            try {
+                _waiters_active.notify(fs.spec.bits);
 
-            // Anyone waiting on 'preparing' is triggered when we
-            // reach active, because at this point we're never going
-            // to go to 'preparing' and we don't want to wait forever.
-            _waiters_preparing.notify(fs.spec.bits);
+                // Anyone waiting on 'preparing' is triggered when we
+                // reach active, because at this point we're never going
+                // to go to 'preparing' and we don't want to wait forever.
+                _waiters_preparing.notify(fs.spec.bits);
+            } catch (...) {
+                vlog(
+                  clusterlog.error,
+                  "Notify hook exception on feature {}: {}",
+                  fs.spec.name,
+                  ss::current_backtrace());
+            }
         } else if (fs.get_state() == feature_state::state::preparing) {
-            _waiters_preparing.notify(fs.spec.bits);
+            vlog(clusterlog.info, "on_update preparing {}", fs.spec.name);
+            try {
+                _waiters_preparing.notify(fs.spec.bits);
+            } catch (...) {
+                vlog(
+                  clusterlog.error,
+                  "Notify hook exception on feature {}: {}",
+                  fs.spec.name,
+                  ss::current_backtrace());
+            }
+        } else {
+            vlog(
+              clusterlog.info,
+              "on_update not available {} {}",
+              fs.spec.name,
+              fs.get_state());
         }
     }
+    vlog(
+      clusterlog.info, "on_update complete mask={:x}", _active_features_mask);
 }
 
 void feature_table::apply_action(const feature_update_action& fua) {
@@ -144,9 +182,7 @@ void feature_table::apply_action(const feature_update_action& fua) {
         vlog(clusterlog.warn, "Ignoring action {}, unknown feature", fua);
         return;
     } else {
-        if (ss::this_shard_id() == 0) {
-            vlog(clusterlog.debug, "apply_action {}", fua);
-        }
+        vlog(clusterlog.info, "apply_action {}", fua);
     }
 
     auto& fstate = get_state(feature_id_opt.value());
@@ -219,11 +255,11 @@ void feature_table::apply_action(const feature_update_action& fua) {
  */
 ss::future<> feature_table::await_feature(feature f, ss::abort_source& as) {
     if (is_active(f)) {
-        vlog(clusterlog.trace, "Feature {} already active", to_string_view(f));
+        vlog(clusterlog.info, "Feature {} already active", to_string_view(f));
         return ss::now();
     } else {
         vlog(
-          clusterlog.trace, "Waiting for feature active {}", to_string_view(f));
+          clusterlog.info, "Waiting for feature active {}", to_string_view(f));
         return _waiters_active.await(f, as);
     }
 }
@@ -238,11 +274,11 @@ ss::future<>
 feature_table::await_feature_preparing(feature f, ss::abort_source& as) {
     if (is_preparing(f)) {
         vlog(
-          clusterlog.trace, "Feature {} already preparing", to_string_view(f));
+          clusterlog.info, "Feature {} already preparing", to_string_view(f));
         return ss::now();
     } else {
         vlog(
-          clusterlog.trace,
+          clusterlog.info,
           "Waiting for feature preparing {}",
           to_string_view(f));
         return _waiters_preparing.await(f, as);

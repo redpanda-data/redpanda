@@ -105,7 +105,7 @@ ss::future<> feature_manager::start() {
             }
 
             vlog(
-              clusterlog.debug, "Controller leader notification term {}", term);
+              clusterlog.info, "Controller leader notification term {}", term);
             _am_controller_leader = leader_id == config::node().node_id();
 
             // This hook avoids the need for the controller leader to receive
@@ -120,7 +120,7 @@ ss::future<> feature_manager::start() {
                 // When I become leader for first time (i.e. when active
                 // version is not known yet, proactively persist it)
                 vlog(
-                  clusterlog.debug,
+                  clusterlog.info,
                   "generating version update for controller leader {} ({})",
                   leader_id.value(),
                   feature_table::get_latest_logical_version());
@@ -154,7 +154,7 @@ ss::future<> feature_manager::stop() {
 }
 
 ss::future<> feature_manager::maybe_update_active_version() {
-    vlog(clusterlog.debug, "Checking for active version update...");
+    vlog(clusterlog.info, "Checking for active version update...");
     bool failed = false;
     try {
         co_await do_maybe_update_active_version();
@@ -163,7 +163,7 @@ ss::future<> feature_manager::maybe_update_active_version() {
         // raft0 for writes, or unavailability of health monitor
         // data for one of the nodes.
         vlog(
-          clusterlog.debug,
+          clusterlog.warn,
           "Exception from updater, will retry ({})",
           std::current_exception());
         failed = true;
@@ -175,6 +175,7 @@ ss::future<> feature_manager::maybe_update_active_version() {
             co_await ss::sleep_abortable(status_retry, _as.local());
         } else {
             // Sleep until we have some updates to process
+            vlog(clusterlog.info, "Sleeping til next update...");
             co_await _update_wait.wait([this]() { return !_updates.empty(); });
         }
     } catch (ss::condition_variable_timed_out) {
@@ -191,7 +192,7 @@ void feature_manager::update_node_version(
     vassert(ss::this_shard_id() == backend_shard, "Wrong shard!");
 
     vlog(
-      clusterlog.debug,
+      clusterlog.info,
       "update_node_version: enqueuing update node={} version={}",
       update_node,
       v);
@@ -218,7 +219,7 @@ ss::future<> feature_manager::do_maybe_update_active_version() {
     auto updates = std::exchange(_updates, {});
     for (const auto& i : updates) {
         auto& [node, v] = i;
-        vlog(clusterlog.debug, "Processing update node={} version={}", node, v);
+        vlog(clusterlog.info, "Processing update node={} version={}", node, v);
         _node_versions[node] = v;
     }
 
@@ -230,7 +231,7 @@ ss::future<> feature_manager::do_maybe_update_active_version() {
     }
     if (max_version <= active_version) {
         vlog(
-          clusterlog.debug,
+          clusterlog.info,
           "No update, max version {} not ahead of {}",
           max_version,
           active_version);
@@ -267,7 +268,7 @@ ss::future<> feature_manager::do_maybe_update_active_version() {
         auto v_iter = _node_versions.find(node_id);
         if (v_iter == _node_versions.end()) {
             vlog(
-              clusterlog.debug,
+              clusterlog.info,
               "Can't update active version to {} because node {} "
               "version unknown",
               max_version,
@@ -275,7 +276,7 @@ ss::future<> feature_manager::do_maybe_update_active_version() {
             co_return;
         } else if (v_iter->second < max_version) {
             vlog(
-              clusterlog.debug,
+              clusterlog.info,
               "Can't update active version to {} because "
               "node {} "
               "version is too low ({})",
