@@ -16,6 +16,7 @@
 #include "storage/parser.h"
 #include "storage/segment_set.h"
 #include "storage/snapshot.h"
+#include "storage/storage_resources.h"
 #include "storage/types.h"
 #include "utils/mutex.h"
 
@@ -99,7 +100,7 @@ public:
         /* your sub-system here */
     };
 
-    explicit kvstore(kvstore_config kv_conf);
+    explicit kvstore(kvstore_config kv_conf, storage_resources&);
 
     ss::future<> start();
     ss::future<> stop();
@@ -115,6 +116,7 @@ public:
 
 private:
     kvstore_config _conf;
+    storage_resources& _resources;
     ntp_config _ntpc;
     ss::gate _gate;
     ss::abort_source _as;

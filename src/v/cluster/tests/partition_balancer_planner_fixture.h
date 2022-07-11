@@ -57,7 +57,6 @@ public:
             config::mock_binding<std::optional<int32_t>>(std::nullopt),
             config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
             config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0}),
-            config::mock_binding<size_t>(16_KiB),
             config::mock_binding<bool>(false))
           .get();
     }

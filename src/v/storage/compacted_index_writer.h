@@ -24,6 +24,8 @@
 
 namespace storage {
 
+class storage_resources;
+
 /** format on file is:
     INT16 PAYLOAD
     INT16 PAYLOAD
@@ -149,6 +151,6 @@ compacted_index_writer make_file_backed_compacted_index(
   ss::io_priority_class p,
   debug_sanitize_files debug,
   bool truncate,
-  size_t max_memory);
+  storage_resources& resources);
 
 } // namespace storage

@@ -157,6 +157,10 @@ private:
 
     compaction_config apply_overrides(compaction_config) const;
 
+    storage_resources& resources();
+
+    void wrote_stm_bytes(size_t);
+
 private:
     size_t max_segment_size() const;
     // Computes the segment size based on the latest max_segment_size
@@ -186,6 +190,9 @@ private:
     std::unique_ptr<readers_cache> _readers_cache;
     // average ratio of segment sizes after segment size before compaction
     moving_average<double, 5> _compaction_ratio{1.0};
+
+    // Bytes written since last time we requested stm snapshot
+    ss::semaphore_units<> _stm_dirty_bytes_units;
 };
 
 } // namespace storage

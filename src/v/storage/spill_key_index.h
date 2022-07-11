@@ -17,6 +17,7 @@
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/segment_appender.h"
+#include "storage/storage_resources.h"
 #include "storage/types.h"
 #include "utils/vint.h"
 
@@ -45,11 +46,15 @@ public:
     spill_key_index(
       ss::sstring filename,
       ss::io_priority_class,
-      size_t max_memory,
       bool truncate,
-      storage::debug_sanitize_files debug);
+      storage::debug_sanitize_files debug,
+      storage_resources&);
 
-    spill_key_index(ss::sstring name, ss::file dummy_file, size_t max_memory);
+    spill_key_index(
+      ss::sstring name,
+      ss::file dummy_file,
+      size_t max_mem,
+      storage_resources&);
 
     spill_key_index(const spill_key_index&) = delete;
     spill_key_index& operator=(const spill_key_index&) = delete;
@@ -87,11 +92,12 @@ private:
     ss::future<> spill(compacted_index::entry_type, bytes_view, value_type);
 
     storage::debug_sanitize_files _debug;
+    storage_resources& _resources;
     ss::io_priority_class _pc;
     bool _truncate;
     std::optional<segment_appender> _appender;
     underlying_t _midx;
-    size_t _max_mem;
+    size_t _max_mem{512_KiB};
     size_t _keys_mem_usage{0};
     compacted_index::footer _footer;
     crc::crc32c _crc;

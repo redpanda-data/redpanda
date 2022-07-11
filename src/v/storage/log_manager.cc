@@ -28,6 +28,7 @@
 #include "storage/segment_reader.h"
 #include "storage/segment_set.h"
 #include "storage/segment_utils.h"
+#include "storage/storage_resources.h"
 #include "utils/directory_walker.h"
 #include "utils/file_sanitizer.h"
 #include "vlog.h"
@@ -55,9 +56,11 @@
 namespace storage {
 using logs_type = absl::flat_hash_map<model::ntp, log_housekeeping_meta>;
 
-log_manager::log_manager(log_config config, kvstore& kvstore) noexcept
+log_manager::log_manager(
+  log_config config, kvstore& kvstore, storage_resources& resources) noexcept
   : _config(std::move(config))
   , _kvstore(kvstore)
+  , _resources(resources)
   , _jitter(_config.compaction_interval())
   , _batch_cache(config.reclaim_opts) {
     _compaction_timer.set_callback([this] { trigger_housekeeping(); });
@@ -193,7 +196,8 @@ ss::future<ss::lw_shared_ptr<segment>> log_manager::make_log_segment(
             read_buf_size,
             read_ahead,
             _config.sanitize_fileops,
-            create_cache(ntp.cache_enabled()));
+            create_cache(ntp.cache_enabled()),
+            _resources);
       });
 }
 
@@ -211,6 +215,7 @@ log_manager::create_cache(with_cache ntp_cache_enabled) {
 ss::future<log> log_manager::manage(ntp_config cfg) {
     auto gate = _open_gate.hold();
 
+    auto units = co_await _resources.get_recovery_units();
     co_return co_await do_manage(std::move(cfg));
 }
 
@@ -274,13 +279,15 @@ ss::future<log> log_manager::do_manage(ntp_config cfg) {
       _abort_source,
       config::shard_local_cfg().storage_read_buffer_size(),
       config::shard_local_cfg().storage_read_readahead_count(),
-      last_clean_segment);
+      last_clean_segment,
+      _resources);
 
     auto l = storage::make_disk_backed_log(
       std::move(cfg), *this, std::move(segments), _kvstore);
     auto [it, success] = _logs.emplace(
       l.config().ntp(), std::make_unique<log_housekeeping_meta>(l));
     _logs_list.push_back(*it->second);
+    _resources.update_partition_count(_logs.size());
     vassert(success, "Could not keep track of:{} - concurrency issue", l);
     co_return l;
 }
@@ -299,6 +306,7 @@ ss::future<> log_manager::remove(model::ntp ntp) {
     vlog(stlog.info, "Asked to remove: {}", ntp);
     return ss::with_gate(_open_gate, [this, ntp = std::move(ntp)] {
         auto handle = _logs.extract(ntp);
+        _resources.update_partition_count(_logs.size());
         if (handle.empty()) {
             return ss::make_ready_future<>();
         }

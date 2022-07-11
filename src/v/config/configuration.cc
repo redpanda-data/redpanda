@@ -734,6 +734,26 @@ configuration::configuration()
        .visibility = visibility::tunable},
       32_MiB,
       storage::segment_appender::validate_fallocation_step)
+  , storage_target_replay_bytes(
+      *this,
+      "storage_target_replay_bytes",
+      "Target bytes to replay from disk on startup after clean shutdown: "
+      "controls frequency of snapshots and checkpoints",
+      {.needs_restart = needs_restart::no,
+       .example = "2147483648",
+       .visibility = visibility::tunable},
+      10_GiB,
+      {.min = 128_MiB, .max = 1_TiB})
+  , storage_max_concurrent_replay(
+      *this,
+      "storage_max_concurrent_replay",
+      "Maximum number of partitions' logs that will be replayed concurrently "
+      "at startup, or flushed concurrently on shutdown.",
+      {.needs_restart = needs_restart::no,
+       .example = "2048",
+       .visibility = visibility::tunable},
+      1024,
+      {.min = 128})
   , max_compacted_log_segment_size(
       *this,
       "max_compacted_log_segment_size",

@@ -41,6 +41,17 @@ void offset_translator::process(const model::record_batch& batch) {
 
     _bytes_processed += batch.size_bytes();
 
+    // Update resource manager for the extra dirty bytes, it may hint us
+    // to checkpoint early in response.
+    auto take_result = _storage_api.resources().offset_translator_take_bytes(
+      batch.size_bytes());
+    if (_bytes_processed_units.count() == 0) {
+        _bytes_processed_units = std::move(take_result.units);
+    } else {
+        _bytes_processed_units.adopt(std::move(take_result.units));
+    }
+    _checkpoint_hint |= take_result.checkpoint_hint;
+
     if (
       std::find(
         _filtered_types.begin(), _filtered_types.end(), batch.header().type)
@@ -177,6 +188,14 @@ ss::future<> offset_translator::sync_with_log(
 
     // read the log to insert the remaining entries into map
     model::offset start_offset = model::next_offset(_highest_known_offset);
+
+    vlog(
+      _logger.debug,
+      "starting sync with log, state: {}, reading offsets {}-{}",
+      _state,
+      _highest_known_offset,
+      log_offsets.dirty_offset);
+
     auto reader_cfg = storage::log_reader_config(
       start_offset, log_offsets.dirty_offset, ss::default_priority_class(), as);
     auto reader = co_await log.make_reader(reader_cfg);
@@ -323,16 +342,18 @@ ss::future<> offset_translator::maybe_checkpoint() {
     co_await _checkpoint_lock.with([this]() -> ss::future<> {
         if (
           _bytes_processed
-          < _bytes_processed_at_checkpoint + checkpoint_threshold) {
+            < _bytes_processed_at_checkpoint + checkpoint_threshold
+          && !_checkpoint_hint) {
             co_return;
         }
 
         vlog(
           _logger.trace,
           "threshold reached, performing checkpoint; state: {}, "
-          "highest_known_offset: {}",
+          "highest_known_offset: {} (hint={})",
           _state,
-          _highest_known_offset);
+          _highest_known_offset,
+          _checkpoint_hint);
 
         co_await do_checkpoint();
     });
@@ -368,6 +389,9 @@ ss::future<> offset_translator::do_checkpoint() {
       highest_known_offset_key(),
       std::move(hko_buf));
     _bytes_processed_at_checkpoint = bytes_processed;
+    _bytes_processed_units.return_all();
+
+    _checkpoint_hint = false;
 }
 
 ss::future<> offset_translator::move_persistent_state(

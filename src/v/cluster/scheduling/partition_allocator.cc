@@ -38,7 +38,6 @@ partition_allocator::partition_allocator(
   config::binding<std::optional<int32_t>> fds_per_partition,
   config::binding<uint32_t> partitions_per_shard,
   config::binding<uint32_t> partitions_reserve_shard0,
-  config::binding<size_t> fallocation_step,
   config::binding<bool> enable_rack_awareness)
   : _state(std::make_unique<allocation_state>(
     partitions_per_shard, partitions_reserve_shard0))
@@ -48,7 +47,6 @@ partition_allocator::partition_allocator(
   , _fds_per_partition(fds_per_partition)
   , _partitions_per_shard(partitions_per_shard)
   , _partitions_reserve_shard0(partitions_reserve_shard0)
-  , _fallocation_step(fallocation_step)
   , _enable_rack_awareness(enable_rack_awareness) {}
 
 allocation_constraints default_constraints() {
@@ -247,20 +245,6 @@ std::error_code partition_allocator::check_cluster_limits(
         } else {
             // Unclear if this can ever happen, but let's be graceful.
             vlog(clusterlog.warn, "Error {} querying file handle limit", errno);
-        }
-    }
-
-    // Refuse to create partitions if there isn't enough space to at least
-    // falloc the first part of a segment for each partition
-    if (_fallocation_step() > 0) {
-        uint64_t disk_limit = effective_cluster_disk / _fallocation_step();
-        if (disk_limit > 0 && (proposed_total_partitions > disk_limit)) {
-            vlog(
-              clusterlog.warn,
-              "Refusing to create {} partitions, exceeds disk limit {}",
-              create_count,
-              disk_limit);
-            return errc::topic_invalid_partitions;
         }
     }
 

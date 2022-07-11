@@ -133,7 +133,10 @@ private:
     template<typename Service, typename... Args>
     void construct_single_service(std::unique_ptr<Service>& s, Args&&... args) {
         s = std::make_unique<Service>(std::forward<Args>(args)...);
-        _deferred.emplace_back([&s] { s->stop().get(); });
+        _deferred.emplace_back([&s] {
+            s->stop().get();
+            s.reset();
+        });
     }
 
     template<typename Service, typename... Args>
