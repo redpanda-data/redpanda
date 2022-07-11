@@ -308,4 +308,35 @@ feature_table::resolve_name(std::string_view feature_name) const {
     return std::nullopt;
 }
 
+bool feature_table::is_active(feature f) const noexcept {
+    bool bitmask_result = (uint64_t(f) & _active_features_mask) != 0;
+    bool table_result = false;
+    for (auto& i : _feature_state) {
+        if (i.spec.bits == f) {
+            table_result = (i.get_state() == feature_state::state::active);
+            break;
+        }
+    }
+
+    if (table_result != bitmask_result) {
+        vlog(
+          clusterlog.warn,
+          "Inconsistent for feature {:x}: {} {} (mask={:x})",
+          (uint64_t)f,
+          bitmask_result,
+          table_result,
+          _active_features_mask);
+    } else {
+        vlog(
+          clusterlog.info,
+          "is_active({:x})={} (mask={:x})",
+          (uint64_t)f,
+          bitmask_result,
+          _active_features_mask);
+    }
+
+    // This is the most trustworthy one: if they differ we logged a warning.
+    return table_result;
+}
+
 } // namespace cluster

@@ -243,9 +243,7 @@ public:
      * Keep this small and simple to be used in hot paths that need to check
      * for feature enablement.
      */
-    bool is_active(feature f) const noexcept {
-        return (uint64_t(f) & _active_features_mask) != 0;
-    }
+    bool is_active(feature f) const noexcept;
 
     /**
      * Query whether a feature has reached ::preparing state, i.e. it is
