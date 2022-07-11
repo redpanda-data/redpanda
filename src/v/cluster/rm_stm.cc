@@ -1776,6 +1776,8 @@ ss::future<> rm_stm::apply(model::record_batch b) {
         }
     } else if (hdr.type == model::record_batch_type::tx_checkpoint) {
         apply_checkpoint(std::move(b));
+    } else if (hdr.type == model::record_batch_type::tx_checkpoint_applied) {
+        apply_checkpoint_applied();
     }
     _insync_offset = last_offset;
 
@@ -1906,6 +1908,11 @@ void rm_stm::apply_checkpoint(const model::record_batch& batch) {
     auto state = serde::from_iobuf<mem_state>(std::move(val_buf));
     _parked_checkpointed_mem_state = std::move(state);
     vlog(clusterlog.info, "Parked checkpoint state from term {}", term);
+}
+
+void rm_stm::apply_checkpoint_applied() {
+    _parked_checkpointed_mem_state = std::nullopt;
+    vlog(clusterlog.info, "Purged local parked checkpoint state.");
 }
 
 ss::future<model::record_batch> rm_stm::make_checkpoint_batch() {

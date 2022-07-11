@@ -357,6 +357,8 @@ private:
       apply_control(model::producer_identity, model::control_record_type);
     void apply_data(model::batch_identity, model::offset);
     void apply_checkpoint(const model::record_batch&);
+    // Applies tx_checkpoint_applied batch.
+    void apply_checkpoint_applied();
 
     ss::future<> reduce_aborted_list();
     ss::future<> offload_aborted_txns();
