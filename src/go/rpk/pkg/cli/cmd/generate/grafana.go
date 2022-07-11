@@ -65,7 +65,7 @@ func NewGrafanaDashboardCmd() *cobra.Command {
 	var metricsEndpoint string
 	command := &cobra.Command{
 		Use:   "grafana-dashboard",
-		Short: "Generate a Grafana dashboard for redpanda metrics.",
+		Short: "Generate a Grafana dashboard for redpanda metrics",
 		RunE: func(ccmd *cobra.Command, args []string) error {
 			if !(strings.HasPrefix(metricsEndpoint, "http://") ||
 				strings.HasPrefix(metricsEndpoint, "https://")) {

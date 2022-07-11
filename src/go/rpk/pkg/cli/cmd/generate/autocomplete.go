@@ -19,7 +19,7 @@ import (
 func NewShellCompletionCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "shell-completion",
-		Short: "Generate shell completion commands.",
+		Short: "Generate shell completion commands",
 		Long: `
 Shell completion can help autocomplete rpk commands when you press tab.
 

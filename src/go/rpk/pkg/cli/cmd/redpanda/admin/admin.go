@@ -24,7 +24,7 @@ import (
 func NewCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "admin",
-		Short: "Talk to the Redpanda admin listener.",
+		Short: "Talk to the Redpanda admin listener",
 		Args:  cobra.ExactArgs(0),
 	}
 
@@ -50,7 +50,7 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 		config.FlagAdminHosts1,
 		[]string{},
 		"A comma-separated list of Admin API addresses (<IP>:<port>)."+
-			" You must specify one for each node.",
+			" You must specify one for each node",
 	)
 
 	common.AddAdminAPITLSFlags(

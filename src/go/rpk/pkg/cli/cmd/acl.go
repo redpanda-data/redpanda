@@ -38,7 +38,7 @@ func NewACLCommand(fs afero.Fs) *cobra.Command {
 	)
 	command := &cobra.Command{
 		Use:   "acl",
-		Short: "Manage ACLs and SASL users.",
+		Short: "Manage ACLs and SASL users",
 		Long:  helpACLs,
 		Args:  cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
@@ -50,7 +50,7 @@ func NewACLCommand(fs afero.Fs) *cobra.Command {
 		},
 	}
 
-	command.Flags().BoolVar(&helpOperations, "help-operations", false, "Print more help about ACL operations.")
+	command.Flags().BoolVar(&helpOperations, "help-operations", false, "Print more help about ACL operations")
 
 	common.AddKafkaFlags(
 		command,

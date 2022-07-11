@@ -23,7 +23,7 @@ func newForceResetCommand(fs afero.Fs) *cobra.Command {
 	var configCacheFile string
 	cmd := &cobra.Command{
 		Use:   "force-reset [PROPERTY...]",
-		Short: "Forcibly clear a cluster configuration property on this node.",
+		Short: "Forcibly clear a cluster configuration property on this node",
 		Long: `Forcibly clear a cluster configuration property on this node.
 
 This command is not for general changes to cluster configuration: use this only

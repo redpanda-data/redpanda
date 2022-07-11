@@ -35,7 +35,7 @@ func newSeekCommand(fs afero.Fs) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "seek [GROUP] --to (start|end|timestamp) --to-group ... --topics ...",
-		Short: "Modify a group's current offsets.",
+		Short: "Modify a group's current offsets",
 		Long: `Modify a group's current offsets.
 
 This command allows you to modify a group's offsets. Sometimes, you may need to

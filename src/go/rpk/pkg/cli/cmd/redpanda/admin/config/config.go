@@ -20,7 +20,7 @@ import (
 func NewCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
-		Short: "View or modify Redpanda configuration through the admin listener.",
+		Short: "View or modify Redpanda configuration through the admin listener",
 		Args:  cobra.ExactArgs(0),
 	}
 	cmd.AddCommand(
@@ -35,7 +35,7 @@ func newPrintCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "print",
 		Aliases: []string{"dump", "list", "ls", "display"},
-		Short:   "Display the current Redpanda configuration.",
+		Short:   "Display the current Redpanda configuration",
 		Args:    cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
 			p := config.ParamsFromCommand(cmd)
@@ -65,7 +65,7 @@ func newPrintCommand(fs afero.Fs) *cobra.Command {
 func newLogLevelCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "log-level",
-		Short: "Manage a broker's log level.",
+		Short: "Manage a broker's log level",
 		Args:  cobra.ExactArgs(0),
 	}
 	cmd.AddCommand(
@@ -81,7 +81,7 @@ func newLogLevelSetCommand(fs afero.Fs) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "set [LOGGERS...]",
-		Short: "Set broker logger's log level.",
+		Short: "Set broker logger's log level",
 		Long: `Set broker logger's log level.
 
 This command temporarily changes a broker logger's log level. Each Redpanda

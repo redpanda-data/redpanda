@@ -28,7 +28,7 @@ func NewDescribeCommand(fs afero.Fs) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "describe [GROUPS...]",
-		Short: "Describe group offset status & lag.",
+		Short: "Describe group offset status & lag",
 		Long: `Describe group offset status & lag.
 
 This command describes group members, calculates their lag, and prints detailed

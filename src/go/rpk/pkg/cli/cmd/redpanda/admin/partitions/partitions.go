@@ -27,7 +27,7 @@ import (
 func NewCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "partitions",
-		Short: "View and configure Redpanda partitions through the admin listener.",
+		Short: "View and configure Redpanda partitions through the admin listener",
 		Args:  cobra.ExactArgs(0),
 	}
 	cmd.AddCommand(
@@ -41,7 +41,7 @@ func newListCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "list [BROKER ID]",
 		Aliases: []string{"ls"},
-		Short:   "List the partitions in a broker in the cluster.",
+		Short:   "List the partitions in a broker in the cluster",
 		Args:    cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			brokerID, err := strconv.Atoi(args[0])

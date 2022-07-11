@@ -30,7 +30,7 @@ func NewTopicCommand(fs afero.Fs) *cobra.Command {
 	)
 	command := &cobra.Command{
 		Use:   "topic",
-		Short: "Create, delete, produce to and consume from Redpanda topics.",
+		Short: "Create, delete, produce to and consume from Redpanda topics",
 	}
 
 	common.AddKafkaFlags(command, &configFile, &user, &password, &mechanism, &enableTLS, &certFile, &keyFile, &truststoreFile, &brokers)

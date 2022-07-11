@@ -33,7 +33,7 @@ func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
 	)
 	command := &cobra.Command{
 		Use:   "iotune",
-		Short: "Measure filesystem performance and create IO configuration file.",
+		Short: "Measure filesystem performance and create IO configuration file",
 		Run: func(cmd *cobra.Command, args []string) {
 			timeout += duration
 			p := config.ParamsFromCommand(cmd)
@@ -57,7 +57,7 @@ func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
 		"config",
 		"",
 		"Redpanda config file, if not set the file will be searched for"+
-			" in the default locations.",
+			" in the default locations",
 	)
 	command.Flags().StringVar(
 		&outputFile,

@@ -26,7 +26,7 @@ import (
 func NewCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "brokers",
-		Short: "View and configure Redpanda brokers through the admin listener.",
+		Short: "View and configure Redpanda brokers through the admin listener",
 		Args:  cobra.ExactArgs(0),
 	}
 	cmd.AddCommand(
@@ -41,7 +41,7 @@ func newListCommand(fs afero.Fs) *cobra.Command {
 	return &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
-		Short:   "List the brokers in your cluster.",
+		Short:   "List the brokers in your cluster",
 		Args:    cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
 			p := config.ParamsFromCommand(cmd)
@@ -82,7 +82,7 @@ func newListCommand(fs afero.Fs) *cobra.Command {
 func newDecommissionBroker(fs afero.Fs) *cobra.Command {
 	return &cobra.Command{
 		Use:   "decommission [BROKER ID]",
-		Short: "Decommission the given broker.",
+		Short: "Decommission the given broker",
 		Long: `Decommission the given broker.
 
 Decommissioning a broker removes it from the cluster.
@@ -116,7 +116,7 @@ leader handles the request.
 func newRecommissionBroker(fs afero.Fs) *cobra.Command {
 	return &cobra.Command{
 		Use:   "recommission [BROKER ID]",
-		Short: "Recommission the given broker if it is still decommissioning.",
+		Short: "Recommission the given broker if it is still decommissioning",
 		Long: `Recommission the given broker if is is still decommissioning.
 
 Recommissioning can stop an active decommission.

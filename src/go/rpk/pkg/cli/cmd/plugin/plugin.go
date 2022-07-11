@@ -17,7 +17,7 @@ const urlBase = "https://vectorized-public.s3.us-west-2.amazonaws.com/rpk-plugin
 func NewCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "plugin",
-		Short: "List, download, update, and remove rpk plugins.",
+		Short: "List, download, update, and remove rpk plugins",
 		Long: `List, download, update, and remove rpk plugins.
 	
 Plugins augment rpk with new commands.
@@ -76,7 +76,7 @@ func newListCommand(fs afero.Fs) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List all available plugins.",
+		Short: "List all available plugins",
 		Long: `List all available plugins.
 
 By default, this command fetches the remote manifest and prints plugins
@@ -156,7 +156,7 @@ func newInstallCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "install [PLUGIN]",
 		Aliases: []string{"download"},
-		Short:   "Install an rpk plugin.",
+		Short:   "Install an rpk plugin",
 		Long: `Install an rpk plugin.
 
 An rpk plugin must be saved in a directory that is in your $PATH. By default,
@@ -246,7 +246,7 @@ func newUninstallCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "uninstall [NAME]",
 		Aliases: []string{"rm"},
-		Short:   "Uninstall / remove an existing local plugin.",
+		Short:   "Uninstall / remove an existing local plugin",
 		Long: `Uninstall / remove an existing local plugin.
 
 This command lists locally installed plugins and removes the first plugin that

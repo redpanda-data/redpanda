@@ -27,7 +27,7 @@ func NewAddPartitionsCommand(fs afero.Fs) *cobra.Command {
 	var num int
 	cmd := &cobra.Command{
 		Use:   "add-partitions [TOPICS...] --num [#]",
-		Short: "Add partitions to existing topics.",
+		Short: "Add partitions to existing topics",
 		Args:  cobra.MinimumNArgs(1),
 		Long:  `Add partitions to existing topics.`,
 		Run: func(cmd *cobra.Command, topics []string) {
@@ -70,6 +70,6 @@ func NewAddPartitionsCommand(fs afero.Fs) *cobra.Command {
 			}
 		},
 	}
-	cmd.Flags().IntVarP(&num, "num", "n", 0, "numer of partitions to add to each topic")
+	cmd.Flags().IntVarP(&num, "num", "n", 0, "Number of partitions to add to each topic")
 	return cmd
 }

@@ -43,7 +43,7 @@ func NewProduceCommand(fs afero.Fs) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "produce [TOPIC]",
-		Short: "Produce records to a topic.",
+		Short: "Produce records to a topic",
 		Long:  helpProduce,
 		Args:  cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
@@ -160,10 +160,10 @@ func NewProduceCommand(fs afero.Fs) *cobra.Command {
 	// The following flags require parsing before we initialize our client.
 	cmd.Flags().StringVarP(&compression, "compression", "z", "snappy", "Compression to use for producing batches (none, gzip, snapy, lz4, zstd)")
 	cmd.Flags().IntVar(&acks, "acks", -1, "Number of acks required for producing (-1=all, 0=none, 1=leader)")
-	cmd.Flags().DurationVar(&timeout, "delivery-timeout", 0, "per-record delivery timeout, if non-zero, min 1s")
-	cmd.Flags().Int32VarP(&partition, "partition", "p", -1, "partition to directly produce to, if non-negative (also allows %p parsing to set partitions)")
+	cmd.Flags().DurationVar(&timeout, "delivery-timeout", 0, "Per-record delivery timeout, if non-zero, min 1s")
+	cmd.Flags().Int32VarP(&partition, "partition", "p", -1, "Partition to directly produce to, if non-negative (also allows %p parsing to set partitions)")
 
-	cmd.Flags().StringVarP(&inFormat, "format", "f", "%v\n", "input record format")
+	cmd.Flags().StringVarP(&inFormat, "format", "f", "%v\n", "Input record format")
 	cmd.Flags().StringVarP(
 		&outFormat,
 		"output-format",
@@ -173,15 +173,15 @@ func NewProduceCommand(fs afero.Fs) *cobra.Command {
 	)
 	cmd.Flags().StringArrayVarP(&recHeaders, "header", "H", nil, "Headers in format key:value to add to each record (repeatable)")
 	cmd.Flags().StringVarP(&key, "key", "k", "", "A fixed key to use for each record (parsed input keys take precedence)")
-	cmd.Flags().BoolVarP(&tombstone, "tombstone", "Z", false, "produce empty values as tombstones")
+	cmd.Flags().BoolVarP(&tombstone, "tombstone", "Z", false, "Produce empty values as tombstones")
 
 	// Deprecated
 	cmd.Flags().IntVarP(new(int), "num", "n", 1, "")
-	cmd.Flags().MarkDeprecated("num", "invoke rpk multiple times if you wish to repeat records")
+	cmd.Flags().MarkDeprecated("num", "Invoke rpk multiple times if you wish to repeat records")
 	cmd.Flags().BoolVarP(new(bool), "jvm-partitioner", "j", false, "")
-	cmd.Flags().MarkDeprecated("jvm-partitioner", "the default is now the jvm-partitioner")
+	cmd.Flags().MarkDeprecated("jvm-partitioner", "The default is now the jvm-partitioner")
 	cmd.Flags().StringVarP(new(string), "timestamp", "t", "", "")
-	cmd.Flags().MarkDeprecated("timestamp", "record timestamps are set when producing")
+	cmd.Flags().MarkDeprecated("timestamp", "Record timestamps are set when producing")
 
 	return cmd
 }

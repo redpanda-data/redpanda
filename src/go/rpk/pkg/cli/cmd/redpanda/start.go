@@ -134,7 +134,7 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 
 	command := &cobra.Command{
 		Use:   "start",
-		Short: "Start redpanda.",
+		Short: "Start redpanda",
 		FParseErrWhitelist: cobra.FParseErrWhitelist{
 			// Allow unknown flags so that arbitrary flags can be passed
 			// through to redpanda/seastar without the need to pass '--'

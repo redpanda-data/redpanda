@@ -135,7 +135,7 @@ func newExportCommand(fs afero.Fs, all *bool) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "export",
-		Short: "Export cluster configuration.",
+		Short: "Export cluster configuration",
 		Long: `Export cluster configuration.
 
 Writes out a YAML representation of the cluster configuration to a file,

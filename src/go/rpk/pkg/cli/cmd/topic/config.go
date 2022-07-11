@@ -33,7 +33,7 @@ func NewAlterConfigCommand(fs afero.Fs) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "alter-config [TOPICS...] --set key=value --delete key2,key3",
-		Short: `Set, delete, add, and remove key/value configs for a topic.`,
+		Short: `Set, delete, add, and remove key/value configs for a topic`,
 		Long: `Set, delete, add, and remove key/value configs for a topic.
 
 This command allows you to incrementally alter the configuration for multiple
@@ -132,7 +132,7 @@ valid, but does not apply it.
 	cmd.Flags().StringArrayVar(&appends, "append", nil, "key=value; Value to append to a list-of-values key (repeatable)")
 	cmd.Flags().StringArrayVar(&subtracts, "subtract", nil, "key=value; Value to remove from list-of-values key (repeatable)")
 
-	cmd.Flags().BoolVar(&dry, "dry", false, "dry run: validate the alter request, but do not apply")
+	cmd.Flags().BoolVar(&dry, "dry", false, "Dry run: validate the alter request, but do not apply")
 
 	return cmd
 }

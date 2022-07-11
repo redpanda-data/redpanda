@@ -56,11 +56,11 @@ func Execute() {
 
 	root := &cobra.Command{
 		Use:   "rpk",
-		Short: "rpk is the Redpanda CLI & toolbox.",
+		Short: "rpk is the Redpanda CLI & toolbox",
 		Long:  "",
 	}
 	root.PersistentFlags().BoolVarP(&verbose, config.FlagVerbose,
-		"v", false, "Enable verbose logging (default: false).")
+		"v", false, "Enable verbose logging (default: false)")
 
 	root.AddCommand(
 		NewGenerateCommand(fs),
@@ -113,6 +113,13 @@ func Execute() {
 			os.Exit(0)
 		}
 	}
+
+	// Cobra creates help flag as: help for <command> if you want to override
+	// that message (capitalize the first letter) then this is the way.
+	// See: spf13/cobra#480
+	walk(root, func(c *cobra.Command) {
+		c.Flags().BoolP("help", "h", false, "Help for "+c.Name())
+	})
 
 	err := root.Execute()
 	if len(os.Args) > 1 {
@@ -422,4 +429,12 @@ func (*osPluginHandler) exec(path string, args []string) error {
 		}).Run()
 	}
 	return syscall.Exec(path, args, env)
+}
+
+// walk calls f for c and all of its children.
+func walk(c *cobra.Command, f func(*cobra.Command)) {
+	f(c)
+	for _, c := range c.Commands() {
+		walk(c, f)
+	}
 }
