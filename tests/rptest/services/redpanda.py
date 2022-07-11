@@ -1330,6 +1330,24 @@ class RedpandaService(Service):
         if bad_lines:
             raise BadLogLines(bad_lines)
 
+    def search_log(self, pattern):
+        """
+        Test helper for grepping the redpanda log
+
+        :return:  true if any instances of `pattern` found
+        """
+        for node in self.nodes:
+            for line in node.account.ssh_capture(
+                    f"grep \"{pattern}\" {self.STDOUT_STDERR_CAPTURE} || true"
+            ):
+                # We got a match
+                self.logger.debug(
+                    f"Found {pattern} on node {node.name}: {line}")
+                return True
+
+        # Fall through, no matches
+        return False
+
     def decode_backtraces(self):
         """
         Decodes redpanda backtraces if any of them are present
