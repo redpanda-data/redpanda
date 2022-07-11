@@ -1769,7 +1769,7 @@ ss::future<> rm_stm::apply(model::record_batch b) {
             apply_data(bid, last_offset);
         }
     } else if (hdr.type == model::record_batch_type::tx_checkpoint) {
-        apply_checkpoint(b);
+        apply_checkpoint(std::move(b));
     }
     _insync_offset = last_offset;
 
@@ -1886,8 +1886,21 @@ void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
     }
 }
 
-void rm_stm::apply_checkpoint(
-  [[maybe_unused]] const model::record_batch& batch) {}
+void rm_stm::apply_checkpoint(const model::record_batch& batch) {
+    vassert(
+      batch.record_count() == 1, "Checkpoint batch with multiple records");
+
+    auto r = batch.copy_records();
+    auto& record = *r.begin();
+    auto key_buf = record.release_key();
+
+    auto term = serde::from_iobuf<model::term_id>(std::move(key_buf));
+
+    auto val_buf = record.release_value();
+    auto state = serde::from_iobuf<mem_state>(std::move(val_buf));
+    _parked_checkpointed_mem_state = std::move(state);
+    vlog(clusterlog.info, "Parked checkpoint state from term {}", term);
+}
 
 ss::future<model::record_batch> rm_stm::make_checkpoint_batch() {
     iobuf key;

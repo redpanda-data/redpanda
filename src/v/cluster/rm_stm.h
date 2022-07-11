@@ -551,6 +551,10 @@ private:
       _inflight_requests;
     log_state _log_state;
     mem_state _mem_state;
+    // A temporary place to park the checkpointed state from a leader node. We
+    // promote this to _mem_state only if the current node becomes the partition
+    // leader. Otherwise a purge batch will clean it up.
+    std::optional<mem_state> _parked_checkpointed_mem_state;
     ss::timer<clock_type> auto_abort_timer;
     model::timestamp _oldest_session;
     std::chrono::milliseconds _sync_timeout;
