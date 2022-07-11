@@ -5,6 +5,12 @@ Describe in plain language the motivation (bug, feature, etc.) behind the change
 <!-- Use the GitHub keyword `Fixes` to link to bug(s) this PR will fix. -->
 Fixes #ISSUE-NUMBER, Fixes #ISSUE-NUMBER, ...
 
+## UX changes
+
+Describe in plain language how this PR affects an end-user. What topic flags, configuration flags, command line flags, deprecation policies etc are added/changed. 
+
+<!-- don't ship user breaking changes. Ping PMs for help with user visible changes  -->
+
 ## Release notes
 <!--
 
