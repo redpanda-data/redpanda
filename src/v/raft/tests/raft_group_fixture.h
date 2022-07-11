@@ -275,6 +275,7 @@ struct raft_node {
           })
           .then([this] {
               tstlog.info("Stopping storage at node {}", broker.id());
+              log.reset();
               return storage.stop();
           })
           .then([this] {
