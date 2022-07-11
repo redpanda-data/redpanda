@@ -20,6 +20,8 @@
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
 #include "net/connection.h"
+#include "security/errc.h"
+#include "security/exceptions.h"
 #include "security/mtls.h"
 #include "security/scram_algorithm.h"
 #include "utils/utf8.h"
@@ -83,7 +85,9 @@ protocol::protocol(
   , _controller_api(controller_api)
   , _tx_gateway_frontend(tx_gateway_frontend)
   , _coproc_partition_manager(coproc_partition_manager)
-  , _data_policy_table(data_policy_table) {
+  , _data_policy_table(data_policy_table)
+  , _mtls_principal_mapper(
+      config::shard_local_cfg().kafka_mtls_principal_mapping_rules.bind()) {
     if (qdc_config) {
         _qdc_mon.emplace(*qdc_config);
     }
@@ -125,11 +129,36 @@ config::broker_authn_method get_authn_method(const net::connection& conn) {
       && config.enable_sasl()) {
         return config::broker_authn_method::sasl;
     }
-    // mtls_identity is currently predicated on having mapping rules
-    if (conn.get_principal_mapping().has_value()) {
-        return config::broker_authn_method::mtls_identity;
-    }
     return config::broker_authn_method::none;
+}
+
+ss::future<security::tls::mtls_state> get_mtls_principal_state(
+  const security::tls::principal_mapper& pm, net::connection& conn) {
+    using namespace std::chrono_literals;
+    return ss::with_timeout(
+             model::timeout_clock::now() + 5s, conn.get_distinguished_name())
+      .then([&pm](std::optional<ss::session_dn> dn) {
+          ss::sstring anonymous_principal;
+          if (!dn.has_value()) {
+              vlog(klog.info, "failed to fetch distinguished name");
+              return security::tls::mtls_state{anonymous_principal};
+          }
+          auto principal = pm.apply(dn->subject);
+          if (!principal) {
+              vlog(
+                klog.info,
+                "failed to extract principal from distinguished name: {}",
+                dn->subject);
+              return security::tls::mtls_state{anonymous_principal};
+          }
+
+          vlog(
+            klog.debug,
+            "got principal: {}, from distinguished name: {}",
+            *principal,
+            dn->subject);
+          return security::tls::mtls_state{*principal};
+      });
 }
 
 ss::future<> protocol::apply(net::server::resources rs) {
@@ -147,16 +176,18 @@ ss::future<> protocol::apply(net::server::resources rs) {
         ? security::sasl_server::sasl_state::initial
         : security::sasl_server::sasl_state::complete);
 
-    auto ctx = ss::make_lw_shared<connection_context>(
-      *this,
-      std::move(rs),
-      std::move(sasl),
-      authz_enabled,
-      authn_method == config::broker_authn_method::mtls_identity);
+    std::optional<security::tls::mtls_state> mtls_state;
+    if (authn_method == config::broker_authn_method::mtls_identity) {
+        mtls_state = co_await get_mtls_principal_state(
+          _mtls_principal_mapper, *rs.conn);
+    }
 
-    return ss::do_until(
-             [ctx] { return ctx->is_finished_parsing(); },
-             [ctx] { return ctx->process_one_request(); })
+    auto ctx = ss::make_lw_shared<connection_context>(
+      *this, std::move(rs), std::move(sasl), authz_enabled, mtls_state);
+
+    co_return co_await ss::do_until(
+      [ctx] { return ctx->is_finished_parsing(); },
+      [ctx] { return ctx->process_one_request(); })
       .handle_exception([ctx](std::exception_ptr eptr) {
           auto disconnected = net::is_disconnect_exception(eptr);
           if (config::shard_local_cfg().enable_sasl()) {

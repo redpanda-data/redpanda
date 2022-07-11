@@ -81,9 +81,13 @@ class AccessControlListTest(RedpandaTest):
 
             self.security.tls_provider = MTLSProvider(self.tls)
 
-        if self.security.mtls_identity_enabled(
-        ) and principal_mapping_rules is not None:
-            self.security.principal_mapping_rules = principal_mapping_rules
+        if self.security.mtls_identity_enabled():
+            if principal_mapping_rules is not None:
+                self.security.principal_mapping_rules = principal_mapping_rules
+            self.redpanda.add_extra_rp_conf({
+                'kafka_mtls_principal_mapping_rules':
+                self.security.principal_mapping_rules
+            })
 
         self.redpanda.set_security_settings(self.security)
         self.redpanda.start()

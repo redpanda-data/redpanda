@@ -167,6 +167,22 @@ std::ostream& operator<<(std::ostream& os, const principal_mapper& p) {
     return os;
 }
 
+principal_mapper::principal_mapper(
+  config::binding<std::optional<ss::sstring>> cb)
+  : _binding(std::move(cb))
+  , _rules{detail::parse_rules(_binding())} {
+    _binding.watch([this]() { _rules = detail::parse_rules(_binding()); });
+}
+
+std::optional<ss::sstring> principal_mapper::apply(std::string_view sv) const {
+    for (const auto& r : _rules) {
+        if (auto p = r.apply(sv); p.has_value()) {
+            return {std::move(p).value()};
+        }
+    }
+    return std::nullopt;
+}
+
 } // namespace security::tls
 
 // explicit instantiations so as to avoid bringing in <fmt/ranges.h> in the

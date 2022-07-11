@@ -539,6 +539,9 @@ class RedpandaService(Service):
     def set_extra_rp_conf(self, conf):
         self._extra_rp_conf = conf
 
+    def add_extra_rp_conf(self, conf):
+        self._extra_rp_conf = {**self._extra_rp_conf, **conf}
+
     def set_extra_node_conf(self, node, conf):
         assert node in self.nodes
         self._extra_node_conf[node] = conf
@@ -1335,10 +1338,6 @@ class RedpandaService(Service):
                 cert_file=RedpandaService.TLS_SERVER_CRT_FILE,
                 truststore_file=RedpandaService.TLS_CA_CRT_FILE,
             )
-            if self.mtls_identity_enabled():
-                tls_config.update(
-                    dict(principal_mapping_rules=self._security.
-                         principal_mapping_rules))
             doc = yaml.full_load(conf)
             doc["redpanda"].update(dict(kafka_api_tls=tls_config))
             conf = yaml.dump(doc)

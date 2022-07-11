@@ -83,7 +83,7 @@ get_request_context(kafka::protocol& proto, ss::input_stream<char>&& input) {
                               net::server::resources(nullptr, nullptr),
                               std::move(sasl),
                               false,
-                              false);
+                              std::nullopt);
 
                           return kafka::request_context(
                             conn,

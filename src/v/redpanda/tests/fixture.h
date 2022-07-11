@@ -414,7 +414,7 @@ public:
           net::server::resources(nullptr, nullptr),
           std::move(sasl),
           false,
-          false);
+          std::nullopt);
 
         kafka::request_header header;
         auto encoder_context = kafka::request_context(
