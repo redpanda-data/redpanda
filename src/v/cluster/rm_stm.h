@@ -219,6 +219,16 @@ public:
         }
     };
 
+    // Tracks the inflight txn metadata.
+    struct tx_inflight_info
+      : public serde::envelope<
+          tx_inflight_info,
+          serde::version<0>,
+          serde::compat_version<0>> {
+        model::term_id begin_term;
+        model::tx_seq current_seq;
+    };
+
     struct transaction_info {
         enum class status_t { ongoing, preparing, prepared, initiating };
         status_t status;
@@ -420,7 +430,9 @@ private:
         absl::flat_hash_map<model::producer_identity, model::offset> estimated;
         // a set of ongoing sessions. we use it  to prevent some client protocol
         // errors like the transactional writes outside of a transaction
-        absl::flat_hash_map<model::producer_identity, model::tx_seq> expected;
+        // we track the term id in which this transaction began.
+        absl::flat_hash_map<model::producer_identity, tx_inflight_info>
+          expected;
         // `preparing` helps to identify failed prepare requests and use them to
         // filter out stale abort requests
         absl::flat_hash_map<model::producer_identity, prepare_marker> preparing;
