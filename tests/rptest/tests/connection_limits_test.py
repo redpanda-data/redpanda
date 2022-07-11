@@ -9,6 +9,7 @@
 
 import socket
 
+from ducktape.mark import parametrize
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
 from rptest.services.rpk_producer import RpkProducer
@@ -24,7 +25,34 @@ class ConnectionLimitsTest(RedpandaTest):
     topics = (TopicSpec(partition_count=1, replication_factor=1), )
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, num_brokers=1, **kwargs)
+        super().__init__(*args, num_brokers=1, log_level='trace', **kwargs)
+
+    @cluster(num_nodes=2)
+    @parametrize(mechanism_enabled=True)
+    @parametrize(mechanism_enabled=False)
+    def test_exceed_connection_rate_quota(self, mechanism_enabled):
+        test_cfg = {"default_window_sec": 10, "default_num_windows": 1}
+        if mechanism_enabled is True:
+            test_cfg["target_quota_time_rate"] = 1
+        self.redpanda.set_cluster_config(test_cfg)
+
+        # Produce some arbitrary data...
+        producer = RpkProducer(self.test_context,
+                               self.redpanda,
+                               self.topic,
+                               msg_size=100000,
+                               msg_count=1000,
+                               produce_timeout=5)
+
+        # With the extremely small constratints on connection rates
+        # set above, the following produce workload will invoke the request
+        # rate quota mechanism (if mechanism_enabled is True)
+        producer.start()
+        producer.wait()
+
+        # To verify is this did indeed occur, check the trace logs
+        assert self.redpanda.search_log(
+            "Request rate quota exceeded") is mechanism_enabled
 
     @cluster(num_nodes=4)
     def test_exceed_broker_limit(self):
