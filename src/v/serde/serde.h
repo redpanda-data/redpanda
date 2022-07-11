@@ -174,6 +174,13 @@ template<typename T>
 inline constexpr bool is_absl_btree_set_v = is_absl_btree_set<T>::value;
 
 template<typename T>
+struct is_pair : std::false_type {};
+template<typename... Args>
+struct is_pair<std::pair<Args...>> : std::true_type {};
+template<typename T>
+inline constexpr bool is_pair_v = is_pair<T>::value;
+
+template<typename T>
 inline constexpr auto const is_serde_compatible_v
   = is_envelope_v<T>
     || (std::is_scalar_v<T>  //
@@ -188,6 +195,7 @@ inline constexpr auto const is_serde_compatible_v
     || std::is_same_v<T, iobuf>
     || std::is_same_v<T, ss::sstring>
     || std::is_same_v<T, bytes>
+    || is_pair_v<T>
     || is_absl_node_hash_set_v<T>
     || is_absl_node_hash_map_v<T>
     || is_absl_flat_hash_map_v<T>
@@ -308,6 +316,9 @@ void write(iobuf& out, T t) {
     } else if constexpr (std::is_same_v<Type, bytes>) {
         write<serde_size_t>(out, t.size());
         out.append(t.data(), t.size());
+    } else if constexpr (is_pair_v<Type>) {
+        write(out, std::move(t.first));
+        write(out, std::move(t.second));
     } else if constexpr (reflection::is_std_optional_v<Type>) {
         if (t) {
             write(out, true);
@@ -572,6 +583,12 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
           read_nested<serde_size_t>(in, bytes_left_limit));
         in.consume_to(str.size(), str.begin());
         t = str;
+    } else if constexpr (is_pair_v<Type>) {
+        auto first = read_nested<typename Type::first_type>(
+          in, bytes_left_limit);
+        auto second = read_nested<typename Type::second_type>(
+          in, bytes_left_limit);
+        t = std::make_pair(std::move(first), std::move(second));
     } else if constexpr (reflection::is_std_optional_v<Type>) {
         t = read_nested<bool>(in, bytes_left_limit)
               ? Type{read_nested<typename Type::value_type>(

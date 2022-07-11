@@ -221,6 +221,16 @@ SEASTAR_THREAD_TEST_CASE(vector_test) {
     BOOST_CHECK((m == std::vector{1, 2, 3}));
 }
 
+SEASTAR_THREAD_TEST_CASE(pair_test) {
+    auto b = iobuf();
+
+    serde::write(b, std::make_pair(1, ss::sstring{"2"}));
+
+    auto parser = iobuf_parser{std::move(b)};
+    auto const m = serde::read<std::pair<int, ss::sstring>>(parser);
+    BOOST_CHECK(m == std::make_pair(1, ss::sstring{"2"}));
+}
+
 // struct with differing sizes:
 // vector length may take different size (vint)
 // vector data may have different size (_ints.size() * sizeof(int))
