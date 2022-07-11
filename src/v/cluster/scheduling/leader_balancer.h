@@ -93,7 +93,6 @@ private:
     using reassignment = leader_balancer_strategy::reassignment;
 
     index_type build_index();
-    std::optional<model::broker_shard> find_leader_shard(const model::ntp&);
     absl::flat_hash_set<raft::group_id> muted_groups() const;
     absl::flat_hash_set<model::node_id> muted_nodes() const;
 

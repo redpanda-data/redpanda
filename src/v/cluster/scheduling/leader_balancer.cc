@@ -492,44 +492,6 @@ absl::flat_hash_set<raft::group_id> leader_balancer::muted_groups() const {
     return res;
 }
 
-std::optional<model::broker_shard>
-leader_balancer::find_leader_shard(const model::ntp& ntp) {
-    /*
-     * look up the broker_shard for ntp's leader. we simply seem to lack
-     * interfaces for making this query concise, but it is rarely needed.
-     */
-    auto leader_node = _leaders.get_leader(ntp);
-    if (!leader_node) {
-        return std::nullopt;
-    }
-
-    auto config_it = _topics.topics_map().find(
-      model::topic_namespace_view(ntp));
-    if (config_it == _topics.topics_map().end()) {
-        return std::nullopt;
-    }
-
-    // If the inital query was for a non_replicable ntp, the get_leader() call
-    // would have returned its source topic
-    for (const auto& partition : config_it->second.get_assignments()) {
-        if (partition.id != ntp.tp.partition) {
-            continue;
-        }
-
-        /*
-         * scan through the replicas until we find the leader node and then
-         * pluck out the shard from that assignment.
-         */
-        for (const auto& replica : partition.replicas) {
-            if (replica.node_id == *leader_node) {
-                return model::broker_shard{replica.node_id, replica.shard};
-            }
-        }
-    }
-
-    return std::nullopt;
-}
-
 /*
  * builds an index that maps each core in the cluster to the set of replica
  * groups such that the leader of each mapped replica group is on the given
