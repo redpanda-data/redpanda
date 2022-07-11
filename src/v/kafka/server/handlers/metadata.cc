@@ -14,6 +14,7 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
+#include "kafka/cluster_limits.h"
 #include "kafka/server/errors.h"
 #include "kafka/server/handlers/details/leader_epoch.h"
 #include "kafka/server/handlers/details/security.h"
@@ -422,4 +423,31 @@ ss::future<response_ptr> metadata_handler::handle(
     co_return co_await ctx.respond(std::move(reply));
 }
 
+size_t metadata_memory_estimator(size_t) {
+    // We cannot make a precise estimate of the size of a metadata response by
+    // examining only the size of the request (nor even by examining the entire
+    // request) since the response depends on the number of partitions in the
+    // cluster. Instead, we return a conservative estimate based on the soft
+    // limit of total cluster-wide partition counts, mutiplied by an empirical
+    // "bytes per partition".
+    //
+    // The bytes per partition is roughly split evenly between the number of
+    // bytes needed to encode the response (about 100 bytes per partition,
+    // assuming 3 replicas) as well as the input structure to the encoder (i.e.,
+    // the in-memory representation of that same metadata).
+    //
+    // This estimate is additionally inexact in the sense that more a higher
+    // replication factor would increase the per-partition size without bound.
+    // An additional inaccuracy is that we don't consider topics but lump all
+    // partitions together: this works for moderate to large partition counts,
+    // but it likely that a cluster with (for example) many topics with only 1
+    // partition each might produce a larger metadata response than this
+    // calculation accounts for.
+
+    // Empirical highwater memory allocated per partition while processing a
+    // metadata response.
+    constexpr size_t bytes_per_partition = 200;
+
+    return max_clusterwide_partitions * bytes_per_partition;
+}
 } // namespace kafka
