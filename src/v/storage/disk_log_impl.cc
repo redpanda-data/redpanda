@@ -732,6 +732,7 @@ ss::future<> disk_log_impl::new_segment(
                 _segs.add(std::move(h));
                 _probe.segment_created();
                 _stm_manager->make_snapshot_in_background();
+                _stm_dirty_bytes_units.return_all();
             });
       });
 }
@@ -1347,6 +1348,23 @@ int64_t disk_log_impl::compaction_backlog() const {
     }
 
     return backlog;
+}
+
+/**
+ * Record appended bytes & maybe trigger STM snapshots if they have
+ * exceeded a threshold.
+ */
+void disk_log_impl::wrote_stm_bytes(size_t byte_size) {
+    auto take_result = _manager.resources().stm_take_bytes(byte_size);
+    if (_stm_dirty_bytes_units.count()) {
+        _stm_dirty_bytes_units.adopt(std::move(take_result.units));
+    } else {
+        _stm_dirty_bytes_units = std::move(take_result.units);
+    }
+    if (take_result.checkpoint_hint) {
+        _stm_manager->make_snapshot_in_background();
+        _stm_dirty_bytes_units.return_all();
+    }
 }
 
 storage_resources& disk_log_impl::resources() { return _manager.resources(); }

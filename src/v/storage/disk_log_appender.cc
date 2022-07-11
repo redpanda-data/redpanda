@@ -123,6 +123,10 @@ disk_log_appender::append_batch_to_segment(const model::record_batch& batch) {
         auto& p = _log.get_probe();
         p.add_bytes_written(r.byte_size);
         p.batch_written();
+
+        // Register increase in dirty bytes since last STM snapshot
+        _log.wrote_stm_bytes(r.byte_size);
+
         // substract the bytes from the append
         // take the min because _bytes_left_in_segment is optimistic
         _bytes_left_in_segment -= std::min(_bytes_left_in_segment, r.byte_size);
