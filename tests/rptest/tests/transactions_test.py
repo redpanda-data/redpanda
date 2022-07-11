@@ -257,6 +257,89 @@ class TransactionsTest(RedpandaTest):
         producer.abort_transaction()
 
     @cluster(num_nodes=3)
+    def graceful_leadership_transfer_test(self):
+
+        producer = ck.Producer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'transactional.id': '0',
+            'transaction.timeout.ms': 10000,
+        })
+
+        producer.init_transactions()
+        producer.begin_transaction()
+
+        count = 0
+        partition = 0
+        records_per_add = 10
+
+        def add_records():
+            nonlocal count
+            nonlocal partition
+            for i in range(count, count + records_per_add):
+                producer.produce(self.input_t.name,
+                                 str(i),
+                                 str(i),
+                                 partition=partition,
+                                 on_delivery=self.on_delivery)
+            producer.flush()
+            count = count + records_per_add
+
+        def graceful_transfer():
+            # Issue a graceful leadership transfer.
+            old_leader = self.admin.get_partition_leader(
+                namespace="kafka",
+                topic=self.input_t.name,
+                partition=partition)
+            self.admin.transfer_leadership_to(namespace="kafka",
+                                              topic=self.input_t.name,
+                                              partition=partition,
+                                              target_id=None)
+
+            def leader_is_changed():
+                new_leader = self.admin.get_partition_leader(
+                    namespace="kafka",
+                    topic=self.input_t.name,
+                    partition=partition)
+                return (new_leader != -1) and (new_leader != old_leader)
+
+            wait_until(leader_is_changed,
+                       timeout_sec=30,
+                       backoff_sec=2,
+                       err_msg="Failed to establish current leader")
+
+        # Add some records
+        add_records()
+        # Issue a leadership transfer
+        graceful_transfer()
+        # Add some more records
+        add_records()
+        # Issue another leadership transfer
+        graceful_transfer()
+        # Issue a commit
+        producer.commit_transaction()
+
+        consumer = ck.Consumer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'group.id': "test",
+            'auto.offset.reset': 'earliest',
+            'enable.auto.commit': False,
+        })
+        try:
+            consumer.subscribe([self.input_t])
+            records = []
+            while len(records) != count:
+                records.extend(
+                    self.consume(consumer, max_records=count, timeout_s=10))
+            assert len(
+                records
+            ) == count, f"Not all records consumed, expected {count}"
+            keys = set([int(r.key()) for r in records])
+            assert all(i in keys
+                       for i in range(0, count)), f"Missing records {keys}"
+        finally:
+            consumer.close()
+
+    @cluster(num_nodes=3)
     def graceful_leadership_transfer_tx_coordinator_test(self):
 
         p_count = 10
