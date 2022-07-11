@@ -1502,13 +1502,17 @@ ss::future<bool> rm_stm::sync(model::timeout_clock::duration timeout) {
     auto ready = co_await persisted_stm::sync(timeout);
     if (ready) {
         if (_mem_state.term != _insync_term) {
-            // There is a term change, issue a checkpoint purge to followers
-            // All other replicate ops need to wait until this finishes, this is
-            // so that the followers clean up the state before we start applying
-            // changes to the in memory state.
-            co_await _checkpoint_applied_replicate.with(
-              [this]() { return replicate_checkpoint_applied(_insync_term); });
-            _mem_state = mem_state{.term = _insync_term};
+            // There is a term change and we are the new leader. Two main steps
+            // here.
+            // 1. Reconcile the mem state: Promotes the parked checkpoint state
+            // into _mem_state.
+            // 2. Notify all the new followers that the checkpoint has been
+            // applied before we
+            //    allow clients to progress.
+            co_await _checkpoint_applied_replicate.with([this]() {
+                reconcile_mem_state();
+                return replicate_checkpoint_applied(_insync_term);
+            });
         }
     }
     co_return ready;
@@ -1960,6 +1964,25 @@ ss::future<> rm_stm::replicate_checkpoint_applied(model::term_id term) {
     }
     vlog(clusterlog.info, "Issued checkpoint applied batch with term {}", term);
     co_return;
+}
+
+void rm_stm::reconcile_mem_state() {
+    if (!_c->is_leader()) return;
+    if (!_parked_checkpointed_mem_state) return;
+    _mem_state = std::move(_parked_checkpointed_mem_state.value());
+    _parked_checkpointed_mem_state = std::nullopt;
+    auto source_term = _mem_state.term;
+    _mem_state.term = _insync_term; // Reset to current in sync term.
+    // Reset the tx expiration timers. This can have the side effect of txns
+    // expiring later than expected.
+    for (auto& [k, v] : _mem_state.expiration) {
+        track_tx(
+          k, std::chrono::duration_cast<std::chrono::milliseconds>(v.timeout));
+    }
+    vlog(
+      clusterlog.info,
+      "Successfully reconciled checkpointed state from term {}",
+      source_term);
 }
 
 ss::future<> rm_stm::checkpoint_in_memory_state() {

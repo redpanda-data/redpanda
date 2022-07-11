@@ -359,9 +359,11 @@ private:
     void apply_checkpoint(const model::record_batch&);
     // Applies tx_checkpoint_applied batch.
     void apply_checkpoint_applied();
+    void reconcile_mem_state();
 
     ss::future<> reduce_aborted_list();
     ss::future<> offload_aborted_txns();
+
     // The state of this state machine maybe change via two paths
     //
     //   - by reading the already replicated commands from raft and
