@@ -12,6 +12,7 @@ package cmd
 import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cluster"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cluster/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cluster/license"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cluster/maintenance"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/group"
@@ -54,11 +55,13 @@ func NewClusterCommand(fs afero.Fs) *cobra.Command {
 	offsets.Deprecated = "replaced by 'rpk group describe'"
 	offsets.Hidden = true
 	offsets.Use = "offsets"
-	command.AddCommand(offsets)
-
-	command.AddCommand(config.NewConfigCommand(fs))
-	command.AddCommand(maintenance.NewMaintenanceCommand(fs))
-	command.AddCommand(cluster.NewHealthOverviewCommand(fs))
+	command.AddCommand(
+		cluster.NewHealthOverviewCommand(fs),
+		config.NewConfigCommand(fs),
+		license.NewLicenseCommand(fs),
+		maintenance.NewMaintenanceCommand(fs),
+		offsets,
+	)
 
 	return command
 }
