@@ -80,6 +80,7 @@ class Admin:
 
         retries = Retry(status=5,
                         connect=0,
+                        read=0,
                         backoff_factor=1,
                         status_forcelist=retry_codes,
                         method_whitelist=None,
