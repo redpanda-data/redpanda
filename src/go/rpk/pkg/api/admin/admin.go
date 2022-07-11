@@ -499,16 +499,23 @@ func maybeUnmarshalRespInto(
 
 // sendAndReceive sends a request and returns the response. If body is
 // non-nil, this json encodes the body and sends it with the request.
+// If the body is already an io.Reader, the reader is used directly
+// without marshaling.
 func (a *AdminAPI) sendAndReceive(
 	ctx context.Context, method, url string, body interface{}, retryable bool,
 ) (*http.Response, error) {
 	var r io.Reader
 	if body != nil {
-		bs, err := json.Marshal(body)
-		if err != nil {
-			return nil, fmt.Errorf("unable to encode request body for %s %s: %w", method, url, err) // should not happen
+		// We might be passing io reader already as body, e.g: license file.
+		if v, ok := body.(io.Reader); ok {
+			r = v
+		} else {
+			bs, err := json.Marshal(body)
+			if err != nil {
+				return nil, fmt.Errorf("unable to encode request body for %s %s: %w", method, url, err) // should not happen
+			}
+			r = bytes.NewBuffer(bs)
 		}
-		r = bytes.NewBuffer(bs)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, url, r)
@@ -549,7 +556,7 @@ func (a *AdminAPI) sendAndReceive(
 		if err != nil {
 			return nil, fmt.Errorf("request %s %s failed: %s, unable to read body: %w", method, url, status, err)
 		}
-		return nil, &HTTPResponseError{Response: res, Body: resBody}
+		return nil, &HTTPResponseError{Response: res, Body: resBody, Method: method, URL: url}
 	}
 
 	return res, nil
@@ -562,6 +569,6 @@ func (he HTTPResponseError) DecodeGenericErrorBody() (GenericErrorBody, error) {
 }
 
 func (he HTTPResponseError) Error() string {
-	return fmt.Sprintf("request %s %s failed: %s, body: %q",
+	return fmt.Sprintf("request %s %s failed: %s, body: %q\n",
 		he.Method, he.URL, http.StatusText(he.Response.StatusCode), he.Body)
 }
