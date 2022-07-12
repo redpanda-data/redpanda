@@ -11,11 +11,11 @@
 #include "cluster/scheduling/leader_balancer.h"
 
 #include "cluster/logger.h"
+#include "cluster/members_table.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/scheduling/leader_balancer_greedy.h"
 #include "cluster/shard_table.h"
 #include "cluster/topic_table.h"
-#include "cluster/members_table.h"
 #include "model/namespace.h"
 #include "random/generators.h"
 #include "rpc/types.h"
@@ -130,6 +130,24 @@ void leader_balancer::on_leadership_change(
     }
 }
 
+void leader_balancer::on_maintenance_change(
+  model::node_id, model::maintenance_state ms) {
+    if (!_enabled()) {
+        return;
+    }
+
+    if (!_raft0->is_elected_leader()) {
+        return;
+    }
+
+    // if a node transitions out of maintenance wake up the balancer early to
+    // transfer leadership back to it.
+    if (ms == model::maintenance_state::inactive) {
+        _timer.cancel();
+        _timer.arm(leader_activation_delay);
+    }
+}
+
 void leader_balancer::check_register_leadership_change_notification() {
     if (!_leadership_change_notify_handle && _in_flight_changes.size() > 0) {
         _leadership_change_notify_handle
@@ -156,6 +174,10 @@ ss::future<> leader_balancer::start() {
       std::bind_front(
         std::mem_fn(&leader_balancer::check_if_controller_leader), this));
 
+    _maintenance_state_notify_handle
+      = _members.register_maintenance_state_change_notification(std::bind_front(
+        std::mem_fn(&leader_balancer::on_maintenance_change), this));
+
     /*
      * register_leadership_notification above may run callbacks synchronously
      * during registration, so make sure the timer is unarmed before arming.
@@ -172,6 +194,8 @@ ss::future<> leader_balancer::start() {
 ss::future<> leader_balancer::stop() {
     _leaders.unregister_leadership_change_notification(
       _raft0->ntp(), _leader_notify_handle);
+    _members.unregister_maintenance_state_change_notification(
+      _maintenance_state_notify_handle);
     _timer.cancel();
     return _gate.close();
 }
@@ -475,7 +499,8 @@ absl::flat_hash_set<model::node_id> leader_balancer::muted_nodes() const {
                 nodes.insert(follower.id);
                 vlog(
                   clusterlog.info,
-                  "Leadership rebalancer muting node {} in a maintenance state.",
+                  "Leadership rebalancer muting node {} in a maintenance "
+                  "state.",
                   follower.id);
             }
         }

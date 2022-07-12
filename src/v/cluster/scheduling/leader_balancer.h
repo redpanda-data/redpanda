@@ -108,6 +108,8 @@ private:
     void on_leadership_change(
       model::ntp, model::term_id, std::optional<model::node_id>);
 
+    void on_maintenance_change(model::node_id, model::maintenance_state);
+
     void check_register_leadership_change_notification();
     void check_unregister_leadership_change_notification();
 
@@ -173,6 +175,7 @@ private:
     cluster::notification_id_type _leader_notify_handle;
     std::optional<cluster::notification_id_type>
       _leadership_change_notify_handle;
+    cluster::notification_id_type _maintenance_state_notify_handle;
     topic_table& _topics;
     partition_leaders_table& _leaders;
     members_table& _members;
