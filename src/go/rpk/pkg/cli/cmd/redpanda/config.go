@@ -67,6 +67,7 @@ partial json/yaml config objects:
 			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
+			cfg = cfg.FileOrDefaults() // we set fields in the raw file without writing env / flag overrides
 
 			if format == "single" {
 				fmt.Println("'--format single' is deprecated, either remove it or use yaml/json")

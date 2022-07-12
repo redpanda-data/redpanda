@@ -184,3 +184,151 @@ func TestInitNode(t *testing.T) {
 		})
 	}
 }
+
+// This is a top level command test, individual cases for set are
+// tested in 'rpk/pkg/config/config_test.go'.
+func TestSetCommand(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		cfgFile string
+		exp     string
+		args    []string
+	}{
+		{
+			name: "set without config file on disk",
+			exp: `config_file: /etc/redpanda/redpanda.yaml
+redpanda:
+    data_directory: /var/lib/redpanda/data
+    node_id: 0
+    rack: redpanda-rack
+    seed_servers: []
+    rpc_server:
+        address: 0.0.0.0
+        port: 33145
+    kafka_api:
+        - address: 0.0.0.0
+          port: 9092
+    admin:
+        - address: 0.0.0.0
+          port: 9644
+    developer_mode: true
+rpk:
+    enable_usage_stats: false
+    tune_network: false
+    tune_disk_scheduler: false
+    tune_disk_nomerges: false
+    tune_disk_write_cache: false
+    tune_disk_irq: false
+    tune_fstrim: false
+    tune_cpu: false
+    tune_aio_events: false
+    tune_clocksource: false
+    tune_swappiness: false
+    tune_transparent_hugepages: false
+    enable_memory_locking: false
+    tune_coredump: false
+    coredump_dir: /var/lib/redpanda/coredump
+    tune_ballast_file: false
+    overprovisioned: false
+pandaproxy: {}
+schema_registry: {}
+`,
+			args: []string{"redpanda.rack", "redpanda-rack"},
+		},
+		{
+			name: "set with loaded config",
+			cfgFile: `config_file: /etc/redpanda/redpanda.yaml
+redpanda:
+    data_directory: ""
+    node_id: 0
+    rack: redpanda-rack
+    seed_servers: []
+    rpc_server:
+        address: 0.0.0.0
+        port: 33145
+    kafka_api:
+        - address: 0.0.0.0
+          port: 9092
+    admin:
+        - address: 0.0.0.0
+          port: 9644
+    developer_mode: true
+rpk:
+    enable_usage_stats: false
+    tune_network: false
+    tune_disk_scheduler: false
+    tune_disk_nomerges: false
+    tune_disk_write_cache: false
+    tune_disk_irq: false
+    tune_fstrim: false
+    tune_cpu: false
+    tune_aio_events: false
+    tune_clocksource: false
+    tune_swappiness: false
+    tune_transparent_hugepages: false
+    enable_memory_locking: false
+    tune_coredump: false
+    tune_ballast_file: false
+    overprovisioned: false
+`,
+			exp: `config_file: /etc/redpanda/redpanda.yaml
+redpanda:
+    node_id: 0
+    rack: redpanda-rack
+    seed_servers: []
+    rpc_server:
+        address: 0.0.0.0
+        port: 33145
+    kafka_api:
+        - address: 0.0.0.0
+          port: 9092
+    admin:
+        - address: 0.0.0.0
+          port: 9644
+    developer_mode: true
+rpk:
+    enable_usage_stats: true
+    tune_network: false
+    tune_disk_scheduler: false
+    tune_disk_nomerges: false
+    tune_disk_write_cache: false
+    tune_disk_irq: false
+    tune_fstrim: false
+    tune_cpu: false
+    tune_aio_events: false
+    tune_clocksource: false
+    tune_swappiness: false
+    tune_transparent_hugepages: false
+    enable_memory_locking: false
+    tune_coredump: false
+    tune_ballast_file: false
+    overprovisioned: false
+`,
+			args: []string{"rpk.enable_usage_stats", "true"},
+		},
+	} {
+		fs := afero.NewMemMapFs()
+
+		// We create a config file in default redpanda location
+		if test.cfgFile != "" {
+			err := afero.WriteFile(fs, "/etc/redpanda/redpanda.yaml", []byte(test.cfgFile), 0o644)
+			if err != nil {
+				t.Errorf("unexpected failure writing passed config file: %v", err)
+			}
+		}
+
+		c := set(fs)
+		c.SetArgs(test.args)
+		err := c.Execute()
+		if err != nil {
+			t.Errorf("error during command execution: %v", err)
+		}
+
+		// Read back from that default location and compare.
+		file, err := afero.ReadFile(fs, "/etc/redpanda/redpanda.yaml")
+		if err != nil {
+			t.Errorf("unexpected failure reading config file: %v", err)
+		}
+		require.Equal(t, test.exp, string(file))
+	}
+}
