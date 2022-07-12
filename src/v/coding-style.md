@@ -110,7 +110,7 @@ void a_function() {
 
 An exception is namespaces -- the body is _not_ indented, to prevent files that are almost 100% whitespace left margin.
 
-When making a change, if you need to insert an indentation level, you can temporarily break the rules by insering a half-indent, so that the patch is easily reviewable:
+When making a change, if you need to insert an indentation level, you can temporarily break the rules by inserting a half-indent, so that the patch is easily reviewable:
 
 ```c++
 void a_function() {
