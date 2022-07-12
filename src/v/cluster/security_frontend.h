@@ -54,6 +54,8 @@ public:
       std::vector<security::acl_binding_filter>,
       model::timeout_clock::duration);
 
+    ss::future<std::error_code> maybe_create_bootstrap_user();
+
 private:
     ss::future<std::vector<errc>> do_create_acls(
       std::vector<security::acl_binding>, model::timeout_clock::duration);

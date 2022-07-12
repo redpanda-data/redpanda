@@ -30,6 +30,7 @@
 #include "rpc/errc.h"
 #include "rpc/types.h"
 #include "security/authorizer.h"
+#include "security/scram_algorithm.h"
 
 #include <seastar/core/coroutine.hh>
 
@@ -306,6 +307,61 @@ security_frontend::dispatch_delete_acls_to_leader(
           }
           return std::move(r.value().results);
       });
+}
+
+/**
+ * For use during cluster creation, if RP_BOOTSTRAP_USER is set
+ * then write a user creation message to the controller log.
+ *
+ * @returns an error code if controller log write failed.  If the
+ *          environment variable is missing or malformed this is
+ *          not considered an error.
+ *
+ */
+ss::future<std::error_code> security_frontend::maybe_create_bootstrap_user() {
+    static const ss::sstring bootstrap_user_env_key{"RP_BOOTSTRAP_USER"};
+
+    auto creds_str_ptr = std::getenv(bootstrap_user_env_key.c_str());
+    if (creds_str_ptr == nullptr) {
+        // Environment variable is not set
+        co_return errc::success;
+    }
+
+    ss::sstring creds_str = creds_str_ptr;
+    auto colon = creds_str.find(":");
+    if (colon == ss::sstring::npos || colon == creds_str.size() - 1) {
+        // Malformed value.  Do not log the value, it may be malformed
+        // but it is still a secret.
+        vlog(
+          clusterlog.warn,
+          "Invalid value of {} (expected \"username:password\")",
+          bootstrap_user_env_key);
+        co_return errc::success;
+    }
+
+    auto username = security::credential_user{creds_str.substr(0, colon)};
+    auto password = creds_str.substr(colon + 1);
+    auto credentials = security::scram_sha256::make_credentials(
+      password, security::scram_sha256::min_iterations);
+
+    auto err = co_await create_user(
+      username, credentials, model::timeout_clock::now() + 5s);
+
+    if (err) {
+        vlog(
+          clusterlog.warn,
+          "Failed to apply {}: {}",
+          bootstrap_user_env_key,
+          err.message());
+    } else {
+        vlog(
+          clusterlog.info,
+          "Created user '{}' via {}",
+          username,
+          bootstrap_user_env_key);
+    }
+
+    co_return err;
 }
 
 } // namespace cluster
