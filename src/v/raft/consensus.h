@@ -123,6 +123,11 @@ public:
     // Replace configuration of raft group with given set of nodes
     ss::future<std::error_code>
       replace_configuration(std::vector<model::broker>, model::revision_id);
+    /**
+     * Replace configuration, uses revision provided with brokers
+     */
+    ss::future<std::error_code>
+      replace_configuration(std::vector<broker_revision>, model::revision_id);
     // Abort ongoing configuration change - may cause data loss
     ss::future<std::error_code> abort_configuration_change(model::revision_id);
     // Revert current configuration change - this is safe and will never cause

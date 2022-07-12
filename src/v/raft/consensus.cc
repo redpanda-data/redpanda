@@ -994,6 +994,18 @@ ss::future<std::error_code> consensus::replace_configuration(
       });
 }
 
+ss::future<std::error_code> consensus::replace_configuration(
+  std::vector<raft::broker_revision> new_brokers,
+  model::revision_id new_revision) {
+    return change_configuration(
+      [new_brokers = std::move(new_brokers),
+       new_revision](group_configuration current) mutable {
+          current.replace(std::move(new_brokers), new_revision);
+          current.set_revision(new_revision);
+          return result<group_configuration>(std::move(current));
+      });
+}
+
 template<typename Func>
 ss::future<std::error_code>
 consensus::interrupt_configuration_change(model::revision_id revision, Func f) {

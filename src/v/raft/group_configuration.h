@@ -23,6 +23,11 @@
 
 namespace raft {
 
+struct broker_revision {
+    model::broker broker;
+    model::revision_id rev;
+};
+
 static constexpr model::revision_id no_revision{};
 class vnode : public serde::envelope<vnode, serde::version<0>> {
 public:
@@ -118,6 +123,7 @@ public:
     void add(std::vector<model::broker>, model::revision_id);
     void remove(const std::vector<model::node_id>&);
     void replace(std::vector<model::broker>, model::revision_id);
+    void replace(std::vector<broker_revision>, model::revision_id);
 
     /**
      * Updating broker configuration. This operation does not require entering
