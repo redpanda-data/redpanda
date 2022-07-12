@@ -14,7 +14,6 @@ rp_test(
 )
 
 set(srcs
-  s3_imposter_fixture.cc
   consumer_groups_test.cc
   member_test.cc
   group_test.cc
