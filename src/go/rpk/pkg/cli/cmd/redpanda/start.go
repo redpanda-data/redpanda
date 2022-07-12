@@ -152,6 +152,13 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("unable to load config file: %s", err)
 			}
+			// We set fields in the raw file without writing rpk specific env
+			// or flag overrides. This command itself has all redpanda specific
+			// flags installed, and handles redpanda specific env vars itself.
+			// The magic `--set` flag is what modifies any redpanda.yaml fields.
+			// Thus, we can ignore any env / flags that would come from rpk
+			// configuration itself.
+			cfg = cfg.FileOrDefaults()
 
 			if len(configKvs) > 0 {
 				if err = setConfig(cfg, configKvs); err != nil {

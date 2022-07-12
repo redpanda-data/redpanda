@@ -14,9 +14,7 @@ package redpanda
 
 import (
 	"bytes"
-	"net"
 	"os"
-	"strconv"
 	"testing"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -194,10 +192,6 @@ func TestStartCommand(t *testing.T) {
 				path,
 			)
 			c := config.Default()
-			// Adding unset default that get added on first load.
-			b0 := c.Redpanda.KafkaAPI[0]
-			c.Rpk.KafkaAPI.Brokers = []string{net.JoinHostPort(b0.Address, strconv.Itoa(b0.Port))}
-			c.Rpk.AdminAPI.Addresses = []string{"127.0.0.1:9644"}
 
 			conf, err := new(config.Params).Load(fs)
 			require.NoError(st, err)

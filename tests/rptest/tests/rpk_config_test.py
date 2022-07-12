@@ -53,15 +53,9 @@ redpanda:
           port: 9644
     developer_mode: true
 rpk:
-    admin_api:
-        addresses:
-            - 127.0.0.1:9644
     coredump_dir: /var/lib/redpanda/coredump
     enable_memory_locking: false
     enable_usage_stats: false
-    kafka_api:
-        brokers:
-            - 0.0.0.0:9092    
     overprovisioned: false
     tune_aio_events: false
     tune_ballast_file: false
@@ -182,9 +176,6 @@ schema_registry: {}
         rpk.config_set(key, value, format='json')
 
         expected_config = yaml.full_load('''
-admin_api:
-    addresses:
-        - 127.0.0.1:9644
 coredump_dir: /var/lib/redpanda/coredump
 enable_memory_locking: false
 enable_usage_stats: false  
@@ -209,12 +200,6 @@ tune_transparent_hugepages: false
 
             with open(os.path.join(d, 'redpanda.yaml')) as f:
                 actual_config = yaml.full_load(f.read())
-
-                assert actual_config['rpk']['kafka_api'] is not None
-
-                # Delete 'kafka_api' so they can be compared since the
-                # brokers change depending on the container it's running
-                del actual_config['rpk']['kafka_api']
 
                 if actual_config['rpk'] != expected_config:
                     self.logger.error("Configs differ")
