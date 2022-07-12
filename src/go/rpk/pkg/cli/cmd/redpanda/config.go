@@ -105,6 +105,7 @@ func bootstrap(fs afero.Fs) *cobra.Command {
 			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
+			cfg = cfg.FileOrDefaults() // we modify fields in the raw file without writing env / flag overrides
 
 			seeds, err := parseSeedIPs(ips)
 			out.MaybeDieErr(err)
@@ -168,6 +169,7 @@ func initNode(fs afero.Fs) *cobra.Command {
 			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
+			cfg = cfg.FileOrDefaults() // we modify fields in the raw file without writing env / flag overrides
 
 			// Don't reset the node's UUID if it has already been set.
 			if cfg.NodeUUID == "" {
