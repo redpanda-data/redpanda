@@ -723,6 +723,11 @@ ss::future<> members_backend::reallocate_replica_set(
               meta.current_replica_set,
               meta.new_replica_set,
               error.message());
+            if (error == errc::no_update_in_progress) {
+                // mark reallocation as finished, reallocations will be
+                // recalculated if required
+                meta.state = reallocation_state::finished;
+            }
             co_return;
         }
         // success, update state and move on
