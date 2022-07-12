@@ -1053,6 +1053,33 @@ if ({{ cond }}) {
 {%- endif %}
 {% endmacro %}
 
+{% macro nullable_version_read_guard(field, flex, fname) %}
+{%- set guard_enum = field.nullable_versions().guard_enum %}
+{%- set e, cond = field.nullable_versions()._guard() %}
+{%- set decoder, named_type = field.decoder(flex) %}
+{%- if field.has_non_nullable_decoder(flex) %}
+{%- if e == guard_enum.NO_GUARD %}
+{
+{%- else %}
+if({{cond}}){
+{%- endif %}
+    auto tmp = reader.{{ decoder }};
+    if (tmp) {
+{%- if named_type == "kafka::produce_request_record_data" %}
+        {{ fname }} = {{ named_type }}(std::move(*tmp), version);
+{%- else %}
+        {{ fname }} = {{ named_type }}(std::move(*tmp));
+{%- endif %}
+    }
+}
+{%- if e == guard_enum.GUARD and field.has_non_nullable_decoder(flex) %}
+{%- set nn_decoder, named_type = field.non_nullable_decoder(flex) %} else {
+    {{ fname }} = {{ named_type }}(reader.{{ nn_decoder }});
+}
+{%- endif %}
+{%- endif %}
+{%- endmacro %}
+
 {% macro field_encoder(field, methods, obj, writer = "writer") %}
 {%- set flex = methods|length > 1 %}
 {%- if obj %}
@@ -1128,16 +1155,7 @@ if ({{ cond }}) {
 {%- if named_type == None %}
 {{ fname }} = reader.{{ decoder }};
 {%- elif field.nullable() %}
-{
-    auto tmp = reader.{{ decoder }};
-    if (tmp) {
-{%- if named_type == "kafka::produce_request_record_data" %}
-        {{ fname }} = {{ named_type }}(std::move(*tmp), version);
-{%- else %}
-        {{ fname }} = {{ named_type }}(std::move(*tmp));
-{%- endif %}
-    }
-}
+{{- nullable_version_read_guard(field, flex, fname) }}
 {%- else %}
 {{ fname }} = {{ named_type }}(reader.{{ decoder }});
 {%- endif %}
