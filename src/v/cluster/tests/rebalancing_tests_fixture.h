@@ -26,7 +26,9 @@ class rebalancing_tests_fixture : public cluster_test_fixture {
 public:
     rebalancing_tests_fixture()
       : test_logger("rebalancing-test") {
-        set_configuration("enable_auto_rebalance_on_node_add", true);
+        set_configuration(
+          "partition_autobalancing_mode",
+          model::partition_autobalancing_mode::node_add_remove);
     }
 
     ~rebalancing_tests_fixture() {
@@ -61,7 +63,9 @@ public:
         auto nid = model::node_id(id);
         apps.emplace(nid, create_node_application(nid));
         set_configuration("disable_metrics", true);
-        set_configuration("enable_auto_rebalance_on_node_add", true);
+        set_configuration(
+          "partition_autobalancing_mode",
+          model::partition_autobalancing_mode::node_add_remove);
     }
 
     cluster::topic_configuration create_topic_cfg(

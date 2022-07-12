@@ -32,7 +32,7 @@ class TransactionsTest(RedpandaTest):
             "transaction_coordinator_replication": 3,
             "id_allocator_replication": 3,
             "enable_leader_balancer": False,
-            "enable_auto_rebalance_on_node_add": False
+            "partition_autobalancing_mode": "off",
         }
 
         super(TransactionsTest, self).__init__(test_context=test_context,

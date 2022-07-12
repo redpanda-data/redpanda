@@ -28,6 +28,7 @@
 #include "cluster/members_table.h"
 #include "cluster/metadata_dissemination_service.h"
 #include "cluster/metrics_reporter.h"
+#include "cluster/partition_balancer_backend.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/partition_manager.h"
 #include "cluster/raft0_utils.h"
@@ -335,6 +336,29 @@ ss::future<> controller::start() {
       })
       .then([this] {
           return _metrics_reporter.invoke_on(0, &metrics_reporter::start);
+      })
+      .then([this] {
+          return _partition_balancer.start_single(
+            _raft0,
+            std::ref(_stm),
+            std::ref(_tp_state),
+            std::ref(_hm_frontend),
+            std::ref(_partition_allocator),
+            std::ref(_tp_frontend),
+            config::shard_local_cfg().partition_autobalancing_mode.bind(),
+            config::shard_local_cfg()
+              .partition_autobalancing_node_availability_timeout_sec.bind(),
+            config::shard_local_cfg()
+              .partition_autobalancing_max_disk_usage_percent.bind(),
+            config::shard_local_cfg()
+              .partition_autobalancing_tick_interval_ms.bind(),
+            config::shard_local_cfg()
+              .partition_autobalancing_movement_batch_size_bytes.bind());
+      })
+      .then([this] {
+          return _partition_balancer.invoke_on(
+            partition_balancer_backend::shard,
+            &partition_balancer_backend::start);
       });
 }
 
@@ -357,6 +381,7 @@ ss::future<> controller::stop() {
         auto stop_leader_balancer = _leader_balancer ? _leader_balancer->stop()
                                                      : ss::now();
         return stop_leader_balancer
+          .then([this] { return _partition_balancer.stop(); })
           .then([this] { return _metrics_reporter.stop(); })
           .then([this] { return _feature_manager.stop(); })
           .then([this] { return _hm_frontend.stop(); })

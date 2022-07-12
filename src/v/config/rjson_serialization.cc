@@ -155,4 +155,10 @@ void rjson_serialize(
     stringize(w, v);
 }
 
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const model::partition_autobalancing_mode& v) {
+    stringize(w, v);
+}
+
 } // namespace json

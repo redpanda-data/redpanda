@@ -22,6 +22,7 @@
 #include "cluster/metadata_dissemination_handler.h"
 #include "cluster/metadata_dissemination_service.h"
 #include "cluster/node/local_monitor.h"
+#include "cluster/partition_balancer_rpc_handler.h"
 #include "cluster/partition_manager.h"
 #include "cluster/rm_partition_frontend.h"
 #include "cluster/security_frontend.h"
@@ -467,7 +468,8 @@ void application::configure_admin_server() {
       controller.get(),
       std::ref(shard_table),
       std::ref(metadata_cache),
-      std::ref(archival_scheduler))
+      std::ref(archival_scheduler),
+      std::ref(_connection_cache))
       .get();
 }
 
@@ -1315,6 +1317,12 @@ void application::start_redpanda(::stop_signal& app_signal) {
             _scheduling_groups.cluster_sg(),
             smp_service_groups.cluster_smp_sg(),
             std::ref(controller->get_partition_leaders()));
+
+          proto->register_service<cluster::partition_balancer_rpc_handler>(
+            _scheduling_groups.cluster_sg(),
+            smp_service_groups.cluster_smp_sg(),
+            std::ref(controller->get_partition_balancer()));
+
           if (!config::shard_local_cfg().disable_metrics()) {
               proto->setup_metrics();
           }

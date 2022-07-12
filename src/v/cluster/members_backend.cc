@@ -228,7 +228,9 @@ void members_backend::calculate_reallocations_after_decommissioned(
 }
 void members_backend::calculate_reallocations_after_node_added(
   members_backend::update_meta& meta) const {
-    if (!config::shard_local_cfg().enable_auto_rebalance_on_node_add()) {
+    if (
+      config::shard_local_cfg().partition_autobalancing_mode()
+      == model::partition_autobalancing_mode::off) {
         return;
     }
     auto& topics = _topics.local().topics_map();

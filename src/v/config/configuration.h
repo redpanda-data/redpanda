@@ -250,6 +250,15 @@ struct configuration final : public config_store {
     one_or_many_property<ss::sstring> full_raft_configuration_recovery_pattern;
     property<bool> enable_auto_rebalance_on_node_add;
 
+    enum_property<model::partition_autobalancing_mode>
+      partition_autobalancing_mode;
+    property<std::chrono::seconds>
+      partition_autobalancing_node_availability_timeout_sec;
+    bounded_property<unsigned> partition_autobalancing_max_disk_usage_percent;
+    property<std::chrono::milliseconds>
+      partition_autobalancing_tick_interval_ms;
+    property<size_t> partition_autobalancing_movement_batch_size_bytes;
+
     property<bool> enable_leader_balancer;
     property<std::chrono::milliseconds> leader_balancer_idle_timeout;
     property<std::chrono::milliseconds> leader_balancer_mute_timeout;

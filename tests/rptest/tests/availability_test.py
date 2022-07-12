@@ -37,14 +37,14 @@ class AvailabilityTests(EndToEndFinjectorTest):
     @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/3450
     @cluster(num_nodes=5, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_availability_when_one_node_failed(self):
-        self.redpanda = RedpandaService(
-            self.test_context,
-            3,
-            extra_rp_conf={
-                "enable_auto_rebalance_on_node_add": True,
-                "group_topic_partitions": 1,
-                "default_topic_replications": 3,
-            })
+        self.redpanda = RedpandaService(self.test_context,
+                                        3,
+                                        extra_rp_conf={
+                                            "partition_autobalancing_mode":
+                                            "node_add_remove",
+                                            "group_topic_partitions": 1,
+                                            "default_topic_replications": 3,
+                                        })
 
         self.redpanda.start()
         spec = TopicSpec(name="test-topic",
@@ -65,14 +65,14 @@ class AvailabilityTests(EndToEndFinjectorTest):
     @cluster(num_nodes=5, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_recovery_after_catastrophic_failure(self):
 
-        self.redpanda = RedpandaService(
-            self.test_context,
-            3,
-            extra_rp_conf={
-                "enable_auto_rebalance_on_node_add": True,
-                "group_topic_partitions": 1,
-                "default_topic_replications": 3,
-            })
+        self.redpanda = RedpandaService(self.test_context,
+                                        3,
+                                        extra_rp_conf={
+                                            "partition_autobalancing_mode":
+                                            "node_add_remove",
+                                            "group_topic_partitions": 1,
+                                            "default_topic_replications": 3,
+                                        })
 
         self.redpanda.start()
         spec = TopicSpec(name="test-topic",

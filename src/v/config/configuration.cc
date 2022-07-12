@@ -1153,8 +1153,51 @@ configuration::configuration()
       *this,
       "enable_auto_rebalance_on_node_add",
       "Enable automatic partition rebalancing when new nodes are added",
-      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      {.needs_restart = needs_restart::no,
+       .visibility = visibility::deprecated},
       false)
+
+  , partition_autobalancing_mode(
+      *this,
+      "partition_autobalancing_mode",
+      "Partition autobalancing mode",
+      {.needs_restart = needs_restart::no,
+       .example = "node_add_remove",
+       .visibility = visibility::user},
+      model::partition_autobalancing_mode::off,
+      {
+        model::partition_autobalancing_mode::off,
+        model::partition_autobalancing_mode::node_add_remove,
+        model::partition_autobalancing_mode::continuous,
+      })
+  , partition_autobalancing_node_availability_timeout_sec(
+      *this,
+      "partition_autobalancing_node_availability_timeout_sec",
+      "Node unavailability timeout that triggers moving partitions from the "
+      "node",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      30min)
+  , partition_autobalancing_max_disk_usage_percent(
+      *this,
+      "partition_autobalancing_max_disk_usage_percent",
+      "Disk usage threshold that triggers moving partitions from the node",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      80,
+      {.min = 5, .max = 100})
+  , partition_autobalancing_tick_interval_ms(
+      *this,
+      "partition_autobalancing_tick_interval_ms",
+      "Partition autobalancer tick interval",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      30s)
+  , partition_autobalancing_movement_batch_size_bytes(
+      *this,
+      "partition_autobalancing_movement_batch_size_bytes",
+      "Total size of partitions that autobalancer is going to move in one "
+      "batch",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      5_GiB)
+
   , enable_leader_balancer(
       *this,
       "enable_leader_balancer",

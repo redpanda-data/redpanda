@@ -104,7 +104,7 @@ topic_table::apply(delete_topic_cmd cmd, model::offset offset) {
 
         for (auto& p_as : tp->second.get_assignments()) {
             auto ntp = model::ntp(cmd.key.ns, cmd.key.tp, p_as.id);
-            _update_in_progress.erase(ntp);
+            _updates_in_progress.erase(ntp);
             _pending_deltas.emplace_back(
               std::move(ntp), p_as, offset, delete_type);
         }
@@ -159,7 +159,7 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
           errc::partition_not_exists);
     }
 
-    if (_update_in_progress.contains(cmd.key)) {
+    if (_updates_in_progress.contains(cmd.key)) {
         return ss::make_ready_future<std::error_code>(errc::update_in_progress);
     }
 
@@ -170,7 +170,7 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
         return ss::make_ready_future<std::error_code>(errc::success);
     }
 
-    _update_in_progress.emplace(
+    _updates_in_progress.emplace(
       cmd.key,
       in_progress_update{
         .previous_replicas = current_assignment_it->replicas,
@@ -184,8 +184,8 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
     auto found = _topics_hierarchy.find(model::topic_namespace_view(cmd.key));
     if (found != _topics_hierarchy.end()) {
         for (const auto& cs : found->second) {
-            /// Insert non-replicable topic into the 'update_in_progress' set
-            auto [_, success] = _update_in_progress.emplace(
+            /// Insert non-replicable topic into the 'updates_in_progress' set
+            auto [_, success] = _updates_in_progress.emplace(
               model::ntp(cs.ns, cs.tp, current_assignment_it->id),
               in_progress_update{
                 .previous_replicas = current_assignment_it->replicas,
@@ -193,7 +193,7 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
               });
             vassert(
               success,
-              "non_replicable topic {}-{} already in _update_in_progress set",
+              "non_replicable topic {}-{} already in _updates_in_progress set",
               cs.tp,
               current_assignment_it->id);
             /// For each child topic of the to-be-moved source, update its new
@@ -254,13 +254,13 @@ topic_table::apply(finish_moving_partition_replicas_cmd cmd, model::offset o) {
         return ss::make_ready_future<std::error_code>(
           errc::invalid_node_operation);
     }
-    auto it = _update_in_progress.find(cmd.key);
-    if (it == _update_in_progress.end()) {
+    auto it = _updates_in_progress.find(cmd.key);
+    if (it == _updates_in_progress.end()) {
         return ss::make_ready_future<std::error_code>(
           errc::no_update_in_progress);
     }
 
-    _update_in_progress.erase(it);
+    _updates_in_progress.erase(it);
 
     partition_assignment delta_assignment{
       current_assignment_it->group,
@@ -268,18 +268,18 @@ topic_table::apply(finish_moving_partition_replicas_cmd cmd, model::offset o) {
       std::move(cmd.value),
     };
 
-    /// Remove child non_replicable topics out of the 'update_in_progress' set
+    /// Remove child non_replicable topics out of the 'updates_in_progress' set
     auto found = _topics_hierarchy.find(model::topic_namespace_view(cmd.key));
     if (found != _topics_hierarchy.end()) {
         for (const auto& cs : found->second) {
-            bool erased = _update_in_progress.erase(
+            bool erased = _updates_in_progress.erase(
                             model::ntp(cs.ns, cs.tp, cmd.key.tp.partition))
                           > 0;
             if (!erased) {
                 vlog(
                   clusterlog.error,
                   "non_replicable_topic expected to exist in "
-                  "update_in_progress set");
+                  "updates_in_progress set");
             }
         }
     }
@@ -324,8 +324,8 @@ topic_table::apply(cancel_moving_partition_replicas_cmd cmd, model::offset o) {
     }
 
     // update must be in progress to be able to cancel it
-    auto in_progress_it = _update_in_progress.find(cmd.key);
-    if (in_progress_it == _update_in_progress.end()) {
+    auto in_progress_it = _updates_in_progress.find(cmd.key);
+    if (in_progress_it == _updates_in_progress.end()) {
         co_return errc::no_update_in_progress;
     }
     switch (in_progress_it->second.state) {
@@ -355,11 +355,11 @@ topic_table::apply(cancel_moving_partition_replicas_cmd cmd, model::offset o) {
     auto found = _topics_hierarchy.find(model::topic_namespace_view(cmd.key));
     if (found != _topics_hierarchy.end()) {
         for (const auto& cs : found->second) {
-            auto child_it = _update_in_progress.find(
+            auto child_it = _updates_in_progress.find(
               model::ntp(cs.ns, cs.tp, current_assignment_it->id));
 
             vassert(
-              child_it != _update_in_progress.end(),
+              child_it != _updates_in_progress.end(),
               "non_replicable topic {} in progress state inconsistent with its "
               "parent {}",
               cs,
@@ -698,7 +698,7 @@ topic_table::get_partition_assignment(const model::ntp& ntp) const {
 }
 
 bool topic_table::is_update_in_progress(const model::ntp& ntp) const {
-    return _update_in_progress.contains(ntp);
+    return _updates_in_progress.contains(ntp);
 }
 
 std::optional<model::initial_revision_id>
@@ -717,8 +717,8 @@ topic_table::get_initial_revision(const model::ntp& ntp) const {
 
 std::optional<std::vector<model::broker_shard>>
 topic_table::get_previous_replica_set(const model::ntp& ntp) const {
-    if (auto it = _update_in_progress.find(ntp);
-        it != _update_in_progress.end()) {
+    if (auto it = _updates_in_progress.find(ntp);
+        it != _updates_in_progress.end()) {
         return it->second.previous_replicas;
     }
     return std::nullopt;

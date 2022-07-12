@@ -118,14 +118,16 @@ public:
     }
 
     /// Replicates record batch
-    ss::future<result<raft::replicate_result>> replicate(model::record_batch&&);
+    ss::future<result<raft::replicate_result>>
+    replicate(model::record_batch&&, std::optional<model::term_id>);
 
     /// Replicates record batch and waits until state will be applied to the
     /// state machine
     ss::future<std::error_code> replicate_and_wait(
       model::record_batch&& b,
       model::timeout_clock::time_point timeout,
-      ss::abort_source& as);
+      ss::abort_source& as,
+      std::optional<model::term_id> term = std::nullopt);
 
 private:
     using promise_t = expiring_promise<std::error_code>;
@@ -191,12 +193,20 @@ requires(State<T>, ...) mux_state_machine<T...>::mux_state_machine(
 template<typename... T>
 requires(State<T>, ...)
   ss::future<result<raft::replicate_result>> mux_state_machine<T...>::replicate(
-    model::record_batch&& batch) {
-    return ss::with_gate(_gate, [this, batch = std::move(batch)]() mutable {
-        return _c->replicate(
-          model::make_memory_record_batch_reader(std::move(batch)),
-          raft::replicate_options{raft::consistency_level::quorum_ack});
-    });
+    model::record_batch&& batch, std::optional<model::term_id> term) {
+    return ss::with_gate(
+      _gate, [this, batch = std::move(batch), term]() mutable {
+          if (term) {
+              return _c->replicate(
+                term.value(),
+                model::make_memory_record_batch_reader(std::move(batch)),
+                raft::replicate_options{raft::consistency_level::quorum_ack});
+          }
+
+          return _c->replicate(
+            model::make_memory_record_batch_reader(std::move(batch)),
+            raft::replicate_options{raft::consistency_level::quorum_ack});
+      });
 }
 
 template<typename... T>
@@ -204,7 +214,8 @@ requires(State<T>, ...)
   ss::future<std::error_code> mux_state_machine<T...>::replicate_and_wait(
     model::record_batch&& b,
     model::timeout_clock::time_point timeout,
-    ss::abort_source& as) {
+    ss::abort_source& as,
+    std::optional<model::term_id> term) {
     if (_gate.is_closed()) {
         return ss::make_ready_future<std::error_code>(errc::shutting_down);
     }
@@ -218,9 +229,10 @@ requires(State<T>, ...)
       _gate,
       [this,
        b = std::move(b),
+       term,
        u = std::move(u),
        promise = std::move(promise)]() mutable {
-          return replicate(std::move(b))
+          return replicate(std::move(b), term)
             .then_wrapped(
               [this, u = std::move(u), promise = std::move(promise)](
                 ss::future<result<raft::replicate_result>> f) mutable {
