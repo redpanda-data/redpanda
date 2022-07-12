@@ -24,6 +24,98 @@
 #include <chrono>
 #include <type_traits>
 
+namespace {
+template<typename T>
+T decode_signed(T value) {
+    return value < T(0) ? T{} : value;
+}
+
+template<typename T>
+T varlong_reader(iobuf_parser& in) {
+    auto [val, len] = in.read_varlong();
+    return T(val);
+}
+
+namespace internal {
+struct hbeat_soa {
+    explicit hbeat_soa(size_t n)
+      : groups(n)
+      , commit_indices(n)
+      , terms(n)
+      , prev_log_indices(n)
+      , prev_log_terms(n)
+      , last_visible_indices(n)
+      , revisions(n)
+      , target_revisions(n) {}
+
+    ~hbeat_soa() noexcept = default;
+    hbeat_soa(const hbeat_soa&) = delete;
+    hbeat_soa& operator=(const hbeat_soa&) = delete;
+    hbeat_soa(hbeat_soa&&) noexcept = default;
+    hbeat_soa& operator=(hbeat_soa&&) noexcept = default;
+
+    std::vector<raft::group_id> groups;
+    std::vector<model::offset> commit_indices;
+    std::vector<model::term_id> terms;
+    std::vector<model::offset> prev_log_indices;
+    std::vector<model::term_id> prev_log_terms;
+    std::vector<model::offset> last_visible_indices;
+    std::vector<model::revision_id> revisions;
+    std::vector<model::revision_id> target_revisions;
+};
+
+struct hbeat_response_array {
+    explicit hbeat_response_array(size_t n)
+      : groups(n)
+      , terms(n)
+      , last_flushed_log_index(n)
+      , last_dirty_log_index(n)
+      , last_term_base_offset(n)
+      , revisions(n)
+      , target_revisions(n) {}
+
+    std::vector<raft::group_id> groups;
+    std::vector<model::term_id> terms;
+    std::vector<model::offset> last_flushed_log_index;
+    std::vector<model::offset> last_dirty_log_index;
+    std::vector<model::offset> last_term_base_offset;
+    std::vector<model::revision_id> revisions;
+    std::vector<model::revision_id> target_revisions;
+};
+template<typename T>
+void encode_one_vint(iobuf& out, const T& t) {
+    auto b = vint::to_bytes(t);
+    // NOLINTNEXTLINE
+    out.append(reinterpret_cast<const char*>(b.data()), b.size());
+}
+
+template<typename T>
+void encode_varint_delta(iobuf& out, const T& prev, const T& current) {
+    // TODO: use delta-delta:
+    // https://github.com/facebookarchive/beringei/blob/92784ec6e2/beringei/lib/BitUtil.cpp
+    auto delta = current - prev;
+    encode_one_vint(out, delta);
+}
+
+template<typename T>
+void encode_one_delta_array(iobuf& o, const std::vector<T>& v) {
+    if (v.empty()) {
+        return;
+    }
+    const size_t max = v.size();
+    encode_one_vint(o, v[0]);
+    for (size_t i = 1; i < max; ++i) {
+        encode_varint_delta(o, v[i - 1], v[i]);
+    }
+}
+template<typename T>
+T read_one_varint_delta(iobuf_parser& in, const T& prev) {
+    auto dst = varlong_reader<T>(in);
+    return prev + dst;
+}
+} // namespace internal
+} // namespace
+
 namespace raft {
 
 replicate_stages::replicate_stages(
@@ -219,12 +311,6 @@ void adl<raft::protocol_metadata>::to(
       idx);
 }
 
-template<typename T>
-T varlong_reader(iobuf_parser& in) {
-    auto [val, len] = in.read_varlong();
-    return T(val);
-}
-
 raft::protocol_metadata adl<raft::protocol_metadata>::from(iobuf_parser& in) {
     raft::protocol_metadata ret;
     ret.group = varlong_reader<raft::group_id>(in);
@@ -235,84 +321,6 @@ raft::protocol_metadata adl<raft::protocol_metadata>::from(iobuf_parser& in) {
     ret.last_visible_index = varlong_reader<model::offset>(in);
     return ret;
 }
-namespace internal {
-struct hbeat_soa {
-    explicit hbeat_soa(size_t n)
-      : groups(n)
-      , commit_indices(n)
-      , terms(n)
-      , prev_log_indices(n)
-      , prev_log_terms(n)
-      , last_visible_indices(n)
-      , revisions(n)
-      , target_revisions(n) {}
-
-    ~hbeat_soa() noexcept = default;
-    hbeat_soa(const hbeat_soa&) = delete;
-    hbeat_soa& operator=(const hbeat_soa&) = delete;
-    hbeat_soa(hbeat_soa&&) noexcept = default;
-    hbeat_soa& operator=(hbeat_soa&&) noexcept = default;
-
-    std::vector<raft::group_id> groups;
-    std::vector<model::offset> commit_indices;
-    std::vector<model::term_id> terms;
-    std::vector<model::offset> prev_log_indices;
-    std::vector<model::term_id> prev_log_terms;
-    std::vector<model::offset> last_visible_indices;
-    std::vector<model::revision_id> revisions;
-    std::vector<model::revision_id> target_revisions;
-};
-
-struct hbeat_response_array {
-    explicit hbeat_response_array(size_t n)
-      : groups(n)
-      , terms(n)
-      , last_flushed_log_index(n)
-      , last_dirty_log_index(n)
-      , last_term_base_offset(n)
-      , revisions(n)
-      , target_revisions(n) {}
-
-    std::vector<raft::group_id> groups;
-    std::vector<model::term_id> terms;
-    std::vector<model::offset> last_flushed_log_index;
-    std::vector<model::offset> last_dirty_log_index;
-    std::vector<model::offset> last_term_base_offset;
-    std::vector<model::revision_id> revisions;
-    std::vector<model::revision_id> target_revisions;
-};
-template<typename T>
-void encode_one_vint(iobuf& out, const T& t) {
-    auto b = vint::to_bytes(t);
-    // NOLINTNEXTLINE
-    out.append(reinterpret_cast<const char*>(b.data()), b.size());
-}
-
-template<typename T>
-void encode_varint_delta(iobuf& out, const T& prev, const T& current) {
-    // TODO: use delta-delta:
-    // https://github.com/facebookarchive/beringei/blob/92784ec6e2/beringei/lib/BitUtil.cpp
-    auto delta = current - prev;
-    encode_one_vint(out, delta);
-}
-
-template<typename T>
-void encode_one_delta_array(iobuf& o, const std::vector<T>& v) {
-    if (v.empty()) {
-        return;
-    }
-    const size_t max = v.size();
-    encode_one_vint(o, v[0]);
-    for (size_t i = 1; i < max; ++i) {
-        encode_varint_delta(o, v[i - 1], v[i]);
-    }
-}
-template<typename T>
-T read_one_varint_delta(iobuf_parser& in, const T& prev) {
-    auto dst = varlong_reader<T>(in);
-    return prev + dst;
-}
-} // namespace internal
 
 ss::future<> async_adl<raft::heartbeat_request>::to(
   iobuf& out, raft::heartbeat_request&& request) {
@@ -384,11 +392,6 @@ ss::future<> async_adl<raft::heartbeat_request>::to(
           internal::encode_one_delta_array<model::revision_id>(
             out, encodee.target_revisions);
       });
-}
-
-template<typename T>
-T decode_signed(T value) {
-    return value < T(0) ? T{} : value;
 }
 
 ss::future<raft::heartbeat_request>
