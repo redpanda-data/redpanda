@@ -32,6 +32,7 @@
 #include <absl/container/node_hash_map.h>
 #include <absl/container/node_hash_set.h>
 
+#include <chrono>
 #include <iosfwd>
 #include <numeric>
 #include <string>
@@ -181,6 +182,20 @@ template<typename T>
 inline constexpr bool is_pair_v = is_pair<T>::value;
 
 template<typename T>
+struct is_duration : std::false_type {};
+template<typename... Args>
+struct is_duration<std::chrono::duration<Args...>> : std::true_type {};
+template<typename T>
+inline constexpr bool is_duration_v = is_duration<T>::value;
+
+template<typename T>
+struct is_time_point : std::false_type {};
+template<typename... Args>
+struct is_time_point<std::chrono::time_point<Args...>> : std::true_type {};
+template<typename T>
+inline constexpr bool is_time_point_v = is_time_point<T>::value;
+
+template<typename T>
 inline constexpr auto const is_serde_compatible_v
   = is_envelope_v<T>
     || (std::is_scalar_v<T>  //
@@ -191,10 +206,11 @@ inline constexpr auto const is_serde_compatible_v
     || reflection::is_named_type_v<T>
     || reflection::is_ss_bool_v<T>
     || reflection::is_std_optional_v<T>
-    || std::is_same_v<T, std::chrono::milliseconds>
     || std::is_same_v<T, iobuf>
     || std::is_same_v<T, ss::sstring>
     || std::is_same_v<T, bytes>
+    || is_duration_v<T>
+    || is_time_point_v<T>
     || is_pair_v<T>
     || is_absl_node_hash_set_v<T>
     || is_absl_node_hash_map_v<T>
@@ -305,8 +321,6 @@ void write(iobuf& out, T t) {
         return write(out, static_cast<typename Type::type>(t));
     } else if constexpr (reflection::is_ss_bool_v<Type>) {
         write(out, static_cast<int8_t>(bool(t)));
-    } else if constexpr (std::is_same_v<Type, std::chrono::milliseconds>) {
-        write<int64_t>(out, t.count());
     } else if constexpr (std::is_same_v<Type, iobuf>) {
         write<serde_size_t>(out, t.size_bytes());
         out.append(t.share(0, t.size_bytes()));
@@ -319,6 +333,14 @@ void write(iobuf& out, T t) {
     } else if constexpr (is_pair_v<Type>) {
         write(out, std::move(t.first));
         write(out, std::move(t.second));
+    } else if constexpr (is_duration_v<Type>) {
+        // We explicitly serialize it as ns to avoid any surprises like
+        // seastar updating underlying duration types without
+        // notice. See https://github.com/redpanda-data/redpanda/pull/5002
+        auto d = std::chrono::duration_cast<std::chrono::nanoseconds>(t);
+        write<int64_t>(out, d.count());
+    } else if constexpr (is_time_point_v<Type>) {
+        write(out, t.time_since_epoch());
     } else if constexpr (reflection::is_std_optional_v<Type>) {
         if (t) {
             write(out, true);
@@ -568,9 +590,6 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
         t = Type{read_nested<typename Type::type>(in, bytes_left_limit)};
     } else if constexpr (reflection::is_ss_bool_v<Type>) {
         t = Type{read_nested<int8_t>(in, bytes_left_limit) != 0};
-    } else if constexpr (std::is_same_v<Type, std::chrono::milliseconds>) {
-        t = std::chrono::milliseconds{
-          read_nested<int64_t>(in, bytes_left_limit)};
     } else if constexpr (std::is_same_v<Type, iobuf>) {
         t = in.share(read_nested<serde_size_t>(in, bytes_left_limit));
     } else if constexpr (std::is_same_v<Type, ss::sstring>) {
@@ -589,6 +608,13 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
         auto second = read_nested<typename Type::second_type>(
           in, bytes_left_limit);
         t = std::make_pair(std::move(first), std::move(second));
+    } else if constexpr (is_duration_v<Type>) {
+        auto rep = read_nested<int64_t>(in, bytes_left_limit);
+        t = std::chrono::duration_cast<Type>(std::chrono::nanoseconds{rep});
+    } else if constexpr (is_time_point_v<Type>) {
+        auto duration = read_nested<typename Type::duration>(
+          in, bytes_left_limit);
+        t = std::chrono::time_point<typename Type::clock>(std::move(duration));
     } else if constexpr (reflection::is_std_optional_v<Type>) {
         t = read_nested<bool>(in, bytes_left_limit)
               ? Type{read_nested<typename Type::value_type>(

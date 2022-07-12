@@ -763,6 +763,31 @@ SEASTAR_THREAD_TEST_CASE(seastar_inet_address_test) {
       ipv6, serde::from_iobuf<ss::net::inet_address>(std::move(ipv6_buf)));
 }
 
+SEASTAR_THREAD_TEST_CASE(duration_type_test) {
+    std::chrono::hours h(1);
+    std::chrono::milliseconds ms{3};
+    std::chrono::duration<int, std::kilo> ks(3);
+
+    BOOST_REQUIRE(h == serde::from_iobuf<decltype(h)>(serde::to_iobuf(h)));
+    BOOST_REQUIRE(ms == serde::from_iobuf<decltype(ms)>(serde::to_iobuf(ms)));
+    BOOST_REQUIRE(ks == serde::from_iobuf<decltype(ks)>(serde::to_iobuf(ks)));
+}
+
+SEASTAR_THREAD_TEST_CASE(time_point_type_test) {
+    using namespace std::literals;
+    auto now = std::chrono::system_clock::now();
+    auto yest = now - 24h;
+    auto now_steady = std::chrono::steady_clock::now();
+
+    BOOST_REQUIRE(
+      now == serde::from_iobuf<decltype(now)>(serde::to_iobuf(now)));
+    BOOST_REQUIRE(
+      yest == serde::from_iobuf<decltype(yest)>(serde::to_iobuf(yest)));
+    BOOST_REQUIRE(
+      now_steady
+      == serde::from_iobuf<decltype(now_steady)>(serde::to_iobuf(now_steady)));
+}
+
 template<template<class...> class T>
 void map_test() {
     T<ss::sstring, int32_t> a = {
