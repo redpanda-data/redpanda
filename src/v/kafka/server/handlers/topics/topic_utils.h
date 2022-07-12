@@ -45,7 +45,10 @@ template<typename T>
 requires TopicRequestItem<T> creatable_topic_result
 generate_error(T item, error_code code, const ss::sstring& msg) {
     return creatable_topic_result{
-      .name = item.name, .error_code = code, .error_message = msg};
+      .name = item.name,
+      .error_code = code,
+      .error_message = msg,
+      .topic_config_error_code = code};
 }
 
 /// Generates successfull creatable_topic_result for single topic request item

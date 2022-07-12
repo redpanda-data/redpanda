@@ -9,6 +9,7 @@
 
 #include "kafka/protocol/create_topics.h"
 #include "kafka/protocol/metadata.h"
+#include "kafka/server/handlers/topics/types.h"
 #include "redpanda/tests/fixture.h"
 #include "resource_mgmt/io_priority.h"
 #include "s3_imposter_fixture.h"
@@ -97,17 +98,18 @@ public:
     void test_create_topic(
       kafka::create_topics_request req,
       std::optional<int> partition_count = std::nullopt,
-      std::optional<int> revision_id = std::nullopt) {
+      std::optional<int> revision_id = std::nullopt,
+      kafka::api_version version = kafka::api_version(2)) {
         auto client = make_kafka_client().get0();
         client.connect().get();
-        auto resp = client.dispatch(req, kafka::api_version(2)).get0();
+        auto resp = client.dispatch(req, version).get0();
 
         // todo: here
         for (auto req : get_requests()) {
             vlog(test_log.info, "{} {}", req._method, req._url);
         }
 
-        BOOST_TEST(
+        BOOST_REQUIRE_MESSAGE(
           std::all_of(
             std::cbegin(resp.data.topics),
             std::cend(resp.data.topics),
@@ -118,6 +120,15 @@ public:
 
         for (auto& topic : req.data.topics) {
             verify_metadata(client, req, topic, partition_count, revision_id);
+
+            auto it = std::find_if(
+              resp.data.topics.begin(),
+              resp.data.topics.end(),
+              [name = topic.name](const auto& t) { return t.name == name; });
+
+            BOOST_CHECK(it != resp.data.topics.end());
+            verify_response(topic, *it, version, req.data.validate_only);
+
             // TODO: one we combine the cluster fixture with the redpanda
             // fixture and enable multiple RP instances to run at the same time
             // in the test, then we should create two clients in this test where
@@ -132,6 +143,44 @@ public:
     void test_create_read_replica_topic(
       kafka::create_topics_request req, int partition_count, int revision_id) {
         test_create_topic(req, partition_count, revision_id);
+    }
+
+    void verify_response(
+      const kafka::creatable_topic& req,
+      const kafka::creatable_topic_result& topic_res,
+      kafka::api_version version,
+      bool validate_only) {
+        if (version < kafka::api_version(5)) {
+            /// currently this method only verifies configurations in v5
+            /// responses
+            return;
+        }
+        if (validate_only) {
+            /// Server should return default configs
+            BOOST_TEST(topic_res.configs, "empty config response");
+            auto cfg_map = config_map(*topic_res.configs);
+            const auto default_topic_properties = kafka::from_cluster_type(
+              app.metadata_cache.local().get_default_properties());
+            BOOST_TEST(
+              cfg_map == default_topic_properties,
+              "incorrect default properties");
+            BOOST_CHECK_EQUAL(
+              topic_res.topic_config_error_code, kafka::error_code::none);
+            return;
+        }
+        if (req.configs.empty()) {
+            /// no custom configs were passed
+            return;
+        }
+        BOOST_TEST(topic_res.configs, "Expecting configs");
+        auto resp_cfgs = kafka::config_map(*topic_res.configs);
+        auto cfg = app.metadata_cache.local().get_topic_cfg(
+          model::topic_namespace_view{model::kafka_namespace, topic_res.name});
+        BOOST_TEST(cfg, "missing topic config");
+        auto config_map = kafka::from_cluster_type(cfg->properties);
+        BOOST_TEST(config_map == resp_cfgs, "configs didn't match");
+        BOOST_CHECK_EQUAL(
+          topic_res.topic_config_error_code, kafka::error_code::none);
     }
 
     void test_create_non_replicable_topic(
@@ -424,4 +473,28 @@ FIXTURE_TEST(read_replica_and_remote_write, create_topic_fixture) {
       resp.data.topics[0].error_message
       == "remote read and write are not supported for read replicas");
     BOOST_CHECK(resp.data.topics[0].name == "topic1");
+}
+
+FIXTURE_TEST(test_v5_validate_configs_resp, create_topic_fixture) {
+    wait_for_controller_leadership().get();
+
+    /// Test conditions in create_topic_fixture::verify_metadata will run
+    test_create_topic(
+      make_req({make_topic("topicA"), make_topic("topicB")}, true),
+      kafka::api_version(5));
+
+    /// Test create topic with custom configs, verify that they have been set
+    /// and correctly returned in response
+    std::map<ss::sstring, ss::sstring> config_map{
+      {ss::sstring(kafka::topic_property_retention_bytes), "1234567"},
+      {ss::sstring(kafka::topic_property_segment_size), "7654321"}};
+
+    test_create_topic(
+      make_req(
+        {make_topic("topicC", 3, 1, config_map),
+         make_topic("topicD", 3, 1, config_map)},
+        false),
+      std::nullopt,
+      std::nullopt,
+      kafka::api_version(5));
 }
