@@ -863,6 +863,17 @@ class RedpandaService(Service):
         if self.coproc_enabled():
             self.start_wasm_engine(node)
 
+        if self.dedicated_nodes:
+            # When running on dedicated nodes, we should always be running on XFS.  If we
+            # aren't, it's probably an accident that can easily cause spurious failures
+            # and confusion, so be helpful and fail out early.
+            fs = node.account.ssh_output(
+                f"stat -f -c %T {self.PERSISTENT_ROOT}").strip()
+            if fs != b'xfs':
+                raise RuntimeError(
+                    f"Unexpected filesystem {fs} at {self.PERSISTENT_ROOT} on {node.name}"
+                )
+
         def is_status_ready():
             status = None
             try:
