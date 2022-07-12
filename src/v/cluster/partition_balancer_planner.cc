@@ -305,7 +305,7 @@ void partition_balancer_planner::get_unavailable_nodes_reassignments(
                     continue;
                 }
                 auto new_allocation_units = get_reallocation(
-                  a, t.second, partition_size.value(), false, rrs);
+                  a, t.second.metadata, partition_size.value(), false, rrs);
                 if (new_allocation_units) {
                     result.reassignments.emplace_back(ntp_reassignments{
                       .ntp = ntp,
@@ -384,7 +384,7 @@ void partition_balancer_planner::get_full_node_reassignments(
             }
             auto new_allocation_units = get_reallocation(
               *current_assignments,
-              topic_metadata,
+              topic_metadata.metadata,
               ntp_size_it->first,
               true,
               rrs);

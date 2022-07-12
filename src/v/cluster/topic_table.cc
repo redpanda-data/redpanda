@@ -25,16 +25,16 @@
 namespace cluster {
 
 template<typename Func>
-std::vector<std::invoke_result_t<Func, const topic_metadata&>>
+std::vector<std::invoke_result_t<Func, const topic_table::topic_metadata_item&>>
 topic_table::transform_topics(Func&& f) const {
-    std::vector<std::invoke_result_t<Func, const topic_metadata>> ret;
+    std::vector<std::invoke_result_t<Func, const topic_metadata_item&>> ret;
     ret.reserve(_topics.size());
     std::transform(
       std::cbegin(_topics),
       std::cend(_topics),
       std::back_inserter(ret),
       [f = std::forward<Func>(f)](
-        const std::pair<model::topic_namespace, topic_metadata>& p) {
+        const std::pair<model::topic_namespace, topic_metadata_item>& p) {
           return f(p.second);
       });
     return ret;
@@ -47,22 +47,30 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
         return ss::make_ready_future<std::error_code>(
           errc::topic_already_exists);
     }
-    // calculate delta
-    for (auto& pas : cmd.value.assignments) {
-        auto ntp = model::ntp(cmd.key.ns, cmd.key.tp, pas.id);
-        _pending_deltas.emplace_back(
-          std::move(ntp), pas, offset, delta::op_type::add);
-    }
 
     std::optional<model::initial_revision_id> remote_revision
       = cmd.value.cfg.properties.remote_topic_properties ? std::make_optional(
           cmd.value.cfg.properties.remote_topic_properties->remote_revision)
                                                          : std::nullopt;
+    auto md = topic_metadata_item{
+      .metadata = topic_metadata(
+        std::move(cmd.value), model::revision_id(offset()), remote_revision)};
+    // calculate delta
+    md.replica_revisions.reserve(cmd.value.assignments.size());
+    for (auto& pas : md.get_assignments()) {
+        auto ntp = model::ntp(cmd.key.ns, cmd.key.tp, pas.id);
+        for (auto& r : pas.replicas) {
+            md.replica_revisions[pas.id][r.node_id] = model::revision_id(
+              offset);
+        }
+        _pending_deltas.emplace_back(
+          std::move(ntp), pas, offset, delta::op_type::add);
+    }
 
-    _topics.insert(
-      {cmd.key,
-       topic_metadata(
-         std::move(cmd.value), model::revision_id(offset()), remote_revision)});
+    _topics.insert({
+      cmd.key,
+      std::move(md),
+    });
     notify_waiters();
     return ss::make_ready_future<std::error_code>(errc::success);
 }
@@ -132,6 +140,10 @@ topic_table::apply(create_partition_cmd cmd, model::offset offset) {
         tp->second.get_assignments().emplace(p_as);
         // propagate deltas
         auto ntp = model::ntp(cmd.key.ns, cmd.key.tp, p_as.id);
+        for (auto& bs : p_as.replicas) {
+            tp->second.replica_revisions[p_as.id][bs.node_id]
+              = model::revision_id(offset);
+        }
         _pending_deltas.emplace_back(
           std::move(ntp), std::move(p_as), offset, delta::op_type::add);
     }
@@ -169,6 +181,11 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
     if (are_replica_sets_equal(current_assignment_it->replicas, cmd.value)) {
         return ss::make_ready_future<std::error_code>(errc::success);
     }
+    auto revisions_it = tp->second.replica_revisions.find(cmd.key.tp.partition);
+    vassert(
+      revisions_it != tp->second.replica_revisions.end(),
+      "partition {}, replica revisions map must exists as partition is present",
+      cmd.key);
 
     _updates_in_progress.emplace(
       cmd.key,
@@ -176,10 +193,29 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
         .previous_replicas = current_assignment_it->replicas,
         .state = in_progress_state::update_requested,
         .update_revision = model::revision_id(o),
+        // snapshot replicas revisions
+        .replicas_revisions = revisions_it->second,
       });
     auto previous_assignment = *current_assignment_it;
     // replace partition replica set
     current_assignment_it->replicas = cmd.value;
+    /**
+     * Update partition replica revisions. Assign new revision to added replicas
+     * and erase replicas which are removed from replica set
+     */
+    auto added_replicas = subtract_replica_sets(
+      current_assignment_it->replicas, previous_assignment.replicas);
+
+    for (auto& r : added_replicas) {
+        revisions_it->second[r.node_id] = model::revision_id(o);
+    }
+
+    auto removed_replicas = subtract_replica_sets(
+      previous_assignment.replicas, current_assignment_it->replicas);
+
+    for (auto& removed : removed_replicas) {
+        revisions_it->second.erase(removed.node_id);
+    }
 
     /// Update all non_replicable topics to have the same 'in-progress' state
     auto found = _topics_hierarchy.find(model::topic_namespace_view(cmd.key));
@@ -352,6 +388,13 @@ topic_table::apply(cancel_moving_partition_replicas_cmd cmd, model::offset o) {
     auto replicas = current_assignment_it->replicas;
     // replace replica set with set from in progress operation
     current_assignment_it->replicas = in_progress_it->second.previous_replicas;
+    auto revisions_it = tp->second.replica_revisions.find(cmd.key.tp.partition);
+    vassert(
+      revisions_it != tp->second.replica_revisions.end(),
+      "partition {} replica revisions map must exists",
+      cmd.key);
+
+    revisions_it->second = in_progress_it->second.replicas_revisions;
 
     /// Update all non_replicable topics to have the same 'in-progress' state
     auto found = _topics_hierarchy.find(model::topic_namespace_view(cmd.key));
@@ -555,10 +598,14 @@ topic_table::apply(create_non_replicable_topic_cmd cmd, model::offset o) {
           success,
           "Duplicate non_replicable_topic detected when it shouldn't exist");
     }
+    auto md = topic_metadata(
+      std::move(cfg), std::move(p_as), model::revision_id(o()), source.tp);
+
     _topics.insert(
       {new_non_rep_topic,
-       topic_metadata(
-         std::move(cfg), std::move(p_as), model::revision_id(o()), source.tp)});
+       topic_metadata_item{
+         .metadata = std::move(md),
+       }});
     notify_waiters();
     co_return make_error_code(errc::success);
 }
@@ -626,8 +673,9 @@ topic_table::wait_for_changes(ss::abort_source& as) {
 }
 
 std::vector<model::topic_namespace> topic_table::all_topics() const {
-    return transform_topics(
-      [](const topic_metadata& tp) { return tp.get_configuration().tp_ns; });
+    return transform_topics([](const topic_metadata_item& tp) {
+        return tp.get_configuration().tp_ns;
+    });
 }
 
 size_t topic_table::all_topics_count() const { return _topics.size(); }
@@ -635,14 +683,14 @@ size_t topic_table::all_topics_count() const { return _topics.size(); }
 std::optional<topic_metadata>
 topic_table::get_topic_metadata(model::topic_namespace_view tp) const {
     if (auto it = _topics.find(tp); it != _topics.end()) {
-        return it->second;
+        return it->second.metadata;
     }
     return {};
 }
 std::optional<std::reference_wrapper<const topic_metadata>>
 topic_table::get_topic_metadata_ref(model::topic_namespace_view tp) const {
     if (auto it = _topics.find(tp); it != _topics.end()) {
-        return it->second;
+        return it->second.metadata;
     }
     return {};
 }
