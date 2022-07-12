@@ -442,6 +442,27 @@ func TestStartCommand(t *testing.T) {
 			require.Exactly(st, config.Default().Redpanda.ID, conf.Redpanda.ID)
 		},
 	}, {
+		name: "it should write default data_directory if loaded config doesn't have one",
+		args: []string{
+			"--config", config.Default().ConfigFile,
+			"--install-dir", "/var/lib/redpanda",
+		},
+		before: func(fs afero.Fs) error {
+			conf := config.Default()
+			conf.Redpanda.Directory = ""
+			return conf.Write(fs)
+		},
+		postCheck: func(
+			fs afero.Fs,
+			_ *redpanda.RedpandaArgs,
+			st *testing.T,
+		) {
+			conf, err := new(config.Params).Load(fs)
+			require.NoError(st, err)
+			// Check that the generated config is as expected.
+			require.Exactly(st, config.Default().Redpanda.Directory, conf.Redpanda.Directory)
+		},
+	}, {
 		name: "it should leave redpanda.node_id untouched if --node-id wasn't passed",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",

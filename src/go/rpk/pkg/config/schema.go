@@ -44,7 +44,7 @@ func (c *Config) File() *Config {
 }
 
 type RedpandaConfig struct {
-	Directory                  string                 `yaml:"data_directory" json:"data_directory"`
+	Directory                  string                 `yaml:"data_directory,omitempty" json:"data_directory"`
 	ID                         int                    `yaml:"node_id" json:"node_id"`
 	Rack                       string                 `yaml:"rack,omitempty" json:"rack"`
 	SeedServers                []SeedServer           `yaml:"seed_servers" json:"seed_servers"`

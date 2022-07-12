@@ -335,6 +335,11 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 				sendEnv(fs, env, cfg, !prestartCfg.checkEnabled, err)
 				return err
 			}
+
+			if cfg.Redpanda.Directory == "" {
+				cfg.Redpanda.Directory = config.Default().Redpanda.Directory
+			}
+
 			checkPayloads, tunerPayloads, err := prestart(
 				fs,
 				rpArgs,

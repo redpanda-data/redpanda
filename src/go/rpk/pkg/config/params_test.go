@@ -56,7 +56,6 @@ redpanda:
 			},
 			exp: `config_file: /etc/redpanda/redpanda.yaml
 redpanda:
-    data_directory: ""
     node_id: 6
     rack: my_rack
 `,
