@@ -272,12 +272,8 @@ class NodesDecommissioningTest(EndToEndTest):
 
         # schedule partition move from the node being decommissioned before actually calling decommission
 
-        partitions = admin.get_partitions(
-            node=self.redpanda.get_node(to_decommission))
-
-        partition_to_move = random.choice(partitions)
-        to_move_tp = partition_to_move['topic']
-        to_move_p = partition_to_move['partition_id']
+        to_move_tp, to_move_p, _ = self._partition_to_move(
+            lambda p: to_decommission in p.replicas)
         details = admin.get_partitions(topic=to_move_tp, partition=to_move_p)
 
         new_replicas = self._find_replacement(details['replicas'],
