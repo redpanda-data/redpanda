@@ -30,4 +30,21 @@ private:
     ss::metrics::metric_groups _public_metrics;
 };
 
+class error_probe {
+public:
+    explicit error_probe(const ss::sstring& group_name);
+
+    void increment_5xx(int64_t count = 1) { _5xx_count += count; }
+
+    void increment_4xx(int64_t count = 1) { _4xx_count += count; }
+
+    void increment_3xx(int64_t count = 1) { _3xx_count += count; }
+
+private:
+    int64_t _5xx_count;
+    int64_t _4xx_count;
+    int64_t _3xx_count;
+    ss::metrics::metric_groups _public_metrics;
+};
+
 } // namespace pandaproxy

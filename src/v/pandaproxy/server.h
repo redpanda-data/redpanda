@@ -14,6 +14,7 @@
 #include "config/config_store.h"
 #include "kafka/client/client.h"
 #include "pandaproxy/json/types.h"
+#include "pandaproxy/probe.h"
 #include "seastarx.h"
 
 #include <seastar/core/abort_source.hh>
@@ -103,6 +104,7 @@ private:
     ss::api_registry_builder20 _api20;
     bool _has_routes;
     context_t& _ctx;
+    error_probe _eprobe;
 };
 
 template<typename service_t>
