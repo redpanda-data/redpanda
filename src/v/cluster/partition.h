@@ -13,6 +13,7 @@
 
 #include "cloud_storage/remote_partition.h"
 #include "cluster/archival_metadata_stm.h"
+#include "cluster/feature_table.h"
 #include "cluster/id_allocator_stm.h"
 #include "cluster/partition_probe.h"
 #include "cluster/rm_stm.h"
@@ -44,27 +45,17 @@ public:
       consensus_ptr r,
       ss::sharded<cluster::tx_gateway_frontend>&,
       ss::sharded<cloud_storage::remote>&,
-      ss::sharded<cloud_storage::cache>&);
+      ss::sharded<cloud_storage::cache>&,
+      ss::sharded<feature_table>&);
 
     raft::group_id group() const { return _raft->group(); }
     ss::future<> start();
     ss::future<> stop();
 
-    ss::future<result<raft::replicate_result>>
+    ss::future<result<kafka_result>>
     replicate(model::record_batch_reader&&, raft::replicate_options);
 
-    raft::replicate_stages
-    replicate_in_stages(model::record_batch_reader&&, raft::replicate_options);
-
-    ss::future<result<raft::replicate_result>> replicate(
-      model::term_id, model::record_batch_reader&&, raft::replicate_options);
-
-    ss::future<result<raft::replicate_result>> replicate(
-      model::batch_identity,
-      model::record_batch_reader&&,
-      raft::replicate_options);
-
-    raft::replicate_stages replicate_in_stages(
+    kafka_stages replicate_in_stages(
       model::batch_identity,
       model::record_batch_reader&&,
       raft::replicate_options);
@@ -289,11 +280,7 @@ public:
         return _raft->abort_configuration_change(rev);
     }
 
-private:
-    friend partition_manager;
-    friend replicated_partition_probe;
-
-    consensus_ptr raft() { return _raft; }
+    consensus_ptr raft() const { return _raft; }
 
 private:
     consensus_ptr _raft;
@@ -305,9 +292,11 @@ private:
     ss::abort_source _as;
     partition_probe _probe;
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
+    ss::sharded<feature_table>& _feature_table;
     bool _is_tx_enabled{false};
     bool _is_idempotence_enabled{false};
     ss::lw_shared_ptr<cloud_storage::remote_partition> _cloud_storage_partition;
+    ss::lw_shared_ptr<const storage::offset_translator_state> _translator;
 
     friend std::ostream& operator<<(std::ostream& o, const partition& x);
 };

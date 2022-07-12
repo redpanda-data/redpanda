@@ -89,7 +89,7 @@ void replicated_partition_probe::setup_internal_metrics(const model::ntp& ntp) {
         sm::make_gauge(
           "leader_id",
           [this] {
-              return _partition._raft->get_leader_id().value_or(
+              return _partition.raft()->get_leader_id().value_or(
                 model::node_id(-1));
           },
           sm::description("Id of current partition leader"),
@@ -98,7 +98,7 @@ void replicated_partition_probe::setup_internal_metrics(const model::ntp& ntp) {
         sm::make_gauge(
           "under_replicated_replicas",
           [this] {
-              auto metrics = _partition._raft->get_follower_metrics();
+              auto metrics = _partition.raft()->get_follower_metrics();
               return std::count_if(
                 metrics.cbegin(),
                 metrics.cend(),
@@ -181,7 +181,7 @@ void replicated_partition_probe::setup_public_metrics(const model::ntp& ntp) {
         sm::make_gauge(
           "under_replicated_replicas",
           [this] {
-              auto metrics = _partition._raft->get_follower_metrics();
+              auto metrics = _partition.raft()->get_follower_metrics();
               return std::count_if(
                 metrics.cbegin(),
                 metrics.cend(),
@@ -214,7 +214,7 @@ void replicated_partition_probe::setup_public_metrics(const model::ntp& ntp) {
           .aggregate({sm::shard_label, partition_label}),
         sm::make_gauge(
           "replicas",
-          [this] { return _partition._raft->get_follower_count(); },
+          [this] { return _partition.raft()->get_follower_count(); },
           sm::description("Number of replicas per topic"),
           labels)
           .aggregate({sm::shard_label, partition_label}),

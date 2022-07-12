@@ -14,25 +14,7 @@ from ducktape.utils.util import wait_until
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
-from rptest.services.redpanda_installer import RedpandaInstaller
-
-
-def wait_for_num_versions(redpanda, num_versions):
-    def get_unique_versions():
-        node = redpanda.nodes[0]
-        brokers_list = \
-            str(node.account.ssh_output(f"{redpanda.find_binary('rpk')} redpanda admin brokers list"))
-        redpanda.logger.debug(brokers_list)
-        version_re = re.compile("v\\d+\\.\\d+\\.\\d+")
-        return set(version_re.findall(brokers_list))
-
-    # NOTE: allow retries, as the version may not be available immediately
-    # following a restart.
-    wait_until(lambda: len(get_unique_versions()) == num_versions,
-               timeout_sec=30)
-    unique_versions = get_unique_versions()
-    assert len(unique_versions) == num_versions, unique_versions
-    return unique_versions
+from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
 
 
 class UpgradeFromSpecificVersion(RedpandaTest):

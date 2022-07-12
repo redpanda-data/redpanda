@@ -175,6 +175,20 @@ inline std::error_code make_error_code(tx_errc e) noexcept {
     return std::error_code(static_cast<int>(e), tx_error_category());
 }
 
+struct kafka_result {
+    kafka::offset last_offset;
+};
+struct kafka_stages {
+    kafka_stages(ss::future<>, ss::future<result<kafka_result>>);
+    explicit kafka_stages(raft::errc);
+    // after this future is ready, request in enqueued in raft and it will not
+    // be reorderd
+    ss::future<> request_enqueued;
+    // after this future is ready, request was successfully replicated with
+    // requested consistency level
+    ss::future<result<kafka_result>> replicate_finished;
+};
+
 struct try_abort_request
   : serde::envelope<try_abort_request, serde::version<0>> {
     model::partition_id tm;

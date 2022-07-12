@@ -139,7 +139,7 @@ static error_code map_produce_error_code(std::error_code ec) {
         case raft::errc::shutting_down:
             return error_code::request_timed_out;
         default:
-            return error_code::unknown_server_error;
+            return error_code::request_timed_out;
         }
     }
 
@@ -157,11 +157,11 @@ static error_code map_produce_error_code(std::error_code ec) {
         case cluster::errc::invalid_request:
             return error_code::invalid_request;
         default:
-            return error_code::unknown_server_error;
+            return error_code::request_timed_out;
         }
     }
 
-    return error_code::unknown_server_error;
+    return error_code::request_timed_out;
 }
 
 /*
@@ -198,7 +198,7 @@ static partition_produce_stages partition_append(
                     p.error_code = map_produce_error_code(r.error());
                 }
             } catch (...) {
-                p.error_code = error_code::unknown_server_error;
+                p.error_code = error_code::request_timed_out;
             }
             return p;
         }),

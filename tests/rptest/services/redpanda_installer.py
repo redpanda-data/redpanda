@@ -9,11 +9,30 @@
 
 import re
 import requests
+from ducktape.utils.util import wait_until
 
 # Match any version that may result from a redpanda binary, which may not be a
 # released version.
 # E.g. "v22.1.1-rc1-1373-g77f868..."
 VERSION_RE = re.compile(".*v(\\d+)\\.(\\d+)\\.(\\d+).*")
+
+
+def wait_for_num_versions(redpanda, num_versions):
+    def get_unique_versions():
+        node = redpanda.nodes[0]
+        brokers_list = \
+            str(node.account.ssh_output(f"{redpanda.find_binary('rpk')} redpanda admin brokers list"))
+        redpanda.logger.debug(brokers_list)
+        version_re = re.compile("v\\d+\\.\\d+\\.\\d+")
+        return set(version_re.findall(brokers_list))
+
+    # NOTE: allow retries, as the version may not be available immediately
+    # following a restart.
+    wait_until(lambda: len(get_unique_versions()) == num_versions,
+               timeout_sec=30)
+    unique_versions = get_unique_versions()
+    assert len(unique_versions) == num_versions, unique_versions
+    return unique_versions
 
 
 class RedpandaInstaller:
