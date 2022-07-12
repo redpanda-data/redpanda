@@ -166,11 +166,12 @@ to include all properties including these low level tunables.
 			var file *os.File
 			if filename == "" {
 				file, err = ioutil.TempFile("/tmp", "config_*.yaml")
+				filename = "/tmp/config_*.yaml"
 			} else {
 				file, err = os.Create(filename)
 			}
 
-			out.MaybeDie(err, "unable to create file %q: %v", file.Name(), err)
+			out.MaybeDie(err, "unable to create file %q: %v", filename, err)
 			err = exportConfig(file, schema, currentConfig, *all)
 			out.MaybeDie(err, "failed to write out config %q: %v", file.Name(), err)
 			err = file.Close()
