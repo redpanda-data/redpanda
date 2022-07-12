@@ -20,6 +20,7 @@
 #include "raft/types.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
+#include "reflection/async_adl.h"
 #include "storage/types.h"
 #include "test_utils/randoms.h"
 #include "test_utils/rpc.h"
@@ -2087,6 +2088,72 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           .log_ok = tests::random_bool(),
         };
         roundtrip_test(data);
+    }
+    {
+        raft::heartbeat_request data;
+
+        // heartbeat request uses the first node/target_node for all of the
+        // heartbeat meatdata entries. so here we arrange for that to be true in
+        // the input data so that equality works as expected.
+        const auto node_id = tests::random_named_int<model::node_id>();
+        const auto target_node_id = tests::random_named_int<model::node_id>();
+
+        for (auto i = 0, mi = random_generators::get_int(1, 20); i < mi; ++i) {
+            raft::protocol_metadata meta{
+              .group = tests::random_named_int<raft::group_id>(),
+              .commit_index = tests::random_named_int<model::offset>(),
+              .term = tests::random_named_int<model::term_id>(),
+              .prev_log_index = tests::random_named_int<model::offset>(),
+              .prev_log_term = tests::random_named_int<model::term_id>(),
+              .last_visible_index = tests::random_named_int<model::offset>(),
+            };
+            raft::heartbeat_metadata hm{
+              .meta = meta,
+              .node_id = raft::
+                vnode{node_id, tests::random_named_int<model::revision_id>()},
+              .target_node_id = raft::
+                vnode{target_node_id, tests::random_named_int<model::revision_id>()},
+            };
+            data.heartbeats.push_back(hm);
+        }
+
+        // encoder will sort automatically. so for equality to work as expected
+        // we use the same sorting for the input as the expected output.
+        struct sorter_fn {
+            constexpr bool operator()(
+              const raft::heartbeat_metadata& lhs,
+              const raft::heartbeat_metadata& rhs) const {
+                return lhs.meta.commit_index < rhs.meta.commit_index;
+            }
+        };
+
+        std::sort(data.heartbeats.begin(), data.heartbeats.end(), sorter_fn{});
+
+        // serde round trip test async version
+        {
+            auto serde_in = data;
+            iobuf serde_out;
+            serde::write_async(serde_out, std::move(serde_in)).get();
+            auto from_serde = serde::from_iobuf<raft::heartbeat_request>(
+              std::move(serde_out));
+            BOOST_REQUIRE(data == from_serde);
+        }
+
+        // the adl test needs to force async to avoid the automatic reflection
+        // version of the encoder.
+        {
+            auto adl_in = data;
+            iobuf adl_out;
+            reflection::async_adl<raft::heartbeat_request>{}
+              .to(adl_out, std::move(adl_in))
+              .get();
+            iobuf_parser in(std::move(adl_out));
+            auto from_adl = reflection::async_adl<raft::heartbeat_request>{}
+                              .from(in)
+                              .get0();
+
+            BOOST_REQUIRE(data == from_adl);
+        }
     }
 }
 

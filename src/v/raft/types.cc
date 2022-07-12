@@ -19,6 +19,8 @@
 #include "vassert.h"
 #include "vlog.h"
 
+#include <seastar/coroutine/maybe_yield.hh>
+
 #include <fmt/ostream.h>
 
 #include <chrono>
@@ -247,6 +249,162 @@ std::ostream& operator<<(std::ostream& o, const install_snapshot_reply& r) {
       r.bytes_stored,
       r.success);
     return o;
+}
+
+ss::future<> heartbeat_request::serde_async_write(iobuf& dst) {
+    vassert(!heartbeats.empty(), "cannot serialize empty heartbeats request");
+
+    struct sorter_fn {
+        constexpr bool operator()(
+          const raft::heartbeat_metadata& lhs,
+          const raft::heartbeat_metadata& rhs) const {
+            return lhs.meta.commit_index < rhs.meta.commit_index;
+        }
+    };
+
+    iobuf out;
+    auto& request = *this;
+
+    std::sort(
+      request.heartbeats.begin(), request.heartbeats.end(), sorter_fn{});
+
+    co_await ss::coroutine::maybe_yield();
+
+    internal::hbeat_soa encodee(request.heartbeats.size());
+    // target physical node id is always the same it differs only by
+    // revision
+
+    const size_t size = request.heartbeats.size();
+    for (size_t i = 0; i < size; ++i) {
+        const auto& m = request.heartbeats[i].meta;
+        const raft::vnode node = request.heartbeats[i].node_id;
+        const raft::vnode target_node = request.heartbeats[i].target_node_id;
+        vassert(m.group() >= 0, "Negative raft group detected. {}", m.group);
+        encodee.groups[i] = m.group;
+        encodee.commit_indices[i] = std::max(model::offset(-1), m.commit_index);
+        encodee.terms[i] = std::max(model::term_id(-1), m.term);
+        encodee.prev_log_indices[i] = std::max(
+          model::offset(-1), m.prev_log_index);
+        encodee.prev_log_terms[i] = std::max(
+          model::term_id(-1), m.prev_log_term);
+        encodee.last_visible_indices[i] = std::max(
+          model::offset(-1), m.last_visible_index);
+        encodee.revisions[i] = std::max(
+          model::revision_id(-1), node.revision());
+        encodee.target_revisions[i] = std::max(
+          model::revision_id(-1), target_node.revision());
+
+        co_await ss::coroutine::maybe_yield();
+    }
+    // important to release this memory after this function
+    // request.meta = {}; // release memory
+
+    using serde::write;
+
+    // physical node ids are the same for all requests
+    write(out, request.heartbeats.front().node_id.id());
+    write(out, request.heartbeats.front().target_node_id.id());
+    write(out, static_cast<uint32_t>(size));
+
+    internal::encode_one_delta_array<raft::group_id>(out, encodee.groups);
+    internal::encode_one_delta_array<model::offset>(
+      out, encodee.commit_indices);
+    internal::encode_one_delta_array<model::term_id>(out, encodee.terms);
+    internal::encode_one_delta_array<model::offset>(
+      out, encodee.prev_log_indices);
+    internal::encode_one_delta_array<model::term_id>(
+      out, encodee.prev_log_terms);
+    internal::encode_one_delta_array<model::offset>(
+      out, encodee.last_visible_indices);
+    internal::encode_one_delta_array<model::revision_id>(
+      out, encodee.revisions);
+    internal::encode_one_delta_array<model::revision_id>(
+      out, encodee.target_revisions);
+
+    write(dst, std::move(out));
+}
+
+void heartbeat_request::serde_read(
+  iobuf_parser& src, const serde::header& hdr) {
+    using serde::read_nested;
+    auto tmp = read_nested<iobuf>(src, hdr._bytes_left_limit);
+    iobuf_parser in(std::move(tmp));
+
+    auto& req = *this;
+    auto node_id = read_nested<model::node_id>(in, 0U);
+    auto target_node = read_nested<model::node_id>(in, 0U);
+    req.heartbeats = std::vector<raft::heartbeat_metadata>(
+      read_nested<uint32_t>(in, 0U));
+    if (req.heartbeats.empty()) {
+        return;
+    }
+    const size_t max = req.heartbeats.size();
+    req.heartbeats[0].meta.group = varlong_reader<raft::group_id>(in);
+    for (size_t i = 1; i < max; ++i) {
+        req.heartbeats[i].meta.group
+          = internal::read_one_varint_delta<raft::group_id>(
+            in, req.heartbeats[i - 1].meta.group);
+    }
+    req.heartbeats[0].meta.commit_index = varlong_reader<model::offset>(in);
+    for (size_t i = 1; i < max; ++i) {
+        req.heartbeats[i].meta.commit_index
+          = internal::read_one_varint_delta<model::offset>(
+            in, req.heartbeats[i - 1].meta.commit_index);
+    }
+    req.heartbeats[0].meta.term = varlong_reader<model::term_id>(in);
+    for (size_t i = 1; i < max; ++i) {
+        req.heartbeats[i].meta.term
+          = internal::read_one_varint_delta<model::term_id>(
+            in, req.heartbeats[i - 1].meta.term);
+    }
+    req.heartbeats[0].meta.prev_log_index = varlong_reader<model::offset>(in);
+    for (size_t i = 1; i < max; ++i) {
+        req.heartbeats[i].meta.prev_log_index
+          = internal::read_one_varint_delta<model::offset>(
+            in, req.heartbeats[i - 1].meta.prev_log_index);
+    }
+    req.heartbeats[0].meta.prev_log_term = varlong_reader<model::term_id>(in);
+    for (size_t i = 1; i < max; ++i) {
+        req.heartbeats[i].meta.prev_log_term
+          = internal::read_one_varint_delta<model::term_id>(
+            in, req.heartbeats[i - 1].meta.prev_log_term);
+    }
+    req.heartbeats[0].meta.last_visible_index = varlong_reader<model::offset>(
+      in);
+    for (size_t i = 1; i < max; ++i) {
+        req.heartbeats[i].meta.last_visible_index
+          = internal::read_one_varint_delta<model::offset>(
+            in, req.heartbeats[i - 1].meta.last_visible_index);
+    }
+
+    req.heartbeats[0].node_id = raft::vnode(
+      node_id, varlong_reader<model::revision_id>(in));
+    for (size_t i = 1; i < max; ++i) {
+        req.heartbeats[i].node_id = raft::vnode(
+          node_id,
+          internal::read_one_varint_delta<model::revision_id>(
+            in, req.heartbeats[i - 1].node_id.revision()));
+    }
+
+    req.heartbeats[0].target_node_id = raft::vnode(
+      target_node, varlong_reader<model::revision_id>(in));
+    for (size_t i = 1; i < max; ++i) {
+        req.heartbeats[i].target_node_id = raft::vnode(
+          target_node,
+          internal::read_one_varint_delta<model::revision_id>(
+            in, req.heartbeats[i - 1].target_node_id.revision()));
+    }
+
+    for (auto& hb : req.heartbeats) {
+        hb.meta.prev_log_index = decode_signed(hb.meta.prev_log_index);
+        hb.meta.commit_index = decode_signed(hb.meta.commit_index);
+        hb.meta.prev_log_term = decode_signed(hb.meta.prev_log_term);
+        hb.meta.last_visible_index = decode_signed(hb.meta.last_visible_index);
+        hb.node_id = raft::vnode(
+          hb.node_id.id(), decode_signed(hb.node_id.revision()));
+        hb.target_node_id = raft::vnode(
+          hb.target_node_id.id(), decode_signed(hb.target_node_id.revision()));
+    }
 }
 
 } // namespace raft
