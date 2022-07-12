@@ -578,7 +578,7 @@ class RedpandaService(Service):
             memory_kb = int(line.strip().split()[1])
             return memory_kb / 1024
 
-    def start(self, nodes=None, clean_nodes=True):
+    def start(self, nodes=None, clean_nodes=True, start_si=True):
         """Start the service on all nodes."""
         to_start = nodes if nodes is not None else self.nodes
         assert all((node in self.nodes for node in to_start))
@@ -653,7 +653,7 @@ class RedpandaService(Service):
                                          request_timeout_ms=30000,
                                          api_version_auto_timeout_ms=3000)
 
-        if self._si_settings is not None:
+        if start_si and self._si_settings is not None:
             self.start_si()
 
     def write_tls_certs(self):
@@ -931,6 +931,8 @@ class RedpandaService(Service):
             logger=self.logger,
         )
 
+        self.logger.debug(
+            f"Creating S3 bucket: {self._si_settings.cloud_storage_bucket}")
         self._s3client.create_bucket(self._si_settings.cloud_storage_bucket)
 
     def list_buckets(self) -> dict[str, Union[list, dict]]:
