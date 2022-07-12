@@ -697,6 +697,9 @@ class Field:
     def nullable(self):
         return self._nullable_versions is not None
 
+    def nullable_versions(self):
+        return self._nullable_versions
+
     def versions(self):
         return self._versions
 
@@ -810,6 +813,41 @@ class Field:
                     assert plain_decoder[3]
                     return plain_decoder[3], named_type
         if self.nullable():
+            assert plain_decoder[2]
+            return plain_decoder[2], named_type
+        assert plain_decoder[1]
+        return plain_decoder[1], named_type
+
+    def has_non_nullable_decoder(self, flex):
+        """
+        Call this method to ensure a type has a non-nullable version or not
+        """
+        plain_decoder, _ = self._redpanda_decoder()
+        if self.potentially_flexible_type:
+            if flex is True:
+                return plain_decoder[3] is not None
+        decoder_type = plain_decoder[0]
+        if decoder_type == "batch_reader" or decoder_type == "iobuf":
+            # These types have only non-nullable decoders
+            return True
+        return plain_decoder[1] is not None
+
+    def non_nullable_decoder(self, flex):
+        """
+        Nullable was never considered a 'conditional' case, but in reality it is
+        dependent on the version. For cases where the template needs to know the
+        non-nullable decoder for the type, this method is used.
+        """
+        plain_decoder, named_type = self._redpanda_decoder()
+        if self.is_array:
+            assert plain_decoder[1]
+            return plain_decoder[1], named_type
+        if self.potentially_flexible_type:
+            if flex is True:
+                assert plain_decoder[3]
+                return plain_decoder[3], named_type
+        decoder_type = plain_decoder[0]
+        if decoder_type == "batch_reader" or decoder_type == "iobuf":
             assert plain_decoder[2]
             return plain_decoder[2], named_type
         assert plain_decoder[1]
