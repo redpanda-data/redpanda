@@ -1080,6 +1080,27 @@ if({{cond}}){
 {%- endif %}
 {%- endmacro %}
 
+{% macro nullable_version_write_guard(field, is_flex, fname, writer) %}
+{%- set guard_enum = field.nullable_versions().guard_enum %}
+{%- set e, cond = field.nullable_versions()._guard() %}
+{%- set flex = "" %}
+{%- if is_flex %}
+{%- set flex = "_flex" %}
+{%- endif %}
+{%- if e == guard_enum.NO_GUARD %}
+{{ writer }}.write{{ flex }}({{ fname }});
+{%- else %}
+if ({{cond}}) {
+    {{ writer }}.write{{ flex }}({{ fname }});
+} else {
+    if(!{{ fname }}.has_value()){
+        throw std::runtime_error(fmt::format("Optional value must be filled at this version: {}", version));
+    }
+    {{ writer }}.write{{ flex }}(*{{ fname }});
+}
+{%- endif %}
+{%- endmacro %}
+
 {% macro field_encoder(field, methods, obj, writer = "writer") %}
 {%- set flex = methods|length > 1 %}
 {%- if obj %}
@@ -1108,6 +1129,8 @@ if({{cond}}){
     {{ writer }}.write(v);
 {%- endif %}
 });
+{%- elif field.nullable() %}
+{{- nullable_version_write_guard(field, (flex and field.type().potentially_flexible_type), fname, writer) }}
 {%- elif flex and field.type().potentially_flexible_type %}
 {{ writer }}.write_flex({{ fname }});
 {%- else %}
