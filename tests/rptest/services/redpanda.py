@@ -375,6 +375,25 @@ class SecurityConfig:
         return self.endpoint_authn_method == "mtls_identity"
 
 
+class LoggingConfig:
+    def __init__(self, default_level: str, logger_levels={}):
+        self.default_level = default_level
+        self.logger_levels = logger_levels
+
+    def to_args(self) -> str:
+        """
+        Generate redpanda CLI arguments for this logging config
+        :return: string
+        """
+        args = f"--default-log-level {self.default_level}"
+        if self.logger_levels:
+            levels_arg = ":".join(
+                [f"{k}={v}" for k, v in self.logger_levels.items()])
+            args += f" --logger-log-level={levels_arg}"
+
+        return args
+
+
 class RedpandaService(Service):
     PERSISTENT_ROOT = "/var/lib/redpanda"
     DATA_DIR = os.path.join(PERSISTENT_ROOT, "data")
@@ -456,6 +475,7 @@ class RedpandaService(Service):
                  resource_settings=None,
                  si_settings=None,
                  log_level: Optional[str] = None,
+                 log_config: Optional[LoggingConfig] = None,
                  environment: Optional[dict[str, str]] = None,
                  security: SecurityConfig = SecurityConfig(),
                  node_ready_timeout_s=None,
@@ -487,11 +507,21 @@ class RedpandaService(Service):
         for node in self.nodes:
             self._extra_node_conf[node] = extra_node_conf or dict()
 
-        if log_level is None:
-            self._log_level = self._context.globals.get(
-                self.LOG_LEVEL_KEY, self.DEFAULT_LOG_LEVEL)
+        if log_config is not None:
+            self._log_config = log_config
         else:
-            self._log_level = log_level
+            if log_level is None:
+                self._log_level = self._context.globals.get(
+                    self.LOG_LEVEL_KEY, self.DEFAULT_LOG_LEVEL)
+            else:
+                self._log_level = log_level
+            self._log_config = LoggingConfig(
+                self._log_level, {
+                    'exception': 'debug',
+                    'archival': 'debug',
+                    'io': 'debug',
+                    'cloud_storage': 'debug'
+                })
 
         self._admin = Admin(self,
                             auth=(self._superuser.username,
@@ -719,8 +749,7 @@ class RedpandaService(Service):
         cmd = (
             f"{preamble} {env_preamble} nohup {self.find_binary('redpanda')}"
             f" --redpanda-cfg {RedpandaService.NODE_CONFIG_FILE}"
-            f" --default-log-level {self._log_level}"
-            f" --logger-log-level=exception=debug:archival=debug:io=debug:cloud_storage=debug "
+            f" {self._log_config.to_args()} "
             f" {res_args} "
             f" >> {RedpandaService.STDOUT_STDERR_CAPTURE} 2>&1 &")
 
