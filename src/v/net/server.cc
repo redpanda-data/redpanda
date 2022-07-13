@@ -16,6 +16,7 @@
 #include "rpc/service.h"
 #include "seastar/core/coroutine.hh"
 #include "ssx/future-util.h"
+#include "ssx/metrics.h"
 #include "ssx/sformat.h"
 #include "vassert.h"
 #include "vlog.h"
@@ -31,7 +32,8 @@ namespace net {
 
 server::server(server_configuration c)
   : cfg(std::move(c))
-  , _memory(cfg.max_service_memory_per_core) {}
+  , _memory(cfg.max_service_memory_per_core)
+  , _public_metrics(ssx::metrics::public_metrics_handle) {}
 
 server::server(ss::sharded<server_configuration>* s)
   : server(s->local()) {}
@@ -43,6 +45,11 @@ void server::start() {
     if (!cfg.disable_metrics) {
         setup_metrics();
         _probe.setup_metrics(_metrics, cfg.name.c_str());
+    }
+
+    if (!cfg.disable_public_metrics) {
+        setup_public_metrics();
+        _probe.setup_public_metrics(_public_metrics, cfg.name.c_str());
     }
 
     if (cfg.connection_rate_bindings) {
@@ -316,6 +323,30 @@ void server::setup_metrics() {
          "dispatch_handler_latency",
          [this] { return _hist.seastar_histogram_logform(); },
          sm::description(ssx::sformat("{}: Latency ", cfg.name)))});
+}
+
+void server::setup_public_metrics() {
+    namespace sm = ss::metrics;
+    if (!_proto) {
+        return;
+    }
+
+    std::string_view server_name(cfg.name);
+
+    if (server_name.ends_with("_rpc")) {
+        server_name.remove_suffix(4);
+    }
+
+    auto server_label = sm::label("server");
+
+    _public_metrics.add_group(
+      prometheus_sanitize::metrics_name("rpc:request"),
+      {sm::make_histogram(
+         "latency_seconds",
+         sm::description("RPC latency"),
+         {server_label(server_name)},
+         [this] { return ssx::metrics::report_default_histogram(_hist); })
+         .aggregate({sm::shard_label})});
 }
 
 std::ostream& operator<<(std::ostream& o, const server_configuration& c) {
