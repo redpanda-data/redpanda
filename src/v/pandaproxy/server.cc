@@ -88,10 +88,12 @@ struct handler_adaptor : ss::httpd::handler_base {
         auto sem_units = co_await ss::get_units(_ctx.mem_sem, req_size);
         if (_ctx.as.abort_requested()) {
             set_reply_unavailable(*rp.rep);
+            measure.set_status(rp.rep->_status);
             co_return std::move(rp.rep);
         }
         rp = co_await _handler(std::move(rq), std::move(rp));
         set_mime_type(*rp.rep, rp.mime_type);
+        measure.set_status(rp.rep->_status);
         co_return std::move(rp.rep);
     }
 
