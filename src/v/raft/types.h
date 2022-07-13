@@ -886,4 +886,41 @@ struct adl<raft::vote_reply> {
         };
     }
 };
+
+template<>
+struct adl<raft::append_entries_reply> {
+    void to(iobuf& out, raft::append_entries_reply&& r) {
+        serialize(
+          out,
+          r.target_node_id,
+          r.node_id,
+          r.group,
+          r.term,
+          r.last_flushed_log_index,
+          r.last_dirty_log_index,
+          r.last_term_base_offset,
+          r.result);
+    }
+    raft::append_entries_reply from(iobuf_parser& in) {
+        auto target_node_id = adl<raft::vnode>{}.from(in);
+        auto node_id = adl<raft::vnode>{}.from(in);
+        auto group = adl<raft::group_id>{}.from(in);
+        auto term = adl<model::term_id>{}.from(in);
+        auto last_flushed_log_index = adl<model::offset>{}.from(in);
+        auto last_dirty_log_index = adl<model::offset>{}.from(in);
+        auto last_term_base_offset = adl<model::offset>{}.from(in);
+        auto result = adl<raft::append_entries_reply::status>{}.from(in);
+        return {
+          .target_node_id = target_node_id,
+          .node_id = node_id,
+          .group = group,
+          .term = term,
+          .last_flushed_log_index = last_flushed_log_index,
+          .last_dirty_log_index = last_dirty_log_index,
+          .last_term_base_offset = last_term_base_offset,
+          .result = result,
+        };
+    }
+};
+
 } // namespace reflection
