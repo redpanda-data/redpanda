@@ -148,7 +148,14 @@ private:
     private:
         net::server_probe& _probe;
     };
-    // used to pass around some internal state
+
+    // Used to hold resources associated with a given request until
+    // the response has been send, as well as to track some statistics
+    // about the request.
+    //
+    // The resources in particular should be not be destroyed until
+    // the request is complete (e.g., all the information written to
+    // the socket so that no userspace buffers remain).
     struct session_resources {
         ss::lowres_clock::duration backpressure_delay;
         ss::semaphore_units<> memlocks;
@@ -166,14 +173,34 @@ private:
 
     ss::future<> handle_mtls_auth();
     ss::future<> dispatch_method_once(request_header, size_t sz);
-    ss::future<> process_next_response();
+
+    /**
+     * Process zero or more ready responses in request order.
+     *
+     * The future<> returned by this method resolves when all ready *and*
+     * in-order responses have been processed, which is not the same as all
+     * ready responses. In particular, responses which are ready may not be
+     * processed if there are earlier (lower sequence number) responses which
+     * are not yet ready: they will be processed by a future invocation.
+     *
+     * @return ss::future<> a future which as described above.
+     */
+    ss::future<> maybe_process_responses();
     ss::future<> do_process(request_context);
 
     ss::future<> handle_auth_v0(size_t);
 
 private:
+    /**
+     * Bundles together a response and its associated resources.
+     */
+    struct response_and_resources {
+        response_ptr response;
+        session_resources resources;
+    };
+
     using sequence_id = named_type<uint64_t, struct kafka_protocol_sequence>;
-    using map_t = absl::flat_hash_map<sequence_id, response_ptr>;
+    using map_t = absl::flat_hash_map<sequence_id, response_and_resources>;
 
     class ctx_log {
     public:
