@@ -234,3 +234,52 @@ tune_transparent_hugepages: false
             rpk.config_set(key, value)
 
             self.redpanda.restart_nodes(node)
+
+    @cluster(num_nodes=1)
+    def test_config_change_mode_prod(self):
+        """
+        Verify that after running rpk redpanda mode prod, the 
+        configuration values of the tuners change accordingly.
+        """
+        node = self.redpanda.nodes[0]
+        rpk = RpkRemoteTool(self.redpanda, node)
+        rpk.mode_set("prod")
+        expected_config = yaml.full_load('''
+    enable_usage_stats: false
+    tune_network: true
+    tune_disk_scheduler: true
+    tune_disk_nomerges: true
+    tune_disk_write_cache: true
+    tune_disk_irq: true
+    tune_fstrim: false
+    tune_cpu: true
+    tune_aio_events: true
+    tune_clocksource: true
+    tune_swappiness: true
+    tune_transparent_hugepages: false
+    enable_memory_locking: false
+    tune_coredump: false
+    coredump_dir: /var/lib/redpanda/coredump
+    tune_ballast_file: true
+    overprovisioned: false
+''')
+        with tempfile.TemporaryDirectory() as d:
+            node.account.copy_from(RedpandaService.NODE_CONFIG_FILE, d)
+
+            with open(os.path.join(d, 'redpanda.yaml')) as f:
+                actual_config = yaml.full_load(f.read())
+
+                # Delete 'admin_api' and 'kafka_api' since they are not
+                # needed for this test and the brokers change depending
+                # on the container it's running.
+                del actual_config['rpk']['kafka_api']
+                del actual_config['rpk']['admin_api']
+
+                if actual_config['rpk'] != expected_config:
+                    self.logger.error("Configs differ")
+                    self.logger.error(
+                        f"Expected: {yaml.dump(expected_config)}")
+                    self.logger.error(
+                        f"Actual: {yaml.dump(actual_config['rpk'])}")
+                assert actual_config['rpk'] == expected_config
+                assert actual_config['redpanda']['developer_mode'] == False
