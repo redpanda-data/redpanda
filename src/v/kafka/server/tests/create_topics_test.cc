@@ -352,58 +352,13 @@ FIXTURE_TEST(create_non_replicable_topics, create_topic_fixture) {
     BOOST_CHECK(resp[1].tp_ns.tp() == "topic2");
 }
 
-FIXTURE_TEST(s3bucket_is_missing, create_topic_fixture) {
-    auto topic = make_topic(
-      "topic1",
-      std::nullopt,
-      std::nullopt,
-      std::map<ss::sstring, ss::sstring>{
-        {"redpanda.remote.readreplica", "true"}});
-
-    auto req = make_req({topic});
-
-    auto client = make_kafka_client().get0();
-    client.connect().get();
-    auto resp = client.dispatch(req, kafka::api_version(2)).get0();
-
-    BOOST_CHECK(
-      resp.data.topics[0].error_code == kafka::error_code::invalid_config);
-    BOOST_CHECK(
-      resp.data.topics[0].error_message
-      == "s3 bucket should be provided for read replica topic");
-    BOOST_CHECK(resp.data.topics[0].name == "topic1");
-}
-
-FIXTURE_TEST(s3bucket_but_not_read_replica, create_topic_fixture) {
-    auto topic = make_topic(
-      "topic1",
-      std::nullopt,
-      std::nullopt,
-      std::map<ss::sstring, ss::sstring>{
-        {"redpanda.remote.readreplica.bucket", "panda-bucket"}});
-
-    auto req = make_req({topic});
-
-    auto client = make_kafka_client().get0();
-    client.connect().get();
-    auto resp = client.dispatch(req, kafka::api_version(2)).get0();
-
-    BOOST_CHECK(
-      resp.data.topics[0].error_code == kafka::error_code::invalid_config);
-    BOOST_CHECK(
-      resp.data.topics[0].error_message
-      == "s3 bucket is supported only when redpanda.remote.readreplica is "
-         "enabled");
-    BOOST_CHECK(resp.data.topics[0].name == "topic1");
-}
-
 FIXTURE_TEST(read_replica_and_remote_write, create_topic_fixture) {
     auto topic = make_topic(
       "topic1",
       std::nullopt,
       std::nullopt,
       std::map<ss::sstring, ss::sstring>{
-        {"redpanda.remote.readreplica", "true"},
+        {"redpanda.remote.readreplica", "panda-bucket"},
         {"redpanda.remote.write", "true"}});
 
     auto req = make_req({topic});
