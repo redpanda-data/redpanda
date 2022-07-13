@@ -271,7 +271,14 @@ private:
     std::optional<model::record_batch_reader> _batches;
 };
 
-struct append_entries_reply {
+/*
+ * append_entries_reply uses two different types of serialization: when
+ * encoding/decoding directly normal adl/serde per-field serialization is used.
+ * the second type is a custom encoding used by heartbeat_reply for more
+ * efficient encoding of a vectory of append_entries_reply.
+ */
+struct append_entries_reply
+  : serde::envelope<append_entries_reply, serde::version<0>> {
     enum class status : uint8_t {
         success,
         failure,
@@ -302,6 +309,18 @@ struct append_entries_reply {
     friend bool
     operator==(const append_entries_reply&, const append_entries_reply&)
       = default;
+
+    auto serde_fields() {
+        return std::tie(
+          target_node_id,
+          node_id,
+          group,
+          term,
+          last_flushed_log_index,
+          last_dirty_log_index,
+          last_term_base_offset,
+          result);
+    }
 };
 
 struct heartbeat_metadata {

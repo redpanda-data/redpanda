@@ -2279,6 +2279,21 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
             BOOST_REQUIRE(batches_from_serde[i] == gold[i]);
         }
     }
+    {
+        raft::append_entries_reply data{
+          .target_node_id = raft::
+            vnode{tests::random_named_int<model::node_id>(), tests::random_named_int<model::revision_id>()},
+          .node_id = raft::
+            vnode{tests::random_named_int<model::node_id>(), tests::random_named_int<model::revision_id>()},
+          .group = tests::random_named_int<raft::group_id>(),
+          .term = tests::random_named_int<model::term_id>(),
+          .last_flushed_log_index = tests::random_named_int<model::offset>(),
+          .last_dirty_log_index = tests::random_named_int<model::offset>(),
+          .last_term_base_offset = tests::random_named_int<model::offset>(),
+          .result = raft::append_entries_reply::status::group_unavailable,
+        };
+        roundtrip_test(data);
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {
