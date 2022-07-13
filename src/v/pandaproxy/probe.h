@@ -61,10 +61,10 @@ class probe {
 public:
     probe(
       ss::httpd::path_description& path_desc, const ss::sstring& group_name);
-    hdr_hist& hist() { return _request_hist; }
+    hdr_hist& hist() { return _request_metrics.hist(); }
 
 private:
-    hdr_hist _request_hist;
+    http_status_metric _request_metrics;
     ss::metrics::metric_groups _metrics;
     ss::metrics::metric_groups _public_metrics;
 };

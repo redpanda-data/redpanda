@@ -21,7 +21,7 @@ namespace pandaproxy {
 
 probe::probe(
   ss::httpd::path_description& path_desc, const ss::sstring& group_name)
-  : _request_hist()
+  : _request_metrics()
   , _metrics()
   , _public_metrics(ssx::metrics::public_metrics_handle) {
     namespace sm = ss::metrics;
@@ -45,7 +45,9 @@ probe::probe(
              "request_latency",
              sm::description("Request latency"),
              labels,
-             [this] { return _request_hist.seastar_histogram_logform(); })
+             [this] {
+                 return _request_metrics.hist().seastar_histogram_logform();
+             })
              .aggregate(internal_aggregate_labels)});
     }
 
@@ -58,7 +60,8 @@ probe::probe(
                ssx::sformat("Internal latency of request for {}", group_name)),
              labels,
              [this] {
-                 return ssx::metrics::report_default_histogram(_request_hist);
+                 return ssx::metrics::report_default_histogram(
+                   _request_metrics.hist());
              })
              .aggregate(aggregate_labels)});
     }
