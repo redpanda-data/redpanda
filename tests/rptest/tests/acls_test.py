@@ -125,7 +125,8 @@ class AccessControlListTest(RedpandaTest):
         wait_until(users_propogated, timeout_sec=10, backoff_sec=1)
 
     def get_client(self, username):
-        if self.security.mtls_identity_enabled():
+        if self.security.mtls_identity_enabled(
+        ) or not self.security.sasl_enabled():
             if username == "base":
                 cert = self.base_user_cert
             elif username == "cluster_describe":
@@ -145,7 +146,8 @@ class AccessControlListTest(RedpandaTest):
                        tls_cert=cert)
 
     def get_super_client(self):
-        if self.security.mtls_identity_enabled():
+        if self.security.mtls_identity_enabled(
+        ) or not self.security.sasl_enabled():
             return RpkTool(self.redpanda, tls_cert=self.admin_user_cert)
 
         username, password, _ = self.redpanda.SUPERUSER_CREDENTIALS
@@ -183,8 +185,30 @@ class AccessControlListTest(RedpandaTest):
                  use_sasl=False,
                  enable_authz=True,
                  authn_method="mtls_identity")
-    def test_describe_acls(self, use_tls, use_sasl, enable_authz,
-                           authn_method):
+    # Disable authz
+    @parametrize(use_tls=True,
+                 use_sasl=True,
+                 enable_authz=False,
+                 authn_method=None,
+                 always_succeed=True)
+    # Disable authz
+    @parametrize(use_tls=True,
+                 use_sasl=True,
+                 enable_authz=False,
+                 authn_method="sasl",
+                 always_succeed=True)
+    # Disable authz
+    @parametrize(use_tls=True,
+                 use_sasl=True,
+                 enable_authz=False,
+                 authn_method="mtls_identity",
+                 always_succeed=True)
+    def test_describe_acls(self,
+                           use_tls,
+                           use_sasl,
+                           enable_authz,
+                           authn_method,
+                           always_succeed=False):
         """
         security::acl_operation::describe, security::default_cluster_name
         """
@@ -194,9 +218,9 @@ class AccessControlListTest(RedpandaTest):
         for _ in range(5):
             try:
                 self.get_client("base").acl_list()
-                assert False, "list acls should have failed"
+                assert always_succeed, "list acls should have failed"
             except ClusterAuthorizationError:
-                pass
+                assert not always_succeed
 
             self.get_client("cluster_describe").acl_list()
             self.get_super_client().acl_list()
