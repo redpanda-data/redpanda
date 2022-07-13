@@ -52,6 +52,7 @@ probe::probe(
     }
 
     if (!config::shard_local_cfg().disable_public_metrics()) {
+        auto status_label = sm::label("status");
         _public_metrics.add_group(
           group_name,
           {sm::make_histogram(
@@ -63,6 +64,33 @@ probe::probe(
                  return ssx::metrics::report_default_histogram(
                    _request_metrics.hist());
              })
+             .aggregate(aggregate_labels),
+
+           sm::make_counter(
+             "request_errors_total",
+             [this] { return _request_metrics._5xx_count; },
+             sm::description(
+               ssx::sformat("Total number of {} server errors", group_name)),
+             {operation_label(path_desc.operations.nickname),
+              status_label("5xx")})
+             .aggregate(aggregate_labels),
+
+           sm::make_counter(
+             "request_errors_total",
+             [this] { return _request_metrics._4xx_count; },
+             sm::description(
+               ssx::sformat("Total number of {} client errors", group_name)),
+             {operation_label(path_desc.operations.nickname),
+              status_label("4xx")})
+             .aggregate(aggregate_labels),
+
+           sm::make_counter(
+             "request_errors_total",
+             [this] { return _request_metrics._3xx_count; },
+             sm::description(ssx::sformat(
+               "Total number of {} redirection errors", group_name)),
+             {operation_label(path_desc.operations.nickname),
+              status_label("3xx")})
              .aggregate(aggregate_labels)});
     }
 }
