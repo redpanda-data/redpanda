@@ -849,3 +849,15 @@ SEASTAR_THREAD_TEST_CASE(test_http_reconnect_graceful_shutdown) {
     ss::sleep(10ms).get();
     BOOST_REQUIRE(fut.get() == http::reconnect_result_t::timed_out);
 }
+
+SEASTAR_THREAD_TEST_CASE(test_header_redacted) {
+    http::client::request_header request_header;
+    request_header.set(boost::beast::http::field::authorization, "password");
+    request_header.set("x-amz-content-sha256", "pigeon");
+    request_header.set("x-amz-security-token", "capetown");
+    auto redacted = http::redacted_header(request_header);
+    auto s = fmt::format("{}", redacted);
+    BOOST_REQUIRE(s.find("password") == std::string::npos);
+    BOOST_REQUIRE(s.find("pigeon") == std::string::npos);
+    BOOST_REQUIRE(s.find("capetown") == std::string::npos);
+}
