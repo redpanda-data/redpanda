@@ -161,27 +161,6 @@ std::ostream& operator<<(std::ostream& o, const install_snapshot_reply& r) {
 
 namespace reflection {
 
-struct rpc_model_reader_consumer {
-    explicit rpc_model_reader_consumer(iobuf& oref)
-      : ref(oref) {}
-    ss::future<ss::stop_iteration> operator()(model::record_batch batch) {
-        reflection::serialize(ref, batch.header());
-        if (!batch.compressed()) {
-            reflection::serialize<int8_t>(ref, 0);
-            batch.for_each_record([this](model::record r) {
-                reflection::serialize(ref, std::move(r));
-            });
-        } else {
-            reflection::serialize<int8_t>(ref, 1);
-            reflection::serialize(ref, std::move(batch).release_data());
-        }
-        return ss::make_ready_future<ss::stop_iteration>(
-          ss::stop_iteration::no);
-    }
-    void end_of_stream(){};
-    iobuf& ref;
-};
-
 ss::future<> async_adl<raft::append_entries_request>::to(
   iobuf& out, raft::append_entries_request&& request) {
     return model::consume_reader_to_memory(
