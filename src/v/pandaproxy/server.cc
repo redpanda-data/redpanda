@@ -91,7 +91,14 @@ struct handler_adaptor : ss::httpd::handler_base {
             measure.set_status(rp.rep->_status);
             co_return std::move(rp.rep);
         }
-        rp = co_await _handler(std::move(rq), std::move(rp));
+        try {
+            rp = co_await _handler(std::move(rq), std::move(rp));
+        } catch (const std::exception& e) {
+            auto eptr = std::current_exception();
+            auto rep = exception_reply(eptr);
+            measure.set_status(rep->_status);
+            std::rethrow_exception(eptr);
+        }
         set_mime_type(*rp.rep, rp.mime_type);
         measure.set_status(rp.rep->_status);
         co_return std::move(rp.rep);
