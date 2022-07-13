@@ -407,6 +407,152 @@ void heartbeat_request::serde_read(
     }
 }
 
+void heartbeat_reply::serde_write(iobuf& dst) {
+    using serde::write;
+
+    auto& reply = *this;
+    iobuf out;
+
+    struct sorter_fn {
+        constexpr bool operator()(
+          const raft::append_entries_reply& lhs,
+          const raft::append_entries_reply& rhs) const {
+            return lhs.last_flushed_log_index < rhs.last_flushed_log_index;
+        }
+    };
+
+    write(out, static_cast<uint32_t>(reply.meta.size()));
+    // no requests
+    if (reply.meta.empty()) {
+        return;
+    }
+
+    // replies are comming from the same physical node
+    write(out, reply.meta.front().node_id.id());
+    // replies are addressed to the same physical node
+    write(out, reply.meta.front().target_node_id.id());
+    std::sort(reply.meta.begin(), reply.meta.end(), sorter_fn{});
+    internal::hbeat_response_array encodee(reply.meta.size());
+
+    for (size_t i = 0; i < reply.meta.size(); ++i) {
+        encodee.groups[i] = reply.meta[i].group;
+        encodee.terms[i] = std::max(model::term_id(-1), reply.meta[i].term);
+
+        encodee.last_flushed_log_index[i] = std::max(
+          model::offset(-1), reply.meta[i].last_flushed_log_index);
+        encodee.last_dirty_log_index[i] = std::max(
+          model::offset(-1), reply.meta[i].last_dirty_log_index);
+        encodee.last_term_base_offset[i] = std::max(
+          model::offset(-1), reply.meta[i].last_term_base_offset);
+        encodee.revisions[i] = std::max(
+          model::revision_id(-1), reply.meta[i].node_id.revision());
+        encodee.target_revisions[i] = std::max(
+          model::revision_id(-1), reply.meta[i].target_node_id.revision());
+    }
+    internal::encode_one_delta_array<raft::group_id>(out, encodee.groups);
+    internal::encode_one_delta_array<model::term_id>(out, encodee.terms);
+
+    internal::encode_one_delta_array<model::offset>(
+      out, encodee.last_flushed_log_index);
+    internal::encode_one_delta_array<model::offset>(
+      out, encodee.last_dirty_log_index);
+    internal::encode_one_delta_array<model::offset>(
+      out, encodee.last_term_base_offset);
+    internal::encode_one_delta_array<model::revision_id>(
+      out, encodee.revisions);
+    internal::encode_one_delta_array<model::revision_id>(
+      out, encodee.target_revisions);
+    for (auto& m : reply.meta) {
+        write(out, m.result);
+    }
+
+    write(dst, std::move(out));
+}
+
+void heartbeat_reply::serde_read(iobuf_parser& src, const serde::header& hdr) {
+    using serde::read_nested;
+    auto tmp = read_nested<iobuf>(src, hdr._bytes_left_limit);
+    iobuf_parser in(std::move(tmp));
+
+    auto& reply = *this;
+    reply.meta = std::vector<raft::append_entries_reply>(
+      read_nested<uint32_t>(in, 0U));
+
+    // empty reply
+    if (reply.meta.empty()) {
+        return;
+    }
+
+    auto node_id = read_nested<model::node_id>(in, 0U);
+    auto target_node_id = read_nested<model::node_id>(in, 0U);
+
+    size_t size = reply.meta.size();
+    reply.meta[0].group = varlong_reader<raft::group_id>(in);
+    for (size_t i = 1; i < size; ++i) {
+        reply.meta[i].group = internal::read_one_varint_delta<raft::group_id>(
+          in, reply.meta[i - 1].group);
+    }
+    reply.meta[0].term = varlong_reader<model::term_id>(in);
+    for (size_t i = 1; i < size; ++i) {
+        reply.meta[i].term = internal::read_one_varint_delta<model::term_id>(
+          in, reply.meta[i - 1].term);
+    }
+
+    reply.meta[0].last_flushed_log_index = varlong_reader<model::offset>(in);
+    for (size_t i = 1; i < size; ++i) {
+        reply.meta[i].last_flushed_log_index
+          = internal::read_one_varint_delta<model::offset>(
+            in, reply.meta[i - 1].last_flushed_log_index);
+    }
+
+    reply.meta[0].last_dirty_log_index = varlong_reader<model::offset>(in);
+    for (size_t i = 1; i < size; ++i) {
+        reply.meta[i].last_dirty_log_index
+          = internal::read_one_varint_delta<model::offset>(
+            in, reply.meta[i - 1].last_dirty_log_index);
+    }
+
+    reply.meta[0].last_term_base_offset = varlong_reader<model::offset>(in);
+    for (size_t i = 1; i < size; ++i) {
+        reply.meta[i].last_term_base_offset
+          = internal::read_one_varint_delta<model::offset>(
+            in, reply.meta[i - 1].last_term_base_offset);
+    }
+
+    reply.meta[0].node_id = raft::vnode(
+      node_id, varlong_reader<model::revision_id>(in));
+    for (size_t i = 1; i < size; ++i) {
+        reply.meta[i].node_id = raft::vnode(
+          node_id,
+          internal::read_one_varint_delta<model::revision_id>(
+            in, reply.meta[i - 1].node_id.revision()));
+    }
+
+    reply.meta[0].target_node_id = raft::vnode(
+      target_node_id, varlong_reader<model::revision_id>(in));
+    for (size_t i = 1; i < size; ++i) {
+        reply.meta[i].target_node_id = raft::vnode(
+          target_node_id,
+          internal::read_one_varint_delta<model::revision_id>(
+            in, reply.meta[i - 1].target_node_id.revision()));
+    }
+
+    for (size_t i = 0; i < size; ++i) {
+        reply.meta[i].result = read_nested<raft::append_entries_reply::status>(
+          in, 0U);
+    }
+
+    for (auto& m : reply.meta) {
+        m.last_flushed_log_index = decode_signed(m.last_flushed_log_index);
+        m.last_dirty_log_index = decode_signed(m.last_dirty_log_index);
+        m.last_term_base_offset = decode_signed(m.last_term_base_offset);
+        m.node_id = raft::vnode(
+          m.node_id.id(), decode_signed(m.node_id.revision()));
+        m.target_node_id = raft::vnode(
+          m.target_node_id.id(), decode_signed(m.target_node_id.revision()));
+    }
+}
+
 } // namespace raft
 
 namespace reflection {

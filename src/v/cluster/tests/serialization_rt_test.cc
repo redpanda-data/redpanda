@@ -2155,6 +2155,61 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
             BOOST_REQUIRE(data == from_adl);
         }
     }
+    {
+        raft::heartbeat_reply data;
+
+        // heartbeat reply uses the first node/target_node for all of the
+        // reply meatdata entries. so here we arrange for that to be true in
+        // the input data so that equality works as expected.
+        const auto node_id = tests::random_named_int<model::node_id>();
+        const auto target_node_id = tests::random_named_int<model::node_id>();
+
+        for (auto i = 0, mi = random_generators::get_int(1, 20); i < mi; ++i) {
+            raft::append_entries_reply reply{
+              .target_node_id = raft::
+                vnode{target_node_id, tests::random_named_int<model::revision_id>()},
+              .node_id = raft::
+                vnode{node_id, tests::random_named_int<model::revision_id>()},
+              .group = tests::random_named_int<raft::group_id>(),
+              .term = tests::random_named_int<model::term_id>(),
+              .last_flushed_log_index
+              = tests::random_named_int<model::offset>(),
+              .last_dirty_log_index = tests::random_named_int<model::offset>(),
+              .last_term_base_offset = tests::random_named_int<model::offset>(),
+              .result = raft::append_entries_reply::status::group_unavailable,
+            };
+            data.meta.push_back(reply);
+        }
+
+        // encoder will sort automatically. so for equality to work as expected
+        // we use the same sorting for the input as the expected output.
+        struct sorter_fn {
+            constexpr bool operator()(
+              const raft::append_entries_reply& lhs,
+              const raft::append_entries_reply& rhs) const {
+                return lhs.last_flushed_log_index < rhs.last_flushed_log_index;
+            }
+        };
+
+        std::sort(data.meta.begin(), data.meta.end(), sorter_fn{});
+
+        serde_roundtrip_test(data);
+
+        // the adl test needs to force async to avoid the automatic reflection
+        // version of the encoder.
+        {
+            auto adl_in = data;
+            iobuf adl_out;
+            reflection::async_adl<raft::heartbeat_reply>{}
+              .to(adl_out, std::move(adl_in))
+              .get();
+            iobuf_parser in(std::move(adl_out));
+            auto from_adl
+              = reflection::async_adl<raft::heartbeat_reply>{}.from(in).get0();
+
+            BOOST_REQUIRE(data == from_adl);
+        }
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {

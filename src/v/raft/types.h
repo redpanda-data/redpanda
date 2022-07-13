@@ -276,6 +276,10 @@ struct append_entries_reply {
 
     friend std::ostream&
     operator<<(std::ostream& o, const append_entries_reply& r);
+
+    friend bool
+    operator==(const append_entries_reply&, const append_entries_reply&)
+      = default;
 };
 
 struct heartbeat_metadata {
@@ -310,9 +314,21 @@ struct heartbeat_request
     ss::future<> serde_async_write(iobuf& out);
     void serde_read(iobuf_parser&, const serde::header&);
 };
-struct heartbeat_reply {
+
+struct heartbeat_reply : serde::envelope<heartbeat_reply, serde::version<0>> {
     std::vector<append_entries_reply> meta;
+
+    heartbeat_reply() noexcept = default;
+    explicit heartbeat_reply(std::vector<append_entries_reply> meta)
+      : meta(std::move(meta)) {}
+
     friend std::ostream& operator<<(std::ostream& o, const heartbeat_reply& r);
+
+    friend bool operator==(const heartbeat_reply&, const heartbeat_reply&)
+      = default;
+
+    void serde_write(iobuf& out);
+    void serde_read(iobuf_parser&, const serde::header&);
 };
 
 struct vote_request : serde::envelope<vote_request, serde::version<0>> {
