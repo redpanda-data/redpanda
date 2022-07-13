@@ -444,6 +444,7 @@ STRUCT_TYPES = [
     "EpochEndOffset",
     "SupportedFeatureKey",
     "FinalizedFeatureKey",
+    "DeleteTopicState",
 ]
 
 # a list of struct types which are ineligible to have default-generated
