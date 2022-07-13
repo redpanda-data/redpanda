@@ -80,7 +80,7 @@ struct handler_adaptor : ss::httpd::handler_base {
       const ss::sstring&,
       std::unique_ptr<ss::request> req,
       std::unique_ptr<ss::reply> rep) final {
-        auto measure = _probe.hist().auto_measure();
+        auto measure = _probe.auto_measure();
         auto guard = gate_guard(_pending_requests);
         server::request_t rq{std::move(req), this->_ctx};
         server::reply_t rp{std::move(rep)};
