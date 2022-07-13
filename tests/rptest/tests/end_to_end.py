@@ -86,7 +86,8 @@ class EndToEndTest(Test):
         self.redpanda = RedpandaService(self.test_context,
                                         num_nodes,
                                         extra_rp_conf=self._extra_rp_conf,
-                                        extra_node_conf=self._extra_node_conf)
+                                        extra_node_conf=self._extra_node_conf,
+                                        si_settings=self.si_settings)
         self.redpanda.start()
         self._client = DefaultClient(self.redpanda)
 
@@ -153,8 +154,8 @@ class EndToEndTest(Test):
 
         wait_until(has_finished_consuming,
                    timeout_sec=timeout_sec,
-                   err_msg="Consumer failed to consume up to offsets %s after waiting %ds." %\
-                   (str(last_acked_offsets), timeout_sec))
+                   err_msg="Consumer failed to consume up to offsets %s after waiting %ds, last consumed offsets: %s." %\
+                   (str(last_acked_offsets), timeout_sec, list(self.last_consumed_offsets)))
 
     def _collect_all_logs(self):
         for s in self.test_context.services:

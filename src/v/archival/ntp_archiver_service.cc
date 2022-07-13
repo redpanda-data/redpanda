@@ -67,6 +67,9 @@ ntp_archiver::ntp_archiver(
   , _manifest_upload_timeout(conf.manifest_upload_timeout)
   , _upload_loop_initial_backoff(conf.upload_loop_initial_backoff)
   , _upload_loop_max_backoff(conf.upload_loop_max_backoff)
+  , _sync_manifest_timeout(
+      config::shard_local_cfg()
+        .cloud_storage_readreplica_manifest_sync_timeout_ms.bind())
   , _upload_sg(conf.upload_scheduling_group)
   , _io_priority(conf.upload_io_priority) {
     vassert(
@@ -79,6 +82,30 @@ ntp_archiver::ntp_archiver(
       "created ntp_archiver {} in term {}",
       _ntp,
       _start_term);
+}
+
+void ntp_archiver::run_sync_manifest_loop() {
+    vassert(
+      !_sync_manifest_loop_started,
+      "sync manifest loop for ntp {} already started",
+      _ntp);
+    _sync_manifest_loop_started = true;
+
+    // NOTE: not using ssx::spawn_with_gate_then here because we want to log
+    // inside the gate (so that _rtclog is guaranteed to be alive).
+    ssx::spawn_with_gate(_gate, [this] {
+        return sync_manifest_loop()
+          .handle_exception_type([](const ss::abort_requested_exception&) {})
+          .handle_exception_type([](const ss::sleep_aborted&) {})
+          .handle_exception_type([](const ss::gate_closed_exception&) {})
+          .handle_exception([this](std::exception_ptr e) {
+              vlog(_rtclog.error, "sync manifest loop error: {}", e);
+          })
+          .finally([this] {
+              vlog(_rtclog.debug, "sync manifest loop stopped");
+              _sync_manifest_loop_stopped = true;
+          });
+    });
 }
 
 void ntp_archiver::run_upload_loop() {
@@ -150,7 +177,67 @@ ss::future<> ntp_archiver::upload_loop() {
     }
 }
 
+ss::future<> ntp_archiver::sync_manifest_loop() {
+    while (sync_manifest_loop_can_continue()) {
+        cloud_storage::download_result result = co_await sync_manifest();
+
+        if (result != cloud_storage::download_result::success) {
+            // The logic in class `remote` already does retries: if we get here,
+            // it means the download failed after several retries, indicating
+            // something non-transient may be wrong. Hence error severity.
+            vlog(
+              _rtclog.error,
+              "Failed to download manifest {}",
+              _manifest.get_manifest_path());
+        } else {
+            vlog(
+              _rtclog.debug,
+              "Successfuly downloaded manifest {}",
+              _manifest.get_manifest_path());
+        }
+        co_await ss::sleep_abortable(_sync_manifest_timeout(), _as);
+    }
+}
+
+ss::future<cloud_storage::download_result> ntp_archiver::sync_manifest() {
+    cloud_storage::download_result r = co_await download_manifest();
+    if (r == cloud_storage::download_result::success) {
+        vlog(_rtclog.debug, "Downloading manifest in read-replica mode");
+        if (_partition->archival_meta_stm()) {
+            vlog(
+              _rtclog.debug,
+              "Updating the archival_meta_stm in read-replica mode");
+            auto deadline = ss::lowres_clock::now() + _manifest_upload_timeout;
+            auto error = co_await _partition->archival_meta_stm()->add_segments(
+              _manifest, deadline, _as);
+            if (
+              error != cluster::errc::success
+              && error != cluster::errc::not_leader) {
+                vlog(
+                  _rtclog.warn,
+                  "archival metadata STM update failed: {}",
+                  error);
+            }
+            auto last_offset
+              = _partition->archival_meta_stm()->manifest().get_last_offset();
+            vlog(_rtclog.debug, "manifest last_offset: {}", last_offset);
+        }
+    } else {
+        vlog(
+          _rtclog.error,
+          "Failed to download partition manifest in read-replica mode");
+    }
+    co_return r;
+}
+
 bool ntp_archiver::upload_loop_can_continue() const {
+    return !_as.abort_requested() && !_gate.is_closed()
+           && _partition->is_elected_leader()
+           && _partition->term() == _start_term;
+}
+
+bool ntp_archiver::sync_manifest_loop_can_continue() const {
+    // todo: think about it
     return !_as.abort_requested() && !_gate.is_closed()
            && _partition->is_elected_leader()
            && _partition->term() == _start_term;

@@ -12,23 +12,16 @@
 #include "kafka/server/handlers/topics/types.h"
 #include "redpanda/tests/fixture.h"
 #include "resource_mgmt/io_priority.h"
-#include "s3_imposter_fixture.h"
 
 #include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>
 
 #include <algorithm>
 #include <limits>
-#include <optional>
-
-inline ss::logger test_log("test"); // NOLINT
 
 // rougly equivalent to the test harness:
 //   https://github.com/apache/kafka/blob/8e16158/core/src/test/scala/unit/kafka/server/AbstractCreateTopicsRequestTest.scala
-class create_topic_fixture
-  : public s3_imposter_fixture
-  , public enable_cloud_storage_fixture
-  , public redpanda_thread_fixture {
+class create_topic_fixture : public redpanda_thread_fixture {
 public:
     kafka::create_topics_request make_req(
       std::vector<kafka::creatable_topic> topics, bool validate_only = false) {
@@ -97,17 +90,10 @@ public:
 
     void test_create_topic(
       kafka::create_topics_request req,
-      std::optional<int> partition_count = std::nullopt,
-      std::optional<int> revision_id = std::nullopt,
       kafka::api_version version = kafka::api_version(2)) {
         auto client = make_kafka_client().get0();
         client.connect().get();
         auto resp = client.dispatch(req, version).get0();
-
-        // todo: here
-        for (auto req : get_requests()) {
-            vlog(test_log.info, "{} {}", req._method, req._url);
-        }
 
         BOOST_REQUIRE_MESSAGE(
           std::all_of(
@@ -119,7 +105,7 @@ public:
           fmt::format("expected no errors. received response: {}", resp));
 
         for (auto& topic : req.data.topics) {
-            verify_metadata(client, req, topic, partition_count, revision_id);
+            verify_metadata(client, req, topic);
 
             auto it = std::find_if(
               resp.data.topics.begin(),
@@ -138,11 +124,6 @@ public:
         }
 
         client.stop().then([&client] { client.shutdown(); }).get();
-    }
-
-    void test_create_read_replica_topic(
-      kafka::create_topics_request req, int partition_count, int revision_id) {
-        test_create_topic(req, partition_count, revision_id);
     }
 
     void verify_response(
@@ -223,9 +204,7 @@ public:
     void verify_metadata(
       kafka::client::transport& client,
       kafka::create_topics_request& create_req,
-      kafka::creatable_topic& request_topic,
-      std::optional<int> partition_count = std::nullopt,
-      std::optional<int> revision_id = std::nullopt) {
+      kafka::creatable_topic& request_topic) {
         // query the server for this topic's metadata
         kafka::metadata_request metadata_req;
         metadata_req.data.topics
@@ -248,9 +227,7 @@ public:
           "expected topic not returned from metadata query");
 
         int partitions;
-        if (partition_count) {
-            partitions = partition_count.value();
-        } else if (!request_topic.assignments.empty()) {
+        if (!request_topic.assignments.empty()) {
             partitions = request_topic.assignments.size();
         } else {
             partitions = request_topic.num_partitions;
@@ -375,38 +352,6 @@ FIXTURE_TEST(create_non_replicable_topics, create_topic_fixture) {
     BOOST_CHECK(resp[1].tp_ns.tp() == "topic2");
 }
 
-FIXTURE_TEST(read_replica, create_topic_fixture) {
-    ss::sstring manifest_url = ssx::sformat(
-      "/f0000000/meta/kafka/test-topic/topic_manifest.json");
-
-    std::string_view manifest_payload = R"json({
-        "version": 1,
-        "namespace": "kafka",
-        "topic": "test-topic",
-        "partition_count": 32,
-        "replication_factor": 3,
-        "revision_id": 10,
-        "compression": null,
-        "cleanup_policy_bitflags": null,
-        "compaction_strategy": null,
-        "timestamp_type": null,
-        "segment_size": null
-    })json";
-
-    set_expectations_and_listen({expectation{
-      .url = manifest_url, .body = ss::sstring(manifest_payload)}});
-
-    auto topic = make_topic(
-      "test-topic",
-      std::nullopt,
-      std::nullopt,
-      std::map<ss::sstring, ss::sstring>{
-        {"redpanda.remote.readreplica", "true"},
-        {"redpanda.remote.readreplica.bucket", "panda-bucket"}});
-
-    test_create_read_replica_topic(make_req({topic}), 32, 10);
-}
-
 FIXTURE_TEST(s3bucket_is_missing, create_topic_fixture) {
     auto topic = make_topic(
       "topic1",
@@ -494,7 +439,5 @@ FIXTURE_TEST(test_v5_validate_configs_resp, create_topic_fixture) {
         {make_topic("topicC", 3, 1, config_map),
          make_topic("topicD", 3, 1, config_map)},
         false),
-      std::nullopt,
-      std::nullopt,
       kafka::api_version(5));
 }

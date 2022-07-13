@@ -222,23 +222,24 @@ class SISettings:
     GLOBAL_S3_REGION_KEY = "s3_region"
 
     def __init__(
-            self,
-            *,
-            log_segment_size: int = 16 * 1000000,
-            cloud_storage_access_key: str = 'panda-user',
-            cloud_storage_secret_key: str = 'panda-secret',
-            cloud_storage_region: str = 'panda-region',
-            cloud_storage_bucket: Optional[str] = None,
-            cloud_storage_api_endpoint: str = 'minio-s3',
-            cloud_storage_api_endpoint_port: int = 9000,
-            cloud_storage_cache_size: int = 160 * 1000000,
-            cloud_storage_enable_remote_read: bool = True,
-            cloud_storage_enable_remote_write: bool = True,
-            cloud_storage_reconciliation_interval_ms: Optional[int] = None,
-            cloud_storage_max_connections: Optional[int] = None,
-            cloud_storage_disable_tls: bool = True,
-            cloud_storage_segment_max_upload_interval_sec: Optional[int] = None
-    ):
+        self,
+        *,
+        log_segment_size: int = 16 * 1000000,
+        cloud_storage_access_key: str = 'panda-user',
+        cloud_storage_secret_key: str = 'panda-secret',
+        cloud_storage_region: str = 'panda-region',
+        cloud_storage_bucket: Optional[str] = None,
+        cloud_storage_api_endpoint: str = 'minio-s3',
+        cloud_storage_api_endpoint_port: int = 9000,
+        cloud_storage_cache_size: int = 160 * 1000000,
+        cloud_storage_enable_remote_read: bool = True,
+        cloud_storage_enable_remote_write: bool = True,
+        cloud_storage_reconciliation_interval_ms: Optional[int] = None,
+        cloud_storage_max_connections: Optional[int] = None,
+        cloud_storage_disable_tls: bool = True,
+        cloud_storage_segment_max_upload_interval_sec: Optional[int] = None,
+        cloud_storage_readreplica_manifest_sync_timeout_ms: Optional[
+            int] = None):
         self.log_segment_size = log_segment_size
         self.cloud_storage_access_key = cloud_storage_access_key
         self.cloud_storage_secret_key = cloud_storage_secret_key
@@ -253,6 +254,7 @@ class SISettings:
         self.cloud_storage_max_connections = cloud_storage_max_connections
         self.cloud_storage_disable_tls = cloud_storage_disable_tls
         self.cloud_storage_segment_max_upload_interval_sec = cloud_storage_segment_max_upload_interval_sec
+        self.cloud_storage_readreplica_manifest_sync_timeout_ms = cloud_storage_readreplica_manifest_sync_timeout_ms
         self.endpoint_url = f'http://{self.cloud_storage_api_endpoint}:{self.cloud_storage_api_endpoint_port}'
 
     def load_context(self, logger, test_context):
@@ -309,6 +311,9 @@ class SISettings:
         if self.cloud_storage_max_connections:
             conf[
                 'cloud_storage_max_connections'] = self.cloud_storage_max_connections
+        if self.cloud_storage_readreplica_manifest_sync_timeout_ms:
+            conf[
+                'cloud_storage_readreplica_manifest_sync_timeout_ms'] = self.cloud_storage_readreplica_manifest_sync_timeout_ms
         if self.cloud_storage_segment_max_upload_interval_sec:
             conf[
                 'cloud_storage_segment_max_upload_interval_sec'] = self.cloud_storage_segment_max_upload_interval_sec
@@ -572,7 +577,7 @@ class RedpandaService(Service):
             memory_kb = int(line.strip().split()[1])
             return memory_kb / 1024
 
-    def start(self, nodes=None, clean_nodes=True):
+    def start(self, nodes=None, clean_nodes=True, start_si=True):
         """Start the service on all nodes."""
         to_start = nodes if nodes is not None else self.nodes
         assert all((node in self.nodes for node in to_start))
@@ -647,7 +652,7 @@ class RedpandaService(Service):
                                          request_timeout_ms=30000,
                                          api_version_auto_timeout_ms=3000)
 
-        if self._si_settings is not None:
+        if start_si and self._si_settings is not None:
             self.start_si()
 
     def write_tls_certs(self):
@@ -925,6 +930,8 @@ class RedpandaService(Service):
             logger=self.logger,
         )
 
+        self.logger.debug(
+            f"Creating S3 bucket: {self._si_settings.cloud_storage_bucket}")
         self._s3client.create_bucket(self._si_settings.cloud_storage_bucket)
 
     def list_buckets(self) -> dict[str, Union[list, dict]]:

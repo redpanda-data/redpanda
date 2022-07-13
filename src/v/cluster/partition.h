@@ -211,6 +211,11 @@ public:
         return _archival_meta_stm;
     }
 
+    bool is_read_replica_mode_enabled() const {
+        const auto& cfg = _raft->log_config();
+        return cfg.is_read_replica_mode_enabled();
+    }
+
     /// Return true if shadow indexing is enabled for the partition
     bool is_remote_fetch_enabled() const {
         const auto& cfg = _raft->log_config();
@@ -232,8 +237,18 @@ public:
     model::offset start_cloud_offset() const {
         vassert(
           cloud_data_available(),
-          "Method can only be called if cloud data is available");
+          "Method can only be called if cloud data is available, ntp: {}",
+          _raft->ntp());
         return _cloud_storage_partition->first_uploaded_offset();
+    }
+
+    /// Last available cloud offset
+    model::offset last_cloud_offset() const {
+        vassert(
+          cloud_data_available(),
+          "Method can only be called if cloud data is available, ntp: {}",
+          _raft->ntp());
+        return _cloud_storage_partition->last_uploaded_offset();
     }
 
     /// Create a reader that will fetch data from remote storage
@@ -242,7 +257,8 @@ public:
       std::optional<model::timeout_clock::time_point> deadline = std::nullopt) {
         vassert(
           cloud_data_available(),
-          "Method can only be called if cloud data is available");
+          "Method can only be called if cloud data is available, ntp: {}",
+          _raft->ntp());
         return _cloud_storage_partition->make_reader(config, deadline);
     }
 

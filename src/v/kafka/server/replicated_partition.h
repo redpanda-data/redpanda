@@ -37,6 +37,13 @@ public:
     const model::ntp& ntp() const final { return _partition->ntp(); }
 
     model::offset start_offset() const final {
+        if (
+          _partition->is_read_replica_mode_enabled()
+          && _partition->cloud_data_available()) {
+            // Always assume remote read in this case.
+            return _partition->start_cloud_offset();
+        }
+
         auto local_kafka_start_offset = _translator->from_log_offset(
           _partition->start_offset());
         if (
@@ -49,10 +56,25 @@ public:
     }
 
     model::offset high_watermark() const final {
+        if (_partition->is_read_replica_mode_enabled()) {
+            if (_partition->cloud_data_available()) {
+                return model::next_offset(_partition->last_cloud_offset());
+            } else {
+                return model::offset(0);
+            }
+        }
         return _translator->from_log_offset(_partition->high_watermark());
     }
 
     model::offset last_stable_offset() const final {
+        if (_partition->is_read_replica_mode_enabled()) {
+            if (_partition->cloud_data_available()) {
+                // There is no difference between HWM and LO in this mode
+                return model::next_offset(_partition->last_cloud_offset());
+            } else {
+                return model::offset(0);
+            }
+        }
         return _translator->from_log_offset(_partition->last_stable_offset());
     }
 
