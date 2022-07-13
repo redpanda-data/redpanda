@@ -192,8 +192,15 @@ struct follower_metrics {
     bool under_replicated;
 };
 
-struct append_entries_request {
+struct append_entries_request
+  : serde::envelope<append_entries_request, serde::version<0>> {
     using flush_after_append = ss::bool_class<struct flush_after_append_tag>;
+
+    /*
+     * default initialize with no record batch reader. default construction
+     * should only be used by serialization frameworks.
+     */
+    append_entries_request() noexcept = default;
 
     // required for the cases where we will set the target node id before
     // sending request to the node
@@ -251,6 +258,9 @@ struct append_entries_request {
           model::make_foreign_record_batch_reader(std::move(req.batches())),
           req.flush);
     }
+
+    ss::future<> serde_async_write(iobuf& out);
+    ss::future<> serde_async_read(iobuf_parser&, const serde::header&);
 
 private:
     /*

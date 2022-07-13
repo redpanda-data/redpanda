@@ -15,6 +15,7 @@
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/tests/random_batch.h"
 #include "model/tests/randoms.h"
 #include "model/timestamp.h"
 #include "raft/types.h"
@@ -2220,6 +2221,63 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           .last_visible_index = tests::random_named_int<model::offset>(),
         };
         roundtrip_test(data);
+    }
+    {
+        const auto gold = model::test::make_random_batches(
+          model::offset(0), 20);
+
+        // make a copy of the source batches for later comparison because the
+        // copy moved into the request will get eaten.
+        ss::circular_buffer<model::record_batch> batches_in;
+        for (const auto& batch : gold) {
+            batches_in.push_back(batch.copy());
+        }
+
+        raft::protocol_metadata pmd{
+          .group = tests::random_named_int<raft::group_id>(),
+          .commit_index = tests::random_named_int<model::offset>(),
+          .term = tests::random_named_int<model::term_id>(),
+          .prev_log_index = tests::random_named_int<model::offset>(),
+          .prev_log_term = tests::random_named_int<model::term_id>(),
+          .last_visible_index = tests::random_named_int<model::offset>(),
+        };
+
+        raft::append_entries_request data{
+          raft::vnode{
+            tests::random_named_int<model::node_id>(),
+            tests::random_named_int<model::revision_id>()},
+          raft::vnode{
+            tests::random_named_int<model::node_id>(),
+            tests::random_named_int<model::revision_id>()},
+          pmd,
+          model::make_memory_record_batch_reader(std::move(batches_in)),
+          raft::append_entries_request::flush_after_append(
+            tests::random_bool()),
+        };
+
+        // append_entries_request -> iobuf
+        iobuf serde_out;
+        serde::write_async(serde_out, std::move(data)).get();
+
+        // iobuf -> append_entries_request
+        iobuf_parser serde_in(std::move(serde_out));
+        auto from_serde
+          = serde::read_async<raft::append_entries_request>(serde_in).get0();
+
+        BOOST_REQUIRE(from_serde.node_id == data.node_id);
+        BOOST_REQUIRE(from_serde.target_node_id == data.target_node_id);
+        BOOST_REQUIRE(from_serde.meta == data.meta);
+        BOOST_REQUIRE(from_serde.flush == data.flush);
+
+        auto batches_from_serde = model::consume_reader_to_memory(
+                                    std::move(from_serde.batches()),
+                                    model::no_timeout)
+                                    .get0();
+        BOOST_REQUIRE(gold.size() > 0);
+        BOOST_REQUIRE(batches_from_serde.size() == gold.size());
+        for (size_t i = 0; i < gold.size(); i++) {
+            BOOST_REQUIRE(batches_from_serde[i] == gold[i]);
+        }
     }
 }
 
