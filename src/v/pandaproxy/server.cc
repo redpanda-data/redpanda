@@ -80,33 +80,19 @@ struct handler_adaptor : ss::httpd::handler_base {
       const ss::sstring&,
       std::unique_ptr<ss::request> req,
       std::unique_ptr<ss::reply> rep) final {
-        return ss::try_with_gate(
-          _pending_requests,
-          [this,
-           req{std::move(req)},
-           rep{std::move(rep)},
-           m = _probe.hist().auto_measure()]() mutable {
-              server::request_t rq{std::move(req), this->_ctx};
-              server::reply_t rp{std::move(rep)};
-              auto req_size = get_request_size(*rq.req);
-
-              return ss::with_semaphore(
-                       _ctx.mem_sem,
-                       req_size,
-                       [this, rq{std::move(rq)}, rp{std::move(rp)}]() mutable {
-                           if (_ctx.as.abort_requested()) {
-                               set_reply_unavailable(*rp.rep);
-                               return ss::make_ready_future<
-                                 std::unique_ptr<ss::reply>>(std::move(rp.rep));
-                           }
-                           return _handler(std::move(rq), std::move(rp))
-                             .then([](server::reply_t rp) {
-                                 set_mime_type(*rp.rep, rp.mime_type);
-                                 return std::move(rp.rep);
-                             });
-                       })
-                .finally([m{std::move(m)}]() {});
-          });
+        auto measure = _probe.hist().auto_measure();
+        auto guard = gate_guard(_pending_requests);
+        server::request_t rq{std::move(req), this->_ctx};
+        server::reply_t rp{std::move(rep)};
+        auto req_size = get_request_size(*rq.req);
+        auto sem_units = co_await ss::get_units(_ctx.mem_sem, req_size);
+        if (_ctx.as.abort_requested()) {
+            set_reply_unavailable(*rp.rep);
+            co_return std::move(rp.rep);
+        }
+        rp = co_await _handler(std::move(rq), std::move(rp));
+        set_mime_type(*rp.rep, rp.mime_type);
+        co_return std::move(rp.rep);
     }
 
     ss::gate& _pending_requests;
