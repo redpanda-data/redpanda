@@ -43,6 +43,8 @@ constexpr error_code map_topic_error_code(cluster::errc code) {
         return error_code::broker_not_available;
     case cluster::errc::not_leader:
         return error_code::not_coordinator;
+    case cluster::errc::invalid_request:
+        return error_code::invalid_request;
     case cluster::errc::replication_error:
     case cluster::errc::shutting_down:
     case cluster::errc::join_request_dispatch_error:

@@ -541,7 +541,25 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         # shutdown target node to make sure that move will never complete
         node = self.redpanda.get_node(replacement['node_id'])
         self.redpanda.stop_node(node)
-        admin.set_partition_replicas(topic, partition, target_assignment)
+
+        # checking that a controller has leader (just in case
+        # the stopped node happened to be previous leader)
+        alive_hosts = [
+            n.account.hostname for n in self.redpanda.nodes if n != node
+        ]
+        controller_leader = admin.await_stable_leader(
+            topic="controller",
+            partition=0,
+            namespace="redpanda",
+            hosts=alive_hosts,
+            check=lambda node_id: node_id != self.redpanda.idx(node),
+            timeout_s=30)
+        controller_leader = self.redpanda.get_node(controller_leader)
+
+        admin.set_partition_replicas(topic,
+                                     partition,
+                                     target_assignment,
+                                     node=controller_leader)
 
         # check that the status is in progress
 

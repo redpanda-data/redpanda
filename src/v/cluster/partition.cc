@@ -181,18 +181,7 @@ raft::replicate_stages partition::replicate_in_stages(
     }
 
     if (_rm_stm) {
-        ss::promise<> p;
-        auto f = p.get_future();
-        auto replicate_finished
-          = _rm_stm->replicate(bid, std::move(r), opts)
-              .then(
-                [p = std::move(p)](result<raft::replicate_result> res) mutable {
-                    p.set_value();
-                    return res;
-                });
-        return raft::replicate_stages(
-          std::move(f), std::move(replicate_finished));
-
+        return _rm_stm->replicate_in_stages(bid, std::move(r), opts);
     } else {
         return _raft->replicate_in_stages(std::move(r), opts);
     }
