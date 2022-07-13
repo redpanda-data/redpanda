@@ -15,8 +15,47 @@
 
 #include <seastar/core/metrics_registration.hh>
 #include <seastar/http/json_path.hh>
+#include <seastar/http/reply.hh>
 
 namespace pandaproxy {
+
+/// If the request is good, measure latency, otherwise record the error.
+class http_status_metric {
+public:
+    class measurement {
+    public:
+        measurement(
+          http_status_metric* p, std::unique_ptr<hdr_hist::measurement> m)
+          : _p(p)
+          , _m(std::move(m)) {}
+
+        void set_status(ss::httpd::reply::status_type s) {
+            using status_type = ss::httpd::reply::status_type;
+            if (s < status_type{300}) {
+                return;
+            }
+            if (s < status_type{400}) {
+                ++_p->_3xx_count;
+            } else if (s < status_type{500}) {
+                ++_p->_4xx_count;
+            } else {
+                ++_p->_5xx_count;
+            }
+            _m->set_trace(false);
+        }
+
+    private:
+        http_status_metric* _p;
+        std::unique_ptr<hdr_hist::measurement> _m;
+    };
+    hdr_hist& hist() { return _hist; }
+    auto auto_measure() { return measurement{this, _hist.auto_measure()}; }
+
+    hdr_hist _hist;
+    int64_t _5xx_count;
+    int64_t _4xx_count;
+    int64_t _3xx_count;
+};
 
 class probe {
 public:
