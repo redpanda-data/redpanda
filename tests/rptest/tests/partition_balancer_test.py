@@ -51,7 +51,7 @@ class PartitionBalancerTest(EndToEndTest):
 
             partitions = wait_until_result(
                 all_partitions_ready,
-                timeout_sec=30,
+                timeout_sec=120,
                 backoff_sec=1,
                 err_msg="failed to wait until all partitions have leaders")
 
@@ -61,7 +61,7 @@ class PartitionBalancerTest(EndToEndTest):
 
         return ret
 
-    def wait_until_status(self, predicate, timeout_sec=60):
+    def wait_until_status(self, predicate, timeout_sec=120):
         admin = Admin(self.redpanda)
         start = time.time()
 
@@ -82,7 +82,7 @@ class PartitionBalancerTest(EndToEndTest):
             backoff_sec=2,
             err_msg="failed to wait until status condition")
 
-    def wait_until_ready(self, timeout_sec=60):
+    def wait_until_ready(self, timeout_sec=120):
         return self.wait_until_status(
             lambda status: status['status'] == 'ready',
             timeout_sec=timeout_sec)

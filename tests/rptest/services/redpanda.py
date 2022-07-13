@@ -402,7 +402,6 @@ class RedpandaService(Service):
         'default_topic_partitions': 4,
         'enable_metrics_reporter': False,
         'superusers': [SUPERUSER_CREDENTIALS[0]],
-        'partition_autobalancing_mode': 'node_add_remove'
     }
 
     logs = {
