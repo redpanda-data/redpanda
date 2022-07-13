@@ -10,6 +10,7 @@
 package tuners
 
 import (
+	"fmt"
 	"path/filepath"
 	"sort"
 	"time"
@@ -32,14 +33,15 @@ func Check(
 
 	for _, checkers := range checkersMap {
 		for _, c := range checkers {
+			log.Debugf("Starting checker %q", c.GetDesc())
 			result := c.Check()
 			if result.Err != nil {
 				if c.GetSeverity() == Fatal {
-					return results, result.Err
+					return results, fmt.Errorf("fatal error during checker %q execution: %v", c.GetDesc(), result.Err)
 				}
-				log.Warnf("System check '%s' failed with non-fatal error '%s'", c.GetDesc(), result.Err)
+				fmt.Printf("System check %q failed with non-fatal error %q\n", c.GetDesc(), result.Err)
 			}
-			log.Debugf("Checker '%s' result %+v", c.GetDesc(), result)
+			log.Debugf("Finished checker %q; result %+v", c.GetDesc(), result)
 			results = append(results, *result)
 		}
 	}
