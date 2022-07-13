@@ -39,6 +39,15 @@
 #include <limits>
 #include <stdexcept>
 
+namespace {
+using field_type = std::variant<boost::beast::http::field, std::string>;
+
+const std::unordered_set<field_type> redacted_fields{
+  boost::beast::http::field::authorization,
+  "x-amz-content-sha256",
+  "x-amz-security-token"};
+} // namespace
+
 namespace http {
 
 // client implementation //
@@ -593,13 +602,7 @@ ss::input_stream<char> client::response_stream::as_input_stream() {
 }
 
 client::request_header redacted_header(client::request_header original) {
-    using field_type = std::variant<boost::beast::http::field, std::string>;
-
-    static const std::unordered_set<field_type> redacted_fields{
-      boost::beast::http::field::authorization, "x-amz-content-sha256"};
-
     auto h{std::move(original)};
-
     for (const auto& field : redacted_fields) {
         std::visit(
           [&h](const auto& f) {
