@@ -316,6 +316,8 @@ T read_one_varint_delta(iobuf_parser& in, const T& prev) {
 
 ss::future<> async_adl<raft::heartbeat_request>::to(
   iobuf& out, raft::heartbeat_request&& request) {
+    vassert(
+      !request.heartbeats.empty(), "cannot serialize empty heartbeats request");
     struct sorter_fn {
         constexpr bool operator()(
           const raft::heartbeat_metadata& lhs,
