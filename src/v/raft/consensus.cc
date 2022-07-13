@@ -1628,7 +1628,7 @@ consensus::do_append_entries(append_entries_request&& r) {
     // section 1
     // For an entry to fit into our log, it must not leave a gap.
     if (r.meta.prev_log_index > last_log_offset) {
-        if (!r.batches.is_end_of_stream()) {
+        if (!r.batches().is_end_of_stream()) {
             vlog(
               _ctxlog.debug,
               "Rejecting append entries. Would leave gap in log, last log "
@@ -1668,7 +1668,7 @@ consensus::do_append_entries(append_entries_request&& r) {
     // special case heartbeat case
     // we need to handle it early (before executing truncation)
     // as timeouts are asynchronous to append calls and can have stall data
-    if (r.batches.is_end_of_stream()) {
+    if (r.batches().is_end_of_stream()) {
         if (r.meta.prev_log_index < last_log_offset) {
             // do not tuncate on heartbeat just response with false
             reply.result = append_entries_reply::status::failure;
@@ -1761,7 +1761,7 @@ consensus::do_append_entries(append_entries_request&& r) {
 
     // success. copy entries for each subsystem
     using offsets_ret = storage::append_result;
-    return disk_append(std::move(r.batches), update_last_quorum_index::no)
+    return disk_append(std::move(r.batches()), update_last_quorum_index::no)
       .then([this, m = r.meta, target = r.node_id](offsets_ret ofs) {
           auto f = ss::make_ready_future<>();
           auto last_visible = std::min(ofs.last_offset, m.last_visible_index);

@@ -189,8 +189,8 @@ struct append_entries_request {
       flush_after_append f = flush_after_append::yes) noexcept
       : node_id(src)
       , meta(m)
-      , batches(std::move(r))
-      , flush(f){};
+      , flush(f)
+      , _batches(std::move(r)) {}
 
     append_entries_request(
       vnode src,
@@ -201,8 +201,8 @@ struct append_entries_request {
       : node_id(src)
       , target_node_id(target)
       , meta(m)
-      , batches(std::move(r))
-      , flush(f){};
+      , flush(f)
+      , _batches(std::move(r)) {}
     ~append_entries_request() noexcept = default;
     append_entries_request(const append_entries_request&) = delete;
     append_entries_request& operator=(const append_entries_request&) = delete;
@@ -215,16 +215,35 @@ struct append_entries_request {
     vnode node_id;
     vnode target_node_id;
     protocol_metadata meta;
-    model::record_batch_reader batches;
+    model::record_batch_reader& batches() {
+        /*
+         * note that some call sites do:
+         *
+         *   auto b = std::move(req.batches())
+         *
+         * which does not reset the std::optional value. so this assertion is
+         * merely here to protect against use of a default constructed request.
+         */
+        vassert(_batches.has_value(), "request contains no batches");
+        return _batches.value();
+    }
     flush_after_append flush;
     static append_entries_request make_foreign(append_entries_request&& req) {
         return append_entries_request(
           req.node_id,
           req.target_node_id,
           std::move(req.meta),
-          model::make_foreign_record_batch_reader(std::move(req.batches)),
+          model::make_foreign_record_batch_reader(std::move(req.batches())),
           req.flush);
     }
+
+private:
+    /*
+     * batches is optional to allow append_entries_request to have a default
+     * constructor and integrate with serde until serde provides a more powerful
+     * interface for dealing with this.
+     */
+    std::optional<model::record_batch_reader> _batches;
 };
 
 struct append_entries_reply {

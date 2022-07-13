@@ -164,7 +164,7 @@ namespace reflection {
 ss::future<> async_adl<raft::append_entries_request>::to(
   iobuf& out, raft::append_entries_request&& request) {
     return model::consume_reader_to_memory(
-             std::move(request.batches), model::no_timeout)
+             std::move(request.batches()), model::no_timeout)
       .then([&out, request = std::move(request)](
               ss::circular_buffer<model::record_batch> batches) {
           reflection::adl<uint32_t>{}.to(out, batches.size());
