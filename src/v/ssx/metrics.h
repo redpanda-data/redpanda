@@ -34,4 +34,10 @@ inline ss::metrics::histogram report_default_histogram(const hdr_hist& hist) {
       num_buckets, first_value, log_base, scale);
 }
 
+const auto label_namespace = "redpanda";
+
+inline ss::metrics::label make_namespaced_label(const seastar::sstring& name) {
+    return ss::metrics::label(ssx::sformat("{}_{}", label_namespace, name));
+}
+
 } // namespace ssx::metrics
