@@ -26,12 +26,12 @@ std::string_view to_string_view(feature f) {
         return "maintenance_mode";
     case feature::mtls_authentication:
         return "mtls_authentication";
+    case feature::rm_stm_kafka_cache:
+        return "rm_stm_kafka_cache";
     case feature::serde_raft_0:
         return "serde_raft_0";
     case feature::license:
         return "license";
-    case feature::rm_stm_kafka_cache:
-        return "rm_stm_kafka_cache";
     case feature::test_alpha:
         return "__test_alpha";
     }
