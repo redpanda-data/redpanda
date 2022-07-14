@@ -55,15 +55,14 @@ struct any_handler_t {
      * out-of-memory condition, while a too-large estimate will "merely" reduce
      * performance.
      *
-     * Handers may also return an initial, small estimate here covering the
-     * first part of processing, then dynamically increase their memory
-     * allocation later on during processing when the full memory size is known.
-     *
      * Unfortunately, this estimate happens early in the decoding process, after
      * only the request size and header has been read, so handlers don't have
-     * as much information as they may like to make this decision.
+     * as much information as they may like to make this decision. The
+     * connection_context for the associated connection is passed to give access
+     * to global state which may be useful in making the estimate.
      */
-    virtual size_t memory_estimate(size_t request_size) const = 0;
+    virtual size_t memory_estimate(
+      size_t request_size, connection_context& conn_ctx) const = 0;
 
     /**
      * @brief Handles the request.

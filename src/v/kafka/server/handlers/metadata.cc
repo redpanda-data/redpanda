@@ -16,6 +16,7 @@
 #include "config/node_config.h"
 #include "kafka/cluster_limits.h"
 #include "kafka/server/errors.h"
+#include "kafka/server/fwd.h"
 #include "kafka/server/handlers/details/leader_epoch.h"
 #include "kafka/server/handlers/details/security.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
@@ -423,7 +424,7 @@ ss::future<response_ptr> metadata_handler::handle(
     co_return co_await ctx.respond(std::move(reply));
 }
 
-size_t metadata_memory_estimator(size_t) {
+size_t metadata_memory_estimator(size_t, connection_context&) {
     // We cannot make a precise estimate of the size of a metadata response by
     // examining only the size of the request (nor even by examining the entire
     // request) since the response depends on the number of partitions in the
