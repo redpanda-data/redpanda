@@ -14,6 +14,7 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
+#include "kafka/protocol/schemata/metadata_response.h"
 #include "kafka/server/errors.h"
 #include "kafka/server/fwd.h"
 #include "kafka/server/handlers/details/leader_epoch.h"
@@ -446,9 +447,21 @@ metadata_memory_estimator(size_t request_size, connection_context& conn_ctx) {
     // fit in this 10000k slush fund.
     size_t size_estimate = 10000;
 
-    auto& md = conn_ctx.server().metadata_cache().all_topics_metadata();
+    auto& md_cache = conn_ctx.server().metadata_cache();
 
-    for (auto& [tp_ns, topic_metadata] : md) {
+    // The size will vary with the number of brokers, though this effect is
+    // probably small if there are large numbers of partitions
+
+    // This covers the variable part of the broker response, i.e., the broker
+    // hostname + rack We just hope these are less than this amount, because we
+    // don't want to execute the relatively complex logic to guess the listener
+    // just for the size estimate.
+    constexpr size_t extra_bytes_per_broker = 200;
+    size_estimate
+      += md_cache.all_brokers().size()
+         * (sizeof(metadata_response_broker) + extra_bytes_per_broker);
+
+    for (auto& [tp_ns, topic_metadata] : md_cache.all_topics_metadata()) {
         // metadata_response_topic
         size_estimate += sizeof(kafka::metadata_response_topic);
         size_estimate += tp_ns.tp().size();
