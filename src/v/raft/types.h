@@ -44,7 +44,9 @@ static constexpr clock_type::time_point no_timeout
   = clock_type::time_point::max();
 
 using group_id = named_type<int64_t, struct raft_group_id_type>;
-struct protocol_metadata {
+
+struct protocol_metadata
+  : serde::envelope<protocol_metadata, serde::version<0>> {
     group_id group;
     model::offset commit_index;
     model::term_id term;
@@ -57,6 +59,16 @@ struct protocol_metadata {
 
     friend bool operator==(const protocol_metadata&, const protocol_metadata&)
       = default;
+
+    auto serde_fields() {
+        return std::tie(
+          group,
+          commit_index,
+          term,
+          prev_log_index,
+          prev_log_term,
+          last_visible_index);
+    }
 };
 
 // The sequence used to track the order of follower append entries request
