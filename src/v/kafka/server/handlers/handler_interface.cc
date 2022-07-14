@@ -128,6 +128,9 @@ constexpr auto make_lut(type_list<Ts...>) {
 std::optional<handler> handler_for_key(kafka::api_key key) noexcept {
     static constexpr auto lut = make_lut(request_types{});
     if (key >= (short)0 && key < (short)lut.size()) {
+        // We have already checked the bounds above so it is safe to use []
+        // instead of at()
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
         if (auto handler = lut[key]) {
             return handler;
         }
