@@ -116,13 +116,15 @@ server::server(
   ss::api_registry_builder20&& api20,
   const ss::sstring& header,
   const ss::sstring& definitions,
-  context_t& ctx)
+  context_t& ctx,
+  json::serialization_format exceptional_mime_type)
   : _server(server_name)
   , _public_metrics_group_name(public_metrics_group_name)
   , _pending_reqs()
   , _api20(std::move(api20))
   , _has_routes(false)
-  , _ctx(ctx) {
+  , _ctx(ctx)
+  , _exceptional_mime_type(exceptional_mime_type) {
     _api20.set_api_doc(_server._routes);
     _api20.register_api_file(_server._routes, header);
     _api20.add_definitions_file(_server._routes, definitions);
@@ -162,10 +164,9 @@ void server::routes(server::routes_t&& rts) {
 ss::future<> server::start(
   const std::vector<model::broker_endpoint>& endpoints,
   const std::vector<config::endpoint_tls_config>& endpoints_tls,
-  const std::vector<model::broker_endpoint>& advertised,
-  json::serialization_format exceptional_mime_type) {
+  const std::vector<model::broker_endpoint>& advertised) {
     _server._routes.register_exeption_handler(
-      exception_replier{ss::sstring{name(exceptional_mime_type)}});
+      exception_replier{ss::sstring{name(_exceptional_mime_type)}});
     _ctx.advertised_listeners.reserve(endpoints.size());
     for (auto& server_endpoint : endpoints) {
         auto addr = co_await net::resolve_dns(server_endpoint.address);

@@ -229,7 +229,8 @@ service::service(
       ss::api_registry_builder20(_config.api_doc_dir(), "/v1"),
       "schema_registry_header",
       "/schema_registry_definitions",
-      _ctx)
+      _ctx,
+      json::serialization_format::schema_registry_v1_json)
   , _store(store)
   , _writer(sequencer)
   , _ensure_started{[this]() { return do_start(); }} {}
@@ -240,8 +241,7 @@ ss::future<> service::start() {
     return _server.start(
       _config.schema_registry_api(),
       _config.schema_registry_api_tls(),
-      not_advertised,
-      json::serialization_format::schema_registry_v1_json);
+      not_advertised);
 }
 
 ss::future<> service::stop() {
