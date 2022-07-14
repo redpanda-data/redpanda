@@ -702,24 +702,29 @@ ss::future<> write_async(iobuf& out, T t) {
         auto size_placeholder = out.reserve(sizeof(serde_size_t));
         auto const size_before = out.size_bytes();
 
-        return ss::do_with(std::move(t), [&out, size_before, size_placeholder = std::move(size_placeholder)](T& t) mutable {
-        return t.serde_async_write(out).then(
-          [&out,
-           size_before,
-           size_placeholder = std::move(size_placeholder)]() mutable {
-              auto const written_size = out.size_bytes() - size_before;
-              if (unlikely(
-                    written_size > std::numeric_limits<serde_size_t>::max())) {
-                  throw serde_exception{"envelope too big"};
-              }
-              auto const size = ss::cpu_to_le(
-                static_cast<serde_size_t>(written_size));
-              size_placeholder.write(
-                reinterpret_cast<char const*>(&size), sizeof(serde_size_t));
+        return ss::do_with(
+          std::move(t),
+          [&out, size_before, size_placeholder = std::move(size_placeholder)](
+            T& t) mutable {
+              return t.serde_async_write(out).then(
+                [&out,
+                 size_before,
+                 size_placeholder = std::move(size_placeholder)]() mutable {
+                    auto const written_size = out.size_bytes() - size_before;
+                    if (unlikely(
+                          written_size
+                          > std::numeric_limits<serde_size_t>::max())) {
+                        throw serde_exception{"envelope too big"};
+                    }
+                    auto const size = ss::cpu_to_le(
+                      static_cast<serde_size_t>(written_size));
+                    size_placeholder.write(
+                      reinterpret_cast<char const*>(&size),
+                      sizeof(serde_size_t));
 
-              return ss::make_ready_future<>();
+                    return ss::make_ready_future<>();
+                });
           });
-        });
     } else {
         write(out, std::move(t));
         return ss::make_ready_future<>();
