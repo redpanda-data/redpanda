@@ -474,7 +474,7 @@ configuration::configuration()
       "group_topic_partitions",
       "Number of partitions in the internal group membership topic",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      1)
+      16)
   , default_topic_replication(
       *this,
       "default_topic_replications",
