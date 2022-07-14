@@ -29,7 +29,7 @@ func NewConfigCommand(fs afero.Fs) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "config",
 		Args:  cobra.ExactArgs(0),
-		Short: "Interact with cluster configuration properties.",
+		Short: "Interact with cluster configuration properties",
 		Long: `Interact with cluster configuration properties.
 
 Cluster properties are redpanda settings which apply to all nodes in
@@ -68,7 +68,7 @@ different redpanda version that does not recognize certain properties.`,
 		&all,
 		"all",
 		false,
-		"Include all properties, including tunables.",
+		"Include all properties, including tunables",
 	)
 
 	command.AddCommand(

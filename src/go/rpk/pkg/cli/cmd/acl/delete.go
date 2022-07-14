@@ -31,7 +31,7 @@ func NewDeleteCommand(fs afero.Fs) *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "delete",
-		Short: "Delete ACLs.",
+		Short: "Delete ACLs",
 		Long: `Delete ACLs.
 
 See the 'rpk acl' help text for a full write up on ACLs. Delete flags work in a
@@ -94,28 +94,28 @@ resource names:
 		},
 	}
 	a.addDeleteFlags(cmd)
-	cmd.Flags().BoolVarP(&printAllFilters, "print-filters", "f", false, "print the filters that were requested (failed filters are always printed)")
-	cmd.Flags().BoolVarP(&dry, "dry", "d", false, "dry run: validate what would be deleted")
-	cmd.Flags().BoolVar(&noConfirm, "no-confirm", false, "disable confirmation prompt")
+	cmd.Flags().BoolVarP(&printAllFilters, "print-filters", "f", false, "Print the filters that were requested (failed filters are always printed)")
+	cmd.Flags().BoolVarP(&dry, "dry", "d", false, "Dry run: validate what would be deleted")
+	cmd.Flags().BoolVar(&noConfirm, "no-confirm", false, "Disable confirmation prompt")
 	return cmd
 }
 
 func (a *acls) addDeleteFlags(cmd *cobra.Command) {
 	a.addDeprecatedFlags(cmd)
 
-	cmd.Flags().StringSliceVar(&a.topics, topicFlag, nil, "topic to remove ACLs for (repeatable)")
-	cmd.Flags().StringSliceVar(&a.groups, groupFlag, nil, "group to remove ACLs for (repeatable)")
-	cmd.Flags().BoolVar(&a.cluster, clusterFlag, false, "whether to remove ACLs to the cluster")
-	cmd.Flags().StringSliceVar(&a.txnIDs, txnIDFlag, nil, "transactional IDs to remove ACLs for (repeatable)")
+	cmd.Flags().StringSliceVar(&a.topics, topicFlag, nil, "Topic to remove ACLs for (repeatable)")
+	cmd.Flags().StringSliceVar(&a.groups, groupFlag, nil, "Group to remove ACLs for (repeatable)")
+	cmd.Flags().BoolVar(&a.cluster, clusterFlag, false, "Whether to remove ACLs to the cluster")
+	cmd.Flags().StringSliceVar(&a.txnIDs, txnIDFlag, nil, "Transactional IDs to remove ACLs for (repeatable)")
 
-	cmd.Flags().StringVar(&a.resourcePatternType, patternFlag, "any", "pattern to use when matching resource names (any, match, literal, or prefixed)")
+	cmd.Flags().StringVar(&a.resourcePatternType, patternFlag, "any", "Pattern to use when matching resource names (any, match, literal, or prefixed)")
 
-	cmd.Flags().StringSliceVar(&a.operations, operationFlag, nil, "operation to remove (repeatable)")
+	cmd.Flags().StringSliceVar(&a.operations, operationFlag, nil, "Operation to remove (repeatable)")
 
-	cmd.Flags().StringSliceVar(&a.allowPrincipals, allowPrincipalFlag, nil, "allowed principal ACLs to remove (repeatable)")
-	cmd.Flags().StringSliceVar(&a.allowHosts, allowHostFlag, nil, "allowed host ACLs to remove (repeatable)")
-	cmd.Flags().StringSliceVar(&a.denyPrincipals, denyPrincipalFlag, nil, "denied principal ACLs to remove (repeatable)")
-	cmd.Flags().StringSliceVar(&a.denyHosts, denyHostFlag, nil, "denied host ACLs to remove (repeatable)")
+	cmd.Flags().StringSliceVar(&a.allowPrincipals, allowPrincipalFlag, nil, "Allowed principal ACLs to remove (repeatable)")
+	cmd.Flags().StringSliceVar(&a.allowHosts, allowHostFlag, nil, "Allowed host ACLs to remove (repeatable)")
+	cmd.Flags().StringSliceVar(&a.denyPrincipals, denyPrincipalFlag, nil, "Denied principal ACLs to remove (repeatable)")
+	cmd.Flags().StringSliceVar(&a.denyHosts, denyHostFlag, nil, "Denied host ACLs to remove (repeatable)")
 }
 
 func deleteReqResp(

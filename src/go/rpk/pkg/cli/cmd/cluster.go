@@ -33,7 +33,7 @@ func NewClusterCommand(fs afero.Fs) *cobra.Command {
 	)
 	command := &cobra.Command{
 		Use:   "cluster",
-		Short: "Interact with a Redpanda cluster.",
+		Short: "Interact with a Redpanda cluster",
 	}
 	// backcompat: until we switch to -X, we need these flags.
 	common.AddKafkaFlags(

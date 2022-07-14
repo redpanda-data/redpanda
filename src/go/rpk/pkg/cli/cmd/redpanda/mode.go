@@ -26,7 +26,7 @@ func NewModeCommand(fs afero.Fs) *cobra.Command {
 	var configFile string
 	command := &cobra.Command{
 		Use:   "mode <mode>",
-		Short: "Enable a default configuration mode.",
+		Short: "Enable a default configuration mode",
 		Long:  "",
 		Args: func(_ *cobra.Command, args []string) error {
 			if len(args) < 1 {

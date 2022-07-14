@@ -24,7 +24,7 @@ import (
 func newDisableCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "disable <broker-id>",
-		Short: "Disable maintenance mode for a node.",
+		Short: "Disable maintenance mode for a node",
 		Long:  `Disable maintenance mode for a node.`,
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {

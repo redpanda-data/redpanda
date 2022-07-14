@@ -216,7 +216,7 @@ func newImportCommand(fs afero.Fs, all *bool) *cobra.Command {
 	var filename string
 	cmd := &cobra.Command{
 		Use:   "import",
-		Short: "Import cluster configuration from a file.",
+		Short: "Import cluster configuration from a file",
 		Long: `Import cluster configuration from a file.
 
 Import configuration from a YAML file, usually generated with

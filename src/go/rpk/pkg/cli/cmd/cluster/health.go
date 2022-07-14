@@ -35,7 +35,7 @@ func NewHealthOverviewCommand(fs afero.Fs) *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "health",
-		Short: "Queries cluster for health overview.",
+		Short: "Queries cluster for health overview",
 		Long: `Queries health overview.
 
 Health overview is created based on the health reports collected periodically
@@ -84,8 +84,8 @@ following conditions are met:
 		&adminCAFile,
 	)
 
-	cmd.Flags().BoolVarP(&watch, "watch", "w", false, "blocks and writes out all cluster health changes")
-	cmd.Flags().BoolVarP(&exit, "exit-when-healthy", "e", false, "when used with watch, exits after cluster is back in healthy state")
+	cmd.Flags().BoolVarP(&watch, "watch", "w", false, "Blocks and writes out all cluster health changes")
+	cmd.Flags().BoolVarP(&exit, "exit-when-healthy", "e", false, "When used with watch, exits after cluster is back in healthy state")
 	return cmd
 }
 

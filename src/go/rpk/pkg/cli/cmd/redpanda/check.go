@@ -34,7 +34,7 @@ func NewCheckCommand(fs afero.Fs) *cobra.Command {
 	)
 	command := &cobra.Command{
 		Use:   "check",
-		Short: "Check if system meets redpanda requirements.",
+		Short: "Check if system meets redpanda requirements",
 		Run: func(cmd *cobra.Command, args []string) {
 			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)

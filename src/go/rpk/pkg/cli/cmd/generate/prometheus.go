@@ -46,7 +46,7 @@ func NewPrometheusConfigCmd(fs afero.Fs) *cobra.Command {
 	)
 	command := &cobra.Command{
 		Use:   "prometheus-config",
-		Short: "Generate the Prometheus configuration to scrape redpanda nodes.",
+		Short: "Generate the Prometheus configuration to scrape redpanda nodes",
 		Long: `
 Generate the Prometheus configuration to scrape redpanda nodes. This command's
 output should be added to the 'scrape_configs' array in your Prometheus

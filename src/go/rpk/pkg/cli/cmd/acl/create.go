@@ -25,7 +25,7 @@ func NewCreateCommand(fs afero.Fs) *cobra.Command {
 	var a acls
 	cmd := &cobra.Command{
 		Use:   "create",
-		Short: "Create ACLs.",
+		Short: "Create ACLs",
 		Long: `Create ACLs.
 
 See the 'rpk acl' help text for a full write up on ACLs. Following the
@@ -88,17 +88,17 @@ Allow write permissions to user buzz to transactional id "txn":
 func (a *acls) addCreateFlags(cmd *cobra.Command) {
 	a.addDeprecatedFlags(cmd)
 
-	cmd.Flags().StringSliceVar(&a.topics, topicFlag, nil, "topic to grant ACLs for (repeatable)")
-	cmd.Flags().StringSliceVar(&a.groups, groupFlag, nil, "group to grant ACLs for (repeatable)")
-	cmd.Flags().BoolVar(&a.cluster, clusterFlag, false, "whether to grant ACLs to the cluster")
-	cmd.Flags().StringSliceVar(&a.txnIDs, txnIDFlag, nil, "transactional IDs to grant ACLs for (repeatable)")
+	cmd.Flags().StringSliceVar(&a.topics, topicFlag, nil, "Topic to grant ACLs for (repeatable)")
+	cmd.Flags().StringSliceVar(&a.groups, groupFlag, nil, "Group to grant ACLs for (repeatable)")
+	cmd.Flags().BoolVar(&a.cluster, clusterFlag, false, "Whether to grant ACLs to the cluster")
+	cmd.Flags().StringSliceVar(&a.txnIDs, txnIDFlag, nil, "Transactional IDs to grant ACLs for (repeatable)")
 
-	cmd.Flags().StringVar(&a.resourcePatternType, patternFlag, "literal", "pattern to use when matching resource names (literal or prefixed)")
+	cmd.Flags().StringVar(&a.resourcePatternType, patternFlag, "literal", "Pattern to use when matching resource names (literal or prefixed)")
 
-	cmd.Flags().StringSliceVar(&a.operations, operationFlag, nil, "operation to grant (repeatable)")
+	cmd.Flags().StringSliceVar(&a.operations, operationFlag, nil, "Operation to grant (repeatable)")
 
-	cmd.Flags().StringSliceVar(&a.allowPrincipals, allowPrincipalFlag, nil, "principals for which these permissions will be granted (repeatable)")
-	cmd.Flags().StringSliceVar(&a.allowHosts, allowHostFlag, nil, "hosts from which access will be granted (repeatable)")
-	cmd.Flags().StringSliceVar(&a.denyPrincipals, denyPrincipalFlag, nil, "principal for which these permissions will be denied (repeatable)")
-	cmd.Flags().StringSliceVar(&a.denyHosts, denyHostFlag, nil, "hosts from from access will be denied (repeatable)")
+	cmd.Flags().StringSliceVar(&a.allowPrincipals, allowPrincipalFlag, nil, "Principals for which these permissions will be granted (repeatable)")
+	cmd.Flags().StringSliceVar(&a.allowHosts, allowHostFlag, nil, "Hosts from which access will be granted (repeatable)")
+	cmd.Flags().StringSliceVar(&a.denyPrincipals, denyPrincipalFlag, nil, "Principal for which these permissions will be denied (repeatable)")
+	cmd.Flags().StringSliceVar(&a.denyHosts, denyHostFlag, nil, "Hosts from from access will be denied (repeatable)")
 }

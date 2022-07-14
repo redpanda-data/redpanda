@@ -26,7 +26,7 @@ func newEnableCommand(fs afero.Fs) *cobra.Command {
 	var wait bool
 	cmd := &cobra.Command{
 		Use:   "enable <node-id>",
-		Short: "Enable maintenance mode for a node.",
+		Short: "Enable maintenance mode for a node",
 		Long: `Enable maintenance mode for a node.
 
 This command enables maintenance mode for the node with the specified ID. If a

@@ -30,7 +30,7 @@ func NewGenerateCommand(fs afero.Fs) *cobra.Command {
 	var skipVersion bool
 	cmd := &cobra.Command{
 		Use:   "generate [PROJECT DIRECTORY]",
-		Short: "Create a npm template project for inline WASM engine.",
+		Short: "Create a npm template project for inline WASM engine",
 		Args:  cobra.ExactArgs(1),
 		Run: func(_ *cobra.Command, args []string) {
 			path, err := filepath.Abs(args[0])
@@ -39,7 +39,7 @@ func NewGenerateCommand(fs afero.Fs) *cobra.Command {
 			out.MaybeDie(err, "unable to generate all manifest files: %v", err)
 		},
 	}
-	cmd.Flags().BoolVar(&skipVersion, "skip-version", false, "omit wasm-api version check from npm, use default instead")
+	cmd.Flags().BoolVar(&skipVersion, "skip-version", false, "Omit wasm-api version check from npm, use default instead")
 	return cmd
 }
 

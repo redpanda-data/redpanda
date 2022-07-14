@@ -26,7 +26,7 @@ import (
 func newEditCommand(fs afero.Fs, all *bool) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "edit",
-		Short: "Edit cluster configuration properties.",
+		Short: "Edit cluster configuration properties",
 		Long: `Edit cluster-wide configuration properties.
 
 This command opens a text editor to modify the cluster's configuration.

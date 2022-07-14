@@ -34,7 +34,7 @@ func NewInfoCommand(fs afero.Fs) *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:     "info",
-		Short:   "Send usage stats to Redpanda Data.",
+		Short:   "Send usage stats to Redpanda Data",
 		Hidden:  true,
 		Aliases: []string{"status"},
 		Args:    cobra.ExactArgs(0),
@@ -95,7 +95,7 @@ func NewInfoCommand(fs afero.Fs) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&configFile, "config", "", "Redpanda config file, if not set the file will be searched for in the default locations")
-	cmd.Flags().BoolVar(&send, "send", false, "If true, send resource usage data to Vectorzed.")
-	cmd.Flags().DurationVar(&timeout, "timeout", 2*time.Second, "How long to wait to calculate the Redpanda CPU % utilization.")
+	cmd.Flags().BoolVar(&send, "send", false, "If true, send resource usage data to Redpanda")
+	cmd.Flags().DurationVar(&timeout, "timeout", 2*time.Second, "How long to wait to calculate the Redpanda CPU % utilization")
 	return cmd
 }

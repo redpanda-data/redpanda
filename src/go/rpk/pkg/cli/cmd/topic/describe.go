@@ -37,7 +37,7 @@ func NewDescribeCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "describe [TOPIC]",
 		Aliases: []string{"info"},
-		Short:   "Describe a topic.",
+		Short:   "Describe a topic",
 		Long: `Describe a topic.
 
 This command prints detailed information about a topic. There are three
@@ -179,10 +179,10 @@ partitions section. By default, the summary and configs sections are printed.
 	cmd.Flags().MarkDeprecated("watermarks", "deprecated - watermarks are always printed if the partition section is requested")
 	cmd.Flags().MarkDeprecated("detailed", "deprecated - info has been merged into describe, use -p to print detailed information")
 
-	cmd.Flags().BoolVarP(&summary, "print-summary", "s", false, "print the summary section")
-	cmd.Flags().BoolVarP(&configs, "print-configs", "c", false, "print the config section")
-	cmd.Flags().BoolVarP(&partitions, "print-partitions", "p", false, "print the detailed partitions section")
-	cmd.Flags().BoolVarP(&all, "print-all", "a", false, "print all sections")
+	cmd.Flags().BoolVarP(&summary, "print-summary", "s", false, "Print the summary section")
+	cmd.Flags().BoolVarP(&configs, "print-configs", "c", false, "Print the config section")
+	cmd.Flags().BoolVarP(&partitions, "print-partitions", "p", false, "Print the detailed partitions section")
+	cmd.Flags().BoolVarP(&all, "print-all", "a", false, "Print all sections")
 
 	return cmd
 }

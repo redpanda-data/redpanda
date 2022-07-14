@@ -34,7 +34,7 @@ func NewStopCommand(fs afero.Fs) *cobra.Command {
 	)
 	command := &cobra.Command{
 		Use:   "stop",
-		Short: "Stop redpanda.",
+		Short: "Stop redpanda",
 		Long: `Stop a local redpanda process. 'rpk stop'
 first sends SIGINT, and waits for the specified timeout. Then, if redpanda
 hasn't stopped, it sends SIGTERM. Lastly, it sends SIGKILL if it's still

@@ -33,7 +33,7 @@ const (
 func NewConfigCommand(fs afero.Fs) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "config <command>",
-		Short: "Edit configuration.",
+		Short: "Edit configuration",
 	}
 	root.AddCommand(set(fs))
 	root.AddCommand(bootstrap(fs))

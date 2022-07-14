@@ -24,7 +24,7 @@ import (
 func newLintCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "lint",
-		Short: "Remove any deprecated content from redpanda.yaml.",
+		Short: "Remove any deprecated content from redpanda.yaml",
 		Long: `Remove any deprecated content from redpanda.yaml.
 
 Deprecated content includes properties which were set via redpanda.yaml

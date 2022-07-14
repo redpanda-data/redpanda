@@ -27,7 +27,7 @@ func NewMaintenanceCommand(fs afero.Fs) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "maintenance",
-		Short: "Toggle a node's maintenance mode.",
+		Short: "Toggle a node's maintenance mode",
 		Long: `Interact with cluster maintenance mode.
 
 Maintenance mode is a state that a node may be placed into in which the node

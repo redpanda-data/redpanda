@@ -24,7 +24,7 @@ func NewUserCommand(fs afero.Fs) *cobra.Command {
 	var apiUrls []string
 	cmd := &cobra.Command{
 		Use:   "user",
-		Short: "Manage SASL users.",
+		Short: "Manage SASL users",
 		Long: `Manage SASL users.
 
 If SASL is enabled, a SASL user is what you use to talk to Redpanda, and ACLs
@@ -39,7 +39,7 @@ redpanda section of your redpanda.yaml.
 		config.FlagAdminHosts2,
 		[]string{},
 		"The comma-separated list of Admin API addresses (<IP>:<port>)."+
-			" You must specify one for each node.",
+			" You must specify one for each node",
 	)
 
 	cmd.AddCommand(NewCreateUserCommand(fs))
@@ -59,7 +59,7 @@ func NewCreateUserCommand(fs afero.Fs) *cobra.Command {
 	var userOld, pass, passOld, mechanism string
 	cmd := &cobra.Command{
 		Use:   "create [USER] -p [PASS]",
-		Short: "Create a SASL user.",
+		Short: "Create a SASL user",
 		Long: `Create a SASL user.
 
 This command creates a single SASL user with the given password, optionally
@@ -120,11 +120,11 @@ acl help text for more info.
 	}
 
 	cmd.Flags().StringVar(&userOld, "new-username", "", "")
-	cmd.Flags().MarkDeprecated("new-username", "the username now does not require a flag") // Oct 2021
+	cmd.Flags().MarkDeprecated("new-username", "The username now does not require a flag") // Oct 2021
 
-	cmd.Flags().StringVarP(&pass, "password", "p", "", "new user's password")
+	cmd.Flags().StringVarP(&pass, "password", "p", "", "New user's password")
 	cmd.Flags().StringVar(&passOld, "new-password", "", "")
-	cmd.Flags().MarkDeprecated("new-password", "renamed to --password") // Oct 2021
+	cmd.Flags().MarkDeprecated("new-password", "Renamed to --password") // Oct 2021
 
 	cmd.Flags().StringVar(
 		&mechanism,
@@ -140,7 +140,7 @@ func NewDeleteUserCommand(fs afero.Fs) *cobra.Command {
 	var oldUser string
 	cmd := &cobra.Command{
 		Use:   "delete [USER]",
-		Short: "Delete a SASL user.",
+		Short: "Delete a SASL user",
 		Long: `Delete a SASL user.
 
 This command deletes the specified SASL account from Redpanda. This does not
@@ -174,7 +174,7 @@ delete any ACLs that may exist for this user.
 	}
 
 	cmd.Flags().StringVar(&oldUser, "delete-username", "", "The user to be deleted")
-	cmd.Flags().MarkDeprecated("delete-username", "the username now does not require a flag")
+	cmd.Flags().MarkDeprecated("delete-username", "The username now does not require a flag")
 
 	return cmd
 }
@@ -183,7 +183,7 @@ func NewListUsersCommand(fs afero.Fs) *cobra.Command {
 	return &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
-		Short:   "List SASL users.",
+		Short:   "List SASL users",
 		Run: func(cmd *cobra.Command, _ []string) {
 			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
