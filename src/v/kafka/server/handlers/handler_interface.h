@@ -106,6 +106,6 @@ using handler = const handler_interface*;
  * @param key the API key for the handler
  * @return std::optional<handler> the handler, if any
  */
-std::optional<handler> handler_for_key(api_key key);
+std::optional<handler> handler_for_key(api_key key) noexcept;
 
 } // namespace kafka

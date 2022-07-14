@@ -125,7 +125,7 @@ constexpr auto make_lut(type_list<Ts...>) {
     return lut;
 }
 
-std::optional<handler> handler_for_key(kafka::api_key key) {
+std::optional<handler> handler_for_key(kafka::api_key key) noexcept {
     static constexpr auto lut = make_lut(request_types{});
     if (key >= (short)0 && key < (short)lut.size()) {
         if (auto handler = lut[key]) {
