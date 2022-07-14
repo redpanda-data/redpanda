@@ -87,7 +87,7 @@ void controller_probe::setup_metrics() {
           "partitions",
           [this] {
               const auto& leaders_table
-                = _controller._partition_leaders.local();
+                = _controller.get_partition_leaders().local();
 
               auto partitions_count = 0;
               leaders_table.for_each_leader(
@@ -102,7 +102,7 @@ void controller_probe::setup_metrics() {
           "unavailable_partitions",
           [this] {
               const auto& leaders_table
-                = _controller._partition_leaders.local();
+                = _controller.get_partition_leaders().local();
               auto unavailable_partitions_count = 0;
 
               leaders_table.for_each_leader([&unavailable_partitions_count](
