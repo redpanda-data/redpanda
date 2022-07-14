@@ -108,9 +108,15 @@ std::vector<raft::broker_revision> create_brokers_set(
               throw std::logic_error(
                 fmt::format("Replica node {} is not available", bs.node_id));
           }
+          auto rev_it = replica_revisions.find(bs.node_id);
+          vassert(
+            rev_it != replica_revisions.end(),
+            "revision for broker {} must be present in replica revisions map. "
+            "revisions map size: {}",
+            bs.node_id,
+            replica_revisions.size());
           return raft::broker_revision{
-            .broker = *br->get(),
-            .rev = replica_revisions.find(bs.node_id)->second};
+            .broker = *br->get(), .rev = rev_it->second};
       });
     return brokers;
 }
