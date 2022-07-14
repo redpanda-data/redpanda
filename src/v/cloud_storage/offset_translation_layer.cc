@@ -34,11 +34,11 @@ ss::future<offset_translator::stream_stats> offset_translator::copy_stream(
       removed);
     model::offset min_offset = model::offset::max();
     model::offset max_offset = model::offset::min();
-    auto pred = [&removed, &ctxlog, &min_offset, &max_offset](
+    auto pred = [this, &removed, &ctxlog, &min_offset, &max_offset](
                   model::record_batch_header& hdr) {
         if (
-          hdr.type == model::record_batch_type::raft_configuration
-          || hdr.type == model::record_batch_type::archival_metadata) {
+          _skip_config_batches
+          && (hdr.type == model::record_batch_type::raft_configuration || hdr.type == model::record_batch_type::archival_metadata)) {
             vlog(ctxlog.debug, "skipping batch {}", hdr);
             removed += hdr.last_offset_delta + 1;
             return storage::batch_consumer::consume_result::skip_batch;

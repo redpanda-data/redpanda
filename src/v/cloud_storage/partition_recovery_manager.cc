@@ -580,7 +580,7 @@ partition_downloader::download_segment_file(
       segm.meta.size_bytes,
       part.part_prefix.string());
 
-    offset_translator otl{segm.meta.delta_offset};
+    offset_translator otl{segm.meta.delta_offset, false};
 
     auto localpath = part.part_prefix
                      / std::string{otl.get_adjusted_segment_name(

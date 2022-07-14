@@ -26,8 +26,11 @@ namespace cloud_storage {
 /// It consumes information stored in the manifest.
 class offset_translator final {
 public:
-    explicit offset_translator(model::offset initial_delta)
-      : _initial_delta(initial_delta) {}
+    explicit offset_translator(
+      model::offset initial_delta, bool skip_config_batches = true)
+      : _initial_delta(
+        initial_delta < model::offset{0} ? model::offset{0} : initial_delta)
+      , _skip_config_batches(skip_config_batches) {}
 
     struct stream_stats {
         model::offset min_offset;
@@ -52,6 +55,7 @@ public:
 
 private:
     model::offset _initial_delta;
+    bool _skip_config_batches;
 };
 
 } // namespace cloud_storage
