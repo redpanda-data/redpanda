@@ -21,7 +21,7 @@ namespace pandaproxy {
 
 probe::probe(
   ss::httpd::path_description& path_desc, const ss::sstring& group_name)
-  : _request_hist()
+  : _request_metrics()
   , _metrics()
   , _public_metrics(ssx::metrics::public_metrics_handle) {
     namespace sm = ss::metrics;
@@ -45,11 +45,14 @@ probe::probe(
              "request_latency",
              sm::description("Request latency"),
              labels,
-             [this] { return _request_hist.seastar_histogram_logform(); })
+             [this] {
+                 return _request_metrics.hist().seastar_histogram_logform();
+             })
              .aggregate(internal_aggregate_labels)});
     }
 
     if (!config::shard_local_cfg().disable_public_metrics()) {
+        auto status_label = sm::label("status");
         _public_metrics.add_group(
           group_name,
           {sm::make_histogram(
@@ -58,8 +61,36 @@ probe::probe(
                ssx::sformat("Internal latency of request for {}", group_name)),
              labels,
              [this] {
-                 return ssx::metrics::report_default_histogram(_request_hist);
+                 return ssx::metrics::report_default_histogram(
+                   _request_metrics.hist());
              })
+             .aggregate(aggregate_labels),
+
+           sm::make_counter(
+             "request_errors_total",
+             [this] { return _request_metrics._5xx_count; },
+             sm::description(
+               ssx::sformat("Total number of {} server errors", group_name)),
+             {operation_label(path_desc.operations.nickname),
+              status_label("5xx")})
+             .aggregate(aggregate_labels),
+
+           sm::make_counter(
+             "request_errors_total",
+             [this] { return _request_metrics._4xx_count; },
+             sm::description(
+               ssx::sformat("Total number of {} client errors", group_name)),
+             {operation_label(path_desc.operations.nickname),
+              status_label("4xx")})
+             .aggregate(aggregate_labels),
+
+           sm::make_counter(
+             "request_errors_total",
+             [this] { return _request_metrics._3xx_count; },
+             sm::description(ssx::sformat(
+               "Total number of {} redirection errors", group_name)),
+             {operation_label(path_desc.operations.nickname),
+              status_label("3xx")})
              .aggregate(aggregate_labels)});
     }
 }

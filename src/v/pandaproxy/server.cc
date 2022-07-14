@@ -70,49 +70,46 @@ struct handler_adaptor : ss::httpd::handler_base {
       server::context_t& ctx,
       server::function_handler&& handler,
       ss::httpd::path_description& path_desc,
-      const ss::sstring& metrics_group_name)
+      const ss::sstring& metrics_group_name,
+      json::serialization_format exceptional_mime_type)
       : _pending_requests(pending_requests)
       , _ctx(ctx)
       , _handler(std::move(handler))
-      , _probe(path_desc, metrics_group_name) {}
+      , _probe(path_desc, metrics_group_name)
+      , _exceptional_mime_type(exceptional_mime_type) {}
 
     ss::future<std::unique_ptr<ss::reply>> handle(
       const ss::sstring&,
       std::unique_ptr<ss::request> req,
       std::unique_ptr<ss::reply> rep) final {
-        return ss::try_with_gate(
-          _pending_requests,
-          [this,
-           req{std::move(req)},
-           rep{std::move(rep)},
-           m = _probe.hist().auto_measure()]() mutable {
-              server::request_t rq{std::move(req), this->_ctx};
-              server::reply_t rp{std::move(rep)};
-              auto req_size = get_request_size(*rq.req);
-
-              return ss::with_semaphore(
-                       _ctx.mem_sem,
-                       req_size,
-                       [this, rq{std::move(rq)}, rp{std::move(rp)}]() mutable {
-                           if (_ctx.as.abort_requested()) {
-                               set_reply_unavailable(*rp.rep);
-                               return ss::make_ready_future<
-                                 std::unique_ptr<ss::reply>>(std::move(rp.rep));
-                           }
-                           return _handler(std::move(rq), std::move(rp))
-                             .then([](server::reply_t rp) {
-                                 set_mime_type(*rp.rep, rp.mime_type);
-                                 return std::move(rp.rep);
-                             });
-                       })
-                .finally([m{std::move(m)}]() {});
-          });
+        auto measure = _probe.auto_measure();
+        auto guard = gate_guard(_pending_requests);
+        server::request_t rq{std::move(req), this->_ctx};
+        server::reply_t rp{std::move(rep)};
+        auto req_size = get_request_size(*rq.req);
+        auto sem_units = co_await ss::get_units(_ctx.mem_sem, req_size);
+        if (_ctx.as.abort_requested()) {
+            set_reply_unavailable(*rp.rep);
+            rp.mime_type = _exceptional_mime_type;
+        } else {
+            try {
+                rp = co_await _handler(std::move(rq), std::move(rp));
+            } catch (...) {
+                rp = server::reply_t{
+                  exception_reply(std::current_exception()),
+                  _exceptional_mime_type};
+            }
+        }
+        set_mime_type(*rp.rep, rp.mime_type);
+        measure.set_status(rp.rep->_status);
+        co_return std::move(rp.rep);
     }
 
     ss::gate& _pending_requests;
     server::context_t& _ctx;
     server::function_handler _handler;
     probe _probe;
+    json::serialization_format _exceptional_mime_type;
 };
 
 server::server(
@@ -121,13 +118,15 @@ server::server(
   ss::api_registry_builder20&& api20,
   const ss::sstring& header,
   const ss::sstring& definitions,
-  context_t& ctx)
+  context_t& ctx,
+  json::serialization_format exceptional_mime_type)
   : _server(server_name)
   , _public_metrics_group_name(public_metrics_group_name)
   , _pending_reqs()
   , _api20(std::move(api20))
   , _has_routes(false)
-  , _ctx(ctx) {
+  , _ctx(ctx)
+  , _exceptional_mime_type(exceptional_mime_type) {
     _api20.set_api_doc(_server._routes);
     _api20.register_api_file(_server._routes, header);
     _api20.add_definitions_file(_server._routes, definitions);
@@ -144,7 +143,8 @@ void server::route(server::route_t r) {
       _ctx,
       std::move(r.handler),
       r.path_desc,
-      _public_metrics_group_name);
+      _public_metrics_group_name,
+      _exceptional_mime_type);
     r.path_desc.set(_server._routes, handler);
 }
 
@@ -167,10 +167,9 @@ void server::routes(server::routes_t&& rts) {
 ss::future<> server::start(
   const std::vector<model::broker_endpoint>& endpoints,
   const std::vector<config::endpoint_tls_config>& endpoints_tls,
-  const std::vector<model::broker_endpoint>& advertised,
-  json::serialization_format exceptional_mime_type) {
+  const std::vector<model::broker_endpoint>& advertised) {
     _server._routes.register_exeption_handler(
-      exception_replier{ss::sstring{name(exceptional_mime_type)}});
+      exception_replier{ss::sstring{name(_exceptional_mime_type)}});
     _ctx.advertised_listeners.reserve(endpoints.size());
     for (auto& server_endpoint : endpoints) {
         auto addr = co_await net::resolve_dns(server_endpoint.address);
