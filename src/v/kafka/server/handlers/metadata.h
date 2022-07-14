@@ -14,6 +14,6 @@
 
 namespace kafka {
 
-using metadata_handler = handler<metadata_api, 0, 7>;
+using metadata_handler = single_stage_handler<metadata_api, 0, 7>;
 
 }

@@ -17,7 +17,7 @@
 
 namespace kafka {
 
-using fetch_handler = handler<fetch_api, 4, 11>;
+using fetch_handler = single_stage_handler<fetch_api, 4, 11>;
 
 /*
  * Fetch operation context

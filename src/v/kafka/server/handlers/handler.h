@@ -22,7 +22,7 @@ template<
   typename RequestApi,
   api_version::type MinSupported,
   api_version::type MaxSupported>
-struct handler {
+struct single_stage_handler {
     using api = RequestApi;
     static constexpr api_version min_supported = api_version(MinSupported);
     static constexpr api_version max_supported = api_version(MaxSupported);
