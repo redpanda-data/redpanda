@@ -2465,10 +2465,9 @@ void admin_server::register_partition_routes() {
                   replica.core = bs.shard;
                   r.previous_replicas.push(replica);
               }
-              co_await ss::coroutine::maybe_yield();
               ret.push_back(std::move(r));
           }
-          co_return std::move(ret);
+          co_return ret;
       });
 }
 

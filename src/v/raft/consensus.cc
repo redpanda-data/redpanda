@@ -45,6 +45,7 @@
 
 #include <algorithm>
 #include <iterator>
+#include <system_error>
 
 template<>
 struct fmt::formatter<raft::consensus::vote_state> final
@@ -994,6 +995,18 @@ ss::future<std::error_code> consensus::replace_configuration(
       });
 }
 
+ss::future<std::error_code> consensus::replace_configuration(
+  std::vector<raft::broker_revision> new_brokers,
+  model::revision_id new_revision) {
+    return change_configuration(
+      [new_brokers = std::move(new_brokers),
+       new_revision](group_configuration current) mutable {
+          current.replace(std::move(new_brokers), new_revision);
+          current.set_revision(new_revision);
+          return result<group_configuration>(std::move(current));
+      });
+}
+
 template<typename Func>
 ss::future<std::error_code>
 consensus::interrupt_configuration_change(model::revision_id revision, Func f) {
@@ -1020,12 +1033,23 @@ ss::future<std::error_code>
 consensus::cancel_configuration_change(model::revision_id revision) {
     vlog(
       _ctxlog.info,
-      "requested revert of current configuration change - {}",
+      "requested cancellation of current configuration change - {}",
       config());
     return interrupt_configuration_change(
-      revision, [revision](raft::group_configuration cfg) {
-          cfg.cancel_configuration_change(revision);
-          return cfg;
+             revision,
+             [revision](raft::group_configuration cfg) {
+                 cfg.cancel_configuration_change(revision);
+                 return cfg;
+             })
+      .then([this](std::error_code ec) -> ss::future<std::error_code> {
+          if (!ec) {
+              // current leader is not a voter, step down
+              if (!config().is_voter(_self)) {
+                  auto u = co_await _op_lock.get_units();
+                  do_step_down("current leader is not voter");
+              }
+          }
+          co_return ec;
       });
 }
 

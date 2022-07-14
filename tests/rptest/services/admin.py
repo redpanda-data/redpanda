@@ -439,6 +439,14 @@ class Admin:
         self.redpanda.logger.debug(f"decommissioning {path}")
         return self._request('put', path, node=node)
 
+    def recommission_broker(self, id, node=None):
+        """
+        Recommission broker i.e. abort ongoing decommissioning
+        """
+        path = f"brokers/{id}/recommission"
+        self.redpanda.logger.debug(f"recommissioning {id}")
+        return self._request('put', path, node=node)
+
     def list_reconfigurations(self, node=None):
         """
         List pending reconfigurations

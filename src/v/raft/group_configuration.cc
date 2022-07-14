@@ -313,6 +313,88 @@ void group_configuration::replace(
     }
 }
 
+void group_configuration::replace(
+  std::vector<broker_revision> brokers, model::revision_id rev) {
+    vassert(!_old, "can not replace joint configuration - {}", *this);
+    _revision = rev;
+
+    /**
+     * If configurations are identical do nothing. For identical configuration
+     * we assume that brokers list hasn't changed (1) and current configuration
+     * contains all brokers in either voters of learners (2).
+     */
+    // check list of brokers (1)
+
+    // check if all brokers are assigned to current configuration (2)
+    bool brokers_are_equal
+      = brokers.size() == _brokers.size()
+        && std::all_of(
+          brokers.begin(), brokers.end(), [this](const broker_revision& b) {
+              // we may do linear lookup in _brokers collection as number of
+              // brokers is usually very small f.e. 3 or 5
+              auto it = std::find_if(
+                _brokers.begin(),
+                _brokers.end(),
+                [&b](const model::broker& existing) {
+                    return b.broker == existing;
+                });
+
+              return _current.contains(vnode(b.broker.id(), b.rev))
+                     && it != _brokers.end();
+          });
+
+    // configurations are identical, do nothing
+    if (brokers_are_equal) {
+        return;
+    }
+
+    _old = _current;
+    _current.learners.clear();
+    _current.voters.clear();
+
+    for (auto& br : brokers) {
+        // check if broker is already a voter. voter will stay a voter
+        auto v_it = std::find_if(
+          _old->voters.cbegin(), _old->voters.cend(), [&br](const vnode& rni) {
+              return rni.id() == br.broker.id() && rni.revision() == br.rev;
+          });
+
+        if (v_it != _old->voters.cend()) {
+            _current.voters.push_back(*v_it);
+            continue;
+        }
+
+        // check if broker was a learner. learner will stay a learner
+        auto l_it = std::find_if(
+          _old->learners.cbegin(),
+          _old->learners.cend(),
+          [&br](const vnode& rni) {
+              return rni.id() == br.broker.id() && rni.revision() == br.rev;
+          });
+
+        if (l_it != _old->learners.cend()) {
+            _current.learners.push_back(*l_it);
+            continue;
+        }
+
+        // new broker, use broker revision
+        _current.learners.emplace_back(br.broker.id(), br.rev);
+    }
+
+    // if both current and previous configurations are exactly the same, we do
+    // not need to enter joint consensus
+    if (
+      _current.voters == _old->voters && _current.learners == _old->learners) {
+        _old.reset();
+    }
+
+    for (auto& b : brokers) {
+        if (!contains_broker(b.broker.id())) {
+            _brokers.push_back(std::move(b.broker));
+        }
+    }
+}
+
 void group_configuration::promote_to_voter(vnode id) {
     auto it = std::find(
       _current.learners.cbegin(), _current.learners.cend(), id);

@@ -41,17 +41,60 @@ public:
         cancel_requested,
         force_cancel_requested
     };
+    /**
+     * Replicas revision map is used to track revision of brokers in a replica
+     * set. When a node is added into replica set its gets the revision assigned
+     */
+    using replicas_revision_map
+      = absl::flat_hash_map<model::node_id, model::revision_id>;
 
     struct in_progress_update {
         std::vector<model::broker_shard> previous_replicas;
         in_progress_state state;
         model::revision_id update_revision;
+        replicas_revision_map replicas_revisions;
     };
+
+    struct topic_metadata_item {
+        topic_metadata metadata;
+        // replicas revisions for each partition
+        absl::node_hash_map<model::partition_id, replicas_revision_map>
+          replica_revisions;
+
+        bool is_topic_replicable() const {
+            return metadata.is_topic_replicable();
+        }
+
+        assignments_set& get_assignments() {
+            return metadata.get_assignments();
+        }
+
+        const assignments_set& get_assignments() const {
+            return metadata.get_assignments();
+        }
+        model::revision_id get_revision() const {
+            return metadata.get_revision();
+        }
+        std::optional<model::initial_revision_id> get_remote_revision() const {
+            return metadata.get_remote_revision();
+        }
+        const model::topic& get_source_topic() const {
+            return metadata.get_source_topic();
+        }
+
+        const topic_configuration& get_configuration() const {
+            return metadata.get_configuration();
+        }
+        topic_configuration& get_configuration() {
+            return metadata.get_configuration();
+        }
+    };
+
     using delta = topic_table_delta;
 
-    using underlying_t = absl::flat_hash_map<
+    using underlying_t = absl::node_hash_map<
       model::topic_namespace,
-      topic_metadata,
+      topic_metadata_item,
       model::topic_namespace_hash,
       model::topic_namespace_eq>;
     using hierarchy_t = absl::node_hash_map<
@@ -208,6 +251,23 @@ public:
     std::optional<std::vector<model::broker_shard>>
     get_previous_replica_set(const model::ntp&) const;
 
+    const absl::node_hash_map<model::ntp, in_progress_update>&
+    in_progress_updates() const {
+        return _updates_in_progress;
+    }
+
+    /**
+     * Lists all NTPs that replicas are being move to a node
+     */
+    std::vector<model::ntp> ntps_moving_to_node(model::node_id) const;
+
+    /**
+     * Lists all NTPs that replicas are being move from a node
+     */
+    std::vector<model::ntp> ntps_moving_from_node(model::node_id) const;
+
+    std::vector<model::ntp> all_updates_in_progress() const;
+
 private:
     struct waiter {
         explicit waiter(uint64_t id)
@@ -221,7 +281,7 @@ private:
     void notify_waiters();
 
     template<typename Func>
-    std::vector<std::invoke_result_t<Func, const topic_metadata&>>
+    std::vector<std::invoke_result_t<Func, const topic_metadata_item&>>
     transform_topics(Func&&) const;
 
     underlying_t _topics;

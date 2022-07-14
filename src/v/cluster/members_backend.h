@@ -10,6 +10,7 @@
 
 #include <seastar/core/condition-variable.hh>
 
+#include <absl/container/flat_hash_map.h>
 #include <absl/container/node_hash_set.h>
 
 #include <chrono>
@@ -98,6 +99,9 @@ private:
     void reassign_replicas(partition_assignment&, partition_reallocation&);
     void calculate_reallocations_after_node_added(update_meta&) const;
     void calculate_reallocations_after_decommissioned(update_meta&) const;
+    void calculate_reallocations_after_recommissioned(update_meta&) const;
+    std::vector<model::ntp> ntps_moving_from_node_older_than(
+      model::node_id, model::revision_id) const;
     void setup_metrics();
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<topic_table>& _topics;
@@ -118,6 +122,14 @@ private:
     ss::timer<> _retry_timer;
     ss::condition_variable _new_updates;
     ss::metrics::metric_groups _metrics;
+    /**
+     * store revision of node decommissioning update, decommissioning command
+     * revision is stored when node is being decommissioned, it is used to
+     * determine which partition movements were scheduled before the node was
+     * decommissioned, recommissioning process will not abort those movements.
+     */
+    absl::flat_hash_map<model::node_id, model::revision_id>
+      _decommission_command_revision;
 };
 std::ostream&
 operator<<(std::ostream&, const members_backend::reallocation_state&);

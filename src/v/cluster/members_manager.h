@@ -53,6 +53,12 @@ public:
         model::node_id id;
         node_update_type type;
         model::offset offset;
+
+        bool is_commissioning() const {
+            return type == members_manager::node_update_type::decommissioned
+                   || type == members_manager::node_update_type::recommissioned;
+        }
+
         friend std::ostream& operator<<(std::ostream&, const node_update&);
     };
 

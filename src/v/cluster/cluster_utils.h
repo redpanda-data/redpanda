@@ -271,4 +271,14 @@ inline std::vector<model::broker_shard> subtract_replica_sets(
       });
     return ret;
 }
+
+// check if replica set contains a node
+inline bool contains_node(
+  const std::vector<model::broker_shard>& replicas, model::node_id id) {
+    return std::find_if(
+             replicas.begin(),
+             replicas.end(),
+             [id](const model::broker_shard& bs) { return bs.node_id == id; })
+           != replicas.end();
+}
 } // namespace cluster
