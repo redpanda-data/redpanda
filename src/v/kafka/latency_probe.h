@@ -60,7 +60,7 @@ public:
             sm::make_histogram(
               "request_latency_seconds",
               sm::description("Internal latency of kafka produce requests"),
-              {sm::label("request")("produce")},
+              {ssx::metrics::make_namespaced_label("request")("produce")},
               [this] {
                   return ssx::metrics::report_default_histogram(
                     _produce_latency);
@@ -69,7 +69,7 @@ public:
             sm::make_histogram(
               "request_latency_seconds",
               sm::description("Internal latency of kafka consume requests"),
-              {sm::label("request")("consume")},
+              {ssx::metrics::make_namespaced_label("request")("consume")},
               [this] {
                   return ssx::metrics::report_default_histogram(_fetch_latency);
               })
