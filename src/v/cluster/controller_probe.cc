@@ -24,24 +24,33 @@
 namespace cluster {
 
 controller_probe::controller_probe(controller& c) noexcept
-  : _controller(c) {
-    _controller._raft_manager.local().register_leadership_notification(
-      [this](
-        raft::group_id group,
-        model::term_id /*term*/,
-        std::optional<model::node_id> leader_id) {
-          // We are only interested in notifications regarding the controller
-          // group.
-          if (_controller._raft0->group() != group) {
-              return;
-          }
+  : _controller(c)
+  , _leadership_notification_handle{} {}
 
-          if (leader_id != _controller.self()) {
-              _public_metrics.reset();
-          } else {
-              setup_metrics();
-          }
-      });
+void controller_probe::start() {
+    _leadership_notification_handle
+      = _controller._raft_manager.local().register_leadership_notification(
+        [this](
+          raft::group_id group,
+          model::term_id /*term*/,
+          std::optional<model::node_id> leader_id) {
+            // We are only interested in notifications regarding the controller
+            // group.
+            if (_controller._raft0->group() != group) {
+                return;
+            }
+
+            if (leader_id != _controller.self()) {
+                _public_metrics.reset();
+            } else {
+                setup_metrics();
+            }
+        });
+}
+
+void controller_probe::stop() {
+    _controller._raft_manager.local().unregister_leadership_notification(
+      _leadership_notification_handle);
 }
 
 void controller_probe::setup_metrics() {

@@ -92,7 +92,8 @@ ss::future<> controller::wire_up() {
           return _authorizer.start(
             []() { return config::shard_local_cfg().superusers.bind(); });
       })
-      .then([this] { return _tp_state.start(); });
+      .then([this] { return _tp_state.start(); })
+      .then([this] { _probe.start(); });
 }
 
 ss::future<> controller::start() {
@@ -377,6 +378,7 @@ ss::future<> controller::stop() {
         f = shutdown_input();
     }
 
+    _probe.stop();
     return f.then([this] {
         auto stop_leader_balancer = _leader_balancer ? _leader_balancer->stop()
                                                      : ss::now();
