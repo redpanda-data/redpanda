@@ -56,6 +56,7 @@ func executeMode(fs afero.Fs, cmd *cobra.Command, mode string) error {
 	if err != nil {
 		return fmt.Errorf("unable to load config: %v", err)
 	}
+	cfg = cfg.FileOrDefaults() // we modify fields in the raw file without writing env / flag overrides
 	cfg, err = config.SetMode(mode, cfg)
 	if err != nil {
 		return err

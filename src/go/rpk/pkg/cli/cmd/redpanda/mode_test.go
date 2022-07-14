@@ -42,10 +42,6 @@ func fillRpkConfig(path, mode string) *config.Config {
 		Overprovisioned:    !val,
 		TuneBallastFile:    val,
 	}
-	// Unset defaults that get added after command execution, needed to compare
-	// expected config with loaded config.
-	conf.Rpk.KafkaAPI = config.RpkKafkaAPI{Brokers: []string{"0.0.0.0:9092"}}
-	conf.Rpk.AdminAPI = config.RpkAdminAPI{Addresses: []string{"127.0.0.1:9644"}}
 	return conf
 }
 

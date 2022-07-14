@@ -254,12 +254,6 @@ tune_transparent_hugepages: false
             with open(os.path.join(d, 'redpanda.yaml')) as f:
                 actual_config = yaml.full_load(f.read())
 
-                # Delete 'admin_api' and 'kafka_api' since they are not
-                # needed for this test and the brokers change depending
-                # on the container it's running.
-                del actual_config['rpk']['kafka_api']
-                del actual_config['rpk']['admin_api']
-
                 if actual_config['rpk'] != expected_config:
                     self.logger.error("Configs differ")
                     self.logger.error(
