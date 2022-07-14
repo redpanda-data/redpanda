@@ -713,3 +713,26 @@ class RpkTool:
             return None
         else:
             return lines[2]
+
+    def license_set(self, path, license=""):
+        cmd = [
+            self._rpk_binary(), "--api-urls",
+            self._admin_host(), "cluster", "license", "set"
+        ]
+
+        if license:
+            cmd += [license]
+        if path:
+            cmd += ["--path", path]
+
+        return self._execute(cmd)
+
+    def license_info(self):
+
+        cmd = [
+            self._rpk_binary(), "--api-urls",
+            self._admin_host(), "cluster", "license", "info", "--format",
+            "json"
+        ]
+
+        return self._execute(cmd)
