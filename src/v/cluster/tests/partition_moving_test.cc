@@ -319,7 +319,7 @@ public:
             auto rdr = model::make_memory_record_batch_reader(
               std::move(batches));
             // replicate
-            auto f = pm.get(ntp)->replicate(
+            auto f = pm.get(ntp)->raft()->replicate(
               std::move(rdr),
               raft::replicate_options(raft::consistency_level::quorum_ack));
 

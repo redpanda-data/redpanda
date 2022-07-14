@@ -661,6 +661,9 @@ void application::wire_up_redpanda_services() {
         cloud_configs.stop().get();
     }
 
+    syschecks::systemd_message("Creating feature table").get();
+    construct_service(_feature_table).get();
+
     syschecks::systemd_message("Adding partition manager").get();
     construct_service(
       partition_manager,
@@ -669,7 +672,8 @@ void application::wire_up_redpanda_services() {
       std::ref(tx_gateway_frontend),
       std::ref(partition_recovery_manager),
       std::ref(cloud_storage_api),
-      std::ref(shadow_index_cache))
+      std::ref(shadow_index_cache),
+      std::ref(_feature_table))
       .get();
     vlog(_log.info, "Partition manager started");
 
@@ -690,7 +694,8 @@ void application::wire_up_redpanda_services() {
       storage,
       storage_node,
       std::ref(raft_group_manager),
-      data_policies);
+      data_policies,
+      std::ref(_feature_table));
 
     controller->wire_up().get0();
     syschecks::systemd_message("Creating kafka metadata cache").get();
@@ -803,6 +808,7 @@ void application::wire_up_redpanda_services() {
           make_upload_controller_config(_scheduling_groups.archival_upload()))
           .get();
     }
+
     // group membership
     syschecks::systemd_message("Creating partition manager").get();
     construct_service(
