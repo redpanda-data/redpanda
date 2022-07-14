@@ -70,11 +70,13 @@ struct handler_adaptor : ss::httpd::handler_base {
       server::context_t& ctx,
       server::function_handler&& handler,
       ss::httpd::path_description& path_desc,
-      const ss::sstring& metrics_group_name)
+      const ss::sstring& metrics_group_name,
+      json::serialization_format exceptional_mime_type)
       : _pending_requests(pending_requests)
       , _ctx(ctx)
       , _handler(std::move(handler))
-      , _probe(path_desc, metrics_group_name) {}
+      , _probe(path_desc, metrics_group_name)
+      , _exceptional_mime_type(exceptional_mime_type) {}
 
     ss::future<std::unique_ptr<ss::reply>> handle(
       const ss::sstring&,
@@ -88,16 +90,15 @@ struct handler_adaptor : ss::httpd::handler_base {
         auto sem_units = co_await ss::get_units(_ctx.mem_sem, req_size);
         if (_ctx.as.abort_requested()) {
             set_reply_unavailable(*rp.rep);
-            measure.set_status(rp.rep->_status);
-            co_return std::move(rp.rep);
-        }
-        try {
-            rp = co_await _handler(std::move(rq), std::move(rp));
-        } catch (const std::exception& e) {
-            auto eptr = std::current_exception();
-            auto rep = exception_reply(eptr);
-            measure.set_status(rep->_status);
-            std::rethrow_exception(eptr);
+            rp.mime_type = _exceptional_mime_type;
+        } else {
+            try {
+                rp = co_await _handler(std::move(rq), std::move(rp));
+            } catch (...) {
+                rp = server::reply_t{
+                  exception_reply(std::current_exception()),
+                  _exceptional_mime_type};
+            }
         }
         set_mime_type(*rp.rep, rp.mime_type);
         measure.set_status(rp.rep->_status);
@@ -108,6 +109,7 @@ struct handler_adaptor : ss::httpd::handler_base {
     server::context_t& _ctx;
     server::function_handler _handler;
     probe _probe;
+    json::serialization_format _exceptional_mime_type;
 };
 
 server::server(
@@ -141,7 +143,8 @@ void server::route(server::route_t r) {
       _ctx,
       std::move(r.handler),
       r.path_desc,
-      _public_metrics_group_name);
+      _public_metrics_group_name,
+      _exceptional_mime_type);
     r.path_desc.set(_server._routes, handler);
 }
 
