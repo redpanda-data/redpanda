@@ -36,7 +36,7 @@ void controller_probe::start() {
           std::optional<model::node_id> leader_id) {
             // We are only interested in notifications regarding the controller
             // group.
-            if (_controller._raft0->group() != group) {
+            if (!_controller._raft0 || _controller._raft0->group() != group) {
                 return;
             }
 
