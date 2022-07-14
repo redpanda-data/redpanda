@@ -62,9 +62,9 @@ public:
             return;
         }
 
-        auto group_label = sm::label("group");
-        auto topic_label = sm::label("topic");
-        auto partition_label = sm::label("partition");
+        auto group_label = ssx::metrics::make_namespaced_label("group");
+        auto topic_label = ssx::metrics::make_namespaced_label("topic");
+        auto partition_label = ssx::metrics::make_namespaced_label("partition");
         std::vector<sm::label_instance> labels{
           group_label(group_id()),
           topic_label(tp.topic()),
@@ -110,7 +110,7 @@ public:
             return;
         }
 
-        auto group_label = sm::label("group");
+        auto group_label = ssx::metrics::make_namespaced_label("group");
 
         std::vector<sm::label_instance> labels{group_label(group_id())};
 
