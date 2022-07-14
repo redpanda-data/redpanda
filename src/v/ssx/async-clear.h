@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include "seastarx.h"
+
 #include <seastar/core/future.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 
@@ -28,7 +30,7 @@ namespace ssx {
 template<typename K, typename V>
 class async_clear {
 public:
-    async_clear(absl::flat_hash_map<K, V>& c)
+    explicit async_clear(absl::flat_hash_map<K, V>& c)
       : _container(c) {}
 
     /**

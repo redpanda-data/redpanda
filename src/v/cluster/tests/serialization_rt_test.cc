@@ -15,11 +15,13 @@
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/tests/random_batch.h"
 #include "model/tests/randoms.h"
 #include "model/timestamp.h"
 #include "raft/types.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
+#include "reflection/async_adl.h"
 #include "storage/types.h"
 #include "test_utils/randoms.h"
 #include "test_utils/rpc.h"
@@ -2085,6 +2087,210 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           .term = tests::random_named_int<model::term_id>(),
           .granted = tests::random_bool(),
           .log_ok = tests::random_bool(),
+        };
+        roundtrip_test(data);
+    }
+    {
+        raft::heartbeat_request data;
+
+        // heartbeat request uses the first node/target_node for all of the
+        // heartbeat meatdata entries. so here we arrange for that to be true in
+        // the input data so that equality works as expected.
+        const auto node_id = tests::random_named_int<model::node_id>();
+        const auto target_node_id = tests::random_named_int<model::node_id>();
+
+        for (auto i = 0, mi = random_generators::get_int(1, 20); i < mi; ++i) {
+            raft::protocol_metadata meta{
+              .group = tests::random_named_int<raft::group_id>(),
+              .commit_index = tests::random_named_int<model::offset>(),
+              .term = tests::random_named_int<model::term_id>(),
+              .prev_log_index = tests::random_named_int<model::offset>(),
+              .prev_log_term = tests::random_named_int<model::term_id>(),
+              .last_visible_index = tests::random_named_int<model::offset>(),
+            };
+            raft::heartbeat_metadata hm{
+              .meta = meta,
+              .node_id = raft::
+                vnode{node_id, tests::random_named_int<model::revision_id>()},
+              .target_node_id = raft::
+                vnode{target_node_id, tests::random_named_int<model::revision_id>()},
+            };
+            data.heartbeats.push_back(hm);
+        }
+
+        // encoder will sort automatically. so for equality to work as expected
+        // we use the same sorting for the input as the expected output.
+        struct sorter_fn {
+            constexpr bool operator()(
+              const raft::heartbeat_metadata& lhs,
+              const raft::heartbeat_metadata& rhs) const {
+                return lhs.meta.commit_index < rhs.meta.commit_index;
+            }
+        };
+
+        std::sort(data.heartbeats.begin(), data.heartbeats.end(), sorter_fn{});
+
+        // serde round trip test async version
+        {
+            auto serde_in = data;
+            iobuf serde_out;
+            serde::write_async(serde_out, std::move(serde_in)).get();
+            auto from_serde = serde::from_iobuf<raft::heartbeat_request>(
+              std::move(serde_out));
+            BOOST_REQUIRE(data == from_serde);
+        }
+
+        // the adl test needs to force async to avoid the automatic reflection
+        // version of the encoder.
+        {
+            auto adl_in = data;
+            iobuf adl_out;
+            reflection::async_adl<raft::heartbeat_request>{}
+              .to(adl_out, std::move(adl_in))
+              .get();
+            iobuf_parser in(std::move(adl_out));
+            auto from_adl = reflection::async_adl<raft::heartbeat_request>{}
+                              .from(in)
+                              .get0();
+
+            BOOST_REQUIRE(data == from_adl);
+        }
+    }
+    {
+        raft::heartbeat_reply data;
+
+        // heartbeat reply uses the first node/target_node for all of the
+        // reply meatdata entries. so here we arrange for that to be true in
+        // the input data so that equality works as expected.
+        const auto node_id = tests::random_named_int<model::node_id>();
+        const auto target_node_id = tests::random_named_int<model::node_id>();
+
+        for (auto i = 0, mi = random_generators::get_int(1, 20); i < mi; ++i) {
+            raft::append_entries_reply reply{
+              .target_node_id = raft::
+                vnode{target_node_id, tests::random_named_int<model::revision_id>()},
+              .node_id = raft::
+                vnode{node_id, tests::random_named_int<model::revision_id>()},
+              .group = tests::random_named_int<raft::group_id>(),
+              .term = tests::random_named_int<model::term_id>(),
+              .last_flushed_log_index
+              = tests::random_named_int<model::offset>(),
+              .last_dirty_log_index = tests::random_named_int<model::offset>(),
+              .last_term_base_offset = tests::random_named_int<model::offset>(),
+              .result = raft::append_entries_reply::status::group_unavailable,
+            };
+            data.meta.push_back(reply);
+        }
+
+        // encoder will sort automatically. so for equality to work as expected
+        // we use the same sorting for the input as the expected output.
+        struct sorter_fn {
+            constexpr bool operator()(
+              const raft::append_entries_reply& lhs,
+              const raft::append_entries_reply& rhs) const {
+                return lhs.last_flushed_log_index < rhs.last_flushed_log_index;
+            }
+        };
+
+        std::sort(data.meta.begin(), data.meta.end(), sorter_fn{});
+
+        serde_roundtrip_test(data);
+
+        // the adl test needs to force async to avoid the automatic reflection
+        // version of the encoder.
+        {
+            auto adl_in = data;
+            iobuf adl_out;
+            reflection::async_adl<raft::heartbeat_reply>{}
+              .to(adl_out, std::move(adl_in))
+              .get();
+            iobuf_parser in(std::move(adl_out));
+            auto from_adl
+              = reflection::async_adl<raft::heartbeat_reply>{}.from(in).get0();
+
+            BOOST_REQUIRE(data == from_adl);
+        }
+    }
+    {
+        raft::protocol_metadata data{
+          .group = tests::random_named_int<raft::group_id>(),
+          .commit_index = tests::random_named_int<model::offset>(),
+          .term = tests::random_named_int<model::term_id>(),
+          .prev_log_index = tests::random_named_int<model::offset>(),
+          .prev_log_term = tests::random_named_int<model::term_id>(),
+          .last_visible_index = tests::random_named_int<model::offset>(),
+        };
+        roundtrip_test(data);
+    }
+    {
+        const auto gold = model::test::make_random_batches(
+          model::offset(0), 20);
+
+        // make a copy of the source batches for later comparison because the
+        // copy moved into the request will get eaten.
+        ss::circular_buffer<model::record_batch> batches_in;
+        for (const auto& batch : gold) {
+            batches_in.push_back(batch.copy());
+        }
+
+        raft::protocol_metadata pmd{
+          .group = tests::random_named_int<raft::group_id>(),
+          .commit_index = tests::random_named_int<model::offset>(),
+          .term = tests::random_named_int<model::term_id>(),
+          .prev_log_index = tests::random_named_int<model::offset>(),
+          .prev_log_term = tests::random_named_int<model::term_id>(),
+          .last_visible_index = tests::random_named_int<model::offset>(),
+        };
+
+        raft::append_entries_request data{
+          raft::vnode{
+            tests::random_named_int<model::node_id>(),
+            tests::random_named_int<model::revision_id>()},
+          raft::vnode{
+            tests::random_named_int<model::node_id>(),
+            tests::random_named_int<model::revision_id>()},
+          pmd,
+          model::make_memory_record_batch_reader(std::move(batches_in)),
+          raft::append_entries_request::flush_after_append(
+            tests::random_bool()),
+        };
+
+        // append_entries_request -> iobuf
+        iobuf serde_out;
+        serde::write_async(serde_out, std::move(data)).get();
+
+        // iobuf -> append_entries_request
+        iobuf_parser serde_in(std::move(serde_out));
+        auto from_serde
+          = serde::read_async<raft::append_entries_request>(serde_in).get0();
+
+        BOOST_REQUIRE(from_serde.node_id == data.node_id);
+        BOOST_REQUIRE(from_serde.target_node_id == data.target_node_id);
+        BOOST_REQUIRE(from_serde.meta == data.meta);
+        BOOST_REQUIRE(from_serde.flush == data.flush);
+
+        auto batches_from_serde = model::consume_reader_to_memory(
+                                    std::move(from_serde.batches()),
+                                    model::no_timeout)
+                                    .get0();
+        BOOST_REQUIRE(gold.size() > 0);
+        BOOST_REQUIRE(batches_from_serde.size() == gold.size());
+        for (size_t i = 0; i < gold.size(); i++) {
+            BOOST_REQUIRE(batches_from_serde[i] == gold[i]);
+        }
+    }
+    {
+        raft::append_entries_reply data{
+          .target_node_id = raft::
+            vnode{tests::random_named_int<model::node_id>(), tests::random_named_int<model::revision_id>()},
+          .node_id = raft::
+            vnode{tests::random_named_int<model::node_id>(), tests::random_named_int<model::revision_id>()},
+          .group = tests::random_named_int<raft::group_id>(),
+          .term = tests::random_named_int<model::term_id>(),
+          .last_flushed_log_index = tests::random_named_int<model::offset>(),
+          .last_dirty_log_index = tests::random_named_int<model::offset>(),
+          .last_term_base_offset = tests::random_named_int<model::offset>(),
+          .result = raft::append_entries_reply::status::group_unavailable,
         };
         roundtrip_test(data);
     }

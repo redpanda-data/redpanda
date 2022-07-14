@@ -679,7 +679,7 @@ template<typename T>
 ss::future<std::decay_t<T>> read_async(iobuf_parser& in) {
     return read_async_nested<T>(in, 0).then([&](std::decay_t<T>&& t) {
         if (likely(in.bytes_left() == 0)) {
-            return ss::make_ready_future<std::decay_t<T>>(t);
+            return ss::make_ready_future<std::decay_t<T>>(std::move(t));
         } else {
             return ss::make_exception_future<std::decay_t<T>>(
               serde_exception{fmt_with_ctx(
@@ -693,7 +693,7 @@ ss::future<std::decay_t<T>> read_async(iobuf_parser& in) {
 }
 
 template<typename T>
-ss::future<> write_async(iobuf& out, T const& t) {
+ss::future<> write_async(iobuf& out, T t) {
     using Type = std::decay_t<T>;
     if constexpr (is_envelope_v<Type> && has_serde_async_write<Type>) {
         write(out, Type::redpanda_serde_version);
@@ -702,24 +702,31 @@ ss::future<> write_async(iobuf& out, T const& t) {
         auto size_placeholder = out.reserve(sizeof(serde_size_t));
         auto const size_before = out.size_bytes();
 
-        return t.serde_async_write(out).then(
-          [&out,
-           size_before,
-           size_placeholder = std::move(size_placeholder)]() mutable {
-              auto const written_size = out.size_bytes() - size_before;
-              if (unlikely(
-                    written_size > std::numeric_limits<serde_size_t>::max())) {
-                  throw serde_exception{"envelope too big"};
-              }
-              auto const size = ss::cpu_to_le(
-                static_cast<serde_size_t>(written_size));
-              size_placeholder.write(
-                reinterpret_cast<char const*>(&size), sizeof(serde_size_t));
+        return ss::do_with(
+          std::move(t),
+          [&out, size_before, size_placeholder = std::move(size_placeholder)](
+            T& t) mutable {
+              return t.serde_async_write(out).then(
+                [&out,
+                 size_before,
+                 size_placeholder = std::move(size_placeholder)]() mutable {
+                    auto const written_size = out.size_bytes() - size_before;
+                    if (unlikely(
+                          written_size
+                          > std::numeric_limits<serde_size_t>::max())) {
+                        throw serde_exception{"envelope too big"};
+                    }
+                    auto const size = ss::cpu_to_le(
+                      static_cast<serde_size_t>(written_size));
+                    size_placeholder.write(
+                      reinterpret_cast<char const*>(&size),
+                      sizeof(serde_size_t));
 
-              return ss::make_ready_future<>();
+                    return ss::make_ready_future<>();
+                });
           });
     } else {
-        write(out, t);
+        write(out, std::move(t));
         return ss::make_ready_future<>();
     }
 }

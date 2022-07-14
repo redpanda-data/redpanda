@@ -44,7 +44,9 @@ static constexpr clock_type::time_point no_timeout
   = clock_type::time_point::max();
 
 using group_id = named_type<int64_t, struct raft_group_id_type>;
-struct protocol_metadata {
+
+struct protocol_metadata
+  : serde::envelope<protocol_metadata, serde::version<0>> {
     group_id group;
     model::offset commit_index;
     model::term_id term;
@@ -54,6 +56,19 @@ struct protocol_metadata {
 
     friend std::ostream&
     operator<<(std::ostream& o, const protocol_metadata& m);
+
+    friend bool operator==(const protocol_metadata&, const protocol_metadata&)
+      = default;
+
+    auto serde_fields() {
+        return std::tie(
+          group,
+          commit_index,
+          term,
+          prev_log_index,
+          prev_log_term,
+          last_visible_index);
+    }
 };
 
 // The sequence used to track the order of follower append entries request
@@ -177,8 +192,15 @@ struct follower_metrics {
     bool under_replicated;
 };
 
-struct append_entries_request {
+struct append_entries_request
+  : serde::envelope<append_entries_request, serde::version<0>> {
     using flush_after_append = ss::bool_class<struct flush_after_append_tag>;
+
+    /*
+     * default initialize with no record batch reader. default construction
+     * should only be used by serialization frameworks.
+     */
+    append_entries_request() noexcept = default;
 
     // required for the cases where we will set the target node id before
     // sending request to the node
@@ -189,8 +211,8 @@ struct append_entries_request {
       flush_after_append f = flush_after_append::yes) noexcept
       : node_id(src)
       , meta(m)
-      , batches(std::move(r))
-      , flush(f){};
+      , flush(f)
+      , _batches(std::move(r)) {}
 
     append_entries_request(
       vnode src,
@@ -201,8 +223,8 @@ struct append_entries_request {
       : node_id(src)
       , target_node_id(target)
       , meta(m)
-      , batches(std::move(r))
-      , flush(f){};
+      , flush(f)
+      , _batches(std::move(r)) {}
     ~append_entries_request() noexcept = default;
     append_entries_request(const append_entries_request&) = delete;
     append_entries_request& operator=(const append_entries_request&) = delete;
@@ -215,19 +237,48 @@ struct append_entries_request {
     vnode node_id;
     vnode target_node_id;
     protocol_metadata meta;
-    model::record_batch_reader batches;
+    model::record_batch_reader& batches() {
+        /*
+         * note that some call sites do:
+         *
+         *   auto b = std::move(req.batches())
+         *
+         * which does not reset the std::optional value. so this assertion is
+         * merely here to protect against use of a default constructed request.
+         */
+        vassert(_batches.has_value(), "request contains no batches");
+        return _batches.value();
+    }
     flush_after_append flush;
     static append_entries_request make_foreign(append_entries_request&& req) {
         return append_entries_request(
           req.node_id,
           req.target_node_id,
           std::move(req.meta),
-          model::make_foreign_record_batch_reader(std::move(req.batches)),
+          model::make_foreign_record_batch_reader(std::move(req.batches())),
           req.flush);
     }
+
+    ss::future<> serde_async_write(iobuf& out);
+    ss::future<> serde_async_read(iobuf_parser&, const serde::header&);
+
+private:
+    /*
+     * batches is optional to allow append_entries_request to have a default
+     * constructor and integrate with serde until serde provides a more powerful
+     * interface for dealing with this.
+     */
+    std::optional<model::record_batch_reader> _batches;
 };
 
-struct append_entries_reply {
+/*
+ * append_entries_reply uses two different types of serialization: when
+ * encoding/decoding directly normal adl/serde per-field serialization is used.
+ * the second type is a custom encoding used by heartbeat_reply for more
+ * efficient encoding of a vectory of append_entries_reply.
+ */
+struct append_entries_reply
+  : serde::envelope<append_entries_reply, serde::version<0>> {
     enum class status : uint8_t {
         success,
         failure,
@@ -254,12 +305,31 @@ struct append_entries_reply {
 
     friend std::ostream&
     operator<<(std::ostream& o, const append_entries_reply& r);
+
+    friend bool
+    operator==(const append_entries_reply&, const append_entries_reply&)
+      = default;
+
+    auto serde_fields() {
+        return std::tie(
+          target_node_id,
+          node_id,
+          group,
+          term,
+          last_flushed_log_index,
+          last_dirty_log_index,
+          last_term_base_offset,
+          result);
+    }
 };
 
 struct heartbeat_metadata {
     protocol_metadata meta;
     vnode node_id;
     vnode target_node_id;
+
+    friend bool operator==(const heartbeat_metadata&, const heartbeat_metadata&)
+      = default;
 };
 
 /// \brief this is our _biggest_ modification to how raft works
@@ -268,14 +338,38 @@ struct heartbeat_metadata {
 /// at a time, as well as the receiving side will trigger the
 /// individual raft responses one at a time - for example to start replaying the
 /// log at some offset
-struct heartbeat_request {
+struct heartbeat_request
+  : serde::envelope<heartbeat_request, serde::version<0>> {
     std::vector<heartbeat_metadata> heartbeats;
+
+    heartbeat_request() noexcept = default;
+    explicit heartbeat_request(std::vector<heartbeat_metadata> heartbeats)
+      : heartbeats(std::move(heartbeats)) {}
+
     friend std::ostream&
     operator<<(std::ostream& o, const heartbeat_request& r);
+
+    friend bool operator==(const heartbeat_request&, const heartbeat_request&)
+      = default;
+
+    ss::future<> serde_async_write(iobuf& out);
+    void serde_read(iobuf_parser&, const serde::header&);
 };
-struct heartbeat_reply {
+
+struct heartbeat_reply : serde::envelope<heartbeat_reply, serde::version<0>> {
     std::vector<append_entries_reply> meta;
+
+    heartbeat_reply() noexcept = default;
+    explicit heartbeat_reply(std::vector<append_entries_reply> meta)
+      : meta(std::move(meta)) {}
+
     friend std::ostream& operator<<(std::ostream& o, const heartbeat_reply& r);
+
+    friend bool operator==(const heartbeat_reply&, const heartbeat_reply&)
+      = default;
+
+    void serde_write(iobuf& out);
+    void serde_read(iobuf_parser&, const serde::header&);
 };
 
 struct vote_request : serde::envelope<vote_request, serde::version<0>> {
@@ -811,4 +905,41 @@ struct adl<raft::vote_reply> {
         };
     }
 };
+
+template<>
+struct adl<raft::append_entries_reply> {
+    void to(iobuf& out, raft::append_entries_reply&& r) {
+        serialize(
+          out,
+          r.target_node_id,
+          r.node_id,
+          r.group,
+          r.term,
+          r.last_flushed_log_index,
+          r.last_dirty_log_index,
+          r.last_term_base_offset,
+          r.result);
+    }
+    raft::append_entries_reply from(iobuf_parser& in) {
+        auto target_node_id = adl<raft::vnode>{}.from(in);
+        auto node_id = adl<raft::vnode>{}.from(in);
+        auto group = adl<raft::group_id>{}.from(in);
+        auto term = adl<model::term_id>{}.from(in);
+        auto last_flushed_log_index = adl<model::offset>{}.from(in);
+        auto last_dirty_log_index = adl<model::offset>{}.from(in);
+        auto last_term_base_offset = adl<model::offset>{}.from(in);
+        auto result = adl<raft::append_entries_reply::status>{}.from(in);
+        return {
+          .target_node_id = target_node_id,
+          .node_id = node_id,
+          .group = group,
+          .term = term,
+          .last_flushed_log_index = last_flushed_log_index,
+          .last_dirty_log_index = last_dirty_log_index,
+          .last_term_base_offset = last_term_base_offset,
+          .result = result,
+        };
+    }
+};
+
 } // namespace reflection

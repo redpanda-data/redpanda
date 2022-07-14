@@ -99,7 +99,7 @@ SEASTAR_THREAD_TEST_CASE(append_entries_requests) {
     auto batches_result = model::consume_reader_to_memory(
                             std::move(readers.back()), model::no_timeout)
                             .get0();
-    d.batches
+    d.batches()
       .consume(checking_consumer(std::move(batches_result)), model::no_timeout)
       .get0();
 }
