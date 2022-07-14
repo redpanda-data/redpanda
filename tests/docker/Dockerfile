@@ -182,4 +182,8 @@ RUN mkdir -p /opt/scripts && \
 RUN mkdir -p /opt/scripts/offline_log_viewer
 COPY --chown=0:0 tools/offline_log_viewer /opt/scripts/offline_log_viewer
 
+# Install remote_scripts
+RUN mkdir -p /opt/remote
+COPY --chown=0:0 tests/rptest/remote_scripts /opt/remote
+
 CMD service ssh start && tail -f /dev/null
