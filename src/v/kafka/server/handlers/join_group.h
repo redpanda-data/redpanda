@@ -14,13 +14,6 @@
 
 namespace kafka {
 
-struct join_group_handler {
-    using api = join_group_api;
-    static constexpr api_version min_supported = api_version(0);
-    static constexpr api_version max_supported = api_version(5);
-    static process_result_stages handle(request_context, ss::smp_service_group);
-    static size_t memory_estimate(size_t request_size) {
-        return default_memory_estimate(request_size);
-    }
-};
+using join_group_handler = two_phase_handler<join_group_api, 0, 5>;
+
 } // namespace kafka
