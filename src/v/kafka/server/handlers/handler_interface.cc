@@ -71,8 +71,9 @@ struct handler_base final : public handler_interface {
     api_key key() const override { return _info._key; }
     const char* name() const override { return _info._name; }
 
-    size_t memory_estimate(size_t request_size) const override {
-        return _info._mem_estimate(request_size);
+    size_t memory_estimate(
+      size_t request_size, connection_context& conn_ctx) const override {
+        return _info._mem_estimate(request_size, conn_ctx);
     }
     /**
      * Only handle varies with one or two pass, since one pass handlers

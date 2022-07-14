@@ -10,6 +10,7 @@
  */
 #pragma once
 #include "kafka/protocol/types.h"
+#include "kafka/server/fwd.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
 #include "kafka/types.h"
@@ -18,7 +19,12 @@
 
 namespace kafka {
 
-using memory_estimate_fn = size_t(size_t);
+using memory_estimate_fn = size_t(size_t, connection_context&);
+
+constexpr size_t
+default_estimate_adaptor(size_t request_size, connection_context&) {
+    return default_memory_estimate(request_size);
+}
 
 /**
  * Handlers are generally specializations of this template, via one of the
@@ -46,8 +52,9 @@ struct handler_template {
      * See handler_interface::memory_estimate for a description of this
      * function.
      */
-    static size_t memory_estimate(size_t request_size) {
-        return MemEstimator(request_size);
+    static size_t
+    memory_estimate(size_t request_size, connection_context& conn_ctx) {
+        return MemEstimator(request_size, conn_ctx);
     }
 };
 
@@ -59,7 +66,7 @@ template<
   typename RequestApi,
   api_version::type MinSupported,
   api_version::type MaxSupported,
-  memory_estimate_fn MemEstimator = default_memory_estimate>
+  memory_estimate_fn MemEstimator = default_estimate_adaptor>
 using single_stage_handler = handler_template<
   RequestApi,
   MinSupported,
@@ -78,7 +85,7 @@ template<
   typename RequestApi,
   api_version::type MinSupported,
   api_version::type MaxSupported,
-  memory_estimate_fn MemEstimator = default_memory_estimate>
+  memory_estimate_fn MemEstimator = default_estimate_adaptor>
 using two_phase_handler = handler_template<
   RequestApi,
   MinSupported,

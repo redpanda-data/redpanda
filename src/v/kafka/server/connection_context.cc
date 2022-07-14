@@ -272,7 +272,7 @@ connection_context::reserve_request_units(api_key key, size_t size) {
     // case the request is likely for an API we don't support or malformed, so
     // it is likely to fail shortly anyway).
     auto handler = handler_for_key(key);
-    auto mem_estimate = handler ? (*handler)->memory_estimate(size)
+    auto mem_estimate = handler ? (*handler)->memory_estimate(size, *this)
                                 : default_memory_estimate(size);
     if (unlikely(mem_estimate >= (size_t)std::numeric_limits<int32_t>::max())) {
         // TODO: Create error response using the specific API?

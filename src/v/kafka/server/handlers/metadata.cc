@@ -15,6 +15,7 @@
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "kafka/server/errors.h"
+#include "kafka/server/fwd.h"
 #include "kafka/server/handlers/details/leader_epoch.h"
 #include "kafka/server/handlers/details/security.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
