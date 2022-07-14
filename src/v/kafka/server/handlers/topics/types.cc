@@ -152,10 +152,11 @@ to_cluster_type(const creatable_topic& t) {
     cfg.properties.recovery = get_bool_value(
       config_entries, topic_property_recovery);
     cfg.properties.shadow_indexing = get_shadow_indexing_mode(config_entries);
-    cfg.properties.read_replica = get_bool_value(
-      config_entries, topic_property_read_replica);
     cfg.properties.read_replica_bucket = get_string_value(
-      config_entries, topic_property_read_replica_bucket);
+      config_entries, topic_property_read_replica);
+    if (cfg.properties.read_replica_bucket.has_value()) {
+        cfg.properties.read_replica = true;
+    }
     /// Final topic_property not decoded here is \ref remote_topic_properties,
     /// is more of an implementation detail no need to ever show user
 
@@ -246,12 +247,8 @@ config_map_t from_cluster_type(const cluster::topic_properties& properties) {
             break;
         }
     }
-    if (properties.read_replica) {
-        config_entries[topic_property_read_replica] = from_config_type(
-          *properties.read_replica);
-    }
     if (properties.read_replica_bucket) {
-        config_entries[topic_property_read_replica_bucket] = from_config_type(
+        config_entries[topic_property_read_replica] = from_config_type(
           *properties.read_replica_bucket);
     }
     /// Final topic_property not encoded here is \ref remote_topic_properties,

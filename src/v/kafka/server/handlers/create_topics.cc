@@ -33,7 +33,7 @@
 
 namespace kafka {
 
-static constexpr std::array<std::string_view, 12> supported_configs{
+static constexpr std::array<std::string_view, 11> supported_configs{
   topic_property_compression,
   topic_property_cleanup_policy,
   topic_property_timestamp_type,
@@ -44,8 +44,7 @@ static constexpr std::array<std::string_view, 12> supported_configs{
   topic_property_recovery,
   topic_property_remote_write,
   topic_property_remote_read,
-  topic_property_read_replica,
-  topic_property_read_replica_bucket};
+  topic_property_read_replica};
 
 bool is_supported(std::string_view name) {
     return std::any_of(
@@ -65,9 +64,7 @@ using validators = make_validator_types<
   compaction_strategy_validator,
   timestamp_type_validator,
   cleanup_policy_validator,
-  remote_read_and_write_are_not_supported_for_read_replica,
-  s3_bucket_is_required_for_read_replica,
-  s3_bucket_is_supported_only_for_read_replica>;
+  remote_read_and_write_are_not_supported_for_read_replica>;
 
 static std::vector<creatable_topic_configs>
 properties_to_result_configs(config_map_t config_map) {

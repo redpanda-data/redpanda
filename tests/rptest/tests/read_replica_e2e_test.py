@@ -48,8 +48,7 @@ class TestReadReplicaService(EndToEndTest):
 
         rpk_second_cluster = RpkTool(self.second_cluster)
         conf = {
-            'redpanda.remote.readreplica': 'true',
-            'redpanda.remote.readreplica.bucket': self.s3_bucket_name,
+            'redpanda.remote.readreplica': self.s3_bucket_name,
         }
         rpk_second_cluster.create_topic(self.topic_name, config=conf)
 
