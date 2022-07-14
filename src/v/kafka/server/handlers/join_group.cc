@@ -35,6 +35,7 @@ static void decode_request(request_context& ctx, join_group_request& req) {
       fmt::format("{}", ctx.connection()->client_host()));
 }
 
+template<>
 process_result_stages join_group_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
     join_group_request request;

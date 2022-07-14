@@ -20,17 +20,28 @@ namespace kafka {
 
 using memory_estimate_fn = size_t(size_t);
 
+/**
+ * Handlers are generally specializations of this template, via one of the
+ * two aliases (handler or two_phase_hander) declared below, though it is
+ * not strictly necessary (only conforming to one of the two KafkaApi*
+ * concepts is needed).
+ *
+ * The benefit of this template is that it takes care of the most of the
+ * handler boilerplate.
+ */
 template<
   typename RequestApi,
   api_version::type MinSupported,
   api_version::type MaxSupported,
-  memory_estimate_fn MemEstimator = default_memory_estimate>
-struct single_stage_handler {
+  typename HandleRetType,
+  memory_estimate_fn MemEstimator>
+struct handler_template {
     using api = RequestApi;
     static constexpr api_version min_supported = api_version(MinSupported);
     static constexpr api_version max_supported = api_version(MaxSupported);
-    static ss::future<response_ptr>
-      handle(request_context, ss::smp_service_group);
+
+    static HandleRetType handle(request_context, ss::smp_service_group);
+
     /**
      * See handler_interface::memory_estimate for a description of this
      * function.
@@ -39,6 +50,41 @@ struct single_stage_handler {
         return MemEstimator(request_size);
     }
 };
+
+/**
+ * A single-stage handler implements the entire request handling in the initial
+ * stage which occurs before any subsequent request is processed.
+ */
+template<
+  typename RequestApi,
+  api_version::type MinSupported,
+  api_version::type MaxSupported,
+  memory_estimate_fn MemEstimator = default_memory_estimate>
+using single_stage_handler = handler_template<
+  RequestApi,
+  MinSupported,
+  MaxSupported,
+  ss::future<response_ptr>,
+  MemEstimator>;
+
+/**
+ * A two-stage handler has an initial stage which happens before any other
+ * request can start processing (as in a single-stage handler) but then also has
+ * a second stage which is processed in the background allowing other requests
+ * on the same connection to start their handler. Responses are still sent in
+ * order, but processing is out-of-order.
+ */
+template<
+  typename RequestApi,
+  api_version::type MinSupported,
+  api_version::type MaxSupported,
+  memory_estimate_fn MemEstimator = default_memory_estimate>
+using two_phase_handler = handler_template<
+  RequestApi,
+  MinSupported,
+  MaxSupported,
+  process_result_stages,
+  MemEstimator>;
 
 template<typename T>
 concept KafkaApiHandler = KafkaApi<typename T::api> && requires(

@@ -14,14 +14,6 @@
 
 namespace kafka {
 
-struct sync_group_handler {
-    using api = sync_group_api;
-    static constexpr api_version min_supported = api_version(0);
-    static constexpr api_version max_supported = api_version(3);
-    static process_result_stages handle(request_context, ss::smp_service_group);
-    static size_t memory_estimate(size_t request_size) {
-        return default_memory_estimate(request_size);
-    }
-};
+using sync_group_handler = two_phase_handler<sync_group_api, 0, 3>;
 
 } // namespace kafka
