@@ -30,7 +30,16 @@ func Check(
 		return results, err
 	}
 
-	for _, checkers := range checkersMap {
+	// We use a sorted list of the checker's ID present in the checkersMap to
+	// run in a consistent order.
+	var ids []int
+	for id := range checkersMap {
+		ids = append(ids, int(id))
+	}
+	sort.Ints(ids)
+
+	for _, id := range ids {
+		checkers := checkersMap[CheckerID(id)]
 		for _, c := range checkers {
 			result := c.Check()
 			if result.Err != nil {
