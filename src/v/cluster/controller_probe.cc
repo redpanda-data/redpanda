@@ -49,6 +49,7 @@ void controller_probe::start() {
 }
 
 void controller_probe::stop() {
+    _public_metrics.reset();
     _controller._raft_manager.local().unregister_leadership_notification(
       _leadership_notification_handle);
 }
