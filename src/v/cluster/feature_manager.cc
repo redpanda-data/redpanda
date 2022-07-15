@@ -186,7 +186,7 @@ ss::future<> feature_manager::maybe_log_license_check_info() {
         const auto& cfg = config::shard_local_cfg();
         std::stringstream warn_ss;
         if (cfg.cloud_storage_enabled) {
-            fmt::print(warn_ss, "{}", "Tired Storage(cloud_storage)");
+            fmt::print(warn_ss, "{}", "Tiered Storage(cloud_storage)");
         }
         const auto& warn_log = warn_ss.str();
         if (!warn_log.empty()) {
