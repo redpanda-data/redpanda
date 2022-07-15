@@ -143,10 +143,10 @@ void replicated_partition_probe::setup_public_metrics(const model::ntp& ntp) {
         return;
     }
 
-    auto request_label = sm::label("request");
-    auto ns_label = sm::label("namespace");
-    auto topic_label = sm::label("topic");
-    auto partition_label = sm::label("partition");
+    auto request_label = ssx::metrics::make_namespaced_label("request");
+    auto ns_label = ssx::metrics::make_namespaced_label("namespace");
+    auto topic_label = ssx::metrics::make_namespaced_label("topic");
+    auto partition_label = ssx::metrics::make_namespaced_label("partition");
 
     const std::vector<sm::label_instance> labels = {
       ns_label(ntp.ns()),

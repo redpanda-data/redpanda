@@ -99,7 +99,7 @@ remote_probe::remote_probe(
     }
 
     if (!public_disabled) {
-        auto direction_label = sm::label("direction");
+        auto direction_label = ssx::metrics::make_namespaced_label("direction");
 
         _public_metrics.add_group(
           prometheus_sanitize::metrics_name("cloud_storage"),
