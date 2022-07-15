@@ -17,6 +17,8 @@ from rptest.clients.types import TopicSpec
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.end_to_end import EndToEndTest
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.tests.upgrade_with_workload import MixedVersionWorkloadRunner
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import (
     KgoVerifierProducer,
@@ -321,3 +323,59 @@ class UpgradeWithWorkloadTest(EndToEndTest):
         self.run_validation(min_records=post_rollback_num_msgs +
                             (self.producer_msgs_per_sec * 3),
                             enable_idempotence=True)
+
+
+class RaftRpcUpgradeTest(EndToEndTest):
+    """
+    This test generates Raft election traffic back and forth between two nodes,
+    all the while being upgraded.
+    """
+    def setUp(self):
+        self.initial_version = MixedVersionWorkloadRunner.PRE_SERDE_VERSION
+        self.producer_msgs_per_sec = 10
+        install_opts = InstallOptions(version=self.initial_version)
+        extra_rp_conf = dict(enable_leader_balancer=False)
+        self.start_redpanda(num_nodes=3,
+                            install_opts=install_opts,
+                            extra_rp_conf=extra_rp_conf)
+
+        # Start running a workload.
+        spec = TopicSpec(name="topic", partition_count=2, replication_factor=3)
+        self.client().create_topic(spec)
+        self.topic = spec.name
+        self.start_producer(num_nodes=1, throughput=self.producer_msgs_per_sec)
+        self.start_consumer(num_nodes=1)
+        self.await_startup(min_records=self.producer_msgs_per_sec)
+
+    def verify_leadership_transfer_to(self, dst_node):
+        def await_progress():
+            num_msgs = self.producer.num_acked
+            self.await_num_produced(num_msgs +
+                                    (self.producer_msgs_per_sec * 3))
+            self.await_num_consumed(num_msgs +
+                                    (self.producer_msgs_per_sec * 3))
+
+        await_progress()
+        admin = self.redpanda._admin
+        dst_id = self.redpanda.idx(dst_node)
+        wait_until(lambda: admin.transfer_leadership_to(
+            namespace="kafka", topic=self.topic, partition=0, target_id=dst_id
+        ),
+                   timeout_sec=30,
+                   backoff_sec=1)
+
+        admin.await_stable_leader(topic=self.topic,
+                                  check=lambda node_id: node_id == dst_id)
+        await_progress()
+
+    def raft_workload(self, src_node, dst_node):
+        # Send leadership to 'src_node' first to exercise leadership transfer
+        # RPCs that get sent when transferring leadership to 'dst_node' too.
+        self.verify_leadership_transfer_to(src_node)
+        self.verify_leadership_transfer_to(dst_node)
+
+    @cluster(num_nodes=5,
+             log_allow_list=MixedVersionWorkloadRunner.ALLOWED_LOGS)
+    def test_raft_traffic_during_upgrade(self):
+        MixedVersionWorkloadRunner.upgrade_with_workload(
+            self.redpanda, self.initial_version, self.raft_workload)
