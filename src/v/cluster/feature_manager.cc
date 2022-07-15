@@ -182,21 +182,25 @@ ss::future<> feature_manager::maybe_log_license_check_info() {
               interval_override);
         }
     }
-    const auto& cfg = config::shard_local_cfg();
-    std::stringstream warn_ss;
-    if (cfg.cloud_storage_enabled) {
-        fmt::print(warn_ss, "{}", "Tired Storage(cloud_storage)");
-    }
-    const auto& warn_log = warn_ss.str();
-    if (!warn_log.empty()) {
-        const auto& license = _feature_table.local().get_license();
-        if (!license || license->is_expired()) {
-            vlog(
-              clusterlog.warn,
-              "Enterprise feature(s) {} detected as enabled without a valid "
-              "license, please contact support and/or upload a valid redpanda "
-              "license",
-              warn_log);
+    if (_feature_table.local().is_active(feature::license)) {
+        const auto& cfg = config::shard_local_cfg();
+        std::stringstream warn_ss;
+        if (cfg.cloud_storage_enabled) {
+            fmt::print(warn_ss, "{}", "Tired Storage(cloud_storage)");
+        }
+        const auto& warn_log = warn_ss.str();
+        if (!warn_log.empty()) {
+            const auto& license = _feature_table.local().get_license();
+            if (!license || license->is_expired()) {
+                vlog(
+                  clusterlog.warn,
+                  "Enterprise feature(s) {} detected as enabled without a "
+                  "valid "
+                  "license, please contact support and/or upload a valid "
+                  "redpanda "
+                  "license",
+                  warn_log);
+            }
         }
     }
     try {
