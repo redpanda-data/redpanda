@@ -114,6 +114,7 @@ subdir('reflection')
 subdir('syschecks')
 subdir('net')
 subdir('http')
+subdir('cloud_roles')
 
 # some tests have circular or forward dependencies if added along with their
 # normal containing directory. a common example are tests that depend on the
