@@ -532,6 +532,17 @@ bool need_redirect_to_leader(
 
     return leader_id_opt.value() != config::node().node_id();
 }
+
+model::node_id parse_broker_id(const ss::httpd::request& req) {
+    try {
+        return model::node_id(
+          boost::lexical_cast<model::node_id::type>(req.param["id"]));
+    } catch (...) {
+        throw ss::httpd::bad_param_exception(
+          fmt::format("Broker id: {}, must be an integer", req.param["id"]));
+    }
+}
+
 } // namespace
 
 /**
@@ -1614,16 +1625,6 @@ void admin_server::register_features_routes() {
           }
           co_return ss::json::json_void();
       });
-}
-
-model::node_id parse_broker_id(const ss::httpd::request& req) {
-    try {
-        return model::node_id(
-          boost::lexical_cast<model::node_id::type>(req.param["id"]));
-    } catch (...) {
-        throw ss::httpd::bad_param_exception(
-          fmt::format("Broker id: {}, must be an integer", req.param["id"]));
-    }
 }
 
 static ss::httpd::broker_json::maintenance_status fill_maintenance_status(
