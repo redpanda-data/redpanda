@@ -353,14 +353,25 @@ class SecurityConfig:
     # the rules, so instead we use a fixed mapping and arrange for certs to use
     # a similar format. this will change when we get closer to GA and the
     # configuration becomes more general.
-    PRINCIPAL_MAPPING_RULES = "RULE:^O=Redpanda,CN=(.*?)$/$1/L, DEFAULT"
+    __DEFAULT_PRINCIPAL_MAPPING_RULES = "RULE:^O=Redpanda,CN=(.*?)$/$1/L, DEFAULT"
 
     def __init__(self):
         self.enable_sasl = False
+        self.kafka_enable_authorization: Optional[bool] = None
+        self.endpoint_authn_method: Optional[str] = None
         self.tls_provider: Optional[TLSProvider] = None
 
-        # extract principal from mtls distinguished name
-        self.enable_mtls_identity = False
+        # The rules to extract principal from mtls
+        self.principal_mapping_rules = self.__DEFAULT_PRINCIPAL_MAPPING_RULES
+
+    # sasl is required
+    def sasl_enabled(self):
+        return (self.kafka_enable_authorization is None
+                and self.enable_sasl) or self.endpoint_authn_method == "sasl"
+
+    # principal is extracted from mtls distinguished name
+    def mtls_identity_enabled(self):
+        return self.endpoint_authn_method == "mtls_identity"
 
 
 class RedpandaService(Service):
@@ -528,6 +539,9 @@ class RedpandaService(Service):
     def set_extra_rp_conf(self, conf):
         self._extra_rp_conf = conf
 
+    def add_extra_rp_conf(self, conf):
+        self._extra_rp_conf = {**self._extra_rp_conf, **conf}
+
     def set_extra_node_conf(self, node, conf):
         assert node in self.nodes
         self._extra_node_conf[node] = conf
@@ -546,7 +560,13 @@ class RedpandaService(Service):
                 self, "redpanda.service.admin")
 
     def sasl_enabled(self):
-        return self._security.enable_sasl
+        return self._security.sasl_enabled()
+
+    def mtls_identity_enabled(self):
+        return self._security.mtls_identity_enabled()
+
+    def endpoint_authn_method(self):
+        return self._security.endpoint_authn_method
 
     @property
     def dedicated_nodes(self):
@@ -1294,7 +1314,8 @@ class RedpandaService(Service):
                            enable_pp=self._enable_pp,
                            enable_sr=self._enable_sr,
                            superuser=self._superuser,
-                           sasl_enabled=self.sasl_enabled())
+                           sasl_enabled=self.sasl_enabled(),
+                           endpoint_authn_method=self.endpoint_authn_method())
 
         if override_cfg_params or self._extra_node_conf[node]:
             doc = yaml.full_load(conf)
@@ -1317,10 +1338,6 @@ class RedpandaService(Service):
                 cert_file=RedpandaService.TLS_SERVER_CRT_FILE,
                 truststore_file=RedpandaService.TLS_CA_CRT_FILE,
             )
-            if self._security.enable_mtls_identity:
-                tls_config.update(
-                    dict(principal_mapping_rules=SecurityConfig.
-                         PRINCIPAL_MAPPING_RULES, ))
             doc = yaml.full_load(conf)
             doc["redpanda"].update(dict(kafka_api_tls=tls_config))
             conf = yaml.dump(doc)
@@ -1341,6 +1358,13 @@ class RedpandaService(Service):
         if self._security.enable_sasl:
             self.logger.debug("Enabling SASL in cluster configuration")
             conf.update(dict(enable_sasl=True))
+        if self._security.kafka_enable_authorization is not None:
+            self.logger.debug(
+                f"Setting kafka_enable_authorization: {self._security.kafka_enable_authorization} in cluster configuration"
+            )
+            conf.update(
+                dict(kafka_enable_authorization=self._security.
+                     kafka_enable_authorization))
 
         conf_yaml = yaml.dump(conf)
         for node in self.nodes:

@@ -171,6 +171,9 @@ struct configuration final : public config_store {
     property<int16_t> id_allocator_log_capacity;
     property<int16_t> id_allocator_batch_size;
     property<bool> enable_sasl;
+    property<std::optional<bool>> kafka_enable_authorization;
+    property<std::optional<std::vector<ss::sstring>>>
+      kafka_mtls_principal_mapping_rules;
     property<std::chrono::milliseconds>
       controller_backend_housekeeping_interval_ms;
     property<std::chrono::milliseconds> node_management_operation_timeout_ms;

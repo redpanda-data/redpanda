@@ -15,6 +15,7 @@
 #include "net/server.h"
 #include "seastarx.h"
 #include "security/acl.h"
+#include "security/mtls.h"
 #include "security/sasl_authentication.h"
 #include "utils/hdr_hist.h"
 #include "utils/named_type.h"
@@ -81,7 +82,7 @@ public:
       net::server::resources&& r,
       security::sasl_server sasl,
       bool enable_authorizer,
-      bool use_mtls) noexcept
+      std::optional<security::tls::mtls_state> mtls_state) noexcept
       : _proto(p)
       , _rs(std::move(r))
       , _sasl(std::move(sasl))
@@ -89,7 +90,7 @@ public:
       , _client_addr(_rs.conn ? _rs.conn->addr.addr() : ss::net::inet_address{})
       , _enable_authorizer(enable_authorizer)
       , _authlog(_client_addr, client_port())
-      , _use_mtls(use_mtls) {}
+      , _mtls_state(std::move(mtls_state)) {}
 
     ~connection_context() noexcept = default;
     connection_context(const connection_context&) = delete;
@@ -104,20 +105,17 @@ public:
     template<typename T>
     bool authorized(
       security::acl_operation operation, const T& name, authz_quiet quiet) {
-        // mtls configured?
-        if (_use_mtls) {
-            if (_mtls_principal.has_value()) {
-                return authorized_user(
-                  _mtls_principal.value(), operation, name, quiet);
-            }
-            return false;
-        }
-        // sasl configured?
+        // authorization disabled?
         if (!_enable_authorizer) {
             return true;
         }
-        auto user = sasl().principal();
-        return authorized_user(std::move(user), operation, name, quiet);
+        // mtls configured?
+        if (_mtls_state) {
+            return authorized_user(
+              _mtls_state->principal(), operation, name, quiet);
+        }
+        // use sasl
+        return authorized_user(sasl().principal(), operation, name, quiet);
     }
 
     template<typename T>
@@ -183,7 +181,6 @@ private:
     ss::future<session_resources>
     throttle_request(const request_header&, size_t sz);
 
-    ss::future<> handle_mtls_auth();
     ss::future<> dispatch_method_once(request_header, size_t sz);
 
     /**
@@ -273,8 +270,7 @@ private:
     const ss::net::inet_address _client_addr;
     const bool _enable_authorizer;
     ctx_log _authlog;
-    bool _use_mtls{false};
-    std::optional<ss::sstring> _mtls_principal;
+    std::optional<security::tls::mtls_state> _mtls_state;
 };
 
 } // namespace kafka

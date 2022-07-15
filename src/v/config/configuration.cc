@@ -13,11 +13,13 @@
 #include "config/node_config.h"
 #include "config/validators.h"
 #include "model/metadata.h"
+#include "security/mtls.h"
 #include "storage/chunk_cache.h"
 #include "storage/segment_appender.h"
 #include "units.h"
 
 #include <cstdint>
+#include <optional>
 
 namespace config {
 using namespace std::chrono_literals;
@@ -780,9 +782,27 @@ configuration::configuration()
   , enable_sasl(
       *this,
       "enable_sasl",
-      "Enable SASL authentication for Kafka connections.",
+      "Enable SASL authentication for Kafka connections, authorization is "
+      "required. see also `kafka_enable_authorization`",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       false)
+  , kafka_enable_authorization(
+      *this,
+      "kafka_enable_authorization",
+      "Enable authorization for Kafka connections. Values:"
+      "- `nil`: Ignored. Authorization is enabled with `enable_sasl: true`"
+      "; `true`: authorization is required"
+      "; `false`: authorization is disabled"
+      ". See also: `enable_sasl` and `kafka_api[].authentication_method`",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt)
+  , kafka_mtls_principal_mapping_rules(
+      *this,
+      "kafka_mtls_principal_mapping_rules",
+      "Principal Mapping Rules for mTLS Authentication on the Kafka API",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt,
+      security::tls::validate_rules)
   , controller_backend_housekeeping_interval_ms(
       *this,
       "controller_backend_housekeeping_interval_ms",

@@ -484,7 +484,10 @@ class ClusterConfigTest(RedpandaTest):
 
         # Don't change these settings, they prevent the test from subsequently
         # using the cluster
-        exclude_settings = {'enable_sasl'}
+        exclude_settings = {
+            'enable_sasl', 'kafka_enable_authorization',
+            'kafka_mtls_principal_mapping_rules'
+        }
 
         # Don't enable coproc: it generates log errors if its companion service isn't running
         exclude_settings.add('enable_coproc')

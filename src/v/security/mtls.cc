@@ -26,7 +26,7 @@ namespace detail {
 static constexpr const char* const rule_pattern{
   R"((DEFAULT)|RULE:((\\.|[^\\/])*)\/((\\.|[^\\/])*)\/([LU]?).*?|(.*?))"};
 static constexpr const char* const rule_pattern_splitter{
-  R"(\s*((DEFAULT)|RULE:((\\.|[^\\/])*)\/((\\.|[^\\/])*)\/([LU]?).*?|(.*?))\s*(,\s*|$))"};
+  R"(\s*((DEFAULT)|RULE:((\\.|[^\\/])*)\/((\\.|[^\\/])*)\/([LU]?).*?|(.*?))\s*([,\n]\s*|$))"};
 
 std::regex make_regex(std::string_view sv) {
     return std::regex{
@@ -68,11 +68,15 @@ constexpr std::optional<std::string_view> make_sv(const std::csub_match& sm) {
              : std::optional<std::string_view>{std::nullopt};
 }
 
-std::vector<rule> parse_rules(std::optional<std::string_view> unparsed_rules) {
+std::vector<rule>
+parse_rules(std::optional<std::vector<ss::sstring>> unparsed_rules) {
     static const std::regex rule_splitter = make_regex(rule_pattern_splitter);
     static const std::regex rule_parser = make_regex(rule_pattern);
 
-    std::string_view rules{trim(unparsed_rules.value_or("DEFAULT"))};
+    std::string rules
+      = unparsed_rules.has_value() ? fmt::format(
+          "{}", fmt::join(unparsed_rules->begin(), unparsed_rules->end(), ","))
+                                   : "DEFAULT";
 
     std::vector<rule> result;
     std::cmatch rules_match;
@@ -147,6 +151,16 @@ std::optional<ss::sstring> rule::apply(std::string_view dn) const {
     return result;
 }
 
+std::optional<ss::sstring>
+validate_rules(const std::optional<std::vector<ss::sstring>>& r) noexcept {
+    try {
+        security::tls::detail::parse_rules(r);
+    } catch (const std::exception& e) {
+        return e.what();
+    }
+    return std::nullopt;
+}
+
 std::ostream& operator<<(std::ostream& os, const rule& r) {
     fmt::print(os, "{}", r);
     return os;
@@ -155,6 +169,22 @@ std::ostream& operator<<(std::ostream& os, const rule& r) {
 std::ostream& operator<<(std::ostream& os, const principal_mapper& p) {
     fmt::print(os, "{}", p);
     return os;
+}
+
+principal_mapper::principal_mapper(
+  config::binding<std::optional<std::vector<ss::sstring>>> cb)
+  : _binding(std::move(cb))
+  , _rules{detail::parse_rules(_binding())} {
+    _binding.watch([this]() { _rules = detail::parse_rules(_binding()); });
+}
+
+std::optional<ss::sstring> principal_mapper::apply(std::string_view sv) const {
+    for (const auto& r : _rules) {
+        if (auto p = r.apply(sv); p.has_value()) {
+            return {std::move(p).value()};
+        }
+    }
+    return std::nullopt;
 }
 
 } // namespace security::tls

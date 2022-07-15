@@ -9,12 +9,16 @@
 
 #pragma once
 
+#include "config/broker_authn_endpoint.h"
 #include "config/broker_endpoint.h"
 #include "config/convert.h"
 #include "config/data_directory_path.h"
 #include "config/property.h"
 #include "config/seed_server.h"
 #include "config_store.h"
+
+#include <algorithm>
+#include <iterator>
 
 namespace config {
 
@@ -31,7 +35,7 @@ public:
     property<tls_config> rpc_server_tls;
 
     // Kafka RPC listener
-    one_or_many_property<model::broker_endpoint> kafka_api;
+    one_or_many_property<config::broker_authn_endpoint> kafka_api;
     one_or_many_property<endpoint_tls_config> kafka_api_tls;
 
     // Admin API listener
@@ -55,9 +59,19 @@ public:
         return data_directory().path / "pid.lock";
     }
 
-    const std::vector<model::broker_endpoint>& advertised_kafka_api() const {
+    std::vector<model::broker_endpoint> advertised_kafka_api() const {
         if (_advertised_kafka_api().empty()) {
-            return kafka_api();
+            std::vector<model::broker_endpoint> eps;
+            auto api = kafka_api();
+            eps.reserve(api.size());
+            std::transform(
+              std::make_move_iterator(api.begin()),
+              std::make_move_iterator(api.end()),
+              std::back_inserter(eps),
+              [](auto ep) {
+                  return model::broker_endpoint{ep.name, ep.address};
+              });
+            return eps;
         }
         return _advertised_kafka_api();
     }

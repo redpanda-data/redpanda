@@ -10,13 +10,18 @@
 #include "protocol.h"
 
 #include "cluster/topics_frontend.h"
+#include "config/broker_authn_endpoint.h"
 #include "config/configuration.h"
+#include "config/node_config.h"
 #include "kafka/server/connection_context.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/group_router.h"
 #include "kafka/server/logger.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
+#include "net/connection.h"
+#include "security/errc.h"
+#include "security/exceptions.h"
 #include "security/mtls.h"
 #include "security/scram_algorithm.h"
 #include "utils/utf8.h"
@@ -80,7 +85,9 @@ protocol::protocol(
   , _controller_api(controller_api)
   , _tx_gateway_frontend(tx_gateway_frontend)
   , _coproc_partition_manager(coproc_partition_manager)
-  , _data_policy_table(data_policy_table) {
+  , _data_policy_table(data_policy_table)
+  , _mtls_principal_mapper(
+      config::shard_local_cfg().kafka_mtls_principal_mapping_rules.bind()) {
     if (qdc_config) {
         _qdc_mon.emplace(*qdc_config);
     }
@@ -92,35 +99,95 @@ coordinator_ntp_mapper& protocol::coordinator_mapper() {
     return _group_router.local().coordinator_mapper().local();
 }
 
+config::broker_authn_method get_authn_method(const net::connection& conn) {
+    // If authn_method is set on the endpoint
+    //    Use it
+    // Else if kafka_enable_authorization is not set
+    //    Use sasl if enable_sasl
+    // Else if has mtls mapping rules
+    //    Use mtls_identity
+    // Else
+    //    Disable AuthN
+
+    std::optional<config::broker_authn_method> authn_method;
+    auto n = conn.name();
+    const auto& kafka_api = config::node().kafka_api.value();
+    auto ep_it = std::find_if(
+      kafka_api.begin(),
+      kafka_api.end(),
+      [&n](const config::broker_authn_endpoint& ep) { return ep.name == n; });
+    if (ep_it != kafka_api.end()) {
+        authn_method = ep_it->authn_method;
+    }
+    if (authn_method.has_value()) {
+        return *authn_method;
+    }
+    const auto& config = config::shard_local_cfg();
+    // if kafka_enable_authorization is not set, use sasl iff enable_sasl
+    if (
+      !config.kafka_enable_authorization().has_value()
+      && config.enable_sasl()) {
+        return config::broker_authn_method::sasl;
+    }
+    return config::broker_authn_method::none;
+}
+
+ss::future<security::tls::mtls_state> get_mtls_principal_state(
+  const security::tls::principal_mapper& pm, net::connection& conn) {
+    using namespace std::chrono_literals;
+    return ss::with_timeout(
+             model::timeout_clock::now() + 5s, conn.get_distinguished_name())
+      .then([&pm](std::optional<ss::session_dn> dn) {
+          ss::sstring anonymous_principal;
+          if (!dn.has_value()) {
+              vlog(klog.info, "failed to fetch distinguished name");
+              return security::tls::mtls_state{anonymous_principal};
+          }
+          auto principal = pm.apply(dn->subject);
+          if (!principal) {
+              vlog(
+                klog.info,
+                "failed to extract principal from distinguished name: {}",
+                dn->subject);
+              return security::tls::mtls_state{anonymous_principal};
+          }
+
+          vlog(
+            klog.debug,
+            "got principal: {}, from distinguished name: {}",
+            *principal,
+            dn->subject);
+          return security::tls::mtls_state{*principal};
+      });
+}
+
 ss::future<> protocol::apply(net::server::resources rs) {
+    const bool authz_enabled
+      = config::shard_local_cfg().kafka_enable_authorization().value_or(
+        config::shard_local_cfg().enable_sasl());
+    const auto authn_method = get_authn_method(*rs.conn);
+
     /*
      * if sasl authentication is not enabled then initialize the sasl state to
      * complete. this will cause auth to be skipped during request processing.
-     *
-     * TODO: temporarily acl authorization is enabled/disabled based on sasl
-     * being enabled/disabled. it may be useful to configure them separately,
-     * but this will come when identity management is introduced.
      */
     security::sasl_server sasl(
-      config::shard_local_cfg().enable_sasl()
+      authn_method == config::broker_authn_method::sasl
         ? security::sasl_server::sasl_state::initial
         : security::sasl_server::sasl_state::complete);
 
-    const auto enable_mtls_authentication
-      = rs.conn->get_principal_mapping().has_value()
-        && feature_table().local().is_active(
-          cluster::feature::mtls_authentication);
+    std::optional<security::tls::mtls_state> mtls_state;
+    if (authn_method == config::broker_authn_method::mtls_identity) {
+        mtls_state = co_await get_mtls_principal_state(
+          _mtls_principal_mapper, *rs.conn);
+    }
 
     auto ctx = ss::make_lw_shared<connection_context>(
-      *this,
-      std::move(rs),
-      std::move(sasl),
-      config::shard_local_cfg().enable_sasl(),
-      enable_mtls_authentication);
+      *this, std::move(rs), std::move(sasl), authz_enabled, mtls_state);
 
-    return ss::do_until(
-             [ctx] { return ctx->is_finished_parsing(); },
-             [ctx] { return ctx->process_one_request(); })
+    co_return co_await ss::do_until(
+      [ctx] { return ctx->is_finished_parsing(); },
+      [ctx] { return ctx->process_one_request(); })
       .handle_exception([ctx](std::exception_ptr eptr) {
           auto disconnected = net::is_disconnect_exception(eptr);
           if (config::shard_local_cfg().enable_sasl()) {
