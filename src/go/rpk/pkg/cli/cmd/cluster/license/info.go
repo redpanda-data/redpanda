@@ -3,6 +3,7 @@ package license
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -40,12 +41,16 @@ func newInfoCommand(fs afero.Fs) *cobra.Command {
 			}
 
 			if info.Properties != (admin.LicenseProperties{}) {
+				expired := info.Properties.Expires < 0
 				if format == "json" {
-					props, err := json.MarshalIndent(info.Properties, "", "  ")
+					props, err := json.MarshalIndent(struct {
+						admin.LicenseProperties
+						Expired bool `json:"license_expired,omitempty"`
+					}{info.Properties, expired}, "", "  ")
 					out.MaybeDie(err, "unable to print license information as json: %v", err)
 					fmt.Printf("%s\n", props)
 				} else {
-					printLicenseInfo(info.Properties)
+					printLicenseInfo(info.Properties, expired)
 				}
 			} else {
 				out.Die("no license loaded")
@@ -57,12 +62,20 @@ func newInfoCommand(fs afero.Fs) *cobra.Command {
 	return command
 }
 
-func printLicenseInfo(p admin.LicenseProperties) {
+func printLicenseInfo(p admin.LicenseProperties, expired bool) {
 	out.Section("LICENSE INFORMATION")
-	licenseFormat := `Organization:    %v
-Type:            %v
-Expires:         %v days
-Version:         %v
+	licenseFormat := `Organization:      %v
+Type:              %v
+Expires:           %v days
+Version:           %v
 `
+	if expired {
+		licenseFormat += `License Expired:   true
+`
+	}
 	fmt.Printf(licenseFormat, p.Organization, p.Type, p.Expires, p.Version)
+	if p.Expires < 30 && p.Expires >= 0 {
+		fmt.Fprintln(os.Stderr, "warning: your license will expire soon")
+		return
+	}
 }
