@@ -411,9 +411,15 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
 }
 
 ss::future<> connection_context::process_next_response() {
+    if (_response_loop_running) {
+        return ss::now();
+    }
+
+    _response_loop_running = true;
     return ss::repeat([this]() mutable {
         auto it = _responses.find(_next_response);
         if (it == _responses.end()) {
+            _response_loop_running = false;
             return ss::make_ready_future<ss::stop_iteration>(
               ss::stop_iteration::yes);
         }
@@ -430,10 +436,17 @@ ss::future<> connection_context::process_next_response() {
 
         auto msg = response_as_scattered(std::move(r));
         try {
-            return _rs.conn->write(std::move(msg)).then([] {
-                return ss::make_ready_future<ss::stop_iteration>(
-                  ss::stop_iteration::no);
-            });
+            return _rs.conn->write(std::move(msg))
+              .then_wrapped([this](ss::future<> f) {
+                  if (f.failed()) {
+                      _response_loop_running = false;
+                      return ss::make_exception_future<ss::stop_iteration>(
+                        f.get_exception());
+                  }
+
+                  return ss::make_ready_future<ss::stop_iteration>(
+                    ss::stop_iteration::no);
+              });
         } catch (...) {
             vlog(
               klog.debug,
