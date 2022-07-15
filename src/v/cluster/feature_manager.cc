@@ -188,13 +188,18 @@ ss::future<> feature_manager::maybe_log_license_check_info() {
         if (cfg.cloud_storage_enabled) {
             fmt::print(warn_ss, "{}", "Tiered Storage(cloud_storage)");
         }
+        if (
+          cfg.partition_autobalancing_mode
+          == model::partition_autobalancing_mode::continuous) {
+            fmt::print(warn_ss, "{} & ", "Continuous partition autobalancing");
+        }
         const auto& warn_log = warn_ss.str();
         if (!warn_log.empty()) {
             const auto& license = _feature_table.local().get_license();
             if (!license || license->is_expired()) {
                 vlog(
                   clusterlog.warn,
-                  "Enterprise feature(s) {} detected as enabled without a "
+                  "Enterprise feature(s) ({}) detected as enabled without a "
                   "valid "
                   "license, please contact support and/or upload a valid "
                   "redpanda "
