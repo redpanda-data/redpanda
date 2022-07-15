@@ -23,9 +23,7 @@ class UpgradeFromSpecificVersion(RedpandaTest):
     """
     def __init__(self, test_context):
         super(UpgradeFromSpecificVersion,
-              self).__init__(test_context=test_context,
-                             num_brokers=3,
-                             enable_installer=True)
+              self).__init__(test_context=test_context, num_brokers=3)
         self.installer = self.redpanda._installer
 
     def setUp(self):
@@ -69,9 +67,7 @@ class UpgradeFromPriorFeatureVersionTest(RedpandaTest):
     """
     def __init__(self, test_context):
         super(UpgradeFromPriorFeatureVersionTest,
-              self).__init__(test_context=test_context,
-                             num_brokers=1,
-                             enable_installer=True)
+              self).__init__(test_context=test_context, num_brokers=1)
         self.installer = self.redpanda._installer
 
     def setUp(self):

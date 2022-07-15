@@ -39,7 +39,6 @@ class Fix5355UpgradeTest(RedpandaTest):
         }
         super(Fix5355UpgradeTest, self).__init__(test_context=test_context,
                                                  num_brokers=3,
-                                                 enable_installer=True,
                                                  extra_rp_conf=extra_rp_conf)
         self.installer = self.redpanda._installer
 

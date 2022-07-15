@@ -458,7 +458,6 @@ class RedpandaService(Service):
                  environment: Optional[dict[str, str]] = None,
                  security: SecurityConfig = SecurityConfig(),
                  node_ready_timeout_s=None,
-                 enable_installer=False,
                  superuser: Optional[SaslCredentials] = None):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
         self._context = context
@@ -467,9 +466,7 @@ class RedpandaService(Service):
         self._enable_pp = enable_pp
         self._enable_sr = enable_sr
         self._security = security
-        self._installer: Optional[RedpandaInstaller] = None
-        if enable_installer:
-            self._installer = RedpandaInstaller(self)
+        self._installer: RedpandaInstaller = RedpandaInstaller(self)
 
         if superuser is None:
             superuser = self.SUPERUSER_CREDENTIALS
@@ -621,7 +618,7 @@ class RedpandaService(Service):
                     # Expected usage is that we may install new binaries before
                     # starting the cluster, and installation-cleaning happened
                     # when we started the installer.
-                    self.clean_node(node, clean_installs=False)
+                    self.clean_node(node, preserve_current_install=True)
                 else:
                     self.logger.debug("%s: skip cleaning node" %
                                       self.who_am_i(node))
@@ -1154,7 +1151,7 @@ class RedpandaService(Service):
                 self.logger.exception("Failed to run seastar-addr2line")
 
     def rp_install_path(self):
-        if self._installer and self._installer._started:
+        if self._installer._started:
             # The installer sets up binaries to always use /opt/redpanda.
             return "/opt/redpanda"
         return self._context.globals.get("rp_install_path_root", None)
@@ -1227,7 +1224,10 @@ class RedpandaService(Service):
         if self._s3client:
             self.delete_bucket_from_si()
 
-    def clean_node(self, node, preserve_logs=False, clean_installs=True):
+    def clean_node(self,
+                   node,
+                   preserve_logs=False,
+                   preserve_current_install=False):
         # These are allow_fail=True to allow for a race where kill_process finds
         # the PID, but then the process has died before it sends the SIGKILL.  This
         # should be safe against actual failures to of the process to stop, because
@@ -1255,9 +1255,11 @@ class RedpandaService(Service):
                 self.EXECUTABLE_SAVE_PATH):
             node.account.remove(self.EXECUTABLE_SAVE_PATH)
 
-        if clean_installs and self._installer is not None:
-            # Get rid of any installed packages.
-            self._installer.clean(node)
+        if not preserve_current_install or not self._installer._started:
+            # Reset the binaries to use the original binaries.
+            # NOTE: if the installer hasn't been started, there is no
+            # installation to preserve!
+            self._installer.reset_current_install([node])
 
     def remove_local_data(self, node):
         node.account.remove(f"{RedpandaService.PERSISTENT_ROOT}/data/*")
@@ -1752,7 +1754,7 @@ class RedpandaService(Service):
         # Any node will do. Even in a mixed-version upgrade test, we should
         # still have the original binaries available.
         node = self.nodes[0]
-        if self._installer and self._installer._started:
+        if self._installer._started:
             head_root_path = self._installer.path_for_version(
                 RedpandaInstaller.HEAD)
             binary = f"{head_root_path}/libexec/redpanda"
