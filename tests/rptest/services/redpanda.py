@@ -1772,3 +1772,21 @@ class RedpandaService(Service):
         else:
             self._saved_executable = True
             self._context.log_collect['executable', self] = True
+
+    def search_log(self, pattern):
+        """
+        Test helper for grepping the redpanda log
+
+        :return:  true if any instances of `pattern` found
+        """
+        for node in self.nodes:
+            for line in node.account.ssh_capture(
+                    f"grep \"{pattern}\" {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
+            ):
+                # We got a match
+                self.logger.debug(
+                    f"Found {pattern} on node {node.name}: {line}")
+                return True
+
+        # Fall through, no matches
+        return False
