@@ -45,7 +45,15 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
         self.partition_count = 20
 
     def replace_replicas(self, admin, assignments, x_core_only=False):
-
+        """
+         replaces random number of replicas in `assignments` list of replicas
+        
+        :param admin: admin api client
+        :param assignments: list of dictionaries {"node_id": ...,"core"...} describing partition replica assignments.
+        :param x_core_only: when true assignment nodes will not be changed, only cores
+        
+        :return: a tuple of lists, list of previous assignments and list of replaced assignments
+        """
         if x_core_only:
             selected = assignments.copy()
             brokers = admin.get_brokers()
@@ -71,6 +79,12 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
         return selected, replacements
 
     def _dispatch_move(self, partition, x_core_only=False):
+        """
+        Request partition replicas to be randomly moved
+
+        :param partition: partition id to be moved
+        :param x_core_only: when true assignment nodes will not be changed, only cores
+        """
         admin = Admin(self.redpanda)
 
         assignments = self._get_assignments(admin, self.topic, partition)
@@ -94,6 +108,9 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
         return prev_assignments, assignments
 
     def _cancel_move(self, unclean_abort, partition, previous_assignment):
+        """
+        Request partition movement to interrupt and validates resulting cancellation against previous assignment
+        """
         admin = Admin(self.redpanda)
 
         def move_in_progress():
