@@ -14,6 +14,7 @@
 
 namespace kafka {
 
-using init_producer_id_handler = handler<init_producer_id_api, 0, 1>;
+using init_producer_id_handler
+  = single_stage_handler<init_producer_id_api, 0, 1>;
 
 }

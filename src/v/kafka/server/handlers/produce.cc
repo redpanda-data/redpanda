@@ -43,6 +43,8 @@
 
 namespace kafka {
 
+static constexpr auto despam_interval = std::chrono::minutes(5);
+
 produce_response produce_request::make_error_response(error_code error) const {
     produce_response response;
 
@@ -464,6 +466,7 @@ static std::vector<topic_produce_stages> produce_topics(produce_ctx& octx) {
     return topics;
 }
 
+template<>
 process_result_stages
 produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
     produce_request request;

@@ -11,6 +11,7 @@
 #pragma once
 #include "kafka/server/protocol.h"
 #include "kafka/server/response.h"
+#include "kafka/types.h"
 #include "net/server.h"
 #include "seastarx.h"
 #include "security/acl.h"
@@ -36,6 +37,41 @@ using authz_quiet = ss::bool_class<struct authz_quiet_tag>;
 
 struct request_header;
 class request_context;
+
+// used to track number of pending requests
+class request_tracker {
+public:
+    explicit request_tracker(net::server_probe& probe) noexcept
+      : _probe(probe) {
+        _probe.request_received();
+    }
+    request_tracker(const request_tracker&) = delete;
+    request_tracker(request_tracker&&) = delete;
+    request_tracker& operator=(const request_tracker&) = delete;
+    request_tracker& operator=(request_tracker&&) = delete;
+
+    ~request_tracker() noexcept { _probe.request_completed(); }
+
+private:
+    net::server_probe& _probe;
+};
+
+// Used to hold resources associated with a given request until
+// the response has been send, as well as to track some statistics
+// about the request.
+//
+// The resources in particular should be not be destroyed until
+// the request is complete (e.g., all the information written to
+// the socket so that no userspace buffers remain).
+struct session_resources {
+    using pointer = ss::lw_shared_ptr<session_resources>;
+
+    ss::lowres_clock::duration backpressure_delay;
+    ss::semaphore_units<> memlocks;
+    ss::semaphore_units<> queue_units;
+    std::unique_ptr<hdr_hist::measurement> method_latency;
+    std::unique_ptr<request_tracker> tracker;
+};
 
 class connection_context final
   : public ss::enable_lw_shared_from_this<connection_context> {
@@ -131,49 +167,52 @@ public:
     }
 
 private:
-    // used to track number of pending requests
-    class request_tracker {
-    public:
-        explicit request_tracker(net::server_probe& probe) noexcept
-          : _probe(probe) {
-            _probe.request_received();
-        }
-        request_tracker(const request_tracker&) = delete;
-        request_tracker(request_tracker&&) = delete;
-        request_tracker& operator=(const request_tracker&) = delete;
-        request_tracker& operator=(request_tracker&&) = delete;
+    // Reserve units from memory from the memory semaphore in proportion
+    // to the number of bytes the request procesisng is expected to
+    // take.
+    ss::future<ss::semaphore_units<>>
+    reserve_request_units(api_key key, size_t size);
 
-        ~request_tracker() noexcept { _probe.request_completed(); }
-
-    private:
-        net::server_probe& _probe;
-    };
-    // used to pass around some internal state
-    struct session_resources {
-        ss::lowres_clock::duration backpressure_delay;
-        ss::semaphore_units<> memlocks;
-        ss::semaphore_units<> queue_units;
-        std::unique_ptr<hdr_hist::measurement> method_latency;
-        std::unique_ptr<request_tracker> tracker;
-    };
-
-    /// called by throttle_request
-    ss::future<ss::semaphore_units<>> reserve_request_units(size_t size);
-
-    /// apply correct backpressure sequence
+    // Apply backpressure sequence, where the request processing may be
+    // delayed for various reasons, including throttling but also because
+    // too few server resources are available to accomodate the request
+    // currently.
+    // When the returned future resolves, the throttling period is over and
+    // the associated resouces have been obtained and are tracked by the
+    // contained session_resources object.
     ss::future<session_resources>
     throttle_request(const request_header&, size_t sz);
 
     ss::future<> handle_mtls_auth();
     ss::future<> dispatch_method_once(request_header, size_t sz);
-    ss::future<> process_next_response();
+
+    /**
+     * Process zero or more ready responses in request order.
+     *
+     * The future<> returned by this method resolves when all ready *and*
+     * in-order responses have been processed, which is not the same as all
+     * ready responses. In particular, responses which are ready may not be
+     * processed if there are earlier (lower sequence number) responses which
+     * are not yet ready: they will be processed by a future invocation.
+     *
+     * @return ss::future<> a future which as described above.
+     */
+    ss::future<> maybe_process_responses();
     ss::future<> do_process(request_context);
 
     ss::future<> handle_auth_v0(size_t);
 
 private:
+    /**
+     * Bundles together a response and its associated resources.
+     */
+    struct response_and_resources {
+        response_ptr response;
+        session_resources::pointer resources;
+    };
+
     using sequence_id = named_type<uint64_t, struct kafka_protocol_sequence>;
-    using map_t = absl::flat_hash_map<sequence_id, response_ptr>;
+    using map_t = absl::flat_hash_map<sequence_id, response_and_resources>;
 
     class ctx_log {
     public:

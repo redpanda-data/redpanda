@@ -14,10 +14,13 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
+#include "kafka/protocol/schemata/metadata_response.h"
 #include "kafka/server/errors.h"
+#include "kafka/server/fwd.h"
 #include "kafka/server/handlers/details/leader_epoch.h"
 #include "kafka/server/handlers/details/security.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
+#include "kafka/server/response.h"
 #include "kafka/types.h"
 #include "likely.h"
 #include "model/metadata.h"
@@ -422,4 +425,80 @@ ss::future<response_ptr> metadata_handler::handle(
     co_return co_await ctx.respond(std::move(reply));
 }
 
+size_t
+metadata_memory_estimator(size_t request_size, connection_context& conn_ctx) {
+    // We cannot make a precise estimate of the size of a metadata response by
+    // examining only the size of the request (nor even by examining the entire
+    // request) since the response depends on the number of partitions in the
+    // cluster. Instead, we return a conservative estimate based on the current
+    // number of topics & partitions in the cluster.
+
+    // Essentially we need to estimate the size taken by a "maximum size"
+    // metadata_response_data response. The maximum size is when metadata for
+    // all topics is returned, which is also a common case in practice. This
+    // involves calculating the size for each topic's portion of the response,
+    // since the size varies both based on the number of partitions and the
+    // replica count.
+
+    // We start with a base estimate of 10K and then proceed to ignore
+    // everything other than the topic/partition part of the response, since
+    // that's what takes space in large responses and we assume the remaining
+    // part of the response (the broker list being the second largest part) will
+    // fit in this 10000k slush fund.
+    size_t size_estimate = 10000;
+
+    auto& md_cache = conn_ctx.server().metadata_cache();
+
+    // The size will vary with the number of brokers, though this effect is
+    // probably small if there are large numbers of partitions
+
+    // This covers the variable part of the broker response, i.e., the broker
+    // hostname + rack We just hope these are less than this amount, because we
+    // don't want to execute the relatively complex logic to guess the listener
+    // just for the size estimate.
+    constexpr size_t extra_bytes_per_broker = 200;
+    size_estimate
+      += md_cache.all_brokers().size()
+         * (sizeof(metadata_response_broker) + extra_bytes_per_broker);
+
+    for (auto& [tp_ns, topic_metadata] : md_cache.all_topics_metadata()) {
+        // metadata_response_topic
+        size_estimate += sizeof(kafka::metadata_response_topic);
+        size_estimate += tp_ns.tp().size();
+
+        using partition = kafka::metadata_response_partition;
+
+        // Base number of bytes needed to represent each partition, ignoring the
+        // variable part attributable to the replica count, we just take as the
+        // size of the partition response structure.
+        constexpr size_t bytes_per_partition = sizeof(partition);
+
+        // Then, we need the number of additional bytes per replica, per
+        // partition, associated with storing the replica list in
+        // metadata_response_partition::replicas/isr_nodes, which we take to
+        // be the size of the elements in those lists (4 bytes each).
+        constexpr size_t bytes_per_replica = sizeof(partition::replica_nodes[0])
+                                             + sizeof(partition::isr_nodes[0]);
+
+        // The actual partition and replica count for this topic.
+        int32_t pcount = topic_metadata.get_configuration().partition_count;
+        int32_t rcount = topic_metadata.get_configuration().replication_factor;
+
+        size_estimate += pcount
+                         * (bytes_per_partition + bytes_per_replica * rcount);
+    }
+
+    // Finally, we double the estimate, because the highwater mark for memory
+    // use comes when the in-memory structures (metadata_response_data and
+    // subobjects) exist on the heap and they are encoded into the reponse,
+    // which will also exist on the heap. The calculation above handles the
+    // first size, and the encoded response ends up being very similar in size,
+    // so we double the estimate to account for both.
+    size_estimate *= 2;
+
+    // We still add on the default_estimate to handle the size of the request
+    // itself and miscellaneous other procesing (this is a small adjustment,
+    // generally ~8000 bytes).
+    return default_memory_estimate(request_size) + size_estimate;
+}
 } // namespace kafka

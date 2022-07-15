@@ -11,16 +11,13 @@
 #pragma once
 #include "kafka/protocol/offset_commit.h"
 #include "kafka/server/handlers/handler.h"
+#include "kafka/server/response.h"
 
 namespace kafka {
 
 // in version 0 kafka stores offsets in zookeeper. if we ever need to
 // support version 0 then we need to do some code review to see if this has
 // any implications on semantics.
-struct offset_commit_handler {
-    using api = offset_commit_api;
-    static constexpr api_version min_supported = api_version(1);
-    static constexpr api_version max_supported = api_version(7);
-    static process_result_stages handle(request_context, ss::smp_service_group);
-};
+using offset_commit_handler = two_phase_handler<offset_commit_api, 1, 7>;
+
 } // namespace kafka

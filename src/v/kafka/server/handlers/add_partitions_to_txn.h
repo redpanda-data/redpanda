@@ -14,6 +14,7 @@
 
 namespace kafka {
 
-using add_partitions_to_txn_handler = handler<add_partitions_to_txn_api, 0, 2>;
+using add_partitions_to_txn_handler
+  = single_stage_handler<add_partitions_to_txn_api, 0, 2>;
 
 }

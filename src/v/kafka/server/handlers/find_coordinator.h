@@ -14,6 +14,7 @@
 
 namespace kafka {
 
-using find_coordinator_handler = handler<find_coordinator_api, 0, 2>;
+using find_coordinator_handler
+  = single_stage_handler<find_coordinator_api, 0, 2>;
 
 } // namespace kafka
