@@ -143,6 +143,21 @@ func AvailableModes() []string {
 	}
 }
 
+// FileOrDefaults return the configuration as read from the file or
+// the default configuration if there is no file loaded.
+func (c *Config) FileOrDefaults() *Config {
+	if c.File() != nil {
+		cfg := c.File()
+		cfg.loadedPath = c.loadedPath
+		cfg.ConfigFile = c.ConfigFile // preserve loaded ConfigFile property.
+		return cfg
+	} else {
+		cfg := Default()
+		cfg.ConfigFile = c.ConfigFile
+		return cfg // no file, write the defaults
+	}
+}
+
 // Check checks if the redpanda and rpk configuration is valid before running
 // the tuners. See: redpanda_checkers.
 func (c *Config) Check() (bool, []error) {

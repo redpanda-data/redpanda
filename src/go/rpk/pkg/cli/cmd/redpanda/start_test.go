@@ -14,9 +14,7 @@ package redpanda
 
 import (
 	"bytes"
-	"net"
 	"os"
-	"strconv"
 	"testing"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -194,10 +192,6 @@ func TestStartCommand(t *testing.T) {
 				path,
 			)
 			c := config.Default()
-			// Adding unset default that get added on first load.
-			b0 := c.Redpanda.KafkaAPI[0]
-			c.Rpk.KafkaAPI.Brokers = []string{net.JoinHostPort(b0.Address, strconv.Itoa(b0.Port))}
-			c.Rpk.AdminAPI.Addresses = []string{"127.0.0.1:9644"}
 
 			conf, err := new(config.Params).Load(fs)
 			require.NoError(st, err)
@@ -440,6 +434,27 @@ func TestStartCommand(t *testing.T) {
 			require.NoError(st, err)
 			// Check that the generated config is as expected.
 			require.Exactly(st, config.Default().Redpanda.ID, conf.Redpanda.ID)
+		},
+	}, {
+		name: "it should write default data_directory if loaded config doesn't have one",
+		args: []string{
+			"--config", config.Default().ConfigFile,
+			"--install-dir", "/var/lib/redpanda",
+		},
+		before: func(fs afero.Fs) error {
+			conf := config.Default()
+			conf.Redpanda.Directory = ""
+			return conf.Write(fs)
+		},
+		postCheck: func(
+			fs afero.Fs,
+			_ *redpanda.RedpandaArgs,
+			st *testing.T,
+		) {
+			conf, err := new(config.Params).Load(fs)
+			require.NoError(st, err)
+			// Check that the generated config is as expected.
+			require.Exactly(st, config.Default().Redpanda.Directory, conf.Redpanda.Directory)
 		},
 	}, {
 		name: "it should leave redpanda.node_id untouched if --node-id wasn't passed",
