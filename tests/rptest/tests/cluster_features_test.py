@@ -11,6 +11,7 @@ import os
 import time
 import datetime
 
+from rptest.utils.rpenv import sample_license
 from rptest.services.admin import Admin
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.tests.redpanda_test import RedpandaTest
@@ -213,10 +214,8 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
         """
         Test uploading and retrieval of license
         """
-        license = os.environ.get("REDPANDA_SAMPLE_LICENSE", None)
+        license = sample_license()
         if license is None:
-            is_ci = os.environ.get("CI", "false")
-            assert is_ci == "false"
             self.logger.info(
                 "Skipping test, REDPANDA_SAMPLE_LICENSE env var not found")
             return
