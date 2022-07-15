@@ -10,7 +10,6 @@
 
 #include "test_utils/http_imposter.h"
 
-#include "config/node_config.h"
 #include "vlog.h"
 
 #include <seastar/http/function_handlers.hh>
