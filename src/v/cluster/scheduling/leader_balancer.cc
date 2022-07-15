@@ -259,7 +259,7 @@ void leader_balancer::trigger_balance() {
           .handle_exception_type([](const ss::sleep_aborted&) {})
           .handle_exception_type([this](const std::exception& e) {
               vlog(
-                clusterlog.info,
+                clusterlog.warn,
                 "Leadership rebalance experienced an unhandled error: {}. "
                 "Retrying in {} seconds",
                 e,
