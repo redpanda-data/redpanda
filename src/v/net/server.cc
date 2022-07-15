@@ -337,7 +337,7 @@ void server::setup_public_metrics() {
         server_name.remove_suffix(4);
     }
 
-    auto server_label = sm::label("server");
+    auto server_label = ssx::metrics::make_namespaced_label("server");
 
     _public_metrics.add_group(
       prometheus_sanitize::metrics_name("rpc:request"),
