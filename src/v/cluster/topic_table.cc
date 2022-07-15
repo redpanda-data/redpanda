@@ -203,14 +203,14 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
      * Update partition replica revisions. Assign new revision to added replicas
      * and erase replicas which are removed from replica set
      */
-    auto added_replicas = subtract_replica_sets(
+    auto added_replicas = subtract_replica_sets_by_node_id(
       current_assignment_it->replicas, previous_assignment.replicas);
 
     for (auto& r : added_replicas) {
         revisions_it->second[r.node_id] = model::revision_id(o);
     }
 
-    auto removed_replicas = subtract_replica_sets(
+    auto removed_replicas = subtract_replica_sets_by_node_id(
       previous_assignment.replicas, current_assignment_it->replicas);
 
     for (auto& removed : removed_replicas) {
