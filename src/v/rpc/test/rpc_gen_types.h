@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "rpc/parse_utils.h"
 #include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
@@ -19,33 +20,41 @@
 
 namespace cycling {
 struct ultimate_cf_slx {
+    using rpc_serde_exempt = std::true_type;
     int x = 42;
 };
 struct nairo_quintana {
+    using rpc_serde_exempt = std::true_type;
     int x = 43;
 };
 struct san_francisco {
+    using rpc_serde_exempt = std::true_type;
     int x = 44;
 };
 struct mount_tamalpais {
+    using rpc_serde_exempt = std::true_type;
     int x = 45;
 };
 } // namespace cycling
 
 namespace echo {
 struct echo_req {
+    using rpc_serde_exempt = std::true_type;
     ss::sstring str;
 };
 
 struct echo_resp {
+    using rpc_serde_exempt = std::true_type;
     ss::sstring str;
 };
 
 struct cnt_req {
+    using rpc_serde_exempt = std::true_type;
     uint64_t expected;
 };
 
 struct cnt_resp {
+    using rpc_serde_exempt = std::true_type;
     uint64_t expected;
     uint64_t current;
 };
