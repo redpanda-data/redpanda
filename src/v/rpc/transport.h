@@ -196,13 +196,24 @@ transport::send_typed_versioned(
     b->set_min_compression_bytes(opts.min_compression_bytes);
     auto raw_b = b.get();
     raw_b->set_service_method_id(method_id);
-    raw_b->set_version(version);
 
     auto& target_buffer = raw_b->buffer();
     auto seq = ++_seq;
-    return reflection::async_adl<Input>{}
-      .to(target_buffer, std::move(r))
-      .then([this, b = std::move(b), seq, opts = std::move(opts)]() mutable {
+    return encode_for_version(target_buffer, std::move(r), version)
+      .then([this, version, b = std::move(b), seq, opts = std::move(opts)](
+              transport_version effective_version) mutable {
+          /*
+           * enforce the rule that a transport configured as v0 behaves like
+           * a v0 client transport and sends v0 messages.
+           */
+          vassert(
+            version != transport_version::v0
+              || effective_version == transport_version::v0,
+            "Request type {} cannot be encoded at version {} (effective {}).",
+            typeid(Input).name(),
+            version,
+            effective_version);
+          b->set_version(effective_version);
           return do_send(seq, std::move(*b.get()), std::move(opts));
       })
       .then([this](result<std::unique_ptr<streaming_context>> sctx) mutable {
