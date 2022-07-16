@@ -95,6 +95,24 @@ struct echo_impl final : echo::echo_service {
         }
     }
 
+    ss::future<echo::echo_resp_adl_only> echo_adl_only(
+      echo::echo_req_adl_only&& req, rpc::streaming_context&) final {
+        return ss::make_ready_future<echo::echo_resp_adl_only>(
+          echo::echo_resp_adl_only{.str = req.str});
+    }
+
+    ss::future<echo::echo_resp_adl_serde> echo_adl_serde(
+      echo::echo_req_adl_serde&& req, rpc::streaming_context&) final {
+        return ss::make_ready_future<echo::echo_resp_adl_serde>(
+          echo::echo_resp_adl_serde{.str = req.str});
+    }
+
+    ss::future<echo::echo_resp_serde_only> echo_serde_only(
+      echo::echo_req_serde_only&& req, rpc::streaming_context&) final {
+        return ss::make_ready_future<echo::echo_resp_serde_only>(
+          echo::echo_resp_serde_only{.str = req.str});
+    }
+
     uint64_t cnt = 0;
 };
 
@@ -530,6 +548,14 @@ FIXTURE_TEST(corrupted_data_at_server, rpc_integration_fixture) {
     }
 }
 
+/*
+ * the not_supported_version test uses the echo_adl_serde variant rather than
+ * the original version whose types cause it to be treated as adl-only. Because
+ * adl-only messages are sent at v0 and the test specifically requires sending
+ * messages at an arbitrarily higher value to trigger the error, a type was
+ * needed that supports a dynamic version range. When encoding adl/serde
+ * supported types the version is passed through.
+ */
 FIXTURE_TEST(version_not_supported, rpc_integration_fixture) {
     configure_server();
     register_services();
@@ -541,9 +567,11 @@ FIXTURE_TEST(version_not_supported, rpc_integration_fixture) {
     auto client = echo::echo_client_protocol(t);
 
     const auto check_unsupported = [&] {
-        auto f = t.send_typed_versioned<echo::echo_req, echo::echo_resp>(
-          echo::echo_req{.str = "testing..."},
-          960598415,
+        auto f = t.send_typed_versioned<
+          echo::echo_req_adl_serde,
+          echo::echo_resp_adl_serde>(
+          echo::echo_req_adl_serde{.str = "testing..."},
+          echo::echo_service::echo_adl_serde_method_id,
           rpc::client_opts(rpc::no_timeout),
           rpc::transport_version::unsupported);
         return f.then([&](auto ret) {
@@ -561,12 +589,17 @@ FIXTURE_TEST(version_not_supported, rpc_integration_fixture) {
     };
 
     const auto check_supported = [&] {
-        auto f = client.echo(
-          echo::echo_req{.str = "testing..."},
+        auto f = client.echo_adl_serde(
+          echo::echo_req_adl_serde{.str = "testing..."},
           rpc::client_opts(rpc::no_timeout));
         return f.then([&](auto ret) {
             BOOST_REQUIRE(ret.has_value());
-            BOOST_REQUIRE_EQUAL(ret.value().data.str, "testing...");
+            // could be either one. depends on timing of transport upgrade
+            BOOST_REQUIRE(
+              ret.value().data.str
+                == "testing..._to_aas_from_aas_to_aas_from_aas"
+              || ret.value().data.str
+                   == "testing..._to_sas_from_sas_to_sas_from_sas");
         });
     };
 
