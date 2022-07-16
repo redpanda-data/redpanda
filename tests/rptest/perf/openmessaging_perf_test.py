@@ -27,7 +27,7 @@ class RedPandaOpenMessagingBenchmarkPerf(RedpandaTest):
         super(RedPandaOpenMessagingBenchmarkPerf,
               self).__init__(test_context=ctx, num_brokers=3)
 
-    @cluster(num_nodes=9)
+    @cluster(num_nodes=6)
     @parametrize(driver_idx="ACK_ALL_GROUP_LINGER_1MS_IDEM_MAX_IN_FLIGHT",
                  workload_idx="TOPIC1_PART100_1KB_4PROD_1250K_RATE")
     def test_perf_with_idempotence_and_max_in_flight(self, driver_idx,
