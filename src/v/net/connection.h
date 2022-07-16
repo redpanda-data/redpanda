@@ -14,7 +14,6 @@
 #include "net/batched_output_stream.h"
 #include "net/server_probe.h"
 #include "seastarx.h"
-#include "security/mtls.h"
 
 #include <seastar/core/iostream.hh>
 #include <seastar/net/api.hh>
@@ -39,8 +38,7 @@ public:
       ss::connected_socket f,
       ss::socket_address a,
       server_probe& p,
-      std::optional<size_t> in_max_buffer_size,
-      std::optional<security::tls::principal_mapper> tls_pm);
+      std::optional<size_t> in_max_buffer_size);
     ~connection() noexcept;
     connection(const connection&) = delete;
     connection& operator=(const connection&) = delete;
@@ -64,11 +62,6 @@ public:
         return ss::tls::get_dn_information(_fd);
     }
 
-    const std::optional<security::tls::principal_mapper>&
-    get_principal_mapping() const {
-        return _tls_pm;
-    }
-
 private:
     boost::intrusive::list<connection>& _hook;
     ss::sstring _name;
@@ -76,7 +69,6 @@ private:
     ss::input_stream<char> _in;
     net::batched_output_stream _out;
     server_probe& _probe;
-    std::optional<security::tls::principal_mapper> _tls_pm;
 };
 
 } // namespace net

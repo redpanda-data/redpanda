@@ -215,23 +215,13 @@ ss::future<> server::accept(listener& s) {
                   }
               }
 
-              std::optional<security::tls::principal_mapper> tls_pm;
-              auto se_it = std::find_if(
-                cfg.addrs.begin(), cfg.addrs.end(), [&name](const auto& a) {
-                    return a.name == name;
-                });
-              if (se_it != cfg.addrs.end()) {
-                  tls_pm = se_it->principal_mapper;
-              }
-
               auto conn = ss::make_lw_shared<net::connection>(
                 _connections,
                 name,
                 std::move(ar.connection),
                 ar.remote_address,
                 _probe,
-                cfg.stream_recv_buf,
-                tls_pm);
+                cfg.stream_recv_buf);
               vlog(
                 rpc::rpclog.trace,
                 "{} - Incoming connection from {} on \"{}\"",
