@@ -27,6 +27,7 @@ struct serialized_json_stream {
 enum class manifest_type {
     topic,
     partition,
+    tx_range,
 };
 
 class base_manifest {

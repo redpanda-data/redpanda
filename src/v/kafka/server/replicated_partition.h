@@ -125,6 +125,16 @@ public:
       model::offset, model::timeout_clock::time_point) final;
 
 private:
+    ss::future<std::vector<cluster::rm_stm::tx_range>>
+      aborted_transactions_local(
+        cloud_storage::offset_range,
+        ss::lw_shared_ptr<const storage::offset_translator_state>);
+
+    ss::future<std::vector<cluster::rm_stm::tx_range>>
+    aborted_transactions_remote(
+      cloud_storage::offset_range offsets,
+      ss::lw_shared_ptr<const storage::offset_translator_state> ot_state);
+
     ss::lw_shared_ptr<cluster::partition> _partition;
     ss::lw_shared_ptr<const storage::offset_translator_state> _translator;
 };

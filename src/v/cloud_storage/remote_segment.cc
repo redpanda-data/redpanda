@@ -13,7 +13,9 @@
 #include "bytes/iobuf.h"
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/logger.h"
+#include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote_segment_index.h"
+#include "cloud_storage/tx_range_manifest.h"
 #include "cloud_storage/types.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
@@ -32,10 +34,12 @@
 #include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/queue.hh>
+#include <seastar/core/seastar.hh>
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/temporary_buffer.hh>
 #include <seastar/core/timed_out_error.hh>
 #include <seastar/core/when_all.hh>
+#include <seastar/coroutine/all.hh>
 #include <seastar/util/defer.hh>
 #include <seastar/util/log.hh>
 
@@ -232,7 +236,7 @@ remote_segment::maybe_get_offsets(model::offset kafka_offset) {
     return pos;
 }
 
-ss::future<> remote_segment::do_hydrate() {
+ss::future<> remote_segment::do_hydrate_segment() {
     auto callback = [this](
                       uint64_t size_bytes,
                       ss::input_stream<char> s) -> ss::future<uint64_t> {
@@ -296,6 +300,106 @@ ss::future<> remote_segment::do_hydrate() {
     }
 }
 
+ss::future<> remote_segment::do_hydrate_txrange() {
+    ss::gate::holder guard(_gate);
+    retry_chain_node local_rtc(
+      cache_hydration_timeout, cache_hydration_backoff, &_rtc);
+
+    tx_range_manifest manifest(_path);
+
+    auto res = co_await _api.download_manifest(
+      _bucket, manifest.get_manifest_path(), manifest, local_rtc);
+
+    if (res == download_result::notfound) {
+        vlog(
+          _ctxlog.debug,
+          "tx_range {}, doesn't exist in the bucket",
+          manifest.get_manifest_path());
+    } else if (res != download_result::success) {
+        vlog(
+          _ctxlog.debug,
+          "Failed to hydrating a tx_range {}, {} waiter will be "
+          "invoked",
+          manifest.get_manifest_path(),
+          _wait_list.size());
+        throw download_exception(res, _path);
+    }
+    _tx_range = std::move(manifest).get_tx_range();
+}
+
+ss::future<bool> remote_segment::do_materialize_segment() {
+    if (_data_file) {
+        co_return true;
+    }
+    auto maybe_file = co_await _cache.get(_path);
+    if (!maybe_file) {
+        // We could got here because the cache check returned
+        // 'cache_element_status::available' but right after
+        // that the file was evicted from cache. It's also
+        // possible (but very unlikely) that we got here after
+        // successful hydration which was immediately followed
+        // by eviction. In any case we should just re-hydrate
+        // the segment.
+        vlog(
+          _ctxlog.info,
+          "Segment {} was deleted from cache and need to be "
+          "re-hydrated, {} waiter are pending",
+          _path,
+          _wait_list.size());
+        co_return false;
+    }
+    _data_file = maybe_file->body;
+    if (!_index) {
+        // Materialize index state if it's not materialized yet.
+        // If do_hydrate_segment was called _index will be populated
+        // and this branch won't be triggered. If the segment was
+        // available on disk then this branch will read it and populate
+        // the _index.
+        co_await maybe_materialize_index();
+    }
+    co_return true;
+}
+
+ss::future<bool> remote_segment::do_materialize_txrange() {
+    if (_tx_range) {
+        co_return true;
+    }
+    auto path = generate_remote_tx_path(_path);
+    if (auto cache_item = co_await _cache.get(path); cache_item.has_value()) {
+        // The cache item is expected to be present if the this method is
+        // called.
+        vlog(_ctxlog.info, "Trying to materialize tx_range '{}'", path);
+        tx_range_manifest manifest(_path);
+        try {
+            ss::file_input_stream_options options{};
+            options.buffer_size
+              = config::shard_local_cfg().storage_read_buffer_size;
+            options.read_ahead
+              = config::shard_local_cfg().storage_read_readahead_count;
+            options.io_priority_class
+              = priority_manager::local().shadow_indexing_priority();
+            auto inp_stream = ss::make_file_input_stream(
+              cache_item->body, options);
+            co_await manifest.update(std::move(inp_stream));
+            _tx_range = std::move(manifest).get_tx_range();
+        } catch (...) {
+            vlog(
+              _ctxlog.warn,
+              "Failed to materialize tx_range '{}'. Error: {}",
+              path,
+              std::current_exception());
+        }
+        co_await cache_item->body.close();
+    } else {
+        vlog(
+          _ctxlog.info,
+          "tx_range '{}' is not available in cache, retrying",
+          path);
+        co_return false;
+    }
+    co_return true;
+}
+
 ss::future<> remote_segment::maybe_materialize_index() {
     ss::gate::holder guard(_gate);
     auto path = _path().native() + ".index";
@@ -342,6 +446,59 @@ ss::future<> remote_segment::maybe_materialize_index() {
     }
 }
 
+// NOTE: Aborted transactions handled using tx_range manifests.
+// The manifests are uploaded alongside the segments with (.tx)
+// suffix added to the name. The hydration of tx_range manifest
+// is not optional. We can't use the segment without it. The following
+// cases are possible:
+// - Both segment and tx-range are not hydrated;
+// - The segment is hydrated but tx-range isn't
+// - The segment is not hydrated but tx-range is
+// - Both segment and tx-range are hydrated
+// This doesn't include various 'in_progress' combinations which are
+// disallowed.
+//
+// Also, both segment and tx-range can be materialized or not. In case
+// of the segment this means that we're holding an opened file handler.
+// In case of tx-range this means that we parsed the json and populated
+// _tx_range collection.
+//
+// In order to be able to deal with the complexity this code combines
+// the flags and tries to handle all combinations that makes sense.
+enum class segment_txrange_status {
+    in_progress,
+    available,
+    not_available,
+    available_not_available,
+    not_available_available,
+};
+
+static segment_txrange_status
+combine_statuses(cache_element_status segment, cache_element_status tx_range) {
+    switch (segment) {
+    case cache_element_status::in_progress:
+        return segment_txrange_status::in_progress;
+    case cache_element_status::available:
+        switch (tx_range) {
+        case cache_element_status::available:
+            return segment_txrange_status::available;
+        case cache_element_status::in_progress:
+            return segment_txrange_status::in_progress;
+        case cache_element_status::not_available:
+            return segment_txrange_status::available_not_available;
+        }
+    case cache_element_status::not_available:
+        switch (tx_range) {
+        case cache_element_status::available:
+            return segment_txrange_status::not_available_available;
+        case cache_element_status::in_progress:
+            return segment_txrange_status::in_progress;
+        case cache_element_status::not_available:
+            return segment_txrange_status::not_available;
+        }
+    }
+}
+
 ss::future<> remote_segment::run_hydrate_bg() {
     ss::gate::holder guard(_gate);
     try {
@@ -361,57 +518,62 @@ ss::future<> remote_segment::run_hydrate_bg() {
                 // and retrieve the file out of it or hydrate.
                 // If _data_file is initialized we can use it safely since the
                 // cache can't delete it until we close it.
-                auto status = co_await _cache.is_cached(_path);
+                auto tx_path = generate_remote_tx_path(_path);
+                auto segment_status = co_await _cache.is_cached(_path);
+                auto txrange_status = co_await _cache.is_cached(tx_path);
+                auto status = combine_statuses(segment_status, txrange_status);
                 switch (status) {
-                case cache_element_status::in_progress:
+                case segment_txrange_status::in_progress:
                     vassert(
                       false,
-                      "Hydration of segment {} is already in progress, {} "
-                      "waiters",
+                      "Hydration of segment or tx-manifest {} is already in "
+                      "progress, {} waiters",
                       _path,
                       _wait_list.size());
-                case cache_element_status::available:
+                case segment_txrange_status::available:
                     vlog(
                       _ctxlog.debug,
                       "Hydrated segment {} is already available, {} waiters "
-                      "will "
-                      "be invoked",
+                      "will be invoked",
                       _path,
                       _wait_list.size());
                     break;
-                case cache_element_status::not_available: {
-                    vlog(_ctxlog.info, "Hydrating segment {}", _path);
+                case segment_txrange_status::not_available:
+                    vlog(
+                      _ctxlog.info,
+                      "Hydrating segment and tx-manifest {}",
+                      _path);
                     try {
-                        co_await do_hydrate();
+                        co_await ss::coroutine::all(
+                          [this] { return do_hydrate_segment(); },
+                          [this] { return do_hydrate_txrange(); });
                     } catch (const download_exception&) {
                         err = std::current_exception();
                     }
-                } break;
+                    break;
+                case segment_txrange_status::not_available_available:
+                    vlog(_ctxlog.info, "Hydrating only segment {}", _path);
+                    try {
+                        co_await do_hydrate_segment();
+                    } catch (const download_exception&) {
+                        err = std::current_exception();
+                    }
+                    break;
+                case segment_txrange_status::available_not_available:
+                    vlog(_ctxlog.info, "Hydrating only tx-manifest {}", _path);
+                    try {
+                        co_await do_hydrate_txrange();
+                    } catch (const download_exception&) {
+                        err = std::current_exception();
+                    }
+                    break;
                 }
                 if (!err) {
-                    auto maybe_file = co_await _cache.get(_path);
-                    if (!maybe_file) {
-                        // We could got here because the cache check returned
-                        // 'cache_element_status::available' but right after
-                        // that the file was evicted from cache. It's also
-                        // possible (but very unlikely) that we got here after
-                        // successful hydration which was immediately followed
-                        // by eviction. In any case we should just re-hydrate
-                        // the segment. The 'wait' on cond-variable won't block
-                        // because the
-                        // '_wait_list' is not empty.
-                        vlog(
-                          _ctxlog.info,
-                          "Segment {} was deleted from cache and need to be "
-                          "re-hydrated, {} waiter are pending",
-                          _path,
-                          _wait_list.size());
+                    if (co_await do_materialize_segment() == false) {
                         continue;
                     }
-                    _data_file = maybe_file->body;
-                    if (!_index) {
-                        // materialize index state
-                        co_await maybe_materialize_index();
+                    if (co_await do_materialize_txrange() == false) {
+                        continue;
                     }
                 }
             }
@@ -452,6 +614,35 @@ ss::future<> remote_segment::hydrate() {
         _bg_cvar.signal();
         return fut.discard_result();
     });
+}
+
+ss::future<std::vector<cluster::rm_stm::tx_range>>
+remote_segment::aborted_transactions(model::offset from, model::offset to) {
+    co_await hydrate();
+    std::vector<cluster::rm_stm::tx_range> result;
+    if (!_tx_range) {
+        // We got NoSuchKey when we tried to download the
+        // tx-manifest. This means that segment doesn't have
+        // any record batches which belong to aborted transactions.
+        vlog(_ctxlog.debug, "segment {} no tx-metadata available", _path);
+        co_return result;
+    }
+    for (const auto& it : *_tx_range) {
+        if (it.last < from) {
+            continue;
+        }
+        if (it.first > to) {
+            continue;
+        }
+        result.push_back(it);
+    }
+    vlog(
+      _ctxlog.debug,
+      "found {} aborted transactions for {}-{} offset range in this segment",
+      result.size(),
+      from,
+      to);
+    co_return result;
 }
 
 /// Batch consumer that connects to remote_segment_batch_reader.

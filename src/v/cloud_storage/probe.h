@@ -59,6 +59,22 @@ public:
         return _cnt_partition_manifest_downloads;
     }
 
+    /// Register manifest (re)upload
+    void txrange_manifest_upload() { _cnt_tx_manifest_uploads++; }
+
+    /// Get manifest (re)upload
+    uint64_t get_txrange_manifest_uploads() const {
+        return _cnt_tx_manifest_uploads;
+    }
+
+    /// Register manifest download
+    void txrange_manifest_download() { _cnt_tx_manifest_downloads++; }
+
+    /// Get manifest download
+    uint64_t get_txrange_manifest_downloads() const {
+        return _cnt_tx_manifest_downloads;
+    }
+
     /// Register backof invocation during manifest upload
     void manifest_upload_backoff() { _cnt_manifest_upload_backoff++; }
 
@@ -166,6 +182,10 @@ private:
     uint64_t _cnt_bytes_sent{0};
     /// Number of bytes being successfully received from S3
     uint64_t _cnt_bytes_received{0};
+    /// Number of tx-range manifest uploads
+    uint64_t _cnt_tx_manifest_uploads{0};
+    /// Number of tx-range manifest downloads
+    uint64_t _cnt_tx_manifest_downloads{0};
 
     ss::metrics::metric_groups _metrics;
     ss::metrics::metric_groups _public_metrics;

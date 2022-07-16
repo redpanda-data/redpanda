@@ -163,9 +163,15 @@ private:
 
     /// Upload individual segment to S3.
     ///
-    /// \return true on success and false otherwise
+    /// \return error code
     ss::future<cloud_storage::upload_result>
     upload_segment(upload_candidate candidate);
+
+    /// Upload segment's transactions metadata to S3.
+    ///
+    /// \return error code
+    ss::future<cloud_storage::upload_result>
+    upload_tx(upload_candidate candidate);
 
     /// Upload manifest to the pre-defined S3 location
     ss::future<cloud_storage::upload_result> upload_manifest();

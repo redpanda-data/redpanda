@@ -29,6 +29,7 @@
 
 #include <chrono>
 #include <exception>
+#include <iterator>
 #include <variant>
 
 using namespace std::chrono_literals;
@@ -496,6 +497,54 @@ remote_partition::get_term_last_offset(model::term_id term) const {
     }
 
     return std::nullopt;
+}
+
+ss::future<std::vector<cluster::rm_stm::tx_range>>
+remote_partition::aborted_transactions(offset_range offsets) {
+    // Here we have to use kafka offsets to locate the segments and
+    // redpanda offsets to extract aborted transactions metadata because
+    // tx-manifests contains redpanda offsets.
+    std::vector<cluster::rm_stm::tx_range> result;
+    auto first_it = _segments.upper_bound(offsets.begin);
+    if (first_it != _segments.begin()) {
+        first_it = std::prev(first_it);
+    }
+    for (auto it = first_it; it != _segments.end(); it++) {
+        if (it->first > offsets.end) {
+            break;
+        }
+        auto& st = it->second;
+        auto tx = co_await ss::visit(
+          st,
+          [this, &st, offsets, offset_key = it->first](
+            offloaded_segment_state& off_state) {
+              auto tmp = off_state->materialize(*this, offset_key);
+              auto res = tmp->segment->aborted_transactions(
+                offsets.begin_rp, offsets.end_rp);
+              st = std::move(tmp);
+              return res;
+          },
+          [offsets](materialized_segment_ptr& m_state) {
+              return m_state->segment->aborted_transactions(
+                offsets.begin_rp, offsets.end_rp);
+          });
+        std::copy(tx.begin(), tx.end(), std::back_inserter(result));
+    }
+    // Adjacent segments might return the same transaction record.
+    // In this case we will have a duplicate. The duplicates will always
+    // be located next to each other in the sequence.
+    auto last = std::unique(result.begin(), result.end());
+    result.erase(last, result.end());
+    vlog(
+      _ctxlog.debug,
+      "found {} aborted transactions for {}-{} offset range ({}-{} before "
+      "offset translaction)",
+      result.size(),
+      offsets.begin_rp,
+      offsets.begin,
+      offsets.end_rp,
+      offsets.end);
+    co_return result;
 }
 
 ss::future<> remote_partition::stop() {
