@@ -185,11 +185,14 @@ public:
     ///
     /// \param name is a bucket name
     /// \param key is an object key
+    /// \param timeout is a timeout of the operation
+    /// \param expect_no_such_key log 404 as warning if set to false
     /// \return future that gets ready after request was sent
     ss::future<http::client::response_stream_ref> get_object(
       bucket_name const& name,
       object_key const& key,
-      const ss::lowres_clock::duration& timeout);
+      const ss::lowres_clock::duration& timeout,
+      bool expect_no_such_key = false);
 
     struct head_object_result {
         uint64_t object_size;
