@@ -226,25 +226,17 @@ ss::future<> refresh_credentials::impl::sleep_until_expiry() const {
     }
 }
 
-ss::future<http::client> refresh_credentials::impl::make_api_client(
-  client_tls_enabled enable_tls) const {
+ss::future<http::client>
+refresh_credentials::impl::make_api_client(client_tls_enabled enable_tls) {
     if (enable_tls == client_tls_enabled::yes) {
-        ss::tls::credentials_builder b;
-
-        b.set_client_auth(ss::tls::client_auth::NONE);
-        auto ca_file = co_await net::find_ca_file();
-        if (ca_file) {
-            co_await b.set_x509_trust_file(
-              ca_file.value(), ss::tls::x509_crt_format::PEM);
-        } else {
-            co_await b.set_system_trust();
+        if (_tls_certs == nullptr) {
+            co_await init_tls_certs();
         }
 
         co_return http::client{
           net::base_transport::configuration{
             .server_addr = net::unresolved_address{api_host(), api_port()},
-            .credentials
-            = co_await b.build_reloadable_certificate_credentials(),
+            .credentials = _tls_certs,
             // TODO (abhijat) toggle metrics
             .disable_metrics = net::metrics_disabled::yes,
             .tls_sni_hostname = api_host()},
@@ -258,6 +250,21 @@ ss::future<http::client> refresh_credentials::impl::make_api_client(
         .disable_metrics = net::metrics_disabled::yes,
         .tls_sni_hostname = std::nullopt},
       _as};
+}
+
+ss::future<> refresh_credentials::impl::init_tls_certs() {
+    ss::tls::credentials_builder b;
+
+    b.set_client_auth(ss::tls::client_auth::NONE);
+    auto ca_file = co_await net::find_ca_file();
+    if (ca_file) {
+        co_await b.set_x509_trust_file(
+          ca_file.value(), ss::tls::x509_crt_format::PEM);
+    } else {
+        co_await b.set_system_trust();
+    }
+
+    _tls_certs = co_await b.build_reloadable_certificate_credentials();
 }
 
 refresh_credentials make_refresh_credentials(
