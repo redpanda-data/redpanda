@@ -38,106 +38,24 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
                 'enable_leader_balancer': False
             },
             **kwargs)
+
         self._ctx = ctx
         self.throughput = 10000
         self.moves = 10
         self.min_records = 100000
         self.partition_count = 20
 
-    def replace_replicas(self, admin, assignments, x_core_only=False):
-        """
-         replaces random number of replicas in `assignments` list of replicas
-        
-        :param admin: admin api client
-        :param assignments: list of dictionaries {"node_id": ...,"core"...} describing partition replica assignments.
-        :param x_core_only: when true assignment nodes will not be changed, only cores
-        
-        :return: a tuple of lists, list of previous assignments and list of replaced assignments
-        """
-        if x_core_only:
-            selected = assignments.copy()
-            brokers = admin.get_brokers()
-            broker_cores = {}
-            for b in brokers:
-                broker_cores[b['node_id']] = b["num_cores"]
-            for a in assignments:
-                a['core'] = random.randint(0, broker_cores[a['node_id']] - 1)
-            return selected, assignments
+    def _random_move_and_cancel(self, unclean_abort):
+        metadata = self.client().describe_topics()
+        topic, partition = self._random_partition(metadata)
+        prev_assignment, _ = self._dispatch_random_partition_move(
+            topic=topic, partition=partition, allow_no_op=False)
 
-        selected, replacements = self._choose_replacement(admin,
-                                                          assignments,
-                                                          allow_no_ops=False)
-        selected = sorted(selected, key=lambda v: v['node_id'])
-        replacements = sorted(replacements, key=lambda v: v['node_id'])
-
-        while selected == replacements:
-            selected, replacements = self._choose_replacement(
-                admin, assignments, allow_no_ops=False)
-            selected = sorted(selected, key=lambda v: v['node_id'])
-            replacements = sorted(replacements, key=lambda v: v['node_id'])
-
-        return selected, replacements
-
-    def _dispatch_move(self, partition, x_core_only=False):
-        """
-        Request partition replicas to be randomly moved
-
-        :param partition: partition id to be moved
-        :param x_core_only: when true assignment nodes will not be changed, only cores
-        """
-        admin = Admin(self.redpanda)
-
-        assignments = self._get_assignments(admin, self.topic, partition)
-        prev_assignments = assignments.copy()
-
-        self.logger.info(
-            f"assignments for {self.topic}-{partition}: {prev_assignments}")
-
-        # build new replica set by replacing a random assignment, do not allow no ops as we want to have operation to cancel
-        selected, replacements = self.replace_replicas(admin, assignments,
-                                                       x_core_only)
-
-        self.logger.info(
-            f"replacement for {self.topic}-{partition}:{len(selected)}: {selected} -> {replacements}"
-        )
-        self.logger.info(
-            f"new assignments for {self.topic}-{partition}: {assignments}")
-
-        admin.set_partition_replicas(self.topic, partition, assignments)
-
-        return prev_assignments, assignments
-
-    def _cancel_move(self, unclean_abort, partition, previous_assignment):
-        """
-        Request partition movement to interrupt and validates resulting cancellation against previous assignment
-        """
-        admin = Admin(self.redpanda)
-
-        def move_in_progress():
-            p = admin.get_partitions(self.topic, partition)
-            return p['status'] == 'in_progress'
-
-        wait_until(move_in_progress, 10, 1)
-        try:
-            if unclean_abort:
-                admin.force_abort_partition_move(self.topic, partition)
-            else:
-                admin.cancel_partition_move(self.topic, partition)
-        except requests.exceptions.HTTPError as e:
-            # we do not throttle cross core moves, it may already be finished
-            assert e.response.status_code == 400
-            return
-
-        # wait for previous assignment
-        self._wait_post_move(self.topic, partition, previous_assignment, 60)
-
-    def _random_move(self, unclean_abort):
-        partition = random.randint(0, self.partition_count - 1)
-        prev_assignment, _ = self._dispatch_move(partition)
-
-        self._cancel_move(unclean_abort=unclean_abort,
-                          partition=partition,
-                          previous_assignment=prev_assignment)
+        self._wait_for_move_in_progress(topic, partition)
+        self._request_move_cancel(unclean_abort=unclean_abort,
+                                  topic=topic,
+                                  partition=partition,
+                                  previous_assignment=prev_assignment)
 
     def _throttle_recovery(self, new_value):
         self.redpanda.set_cluster_config(
@@ -170,7 +88,7 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
         self._throttle_recovery(10)
 
         for _ in range(self.moves):
-            self._random_move(unclean_abort)
+            self._random_move_and_cancel(unclean_abort)
             if recovery == RESTART_RECOVERY:
                 # restart one of the nodes after each move
                 self.redpanda.restart_nodes(
@@ -218,17 +136,77 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
             # move partition between cores first
             x_core = i < self.moves / 2
 
-            prev_assignment, new_assignment = self._dispatch_move(
-                partition, x_core_only=x_core)
+            prev_assignment, new_assignment = self._dispatch_random_partition_move(
+                topic=self.topic, partition=partition, x_core_only=x_core)
             if x_core:
                 self._wait_post_move(topic=self.topic,
                                      partition=partition,
                                      assignments=new_assignment,
                                      timeout_sec=60)
             else:
-                self._cancel_move(unclean_abort=unclean_abort,
-                                  partition=partition,
-                                  previous_assignment=prev_assignment)
+                self._request_move_cancel(unclean_abort=unclean_abort,
+                                          topic=self.topic,
+                                          partition=partition,
+                                          previous_assignment=prev_assignment)
+            if recovery == RESTART_RECOVERY:
+                # restart one of the nodes after each move
+                self.redpanda.restart_nodes(
+                    [random.choice(self.redpanda.nodes)])
+
+        if unclean_abort:
+            # do not run offsets validation as we may experience data loss since partition movement is forcibly cancelled
+            wait_until(lambda: self.producer.num_acked > 20000, timeout_sec=60)
+
+            self.producer.stop()
+            self.consumer.stop()
+        else:
+            self.run_validation(enable_idempotence=False,
+                                consumer_timeout_sec=45,
+                                min_records=self.min_records)
+
+    @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    @matrix(replication_factor=[1, 3],
+            unclean_abort=[True, False],
+            recovery=[NO_RECOVERY, RESTART_RECOVERY])
+    def test_cancelling_partition_move_x_core(self, replication_factor,
+                                              unclean_abort, recovery):
+        """
+        Cancel partition moving with active consumer / producer
+        """
+        self.start_redpanda(num_nodes=5,
+                            extra_rp_conf={
+                                "default_topic_replications": 3,
+                            })
+
+        spec = TopicSpec(partition_count=self.partition_count,
+                         replication_factor=replication_factor)
+
+        self.client().create_topic(spec)
+        self.topic = spec.name
+
+        self.start_producer(1, throughput=self.throughput)
+        self.start_consumer(1)
+        self.await_startup()
+        # throttle recovery to prevent partition move from finishing
+        self._throttle_recovery(10)
+
+        partition = random.randint(0, self.partition_count - 1)
+        for i in range(self.moves):
+            # move partition between cores first
+            x_core = i < self.moves / 2
+
+            prev_assignment, new_assignment = self._dispatch_random_partition_move(
+                self.topic, partition, x_core_only=x_core)
+            if x_core:
+                self._wait_post_move(topic=self.topic,
+                                     partition=partition,
+                                     assignments=new_assignment,
+                                     timeout_sec=60)
+            else:
+                self._request_move_cancel(topic=self.topic,
+                                          unclean_abort=unclean_abort,
+                                          partition=partition,
+                                          previous_assignment=prev_assignment)
             if recovery == RESTART_RECOVERY:
                 # restart one of the nodes after each move
                 self.redpanda.restart_nodes(
@@ -319,11 +297,7 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
         # update replica set
         admin.set_partition_replicas(self.topic, partition, new_assignment)
 
-        def move_in_progress():
-            p = admin.get_partitions(self.topic, partition)
-            return p['status'] == 'in_progress'
-
-        wait_until(move_in_progress, 10)
+        self._wait_for_move_in_progress(self.topic, partition)
 
         # abort moving partition
         admin.cancel_partition_move(self.topic, partition=partition)
@@ -374,7 +348,9 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
         for _ in range(self.partition_count - 1):
             partition = random.choice(partitions)
             partitions.remove(partition)
-            current_movements[partition] = self._dispatch_move(partition)
+            current_movements[
+                partition] = self._dispatch_random_partition_move(
+                    self.topic, partition)
 
         self.logger.info(f"moving {current_movements}")
 
@@ -426,7 +402,9 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
         for _ in range(self.partition_count - 1):
             partition = random.choice(partitions)
             partitions.remove(partition)
-            current_movements[partition] = self._dispatch_move(partition)
+            current_movements[
+                partition] = self._dispatch_random_partition_move(
+                    self.topic, partition)
 
         self.logger.info(f"moving {current_movements}")
 
