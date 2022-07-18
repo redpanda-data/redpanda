@@ -25,6 +25,7 @@
 #include "model/timestamp.h"
 #include "raft/errc.h"
 #include "raft/types.h"
+#include "ssx/future-util.h"
 #include "utils/remote.h"
 #include "utils/to_string.h"
 #include "vlog.h"
@@ -32,6 +33,7 @@
 #include <seastar/core/execution_stage.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/core/smp.hh>
 #include <seastar/util/log.hh>
 
 #include <boost/container_hash/extensions.hpp>
@@ -39,6 +41,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <memory>
 #include <string_view>
 
 namespace kafka {
@@ -207,6 +210,22 @@ static partition_produce_stages partition_append(
     };
 }
 
+ss::future<produce_response::partition> finalize_request_with_error_code(
+  error_code ec,
+  std::unique_ptr<ss::promise<>> dispatch,
+  model::ntp ntp,
+  ss::shard_id source_shard) {
+    // submit back to promise source shard
+    ssx::background = ss::smp::submit_to(
+      source_shard, [dispatch = std::move(dispatch)]() mutable {
+          dispatch->set_value();
+          dispatch.reset();
+      });
+    return ss::make_ready_future<produce_response::partition>(
+      produce_response::partition{
+        .partition_index = ntp.tp.partition, .error_code = ec});
+}
+
 /**
  * \brief handle writing to a single topic partition.
  */
@@ -274,28 +293,18 @@ static partition_produce_stages produce_topic_partition(
               cluster::partition_manager& mgr) mutable {
                 auto partition = mgr.get(ntp);
                 if (!partition) {
-                    // submit back to promise source shard
-                    (void)ss::smp::submit_to(
-                      source_shard, [dispatch = std::move(dispatch)]() mutable {
-                          dispatch->set_value();
-                          dispatch.reset();
-                      });
-                    return ss::make_ready_future<produce_response::partition>(
-                      produce_response::partition{
-                        .partition_index = ntp.tp.partition,
-                        .error_code = error_code::unknown_topic_or_partition});
+                    return finalize_request_with_error_code(
+                      error_code::unknown_topic_or_partition,
+                      std::move(dispatch),
+                      ntp,
+                      source_shard);
                 }
                 if (unlikely(!partition->is_leader())) {
-                    // submit back to promise source shard
-                    (void)ss::smp::submit_to(
-                      source_shard, [dispatch = std::move(dispatch)]() mutable {
-                          dispatch->set_value();
-                          dispatch.reset();
-                      });
-                    return ss::make_ready_future<produce_response::partition>(
-                      produce_response::partition{
-                        .partition_index = ntp.tp.partition,
-                        .error_code = error_code::not_leader_for_partition});
+                    return finalize_request_with_error_code(
+                      error_code::not_leader_for_partition,
+                      std::move(dispatch),
+                      ntp,
+                      source_shard);
                 }
                 auto stages = partition_append(
                   ntp.tp.partition,
