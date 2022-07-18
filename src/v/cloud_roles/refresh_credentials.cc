@@ -16,6 +16,7 @@
 #include "cloud_roles/logger.h"
 #include "config/node_config.h"
 #include "model/metadata.h"
+#include "net/tls.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
@@ -225,8 +226,32 @@ ss::future<> refresh_credentials::impl::sleep_until_expiry() const {
     }
 }
 
-http::client refresh_credentials::impl::make_api_client() const {
-    return http::client{
+ss::future<http::client> refresh_credentials::impl::make_api_client(
+  client_tls_enabled enable_tls) const {
+    if (enable_tls == client_tls_enabled::yes) {
+        ss::tls::credentials_builder b;
+
+        b.set_client_auth(ss::tls::client_auth::NONE);
+        auto ca_file = co_await net::find_ca_file();
+        if (ca_file) {
+            co_await b.set_x509_trust_file(
+              ca_file.value(), ss::tls::x509_crt_format::PEM);
+        } else {
+            co_await b.set_system_trust();
+        }
+
+        co_return http::client{
+          net::base_transport::configuration{
+            .server_addr = net::unresolved_address{api_host(), api_port()},
+            .credentials
+            = co_await b.build_reloadable_certificate_credentials(),
+            // TODO (abhijat) toggle metrics
+            .disable_metrics = net::metrics_disabled::yes,
+            .tls_sni_hostname = api_host()},
+          _as};
+    }
+
+    co_return http::client{
       net::base_transport::configuration{
         .server_addr = net::unresolved_address{_api_host, _api_port},
         .credentials = {},

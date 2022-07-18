@@ -13,6 +13,7 @@
 #include "bytes/iobuf_istreambuf.h"
 #include "utils/file_io.h"
 
+#include <boost/algorithm/string/trim.hpp>
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/xml_parser.hpp>
 
@@ -115,9 +116,15 @@ ss::future<api_response> aws_sts_refresh_impl::fetch_credentials() {
     assume_req.target("/");
 
     assume_req.set(boost::beast::http::field::content_type, content_type);
+    assume_req.set(
+      boost::beast::http::field::host,
+      fmt::format("{}:{}", api_host(), api_port()));
+    assume_req.set(
+      boost::beast::http::field::user_agent, "redpanda.vectorized.io");
 
     using namespace fmt::literals;
 
+    boost::trim(token);
     ss::sstring body = fmt::format(
       request_payload,
       "duration_sec"_a = sts_params::token_expiry_seconds.count(),
@@ -126,8 +133,17 @@ ss::future<api_response> aws_sts_refresh_impl::fetch_credentials() {
       "role_arn"_a = _role,
       "token"_a = token);
 
+    // STS requires a TLS enabled client by default, but in test mode where we
+    // use the http imposter, we need to use a simple client.
+    auto tls_enabled = refresh_credentials::client_tls_enabled::yes;
+    if (api_port() != default_port) {
+        tls_enabled = refresh_credentials::client_tls_enabled::no;
+    }
+
     co_return co_await post_request(
-      make_api_client(), std::move(assume_req), std::move(body));
+      co_await make_api_client(tls_enabled),
+      std::move(assume_req),
+      std::move(body));
 }
 
 api_response_parse_result aws_sts_refresh_impl::parse_response(iobuf resp) {

@@ -31,6 +31,11 @@ struct retry_params {
 
 class refresh_credentials {
 public:
+    enum class client_tls_enabled : bool {
+        yes = true,
+        no = false,
+    };
+
     class impl {
     public:
         impl(
@@ -79,7 +84,8 @@ public:
 
     protected:
         /// Returns an http client with the API host and port applied
-        http::client make_api_client() const;
+        ss::future<http::client> make_api_client(
+          client_tls_enabled enable_tls = client_tls_enabled::no) const;
 
         /// Helper to parse the iobuf returned from API into a credentials
         /// object, customized to API response structure

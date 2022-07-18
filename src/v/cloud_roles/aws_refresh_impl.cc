@@ -63,7 +63,8 @@ ss::future<api_response> aws_refresh_impl::fetch_credentials() {
     creds_req.method(boost::beast::http::verb::get);
     creds_req.target(
       fmt::format("/latest/meta-data/iam/security-credentials/{}", *_role));
-    co_return co_await make_request(make_api_client(), std::move(creds_req));
+    co_return co_await make_request(
+      co_await make_api_client(), std::move(creds_req));
 }
 
 api_response_parse_result aws_refresh_impl::parse_response(iobuf resp) {
@@ -105,7 +106,8 @@ ss::future<api_response> aws_refresh_impl::fetch_role_name() {
     http::client::request_header role_req;
     role_req.method(boost::beast::http::verb::get);
     role_req.target("/latest/meta-data/iam/security-credentials/");
-    co_return co_await make_request(make_api_client(), std::move(role_req));
+    co_return co_await make_request(
+      co_await make_api_client(), std::move(role_req));
 }
 
 std::ostream& aws_refresh_impl::print(std::ostream& os) const {
