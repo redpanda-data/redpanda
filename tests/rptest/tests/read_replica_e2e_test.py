@@ -10,8 +10,9 @@ from rptest.services.cluster import cluster
 
 from rptest.clients.default import DefaultClient
 from rptest.services.redpanda import SISettings
-from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk import RpkTool, RpkException
 from rptest.clients.types import TopicSpec
+from rptest.util import expect_exception
 from ducktape.mark import matrix
 
 import json
@@ -40,12 +41,13 @@ class TestReadReplicaService(EndToEndTest):
         super(TestReadReplicaService, self).__init__(test_context=test_context)
         self.second_cluster = None
 
-    def create_read_replica_topic(self):
+    def start_second_cluster(self):
         self.second_cluster = RedpandaService(self.test_context,
                                               num_brokers=3,
                                               si_settings=self.si_settings)
         self.second_cluster.start(start_si=False)
 
+    def create_read_replica_topic(self):
         rpk_second_cluster = RpkTool(self.second_cluster)
         conf = {
             'redpanda.remote.readreplica': self.s3_bucket_name,
@@ -71,6 +73,52 @@ class TestReadReplicaService(EndToEndTest):
             throughput=1000,
             message_validator=is_int_with_prefix)
         self.producer.start()
+
+    @cluster(num_nodes=6)
+    @matrix(partition_count=[10])
+    def test_produce_is_forbidden(self, partition_count):
+        # Create original topic
+        self.start_redpanda(3, si_settings=self.si_settings)
+        spec = TopicSpec(name=self.topic_name,
+                         partition_count=partition_count,
+                         replication_factor=3)
+
+        DefaultClient(self.redpanda).create_topic(spec)
+
+        # Make original topic upload data to S3
+        rpk = RpkTool(self.redpanda)
+        rpk.alter_topic_config(spec.name, 'redpanda.remote.write', 'true')
+
+        self.start_second_cluster()
+
+        def create_read_replica_topic_success():
+            try:
+                self.create_read_replica_topic()
+            except RpkException as e:
+                if "The server experienced an unexpected error when processing the request" in str(
+                        e):
+                    return False
+                else:
+                    raise
+            else:
+                return True
+
+        # wait until the read replica topic creation succeeds
+        wait_until(
+            create_read_replica_topic_success,
+            timeout_sec=
+            60,  #should be uploaded since cloud_storage_segment_max_upload_interval_sec=5
+            backoff_sec=5,
+            err_msg=
+            f"Could not create read replica topic. Most likely because topic manifest is not in S3, in S3 bucket: {list(self.redpanda._s3client.list_objects(self.s3_bucket_name))}"
+        )
+
+        second_rpk = RpkTool(self.second_cluster)
+        with expect_exception(
+                RpkException, lambda e:
+                "unable to produce record: INVALID_TOPIC_EXCEPTION: The request attempted to perform an operation on an invalid topic."
+                in str(e)):
+            second_rpk.produce(self.topic_name, "", "test payload")
 
     @cluster(num_nodes=8)
     @matrix(partition_count=[10], min_records=[10000])
@@ -127,6 +175,7 @@ class TestReadReplicaService(EndToEndTest):
         )
 
         # Create read replica topic, consume from it and validate
+        self.start_second_cluster()
         self.create_read_replica_topic()
         self.start_consumer()
         self.run_validation()
