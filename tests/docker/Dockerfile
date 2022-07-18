@@ -163,6 +163,13 @@ RUN apt update && \
       file && \
     rm -rf /var/lib/apt/lists/*
 
+# Clone and install the arroyo client library in order to run its test suite.
+RUN mkdir /root/external_test_suites && \
+    git -C /root/external_test_suites clone --depth=1 https://github.com/getsentry/arroyo.git && \
+    cd /root/external_test_suites/arroyo && \
+    git reset --hard 2631cf1406b0cb5bc05c8a37e8f9f5a40fcf31d4 && \
+    python3 -m pip install --force --no-cache-dir -e /root/external_test_suites/arroyo
+
 RUN mkdir -p /opt/scripts && \
     curl https://raw.githubusercontent.com/redpanda-data/seastar/2a9504b3238cba4150be59353bf8d0b3a01fe39c/scripts/addr2line.py -o /opt/scripts/addr2line.py && \
     curl https://raw.githubusercontent.com/redpanda-data/seastar/2a9504b3238cba4150be59353bf8d0b3a01fe39c/scripts/seastar-addr2line -o /opt/scripts/seastar-addr2line && \
