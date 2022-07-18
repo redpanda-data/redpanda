@@ -193,6 +193,23 @@ ss::future<download_result> remote::download_manifest(
   const remote_manifest_path& key,
   base_manifest& manifest,
   retry_chain_node& parent) {
+    return do_download_manifest(bucket, key, manifest, parent);
+}
+
+ss::future<download_result> remote::maybe_download_manifest(
+  const s3::bucket_name& bucket,
+  const remote_manifest_path& key,
+  base_manifest& manifest,
+  retry_chain_node& parent) {
+    return do_download_manifest(bucket, key, manifest, parent, true);
+}
+
+ss::future<download_result> remote::do_download_manifest(
+  const s3::bucket_name& bucket,
+  const remote_manifest_path& key,
+  base_manifest& manifest,
+  retry_chain_node& parent,
+  bool expect_missing) {
     gate_guard guard{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
@@ -206,7 +223,7 @@ ss::future<download_result> remote::download_manifest(
         std::exception_ptr eptr = nullptr;
         try {
             auto resp = co_await client->get_object(
-              bucket, path, fib.get_timeout());
+              bucket, path, fib.get_timeout(), expect_missing);
             vlog(ctxlog.debug, "Receive OK response from {}", path);
             co_await manifest.update(resp->as_input_stream());
             switch (manifest.get_manifest_type()) {
