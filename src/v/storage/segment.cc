@@ -179,7 +179,7 @@ ss::future<> segment::release_appender(readers_cache* readers_cache) {
      * An exception safe variant of try write lock is simulated since seastar
      * does not have such primitives available on the semaphore. The fast path
      * of try_write_lock is combined with immediately releasing the lock (which
-     * will not also not signal any waiters--there cannot be any!) to guarnatee
+     * will not also not signal any waiters--there cannot be any!) to guarantee
      * that the blocking get_units version will find the lock uncontested.
      *
      * TODO: we should upstream get_units try-variants for semaphore and rwlock.
@@ -357,14 +357,21 @@ ss::future<> segment::do_compaction_index_batch(const model::record_batch& b) {
     vassert(!b.compressed(), "wrong method. Call compact_index_batch. {}", b);
     auto& w = compaction_index();
     return model::for_each_record(
-      b, [o = b.base_offset(), &w](const model::record& r) {
-          return w.index(r.key(), o, r.offset_delta());
+      b,
+      [o = b.base_offset(), batch_type = b.header().type, &w](
+        const model::record& r) {
+          return w.index(batch_type, r.key(), o, r.offset_delta());
       });
 }
 ss::future<> segment::compaction_index_batch(const model::record_batch& b) {
     if (!has_compaction_index()) {
         return ss::now();
     }
+    // do not index not compactible batches
+    if (!internal::is_compactible(b)) {
+        return ss::now();
+    }
+
     if (!b.compressed()) {
         return do_compaction_index_batch(b);
     }
@@ -447,7 +454,7 @@ ss::future<append_result> segment::append(const model::record_batch& b) {
           auto index_err = std::move(index_fut).get_exception();
           vlog(
             stlog.error,
-            "segment::append index: {}. ignorning append: {}",
+            "segment::append index: {}. ignoring append: {}",
             index_err,
             ret);
           return ss::make_exception_future<append_result>(index_err);

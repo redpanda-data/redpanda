@@ -9,6 +9,7 @@
 
 #include "storage/types.h"
 
+#include "storage/compacted_index.h"
 #include "storage/ntp_config.h"
 #include "utils/human.h"
 #include "utils/to_string.h"
@@ -169,4 +170,18 @@ std::ostream& operator<<(std::ostream& o, const compaction_result& r) {
     return o;
 }
 
+std::ostream&
+operator<<(std::ostream& o, compacted_index::recovery_state state) {
+    switch (state) {
+    case compacted_index::recovery_state::index_missing:
+        return o << "index_missing";
+    case compacted_index::recovery_state::already_compacted:
+        return o << "already_compacted";
+    case compacted_index::recovery_state::index_needs_rebuild:
+        return o << "index_needs_rebuild";
+    case compacted_index::recovery_state::index_recovered:
+        return o << "index_recovered";
+    }
+    __builtin_unreachable();
+}
 } // namespace storage

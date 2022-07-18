@@ -2086,3 +2086,108 @@ FIXTURE_TEST(test_querying_term_last_offset, storage_test_fixture) {
 
     BOOST_REQUIRE(!log.get_term_last_offset(model::term_id(0)).has_value());
 }
+
+void write_batch(
+  storage::log log,
+  ss::sstring key,
+  int value,
+  model::record_batch_type batch_type) {
+    storage::record_batch_builder builder(batch_type, model::offset(0));
+
+    builder.add_raw_kv(serde::to_iobuf(std::move(key)), serde::to_iobuf(value));
+
+    auto batch = std::move(builder).build();
+    batch.set_term(model::term_id(0));
+    auto reader = model::make_memory_record_batch_reader({std::move(batch)});
+    storage::log_append_config cfg{
+      .should_fsync = storage::log_append_config::fsync::no,
+      .io_priority = ss::default_priority_class(),
+      .timeout = model::no_timeout,
+    };
+
+    std::move(reader).for_each_ref(log.make_appender(cfg), cfg.timeout).get0();
+}
+
+absl::flat_hash_map<std::pair<model::record_batch_type, ss::sstring>, int>
+compact_in_memory(storage::log log) {
+    auto rdr = log
+                 .make_reader(storage::log_reader_config(
+                   model::offset(0),
+                   model::offset::max(),
+                   ss::default_priority_class()))
+                 .get();
+
+    absl::flat_hash_map<std::pair<model::record_batch_type, ss::sstring>, int>
+      ret;
+    auto batches = model::consume_reader_to_memory(
+                     std::move(rdr), model::no_timeout)
+                     .get();
+
+    for (auto& b : batches) {
+        b.for_each_record([&ret, bt = b.header().type](model::record r) {
+            auto k = std::make_pair(
+              bt, serde::from_iobuf<ss::sstring>(r.key().copy()));
+            ret.insert_or_assign(k, serde::from_iobuf<int>(r.value().copy()));
+        });
+    }
+
+    return ret;
+}
+
+FIXTURE_TEST(test_compacting_batches_of_different_types, storage_test_fixture) {
+    auto cfg = default_log_config(test_dir);
+    cfg.max_compacted_segment_size = config::mock_binding<size_t>(100_MiB);
+    cfg.stype = storage::log_config::storage_type::disk;
+    cfg.cache = storage::with_cache::no;
+    storage::ntp_config::default_overrides overrides;
+    overrides.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::compaction;
+
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+    auto log = mgr
+                 .manage(storage::ntp_config(
+                   ntp,
+                   mgr.config().base_dir,
+                   std::make_unique<storage::ntp_config::default_overrides>(
+                     overrides)))
+                 .get0();
+
+    auto disk_log = get_disk_log(log);
+
+    // the same key but three different batch types
+    write_batch(log, "key_1", 1, model::record_batch_type::raft_data);
+    write_batch(log, "key_1", 10, model::record_batch_type::tm_update);
+    write_batch(log, "key_1", 100, model::record_batch_type::tx_fence);
+
+    write_batch(log, "key_1", 2, model::record_batch_type::raft_data);
+    write_batch(log, "key_1", 3, model::record_batch_type::raft_data);
+    write_batch(log, "key_1", 4, model::record_batch_type::raft_data);
+
+    write_batch(log, "key_1", 20, model::record_batch_type::tm_update);
+    write_batch(log, "key_1", 30, model::record_batch_type::tm_update);
+    write_batch(log, "key_1", 40, model::record_batch_type::tm_update);
+
+    write_batch(log, "key_1", 200, model::record_batch_type::tm_update);
+    write_batch(log, "key_1", 300, model::record_batch_type::tm_update);
+    write_batch(log, "key_1", 400, model::record_batch_type::tm_update);
+
+    disk_log->force_roll(ss::default_priority_class()).get();
+
+    log.flush().get0();
+
+    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 2);
+
+    storage::compaction_config c_cfg(
+      model::timestamp::min(), std::nullopt, ss::default_priority_class(), as);
+    auto before_compaction = compact_in_memory(log);
+
+    BOOST_REQUIRE_EQUAL(before_compaction.size(), 3);
+    // compact
+    log.compact(c_cfg).get0();
+    auto after_compaction = compact_in_memory(log);
+
+    BOOST_REQUIRE(before_compaction == after_compaction);
+}

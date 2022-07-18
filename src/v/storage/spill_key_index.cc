@@ -12,6 +12,7 @@
 #include "bytes/bytes.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
+#include "storage/compacted_index.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/logger.h"
 #include "storage/segment_utils.h"
@@ -68,8 +69,8 @@ spill_key_index::~spill_key_index() {
       _midx.size());
 }
 
-ss::future<>
-spill_key_index::index(bytes_view v, model::offset base_offset, int32_t delta) {
+ss::future<> spill_key_index::index(
+  const compaction_key& v, model::offset base_offset, int32_t delta) {
     if (auto it = _midx.find(v); it != _midx.end()) {
         auto& pair = it->second;
         if (base_offset > pair.base_offset) {
@@ -79,10 +80,10 @@ spill_key_index::index(bytes_view v, model::offset base_offset, int32_t delta) {
         return ss::now();
     }
     // not found
-    return add_key(bytes(v), value_type{base_offset, delta});
+    return add_key(v, value_type{base_offset, delta});
 }
 
-ss::future<> spill_key_index::add_key(bytes b, value_type v) {
+ss::future<> spill_key_index::add_key(compaction_key b, value_type v) {
     auto f = ss::now();
     auto const key_size = b.size();
     auto const expected_size = idx_mem_usage() + _keys_mem_usage + key_size;
@@ -121,9 +122,13 @@ ss::future<> spill_key_index::add_key(bytes b, value_type v) {
     });
 }
 
-ss::future<>
-spill_key_index::index(bytes&& b, model::offset base_offset, int32_t delta) {
-    if (auto it = _midx.find(b); it != _midx.end()) {
+ss::future<> spill_key_index::index(
+  model::record_batch_type batch_type,
+  bytes&& b,
+  model::offset base_offset,
+  int32_t delta) {
+    auto key = prefix_with_batch_type(batch_type, b);
+    if (auto it = _midx.find(key); it != _midx.end()) {
         auto& pair = it->second;
         // must use both base+delta, since we only want to keep the latest
         // which might be inserted into the batch multiple times by client
@@ -136,11 +141,15 @@ spill_key_index::index(bytes&& b, model::offset base_offset, int32_t delta) {
         return ss::now();
     }
     // not found
-    return add_key(std::move(b), value_type{base_offset, delta});
+    return add_key(std::move(key), value_type{base_offset, delta});
 }
 ss::future<> spill_key_index::index(
-  const iobuf& key, model::offset base_offset, int32_t delta) {
+  model::record_batch_type batch_type,
+  const iobuf& key,
+  model::offset base_offset,
+  int32_t delta) {
     return index(
+      batch_type,
       iobuf_to_bytes(key), // makes a copy, but we need deterministic keys
       base_offset,
       delta);

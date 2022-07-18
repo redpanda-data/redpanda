@@ -30,7 +30,10 @@ PERF_TEST_F(reducer_bench, compaction_key_reducer_test) {
     auto key = random_generators::get_bytes(20);
 
     storage::compacted_index::entry entry(
-      storage::compacted_index::entry_type::key, std::move(key), o, 0);
+      storage::compacted_index::entry_type::key,
+      storage::compaction_key(std::move(key)),
+      o,
+      0);
 
     perf_tests::start_measuring_time();
     return reducer(std::move(entry)).discard_result().finally([] {
