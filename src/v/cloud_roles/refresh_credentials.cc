@@ -14,6 +14,7 @@
 #include "cloud_roles/aws_sts_refresh_impl.h"
 #include "cloud_roles/gcp_refresh_impl.h"
 #include "cloud_roles/logger.h"
+#include "config/configuration.h"
 #include "config/node_config.h"
 #include "model/metadata.h"
 #include "net/tls.h"
@@ -262,13 +263,24 @@ refresh_credentials::impl::make_api_client(client_tls_enabled enable_tls) {
 
 ss::future<> refresh_credentials::impl::init_tls_certs() {
     ss::tls::credentials_builder b;
-
     b.set_client_auth(ss::tls::client_auth::NONE);
-    auto ca_file = co_await net::find_ca_file();
-    if (ca_file) {
+
+    if (auto trust_file_path
+        = config::shard_local_cfg().cloud_storage_trust_file.value();
+        trust_file_path.has_value()) {
+        vlog(
+          clrl_log.info,
+          "Using non-default trust file {}",
+          trust_file_path.value());
+        co_await b.set_x509_trust_file(
+          trust_file_path.value(), ss::tls::x509_crt_format::PEM);
+    } else if (auto ca_file = co_await net::find_ca_file();
+               ca_file.has_value()) {
+        vlog(clrl_log.info, "Using discovered trust file {}", ca_file.value());
         co_await b.set_x509_trust_file(
           ca_file.value(), ss::tls::x509_crt_format::PEM);
     } else {
+        vlog(clrl_log.info, "Using GnuTLS default");
         co_await b.set_system_trust();
     }
 
