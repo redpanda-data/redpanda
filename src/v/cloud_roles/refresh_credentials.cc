@@ -56,7 +56,15 @@ void refresh_credentials::start() {
 ss::future<> refresh_credentials::do_start() {
     return ss::do_until(
       [this] { return _gate.is_closed() || _as.abort_requested(); },
-      [this] { return fetch_and_update_credentials(); });
+      [this] {
+          return fetch_and_update_credentials().handle_exception_type(
+            [](const ss::sleep_aborted& ex) {
+                vlog(
+                  clrl_log.info,
+                  "stopping refresh_credentials loop: {}",
+                  ex.what());
+            });
+      });
 }
 
 static std::optional<ss::sstring>
