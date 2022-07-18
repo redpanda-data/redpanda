@@ -318,7 +318,7 @@ ss::future<> remote_segment::do_hydrate_txrange() {
 
     tx_range_manifest manifest(_path);
 
-    auto res = co_await _api.download_manifest(
+    auto res = co_await _api.maybe_download_manifest(
       _bucket, manifest.get_manifest_path(), manifest, local_rtc);
 
     vlog(
