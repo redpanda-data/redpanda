@@ -161,6 +161,25 @@ public:
       base_manifest& manifest,
       retry_chain_node& parent);
 
+    /// \brief Download manifest from pre-defined S3 location
+    ///
+    /// Method downloads the manifest and handles backpressure and
+    /// errors. It retries multiple times until timeout excedes.
+    /// The method expects that the manifest might be missing from
+    /// S3 bucket. It behaves exactly the same as 'download_manifest'.
+    /// The only difference is that 'NoSuchKey' error is not logged
+    /// using 'warn' log level.
+    ///
+    /// \param bucket is a bucket name
+    /// \param key is an object key of the manifest
+    /// \param manifest is a manifest to download
+    /// \return future that returns success code
+    ss::future<download_result> maybe_download_manifest(
+      const s3::bucket_name& bucket,
+      const remote_manifest_path& key,
+      base_manifest& manifest,
+      retry_chain_node& parent);
+
     /// \brief Upload manifest to the pre-defined S3 location
     ///
     /// \param bucket is a bucket name
@@ -217,6 +236,13 @@ public:
       const s3::bucket_name& bucket,
       const remote_segment_path& segment_path,
       retry_chain_node& parent);
+
+    ss::future<download_result> do_download_manifest(
+      const s3::bucket_name& bucket,
+      const remote_manifest_path& key,
+      base_manifest& manifest,
+      retry_chain_node& parent,
+      bool expect_missing = false);
 
 private:
     ss::future<> propagate_credentials(cloud_roles::credentials credentials);
