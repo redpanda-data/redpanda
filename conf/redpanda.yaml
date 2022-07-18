@@ -45,10 +45,10 @@ redpanda:
   developer_mode: true
 
 # Enable Pandaproxy
-pandaproxy:
+pandaproxy: {}
 
 # Enable Schema Registry
-schema_registry:
+schema_registry: {}
 
 rpk:
   # TLS configuration.
