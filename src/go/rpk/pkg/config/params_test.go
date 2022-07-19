@@ -1,10 +1,12 @@
 package config
 
 import (
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/spf13/afero"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParams_Write(t *testing.T) {
@@ -128,4 +130,103 @@ rpk:
 			}
 		})
 	}
+}
+
+func TestRedpandaSampleFile(t *testing.T) {
+	// Config from 'redpanda/conf/redpanda.yaml'.
+	sample, err := os.ReadFile("../../../../../conf/redpanda.yaml")
+	if err != nil {
+		t.Errorf("unexpected error while reading sample config file: %s", err)
+		return
+	}
+	fs := afero.NewMemMapFs()
+	err = afero.WriteFile(fs, "/etc/redpanda/redpanda.yaml", sample, 0o644)
+	if err != nil {
+		t.Errorf("unexpected error while writing sample config file: %s", err)
+		return
+	}
+	expCfg := &Config{
+		ConfigFile: "/etc/redpanda/redpanda.yaml",
+		loadedPath: "/etc/redpanda/redpanda.yaml",
+		Redpanda: RedpandaConfig{
+			Directory: "/var/lib/redpanda/data",
+			RPCServer: SocketAddress{
+				Address: "0.0.0.0",
+				Port:    33145,
+			},
+			KafkaAPI: []NamedSocketAddress{{
+				Address: "0.0.0.0",
+				Port:    9092,
+			}},
+			AdminAPI: []NamedSocketAddress{{
+				Address: "0.0.0.0",
+				Port:    9644,
+			}},
+			ID:            1,
+			SeedServers:   []SeedServer{},
+			DeveloperMode: true,
+		},
+		Rpk: RpkConfig{
+			CoredumpDir:      "/var/lib/redpanda/coredump",
+			EnableUsageStats: true,
+		},
+		Pandaproxy:     &Pandaproxy{},
+		SchemaRegistry: &SchemaRegistry{},
+	}
+	// Load and check we load it correctly
+	cfg, err := new(Params).Load(fs)
+	if err != nil {
+		t.Errorf("unexpected error while loading sample config file: %s", err)
+		return
+	}
+	cfg = cfg.FileOrDefaults() // we want to check that we correctly load the raw file
+	require.Equal(t, expCfg, cfg)
+
+	// Write to the file and check we don't mangle the config properties
+	err = cfg.Write(fs)
+	if err != nil {
+		t.Errorf("unexpected error while writing config file: %s", err)
+		return
+	}
+	file, err := afero.ReadFile(fs, "/etc/redpanda/redpanda.yaml")
+	if err != nil {
+		t.Errorf("unexpected error while reading config file from fs: %s", err)
+		return
+	}
+	require.Equal(t, `config_file: /etc/redpanda/redpanda.yaml
+redpanda:
+    data_directory: /var/lib/redpanda/data
+    node_id: 1
+    seed_servers: []
+    rpc_server:
+        address: 0.0.0.0
+        port: 33145
+    kafka_api:
+        - address: 0.0.0.0
+          port: 9092
+    admin:
+        - address: 0.0.0.0
+          port: 9644
+    developer_mode: true
+rpk:
+    enable_usage_stats: true
+    tune_network: false
+    tune_disk_scheduler: false
+    tune_disk_nomerges: false
+    tune_disk_write_cache: false
+    tune_disk_irq: false
+    tune_fstrim: false
+    tune_cpu: false
+    tune_aio_events: false
+    tune_clocksource: false
+    tune_swappiness: false
+    tune_transparent_hugepages: false
+    enable_memory_locking: false
+    tune_coredump: false
+    coredump_dir: /var/lib/redpanda/coredump
+    tune_ballast_file: false
+    overprovisioned: false
+pandaproxy: {}
+schema_registry: {}
+`, string(file))
 }
