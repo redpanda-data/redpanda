@@ -20,7 +20,7 @@ type ClusterHealthOverview struct {
 	ControllerID         int      `json:"controller_id"`
 	AllNodes             []int    `json:"all_nodes"`
 	NodesDown            []int    `json:"nodes_down"`
-	LeaderlessPartitions []string `json:"leaderless_partition"`
+	LeaderlessPartitions []string `json:"leaderless_partitions"`
 }
 
 func (a *AdminAPI) GetHealthOverview(ctx context.Context) (ClusterHealthOverview, error) {
