@@ -33,10 +33,7 @@ topic_table::transform_topics(Func&& f) const {
       std::cbegin(_topics),
       std::cend(_topics),
       std::back_inserter(ret),
-      [f = std::forward<Func>(f)](
-        const std::pair<model::topic_namespace, topic_metadata_item>& p) {
-          return f(p.second);
-      });
+      [f = std::forward<Func>(f)](const auto& p) { return f(p.second); });
     return ret;
 }
 
@@ -52,25 +49,21 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
       = cmd.value.cfg.properties.remote_topic_properties ? std::make_optional(
           cmd.value.cfg.properties.remote_topic_properties->remote_revision)
                                                          : std::nullopt;
-    auto md = topic_metadata_item{
-      .metadata = topic_metadata(
-        std::move(cmd.value), model::revision_id(offset()), remote_revision)};
+    topic_metadata_item md{topic_metadata(
+      std::move(cmd.value), model::revision_id(offset()), remote_revision)};
     // calculate delta
-    md.replica_revisions.reserve(cmd.value.assignments.size());
+    md.get_replica_revisions().reserve(cmd.value.assignments.size());
     for (auto& pas : md.get_assignments()) {
         auto ntp = model::ntp(cmd.key.ns, cmd.key.tp, pas.id);
         for (auto& r : pas.replicas) {
-            md.replica_revisions[pas.id][r.node_id] = model::revision_id(
+            md.get_replica_revisions()[pas.id][r.node_id] = model::revision_id(
               offset);
         }
         _pending_deltas.emplace_back(
           std::move(ntp), pas, offset, delta::op_type::add);
     }
 
-    _topics.insert({
-      cmd.key,
-      std::move(md),
-    });
+    _topics.emplace(cmd.key, std::move(md));
     notify_waiters();
     return ss::make_ready_future<std::error_code>(errc::success);
 }
@@ -141,7 +134,7 @@ topic_table::apply(create_partition_cmd cmd, model::offset offset) {
         // propagate deltas
         auto ntp = model::ntp(cmd.key.ns, cmd.key.tp, p_as.id);
         for (auto& bs : p_as.replicas) {
-            tp->second.replica_revisions[p_as.id][bs.node_id]
+            tp->second.get_replica_revisions()[p_as.id][bs.node_id]
               = model::revision_id(offset);
         }
         _pending_deltas.emplace_back(
@@ -181,9 +174,10 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
     if (are_replica_sets_equal(current_assignment_it->replicas, cmd.value)) {
         return ss::make_ready_future<std::error_code>(errc::success);
     }
-    auto revisions_it = tp->second.replica_revisions.find(cmd.key.tp.partition);
+    auto revisions_it = tp->second.get_replica_revisions().find(
+      cmd.key.tp.partition);
     vassert(
-      revisions_it != tp->second.replica_revisions.end(),
+      revisions_it != tp->second.get_replica_revisions().end(),
       "partition {}, replica revisions map must exists as partition is present",
       cmd.key);
 
@@ -388,9 +382,10 @@ topic_table::apply(cancel_moving_partition_replicas_cmd cmd, model::offset o) {
     auto replicas = current_assignment_it->replicas;
     // replace replica set with set from in progress operation
     current_assignment_it->replicas = in_progress_it->second.previous_replicas;
-    auto revisions_it = tp->second.replica_revisions.find(cmd.key.tp.partition);
+    auto revisions_it = tp->second.get_replica_revisions().find(
+      cmd.key.tp.partition);
     vassert(
-      revisions_it != tp->second.replica_revisions.end(),
+      revisions_it != tp->second.get_replica_revisions().end(),
       "partition {} replica revisions map must exists",
       cmd.key);
 
@@ -601,11 +596,7 @@ topic_table::apply(create_non_replicable_topic_cmd cmd, model::offset o) {
     auto md = topic_metadata(
       std::move(cfg), std::move(p_as), model::revision_id(o()), source.tp);
 
-    _topics.insert(
-      {new_non_rep_topic,
-       topic_metadata_item{
-         .metadata = std::move(md),
-       }});
+    _topics.emplace(new_non_rep_topic, std::move(md));
     notify_waiters();
     co_return make_error_code(errc::success);
 }
@@ -683,14 +674,14 @@ size_t topic_table::all_topics_count() const { return _topics.size(); }
 std::optional<topic_metadata>
 topic_table::get_topic_metadata(model::topic_namespace_view tp) const {
     if (auto it = _topics.find(tp); it != _topics.end()) {
-        return it->second.metadata;
+        return it->second.get_metadata();
     }
     return {};
 }
 std::optional<std::reference_wrapper<const topic_metadata>>
 topic_table::get_topic_metadata_ref(model::topic_namespace_view tp) const {
     if (auto it = _topics.find(tp); it != _topics.end()) {
-        return it->second.metadata;
+        return it->second.get_metadata();
     }
     return {};
 }

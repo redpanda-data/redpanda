@@ -11,6 +11,7 @@
 
 #include "cluster/types.h"
 #include "model/fundamental.h"
+#include "ssx/metrics.h"
 
 #include <absl/container/flat_hash_map.h>
 
@@ -23,11 +24,20 @@ namespace cluster {
 using replicas_revision_map
   = absl::flat_hash_map<model::node_id, model::revision_id>;
 
-struct topic_metadata_item {
-    topic_metadata metadata;
-    // replicas revisions for each partition
-    absl::node_hash_map<model::partition_id, replicas_revision_map>
-      replica_revisions;
+using replica_revisions
+  = absl::node_hash_map<model::partition_id, replicas_revision_map>;
+
+class topic_metadata_item {
+public:
+    explicit topic_metadata_item(topic_metadata) noexcept;
+
+    topic_metadata_item(const topic_metadata_item&) = delete;
+    topic_metadata_item& operator=(const topic_metadata_item&) = delete;
+
+    topic_metadata_item(topic_metadata_item&&) noexcept;
+    topic_metadata_item& operator=(topic_metadata_item&&) noexcept;
+
+    ~topic_metadata_item() = default;
 
     bool is_topic_replicable() const;
 
@@ -42,6 +52,22 @@ struct topic_metadata_item {
 
     const topic_configuration& get_configuration() const;
     topic_configuration& get_configuration();
+
+    const topic_metadata& get_metadata() const;
+    topic_metadata& get_metadata();
+
+    const replica_revisions& get_replica_revisions() const;
+    replica_revisions& get_replica_revisions();
+
+private:
+    void setup_metrics();
+
+    topic_metadata _metadata;
+    // replicas revisions for each partition
+    replica_revisions _replica_revisions;
+
+    ss::metrics::metric_groups _public_metrics{
+      ssx::metrics::public_metrics_handle};
 };
 
 } // namespace cluster

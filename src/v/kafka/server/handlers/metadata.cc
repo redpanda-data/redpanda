@@ -232,7 +232,7 @@ get_topic_metadata(request_context& ctx, metadata_request& request) {
                   authz_quiet{true})) {
                 continue;
             }
-            res.push_back(make_topic_response(ctx, request, md.metadata));
+            res.push_back(make_topic_response(ctx, request, md.get_metadata()));
         }
 
         return ss::make_ready_future<std::vector<metadata_response::topic>>(

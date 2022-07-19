@@ -177,11 +177,11 @@ void validate_brokers_revisions(
     auto tp_it = all_metadata.find(model::topic_namespace_view(ntp));
     BOOST_REQUIRE(tp_it != all_metadata.end());
 
-    auto p_it = tp_it->second.metadata.get_assignments().find(ntp.tp.partition);
-    BOOST_REQUIRE(p_it != tp_it->second.metadata.get_assignments().end());
+    auto p_it = tp_it->second.get_assignments().find(ntp.tp.partition);
+    BOOST_REQUIRE(p_it != tp_it->second.get_assignments().end());
 
-    auto rev_it = tp_it->second.replica_revisions.find(ntp.tp.partition);
-    BOOST_REQUIRE(rev_it != tp_it->second.replica_revisions.end());
+    auto rev_it = tp_it->second.get_replica_revisions().find(ntp.tp.partition);
+    BOOST_REQUIRE(rev_it != tp_it->second.get_replica_revisions().end());
 
     for (auto& bs : p_it->replicas) {
         fmt::print("replica: {}\n", bs);
