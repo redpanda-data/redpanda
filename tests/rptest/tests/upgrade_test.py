@@ -7,7 +7,9 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import random
 import re
+import string
 from packaging.version import Version
 
 from ducktape.mark import parametrize
@@ -28,6 +30,8 @@ from rptest.services.kgo_verifier_services import (
 )
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.services.redpanda_installer import InstallOptions, RedpandaInstaller, wait_for_num_versions
+
+from confluent_kafka.admin import AdminClient, ConfigResource, RESOURCE_TOPIC
 
 
 class UpgradeFromSpecificVersion(RedpandaTest):
@@ -379,3 +383,78 @@ class RaftRpcUpgradeTest(EndToEndTest):
     def test_raft_traffic_during_upgrade(self):
         MixedVersionWorkloadRunner.upgrade_with_workload(
             self.redpanda, self.initial_version, self.raft_workload)
+
+
+def rand_with_prefix(prefix):
+    return f"{prefix}-{''.join([random.choice(string.ascii_letters) for _ in range(5)])}"
+
+
+class KafkaRpcUpgradeTest(EndToEndTest):
+    """
+    This test uses Kafka admin operations to exercise admin RPC traffic between
+    two nodes, all the while being upgraded.
+
+    Since our goal is to deterministically trigger RPCs between servers, this
+    only exercises the Kafka client metadata API, which is sent to any node
+    rather than having the client send directly to the controller leader. This
+    ensures the request is sent to a specific node that then triggers RPC
+    dispatch to the controller.
+    """
+    def setUp(self):
+        self.initial_version = MixedVersionWorkloadRunner.PRE_SERDE_VERSION
+        install_opts = InstallOptions(version=self.initial_version)
+        extra_rp_conf = dict(enable_leader_balancer=False,
+                             auto_create_topics_enabled=True)
+        self.start_redpanda(num_nodes=3,
+                            install_opts=install_opts,
+                            extra_rp_conf=extra_rp_conf)
+
+    @cluster(num_nodes=3)
+    def test_create_topics(self):
+        self.created_topics = []
+
+        def create_random_topic(src_node, dst_node):
+            admin = self.redpanda._admin
+
+            dst_id = self.redpanda.idx(dst_node)
+            # Ensure there is an active controller leader (i.e. it's finished
+            # bootstrapping, etc) by creating a topic.
+            first_topic_name = rand_with_prefix("topic")
+            spec = TopicSpec(name=first_topic_name,
+                             partition_count=1,
+                             replication_factor=1)
+            self.client().create_topic(spec)
+            self.created_topics.append(first_topic_name)
+            # Move controller leadership to 'dst_node'. The client will send a
+            # request to 'src_node' and Redpanda to forward a request to
+            # 'dst_node'.
+            wait_until(
+                lambda: admin.transfer_leadership_to(namespace="redpanda",
+                                                     topic="controller",
+                                                     partition=0,
+                                                     target_id=dst_id),
+                timeout_sec=30,
+                backoff_sec=1)
+            wait_until(lambda: admin.await_stable_leader(
+                namespace="redpanda", topic="controller", partition=0),
+                       timeout_sec=30,
+                       backoff_sec=1)
+            topic_name = rand_with_prefix("topic")
+            # Leave only 'src_node' in the bootstrap servers to encourage the
+            # initial request to go to it.
+            ac = AdminClient(
+                {"bootstrap.servers": self.redpanda.broker_address(src_node)})
+            ac.list_topics(topic_name)
+            self.created_topics.append(topic_name)
+
+        MixedVersionWorkloadRunner.upgrade_with_workload(
+            self.redpanda, self.initial_version, create_random_topic)
+
+        ck_admin = AdminClient({"bootstrap.servers": self.redpanda.brokers()})
+
+        def has_expected_topics():
+            num_topics = len(ck_admin.list_topics().topics)
+            num_expected = len(self.created_topics)
+            return num_topics == num_expected
+
+        wait_until(has_expected_topics, timeout_sec=30, backoff_sec=1)
