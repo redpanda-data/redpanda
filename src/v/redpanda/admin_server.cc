@@ -2775,6 +2775,7 @@ void admin_server::register_cluster_routes() {
                                        std::chrono::seconds(5)));
           ss::httpd::cluster_json::cluster_health_overview ret;
           ret.is_healthy = health_overview.is_healthy;
+          ret.unhealthy_reason = health_overview.unhealthy_reason;
           ret.all_nodes._set = true;
           ret.nodes_down._set = true;
           ret.leaderless_partitions._set = true;
