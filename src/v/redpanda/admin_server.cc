@@ -2786,11 +2786,9 @@ void admin_server::register_cluster_routes() {
               ret.leaderless_partitions.push(fmt::format(
                 "{}/{}/{}", ntp.ns(), ntp.tp.topic(), ntp.tp.partition));
           }
-          if (health_overview.controller_id) {
-              ret.controller_id = health_overview.controller_id.value();
-          } else {
-              ret.controller_id = -1;
-          }
+
+          ret.controller_id = health_overview.controller_id.value_or(
+            model::node_id(-1));
 
           co_return ss::json::json_return_type(ret);
       });
