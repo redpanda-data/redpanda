@@ -25,6 +25,7 @@
 #include "utils/named_type.h"
 #include "vlog.h"
 
+#include <seastar/core/future.hh>
 #include <seastar/net/inet_address.hh>
 
 #include <absl/container/node_hash_map.h>
@@ -69,57 +70,26 @@ struct header {
     checksum_t _checksum;
 };
 
-template<typename T, typename = void>
-struct help_has_serde_read : std::false_type {};
+template<typename T>
+concept has_serde_read = requires(T t, iobuf_parser& in, const header& h) {
+    t.serde_read(in, h);
+};
 
 template<typename T>
-struct help_has_serde_read<
-  T,
-  std::void_t<decltype(std::declval<T>().serde_read(
-    std::declval<std::add_lvalue_reference_t<iobuf_parser>>(),
-    std::declval<header>()))>> : std::true_type {};
+concept has_serde_write = requires(T t, iobuf& out) {
+    t.serde_write(out);
+};
 
 template<typename T>
-inline constexpr auto const has_serde_read = help_has_serde_read<T>::value;
-
-template<typename T, typename = void>
-struct help_has_serde_write : std::false_type {};
-
-template<typename T>
-struct help_has_serde_write<
-  T,
-  std::void_t<decltype(std::declval<T>().serde_write(
-    std::declval<std::add_lvalue_reference_t<iobuf>>()))>> : std::true_type {};
+concept has_serde_async_read
+  = requires(T t, iobuf_parser& in, const header& h) {
+    { t.serde_async_read(in, h) } -> seastar::Future;
+};
 
 template<typename T>
-inline constexpr auto const has_serde_write = help_has_serde_write<T>::value;
-
-template<typename T, typename = void>
-struct help_has_serde_async_read : std::false_type {};
-
-template<typename T>
-struct help_has_serde_async_read<
-  T,
-  std::void_t<decltype(std::declval<T>().serde_async_read(
-    std::declval<std::add_lvalue_reference_t<iobuf_parser>>(),
-    std::declval<header>()))>> : std::true_type {};
-
-template<typename T>
-inline constexpr auto const has_serde_async_read
-  = help_has_serde_async_read<T>::value;
-
-template<typename T, typename = void>
-struct help_has_serde_async_write : std::false_type {};
-
-template<typename T>
-struct help_has_serde_async_write<
-  T,
-  std::void_t<decltype(std::declval<T>().serde_async_write(
-    std::declval<std::add_lvalue_reference_t<iobuf>>()))>> : std::true_type {};
-
-template<typename T>
-inline constexpr auto const has_serde_async_write
-  = help_has_serde_async_write<T>::value;
+concept has_serde_async_write = requires(T t, iobuf& out) {
+    { t.serde_async_write(out) } -> seastar::Future;
+};
 
 using serde_enum_serialized_t = int32_t;
 
@@ -159,7 +129,7 @@ inline constexpr bool is_absl_node_hash_map_v = is_absl_node_hash_map<T>::value;
 
 template<typename T>
 inline constexpr auto const is_serde_compatible_v
-  = is_envelope_v<T>
+  = is_envelope<T>
     || (std::is_scalar_v<T>  //
          && (!std::is_same_v<float, T> || std::numeric_limits<float>::is_iec559)
          && (!std::is_same_v<double, T> || std::numeric_limits<double>::is_iec559)
@@ -190,14 +160,14 @@ void write(iobuf& out, T t) {
     static_assert(are_bytes_and_string_different<Type>);
     static_assert(has_serde_write<Type> || is_serde_compatible_v<Type>);
 
-    if constexpr (is_envelope_v<Type>) {
+    if constexpr (is_envelope<Type>) {
         write(out, Type::redpanda_serde_version);
         write(out, Type::redpanda_serde_compat_version);
 
         auto size_placeholder = out.reserve(sizeof(serde_size_t));
 
         auto checksum_placeholder = iobuf::placeholder{};
-        if constexpr (is_checksum_envelope_v<Type>) {
+        if constexpr (is_checksum_envelope<Type>) {
             checksum_placeholder = out.reserve(sizeof(checksum_t));
         }
 
@@ -218,7 +188,7 @@ void write(iobuf& out, T t) {
         size_placeholder.write(
           reinterpret_cast<char const*>(&size), sizeof(serde_size_t));
 
-        if constexpr (is_checksum_envelope_v<Type>) {
+        if constexpr (is_checksum_envelope<Type>) {
             auto crc = crc::crc32c{};
             auto in = iobuf_const_parser{out};
             in.skip(size_before);
@@ -388,7 +358,7 @@ header read_header(iobuf_parser& in, std::size_t const bytes_left_limit) {
     auto const size = read_nested<serde_size_t>(in, bytes_left_limit);
 
     auto checksum = checksum_t{};
-    if constexpr (is_checksum_envelope_v<T>) {
+    if constexpr (is_checksum_envelope<T>) {
         checksum = read_nested<checksum_t>(in, bytes_left_limit);
     }
 
@@ -443,10 +413,10 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
     static_assert(are_bytes_and_string_different<Type>);
     static_assert(has_serde_read<T> || is_serde_compatible_v<Type>);
 
-    if constexpr (is_envelope_v<Type>) {
+    if constexpr (is_envelope<Type>) {
         auto const h = read_header<Type>(in, bytes_left_limit);
 
-        if constexpr (is_checksum_envelope_v<Type>) {
+        if constexpr (is_checksum_envelope<Type>) {
             auto const shared = in.share(in.bytes_left() - h._bytes_left_limit);
             auto read_only_in = iobuf_const_parser{shared};
             auto crc = crc::crc32c{};
@@ -695,7 +665,7 @@ ss::future<std::decay_t<T>> read_async(iobuf_parser& in) {
 template<typename T>
 ss::future<> write_async(iobuf& out, T t) {
     using Type = std::decay_t<T>;
-    if constexpr (is_envelope_v<Type> && has_serde_async_write<Type>) {
+    if constexpr (is_envelope<Type> && has_serde_async_write<Type>) {
         write(out, Type::redpanda_serde_version);
         write(out, Type::redpanda_serde_compat_version);
 
