@@ -405,6 +405,41 @@ void partition_balancer_planner::get_full_node_reassignments(
     }
 }
 
+/*
+ * Cancel movement if new assignments contains unavailble node
+ * and previous replica set doesn't contain this node
+ */
+void partition_balancer_planner::get_unavailable_node_movement_cancellations(
+  std::vector<model::ntp>& cancellations,
+  const reallocation_request_state& rrs) {
+    for (const auto& update : _topic_table.updates_in_progress()) {
+        if (
+          update.second.state
+          != topic_table::in_progress_state::update_requested) {
+            continue;
+        }
+
+        absl::flat_hash_set<model::node_id> previous_replicas_set;
+        for (const auto& r : update.second.previous_replicas) {
+            previous_replicas_set.insert(r.node_id);
+        }
+
+        auto current_assignments = _topic_table.get_partition_assignment(
+          update.first);
+        if (!current_assignments.has_value()) {
+            continue;
+        }
+        for (const auto& r : current_assignments->replicas) {
+            if (
+              rrs.unavailable_nodes.contains(r.node_id)
+              && !previous_replicas_set.contains(r.node_id)) {
+                cancellations.push_back(update.first);
+                continue;
+            }
+        }
+    }
+}
+
 partition_balancer_planner::plan_data
 partition_balancer_planner::plan_reassignments(
   const cluster_health_report& health_report,
@@ -415,6 +450,10 @@ partition_balancer_planner::plan_reassignments(
     init_node_disk_reports_from_health_report(health_report, rrs);
     calculate_unavailable_nodes(follower_metrics, rrs, result);
     calculate_nodes_with_disk_constraints_violation(rrs, result);
+
+    if (_topic_table.has_updates_in_progress()) {
+        get_unavailable_node_movement_cancellations(result.cancellations, rrs);
+    }
 
     if (
       !_topic_table.has_updates_in_progress()

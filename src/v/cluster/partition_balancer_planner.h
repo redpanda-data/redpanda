@@ -41,6 +41,7 @@ public:
     struct plan_data {
         partition_balancer_violations violations;
         std::vector<ntp_reassignments> reassignments;
+        std::vector<model::ntp> cancellations;
         size_t failed_reassignments_count = 0;
     };
 
@@ -76,6 +77,10 @@ private:
       plan_data&, reallocation_request_state&);
 
     void get_full_node_reassignments(plan_data&, reallocation_request_state&);
+
+    void get_unavailable_node_movement_cancellations(
+      std::vector<model::ntp>& cancellations,
+      const reallocation_request_state&);
 
     void calculate_nodes_with_disk_constraints_violation(
       reallocation_request_state&, plan_data&);
