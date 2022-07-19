@@ -13,6 +13,7 @@
 
 #include "cluster/commands.h"
 #include "cluster/non_replicable_topics_frontend.h"
+#include "cluster/probed_topic_metadata.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/limits.h"
@@ -51,7 +52,7 @@ public:
 
     using underlying_t = absl::flat_hash_map<
       model::topic_namespace,
-      topic_metadata,
+      probed_topic_metadata,
       model::topic_namespace_hash,
       model::topic_namespace_eq>;
     using hierarchy_t = absl::node_hash_map<

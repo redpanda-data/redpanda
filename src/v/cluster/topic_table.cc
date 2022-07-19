@@ -33,9 +33,8 @@ topic_table::transform_topics(Func&& f) const {
       std::cbegin(_topics),
       std::cend(_topics),
       std::back_inserter(ret),
-      [f = std::forward<Func>(f)](
-        const std::pair<model::topic_namespace, topic_metadata>& p) {
-          return f(p.second);
+      [f = std::forward<Func>(f)](const auto& p) {
+          return f(p.second.get_topic_metadata());
       });
     return ret;
 }
@@ -59,10 +58,11 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
           cmd.value.cfg.properties.remote_topic_properties->remote_revision)
                                                          : std::nullopt;
 
-    _topics.insert(
-      {cmd.key,
-       topic_metadata(
-         std::move(cmd.value), model::revision_id(offset()), remote_revision)});
+    _topics.emplace(
+      cmd.key,
+      topic_metadata(
+        std::move(cmd.value), model::revision_id(offset()), remote_revision));
+
     notify_waiters();
     return ss::make_ready_future<std::error_code>(errc::success);
 }
@@ -553,10 +553,11 @@ topic_table::apply(create_non_replicable_topic_cmd cmd, model::offset o) {
           success,
           "Duplicate non_replicable_topic detected when it shouldn't exist");
     }
-    _topics.insert(
-      {new_non_rep_topic,
-       topic_metadata(
-         std::move(cfg), std::move(p_as), model::revision_id(o()), source.tp)});
+
+    _topics.emplace(
+      new_non_rep_topic,
+      topic_metadata(
+        std::move(cfg), std::move(p_as), model::revision_id(o()), source.tp));
     notify_waiters();
     co_return make_error_code(errc::success);
 }
@@ -633,14 +634,14 @@ size_t topic_table::all_topics_count() const { return _topics.size(); }
 std::optional<topic_metadata>
 topic_table::get_topic_metadata(model::topic_namespace_view tp) const {
     if (auto it = _topics.find(tp); it != _topics.end()) {
-        return it->second;
+        return it->second.get_topic_metadata();
     }
     return {};
 }
 std::optional<std::reference_wrapper<const topic_metadata>>
 topic_table::get_topic_metadata_ref(model::topic_namespace_view tp) const {
     if (auto it = _topics.find(tp); it != _topics.end()) {
-        return it->second;
+        return it->second.get_topic_metadata();
     }
     return {};
 }
