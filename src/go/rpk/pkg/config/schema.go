@@ -61,6 +61,7 @@ type RedpandaConfig struct {
 	AdvertisedRPCAPI           *SocketAddress         `yaml:"advertised_rpc_api,omitempty" json:"advertised_rpc_api,omitempty"`
 	AdvertisedKafkaAPI         []NamedSocketAddress   `yaml:"advertised_kafka_api,omitempty" json:"advertised_kafka_api,omitempty"`
 	DeveloperMode              bool                   `yaml:"developer_mode" json:"developer_mode"`
+	AggregateMetrics           bool                   `yaml:"aggregate_metrics,omitempty" json:"aggregate_metrics,omitempty"`
 	Other                      map[string]interface{} `yaml:",inline"`
 }
 

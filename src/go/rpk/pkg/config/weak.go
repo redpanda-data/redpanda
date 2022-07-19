@@ -322,6 +322,7 @@ func (rpc *RedpandaConfig) UnmarshalYAML(n *yaml.Node) error {
 		AdvertisedRPCAPI           *SocketAddress         `yaml:"advertised_rpc_api"`
 		AdvertisedKafkaAPI         namedSocketAddresses   `yaml:"advertised_kafka_api"`
 		DeveloperMode              weakBool               `yaml:"developer_mode"`
+		AggregateMetrics           weakBool               `yaml:"aggregate_metrics"`
 		Other                      map[string]interface{} `yaml:",inline"`
 	}
 
@@ -345,6 +346,7 @@ func (rpc *RedpandaConfig) UnmarshalYAML(n *yaml.Node) error {
 	rpc.AdvertisedRPCAPI = internal.AdvertisedRPCAPI
 	rpc.AdvertisedKafkaAPI = internal.AdvertisedKafkaAPI
 	rpc.DeveloperMode = bool(internal.DeveloperMode)
+	rpc.AggregateMetrics = bool(internal.AggregateMetrics)
 	rpc.Other = internal.Other
 	return nil
 }

@@ -786,6 +786,7 @@ redpanda:
   - address: 192.168.0.1
     port: 33145
   rack: "rack-id"
+  aggregate_metrics: true
 pandaproxy:
   pandaproxy_api:
   - address: "0.0.0.0"
@@ -898,6 +899,7 @@ rpk:
 					SeedServers: []SeedServer{
 						{SocketAddress{"192.168.0.1", 33145}},
 					},
+					AggregateMetrics: true,
 					Other: map[string]interface{}{
 						"enable_admin_api": true,
 					},
@@ -1021,6 +1023,7 @@ redpanda:
   - address: 192.168.0.1
     port: 33145
   rack: "rack-id"
+  aggregate_metrics: "true"
 pandaproxy:
   pandaproxy_api:
   - address: "0.0.0.0"
@@ -1134,6 +1137,7 @@ rpk:
 						{SocketAddress{"192.168.0.1", 33145}},
 						{SocketAddress{"192.168.0.1", 33145}},
 					},
+					AggregateMetrics: true,
 					Other: map[string]interface{}{
 						"enable_admin_api": true,
 					},
