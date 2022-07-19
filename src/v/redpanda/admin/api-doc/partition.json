@@ -470,6 +470,28 @@
                     "description": "Reconfiguration status"
                 }
             }
+        },
+        "partition_result": {
+            "id": "partition_result",
+            "description": "Partition result",
+            "properties": {
+                "ns": {
+                    "type": "string",
+                    "description": "Namespace"
+                },
+                "topic": {
+                    "type": "string",
+                    "description": "Topic"
+                },
+                "partition": {
+                    "type": "long",
+                    "description": "Partition id"
+                },
+                "result": {
+                    "type": "string",
+                    "description": "Status of operation"
+                }
+            }
         }
     }
 }

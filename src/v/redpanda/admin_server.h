@@ -176,6 +176,9 @@ private:
     ss::future<ss::httpd::redirect_exception>
     redirect_to_leader(ss::httpd::request& req, model::ntp const& ntp) const;
 
+    ss::future<ss::json::json_return_type> cancel_node_partition_moves(
+      ss::httpd::request& req, cluster::partition_move_direction direction);
+
     struct level_reset {
         using time_point = ss::timer<>::clock::time_point;
 

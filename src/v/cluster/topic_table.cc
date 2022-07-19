@@ -203,14 +203,14 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
      * Update partition replica revisions. Assign new revision to added replicas
      * and erase replicas which are removed from replica set
      */
-    auto added_replicas = subtract_replica_sets(
+    auto added_replicas = subtract_replica_sets_by_node_id(
       current_assignment_it->replicas, previous_assignment.replicas);
 
     for (auto& r : added_replicas) {
         revisions_it->second[r.node_id] = model::revision_id(o);
     }
 
-    auto removed_replicas = subtract_replica_sets(
+    auto removed_replicas = subtract_replica_sets_by_node_id(
       previous_assignment.replicas, current_assignment_it->replicas);
 
     for (auto& removed : removed_replicas) {
@@ -772,6 +772,28 @@ topic_table::get_previous_replica_set(const model::ntp& ntp) const {
         return it->second.previous_replicas;
     }
     return std::nullopt;
+}
+
+std::vector<model::ntp>
+topic_table::all_ntps_moving_per_node(model::node_id node) const {
+    std::vector<model::ntp> ret;
+
+    for (const auto& [ntp, state] : _updates_in_progress) {
+        auto current_assignment = get_partition_assignment(ntp);
+        if (unlikely(!current_assignment)) {
+            continue;
+        }
+        const auto in_previous = contains_node(state.previous_replicas, node);
+        const auto in_current = contains_node(
+          current_assignment->replicas, node);
+
+        if ((in_previous && in_current) || (!in_previous && !in_current)) {
+            continue;
+        }
+
+        ret.push_back(ntp);
+    }
+    return ret;
 }
 
 std::vector<model::ntp>

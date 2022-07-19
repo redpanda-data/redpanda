@@ -24,6 +24,7 @@
 
 #include <seastar/core/sharded.hh>
 
+#include <system_error>
 #include <utility>
 
 namespace detail {
@@ -272,6 +273,29 @@ inline std::vector<model::broker_shard> subtract_replica_sets(
     return ret;
 }
 
+/**
+ * Subtracts second replica set from the first one. Result contains only brokers
+ * that node_ids are present in the first list but not the other one
+ */
+inline std::vector<model::broker_shard> subtract_replica_sets_by_node_id(
+  const std::vector<model::broker_shard>& lhs,
+  const std::vector<model::broker_shard>& rhs) {
+    std::vector<model::broker_shard> ret;
+    std::copy_if(
+      lhs.begin(),
+      lhs.end(),
+      std::back_inserter(ret),
+      [&rhs](const model::broker_shard& lhs_bs) {
+          return std::find_if(
+                   rhs.begin(),
+                   rhs.end(),
+                   [&lhs_bs](const model::broker_shard& rhs_bs) {
+                       return rhs_bs.node_id == lhs_bs.node_id;
+                   })
+                 == rhs.end();
+      });
+    return ret;
+}
 // check if replica set contains a node
 inline bool contains_node(
   const std::vector<model::broker_shard>& replicas, model::node_id id) {
@@ -281,4 +305,7 @@ inline bool contains_node(
              [id](const model::broker_shard& bs) { return bs.node_id == id; })
            != replicas.end();
 }
+
+cluster::errc map_update_interruption_error_code(std::error_code);
+
 } // namespace cluster

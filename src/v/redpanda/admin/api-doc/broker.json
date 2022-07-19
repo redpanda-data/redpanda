@@ -146,6 +146,28 @@
             ]
         },
         {
+            "path": "/v1/brokers/{id}/cancel_partition_moves",
+            "operations": [
+                {
+                    "method": "POST",
+                    "nickname": "cancel_partition_moves",
+                    "summary": "Cancel all partitions movement transferring replicas either to or from given node",
+                    "type": "void",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "id",
+                            "in": "path",
+                            "required": true,
+                            "type": "long"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
             "path": "/v1/maintenance",
             "operations": [
                 {

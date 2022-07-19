@@ -550,4 +550,53 @@ ss::future<feature_barrier_response> service::feature_barrier(
       .entered = result.entered, .complete = result.complete};
 }
 
+ss::future<cancel_partition_movements_reply>
+service::cancel_all_partition_movements(
+  cancel_all_partition_movements_request&& req, rpc::streaming_context&) {
+    return ss::with_scheduling_group(get_scheduling_group(), [this, req]() {
+        return do_cancel_all_partition_movements(req);
+    });
+}
+ss::future<cancel_partition_movements_reply>
+service::cancel_node_partition_movements(
+  cancel_node_partition_movements_request&& req, rpc::streaming_context&) {
+    return ss::with_scheduling_group(get_scheduling_group(), [this, req]() {
+        return do_cancel_node_partition_movements(req);
+    });
+}
+
+ss::future<cancel_partition_movements_reply>
+service::do_cancel_all_partition_movements(
+  cancel_all_partition_movements_request req) {
+    auto ret
+      = co_await _topics_frontend.local().cancel_moving_all_partition_replicas(
+        default_move_interruption_timeout + model::timeout_clock::now());
+
+    if (ret.has_error()) {
+        co_return cancel_partition_movements_reply{
+          .general_error = map_update_interruption_error_code(ret.error())};
+    }
+    co_return cancel_partition_movements_reply{
+      .general_error = errc::success,
+      .partition_results = std::move(ret.value())};
+}
+
+ss::future<cancel_partition_movements_reply>
+service::do_cancel_node_partition_movements(
+  cancel_node_partition_movements_request req) {
+    auto ret
+      = co_await _topics_frontend.local().cancel_moving_partition_replicas_node(
+        req.node_id,
+        req.direction,
+        default_move_interruption_timeout + model::timeout_clock::now());
+
+    if (ret.has_error()) {
+        co_return cancel_partition_movements_reply{
+          .general_error = map_update_interruption_error_code(ret.error())};
+    }
+    co_return cancel_partition_movements_reply{
+      .general_error = errc::success,
+      .partition_results = std::move(ret.value())};
+}
+
 } // namespace cluster

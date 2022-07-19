@@ -36,6 +36,21 @@
                     "parameters": []
                 }
             ]
+        },
+        {
+            "path": "/v1/cluster/cancel_reconfigurations",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Cancel all partition reconfigurations",
+                    "type": "cancel_all_partitions_reconfigurations",
+                    "nickname": "cancel_all_partitions_reconfigurations",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
         }
     ],
     "models": {

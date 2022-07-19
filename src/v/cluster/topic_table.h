@@ -266,6 +266,11 @@ public:
      */
     std::vector<model::ntp> ntps_moving_from_node(model::node_id) const;
 
+    /**
+     * Lists all ntps moving either from or to a node
+     */
+    std::vector<model::ntp> all_ntps_moving_per_node(model::node_id) const;
+
     std::vector<model::ntp> all_updates_in_progress() const;
 
 private:

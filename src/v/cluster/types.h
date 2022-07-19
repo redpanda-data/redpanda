@@ -2290,6 +2290,59 @@ private:
     std::optional<model::initial_revision_id> _remote_revision;
 };
 
+struct move_cancellation_result
+  : serde::envelope<move_cancellation_result, serde::version<0>> {
+    move_cancellation_result() = default;
+
+    move_cancellation_result(model::ntp ntp, cluster::errc ec)
+      : ntp(std::move(ntp))
+      , result(ec) {}
+
+    auto serde_fields() { return std::tie(ntp, result); }
+
+    friend bool
+    operator==(const move_cancellation_result&, const move_cancellation_result&)
+      = default;
+
+    model::ntp ntp;
+    cluster::errc result;
+};
+
+enum class partition_move_direction { to_node, from_node, all };
+
+struct cancel_all_partition_movements_request
+  : serde::envelope<cancel_all_partition_movements_request, serde::version<0>> {
+    cancel_all_partition_movements_request() = default;
+
+    auto serde_fields() { return std::tie(); }
+};
+struct cancel_node_partition_movements_request
+  : serde::
+      envelope<cancel_node_partition_movements_request, serde::version<0>> {
+    model::node_id node_id;
+    partition_move_direction direction;
+
+    auto serde_fields() { return std::tie(node_id, direction); }
+
+    friend bool operator==(
+      const cancel_node_partition_movements_request&,
+      const cancel_node_partition_movements_request&)
+      = default;
+};
+
+struct cancel_partition_movements_reply
+  : serde::envelope<cancel_partition_movements_reply, serde::version<0>> {
+    friend bool operator==(
+      const cancel_partition_movements_reply&,
+      const cancel_partition_movements_reply&)
+      = default;
+
+    auto serde_fields() { return std::tie(general_error, partition_results); }
+
+    errc general_error;
+    std::vector<move_cancellation_result> partition_results;
+};
+
 } // namespace cluster
 namespace std {
 template<>
@@ -3172,6 +3225,59 @@ struct adl<cluster::cancel_moving_partition_replicas_cmd_data> {
     cluster::cancel_moving_partition_replicas_cmd_data from(iobuf_parser& in) {
         auto force = adl<cluster::force_abort_update>{}.from(in);
         return cluster::cancel_moving_partition_replicas_cmd_data(force);
+    }
+};
+
+template<>
+struct adl<cluster::move_cancellation_result> {
+    void to(iobuf& out, cluster::move_cancellation_result&& r) {
+        serialize(out, std::move(r.ntp), r.result);
+    }
+    cluster::move_cancellation_result from(iobuf_parser& in) {
+        auto ntp = adl<model::ntp>{}.from(in);
+        auto ec = adl<cluster::errc>{}.from(in);
+        return {std::move(ntp), ec};
+    }
+};
+
+template<>
+struct adl<cluster::cancel_node_partition_movements_request> {
+    void to(iobuf& out, cluster::cancel_node_partition_movements_request&& r) {
+        serialize(out, r.node_id, r.direction);
+    }
+
+    cluster::cancel_node_partition_movements_request from(iobuf_parser& in) {
+        auto node_id = adl<model::node_id>{}.from(in);
+        auto dir = adl<cluster::partition_move_direction>{}.from(in);
+        return cluster::cancel_node_partition_movements_request{
+          .node_id = node_id, .direction = dir};
+    }
+};
+
+template<>
+struct adl<cluster::cancel_all_partition_movements_request> {
+    void to(iobuf&, cluster::cancel_all_partition_movements_request&&) {}
+
+    cluster::cancel_all_partition_movements_request from(iobuf_parser&) {
+        return cluster::cancel_all_partition_movements_request{};
+    }
+};
+
+template<>
+struct adl<cluster::cancel_partition_movements_reply> {
+    void to(iobuf& out, cluster::cancel_partition_movements_reply&& r) {
+        serialize(out, r.general_error, std::move(r.partition_results));
+    }
+
+    cluster::cancel_partition_movements_reply from(iobuf_parser& in) {
+        auto general_error = adl<cluster::errc>{}.from(in);
+        auto partition_results
+          = adl<std::vector<cluster::move_cancellation_result>>{}.from(in);
+
+        return cluster::cancel_partition_movements_reply{
+          .general_error = general_error,
+          .partition_results = std::move(partition_results),
+        };
     }
 };
 } // namespace reflection

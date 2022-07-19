@@ -47,6 +47,7 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/record.h"
+#include "model/timeout_clock.h"
 #include "net/dns.h"
 #include "raft/types.h"
 #include "redpanda/admin/api-doc/broker.json.h"
@@ -532,6 +533,33 @@ bool need_redirect_to_leader(
 
     return leader_id_opt.value() != config::node().node_id();
 }
+
+model::node_id parse_broker_id(const ss::httpd::request& req) {
+    try {
+        return model::node_id(
+          boost::lexical_cast<model::node_id::type>(req.param["id"]));
+    } catch (...) {
+        throw ss::httpd::bad_param_exception(
+          fmt::format("Broker id: {}, must be an integer", req.param["id"]));
+    }
+}
+
+ss::future<std::vector<ss::httpd::partition_json::partition_result>>
+map_partition_results(std::vector<cluster::move_cancellation_result> results) {
+    std::vector<ss::httpd::partition_json::partition_result> ret;
+    ret.reserve(results.size());
+
+    for (cluster::move_cancellation_result& r : results) {
+        ss::httpd::partition_json::partition_result result;
+        result.ns = std::move(r.ntp.ns)();
+        result.topic = std::move(r.ntp.tp.topic)();
+        result.partition = r.ntp.tp.partition;
+        result.result = fmt::format("{}", r.result);
+        ret.push_back(std::move(result));
+        co_await ss::maybe_yield();
+    }
+    co_return ret;
+}
 } // namespace
 
 /**
@@ -622,6 +650,24 @@ ss::future<> admin_server::throw_on_error(
         throw ss::httpd::server_error_exception(
           fmt::format("Unexpected error: {}", ec.message()));
     }
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::cancel_node_partition_moves(
+  ss::httpd::request& req, cluster::partition_move_direction direction) {
+    auto node_id = parse_broker_id(req);
+    auto res = co_await _controller->get_topics_frontend()
+                 .local()
+                 .cancel_moving_partition_replicas_node(
+                   node_id, direction, model::timeout_clock::now() + 5s);
+
+    if (res.has_error()) {
+        co_await throw_on_error(
+          req, res.error(), model::controller_ntp, node_id);
+    }
+
+    co_return ss::json::json_return_type(
+      co_await map_partition_results(std::move(res.value())));
 }
 
 bool str_to_bool(std::string_view s) {
@@ -1616,16 +1662,6 @@ void admin_server::register_features_routes() {
       });
 }
 
-model::node_id parse_broker_id(const ss::httpd::request& req) {
-    try {
-        return model::node_id(
-          boost::lexical_cast<model::node_id::type>(req.param["id"]));
-    } catch (...) {
-        throw ss::httpd::bad_param_exception(
-          fmt::format("Broker id: {}, must be an integer", req.param["id"]));
-    }
-}
-
 static ss::httpd::broker_json::maintenance_status fill_maintenance_status(
   const std::optional<cluster::drain_manager::drain_status>& status) {
     ss::httpd::broker_json::maintenance_status ret;
@@ -1938,6 +1974,12 @@ void admin_server::register_broker_routes() {
               }
           }
           co_return res;
+      });
+    register_route<superuser>(
+      ss::httpd::broker_json::cancel_partition_moves,
+      [this](std::unique_ptr<ss::httpd::request> req) {
+          return cancel_node_partition_moves(
+            *req, cluster::partition_move_direction::all);
       });
 }
 
@@ -2892,6 +2934,26 @@ void admin_server::register_cluster_routes() {
                                               .size();
 
           co_return ss::json::json_return_type(ret);
+      });
+
+    register_route<superuser>(
+      ss::httpd::cluster_json::cancel_all_partitions_reconfigurations,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          vlog(
+            logger.info,
+            "Requested cancellation of all ongoing partition movements");
+
+          auto res = co_await _controller->get_topics_frontend()
+                       .local()
+                       .cancel_moving_all_partition_replicas(
+                         model::timeout_clock::now() + 5s);
+          if (res.has_error()) {
+              co_await throw_on_error(*req, res.error(), model::controller_ntp);
+          }
+
+          co_return ss::json::json_return_type(
+            co_await map_partition_results(std::move(res.value())));
       });
 }
 

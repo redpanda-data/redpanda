@@ -455,6 +455,22 @@ class Admin:
 
         return self._request('get', path, node=node).json()
 
+    def cancel_all_reconfigurations(self, node=None):
+        """
+        Cancel all pending reconfigurations
+        """
+        path = "cluster/cancel_reconfigurations"
+
+        return self._request('post', path, node=node).json()
+
+    def cancel_all_node_reconfigurations(self, target_id, node=None):
+        """
+        Cancel all reconfigurations moving partition replicas from node
+        """
+        path = f"brokers/{target_id}/cancel_partition_moves"
+
+        return self._request('post', path, node=node).json()
+
     def get_partitions(self,
                        topic=None,
                        partition=None,
