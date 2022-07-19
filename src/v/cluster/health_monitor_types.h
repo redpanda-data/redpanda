@@ -225,10 +225,18 @@ struct cluster_health_overview {
 
     // additional human readable information that will make debugging cluster
     // errors easier
-    // The ID of the controller node, or nullopt if no controller is currently elected.
+
+    // Zero or more "unhealthy" reasons, which are terse human-readable strings
+    // indicating one reason the cluster is unhealthy (there may be several).
+    // is_healthy is true iff this list is empty (effectively, is_healthy is
+    // redundnat but it's there for backwards compat and convenience).
+    std::vector<ss::sstring> unhealthy_reasons;
+
+    // The ID of the controller node, or nullopt if no controller is currently
+    // elected.
     std::optional<model::node_id> controller_id;
-    // All known nodes in the cluster, including nodes that have joined in the past
-    // but are not curently up.
+    // All known nodes in the cluster, including nodes that have joined in the
+    // past but are not curently up.
     std::vector<model::node_id> all_nodes;
     // A list of known nodes which are down from the point of view of the health
     // subsystem.

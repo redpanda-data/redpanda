@@ -845,9 +845,33 @@ health_monitor_backend::get_cluster_health_overview(
 
     ret.controller_id = _raft0->get_leader_id();
 
-    ret.is_healthy = ret.nodes_down.empty() && ret.leaderless_partitions.empty()
-                     && ret.under_replicated_partitions.empty()
-                     && ret.controller_id && !ec;
+    // cluster is not healthy if some nodes are down
+    if (!ret.nodes_down.empty()) {
+        ret.unhealthy_reasons.emplace_back("nodes_down");
+    }
+
+    // cluster is not healthy if some partitions do not have leaders
+    if (!ret.leaderless_partitions.empty()) {
+        ret.unhealthy_reasons.emplace_back("leaderless_partitions");
+    }
+
+    // cluster is not healthy if some partitions have fewer replicas than their
+    // configured amount
+    if (!ret.under_replicated_partitions.empty()) {
+        ret.unhealthy_reasons.emplace_back("under_replicated_partitions");
+    }
+
+    // cluster is not healthy if no controller is elected
+    if (!ret.controller_id) {
+        ret.unhealthy_reasons.emplace_back("no_elected_controller");
+    }
+
+    // cluster is not healthy if the health report can't be obtained
+    if (ec) {
+        ret.unhealthy_reasons.emplace_back("no_health_report");
+    }
+
+    ret.is_healthy = ret.unhealthy_reasons.empty();
 
     ret.bytes_in_cloud_storage = _bytes_in_cloud_storage;
 
