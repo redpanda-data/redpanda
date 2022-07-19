@@ -10,28 +10,64 @@
 package v1alpha1
 
 import (
+	"github.com/cloudhut/common/logging"
+	"github.com/cloudhut/common/rest"
 	"github.com/redpanda-data/console/backend/pkg/connect"
 	"github.com/redpanda-data/console/backend/pkg/console"
-	"github.com/redpanda-data/console/backend/pkg/kafka"
+	"github.com/redpanda-data/console/backend/pkg/msgpack"
+	"github.com/redpanda-data/console/backend/pkg/proto"
+	v1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // ConsoleSpec defines the desired state of Console
 type ConsoleSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	Console console.Config `json:"console"`
-	Connect connect.Config `json:"connect"`
-	Kafka   kafka.Config   `json:"kafka"`
+	Console console.Config  `json:"console"`
+	Connect connect.Config  `json:"connect"`
+	REST    rest.Config     `json:"server"`
+	Logger  *logging.Config `json:"logger,omitempty"`
+
+	MessagePack msgpack.Config `json:"messagePack"`
+	Protobuf    proto.Config   `json:"protobuf"`
+
+	// ClusterKeyRef references to Cluster Custom Resource which will
+	// set kafka.Config configuration in Redpanda console
+	ClusterKeyRef corev1.ObjectReference `json:"clusterKeyRef"`
+	ClientID      string                 `json:"clientID,omitempty"`
+
+	Deployment Deployment `json:"deployment"`
+
+	Image   string `json:"image"`
+	Version string `json:"version"`
+}
+
+type Deployment struct {
+	Replicas                  *int32                            `json:"replicas,omitempty"`
+	DeploymentStrategy        *v1.DeploymentStrategy            `json:"strategy,omitempty"`
+	ProgressDeadlineSeconds   *int32                            `json:"progressDeadlineSeconds,omitempty"`
+	DNSPolicy                 *corev1.DNSPolicy                 `json:"dnsPolicy,omitempty"`
+	NodeSelector              map[string]string                 `json:"nodeSelector,omitempty"`
+	SecurityContext           *corev1.PodSecurityContext        `json:"securityContext,omitempty"`
+	ImagePullSecrets          []corev1.LocalObjectReference     `json:"imagePullSecrets,omitempty"`
+	Affinity                  *corev1.Affinity                  `json:"affinity,omitempty"`
+	SchedulerName             string                            `json:"schedulerName,omitempty"`
+	Tolerations               []corev1.Toleration               `json:"tolerations,omitempty"`
+	PriorityClassName         string                            `json:"priorityClassName,omitempty"`
+	Priority                  *int32                            `json:"priority,omitempty"`
+	DNSConfig                 *corev1.PodDNSConfig              `json:"dnsConfig,omitempty"`
+	RuntimeClassName          *string                           `json:"runtimeClassName,omitempty"`
+	Overhead                  corev1.ResourceList               `json:"overhead,omitempty"`
+	TopologySpreadConstraints []corev1.TopologySpreadConstraint `json:"topologySpreadConstraints,omitempty"`
+	SetHostnameAsFQDN         *bool                             `json:"setHostnameAsFQDN,omitempty"`
+	ResourceRequirements      corev1.ResourceRequirements       `json:"resources,omitempty"`
+	ImagePullPolicy           corev1.PullPolicy                 `json:"imagePullPolicy,omitempty"`
+	LivenessProbe             *corev1.Probe                     `json:"livenessProbe,omitempty"`
+	ReadinessProbe            *corev1.Probe                     `json:"readinessProbe,omitempty"`
 }
 
 // ConsoleStatus defines the observed state of Console
 type ConsoleStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
 }
 
 //+kubebuilder:object:root=true

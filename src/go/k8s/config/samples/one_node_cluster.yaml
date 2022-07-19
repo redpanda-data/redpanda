@@ -3,9 +3,11 @@ kind: Cluster
 metadata:
   name: one-node-cluster
 spec:
+  annotations:
+    linkerd.io/inject: enabled
   image: "vectorized/redpanda"
   version: "latest"
-  replicas: 1
+  replicas: 3
   resources:
     requests:
       cpu: 1
