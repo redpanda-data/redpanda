@@ -13,33 +13,21 @@
 
 namespace serde {
 
-#if defined(_MSC_VER)
-#define SERDE_SIG __FUNCSIG__
-#elif defined(__clang__) || defined(__GNUC__)
-#define SERDE_SIG __PRETTY_FUNCTION__
-#else
-#error unsupported compiler
-#endif
-
 template<typename T>
-constexpr std::string_view type_str() {
+consteval std::string_view type_str() {
 #if defined(__clang__)
     constexpr std::string_view prefix
       = "std::string_view serde::type_str() [T = ";
     constexpr std::string_view suffix = "]";
-#elif defined(_MSC_VER)
+#elif defined(__GNUC__)
     constexpr std::string_view prefix
-      = "class std::basic_string_view<char,struct std::char_traits<char> > "
-        "__cdecl serde::type_str<";
-    constexpr std::string_view suffix = ">(void)";
-#else
-    constexpr std::string_view prefix
-      = "constexpr std::string_view serde::type_str() [with T = ";
+      = "consteval std::string_view serde::type_str() [with T = ";
     constexpr std::string_view suffix
       = "; std::string_view = std::basic_string_view<char>]";
+#else
+#error unsupported compiler
 #endif
-
-    auto sig = std::string_view{SERDE_SIG};
+    auto sig = std::string_view{__PRETTY_FUNCTION__};
     sig.remove_prefix(prefix.size());
     sig.remove_suffix(suffix.size());
     return sig;
