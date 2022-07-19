@@ -27,13 +27,14 @@ class PartitionBalancerTest(EndToEndTest):
             ctx,
             *args,
             extra_rp_conf={
-                'partition_autobalancing_mode': 'continuous',
-                'partition_autobalancing_node_availability_timeout_sec':
+                "partition_autobalancing_mode": "continuous",
+                "partition_autobalancing_node_availability_timeout_sec":
                 self.NODE_AVAILABILITY_TIMEOUT,
-                'partition_autobalancing_tick_interval_ms': 5000,
-                'raft_learner_recovery_rate': 1_000_000,
+                "partition_autobalancing_tick_interval_ms": 5000,
+                "raft_learner_recovery_rate": 1_000_000,
             },
-            **kwargs)
+            **kwargs,
+        )
 
     def node2partition_count(self):
         topics = [self.topic]
@@ -53,7 +54,8 @@ class PartitionBalancerTest(EndToEndTest):
                 all_partitions_ready,
                 timeout_sec=120,
                 backoff_sec=1,
-                err_msg="failed to wait until all partitions have leaders")
+                err_msg="failed to wait until all partitions have leaders",
+            )
 
             for p in partitions:
                 for r in p.replicas:
@@ -69,22 +71,26 @@ class PartitionBalancerTest(EndToEndTest):
             req_start = time.time()
 
             status = admin.get_partition_balancer_status(timeout=1)
-            self.logger.info(f'partition balancer status: {status}')
+            self.logger.info(f"partition balancer status: {status}")
 
-            if 'seconds_since_last_tick' not in status:
+            if "seconds_since_last_tick" not in status:
                 return False
-            return (req_start - status['seconds_since_last_tick'] - 1 > start
-                    and predicate(status), status)
+            return (
+                req_start - status["seconds_since_last_tick"] - 1 > start
+                and predicate(status),
+                status,
+            )
 
         return wait_until_result(
             check,
             timeout_sec=timeout_sec,
             backoff_sec=2,
-            err_msg="failed to wait until status condition")
+            err_msg="failed to wait until status condition",
+        )
 
     def wait_until_ready(self, timeout_sec=120):
         return self.wait_until_status(
-            lambda status: status['status'] == 'ready',
+            lambda status: status["status"] == "ready",
             timeout_sec=timeout_sec)
 
     @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
@@ -106,8 +112,9 @@ class PartitionBalancerTest(EndToEndTest):
         for n in range(10):
             node = self.redpanda.nodes[n % 5]
             failure_types = [
-                FailureSpec.FAILURE_KILL, FailureSpec.FAILURE_TERMINATE,
-                FailureSpec.FAILURE_SUSPEND
+                FailureSpec.FAILURE_KILL,
+                FailureSpec.FAILURE_TERMINATE,
+                FailureSpec.FAILURE_SUSPEND,
             ]
             failure = FailureSpec(random.choice(failure_types), node)
             f_injector._start_func(failure.type)(failure.node)
@@ -126,13 +133,13 @@ class PartitionBalancerTest(EndToEndTest):
                 self.wait_until_ready()
 
                 node2pc = self.node2partition_count()
-                self.logger.info(f'partition counts after: {node2pc}')
+                self.logger.info(f"partition counts after: {node2pc}")
 
                 assert sum(node2pc.values()) == total_replicas
                 assert self.redpanda.idx(node) not in node2pc
             else:
-                self.wait_until_status(lambda s: s['status'] == 'in_progress'
-                                       or s['status'] == 'ready')
+                self.wait_until_status(lambda s: s["status"] == "in_progress"
+                                       or s["status"] == "ready")
 
             prev_failure = failure
 
