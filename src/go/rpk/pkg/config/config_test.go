@@ -257,6 +257,7 @@ tune_cpu: true`,
 				require.Exactly(st, expected, c.Redpanda.AdvertisedKafkaAPI)
 			},
 		},
+
 		{
 			name:  "set value of a slice",
 			key:   "redpanda.admin.port",
@@ -265,6 +266,24 @@ tune_cpu: true`,
 				require.Exactly(st, 9641, c.Redpanda.AdminAPI[0].Port)
 			},
 		},
+
+		{
+			name:  "set value of a slice with an index",
+			key:   "redpanda.admin[0].port",
+			value: "9641",
+			check: func(st *testing.T, c *Config) {
+				require.Exactly(st, 9641, c.Redpanda.AdminAPI[0].Port)
+			},
+		},
+		{
+			name:  "set value of a slice with an index at end extends slice",
+			key:   "redpanda.admin[1].port",
+			value: "9648",
+			check: func(st *testing.T, c *Config) {
+				require.Exactly(st, 9648, c.Redpanda.AdminAPI[1].Port)
+			},
+		},
+
 		{
 			name:   "set slice single values",
 			key:    "redpanda.seed_servers.host.address",
@@ -274,6 +293,7 @@ tune_cpu: true`,
 				require.Exactly(st, "foo", c.Redpanda.SeedServers[0].Host.Address)
 			},
 		},
+
 		{
 			name:   "set slice object",
 			key:    "redpanda.seed_servers.host",
@@ -284,6 +304,37 @@ tune_cpu: true`,
 				require.Exactly(st, 80, c.Redpanda.SeedServers[0].Host.Port)
 			},
 		},
+
+		{
+			name:   "set slice with object defaults to index 0",
+			key:    "redpanda.advertised_kafka_api",
+			value:  `{address: 3.250.158.1, port: 9092}`,
+			format: "yaml",
+			check: func(st *testing.T, c *Config) {
+				require.Exactly(st, "3.250.158.1", c.Redpanda.AdvertisedKafkaAPI[0].Address)
+				require.Exactly(st, 9092, c.Redpanda.AdvertisedKafkaAPI[0].Port)
+			},
+		},
+
+		{
+			name:   "slices with one element works",
+			key:    "rpk.kafka_api.brokers",
+			value:  `127.0.0.0:9092`,
+			format: "yaml",
+			check: func(st *testing.T, c *Config) {
+				require.Exactly(st, "127.0.0.0:9092", c.Rpk.KafkaAPI.Brokers[0])
+			},
+		},
+		{
+			name:   "slices with one element works with indexing",
+			key:    "rpk.kafka_api.brokers[0]",
+			value:  `127.0.0.0:9092`,
+			format: "yaml",
+			check: func(st *testing.T, c *Config) {
+				require.Exactly(st, "127.0.0.0:9092", c.Rpk.KafkaAPI.Brokers[0])
+			},
+		},
+
 		{
 			name:      "fail if the value isn't well formatted (json)",
 			key:       "redpanda",
@@ -316,6 +367,31 @@ tune_cpu: true`,
 			name:      "fail if deep unrecognized value is passed",
 			key:       "redpanda.unrecognized.name",
 			value:     "foo",
+			expectErr: true,
+		},
+
+		{
+			name:      "invalid negative index",
+			key:       "redpanda.admin[-1].port",
+			value:     "9641",
+			expectErr: true,
+		},
+		{
+			name:      "invalid large index",
+			key:       "redpanda.admin[12310293812093823094801].port",
+			value:     "9641",
+			expectErr: true,
+		},
+		{
+			name:      "invalid out of bounds index",
+			key:       "redpanda.admin[2].port", // 0 is default, 1 is valid (extends by one), 2 is invalid
+			value:     "9641",
+			expectErr: true,
+		},
+		{
+			name:      "index into other (unknown) field",
+			key:       "redpanda.fiz[0]",
+			value:     "9641",
 			expectErr: true,
 		},
 	}
