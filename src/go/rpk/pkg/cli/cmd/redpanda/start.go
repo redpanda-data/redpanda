@@ -613,6 +613,7 @@ func buildRedpandaFlags(
 		}
 		finalFlags[n] = fmt.Sprint(v)
 	}
+	finalFlags["foo"] = "bar"
 	return &rp.RedpandaArgs{
 		ConfigFilePath: conf.ConfigFile,
 		SeastarFlags:   finalFlags,
