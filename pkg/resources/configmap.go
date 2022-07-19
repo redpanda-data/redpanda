@@ -223,15 +223,15 @@ func (r *ConfigMapResource) CreateConfiguration(
 	cr := &cfg.NodeConfiguration.Redpanda
 
 	internalListener := r.pandaCluster.InternalListener()
-	cr.KafkaAPI = []config.NamedSocketAddress{} // we don't want to inherit default kafka port
-	cr.KafkaAPI = append(cr.KafkaAPI, config.NamedSocketAddress{
+	cr.KafkaAPI = []config.NamedAuthNSocketAddress{} // we don't want to inherit default kafka port
+	cr.KafkaAPI = append(cr.KafkaAPI, config.NamedAuthNSocketAddress{
 		Address: "0.0.0.0",
 		Port:    internalListener.Port,
 		Name:    InternalListenerName,
 	})
 
 	if r.pandaCluster.ExternalListener() != nil {
-		cr.KafkaAPI = append(cr.KafkaAPI, config.NamedSocketAddress{
+		cr.KafkaAPI = append(cr.KafkaAPI, config.NamedAuthNSocketAddress{
 			Address: "0.0.0.0",
 			Port:    calculateExternalPort(internalListener.Port, r.pandaCluster.ExternalListener().Port),
 			Name:    ExternalListenerName,
