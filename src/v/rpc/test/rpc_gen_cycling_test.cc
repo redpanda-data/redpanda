@@ -889,8 +889,8 @@ FIXTURE_TEST(oc_ns_adl_serde_no_upgrade, rpc_integration_fixture) {
     start_server();
 
     rpc::transport t(client_config());
-    t.set_version(rpc::transport_version::v0);
     t.connect(model::no_timeout).get();
+    t.set_version(rpc::transport_version::v0); // connect resets version=v1
     auto stop = ss::defer([&t] { t.stop().get(); });
     auto client = echo::echo_client_protocol(t);
 
@@ -920,8 +920,8 @@ FIXTURE_TEST(oc_ns_adl_only_no_upgrade, rpc_integration_fixture) {
     start_server();
 
     rpc::transport t(client_config());
-    t.set_version(rpc::transport_version::v0);
     t.connect(model::no_timeout).get();
+    t.set_version(rpc::transport_version::v0); // connect resets version=v1
     auto stop = ss::defer([&t] { t.stop().get(); });
     auto client = echo::echo_client_protocol(t);
 

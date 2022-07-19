@@ -83,6 +83,7 @@ void transport::reset_state() {
     _correlation_idx = 0;
     _last_seq = sequence_t{0};
     _seq = sequence_t{0};
+    _version = transport_version::v1;
 }
 
 ss::future<>
