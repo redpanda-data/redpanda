@@ -212,12 +212,6 @@ void replicated_partition_probe::setup_public_metrics(const model::ntp& ntp) {
            topic_label(ntp.tp.topic()),
            partition_label(ntp.tp.partition())})
           .aggregate({sm::shard_label, partition_label}),
-        sm::make_gauge(
-          "replicas",
-          [this] { return _partition.raft()->get_follower_count(); },
-          sm::description("Number of replicas per topic"),
-          labels)
-          .aggregate({sm::shard_label, partition_label}),
       });
 }
 
