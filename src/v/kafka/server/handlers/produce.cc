@@ -306,6 +306,13 @@ static partition_produce_stages produce_topic_partition(
                       ntp,
                       source_shard);
                 }
+                if (partition->is_read_replica_mode_enabled()) {
+                    return finalize_request_with_error_code(
+                      error_code::invalid_topic_exception,
+                      std::move(dispatch),
+                      ntp,
+                      source_shard);
+                }
                 auto stages = partition_append(
                   ntp.tp.partition,
                   ss::make_lw_shared<replicated_partition>(
