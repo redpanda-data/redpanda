@@ -616,3 +616,58 @@ FIXTURE_TEST(test_lot_of_partitions, partition_balancer_planner_fixture) {
     BOOST_REQUIRE_EQUAL(node_3_counter, node_4_counter);
     BOOST_REQUIRE_EQUAL(node_4_counter, movement_batch_partitions_amount / 2);
 }
+
+/*
+ * 4 nodes; 1 topic; 1+1 node down
+ * Node 3 is down after planning
+ * Initial
+ *   node_0: partitions: 1; down: True; disk: unfilled;
+ *   node_1: partitions: 1; down: False; disk: unfilled;
+ *   node_2: partitions: 1; down: False; disk: unfilled;
+ *   node_3: partitions: 0; down: False; disk: unfilled;
+ * Expected
+ *   node_0: partitions: 1;
+ *   node_1: partitions: 1;
+ *   node_2: partitions: 1;
+ *   node_3: partitions: 0;
+ */
+FIXTURE_TEST(test_node_cancelation, partition_balancer_planner_fixture) {
+    vlog(logger.debug, "test_node_cancelation");
+    allocator_register_nodes(3);
+    create_topic("topic-1", 1, 3);
+    allocator_register_nodes(1);
+
+    auto hr = create_health_report();
+
+    std::set<size_t> unavailable_nodes = {0};
+    auto fm = create_follower_metrics(unavailable_nodes);
+
+    auto planner_result = planner.plan_reassignments(hr, fm);
+
+    BOOST_REQUIRE_EQUAL(planner_result.reassignments.size(), 1);
+
+    auto ntp = planner_result.reassignments.front().ntp;
+
+    std::unordered_set<model::node_id> expected_nodes(
+      {model::node_id(1), model::node_id(2), model::node_id(3)});
+
+    auto new_replicas = planner_result.reassignments.front()
+                          .allocation_units.get_assignments()
+                          .front()
+                          .replicas;
+    check_expected_assignments(new_replicas, expected_nodes);
+
+    for (auto& reassignment : planner_result.reassignments) {
+        move_partition_replicas(reassignment);
+    }
+
+    hr = create_health_report();
+
+    unavailable_nodes = {0, 3};
+    fm = create_follower_metrics(unavailable_nodes);
+
+    planner_result = planner.plan_reassignments(hr, fm);
+    BOOST_REQUIRE(planner_result.reassignments.size() == 0);
+    BOOST_REQUIRE(planner_result.cancellations.size() == 1);
+    BOOST_REQUIRE(planner_result.cancellations.front() == ntp);
+}

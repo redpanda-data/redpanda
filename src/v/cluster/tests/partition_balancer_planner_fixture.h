@@ -133,6 +133,22 @@ struct partition_balancer_planner_fixture {
         }
     }
 
+    cluster::move_partition_replicas_cmd make_move_partition_replicas_cmd(
+      model::ntp ntp, std::vector<model::broker_shard> replica_set) {
+        return cluster::move_partition_replicas_cmd(
+          std::move(ntp), std::move(replica_set));
+    }
+
+    void move_partition_replicas(cluster::ntp_reassignments& reassignment) {
+        auto cmd = make_move_partition_replicas_cmd(
+          reassignment.ntp,
+          reassignment.allocation_units.get_assignments().front().replicas);
+        auto res = workers.dispatcher
+                     .apply_update(serialize_cmd(std::move(cmd)).get())
+                     .get();
+        BOOST_REQUIRE_EQUAL(res, cluster::errc::success);
+    }
+
     std::vector<raft::follower_metrics>
     create_follower_metrics(const std::set<size_t>& unavailable_nodes = {}) {
         std::vector<raft::follower_metrics> metrics;
