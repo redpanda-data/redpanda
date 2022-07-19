@@ -99,12 +99,21 @@ using serde_size_t = uint16_t;
 using serde_size_t = uint32_t;
 #endif
 
+namespace detail {
+
+template<class T, template<class, size_t> class C>
+struct is_specialization_of_sized : std::false_type {};
+template<template<class, size_t> class C, class T, size_t N>
+struct is_specialization_of_sized<C<T, N>, C> : std::true_type {};
+template<typename T, template<class, size_t> class C>
+inline constexpr bool is_specialization_of_sized_v
+  = is_specialization_of_sized<T, C>::value;
+
+} // namespace detail
+
 template<typename T>
-struct is_fragmented_vector : std::false_type {};
-template<typename T, size_t S>
-struct is_fragmented_vector<fragmented_vector<T, S>> : std::true_type {};
-template<typename T>
-inline constexpr bool is_fragmented_vector_v = is_fragmented_vector<T>::value;
+concept is_fragmented_vector
+  = detail::is_specialization_of_sized_v<T, fragmented_vector>;
 
 template<typename T>
 concept is_std_unordered_map
@@ -136,7 +145,7 @@ inline constexpr auto const is_serde_compatible_v
     || is_absl_node_hash_set<T>
     || is_absl_node_hash_map<T>
     || is_std_unordered_map<T>
-    || is_fragmented_vector_v<T> || reflection::is_tristate<T> || std::is_same_v<T, ss::net::inet_address>;
+    || is_fragmented_vector<T> || reflection::is_tristate<T> || std::is_same_v<T, ss::net::inet_address>;
 
 template<typename T>
 inline constexpr auto const are_bytes_and_string_different = !(
@@ -293,7 +302,7 @@ void write(iobuf& out, T t) {
             write(out, v.first);
             write(out, std::move(v.second));
         }
-    } else if constexpr (is_fragmented_vector_v<Type>) {
+    } else if constexpr (is_fragmented_vector<Type>) {
         if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
             throw serde_exception(fmt_with_ctx(
               ssx::sformat,
@@ -546,7 +555,7 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
               in, bytes_left_limit);
             t.emplace(std::move(key), std::move(value));
         }
-    } else if constexpr (is_fragmented_vector_v<Type>) {
+    } else if constexpr (is_fragmented_vector<Type>) {
         using value_type = typename Type::value_type;
         const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
         for (auto i = 0U; i < size; ++i) {
