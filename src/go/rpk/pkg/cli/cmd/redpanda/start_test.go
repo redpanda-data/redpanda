@@ -200,6 +200,7 @@ func TestParseSeeds(t *testing.T) {
 }
 
 func TestStartCommand(t *testing.T) {
+	authNSasl := "sasl"
 	tests := []struct {
 		name           string
 		launcher       redpanda.Launcher
@@ -929,7 +930,7 @@ func TestStartCommand(t *testing.T) {
 		name: "it should parse the --kafka-addr and persist it (list)",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
-			"--kafka-addr", "nondefaultname://192.168.34.32,host:9092",
+			"--kafka-addr", "nondefaultname://192.168.34.32,host:9092,authn://host:9093|sasl",
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			conf, err := new(config.Params).Load(fs)
@@ -941,6 +942,11 @@ func TestStartCommand(t *testing.T) {
 			}, {
 				Address: "host",
 				Port:    9092,
+			}, {
+				Name:    "authn",
+				Address: "host",
+				Port:    9093,
+				AuthN:   &authNSasl,
 			}}
 			// Check that the generated config is as expected.
 			require.Exactly(
