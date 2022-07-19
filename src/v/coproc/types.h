@@ -47,6 +47,7 @@ enum class topic_ingestion_policy : int8_t { earliest = 0, stored, latest };
 
 /// \brief type to use for registration/deregistration of a topic
 struct enable_copros_request {
+    using rpc_serde_exempt = std::true_type;
     struct data {
         script_id id;
         iobuf source_code;
@@ -57,6 +58,7 @@ struct enable_copros_request {
 /// \brief registration acks per copro, responses are organized in the
 /// same order as the list of topics in the 'topics' array
 struct enable_copros_reply {
+    using rpc_serde_exempt = std::true_type;
     using topic_policy = std::pair<model::topic, topic_ingestion_policy>;
     struct script_metadata {
         script_id id;
@@ -76,12 +78,14 @@ using state_size_t = named_type<int64_t, struct state_size_tag>;
 /// \brief deregistration request, remove all topics registered to a coprocessor
 /// with id 'script_id'.
 struct disable_copros_request {
+    using rpc_serde_exempt = std::true_type;
     std::vector<script_id> ids;
 };
 
 /// \brief deregistration acks per topic, responses are organized in the
 /// same order as the list of topics in the 'ids' array
 struct disable_copros_reply {
+    using rpc_serde_exempt = std::true_type;
     using ack = std::pair<script_id, disable_response_code>;
     std::vector<ack> acks;
 };
@@ -89,6 +93,7 @@ struct disable_copros_reply {
 /// \brief Request that co-processors with the given script ids, process batches
 /// from the reader whose source topic is the given ntp
 struct process_batch_request {
+    using rpc_serde_exempt = std::true_type;
     struct data {
         std::vector<script_id> ids;
         model::ntp ntp;
@@ -100,6 +105,7 @@ struct process_batch_request {
 /// \brief Response from the above request, acks from script ids that have
 /// processed the record and produce new batches on a new materialized ntp
 struct process_batch_reply {
+    using rpc_serde_exempt = std::true_type;
     struct data {
         script_id id;
         model::ntp source;

@@ -49,6 +49,7 @@ struct partition_balancer_violations
         model::node_id id;
         model::timestamp unavailable_since;
 
+        unavailable_node() noexcept = default;
         unavailable_node(model::node_id id, model::timestamp unavailable_since)
           : id(id)
           , unavailable_since(unavailable_since) {}
@@ -65,6 +66,7 @@ struct partition_balancer_violations
         model::node_id id;
         uint32_t disk_used_percent;
 
+        full_node() noexcept = default;
         full_node(model::node_id id, uint32_t disk_used_percent)
           : id(id)
           , disk_used_percent(disk_used_percent) {}
