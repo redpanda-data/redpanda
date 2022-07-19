@@ -172,7 +172,7 @@ ss::future<result<rpc::client_context<T>>> parse_result(
         }
         if (protocol_violation) {
             vlog(
-              rpclog.warn,
+              rpclog.error,
               "Protocol violation: request version {} incompatible with "
               "reply version {}",
               req_ver,
