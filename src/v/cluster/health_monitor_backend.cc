@@ -900,8 +900,19 @@ health_monitor_backend::get_cluster_health_overview(
       std::back_inserter(ret.leaderless_partitions));
     ret.controller_id = _raft0->get_leader_id();
 
-    ret.is_healthy = ret.nodes_down.empty() && ret.leaderless_partitions.empty()
-                     && ret.controller_id && !ec;
+    ss::sstring unhealthy_reason;
+
+    if (!ret.nodes_down.empty()) unhealthy_reason = "some nodes are down";
+    if (!ret.leaderless_partitions.empty())
+        unhealthy_reason = "some partitions are leaderless";
+    if (!ret.controller_id)
+        unhealthy_reason = "no controller is elected in the partition";
+    if (ec)
+        unhealthy_reason = fmt::format(
+          "cannot obtain health report: {}: {}", ec, ec.message());
+
+    ret.unhealthy_reason = unhealthy_reason;
+    ret.is_healthy = unhealthy_reason.empty();
 
     co_return ret;
 }
