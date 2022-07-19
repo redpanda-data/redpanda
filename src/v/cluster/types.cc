@@ -10,6 +10,7 @@
 #include "cluster/types.h"
 
 #include "cluster/fwd.h"
+#include "cluster/probed_topic_metadata.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -327,6 +328,9 @@ topic_metadata::topic_metadata(
   , _source_topic(st)
   , _revision(rid)
   , _remote_revision(remote_revision_id) {}
+
+topic_metadata::topic_metadata(const probed_topic_metadata& probed) noexcept
+  : topic_metadata(probed.get_topic_metadata()) {}
 
 bool topic_metadata::is_topic_replicable() const {
     return _source_topic.has_value() == false;

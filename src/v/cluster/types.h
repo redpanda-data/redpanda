@@ -2257,6 +2257,8 @@ public:
       model::topic,
       std::optional<model::initial_revision_id> = std::nullopt) noexcept;
 
+    topic_metadata(const probed_topic_metadata&) noexcept;
+
     bool is_topic_replicable() const;
     model::revision_id get_revision() const;
     std::optional<model::initial_revision_id> get_remote_revision() const;
