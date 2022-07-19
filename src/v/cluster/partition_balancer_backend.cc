@@ -133,24 +133,43 @@ ss::future<> partition_balancer_backend::do_tick() {
         vlog(
           clusterlog.info,
           "violations: {} unavailable nodes, {} full nodes; planned {} "
-          "reassignments",
+          "reassignments; cancelled {} reassignments",
           plan_data.violations.unavailable_nodes.size(),
           plan_data.violations.full_nodes.size(),
-          plan_data.reassignments.size());
+          plan_data.reassignments.size(),
+          plan_data.cancellations.size());
     }
 
     _last_leader_term = _raft0->term();
     _last_tick_time = ss::lowres_clock::now();
     _last_violations = std::move(plan_data.violations);
+
     if (
-      _topic_table.has_updates_in_progress()
-      || !plan_data.reassignments.empty()) {
+      _topic_table.has_updates_in_progress() || !plan_data.reassignments.empty()
+      || !plan_data.cancellations.empty()) {
         _last_status = partition_balancer_status::in_progress;
     } else if (plan_data.failed_reassignments_count > 0) {
         _last_status = partition_balancer_status::stalled;
     } else {
         _last_status = partition_balancer_status::ready;
     }
+
+    co_await ss::max_concurrent_for_each(
+      plan_data.cancellations, 32, [this, current_term](model::ntp& ntp) {
+          vlog(clusterlog.info, "cancel movement for ntp {}", ntp);
+          return _topics_frontend
+            .cancel_moving_partition_replicas(
+              ntp,
+              model::timeout_clock::now() + add_move_cmd_timeout,
+              current_term)
+            .then([ntp = std::move(ntp)](auto errc) {
+                vlog(
+                  clusterlog.info,
+                  "{} movement cancellation submitted, errc: {}",
+                  ntp,
+                  errc);
+            });
+      });
 
     co_await ss::max_concurrent_for_each(
       plan_data.reassignments,
