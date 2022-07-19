@@ -883,6 +883,10 @@ health_monitor_backend::get_cluster_health_overview(
             ret.nodes_down.push_back(broker->id());
         }
     }
+
+    std::sort(ret.all_nodes.begin(), ret.all_nodes.end());
+    std::sort(ret.nodes_down.begin(), ret.nodes_down.end());
+
     absl::node_hash_set<model::ntp> leaderless;
     for (const auto& [_, report] : _reports) {
         for (const auto& [tp_ns, partitions] : report.topics) {
