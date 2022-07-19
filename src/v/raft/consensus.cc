@@ -2393,13 +2393,13 @@ void consensus::maybe_update_leader_commit_idx() {
 ss::future<> consensus::maybe_commit_configuration(ss::semaphore_units<> u) {
     // we are not a leader, do nothing
     if (_vstate != vote_state::leader) {
-        return ss::now();
+        co_return;
     }
 
     auto latest_offset = _configuration_manager.get_latest_offset();
     // no configurations were committed
     if (latest_offset > _commit_index) {
-        return ss::now();
+        co_return;
     }
 
     auto latest_cfg = _configuration_manager.get_latest();
@@ -2407,7 +2407,7 @@ ss::future<> consensus::maybe_commit_configuration(ss::semaphore_units<> u) {
      * simple configuration, there is nothing to do
      */
     if (latest_cfg.type() == configuration_type::simple) {
-        return ss::now();
+        co_return;
     }
     /**
      * at this point joint configuration is committed, and all added learners
@@ -2436,27 +2436,26 @@ ss::future<> consensus::maybe_commit_configuration(ss::semaphore_units<> u) {
         }
 
         auto contains_current = latest_cfg.contains(_self);
-        return replicate_configuration(std::move(u), std::move(latest_cfg))
-          .then([this, contains_current](std::error_code ec) {
-              if (ec) {
-                  if (ec != errc::shutting_down) {
-                      vlog(
-                        _ctxlog.error,
-                        "unable to replicate updated configuration: {}",
-                        ec.message());
-                  }
-                  return;
-              }
-              // leader was removed, step down.
-              if (!contains_current) {
-                  vlog(
-                    _ctxlog.trace,
-                    "current node is not longer group member, stepping down");
-                  do_step_down("not_longer_member");
-              }
-          });
+        auto ec = co_await replicate_configuration(
+          std::move(u), std::move(latest_cfg));
+
+        if (ec) {
+            if (ec != errc::shutting_down) {
+                vlog(
+                  _ctxlog.error,
+                  "unable to replicate updated configuration: {}",
+                  ec.message());
+            }
+            co_return;
+        }
+        // leader was removed, step down.
+        if (!contains_current) {
+            vlog(
+              _ctxlog.trace,
+              "current node is not longer group member, stepping down");
+            do_step_down("not_longer_member");
+        }
     }
-    return ss::now();
 }
 
 ss::future<>
