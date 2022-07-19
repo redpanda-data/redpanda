@@ -25,7 +25,7 @@
 namespace cluster {
 
 template<typename Func>
-std::vector<std::invoke_result_t<Func, const topic_table::topic_metadata_item&>>
+std::vector<std::invoke_result_t<Func, const topic_metadata_item&>>
 topic_table::transform_topics(Func&& f) const {
     std::vector<std::invoke_result_t<Func, const topic_metadata_item&>> ret;
     ret.reserve(_topics.size());
