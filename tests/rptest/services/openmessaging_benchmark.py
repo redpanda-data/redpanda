@@ -115,6 +115,7 @@ class OpenMessagingBenchmarkWorkers(Service):
 class OpenMessagingBenchmark(Service):
     PERSISTENT_ROOT = "/var/lib/openmessaging"
     RESULTS_DIR = os.path.join(PERSISTENT_ROOT, "results")
+    RESULT_FILE = os.path.join(RESULTS_DIR, "result.json")
     CHARTS_DIR = os.path.join(PERSISTENT_ROOT, "charts")
     STDOUT_STDERR_CAPTURE = os.path.join(PERSISTENT_ROOT, "benchmark.log")
     OPENMESSAGING_DIR = "/opt/openmessaging-benchmark"
@@ -147,10 +148,6 @@ class OpenMessagingBenchmark(Service):
         self.driver = OMBSampleConfigurations.DRIVERS[driver]
         self.workload = OMBSampleConfigurations.WORKLOADS[workload][0]
         self.validator = OMBSampleConfigurations.WORKLOADS[workload][1]
-        output_file_name = "result-{}-{}.json".format(self.driver["name"],
-                                                      self.workload["name"])
-        self.output_file = os.path.join(OpenMessagingBenchmark.RESULTS_DIR,
-                                        output_file_name)
         self.logger.info("Using driver: %s, workload: %s", self.driver["name"],
                          self.workload["name"])
 
@@ -187,19 +184,27 @@ class OpenMessagingBenchmark(Service):
         self.logger.info(
             f"Starting Open Messaging Benchmark with workers: {worker_nodes}")
 
+        rp_node = self.redpanda.nodes[0]
+        rp_version = "unknown_version"
+        try:
+            rp_version = self.redpanda.get_version(rp_node)
+        except AssertionError:
+            # In some builds (particularly in dev), version string may not be populated
+            pass
+
         start_cmd = f"cd {OpenMessagingBenchmark.OPENMESSAGING_DIR}; \
                     bin/benchmark \
                     --drivers {OpenMessagingBenchmark.DRIVER_FILE} \
                     --workers {worker_nodes} \
-                    --output {self.output_file} \
+                    --output {OpenMessagingBenchmark.RESULT_FILE} \
+                    --service-version {rp_version} \
                     {OpenMessagingBenchmark.WORKLOAD_FILE} >> {OpenMessagingBenchmark.STDOUT_STDERR_CAPTURE} 2>&1 \
                     & disown"
 
         # This command generates charts and returns some metrics data like latency quantiles and throughput that
         # we can use to determine if they fall in the expected range.
-        self.chart_cmd = f"""cd {OpenMessagingBenchmark.OPENMESSAGING_DIR} &&
-            bin/generate_charts.py --results {OpenMessagingBenchmark.RESULTS_DIR} --output {OpenMessagingBenchmark.CHARTS_DIR}
-         """
+        self.chart_cmd = f"cd {OpenMessagingBenchmark.OPENMESSAGING_DIR} && \
+            bin/generate_charts.py --results {OpenMessagingBenchmark.RESULTS_DIR} --output {OpenMessagingBenchmark.CHARTS_DIR}"
 
         node.account.mkdirs(OpenMessagingBenchmark.RESULTS_DIR)
         node.account.mkdirs(OpenMessagingBenchmark.CHARTS_DIR)
@@ -238,7 +243,7 @@ class OpenMessagingBenchmark(Service):
         for node in self.nodes:
             # Here we check that OMB finished and put result in file
             assert node.account.exists(\
-                self.output_file), f"{node.account.hostname} OMB is not finished"
+                OpenMessagingBenchmark.RESULT_FILE), f"{node.account.hostname} OMB is not finished"
             self.raise_on_bad_log_lines(node)
         # Generate charts from the result
         self.logger.info(f"Generating charts with command {self.chart_cmd}")
