@@ -144,15 +144,23 @@ void members_backend::handle_single_update(
 
 void members_backend::start_reconciliation_loop() {
     ssx::background = ssx::spawn_with_gate_then(_bg, [this] {
+                          vlog(clusterlog.warn, "reconcile() starting");
                           return reconcile().finally([this] {
                               if (!_as.local().abort_requested()) {
+                                  vlog(
+                                    clusterlog.warn,
+                                    "reconcile() ending (rearmed)");
                                   _retry_timer.arm(_retry_timeout);
+                              } else {
+                                  vlog(
+                                    clusterlog.warn,
+                                    "reconcile() ending (not rearmed)");
                               }
                           });
                       }).handle_exception([](const std::exception_ptr& e) {
         // just log an exception, will retry
         vlog(
-          clusterlog.trace,
+          clusterlog.warn,
           "error encountered while handling cluster state reconciliation - {}",
           e);
     });
@@ -337,8 +345,12 @@ void members_backend::calculate_reallocations_after_node_added(
     }
 
     vlog(
-      partlog.info,
-      "Generated {} reallocations",
+      partlog.warn,
+      "For {} generated {} reallocations, target_replicas_per_node: {}, "
+      "total_replicas: {}",
+      meta.update,
+      target_replicas_per_node,
+      total_replicas,
       meta.partition_reallocations.size());
 }
 
@@ -400,7 +412,10 @@ void members_backend::calculate_reallocations_after_recommissioned(
 ss::future<> members_backend::reconcile() {
     // if nothing to do, wait
     co_await _new_updates.wait([this] { return !_updates.empty(); });
+    vlog(clusterlog.warn, "reconcile() found {} updates", _updates.size());
     auto u = co_await _lock.get_units();
+    vlog(clusterlog.warn, "reconcile() got lock");
+
     // remove stored revisions of previous decommissioning nodes, this will only
     // happen when update is finished and it is either decommissioning or
     // recommissioning of a node
@@ -421,12 +436,20 @@ ss::future<> members_backend::reconcile() {
       _updates, [](const update_meta& meta) { return meta.finished; });
 
     if (!_raft0->is_elected_leader() || _updates.empty()) {
+        vlog(
+          clusterlog.warn,
+          "reconcile() early exit, leader: {}, empty(): {}",
+          _raft0->is_elected_leader(),
+          _updates.empty());
         co_return;
     }
 
     // use linearizable barrier to make sure leader is up to date and all
     // changes are applied
+
+    vlog(clusterlog.warn, "reconcile() before barrier");
     auto barrier_result = co_await _raft0->linearizable_barrier();
+    vlog(clusterlog.warn, "reconcile() after barrier");
     if (
       barrier_result.has_error()
       || barrier_result.value() < _raft0->dirty_offset()) {
@@ -435,11 +458,17 @@ ss::future<> members_backend::reconcile() {
               partlog.info,
               "error waiting for all raft0 updates to be applied - {}",
               barrier_result.error().message());
+            vlog(
+              clusterlog.warn,
+              "reconcile() error waiting for all raft0 updates to be applied - "
+              "{}",
+              barrier_result.error().message());
 
         } else {
             vlog(
-              clusterlog.trace,
-              "waiting for all raft0 updates to be applied - barrier offset: "
+              clusterlog.warn,
+              "reconcile() waiting for all raft0 updates to be applied - "
+              "barrier offset: "
               "{}, raft_0 dirty offset: {}",
               barrier_result.value(),
               _raft0->dirty_offset());
@@ -448,12 +477,18 @@ ss::future<> members_backend::reconcile() {
     }
 
     // process one update at a time
+    vassert(!_updates.empty(), "_updates was empty");
     auto& meta = _updates.front();
 
     // leadership changed, drop not yet requested reallocations to make sure
     // there is no stale state
     auto current_term = _raft0->term();
     if (_last_term != current_term) {
+        vlog(
+          clusterlog.warn,
+          "reconcile() leadership changed {} {}",
+          _last_term,
+          current_term);
         for (auto& reallocation : meta.partition_reallocations) {
             if (reallocation.state == reallocation_state::reassigned) {
                 reallocation.release_assignment_units();
@@ -464,10 +499,17 @@ ss::future<> members_backend::reconcile() {
     }
     _last_term = current_term;
 
+    vlog(
+      clusterlog.warn,
+      "reconcile() try_to_finish for {} with {} reallocs, {} updates remaining",
+      meta.update,
+      meta.partition_reallocations.size(),
+      _updates.size());
+
     co_await try_to_finish_update(meta);
 
     vlog(
-      clusterlog.info,
+      clusterlog.warn,
       "[update: {}] reconciliation loop - reallocations: {}, finished: {}",
       meta.update,
       meta.partition_reallocations,
@@ -478,7 +520,7 @@ ss::future<> members_backend::reconcile() {
         calculate_reallocations(meta);
         // if there is nothing to reallocate, just finish this update
         vlog(
-          partlog.info,
+          partlog.warn,
           "[update: {}] calculated reallocations: {}",
           meta.update,
           meta.partition_reallocations);
@@ -491,8 +533,8 @@ ss::future<> members_backend::reconcile() {
                 meta.finished = true;
             }
             vlog(
-              partlog.info,
-              "[update: {}] no need reallocations, finished: {}",
+              partlog.warn,
+              "[update: {}] no needed reallocations, finished: {}",
               meta.update,
               meta.finished);
             co_return;
@@ -574,6 +616,10 @@ ss::future<>
 members_backend::try_to_finish_update(members_backend::update_meta& meta) {
     // broker was removed, finish
     if (!_members.local().contains(meta.update.id)) {
+        vlog(
+          clusterlog.warn,
+          "reconcile() finished update for {} as it was removed",
+          meta.update);
         meta.finished = true;
     }
 
@@ -591,18 +637,41 @@ members_backend::try_to_finish_update(members_backend::update_meta& meta) {
         co_return;
     }
 
+    auto is_finished = [](const partition_reallocation& r) {
+        return r.state == reallocation_state::finished;
+    };
+
     // if all reallocations are propagate reallocation finished event and mark
     // update as finished
     const auto all_reallocations_finished = std::all_of(
       meta.partition_reallocations.begin(),
       meta.partition_reallocations.end(),
-      [](const partition_reallocation& r) {
-          return r.state == reallocation_state::finished;
-      });
+      is_finished);
+
+    const auto finished_count = std::count_if(
+      meta.partition_reallocations.begin(),
+      meta.partition_reallocations.end(),
+      is_finished);
+
+    vlog(
+      clusterlog.warn,
+      "reconcile() try_to_finish() {}: {}/{} finished",
+      meta.update,
+      finished_count,
+      meta.partition_reallocations.size());
 
     if (all_reallocations_finished && !meta.partition_reallocations.empty()) {
+        vlog(
+          clusterlog.warn,
+          "reconcile() try_to_finish() {}: begin finish_node_reallocations",
+          meta.update);
         auto err = co_await _members_frontend.local().finish_node_reallocations(
           meta.update.id);
+        vlog(
+          clusterlog.warn,
+          "reconcile() try_to_finish() {}: end finish_node_reallocations: {}",
+          meta.update,
+          err);
         if (!err) {
             meta.finished = true;
         }
@@ -651,12 +720,17 @@ ss::future<> members_backend::reallocate_replica_set(
         if (meta.new_replica_set.empty()) {
             // if partition allocator failed to reassign partitions return
             // and wait for next retry
+            vlog(
+              clusterlog.warn,
+              "[ntp: {}, {} -> -] new partition assignment failed (empty)",
+              meta.ntp,
+              meta.new_replica_set);
             co_return;
         }
         // success, update state and move on
         meta.state = reallocation_state::reassigned;
         vlog(
-          clusterlog.info,
+          clusterlog.warn,
           "[ntp: {}, {} -> {}] new partition assignment calculated "
           "successfully",
           meta.ntp,
@@ -669,7 +743,7 @@ ss::future<> members_backend::reallocate_replica_set(
           !meta.new_replica_set.empty(),
           "reallocation meta in reassigned state must have new_assignment");
         vlog(
-          clusterlog.info,
+          clusterlog.warn,
           "[ntp: {}, {} -> {}] dispatching request to move partition",
           meta.ntp,
           meta.current_replica_set,
@@ -682,7 +756,7 @@ ss::future<> members_backend::reallocate_replica_set(
             model::timeout_clock::now() + _retry_timeout);
         if (error) {
             vlog(
-              clusterlog.info,
+              clusterlog.warn,
               "[ntp: {}, {} -> {}] partition move error: {}",
               meta.ntp,
               meta.current_replica_set,
@@ -700,7 +774,7 @@ ss::future<> members_backend::reallocate_replica_set(
         auto reconciliation_state
           = co_await _api.local().get_reconciliation_state(meta.ntp);
         vlog(
-          clusterlog.info,
+          clusterlog.warn,
           "[ntp: {}, {} -> {}] reconciliation state: {}, pending operations: "
           "{}",
           meta.ntp,
@@ -722,7 +796,7 @@ ss::future<> members_backend::reallocate_replica_set(
             meta.ntp, model::timeout_clock::now() + _retry_timeout);
         if (error) {
             vlog(
-              clusterlog.info,
+              clusterlog.warn,
               "[ntp: {}, {} -> {}] partition reconfiguration cancellation "
               "error: {}",
               meta.ntp,
@@ -744,7 +818,7 @@ ss::future<> members_backend::reallocate_replica_set(
         auto reconciliation_state
           = co_await _api.local().get_reconciliation_state(meta.ntp);
         vlog(
-          clusterlog.info,
+          clusterlog.warn,
           "[ntp: {}, {} -> {}] reconciliation state: {}, pending operations: "
           "{}",
           meta.ntp,
