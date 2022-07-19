@@ -13,14 +13,11 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"os"
 	"strconv"
 	"strings"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/twmb/franz-go/pkg/kadm"
@@ -58,12 +55,6 @@ directly. Otherwise, 'rpk generate prometheus-conf' will read the redpanda
 config file and use the node IP configured there. --config may be passed to
 specify an arbitrary config file.`,
 		Run: func(cmd *cobra.Command, args []string) {
-			log.SetFormatter(cli.NewNoopFormatter())
-			// The logger's default stream is stderr, which prevents piping to files
-			// from working without redirecting them with '2>&1'.
-			if log.StandardLogger().Out == os.Stderr {
-				log.SetOutput(os.Stdout)
-			}
 			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
@@ -75,7 +66,7 @@ specify an arbitrary config file.`,
 				seedAddr,
 			)
 			out.MaybeDieErr(err)
-			log.Infof("\n%s", string(yml))
+			fmt.Println(string(yml))
 		},
 	}
 	command.Flags().StringVar(
