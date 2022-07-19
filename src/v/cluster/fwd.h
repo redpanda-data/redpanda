@@ -31,6 +31,7 @@ class members_manager;
 class members_table;
 class metadata_cache;
 class metadata_dissemination_service;
+class probed_topic_metadata;
 class security_frontend;
 class controller_api;
 class members_frontend;

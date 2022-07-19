@@ -95,6 +95,7 @@ v_cc_library(
     drain_manager.cc
     read_replica_manager.cc
     partition_balancer_planner.cc
+    probed_topic_metadata.cc
   DEPS
     Seastar::seastar
     controller_rpc
