@@ -939,6 +939,43 @@ func parseNamedAddress(
 	}, nil
 }
 
+func parseNamedAuthNAddress(
+	addrAuthn string, defaultPort int,
+) (*config.NamedAuthNSocketAddress, error) {
+	if addrAuthn == "" {
+		return nil, nil
+	}
+	addr, authn, err := splitAddressAuthN(addrAuthn)
+	if err != nil {
+		return nil, err
+	}
+	scheme, hostport, err := net.ParseHostMaybeScheme(addr)
+	if err != nil {
+		return nil, err
+	}
+	host, port := net.SplitHostPortDefault(hostport, defaultPort)
+
+	return &config.NamedAuthNSocketAddress{
+		Address: host,
+		Port:    port,
+		Name:    scheme,
+		AuthN:   authn,
+	}, nil
+}
+
+func splitAddressAuthN(str string) (addr string, authn *string, err error) {
+	bits := strings.Split(str, "|")
+	if len(bits) > 2 {
+		err = fmt.Errorf(`invalid format for listener, at most one "|" can be present: %q`, str)
+		return
+	}
+	addr = bits[0]
+	if len(bits) == 2 {
+		authn = &bits[1]
+	}
+	return
+}
+
 func sendEnv(fs afero.Fs, env api.EnvironmentPayload, conf *config.Config, skipChecks bool, err error) {
 	if err != nil {
 		env.ErrorMsg = err.Error()

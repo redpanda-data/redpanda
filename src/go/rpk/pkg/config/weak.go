@@ -219,6 +219,30 @@ func (nsa *namedSocketAddresses) UnmarshalYAML(n *yaml.Node) error {
 	return nil
 }
 
+// namedAuthNSocketAddresses is an intermediary one_or_many type to be used
+// during our transition to strictly typed configuration parameters.
+// This type will:
+//   - parse an array of NamedAuthNSocketAddress
+//   - parse a single NamedAuthNSocketAddress to an array.
+type namedAuthNSocketAddresses []NamedAuthNSocketAddress
+
+func (nsa *namedAuthNSocketAddresses) UnmarshalYAML(n *yaml.Node) error {
+	var multi []NamedAuthNSocketAddress
+	err := n.Decode(&multi)
+	if err == nil {
+		*nsa = multi
+		return nil
+	}
+
+	var single NamedAuthNSocketAddress
+	err = n.Decode(&single)
+	if err != nil {
+		return err
+	}
+	*nsa = []NamedAuthNSocketAddress{single}
+	return nil
+}
+
 // serverTLSArray is an intermediary one_or_many type to be used during our
 // transition to strictly typed configuration parameters. This type will:
 //   - parse an array of ServerTLS
@@ -589,6 +613,25 @@ func (nsa *NamedSocketAddress) UnmarshalYAML(n *yaml.Node) error {
 	nsa.Name = string(internal.Name)
 	nsa.Address = string(internal.Address)
 	nsa.Port = int(internal.Port)
+	return nil
+}
+
+func (nsa *NamedAuthNSocketAddress) UnmarshalYAML(n *yaml.Node) error {
+	var internal struct {
+		Name    weakString  `yaml:"name"`
+		Address weakString  `yaml:"address" mapstructure:"address"`
+		Port    weakInt     `yaml:"port" mapstructure:"port"`
+		AuthN   *weakString `yaml:"authentication_method" mapstructure:"authentication_method"`
+	}
+
+	if err := n.Decode(&internal); err != nil {
+		return err
+	}
+
+	nsa.Name = string(internal.Name)
+	nsa.Address = string(internal.Address)
+	nsa.Port = int(internal.Port)
+	nsa.AuthN = (*string)(internal.AuthN)
 	return nil
 }
 

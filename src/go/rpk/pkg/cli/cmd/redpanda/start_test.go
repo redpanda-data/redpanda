@@ -96,6 +96,54 @@ func TestMergeFlags(t *testing.T) {
 	}
 }
 
+func TestParseNamedAuthNAddress(t *testing.T) {
+	authNSasl := "sasl"
+	tests := []struct {
+		name           string
+		arg            string
+		expected       config.NamedAuthNSocketAddress
+		expectedErrMsg string
+	}{
+		{
+			name:     "it should parse host:port",
+			arg:      "host:9092",
+			expected: config.NamedAuthNSocketAddress{Address: "host", Port: 9092, Name: ""},
+		},
+		{
+			name:     "it should parse scheme://host:port",
+			arg:      "scheme://host:9092",
+			expected: config.NamedAuthNSocketAddress{Address: "host", Port: 9092, Name: "scheme"},
+		},
+		{
+			name:     "it should parse host:port|authn",
+			arg:      "host:9092|sasl",
+			expected: config.NamedAuthNSocketAddress{Address: "host", Port: 9092, Name: "", AuthN: &authNSasl},
+		},
+		{
+			name:     "it should parse scheme://host:port|authn",
+			arg:      "scheme://host:9092|sasl",
+			expected: config.NamedAuthNSocketAddress{Address: "host", Port: 9092, Name: "scheme", AuthN: &authNSasl},
+		},
+		{
+			name:           "it should fail for multiple |",
+			arg:            "host|sasl|ignore",
+			expected:       config.NamedAuthNSocketAddress{},
+			expectedErrMsg: `invalid format for listener, at most one "|" can be present: "host|sasl|ignore"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(st *testing.T) {
+			res, err := parseNamedAuthNAddress(tt.arg, 19092)
+			if tt.expectedErrMsg != "" {
+				require.EqualError(st, err, tt.expectedErrMsg)
+				return
+			}
+			require.Exactly(st, tt.expected, *res)
+		})
+	}
+}
+
 func TestParseSeeds(t *testing.T) {
 	tests := []struct {
 		name           string

@@ -417,6 +417,110 @@ func TestNamedSocketAddressArray(t *testing.T) {
 	}
 }
 
+func TestNamedAuthNSocketAddressArray(t *testing.T) {
+	authNMtlsIdentity := "mtls_identity"
+	authNSasl := "sasl"
+	authNNOne := "none"
+	for _, test := range []struct {
+		name   string
+		data   string
+		exp    []NamedAuthNSocketAddress
+		expErr bool
+	}{
+		{
+			name: "single namedAuthNSocketAddress",
+			data: "test_api:\n  address: 0.0.0.0\n  port: 80\n  name: socket\n  authentication_method: mtls_identity\n",
+			exp: []NamedAuthNSocketAddress{
+				{
+					Name:    "socket",
+					Address: "0.0.0.0",
+					Port:    80,
+					AuthN:   &authNMtlsIdentity,
+				},
+			},
+		},
+		{
+			name: "list of 1 namedSocketAddress",
+			data: "test_api:\n  - name: socket\n    address: 0.0.0.0\n    port: 80\n    authentication_method: sasl\n",
+			exp: []NamedAuthNSocketAddress{
+				{
+					Name:    "socket",
+					Address: "0.0.0.0",
+					Port:    80,
+					AuthN:   &authNSasl,
+				},
+			},
+		},
+		{
+			name: "list of namedSocketAddress",
+			data: `test_api:
+  - name: socket
+    address: 0.0.0.0
+    port: 80
+    authentication_method: mtls_identity
+  - name: socket2
+    address: 0.0.0.1
+    port: 81
+    authentication_method: sasl
+  - name: socket3
+    address: 0.0.0.2
+    port: 81
+    authentication_method: none
+  - name: socket4
+    address: 0.0.0.3
+    port: 81`,
+			exp: []NamedAuthNSocketAddress{
+				{
+					Name:    "socket",
+					Address: "0.0.0.0",
+					Port:    80,
+					AuthN:   &authNMtlsIdentity,
+				},
+				{
+					Name:    "socket2",
+					Address: "0.0.0.1",
+					Port:    81,
+					AuthN:   &authNSasl,
+				},
+				{
+					Name:    "socket3",
+					Address: "0.0.0.2",
+					Port:    81,
+					AuthN:   &authNNOne,
+				},
+				{
+					Name:    "socket4",
+					Address: "0.0.0.3",
+					Port:    81,
+				},
+			},
+		},
+		{
+			name:   "unsupported types",
+			data:   "test_api:\n  address: [0.0.0.0]\n  port: 80\n  name: socket\n",
+			expErr: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var ts struct {
+				Sockets namedAuthNSocketAddresses `yaml:"test_api"`
+			}
+			err := yaml.Unmarshal([]byte(test.data), &ts)
+
+			gotErr := err != nil
+			if gotErr != test.expErr {
+				t.Errorf("input %q: got err? %v, exp err? %v; error: %v",
+					test.data, gotErr, test.expErr, err)
+				return
+			}
+			if test.expErr {
+				return
+			}
+			require.Equal(t, namedAuthNSocketAddresses(test.exp), ts.Sockets)
+		})
+	}
+}
+
 func TestServerTLSArray(t *testing.T) {
 	for _, test := range []struct {
 		name   string

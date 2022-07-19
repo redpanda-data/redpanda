@@ -103,6 +103,13 @@ type NamedSocketAddress struct {
 	Name    string `yaml:"name,omitempty" json:"name,omitempty"`
 }
 
+type NamedAuthNSocketAddress struct {
+	Address string  `yaml:"address" json:"address"`
+	Port    int     `yaml:"port" json:"port"`
+	Name    string  `yaml:"name,omitempty" json:"name,omitempty"`
+	AuthN   *string `yaml:"authentication_method,omitempty" json:"authentication_method,omitempty"`
+}
+
 type TLS struct {
 	KeyFile        string `yaml:"key_file,omitempty" json:"key_file"`
 	CertFile       string `yaml:"cert_file,omitempty" json:"cert_file"`
