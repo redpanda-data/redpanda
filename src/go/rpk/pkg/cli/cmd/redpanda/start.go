@@ -843,7 +843,7 @@ func parseFlags(flags []string) map[string]string {
 
 		if i == len(flags)-1 {
 			// We've reached the last element, so it's a single flag
-			parsed[trimmed] = "true"
+			parsed[trimmed] = ""
 			continue
 		}
 
@@ -852,7 +852,7 @@ func parseFlags(flags []string) map[string]string {
 		// boolean flag
 		next := flags[i+1]
 		if strings.HasPrefix(next, "-") {
-			parsed[trimmed] = "true"
+			parsed[trimmed] = ""
 			continue
 		}
 
