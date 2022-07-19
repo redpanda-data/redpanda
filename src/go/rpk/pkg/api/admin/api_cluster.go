@@ -17,6 +17,7 @@ import (
 // Health overview data structure.
 type ClusterHealthOverview struct {
 	IsHealthy            bool     `json:"is_healthy"`
+	UnhealthyReason      string   `json:"unhealthy_reason"`
 	ControllerID         int      `json:"controller_id"`
 	AllNodes             []int    `json:"all_nodes"`
 	NodesDown            []int    `json:"nodes_down"`
