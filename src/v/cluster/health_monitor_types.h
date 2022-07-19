@@ -225,8 +225,13 @@ struct cluster_health_overview {
 
     // additional human readable information that will make debugging cluster
     // errors easier
+    // The ID of the controller node, or nullopt if no controller is currently elected.
     std::optional<model::node_id> controller_id;
+    // All known nodes in the cluster, including nodes that have joined in the past
+    // but are not curently up.
     std::vector<model::node_id> all_nodes;
+    // A list of known nodes which are down from the point of view of the health
+    // subsystem.
     std::vector<model::node_id> nodes_down;
     std::vector<model::ntp> leaderless_partitions;
     std::vector<model::ntp> under_replicated_partitions;
