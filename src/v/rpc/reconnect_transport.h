@@ -32,9 +32,6 @@ public:
 
     bool is_valid() const { return _transport.is_valid(); }
 
-    ss::future<result<rpc::transport*>> reconnect(clock_type::time_point);
-    ss::future<result<rpc::transport*>> reconnect(clock_type::duration);
-
     rpc::transport& get() { return _transport; }
 
     /// safe client connect - attempts to reconnect if not connected
@@ -50,6 +47,9 @@ public:
     ss::future<> stop();
 
 private:
+    ss::future<result<rpc::transport*>> reconnect(clock_type::time_point);
+    ss::future<result<rpc::transport*>> reconnect(clock_type::duration);
+
     rpc::transport _transport;
     rpc::clock_type::time_point _stamp{rpc::clock_type::now()};
     ss::semaphore _connected_sem{1};
