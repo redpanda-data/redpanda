@@ -214,7 +214,7 @@ tune_cpu: true`,
   port: 9092
 `,
 			check: func(st *testing.T, c *Config) {
-				expected := []NamedSocketAddress{{
+				expected := []NamedAuthNSocketAddress{{
 					Name:    "external",
 					Address: "192.168.73.45",
 					Port:    9092,
@@ -235,7 +235,7 @@ tune_cpu: true`,
 		}]`,
 			format: "json",
 			check: func(st *testing.T, c *Config) {
-				expected := []NamedSocketAddress{{
+				expected := []NamedAuthNSocketAddress{{
 					Port:    9092,
 					Address: "192.168.54.2",
 				}}
@@ -347,7 +347,7 @@ func TestDefault(t *testing.T) {
 		Redpanda: RedpandaConfig{
 			Directory: "/var/lib/redpanda/data",
 			RPCServer: SocketAddress{"0.0.0.0", 33145},
-			KafkaAPI: []NamedSocketAddress{{
+			KafkaAPI: []NamedAuthNSocketAddress{{
 				Address: "0.0.0.0",
 				Port:    9092,
 			}},

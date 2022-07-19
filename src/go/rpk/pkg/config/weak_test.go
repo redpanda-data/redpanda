@@ -989,9 +989,9 @@ rpk:
 						{RequireClientAuth: false, TruststoreFile: "certs/tls-ca.pem"},
 					},
 					AdvertisedRPCAPI: &SocketAddress{"0.0.0.0", 33145},
-					KafkaAPI: []NamedSocketAddress{
-						{"0.0.0.0", 9092, "internal"},
-						{"0.0.0.0", 9093, "external"},
+					KafkaAPI: []NamedAuthNSocketAddress{
+						{"0.0.0.0", 9092, "internal", nil},
+						{"0.0.0.0", 9093, "external", nil},
 					},
 					KafkaAPITLS: []ServerTLS{
 						{Name: "external", KeyFile: "certs/tls-key.pem"},
@@ -1227,9 +1227,9 @@ rpk:
 						{RequireClientAuth: false, TruststoreFile: "certs/tls-ca.pem"},
 					},
 					AdvertisedRPCAPI: &SocketAddress{"0.0.0.0", 33145},
-					KafkaAPI: []NamedSocketAddress{
-						{"0.0.0.0", 9092, "internal"},
-						{"0.0.0.0", 9093, "external"},
+					KafkaAPI: []NamedAuthNSocketAddress{
+						{"0.0.0.0", 9092, "internal", nil},
+						{"0.0.0.0", 9093, "external", nil},
 					},
 					KafkaAPITLS: []ServerTLS{
 						{Name: "external", KeyFile: "certs/tls-key.pem"},

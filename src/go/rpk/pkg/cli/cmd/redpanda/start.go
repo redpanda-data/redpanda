@@ -196,7 +196,7 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 					",",
 				),
 			)
-			kafkaAPI, err := parseNamedAddresses(
+			kafkaAPI, err := parseNamedAuthNAddresses(
 				kafkaAddr,
 				config.DefaultKafkaPort,
 			)
@@ -937,6 +937,22 @@ func parseNamedAddress(
 		Port:    port,
 		Name:    scheme,
 	}, nil
+}
+
+func parseNamedAuthNAddresses(
+	addrs []string, defaultPort int,
+) ([]config.NamedAuthNSocketAddress, error) {
+	as := make([]config.NamedAuthNSocketAddress, 0, len(addrs))
+	for _, addr := range addrs {
+		a, err := parseNamedAuthNAddress(addr, defaultPort)
+		if err != nil {
+			return nil, err
+		}
+		if a != nil {
+			as = append(as, *a)
+		}
+	}
+	return as, nil
 }
 
 func parseNamedAuthNAddress(

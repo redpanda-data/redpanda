@@ -154,7 +154,7 @@ func TestRedpandaSampleFile(t *testing.T) {
 				Address: "0.0.0.0",
 				Port:    33145,
 			},
-			KafkaAPI: []NamedSocketAddress{{
+			KafkaAPI: []NamedAuthNSocketAddress{{
 				Address: "0.0.0.0",
 				Port:    9092,
 			}},

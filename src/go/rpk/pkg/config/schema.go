@@ -44,26 +44,26 @@ func (c *Config) File() *Config {
 }
 
 type RedpandaConfig struct {
-	Directory                  string                 `yaml:"data_directory,omitempty" json:"data_directory"`
-	ID                         int                    `yaml:"node_id" json:"node_id"`
-	Rack                       string                 `yaml:"rack,omitempty" json:"rack"`
-	SeedServers                []SeedServer           `yaml:"seed_servers" json:"seed_servers"`
-	RPCServer                  SocketAddress          `yaml:"rpc_server" json:"rpc_server"`
-	RPCServerTLS               []ServerTLS            `yaml:"rpc_server_tls,omitempty" json:"rpc_server_tls"`
-	KafkaAPI                   []NamedSocketAddress   `yaml:"kafka_api" json:"kafka_api"`
-	KafkaAPITLS                []ServerTLS            `yaml:"kafka_api_tls,omitempty" json:"kafka_api_tls"`
-	AdminAPI                   []NamedSocketAddress   `yaml:"admin" json:"admin"`
-	AdminAPITLS                []ServerTLS            `yaml:"admin_api_tls,omitempty" json:"admin_api_tls"`
-	CoprocSupervisorServer     SocketAddress          `yaml:"coproc_supervisor_server,omitempty" json:"coproc_supervisor_server"`
-	AdminAPIDocDir             string                 `yaml:"admin_api_doc_dir,omitempty" json:"admin_api_doc_dir"`
-	DashboardDir               string                 `yaml:"dashboard_dir,omitempty" json:"dashboard_dir"`
-	CloudStorageCacheDirectory string                 `yaml:"cloud_storage_cache_directory,omitempty" json:"cloud_storage_cache_directory"`
-	AdvertisedRPCAPI           *SocketAddress         `yaml:"advertised_rpc_api,omitempty" json:"advertised_rpc_api,omitempty"`
-	AdvertisedKafkaAPI         []NamedSocketAddress   `yaml:"advertised_kafka_api,omitempty" json:"advertised_kafka_api,omitempty"`
-	DeveloperMode              bool                   `yaml:"developer_mode" json:"developer_mode"`
-	AggregateMetrics           bool                   `yaml:"aggregate_metrics,omitempty" json:"aggregate_metrics,omitempty"`
-	DisablePublicMetrics       bool                   `yaml:"disable_public_metrics,omitempty" json:"disable_public_metrics,omitempty"`
-	Other                      map[string]interface{} `yaml:",inline"`
+	Directory                  string                    `yaml:"data_directory,omitempty" json:"data_directory"`
+	ID                         int                       `yaml:"node_id" json:"node_id"`
+	Rack                       string                    `yaml:"rack,omitempty" json:"rack"`
+	SeedServers                []SeedServer              `yaml:"seed_servers" json:"seed_servers"`
+	RPCServer                  SocketAddress             `yaml:"rpc_server" json:"rpc_server"`
+	RPCServerTLS               []ServerTLS               `yaml:"rpc_server_tls,omitempty" json:"rpc_server_tls"`
+	KafkaAPI                   []NamedAuthNSocketAddress `yaml:"kafka_api" json:"kafka_api"`
+	KafkaAPITLS                []ServerTLS               `yaml:"kafka_api_tls,omitempty" json:"kafka_api_tls"`
+	AdminAPI                   []NamedSocketAddress      `yaml:"admin" json:"admin"`
+	AdminAPITLS                []ServerTLS               `yaml:"admin_api_tls,omitempty" json:"admin_api_tls"`
+	CoprocSupervisorServer     SocketAddress             `yaml:"coproc_supervisor_server,omitempty" json:"coproc_supervisor_server"`
+	AdminAPIDocDir             string                    `yaml:"admin_api_doc_dir,omitempty" json:"admin_api_doc_dir"`
+	DashboardDir               string                    `yaml:"dashboard_dir,omitempty" json:"dashboard_dir"`
+	CloudStorageCacheDirectory string                    `yaml:"cloud_storage_cache_directory,omitempty" json:"cloud_storage_cache_directory"`
+	AdvertisedRPCAPI           *SocketAddress            `yaml:"advertised_rpc_api,omitempty" json:"advertised_rpc_api,omitempty"`
+	AdvertisedKafkaAPI         []NamedSocketAddress      `yaml:"advertised_kafka_api,omitempty" json:"advertised_kafka_api,omitempty"`
+	DeveloperMode              bool                      `yaml:"developer_mode" json:"developer_mode"`
+	AggregateMetrics           bool                      `yaml:"aggregate_metrics,omitempty" json:"aggregate_metrics,omitempty"`
+	DisablePublicMetrics       bool                      `yaml:"disable_public_metrics,omitempty" json:"disable_public_metrics,omitempty"`
+	Other                      map[string]interface{}    `yaml:",inline"`
 }
 
 type Pandaproxy struct {
