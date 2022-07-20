@@ -16,11 +16,6 @@
 
 #include <boost/range/join.hpp>
 
-#include <algorithm>
-#include <numeric>
-#include <optional>
-#include <type_traits>
-
 namespace raft {
 
 struct broker_revision {
