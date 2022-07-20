@@ -985,17 +985,6 @@ ss::future<std::error_code> consensus::remove_members(
 }
 
 ss::future<std::error_code> consensus::replace_configuration(
-  std::vector<model::broker> new_brokers, model::revision_id new_revision) {
-    return change_configuration(
-      [new_brokers = std::move(new_brokers),
-       new_revision](group_configuration current) mutable {
-          current.replace(std::move(new_brokers), new_revision);
-          current.set_revision(new_revision);
-          return result<group_configuration>(std::move(current));
-      });
-}
-
-ss::future<std::error_code> consensus::replace_configuration(
   std::vector<raft::broker_revision> new_brokers,
   model::revision_id new_revision) {
     return change_configuration(

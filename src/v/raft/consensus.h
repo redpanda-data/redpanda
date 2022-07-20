@@ -120,9 +120,7 @@ public:
     // Removes members from group
     ss::future<std::error_code>
       remove_members(std::vector<model::node_id>, model::revision_id);
-    // Replace configuration of raft group with given set of nodes
-    ss::future<std::error_code>
-      replace_configuration(std::vector<model::broker>, model::revision_id);
+
     /**
      * Replace configuration, uses revision provided with brokers
      */

@@ -122,7 +122,6 @@ public:
      */
     void add(std::vector<model::broker>, model::revision_id);
     void remove(const std::vector<model::node_id>&);
-    void replace(std::vector<model::broker>, model::revision_id);
     void replace(std::vector<broker_revision>, model::revision_id);
 
     /**
