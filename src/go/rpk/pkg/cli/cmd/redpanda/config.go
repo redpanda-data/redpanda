@@ -49,18 +49,36 @@ func set(fs afero.Fs) *cobra.Command {
 	)
 	c := &cobra.Command{
 		Use:   "set <key> <value>",
-		Short: "Set configuration values, such as the node IDs or the list of seed servers",
-		Long: `Set configuration values, such as the node IDs or the list of seed servers
+		Short: "Set configuration values, such as the redpanda node ID or the list of seed servers",
+		Long: `Set configuration values, such as the redpanda node ID or the list of seed servers
 
-You can pass a key that represents the configuration property name, if it's a 
-nested property you should pass the group/category where it belongs, e.g:
+This command modifies the redpanda.yaml you have locally on disk. The first
+argument is the key within the yaml representing a property / field that you
+would like to set. Nested fields can be accessed through a dot:
 
   rpk redpanda config set redpanda.developer_mode true
 
-if --format is not used, rpk will use yaml as default, you can also pass
-partial json/yaml config objects:
+The default format is to parse the value as yaml. Individual specific fields
+can be set, or full structs:
+
+  rpk redpanda config set rpk.tune_disk_irq true
+  rpk redpanda config set redpanda.rpc_server '{address: 3.250.158.1, port: 9092}'
+
+You can set an entire array by wrapping all items with braces, or by using one
+struct:
+
+  rpk redpanda config set redpanda.advertised_kafka_api '[{address: 0.0.0.0, port: 9092}]'
+  rpk redpanda config set redpanda.advertised_kafka_api '{address: 0.0.0.0, port: 9092}' # same
+
+Indexing can be used to set specific items in an array. You can index one past
+the end of an array to extend it:
+
+  rpk redpanda config set redpanda.advertised_kafka_api[1] '{address: 0.0.0.0, port: 9092}'
+
+The json format can be used to set values as json:
 
   rpk redpanda config set redpanda.rpc_server '{"address":"0.0.0.0","port":33145}' --format json
+
 `,
 		Args: cobra.ExactArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {

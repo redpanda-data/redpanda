@@ -470,7 +470,7 @@ func (k *KafkaClient) UnmarshalYAML(n *yaml.Node) error {
 		SASLMechanism *weakString            `yaml:"sasl_mechanism"`
 		SCRAMUsername *weakString            `yaml:"scram_username"`
 		SCRAMPassword *weakString            `yaml:"scram_password"`
-		Other         map[string]interface{} `yaml:",inline" mapstructure:",remain"`
+		Other         map[string]interface{} `yaml:",inline"`
 	}
 	if err := n.Decode(&internal); err != nil {
 		return err
@@ -508,7 +508,7 @@ func (s *ServerTLS) UnmarshalYAML(n *yaml.Node) error {
 		TruststoreFile    weakString             `yaml:"truststore_file"`
 		Enabled           weakBool               `yaml:"enabled"`
 		RequireClientAuth weakBool               `yaml:"require_client_auth"`
-		Other             map[string]interface{} `yaml:",inline" mapstructure:",remain"`
+		Other             map[string]interface{} `yaml:",inline"`
 	}
 	if err := n.Decode(&internal); err != nil {
 		return err
@@ -578,8 +578,8 @@ func (sa *SocketAddress) UnmarshalYAML(n *yaml.Node) error {
 func (nsa *NamedSocketAddress) UnmarshalYAML(n *yaml.Node) error {
 	var internal struct {
 		Name    weakString `yaml:"name"`
-		Address weakString `yaml:"address" mapstructure:"address"`
-		Port    weakInt    `yaml:"port" mapstructure:"port"`
+		Address weakString `yaml:"address"`
+		Port    weakInt    `yaml:"port"`
 	}
 
 	if err := n.Decode(&internal); err != nil {

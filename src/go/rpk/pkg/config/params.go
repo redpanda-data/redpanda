@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -571,9 +572,9 @@ func (c *Config) addUnsetDefaults() {
 	}
 }
 
-// Set allow to set a single configuration property by passing a key value pair
+// Set allow to set a single configuration field by passing a key value pair
 //
-//   Key:    string containing the yaml property tag, e.g: 'rpk.admin_api'.
+//   Key:    string containing the yaml field tags, e.g: 'rpk.admin_api'.
 //   Value:  string representation of the value, either single value or partial
 //           representation.
 //   Format: either json or yaml (default: yaml).
@@ -581,87 +582,127 @@ func (c *Config) Set(key, value, format string) error {
 	if key == "" {
 		return fmt.Errorf("key field must not be empty")
 	}
-	props := strings.Split(key, ".")
-	rv := reflect.ValueOf(c).Elem()
-	field, other, err := getField(props, rv)
+	tags := strings.Split(key, ".")
+	for _, tag := range tags {
+		if _, _, err := splitTagIndex(tag); err != nil {
+			return err
+		}
+	}
+
+	field, other, err := getField(tags, "", reflect.ValueOf(c).Elem())
 	if err != nil {
 		return err
 	}
 	isOther := other != reflect.Value{}
 
+	// For Other fields, we need to wrap the value in key:value format when
+	// unmarshaling, and we forbid indexing.
+	var finalTag string
 	if isOther {
+		finalTag = tags[len(tags)-1]
+		if _, index, _ := splitTagIndex(finalTag); index >= 0 {
+			return fmt.Errorf("cannot index into unknown field %q", finalTag)
+		}
 		field = other
 	}
 
-	if field.CanAddr() {
-		i := field.Addr().Interface()
-		in := value
-		switch strings.ToLower(format) {
-		// single is deprecated, leaving it here for backward compatibility.
-		case "yaml", "single", "":
-			if isOther {
-				p := props[len(props)-1]
-				in = fmt.Sprintf("%s: %s", p, value)
-			}
-			err = yaml.Unmarshal([]byte(in), i)
-			if err != nil {
-				return err
-			}
-			return nil
-		case "json":
-			if isOther {
-				p := props[len(props)-1]
-				in = fmt.Sprintf("{%q: %s}", p, value)
-			}
-			err = json.Unmarshal([]byte(in), i)
-			if err != nil {
-				return err
-			}
-			return nil
-		default:
-			return fmt.Errorf("unsupported format %s", format)
-		}
+	if !field.CanAddr() {
+		return errors.New("rpk bug, please describe how you encountered this at https://github.com/redpanda-data/redpanda/issues/new?assignees=&labels=kind%2Fbug&template=01_bug_report.md")
 	}
-	return errors.New("rpk bug, please describe how you encountered this at https://github.com/redpanda-data/redpanda/issues/new?assignees=&labels=kind%2Fbug&template=01_bug_report.md")
+
+	var unmarshal func([]byte, interface{}) error
+	switch strings.ToLower(format) {
+	case "yaml", "single", "": // single is deprecated; it is kept for backcompat
+		if isOther {
+			value = fmt.Sprintf("%s: %s", finalTag, value)
+		}
+		unmarshal = yaml.Unmarshal
+	case "json":
+		if isOther {
+			value = fmt.Sprintf("{%q: %s}", finalTag, value)
+		}
+		unmarshal = json.Unmarshal
+	default:
+		return fmt.Errorf("unsupported format %s", format)
+	}
+
+	// If we cannot unmarshal, but our error looks like we are trying to
+	// unmarshal a single element into a slice, we index[0] into the slice
+	// and try unmarshaling again.
+	if err := unmarshal([]byte(value), field.Addr().Interface()); err != nil {
+		if elem0, ok := tryValueAsSlice0(field, format, err); ok {
+			return unmarshal([]byte(value), elem0.Addr().Interface())
+		}
+		return err
+	}
+	return nil
 }
 
-// getField deeply search in p for the value that reflect property props.
-func getField(props []string, p reflect.Value) (reflect.Value, reflect.Value, error) {
-	if len(props) == 0 {
-		return p, reflect.Value{}, nil
-	}
-	if p.Kind() == reflect.Slice {
-		if p.Len() == 0 {
-			p.Set(reflect.Append(p, reflect.Indirect(reflect.New(p.Type().Elem()))))
+// getField deeply search in v for the value that reflect field tags.
+//
+// The parentRawTag is the previous tag, and includes an index if there is one.
+func getField(tags []string, parentRawTag string, v reflect.Value) (reflect.Value, reflect.Value, error) {
+	// *At* the last element, we check if it is a slice. The final tag can
+	// still index into the slice and if that happens, we want to return
+	// the index:
+	//
+	//     rpk.kafka_api.brokers[0] => return first broker.
+	//
+	if v.Kind() == reflect.Slice {
+		index := -1
+		if parentRawTag != "" {
+			_, index, _ = splitTagIndex(parentRawTag)
 		}
-		p = p.Index(0)
+		if index < 0 {
+			// If there is no index and if there are no additional
+			// tags, we return the field itself (the slice). If
+			// there are more tags or there is an index, we index.
+			if len(tags) == 0 {
+				return v, reflect.Value{}, nil
+			}
+			index = 0
+		}
+		if index > v.Len() {
+			return reflect.Value{}, reflect.Value{}, fmt.Errorf("field %q: unable to modify index %d of %d elements", parentRawTag, index, v.Len())
+		} else if index == v.Len() {
+			v.Set(reflect.Append(v, reflect.Indirect(reflect.New(v.Type().Elem()))))
+		}
+		v = v.Index(index)
 	}
 
-	// If is a nil pointer we assign the zero value, and we reassign p to the
-	// value that p points to
-	if p.Kind() == reflect.Ptr {
-		if p.IsNil() {
-			p.Set(reflect.New(p.Type().Elem()))
-		}
-		p = reflect.Indirect(p)
+	if len(tags) == 0 {
+		// Now, either this is not a slice and we return the field, or
+		// we indexed into the slice and we return the indexed value.
+		return v, reflect.Value{}, nil
 	}
-	if p.Kind() == reflect.Struct {
-		newP, other, err := getFieldByTag(props[0], p)
+
+	tag, _, _ := splitTagIndex(tags[0]) // err already checked at the start in Set
+
+	// If is a nil pointer we assign the zero value, and we reassign v to the
+	// value that v points to
+	if v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			v.Set(reflect.New(v.Type().Elem()))
+		}
+		v = reflect.Indirect(v)
+	}
+	if v.Kind() == reflect.Struct {
+		newP, other, err := getFieldByTag(tag, v)
 		if err != nil {
 			return reflect.Value{}, reflect.Value{}, err
 		}
 		// if is "Other" map field, we stop the recursion and return
 		if (other != reflect.Value{}) {
-			// user may try to set deep unmanaged property:
+			// user may try to set deep unmanaged field:
 			// rpk.unmanaged.name = "name"
-			if len(props) > 1 {
-				return reflect.Value{}, reflect.Value{}, fmt.Errorf("unable to set property %q using rpk", strings.Join(props, "."))
+			if len(tags) > 1 {
+				return reflect.Value{}, reflect.Value{}, fmt.Errorf("unable to set field %q using rpk", strings.Join(tags, "."))
 			}
 			return reflect.Value{}, other, nil
 		}
-		return getField(props[1:], newP)
+		return getField(tags[1:], tags[0], newP)
 	}
-	return reflect.Value{}, reflect.Value{}, fmt.Errorf("unable to set field of type %v", p.Type())
+	return reflect.Value{}, reflect.Value{}, fmt.Errorf("unable to set field of type %v", v.Type())
 }
 
 // getFieldByTag finds a field with a given yaml tag and returns 3 parameters:
@@ -669,11 +710,11 @@ func getField(props []string, p reflect.Value) (reflect.Value, reflect.Value, er
 //   1. if tag is found within the struct, return the field.
 //   2. if tag is not found _but_ the struct has "Other" field, return Other.
 //   3. Error if it can't find the given tag and "Other" field is unavailable.
-func getFieldByTag(tag string, p reflect.Value) (reflect.Value, reflect.Value, error) {
-	t := p.Type()
+func getFieldByTag(tag string, v reflect.Value) (reflect.Value, reflect.Value, error) {
+	t := v.Type()
 	var other bool
 	// Loop struct to get the field that match tag.
-	for i := 0; i < p.NumField(); i++ {
+	for i := 0; i < v.NumField(); i++ {
 		// rpk allows blindly setting unknown configuration parameters in
 		// Other map[string]interface{} fields
 		if t.Field(i).Name == "Other" {
@@ -688,14 +729,76 @@ func getFieldByTag(tag string, p reflect.Value) (reflect.Value, reflect.Value, e
 		ft := strings.Split(yt, ",")[0]
 
 		if ft == tag {
-			return p.Field(i), reflect.Value{}, nil
+			return v.Field(i), reflect.Value{}, nil
 		}
 	}
 
 	// If we can't find the tag but the struct has an 'Other' map field:
 	if other {
-		return reflect.Value{}, p.FieldByName("Other"), nil
+		return reflect.Value{}, v.FieldByName("Other"), nil
 	}
 
 	return reflect.Value{}, reflect.Value{}, fmt.Errorf("unable to find field %q", tag)
+}
+
+// All valid tags in redpanda.yaml are alphabetic_with_underscores. The k8s
+// tests use dashes in and numbers in places for AdditionalConfiguration, and
+// theoretically, a key may be added to redpanda in the future with a dash or a
+// number. We will accept alphanumeric with any case, as well as dashes or
+// underscores. That is plenty generous.
+//
+// 0: entire match
+// 1: tag name
+// 2: index, if present
+var tagIndexRe = regexp.MustCompile(`^([_a-zA-Z0-9-]+)(?:\[(\d+)\])?$`)
+
+// We accept tags with indices such as foo[1]. This splits the index and
+// returns it if present, or -1 if not present.
+func splitTagIndex(tag string) (string, int, error) {
+	m := tagIndexRe.FindStringSubmatch(tag)
+	if len(m) == 0 {
+		return "", 0, fmt.Errorf("invalid field %q", tag)
+	}
+
+	field := m[1]
+
+	if m[2] != "" {
+		index, err := strconv.Atoi(m[2])
+		if err != nil {
+			return "", 0, fmt.Errorf("invalid field %q index: %v", field, err)
+		}
+		return field, index, nil
+	}
+
+	return field, -1, nil
+}
+
+// If a value is a slice and our error indicates we are decoding a single
+// element into the slice, we create index 0 and return that to be unmarshaled
+// into.
+//
+// For json this is nice, the error is explicit. For yaml, we have to string
+// match and it is a bit rough.
+func tryValueAsSlice0(v reflect.Value, format string, err error) (reflect.Value, bool) {
+	if v.Kind() != reflect.Slice {
+		return v, false
+	}
+
+	switch format {
+	case "json":
+		if te := (*json.UnmarshalTypeError)(nil); !errors.As(err, &te) || te.Type.Kind() != reflect.Slice {
+			return v, false
+		}
+	case "yaml":
+		if !strings.Contains(err.Error(), "cannot unmarshal !!") {
+			return v, false
+		}
+	}
+	if v.Len() == 0 {
+		v.Set(reflect.Append(v, reflect.Indirect(reflect.New(v.Type().Elem()))))
+	}
+	// We are setting an entire array with one item; we always clear what
+	// existed previously.
+	v.Set(v.Slice(0, 1))
+	return v.Index(0), true
 }
