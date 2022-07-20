@@ -1352,7 +1352,19 @@ ss::future<std::error_code> controller_backend::update_partition_replica_set(
       replicas,
       rev,
       [this, rev, &replicas, &ntp](ss::lw_shared_ptr<partition> p) {
-          auto brokers = create_brokers_set(replicas, _members_table.local());
+          auto it = _topics.local().all_topics_metadata().find(
+            model::topic_namespace_view(ntp));
+          // no longer in progress
+          if (it == _topics.local().all_topics_metadata().end()) {
+              return ss::make_ready_future<std::error_code>(errc::success);
+          }
+          auto rev_it = it->second.replica_revisions.find(ntp.tp.partition);
+          vassert(
+            rev_it != it->second.replica_revisions.end(),
+            "Replica revisions for {} must exists",
+            ntp);
+          auto brokers = create_brokers_set(
+            replicas, rev_it->second, _members_table.local());
           vlog(
             clusterlog.debug,
             "updating partition {} replica set with {}",
