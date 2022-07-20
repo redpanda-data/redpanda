@@ -90,7 +90,7 @@ group_configuration::find_broker(model::node_id id) const {
     return std::nullopt;
 }
 
-bool group_configuration::has_voters() {
+bool group_configuration::has_voters() const {
     return !(_current.voters.empty() || (_old && _old->voters.empty()));
 }
 

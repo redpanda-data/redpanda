@@ -93,7 +93,7 @@ public:
     group_configuration& operator=(group_configuration&&) = default;
     ~group_configuration() = default;
 
-    bool has_voters();
+    bool has_voters() const;
 
     std::optional<model::broker> find_broker(model::node_id id) const;
     bool contains_broker(model::node_id id) const;
