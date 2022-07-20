@@ -179,6 +179,8 @@ simple_protocol::dispatch_method_once(header h, net::server::resources rs) {
                         ctx->pr.set_exception(e);
                         return ss::now();
                     } catch (const ss::timed_out_error& e) {
+                        rpclog.debug("Timing out request on timed_out_error "
+                                     "(shutting down)");
                         reply_buf.set_status(rpc::status::request_timeout);
                     } catch (const ss::gate_closed_exception& e) {
                         // gate_closed is typical during shutdown.  Treat
