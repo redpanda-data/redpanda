@@ -127,11 +127,12 @@ std::ostream& operator<<(std::ostream& o, allocation_node::state s) {
 std::ostream& operator<<(std::ostream& o, const allocation_node& n) {
     fmt::print(
       o,
-      "{{node: {}, max_partitions_per_core: {}, state: {}, partition_capacity: "
-      "{}, weights: [",
+      "{{node: {}, max_partitions_per_core: {}, state: {}, allocated: {}, "
+      "partition_capacity: {}, weights: [",
       n._id,
       n._partitions_per_shard(),
       n._state,
+      n._allocated_partitions,
       n.partition_capacity());
 
     for (auto w : n._weights) {
