@@ -965,9 +965,11 @@ private:
 
 {%- if op_type == "request" %}
 
+struct {{ request_name }}_request;
 struct {{ request_name }}_response;
 
 struct {{ request_name }}_api final {
+    using request_type = {{ request_name }}_request;
     using response_type = {{ request_name }}_response;
 
     static constexpr const char* name = "{{ request_name }}";
