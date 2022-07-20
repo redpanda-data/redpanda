@@ -26,7 +26,7 @@
 #include <vector>
 
 namespace raft {
-bool group_nodes::contains(vnode id) const {
+bool group_nodes::contains(const vnode& id) const {
     auto v_it = std::find(voters.cbegin(), voters.cend(), id);
     if (v_it != voters.cend()) {
         return true;

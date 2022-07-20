@@ -60,7 +60,7 @@ struct group_nodes {
     std::vector<vnode> voters;
     std::vector<vnode> learners;
 
-    bool contains(vnode id) const;
+    bool contains(const vnode&) const;
 
     std::optional<vnode> find(model::node_id) const;
 
