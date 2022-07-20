@@ -29,6 +29,7 @@ v_cc_library(
     v::ssx
     v::utils
     avrocpp_s
+    Boost::iostreams
     protobuf::libprotobuf
     protobuf::libprotoc
   )
