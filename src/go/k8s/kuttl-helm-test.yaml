@@ -2,8 +2,8 @@ apiVersion: kuttl.dev/v1beta1
 kind: TestSuite
 startKIND: true
 kindContainers:
-  - vectorized/redpanda-operator:dev
-  - vectorized/configurator:dev
+  - localhost/redpanda-operator:dev
+  - localhost/configurator:dev
 testDirs:
   - ./tests/e2e-helm
 kindConfig: ./kind.yaml
