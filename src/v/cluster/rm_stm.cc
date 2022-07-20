@@ -29,6 +29,10 @@
 namespace cluster {
 using namespace std::chrono_literals;
 
+static ss::sstring abort_idx_name(model::offset first, model::offset last) {
+    return fmt::format("abort.idx.{}.{}", first, last);
+}
+
 static const model::violation_recovery_policy crash{
   model::violation_recovery_policy::crash};
 static const model::violation_recovery_policy best_effort{
@@ -1412,7 +1416,7 @@ rm_stm::aborted_transactions(model::offset from, model::offset to) {
     if (!_is_tx_enabled) {
         co_return result;
     }
-    for (auto& idx : _log_state.abort_indexes) {
+    for (const auto& idx : _log_state.abort_indexes) {
         if (idx.last < from) {
             continue;
         }
@@ -1986,6 +1990,38 @@ void rm_stm::fill_snapshot_wo_seqs(T& snapshot) {
 }
 
 ss::future<stm_snapshot> rm_stm::take_snapshot() {
+    auto start_offset = _raft->start_offset();
+
+    std::vector<abort_index> abort_indexes;
+    std::vector<abort_index> expired_abort_indexes;
+    abort_indexes.reserve(_log_state.abort_indexes.size());
+
+    for (const auto& idx : _log_state.abort_indexes) {
+        if (idx.last < start_offset) {
+            // caching expired indexes instead of removing them as we go
+            // to avoid giving a control to another coroutine and managing
+            // concurrent access to _log_state.abort_indexes
+            expired_abort_indexes.push_back(idx);
+        } else {
+            abort_indexes.push_back(idx);
+        }
+    }
+    _log_state.abort_indexes = std::move(abort_indexes);
+
+    for (const auto& idx : expired_abort_indexes) {
+        auto filename = abort_idx_name(idx.first, idx.last);
+        co_await _abort_snapshot_mgr.remove_snapshot(filename);
+    }
+
+    std::vector<tx_range> aborted;
+    aborted.reserve(_log_state.aborted.size());
+    std::copy_if(
+      _log_state.aborted.begin(),
+      _log_state.aborted.end(),
+      std::back_inserter(aborted),
+      [start_offset](tx_range range) { return range.last >= start_offset; });
+    _log_state.aborted = std::move(aborted);
+
     if (_log_state.aborted.size() > _abort_index_segment_size) {
         std::sort(
           std::begin(_log_state.aborted),
@@ -2062,8 +2098,7 @@ ss::future<> rm_stm::save_abort_snapshot(abort_snapshot snapshot) {
     reflection::adl<abort_snapshot>{}.to(snapshot_data, snapshot);
     int32_t snapshot_size = snapshot_data.size_bytes();
 
-    auto filename = fmt::format(
-      "abort.idx.{}.{}", snapshot.first, snapshot.last);
+    auto filename = abort_idx_name(snapshot.first, snapshot.last);
     auto writer = co_await _abort_snapshot_mgr.start_snapshot(filename);
 
     iobuf metadata_buf;
@@ -2077,7 +2112,7 @@ ss::future<> rm_stm::save_abort_snapshot(abort_snapshot snapshot) {
 
 ss::future<std::optional<rm_stm::abort_snapshot>>
 rm_stm::load_abort_snapshot(abort_index index) {
-    auto filename = fmt::format("abort.idx.{}.{}", index.first, index.last);
+    auto filename = abort_idx_name(index.first, index.last);
 
     auto reader = co_await _abort_snapshot_mgr.open_snapshot(filename);
     if (!reader) {
@@ -2110,6 +2145,15 @@ rm_stm::load_abort_snapshot(abort_index index) {
     auto data = reflection::adl<abort_snapshot>{}.from(data_parser);
 
     co_return data;
+}
+
+ss::future<> rm_stm::remove_persistent_state() {
+    for (const auto& idx : _log_state.abort_indexes) {
+        auto filename = abort_idx_name(idx.first, idx.last);
+        co_await _abort_snapshot_mgr.remove_snapshot(filename);
+    }
+    co_await _abort_snapshot_mgr.remove_partial_snapshots();
+    co_return co_await persisted_stm::remove_persistent_state();
 }
 
 ss::future<> rm_stm::handle_eviction() {
