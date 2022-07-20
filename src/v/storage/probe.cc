@@ -29,12 +29,12 @@ void node_probe::set_disk_metrics(
 }
 
 void node_probe::setup_node_metrics() {
-    if (config::shard_local_cfg().disable_metrics()) {
+    if (config::shard_local_cfg().disable_public_metrics()) {
         return;
     }
 
     namespace sm = ss::metrics;
-    _metrics.add_group(
+    _public_metrics.add_group(
       prometheus_sanitize::metrics_name("storage:disk"),
       {
         sm::make_total_bytes(
