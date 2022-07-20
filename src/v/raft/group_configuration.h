@@ -70,7 +70,7 @@ struct group_nodes {
     std::optional<vnode> find(model::node_id) const;
 
     friend std::ostream& operator<<(std::ostream&, const group_nodes&);
-    friend bool operator==(const group_nodes&, const group_nodes&);
+    friend bool operator==(const group_nodes&, const group_nodes&) = default;
 };
 
 class group_configuration final {
@@ -227,7 +227,8 @@ public:
     void maybe_set_initial_revision(model::revision_id r);
 
     friend bool
-    operator==(const group_configuration&, const group_configuration&);
+    operator==(const group_configuration&, const group_configuration&)
+      = default;
 
     friend std::ostream& operator<<(std::ostream&, const group_configuration&);
 

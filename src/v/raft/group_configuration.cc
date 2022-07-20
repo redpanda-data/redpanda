@@ -515,15 +515,6 @@ std::ostream& operator<<(std::ostream& o, const offset_configuration& c) {
     return o;
 }
 
-bool operator==(const group_nodes& a, const group_nodes& b) {
-    return a.learners == b.learners && a.voters == b.voters;
-}
-
-bool operator==(const group_configuration& a, const group_configuration& b) {
-    return a._brokers == b._brokers && a._current == b._current
-           && a._old == b._old;
-}
-
 std::ostream& operator<<(std::ostream& o, configuration_type t) {
     switch (t) {
     case configuration_type::simple:
