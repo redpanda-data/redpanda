@@ -8,11 +8,12 @@
 # by the Apache License, Version 2.0
 
 import random
+import re
 import threading
 import time
 import requests
 
-from ducktape.mark import parametrize
+from ducktape.mark import matrix
 from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
@@ -23,6 +24,7 @@ from rptest.clients.default import DefaultClient
 from rptest.services.admin import Admin
 from rptest.services.failure_injector import FailureInjector, FailureSpec
 from rptest.services.redpanda import RedpandaService, CHAOS_LOG_ALLOW_LIST
+from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.tests.end_to_end import EndToEndTest
 
 DECOMMISSION = "decommission"
@@ -30,6 +32,12 @@ ADD = "add"
 ADD_NO_WAIT = "add_no_wait"
 
 ALLOWED_REPLICATION = [1, 3]
+
+# Allow logs from previously allowed on old versions.
+V22_1_CHAOS_ALLOW_LOGS = [
+    re.compile("storage - Could not parse header"),
+    re.compile("storage - Cannot continue parsing"),
+]
 
 
 class NodeOperationFuzzyTest(EndToEndTest):
@@ -92,21 +100,32 @@ class NodeOperationFuzzyTest(EndToEndTest):
 
         return topics
 
-    @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
-    @parametrize(enable_failures=True)
-    @parametrize(enable_failures=False)
-    def test_node_operations(self, enable_failures):
+    @cluster(num_nodes=7,
+             log_allow_list=CHAOS_LOG_ALLOW_LIST + V22_1_CHAOS_ALLOW_LOGS)
+    @matrix(enable_failures=[True, False], num_to_upgrade=[0, 3])
+    def test_node_operations(self, enable_failures, num_to_upgrade):
         # allocate 5 nodes for the cluster
+        extra_rp_conf = {
+            "group_topic_partitions": 3,
+            "default_topic_replications": 3,
+        }
+        if num_to_upgrade > 0:
+            # Use the deprecated config to bootstrap older nodes.
+            extra_rp_conf["enable_auto_rebalance_on_node_add"] = True
+        else:
+            extra_rp_conf["partition_autobalancing_mode"] = "node_add_remove"
         self.redpanda = RedpandaService(self.test_context,
                                         5,
-                                        extra_rp_conf={
-                                            "partition_autobalancing_mode":
-                                            "node_add_remove",
-                                            "group_topic_partitions": 3,
-                                            "default_topic_replications": 3,
-                                        })
-
-        self.redpanda.start()
+                                        extra_rp_conf=extra_rp_conf)
+        if num_to_upgrade > 0:
+            installer = self.redpanda._installer
+            installer.install(self.redpanda.nodes, (22, 1, 4))
+            self.redpanda.start()
+            installer.install(self.redpanda.nodes[:num_to_upgrade],
+                              RedpandaInstaller.HEAD)
+            self.redpanda.restart_nodes(self.redpanda.nodes[:num_to_upgrade])
+        else:
+            self.redpanda.start()
         # create some topics
         topics = self._create_random_topics(10)
         self.redpanda.logger.info(f"using topics: {topics}")
@@ -257,7 +276,8 @@ class NodeOperationFuzzyTest(EndToEndTest):
             self.redpanda.stop_node(self.redpanda.get_node(idx))
             if cleanup:
                 self.redpanda.clean_node(self.redpanda.get_node(idx),
-                                         preserve_logs=True)
+                                         preserve_logs=True,
+                                         preserve_current_install=True)
             # we do not reuse previous node ids and override seed server list
             self.redpanda.start_node(
                 self.redpanda.get_node(idx),
