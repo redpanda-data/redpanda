@@ -30,10 +30,10 @@ namespace reflection {
 template<typename T>
 struct adl {
     using type = std::remove_reference_t<std::decay_t<T>>;
-    static constexpr bool is_optional = is_std_optional_v<type>;
+    static constexpr bool is_optional = is_std_optional<type>;
     static constexpr bool is_sstring = std::is_same_v<type, ss::sstring>;
-    static constexpr bool is_vector = is_std_vector_v<type>;
-    static constexpr bool is_named_type = is_named_type_v<type>;
+    static constexpr bool is_vector = is_std_vector<type>;
+    static constexpr bool is_named_type = is_rp_named_type<type>;
     static constexpr bool is_iobuf = std::is_same_v<type, iobuf>;
     static constexpr bool is_standard_layout = std::is_standard_layout_v<type>;
     static constexpr bool is_not_floating_point
@@ -41,12 +41,12 @@ struct adl {
     static constexpr bool is_trivially_copyable
       = std::is_trivially_copyable_v<type>;
     static constexpr bool is_enum = std::is_enum_v<T>;
-    static constexpr bool is_ss_bool = is_ss_bool_v<T>;
+    static constexpr bool is_ss_bool = is_ss_bool_class<T>;
     static constexpr bool is_chrono_milliseconds
       = std::is_same_v<type, std::chrono::milliseconds>;
     static constexpr bool is_time_point
       = std::is_same_v<type, ss::lowres_system_clock::time_point>;
-    static constexpr bool is_circular_buffer = is_ss_circular_buffer_v<type>;
+    static constexpr bool is_circular_buffer = is_ss_circular_buffer<type>;
 
     static_assert(
       is_optional || is_sstring || is_vector || is_named_type || is_iobuf

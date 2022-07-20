@@ -71,7 +71,7 @@ void init(
            },
            t.template get_generation<Generation>())),
          ...);
-    } else if constexpr (reflection::is_std_optional_v<T>) {
+    } else if constexpr (reflection::is_std_optional<T>) {
         if (
           depth != max_depth
           && gen.get<std::uint8_t>()
@@ -81,7 +81,7 @@ void init(
         } else {
             t = std::nullopt;
         }
-    } else if constexpr (reflection::is_std_vector_v<T>) {
+    } else if constexpr (reflection::is_std_vector<T>) {
         if (depth != max_depth) {
             t.resize(gen.get<uint8_t>() % max_vector_size);
             for (auto& v : t) {

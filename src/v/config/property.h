@@ -382,7 +382,7 @@ consteval std::string_view property_type_name() {
     } else if constexpr (std::is_same_v<type, bool>) {
         // boolean check must come before is_integral check
         return "boolean";
-    } else if constexpr (reflection::is_std_optional_v<type>) {
+    } else if constexpr (reflection::is_std_optional<type>) {
         return property_type_name<typename type::value_type>();
     } else if constexpr (is_collection<type>) {
         return property_type_name<typename type::value_type>();
@@ -440,7 +440,7 @@ consteval std::string_view property_units_name() {
         return "ms";
     } else if constexpr (std::is_same_v<type, std::chrono::seconds>) {
         return "s";
-    } else if constexpr (reflection::is_std_optional_v<type>) {
+    } else if constexpr (reflection::is_std_optional<type>) {
         return property_units_name<typename type::value_type>();
     } else {
         // This will be transformed to nullopt at runtime: returning
@@ -471,7 +471,7 @@ std::optional<std::string_view> property<T>::units_name() const {
 
 template<typename T>
 bool property<T>::is_nullable() const {
-    if constexpr (reflection::is_std_optional_v<std::decay_t<T>>) {
+    if constexpr (reflection::is_std_optional<std::decay_t<T>>) {
         return true;
     } else {
         return false;

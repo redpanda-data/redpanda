@@ -22,48 +22,38 @@
 #include <type_traits>
 #include <vector>
 
+namespace detail {
+
+template<typename T, template<typename...> class C>
+struct is_specialization_of : std::false_type {};
+template<template<typename...> class C, typename... Args>
+struct is_specialization_of<C<Args...>, C> : std::true_type {};
+template<typename T, template<typename...> class C>
+inline constexpr bool is_specialization_of_v
+  = is_specialization_of<T, C>::value;
+
+} // namespace detail
+
 namespace reflection {
 
 template<typename T>
-struct is_std_vector : std::false_type {};
-template<typename... Args>
-struct is_std_vector<std::vector<Args...>> : std::true_type {};
-template<typename T>
-inline constexpr bool is_std_vector_v = is_std_vector<T>::value;
+concept is_std_vector = ::detail::is_specialization_of_v<T, std::vector>;
 
 template<typename T>
-struct is_ss_circular_buffer : std::false_type {};
-template<typename... Args>
-struct is_ss_circular_buffer<ss::circular_buffer<Args...>> : std::true_type {};
-template<typename T>
-inline constexpr bool is_ss_circular_buffer_v = is_ss_circular_buffer<T>::value;
+concept is_ss_circular_buffer
+  = ::detail::is_specialization_of_v<T, ss::circular_buffer>;
 
 template<typename T>
-struct is_std_optional : std::false_type {};
-template<typename... Args>
-struct is_std_optional<std::optional<Args...>> : std::true_type {};
-template<typename T>
-inline constexpr bool is_std_optional_v = is_std_optional<T>::value;
+concept is_std_optional = ::detail::is_specialization_of_v<T, std::optional>;
 
 template<typename T>
-struct is_named_type : std::false_type {};
-template<typename T, typename Tag>
-struct is_named_type<named_type<T, Tag>> : std::true_type {};
-template<typename T>
-inline constexpr bool is_named_type_v = is_named_type<T>::value;
+concept is_rp_named_type
+  = ::detail::is_specialization_of_v<T, ::detail::base_named_type>;
 
 template<typename T>
-struct is_ss_bool : std::false_type {};
-template<typename T>
-struct is_ss_bool<ss::bool_class<T>> : std::true_type {};
-template<typename T>
-inline constexpr bool is_ss_bool_v = is_ss_bool<T>::value;
+concept is_ss_bool_class = ::detail::is_specialization_of_v<T, ss::bool_class>;
 
 template<typename T>
-struct is_tristate : std::false_type {};
-template<typename T>
-struct is_tristate<tristate<T>> : std::true_type {};
-template<typename T>
-inline constexpr bool is_tristate_v = is_tristate<T>::value;
+concept is_tristate = ::detail::is_specialization_of_v<T, tristate>;
 
 } // namespace reflection
