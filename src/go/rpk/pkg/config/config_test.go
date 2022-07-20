@@ -47,6 +47,7 @@ func getValidConfig() *Config {
 }
 
 func TestSet(t *testing.T) {
+	authNSasl := "sasl"
 	tests := []struct {
 		name      string
 		key       string
@@ -214,10 +215,35 @@ tune_cpu: true`,
   port: 9092
 `,
 			check: func(st *testing.T, c *Config) {
-				expected := []NamedSocketAddress{{
+				expected := []NamedAuthNSocketAddress{{
 					Name:    "external",
 					Address: "192.168.73.45",
 					Port:    9092,
+				}, {
+					Name:    "internal",
+					Address: "10.21.34.58",
+					Port:    9092,
+				}}
+				require.Exactly(st, expected, c.Redpanda.KafkaAPI)
+			},
+		},
+		{
+			name: "extract kafka_api[].authentication_method",
+			key:  "redpanda.kafka_api",
+			value: `- name: external
+  address: 192.168.73.45
+  port: 9092
+  authentication_method: sasl
+- name: internal
+  address: 10.21.34.58
+  port: 9092
+`,
+			check: func(st *testing.T, c *Config) {
+				expected := []NamedAuthNSocketAddress{{
+					Name:    "external",
+					Address: "192.168.73.45",
+					Port:    9092,
+					AuthN:   &authNSasl,
 				}, {
 					Name:    "internal",
 					Address: "10.21.34.58",
@@ -235,7 +261,7 @@ tune_cpu: true`,
 		}]`,
 			format: "json",
 			check: func(st *testing.T, c *Config) {
-				expected := []NamedSocketAddress{{
+				expected := []NamedAuthNSocketAddress{{
 					Port:    9092,
 					Address: "192.168.54.2",
 				}}
@@ -423,7 +449,7 @@ func TestDefault(t *testing.T) {
 		Redpanda: RedpandaConfig{
 			Directory: "/var/lib/redpanda/data",
 			RPCServer: SocketAddress{"0.0.0.0", 33145},
-			KafkaAPI: []NamedSocketAddress{{
+			KafkaAPI: []NamedAuthNSocketAddress{{
 				Address: "0.0.0.0",
 				Port:    9092,
 			}},

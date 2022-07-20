@@ -96,6 +96,54 @@ func TestMergeFlags(t *testing.T) {
 	}
 }
 
+func TestParseNamedAuthNAddress(t *testing.T) {
+	authNSasl := "sasl"
+	tests := []struct {
+		name           string
+		arg            string
+		expected       config.NamedAuthNSocketAddress
+		expectedErrMsg string
+	}{
+		{
+			name:     "it should parse host:port",
+			arg:      "host:9092",
+			expected: config.NamedAuthNSocketAddress{Address: "host", Port: 9092, Name: ""},
+		},
+		{
+			name:     "it should parse scheme://host:port",
+			arg:      "scheme://host:9092",
+			expected: config.NamedAuthNSocketAddress{Address: "host", Port: 9092, Name: "scheme"},
+		},
+		{
+			name:     "it should parse host:port|authn",
+			arg:      "host:9092|sasl",
+			expected: config.NamedAuthNSocketAddress{Address: "host", Port: 9092, Name: "", AuthN: &authNSasl},
+		},
+		{
+			name:     "it should parse scheme://host:port|authn",
+			arg:      "scheme://host:9092|sasl",
+			expected: config.NamedAuthNSocketAddress{Address: "host", Port: 9092, Name: "scheme", AuthN: &authNSasl},
+		},
+		{
+			name:           "it should fail for multiple |",
+			arg:            "host|sasl|ignore",
+			expected:       config.NamedAuthNSocketAddress{},
+			expectedErrMsg: `invalid format for listener, at most one "|" can be present: "host|sasl|ignore"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(st *testing.T) {
+			res, err := parseNamedAuthNAddress(tt.arg, 19092)
+			if tt.expectedErrMsg != "" {
+				require.EqualError(st, err, tt.expectedErrMsg)
+				return
+			}
+			require.Exactly(st, tt.expected, *res)
+		})
+	}
+}
+
 func TestParseSeeds(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -152,6 +200,7 @@ func TestParseSeeds(t *testing.T) {
 }
 
 func TestStartCommand(t *testing.T) {
+	authNSasl := "sasl"
 	tests := []struct {
 		name           string
 		launcher       redpanda.Launcher
@@ -262,7 +311,7 @@ func TestStartCommand(t *testing.T) {
 				Address: "192.168.54.2",
 				Port:    9643,
 			}}
-			expectedKafkaAPI := []config.NamedSocketAddress{{
+			expectedKafkaAPI := []config.NamedAuthNSocketAddress{{
 				Name:    "external",
 				Address: "192.168.73.45",
 				Port:    9092,
@@ -327,7 +376,7 @@ func TestStartCommand(t *testing.T) {
 				Address: "192.168.54.2",
 				Port:    9643,
 			}}
-			expectedKafkaAPI := []config.NamedSocketAddress{{
+			expectedKafkaAPI := []config.NamedAuthNSocketAddress{{
 				Name:    "external",
 				Address: "192.168.73.45",
 				Port:    9092,
@@ -378,7 +427,7 @@ func TestStartCommand(t *testing.T) {
 			require.NoError(st, err)
 			// The value set through the --kafka-addr flag should
 			// have been picked.
-			expectedKafkaAPI := []config.NamedSocketAddress{{
+			expectedKafkaAPI := []config.NamedAuthNSocketAddress{{
 				Name:    "flag",
 				Address: "192.168.34.3",
 				Port:    9093,
@@ -825,7 +874,7 @@ func TestStartCommand(t *testing.T) {
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			conf, err := new(config.Params).Load(fs)
 			require.NoError(st, err)
-			expectedAddr := []config.NamedSocketAddress{{
+			expectedAddr := []config.NamedAuthNSocketAddress{{
 				Address: "192.168.34.32",
 				Port:    33145,
 			}}
@@ -845,7 +894,7 @@ func TestStartCommand(t *testing.T) {
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			conf, err := new(config.Params).Load(fs)
 			require.NoError(st, err)
-			expectedAddr := []config.NamedSocketAddress{{
+			expectedAddr := []config.NamedAuthNSocketAddress{{
 				Address: "192.168.34.32",
 				Port:    9092,
 			}}
@@ -865,7 +914,7 @@ func TestStartCommand(t *testing.T) {
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			conf, err := new(config.Params).Load(fs)
 			require.NoError(st, err)
-			expectedAddr := []config.NamedSocketAddress{{
+			expectedAddr := []config.NamedAuthNSocketAddress{{
 				Name:    "nondefaultname",
 				Address: "192.168.34.32",
 				Port:    9092,
@@ -881,18 +930,23 @@ func TestStartCommand(t *testing.T) {
 		name: "it should parse the --kafka-addr and persist it (list)",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
-			"--kafka-addr", "nondefaultname://192.168.34.32,host:9092",
+			"--kafka-addr", "nondefaultname://192.168.34.32,host:9092,authn://host:9093|sasl",
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			conf, err := new(config.Params).Load(fs)
 			require.NoError(st, err)
-			expectedAddr := []config.NamedSocketAddress{{
+			expectedAddr := []config.NamedAuthNSocketAddress{{
 				Name:    "nondefaultname",
 				Address: "192.168.34.32",
 				Port:    9092,
 			}, {
 				Address: "host",
 				Port:    9092,
+			}, {
+				Name:    "authn",
+				Address: "host",
+				Port:    9093,
+				AuthN:   &authNSasl,
 			}}
 			// Check that the generated config is as expected.
 			require.Exactly(
@@ -923,7 +977,7 @@ func TestStartCommand(t *testing.T) {
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			conf, err := new(config.Params).Load(fs)
 			require.NoError(st, err)
-			expectedAddr := []config.NamedSocketAddress{{
+			expectedAddr := []config.NamedAuthNSocketAddress{{
 				Address: "host",
 				Port:    3123,
 			}}
@@ -941,7 +995,7 @@ func TestStartCommand(t *testing.T) {
 		},
 		before: func(fs afero.Fs) error {
 			conf := config.Default()
-			conf.Redpanda.KafkaAPI = []config.NamedSocketAddress{{
+			conf.Redpanda.KafkaAPI = []config.NamedAuthNSocketAddress{{
 				Address: "192.168.33.33",
 				Port:    9892,
 			}}
@@ -950,7 +1004,7 @@ func TestStartCommand(t *testing.T) {
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			conf, err := new(config.Params).Load(fs)
 			require.NoError(st, err)
-			expectedAddr := []config.NamedSocketAddress{{
+			expectedAddr := []config.NamedAuthNSocketAddress{{
 				Address: "192.168.33.33",
 				Port:    9892,
 			}}

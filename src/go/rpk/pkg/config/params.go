@@ -260,7 +260,7 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 				Address: "0.0.0.0",
 				Port:    33145,
 			},
-			KafkaAPI: []NamedSocketAddress{{
+			KafkaAPI: []NamedAuthNSocketAddress{{
 				Address: "0.0.0.0",
 				Port:    9092,
 			}},

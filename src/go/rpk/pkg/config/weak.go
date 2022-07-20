@@ -219,6 +219,30 @@ func (nsa *namedSocketAddresses) UnmarshalYAML(n *yaml.Node) error {
 	return nil
 }
 
+// namedAuthNSocketAddresses is an intermediary one_or_many type to be used
+// during our transition to strictly typed configuration parameters.
+// This type will:
+//   - parse an array of NamedAuthNSocketAddress
+//   - parse a single NamedAuthNSocketAddress to an array.
+type namedAuthNSocketAddresses []NamedAuthNSocketAddress
+
+func (nsa *namedAuthNSocketAddresses) UnmarshalYAML(n *yaml.Node) error {
+	var multi []NamedAuthNSocketAddress
+	err := n.Decode(&multi)
+	if err == nil {
+		*nsa = multi
+		return nil
+	}
+
+	var single NamedAuthNSocketAddress
+	err = n.Decode(&single)
+	if err != nil {
+		return err
+	}
+	*nsa = []NamedAuthNSocketAddress{single}
+	return nil
+}
+
 // serverTLSArray is an intermediary one_or_many type to be used during our
 // transition to strictly typed configuration parameters. This type will:
 //   - parse an array of ServerTLS
@@ -305,26 +329,26 @@ func (c *Config) UnmarshalYAML(n *yaml.Node) error {
 
 func (rpc *RedpandaConfig) UnmarshalYAML(n *yaml.Node) error {
 	var internal struct {
-		Directory                  weakString             `yaml:"data_directory"`
-		ID                         weakInt                `yaml:"node_id" `
-		Rack                       weakString             `yaml:"rack"`
-		SeedServers                seedServers            `yaml:"seed_servers"`
-		RPCServer                  SocketAddress          `yaml:"rpc_server"`
-		RPCServerTLS               serverTLSArray         `yaml:"rpc_server_tls"`
-		KafkaAPI                   namedSocketAddresses   `yaml:"kafka_api"`
-		KafkaAPITLS                serverTLSArray         `yaml:"kafka_api_tls"`
-		AdminAPI                   namedSocketAddresses   `yaml:"admin"`
-		AdminAPITLS                serverTLSArray         `yaml:"admin_api_tls"`
-		CoprocSupervisorServer     SocketAddress          `yaml:"coproc_supervisor_server"`
-		AdminAPIDocDir             weakString             `yaml:"admin_api_doc_dir"`
-		DashboardDir               weakString             `yaml:"dashboard_dir"`
-		CloudStorageCacheDirectory weakString             `yaml:"cloud_storage_cache_directory"`
-		AdvertisedRPCAPI           *SocketAddress         `yaml:"advertised_rpc_api"`
-		AdvertisedKafkaAPI         namedSocketAddresses   `yaml:"advertised_kafka_api"`
-		DeveloperMode              weakBool               `yaml:"developer_mode"`
-		AggregateMetrics           weakBool               `yaml:"aggregate_metrics"`
-		DisablePublicMetrics       weakBool               `yaml:"disable_public_metrics"`
-		Other                      map[string]interface{} `yaml:",inline"`
+		Directory                  weakString                `yaml:"data_directory"`
+		ID                         weakInt                   `yaml:"node_id" `
+		Rack                       weakString                `yaml:"rack"`
+		SeedServers                seedServers               `yaml:"seed_servers"`
+		RPCServer                  SocketAddress             `yaml:"rpc_server"`
+		RPCServerTLS               serverTLSArray            `yaml:"rpc_server_tls"`
+		KafkaAPI                   namedAuthNSocketAddresses `yaml:"kafka_api"`
+		KafkaAPITLS                serverTLSArray            `yaml:"kafka_api_tls"`
+		AdminAPI                   namedSocketAddresses      `yaml:"admin"`
+		AdminAPITLS                serverTLSArray            `yaml:"admin_api_tls"`
+		CoprocSupervisorServer     SocketAddress             `yaml:"coproc_supervisor_server"`
+		AdminAPIDocDir             weakString                `yaml:"admin_api_doc_dir"`
+		DashboardDir               weakString                `yaml:"dashboard_dir"`
+		CloudStorageCacheDirectory weakString                `yaml:"cloud_storage_cache_directory"`
+		AdvertisedRPCAPI           *SocketAddress            `yaml:"advertised_rpc_api"`
+		AdvertisedKafkaAPI         namedSocketAddresses      `yaml:"advertised_kafka_api"`
+		DeveloperMode              weakBool                  `yaml:"developer_mode"`
+		AggregateMetrics           weakBool                  `yaml:"aggregate_metrics"`
+		DisablePublicMetrics       weakBool                  `yaml:"disable_public_metrics"`
+		Other                      map[string]interface{}    `yaml:",inline"`
 	}
 
 	if err := n.Decode(&internal); err != nil {
@@ -589,6 +613,25 @@ func (nsa *NamedSocketAddress) UnmarshalYAML(n *yaml.Node) error {
 	nsa.Name = string(internal.Name)
 	nsa.Address = string(internal.Address)
 	nsa.Port = int(internal.Port)
+	return nil
+}
+
+func (nsa *NamedAuthNSocketAddress) UnmarshalYAML(n *yaml.Node) error {
+	var internal struct {
+		Name    weakString  `yaml:"name"`
+		Address weakString  `yaml:"address" mapstructure:"address"`
+		Port    weakInt     `yaml:"port" mapstructure:"port"`
+		AuthN   *weakString `yaml:"authentication_method" mapstructure:"authentication_method"`
+	}
+
+	if err := n.Decode(&internal); err != nil {
+		return err
+	}
+
+	nsa.Name = string(internal.Name)
+	nsa.Address = string(internal.Address)
+	nsa.Port = int(internal.Port)
+	nsa.AuthN = (*string)(internal.AuthN)
 	return nil
 }
 

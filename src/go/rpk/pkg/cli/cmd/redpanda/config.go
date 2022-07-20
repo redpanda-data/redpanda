@@ -133,7 +133,7 @@ func bootstrap(fs afero.Fs) *cobra.Command {
 
 			cfg.Redpanda.ID = id
 			cfg.Redpanda.RPCServer.Address = ownIP.String()
-			cfg.Redpanda.KafkaAPI = []config.NamedSocketAddress{{
+			cfg.Redpanda.KafkaAPI = []config.NamedAuthNSocketAddress{{
 				Address: ownIP.String(),
 				Port:    config.DefaultKafkaPort,
 			}}
