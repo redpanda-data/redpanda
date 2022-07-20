@@ -1,11 +1,3 @@
-# This template exists so that the same Dockerfile content can be used in both 
-# regular 'docker build' and builkit builds. For the former, the following line 
-# needs to be added at the top:
-#
-#   ARG BUILDPLATFORM
-#
-# For buildkit, the file can be used "as is"
-
 FROM --platform=$BUILDPLATFORM golang:1.17 as builder
 
 ARG TARGETARCH
