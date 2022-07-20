@@ -40,11 +40,13 @@ void node_probe::setup_node_metrics() {
         sm::make_total_bytes(
           "total_bytes",
           [this] { return _disk.total_bytes; },
-          sm::description("Total size of attached storage, in bytes.")),
+          sm::description("Total size of attached storage, in bytes."))
+          .aggregate({sm::shard_label}),
         sm::make_total_bytes(
           "free_bytes",
           [this] { return _disk.free_bytes; },
-          sm::description("Disk storage bytes free.")),
+          sm::description("Disk storage bytes free."))
+          .aggregate({sm::shard_label}),
         sm::make_gauge(
           "free_space_alert",
           [this] {
@@ -52,7 +54,8 @@ void node_probe::setup_node_metrics() {
                 _disk.space_alert);
           },
           sm::description(
-            "Status of low storage space alert. 0-OK, 1-Low Space 2-Degraded")),
+            "Status of low storage space alert. 0-OK, 1-Low Space 2-Degraded"))
+          .aggregate({sm::shard_label}),
       });
 }
 
