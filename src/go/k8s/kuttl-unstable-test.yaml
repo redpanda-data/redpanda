@@ -4,8 +4,8 @@ startKIND: true
 skipDelete: true
 skipClusterDelete: true
 kindContainers:
-  - vectorized/redpanda-operator:dev
-  - vectorized/configurator:dev
+  - localhost/redpanda-operator:dev
+  - localhost/configurator:dev
   - localhost/redpanda:dev
 testDirs:
   - ./tests/e2e-unstable
