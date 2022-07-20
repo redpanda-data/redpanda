@@ -777,6 +777,30 @@ void map_test() {
     BOOST_REQUIRE(b == b_from);
 }
 
+template<template<class...> class T>
+void set_test() {
+    T<ss::sstring> a = {
+      "asdf",
+      "fooo",
+    };
+
+    T<int32_t> b = {
+      123,
+      456,
+      959,
+    };
+
+    iobuf a_buf = serde::to_iobuf(a);
+    iobuf b_buf = serde::to_iobuf(b);
+
+    auto a_from = serde::from_iobuf<T<ss::sstring>>(std::move(a_buf));
+
+    auto b_from = serde::from_iobuf<T<int32_t>>(std::move(b_buf));
+
+    BOOST_REQUIRE(a == a_from);
+    BOOST_REQUIRE(b == b_from);
+}
+
 SEASTAR_THREAD_TEST_CASE(std_unordered_map) { map_test<std::unordered_map>(); }
 
 SEASTAR_THREAD_TEST_CASE(absl_node_hash_map) {
@@ -788,26 +812,7 @@ SEASTAR_THREAD_TEST_CASE(absl_flat_hash_map) {
 }
 
 SEASTAR_THREAD_TEST_CASE(absl_node_hash_set) {
-    absl::node_hash_set<ss::sstring> a = {
-      "asdf",
-      "fooo",
-    };
-
-    absl::node_hash_set<int32_t> b = {
-      123,
-      456,
-      959,
-    };
-
-    iobuf a_buf = serde::to_iobuf(a);
-    iobuf b_buf = serde::to_iobuf(b);
-
-    auto a_from = serde::from_iobuf<absl::node_hash_set<ss::sstring>>(
-      std::move(a_buf));
-
-    auto b_from = serde::from_iobuf<absl::node_hash_set<int32_t>>(
-      std::move(b_buf));
-
-    BOOST_REQUIRE(a == a_from);
-    BOOST_REQUIRE(b == b_from);
+    set_test<absl::node_hash_set>();
 }
+
+SEASTAR_THREAD_TEST_CASE(absl_btree_set) { set_test<absl::btree_set>(); }
