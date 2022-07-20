@@ -14,6 +14,7 @@
 #include "model/fundamental.h"
 #include "storage/parser_utils.h"
 
+static ss::logger slog{"test"};
 namespace storage {
 
 log_gap_analysis make_log_gap_analysis(
@@ -30,9 +31,9 @@ log_gap_analysis make_log_gap_analysis(
       [&](const model::record& r, const model::record_batch& b) {
           model::offset msg_offset = model::offset(r.offset_delta())
                                      + b.base_offset();
-
           if (expected_start && !last_offset) {
               last_offset = *expected_start - model::offset(1);
+              slog.info("gap_analysis: starting at {}", *last_offset + 1L);
           }
           if (last_offset) {
               model::offset expected = *last_offset + model::offset(1);
@@ -42,6 +43,17 @@ log_gap_analysis make_log_gap_analysis(
                       ga.first_gap_start = expected;
                   }
                   ga.last_gap_end = msg_offset - model::offset(1);
+                  slog.info(
+                    "gap_analysis: at moffs {} expected {}, gaps {}",
+                    msg_offset,
+                    expected,
+                    ga);
+              } else {
+                  slog.debug(
+                    "gap_analysis: *OK*: at moffs {} = expected {}, gaps {}",
+                    msg_offset,
+                    expected,
+                    ga);
               }
           }
           last_offset = msg_offset;
