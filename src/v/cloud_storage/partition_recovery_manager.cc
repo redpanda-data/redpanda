@@ -292,16 +292,15 @@ partition_downloader::download_log(const remote_manifest_path& manifest_key) {
 
     auto upl_result = co_await _remote->upload_manifest(
       _bucket, target, _rtcnode);
-    // If the manifest upload fails we can't continue
-    // since it will damage the data in S3. The archival subsystem
-    // will pick new partition after the leader will be elected. Then
-    // it won't find the manifest in place and will create a new one.
-    // If the manifest name in S3 matches the old manifest name it will
-    // be overwriten and some data may be lost as a result.
-    vassert(
-      upl_result == upload_result::success,
-      "Can't upload new manifest {} after recovery",
-      target.get_manifest_path());
+
+    // In this case the manifest will be uploaded next time we will roll the
+    // segments
+    if (upl_result != upload_result::success) {
+        vlog(
+          _ctxlog.warn,
+          "Can't upload partition manifest {} after recovery",
+          target.get_manifest_path());
+    }
 
     // TODO (evgeny): clean up old manifests on success. Take into account
     //                that old and new manifest names could match.
