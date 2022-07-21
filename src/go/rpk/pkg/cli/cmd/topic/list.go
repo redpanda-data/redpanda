@@ -52,7 +52,7 @@ information.
 		Run: func(cmd *cobra.Command, topics []string) {
 			// The purpose of the regex flag really is for users to
 			// know what topics they will delete when using regex.
-			// We forbit deleting internal topics (redpanda
+			// We forbid deleting internal topics (redpanda
 			// actually does not expose these currently), so we
 			// make -r and -i incompatible.
 			if internal && re {

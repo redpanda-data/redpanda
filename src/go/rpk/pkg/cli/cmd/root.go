@@ -58,6 +58,10 @@ func Execute() {
 		Use:   "rpk",
 		Short: "rpk is the Redpanda CLI & toolbox",
 		Long:  "",
+
+		CompletionOptions: cobra.CompletionOptions{
+			DisableDefaultCmd: true,
+		},
 	}
 	root.PersistentFlags().BoolVarP(&verbose, config.FlagVerbose,
 		"v", false, "Enable verbose logging (default: false)")
