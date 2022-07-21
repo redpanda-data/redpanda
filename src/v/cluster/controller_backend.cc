@@ -1337,8 +1337,13 @@ ss::future<std::error_code> controller_backend::force_abort_replica_set_update(
         if (ec) {
             co_return ec;
         }
+        auto current_leader = partition->get_leader_id();
+        if (!current_leader.has_value() || current_leader == _self) {
+            co_return check_configuration_update(
+              _self, partition, replicas, rev);
+        }
 
-        co_return check_configuration_update(_self, partition, replicas, rev);
+        co_return errc::waiting_for_recovery;
     }
 }
 
