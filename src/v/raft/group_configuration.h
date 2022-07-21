@@ -227,6 +227,47 @@ public:
 
     friend std::ostream& operator<<(std::ostream&, const group_configuration&);
 
+    struct configuration_change_strategy {
+        /**
+         * Configuration manipulation API. Each of the operation updates
+         * configuration revision with provided parameter.
+         */
+        // add
+        virtual void add(
+          std::vector<model::broker> to_add,
+          model::revision_id new_cfg_revision)
+          = 0;
+        virtual void remove(const std::vector<model::node_id>& to_remove) = 0;
+        virtual void replace(
+          std::vector<broker_revision> new_replica_set,
+          model::revision_id new_cfg_revision)
+          = 0;
+
+        /**
+         * Discards the old configuration, after this operation joint
+         * configuration become simple
+         */
+        virtual void discard_old_config() = 0;
+
+        /**
+         * Forcefully abort changing configuration. If current configuration in
+         * in joint state it drops the new configuration part and allow raft to
+         * operate with old quorum
+         *
+         * NOTE: may lead to data loss in some situations use only for cluster
+         * recovery from critical failures
+         */
+        virtual void abort_configuration_change(model::revision_id) = 0;
+
+        /**
+         * Reverts configuration change, the configuration is still in joint
+         * state but the direction of change is being changed
+         *
+         */
+        virtual void cancel_configuration_change(model::revision_id) = 0;
+        virtual ~configuration_change_strategy() = default;
+    };
+
 private:
     std::vector<vnode> unique_voter_ids() const;
     std::vector<vnode> unique_learner_ids() const;
