@@ -153,6 +153,7 @@ simple_protocol::dispatch_method_once(header h, net::server::resources rs) {
                     ctx->res.conn->addr);
                   rs.probe().method_not_found();
                   netbuf reply_buf;
+                  reply_buf.set_version(ctx->get_header().version);
                   reply_buf.set_status(rpc::status::method_not_found);
                   return send_reply_skip_payload(ctx, std::move(reply_buf))
                     .then([ctx] { ctx->signal_body_parse(); });
@@ -163,10 +164,12 @@ simple_protocol::dispatch_method_once(header h, net::server::resources rs) {
               return m->handle(ctx->res.conn->input(), *ctx)
                 .then_wrapped([ctx, m, l = ctx->res.hist().auto_measure(), rs](
                                 ss::future<netbuf> fut) mutable {
+                    bool error = true;
                     netbuf reply_buf;
                     try {
                         reply_buf = fut.get0();
                         reply_buf.set_status(rpc::status::success);
+                        error = false;
                     } catch (const rpc_internal_body_parsing_exception& e) {
                         // We have to distinguish between exceptions thrown by
                         // the service handler and the one caused by the
@@ -176,6 +179,8 @@ simple_protocol::dispatch_method_once(header h, net::server::resources rs) {
                         ctx->pr.set_exception(e);
                         return ss::now();
                     } catch (const ss::timed_out_error& e) {
+                        rpclog.debug("Timing out request on timed_out_error "
+                                     "(shutting down)");
                         reply_buf.set_status(rpc::status::request_timeout);
                     } catch (const ss::gate_closed_exception& e) {
                         // gate_closed is typical during shutdown.  Treat
@@ -201,6 +206,20 @@ simple_protocol::dispatch_method_once(header h, net::server::resources rs) {
                           std::current_exception());
                         rs.probe().service_error();
                         reply_buf.set_status(rpc::status::server_error);
+                    }
+                    if (error) {
+                        /*
+                         * when an exception occurs while processing a request
+                         * reply_buf is sent back to the client as a reply with
+                         * a status/error code and no body. the version needs to
+                         * also be set to match the request version to avoid the
+                         * client complaining about an unexpected version.
+                         *
+                         * in the error free case the handler will provide a
+                         * fully defined (with version) netbuf which replaces
+                         * reply_buf (see try block above).
+                         */
+                        reply_buf.set_version(ctx->get_header().version);
                     }
                     return send_reply(ctx, std::move(reply_buf))
                       .finally([m, l = std::move(l)]() mutable {

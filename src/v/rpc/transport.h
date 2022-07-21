@@ -112,6 +112,8 @@ private:
      * version level used when dispatching requests. this value may change
      * during the lifetime of the transport. for example the version may be
      * upgraded if it is discovered that a server supports a newer version.
+     *
+     * reset to v1 in reset_state() to support reconnect_transport.
      */
     transport_version _version{transport_version::v1};
 
@@ -170,7 +172,7 @@ ss::future<result<rpc::client_context<T>>> parse_result(
         }
         if (protocol_violation) {
             vlog(
-              rpclog.warn,
+              rpclog.error,
               "Protocol violation: request version {} incompatible with "
               "reply version {}",
               req_ver,
