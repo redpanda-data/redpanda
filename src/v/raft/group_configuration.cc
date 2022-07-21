@@ -563,7 +563,7 @@ struct group_nodes_v0 {
 
 raft::group_configuration
 adl<raft::group_configuration>::from(iobuf_parser& p) {
-    auto version = adl<uint8_t>{}.from(p);
+    auto version = adl<raft::group_configuration::version_t>{}.from(p);
     // currently we support only versions up to 1
     vassert(
       version <= raft::group_configuration::current_version,
@@ -578,11 +578,12 @@ adl<raft::group_configuration>::from(iobuf_parser& p) {
      * version 1 - introduced revision id
      * version 2 - introduced raft::vnode
      * version 3 - model::broker with multiple endpoints
+     * version 4 - persist configuration update request
      */
 
     std::vector<model::broker> brokers;
 
-    if (likely(version >= 3)) {
+    if (likely(version >= raft::group_configuration::version_t(3))) {
         brokers = adl<std::vector<model::broker>>{}.from(p);
     } else {
         auto brokers_v0 = adl<std::vector<model::internal::broker_v0>>{}.from(
@@ -599,7 +600,7 @@ adl<raft::group_configuration>::from(iobuf_parser& p) {
     raft::group_nodes current;
     std::optional<raft::group_nodes> old;
 
-    if (likely(version >= 2)) {
+    if (likely(version >= raft::group_configuration::version_t(2))) {
         current = adl<raft::group_nodes>{}.from(p);
         old = adl<std::optional<raft::group_nodes>>{}.from(p);
     } else {
@@ -613,7 +614,7 @@ adl<raft::group_configuration>::from(iobuf_parser& p) {
         }
     }
     model::revision_id revision = raft::no_revision;
-    if (version > 0) {
+    if (version > raft::group_configuration::version_t(0)) {
         revision = adl<model::revision_id>{}.from(p);
     }
     return raft::group_configuration(

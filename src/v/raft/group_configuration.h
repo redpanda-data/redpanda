@@ -70,7 +70,9 @@ struct group_nodes {
 
 class group_configuration final {
 public:
-    static constexpr int8_t current_version = 3;
+    using version_t
+      = named_type<int8_t, struct raft_group_configuration_version>;
+    static constexpr version_t current_version{3};
     /**
      * creates a configuration where all provided brokers are current
      * configuration voters
@@ -208,7 +210,7 @@ public:
     requires std::predicate<Predicate, vnode>
     bool majority(Predicate&& f) const;
 
-    int8_t version() const { return _version; }
+    version_t version() const { return _version; }
 
     void promote_to_voter(vnode id);
     model::revision_id revision_id() const { return _revision; }
@@ -272,7 +274,7 @@ private:
     std::vector<vnode> unique_voter_ids() const;
     std::vector<vnode> unique_learner_ids() const;
 
-    uint8_t _version = current_version;
+    version_t _version = current_version;
     std::vector<model::broker> _brokers;
     group_nodes _current;
     std::optional<group_nodes> _old;
