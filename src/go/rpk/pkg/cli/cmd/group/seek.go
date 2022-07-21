@@ -12,6 +12,7 @@ package group
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -22,6 +23,7 @@ import (
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kerr"
 )
 
 func newSeekCommand(fs afero.Fs) *cobra.Command {
@@ -272,7 +274,14 @@ func seek(
 		}
 		se := seekCommitErr{c.Topic, c.Partition, -1, -1, ""}
 		if c.Err != nil {
-			se.Error = c.Err.Error()
+			// Redpanda / Kafka send UnknownMemberID when issuing OffsetCommit
+			// if the group is not empty. This error is unclear to end users, so
+			// we remap it here.
+			if errors.Is(c.Err, kerr.UnknownMemberID) {
+				se.Error = "INVALID_OPERATION: seeking a non-empty group is not allowed."
+			} else {
+				se.Error = c.Err.Error()
+			}
 		}
 		if useErr {
 			tw.PrintStructFields(se)
