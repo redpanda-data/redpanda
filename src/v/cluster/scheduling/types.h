@@ -13,6 +13,7 @@
 
 #include "cluster/types.h"
 #include "model/fundamental.h"
+#include "oncore.h"
 #include "vassert.h"
 
 #include <absl/container/node_hash_set.h>
@@ -126,6 +127,13 @@ struct allocation_constraints {
 /**
  * RAII based helper holding allocated partititions, allocation is reverted
  * after this object goes out of scope.
+ *
+ * WARNING: this object contains an embedded reference to the partition
+ * allocator service (specifically, the allocation_state associated with that
+ * allocator) and so it must be destroyed on the same shard the original units
+ * were allocated on. I.e., if original units A are moved into B, B must be
+ * destroyed the shard A was allocated on (or the shard of the object that was
+ * moved into A and so on).
  */
 struct allocation_units {
     allocation_units(std::vector<partition_assignment>, allocation_state*);
@@ -151,6 +159,8 @@ private:
     absl::node_hash_set<model::broker_shard> _previous;
     // keep the pointer to make this type movable
     allocation_state* _state;
+    // oncore checker to ensure destruction happenson the same core
+    [[no_unique_address]] oncore _oncore;
 };
 
 /**

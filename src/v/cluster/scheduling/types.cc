@@ -12,6 +12,7 @@
 #include "cluster/scheduling/types.h"
 
 #include "cluster/scheduling/allocation_state.h"
+#include "oncore.h"
 
 #include <fmt/ostream.h>
 
@@ -55,6 +56,7 @@ allocation_units::allocation_units(
 }
 
 allocation_units::~allocation_units() {
+    oncore_debug_verify(_oncore);
     for (auto& pas : _assignments) {
         for (auto& replica : pas.replicas) {
             if (!_previous.contains(replica)) {
