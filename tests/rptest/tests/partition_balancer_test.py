@@ -537,3 +537,104 @@ class PartitionBalancerTest(EndToEndTest):
 
         self.run_validation(enable_idempotence=False,
                             consumer_timeout_sec=CONSUMER_TIMEOUT)
+
+    @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    @matrix(kill_same_node=[True, False], decommission_first=[True, False])
+    def test_decommission(self, kill_same_node, decommission_first):
+        """
+        Test interaction with decommissioning: the balancer should not schedule
+        any movements to decommissioning nodes and cancel any movements from
+        decommissioning nodes.
+
+        In this test we test that decommission finishes in the following 4 scenarios:
+        * we first kill a node / we first decommission a node
+        * we kill the same / different node from the one we decommission
+        """
+
+        self.start_redpanda(num_nodes=5)
+
+        self.topic = TopicSpec(partition_count=random.randint(20, 30))
+        self.client().create_topic(self.topic)
+
+        self.start_producer(1)
+        self.start_consumer(1)
+        self.await_startup()
+
+        # choose a node
+        to_decom = random.choice(self.redpanda.nodes)
+        to_decom_id = self.redpanda.idx(to_decom)
+
+        if kill_same_node:
+            to_kill = to_decom
+            to_kill_id = to_decom_id
+        else:
+            to_kill = random.choice([
+                n for n in self.redpanda.nodes
+                if self.redpanda.idx(n) != to_decom_id
+            ])
+            to_kill_id = self.redpanda.idx(to_kill)
+
+        # throttle recovery to prevent partition moves from finishing
+        self.logger.info("throttling recovery")
+        self._throttle_recovery(10)
+
+        admin = Admin(self.redpanda)
+
+        if decommission_first:
+            self.logger.info(f"decommissioning node: {to_decom.name}")
+            admin.decommission_broker(to_decom_id)
+
+        with self.NodeStopper(self) as ns:
+            # kill the node and wait for the partition balancer to kick in
+            ns.make_unavailable(to_kill,
+                                failure_types=[FailureSpec.FAILURE_KILL])
+            time.sleep(self.NODE_AVAILABILITY_TIMEOUT)
+            self.wait_until_status(lambda s: s["status"] == "in_progress")
+
+            if not decommission_first:
+                self.logger.info(f"decommissioning node: {to_decom.name}")
+                admin.decommission_broker(to_decom_id)
+
+            # A node which isn't being decommed, to use when calling into
+            # the admin API from this point onwards.
+            survivor_node = random.choice([
+                n for n in self.redpanda.nodes
+                if self.redpanda.idx(n) not in {to_kill_id, to_decom_id}
+            ])
+            self.logger.info(
+                f"Using survivor node {survivor_node.name} {self.redpanda.idx(survivor_node)}"
+            )
+
+            def started_draining():
+                b = [
+                    b for b in admin.get_brokers(survivor_node)
+                    if b['node_id'] == to_decom_id
+                ]
+                return len(b) > 0 and b[0]["membership_status"] == "draining"
+
+            wait_until(started_draining, timeout_sec=60, backoff_sec=2)
+
+            # wait for balancer tick
+            self.wait_until_status(lambda s: s["status"] != "starting")
+
+            # back to normal recovery speed
+            self.logger.info("bringing back recovery speed")
+            # use raw admin interface to avoid waiting for the killed node
+            admin.patch_cluster_config(
+                {"raft_learner_recovery_rate": 1_000_000})
+
+        # Check that the node has been successfully decommissioned.
+        # We have to bring back failed node because otherwise decommission won't finish.
+        def node_removed():
+            brokers = admin.get_brokers(node=survivor_node)
+            return not any(b['node_id'] == to_decom_id for b in brokers)
+
+        wait_until(node_removed, timeout_sec=120, backoff_sec=2)
+        # stop the decommissioned node (this must be done manually) so that
+        # it doesn't respond to admin API requests.
+        self.redpanda.stop_node(to_decom)
+
+        self.wait_until_ready()
+
+        self.run_validation(enable_idempotence=False,
+                            consumer_timeout_sec=CONSUMER_TIMEOUT)
