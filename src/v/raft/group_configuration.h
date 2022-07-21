@@ -271,8 +271,11 @@ public:
     };
 
 private:
+    friend class configuration_change_strategy_v3;
+
     std::vector<vnode> unique_voter_ids() const;
     std::vector<vnode> unique_learner_ids() const;
+    std::unique_ptr<configuration_change_strategy> make_change_strategy();
 
     version_t _version = current_version;
     std::vector<model::broker> _brokers;
