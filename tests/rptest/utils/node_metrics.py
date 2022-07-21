@@ -1,7 +1,7 @@
 from math import floor
 
 from ducktape.utils.util import wait_until
-from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda import RedpandaService, MetricsEndpoint
 
 
 def all_greater_than_zero(l1: list[float]):
@@ -14,7 +14,9 @@ class NodeMetrics:
         self.redpanda = redpanda
 
     def _get_metrics_vals(self, name_substr: str) -> list[float]:
-        family = self.redpanda.metrics_sample(name_substr)
+        family = self.redpanda.metrics_sample(
+            sample_pattern=name_substr,
+            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
         assert family
         return list(map(lambda s: floor(s.value), family.samples))
 
