@@ -20,6 +20,7 @@
 #include "units.h"
 #include "utils/human.h"
 
+#include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 
 #include <absl/container/node_hash_set.h>
@@ -28,6 +29,7 @@
 #include <algorithm>
 #include <exception>
 #include <iterator>
+#include <memory>
 #include <vector>
 
 namespace cluster {
@@ -267,7 +269,7 @@ std::error_code partition_allocator::check_cluster_limits(
     return errc::success;
 }
 
-result<allocation_units>
+result<allocation_units::pointer>
 partition_allocator::allocate(allocation_request request) {
     vlog(
       clusterlog.trace,
@@ -293,8 +295,8 @@ partition_allocator::allocate(allocation_request request) {
           _state->next_group_id(), partition_id, std::move(replicas.value()));
     }
 
-    return allocation_units(
-      std::move(assignments).finish(), _state.get(), request.domain);
+    return ss::make_foreign(std::make_unique<allocation_units>(
+      std::move(assignments).finish(), _state.get(), request.domain));
 }
 
 result<std::vector<model::broker_shard>>

@@ -110,7 +110,7 @@ struct partition_balancer_planner_fixture {
         auto pas = workers.allocator.local()
                      .allocate(std::move(req))
                      .value()
-                     .get_assignments();
+                     ->get_assignments();
 
         return {cfg, std::move(pas)};
     }
