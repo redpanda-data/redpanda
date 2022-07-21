@@ -369,6 +369,38 @@ guess_peer_listener(request_context& ctx, cluster::broker_ptr broker) {
     }
 }
 
+struct conc_tracker {
+    int conc = 0, hwm = 0;
+};
+
+struct conc_holder {
+    explicit conc_holder(conc_tracker& tracker, const char* name)
+      : _tracker{tracker}
+      , _name{name} {
+        conc = ++tracker.conc;
+        if (conc > tracker.hwm) {
+            tracker.hwm = tracker.conc;
+            vlog(
+              klog.warn,
+              "metadata_handler::handle conc_tracker {} hwm {}",
+              _name,
+              conc);
+            is_hwm = true;
+        } else {
+            is_hwm = false;
+        }
+    }
+
+    ~conc_holder() { _tracker.conc--; }
+
+    bool is_hwm;
+    int conc;
+    conc_tracker& _tracker;
+    const char* _name;
+};
+
+static thread_local conc_tracker md_conc_tracker_outer;
+static thread_local conc_tracker md_conc_tracker_inner;
 template<typename T>
 static size_t vector_size(const std::vector<T>& v) {
     return v.capacity() * sizeof(*v.data());
@@ -387,11 +419,17 @@ static size_t response_size(const metadata_response& resp) {
     return size;
 }
 
+static thread_local ss::semaphore handler_sem{50};
 static thread_local periodic_ms memunits_period{1000ms};
 
 template<>
 ss::future<response_ptr> metadata_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
+    conc_holder conc_outer(md_conc_tracker_outer, "outer");
+
+    auto units = co_await ss::get_units(handler_sem, 1);
+    conc_holder conc_inner(md_conc_tracker_inner, "inner");
+
     metadata_response reply;
     auto alive_brokers = co_await ctx.metadata_cache().all_alive_brokers();
     for (const auto& broker : alive_brokers) {
