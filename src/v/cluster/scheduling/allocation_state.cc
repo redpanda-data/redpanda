@@ -10,11 +10,13 @@
 #include "cluster/scheduling/allocation_state.h"
 
 #include "cluster/logger.h"
+#include "oncore.h"
 #include "ssx/sformat.h"
 
 namespace cluster {
 
 void allocation_state::rollback(const std::vector<partition_assignment>& v) {
+    verify_shard();
     for (auto& as : v) {
         rollback(as.replicas);
         // rollback for each assignment as the groups are distinct
@@ -23,12 +25,14 @@ void allocation_state::rollback(const std::vector<partition_assignment>& v) {
 }
 
 void allocation_state::rollback(const std::vector<model::broker_shard>& v) {
+    verify_shard();
     for (auto& bs : v) {
         deallocate(bs);
     }
 }
 
 int16_t allocation_state::available_nodes() const {
+    verify_shard();
     return std::count_if(
       _nodes.begin(), _nodes.end(), [](const underlying_t::value_type& p) {
           return p.second->is_active();
@@ -48,6 +52,7 @@ raft::group_id allocation_state::next_group_id() { return ++_highest_group; }
 
 void allocation_state::apply_update(
   std::vector<model::broker_shard> replicas, raft::group_id group_id) {
+    verify_shard();
     if (replicas.empty()) {
         return;
     }
@@ -86,6 +91,7 @@ void allocation_state::register_node(allocation_state::node_ptr n) {
 
 void allocation_state::update_allocation_nodes(
   const std::vector<model::broker>& brokers) {
+    verify_shard();
     // deletions
     for (auto& [id, node] : _nodes) {
         auto it = std::find_if(
@@ -121,6 +127,7 @@ void allocation_state::update_allocation_nodes(
 }
 
 void allocation_state::decommission_node(model::node_id id) {
+    verify_shard();
     auto it = _nodes.find(id);
     if (it == _nodes.end()) {
         throw std::invalid_argument(
@@ -131,6 +138,7 @@ void allocation_state::decommission_node(model::node_id id) {
 }
 
 void allocation_state::recommission_node(model::node_id id) {
+    verify_shard();
     auto it = _nodes.find(id);
     if (it == _nodes.end()) {
         throw std::invalid_argument(
@@ -150,12 +158,14 @@ bool allocation_state::is_empty(model::node_id id) const {
 }
 
 void allocation_state::deallocate(const model::broker_shard& replica) {
+    verify_shard();
     if (auto it = _nodes.find(replica.node_id); it != _nodes.end()) {
         it->second->deallocate(replica.shard);
     }
 }
 
 result<uint32_t> allocation_state::allocate(model::node_id id) {
+    verify_shard();
     if (auto it = _nodes.find(id); it != _nodes.end()) {
         if (it->second->is_full()) {
             return errc::invalid_node_operation;
@@ -172,6 +182,19 @@ allocation_state::get_rack_id(model::node_id id) const {
         return it->second->rack();
     }
     vassert(false, "unexpected node id {}", id);
+}
+
+void allocation_state::verify_shard() const {
+    /* This is a consistency check on the use of the allocation state:
+     * it checks that the caller is on the same shard the state was originally
+     * created on. It is easy to inadvertently violate this condition since
+     * the cluster::allocation_units class embeds a pointer to this state and
+     * when moved across shards (e.g., because allocation always happens on
+     * shard 0 but some other shard initiates the request) it may result in
+     * calls on the current shard being routed back to the original shard
+     * through this pointer, a thread-safety violation.
+     */
+    oncore_debug_verify(_verify_shard);
 }
 
 } // namespace cluster
