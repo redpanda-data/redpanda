@@ -93,7 +93,7 @@ FIXTURE_TEST(data_are_consistent_across_nodes, cluster_test_fixture) {
         return n1->controller->get_health_monitor()
           .local()
           .get_cluster_health(
-            get_all, cluster::force_refresh::yes, model::no_timeout)
+            get_all, cluster::force_refresh::yes, model::no_timeout, "test")
           .then([](result<cluster::cluster_health_report> res) {
               if (!res) {
                   return false;
@@ -112,17 +112,17 @@ FIXTURE_TEST(data_are_consistent_across_nodes, cluster_test_fixture) {
     auto r_1 = n1->controller->get_health_monitor()
                  .local()
                  .get_cluster_health(
-                   get_all, cluster::force_refresh::yes, model::no_timeout)
+                   get_all, cluster::force_refresh::yes, model::no_timeout, "test")
                  .get0();
     auto r_2 = n2->controller->get_health_monitor()
                  .local()
                  .get_cluster_health(
-                   get_all, cluster::force_refresh::yes, model::no_timeout)
+                   get_all, cluster::force_refresh::yes, model::no_timeout, "test")
                  .get0();
     auto r_3 = n3->controller->get_health_monitor()
                  .local()
                  .get_cluster_health(
-                   get_all, cluster::force_refresh::yes, model::no_timeout)
+                   get_all, cluster::force_refresh::yes, model::no_timeout, "test")
                  .get0();
 
     BOOST_TEST_REQUIRE(r_1.has_value());
@@ -185,7 +185,7 @@ FIXTURE_TEST(test_ntp_filter, cluster_test_fixture) {
         return n1->controller->get_health_monitor()
           .local()
           .get_cluster_health(
-            get_all, cluster::force_refresh::yes, model::no_timeout)
+            get_all, cluster::force_refresh::yes, model::no_timeout, "test")
           .then([](result<cluster::cluster_health_report> res) {
               if (!res) {
                   return false;
@@ -226,7 +226,7 @@ FIXTURE_TEST(test_ntp_filter, cluster_test_fixture) {
         return n1->controller->get_health_monitor()
           .local()
           .get_cluster_health(
-            all, cluster::force_refresh::yes, model::no_timeout)
+            all, cluster::force_refresh::yes, model::no_timeout, "test")
           .then([](result<cluster::cluster_health_report> report) {
               return report.has_value()
                      && report.value().node_reports.size() == 3
@@ -268,7 +268,7 @@ FIXTURE_TEST(test_ntp_filter, cluster_test_fixture) {
     auto report = n1->controller->get_health_monitor()
                     .local()
                     .get_cluster_health(
-                      f_1, cluster::force_refresh::yes, model::no_timeout)
+                      f_1, cluster::force_refresh::yes, model::no_timeout, "test")
                     .get0();
     BOOST_TEST_REQUIRE(report.has_value());
 
@@ -313,7 +313,7 @@ FIXTURE_TEST(test_alive_status, cluster_test_fixture) {
         return n1->controller->get_health_monitor()
           .local()
           .get_cluster_health(
-            get_all, cluster::force_refresh::yes, model::no_timeout)
+            get_all, cluster::force_refresh::yes, model::no_timeout, "test")
           .then([](result<cluster::cluster_health_report> res) {
               if (!res) {
                   return false;
@@ -336,7 +336,7 @@ FIXTURE_TEST(test_alive_status, cluster_test_fixture) {
         return n1->controller->get_health_monitor()
           .local()
           .get_cluster_health(
-            get_all, cluster::force_refresh::yes, model::no_timeout)
+            get_all, cluster::force_refresh::yes, model::no_timeout, "test")
           .then([](result<cluster::cluster_health_report> res) {
               if (!res) {
                   return false;

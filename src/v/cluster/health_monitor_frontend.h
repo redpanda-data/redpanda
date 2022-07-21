@@ -49,7 +49,7 @@ public:
     // state that is cached on current node. If force_refresh flag is set. It
     // will always refresh cluster health metadata
     ss::future<result<cluster_health_report>> get_cluster_health(
-      cluster_report_filter, force_refresh, model::timeout_clock::time_point);
+      cluster_report_filter, force_refresh, model::timeout_clock::time_point, const char* reason);
 
     storage::disk_space_alert get_cluster_disk_health();
 
@@ -64,7 +64,7 @@ public:
 
     // Return status of all nodes
     ss::future<result<std::vector<node_state>>>
-      get_nodes_status(model::timeout_clock::time_point);
+      get_nodes_status(model::timeout_clock::time_point, const char* reason);
 
     /**
      * Return drain status for a given node.

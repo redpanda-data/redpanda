@@ -344,7 +344,7 @@ ss::future<> metadata_dissemination_service::dispatch_disseminate_leadership() {
       .get_cluster_health(
         cluster_report_filter{},
         force_refresh::no,
-        _dissemination_interval + model::timeout_clock::now())
+        _dissemination_interval + model::timeout_clock::now(), "metadata_dissemination_service")
       .then([this](result<cluster_health_report> report) {
           if (report.has_error()) {
               vlog(

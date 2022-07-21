@@ -581,7 +581,8 @@ get_brokers(cluster::controller* const controller) {
           .node_report_filter = std::move(filter),
         },
         cluster::force_refresh::no,
-        model::no_timeout)
+        model::no_timeout,
+        "admin_server")
       .then([controller](result<cluster::cluster_health_report> h_report) {
           if (h_report.has_error()) {
               throw ss::httpd::base_exception(

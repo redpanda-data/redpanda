@@ -464,10 +464,13 @@ ss::future<result<cluster_health_report>>
 health_monitor_backend::get_cluster_health(
   cluster_report_filter filter,
   force_refresh refresh,
-  model::timeout_clock::time_point deadline) {
+  model::timeout_clock::time_point deadline,
+  const char* reason) {
     vlog(
       clusterlog.debug,
-      "requesing cluster state report with filter: {}, force refresh: {}",
+      "requesting cluster state report reason: {} with filter: {}, force "
+      "refresh: {}",
+      reason,
       filter,
       refresh);
     auto ec = co_await maybe_refresh_cluster_health(refresh, deadline);

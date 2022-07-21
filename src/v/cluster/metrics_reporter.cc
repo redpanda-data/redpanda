@@ -178,7 +178,7 @@ metrics_reporter::build_metrics_snapshot() {
         = node_report_filter{.include_partitions = include_partitions_info::no}},
       force_refresh::no,
       config::shard_local_cfg().metrics_reporter_report_interval()
-        + ss::lowres_clock::now());
+        + ss::lowres_clock::now(), "metrics");
 
     if (!report) {
         co_return result<metrics_snapshot>(report.error());

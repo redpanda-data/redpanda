@@ -43,10 +43,10 @@ ss::future<result<cluster_health_report>>
 health_monitor_frontend::get_cluster_health(
   cluster_report_filter f,
   force_refresh force_refresh,
-  model::timeout_clock::time_point deadline) {
+  model::timeout_clock::time_point deadline, const char* reason) {
     return dispatch_to_backend(
-      [f = std::move(f), force_refresh, deadline](health_monitor_backend& be) {
-          return be.get_cluster_health(f, force_refresh, deadline);
+      [f = std::move(f), force_refresh, deadline, reason](health_monitor_backend& be) {
+          return be.get_cluster_health(f, force_refresh, deadline, reason);
       });
 }
 
@@ -75,14 +75,14 @@ health_monitor_frontend::collect_node_health(node_report_filter f) {
 // Return status of single node
 ss::future<result<std::vector<node_state>>>
 health_monitor_frontend::get_nodes_status(
-  model::timeout_clock::time_point deadline) {
-    return dispatch_to_backend([deadline](health_monitor_backend& be) {
+  model::timeout_clock::time_point deadline, const char* reason) {
+    return dispatch_to_backend([deadline, reason](health_monitor_backend& be) {
         // build filter
         cluster_report_filter filter{
           .node_report_filter = node_report_filter{
             .include_partitions = include_partitions_info::no,
           }};
-        return be.get_cluster_health(filter, force_refresh::no, deadline)
+        return be.get_cluster_health(filter, force_refresh::no, deadline, reason)
           .then([](result<cluster_health_report> res) {
               using ret_t = result<std::vector<node_state>>;
               if (!res) {

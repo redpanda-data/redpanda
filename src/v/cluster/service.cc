@@ -510,7 +510,7 @@ service::do_get_cluster_health_report(get_cluster_health_request req) {
     auto tout = config::shard_local_cfg().health_monitor_max_metadata_age()
                 + model::timeout_clock::now();
     auto res = co_await _hm_frontend.local().get_cluster_health(
-      req.filter, req.refresh, tout);
+      req.filter, req.refresh, tout, "do_get_cluster_health_report");
 
     if (res.has_error()) {
         co_return get_cluster_health_reply{

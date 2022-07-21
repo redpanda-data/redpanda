@@ -119,7 +119,7 @@ ss::future<std::vector<broker_ptr>> metadata_cache::all_alive_brokers() const {
     std::vector<broker_ptr> brokers;
     auto res = co_await _health_monitor.local().get_nodes_status(
       config::shard_local_cfg().metadata_status_wait_timeout_ms()
-      + model::timeout_clock::now());
+      + model::timeout_clock::now(), "all_alive_brokers");
     if (!res) {
         // if we were not able to refresh the cache, return all brokers
         // (controller may be unreachable)

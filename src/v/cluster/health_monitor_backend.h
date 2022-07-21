@@ -63,7 +63,7 @@ public:
     ss::future<> stop();
 
     ss::future<result<cluster_health_report>> get_cluster_health(
-      cluster_report_filter, force_refresh, model::timeout_clock::time_point);
+      cluster_report_filter, force_refresh, model::timeout_clock::time_point, const char* reason);
 
     cluster_health_report
     get_current_cluster_health_snapshot(const cluster_report_filter&);
