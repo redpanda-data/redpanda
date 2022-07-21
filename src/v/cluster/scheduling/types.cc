@@ -60,6 +60,7 @@ allocation_units::allocation_units(
 }
 
 allocation_units::~allocation_units() {
+    oncore_debug_verify(_oncore);
     for (auto& pas : _assignments) {
         for (auto& replica : pas.replicas) {
             if (!_previous.contains(replica)) {
