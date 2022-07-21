@@ -28,6 +28,8 @@
 #include <seastar/core/future.hh>
 #include <seastar/net/inet_address.hh>
 
+#include <absl/container/btree_set.h>
+#include <absl/container/flat_hash_map.h>
 #include <absl/container/node_hash_map.h>
 #include <absl/container/node_hash_set.h>
 
@@ -91,6 +93,14 @@ concept has_serde_async_write = requires(T t, iobuf& out) {
     { t.serde_async_write(out) } -> seastar::Future;
 };
 
+template<typename T>
+concept is_absl_flat_hash_map
+  = ::detail::is_specialization_of_v<T, absl::flat_hash_map>;
+
+template<typename T>
+concept is_absl_btree_set
+  = ::detail::is_specialization_of_v<T, absl::btree_set>;
+
 using serde_enum_serialized_t = int32_t;
 
 #if defined(SERDE_TEST)
@@ -142,6 +152,8 @@ inline constexpr auto const is_serde_compatible_v
     || std::is_same_v<T, iobuf>
     || std::is_same_v<T, ss::sstring>
     || std::is_same_v<T, bytes>
+    || is_absl_btree_set<T>
+    || is_absl_flat_hash_map<T>
     || is_absl_node_hash_set<T>
     || is_absl_node_hash_map<T>
     || is_std_unordered_map<T>
@@ -267,22 +279,24 @@ void write(iobuf& out, T t) {
         } else {
             write(out, false);
         }
-    } else if constexpr (is_absl_node_hash_set<Type>) {
+    } else if constexpr (
+      is_absl_node_hash_set<Type> || is_absl_btree_set<Type>) {
         if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
             throw serde_exception(fmt_with_ctx(
               ssx::sformat,
-              "serde: absl::node_hash_set size {} exceeds serde_size_t",
+              "serde: absl set size {} exceeds serde_size_t",
               t.size()));
         }
         write(out, static_cast<serde_size_t>(t.size()));
         for (auto& e : t) {
             write(out, e);
         }
-    } else if constexpr (is_absl_node_hash_map<Type>) {
+    } else if constexpr (
+      is_absl_node_hash_map<Type> || is_absl_flat_hash_map<Type>) {
         if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
             throw serde_exception(fmt_with_ctx(
               ssx::sformat,
-              "serde: absl::node_hash_map size {} exceeds serde_size_t",
+              "serde: absl map size {} exceeds serde_size_t",
               t.size()));
         }
         write(out, static_cast<serde_size_t>(t.size()));
@@ -535,7 +549,15 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
               in, bytes_left_limit);
             t.emplace(std::move(elem));
         }
-    } else if constexpr (is_absl_node_hash_map<Type>) {
+    } else if constexpr (is_absl_btree_set<Type>) {
+        const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
+        for (auto i = 0U; i < size; ++i) {
+            auto elem = read_nested<typename Type::key_type>(
+              in, bytes_left_limit);
+            t.emplace(std::move(elem));
+        }
+    } else if constexpr (
+      is_absl_node_hash_map<Type> || is_absl_flat_hash_map<Type>) {
         const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
         t.reserve(size);
         for (auto i = 0U; i < size; ++i) {
