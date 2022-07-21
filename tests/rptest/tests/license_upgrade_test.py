@@ -95,7 +95,8 @@ class UpgradeToLicenseChecks(RedpandaTest):
         # Assert that the log was found
         wait_until(
             lambda: self.redpanda.search_log("Enterprise feature(s).*"),
-            timeout_sec=UpgradeToLicenseChecks.LICENSE_CHECK_INTERVAL_SEC * 4,
+            timeout_sec=(UpgradeToLicenseChecks.LICENSE_CHECK_INTERVAL_SEC * 4)
+            * len(self.redpanda.nodes),
             backoff_sec=1,
             err_msg="Timeout waiting for enterprise nag log")
 
