@@ -29,6 +29,11 @@ from rptest.tests.redpanda_test import RedpandaTest
 
 default_log_segment_size = 1048576  # 1MB
 
+# This size is a rough approximation used to tolerate differences
+# between original and restored partition. Restored partitions skip
+# config batches, so they are smaller than original partitions.
+default_config_batch_size = 1024
+
 NTP = namedtuple("NTP", ['ns', 'topic', 'partition'])
 
 TopicManifestMetadata = namedtuple('TopicManifestMetadata',
@@ -169,9 +174,10 @@ def _verify_file_layout(baseline_per_host,
     logger.info(
         f'baseline_last_segment_sizes: {pprint.pformat(baseline_last_segment_sizes)}'
     )
-    logger.info(
-        f"before matching\nrestored ntps: {restored_ntps}baseline ntps: {baseline_ntps}\nexpected topics: {expected_topics}"
-    )
+    logger.info(f"before matching\n"
+                f"restored ntps: {restored_ntps}\n"
+                f"baseline ntps: {baseline_ntps}\n"
+                f"expected topics: {expected_topics}")
 
     for ntp, orig_ntp_size in baseline_ntps.items():
         # Restored ntp should be equal or less than original
@@ -184,10 +190,17 @@ def _verify_file_layout(baseline_per_host,
             orig_ntp_size -= size_overrides[ntp]
         assert ntp in restored_ntps, f"NTP {ntp} is missing in the restored data"
         rest_ntp_size = restored_ntps[ntp]
-        assert rest_ntp_size <= orig_ntp_size, f"NTP {ntp} the restored partition is larger {rest_ntp_size} than the original one {orig_ntp_size}."
+        assert (
+            rest_ntp_size <= orig_ntp_size,
+            f"NTP {ntp} the restored partition is larger {rest_ntp_size} than the original one {orig_ntp_size}."
+        )
         delta = orig_ntp_size - rest_ntp_size
-        assert delta <= baseline_last_segment_sizes[
-            ntp], f"NTP {ntp} the restored partition is too small {rest_ntp_size}. The original is {orig_ntp_size} bytes which {delta} bytes larger."
+        tolerance = baseline_last_segment_sizes[ntp]
+        assert (
+            delta <= tolerance,
+            f"NTP {ntp} the restored partition is too small {rest_ntp_size}."
+            f" The original is {orig_ntp_size} bytes which {delta} bytes larger."
+        )
 
 
 def _gen_manifest_path(ntp, rev):
@@ -204,6 +217,20 @@ def _gen_segment_path(ntp, rev, name):
     x.update(path.encode('ascii'))
     hash = x.hexdigest()
     return f"{hash}/{path}"
+
+
+def _get_ntp_delta_offset(partition_manifest: dict):
+    """
+    Calculates the max delta offset for a given ntp. The delta offset
+    should progressively increase as segment offsets increase, the max
+    delta offset will be the number of non-data batches for the ntp.
+    """
+    delta_offset = 0
+    if 'segments' in partition_manifest:
+        segments = partition_manifest['segments']
+        for _, segment in segments.items():
+            delta_offset = max(delta_offset, segment.get('delta_offset', 0))
+    return delta_offset
 
 
 class BaseCase:
@@ -703,6 +730,22 @@ class FastCheck(BaseCase):
             producer.wait()
             producer.free()
 
+    def _collect_partition_delta_offsets(self, expected_topics):
+        delta_offsets = {}
+        manifests = [
+            item for item in self._s3.list_objects(self._bucket)
+            if item.Key.endswith('/manifest.json')
+        ]
+        for obj in manifests:
+            components = _parse_s3_manifest_path(obj.Key)
+            ntp = components.ntp
+            if ntp.topic not in expected_topics:
+                continue
+            manifest_data = self._s3.get_object_data(self._bucket, obj.Key)
+            delta_offsets[ntp] = _get_ntp_delta_offset(
+                json.loads(manifest_data))
+        return delta_offsets
+
     def validate_cluster(self, baseline, restored):
         """Check that the topic is writeable"""
         self.logger.info(f"FastCheck.validate_cluster - baseline - {baseline}")
@@ -711,7 +754,17 @@ class FastCheck(BaseCase):
         expected_topics = [
             topic.name for topic in self.expected_recovered_topics
         ]
-        _verify_file_layout(baseline, restored, expected_topics, self.logger)
+        config_batch_counts = self._collect_partition_delta_offsets(
+            expected_topics)
+        config_batch_sizes = {
+            k: v * default_config_batch_size
+            for k, v in config_batch_counts.items()
+        }
+        _verify_file_layout(baseline,
+                            restored,
+                            expected_topics,
+                            self.logger,
+                            size_overrides=config_batch_sizes)
         for topic in self.topics:
             self._produce_and_verify(topic)
 
@@ -1316,7 +1369,6 @@ class TopicRecoveryTest(RedpandaTest):
                               self.rpk_producer_maker, topics)
         self.do_run(test_case)
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/4960
     @cluster(num_nodes=4, log_allow_list=TRANSIENT_ERRORS)
     def test_fast2(self):
         """Basic recovery test. This test stresses successful recovery
