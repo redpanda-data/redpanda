@@ -137,4 +137,8 @@ void group_manager::setup_metrics() {
         sm::description("Number of raft groups"))});
 }
 
+void group_manager::set_feature_active(raft_feature f) {
+    _raft_feature_table.set_feature_active(f);
+}
+
 } // namespace raft
