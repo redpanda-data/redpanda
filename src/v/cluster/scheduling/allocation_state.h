@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "bytes/oncore.h"
 #include "cluster/scheduling/allocation_node.h"
 #include "model/metadata.h"
 
@@ -67,10 +68,17 @@ public:
     std::optional<model::rack_id> get_rack_id(model::node_id) const;
 
 private:
+    /**
+     * This function verifies that the current shard matches the shard the
+     * state was originally created on, aborting if not.
+     */
+    void verify_shard() const;
+
     config::binding<uint32_t> _partitions_per_shard;
     config::binding<uint32_t> _partitions_reserve_shard0;
 
     raft::group_id _highest_group{0};
     underlying_t _nodes;
+    expression_in_debug_mode(oncore _verify_shard;)
 };
 } // namespace cluster
