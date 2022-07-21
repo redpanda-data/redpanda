@@ -110,9 +110,11 @@ ss::future<> members_manager::start() {
  */
 ss::future<> members_manager::join_cluster() {
     if (is_already_member()) {
+        vlog(clusterlog.info, "join_cluster() already member");
         ssx::spawn_with_gate(
           _gate, [this] { return maybe_update_current_node_configuration(); });
     } else {
+        vlog(clusterlog.info, "join_cluster() trying to join");
         join_raft0();
     }
 
@@ -399,7 +401,7 @@ ss::future<result<join_node_reply>> members_manager::dispatch_join_to_remote(
 
 void members_manager::join_raft0() {
     ssx::spawn_with_gate(_gate, [this] {
-        vlog(clusterlog.debug, "Trying to join the cluster");
+        vlog(clusterlog.info, "Trying to join the cluster");
         return ss::repeat([this] {
                    return dispatch_join_to_seed_server(
                             std::cbegin(_seed_servers),
