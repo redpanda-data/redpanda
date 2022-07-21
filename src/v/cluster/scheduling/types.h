@@ -136,6 +136,13 @@ struct allocation_constraints {
  * moved into A and so on).
  */
 struct allocation_units {
+    /**
+     * A foreign unique pointer to some units. Given the warning above about
+     * cross-core destruction, it is best to use this pointer class when dealing
+     * with units allocated on another core.
+     */
+    using pointer = ss::foreign_ptr<std::unique_ptr<allocation_units>>;
+
     allocation_units(
       std::vector<partition_assignment>,
       allocation_state*,

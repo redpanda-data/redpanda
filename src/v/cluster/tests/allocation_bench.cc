@@ -37,10 +37,10 @@ PERF_TEST_F(partition_allocator_fixture, deallocation_3) {
     std::vector<model::broker_shard> replicas;
     {
         auto vals = std::move(allocator.allocate(std::move(req)).value());
-        replicas = vals.get_assignments().front().replicas;
+        replicas = vals->get_assignments().front().replicas;
         allocator.update_allocation_state(
-          vals.get_assignments().front().replicas,
-          vals.get_assignments().front().group,
+          vals->get_assignments().front().replicas,
+          vals->get_assignments().front().group,
           cluster::partition_allocation_domains::common);
     }
     perf_tests::do_not_optimize(replicas);

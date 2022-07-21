@@ -65,7 +65,7 @@ struct partition_allocator_fixture {
         auto units = allocator.allocate(
           make_allocation_request(max_capacity(), 1));
 
-        for (auto& pas : units.value().get_assignments()) {
+        for (auto& pas : units.value()->get_assignments()) {
             allocator.state().apply_update(
               pas.replicas,
               pas.group,

@@ -592,12 +592,12 @@ ss::future<topic_result> topics_frontend::do_create_topic(
 
 ss::future<topic_result> topics_frontend::replicate_create_topic(
   topic_configuration cfg,
-  allocation_units units,
+  allocation_units::pointer units,
   model::timeout_clock::time_point timeout) {
     auto tp_ns = cfg.tp_ns;
     create_topic_cmd cmd(
       tp_ns,
-      topic_configuration_assignment(std::move(cfg), units.get_assignments()));
+      topic_configuration_assignment(std::move(cfg), units->get_assignments()));
 
     for (auto& p_as : cmd.value.assignments) {
         std::shuffle(
@@ -910,7 +910,7 @@ ss::future<topic_result> topics_frontend::do_create_partition(
 
     auto tp_ns = p_cfg.tp_ns;
     create_partitions_configuration_assignment payload(
-      std::move(p_cfg), units.value().get_assignments());
+      std::move(p_cfg), units.value()->get_assignments());
     create_partition_cmd cmd = create_partition_cmd(tp_ns, std::move(payload));
 
     try {
