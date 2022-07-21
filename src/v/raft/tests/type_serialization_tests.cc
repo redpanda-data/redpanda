@@ -308,7 +308,8 @@ SEASTAR_THREAD_TEST_CASE(snapshot_metadata_roundtrip) {
       = {raft::vnode(n1.id(), model::revision_id(1)), raft::vnode(n3.id(), model::revision_id(3))},
       .learners = {raft::vnode(n2.id(), model::revision_id(1))}};
 
-    raft::group_configuration cfg(nodes, current, model::revision_id(0));
+    raft::group_configuration cfg(
+      nodes, current, model::revision_id(0), std::nullopt);
 
     auto ct = ss::lowres_clock::now();
     raft::offset_translator_delta delta{
@@ -341,7 +342,8 @@ SEASTAR_THREAD_TEST_CASE(snapshot_metadata_backward_compatibility) {
       = {raft::vnode(n1.id(), model::revision_id(1)), raft::vnode(n3.id(), model::revision_id(3))},
       .learners = {raft::vnode(n2.id(), model::revision_id(1))}};
 
-    raft::group_configuration cfg(nodes, current, model::revision_id(0));
+    raft::group_configuration cfg(
+      nodes, current, model::revision_id(0), std::nullopt);
     auto c = cfg;
     auto ct = ss::lowres_clock::now();
     // serialize using old format (no version included)

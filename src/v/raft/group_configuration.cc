@@ -43,10 +43,75 @@ public:
     void discard_old_config() final;
     void abort_configuration_change(model::revision_id) final;
     void cancel_configuration_change(model::revision_id) final;
+    void finish_configuration_transition() final {}
 
 private:
     group_configuration& _cfg;
 };
+
+class configuration_change_strategy_v4
+  : public group_configuration::configuration_change_strategy {
+public:
+    explicit configuration_change_strategy_v4(group_configuration& cfg)
+      : _cfg(cfg) {}
+
+    void add(std::vector<model::broker>, model::revision_id) final;
+    void remove(const std::vector<model::node_id>&) final;
+    void replace(std::vector<broker_revision>, model::revision_id) final;
+
+    void discard_old_config() final;
+    void abort_configuration_change(model::revision_id) final;
+    void cancel_configuration_change(model::revision_id) final;
+    void finish_configuration_transition() final;
+
+private:
+    void cancel_update_in_transitional_state();
+    void cancel_update_in_joint_state();
+    group_configuration& _cfg;
+};
+
+namespace {
+
+configuration_update calculate_configuration_update(
+  const std::vector<vnode>& current_nodes,
+  const std::vector<broker_revision>& requested_brokers) {
+    configuration_update update;
+    for (const auto& vn : current_nodes) {
+        auto it = std::find_if(
+          requested_brokers.begin(),
+          requested_brokers.end(),
+          [&vn](const broker_revision& br) {
+              return br.broker.id() == vn.id() && br.rev == vn.revision();
+          });
+        if (it == requested_brokers.end()) {
+            update.replicas_to_remove.push_back(vn);
+        }
+    }
+
+    for (const auto& br : requested_brokers) {
+        auto it = std::find_if(
+          current_nodes.begin(), current_nodes.end(), [&br](const vnode& vn) {
+              return br.broker.id() == vn.id() && br.rev == vn.revision();
+          });
+        if (it == current_nodes.end()) {
+            update.replicas_to_add.emplace_back(br.broker.id(), br.rev);
+        }
+    }
+
+    return update;
+}
+} // namespace
+
+bool configuration_update::is_to_add(const vnode& id) const {
+    return std::find(replicas_to_add.begin(), replicas_to_add.end(), id)
+           != replicas_to_add.end();
+}
+
+bool configuration_update::is_to_remove(const vnode& id) const {
+    return std::find(replicas_to_remove.begin(), replicas_to_remove.end(), id)
+           != replicas_to_remove.end();
+}
+
 bool group_nodes::contains(const vnode& id) const {
     auto v_it = std::find(voters.cbegin(), voters.cend(), id);
     if (v_it != voters.cend()) {
@@ -92,15 +157,23 @@ group_configuration::group_configuration(
   std::vector<model::broker> brokers,
   group_nodes current,
   model::revision_id revision,
-  std::optional<group_nodes> old)
-  : _brokers(std::move(brokers))
+  std::optional<configuration_update> update,
+  std::optional<group_nodes> old,
+  version_t v)
+  : _version(v)
+  , _brokers(std::move(brokers))
   , _current(std::move(current))
+  , _configuration_update(std::move(update))
   , _old(std::move(old))
   , _revision(revision) {}
 
 std::unique_ptr<group_configuration::configuration_change_strategy>
 group_configuration::make_change_strategy() {
-    return std::make_unique<configuration_change_strategy_v3>(*this);
+    if (_version >= group_configuration::version_t(4)) {
+        return std::make_unique<configuration_change_strategy_v4>(*this);
+    } else {
+        return std::make_unique<configuration_change_strategy_v3>(*this);
+    }
 }
 
 std::optional<model::broker>
@@ -179,6 +252,9 @@ bool group_configuration::contains_address(
 configuration_type group_configuration::type() const {
     if (_old) {
         return configuration_type::joint;
+    }
+    if (_configuration_update) {
+        return configuration_type::transitional;
     }
     return configuration_type::simple;
 };
@@ -271,6 +347,10 @@ void group_configuration::cancel_configuration_change(model::revision_id rev) {
       "can not cancel configuration change if it is of simple type - {}",
       *this);
     make_change_strategy()->cancel_configuration_change(rev);
+}
+
+void group_configuration::finish_configuration_transition() {
+    make_change_strategy()->finish_configuration_transition();
 }
 
 void group_configuration::promote_to_voter(vnode id) {
@@ -516,6 +596,257 @@ void configuration_change_strategy_v3::discard_old_config() {
     _cfg._old.reset();
 }
 
+/**
+ * Update strategy for v4 configuration
+ */
+void configuration_change_strategy_v4::add(
+  std::vector<model::broker> brokers, model::revision_id rev) {
+    _cfg._revision = rev;
+    for (auto& b : brokers) {
+        auto it = std::find_if(
+          _cfg._brokers.cbegin(),
+          _cfg._brokers.cend(),
+          [id = b.id()](const model::broker& n) { return id == n.id(); });
+        if (unlikely(it != _cfg._brokers.cend())) {
+            throw std::invalid_argument(fmt::format(
+              "broker {} already present in current configuration {}",
+              b.id(),
+              _cfg));
+        }
+    }
+    _cfg._configuration_update = configuration_update{};
+    _cfg._configuration_update->replicas_to_add.reserve(brokers.size());
+    for (auto& b : brokers) {
+        _cfg._current.learners.emplace_back(b.id(), rev);
+        _cfg._configuration_update->replicas_to_add.emplace_back(b.id(), rev);
+        _cfg._brokers.push_back(std::move(b));
+    }
+}
+
+void configuration_change_strategy_v4::remove(
+  const std::vector<model::node_id>& ids) {
+    for (auto& id : ids) {
+        auto broker_it = std::find_if(
+          _cfg._brokers.cbegin(),
+          _cfg._brokers.cend(),
+          [id](const model::broker& n) { return id == n.id(); });
+        if (unlikely(broker_it == _cfg._brokers.cend())) {
+            throw std::invalid_argument(fmt::format(
+              "broker {} not found in current configuration {}", id, _cfg));
+        }
+    }
+
+    auto new_cfg = _cfg._current;
+    _cfg._configuration_update = configuration_update{};
+    // we do not yet remove brokers as we have to know each of them until
+    // configuration will be advanced to simple mode
+    for (auto& id : ids) {
+        auto lit = std::find_if(
+          new_cfg.learners.begin(),
+          new_cfg.learners.end(),
+          [id](const vnode& vn) { return vn.id() == id; });
+
+        if (lit != new_cfg.learners.end()) {
+            _cfg._configuration_update->replicas_to_remove.push_back(*lit);
+            new_cfg.learners.erase(lit);
+        }
+
+        auto vit = std::find_if(
+          new_cfg.voters.begin(), new_cfg.voters.end(), [id](const vnode& vn) {
+              return vn.id() == id;
+          });
+
+        if (vit != new_cfg.voters.end()) {
+            _cfg._configuration_update->replicas_to_remove.push_back(*vit);
+            new_cfg.voters.erase(vit);
+        }
+    }
+
+    _cfg._old = std::move(_cfg._current);
+    _cfg._current = std::move(new_cfg);
+}
+
+void configuration_change_strategy_v4::replace(
+  std::vector<broker_revision> brokers, model::revision_id rev) {
+    _cfg._revision = rev;
+
+    /**
+     * If configurations are identical do nothing. For identical configuration
+     * we assume that brokers list hasn't changed (1) and current configuration
+     * contains all brokers in either voters of learners (2).
+     */
+    // check list of brokers (1)
+
+    // check if all brokers are assigned to current configuration (2)
+    bool brokers_are_equal
+      = brokers.size() == _cfg._brokers.size()
+        && std::all_of(
+          brokers.begin(), brokers.end(), [this](const broker_revision& b) {
+              // we may do linear lookup in _brokers collection as number of
+              // brokers is usually very small f.e. 3 or 5
+              auto it = std::find_if(
+                _cfg._brokers.begin(),
+                _cfg._brokers.end(),
+                [&b](const model::broker& existing) {
+                    return b.broker == existing;
+                });
+
+              return _cfg._current.contains(vnode(b.broker.id(), b.rev))
+                     && it != _cfg._brokers.end();
+          });
+
+    // configurations are identical, do nothing
+    if (brokers_are_equal) {
+        return;
+    }
+    // calculate configuration update
+    _cfg._configuration_update = calculate_configuration_update(
+      _cfg._current.voters, brokers);
+
+    // add replicas to current configuration
+    for (auto& br : brokers) {
+        vnode vn(br.broker.id(), br.rev);
+        if (_cfg._configuration_update->is_to_add(vn)) {
+            _cfg._brokers.push_back(std::move(br.broker));
+            _cfg._current.learners.push_back(vn);
+        }
+    }
+}
+
+void configuration_change_strategy_v4::finish_configuration_transition() {
+    // if there are no nodes to remove there is no need to enter joint consensus
+    if (_cfg._configuration_update->replicas_to_remove.empty()) {
+        _cfg._configuration_update.reset();
+        return;
+    }
+
+    // enter joint consensus
+    _cfg._old = _cfg._current;
+
+    // remove nodes from current voters
+    std::erase_if(_cfg._current.voters, [this](const vnode& voter) {
+        return _cfg._configuration_update->is_to_remove(voter);
+    });
+}
+
+void configuration_change_strategy_v4::abort_configuration_change(
+  model::revision_id rev) {
+    // collect all node ids
+    absl::flat_hash_set<vnode> all_node_ids;
+
+    _cfg.for_each_learner(
+      [&all_node_ids](const vnode& learner) { all_node_ids.insert(learner); });
+
+    _cfg.for_each_voter(
+      [&all_node_ids](const vnode& voter) { all_node_ids.insert(voter); });
+
+    // clear the configuration
+    _cfg._current.voters.clear();
+    _cfg._current.learners.clear();
+    _cfg._old.reset();
+
+    // rebuild configuration
+
+    for (auto& vn : all_node_ids) {
+        if (!_cfg._configuration_update->is_to_add(vn)) {
+            _cfg._current.voters.push_back(vn);
+        }
+    }
+    std::erase_if(_cfg._brokers, [this](const model::broker& br) {
+        return !std::any_of(
+          _cfg._current.voters.begin(),
+          _cfg._current.voters.end(),
+          [id = br.id()](vnode vn) { return vn.id() == id; });
+    });
+    // finally reset configuration update and set the revision
+    _cfg._configuration_update.reset();
+    _cfg._revision = rev;
+}
+
+void configuration_change_strategy_v4::cancel_configuration_change(
+  model::revision_id rev) {
+    switch (_cfg.type()) {
+    case configuration_type::simple:
+        vassert(
+          false,
+          "can not cancel, configuration change is not in progress - {}",
+          _cfg);
+    case configuration_type::transitional:
+        cancel_update_in_transitional_state();
+        break;
+    case configuration_type::joint:
+        cancel_update_in_joint_state();
+        break;
+    }
+    _cfg._revision = rev;
+}
+
+void configuration_change_strategy_v4::cancel_update_in_transitional_state() {
+    /**
+     * in transitional state the only change applied to configuration are nodes
+     * which are added to the replica set. We may simply remove learners but for
+     * the learners that were already promoted to voter we must use joint
+     * consensus.
+     */
+
+    _cfg._configuration_update->replicas_to_remove.clear();
+
+    for (auto& to_add : _cfg._configuration_update->replicas_to_add) {
+        if (_cfg.is_voter(to_add)) {
+            _cfg._configuration_update->replicas_to_remove.push_back(to_add);
+        }
+    }
+
+    std::erase_if(_cfg._brokers, [this](const model::broker& br) {
+        return std::any_of(
+          _cfg._current.learners.begin(),
+          _cfg._current.learners.end(),
+          [id = br.id()](const vnode& vn) { return vn.id() == id; });
+    });
+
+    // all the other nodes that are to add are learners, remove them all
+    _cfg._current.learners.clear();
+    _cfg._configuration_update->replicas_to_add.clear();
+}
+
+void configuration_change_strategy_v4::cancel_update_in_joint_state() {
+    /**
+     * After group configuration reached the joint state we must move back to
+     * transitional state and start adding nodes that are removed.
+     */
+    _cfg._current = *_cfg._old;
+    _cfg._old.reset();
+
+    auto tmp_u = _cfg._configuration_update->replicas_to_add;
+
+    _cfg._configuration_update->replicas_to_add
+      = _cfg._configuration_update->replicas_to_remove;
+    _cfg._configuration_update->replicas_to_remove = std::move(tmp_u);
+}
+
+void configuration_change_strategy_v4::discard_old_config() {
+    absl::flat_hash_set<model::node_id> physical_node_ids;
+
+    for (auto& id : _cfg._current.learners) {
+        physical_node_ids.insert(id.id());
+    }
+
+    for (auto& id : _cfg._current.voters) {
+        physical_node_ids.insert(id.id());
+    }
+    // remove unused brokers from brokers set
+    auto it = std::stable_partition(
+      _cfg._brokers.begin(),
+      _cfg._brokers.end(),
+      [physical_node_ids](const model::broker& b) {
+          return physical_node_ids.contains(b.id());
+      });
+    // we are only interested in current brokers
+    _cfg._brokers.erase(it, _cfg._brokers.end());
+    _cfg._old.reset();
+    _cfg._configuration_update.reset();
+}
+
 std::vector<vnode> with_revisions_assigned(
   const std::vector<vnode>& vnodes, model::revision_id new_revision) {
     std::vector<vnode> with_rev;
@@ -563,10 +894,13 @@ void group_configuration::maybe_set_initial_revision(
 std::ostream& operator<<(std::ostream& o, const group_configuration& c) {
     fmt::print(
       o,
-      "{{current: {}, old:{}, revision: {}, brokers: {}}}",
+      "{{current: {}, old:{}, revision: {}, update: {}, version: {}, brokers: "
+      "{}}}",
       c._current,
       c._old,
       c._revision,
+      c._configuration_update,
+      c._version,
       c._brokers);
     return o;
 }
@@ -587,8 +921,18 @@ std::ostream& operator<<(std::ostream& o, configuration_type t) {
         return o << "simple";
     case configuration_type::joint:
         return o << "joint";
+    case configuration_type::transitional:
+        return o << "transitional";
     }
     __builtin_unreachable();
+}
+std::ostream& operator<<(std::ostream& o, const configuration_update& u) {
+    fmt::print(
+      o,
+      "{{to_add: {}, to_remove: {}}}",
+      u.replicas_to_add,
+      u.replicas_to_remove);
+    return o;
 }
 } // namespace raft
 
@@ -603,9 +947,14 @@ void adl<raft::group_configuration>::to(
       cfg.current_config(),
       cfg.old_config(),
       cfg.revision_id());
+
+    // only serialize configuration update for version which is greater than 4
+    if (cfg.version() >= raft::group_configuration::version_t(4)) {
+        serialize(buf, cfg.get_configuration_update());
+    }
 }
 
-std::vector<raft::vnode> make_vnodes(const std::vector<model::node_id> ids) {
+std::vector<raft::vnode> make_vnodes(const std::vector<model::node_id>& ids) {
     std::vector<raft::vnode> ret;
     ret.reserve(ids.size());
     std::transform(
@@ -683,8 +1032,17 @@ adl<raft::group_configuration>::from(iobuf_parser& p) {
     if (version > raft::group_configuration::version_t(0)) {
         revision = adl<model::revision_id>{}.from(p);
     }
-    return raft::group_configuration(
-      std::move(brokers), std::move(current), revision, std::move(old));
+    std::optional<raft::configuration_update> update;
+    if (likely(version >= raft::group_configuration::version_t(4))) {
+        update = adl<std::optional<raft::configuration_update>>{}.from(p);
+    }
+    return {
+      std::move(brokers),
+      std::move(current),
+      revision,
+      std::move(update),
+      std::move(old),
+      version};
 }
 
 void adl<raft::vnode>::to(iobuf& buf, raft::vnode id) {
@@ -694,7 +1052,23 @@ void adl<raft::vnode>::to(iobuf& buf, raft::vnode id) {
 raft::vnode adl<raft::vnode>::from(iobuf_parser& p) {
     auto id = adl<model::node_id>{}.from(p);
     auto rev = adl<model::revision_id>{}.from(p);
-    return raft::vnode(id, rev);
+    return {id, rev};
+}
+
+void adl<raft::configuration_update>::to(
+  iobuf& out, raft::configuration_update update) {
+    reflection::serialize(
+      out, update.replicas_to_add, update.replicas_to_remove);
+}
+raft::configuration_update
+adl<raft::configuration_update>::from(iobuf_parser& in) {
+    auto to_add = adl<std::vector<raft::vnode>>{}.from(in);
+    auto to_remove = adl<std::vector<raft::vnode>>{}.from(in);
+
+    return raft::configuration_update{
+      .replicas_to_add = std::move(to_add),
+      .replicas_to_remove = std::move(to_remove),
+    };
 }
 
 } // namespace reflection

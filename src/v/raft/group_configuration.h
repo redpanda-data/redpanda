@@ -12,6 +12,7 @@
 #pragma once
 #include "model/metadata.h"
 #include "reflection/adl.h"
+#include "serde/envelope.h"
 #include "utils/to_string.h"
 
 #include <boost/range/join.hpp>
@@ -52,7 +53,7 @@ private:
     model::revision_id _revision;
 };
 
-enum class configuration_type : uint8_t { simple, joint };
+enum class configuration_type : uint8_t { simple, transitional, joint };
 
 std::ostream& operator<<(std::ostream& o, configuration_type t);
 
@@ -68,11 +69,30 @@ struct group_nodes {
     friend bool operator==(const group_nodes&, const group_nodes&) = default;
 };
 
+struct configuration_update
+  : serde::envelope<configuration_update, serde::version<0>> {
+    std::vector<vnode> replicas_to_add;
+    std::vector<vnode> replicas_to_remove;
+
+    bool is_to_add(const vnode&) const;
+    bool is_to_remove(const vnode&) const;
+
+    friend bool
+    operator==(const configuration_update&, const configuration_update&)
+      = default;
+
+    auto serde_fields() {
+        return std::tie(replicas_to_add, replicas_to_remove);
+    }
+
+    friend std::ostream& operator<<(std::ostream&, const configuration_update&);
+};
+
 class group_configuration final {
 public:
     using version_t
       = named_type<int8_t, struct raft_group_configuration_version>;
-    static constexpr version_t current_version{3};
+    static constexpr version_t current_version{4};
     /**
      * creates a configuration where all provided brokers are current
      * configuration voters
@@ -87,7 +107,9 @@ public:
       std::vector<model::broker>,
       group_nodes,
       model::revision_id,
-      std::optional<group_nodes> = std::nullopt);
+      std::optional<configuration_update>,
+      std::optional<group_nodes> = std::nullopt,
+      version_t = current_version);
 
     group_configuration(const group_configuration&) = default;
     group_configuration(group_configuration&&) = default;
@@ -156,6 +178,8 @@ public:
      */
     bool maybe_demote_removed_voters();
 
+    void finish_configuration_transition();
+
     const group_nodes& current_config() const { return _current; }
     const std::optional<group_nodes>& old_config() const { return _old; }
     const std::vector<model::broker>& brokers() const { return _brokers; }
@@ -223,6 +247,13 @@ public:
      */
     void maybe_set_initial_revision(model::revision_id r);
 
+    const std::optional<configuration_update>&
+    get_configuration_update() const {
+        return _configuration_update;
+    }
+
+    void set_version(version_t v) { _version = v; }
+
     friend bool
     operator==(const group_configuration&, const group_configuration&)
       = default;
@@ -267,12 +298,16 @@ public:
          *
          */
         virtual void cancel_configuration_change(model::revision_id) = 0;
+
+        virtual void finish_configuration_transition() = 0;
+
         virtual ~configuration_change_strategy() = default;
     };
 
 private:
     friend class configuration_change_strategy_v3;
 
+    friend class configuration_change_strategy_v4;
     std::vector<vnode> unique_voter_ids() const;
     std::vector<vnode> unique_learner_ids() const;
     std::unique_ptr<configuration_change_strategy> make_change_strategy();
@@ -280,6 +315,7 @@ private:
     version_t _version = current_version;
     std::vector<model::broker> _brokers;
     group_nodes _current;
+    std::optional<configuration_update> _configuration_update;
     std::optional<group_nodes> _old;
     model::revision_id _revision;
 };
@@ -411,5 +447,10 @@ template<>
 struct adl<raft::group_configuration> {
     void to(iobuf&, raft::group_configuration);
     raft::group_configuration from(iobuf_parser&);
+};
+template<>
+struct adl<raft::configuration_update> {
+    void to(iobuf&, raft::configuration_update);
+    raft::configuration_update from(iobuf_parser&);
 };
 } // namespace reflection

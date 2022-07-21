@@ -204,7 +204,7 @@ std::error_code check_configuration_update(
      * will only remove the partition after other node claim update as finished.
      *
      */
-    if (includes_self && group_cfg.type() == raft::configuration_type::joint) {
+    if (includes_self && group_cfg.type() != raft::configuration_type::simple) {
         vlog(
           clusterlog.trace,
           "partition {} contains current node and its consensus configuration "

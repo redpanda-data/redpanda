@@ -164,7 +164,7 @@ void consensus::setup_metrics() {
          [this] {
              return is_elected_leader()
                     && _configuration_manager.get_latest().type()
-                         == configuration_type::joint;
+                         != configuration_type::simple;
          },
          sm::description("Indicates if current raft group configuration is in "
                          "joint state i.e. configuration is being changed"),
@@ -920,8 +920,8 @@ ss::future<std::error_code> consensus::change_configuration(Func&& f) {
                 errc::configuration_change_in_progress);
           }
           auto latest_cfg = config();
-          // latest configuration is of joint type
-          if (latest_cfg.type() == configuration_type::joint) {
+          // can not change configuration if its type is different than simple
+          if (latest_cfg.type() != configuration_type::simple) {
               return ss::make_ready_future<std::error_code>(
                 errc::configuration_change_in_progress);
           }
@@ -2378,7 +2378,10 @@ void consensus::maybe_update_leader_commit_idx() {
         vlog(_ctxlog.warn, "Error updating leader commit index", e);
     });
 }
-
+/**
+ * The `maybe_commit_configuration` method is the place where configuration
+ * state transition is decided and executed
+ */
 ss::future<> consensus::maybe_commit_configuration(ss::semaphore_units<> u) {
     // we are not a leader, do nothing
     if (_vstate != vote_state::leader) {
@@ -2392,21 +2395,22 @@ ss::future<> consensus::maybe_commit_configuration(ss::semaphore_units<> u) {
     }
 
     auto latest_cfg = _configuration_manager.get_latest();
+
     /**
-     * simple configuration, there is nothing to do
+     * current config still contains learners, do nothing
      */
-    if (latest_cfg.type() == configuration_type::simple) {
+    if (unlikely(!latest_cfg.current_config().learners.empty())) {
         co_return;
     }
-    /**
-     * at this point joint configuration is committed, and all added learners
-     * were promoted to voter
-     */
-    if (latest_cfg.current_config().learners.empty()) {
-        /*
-         * In the first step we demote all removed voters to learners
-         */
-
+    switch (latest_cfg.type()) {
+    case configuration_type::simple:
+        co_return;
+    case configuration_type::transitional:
+        vlog(
+          _ctxlog.info, "finishing transition of configuration {}", latest_cfg);
+        latest_cfg.finish_configuration_transition();
+        break;
+    case configuration_type::joint:
         if (latest_cfg.maybe_demote_removed_voters()) {
             vlog(
               _ctxlog.info,
@@ -2414,8 +2418,8 @@ ss::future<> consensus::maybe_commit_configuration(ss::semaphore_units<> u) {
               latest_cfg);
         } else {
             /**
-             * When all old voters were demoted, as a leader, we replicate new
-             * configuration
+             * When all old voters were demoted, as a leader, we replicate
+             * new configuration
              */
             latest_cfg.discard_old_config();
             vlog(
@@ -2423,27 +2427,27 @@ ss::future<> consensus::maybe_commit_configuration(ss::semaphore_units<> u) {
               "leaving joint consensus, new simple configuration {}",
               latest_cfg);
         }
+    }
 
-        auto contains_current = latest_cfg.contains(_self);
-        auto ec = co_await replicate_configuration(
-          std::move(u), std::move(latest_cfg));
+    auto contains_current = latest_cfg.contains(_self);
+    auto ec = co_await replicate_configuration(
+      std::move(u), std::move(latest_cfg));
 
-        if (ec) {
-            if (ec != errc::shutting_down) {
-                vlog(
-                  _ctxlog.error,
-                  "unable to replicate updated configuration: {}",
-                  ec.message());
-            }
-            co_return;
-        }
-        // leader was removed, step down.
-        if (!contains_current) {
+    if (ec) {
+        if (ec != errc::shutting_down) {
             vlog(
-              _ctxlog.trace,
-              "current node is not longer group member, stepping down");
-            do_step_down("not_longer_member");
+              _ctxlog.error,
+              "unable to replicate updated configuration: {}",
+              ec.message());
         }
+        co_return;
+    }
+    // leader was removed, step down.
+    if (!contains_current) {
+        vlog(
+          _ctxlog.trace,
+          "current node is not longer group member, stepping down");
+        do_step_down("not_longer_member");
     }
 }
 
