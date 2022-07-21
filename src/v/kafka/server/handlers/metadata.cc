@@ -399,8 +399,6 @@ struct conc_holder {
     const char* _name;
 };
 
-static thread_local conc_tracker md_conc_tracker_outer;
-static thread_local conc_tracker md_conc_tracker_inner;
 template<typename T>
 static size_t vector_size(const std::vector<T>& v) {
     return v.capacity() * sizeof(*v.data());
@@ -419,16 +417,13 @@ static size_t response_size(const metadata_response& resp) {
     return size;
 }
 
-static thread_local ss::semaphore handler_sem{50};
 static thread_local periodic_ms memunits_period{1000ms};
+static thread_local conc_tracker md_conc_tracker;
 
 template<>
 ss::future<response_ptr> metadata_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
-    conc_holder conc_outer(md_conc_tracker_outer, "outer");
-
-    auto units = co_await ss::get_units(handler_sem, 1);
-    conc_holder conc_inner(md_conc_tracker_inner, "inner");
+    conc_holder conc(md_conc_tracker, "metadata_handler::handle parallelism");
 
     metadata_response reply;
     auto alive_brokers = co_await ctx.metadata_cache().all_alive_brokers();
@@ -486,10 +481,7 @@ ss::future<response_ptr> metadata_handler::handle(
         vlog(klog.warn, "response size {} units {}", rsize, ctx.memunits());
     }
 
-    auto resp = co_await ctx.respond(std::move(reply));
-    resp->set_units(std::move(units));
-
-    co_return resp;
+    co_return co_await ctx.respond(std::move(reply));
 }
 
 size_t
