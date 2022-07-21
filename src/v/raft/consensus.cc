@@ -23,6 +23,7 @@
 #include "raft/group_configuration.h"
 #include "raft/logger.h"
 #include "raft/prevote_stm.h"
+#include "raft/raft_feature_table.h"
 #include "raft/recovery_stm.h"
 #include "raft/replicate_entries_stm.h"
 #include "raft/rpc_client_protocol.h"
@@ -94,7 +95,8 @@ consensus::consensus(
   consensus::leader_cb_t cb,
   storage::api& storage,
   std::optional<std::reference_wrapper<recovery_throttle>> recovery_throttle,
-  recovery_memory_quota& recovery_mem_quota)
+  recovery_memory_quota& recovery_mem_quota,
+  raft_feature_table& ft)
   : _self(nid, initial_cfg.revision_id())
   , _group(group)
   , _jit(std::move(jit))
@@ -124,6 +126,7 @@ consensus::consensus(
   , _storage(storage)
   , _recovery_throttle(recovery_throttle)
   , _recovery_mem_quota(recovery_mem_quota)
+  , _features(ft)
   , _snapshot_mgr(
       std::filesystem::path(_log.config().work_directory()),
       storage::simple_snapshot_manager::default_snapshot_filename,
@@ -2088,6 +2091,15 @@ ss::future<std::error_code> consensus::replicate_configuration(
     vlog(_ctxlog.debug, "Replicating group configuration {}", cfg);
     return ss::with_gate(
       _bg, [this, u = std::move(u), cfg = std::move(cfg)]() mutable {
+          if (unlikely(cfg.version() < group_configuration::version_t(4))) {
+              if (
+                _features.is_feature_active(
+                  raft_feature::improved_config_change)
+                && cfg.type() == configuration_type::simple) {
+                  vlog(_ctxlog.debug, "Upgrading configuration version");
+                  cfg.set_version(group_configuration::current_version);
+              }
+          }
           auto batches = details::serialize_configuration_as_batches(
             std::move(cfg));
           for (auto& b : batches) {

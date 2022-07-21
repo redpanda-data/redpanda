@@ -20,6 +20,7 @@
 #include "raft/kvelldb/kvrsm.h"
 #include "raft/kvelldb/logger.h"
 #include "raft/logger.h"
+#include "raft/raft_feature_table.h"
 #include "raft/rpc_client_protocol.h"
 #include "raft/service.h"
 #include "raft/types.h"
@@ -158,9 +159,12 @@ private:
       model::topic("kvelldblog"),
       model::partition_id(ss::this_shard_id())};
     ss::lw_shared_ptr<raft::consensus> _consensus;
+    raft::raft_feature_table _features;
 
     ss::future<>
     init_consensus(raft::group_configuration&& cfg, storage::log log) {
+        _features.set_feature_active(
+          raft::raft_feature::improved_config_change);
         _consensus = ss::make_lw_shared<raft::consensus>(
           _self,
           raft::group_id(66),
@@ -186,7 +190,8 @@ private:
           },
           _storage,
           std::nullopt,
-          _recovery_memory_quota);
+          _recovery_memory_quota,
+          _features);
         return _consensus->start().then(
           [this] { return _hbeats.register_group(_consensus); });
     }

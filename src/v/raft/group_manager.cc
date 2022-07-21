@@ -10,6 +10,7 @@
 #include "raft/group_manager.h"
 
 #include "config/configuration.h"
+#include "likely.h"
 #include "model/metadata.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "resource_mgmt/io_priority.h"
@@ -64,10 +65,17 @@ ss::future<> group_manager::stop_heartbeats() { return _heartbeats.stop(); }
 ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
   raft::group_id id, std::vector<model::broker> nodes, storage::log log) {
     auto revision = log.config().get_revision();
+    auto raft_cfg = raft::group_configuration(std::move(nodes), revision);
+
+    if (unlikely(!_raft_feature_table.is_feature_active(
+          raft_feature::improved_config_change))) {
+        raft_cfg.set_version(group_configuration::version_t(3));
+    }
+
     auto raft = ss::make_lw_shared<raft::consensus>(
       _self,
       id,
-      raft::group_configuration(std::move(nodes), revision),
+      std::move(raft_cfg),
       raft::timeout_jitter(
         config::shard_local_cfg().raft_election_timeout_ms()),
       log,
@@ -79,7 +87,8 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
       },
       _storage,
       _recovery_throttle,
-      _recovery_mem_quota);
+      _recovery_mem_quota,
+      _raft_feature_table);
 
     return ss::with_gate(_gate, [this, raft] {
         return _heartbeats.register_group(raft).then([this, raft] {

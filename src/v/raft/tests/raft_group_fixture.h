@@ -23,6 +23,7 @@
 #include "raft/consensus_client_protocol.h"
 #include "raft/heartbeat_manager.h"
 #include "raft/log_eviction_stm.h"
+#include "raft/raft_feature_table.h"
 #include "raft/rpc_client_protocol.h"
 #include "raft/service.h"
 #include "random/generators.h"
@@ -105,6 +106,8 @@ struct raft_node {
             .default_read_buffer_size = config::mock_binding(512_KiB),
           };
       }) {
+        _features.set_feature_active(
+          raft::raft_feature::improved_config_change);
         cache.start().get();
 
         storage
@@ -163,7 +166,8 @@ struct raft_node {
           [this](raft::leadership_status st) { leader_callback(st); },
           storage.local(),
           recovery_throttle.local(),
-          recovery_mem_quota);
+          recovery_mem_quota,
+          _features);
 
         // create connections to initial nodes
         consensus->config().for_each_broker(
@@ -347,6 +351,7 @@ struct raft_node {
     std::unique_ptr<raft::heartbeat_manager> hbeats;
     consensus_ptr consensus;
     std::unique_ptr<raft::log_eviction_stm> _nop_stm;
+    raft::raft_feature_table _features;
     ss::abort_source _as;
 };
 
