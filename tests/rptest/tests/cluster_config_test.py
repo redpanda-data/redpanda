@@ -33,25 +33,6 @@ BOOTSTRAP_CONFIG = {
 SECRET_CONFIG_NAMES = frozenset(["cloud_storage_secret_key"])
 
 
-def search_log(redpanda, pattern):
-    """
-    Test helper for grepping the redpanda log
-
-    :return:  true if any instances of `pattern` found
-    """
-    for node in redpanda.nodes:
-        for line in node.account.ssh_capture(
-                f"grep \"{pattern}\" {redpanda.STDOUT_STDERR_CAPTURE} || true"
-        ):
-            # We got a match
-            redpanda.logger.debug(
-                f"Found {pattern} on node {node.name}: {line}")
-            return True
-
-    # Fall through, no matches
-    return False
-
-
 class ClusterConfigUpgradeTest(RedpandaTest):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, extra_rp_conf={}, **kwargs)
@@ -84,8 +65,8 @@ class ClusterConfigUpgradeTest(RedpandaTest):
         self.redpanda.restart_nodes(
             [node], override_cfg_params={'delete_retention_ms': '1234'})
         assert admin.get_cluster_config()['delete_retention_ms'] == 9876
-        assert search_log(self.redpanda,
-                          "Ignoring value for 'delete_retention_ms'")
+        assert self.redpanda.search_log(
+            "Ignoring value for 'delete_retention_ms'")
 
 
 class ClusterConfigTest(RedpandaTest):
@@ -948,11 +929,11 @@ class ClusterConfigTest(RedpandaTest):
             self._wait_for_version_sync(patch_result['config_version'])
 
             # Check value was/was not printed to log while applying
-            assert search_log(self.redpanda, value) is expect_log
+            assert self.redpanda.search_log(value) is expect_log
 
             # Check we do/don't print on next startup
             self.redpanda.restart_nodes(self.redpanda.nodes)
-            assert search_log(self.redpanda, value) is expect_log
+            assert self.redpanda.search_log(value) is expect_log
 
         # Default valued secrets are still shown.
         self._check_value_everywhere("cloud_storage_secret_key", None)

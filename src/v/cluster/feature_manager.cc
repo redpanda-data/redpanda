@@ -163,22 +163,49 @@ ss::future<> feature_manager::stop() {
 }
 
 ss::future<> feature_manager::maybe_log_license_check_info() {
-    static constexpr std::chrono::seconds license_check_retry = 5min;
-    const auto& cfg = config::shard_local_cfg();
-    std::stringstream warn_ss;
-    if (cfg.cloud_storage_enabled) {
-        fmt::print(warn_ss, "{}", "Tired Storage(cloud_storage)");
-    }
-    const auto& warn_log = warn_ss.str();
-    if (!warn_log.empty()) {
-        const auto& license = _feature_table.local().get_license();
-        if (!license || license->is_expired()) {
+    auto license_check_retry = std::chrono::seconds(60 * 5);
+    auto interval_override = std::getenv(
+      "__REDPANDA_LICENSE_CHECK_INTERVAL_SEC");
+    if (interval_override != nullptr) {
+        try {
+            license_check_retry = std::min(
+              std::chrono::seconds{license_check_retry},
+              std::chrono::seconds{std::stoi(interval_override)});
             vlog(
-              clusterlog.warn,
-              "Enterprise feature(s) {} detected as enabled without a valid "
-              "license, please contact support and/or upload a valid redpanda "
-              "license",
-              warn_log);
+              clusterlog.info,
+              "Overriding default license log annoy interval to: {}s",
+              license_check_retry.count());
+        } catch (...) {
+            vlog(
+              clusterlog.error,
+              "Invalid license check interval override '{}'",
+              interval_override);
+        }
+    }
+    if (_feature_table.local().is_active(feature::license)) {
+        const auto& cfg = config::shard_local_cfg();
+        std::stringstream warn_ss;
+        if (cfg.cloud_storage_enabled) {
+            fmt::print(warn_ss, "{}", "Tiered Storage(cloud_storage)");
+        }
+        if (
+          cfg.partition_autobalancing_mode
+          == model::partition_autobalancing_mode::continuous) {
+            fmt::print(warn_ss, "{} & ", "Continuous partition autobalancing");
+        }
+        const auto& warn_log = warn_ss.str();
+        if (!warn_log.empty()) {
+            const auto& license = _feature_table.local().get_license();
+            if (!license || license->is_expired()) {
+                vlog(
+                  clusterlog.warn,
+                  "Enterprise feature(s) ({}) detected as enabled without a "
+                  "valid "
+                  "license, please contact support and/or upload a valid "
+                  "redpanda "
+                  "license",
+                  warn_log);
+            }
         }
     }
     try {
