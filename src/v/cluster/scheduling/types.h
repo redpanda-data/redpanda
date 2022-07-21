@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "bytes/oncore.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "vassert.h"
@@ -126,6 +127,13 @@ struct allocation_constraints {
 /**
  * RAII based helper holding allocated partititions, allocation is reverted
  * after this object goes out of scope.
+ *
+ * WARNING: this object contains an embedded reference to the partition
+ * allocator service (specifically, the allocation_state associated with that
+ * allocator) and so it must be destroyed on the same shard the original units
+ * were allocated on. I.e., if original units A are moved into B, B must be
+ * destroyed the shard A was allocated on (or the shard of the object that was
+ * moved into A and so on).
  */
 struct allocation_units {
     allocation_units(
@@ -156,6 +164,8 @@ private:
     // keep the pointer to make this type movable
     allocation_state* _state;
     partition_allocation_domain _domain;
+    // oncore checker to ensure destruction happens on the same core
+    [[no_unique_address]] oncore _oncore;
 };
 
 /**
