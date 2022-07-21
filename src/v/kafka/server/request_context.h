@@ -63,11 +63,13 @@ public:
       ss::lw_shared_ptr<connection_context> conn,
       request_header&& header,
       iobuf&& request,
-      ss::lowres_clock::duration throttle_delay) noexcept
+      ss::lowres_clock::duration throttle_delay,
+      int memunits = -1) noexcept
       : _conn(std::move(conn))
       , _header(std::move(header))
       , _reader(std::move(request))
-      , _throttle_delay(throttle_delay) {}
+      , _throttle_delay(throttle_delay)
+      , _memunits(memunits) {}
 
     request_context(const request_context&) = delete;
     request_context& operator=(const request_context&) = delete;
@@ -212,11 +214,16 @@ public:
         return _conn->server().controller_api();
     }
 
+    int memunits() const {
+        return _memunits;
+    }
+
 private:
     ss::lw_shared_ptr<connection_context> _conn;
     request_header _header;
     request_reader _reader;
     ss::lowres_clock::duration _throttle_delay;
+    int _memunits;
 };
 
 // Executes the API call identified by the specified request_context.
