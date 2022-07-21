@@ -31,6 +31,11 @@ struct retry_params {
 
 class refresh_credentials {
 public:
+    enum class client_tls_enabled : bool {
+        yes = true,
+        no = false,
+    };
+
     class impl {
     public:
         impl(
@@ -79,7 +84,8 @@ public:
 
     protected:
         /// Returns an http client with the API host and port applied
-        http::client make_api_client() const;
+        ss::future<http::client>
+        make_api_client(client_tls_enabled enable_tls = client_tls_enabled::no);
 
         /// Helper to parse the iobuf returned from API into a credentials
         /// object, customized to API response structure
@@ -117,6 +123,10 @@ public:
         aws_region_name region() const { return _region; }
 
     private:
+        /// Initializes certificate_credentials on first client creation.
+        /// Subsequent clients which are created will reuse the certs.
+        ss::future<> init_tls_certs();
+
         /// The hostname to query for credentials. Can be overridden using env
         /// variable `RP_SI_CREDS_API_HOST`
         ss::sstring _api_host;
@@ -133,6 +143,7 @@ public:
         std::optional<std::chrono::milliseconds> _sleep_duration{std::nullopt};
         ss::abort_source& _as;
         retry_params _retry_params;
+        ss::shared_ptr<ss::tls::certificate_credentials> _tls_certs = nullptr;
     };
 
     refresh_credentials(

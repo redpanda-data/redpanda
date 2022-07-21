@@ -60,7 +60,10 @@ ss::future<api_response> make_request(
               .error_kind = api_request_error_kind::failed_abort};
         }
 
-        co_return co_await drain_response_stream(std::move(response_stream));
+        auto data = co_await drain_response_stream(std::move(response_stream));
+        co_await client.stop();
+        client.shutdown();
+        co_return data;
     } catch (const std::system_error& ec) {
         if (auto code = ec.code(); std::find(
                                      retryable_system_error_codes.begin(),
@@ -100,11 +103,8 @@ ss::future<api_response> post_request(
           boost::beast::http::field::content_length,
           boost::beast::to_static_string(content.size_bytes()));
 
-        auto [req_str, resp] = co_await client.make_request(
-          std::move(req), timeout);
-        co_await req_str->send_some(std::move(content));
-        co_await req_str->send_eof();
-
+        auto stream = make_iobuf_input_stream(std::move(content));
+        auto resp = co_await client.request(std::move(req), stream, timeout);
         auto status = co_await get_status(resp);
         if (
           std::find(
@@ -121,7 +121,11 @@ ss::future<api_response> post_request(
               .error_kind = api_request_error_kind::failed_abort};
         }
 
-        co_return co_await drain_response_stream(std::move(resp));
+        auto data = co_await drain_response_stream(std::move(resp));
+        co_await stream.close();
+        co_await client.stop();
+        client.shutdown();
+        co_return data;
     } catch (const std::system_error& ec) {
         if (auto code = ec.code(); std::find(
                                      retryable_system_error_codes.begin(),

@@ -14,8 +14,10 @@
 #include "cloud_roles/aws_sts_refresh_impl.h"
 #include "cloud_roles/gcp_refresh_impl.h"
 #include "cloud_roles/logger.h"
+#include "config/configuration.h"
 #include "config/node_config.h"
 #include "model/metadata.h"
+#include "net/tls.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
@@ -55,7 +57,15 @@ void refresh_credentials::start() {
 ss::future<> refresh_credentials::do_start() {
     return ss::do_until(
       [this] { return _gate.is_closed() || _as.abort_requested(); },
-      [this] { return fetch_and_update_credentials(); });
+      [this] {
+          return fetch_and_update_credentials().handle_exception_type(
+            [](const ss::sleep_aborted& ex) {
+                vlog(
+                  clrl_log.info,
+                  "stopping refresh_credentials loop: {}",
+                  ex.what());
+            });
+      });
 }
 
 static std::optional<ss::sstring>
@@ -225,14 +235,56 @@ ss::future<> refresh_credentials::impl::sleep_until_expiry() const {
     }
 }
 
-http::client refresh_credentials::impl::make_api_client() const {
-    return http::client{
+ss::future<http::client>
+refresh_credentials::impl::make_api_client(client_tls_enabled enable_tls) {
+    if (enable_tls == client_tls_enabled::yes) {
+        if (_tls_certs == nullptr) {
+            co_await init_tls_certs();
+        }
+
+        co_return http::client{
+          net::base_transport::configuration{
+            .server_addr = net::unresolved_address{api_host(), api_port()},
+            .credentials = _tls_certs,
+            // TODO (abhijat) toggle metrics
+            .disable_metrics = net::metrics_disabled::yes,
+            .tls_sni_hostname = api_host()},
+          _as};
+    }
+
+    co_return http::client{
       net::base_transport::configuration{
         .server_addr = net::unresolved_address{_api_host, _api_port},
         .credentials = {},
         .disable_metrics = net::metrics_disabled::yes,
         .tls_sni_hostname = std::nullopt},
       _as};
+}
+
+ss::future<> refresh_credentials::impl::init_tls_certs() {
+    ss::tls::credentials_builder b;
+    b.set_client_auth(ss::tls::client_auth::NONE);
+
+    if (auto trust_file_path
+        = config::shard_local_cfg().cloud_storage_trust_file.value();
+        trust_file_path.has_value()) {
+        vlog(
+          clrl_log.info,
+          "Using non-default trust file {}",
+          trust_file_path.value());
+        co_await b.set_x509_trust_file(
+          trust_file_path.value(), ss::tls::x509_crt_format::PEM);
+    } else if (auto ca_file = co_await net::find_ca_file();
+               ca_file.has_value()) {
+        vlog(clrl_log.info, "Using discovered trust file {}", ca_file.value());
+        co_await b.set_x509_trust_file(
+          ca_file.value(), ss::tls::x509_crt_format::PEM);
+    } else {
+        vlog(clrl_log.info, "Using GnuTLS default");
+        co_await b.set_system_trust();
+    }
+
+    _tls_certs = co_await b.build_reloadable_certificate_credentials();
 }
 
 refresh_credentials make_refresh_credentials(
