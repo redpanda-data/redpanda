@@ -41,7 +41,7 @@ class AvailabilityTests(EndToEndFinjectorTest):
                                         3,
                                         extra_rp_conf={
                                             "partition_autobalancing_mode":
-                                            "node_add_remove",
+                                            "node_add",
                                             "group_topic_partitions": 1,
                                             "default_topic_replications": 3,
                                         })
@@ -69,7 +69,7 @@ class AvailabilityTests(EndToEndFinjectorTest):
                                         3,
                                         extra_rp_conf={
                                             "partition_autobalancing_mode":
-                                            "node_add_remove",
+                                            "node_add",
                                             "group_topic_partitions": 1,
                                             "default_topic_replications": 3,
                                         })

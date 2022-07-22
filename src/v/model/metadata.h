@@ -404,7 +404,7 @@ std::ostream& operator<<(std::ostream& os, const cloud_credentials_source& cs);
 
 enum class partition_autobalancing_mode {
     off = 0,
-    node_add_remove,
+    node_add,
     continuous,
 };
 
@@ -413,8 +413,8 @@ operator<<(std::ostream& o, const partition_autobalancing_mode& m) {
     switch (m) {
     case model::partition_autobalancing_mode::off:
         return o << "off";
-    case model::partition_autobalancing_mode::node_add_remove:
-        return o << "node_add_remove";
+    case model::partition_autobalancing_mode::node_add:
+        return o << "node_add";
     case model::partition_autobalancing_mode::continuous:
         return o << "continuous";
     }

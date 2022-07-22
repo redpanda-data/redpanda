@@ -28,7 +28,7 @@ public:
       : test_logger("rebalancing-test") {
         set_configuration(
           "partition_autobalancing_mode",
-          model::partition_autobalancing_mode::node_add_remove);
+          model::partition_autobalancing_mode::node_add);
     }
 
     ~rebalancing_tests_fixture() {
@@ -65,7 +65,7 @@ public:
         set_configuration("disable_metrics", true);
         set_configuration(
           "partition_autobalancing_mode",
-          model::partition_autobalancing_mode::node_add_remove);
+          model::partition_autobalancing_mode::node_add);
     }
 
     cluster::topic_configuration create_topic_cfg(

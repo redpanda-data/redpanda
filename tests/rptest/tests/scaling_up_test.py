@@ -29,7 +29,7 @@ class ScalingUpTest(EndToEndTest):
                                             "group_topic_partitions":
                                             1,
                                             "partition_autobalancing_mode":
-                                            "node_add_remove"
+                                            "node_add"
                                         })
         # start single node cluster
         self.redpanda.start(nodes=[self.redpanda.nodes[0]])

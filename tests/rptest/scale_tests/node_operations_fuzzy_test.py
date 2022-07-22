@@ -113,7 +113,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
             # Use the deprecated config to bootstrap older nodes.
             extra_rp_conf["enable_auto_rebalance_on_node_add"] = True
         else:
-            extra_rp_conf["partition_autobalancing_mode"] = "node_add_remove"
+            extra_rp_conf["partition_autobalancing_mode"] = "node_add"
         self.redpanda = RedpandaService(self.test_context,
                                         5,
                                         extra_rp_conf=extra_rp_conf)
