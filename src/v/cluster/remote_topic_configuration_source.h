@@ -34,6 +34,19 @@ public:
       const s3::bucket_name& bucket,
       ss::abort_source& as);
 
+    /**
+     * Download remote topic manifest and set topic properties to cfg.
+     * This method is used to restore properties of the recovered topic.
+     *
+     * @param cfg custom_assignable_topic_configuration that will be changed
+     * @param bucket s3 bucket where the topic manifeset will be downloaded from
+     * @param as abourt source that caller can use request abort
+     */
+    ss::future<errc> set_recovered_topic_properties(
+      custom_assignable_topic_configuration& cfg,
+      const s3::bucket_name& bucket,
+      ss::abort_source& as);
+
 private:
     cloud_storage::remote& _remote;
 };
