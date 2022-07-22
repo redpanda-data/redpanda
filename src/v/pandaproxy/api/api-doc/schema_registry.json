@@ -247,6 +247,9 @@
             "schema": {
               "type": "object",
               "properties": {
+                "schemaType": {
+                  "type": "string"
+                },
                 "schema": {
                   "type": "string"
                 }
