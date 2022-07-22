@@ -52,9 +52,9 @@ public:
     auto auto_measure() { return measurement{this, _hist.auto_measure()}; }
 
     hdr_hist _hist;
-    int64_t _5xx_count;
-    int64_t _4xx_count;
-    int64_t _3xx_count;
+    int64_t _5xx_count{0};
+    int64_t _4xx_count{0};
+    int64_t _3xx_count{0};
 };
 
 class probe {
