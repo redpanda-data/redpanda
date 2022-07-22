@@ -15,6 +15,7 @@ from rptest.util import wait_until_result
 from rptest.clients.default import DefaultClient
 from rptest.services.redpanda import RedpandaService, CHAOS_LOG_ALLOW_LIST
 from rptest.services.failure_injector import FailureInjector, FailureSpec
+from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool, RpkException
@@ -251,5 +252,58 @@ class PartitionBalancerTest(EndToEndTest):
             ns.step_and_wait_for_ready(node)
             self.check_no_replicas_on_node(node)
             check_rack_placement()
+
+        self.run_validation()
+
+    @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    def test_fuzz_admin_ops(self):
+        self.start_redpanda(num_nodes=5)
+
+        self.topic = TopicSpec(partition_count=random.randint(20, 30))
+        self.client().create_topic(self.topic)
+
+        self.start_producer(1)
+        self.start_consumer(1)
+        self.await_startup()
+
+        admin_fuzz = AdminOperationsFuzzer(self.redpanda, min_replication=3)
+        admin_fuzz.start()
+
+        def describe_topics(retries=5, retries_interval=5):
+            if retries == 0:
+                return self.client().describe_topics()
+            error = None
+            for retry in range(retries):
+                try:
+                    return self.client().describe_topics()
+                except Exception as e:
+                    error = e
+                    self.logger.info(
+                        f"describe_topics error: {error}, "
+                        f"retries left: {retries-retry}/{retries}")
+                    time.sleep(retries_interval)
+            raise error
+
+        ns = self.NodeStopper(self)
+        for n in range(7):
+            node = self.redpanda.nodes[n % len(self.redpanda.nodes)]
+            ns.make_unavailable(node)
+            try:
+                admin_fuzz.pause()
+                self.wait_until_ready()
+                node2partition_count = {}
+                for t in describe_topics():
+                    for p in t.partitions:
+                        for r in p.replicas:
+                            node2partition_count[
+                                r] = node2partition_count.setdefault(r, 0) + 1
+                self.logger.info(f"partition counts: {node2partition_count}")
+                assert self.redpanda.idx(node) not in node2partition_count
+
+            finally:
+                admin_fuzz.unpause()
+
+        admin_fuzz.wait(count=10, timeout=240)
+        admin_fuzz.stop()
 
         self.run_validation()
