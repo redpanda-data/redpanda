@@ -1226,9 +1226,14 @@ class RedpandaService(Service):
             return None
 
     def pids(self, node):
-        """Return process ids associated with running processes on the given node."""
+        """
+        Return process ids for the following processes on the given node:
+        * 'redpanda' started in 'start_redpanda'
+        * 'node' started in 'start_wasm_engine' (only when coproc is enabled)
+        """
         try:
-            cmd = "ps ax | grep -i 'redpanda\|node' | grep -v grep | awk '{print $1}'"
+            proc_name_regex = "redpanda\|/bin/node"
+            cmd = f"ps ax | grep -i '{proc_name_regex}' | grep -v grep | awk '{{print $1}}'"
             pid_arr = [
                 pid for pid in node.account.ssh_capture(
                     cmd, allow_fail=True, callback=int)
