@@ -1203,7 +1203,7 @@ configuration::configuration()
       "Node unavailability timeout that triggers moving partitions from the "
       "node",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      30min)
+      15min)
   , partition_autobalancing_max_disk_usage_percent(
       *this,
       "partition_autobalancing_max_disk_usage_percent",
