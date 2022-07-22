@@ -302,25 +302,6 @@ partition_downloader::download_log(const remote_manifest_path& manifest_key) {
           target.get_manifest_path());
     }
 
-    // TODO (evgeny): clean up old manifests on success. Take into account
-    //                that old and new manifest names could match.
-
-    // Upload topic manifest for re-created topic (here we don't prevent
-    // other partitions of the same topic to read old topic manifest if the
-    // revision is different).
-    if (mat.topic_manifest.get_revision() != _ntpc.get_initial_revision()) {
-        mat.topic_manifest.set_revision(_ntpc.get_initial_revision());
-        upl_result = co_await _remote->upload_manifest(
-          _bucket, mat.topic_manifest, _rtcnode);
-        if (upl_result != upload_result::success) {
-            // That's probably fine since the archival subsystem will
-            // re-upload topic manifest eventually.
-            vlog(
-              _ctxlog.warn,
-              "Failed to upload new topic manifest {} after recovery",
-              target.get_manifest_path());
-        }
-    }
     log_recovery_result result{
       .completed = true,
       .min_kafka_offset = part.range.min_offset,
