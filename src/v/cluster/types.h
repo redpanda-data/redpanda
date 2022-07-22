@@ -1282,6 +1282,9 @@ struct topic_configuration
     bool is_read_replica() const {
         return properties.read_replica && properties.read_replica.value();
     }
+    bool is_recovery_enabled() const {
+        return properties.recovery && properties.recovery.value();
+    }
 
     model::topic_namespace tp_ns;
     // using signed integer because Kafka protocol defines it as signed int
@@ -1322,6 +1325,7 @@ struct custom_assignable_topic_configuration {
 
     bool has_custom_assignment() const { return !custom_assignments.empty(); }
     bool is_read_replica() const { return cfg.is_read_replica(); }
+    bool is_recovery_enabled() const { return cfg.is_recovery_enabled(); }
 
     friend std::ostream&
     operator<<(std::ostream&, const custom_assignable_topic_configuration&);
