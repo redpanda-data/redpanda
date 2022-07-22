@@ -76,7 +76,7 @@ send_reply(ss::lw_shared_ptr<server_context_impl> ctx, netbuf buf) {
     buf.set_compression(rpc::compression_type::zstd);
     buf.set_correlation_id(ctx->get_header().correlation_id);
 
-    auto view = std::move(buf).as_scattered();
+    auto view = co_await std::move(buf).as_scattered();
     if (ctx->res.conn_gate().is_closed()) {
         // do not write if gate is closed
         rpclog.debug(
