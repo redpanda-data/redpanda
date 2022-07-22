@@ -298,3 +298,24 @@ SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_missing_field) {
       R"(syntax = "proto3"; message Simple { int32 id = 2; })",
       R"(syntax = "proto3"; message Simple { string res = 1; int32 id = 2; })"));
 }
+
+constexpr std::string_view recursive = R"(syntax = "proto3";
+
+package recursive;
+
+message Payload {
+  oneof payload {
+    .recursive.Message message = 1;
+  }
+}
+
+message Message {
+  string rule_name = 1;
+  .recursive.Payload payload = 2;
+})";
+
+SEASTAR_THREAD_TEST_CASE(
+  test_protobuf_compatibility_of_mutually_recursive_types) {
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::full_transitive, recursive, recursive));
+}
