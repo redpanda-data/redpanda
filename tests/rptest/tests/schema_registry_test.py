@@ -1039,6 +1039,15 @@ class SchemaRegistryTest(RedpandaTest):
         assert result_raw.status_code == requests.codes.ok
         assert result_raw.text.strip() == simple_proto_def.strip()
 
+        result_raw = self._request("GET",
+                                   f"schemas/ids/1",
+                                   headers=HTTP_GET_HEADERS)
+        self.logger.info(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+        result = result_raw.json()
+        assert result["schemaType"] == "PROTOBUF"
+        assert result["schema"].strip() == simple_proto_def.strip()
+
         result_raw = self._get_subjects_subject_versions_version_referenced_by(
             "simple", 1)
         self.logger.info(result_raw)
