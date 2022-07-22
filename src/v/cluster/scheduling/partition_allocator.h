@@ -108,8 +108,9 @@ private:
     std::error_code
     check_cluster_limits(allocation_request const& request) const;
 
-    result<std::vector<model::broker_shard>>
-      allocate_partition(partition_constraints);
+    result<std::vector<model::broker_shard>> allocate_partition(
+      partition_constraints,
+      const std::vector<model::broker_shard>& not_changed_replicas = {});
 
     result<std::vector<model::broker_shard>> do_reallocate_partition(
       partition_constraints, const std::vector<model::broker_shard>&);
