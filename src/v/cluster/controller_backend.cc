@@ -553,17 +553,11 @@ find_interrupting_operation(deltas_t::iterator current_it, deltas_t& deltas) {
 ss::future<std::error_code> revert_configuration_update(
   const model::ntp& ntp,
   const std::vector<model::broker_shard>& replicas,
+  const topic_table_delta::revision_map_t& replica_revisions,
   model::revision_id rev,
   ss::lw_shared_ptr<partition> p,
-  members_table& members,
-  topic_table& topics) {
-    auto in_progress_it = topics.in_progress_updates().find(ntp);
-    // no longer in progress
-    if (in_progress_it == topics.in_progress_updates().end()) {
-        co_return errc::success;
-    }
-    auto brokers = create_brokers_set(
-      replicas, in_progress_it->second.replicas_revisions, members);
+  members_table& members) {
+    auto brokers = create_brokers_set(replicas, replica_revisions, members);
     vlog(
       clusterlog.debug,
       "reverting already finished reconfiguration of {}, revision: {}. Replica "
@@ -775,11 +769,17 @@ controller_backend::execute_partition_op(const topic_table::delta& delta) {
           "reconfiguration delta must have previous replica set, current "
           "delta: {}",
           delta);
+        vassert(
+          delta.previous_replica_set,
+          "replica revisions map must be present in reconfiguration type "
+          "delta: {}",
+          delta);
         return process_partition_reconfiguration(
           delta.type,
           delta.ntp,
           delta.new_assignment,
           *delta.previous_replica_set,
+          *delta.replica_revisions,
           rev);
     case op_t::update_finished:
         return finish_partition_update(delta.ntp, delta.new_assignment, rev)
@@ -826,6 +826,7 @@ controller_backend::process_partition_reconfiguration(
   model::ntp ntp,
   const partition_assignment& target_assignment,
   const std::vector<model::broker_shard>& previous_replicas,
+  const topic_table_delta::revision_map_t& replica_revisions,
   model::revision_id rev) {
     vlog(
       clusterlog.trace,
@@ -884,7 +885,7 @@ controller_backend::process_partition_reconfiguration(
          *
          */
         co_return co_await execute_reconfiguration(
-          type, ntp, target_assignment.replicas, rev);
+          type, ntp, target_assignment.replicas, replica_revisions, rev);
     }
     const auto cross_core_move = contains_node(_self, previous_replicas)
                                  && !has_local_replicas(
@@ -908,7 +909,7 @@ controller_backend::process_partition_reconfiguration(
         // try executing reconfiguration, this method will return success if
         // partition configuration is up to date with requested assignment
         auto ec = co_await execute_reconfiguration(
-          type, ntp, target_assignment.replicas, rev);
+          type, ntp, target_assignment.replicas, replica_revisions, rev);
         if (!ec) {
             /**
              *  After one of the replicas find the configuration to be
@@ -1105,17 +1106,18 @@ ss::future<std::error_code> controller_backend::execute_reconfiguration(
   topic_table_delta::op_type type,
   const model::ntp& ntp,
   const std::vector<model::broker_shard>& replica_set,
+  const topic_table_delta::revision_map_t& replica_revisions,
   model::revision_id revision) {
     switch (type) {
     case topic_table_delta::op_type::update:
         co_return co_await update_partition_replica_set(
-          ntp, replica_set, revision);
+          ntp, replica_set, replica_revisions, revision);
     case topic_table_delta::op_type::cancel_update:
         co_return co_await cancel_replica_set_update(
-          ntp, replica_set, revision);
+          ntp, replica_set, replica_revisions, revision);
     case topic_table_delta::op_type::force_abort_update:
         co_return co_await force_abort_replica_set_update(
-          ntp, replica_set, revision);
+          ntp, replica_set, replica_revisions, revision);
     default:
         vassert(
           false, "delta of type {} is not partition reconfiguration", type);
@@ -1237,6 +1239,7 @@ controller_backend::apply_configuration_change_on_leader(
 ss::future<std::error_code> controller_backend::cancel_replica_set_update(
   const model::ntp& ntp,
   const std::vector<model::broker_shard>& replicas,
+  const topic_table_delta::revision_map_t& replica_revisions,
   model::revision_id rev) {
     /**
      * Following scenarios can happen in here:
@@ -1250,7 +1253,8 @@ ss::future<std::error_code> controller_backend::cancel_replica_set_update(
       ntp,
       replicas,
       rev,
-      [this, &ntp, rev, replicas](ss::lw_shared_ptr<partition> p) {
+      [this, &ntp, rev, replicas, &replica_revisions](
+        ss::lw_shared_ptr<partition> p) {
           const auto current_cfg = p->group_configuration();
           // we do not have to request update/cancellation twice
           if (current_cfg.revision_id() == rev) {
@@ -1266,10 +1270,10 @@ ss::future<std::error_code> controller_backend::cancel_replica_set_update(
               return revert_configuration_update(
                 ntp,
                 replicas,
+                replica_revisions,
                 rev,
                 std::move(p),
-                _members_table.local(),
-                _topics.local());
+                _members_table.local());
           } else {
               vlog(
                 clusterlog.debug,
@@ -1283,6 +1287,7 @@ ss::future<std::error_code> controller_backend::cancel_replica_set_update(
 ss::future<std::error_code> controller_backend::force_abort_replica_set_update(
   const model::ntp& ntp,
   const std::vector<model::broker_shard>& replicas,
+  const topic_table_delta::revision_map_t& replica_revisions,
   model::revision_id rev) {
     /**
      * Force abort configuration change for each of the partition replicas.
@@ -1315,15 +1320,15 @@ ss::future<std::error_code> controller_backend::force_abort_replica_set_update(
           ntp,
           replicas,
           rev,
-          [this, rev, &replicas, &ntp](
+          [this, rev, &replicas, &ntp, &replica_revisions](
             ss::lw_shared_ptr<cluster::partition> p) {
               return revert_configuration_update(
                 ntp,
                 replicas,
+                replica_revisions,
                 rev,
                 std::move(p),
-                _members_table.local(),
-                _topics.local());
+                _members_table.local());
           });
 
     } else {
@@ -1340,6 +1345,7 @@ ss::future<std::error_code> controller_backend::force_abort_replica_set_update(
 ss::future<std::error_code> controller_backend::update_partition_replica_set(
   const model::ntp& ntp,
   const std::vector<model::broker_shard>& replicas,
+  const topic_table_delta::revision_map_t& replica_revisions,
   model::revision_id rev) {
     /**
      * Following scenarios can happen in here:
@@ -1351,20 +1357,17 @@ ss::future<std::error_code> controller_backend::update_partition_replica_set(
       ntp,
       replicas,
       rev,
-      [this, rev, &replicas, &ntp](ss::lw_shared_ptr<partition> p) {
+      [this, rev, &replicas, &ntp, &replica_revisions](
+        ss::lw_shared_ptr<partition> p) {
           auto it = _topics.local().all_topics_metadata().find(
             model::topic_namespace_view(ntp));
           // no longer in progress
           if (it == _topics.local().all_topics_metadata().end()) {
               return ss::make_ready_future<std::error_code>(errc::success);
           }
-          auto rev_it = it->second.replica_revisions.find(ntp.tp.partition);
-          vassert(
-            rev_it != it->second.replica_revisions.end(),
-            "Replica revisions for {} must exists",
-            ntp);
+
           auto brokers = create_brokers_set(
-            replicas, rev_it->second, _members_table.local());
+            replicas, replica_revisions, _members_table.local());
           vlog(
             clusterlog.debug,
             "updating partition {} replica set with {}",

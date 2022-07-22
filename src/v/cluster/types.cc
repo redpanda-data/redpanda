@@ -133,12 +133,14 @@ topic_table_delta::topic_table_delta(
   cluster::partition_assignment new_assignment,
   model::offset o,
   op_type tp,
-  std::optional<std::vector<model::broker_shard>> previous)
+  std::optional<std::vector<model::broker_shard>> previous,
+  std::optional<revision_map_t> replica_revisions)
   : ntp(std::move(ntp))
   , new_assignment(std::move(new_assignment))
   , offset(o)
   , type(tp)
-  , previous_replica_set(std::move(previous)) {}
+  , previous_replica_set(std::move(previous))
+  , replica_revisions(std::move(replica_revisions)) {}
 
 ntp_reconciliation_state::ntp_reconciliation_state(
   model::ntp ntp,
