@@ -27,7 +27,7 @@ iobuf header_as_iobuf(const header& h) {
 }
 /// \brief used to send the bytes down the wire
 /// we re-compute the header-checksum on every call
-ss::scattered_message<char> netbuf::as_scattered() && {
+ss::future<ss::scattered_message<char>> netbuf::as_scattered() && {
     if (_hdr.correlation_id == 0 || _hdr.meta == 0) {
         throw std::runtime_error(
           "cannot compose scattered view with incomplete header. missing "
@@ -54,7 +54,7 @@ ss::scattered_message<char> netbuf::as_scattered() && {
     _out.prepend(header_as_iobuf(_hdr));
 
     // prepare for output
-    return iobuf_as_scattered(std::move(_out));
+    co_return iobuf_as_scattered(std::move(_out));
 }
 
 } // namespace rpc
