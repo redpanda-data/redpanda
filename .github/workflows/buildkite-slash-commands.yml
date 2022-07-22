@@ -1,0 +1,45 @@
+on:
+  repository_dispatch:
+    types: 
+      - ci-repeat-command
+      - test-codecov-command
+
+jobs:
+  run-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with: 
+          repository: redpanda-data/sparse-checkout 
+          token: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          path: sparse-checkout
+
+      - uses: ./sparse-checkout 
+        with:
+          repository: redpanda-data/vtools
+          token: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          patterns: actions
+          path: ghca 
+
+      - name: Buildkite slash command action
+        uses: ./ghca/actions/buildkite-slash-commands
+        with:
+          buildkite_token: ${{ secrets.BUILDKITE_TOKEN }}
+          buildkite_org: redpanda
+          buildkite_pipeline: redpanda
+          command: ${{ github.event.client_payload.slash_command.command }}
+
+      - name: Success reaction
+        uses: peter-evans/create-or-update-comment@v2
+        with:
+          token: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          repository: ${{ github.event.client_payload.github.payload.repository.full_name }}
+          comment-id: ${{ github.event.client_payload.github.payload.comment.id }}
+          reaction-type: hooray
+
+      - name: Error response
+        if: failure()
+        uses: ./ghca/actions/slash-command-error
+        with:
+          token: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          body: ${{ env.ERROR_MSG }}
