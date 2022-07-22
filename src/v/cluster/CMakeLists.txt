@@ -100,7 +100,7 @@ v_cc_library(
     feature_barrier.cc
     feature_table.cc
     drain_manager.cc
-    read_replica_manager.cc
+    remote_topic_configuration_source.cc
     partition_balancer_planner.cc
     partition_balancer_backend.cc
     partition_balancer_rpc_handler.cc

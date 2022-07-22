@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Redpanda Data, Inc.
+ * Copyright 2022 Redpanda Data, Inc.
  *
  * Use of this software is governed by the Business Source License
  * included in the file licenses/BSL.md
@@ -18,9 +18,9 @@
 
 namespace cluster {
 
-class read_replica_manager {
+class remote_topic_configuration_source {
 public:
-    read_replica_manager(cloud_storage::remote&);
+    explicit remote_topic_configuration_source(cloud_storage::remote&);
 
     /**
      * Download remote topic manifest and set remote_properties to cfg.

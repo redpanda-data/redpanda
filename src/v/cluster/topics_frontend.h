@@ -16,7 +16,7 @@
 #include "cluster/data_policy_frontend.h"
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
-#include "cluster/read_replica_manager.h"
+#include "cluster/remote_topic_configuration_source.h"
 #include "cluster/scheduling/types.h"
 #include "cluster/topic_table.h"
 #include "model/metadata.h"

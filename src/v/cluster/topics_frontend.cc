@@ -432,7 +432,8 @@ ss::future<topic_result> topics_frontend::do_create_topic(
             co_return make_error_result(
               assignable_config.cfg.tp_ns, errc::topic_invalid_config);
         }
-        auto rr_manager = read_replica_manager(_cloud_storage_api.local());
+        auto rr_manager = remote_topic_configuration_source(
+          _cloud_storage_api.local());
 
         errc download_res = co_await rr_manager.set_remote_properties_in_config(
           assignable_config,

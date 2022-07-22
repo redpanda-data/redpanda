@@ -1,4 +1,15 @@
-#include "cluster/read_replica_manager.h"
+/*
+ * Copyright 2022 Redpanda Data, Inc.
+ *
+ * Use of this software is governed by the Business Source License
+ * included in the file licenses/BSL.md
+ *
+ * As of the Change Date specified in that file, in accordance with
+ * the Business Source License, use of this software will be governed
+ * by the Apache License, Version 2.0
+ */
+
+#include "cluster/remote_topic_configuration_source.h"
 
 #include "cloud_storage/topic_manifest.h"
 #include "cluster/logger.h"
@@ -7,10 +18,12 @@
 
 namespace cluster {
 
-read_replica_manager::read_replica_manager(cloud_storage::remote& remote)
+remote_topic_configuration_source::remote_topic_configuration_source(
+  cloud_storage::remote& remote)
   : _remote(remote) {}
 
-ss::future<errc> read_replica_manager::set_remote_properties_in_config(
+ss::future<errc>
+remote_topic_configuration_source::set_remote_properties_in_config(
   custom_assignable_topic_configuration& cfg,
   const s3::bucket_name& bucket,
   ss::abort_source& as) {
