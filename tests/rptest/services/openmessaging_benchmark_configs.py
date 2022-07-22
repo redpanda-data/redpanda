@@ -78,7 +78,7 @@ class OMBSampleConfigurations:
     SIMPLE_DRIVER = {
         "name": "simple-driver",
         "replication_factor": 3,
-        "request_timeout": 120000,
+        "request_timeout": 300000,
         "enable_idempotence": "false",
         "acks": "1",
         "linger_ms": 1,
@@ -92,7 +92,7 @@ class OMBSampleConfigurations:
     ACK_ALL_GROUP_LINGER_1MS = {
         "name": "ack-all-group-linger-1-ms-no-idem",
         "replication_factor": 3,
-        "request_timeout": 120000,
+        "request_timeout": 300000,
         "enable_idempotence": "false",
         "acks": "all",
         "linger_ms": 1,
@@ -106,7 +106,7 @@ class OMBSampleConfigurations:
     ACK_ALL_GROUP_LINGER_1MS_WITH_IDEMPOTENCE = {
         "name": "ack-all-group-linger-1-ms-enable-idem",
         "replication_factor": 3,
-        "request_timeout": 120000,
+        "request_timeout": 300000,
         "enable_idempotence": "true",
         "acks": "all",
         "linger_ms": 1,
@@ -120,7 +120,7 @@ class OMBSampleConfigurations:
     ACK_ALL_GROUP_LINGER_1MS_IDEM_MAX_IN_FLIGHT = {
         "name": "ack-all-group-linger-1-ms-enable-idem",
         "replication_factor": 3,
-        "request_timeout": 120000,
+        "request_timeout": 300000,
         "enable_idempotence": "true",
         "acks": "all",
         "linger_ms": 1,
@@ -134,7 +134,7 @@ class OMBSampleConfigurations:
     ACK_ALL_GROUP_LINGER_10MS = {
         "name": "ack-all-group-linger-10-ms-no-idem",
         "replication_factor": 3,
-        "request_timeout": 120000,
+        "request_timeout": 300000,
         "enable_idempotence": "false",
         "acks": "all",
         "linger_ms": 10,
@@ -148,7 +148,7 @@ class OMBSampleConfigurations:
     ACK_ALL_GROUP_LINGER_10MS_WITH_IDEMPOTENCE = {
         "name": "ack-all-group-linger-10-ms-enable-idem",
         "replication_factor": 3,
-        "request_timeout": 120000,
+        "request_timeout": 300000,
         "enable_idempotence": "true",
         "acks": "all",
         "linger_ms": 1,
