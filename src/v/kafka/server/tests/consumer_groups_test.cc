@@ -91,15 +91,17 @@ FIXTURE_TEST(join_empty_group_static_member, consumer_offsets_fixture) {
     });
     client.connect().get();
 
-    auto req = make_join_group_request(
-      unknown_member_id, "group-test", {"p1", "p2"}, "random");
-    // set group instance id
-    req.data.group_instance_id = gr;
-    auto resp = client.dispatch(std::move(req), kafka::api_version(5)).get0();
-
-    info("response: {}", resp.data);
-
-    // static we expect coordinator to assign member_id
-    BOOST_REQUIRE_EQUAL(resp.data.error_code, kafka::error_code::none);
-    BOOST_REQUIRE_NE(resp.data.member_id, unknown_member_id);
+    tests::cooperative_spin_wait_with_timeout(30s, [&gr, &client] {
+        auto req = make_join_group_request(
+          unknown_member_id, "group-test", {"p1", "p2"}, "random");
+        // set group instance id
+        req.data.group_instance_id = gr;
+        auto resp
+          = client.dispatch(std::move(req), kafka::api_version(5)).get0();
+        BOOST_REQUIRE(
+          resp.data.error_code == kafka::error_code::none
+          || resp.data.error_code == kafka::error_code::not_coordinator);
+        return resp.data.error_code == kafka::error_code::none
+               && resp.data.member_id != unknown_member_id;
+    }).get();
 }
