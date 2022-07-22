@@ -65,11 +65,13 @@ def _choice_random_user(redpanda, prefix):
 
 # topic operations
 class CreateTopicOperation(Operation):
-    def __init__(self, prefix, max_partitions, max_replication):
+    def __init__(self, prefix, max_partitions, min_replication,
+                 max_replication):
         self.prefix = prefix
         self.topic = f'{prefix}-{random_string(6)}'
         self.partitions = random.randint(1, max_partitions)
-        self.rf = random.choice([x for x in range(1, max_replication + 1, 2)])
+        self.rf = random.choice(
+            [x for x in range(min_replication, max_replication + 1, 2)])
 
     def execute(self, redpanda):
         redpanda.logger.info(
@@ -382,6 +384,7 @@ class AdminOperationsFuzzer():
                  operation_timeout=30,
                  operations_interval=1,
                  max_partitions=10,
+                 min_replication=1,
                  max_replication=3):
         self.redpanda = redpanda
         self.initial_entities = initial_entities
@@ -390,6 +393,7 @@ class AdminOperationsFuzzer():
         self.operation_timeout = operation_timeout
         self.operations_interval = operations_interval
         self.max_partitions = max_partitions
+        self.min_replication = min_replication
         self.max_replication = max_replication
 
         self.prefix = f'fuzzy-operator-{random.randint(0,10000)}'
@@ -407,7 +411,8 @@ class AdminOperationsFuzzer():
                                        args=())
         # pre-populate cluster with users and topics
         for i in range(0, self.initial_entities):
-            tp = CreateTopicOperation(self.prefix, 1, self.max_replication)
+            tp = CreateTopicOperation(self.prefix, 1, self.min_replication,
+                                      self.max_replication)
             self.append_to_history(tp)
             tp.execute(self.redpanda)
 
@@ -505,8 +510,9 @@ class AdminOperationsFuzzer():
         op = random.choice([o for o in RedpandaAdminOperation])
         actions = {
             RedpandaAdminOperation.CREATE_TOPIC:
-            lambda: CreateTopicOperation(self.prefix, self.max_partitions, self
-                                         .max_replication),
+            lambda:
+            CreateTopicOperation(self.prefix, self.max_partitions, self.
+                                 min_replication, self.max_replication),
             RedpandaAdminOperation.DELETE_TOPIC:
             lambda: DeleteTopicOperation(self.prefix),
             RedpandaAdminOperation.UPDATE_TOPIC:
