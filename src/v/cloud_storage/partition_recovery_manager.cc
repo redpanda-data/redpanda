@@ -85,8 +85,8 @@ partition_recovery_manager::~partition_recovery_manager() {
 
 ss::future<> partition_recovery_manager::stop() { co_await _gate.close(); }
 
-ss::future<log_recovery_result>
-partition_recovery_manager::download_log(const storage::ntp_config& ntp_cfg) {
+ss::future<log_recovery_result> partition_recovery_manager::download_log(
+  const storage::ntp_config& ntp_cfg, cluster::remote_topic_properties rtp) {
     if (!ntp_cfg.has_overrides()) {
         vlog(
           cst_log.debug, "No overrides for {} found, skipping", ntp_cfg.ntp());
@@ -101,19 +101,21 @@ partition_recovery_manager::download_log(const storage::ntp_config& ntp_cfg) {
         co_return log_recovery_result{};
     }
     partition_downloader downloader(
-      ntp_cfg, &_remote.local(), _bucket, _gate, _root);
+      ntp_cfg, &_remote.local(), rtp, _bucket, _gate, _root);
     co_return co_await downloader.download_log();
 }
 
 partition_downloader::partition_downloader(
   const storage::ntp_config& ntpc,
   remote* remote,
+  cluster::remote_topic_properties rtp,
   s3::bucket_name bucket,
   ss::gate& gate_root,
   retry_chain_node& parent)
   : _ntpc(ntpc)
   , _bucket(std::move(bucket))
   , _remote(remote)
+  , _rtp(rtp)
   , _gate(gate_root)
   , _rtcnode(download_timeout, initial_backoff, &parent)
   , _ctxlog(
@@ -519,13 +521,8 @@ ss::future<partition_downloader::recovery_material>
 partition_downloader::find_recovery_material(const remote_manifest_path& key) {
     vlog(_ctxlog.info, "Downloading topic manifest {}", key);
     recovery_material recovery_mat;
-    auto result = co_await _remote->download_manifest(
-      _bucket, key, recovery_mat.topic_manifest, _rtcnode);
-    if (result != download_result::success) {
-        throw missing_partition_exception(key);
-    }
-    auto orig_rev = recovery_mat.topic_manifest.get_revision();
-    partition_manifest tmp(_ntpc.ntp(), orig_rev);
+
+    partition_manifest tmp(_ntpc.ntp(), _rtp.remote_revision);
     auto res = co_await _remote->download_manifest(
       _bucket, tmp.get_manifest_path(), tmp, _rtcnode);
     if (res != download_result::success) {

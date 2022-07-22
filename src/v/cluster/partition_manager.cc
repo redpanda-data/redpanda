@@ -14,6 +14,7 @@
 #include "cluster/archival_metadata_stm.h"
 #include "cluster/fwd.h"
 #include "cluster/logger.h"
+#include "cluster/types.h"
 #include "config/configuration.h"
 #include "model/metadata.h"
 #include "raft/consensus.h"
@@ -73,9 +74,10 @@ partition_manager::get_topic_partition_table(
 ss::future<consensus_ptr> partition_manager::manage(
   storage::ntp_config ntp_cfg,
   raft::group_id group,
-  std::vector<model::broker> initial_nodes) {
+  std::vector<model::broker> initial_nodes,
+  std::optional<cluster::remote_topic_properties> rtp) {
     gate_guard guard(_gate);
-    auto dl_result = co_await maybe_download_log(ntp_cfg);
+    auto dl_result = co_await maybe_download_log(ntp_cfg, rtp);
     auto [logs_recovered, min_kafka_offset, max_kafka_offset, manifest]
       = dl_result;
     if (logs_recovered) {
@@ -151,10 +153,12 @@ ss::future<consensus_ptr> partition_manager::manage(
 }
 
 ss::future<cloud_storage::log_recovery_result>
-partition_manager::maybe_download_log(storage::ntp_config& ntp_cfg) {
-    if (_partition_recovery_mgr.local_is_initialized()) {
+partition_manager::maybe_download_log(
+  storage::ntp_config& ntp_cfg,
+  std::optional<cluster::remote_topic_properties> rtp) {
+    if (rtp.has_value() && _partition_recovery_mgr.local_is_initialized()) {
         auto res = co_await _partition_recovery_mgr.local().download_log(
-          ntp_cfg);
+          ntp_cfg, *rtp);
         co_return res;
     }
     vlog(
