@@ -271,6 +271,7 @@ ss::future<> controller::start() {
           _leader_balancer = std::make_unique<leader_balancer>(
             _tp_state.local(),
             _partition_leaders.local(),
+            _members_table.local(),
             _raft_manager.local().raft_client(),
             std::ref(_shard_table),
             std::ref(_partition_manager),

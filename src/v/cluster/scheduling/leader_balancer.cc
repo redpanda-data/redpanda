@@ -11,6 +11,7 @@
 #include "cluster/scheduling/leader_balancer.h"
 
 #include "cluster/logger.h"
+#include "cluster/members_table.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/scheduling/leader_balancer_greedy.h"
 #include "cluster/shard_table.h"
@@ -38,6 +39,7 @@ namespace cluster {
 leader_balancer::leader_balancer(
   topic_table& topics,
   partition_leaders_table& leaders,
+  members_table& members,
   raft::consensus_client_protocol client,
   ss::sharded<shard_table>& shard_table,
   ss::sharded<partition_manager>& partition_manager,
@@ -55,6 +57,7 @@ leader_balancer::leader_balancer(
   , _transfer_limit_per_shard(std::move(transfer_limit_per_shard))
   , _topics(topics)
   , _leaders(leaders)
+  , _members(members)
   , _client(std::move(client))
   , _shard_table(shard_table)
   , _partition_manager(partition_manager)
@@ -127,6 +130,24 @@ void leader_balancer::on_leadership_change(
     }
 }
 
+void leader_balancer::on_maintenance_change(
+  model::node_id, model::maintenance_state ms) {
+    if (!_enabled()) {
+        return;
+    }
+
+    if (!_raft0->is_elected_leader()) {
+        return;
+    }
+
+    // if a node transitions out of maintenance wake up the balancer early to
+    // transfer leadership back to it.
+    if (ms == model::maintenance_state::inactive) {
+        _timer.cancel();
+        _timer.arm(leader_activation_delay);
+    }
+}
+
 void leader_balancer::check_register_leadership_change_notification() {
     if (!_leadership_change_notify_handle && _in_flight_changes.size() > 0) {
         _leadership_change_notify_handle
@@ -153,6 +174,10 @@ ss::future<> leader_balancer::start() {
       std::bind_front(
         std::mem_fn(&leader_balancer::check_if_controller_leader), this));
 
+    _maintenance_state_notify_handle
+      = _members.register_maintenance_state_change_notification(std::bind_front(
+        std::mem_fn(&leader_balancer::on_maintenance_change), this));
+
     /*
      * register_leadership_notification above may run callbacks synchronously
      * during registration, so make sure the timer is unarmed before arming.
@@ -169,6 +194,8 @@ ss::future<> leader_balancer::start() {
 ss::future<> leader_balancer::stop() {
     _leaders.unregister_leadership_change_notification(
       _raft0->ntp(), _leader_notify_handle);
+    _members.unregister_maintenance_state_change_notification(
+      _maintenance_state_notify_handle);
     _timer.cancel();
     return _gate.close();
 }
@@ -464,6 +491,19 @@ absl::flat_hash_set<model::node_id> leader_balancer::muted_nodes() const {
                 last_hbeat_age)
                 .count());
         }
+
+        if (auto broker_ptr = _members.get_broker(follower.id); broker_ptr) {
+            auto maintenance_state = (*broker_ptr)->get_maintenance_state();
+
+            if (maintenance_state == model::maintenance_state::active) {
+                nodes.insert(follower.id);
+                vlog(
+                  clusterlog.info,
+                  "Leadership rebalancer muting node {} in a maintenance "
+                  "state.",
+                  follower.id);
+            }
+        }
     }
     return nodes;
 }
@@ -475,44 +515,6 @@ absl::flat_hash_set<raft::group_id> leader_balancer::muted_groups() const {
         res.insert(e.first);
     }
     return res;
-}
-
-std::optional<model::broker_shard>
-leader_balancer::find_leader_shard(const model::ntp& ntp) {
-    /*
-     * look up the broker_shard for ntp's leader. we simply seem to lack
-     * interfaces for making this query concise, but it is rarely needed.
-     */
-    auto leader_node = _leaders.get_leader(ntp);
-    if (!leader_node) {
-        return std::nullopt;
-    }
-
-    auto config_it = _topics.topics_map().find(
-      model::topic_namespace_view(ntp));
-    if (config_it == _topics.topics_map().end()) {
-        return std::nullopt;
-    }
-
-    // If the inital query was for a non_replicable ntp, the get_leader() call
-    // would have returned its source topic
-    for (const auto& partition : config_it->second.get_assignments()) {
-        if (partition.id != ntp.tp.partition) {
-            continue;
-        }
-
-        /*
-         * scan through the replicas until we find the leader node and then
-         * pluck out the shard from that assignment.
-         */
-        for (const auto& replica : partition.replicas) {
-            if (replica.node_id == *leader_node) {
-                return model::broker_shard{replica.node_id, replica.shard};
-            }
-        }
-    }
-
-    return std::nullopt;
 }
 
 /*

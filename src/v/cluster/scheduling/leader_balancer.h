@@ -73,6 +73,7 @@ public:
     leader_balancer(
       topic_table&,
       partition_leaders_table&,
+      members_table&,
       raft::consensus_client_protocol,
       ss::sharded<shard_table>&,
       ss::sharded<partition_manager>&,
@@ -92,7 +93,6 @@ private:
     using reassignment = leader_balancer_strategy::reassignment;
 
     index_type build_index();
-    std::optional<model::broker_shard> find_leader_shard(const model::ntp&);
     absl::flat_hash_set<raft::group_id> muted_groups() const;
     absl::flat_hash_set<model::node_id> muted_nodes() const;
 
@@ -107,6 +107,8 @@ private:
 
     void on_leadership_change(
       model::ntp, model::term_id, std::optional<model::node_id>);
+
+    void on_maintenance_change(model::node_id, model::maintenance_state);
 
     void check_register_leadership_change_notification();
     void check_unregister_leadership_change_notification();
@@ -173,8 +175,10 @@ private:
     cluster::notification_id_type _leader_notify_handle;
     std::optional<cluster::notification_id_type>
       _leadership_change_notify_handle;
+    cluster::notification_id_type _maintenance_state_notify_handle;
     topic_table& _topics;
     partition_leaders_table& _leaders;
+    members_table& _members;
     raft::consensus_client_protocol _client;
     ss::sharded<shard_table>& _shard_table;
     ss::sharded<partition_manager>& _partition_manager;
