@@ -19,6 +19,8 @@
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
 
+#include <seastar/core/do_with.hh>
+
 #include <algorithm>
 #include <iterator>
 
@@ -71,15 +73,22 @@ metadata_dissemination_handler::update_leadership_v2(
 ss::future<update_leadership_reply>
 metadata_dissemination_handler::do_update_leadership(
   std::vector<ntp_leader_revision> leaders) {
-    return _leaders
-      .invoke_on_all(
-        [leaders = std::move(leaders)](partition_leaders_table& pl) mutable {
-            for (auto& leader : leaders) {
-                pl.update_partition_leader(
-                  leader.ntp, leader.revision, leader.term, leader.leader_id);
-            }
-        })
-      .then([] { return ss::make_ready_future<update_leadership_reply>(); });
+    return ss::do_with(
+      std::move(leaders),
+      [this](const std::vector<ntp_leader_revision>& leaders) {
+          return _leaders
+            .invoke_on_all([&leaders](partition_leaders_table& pl) {
+                for (auto& leader : leaders) {
+                    pl.update_partition_leader(
+                      leader.ntp,
+                      leader.revision,
+                      leader.term,
+                      leader.leader_id);
+                }
+            })
+            .then(
+              [] { return ss::make_ready_future<update_leadership_reply>(); });
+      });
 }
 
 static get_leadership_reply
