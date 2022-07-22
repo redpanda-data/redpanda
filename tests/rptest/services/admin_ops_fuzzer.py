@@ -11,7 +11,7 @@ import json
 import random
 import re
 import string
-from threading import Event
+from threading import Event, Condition
 import threading
 import time
 from ducktape.utils.util import wait_until
@@ -398,6 +398,10 @@ class AdminOperationsFuzzer():
         self.history = []
         self.error = None
 
+        self._pause_cond = Condition()
+        self._pause_requested = False
+        self._pause_reached = False
+
     def start(self):
         self.thread = threading.Thread(target=lambda: self.thread_loop(),
                                        args=())
@@ -413,6 +417,21 @@ class AdminOperationsFuzzer():
 
         self.thread.start()
 
+    def pause(self):
+        with self._pause_cond:
+            self.redpanda.logger.info("pausing admin ops fuzzer...")
+            assert self._pause_requested == False
+            self._pause_requested = True
+            while not self._pause_reached:
+                self._pause_cond.wait()
+            self.redpanda.logger.info("paused admin ops fuzzer")
+
+    def unpause(self):
+        with self._pause_cond:
+            self._pause_requested = False
+            self._pause_cond.notify()
+            self.redpanda.logger.info("unpaused admin ops fuzzer")
+
     def append_to_history(self, op):
         d = op.describe()
         d['timestamp'] = int(time.time())
@@ -420,6 +439,16 @@ class AdminOperationsFuzzer():
 
     def thread_loop(self):
         while not self._stopping.is_set():
+            with self._pause_cond:
+                if self._pause_requested:
+                    self._pause_reached = True
+                    self._pause_cond.notify()
+
+                while self._pause_requested:
+                    self._pause_cond.wait()
+
+                self._pause_reached = False
+
             op_type, op = self.make_random_operation()
             self.append_to_history(op)
 
@@ -446,6 +475,10 @@ class AdminOperationsFuzzer():
                 self.redpanda.logger.error(f"Operation: {op_type} error: {e}")
                 self.error = e
                 self._stopping.set()
+
+        with self._pause_cond:
+            self._pause_reached = True
+            self._pause_cond.notify()
 
     def execute_with_retries(self, op_type, op):
         self.redpanda.logger.info(
