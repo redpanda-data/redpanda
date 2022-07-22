@@ -31,6 +31,7 @@
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future-util.hh>
+#include <seastar/core/future.hh>
 #include <seastar/core/thread.hh>
 
 #include <boost/numeric/conversion/cast.hpp>
@@ -280,12 +281,19 @@ get_topic_metadata(request_context& ctx, metadata_request& request) {
         new_topics.push_back(create_topic(ctx, std::move(topic.name)));
     }
 
-    return ss::when_all_succeed(new_topics.begin(), new_topics.end())
-      .then([res = std::move(res)](
-              std::vector<metadata_response::topic> topics) mutable {
-          res.insert(res.end(), topics.begin(), topics.end());
-          return res;
-      });
+    if (new_topics.empty()) {
+        // if we have no new topics to create (which is the overwhelmingly
+        // common case), we just return the ready future as an optimization
+        return ss::make_ready_future<std::vector<metadata_response::topic>>(
+          std::move(res));
+    } else {
+        return ss::when_all_succeed(new_topics.begin(), new_topics.end())
+          .then([res = std::move(res)](
+                  const std::vector<metadata_response::topic>& topics) mutable {
+              res.insert(res.end(), topics.begin(), topics.end());
+              return std::move(res);
+          });
+    }
 }
 
 /**
