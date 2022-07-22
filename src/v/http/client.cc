@@ -23,7 +23,6 @@
 #include <seastar/core/iostream.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
-#include <seastar/core/semaphore.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/temporary_buffer.hh>
 #include <seastar/core/timed_out_error.hh>

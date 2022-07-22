@@ -24,7 +24,6 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/iostream.hh>
 #include <seastar/core/metrics_registration.hh>
-#include <seastar/core/semaphore.hh>
 #include <seastar/net/api.hh>
 #include <seastar/net/tls.hh>
 

@@ -31,7 +31,6 @@
 #include "utils/retry.h"
 
 #include <seastar/core/condition-variable.hh>
-#include <seastar/core/semaphore.hh>
 
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>

@@ -28,7 +28,6 @@
 #include "utils/to_string.h"
 
 #include <seastar/core/io_priority_class.hh>
-#include <seastar/core/semaphore.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/when_all.hh>
 #include <seastar/util/defer.hh>

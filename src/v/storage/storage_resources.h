@@ -15,8 +15,6 @@
 #include "ssx/semaphore.h"
 #include "units.h"
 
-#include <seastar/core/semaphore.hh>
-
 #include <cstdint>
 
 namespace storage {

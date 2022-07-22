@@ -20,7 +20,6 @@
 
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/seastar.hh>
-#include <seastar/core/semaphore.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/when_all.hh>
 #include <seastar/util/defer.hh>

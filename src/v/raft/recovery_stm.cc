@@ -23,7 +23,6 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/io_priority_class.hh>
-#include <seastar/core/semaphore.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/with_scheduling_group.hh>
 

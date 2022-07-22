@@ -13,8 +13,6 @@
 #include "seastarx.h"
 #include "ssx/semaphore.h"
 
-#include <seastar/core/semaphore.hh>
-
 /*
  * A traditional mutex. If you are trying to count things or need timeouts, you
  * probably want to stick with a standard semaphore. The primary motivation for

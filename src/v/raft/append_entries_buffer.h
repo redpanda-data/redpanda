@@ -5,7 +5,6 @@
 
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/gate.hh>
-#include <seastar/core/semaphore.hh>
 
 namespace raft {
 

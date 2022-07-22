@@ -21,7 +21,6 @@
 #include <seastar/core/align.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
-#include <seastar/core/semaphore.hh>
 
 #include <fmt/format.h>
 

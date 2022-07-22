@@ -19,7 +19,6 @@
 #include "raft/types.h"
 #include "utils/mutex.h"
 
-#include <seastar/core/semaphore.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/util/log.hh>
 

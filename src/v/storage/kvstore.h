@@ -23,7 +23,6 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
-#include <seastar/core/semaphore.hh>
 #include <seastar/core/timer.hh>
 
 #include <absl/container/flat_hash_map.h>

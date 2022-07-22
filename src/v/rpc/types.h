@@ -23,7 +23,6 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/iostream.hh>
 #include <seastar/core/scheduling.hh>
-#include <seastar/core/semaphore.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/timer.hh>

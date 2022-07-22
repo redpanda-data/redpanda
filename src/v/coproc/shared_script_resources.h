@@ -18,8 +18,6 @@
 #include "ssx/semaphore.h"
 #include "utils/mutex.h"
 
-#include <seastar/core/semaphore.hh>
-
 #include <absl/container/node_hash_map.h>
 #include <absl/container/node_hash_set.h>
 

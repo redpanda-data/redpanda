@@ -15,7 +15,6 @@
 
 #include <seastar/core/future.hh>
 #include <seastar/core/scattered_message.hh>
-#include <seastar/core/semaphore.hh>
 
 #include <fmt/format.h>
 

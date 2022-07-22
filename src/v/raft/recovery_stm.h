@@ -18,8 +18,6 @@
 #include "storage/snapshot.h"
 #include "utils/prefix_logger.h"
 
-#include <seastar/core/semaphore.hh>
-
 #include <vector>
 
 namespace raft {

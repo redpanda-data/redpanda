@@ -12,8 +12,6 @@
 #include "raft/group_configuration.h"
 #include "ssx/semaphore.h"
 
-#include <seastar/core/semaphore.hh>
-
 namespace raft {
 
 class follower_queue {

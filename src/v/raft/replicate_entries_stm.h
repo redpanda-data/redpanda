@@ -22,7 +22,6 @@
 #include "storage/types.h"
 
 #include <seastar/core/gate.hh>
-#include <seastar/core/semaphore.hh>
 #include <seastar/core/shared_ptr.hh>
 
 #include <absl/container/flat_hash_map.h>

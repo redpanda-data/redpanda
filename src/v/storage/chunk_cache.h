@@ -10,7 +10,6 @@
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>
-#include <seastar/core/semaphore.hh>
 #include <seastar/util/later.hh>
 
 #include <boost/iterator/counting_iterator.hpp>

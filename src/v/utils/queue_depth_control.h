@@ -3,8 +3,6 @@
 #include "ssx/semaphore.h"
 #include "utils/ema.h"
 
-#include <seastar/core/semaphore.hh>
-
 /*
  * exponential moving average queue depth control. given a maximum latency
  * update the number of units available in the contained semaphore which can be

@@ -13,7 +13,6 @@
 #include "seastarx.h"
 #include "ssx/semaphore.h"
 
-#include <seastar/core/semaphore.hh>
 #include <seastar/util/noncopyable_function.hh>
 
 namespace raft {

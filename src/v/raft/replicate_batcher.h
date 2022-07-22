@@ -19,7 +19,6 @@
 #include "utils/mutex.h"
 
 #include <seastar/core/gate.hh>
-#include <seastar/core/semaphore.hh>
 
 #include <absl/container/flat_hash_map.h>
 namespace raft {
