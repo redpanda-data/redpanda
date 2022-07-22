@@ -54,22 +54,6 @@ redpanda:
     developer_mode: true
 rpk:
     coredump_dir: /var/lib/redpanda/coredump
-    enable_memory_locking: false
-    enable_usage_stats: false
-    overprovisioned: false
-    tune_aio_events: false
-    tune_ballast_file: false
-    tune_clocksource: false
-    tune_coredump: false
-    tune_cpu: false
-    tune_disk_irq: false
-    tune_disk_nomerges: false
-    tune_disk_scheduler: false
-    tune_disk_write_cache: false
-    tune_fstrim: false
-    tune_network: false
-    tune_swappiness: false
-    tune_transparent_hugepages: false
 schema_registry: {}
 '''
 
@@ -177,22 +161,9 @@ schema_registry: {}
 
         expected_config = yaml.full_load('''
 coredump_dir: /var/lib/redpanda/coredump
-enable_memory_locking: false
-enable_usage_stats: false  
-overprovisioned: false
 tune_aio_events: true
-tune_ballast_file: false
-tune_clocksource: false
-tune_coredump: false
 tune_cpu: true
 tune_disk_irq: true
-tune_disk_nomerges: false
-tune_disk_scheduler: false
-tune_disk_write_cache: false
-tune_fstrim: false
-tune_network: false
-tune_swappiness: false
-tune_transparent_hugepages: false
 ''')
 
         with tempfile.TemporaryDirectory() as d:
@@ -230,23 +201,17 @@ tune_transparent_hugepages: false
         rpk = RpkRemoteTool(self.redpanda, node)
         rpk.mode_set("prod")
         expected_config = yaml.full_load('''
-    enable_usage_stats: false
     tune_network: true
     tune_disk_scheduler: true
     tune_disk_nomerges: true
     tune_disk_write_cache: true
     tune_disk_irq: true
-    tune_fstrim: false
     tune_cpu: true
     tune_aio_events: true
     tune_clocksource: true
     tune_swappiness: true
-    tune_transparent_hugepages: false
-    enable_memory_locking: false
-    tune_coredump: false
     coredump_dir: /var/lib/redpanda/coredump
     tune_ballast_file: true
-    overprovisioned: false
 ''')
         with tempfile.TemporaryDirectory() as d:
             node.account.copy_from(RedpandaService.NODE_CONFIG_FILE, d)
@@ -261,4 +226,4 @@ tune_transparent_hugepages: false
                     self.logger.error(
                         f"Actual: {yaml.dump(actual_config['rpk'])}")
                 assert actual_config['rpk'] == expected_config
-                assert actual_config['redpanda']['developer_mode'] == False
+                assert 'developer_mode' not in actual_config['redpanda']

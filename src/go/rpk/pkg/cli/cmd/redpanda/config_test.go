@@ -213,23 +213,7 @@ redpanda:
           port: 9644
     developer_mode: true
 rpk:
-    enable_usage_stats: false
-    tune_network: false
-    tune_disk_scheduler: false
-    tune_disk_nomerges: false
-    tune_disk_write_cache: false
-    tune_disk_irq: false
-    tune_fstrim: false
-    tune_cpu: false
-    tune_aio_events: false
-    tune_clocksource: false
-    tune_swappiness: false
-    tune_transparent_hugepages: false
-    enable_memory_locking: false
-    tune_coredump: false
     coredump_dir: /var/lib/redpanda/coredump
-    tune_ballast_file: false
-    overprovisioned: false
 pandaproxy: {}
 schema_registry: {}
 `,
@@ -239,7 +223,7 @@ schema_registry: {}
 			name: "set with loaded config",
 			cfgFile: `config_file: /etc/redpanda/redpanda.yaml
 redpanda:
-    data_directory: ""
+    data_directory: data/dir
     node_id: 0
     rack: redpanda-rack
     seed_servers: []
@@ -254,25 +238,12 @@ redpanda:
           port: 9644
     developer_mode: true
 rpk:
-    enable_usage_stats: false
-    tune_network: false
-    tune_disk_scheduler: false
-    tune_disk_nomerges: false
-    tune_disk_write_cache: false
-    tune_disk_irq: false
-    tune_fstrim: false
-    tune_cpu: false
-    tune_aio_events: false
-    tune_clocksource: false
-    tune_swappiness: false
-    tune_transparent_hugepages: false
-    enable_memory_locking: false
-    tune_coredump: false
-    tune_ballast_file: false
-    overprovisioned: false
+    tune_network: true
+    tune_disk_scheduler: true
 `,
 			exp: `config_file: /etc/redpanda/redpanda.yaml
 redpanda:
+    data_directory: data/dir
     node_id: 0
     rack: redpanda-rack
     seed_servers: []
@@ -288,21 +259,8 @@ redpanda:
     developer_mode: true
 rpk:
     enable_usage_stats: true
-    tune_network: false
-    tune_disk_scheduler: false
-    tune_disk_nomerges: false
-    tune_disk_write_cache: false
-    tune_disk_irq: false
-    tune_fstrim: false
-    tune_cpu: false
-    tune_aio_events: false
-    tune_clocksource: false
-    tune_swappiness: false
-    tune_transparent_hugepages: false
-    enable_memory_locking: false
-    tune_coredump: false
-    tune_ballast_file: false
-    overprovisioned: false
+    tune_network: true
+    tune_disk_scheduler: true
 `,
 			args: []string{"rpk.enable_usage_stats", "true"},
 		},
