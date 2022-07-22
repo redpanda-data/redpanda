@@ -14,6 +14,7 @@
 #include "ssx/semaphore.h"
 
 #include <seastar/core/condition-variable.hh>
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/future-util.hh>
 
 #include <exception>
@@ -80,9 +81,9 @@ send_reply(ss::lw_shared_ptr<server_context_impl> ctx, netbuf buf) {
         // do not write if gate is closed
         rpclog.debug(
           "Skipping write of {} bytes, connection is closed", view.size());
-        return ss::make_ready_future<>();
+        co_return;
     }
-    return ctx->res.conn->write(std::move(view))
+    co_await ctx->res.conn->write(std::move(view))
       .handle_exception([ctx = std::move(ctx)](std::exception_ptr e) {
           auto disconnect = net::is_disconnect_exception(e);
           if (disconnect) {
