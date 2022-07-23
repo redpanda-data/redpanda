@@ -14,6 +14,7 @@ from rptest.clients.rpk import RpkTool, RpkException
 from rptest.clients.types import TopicSpec
 from rptest.util import expect_exception
 from ducktape.mark import matrix
+from ducktape.tests.test import TestContext
 
 import json
 
@@ -37,24 +38,24 @@ class TestReadReplicaService(EndToEndTest):
         cloud_storage_readreplica_manifest_sync_timeout_ms=500,
         cloud_storage_segment_max_upload_interval_sec=5)
 
-    def __init__(self, test_context):
+    def __init__(self, test_context: TestContext):
         super(TestReadReplicaService, self).__init__(test_context=test_context)
         self.second_cluster = None
 
-    def start_second_cluster(self):
+    def start_second_cluster(self) -> None:
         self.second_cluster = RedpandaService(self.test_context,
                                               num_brokers=3,
                                               si_settings=self.si_settings)
         self.second_cluster.start(start_si=False)
 
-    def create_read_replica_topic(self):
+    def create_read_replica_topic(self) -> None:
         rpk_second_cluster = RpkTool(self.second_cluster)
         conf = {
             'redpanda.remote.readreplica': self.s3_bucket_name,
         }
         rpk_second_cluster.create_topic(self.topic_name, config=conf)
 
-    def start_consumer(self):
+    def start_consumer(self) -> None:
         self.consumer = VerifiableConsumer(
             self.test_context,
             num_nodes=1,
@@ -64,7 +65,7 @@ class TestReadReplicaService(EndToEndTest):
             on_record_consumed=self.on_record_consumed)
         self.consumer.start()
 
-    def start_producer(self):
+    def start_producer(self) -> None:
         self.producer = VerifiableProducer(
             self.test_context,
             num_nodes=1,
@@ -76,7 +77,7 @@ class TestReadReplicaService(EndToEndTest):
 
     @cluster(num_nodes=6)
     @matrix(partition_count=[10])
-    def test_produce_is_forbidden(self, partition_count):
+    def test_produce_is_forbidden(self, partition_count: int) -> None:
         # Create original topic
         self.start_redpanda(3, si_settings=self.si_settings)
         spec = TopicSpec(name=self.topic_name,
@@ -91,7 +92,7 @@ class TestReadReplicaService(EndToEndTest):
 
         self.start_second_cluster()
 
-        def create_read_replica_topic_success():
+        def create_read_replica_topic_success() -> bool:
             try:
                 self.create_read_replica_topic()
             except RpkException as e:
@@ -124,7 +125,8 @@ class TestReadReplicaService(EndToEndTest):
 
     @cluster(num_nodes=8)
     @matrix(partition_count=[10], min_records=[10000])
-    def test_simple_end_to_end(self, partition_count, min_records):
+    def test_simple_end_to_end(self, partition_count: int,
+                               min_records: int) -> None:
         # Create original topic, produce data to it
         self.start_redpanda(3, si_settings=self.si_settings)
         spec = TopicSpec(name=self.topic_name,
