@@ -67,6 +67,7 @@ class EndToEndShadowIndexingBase(EndToEndTest):
         self.kafka_tools = KafkaCliTools(self.redpanda)
 
     def setUp(self):
+        assert self.redpanda
         self.redpanda.start()
         for topic in self.topics:
             self.kafka_tools.create_topic(topic)
@@ -126,6 +127,7 @@ class EndToEndShadowIndexingTestWithDisruptions(EndToEndShadowIndexingBase):
             {TopicSpec.PROPERTY_RETENTION_BYTES: 5 * self.segment_size},
         )
 
+        assert self.redpanda
         with random_process_kills(self.redpanda) as ctx:
             wait_for_segments_removal(redpanda=self.redpanda,
                                       topic=self.topic,
@@ -199,7 +201,7 @@ class ShadowIndexingWhileBusyTest(PreallocNodesTest):
         # Block until a subset of records are produced
         await_minimum_produced_records(self.redpanda,
                                        producer,
-                                       min_acked=msg_count / 100)
+                                       min_acked=msg_count // 100)
 
         rand_consumer = FranzGoVerifiableRandomConsumer(
             self.test_context, self.redpanda, self.topic, msg_size, 100, 10,
