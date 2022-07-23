@@ -72,7 +72,8 @@ class EndToEndShadowIndexingBase(EndToEndTest):
             self.kafka_tools.create_topic(topic)
 
     def tearDown(self):
-        self.s3_client.empty_bucket(self.s3_bucket_name)
+        assert self.redpanda and self.redpanda.s3_client
+        self.redpanda.s3_client.empty_bucket(self.s3_bucket_name)
 
 
 class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):

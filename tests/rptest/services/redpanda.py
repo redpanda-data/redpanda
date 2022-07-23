@@ -514,7 +514,7 @@ class RedpandaService(Service):
             self._extra_rp_conf = si_settings.update_rp_conf(
                 self._extra_rp_conf)
         self._si_settings = si_settings
-        self._s3client = None
+        self.s3_client: Optional[S3Client] = None
 
         if environment is None:
             environment = dict()
@@ -939,7 +939,7 @@ class RedpandaService(Service):
         self.start_service(node, start_wasm_service)
 
     def start_si(self):
-        self._s3client = S3Client(
+        self.s3_client = S3Client(
             region=self._si_settings.cloud_storage_region,
             access_key=self._si_settings.cloud_storage_access_key,
             secret_key=self._si_settings.cloud_storage_secret_key,
@@ -949,27 +949,23 @@ class RedpandaService(Service):
 
         self.logger.debug(
             f"Creating S3 bucket: {self._si_settings.cloud_storage_bucket}")
-        self._s3client.create_bucket(self._si_settings.cloud_storage_bucket)
+        self.s3_client.create_bucket(self._si_settings.cloud_storage_bucket)
 
     def list_buckets(self) -> dict[str, Union[list, dict]]:
-        assert self._s3client is not None
-        return self._s3client.list_buckets()
-
-    @property
-    def s3_client(self):
-        return self._s3client
+        assert self.s3_client is not None
+        return self.s3_client.list_buckets()
 
     def delete_bucket_from_si(self):
-        assert self._s3client is not None
+        assert self.s3_client is not None
 
-        failed_deletions = self._s3client.empty_bucket(
+        failed_deletions = self.s3_client.empty_bucket(
             self._si_settings.cloud_storage_bucket)
         assert len(failed_deletions) == 0
-        self._s3client.delete_bucket(self._si_settings.cloud_storage_bucket)
+        self.s3_client.delete_bucket(self._si_settings.cloud_storage_bucket)
 
     def get_objects_from_si(self):
-        assert self._s3client is not None
-        return self._s3client.list_objects(
+        assert self.s3_client is not None
+        return self.s3_client.list_objects(
             self._si_settings.cloud_storage_bucket)
 
     def set_cluster_config(self, values: dict, expect_restart: bool = False):
@@ -1221,7 +1217,7 @@ class RedpandaService(Service):
 
     def clean(self, **kwargs):
         super().clean(**kwargs)
-        if self._s3client:
+        if self.s3_client:
             self.delete_bucket_from_si()
 
     def clean_node(self,
