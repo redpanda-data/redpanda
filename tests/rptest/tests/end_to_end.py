@@ -20,6 +20,7 @@
 
 from collections import namedtuple
 import os
+from typing import Optional
 from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
 from rptest.services.redpanda import RedpandaService
@@ -66,7 +67,7 @@ class EndToEndTest(Test):
 
         self.records_consumed = []
         self.last_consumed_offsets = {}
-        self.redpanda = None
+        self.redpanda: Optional[RedpandaService] = None
         self.topic = None
         self._client = None
 
