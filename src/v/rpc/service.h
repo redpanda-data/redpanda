@@ -54,6 +54,8 @@ template<typename Input, typename Output, typename Codec>
 struct service::execution_helper {
     using input = Input;
     using output = Output;
+    static constexpr bool is_output_exempt_from_any
+      = (is_rpc_adl_exempt<output> || is_rpc_serde_exempt<output>);
 
     template<typename Func>
     static ss::future<netbuf> exec(
@@ -85,16 +87,21 @@ struct service::execution_helper {
                              raw_b->buffer(), std::move(out), version)
                       .then([version, b = std::move(b)](
                               transport_version effective_version) {
-                          /*
-                           * this assertion is safe because the conditions under
-                           * which this assertion would fail should have been
-                           * verified in parse_type above.
-                           */
-                          vassert(
-                            effective_version == version,
-                            "Unexpected encoding at effective {} != {}",
-                            effective_version,
-                            version);
+                          if constexpr (!is_output_exempt_from_any) {
+                              /*
+                               * this assertion is safe because the conditions
+                               * under which this assertion would fail should
+                               * have been verified in Codec::encode() above.
+                               */
+                              vassert(
+                                effective_version == version,
+                                "Unexpected encoding at effective {} != {}",
+                                effective_version,
+                                version);
+                          } else {
+                              std::ignore = version;
+                              std::ignore = effective_version;
+                          }
                           return std::move(*b);
                       });
                 });
