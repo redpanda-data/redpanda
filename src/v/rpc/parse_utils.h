@@ -118,12 +118,14 @@ concept is_rpc_serde_exempt = requires {
 /*
  * Encode a client request for the given transport version.
  *
- * Unless the message type T is explicitly exempt from adl<> support, type T
- * must be supported by both adl<> and serde encoding frameworks. When the type
- * is not exempt from adl<> support, serde is used when the version >= v2.
+ * Unless the message type T is explicitly exempt from adl<> or serde support,
+ * type T must be supported by both encoding frameworks. When the type is not
+ * exempt from serde support, serde is used when the version >= v2.
  *
  * The returned version indicates what level of encoding is used. This is always
- * equal to the input version, except for serde-only messags which return v2.
+ * equal to the input version, except for
+ * - adl-only messages which return v0;
+ * - serde-only messags which return v2.
  * Callers are expected to further validate the runtime implications of this.
  */
 template<typename T>
