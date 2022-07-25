@@ -1370,6 +1370,46 @@ func TestStartCommand(t *testing.T) {
 			}
 			require.Equal(st, expected, rpArgs.ExtraArgs)
 		},
+	}, {
+		name: "--dev flag set required bundle of flags",
+		args: []string{
+			"--install-dir", "/var/lib/redpanda",
+			"--sandbox",
+		},
+		postCheck: func(
+			fs afero.Fs,
+			rpArgs *redpanda.RedpandaArgs,
+			st *testing.T,
+		) {
+			require.Equal(st, "true", rpArgs.SeastarFlags["overprovisioned"])
+			require.Equal(st, "1", rpArgs.SeastarFlags["smp"])
+			require.Equal(st, "0M", rpArgs.SeastarFlags["reserve-memory"])
+			require.Equal(st, "true", rpArgs.SeastarFlags["unsafe-bypass-fsync"])
+			conf, err := new(config.Params).Load(fs)
+			require.NoError(st, err)
+			require.Equal(st, 0, conf.Redpanda.ID)
+		},
+	}, {
+		name: "override values set by --dev",
+		args: []string{
+			"--install-dir", "/var/lib/redpanda",
+			"--sandbox", "--smp", "2",
+		},
+		postCheck: func(
+			fs afero.Fs,
+			rpArgs *redpanda.RedpandaArgs,
+			st *testing.T,
+		) {
+			// override value:
+			require.Equal(st, "2", rpArgs.SeastarFlags["smp"])
+			// rest of --dev bundle
+			require.Equal(st, "true", rpArgs.SeastarFlags["overprovisioned"])
+			require.Equal(st, "0M", rpArgs.SeastarFlags["reserve-memory"])
+			require.Equal(st, "true", rpArgs.SeastarFlags["unsafe-bypass-fsync"])
+			conf, err := new(config.Params).Load(fs)
+			require.NoError(st, err)
+			require.Equal(st, 0, conf.Redpanda.ID)
+		},
 	}}
 
 	for _, tt := range tests {

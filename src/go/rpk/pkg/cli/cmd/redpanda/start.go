@@ -45,39 +45,43 @@ type prestartConfig struct {
 }
 
 type seastarFlags struct {
-	memory           string
-	lockMemory       bool
-	reserveMemory    string
-	hugepages        string
-	cpuSet           string
-	ioPropertiesFile string
-	ioProperties     string
-	smp              int
-	threadAffinity   bool
-	numIoQueues      int
-	maxIoRequests    int
-	mbind            bool
-	overprovisioned  bool
+	memory            string
+	lockMemory        bool
+	reserveMemory     string
+	hugepages         string
+	cpuSet            string
+	ioPropertiesFile  string
+	ioProperties      string
+	smp               int
+	threadAffinity    bool
+	numIoQueues       int
+	maxIoRequests     int
+	mbind             bool
+	overprovisioned   bool
+	unsafeBypassFsync bool
 }
 
 const (
-	configFlag           = "config"
-	memoryFlag           = "memory"
-	lockMemoryFlag       = "lock-memory"
-	reserveMemoryFlag    = "reserve-memory"
-	hugepagesFlag        = "hugepages"
-	cpuSetFlag           = "cpuset"
-	ioPropertiesFileFlag = "io-properties-file"
-	ioPropertiesFlag     = "io-properties"
-	wellKnownIOFlag      = "well-known-io"
-	smpFlag              = "smp"
-	threadAffinityFlag   = "thread-affinity"
-	numIoQueuesFlag      = "num-io-queues"
-	maxIoRequestsFlag    = "max-io-requests"
-	mbindFlag            = "mbind"
-	overprovisionedFlag  = "overprovisioned"
-	nodeIDFlag           = "node-id"
-	setConfigFlag        = "set"
+	configFlag            = "config"
+	memoryFlag            = "memory"
+	lockMemoryFlag        = "lock-memory"
+	reserveMemoryFlag     = "reserve-memory"
+	hugepagesFlag         = "hugepages"
+	cpuSetFlag            = "cpuset"
+	ioPropertiesFileFlag  = "io-properties-file"
+	ioPropertiesFlag      = "io-properties"
+	wellKnownIOFlag       = "well-known-io"
+	smpFlag               = "smp"
+	threadAffinityFlag    = "thread-affinity"
+	numIoQueuesFlag       = "num-io-queues"
+	maxIoRequestsFlag     = "max-io-requests"
+	mbindFlag             = "mbind"
+	overprovisionedFlag   = "overprovisioned"
+	unsafeBypassFsyncFlag = "unsafe-bypass-fsync"
+	nodeIDFlag            = "node-id"
+	setConfigFlag         = "set"
+	sandboxFlag           = "sandbox"
+	checkFlag             = "check"
 )
 
 func updateConfigWithFlags(conf *config.Config, flags *pflag.FlagSet) {
@@ -129,6 +133,7 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 		installDirFlag  string
 		timeout         time.Duration
 		wellKnownIo     string
+		sandbox         bool
 	)
 	sFlags := seastarFlags{}
 
@@ -147,6 +152,10 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 			// for list flags, and since JSON often contains commas, it
 			// blows up when there's a JSON object.
 			configKvs, filteredArgs := parseConfigKvs(os.Args)
+			if sandbox {
+				setDevMode(cmd)
+				fmt.Println("WARNING: This is a setup for development purposes only; in sandbox mode your clusters may run unrealistically fast and data can be corrupted any time your computer shuts down uncleanly.")
+			}
 			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			if err != nil {
@@ -451,7 +460,7 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 		"Directory where redpanda has been installed")
 	command.Flags().BoolVar(&prestartCfg.tuneEnabled, "tune", false,
 		"When present will enable tuning before starting redpanda")
-	command.Flags().BoolVar(&prestartCfg.checkEnabled, "check", true,
+	command.Flags().BoolVar(&prestartCfg.checkEnabled, checkFlag, true,
 		"When set to false will disable system checking before starting redpanda")
 	command.Flags().IntVar(&sFlags.smp, smpFlag, 0, "Restrict redpanda to"+
 		" the given number of CPUs. This option does not mandate a"+
@@ -477,13 +486,15 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 		wellKnownIOFlag,
 		"",
 		"The cloud vendor and VM type, in the format <vendor>:<vm type>:<storage type>")
-	command.Flags().BoolVar(&sFlags.mbind, mbindFlag, true, "enable mbind")
+	command.Flags().BoolVar(&sFlags.mbind, mbindFlag, true, "Enable mbind")
 	command.Flags().BoolVar(
 		&sFlags.overprovisioned,
 		overprovisionedFlag,
 		false,
 		"Enable overprovisioning",
 	)
+	command.Flags().BoolVar(&sFlags.unsafeBypassFsync, unsafeBypassFsyncFlag, false, "Enable unsafe-bypass-fsync")
+	command.Flags().BoolVar(&sandbox, sandboxFlag, false, "Sandbox mode, sets the following flags: --overprovisioned --smp 1 --node-id 0 --reserveMemory 0M --check=false --unsafe-bypass-fsync=true")
 	command.Flags().DurationVar(
 		&timeout,
 		"timeout",
@@ -501,19 +512,20 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 
 func flagsMap(sFlags seastarFlags) map[string]interface{} {
 	return map[string]interface{}{
-		memoryFlag:           sFlags.memory,
-		lockMemoryFlag:       sFlags.lockMemory,
-		reserveMemoryFlag:    sFlags.reserveMemory,
-		ioPropertiesFileFlag: sFlags.ioPropertiesFile,
-		ioPropertiesFlag:     sFlags.ioProperties,
-		cpuSetFlag:           sFlags.cpuSet,
-		smpFlag:              sFlags.smp,
-		hugepagesFlag:        sFlags.hugepages,
-		threadAffinityFlag:   sFlags.threadAffinity,
-		numIoQueuesFlag:      sFlags.numIoQueues,
-		maxIoRequestsFlag:    sFlags.maxIoRequests,
-		mbindFlag:            sFlags.mbind,
-		overprovisionedFlag:  sFlags.overprovisioned,
+		memoryFlag:            sFlags.memory,
+		lockMemoryFlag:        sFlags.lockMemory,
+		reserveMemoryFlag:     sFlags.reserveMemory,
+		ioPropertiesFileFlag:  sFlags.ioPropertiesFile,
+		ioPropertiesFlag:      sFlags.ioProperties,
+		cpuSetFlag:            sFlags.cpuSet,
+		smpFlag:               sFlags.smp,
+		hugepagesFlag:         sFlags.hugepages,
+		threadAffinityFlag:    sFlags.threadAffinity,
+		numIoQueuesFlag:       sFlags.numIoQueues,
+		maxIoRequestsFlag:     sFlags.maxIoRequests,
+		mbindFlag:             sFlags.mbind,
+		overprovisionedFlag:   sFlags.overprovisioned,
+		unsafeBypassFsyncFlag: sFlags.unsafeBypassFsync,
 	}
 }
 
@@ -1042,4 +1054,24 @@ func mergeMaps(a, b map[string]string) map[string]string {
 		a[kb] = vb
 	}
 	return a
+}
+
+// setDevMode sets flags bundled into --dev flag.
+func setDevMode(cmd *cobra.Command) {
+	devMap := map[string]string{
+		overprovisionedFlag:   "true",
+		smpFlag:               "1",
+		reserveMemoryFlag:     "0M",
+		nodeIDFlag:            "0",
+		checkFlag:             "false",
+		unsafeBypassFsyncFlag: "true",
+	}
+	// We don't override the values set during command execution, e.g:
+	//   rpk redpanda start --dev --smp 2
+	// will apply all dev flags, but smp will be 2.
+	for k, v := range devMap {
+		if !cmd.Flags().Changed(k) {
+			cmd.Flags().Set(k, v)
+		}
+	}
 }
