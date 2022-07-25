@@ -12,7 +12,8 @@ import time
 from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
 from rptest.util import wait_until_result
-from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST
+from rptest.clients.default import DefaultClient
+from rptest.services.redpanda import RedpandaService, CHAOS_LOG_ALLOW_LIST
 from rptest.services.failure_injector import FailureInjector, FailureSpec
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.clients.types import TopicSpec
@@ -96,24 +97,15 @@ class PartitionBalancerTest(EndToEndTest):
             lambda status: status["status"] == "ready",
             timeout_sec=timeout_sec)
 
-    @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
-    def test_unavailable_nodes(self):
-        self.start_redpanda(num_nodes=5)
-
-        self.topic = TopicSpec(partition_count=random.randint(20, 30))
-        self.client().create_topic(self.topic)
-
-        self.start_producer(1)
-        self.start_consumer(1)
-        self.await_startup()
+    def run_node_stop_start_chain(self, steps, additional_check=None):
 
         total_replicas = sum(self.node2partition_count().values())
 
         f_injector = FailureInjector(self.redpanda)
         prev_failure = None
 
-        for n in range(10):
-            node = self.redpanda.nodes[n % 5]
+        for n in range(steps):
+            node = self.redpanda.nodes[n % len(self.redpanda.nodes)]
             failure_types = [
                 FailureSpec.FAILURE_KILL,
                 FailureSpec.FAILURE_TERMINATE,
@@ -136,7 +128,23 @@ class PartitionBalancerTest(EndToEndTest):
             assert sum(node2pc.values()) == total_replicas
             assert self.redpanda.idx(node) not in node2pc
 
+            if additional_check:
+                additional_check()
+
             prev_failure = failure
+
+    @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    def test_unavailable_nodes(self):
+        self.start_redpanda(num_nodes=5)
+
+        self.topic = TopicSpec(partition_count=random.randint(20, 30))
+        self.client().create_topic(self.topic)
+
+        self.start_producer(1)
+        self.start_consumer(1)
+        self.await_startup()
+
+        self.run_node_stop_start_chain(steps=7)
 
         self.run_validation()
 
@@ -200,5 +208,40 @@ class PartitionBalancerTest(EndToEndTest):
             assert self.redpanda.idx(empty_node) not in node2pc
 
             f_injector._stop_func(initial_failure.type)(initial_failure.node)
+
+        self.run_validation()
+
+    @cluster(num_nodes=8, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    def test_rack_awareness(self):
+        extra_rp_conf = self._extra_rp_conf | {"enable_rack_awareness": True}
+        self.redpanda = RedpandaService(self.test_context,
+                                        num_brokers=6,
+                                        extra_rp_conf=extra_rp_conf)
+
+        rack_layout = "AABBCC"
+        for ix, node in enumerate(self.redpanda.nodes):
+            self.redpanda.set_extra_node_conf(node, {"rack": rack_layout[ix]})
+
+        self.redpanda.start()
+        self._client = DefaultClient(self.redpanda)
+
+        self.topic = TopicSpec(partition_count=random.randint(20, 30))
+        self.client().create_topic(self.topic)
+
+        def check_rack_placement():
+            for p in self.topic_partitions_replicas(self.topic):
+                racks = {(r - 1) // 2 for r in p.replicas}
+                assert (
+                    len(racks) == 3
+                ), f"bad rack placement {racks} for partition id: {p.id} (replicas: {p.replicas})"
+
+        check_rack_placement()
+
+        self.start_producer(1)
+        self.start_consumer(1)
+        self.await_startup()
+
+        self.run_node_stop_start_chain(steps=3,
+                                       additional_check=check_rack_placement)
 
         self.run_validation()
