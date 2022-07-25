@@ -38,11 +38,19 @@ public:
       topic_table& topic_table,
       partition_allocator& partition_allocator);
 
+    enum class status {
+        empty,
+        movement_planned,
+        cancellations_planned,
+        waiting_for_reports,
+    };
+
     struct plan_data {
         partition_balancer_violations violations;
         std::vector<ntp_reassignments> reassignments;
         std::vector<model::ntp> cancellations;
         size_t failed_reassignments_count = 0;
+        status status = status::empty;
     };
 
     plan_data plan_reassignments(
@@ -111,6 +119,8 @@ private:
 
     std::optional<size_t> get_partition_size(
       const model::ntp& ntp, const reallocation_request_state&);
+
+    bool all_reports_received(const reallocation_request_state&);
 
     planner_config _config;
     topic_table& _topic_table;
