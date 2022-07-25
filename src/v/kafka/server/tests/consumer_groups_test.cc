@@ -96,12 +96,13 @@ FIXTURE_TEST(join_empty_group_static_member, consumer_offsets_fixture) {
           unknown_member_id, "group-test", {"p1", "p2"}, "random");
         // set group instance id
         req.data.group_instance_id = gr;
-        auto resp
-          = client.dispatch(std::move(req), kafka::api_version(5)).get0();
-        BOOST_REQUIRE(
-          resp.data.error_code == kafka::error_code::none
-          || resp.data.error_code == kafka::error_code::not_coordinator);
-        return resp.data.error_code == kafka::error_code::none
-               && resp.data.member_id != unknown_member_id;
+        return client.dispatch(std::move(req), kafka::api_version(5))
+          .then([&](auto resp) {
+              BOOST_REQUIRE(
+                resp.data.error_code == kafka::error_code::none
+                || resp.data.error_code == kafka::error_code::not_coordinator);
+              return resp.data.error_code == kafka::error_code::none
+                     && resp.data.member_id != unknown_member_id;
+          });
     }).get();
 }
