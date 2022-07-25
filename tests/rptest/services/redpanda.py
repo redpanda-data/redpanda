@@ -360,6 +360,7 @@ class SecurityConfig:
         self.kafka_enable_authorization: Optional[bool] = None
         self.endpoint_authn_method: Optional[str] = None
         self.tls_provider: Optional[TLSProvider] = None
+        self.require_client_auth: bool = True
 
         # The rules to extract principal from mtls
         self.principal_mapping_rules = self.__DEFAULT_PRINCIPAL_MAPPING_RULES
@@ -564,6 +565,9 @@ class RedpandaService(Service):
 
     def endpoint_authn_method(self):
         return self._security.endpoint_authn_method
+
+    def require_client_auth(self):
+        return self._security.require_client_auth
 
     @property
     def dedicated_nodes(self):
@@ -1335,7 +1339,7 @@ class RedpandaService(Service):
         if self._security.tls_provider:
             tls_config = dict(
                 enabled=True,
-                require_client_auth=True,
+                require_client_auth=self.require_client_auth(),
                 name="dnslistener",
                 key_file=RedpandaService.TLS_SERVER_KEY_FILE,
                 cert_file=RedpandaService.TLS_SERVER_CRT_FILE,
