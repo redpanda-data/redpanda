@@ -1,0 +1,11 @@
+name: Backport Slash Command
+description: |
+  Slash command to create backport issue and pull requests.
+  This action requires the redpanda actions directory to be checked out, and it can only work with slash commands.
+
+runs:
+  using: composite
+  steps:
+    - name: Set action path for scripts 
+      run: echo "${{ github.action_path }}" >>"$GITHUB_PATH"
+      shell: bash
