@@ -3,7 +3,7 @@ on:
   repository_dispatch:
     types: [backport-command]
 env:
-  SCRIPT_DIR: "${{ github.workspace }}/.github/workflows/scripts/backport-command"
+  SCRIPT_DIR: "${{ github.workspace }}/actions/backport-slash-command"
   PR_NUMBER: ${{ github.event.client_payload.pull_request.number }}
   ORIG_ISSUE_URL: ${{ github.event.client_payload.github.payload.issue.html_url }}
   TARGET_ORG: ${{ github.event.client_payload.slash_command.args.named.org }}
