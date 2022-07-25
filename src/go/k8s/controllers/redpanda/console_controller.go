@@ -316,15 +316,15 @@ func getSchema(cluster *redpandav1alpha1.Cluster) schema.Config {
 func (r *ConsoleReconciler) createDeployment(ctx context.Context, cluster *redpandav1alpha1.Cluster, console *redpandav1alpha1.Console, log logr.Logger) error {
 	consoleLabels := labels.ForConsole(console)
 	gracePeriod := console.Spec.REST.ServerGracefulShutdownTimeout.Nanoseconds() / time.Second.Nanoseconds()
-	sa := &v1.Deployment{
+	deploy := &v1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: console.Namespace,
 			Name:      console.Name,
 			Labels:    consoleLabels,
 		},
 		TypeMeta: metav1.TypeMeta{
-			Kind:       "ServiceAccount",
-			APIVersion: "v1",
+			Kind:       "Deployment",
+			APIVersion: "apps/v1",
 		},
 		Spec: v1.DeploymentSpec{
 			Replicas: console.Spec.Deployment.Replicas,
@@ -367,25 +367,25 @@ func (r *ConsoleReconciler) createDeployment(ctx context.Context, cluster *redpa
 		},
 	}
 
-	err := controllerutil.SetControllerReference(console, sa, r.RuntimeScheme)
+	err := controllerutil.SetControllerReference(console, deploy, r.RuntimeScheme)
 	if err != nil {
 		return err
 	}
 
-	created, err := resources.CreateIfNotExists(ctx, r, sa, log)
+	created, err := resources.CreateIfNotExists(ctx, r, deploy, log)
 	if err != nil || created {
-		return fmt.Errorf("creating Console service account: %w", err)
+		return fmt.Errorf("creating Console deployment: %w", err)
 	}
 
-	var currentSA corev1.ServiceAccount
-	err = r.Get(ctx, types.NamespacedName{Name: console.Name, Namespace: console.Namespace}, &currentSA)
+	var currentDeploy v1.Deployment
+	err = r.Get(ctx, types.NamespacedName{Name: console.Name, Namespace: console.Namespace}, &currentDeploy)
 	if err != nil {
-		return fmt.Errorf("fetching Console service account: %w", err)
+		return fmt.Errorf("fetching Console deployment: %w", err)
 	}
 
-	_, err = resources.Update(ctx, &currentSA, sa, r, log)
+	_, err = resources.Update(ctx, &currentDeploy, deploy, r, log)
 	if err != nil {
-		return fmt.Errorf("updating Console service account: %w", err)
+		return fmt.Errorf("updating Console deployment: %w", err)
 	}
 	return nil
 }
