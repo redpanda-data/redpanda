@@ -1270,7 +1270,6 @@ class TopicRecoveryTest(RedpandaTest):
                                      self.rpk_producer_maker)
         self.do_run(test_case)
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/4849
     @cluster(num_nodes=4,
              log_allow_list=MISSING_DATA_ERRORS + TRANSIENT_ERRORS)
     def test_missing_segment(self):
@@ -1296,7 +1295,6 @@ class TopicRecoveryTest(RedpandaTest):
                               self.rpk_producer_maker, topics)
         self.do_run(test_case)
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/4960
     @cluster(num_nodes=4, log_allow_list=TRANSIENT_ERRORS)
     def test_fast2(self):
         """Basic recovery test. This test stresses successful recovery
@@ -1314,7 +1312,6 @@ class TopicRecoveryTest(RedpandaTest):
                               self.rpk_producer_maker, topics)
         self.do_run(test_case)
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/4972
     @cluster(num_nodes=4, log_allow_list=TRANSIENT_ERRORS)
     def test_fast3(self):
         """Basic recovery test. This test stresses successful recovery
