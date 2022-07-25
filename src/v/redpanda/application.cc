@@ -221,7 +221,7 @@ int application::run(int ac, char** av) {
       buf.nodename,
       buf.machine);
 
-    return app.run(ac, av, [this, &app] {
+    return app.run(ac, av, [this, &app]() {
         auto& cfg = app.configuration();
         log_system_resources(_log, cfg);
         // NOTE: we validate required args here instead of above because run()

@@ -38,10 +38,10 @@ set(common_cmake_args
 set(ENV{PKG_CONFIG_PATH}  @PKG_CONFIG_PATH@)
 set(cmake_build_env)
 if (@CMAKE_CXX_COMPILER_ID@ MATCHES "GNU")
-  set(seastar_ld_flags "${ld_flags} -pthread")
-  set(seastar_cxx_flags "-Wno-error$<SEMICOLON>-fcoroutines")
+  set(seastar_ld_flags "${CMAKE_EXE_LINKER_FLAGS} ${ld_flags} -pthread")
+  set(seastar_cxx_flags "${CMAKE_CXX_FLAGS} -Wno-error$<SEMICOLON>-fcoroutines")
 else()
-  set(seastar_cxx_flags "-Wno-error")
+  set(seastar_cxx_flags -stdlib=libc++ -Wno-error)
 endif()
 
 if ("@CMAKE_CXX_COMPILER_ID@" MATCHES "Clang")
@@ -177,6 +177,7 @@ ExternalProject_Add(fmt
      -DFMT_DOC=OFF
      -DFMT_TEST=OFF)
 
+message(STATUS "seastar_cxx_flags=${seastar_cxx_flags}")
 ExternalProject_Add(seastar
   GIT_REPOSITORY https://github.com/redpanda-data/seastar.git
   GIT_TAG 79a3038e90c45195a0446a067f516f7ff0ada0be

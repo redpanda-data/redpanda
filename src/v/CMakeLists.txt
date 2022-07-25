@@ -31,6 +31,7 @@ add_subdirectory(serde)
 add_subdirectory(cloud_storage)
 add_subdirectory(cloud_roles)
 add_subdirectory(v8_engine)
+add_subdirectory(compat)
 add_subdirectory(rp_util)
 
 option(ENABLE_GIT_VERSION "Build with Git metadata" OFF)

@@ -16,6 +16,7 @@
 #include "json/writer.h"
 #include "model/metadata.h"
 #include "net/unresolved_address.h"
+#include "utils/fragmented_vector.h"
 #include "utils/named_type.h"
 
 #include <seastar/net/inet_address.hh>
@@ -84,6 +85,16 @@ void rjson_serialize(
 template<typename T, typename A>
 void rjson_serialize(
   json::Writer<json::StringBuffer>& w, const std::vector<T, A>& v) {
+    w.StartArray();
+    for (const auto& e : v) {
+        rjson_serialize(w, e);
+    }
+    w.EndArray();
+}
+
+template<typename T, size_t A>
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const fragmented_vector<T, A>& v) {
     w.StartArray();
     for (const auto& e : v) {
         rjson_serialize(w, e);
