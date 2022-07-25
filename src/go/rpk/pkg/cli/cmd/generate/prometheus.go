@@ -28,6 +28,7 @@ import (
 type ScrapeConfig struct {
 	JobName       string         `yaml:"job_name"`
 	StaticConfigs []StaticConfig `yaml:"static_configs"`
+	MetricsPath   string         `yaml:"metrics_path"`
 }
 
 type StaticConfig struct {
@@ -40,6 +41,7 @@ func NewPrometheusConfigCmd(fs afero.Fs) *cobra.Command {
 		nodeAddrs  []string
 		seedAddr   string
 		configFile string
+		intMetrics bool
 	)
 	command := &cobra.Command{
 		Use:   "prometheus-config",
@@ -64,6 +66,7 @@ specify an arbitrary config file.`,
 				jobName,
 				nodeAddrs,
 				seedAddr,
+				intMetrics,
 			)
 			out.MaybeDieErr(err)
 			fmt.Println(string(yml))
@@ -91,6 +94,7 @@ specify an arbitrary config file.`,
 		"config",
 		"",
 		"The path to the redpanda config file")
+	command.Flags().BoolVar(&intMetrics, "internal-metrics", false, "Include scrape config for internal metrics (/metrics)")
 	return command
 }
 
@@ -99,9 +103,10 @@ func executePrometheusConfig(
 	jobName string,
 	nodeAddrs []string,
 	seedAddr string,
+	intMetrics bool,
 ) ([]byte, error) {
 	if len(nodeAddrs) > 0 {
-		return renderConfig(jobName, nodeAddrs)
+		return renderConfig(jobName, nodeAddrs, intMetrics)
 	}
 	if seedAddr != "" {
 		host, port, err := splitAddress(seedAddr)
@@ -115,7 +120,7 @@ func executePrometheusConfig(
 		if err != nil {
 			return []byte(""), err
 		}
-		return renderConfig(jobName, hosts)
+		return renderConfig(jobName, hosts, intMetrics)
 	}
 	hosts, err := discoverHosts(
 		cfg.Redpanda.KafkaAPI[0].Address,
@@ -124,15 +129,23 @@ func executePrometheusConfig(
 	if err != nil {
 		return []byte(""), err
 	}
-	return renderConfig(jobName, hosts)
+	return renderConfig(jobName, hosts, intMetrics)
 }
 
-func renderConfig(jobName string, targets []string) ([]byte, error) {
-	scrapeConfig := ScrapeConfig{
+func renderConfig(jobName string, targets []string, intMetrics bool) ([]byte, error) {
+	scrapeConfigs := []ScrapeConfig{{
 		JobName:       jobName,
 		StaticConfigs: []StaticConfig{{Targets: targets}},
+		MetricsPath:   "/public_metrics",
+	}}
+	if intMetrics {
+		scrapeConfigs = append(scrapeConfigs, ScrapeConfig{
+			JobName:       jobName,
+			StaticConfigs: []StaticConfig{{Targets: targets}},
+			MetricsPath:   "/metrics",
+		})
 	}
-	return yaml.Marshal([]ScrapeConfig{scrapeConfig})
+	return yaml.Marshal(scrapeConfigs)
 }
 
 func discoverHosts(url string, port int) ([]string, error) {
