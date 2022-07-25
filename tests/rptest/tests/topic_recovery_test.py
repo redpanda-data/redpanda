@@ -5,11 +5,13 @@
 # the License. You may obtain a copy of the License at
 #
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
-
+import collections
 import datetime
+import io
 import json
 import os
 import pprint
+import struct
 import time
 from collections import namedtuple, defaultdict
 from typing import Optional, Callable
@@ -27,12 +29,9 @@ from rptest.services.redpanda import RedpandaService, SISettings, RESTART_LOG_AL
 from rptest.services.rpk_producer import RpkProducer
 from rptest.tests.redpanda_test import RedpandaTest
 
-default_log_segment_size = 1048576  # 1MB
+EMPTY_SEGMENT_SIZE = 4096
 
-# This size is a rough approximation used to tolerate differences
-# between original and restored partition. Restored partitions skip
-# config batches, so they are smaller than original partitions.
-default_config_batch_size = 1024
+default_log_segment_size = 1048576  # 1MB
 
 NTP = namedtuple("NTP", ['ns', 'topic', 'partition'])
 
@@ -48,6 +47,39 @@ SegmentPathComponents = namedtuple('SegmentPathComponents',
 
 ManifestPathComponents = namedtuple('ManifestPathComponents',
                                     ['ntp', 'revision'])
+
+
+class SegmentReader:
+    HDR_FMT_RP = "<IiqbIhiqqqhii"
+    HEADER_SIZE = struct.calcsize(HDR_FMT_RP)
+    Header = collections.namedtuple(
+        'Header', ('header_crc', 'batch_size', 'base_offset', 'type', 'crc',
+                   'attrs', 'delta', 'first_ts', 'max_ts', 'producer_id',
+                   'producer_epoch', 'base_seq', 'record_count'))
+
+    def __init__(self, stream):
+        self.stream = stream
+
+    def read_batch(self):
+        data = self.stream.read(self.HEADER_SIZE)
+        if len(data) == self.HEADER_SIZE:
+            header = self.Header(*struct.unpack(self.HDR_FMT_RP, data))
+            if all(map(lambda v: v == 0, header)):
+                return None
+            records_size = header.batch_size - self.HEADER_SIZE
+            data = self.stream.read(records_size)
+            if len(data) < records_size:
+                return None
+            assert len(data) == records_size
+            return header
+        return None
+
+    def __iter__(self):
+        while True:
+            it = self.read_batch()
+            if it is None:
+                return
+            yield it
 
 
 def _parse_s3_manifest_path(path):
@@ -132,7 +164,7 @@ def _verify_file_layout(baseline_per_host,
             for path, entry in fdata.items():
                 it = _parse_checksum_entry(path, entry, ignore_rev=True)
                 if it.ntp.topic in expected_topics:
-                    if it.size > 4096:
+                    if it.size > EMPTY_SEGMENT_SIZE:
                         # filter out empty segments created at the end of the log
                         # which are created after recovery
                         ntp_size[it.ntp] += it.size
@@ -172,7 +204,7 @@ def _verify_file_layout(baseline_per_host,
 
     baseline_last_segment_sizes = gather_last_segment_sizes(baseline_per_host)
     logger.info(
-        f'baseline_last_segment_sizes: {pprint.pformat(baseline_last_segment_sizes)}'
+        f'baseline_last_segment_sizes: {pprint.pformat(baseline_last_segment_sizes, indent=2)}'
     )
     logger.info(f"before matching\n"
                 f"restored ntps: {restored_ntps}\n"
@@ -190,17 +222,14 @@ def _verify_file_layout(baseline_per_host,
             orig_ntp_size -= size_overrides[ntp]
         assert ntp in restored_ntps, f"NTP {ntp} is missing in the restored data"
         rest_ntp_size = restored_ntps[ntp]
-        assert (
-            rest_ntp_size <= orig_ntp_size,
+        assert rest_ntp_size <= orig_ntp_size, \
             f"NTP {ntp} the restored partition is larger {rest_ntp_size} than the original one {orig_ntp_size}."
-        )
+
         delta = orig_ntp_size - rest_ntp_size
         tolerance = baseline_last_segment_sizes[ntp]
-        assert (
-            delta <= tolerance,
-            f"NTP {ntp} the restored partition is too small {rest_ntp_size}."
+        assert delta <= tolerance, \
+            f"NTP {ntp} the restored partition is too small {rest_ntp_size}." \
             f" The original is {orig_ntp_size} bytes which {delta} bytes larger."
-        )
 
 
 def _gen_manifest_path(ntp, rev):
@@ -217,20 +246,6 @@ def _gen_segment_path(ntp, rev, name):
     x.update(path.encode('ascii'))
     hash = x.hexdigest()
     return f"{hash}/{path}"
-
-
-def _get_ntp_delta_offset(partition_manifest: dict):
-    """
-    Calculates the max delta offset for a given ntp. The delta offset
-    should progressively increase as segment offsets increase, the max
-    delta offset will be the number of non-data batches for the ntp.
-    """
-    delta_offset = 0
-    if 'segments' in partition_manifest:
-        segments = partition_manifest['segments']
-        for _, segment in segments.items():
-            delta_offset = max(delta_offset, segment.get('delta_offset', 0))
-    return delta_offset
 
 
 class BaseCase:
@@ -730,21 +745,46 @@ class FastCheck(BaseCase):
             producer.wait()
             producer.free()
 
-    def _collect_partition_delta_offsets(self, expected_topics):
-        delta_offsets = {}
-        manifests = [
+    def _collect_non_data_batch_sizes(self, expected_topics):
+        """
+        Parses segment file and calculates sizes of all non-data batches present in the file.
+        These sizes are used when comparing S3 segment sizes with restored data, to account
+        for differences caused because configuration batches are not written to restored data.
+        """
+        non_data_batches_per_ntp = defaultdict(lambda: 0)
+        segments = [
             item for item in self._s3.list_objects(self._bucket)
-            if item.Key.endswith('/manifest.json')
+            if not item.Key.endswith('manifest.json')
         ]
-        for obj in manifests:
-            components = _parse_s3_manifest_path(obj.Key)
+        for seg in segments:
+            components = _parse_s3_segment_path(seg.Key)
             ntp = components.ntp
             if ntp.topic not in expected_topics:
                 continue
-            manifest_data = self._s3.get_object_data(self._bucket, obj.Key)
-            delta_offsets[ntp] = _get_ntp_delta_offset(
-                json.loads(manifest_data))
-        return delta_offsets
+            segment_data = self._s3.get_object_data(self._bucket, seg.Key)
+            segment_size = len(segment_data)
+            segment = SegmentReader(io.BytesIO(segment_data))
+            for batch in segment:
+                # We want to skip segments where the size is lower than EMPTY_SEGMENT_SIZE,
+                # since the size of these segments is not accounted for in the final comparison
+                # when verifying file layout. If we accumulate size of config batch from these
+                # "skipped" segments, we will mistakenly adjust the size of the baseline NTP to
+                # be smaller than it should be, in the final tally.
+
+                # e.g. for segment A of size 455 bytes (config batch + archival stm batch),
+                # since it is smaller than EMPTY_SEGMENT_SIZE, it will not be used in the final
+                # total for baseline calculation. But if we still add the 455 bytes here into
+                # non_data_batches_per_ntp, baseline will be reduced by 455 bytes, causing an assertion
+                # error that baseline is smaller than restored by 455 bytes.
+                if batch.type != 1 and segment_size >= EMPTY_SEGMENT_SIZE:
+                    non_data_batches_per_ntp[ntp] += batch.batch_size
+                    self.logger.debug(
+                        f'non data batch {batch.type} of size {batch.batch_size} is found for {ntp}, '
+                        f'record count is {batch.record_count}')
+        self.logger.info(
+            f'non data batch sizes per ntp: '
+            f'{pprint.pformat(dict(non_data_batches_per_ntp), indent=2)}')
+        return non_data_batches_per_ntp
 
     def validate_cluster(self, baseline, restored):
         """Check that the topic is writeable"""
@@ -754,12 +794,8 @@ class FastCheck(BaseCase):
         expected_topics = [
             topic.name for topic in self.expected_recovered_topics
         ]
-        config_batch_counts = self._collect_partition_delta_offsets(
+        config_batch_sizes = self._collect_non_data_batch_sizes(
             expected_topics)
-        config_batch_sizes = {
-            k: v * default_config_batch_size
-            for k, v in config_batch_counts.items()
-        }
         _verify_file_layout(baseline,
                             restored,
                             expected_topics,
