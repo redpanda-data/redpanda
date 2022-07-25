@@ -29,8 +29,9 @@ RUN apt update && \
 # Install kafka streams examples.  This is a very slow step (tens of minutes), doing
 # many maven dependency downloads without any parallelism.  To avoid re-running it
 # on unrelated changes in other steps, this step is as early on the Dockerfile as possible.
-RUN git -C /opt clone --branch ducktape2 https://github.com/redpanda-data/kafka-streams-examples.git && \
-    cd /opt/kafka-streams-examples && mvn -DskipTests=true clean package
+RUN git -C /opt clone https://github.com/redpanda-data/kafka-streams-examples.git && \
+    cd /opt/kafka-streams-examples && git reset --hard da50fa2723840f6388f99a1dae8d58104fd7650d && \
+    mvn -DskipTests=true clean package
 
 # Install our in-tree Java test clientst
 RUN mkdir -p /opt/redpanda-tests
