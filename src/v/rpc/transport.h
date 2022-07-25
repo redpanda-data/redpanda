@@ -174,9 +174,10 @@ ss::future<result<rpc::client_context<T>>> parse_result(
             vlog(
               rpclog.error,
               "Protocol violation: request version {} incompatible with "
-              "reply version {}",
+              "reply version {} reply type {}",
               req_ver,
-              rep_ver);
+              rep_ver,
+              serde::type_str<T>());
         }
         if (st == status::success) {
             return ss::make_ready_future<ret_t>(errc::service_error);
