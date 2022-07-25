@@ -816,3 +816,16 @@ SEASTAR_THREAD_TEST_CASE(absl_node_hash_set) {
 }
 
 SEASTAR_THREAD_TEST_CASE(absl_btree_set) { set_test<absl::btree_set>(); }
+
+struct foo_bar {};
+
+SEASTAR_THREAD_TEST_CASE(type_str) {
+    BOOST_CHECK_EQUAL(serde::type_str<int>(), "int");
+    BOOST_CHECK_EQUAL(serde::type_str<void>(), "void");
+    // the type part of a parameter in __PRETTY_FUNCTION__ may vary when it
+    // comes to a specialization of a template in standard library, but
+    // std::basic_string<char> should always have "string" in its name
+    BOOST_CHECK_NE(
+      serde::type_str<std::string>().find("string"), std::string_view::npos);
+    BOOST_CHECK_EQUAL(serde::type_str<foo_bar>(), "foo_bar");
+}
