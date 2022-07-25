@@ -10,6 +10,8 @@ v_cc_library(
     Seastar::seastar
     v::serde
     v::utils
+    v::storage
+    v::cloud_storage
 )
 
 add_custom_target(compat-check
