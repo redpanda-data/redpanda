@@ -246,22 +246,13 @@ partition_downloader::download_log(const remote_manifest_path& manifest_key) {
       retention);
     auto mat = co_await find_recovery_material(manifest_key);
     auto offset_map = co_await build_offset_map(mat);
-    partition_manifest target(_ntpc.ntp(), _ntpc.get_initial_revision());
-    for (const auto& kv : offset_map) {
-        target.add(kv.second.manifest_key, kv.second.meta);
-    }
     if (cst_log.is_enabled(ss::log_level::debug)) {
         std::stringstream ostr;
-        target.serialize(ostr);
-        vlog(_ctxlog.debug, "Generated partition manifest: {}", ostr.str());
-    }
-    // Here the partition manifest 'target' may contain segments
-    // that have different revision ids inside the path.
-    if (target.size() == 0) {
+        mat.partition_manifest.serialize(ostr);
         vlog(
-          _ctxlog.error,
-          "No segments found. Empty partition manifest generated.");
-        throw missing_partition_exception(_ntpc);
+          _ctxlog.debug,
+          "Partition manifest used for recovery: {}",
+          ostr.str());
     }
     download_part part;
     if (std::holds_alternative<std::monostate>(retention)) {
@@ -269,7 +260,7 @@ partition_downloader::download_log(const remote_manifest_path& manifest_key) {
         static constexpr auto one_week = one_day * 7;
         vlog(_ctxlog.info, "Default retention parameters are used.");
         part = co_await download_log_with_capped_time(
-          offset_map, target, prefix, one_week);
+          offset_map, mat.partition_manifest, prefix, one_week);
     } else if (std::holds_alternative<size_bound_deletion_parameters>(
                  retention)) {
         auto r = std::get<size_bound_deletion_parameters>(retention);
@@ -278,7 +269,7 @@ partition_downloader::download_log(const remote_manifest_path& manifest_key) {
           "Size bound retention is used. Size limit: {} bytes.",
           r.retention_bytes);
         part = co_await download_log_with_capped_size(
-          offset_map, target, prefix, r.retention_bytes);
+          offset_map, mat.partition_manifest, prefix, r.retention_bytes);
     } else if (std::holds_alternative<time_bound_deletion_parameters>(
                  retention)) {
         auto r = std::get<time_bound_deletion_parameters>(retention);
@@ -287,28 +278,16 @@ partition_downloader::download_log(const remote_manifest_path& manifest_key) {
           "Time bound retention is used. Time limit: {}ms.",
           r.retention_duration.count());
         part = co_await download_log_with_capped_time(
-          offset_map, target, prefix, r.retention_duration);
+          offset_map, mat.partition_manifest, prefix, r.retention_duration);
     }
     // Move parts to final destinations
     co_await move_parts(part);
-
-    auto upl_result = co_await _remote->upload_manifest(
-      _bucket, target, _rtcnode);
-
-    // In this case the manifest will be uploaded next time we will roll the
-    // segments
-    if (upl_result != upload_result::success) {
-        vlog(
-          _ctxlog.warn,
-          "Can't upload partition manifest {} after recovery",
-          target.get_manifest_path());
-    }
 
     log_recovery_result result{
       .completed = true,
       .min_kafka_offset = part.range.min_offset,
       .max_kafka_offset = part.range.max_offset,
-      .manifest = target,
+      .manifest = mat.partition_manifest,
     };
     co_return result;
 }
