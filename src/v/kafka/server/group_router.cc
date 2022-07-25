@@ -34,10 +34,7 @@ auto group_router::route(Request&& r, FwdFunc func) {
     r.ntp = std::move(m->first);
     return with_scheduling_group(
       _sg, [this, func, shard = m->second, r = std::move(r)]() mutable {
-          return get_group_manager().invoke_on(
-            shard, _ssg, [func, r = std::move(r)](group_manager& mgr) mutable {
-                return std::invoke(func, mgr, std::move(r));
-            });
+          return get_group_manager().invoke_on(shard, _ssg, func, std::move(r));
       });
 }
 
@@ -63,10 +60,7 @@ auto group_router::route_tx(Request&& r, FwdFunc func) {
     r.ntp = std::move(m->first);
     return with_scheduling_group(
       _sg, [this, func, shard = m->second, r = std::move(r)]() mutable {
-          return get_group_manager().invoke_on(
-            shard, _ssg, [func, r = std::move(r)](group_manager& mgr) mutable {
-                return std::invoke(func, mgr, std::move(r));
-            });
+          return get_group_manager().invoke_on(shard, _ssg, func, std::move(r));
       });
 }
 
