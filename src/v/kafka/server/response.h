@@ -29,6 +29,8 @@ class response {
 public:
     explicit response(flex_enabled flex) noexcept
       : _flex(flex)
+      , _tags(
+          flex ? std::optional<tagged_fields>(tagged_fields{}) : std::nullopt)
       , _writer(_buf) {}
 
     response_writer& writer() { return _writer; }
@@ -42,7 +44,6 @@ public:
 
     flex_enabled is_flexible() const { return _flex; }
 
-    /// Currently unused
     const std::optional<tagged_fields>& tags() const { return _tags; }
     std::optional<tagged_fields>& tags() { return _tags; }
 

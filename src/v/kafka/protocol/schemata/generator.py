@@ -915,6 +915,7 @@ struct {{ struct.name }} {
     {%- endif %}
 {%- endfor %}
 {%- endif %}
+    tagged_fields unknown_tags;
 
 {%- if struct.context_field %}
     // extra context not part of kafka protocol.
@@ -1116,14 +1117,6 @@ if ({{ cond }}) {
 {%- endif %}
 {%- endmacro %}
 
-{% macro blind_decode() %}
-reader.consume_tags();
-{%- endmacro %}
-
-{% macro encode_zero() %}
-writer.write_tags();
-{%- endmacro %}
-
 {% macro tag_decoder_impl(tag_definitions, obj = "") %}
 /// Tags decoding section
 auto num_tags = reader.read_unsigned_varint();
@@ -1137,15 +1130,22 @@ while(num_tags-- > 0) {
         break;
 {%- endfor %}
     default:
-        /// Read unknown tag
-        reader.consume_unknown_tag(sz);
+{%- set tf = "unknown_tags" %}
+{%- if obj != "" %}
+{%- set tf = obj + '.unknown_tags' %}
+{%- endif %}
+        reader.consume_unknown_tag({{ tf }}, tag, sz);
     }
 }
 {%- endmacro %}
 
 {% macro tag_decoder(tag_definitions, obj = "") %}
 {%- if tag_definitions|length == 0 %}
-{{- blind_decode() }}
+{%- set tf = "unknown_tags" %}
+{%- if obj != "" %}
+{%- set tf = obj + '.unknown_tags' %}
+{%- endif %}
+{{ tf }} = reader.read_tags();
 {%- else %}
 {
 {{- tag_decoder_impl(tag_definitions, obj) | indent }}
@@ -1179,9 +1179,12 @@ std::vector<uint32_t> to_encode;
 {{- conditional_tag_encode(tdef, "to_encode") }}
 {%- endcall %}
 {%- endfor %}
-writer.write_unsigned_varint(to_encode.size());
-for(size_t tag : to_encode) {
-    writer.write_unsigned_varint(tag);
+{%- set tf = "unknown_tags" %}
+{%- if obj != "" %}
+{%- set tf = obj + '.unknown_tags' %}
+{%- endif %}
+tagged_fields::type tags_to_encode{std::move({{ tf }})};
+for(uint32_t tag : to_encode) {
     iobuf b;
     response_writer rw(b);
     switch(tag){
@@ -1193,13 +1196,18 @@ for(size_t tag : to_encode) {
     default:
         __builtin_unreachable();
     }
-    writer.write_size_prepended(std::move(b));
+    tags_to_encode.emplace(tag_id(tag), iobuf_to_bytes(b));
 }
+writer.write_tags(tagged_fields(std::move(tags_to_encode)));
 {%- endmacro %}
 
 {% macro tag_encoder(tag_definitions, obj = "") %}
 {%- if tag_definitions|length == 0 %}
-{{- encode_zero() }}
+{%- set tf = "unknown_tags" %}
+{%- if obj != "" %}
+{%- set tf = obj + '.unknown_tags' %}
+{%- endif %}
+writer.write_tags(std::move({{ tf }}));
 {%- else %}
 {
 {{- tag_encoder_impl(tag_definitions, obj) | indent }}

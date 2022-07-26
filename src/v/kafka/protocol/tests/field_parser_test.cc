@@ -94,7 +94,7 @@ void write_flex(T& type, iobuf& buf) {
           type, [](test_struct& ts, kafka::response_writer& writer) {
               writer.write_flex(ts.field_a);
               writer.write(ts.field_b);
-              writer.write_tags();
+              writer.write_tags(kafka::tagged_fields{});
           });
     } else if constexpr (std::is_same_v<
                            T,
@@ -103,7 +103,7 @@ void write_flex(T& type, iobuf& buf) {
           type, [](test_struct& ts, kafka::response_writer& writer) {
               writer.write_flex(ts.field_a);
               writer.write(ts.field_b);
-              writer.write_tags();
+              writer.write_tags(kafka::tagged_fields{});
           });
     } else if constexpr (std::is_same_v<T, kafka::uuid>) {
         writer.write(type);
@@ -128,7 +128,7 @@ T read_flex(iobuf buf) {
             test_struct v;
             v.field_a = reader.read_flex_string();
             v.field_b = reader.read_int32();
-            reader.consume_tags();
+            (void)reader.read_tags();
             return v;
         });
     } else if constexpr (std::is_same_v<
@@ -139,7 +139,7 @@ T read_flex(iobuf buf) {
               test_struct v;
               v.field_a = reader.read_flex_string();
               v.field_b = reader.read_int32();
-              reader.consume_tags();
+              (void)reader.read_tags();
               return v;
           });
     }

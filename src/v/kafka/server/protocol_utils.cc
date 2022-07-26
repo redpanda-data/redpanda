@@ -150,14 +150,8 @@ ss::scattered_message<char> response_as_scattered(response_ptr response) {
     iobuf tags_header;
     if (response->is_flexible()) {
         response_writer writer(tags_header);
-        if (response->tags()) {
-            writer.write_tags(std::move(*response->tags()));
-        } else {
-            // Currently sending tags to client is an unused feature however if
-            // the request is flexible at least a single 0 byte must be written
-            // to be compliant with the protocol
-            writer.write_tags();
-        }
+        vassert(response->tags(), "If flexible, tags should be filled");
+        writer.write_tags(std::move(*response->tags()));
     }
     const auto size = static_cast<int32_t>(
       sizeof(response->correlation()) + tags_header.size_bytes()

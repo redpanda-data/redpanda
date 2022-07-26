@@ -203,7 +203,7 @@ private:
         if (flex_versions::is_flexible_request(key, version)) {
             /// Tags are unused by the client but to be protocol compliant
             /// with flex versions at least a 0 byte must be written
-            wr.write_tags();
+            wr.write_tags(tagged_fields{});
         }
         _correlation = _correlation + correlation_id(1);
     }
