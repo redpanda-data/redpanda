@@ -711,6 +711,12 @@ void configuration_change_strategy_v4::replace(
             _cfg._current.learners.push_back(vn);
         }
     }
+
+    // optimization: when there are only nodes to be deleted we may go straight
+    // to the joint configuration
+    if (_cfg._configuration_update->replicas_to_add.empty()) {
+        finish_configuration_transition();
+    }
 }
 
 void configuration_change_strategy_v4::finish_configuration_transition() {
@@ -807,6 +813,10 @@ void configuration_change_strategy_v4::cancel_update_in_transitional_state() {
     // all the other nodes that are to add are learners, remove them all
     _cfg._current.learners.clear();
     _cfg._configuration_update->replicas_to_add.clear();
+
+    // optimization: when there are only nodes to be deleted we may go straight
+    // to the joint configuration
+    finish_configuration_transition();
 }
 
 void configuration_change_strategy_v4::cancel_update_in_joint_state() {
