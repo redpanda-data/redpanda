@@ -13,7 +13,7 @@ import os
 import pprint
 import struct
 import time
-from collections import namedtuple, defaultdict
+from collections import namedtuple, defaultdict, deque
 from typing import Optional, Callable
 
 import xxhash
@@ -185,27 +185,6 @@ def _verify_file_layout(baseline_per_host,
     restored_ntps = get_ntp_sizes(restored_per_host, hosts_can_vary=False)
     baseline_ntps = get_ntp_sizes(baseline_per_host, hosts_can_vary=True)
 
-    def gather_last_segment_sizes(fdata_per_host: dict) -> dict:
-        """
-        Collects last segment sizes for all ntps. The last segment may be open
-        and miss being uploaded to tiered storage. In this case we need to reduce
-        the size of the restored partition in our assertions accordingly.
-        """
-        last_segment_size = {}
-        ntp_max_base_offset = defaultdict(lambda: 0)
-        for segment_data in fdata_per_host.values():
-            for path, entry in segment_data.items():
-                it = _parse_checksum_entry(path, entry, ignore_rev=True)
-                if it.ntp.topic in expected_topics and it.base_offset >= ntp_max_base_offset[
-                        it.ntp]:
-                    last_segment_size[it.ntp] = it.size
-                    ntp_max_base_offset[it.ntp] = it.base_offset
-        return last_segment_size
-
-    baseline_last_segment_sizes = gather_last_segment_sizes(baseline_per_host)
-    logger.info(
-        f'baseline_last_segment_sizes: {pprint.pformat(baseline_last_segment_sizes, indent=2)}'
-    )
     logger.info(f"before matching\n"
                 f"restored ntps: {restored_ntps}\n"
                 f"baseline ntps: {baseline_ntps}\n"
@@ -226,7 +205,7 @@ def _verify_file_layout(baseline_per_host,
             f"NTP {ntp} the restored partition is larger {rest_ntp_size} than the original one {orig_ntp_size}."
 
         delta = orig_ntp_size - rest_ntp_size
-        assert delta == 0, \
+        assert delta <= 4096, \
             f"NTP {ntp} the restored partition is too small {rest_ntp_size}." \
             f" The original is {orig_ntp_size} bytes which {delta} bytes larger."
 
@@ -1205,19 +1184,21 @@ class TopicRecoveryTest(RedpandaTest):
     def _wait_for_data_in_s3(self,
                              expected_topics,
                              timeout=datetime.timedelta(minutes=1)):
+        deltas = deque(maxlen=6)
+        total_partitions = sum([t.partition_count for t in expected_topics])
+        # Allow upto 4096 bytes per partition due to block allocation of segments
+        tolerance = 4096 * total_partitions
+        topic_names = {t.name for t in expected_topics}
+        topic_manifest_paths = {
+            f'/{t.name}/topic_manifest.json'
+            for t in expected_topics
+        }
         """Wait until all topics are uploaded to S3"""
         def verify():
-            total_partitions = sum(
-                [t.partition_count for t in expected_topics])
-            topic_names = {t.name for t in expected_topics}
             manifests = []
             topic_manifests = []
             segments = []
             lst = self.s3_client.list_objects(self.s3_bucket)
-            topic_manifest_paths = {
-                f'/{t.name}/topic_manifest.json'
-                for t in expected_topics
-            }
             for obj in lst:
                 # only count manifest if it matches our topic names
                 if obj.Key.endswith("/manifest.json") and any(
@@ -1252,11 +1233,20 @@ class TopicRecoveryTest(RedpandaTest):
             self.logger.debug(
                 f'segments in cloud: {pprint.pformat(segments, indent=2)}, size in cloud: {size_in_cloud}'
             )
-            if size_on_disk != size_in_cloud:
-                self.logger.info(f"not enough data uploaded to S3, "
-                                 f"uploaded {size_in_cloud} bytes, "
-                                 f"with {size_on_disk} bytes on disk. "
-                                 f"diff: {size_on_disk - size_in_cloud}")
+            delta = size_on_disk - size_in_cloud
+            deltas.append(delta)
+            # We want to make sure the diff between disk and s3 is stable
+            # IE unchanging for last N iterations, and also the diff is less than
+            # tolerated limit
+            is_stable = (delta <= tolerance and len(deltas) == deltas.maxlen
+                         and deltas.count(delta) == len(deltas))
+            if not is_stable:
+                self.logger.info(
+                    f"not enough data uploaded to S3, "
+                    f"uploaded {size_in_cloud} bytes, "
+                    f"with {size_on_disk} bytes on disk. "
+                    f"current delta: {delta} "
+                    f"tracked deltas: {pprint.pformat(deltas, indent=2)}")
                 return False
 
             return True
