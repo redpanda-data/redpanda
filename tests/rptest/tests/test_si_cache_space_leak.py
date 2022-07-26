@@ -121,9 +121,11 @@ class ShadowIndexingCacheSpaceLeakTest(RedpandaTest):
                 # and deleted files. The deleted files are likely cache
                 # files that were deleted by retention previously but
                 # still kept open because they're used by the consumer.
-                return fname.startswith(
-                    "/var/lib/redpanda/data/cloud_storage_cache"
-                ) or fname == "(deleted)"
+                #
+                # Do not use an absolute path, because the redpanda data
+                # directory may have been a symlink & the path in lsof
+                # will be the underlying storage.
+                return "data/cloud_storage_cache" in fname or fname == "(deleted)"
 
             files_count = 0
             for node in self.redpanda.nodes:
