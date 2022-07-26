@@ -445,20 +445,10 @@ model::offset remote_partition::first_uploaded_offset() {
       "The manifest for {} is not expected to be empty",
       _manifest.get_ntp());
     try {
-        if (_first_uploaded_offset) {
-            return *_first_uploaded_offset;
-        }
-        model::offset starting_offset = model::offset::max();
-        for (const auto& m : _manifest) {
-            starting_offset = std::min(
-              starting_offset, get_kafka_base_offset(m.second));
-        }
-        _first_uploaded_offset = starting_offset;
-        vlog(
-          _ctxlog.debug,
-          "remote partition first_uploaded_offset set to {}",
-          starting_offset);
-        return starting_offset;
+        auto it = _manifest.begin();
+        auto off = get_kafka_base_offset(it->second);
+        vlog(_ctxlog.debug, "remote partition first_uploaded_offset: {}", off);
+        return off;
     } catch (...) {
         vlog(
           _ctxlog.error,

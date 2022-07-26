@@ -108,6 +108,11 @@ public:
     /// Total size of data that have to be uploaded
     uint64_t estimate_backlog_size();
 
+    /// Invoke syncup procedure for ntp (check if segments are missing and
+    /// truncate)
+    ss::future<std::optional<cloud_storage::partition_manifest>>
+    maybe_truncate_manifest(const model::ntp& ntp);
+
 private:
     /// Remove archivers from the workingset
     ss::future<> remove_archivers(std::vector<model::ntp> to_remove);
@@ -168,6 +173,9 @@ public:
 
     /// Estimate total size of the upload backlog
     using internal::scheduler_service_impl::estimate_backlog_size;
+
+    /// Truncate manifest if needed
+    using internal::scheduler_service_impl::maybe_truncate_manifest;
 };
 
 } // namespace archival

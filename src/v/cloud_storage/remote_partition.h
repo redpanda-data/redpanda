@@ -311,7 +311,6 @@ private:
     remote& _api;
     cache& _cache;
     const partition_manifest& _manifest;
-    std::optional<model::offset> _first_uploaded_offset;
     s3::bucket_name _bucket;
     segment_map_t _segments;
     eviction_list_t _eviction_list;

@@ -637,3 +637,10 @@ class Admin:
         self.redpanda.logger.info(f"Get leaders info on {node.name}/{id}")
         url = "debug/partition_leaders_table"
         return self._request("get", url, node=node).json()
+
+    def si_sync_local_state(self, topic, partition, node=None):
+        """
+        Check data in the S3 bucket and fix local index if needed
+        """
+        path = f"shadow_indexing/sync_local_state/{topic}/{partition}"
+        return self._request('post', path, node=node)
