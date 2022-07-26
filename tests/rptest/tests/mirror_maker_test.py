@@ -82,6 +82,8 @@ class TestMirrorMakerService(EndToEndTest):
         self.redpanda.start()
 
         self.source_client = DefaultClient(self.source_broker)
+
+        self.topic.partition_count = 1000 if self.redpanda.dedicated_nodes else 1
         self.source_client.create_topic(self.topic)
 
     def start_workload(self):
@@ -160,12 +162,14 @@ class TestMirrorMakerService(EndToEndTest):
                                          log_level="TRACE")
         self.mirror_maker.start()
 
-        msg_cnt = 100
+        msg_size = 512
+        msg_cnt = 1000000 if self.redpanda.dedicated_nodes else 100
+
         # produce some messages to source redpanda
         producer = RpkProducer(self.test_context,
                                self.source_broker,
                                self.topic.name,
-                               512,
+                               msg_size,
                                msg_cnt,
                                acks=-1)
 
@@ -180,7 +184,8 @@ class TestMirrorMakerService(EndToEndTest):
                                ignore_errors=False,
                                retries=3,
                                group=consumer_group,
-                               num_msgs=20)
+                               save_msgs=False,
+                               num_msgs=int(msg_cnt / 5))
 
         consumer.start()
         consumer.wait()
@@ -206,6 +211,7 @@ class TestMirrorMakerService(EndToEndTest):
             return target_group.partitions == source_group.partitions and target_group.name == source_group.name
 
         # wait for consumer group sync
-        wait_until(target_group_equal, 60, backoff_sec=5)
+        timeout = 600 if self.redpanda.dedicated_nodes else 60
+        wait_until(target_group_equal, timeout_sec=timeout, backoff_sec=5)
 
         self.mirror_maker.stop()
