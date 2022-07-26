@@ -15,7 +15,6 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"
-#include "reflection/adl.h"
 #include "serde/serde.h"
 
 namespace cluster {
@@ -133,13 +132,16 @@ operator<<(std::ostream& os, partition_balancer_status status) {
 
 struct partition_balancer_overview_request
   : serde::envelope<partition_balancer_overview_request, serde::version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     auto serde_fields() { return std::tie(); }
 };
 
 struct partition_balancer_overview_reply
   : serde::envelope<partition_balancer_overview_reply, serde::version<0>> {
-    errc error;
+    using rpc_adl_exempt = std::true_type;
 
+    errc error;
     model::timestamp last_tick_time;
     partition_balancer_status status;
     std::optional<partition_balancer_violations> violations;
@@ -155,79 +157,3 @@ struct partition_balancer_overview_reply
 };
 
 } // namespace cluster
-
-namespace reflection {
-
-template<>
-struct adl<cluster::partition_balancer_violations::unavailable_node> {
-    void to(
-      iobuf& out,
-      cluster::partition_balancer_violations::unavailable_node&& n) {
-        serialize(out, n.id, uint64_t(n.unavailable_since.value()));
-    }
-    cluster::partition_balancer_violations::unavailable_node
-    from(iobuf_parser& in) {
-        auto id = adl<model::node_id>{}.from(in);
-        auto unavailable_since = adl<uint64_t>{}.from(in);
-        return cluster::partition_balancer_violations::unavailable_node(
-          id, model::timestamp(unavailable_since));
-    }
-};
-
-template<>
-struct adl<cluster::partition_balancer_violations::full_node> {
-    void to(iobuf& out, cluster::partition_balancer_violations::full_node&& n) {
-        serialize(out, n.id, n.disk_used_percent);
-    }
-    cluster::partition_balancer_violations::full_node from(iobuf_parser& in) {
-        auto id = adl<model::node_id>{}.from(in);
-        auto disk_used_percent = adl<uint32_t>{}.from(in);
-        return cluster::partition_balancer_violations::full_node(
-          id, disk_used_percent);
-    }
-};
-
-template<>
-struct adl<cluster::partition_balancer_violations> {
-    void to(iobuf& out, cluster::partition_balancer_violations&& v) {
-        serialize(out, v.unavailable_nodes, v.full_nodes);
-    }
-    cluster::partition_balancer_violations from(iobuf_parser& in) {
-        auto unavailable_nodes = adl<std::vector<
-          cluster::partition_balancer_violations::unavailable_node>>{}
-                                   .from(in);
-        auto full_nodes
-          = adl<
-              std::vector<cluster::partition_balancer_violations::full_node>>{}
-              .from(in);
-        return cluster::partition_balancer_violations(
-          std::move(unavailable_nodes), std::move(full_nodes));
-    }
-};
-
-template<>
-struct adl<cluster::partition_balancer_overview_request> {
-    void to(iobuf&, cluster::partition_balancer_overview_request&&) {}
-    cluster::partition_balancer_overview_request from(iobuf_parser&) {
-        return cluster::partition_balancer_overview_request{};
-    }
-};
-
-template<>
-struct adl<cluster::partition_balancer_overview_reply> {
-    void to(iobuf& out, cluster::partition_balancer_overview_reply&& r) {
-        serialize(
-          out, r.error, r.last_tick_time.value(), r.status, r.violations);
-    }
-    cluster::partition_balancer_overview_reply from(iobuf_parser& in) {
-        cluster::partition_balancer_overview_reply ret;
-        ret.error = adl<cluster::errc>{}.from(in);
-        ret.last_tick_time = model::timestamp(
-          adl<decltype(ret.last_tick_time.value())>{}.from(in));
-        ret.status = adl<decltype(ret.status)>{}.from(in);
-        ret.violations = adl<decltype(ret.violations)>{}.from(in);
-        return ret;
-    }
-};
-
-} // namespace reflection
