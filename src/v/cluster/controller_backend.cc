@@ -204,7 +204,9 @@ std::error_code check_configuration_update(
      * will only remove the partition after other node claim update as finished.
      *
      */
-    if (includes_self && group_cfg.type() != raft::configuration_type::simple) {
+    if (
+      includes_self
+      && group_cfg.get_state() != raft::configuration_state::simple) {
         vlog(
           clusterlog.trace,
           "partition {} contains current node and its consensus configuration "
@@ -1263,7 +1265,7 @@ ss::future<std::error_code> controller_backend::cancel_replica_set_update(
           }
 
           const auto raft_cfg_update_finished
-            = current_cfg.type() == raft::configuration_type::simple;
+            = current_cfg.get_state() == raft::configuration_state::simple;
 
           // raft already finished its part, we need to move replica back
           if (raft_cfg_update_finished) {
@@ -1312,8 +1314,8 @@ ss::future<std::error_code> controller_backend::force_abort_replica_set_update(
         co_return errc::waiting_for_recovery;
     }
 
-    const auto raft_cfg_update_finished = current_cfg.type()
-                                          == raft::configuration_type::simple;
+    const auto raft_cfg_update_finished = current_cfg.get_state()
+                                          == raft::configuration_state::simple;
 
     if (raft_cfg_update_finished) {
         co_return co_await apply_configuration_change_on_leader(

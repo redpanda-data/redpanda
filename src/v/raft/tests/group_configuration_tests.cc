@@ -93,7 +93,8 @@ BOOST_AUTO_TEST_CASE(test_aborting_configuration_change) {
     // abort change
     test_grp.abort_configuration_change(model::revision_id{1});
 
-    BOOST_REQUIRE_EQUAL(test_grp.type(), raft::configuration_type::simple);
+    BOOST_REQUIRE_EQUAL(
+      test_grp.get_state(), raft::configuration_state::simple);
     BOOST_REQUIRE_EQUAL(test_grp.brokers(), original_brokers);
     BOOST_REQUIRE_EQUAL(test_grp.current_config().voters, original_voters);
 }
@@ -109,11 +110,12 @@ BOOST_AUTO_TEST_CASE(test_reverting_configuration_change_when_adding) {
     test_grp.cancel_configuration_change(model::revision_id{1});
 
     BOOST_REQUIRE_EQUAL(
-      test_grp.type(), raft::configuration_type::transitional);
+      test_grp.get_state(), raft::configuration_state::transitional);
     BOOST_REQUIRE_EQUAL(test_grp.brokers().size(), 1);
     BOOST_REQUIRE_EQUAL(test_grp.current_config().voters.size(), 1);
     BOOST_REQUIRE_EQUAL(test_grp.current_config().learners.size(), 0);
 
     test_grp.finish_configuration_transition();
-    BOOST_REQUIRE_EQUAL(test_grp.type(), raft::configuration_type::simple);
+    BOOST_REQUIRE_EQUAL(
+      test_grp.get_state(), raft::configuration_state::simple);
 }

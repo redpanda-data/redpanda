@@ -166,8 +166,8 @@ void consensus::setup_metrics() {
          "configuration_change_in_progress",
          [this] {
              return is_elected_leader()
-                    && _configuration_manager.get_latest().type()
-                         != configuration_type::simple;
+                    && _configuration_manager.get_latest().get_state()
+                         != configuration_state::simple;
          },
          sm::description("Indicates if current raft group configuration is in "
                          "joint state i.e. configuration is being changed"),
@@ -924,7 +924,7 @@ ss::future<std::error_code> consensus::change_configuration(Func&& f) {
           }
           auto latest_cfg = config();
           // can not change configuration if its type is different than simple
-          if (latest_cfg.type() != configuration_type::simple) {
+          if (latest_cfg.get_state() != configuration_state::simple) {
               return ss::make_ready_future<std::error_code>(
                 errc::configuration_change_in_progress);
           }
@@ -1005,7 +1005,7 @@ consensus::interrupt_configuration_change(model::revision_id revision, Func f) {
     auto u = co_await _op_lock.get_units();
     auto latest_cfg = config();
     // latest configuration is of joint type
-    if (latest_cfg.type() == configuration_type::simple) {
+    if (latest_cfg.get_state() == configuration_state::simple) {
         vlog(_ctxlog.info, "no configuration changes in progress");
         co_return errc::invalid_configuration_update;
     }
@@ -1054,7 +1054,7 @@ consensus::abort_configuration_change(model::revision_id revision) {
     auto u = co_await _op_lock.get_units();
     auto latest_cfg = config();
     // latest configuration must be of joint type
-    if (latest_cfg.type() == configuration_type::simple) {
+    if (latest_cfg.get_state() == configuration_state::simple) {
         vlog(_ctxlog.info, "no configuration changes in progress");
         co_return errc::invalid_configuration_update;
     }
@@ -2095,7 +2095,7 @@ ss::future<std::error_code> consensus::replicate_configuration(
               if (
                 _features.is_feature_active(
                   raft_feature::improved_config_change)
-                && cfg.type() == configuration_type::simple) {
+                && cfg.get_state() == configuration_state::simple) {
                   vlog(_ctxlog.debug, "Upgrading configuration version");
                   cfg.set_version(group_configuration::current_version);
               }
@@ -2414,15 +2414,15 @@ ss::future<> consensus::maybe_commit_configuration(ss::semaphore_units<> u) {
     if (unlikely(!latest_cfg.current_config().learners.empty())) {
         co_return;
     }
-    switch (latest_cfg.type()) {
-    case configuration_type::simple:
+    switch (latest_cfg.get_state()) {
+    case configuration_state::simple:
         co_return;
-    case configuration_type::transitional:
+    case configuration_state::transitional:
         vlog(
           _ctxlog.info, "finishing transition of configuration {}", latest_cfg);
         latest_cfg.finish_configuration_transition();
         break;
-    case configuration_type::joint:
+    case configuration_state::joint:
         if (latest_cfg.maybe_demote_removed_voters()) {
             vlog(
               _ctxlog.info,
@@ -2841,7 +2841,7 @@ consensus::do_transfer_leadership(std::optional<model::node_id> target) {
     auto conf = _configuration_manager.get_latest();
     if (
       _configuration_manager.get_latest_offset() > last_visible_index()
-      || conf.type() == configuration_type::joint) {
+      || conf.get_state() == configuration_state::joint) {
         vlog(
           _ctxlog.warn,
           "Cannot transfer leadership during configuration change");

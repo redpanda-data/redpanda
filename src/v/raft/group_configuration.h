@@ -52,10 +52,39 @@ private:
     model::node_id _node_id;
     model::revision_id _revision;
 };
+/**
+ * Enum describing configuration state.
+ *
+ * Possible state transitions:
+ *
+ *                                ┌────────────┐
+ *                                │            │
+ *                ┌──────────────►│   simple   │◄─────┐
+ *                │               │            │      │
+ *                │        ┌──────┴─────┬──────┘      │
+ *                │        │            │             │
+ *                │        │            │nodes to add │ nothing to remove
+ *                │        │            ▼             │ add finished
+ *                │        │     ┌──────────────┐     │
+ *                │        │     │              │     │
+ *                │  remove│     │ transitional ├─────┘
+ *       remove   │  only  │     │              │
+ *       finished │        │     └──────┬───────┘
+ *                │        │            │
+ *                │        │            │ nodes to remove
+ *                │        │            ▼
+ *                │        │      ┌───────────┐
+ *                │        │      │           │
+ *                │        └─────►│   joint   │
+ *                │               │           │
+ *                │               └─────┬─────┘
+ *                │                     │
+ *                │                     │
+ *                └─────────────────────┘
+ */
+enum class configuration_state : uint8_t { simple, transitional, joint };
 
-enum class configuration_type : uint8_t { simple, transitional, joint };
-
-std::ostream& operator<<(std::ostream& o, configuration_type t);
+std::ostream& operator<<(std::ostream& o, configuration_state t);
 
 struct group_nodes {
     std::vector<vnode> voters;
@@ -184,7 +213,7 @@ public:
     const std::optional<group_nodes>& old_config() const { return _old; }
     const std::vector<model::broker>& brokers() const { return _brokers; }
 
-    configuration_type type() const;
+    configuration_state get_state() const;
 
     size_t unique_voter_count() const { return unique_voter_ids().size(); }
 

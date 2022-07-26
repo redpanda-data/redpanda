@@ -249,14 +249,14 @@ bool group_configuration::contains_address(
       });
 }
 
-configuration_type group_configuration::type() const {
+configuration_state group_configuration::get_state() const {
     if (_old) {
-        return configuration_type::joint;
+        return configuration_state::joint;
     }
     if (_configuration_update) {
-        return configuration_type::transitional;
+        return configuration_state::transitional;
     }
-    return configuration_type::simple;
+    return configuration_state::simple;
 };
 
 std::vector<vnode>
@@ -301,7 +301,7 @@ void erase_id(std::vector<vnode>& v, model::node_id id) {
 void group_configuration::add(
   std::vector<model::broker> brokers, model::revision_id rev) {
     vassert(
-      type() == configuration_type::simple,
+      get_state() == configuration_state::simple,
       "can not add node to configuration when update is in progress - {}",
       *this);
 
@@ -310,7 +310,7 @@ void group_configuration::add(
 
 void group_configuration::remove(const std::vector<model::node_id>& ids) {
     vassert(
-      type() == configuration_type::simple,
+      get_state() == configuration_state::simple,
       "can not remove node from configuration when update is in progress - {}",
       *this);
     make_change_strategy()->remove(ids);
@@ -319,7 +319,7 @@ void group_configuration::remove(const std::vector<model::node_id>& ids) {
 void group_configuration::replace(
   std::vector<broker_revision> brokers, model::revision_id rev) {
     vassert(
-      type() == configuration_type::simple,
+      get_state() == configuration_state::simple,
       "can not replace configuration when update is in progress - {}",
       *this);
     make_change_strategy()->replace(std::move(brokers), rev);
@@ -327,7 +327,7 @@ void group_configuration::replace(
 
 void group_configuration::discard_old_config() {
     vassert(
-      type() == configuration_type::joint,
+      get_state() == configuration_state::joint,
       "can only discard old configuration when in joint state - {}",
       *this);
     make_change_strategy()->discard_old_config();
@@ -335,7 +335,7 @@ void group_configuration::discard_old_config() {
 
 void group_configuration::abort_configuration_change(model::revision_id rev) {
     vassert(
-      type() != configuration_type::simple,
+      get_state() != configuration_state::simple,
       "can not abort configuration change if it is of simple type - {}",
       *this);
     make_change_strategy()->abort_configuration_change(rev);
@@ -343,7 +343,7 @@ void group_configuration::abort_configuration_change(model::revision_id rev) {
 
 void group_configuration::cancel_configuration_change(model::revision_id rev) {
     vassert(
-      type() != configuration_type::simple,
+      get_state() != configuration_state::simple,
       "can not cancel configuration change if it is of simple type - {}",
       *this);
     make_change_strategy()->cancel_configuration_change(rev);
@@ -367,7 +367,7 @@ void group_configuration::promote_to_voter(vnode id) {
 
 bool group_configuration::maybe_demote_removed_voters() {
     vassert(
-      type() == configuration_type::joint,
+      get_state() == configuration_state::joint,
       "can not demote removed voters as configuration is of simple type - {}",
       *this);
 
@@ -765,16 +765,16 @@ void configuration_change_strategy_v4::abort_configuration_change(
 
 void configuration_change_strategy_v4::cancel_configuration_change(
   model::revision_id rev) {
-    switch (_cfg.type()) {
-    case configuration_type::simple:
+    switch (_cfg.get_state()) {
+    case configuration_state::simple:
         vassert(
           false,
           "can not cancel, configuration change is not in progress - {}",
           _cfg);
-    case configuration_type::transitional:
+    case configuration_state::transitional:
         cancel_update_in_transitional_state();
         break;
-    case configuration_type::joint:
+    case configuration_state::joint:
         cancel_update_in_joint_state();
         break;
     }
@@ -915,13 +915,13 @@ std::ostream& operator<<(std::ostream& o, const offset_configuration& c) {
     return o;
 }
 
-std::ostream& operator<<(std::ostream& o, configuration_type t) {
+std::ostream& operator<<(std::ostream& o, configuration_state t) {
     switch (t) {
-    case configuration_type::simple:
+    case configuration_state::simple:
         return o << "simple";
-    case configuration_type::joint:
+    case configuration_state::joint:
         return o << "joint";
-    case configuration_type::transitional:
+    case configuration_state::transitional:
         return o << "transitional";
     }
     __builtin_unreachable();

@@ -401,7 +401,7 @@ FIXTURE_TEST(abort_configuration_change, raft_test_fixture) {
 
     auto current_cfg = gr.get_member(model::node_id(0)).consensus->config();
     BOOST_REQUIRE_EQUAL(current_cfg.brokers().size(), 1);
-    BOOST_REQUIRE(current_cfg.type() == raft::configuration_type::simple);
+    BOOST_REQUIRE(current_cfg.get_state() == raft::configuration_state::simple);
 
     auto logs_before = gr.read_all_logs();
     // replicate more data, partition should be writable
@@ -456,8 +456,8 @@ FIXTURE_TEST(revert_configuration_change, raft_test_fixture) {
           if (!leader_id) {
               return false;
           }
-          return gr.get_member(*leader_id).consensus->config().type()
-                 == raft::configuration_type::simple;
+          return gr.get_member(*leader_id).consensus->config().get_state()
+                 == raft::configuration_state::simple;
       },
       "new nodes are up to date");
 
