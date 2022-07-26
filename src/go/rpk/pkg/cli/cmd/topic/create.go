@@ -11,6 +11,9 @@ package topic
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"os"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
@@ -85,13 +88,27 @@ the cleanup.policy=compact config option set.
 			resp, err := req.RequestWith(context.Background(), cl)
 			out.MaybeDie(err, "unable to create topics %v: %v", topics, err)
 
+			var exit1 bool
+			defer func() {
+				if exit1 {
+					os.Exit(1)
+				}
+			}()
+
 			tw := out.NewTable("topic", "status")
 			defer tw.Flush()
 
 			for _, topic := range resp.Topics {
 				msg := "OK"
 				if err := kerr.ErrorForCode(topic.ErrorCode); err != nil {
-					msg = err.Error()
+					if errors.Is(err, kerr.InvalidPartitions) && partitions > 0 {
+						msg = fmt.Sprintf("INVALID_PARTITIONS: unable to create topic with %d partitions due to hardware constraints", partitions)
+					} else if errors.Is(err, kerr.InvalidReplicationFactor) && replicas%2 == 0 {
+						msg = "INVALID_REPLICATION_FACTOR: replication factor must be odd"
+					} else {
+						msg = err.Error()
+					}
+					exit1 = true
 				}
 				tw.Print(topic.Topic, msg)
 			}
@@ -99,7 +116,7 @@ the cleanup.policy=compact config option set.
 	}
 	cmd.Flags().StringArrayVarP(&configKVs, "topic-config", "c", nil, "key=value; Config parameters (repeatable; e.g. -c cleanup.policy=compact)")
 	cmd.Flags().Int32VarP(&partitions, "partitions", "p", 1, "Number of partitions to create per topic")
-	cmd.Flags().Int16VarP(&replicas, "replicas", "r", -1, "Replication factor; if -1, this will be the broker's default.replication.factor")
+	cmd.Flags().Int16VarP(&replicas, "replicas", "r", -1, "Replication factor (must be odd); if -1, this will be the broker's default.replication.factor")
 	cmd.Flags().BoolVarP(&dry, "dry", "d", false, "dry run: validate the topic creation request; do not create topics")
 
 	// Sept 2021

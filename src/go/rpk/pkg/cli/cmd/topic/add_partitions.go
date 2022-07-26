@@ -11,12 +11,16 @@ package topic
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"os"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"github.com/twmb/franz-go/pkg/kerr"
 )
 
 func NewAddPartitionsCommand(fs afero.Fs) *cobra.Command {
@@ -42,13 +46,25 @@ func NewAddPartitionsCommand(fs afero.Fs) *cobra.Command {
 			resps, err := adm.CreatePartitions(context.Background(), num, topics...)
 			out.MaybeDie(err, "create partitions request failed: %v", err)
 
+			var exit1 bool
+			defer func() {
+				if exit1 {
+					os.Exit(1)
+				}
+			}()
+
 			tw := out.NewTable("topic", "error")
 			defer tw.Flush()
 
 			for _, resp := range resps.Sorted() {
 				msg := "OK"
 				if e := resp.Err; e != nil {
-					msg = e.Error()
+					if errors.Is(e, kerr.InvalidPartitions) && num > 0 {
+						msg = fmt.Sprintf("INVALID_PARTITIONS: unable to add %d partitions due to hardware constraints", num)
+					} else {
+						msg = e.Error()
+					}
+					exit1 = true
 				}
 				tw.Print(resp.Topic, msg)
 			}

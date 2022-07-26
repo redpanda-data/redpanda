@@ -46,6 +46,13 @@ class RpkToolTest(RedpandaTest):
                               lambda e: "INVALID_CONFIG" in str(e)):
             out = self._rpk.create_topic("topic", config={config_type: "foo"})
 
+    @cluster(num_nodes=1)
+    def test_add_unfeasible_number_of_partitions(self):
+        with expect_exception(RpkException,
+                              lambda e: "INVALID_REQUEST" in str(e)):
+            self._rpk.create_topic("topic")
+            out = self._rpk.add_partitions("topic", 2000000000000)
+
     @cluster(num_nodes=4)
     def test_produce(self):
         topic = 'topic'
