@@ -33,6 +33,8 @@ function (rp_test)
     LIBRARIES
     DEFINITIONS
     INPUT_FILES
+    BUILD_DEPENDENCIES
+    ENV
     LABELS
     ARGS
     SKIP_BUILD_TYPES)
@@ -80,6 +82,9 @@ function (rp_test)
     ${RP_TEST_BINARY_NAME} "${RP_TEST_SOURCES}")
   target_link_libraries(
     ${RP_TEST_BINARY_NAME} PUBLIC "${RP_TEST_LIBRARIES}")
+  if(${BUILD_DEPENDENCIES})
+    add_dependencies(${RP_TEST_BINARY_NAME} ${BUILD_DEPENDENCIES})
+  endif()
 
   foreach(i ${RP_TEST_INCLUDES})
     target_include_directories(${RP_TEST_BINARY_NAME} PUBLIC ${i})
@@ -110,6 +115,7 @@ function (rp_test)
       set_tests_properties(${RP_TEST_BINARY_NAME}
         PROPERTIES TIMEOUT ${RP_TEST_TIMEOUT})
     endif()
+    set_property(TEST ${RP_TEST_BINARY_NAME} PROPERTY ENVIRONMENT "${RP_TEST_ENV}")
   endif()
 endfunction()
 
