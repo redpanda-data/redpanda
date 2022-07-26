@@ -165,9 +165,8 @@ RUN apt update && \
 
 # Clone and install the arroyo client library in order to run its test suite.
 RUN mkdir /root/external_test_suites && \
-    git -C /root/external_test_suites clone --depth=1 https://github.com/getsentry/arroyo.git && \
+    git -C /root/external_test_suites clone -b 1.0.0 --depth=1 https://github.com/getsentry/arroyo.git && \
     cd /root/external_test_suites/arroyo && \
-    git reset --hard 2631cf1406b0cb5bc05c8a37e8f9f5a40fcf31d4 && \
     python3 -m pip install --force --no-cache-dir -e /root/external_test_suites/arroyo
 
 RUN mkdir -p /opt/scripts && \
