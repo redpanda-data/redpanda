@@ -1225,7 +1225,7 @@ class TopicRecoveryTest(RedpandaTest):
                     manifests.append(obj)
                 elif any(obj.Key.endswith(p) for p in topic_manifest_paths):
                     topic_manifests.append(obj)
-                else:
+                elif any(t in obj.Key for t in topic_names):
                     segments.append(obj)
             if len(expected_topics) != len(topic_manifests):
                 self.logger.info(
@@ -1243,16 +1243,20 @@ class TopicRecoveryTest(RedpandaTest):
             for node, files in self._collect_file_checksums().items():
                 tmp_size = 0
                 for path, (_, size) in files.items():
-                    tmp_size += size
-                size_on_disk = max([tmp_size, size_on_disk])
-            size_in_cloud = 0
-            for obj in segments:
-                size_in_cloud += obj.ContentLength
-            max_delta = default_log_segment_size * 1.5 * total_partitions
-            if (size_on_disk - size_in_cloud) > max_delta:
-                self.logger.info(
-                    f"not enough data uploaded to S3, uploaded {size_in_cloud} bytes, with {size_on_disk} bytes on disk"
-                )
+                    if any(t in path for t in topic_names) and size > 4096:
+                        tmp_size += size
+                size_on_disk = max(tmp_size, size_on_disk)
+
+            size_in_cloud = sum(obj.ContentLength for obj in segments
+                                if obj.ContentLength > 4096)
+            self.logger.debug(
+                f'segments in cloud: {pprint.pformat(segments, indent=2)}, size in cloud: {size_in_cloud}'
+            )
+            if size_on_disk != size_in_cloud:
+                self.logger.info(f"not enough data uploaded to S3, "
+                                 f"uploaded {size_in_cloud} bytes, "
+                                 f"with {size_on_disk} bytes on disk. "
+                                 f"diff: {size_on_disk - size_in_cloud}")
                 return False
 
             return True
