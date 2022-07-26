@@ -355,6 +355,12 @@ class FeaturesNodeJoinTest(RedpandaTest):
 
         # Restart it with a sufficiently recent version and join should succeed
         self.installer.install([old_node], RedpandaInstaller.HEAD)
+
+        # Set the maximum age of the health monitor metadata to 5 seconds.
+        # The assertion below relies on the metadata being fresh on all brokers.
+        self.redpanda.set_cluster_config(
+            {"health_monitor_max_metadata_age": 5000})
+
         self.redpanda.restart_nodes([old_node])
         wait_until(lambda: self.redpanda.registered(old_node),
                    timeout_sec=10,
