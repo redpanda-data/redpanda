@@ -360,7 +360,15 @@ class RpkTool:
 
         def try_describe_group(group):
             cmd = ["describe", group]
-            out = self._run_group(cmd)
+            try:
+                out = self._run_group(cmd)
+            except RpkException as e:
+                if "COORDINATOR_NOT_AVAILABLE" in e.msg:
+                    # Transient, return None to retry
+                    return None
+                else:
+                    raise
+
             lines = out.splitlines()
 
             group_name = parse_field("GROUP", lines[0])
