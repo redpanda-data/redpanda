@@ -87,30 +87,16 @@ public:
 
     bool available() const { return _available; }
 
-    void set_exception(std::exception_ptr&& ex) {
+    template<typename Exception>
+    void set_exception(Exception&& ex) {
         if (_timer.cancel()) {
             unlink_abort_source();
         }
 
         if (likely(!_available)) {
             _available = true;
-            _promise.set_exception(ex);
+            _promise.set_exception(std::forward<Exception>(ex));
         }
-    }
-
-    void set_exception(const std::exception_ptr& ex) {
-        if (_timer.cancel()) {
-            unlink_abort_source();
-        }
-
-        if (likely(!_available)) {
-            _available = true;
-            _promise.set_exception(ex);
-        }
-    }
-
-    void set_exception(const std::exception& ex) {
-        set_exception(std::make_exception_ptr(ex));
     }
 
 private:
