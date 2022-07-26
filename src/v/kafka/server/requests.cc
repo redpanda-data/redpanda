@@ -301,7 +301,7 @@ std::ostream& operator<<(std::ostream& os, const request_header& header) {
       header.version,
       header.correlation,
       header.client_id.value_or(std::string_view("nullopt")),
-      (header.tags ? header.tags->size() : 0),
+      (header.tags ? (*header.tags)().size() : 0),
       header.tags_size_bytes);
     return os;
 }

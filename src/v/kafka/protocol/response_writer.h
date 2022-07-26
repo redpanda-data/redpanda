@@ -335,12 +335,12 @@ public:
     // Only relevent when writing flex responses
     uint32_t write_tags(tagged_fields&& tags) {
         auto start_size = uint32_t(_out->size_bytes());
-        auto n = tags.size();
+        const auto n = tags().size();
         write_unsigned_varint(n); // write total number of tags
-        for (auto& [id, tag] : tags) {
+        for (auto& [id, tag] : tags()) {
             // write tag id +  size in bytes + tag itself
             write_unsigned_varint(id);
-            write_size_prepended(std::move(tag));
+            write_size_prepended(bytes_to_iobuf(tag));
         }
         return _out->size_bytes() - start_size;
     }

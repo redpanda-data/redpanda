@@ -104,15 +104,19 @@ parse_tags(ss::input_stream<char>& src) {
         co_return std::make_pair(std::nullopt, total_bytes_read);
     }
 
-    tagged_fields tags;
+    tagged_fields::type tags;
     while (num_tags-- > 0) {
-        auto tag_id = co_await read_unsigned_vint(total_bytes_read, src);
+        auto id = co_await read_unsigned_vint(total_bytes_read, src);
         auto next_len = co_await read_unsigned_vint(total_bytes_read, src);
         auto buf = co_await src.read_exactly(next_len);
-        iobuf data;
-        data.append(std::move(buf));
+        auto data = ss::uninitialized_string<bytes>(buf.size());
+        std::copy_n(buf.begin(), buf.size(), data.begin());
         total_bytes_read += next_len;
-        tags.emplace_back(tag_id, std::move(data));
+        auto [_, succeded] = tags.emplace(tag_id(id), std::move(data));
+        if (!succeded) {
+            throw std::logic_error(
+              fmt::format("Protocol error, duplicate tag id detected, {}", id));
+        }
     }
     co_return std::make_pair(std::move(tags), total_bytes_read);
 }

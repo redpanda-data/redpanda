@@ -22,21 +22,19 @@
 #include <boost/iterator/counting_iterator.hpp>
 
 kafka::tagged_fields make_random_tags(size_t n) {
-    kafka::tagged_fields tags;
+    kafka::tagged_fields::type tags;
     for (uint32_t i = 0; i < n; ++i) {
-        tags.emplace_back(n, bytes_to_iobuf(random_generators::get_bytes()));
+        tags.emplace(n, random_generators::get_bytes());
     }
-    return tags;
+    return kafka::tagged_fields(std::move(tags));
 }
 
 kafka::tagged_fields copy_tags(const kafka::tagged_fields& otags) {
-    kafka::tagged_fields tags;
-    std::transform(
-      otags.begin(), otags.end(), std::back_inserter(tags), [](auto& t) {
-          auto& [tag_id, tag] = t;
-          return std::make_tuple(tag_id, tag.copy());
-      });
-    return tags;
+    kafka::tagged_fields::type tags;
+    for (const auto& [tag_id, tag] : otags()) {
+        tags.emplace(tag_id, tag);
+    }
+    return kafka::tagged_fields(std::move(tags));
 }
 
 SEASTAR_THREAD_TEST_CASE(serde_tags) {

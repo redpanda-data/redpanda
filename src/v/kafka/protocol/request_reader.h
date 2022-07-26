@@ -180,14 +180,23 @@ public:
 
     // Only relevent when reading flex requests
     tagged_fields read_tags() {
-        tagged_fields tags;
+        tagged_fields::type tags;
         auto num_tags = read_unsigned_varint(); // consume total num of tags
+        int64_t prev_tag_id = -1;
         while (num_tags-- > 0) {
-            auto tag_id = read_unsigned_varint(); // consume tag id
-            auto size = read_unsigned_varint();   // consume size in bytes
-            tags.emplace_back(tag_id, _parser.share(size)); // consume tag
+            auto id = read_unsigned_varint(); // consume tag id
+            if (id <= prev_tag_id) {
+                throw std::out_of_range(fmt::format(
+                  "Protocol error encountered when parsing tags, tags must be "
+                  "serialized in ascending order with no duplicates, tag: {}",
+                  id));
+            }
+            prev_tag_id = id;
+            auto size = read_unsigned_varint(); // consume size in bytes
+            tags.emplace(
+              tag_id(id), iobuf_to_bytes(_parser.share(size))); // consume tag
         }
-        return tags;
+        return tagged_fields(std::move(tags));
     }
 
     void consume_tags() {
