@@ -226,8 +226,7 @@ def _verify_file_layout(baseline_per_host,
             f"NTP {ntp} the restored partition is larger {rest_ntp_size} than the original one {orig_ntp_size}."
 
         delta = orig_ntp_size - rest_ntp_size
-        tolerance = baseline_last_segment_sizes[ntp]
-        assert delta <= tolerance, \
+        assert delta == 0, \
             f"NTP {ntp} the restored partition is too small {rest_ntp_size}." \
             f" The original is {orig_ntp_size} bytes which {delta} bytes larger."
 
@@ -1079,9 +1078,11 @@ TRANSIENT_ERRORS = RESTART_LOG_ALLOW_LIST + [
 
 class TopicRecoveryTest(RedpandaTest):
     def __init__(self, test_context):
-        si_settings = SISettings(cloud_storage_reconciliation_interval_ms=50,
-                                 cloud_storage_max_connections=5,
-                                 log_segment_size=default_log_segment_size)
+        si_settings = SISettings(
+            cloud_storage_reconciliation_interval_ms=50,
+            cloud_storage_max_connections=5,
+            cloud_storage_segment_max_upload_interval_sec=10,
+            log_segment_size=default_log_segment_size)
 
         self.s3_bucket = si_settings.cloud_storage_bucket
 
@@ -1208,6 +1209,7 @@ class TopicRecoveryTest(RedpandaTest):
         def verify():
             total_partitions = sum(
                 [t.partition_count for t in expected_topics])
+            topic_names = {t.name for t in expected_topics}
             manifests = []
             topic_manifests = []
             segments = []
@@ -1217,7 +1219,9 @@ class TopicRecoveryTest(RedpandaTest):
                 for t in expected_topics
             }
             for obj in lst:
-                if obj.Key.endswith("/manifest.json"):
+                # only count manifest if it matches our topic names
+                if obj.Key.endswith("/manifest.json") and any(
+                        tn in obj.Key for tn in topic_names):
                     manifests.append(obj)
                 elif any(obj.Key.endswith(p) for p in topic_manifest_paths):
                     topic_manifests.append(obj)
@@ -1225,13 +1229,15 @@ class TopicRecoveryTest(RedpandaTest):
                     segments.append(obj)
             if len(expected_topics) != len(topic_manifests):
                 self.logger.info(
-                    f"can't find enough topic_manifest.json objects, expected: {len(expected_topics)}, actual: {len(topic_manifests)}"
-                )
+                    f"can't find enough topic_manifest.json objects, "
+                    f"expected: {len(expected_topics)}, "
+                    f"actual: {len(topic_manifests)}")
                 return False
             if total_partitions != len(manifests):
-                self.logger.info(
-                    f"can't find enough manifest.json objects, expected: {len(manifests)}, actual: {total_partitions}"
-                )
+                self.logger.info(f"can't find enough manifest.json objects, "
+                                 f"manifest found: {len(manifests)}, "
+                                 f"expected partitions: {total_partitions}, "
+                                 f"{pprint.pformat(manifests, indent=2)}")
                 return False
             size_on_disk = 0
             for node, files in self._collect_file_checksums().items():
@@ -1251,7 +1257,10 @@ class TopicRecoveryTest(RedpandaTest):
 
             return True
 
-        wait_until(verify, timeout_sec=timeout.total_seconds(), backoff_sec=1)
+        wait_until(verify,
+                   timeout_sec=timeout.total_seconds(),
+                   backoff_sec=1,
+                   err_msg='objects not found in S3')
 
     def _wait_for_topic(self,
                         recovered_topics,
