@@ -155,29 +155,31 @@ class NodeOperationFuzzyTest(EndToEndTest):
             return id
 
         def failure_injector_loop():
-            f_injector = FailureInjector(self.redpanda)
-            while enable_failures:
-                f_type = random.choice(FailureSpec.FAILURE_TYPES)
-                length = 0
-                # allow suspending any node
-                if f_type == FailureSpec.FAILURE_SUSPEND:
-                    length = random.randint(
-                        1, NodeOperationFuzzyTest.max_suspend_duration_seconds)
-                    node = random.choice(self.redpanda.nodes)
-                else:
-                    #kill/terminate only active nodes (not to influence the test outcome)
-                    idx = random.choice(list(self.active_nodes))
-                    node = self.redpanda.get_node(idx)
+            with FailureInjector(self.redpanda) as f_injector:
+                while enable_failures:
+                    f_type = random.choice(FailureSpec.NETEM_FAILURE_TYPES +
+                                           FailureSpec.FAILURE_TYPES)
+                    length = 0
+                    # allow suspending any node
+                    if f_type == FailureSpec.FAILURE_SUSPEND:
+                        length = random.randint(
+                            1, NodeOperationFuzzyTest.
+                            max_suspend_duration_seconds)
+                        node = random.choice(self.redpanda.nodes)
+                    else:
+                        #kill/terminate only active nodes (not to influence the test outcome)
+                        idx = random.choice(list(self.active_nodes))
+                        node = self.redpanda.get_node(idx)
 
-                f_injector.inject_failure(
-                    FailureSpec(node=node, type=f_type, length=length))
+                    f_injector.inject_failure(
+                        FailureSpec(node=node, type=f_type, length=length))
 
-                delay = random.randint(
-                    NodeOperationFuzzyTest.min_inter_failure_time,
-                    NodeOperationFuzzyTest.max_inter_failure_time)
-                self.redpanda.logger.info(
-                    f"waiting {delay} seconds before next failure")
-                time.sleep(delay)
+                    delay = random.randint(
+                        NodeOperationFuzzyTest.min_inter_failure_time,
+                        NodeOperationFuzzyTest.max_inter_failure_time)
+                    self.redpanda.logger.info(
+                        f"waiting {delay} seconds before next failure")
+                    time.sleep(delay)
 
         if enable_failures:
             finjector_thread = threading.Thread(target=failure_injector_loop,
