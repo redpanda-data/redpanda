@@ -7,8 +7,10 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "compression/async_stream_zstd.h"
 #include "compression/stream_zstd.h"
 #include "random/generators.h"
+#include "units.h"
 #include "vassert.h"
 
 #include <seastar/core/reactor.hh>
@@ -35,6 +37,8 @@ static inline iobuf gen(const size_t data_size) {
 inline void compress_test(size_t data_size) {
     auto o = gen(data_size);
     compression::stream_zstd fn;
+    compression::stream_zstd::init_workspace(2_MiB);
+
     perf_tests::start_measuring_time();
     perf_tests::do_not_optimize(fn.compress(std::move(o)));
     perf_tests::stop_measuring_time();
@@ -42,9 +46,29 @@ inline void compress_test(size_t data_size) {
 
 inline void uncompress_test(size_t data_size) {
     compression::stream_zstd fn;
+    compression::stream_zstd::init_workspace(2_MiB);
     auto o = fn.compress(gen(data_size));
+
     perf_tests::start_measuring_time();
     perf_tests::do_not_optimize(fn.uncompress(std::move(o)));
+    perf_tests::stop_measuring_time();
+}
+
+inline ss::future<> async_compress_test(size_t data_size) {
+    auto o = gen(data_size);
+    compression::async_stream_zstd fn(2_MiB);
+
+    perf_tests::start_measuring_time();
+    perf_tests::do_not_optimize(co_await fn.compress(std::move(o)));
+    perf_tests::stop_measuring_time();
+}
+
+inline ss::future<> async_uncompress_test(size_t data_size) {
+    compression::async_stream_zstd fn(2_MiB);
+    auto o = co_await fn.compress(gen(data_size));
+
+    perf_tests::start_measuring_time();
+    perf_tests::do_not_optimize(co_await fn.uncompress(std::move(o)));
     perf_tests::stop_measuring_time();
 }
 
@@ -52,3 +76,17 @@ PERF_TEST(streaming_zstd_1mb, compress) { compress_test(1 << 20); }
 PERF_TEST(streaming_zstd_1mb, uncompress) { return uncompress_test(1 << 20); }
 PERF_TEST(streaming_zstd_10mb, compress) { compress_test(10 << 20); }
 PERF_TEST(streaming_zstd_10mb, uncompress) { return uncompress_test(10 << 20); }
+
+struct async_stream_zstd {};
+PERF_TEST_C(async_stream_zstd, 1mb_compress) {
+    co_await async_compress_test(1 << 20);
+}
+PERF_TEST_C(async_stream_zstd, 1mb_uncompress) {
+    co_return co_await async_uncompress_test(1 << 20);
+}
+PERF_TEST_C(async_stream_zstd, 10mb_compress) {
+    co_await async_compress_test(10 << 20);
+}
+PERF_TEST_C(async_stream_zstd, 10mb_uncompress) {
+    co_return co_await async_uncompress_test(10 << 20);
+}
