@@ -6,6 +6,8 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+import time
+from typing import NamedTuple, Optional
 from rptest.services.cluster import cluster
 
 from rptest.clients.default import DefaultClient
@@ -20,10 +22,17 @@ import json
 
 from rptest.services.redpanda import RedpandaService
 from rptest.tests.end_to_end import EndToEndTest
+from rptest.utils.expect_rate import ExpectRate, RateTarget
 from rptest.services.verifiable_producer import VerifiableProducer, is_int_with_prefix
 from rptest.services.verifiable_consumer import VerifiableConsumer
 from rptest.util import (
     wait_until, )
+
+
+class BucketUsage(NamedTuple):
+    num_objects: int
+    total_bytes: int
+    keys: set[str]
 
 
 class TestReadReplicaService(EndToEndTest):
@@ -55,6 +64,8 @@ class TestReadReplicaService(EndToEndTest):
         rpk_second_cluster.create_topic(self.topic_name, config=conf)
 
     def start_consumer(self) -> None:
+        # important side effect for superclass; we will use the replica
+        # consumer from here on.
         self.consumer = VerifiableConsumer(
             self.test_context,
             num_nodes=1,
@@ -121,6 +132,32 @@ class TestReadReplicaService(EndToEndTest):
             err_msg="Could not create read replica topic. Most likely " +
             "because topic manifest is not in S3.")
 
+    def _bucket_usage(self) -> BucketUsage:
+        assert self.redpanda and self.redpanda.s3_client
+        keys: set[str] = set()
+        s3 = self.redpanda.s3_client
+        num_objects = total_bytes = 0
+        bucket = self.si_settings.cloud_storage_bucket
+        for o in s3.list_objects(bucket):
+            num_objects += 1
+            total_bytes += o.ContentLength
+            keys.add(o.Key)
+        self.redpanda.logger.info(f"bucket usage {num_objects} objects, " +
+                                  f"{total_bytes} bytes for {bucket}")
+        return BucketUsage(num_objects, total_bytes, keys)
+
+    def _bucket_delta(self, bu1: BucketUsage,
+                      bu2: BucketUsage) -> Optional[BucketUsage]:
+        """ Return None if both bucket usage reports are equal.
+            Otherwise, return deltas. """
+        obj_delta = bu2.num_objects - bu1.num_objects
+        bytes_delta = bu2.total_bytes - bu1.total_bytes
+        keys_delta = bu2.keys.difference(bu1.keys)
+        if obj_delta or bytes_delta or len(keys_delta) > 0:
+            return BucketUsage(obj_delta, bytes_delta, keys_delta)
+        else:
+            return None
+
     @cluster(num_nodes=6)
     @matrix(partition_count=[10])
     def test_produce_is_forbidden(self, partition_count: int) -> None:
@@ -133,7 +170,7 @@ class TestReadReplicaService(EndToEndTest):
                 in str(e)):
             second_rpk.produce(self.topic_name, "", "test payload")
 
-    @cluster(num_nodes=8)
+    @cluster(num_nodes=9)
     @matrix(partition_count=[10], min_records=[10000])
     def test_simple_end_to_end(self, partition_count: int,
                                min_records: int) -> None:
@@ -143,4 +180,34 @@ class TestReadReplicaService(EndToEndTest):
 
         # Consume from read replica topic and validate
         self.start_consumer()
-        self.run_validation()
+        self.run_validation()  # calls self.consumer.stop()
+        assert self.redpanda
+        self.redpanda.stop()
+
+        # Run consumer again, this time with source cluster stopped.
+        # Now we can test that replicas do not write to s3.
+        self.start_consumer()
+
+        # Assert zero bytes written for at least 20 seconds.
+        total_bytes = lambda: self._bucket_usage().total_bytes
+        assert self.redpanda and self.redpanda.logger
+        er = ExpectRate(total_bytes, self.redpanda.logger)
+        zero_growth = RateTarget(max_total_sec=60,
+                                 target_sec=20,
+                                 target_min_rate=0,
+                                 target_max_rate=0)
+        er.expect_rate(zero_growth)
+
+        # Get current bucket usage
+        pre_usage = self._bucket_usage()
+        self.logger.info(f"pre_usage {pre_usage}")
+
+        # Let replica consumer run to completion, assert no s3 writes
+        self.run_consumer_validation()
+
+        post_usage = self._bucket_usage()
+        self.logger.info(f"post_usage {post_usage}")
+        delta = self._bucket_delta(pre_usage, post_usage)
+        if delta:
+            m = f"S3 Bucket usage changed during read replica test: {delta}"
+            assert False, m
