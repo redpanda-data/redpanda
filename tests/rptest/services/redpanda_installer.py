@@ -38,6 +38,14 @@ def wait_for_num_versions(redpanda, num_versions):
     return unique_versions
 
 
+def int_tuple(str_tuple):
+    """
+    Converts
+    ("x": string, "y": string, "z": string) => (x: int, y: int, z: int)
+    """
+    return (int(str_tuple[0]), int(str_tuple[1]), int(str_tuple[2]))
+
+
 class InstallOptions:
     """
     Options with which to configure the installation of Redpanda in a cluster.
@@ -112,6 +120,7 @@ class RedpandaInstaller:
         Constructs an installer for the given RedpandaService.
         """
         self._started = False
+        self._released_versions: list[tuple] = []
         self._redpanda = redpanda
 
         # Keep track if the original install path is /opt/redpanda, as is the
@@ -243,9 +252,6 @@ class RedpandaInstaller:
         self.wait_for_async_ssh(self._redpanda.logger, ssh_setup_head_per_node,
                                 "Setting up /opt/redpanda")
 
-        def int_tuple(str_tuple):
-            return (int(str_tuple[0]), int(str_tuple[1]), int(str_tuple[2]))
-
         # Keep track of the logical version of the head installation so we can
         # use it to get older versions relative to the head version.
         # NOTE: installing this version may not yield the same binaries being
@@ -253,16 +259,21 @@ class RedpandaInstaller:
         self._head_version: tuple = int_tuple(
             VERSION_RE.findall(initial_version)[0])
 
+        self._started = True
+
+    def _initialize_released_versions(self):
+        if len(self._released_versions) > 0:
+            return
+
         # Initialize and order the releases so we can iterate to previous
         # releases when requested.
         releases_resp = requests.get(
             "https://api.github.com/repos/redpanda-data/redpanda/releases")
-        self._released_versions: list[tuple] = [
+        self._released_versions = [
             int_tuple(VERSION_RE.findall(f["tag_name"])[0])
             for f in releases_resp.json()
         ]
         self._released_versions.sort(reverse=True)
-        self._started = True
 
     def highest_from_prior_feature_version(self, version):
         """
@@ -271,6 +282,9 @@ class RedpandaInstaller:
         """
         if not self._started:
             self.start()
+        if len(self._released_versions) == 0:
+            self._initialize_released_versions()
+
         if version == RedpandaInstaller.HEAD:
             version = self._head_version
         # NOTE: the released versions are sorted highest first.
@@ -303,8 +317,6 @@ class RedpandaInstaller:
         Like above but expects the install lock to have been taken before
         calling.
         """
-        assert version == RedpandaInstaller.HEAD or version in self._released_versions, \
-            f"Can't find installation for {version}"
         version_root = self.root_for_version(version)
 
         nodes_to_download = nodes
