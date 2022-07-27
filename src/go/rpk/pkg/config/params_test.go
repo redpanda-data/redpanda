@@ -41,7 +41,6 @@ rpk:
     admin_api:
         addresses:
             - 127.0.0.1:9644
-    enable_usage_stats: false
 `,
 		},
 		{
@@ -210,22 +209,7 @@ redpanda:
     developer_mode: true
 rpk:
     enable_usage_stats: true
-    tune_network: false
-    tune_disk_scheduler: false
-    tune_disk_nomerges: false
-    tune_disk_write_cache: false
-    tune_disk_irq: false
-    tune_fstrim: false
-    tune_cpu: false
-    tune_aio_events: false
-    tune_clocksource: false
-    tune_swappiness: false
-    tune_transparent_hugepages: false
-    enable_memory_locking: false
-    tune_coredump: false
     coredump_dir: /var/lib/redpanda/coredump
-    tune_ballast_file: false
-    overprovisioned: false
 pandaproxy: {}
 schema_registry: {}
 `, string(file))

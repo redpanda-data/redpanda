@@ -499,7 +499,6 @@ redpanda:
     admin:
         - address: 0.0.0.0
           port: 9644
-    developer_mode: false
 rpk:
     enable_usage_stats: true
     tune_network: true
@@ -518,7 +517,6 @@ rpk:
     coredump_dir: /var/lib/redpanda/coredumps
     tune_ballast_file: true
     well_known_io: vendor:vm:storage
-    overprovisioned: false
 pandaproxy: {}
 schema_registry: {}
 `,
@@ -556,7 +554,6 @@ redpanda:
     advertised_rpc_api:
         address: 174.32.64.2
         port: 33145
-    developer_mode: false
 rpk:
     enable_usage_stats: true
     tune_network: true
@@ -575,7 +572,6 @@ rpk:
     coredump_dir: /var/lib/redpanda/coredumps
     tune_ballast_file: true
     well_known_io: vendor:vm:storage
-    overprovisioned: false
 pandaproxy: {}
 schema_registry: {}
 `,
@@ -608,24 +604,6 @@ redpanda:
     admin:
         - address: 0.0.0.0
           port: 9644
-    developer_mode: false
-rpk:
-    enable_usage_stats: false
-    tune_network: false
-    tune_disk_scheduler: false
-    tune_disk_nomerges: false
-    tune_disk_write_cache: false
-    tune_disk_irq: false
-    tune_fstrim: false
-    tune_cpu: false
-    tune_aio_events: false
-    tune_clocksource: false
-    tune_swappiness: false
-    tune_transparent_hugepages: false
-    enable_memory_locking: false
-    tune_coredump: false
-    tune_ballast_file: false
-    overprovisioned: false
 pandaproxy: {}
 schema_registry: {}
 `,
@@ -662,7 +640,6 @@ redpanda:
     admin:
         - address: 0.0.0.0
           port: 9644
-    developer_mode: false
     log_segment_size: 536870912
 rpk:
     enable_usage_stats: true
@@ -682,7 +659,6 @@ rpk:
     coredump_dir: /var/lib/redpanda/coredumps
     tune_ballast_file: true
     well_known_io: vendor:vm:storage
-    overprovisioned: false
 pandaproxy: {}
 schema_registry: {}
 `,
