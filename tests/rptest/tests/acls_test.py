@@ -8,7 +8,7 @@
 # by the Apache License, Version 2.0
 import socket
 import time
-from ducktape.mark import parametrize
+from ducktape.mark import parametrize, matrix, ignore
 from ducktape.utils.util import wait_until
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
@@ -17,6 +17,7 @@ from rptest.clients.rpk import RpkTool, ClusterAuthorizationError
 from rptest.services.redpanda import SecurityConfig, TLSProvider
 from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
 from rptest.services import tls
+from typing import Optional
 
 
 class MTLSProvider(TLSProvider):
@@ -49,16 +50,34 @@ class AccessControlListTest(RedpandaTest):
         # it with custom security settings
         return
 
+    def authz_enabled(self, use_sasl, enable_authz):
+        if enable_authz is not None and enable_authz:
+            return True
+        elif enable_authz is None and use_sasl:
+            return True
+        else:
+            return False
+
+    def authn_enabled(self, use_sasl, enable_authz, authn_method):
+        if authn_method is not None:
+            return True
+        elif authn_method is None and enable_authz is None and use_sasl:
+            return True
+        else:
+            return False
+
     def prepare_cluster(self,
-                        use_tls,
-                        use_sasl,
-                        enable_authz=None,
-                        authn_method=None,
-                        principal_mapping_rules=None):
+                        use_tls: bool,
+                        use_sasl: bool,
+                        enable_authz: Optional[bool] = None,
+                        authn_method: Optional[str] = None,
+                        principal_mapping_rules: Optional[str] = None,
+                        client_auth: bool = True):
         self.security = SecurityConfig()
         self.security.enable_sasl = use_sasl
         self.security.kafka_enable_authorization = enable_authz
         self.security.endpoint_authn_method = authn_method
+        self.security.require_client_auth = client_auth
 
         if use_tls:
             self.tls = tls.TLSCertManager(self.logger)
@@ -173,66 +192,402 @@ class AccessControlListTest(RedpandaTest):
                        sasl_mechanism=self.algorithm,
                        tls_cert=cert)
 
-    # The old config style has use_sasl at the top level, which enables
-    # authorization. New config style has kafka_enable_authorization at the
-    # top-level, with authentication_method on the listener.
+    '''
+    The old config style has use_sasl at the top level, which enables
+    authorization. New config style has kafka_enable_authorization at the
+    top-level, with authentication_method on the listener.
+
+    Brief param descriptions:
+        use_tls - Controls whether tls certs are used
+        use_sasl - Controls the value of enable_sasl RP config
+        enable_authz - Controls the value of kafka_enable_authorization RP config
+        authn_method - Controls the broker level authentication_method (e.g., mtls_identity)
+        client_auth - Controls the value of require_client_auth RP config
+    '''
+
     @cluster(num_nodes=3)
-    # plaintext conn + sasl for authn (global sasl config)
-    @parametrize(use_tls=False,
-                 use_sasl=True,
-                 enable_authz=None,
-                 authn_method=None)
-    # ssl/tls conn + sasl for authn (global sasl config)
-    @parametrize(use_tls=True,
-                 use_sasl=True,
-                 enable_authz=None,
-                 authn_method=None)
-    # ssl/tls conn + sasl for authn (listener sasl config)
-    @parametrize(use_tls=True,
-                 use_sasl=False,
-                 enable_authz=True,
-                 authn_method="sasl")
-    # ssl/tls conn + mtls for authn (listener mtls config)
-    @parametrize(use_tls=True,
-                 use_sasl=False,
-                 enable_authz=True,
-                 authn_method="mtls_identity")
-    # Disable authz
-    @parametrize(use_tls=True,
-                 use_sasl=True,
-                 enable_authz=False,
-                 authn_method=None,
-                 always_succeed=True)
-    # Disable authz
-    @parametrize(use_tls=True,
-                 use_sasl=True,
-                 enable_authz=False,
-                 authn_method="sasl",
-                 always_succeed=True)
-    # Disable authz
-    @parametrize(use_tls=True,
-                 use_sasl=True,
-                 enable_authz=False,
-                 authn_method="mtls_identity",
-                 always_succeed=True)
-    def test_describe_acls(self,
-                           use_tls,
-                           use_sasl,
-                           enable_authz,
-                           authn_method,
-                           always_succeed=False):
+    # Test cases with require_client_auth = True
+    @ignore(use_tls=True,
+            use_sasl=False,
+            enable_authz=True,
+            authn_method=None,
+            client_auth=True
+            )  # Hang on rpk wrapper: unable to create ACLs: EOF
+    @ignore(use_tls=True,
+            use_sasl=True,
+            enable_authz=True,
+            authn_method=None,
+            client_auth=True
+            )  # Hang on rpk wrapper: unable to create ACLs: EOF
+    @ignore(use_tls=True,
+            use_sasl=True,
+            enable_authz=True,
+            authn_method=None,
+            client_auth=True
+            )  # Hang on rpk wrapper: unable to create ACLs: EOF
+    @ignore(use_tls=True,
+            use_sasl=False,
+            enable_authz=True,
+            authn_method=None,
+            client_auth=True
+            )  # Hang on rpk wrapper: unable to create ACLs: EOF
+    @ignore(
+        use_tls=True,
+        use_sasl=True,
+        enable_authz=None,
+        authn_method='mtls_identity',
+        client_auth=True
+    )  # KafkaException: KafkaError{code=_TRANSPORT,val=-195,str="Failed to get metadata: Local: Broker transport failure"}
+    @ignore(
+        use_tls=False,
+        use_sasl=True,
+        enable_authz=True,
+        authn_method='mtls_identity',
+        client_auth=True
+    )  # KafkaException: KafkaError{code=_TRANSPORT,val=-195,str="Failed to get metadata: Local: Broker transport failure"}
+    @ignore(
+        use_tls=False,
+        use_sasl=True,
+        enable_authz=False,
+        authn_method='mtls_identity',
+        client_auth=True
+    )  # KafkaException: KafkaError{code=_TRANSPORT,val=-195,str="Failed to get metadata: Local: Broker transport failure"}
+    @ignore(
+        use_tls=False,
+        use_sasl=True,
+        enable_authz=None,
+        authn_method='mtls_identity',
+        client_auth=True
+    )  # KafkaException: KafkaError{code=_TRANSPORT,val=-195,str="Failed to get metadata: Local: Broker transport failure"}
+    @ignore(
+        use_tls=False,
+        use_sasl=False,
+        enable_authz=True,
+        authn_method='mtls_identity',
+        client_auth=True
+    )  # KafkaException: KafkaError{code=_TRANSPORT,val=-195,str="Failed to get metadata: Local: Broker transport failure"}
+    @ignore(
+        use_tls=False,
+        use_sasl=False,
+        enable_authz=False,
+        authn_method='mtls_identity',
+        client_auth=True
+    )  # KafkaException: KafkaError{code=_TRANSPORT,val=-195,str="Failed to get metadata: Local: Broker transport failure"}
+    @ignore(
+        use_tls=False,
+        use_sasl=False,
+        enable_authz=None,
+        authn_method='mtls_identity',
+        client_auth=True
+    )  # KafkaException: KafkaError{code=_TRANSPORT,val=-195,str="Failed to get metadata: Local: Broker transport failure"}
+    @ignore(use_tls=True,
+            use_sasl=False,
+            enable_authz=False,
+            authn_method=None,
+            client_auth=True)  # timeout users_propogated
+    @ignore(use_tls=True,
+            use_sasl=False,
+            enable_authz=False,
+            authn_method='sasl',
+            client_auth=True)  # timeout users_propogated
+    @ignore(use_tls=True,
+            use_sasl=False,
+            enable_authz=None,
+            authn_method=None,
+            client_auth=True)  # timeout users_propogated
+    @ignore(use_tls=True,
+            use_sasl=False,
+            enable_authz=None,
+            authn_method='sasl',
+            client_auth=True)  # timeout users_propogated
+    @ignore(use_tls=False,
+            use_sasl=False,
+            enable_authz=False,
+            authn_method='sasl',
+            client_auth=True)  # timeout users_propogated
+    @ignore(use_tls=False,
+            use_sasl=False,
+            enable_authz=None,
+            authn_method='sasl',
+            client_auth=True)  # timeout users_propogated
+    @ignore(
+        use_tls=False,
+        use_sasl=True,
+        enable_authz=True,
+        authn_method=None,
+        client_auth=True
+    )  # AttributeError: 'AccessControlListTest' object has no attribute 'admin_user_cert'
+    @ignore(
+        use_tls=False,
+        use_sasl=True,
+        enable_authz=False,
+        authn_method=None,
+        client_auth=True
+    )  # AttributeError: 'AccessControlListTest' object has no attribute 'admin_user_cert'
+    @ignore(
+        use_tls=False,
+        use_sasl=False,
+        enable_authz=True,
+        authn_method=None,
+        client_auth=True
+    )  # AttributeError: 'AccessControlListTest' object has no attribute 'admin_user_cert'
+    @ignore(
+        use_tls=False,
+        use_sasl=False,
+        enable_authz=False,
+        authn_method=None,
+        client_auth=True
+    )  # AttributeError: 'AccessControlListTest' object has no attribute 'admin_user_cert'
+    @ignore(
+        use_tls=False,
+        use_sasl=False,
+        enable_authz=None,
+        authn_method=None,
+        client_auth=True
+    )  # AttributeError: 'AccessControlListTest' object has no attribute 'admin_user_cert'
+    # Test cases with require_client_auth = False
+    @ignore(use_tls=True,
+            use_sasl=False,
+            enable_authz=True,
+            authn_method=None,
+            client_auth=False
+            )  # Hang on rpk wrapper: unable to create ACLs: EOF
+    @ignore(use_tls=True,
+            use_sasl=True,
+            enable_authz=True,
+            authn_method=None,
+            client_auth=False
+            )  # Hang on rpk wrapper: unable to create ACLs: EOF
+    @ignore(use_tls=True,
+            use_sasl=True,
+            enable_authz=True,
+            authn_method=None,
+            client_auth=False
+            )  # Hang on rpk wrapper: unable to create ACLs: EOF
+    @ignore(use_tls=True,
+            use_sasl=False,
+            enable_authz=True,
+            authn_method=None,
+            client_auth=False
+            )  # Hang on rpk wrapper: unable to create ACLs: EOF
+    @ignore(
+        use_tls=False,
+        use_sasl=True,
+        enable_authz=True,
+        authn_method='mtls_identity',
+        client_auth=False
+    )  # KafkaException: KafkaError{code=_TRANSPORT,val=-195,str="Failed to get metadata: Local: Broker transport failure"}
+    @ignore(
+        use_tls=False,
+        use_sasl=True,
+        enable_authz=False,
+        authn_method='mtls_identity',
+        client_auth=False
+    )  # KafkaException: KafkaError{code=_TRANSPORT,val=-195,str="Failed to get metadata: Local: Broker transport failure"}
+    @ignore(
+        use_tls=False,
+        use_sasl=True,
+        enable_authz=None,
+        authn_method='mtls_identity',
+        client_auth=False
+    )  # KafkaException: KafkaError{code=_TRANSPORT,val=-195,str="Failed to get metadata: Local: Broker transport failure"}
+    @ignore(
+        use_tls=False,
+        use_sasl=False,
+        enable_authz=True,
+        authn_method='mtls_identity',
+        client_auth=False
+    )  # KafkaException: KafkaError{code=_TRANSPORT,val=-195,str="Failed to get metadata: Local: Broker transport failure"}
+    @ignore(
+        use_tls=False,
+        use_sasl=False,
+        enable_authz=False,
+        authn_method='mtls_identity',
+        client_auth=False
+    )  # KafkaException: KafkaError{code=_TRANSPORT,val=-195,str="Failed to get metadata: Local: Broker transport failure"}
+    @ignore(
+        use_tls=False,
+        use_sasl=False,
+        enable_authz=None,
+        authn_method='mtls_identity',
+        client_auth=False
+    )  # KafkaException: KafkaError{code=_TRANSPORT,val=-195,str="Failed to get metadata: Local: Broker transport failure"}
+    @ignore(use_tls=True,
+            use_sasl=False,
+            enable_authz=False,
+            authn_method='mtls_identity',
+            client_auth=False)  # Infinite rdkafka error message
+    @ignore(use_tls=True,
+            use_sasl=False,
+            enable_authz=None,
+            authn_method='mtls_identity',
+            client_auth=False)  # Infinite rdkafka error message
+    @ignore(use_tls=True,
+            use_sasl=False,
+            enable_authz=True,
+            authn_method='mtls_identity',
+            client_auth=False)  # Infinite rdkafka error message
+    @ignore(use_tls=True,
+            use_sasl=True,
+            enable_authz=False,
+            authn_method='mtls_identity',
+            client_auth=False)  # Infinite rdkafka error message
+    @ignore(use_tls=True,
+            use_sasl=True,
+            enable_authz=None,
+            authn_method='mtls_identity',
+            client_auth=False)  # Infinite rdkafka error message
+    @ignore(use_tls=True,
+            use_sasl=True,
+            enable_authz=True,
+            authn_method='mtls_identity',
+            client_auth=False)  # Infinite rdkafka error message
+    @ignore(use_tls=True,
+            use_sasl=True,
+            enable_authz=True,
+            authn_method='mtls_identity',
+            client_auth=False)  # Infinite rdkafka error message
+    @ignore(use_tls=True,
+            use_sasl=True,
+            enable_authz=False,
+            authn_method='mtls_identity',
+            client_auth=False)  # Infinite rdkafka error message
+    @ignore(use_tls=True,
+            use_sasl=True,
+            enable_authz=None,
+            authn_method='mtls_identity',
+            client_auth=False)  # Infinite rdkafka error message
+    @ignore(use_tls=True,
+            use_sasl=False,
+            enable_authz=True,
+            authn_method='mtls_identity',
+            client_auth=False)  # Infinite rdkafka error message
+    @ignore(use_tls=True,
+            use_sasl=False,
+            enable_authz=False,
+            authn_method='mtls_identity',
+            client_auth=False)  # Infinite rdkafka error message
+    @ignore(use_tls=True,
+            use_sasl=False,
+            enable_authz=None,
+            authn_method='mtls_identity',
+            client_auth=False)  # Infinite rdkafka error message
+    @ignore(use_tls=True,
+            use_sasl=False,
+            enable_authz=False,
+            authn_method=None,
+            client_auth=False)  # timeout users_propogated
+    @ignore(use_tls=True,
+            use_sasl=False,
+            enable_authz=False,
+            authn_method='sasl',
+            client_auth=False)  # timeout users_propogated
+    @ignore(use_tls=True,
+            use_sasl=False,
+            enable_authz=None,
+            authn_method=None,
+            client_auth=False)  # timeout users_propogated
+    @ignore(use_tls=True,
+            use_sasl=False,
+            enable_authz=None,
+            authn_method='sasl',
+            client_auth=False)  # timeout users_propogated
+    @ignore(use_tls=False,
+            use_sasl=False,
+            enable_authz=False,
+            authn_method='sasl',
+            client_auth=False)  # timeout users_propogated
+    @ignore(use_tls=False,
+            use_sasl=False,
+            enable_authz=None,
+            authn_method='sasl',
+            client_auth=False)  # timeout users_propogated
+    @ignore(
+        use_tls=False,
+        use_sasl=True,
+        enable_authz=True,
+        authn_method=None,
+        client_auth=False
+    )  # AttributeError: 'AccessControlListTest' object has no attribute 'admin_user_cert'
+    @ignore(
+        use_tls=False,
+        use_sasl=True,
+        enable_authz=False,
+        authn_method=None,
+        client_auth=False
+    )  # AttributeError: 'AccessControlListTest' object has no attribute 'admin_user_cert'
+    @ignore(
+        use_tls=False,
+        use_sasl=False,
+        enable_authz=True,
+        authn_method=None,
+        client_auth=False
+    )  # AttributeError: 'AccessControlListTest' object has no attribute 'admin_user_cert'
+    @ignore(
+        use_tls=False,
+        use_sasl=False,
+        enable_authz=False,
+        authn_method=None,
+        client_auth=False
+    )  # AttributeError: 'AccessControlListTest' object has no attribute 'admin_user_cert'
+    @ignore(
+        use_tls=False,
+        use_sasl=False,
+        enable_authz=None,
+        authn_method=None,
+        client_auth=False
+    )  # AttributeError: 'AccessControlListTest' object has no attribute 'admin_user_cert'
+    @matrix(use_tls=[True, False],
+            use_sasl=[True, False],
+            enable_authz=[True, False, None],
+            authn_method=[None, 'sasl', 'mtls_identity'],
+            client_auth=[True, False])
+    def test_describe_acls(self, use_tls: bool, use_sasl: bool,
+                           enable_authz: Optional[bool],
+                           authn_method: Optional[str], client_auth: bool):
         """
         security::acl_operation::describe, security::default_cluster_name
         """
-        self.prepare_cluster(use_tls, use_sasl, enable_authz, authn_method)
+        self.prepare_cluster(use_tls,
+                             use_sasl,
+                             enable_authz,
+                             authn_method,
+                             client_auth=client_auth)
 
+        def should_pass_w_base_user(use_tls: bool, use_sasl: bool,
+                                    enable_authz: Optional[bool],
+                                    authn_method: Optional[str]):
+            '''
+            These are the config combinations where `rpk acl list` should pass
+            with the base user. All other tests should fail with ClusterAuthzError
+            with the base user. These combinations were pulled from previous
+            iterations of this ducktape test (i.e., AccessControlListTest.test_describe_acls).
+            See https://github.com/redpanda-data/redpanda/blob/38650a7b96707ce4a13d9879d459b08bb0a59bba/tests/rptest/tests/acls_test.py#L217
+            '''
+            if use_tls and not use_sasl and enable_authz == False and authn_method == 'mtls_identity':
+                return True
+            elif use_tls and not use_sasl and enable_authz == None and authn_method == 'mtls_identity':
+                return True
+            elif not use_tls and use_sasl and enable_authz == False and authn_method == 'sasl':
+                return True
+            elif use_tls and use_sasl and enable_authz == False and authn_method == None:
+                return True
+            elif use_tls and use_sasl and enable_authz == False and authn_method == 'mtls_identity':
+                return True
+            elif use_tls and use_sasl and enable_authz == False and authn_method == 'sasl':
+                return True
+            else:
+                return False
+
+        pass_w_base_user = should_pass_w_base_user(use_tls, use_sasl,
+                                                   enable_authz, authn_method)
         # run a few times for good health
         for _ in range(5):
             try:
                 self.get_client("base").acl_list()
-                assert always_succeed, "list acls should have failed"
+                assert pass_w_base_user, "list acls should have failed"
             except ClusterAuthorizationError:
-                assert not always_succeed
+                assert not pass_w_base_user
 
             self.get_client("cluster_describe").acl_list()
             self.get_super_client().acl_list()
