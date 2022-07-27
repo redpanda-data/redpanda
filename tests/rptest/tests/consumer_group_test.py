@@ -14,6 +14,7 @@ from rptest.services.cluster import cluster
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.kafka_cli_consumer import KafkaCliConsumer
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.services.rpk_producer import RpkProducer
 from rptest.tests.redpanda_test import RedpandaTest
 from ducktape.utils.util import wait_until
@@ -304,7 +305,7 @@ class ConsumerGroupTest(RedpandaTest):
             c.wait()
             c.free()
 
-    @cluster(num_nodes=6)
+    @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @parametrize(static_members=True)
     @parametrize(static_members=False)
     def test_dead_group_recovery(self, static_members):
