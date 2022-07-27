@@ -619,6 +619,18 @@ struct timeout_now_request
     auto serde_fields() {
         return std::tie(target_node_id, node_id, group, term);
     }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const timeout_now_request& r) {
+        fmt::print(
+          o,
+          "target_node_id {} node_id {} group {} term {}",
+          r.target_node_id,
+          r.node_id,
+          r.group,
+          r.term);
+        return o;
+    }
 };
 
 struct timeout_now_reply
