@@ -43,17 +43,29 @@ public:
           , _cache(c) {}
 
         range_lock_holder(const range_lock_holder&) = delete;
-        range_lock_holder(range_lock_holder&&) = default;
+        range_lock_holder(range_lock_holder&& other) noexcept
+          : _range(std::move(other._range))
+          , _cache(other._cache) {
+            other._range.reset();
+        }
 
         range_lock_holder& operator=(const range_lock_holder&) = delete;
-        range_lock_holder& operator=(range_lock_holder&&) = default;
+        range_lock_holder& operator=(range_lock_holder&& other) noexcept {
+            _range = std::move(other._range);
+            _cache = other._cache;
+            other._range.reset();
+
+            return *this;
+        }
 
         ~range_lock_holder() {
-            std::erase(_cache->_locked_offset_ranges, _range);
+            if (_range) {
+                std::erase(_cache->_locked_offset_ranges, _range.value());
+            }
         }
 
     private:
-        offset_range _range;
+        std::optional<offset_range> _range;
         readers_cache* _cache;
     };
     explicit readers_cache(model::ntp, std::chrono::milliseconds);
