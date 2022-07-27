@@ -472,7 +472,8 @@ ss::future<> config_manager::reconcile_status() {
         } else {
             vlog(
               clusterlog.trace,
-              "reconcile_status: sending status update to leader");
+              "reconcile_status: sending status update to leader: {}",
+              my_latest_status);
             if (_self == *leader) {
                 auto err = co_await _frontend.local().set_status(
                   my_latest_status, model::timeout_clock::now() + timeout);
