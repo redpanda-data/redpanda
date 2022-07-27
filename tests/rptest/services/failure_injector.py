@@ -46,6 +46,13 @@ class FailureInjector:
             self._start_func(spec.type)(spec.node)
         except Exception as e:
             self.redpanda.logger.info(f"injecting failure error: {e}")
+            if spec.type == FailureSpec.FAILURE_TERMINATE and isinstance(
+                    e, TimeoutError):
+                # A timeout during termination indicates a shutdown hang in redpanda: this
+                # is a bug and we should fail the test on it.  Otherwise we'd leave the node
+                # in a weird state & get some non-obvious failure later in the test, such
+                # as https://github.com/redpanda-data/redpanda/issues/5178
+                raise
         finally:
             if spec.length is not None:
                 if spec.length == 0:
