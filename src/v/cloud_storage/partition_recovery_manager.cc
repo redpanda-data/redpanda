@@ -295,6 +295,11 @@ partition_downloader::download_log(const remote_manifest_path& manifest_key) {
 void partition_downloader::update_downloaded_offsets(
   std::vector<partition_downloader::offset_range> dloffsets,
   partition_downloader::download_part& dlpart) {
+    auto to_erase = std::remove_if(
+      dloffsets.begin(), dloffsets.end(), [](offset_range r) {
+          return r.max_offset == model::offset::min();
+      });
+    dloffsets.erase(to_erase, dloffsets.end());
     std::sort(dloffsets.begin(), dloffsets.end());
     for (auto it = dloffsets.rbegin(); it != dloffsets.rend(); it++) {
         auto offsets = *it;
@@ -395,6 +400,11 @@ partition_downloader::download_log_with_capped_size(
           }
       });
     update_downloaded_offsets(std::move(dloffsets), dlpart);
+    if (dlpart.num_files == 0) {
+        // The segments didn't have data batches
+        dlpart.range.min_offset = manifest.get_last_offset();
+        dlpart.range.max_offset = manifest.get_last_offset();
+    }
     co_return dlpart;
 }
 
@@ -481,6 +491,11 @@ partition_downloader::download_log_with_capped_time(
           }
       });
     update_downloaded_offsets(std::move(dloffsets), dlpart);
+    if (dlpart.num_files == 0) {
+        // The segments didn't have data batches
+        dlpart.range.min_offset = manifest.get_last_offset();
+        dlpart.range.max_offset = manifest.get_last_offset();
+    }
     co_return dlpart;
 }
 
@@ -581,12 +596,22 @@ partition_downloader::download_segment_file(
         min_offset = stream_stats.min_offset;
         max_offset = stream_stats.max_offset;
 
-        vlog(
-          _ctxlog.debug,
-          "Log segment downloaded. {} bytes expected, {} bytes after "
-          "pre-processing.",
-          len,
-          stream_stats.size_bytes);
+        if (stream_stats.size_bytes == 0) {
+            vlog(
+              _ctxlog.debug,
+              "Log segment downloaded empty. Original size: {}.",
+              len);
+            // The segment is empty after filtering
+            co_await ss::remove_file(localpath.native());
+        } else {
+            vlog(
+              _ctxlog.debug,
+              "Log segment downloaded. {} bytes expected, {} bytes after "
+              "pre-processing.",
+              len,
+              stream_stats.size_bytes);
+        }
+
         co_return stream_stats.size_bytes;
     };
 
