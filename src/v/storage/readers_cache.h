@@ -94,6 +94,7 @@ public:
     ~readers_cache();
 
 private:
+    friend struct readers_cache_test_fixture;
     struct entry;
     void touch(entry* e) {
         e->last_used = ss::lowres_clock::now();
