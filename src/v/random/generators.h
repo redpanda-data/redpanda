@@ -74,6 +74,13 @@ const T& random_choice(const std::vector<T>& elements) {
 }
 
 template<typename T>
+T random_choice(std::initializer_list<T> choices) {
+    auto idx = get_int<size_t>(0, choices.size() - 1);
+    auto& choice = *(choices.begin() + idx);
+    return std::move(choice);
+}
+
+template<typename T>
 struct gen {};
 
 template<typename T>
