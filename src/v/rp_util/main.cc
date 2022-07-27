@@ -10,11 +10,42 @@
  */
 
 #include "boost/program_options.hpp"
+#include "compat/run.h"
 #include "redpanda/cluster_config_schema_util.h"
+#include "seastar/core/app-template.hh"
+#include "seastarx.h"
 #include "version.h"
 
+#include <filesystem>
 #include <iostream>
 
+namespace {
+int corpus_write(char** argv, std::filesystem::path dir) {
+    seastar::app_template app;
+    try {
+        return app.run(1, argv, [dir = std::move(dir)]() -> ss::future<int> {
+            co_await compat::write_corpus(dir);
+            co_return 0;
+        });
+    } catch (...) {
+        std::cerr << std::current_exception() << "\n";
+        return 1;
+    }
+}
+
+int corpus_check(char** argv, std::filesystem::path path) {
+    seastar::app_template app;
+    try {
+        return app.run(1, argv, [path = std::move(path)]() -> ss::future<int> {
+            co_await compat::check_type(path);
+            co_return 0;
+        });
+    } catch (...) {
+        std::cerr << std::current_exception() << "\n";
+        return 1;
+    }
+}
+} // namespace
 
 /**
  * This binary is meant to host developer friendly utilities related to core.
@@ -33,6 +64,8 @@ int main(int ac, char* av[]) {
     desc.add_options()
       ("help", "Allowed options")
       ("config_schema_json", "Generates JSON schema for cluster configuration")
+      ("corpus_write", po::value<std::filesystem::path>(), "Writes data structure corpus")
+      ("corpus_check", po::value<std::filesystem::path>(), "Check a corpus test case")
       ("version", "Redpanda core version for this utility");
     // clang-format on
 
@@ -47,6 +80,11 @@ int main(int ac, char* av[]) {
                   << "\n";
     } else if (vm.count("version")) {
         std::cout << redpanda_version() << "\n";
+    } else if (vm.count("corpus_write")) {
+        return corpus_write(av, vm["corpus_write"].as<std::filesystem::path>());
+    } else if (vm.count("corpus_check")) {
+        return corpus_check(av, vm["corpus_check"].as<std::filesystem::path>());
     }
+
     return 0;
 }
