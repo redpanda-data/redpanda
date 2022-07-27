@@ -607,6 +607,68 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
                             consumer_timeout_sec=45,
                             min_records=records)
 
+    @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_availability_when_one_node_down(self):
+        """
+        Test availability during partition reconfiguration.
+        
+        The test validates if a partition is available when one of its replicas 
+        is down during reconfiguration.
+        """
+        throughput, records, _ = self._get_scale_params()
+        partition_count = 1
+        self.start_redpanda(num_nodes=4)
+        admin = Admin(self.redpanda)
+        spec = TopicSpec(partition_count=partition_count, replication_factor=3)
+        self.client().create_topic(spec)
+        self.topic = spec.name
+        partition_id = random.randint(0, partition_count - 1)
+
+        self.start_producer(1, throughput=throughput)
+        self.start_consumer(1)
+        self.await_startup()
+
+        assignments = self._get_assignments(admin, self.topic, partition_id)
+        self.logger.info(
+            f"current assignment for {self.topic}/{partition_id}: {assignments}"
+        )
+        current_replicas = set()
+        for a in assignments:
+            current_replicas.add(a['node_id'])
+        # replace single replica
+        brokers = admin.get_brokers()
+        to_select = [
+            b for b in brokers if b['node_id'] not in current_replicas
+        ]
+        selected = random.choice(to_select)
+        # replace one of the assignments
+        assignments[0] = {'node_id': selected['node_id'], 'core': 0}
+        self.logger.info(
+            f"new assignment for {self.topic}/{partition_id}: {assignments}")
+
+        to_stop = assignments[1]['node_id']
+        # stop one of the not replaced nodes
+        self.logger.info(f"stopping node: {to_stop}")
+        self.redpanda.stop_node(self.redpanda.get_node(to_stop))
+
+        wait_until(lambda: self.redpanda.controller() != to_stop, 30, 1)
+        # ask partition to move
+        admin.set_partition_replicas(self.topic, partition_id, assignments)
+
+        def status_done():
+            info = admin.get_partitions(self.topic, partition_id)
+            self.logger.info(
+                f"current assignments for {self.topic}/{partition_id}: {info}")
+            converged = self._equal_assignments(info["replicas"], assignments)
+            return converged and info["status"] == "done"
+
+        # wait until redpanda reports complete
+        wait_until(status_done, timeout_sec=40, backoff_sec=2)
+
+        self.run_validation(enable_idempotence=False,
+                            consumer_timeout_sec=45,
+                            min_records=records)
+
 
 class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
     """

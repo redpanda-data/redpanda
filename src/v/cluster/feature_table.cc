@@ -32,6 +32,8 @@ std::string_view to_string_view(feature f) {
         return "serde_raft_0";
     case feature::license:
         return "license";
+    case feature::raft_improved_configuration:
+        return "raft_improved_configuration";
     case feature::test_alpha:
         return "__test_alpha";
     }

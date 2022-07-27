@@ -23,6 +23,7 @@
 #include "raft/group_configuration.h"
 #include "raft/logger.h"
 #include "raft/prevote_stm.h"
+#include "raft/raft_feature_table.h"
 #include "raft/recovery_stm.h"
 #include "raft/replicate_entries_stm.h"
 #include "raft/rpc_client_protocol.h"
@@ -94,7 +95,8 @@ consensus::consensus(
   consensus::leader_cb_t cb,
   storage::api& storage,
   std::optional<std::reference_wrapper<recovery_throttle>> recovery_throttle,
-  recovery_memory_quota& recovery_mem_quota)
+  recovery_memory_quota& recovery_mem_quota,
+  raft_feature_table& ft)
   : _self(nid, initial_cfg.revision_id())
   , _group(group)
   , _jit(std::move(jit))
@@ -124,6 +126,7 @@ consensus::consensus(
   , _storage(storage)
   , _recovery_throttle(recovery_throttle)
   , _recovery_mem_quota(recovery_mem_quota)
+  , _features(ft)
   , _snapshot_mgr(
       std::filesystem::path(_log.config().work_directory()),
       storage::simple_snapshot_manager::default_snapshot_filename,
@@ -163,8 +166,8 @@ void consensus::setup_metrics() {
          "configuration_change_in_progress",
          [this] {
              return is_elected_leader()
-                    && _configuration_manager.get_latest().type()
-                         == configuration_type::joint;
+                    && _configuration_manager.get_latest().get_state()
+                         != configuration_state::simple;
          },
          sm::description("Indicates if current raft group configuration is in "
                          "joint state i.e. configuration is being changed"),
@@ -920,8 +923,8 @@ ss::future<std::error_code> consensus::change_configuration(Func&& f) {
                 errc::configuration_change_in_progress);
           }
           auto latest_cfg = config();
-          // latest configuration is of joint type
-          if (latest_cfg.type() == configuration_type::joint) {
+          // can not change configuration if its type is different than simple
+          if (latest_cfg.get_state() != configuration_state::simple) {
               return ss::make_ready_future<std::error_code>(
                 errc::configuration_change_in_progress);
           }
@@ -985,17 +988,6 @@ ss::future<std::error_code> consensus::remove_members(
 }
 
 ss::future<std::error_code> consensus::replace_configuration(
-  std::vector<model::broker> new_brokers, model::revision_id new_revision) {
-    return change_configuration(
-      [new_brokers = std::move(new_brokers),
-       new_revision](group_configuration current) mutable {
-          current.replace(std::move(new_brokers), new_revision);
-          current.set_revision(new_revision);
-          return result<group_configuration>(std::move(current));
-      });
-}
-
-ss::future<std::error_code> consensus::replace_configuration(
   std::vector<raft::broker_revision> new_brokers,
   model::revision_id new_revision) {
     return change_configuration(
@@ -1013,7 +1005,7 @@ consensus::interrupt_configuration_change(model::revision_id revision, Func f) {
     auto u = co_await _op_lock.get_units();
     auto latest_cfg = config();
     // latest configuration is of joint type
-    if (latest_cfg.type() == configuration_type::simple) {
+    if (latest_cfg.get_state() == configuration_state::simple) {
         vlog(_ctxlog.info, "no configuration changes in progress");
         co_return errc::invalid_configuration_update;
     }
@@ -1062,7 +1054,7 @@ consensus::abort_configuration_change(model::revision_id revision) {
     auto u = co_await _op_lock.get_units();
     auto latest_cfg = config();
     // latest configuration must be of joint type
-    if (latest_cfg.type() == configuration_type::simple) {
+    if (latest_cfg.get_state() == configuration_state::simple) {
         vlog(_ctxlog.info, "no configuration changes in progress");
         co_return errc::invalid_configuration_update;
     }
@@ -2099,6 +2091,15 @@ ss::future<std::error_code> consensus::replicate_configuration(
     vlog(_ctxlog.debug, "Replicating group configuration {}", cfg);
     return ss::with_gate(
       _bg, [this, u = std::move(u), cfg = std::move(cfg)]() mutable {
+          if (unlikely(cfg.version() < group_configuration::version_t(4))) {
+              if (
+                _features.is_feature_active(
+                  raft_feature::improved_config_change)
+                && cfg.get_state() == configuration_state::simple) {
+                  vlog(_ctxlog.debug, "Upgrading configuration version");
+                  cfg.set_version(group_configuration::current_version);
+              }
+          }
           auto batches = details::serialize_configuration_as_batches(
             std::move(cfg));
           for (auto& b : batches) {
@@ -2389,35 +2390,39 @@ void consensus::maybe_update_leader_commit_idx() {
         vlog(_ctxlog.warn, "Error updating leader commit index", e);
     });
 }
-
+/**
+ * The `maybe_commit_configuration` method is the place where configuration
+ * state transition is decided and executed
+ */
 ss::future<> consensus::maybe_commit_configuration(ss::semaphore_units<> u) {
     // we are not a leader, do nothing
     if (_vstate != vote_state::leader) {
-        return ss::now();
+        co_return;
     }
 
     auto latest_offset = _configuration_manager.get_latest_offset();
     // no configurations were committed
     if (latest_offset > _commit_index) {
-        return ss::now();
+        co_return;
     }
 
     auto latest_cfg = _configuration_manager.get_latest();
-    /**
-     * simple configuration, there is nothing to do
-     */
-    if (latest_cfg.type() == configuration_type::simple) {
-        return ss::now();
-    }
-    /**
-     * at this point joint configuration is committed, and all added learners
-     * were promoted to voter
-     */
-    if (latest_cfg.current_config().learners.empty()) {
-        /*
-         * In the first step we demote all removed voters to learners
-         */
 
+    /**
+     * current config still contains learners, do nothing
+     */
+    if (unlikely(!latest_cfg.current_config().learners.empty())) {
+        co_return;
+    }
+    switch (latest_cfg.get_state()) {
+    case configuration_state::simple:
+        co_return;
+    case configuration_state::transitional:
+        vlog(
+          _ctxlog.info, "finishing transition of configuration {}", latest_cfg);
+        latest_cfg.finish_configuration_transition();
+        break;
+    case configuration_state::joint:
         if (latest_cfg.maybe_demote_removed_voters()) {
             vlog(
               _ctxlog.info,
@@ -2425,8 +2430,8 @@ ss::future<> consensus::maybe_commit_configuration(ss::semaphore_units<> u) {
               latest_cfg);
         } else {
             /**
-             * When all old voters were demoted, as a leader, we replicate new
-             * configuration
+             * When all old voters were demoted, as a leader, we replicate
+             * new configuration
              */
             latest_cfg.discard_old_config();
             vlog(
@@ -2434,29 +2439,28 @@ ss::future<> consensus::maybe_commit_configuration(ss::semaphore_units<> u) {
               "leaving joint consensus, new simple configuration {}",
               latest_cfg);
         }
-
-        auto contains_current = latest_cfg.contains(_self);
-        return replicate_configuration(std::move(u), std::move(latest_cfg))
-          .then([this, contains_current](std::error_code ec) {
-              if (ec) {
-                  if (ec != errc::shutting_down) {
-                      vlog(
-                        _ctxlog.error,
-                        "unable to replicate updated configuration: {}",
-                        ec.message());
-                  }
-                  return;
-              }
-              // leader was removed, step down.
-              if (!contains_current) {
-                  vlog(
-                    _ctxlog.trace,
-                    "current node is not longer group member, stepping down");
-                  do_step_down("not_longer_member");
-              }
-          });
     }
-    return ss::now();
+
+    auto contains_current = latest_cfg.contains(_self);
+    auto ec = co_await replicate_configuration(
+      std::move(u), std::move(latest_cfg));
+
+    if (ec) {
+        if (ec != errc::shutting_down) {
+            vlog(
+              _ctxlog.error,
+              "unable to replicate updated configuration: {}",
+              ec.message());
+        }
+        co_return;
+    }
+    // leader was removed, step down.
+    if (!contains_current) {
+        vlog(
+          _ctxlog.trace,
+          "current node is not longer group member, stepping down");
+        do_step_down("not_longer_member");
+    }
 }
 
 ss::future<>
@@ -2837,7 +2841,7 @@ consensus::do_transfer_leadership(std::optional<model::node_id> target) {
     auto conf = _configuration_manager.get_latest();
     if (
       _configuration_manager.get_latest_offset() > last_visible_index()
-      || conf.type() == configuration_type::joint) {
+      || conf.get_state() == configuration_state::joint) {
         vlog(
           _ctxlog.warn,
           "Cannot transfer leadership during configuration change");

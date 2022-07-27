@@ -26,6 +26,7 @@
 #include "raft/offset_translator.h"
 #include "raft/prevote_stm.h"
 #include "raft/probe.h"
+#include "raft/raft_feature_table.h"
 #include "raft/recovery_memory_quota.h"
 #include "raft/recovery_throttle.h"
 #include "raft/replicate_batcher.h"
@@ -93,7 +94,8 @@ public:
       leader_cb_t,
       storage::api&,
       std::optional<std::reference_wrapper<recovery_throttle>>,
-      recovery_memory_quota&);
+      recovery_memory_quota&,
+      raft_feature_table&);
 
     /// Initial call. Allow for internal state recovery
     ss::future<> start();
@@ -120,9 +122,7 @@ public:
     // Removes members from group
     ss::future<std::error_code>
       remove_members(std::vector<model::node_id>, model::revision_id);
-    // Replace configuration of raft group with given set of nodes
-    ss::future<std::error_code>
-      replace_configuration(std::vector<model::broker>, model::revision_id);
+
     /**
      * Replace configuration, uses revision provided with brokers
      */
@@ -634,6 +634,7 @@ private:
     storage::api& _storage;
     std::optional<std::reference_wrapper<recovery_throttle>> _recovery_throttle;
     recovery_memory_quota& _recovery_mem_quota;
+    raft_feature_table& _features;
     storage::simple_snapshot_manager _snapshot_mgr;
     std::optional<storage::snapshot_writer> _snapshot_writer;
     model::offset _last_snapshot_index;

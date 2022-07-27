@@ -269,12 +269,14 @@ private:
       model::ntp,
       const partition_assignment&,
       const std::vector<model::broker_shard>&,
+      const topic_table_delta::revision_map_t&,
       model::revision_id);
 
     ss::future<std::error_code> execute_reconfiguration(
       topic_table_delta::op_type,
       const model::ntp&,
       const std::vector<model::broker_shard>&,
+      const topic_table_delta::revision_map_t&,
       model::revision_id);
 
     ss::future<> finish_partition_update(
@@ -302,15 +304,18 @@ private:
     ss::future<std::error_code> update_partition_replica_set(
       const model::ntp&,
       const std::vector<model::broker_shard>&,
+      const topic_table_delta::revision_map_t&,
       model::revision_id);
     ss::future<std::error_code> cancel_replica_set_update(
       const model::ntp&,
       const std::vector<model::broker_shard>&,
+      const topic_table_delta::revision_map_t&,
       model::revision_id);
 
     ss::future<std::error_code> force_abort_replica_set_update(
       const model::ntp&,
       const std::vector<model::broker_shard>&,
+      const topic_table_delta::revision_map_t&,
       model::revision_id);
 
     ss::future<std::error_code>

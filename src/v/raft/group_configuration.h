@@ -12,14 +12,10 @@
 #pragma once
 #include "model/metadata.h"
 #include "reflection/adl.h"
+#include "serde/envelope.h"
 #include "utils/to_string.h"
 
 #include <boost/range/join.hpp>
-
-#include <algorithm>
-#include <numeric>
-#include <optional>
-#include <type_traits>
 
 namespace raft {
 
@@ -56,26 +52,76 @@ private:
     model::node_id _node_id;
     model::revision_id _revision;
 };
+/**
+ * Enum describing configuration state.
+ *
+ * Possible state transitions:
+ *
+ *                                ┌────────────┐
+ *                                │            │
+ *                ┌──────────────►│   simple   │◄─────┐
+ *                │               │            │      │
+ *                │        ┌──────┴─────┬──────┘      │
+ *                │        │            │             │
+ *                │        │            │nodes to add │ nothing to remove
+ *                │        │            ▼             │ add finished
+ *                │        │     ┌──────────────┐     │
+ *                │        │     │              │     │
+ *                │  remove│     │ transitional ├─────┘
+ *       remove   │  only  │     │              │
+ *       finished │        │     └──────┬───────┘
+ *                │        │            │
+ *                │        │            │ nodes to remove
+ *                │        │            ▼
+ *                │        │      ┌───────────┐
+ *                │        │      │           │
+ *                │        └─────►│   joint   │
+ *                │               │           │
+ *                │               └─────┬─────┘
+ *                │                     │
+ *                │                     │
+ *                └─────────────────────┘
+ */
+enum class configuration_state : uint8_t { simple, transitional, joint };
 
-enum class configuration_type : uint8_t { simple, joint };
-
-std::ostream& operator<<(std::ostream& o, configuration_type t);
+std::ostream& operator<<(std::ostream& o, configuration_state t);
 
 struct group_nodes {
     std::vector<vnode> voters;
     std::vector<vnode> learners;
 
-    bool contains(vnode id) const;
+    bool contains(const vnode&) const;
 
     std::optional<vnode> find(model::node_id) const;
 
     friend std::ostream& operator<<(std::ostream&, const group_nodes&);
-    friend bool operator==(const group_nodes&, const group_nodes&);
+    friend bool operator==(const group_nodes&, const group_nodes&) = default;
+};
+
+struct configuration_update
+  : serde::envelope<configuration_update, serde::version<0>> {
+    std::vector<vnode> replicas_to_add;
+    std::vector<vnode> replicas_to_remove;
+
+    bool is_to_add(const vnode&) const;
+    bool is_to_remove(const vnode&) const;
+
+    friend bool
+    operator==(const configuration_update&, const configuration_update&)
+      = default;
+
+    auto serde_fields() {
+        return std::tie(replicas_to_add, replicas_to_remove);
+    }
+
+    friend std::ostream& operator<<(std::ostream&, const configuration_update&);
 };
 
 class group_configuration final {
 public:
-    static constexpr int8_t current_version = 3;
+    using version_t
+      = named_type<int8_t, struct raft_group_configuration_version>;
+    static constexpr version_t current_version{4};
     /**
      * creates a configuration where all provided brokers are current
      * configuration voters
@@ -90,7 +136,9 @@ public:
       std::vector<model::broker>,
       group_nodes,
       model::revision_id,
-      std::optional<group_nodes> = std::nullopt);
+      std::optional<configuration_update>,
+      std::optional<group_nodes> = std::nullopt,
+      version_t = current_version);
 
     group_configuration(const group_configuration&) = default;
     group_configuration(group_configuration&&) = default;
@@ -98,7 +146,7 @@ public:
     group_configuration& operator=(group_configuration&&) = default;
     ~group_configuration() = default;
 
-    bool has_voters();
+    bool has_voters() const;
 
     std::optional<model::broker> find_broker(model::node_id id) const;
     bool contains_broker(model::node_id id) const;
@@ -122,7 +170,6 @@ public:
      */
     void add(std::vector<model::broker>, model::revision_id);
     void remove(const std::vector<model::node_id>&);
-    void replace(std::vector<model::broker>, model::revision_id);
     void replace(std::vector<broker_revision>, model::revision_id);
 
     /**
@@ -160,11 +207,13 @@ public:
      */
     bool maybe_demote_removed_voters();
 
+    void finish_configuration_transition();
+
     const group_nodes& current_config() const { return _current; }
     const std::optional<group_nodes>& old_config() const { return _old; }
     const std::vector<model::broker>& brokers() const { return _brokers; }
 
-    configuration_type type() const;
+    configuration_state get_state() const;
 
     size_t unique_voter_count() const { return unique_voter_ids().size(); }
 
@@ -214,7 +263,7 @@ public:
     requires std::predicate<Predicate, vnode>
     bool majority(Predicate&& f) const;
 
-    int8_t version() const { return _version; }
+    version_t version() const { return _version; }
 
     void promote_to_voter(vnode id);
     model::revision_id revision_id() const { return _revision; }
@@ -227,18 +276,75 @@ public:
      */
     void maybe_set_initial_revision(model::revision_id r);
 
+    const std::optional<configuration_update>&
+    get_configuration_update() const {
+        return _configuration_update;
+    }
+
+    void set_version(version_t v) { _version = v; }
+
     friend bool
-    operator==(const group_configuration&, const group_configuration&);
+    operator==(const group_configuration&, const group_configuration&)
+      = default;
 
     friend std::ostream& operator<<(std::ostream&, const group_configuration&);
 
+    struct configuration_change_strategy {
+        /**
+         * Configuration manipulation API. Each of the operation updates
+         * configuration revision with provided parameter.
+         */
+        // add
+        virtual void add(
+          std::vector<model::broker> to_add,
+          model::revision_id new_cfg_revision)
+          = 0;
+        virtual void remove(const std::vector<model::node_id>& to_remove) = 0;
+        virtual void replace(
+          std::vector<broker_revision> new_replica_set,
+          model::revision_id new_cfg_revision)
+          = 0;
+
+        /**
+         * Discards the old configuration, after this operation joint
+         * configuration become simple
+         */
+        virtual void discard_old_config() = 0;
+
+        /**
+         * Forcefully abort changing configuration. If current configuration in
+         * in joint state it drops the new configuration part and allow raft to
+         * operate with old quorum
+         *
+         * NOTE: may lead to data loss in some situations use only for cluster
+         * recovery from critical failures
+         */
+        virtual void abort_configuration_change(model::revision_id) = 0;
+
+        /**
+         * Reverts configuration change, the configuration is still in joint
+         * state but the direction of change is being changed
+         *
+         */
+        virtual void cancel_configuration_change(model::revision_id) = 0;
+
+        virtual void finish_configuration_transition() = 0;
+
+        virtual ~configuration_change_strategy() = default;
+    };
+
 private:
+    friend class configuration_change_strategy_v3;
+
+    friend class configuration_change_strategy_v4;
     std::vector<vnode> unique_voter_ids() const;
     std::vector<vnode> unique_learner_ids() const;
+    std::unique_ptr<configuration_change_strategy> make_change_strategy();
 
-    uint8_t _version = current_version;
+    version_t _version = current_version;
     std::vector<model::broker> _brokers;
     group_nodes _current;
+    std::optional<configuration_update> _configuration_update;
     std::optional<group_nodes> _old;
     model::revision_id _revision;
 };
@@ -370,5 +476,10 @@ template<>
 struct adl<raft::group_configuration> {
     void to(iobuf&, raft::group_configuration);
     raft::group_configuration from(iobuf_parser&);
+};
+template<>
+struct adl<raft::configuration_update> {
+    void to(iobuf&, raft::configuration_update);
+    raft::configuration_update from(iobuf_parser&);
 };
 } // namespace reflection
