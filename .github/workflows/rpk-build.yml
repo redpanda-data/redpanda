@@ -101,7 +101,7 @@ jobs:
 
       - name: Install gon for code signing and app notarization
         run: |
-          curl -LO https://github.com/mitchellh/gon/releases/download/v0.2.3/gon_macos.zip
+          curl -LO https://github.com/mitchellh/gon/releases/download/v0.2.5/gon_macos.zip
           unzip gon_macos.zip
           rm gon_macos.zip
 
