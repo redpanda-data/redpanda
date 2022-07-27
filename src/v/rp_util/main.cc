@@ -15,7 +15,6 @@
 
 #include <iostream>
 
-namespace po = boost::program_options;
 
 /**
  * This binary is meant to host developer friendly utilities related to core.
@@ -27,10 +26,16 @@ namespace po = boost::program_options;
  * - This tool provides _no backward compatibility_ of any sorts.
  */
 int main(int ac, char* av[]) {
+    namespace po = boost::program_options;
     po::options_description desc("Allowed options");
-    desc.add_options()("help", "Allowed options")(
-      "config_schema_json", "Generates JSON schema for cluster configuration")(
-      "version", "Redpanda core version for this utility");
+
+    // clang-format off
+    desc.add_options()
+      ("help", "Allowed options")
+      ("config_schema_json", "Generates JSON schema for cluster configuration")
+      ("version", "Redpanda core version for this utility");
+    // clang-format on
+
     po::variables_map vm;
     po::store(po::parse_command_line(ac, av, desc), vm);
     po::notify(vm);
