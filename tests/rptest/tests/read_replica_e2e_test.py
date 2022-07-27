@@ -86,9 +86,10 @@ class TestReadReplicaService(EndToEndTest):
         else:
             return True
 
-    @cluster(num_nodes=6)
-    @matrix(partition_count=[10])
-    def test_produce_is_forbidden(self, partition_count: int) -> None:
+    def _setup_read_replica(self, num_messages=0, partition_count=3) -> None:
+        self.logger.info(f"Setup read replica \"{self.topic_name}\", : "
+                         f"{num_messages} msg, {partition_count} "
+                         "partitions.")
         # Create original topic
         self.start_redpanda(3, si_settings=self.si_settings)
         spec = TopicSpec(name=self.topic_name,
@@ -96,7 +97,16 @@ class TestReadReplicaService(EndToEndTest):
                          replication_factor=3)
 
         DefaultClient(self.redpanda).create_topic(spec)
-        assert self.redpanda and self.redpanda.s3_client
+
+        if num_messages > 0:
+            self.start_producer()
+            wait_until(lambda: self.producer.num_acked > num_messages,
+                           timeout_sec=30,
+                           err_msg="Producer failed to produce messages for %ds." %\
+                           30)
+            self.logger.info("Stopping producer after writing up to offsets %s" %\
+                            str(self.producer.last_acked_offsets))
+            self.producer.stop()
 
         # Make original topic upload data to S3
         rpk = RpkTool(self.redpanda)
@@ -111,6 +121,11 @@ class TestReadReplicaService(EndToEndTest):
             err_msg="Could not create read replica topic. Most likely " +
             "because topic manifest is not in S3.")
 
+    @cluster(num_nodes=6)
+    @matrix(partition_count=[10])
+    def test_produce_is_forbidden(self, partition_count: int) -> None:
+
+        self._setup_read_replica(partition_count=partition_count)
         second_rpk = RpkTool(self.second_cluster)
         with expect_exception(
                 RpkException, lambda e:
@@ -122,37 +137,9 @@ class TestReadReplicaService(EndToEndTest):
     @matrix(partition_count=[10], min_records=[10000])
     def test_simple_end_to_end(self, partition_count: int,
                                min_records: int) -> None:
-        # Create original topic, produce data to it
-        self.start_redpanda(3, si_settings=self.si_settings)
-        spec = TopicSpec(name=self.topic_name,
-                         partition_count=partition_count,
-                         replication_factor=3)
 
-        DefaultClient(self.redpanda).create_topic(spec)
-        assert self.redpanda and self.redpanda.s3_client  # drops optional types
-
-        self.start_producer()
-        wait_until(lambda: self.producer.num_acked > min_records,
-                       timeout_sec=30,
-                       err_msg="Producer failed to produce messages for %ds." %\
-                       30)
-        self.logger.info("Stopping producer after writing up to offsets %s" %\
-                        str(self.producer.last_acked_offsets))
-        self.producer.stop()
-
-        # Make original topic upload data to S3
-        rpk = RpkTool(self.redpanda)
-        rpk.alter_topic_config(spec.name, 'redpanda.remote.write', 'true')
-
-        # Start second cluster and create read replica topic
-        self.start_second_cluster()
-        wait_until(
-            self.create_read_replica_topic_success,
-            timeout_sec=300,
-            backoff_sec=5,
-            err_msg=
-            f"Could not create read replica topic. Most likely because topic manifest is not in S3"
-        )
+        self._setup_read_replica(num_messages=min_records,
+                                 partition_count=partition_count)
 
         # Consume from read replica topic and validate
         self.start_consumer()
