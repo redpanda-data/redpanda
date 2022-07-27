@@ -174,6 +174,8 @@ private:
         co_await dispose_entries(std::move(to_evict));
     }
 
+    bool intersects_with_locked_range(model::offset, model::offset) const;
+
     model::ntp _ntp;
     std::chrono::milliseconds _eviction_timeout;
     ss::gate _gate;
