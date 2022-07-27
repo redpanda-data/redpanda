@@ -13,14 +13,11 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"os"
 	"strconv"
 	"strings"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/twmb/franz-go/pkg/kadm"
@@ -31,6 +28,7 @@ import (
 type ScrapeConfig struct {
 	JobName       string         `yaml:"job_name"`
 	StaticConfigs []StaticConfig `yaml:"static_configs"`
+	MetricsPath   string         `yaml:"metrics_path"`
 }
 
 type StaticConfig struct {
@@ -43,6 +41,7 @@ func NewPrometheusConfigCmd(fs afero.Fs) *cobra.Command {
 		nodeAddrs  []string
 		seedAddr   string
 		configFile string
+		intMetrics bool
 	)
 	command := &cobra.Command{
 		Use:   "prometheus-config",
@@ -58,12 +57,6 @@ directly. Otherwise, 'rpk generate prometheus-conf' will read the redpanda
 config file and use the node IP configured there. --config may be passed to
 specify an arbitrary config file.`,
 		Run: func(cmd *cobra.Command, args []string) {
-			log.SetFormatter(cli.NewNoopFormatter())
-			// The logger's default stream is stderr, which prevents piping to files
-			// from working without redirecting them with '2>&1'.
-			if log.StandardLogger().Out == os.Stderr {
-				log.SetOutput(os.Stdout)
-			}
 			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
@@ -73,9 +66,10 @@ specify an arbitrary config file.`,
 				jobName,
 				nodeAddrs,
 				seedAddr,
+				intMetrics,
 			)
 			out.MaybeDieErr(err)
-			log.Infof("\n%s", string(yml))
+			fmt.Println(string(yml))
 		},
 	}
 	command.Flags().StringVar(
@@ -100,6 +94,7 @@ specify an arbitrary config file.`,
 		"config",
 		"",
 		"The path to the redpanda config file")
+	command.Flags().BoolVar(&intMetrics, "internal-metrics", false, "Include scrape config for internal metrics (/metrics)")
 	return command
 }
 
@@ -108,9 +103,10 @@ func executePrometheusConfig(
 	jobName string,
 	nodeAddrs []string,
 	seedAddr string,
+	intMetrics bool,
 ) ([]byte, error) {
 	if len(nodeAddrs) > 0 {
-		return renderConfig(jobName, nodeAddrs)
+		return renderConfig(jobName, nodeAddrs, intMetrics)
 	}
 	if seedAddr != "" {
 		host, port, err := splitAddress(seedAddr)
@@ -124,7 +120,7 @@ func executePrometheusConfig(
 		if err != nil {
 			return []byte(""), err
 		}
-		return renderConfig(jobName, hosts)
+		return renderConfig(jobName, hosts, intMetrics)
 	}
 	hosts, err := discoverHosts(
 		cfg.Redpanda.KafkaAPI[0].Address,
@@ -133,15 +129,23 @@ func executePrometheusConfig(
 	if err != nil {
 		return []byte(""), err
 	}
-	return renderConfig(jobName, hosts)
+	return renderConfig(jobName, hosts, intMetrics)
 }
 
-func renderConfig(jobName string, targets []string) ([]byte, error) {
-	scrapeConfig := ScrapeConfig{
+func renderConfig(jobName string, targets []string, intMetrics bool) ([]byte, error) {
+	scrapeConfigs := []ScrapeConfig{{
 		JobName:       jobName,
 		StaticConfigs: []StaticConfig{{Targets: targets}},
+		MetricsPath:   "/public_metrics",
+	}}
+	if intMetrics {
+		scrapeConfigs = append(scrapeConfigs, ScrapeConfig{
+			JobName:       jobName,
+			StaticConfigs: []StaticConfig{{Targets: targets}},
+			MetricsPath:   "/metrics",
+		})
 	}
-	return yaml.Marshal([]ScrapeConfig{scrapeConfig})
+	return yaml.Marshal(scrapeConfigs)
 }
 
 func discoverHosts(url string, port int) ([]string, error) {
