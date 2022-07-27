@@ -646,6 +646,17 @@ struct timeout_now_reply
       = default;
 
     auto serde_fields() { return std::tie(target_node_id, term, result); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const timeout_now_reply& r) {
+        fmt::print(
+          o,
+          "target_node_id {} term {} result {}",
+          r.target_node_id,
+          r.term,
+          static_cast<std::underlying_type_t<status>>(r.result));
+        return o;
+    }
 };
 
 // if not target is specified then the most up-to-date node will be selected

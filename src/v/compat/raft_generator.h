@@ -62,4 +62,32 @@ struct instance_generator<raft::timeout_now_request> {
     }
 };
 
+template<>
+struct instance_generator<raft::timeout_now_reply> {
+    static raft::timeout_now_reply random() {
+        return {
+          .target_node_id = instance_generator<raft::vnode>::random(),
+          .term = tests::random_named_int<model::term_id>(),
+          .result = random_generators::random_choice(
+            {raft::timeout_now_reply::status::success,
+             raft::timeout_now_reply::status::failure}),
+        };
+    }
+
+    static std::vector<raft::timeout_now_reply> limits() {
+        return {
+          {
+            .target_node_id = instance_generator<raft::vnode>::random(),
+            .term = model::term_id::min(),
+            .result = raft::timeout_now_reply::status::success,
+          },
+          {
+            .target_node_id = instance_generator<raft::vnode>::random(),
+            .term = model::term_id::max(),
+            .result = raft::timeout_now_reply::status::failure,
+          },
+        };
+    }
+};
+
 } // namespace compat
