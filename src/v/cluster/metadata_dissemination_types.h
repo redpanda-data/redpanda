@@ -94,7 +94,17 @@ struct update_leadership_request
     explicit update_leadership_request(std::vector<ntp_leader> leaders)
       : leaders(std::move(leaders)) {}
 
+    friend bool operator==(
+      const update_leadership_request&, const update_leadership_request&)
+      = default;
+
     auto serde_fields() { return std::tie(leaders); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const update_leadership_request& r) {
+        fmt::print(o, "leaders {}", r.leaders);
+        return o;
+    }
 };
 
 struct update_leadership_request_v2

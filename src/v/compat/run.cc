@@ -11,6 +11,7 @@
 #include "compat/run.h"
 
 #include "compat/check.h"
+#include "compat/metadata_dissemination_compat.h"
 #include "compat/raft_compat.h"
 #include "json/document.h"
 #include "json/prettywriter.h"
@@ -26,8 +27,10 @@ namespace compat {
 template<typename... Types>
 struct type_list {};
 
-using compat_checks
-  = type_list<raft::timeout_now_request, raft::timeout_now_reply>;
+using compat_checks = type_list<
+  raft::timeout_now_request,
+  raft::timeout_now_reply,
+  cluster::update_leadership_request>;
 
 struct compat_error final : public std::runtime_error {
 public:
