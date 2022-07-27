@@ -25,6 +25,7 @@
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/queue.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/core/sleep.hh>
 #include <seastar/core/temporary_buffer.hh>
 
 #include <chrono>
@@ -529,6 +530,7 @@ remote_partition::aborted_transactions(offset_range offsets) {
                 offsets.begin_rp, offsets.end_rp);
           });
         std::copy(tx.begin(), tx.end(), std::back_inserter(result));
+        co_await ss::sleep(ss::lowres_clock::duration(10s));
     }
     // Adjacent segments might return the same transaction record.
     // In this case we will have a duplicate. The duplicates will always
