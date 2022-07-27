@@ -30,6 +30,7 @@ ss::future<> health_monitor_frontend::start() {
 }
 
 ss::future<> health_monitor_frontend::stop() {
+    vlog(clusterlog.info, "Stopping Health Monitor Frontend...");
     if (ss::this_shard_id() == refresher_shard) {
         if (_refresh_timer.armed()) {
             _refresh_timer.cancel();

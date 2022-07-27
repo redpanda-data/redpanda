@@ -127,6 +127,7 @@ ss::future<> metrics_reporter::start() {
 }
 
 ss::future<> metrics_reporter::stop() {
+    vlog(clusterlog.info, "Stopping Metrics Reporter...");
     _tick_timer.cancel();
     co_await _gate.close();
 }

@@ -192,6 +192,7 @@ ss::future<> leader_balancer::start() {
 }
 
 ss::future<> leader_balancer::stop() {
+    vlog(clusterlog.info, "Stopping Leader Balancer...");
     _leaders.unregister_leadership_change_notification(
       _raft0->ntp(), _leader_notify_handle);
     _members.unregister_maintenance_state_change_notification(

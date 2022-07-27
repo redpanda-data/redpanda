@@ -39,9 +39,6 @@ public:
       ss::sharded<feature_table>&,
       ss::sharded<ss::abort_source>&);
 
-    ss::future<> start();
-    ss::future<> stop();
-
     ss::future<std::error_code> decommission_node(model::node_id);
     ss::future<std::error_code> recommission_node(model::node_id);
     ss::future<std::error_code> finish_node_reallocations(model::node_id);

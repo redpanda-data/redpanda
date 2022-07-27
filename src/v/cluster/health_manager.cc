@@ -53,6 +53,7 @@ ss::future<> health_manager::start() {
 }
 
 ss::future<> health_manager::stop() {
+    vlog(clusterlog.info, "Stopping Health Manager...");
     _timer.cancel();
     return _gate.close();
 }
