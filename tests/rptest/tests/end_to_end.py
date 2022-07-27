@@ -19,11 +19,14 @@
 # - Imported annotate_missing_msgs helper from kafka test suite
 
 from collections import namedtuple
+from typing import Optional
 import os
 from typing import Optional
 from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
 from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda_installer import InstallOptions
+from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.clients.default import DefaultClient
 from rptest.services.verifiable_consumer import VerifiableConsumer
 from rptest.services.verifiable_producer import VerifiableProducer, is_int_with_prefix
@@ -74,7 +77,8 @@ class EndToEndTest(Test):
     def start_redpanda(self,
                        num_nodes=1,
                        extra_rp_conf=None,
-                       si_settings=None):
+                       si_settings=None,
+                       install_opts: Optional[InstallOptions] = None):
         self.si_settings = si_settings
         if self.si_settings:
             self.si_settings.load_context(self.logger, self.test_context)
@@ -90,7 +94,30 @@ class EndToEndTest(Test):
                                         extra_rp_conf=self._extra_rp_conf,
                                         extra_node_conf=self._extra_node_conf,
                                         si_settings=self.si_settings)
+        version_to_install = None
+        if install_opts:
+            if install_opts.install_previous_version:
+                version_to_install = \
+                    self.redpanda._installer.highest_from_prior_feature_version(RedpandaInstaller.HEAD)
+            if install_opts.version:
+                version_to_install = install_opts.version
+
+        if version_to_install:
+            self.redpanda._installer.install(self.redpanda.nodes,
+                                             version_to_install)
         self.redpanda.start()
+        if version_to_install and install_opts.num_to_upgrade > 0:
+            # Perform the upgrade rather than starting each node on the
+            # appropriate version. Redpanda may not start up if starting a new
+            # cluster with mixed-versions.
+            nodes_to_upgrade = [
+                self.redpanda.get_node(i + 1)
+                for i in range(install_opts.num_to_upgrade)
+            ]
+            self.redpanda._installer.install(nodes_to_upgrade,
+                                             RedpandaInstaller.HEAD)
+            self.redpanda.restart_nodes(nodes_to_upgrade)
+
         self._client = DefaultClient(self.redpanda)
 
     def client(self):
@@ -155,16 +182,25 @@ class EndToEndTest(Test):
                    err_msg="Consumer failed to consume up to offsets %s after waiting %ds, last consumed offsets: %s." %\
                    (str(last_acked_offsets), timeout_sec, list(self.last_consumed_offsets)))
 
+    def await_num_produced(self, min_records, timeout_sec=30):
+        wait_until(lambda: self.producer.num_acked > min_records,
+                   timeout_sec=timeout_sec,
+                   err_msg="Producer failed to produce messages for %ds." %\
+                   timeout_sec)
+
+    def await_num_consumed(self, min_records, timeout_sec=30):
+        wait_until(lambda: self.consumer.total_consumed() >= min_records,
+                   timeout_sec=timeout_sec,
+                   err_msg="Timed out after %ds while awaiting record consumption of %d records" %\
+                   (timeout_sec, min_records))
+
     def _collect_all_logs(self):
         for s in self.test_context.services:
             self.mark_for_collect(s)
 
     def await_startup(self, min_records=5, timeout_sec=30):
         try:
-            wait_until(lambda: self.consumer.total_consumed() >= min_records,
-                       timeout_sec=timeout_sec,
-                       err_msg="Timed out after %ds while awaiting initial record delivery of %d records" %\
-                       (timeout_sec, min_records))
+            self.await_num_consumed(min_records, timeout_sec)
         except BaseException:
             self._collect_all_logs()
             raise
@@ -175,10 +211,7 @@ class EndToEndTest(Test):
                        consumer_timeout_sec=30,
                        enable_idempotence=False):
         try:
-            wait_until(lambda: self.producer.num_acked > min_records,
-                       timeout_sec=producer_timeout_sec,
-                       err_msg="Producer failed to produce messages for %ds." %\
-                       producer_timeout_sec)
+            self.await_num_produced(min_records, producer_timeout_sec)
 
             self.logger.info("Stopping producer after writing up to offsets %s" %\
                          str(self.producer.last_acked_offsets))

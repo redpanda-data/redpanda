@@ -35,6 +35,7 @@ from ducktape.errors import TimeoutError
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.services.admin import Admin
 from rptest.services.redpanda_installer import RedpandaInstaller
+from rptest.services.rolling_restarter import RollingRestarter
 from rptest.services.storage import ClusterStorage, NodeStorage
 from rptest.services.utils import BadLogLines, NodeCrash
 from rptest.clients.python_librdkafka import PythonLibrdkafka
@@ -1185,7 +1186,6 @@ class RedpandaService(Service):
 
     def stop_node(self, node, timeout=None):
         pids = self.pids(node)
-
         for pid in pids:
             node.account.signal(pid, signal.SIGTERM, allow_fail=False)
 
@@ -1389,6 +1389,18 @@ class RedpandaService(Service):
             self.stop_node(node, timeout=stop_timeout)
         for node in nodes:
             self.start_node(node, override_cfg_params, timeout=start_timeout)
+
+    def rolling_restart_nodes(self,
+                              nodes,
+                              override_cfg_params=None,
+                              start_timeout=None,
+                              stop_timeout=None):
+        nodes = [nodes] if isinstance(nodes, ClusterNode) else nodes
+        restarter = RollingRestarter(self)
+        restarter.restart_nodes(nodes,
+                                override_cfg_params=override_cfg_params,
+                                start_timeout=start_timeout,
+                                stop_timeout=stop_timeout)
 
     def registered(self, node):
         """
@@ -1743,8 +1755,9 @@ class RedpandaService(Service):
             # the same binaries.
             return
 
+        # Assume that if 'CI' isn't explicitly set to false, we do want to keep
+        # the executable.
         if os.environ.get('CI', None) == 'false':
-            # We are on a developer workstation
             self.logger.info("Skipping saving executable, not in CI")
             return
 
@@ -1756,7 +1769,7 @@ class RedpandaService(Service):
         # still have the original binaries available.
         node = self.nodes[0]
         if self._installer._started:
-            head_root_path = self._installer.path_for_version(
+            head_root_path = self._installer.root_for_version(
                 RedpandaInstaller.HEAD)
             binary = f"{head_root_path}/libexec/redpanda"
         else:

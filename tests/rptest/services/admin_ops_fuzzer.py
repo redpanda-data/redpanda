@@ -463,9 +463,9 @@ class AdminOperationsFuzzer():
             except Exception as e:
                 error = e
                 self.redpanda.logger.info(
-                    f"Operation: {op_type} error: {error}, retires left: {self.retries-retry}/{self.retries}"
+                    f"Operation: {op_type} error: {error}, retries left: {self.retries-retry}/{self.retries}"
                 )
-                sleep(1)
+                sleep(self.retries_interval)
         raise error
 
     def make_random_operation(self) -> Operation:
