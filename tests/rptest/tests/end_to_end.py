@@ -20,12 +20,14 @@
 
 from collections import namedtuple
 import os
+from typing import Optional
 from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
 from rptest.services.redpanda import RedpandaService
 from rptest.clients.default import DefaultClient
 from rptest.services.verifiable_consumer import VerifiableConsumer
 from rptest.services.verifiable_producer import VerifiableProducer, is_int_with_prefix
+from rptest.archival.s3_client import S3Client
 
 TopicPartition = namedtuple('TopicPartition', ['topic', 'partition'])
 
@@ -65,7 +67,7 @@ class EndToEndTest(Test):
 
         self.records_consumed = []
         self.last_consumed_offsets = {}
-        self.redpanda = None
+        self.redpanda: Optional[RedpandaService] = None
         self.topic = None
         self._client = None
 
@@ -90,10 +92,6 @@ class EndToEndTest(Test):
                                         si_settings=self.si_settings)
         self.redpanda.start()
         self._client = DefaultClient(self.redpanda)
-
-    @property
-    def s3_client(self):
-        return self.redpanda.s3_client
 
     def client(self):
         assert self._client is not None

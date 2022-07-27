@@ -14,6 +14,7 @@ from rptest.clients.rpk import RpkTool, RpkException
 from rptest.clients.types import TopicSpec
 from rptest.util import expect_exception
 from ducktape.mark import matrix
+from ducktape.tests.test import TestContext
 
 import json
 
@@ -37,24 +38,24 @@ class TestReadReplicaService(EndToEndTest):
         cloud_storage_readreplica_manifest_sync_timeout_ms=500,
         cloud_storage_segment_max_upload_interval_sec=5)
 
-    def __init__(self, test_context):
+    def __init__(self, test_context: TestContext):
         super(TestReadReplicaService, self).__init__(test_context=test_context)
         self.second_cluster = None
 
-    def start_second_cluster(self):
+    def start_second_cluster(self) -> None:
         self.second_cluster = RedpandaService(self.test_context,
                                               num_brokers=3,
                                               si_settings=self.si_settings)
         self.second_cluster.start(start_si=False)
 
-    def create_read_replica_topic(self):
+    def create_read_replica_topic(self) -> None:
         rpk_second_cluster = RpkTool(self.second_cluster)
         conf = {
             'redpanda.remote.readreplica': self.s3_bucket_name,
         }
         rpk_second_cluster.create_topic(self.topic_name, config=conf)
 
-    def start_consumer(self):
+    def start_consumer(self) -> None:
         self.consumer = VerifiableConsumer(
             self.test_context,
             num_nodes=1,
@@ -64,7 +65,7 @@ class TestReadReplicaService(EndToEndTest):
             on_record_consumed=self.on_record_consumed)
         self.consumer.start()
 
-    def start_producer(self):
+    def start_producer(self) -> None:
         self.producer = VerifiableProducer(
             self.test_context,
             num_nodes=1,
@@ -76,7 +77,7 @@ class TestReadReplicaService(EndToEndTest):
 
     @cluster(num_nodes=6)
     @matrix(partition_count=[10])
-    def test_produce_is_forbidden(self, partition_count):
+    def test_produce_is_forbidden(self, partition_count: int) -> None:
         # Create original topic
         self.start_redpanda(3, si_settings=self.si_settings)
         spec = TopicSpec(name=self.topic_name,
@@ -91,7 +92,7 @@ class TestReadReplicaService(EndToEndTest):
 
         self.start_second_cluster()
 
-        def create_read_replica_topic_success():
+        def create_read_replica_topic_success() -> bool:
             try:
                 self.create_read_replica_topic()
             except RpkException as e:
@@ -103,14 +104,16 @@ class TestReadReplicaService(EndToEndTest):
             else:
                 return True
 
+        assert self.redpanda and self.redpanda.s3_client
         # wait until the read replica topic creation succeeds
         wait_until(
             create_read_replica_topic_success,
             timeout_sec=
             60,  #should be uploaded since cloud_storage_segment_max_upload_interval_sec=5
             backoff_sec=5,
-            err_msg=
-            f"Could not create read replica topic. Most likely because topic manifest is not in S3, in S3 bucket: {list(self.redpanda._s3client.list_objects(self.s3_bucket_name))}"
+            err_msg="Could not create read replica topic. Most likely " +
+            "because topic manifest is not in S3, in S3 bucket: " +
+            f"{list(self.redpanda.s3_client.list_objects(self.s3_bucket_name))}"
         )
 
         second_rpk = RpkTool(self.second_cluster)
@@ -122,7 +125,8 @@ class TestReadReplicaService(EndToEndTest):
 
     @cluster(num_nodes=8)
     @matrix(partition_count=[10], min_records=[10000])
-    def test_simple_end_to_end(self, partition_count, min_records):
+    def test_simple_end_to_end(self, partition_count: int,
+                               min_records: int) -> None:
         # Create original topic, produce data to it
         self.start_redpanda(3, si_settings=self.si_settings)
         spec = TopicSpec(name=self.topic_name,
@@ -144,15 +148,19 @@ class TestReadReplicaService(EndToEndTest):
         rpk = RpkTool(self.redpanda)
         rpk.alter_topic_config(spec.name, 'redpanda.remote.write', 'true')
 
+        assert self.redpanda and self.redpanda.s3_client  # drops optional types
+
         # Make sure all produced data is uploaded to S3
-        def s3_has_all_data():
+        def s3_has_all_data() -> bool:
+            # pyright doesn't consider the assert in outer scope
+            assert self.redpanda and self.redpanda.s3_client
             objects = list(
-                self.redpanda._s3client.list_objects(self.s3_bucket_name))
+                self.redpanda.s3_client.list_objects(self.s3_bucket_name))
             total_uploaded = 0
             for o in objects:
                 if o.Key.endswith(
                         "/manifest.json") and self.topic_name in o.Key:
-                    data = self.redpanda._s3client.get_object_data(
+                    data = self.redpanda.s3_client.get_object_data(
                         self.s3_bucket_name, o.Key)
                     manifest = json.loads(data)
                     last_upl_offset = manifest['last_offset']
@@ -170,8 +178,8 @@ class TestReadReplicaService(EndToEndTest):
             timeout_sec=
             30,  #should be uploaded since cloud_storage_segment_max_upload_interval_sec=5
             backoff_sec=5,
-            err_msg=
-            f"Not all data is uploaded to S3 bucket, is S3 bucket: {list(self.redpanda._s3client.list_objects(self.s3_bucket_name))}"
+            err_msg="Not all data is uploaded to S3 bucket: " +
+            f"{list(self.redpanda.s3_client.list_objects(self.s3_bucket_name))}"
         )
 
         # Create read replica topic, consume from it and validate
