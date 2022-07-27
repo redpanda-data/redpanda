@@ -76,7 +76,7 @@ jobs:
     strategy:
       matrix:
         arch: [amd64, arm64]
-    runs-on: macos-10.15
+    runs-on: macos-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v2
