@@ -47,7 +47,14 @@ local_monitor::local_monitor(
   , _free_percent_alert_threshold(alert_percent)
   , _min_free_bytes(min_bytes)
   , _storage_node_api(node_api)
-  , _storage_api(api) {}
+  , _storage_api(api) {
+    // Intentionally undocumented environment variable, only for use
+    // in integration tests.
+    const char* test_disk_size_str = std::getenv("__REDPANDA_TEST_DISK_SIZE");
+    if (test_disk_size_str) {
+        _disk_size_for_test = std::stoul(std::string(test_disk_size_str));
+    }
+}
 
 ss::future<> local_monitor::update_state() {
     // grab new snapshot of local state
@@ -89,11 +96,25 @@ ss::future<std::vector<storage::disk>> local_monitor::get_disks() {
 
     auto svfs = co_await get_statvfs(path);
 
+    // f_bsize is a historical linux-ism, use f_frsize
+    uint64_t free = svfs.f_bfree * svfs.f_frsize;
+    uint64_t total = svfs.f_blocks * svfs.f_frsize;
+
+    if (_disk_size_for_test) {
+        uint64_t used = total - free;
+        vassert(
+          used < *_disk_size_for_test,
+          "mock disk size {} must be > used size {}",
+          *_disk_size_for_test,
+          used);
+        total = *_disk_size_for_test;
+        free = total - used;
+    }
+
     co_return std::vector<storage::disk>{storage::disk{
       .path = config::node().data_directory().as_sstring(),
-      // f_bsize is a historical linux-ism, use f_frsize
-      .free = svfs.f_bfree * svfs.f_frsize,
-      .total = svfs.f_blocks * svfs.f_frsize,
+      .free = free,
+      .total = total,
     }};
 }
 
