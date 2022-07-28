@@ -17,12 +17,12 @@
 #include "security/acl.h"
 #include "security/mtls.h"
 #include "security/sasl_authentication.h"
+#include "ssx/semaphore.h"
 #include "utils/hdr_hist.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
-#include <seastar/core/semaphore.hh>
 #include <seastar/core/shared_ptr.hh>
 
 #include <absl/container/flat_hash_map.h>
@@ -68,8 +68,8 @@ struct session_resources {
     using pointer = ss::lw_shared_ptr<session_resources>;
 
     ss::lowres_clock::duration backpressure_delay;
-    ss::semaphore_units<> memlocks;
-    ss::semaphore_units<> queue_units;
+    ssx::semaphore_units memlocks;
+    ssx::semaphore_units queue_units;
     std::unique_ptr<hdr_hist::measurement> method_latency;
     std::unique_ptr<request_tracker> tracker;
 };
@@ -168,7 +168,7 @@ private:
     // Reserve units from memory from the memory semaphore in proportion
     // to the number of bytes the request procesisng is expected to
     // take.
-    ss::future<ss::semaphore_units<>>
+    ss::future<ssx::semaphore_units>
     reserve_request_units(api_key key, size_t size);
 
     // Apply backpressure sequence, where the request processing may be
@@ -189,8 +189,9 @@ private:
      * The future<> returned by this method resolves when all ready *and*
      * in-order responses have been processed, which is not the same as all
      * ready responses. In particular, responses which are ready may not be
-     * processed if there are earlier (lower sequence number) responses which
-     * are not yet ready: they will be processed by a future invocation.
+     * processed if there are earlier (lower sequence number) responses
+     * which are not yet ready: they will be processed by a future
+     * invocation.
      *
      * @return ss::future<> a future which as described above.
      */

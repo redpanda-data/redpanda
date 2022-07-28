@@ -12,6 +12,7 @@
 #pragma once
 
 #include "seastarx.h"
+#include "ssx/semaphore.h"
 
 #include <seastar/core/iostream.hh>
 #include <seastar/core/semaphore.hh>
@@ -73,7 +74,7 @@ private:
 
     ss::output_stream<char> _out;
     size_t _cache_size{0};
-    std::unique_ptr<ss::semaphore> _write_sem;
+    std::unique_ptr<ssx::semaphore> _write_sem;
     size_t _unflushed_bytes{0};
     bool _closed = false;
 };

@@ -13,6 +13,7 @@
 
 #include "model/fundamental.h"
 #include "raft/types.h"
+#include "ssx/semaphore.h"
 #include "storage/fwd.h"
 #include "storage/log.h"
 #include "storage/offset_translator_state.h"
@@ -131,7 +132,7 @@ private:
 
     // Units issued by the storage resource manager to track how many bytes
     // of data is currently pending checkpoint.
-    ss::semaphore_units<> _bytes_processed_units;
+    ssx::semaphore_units _bytes_processed_units;
 
     // If true, the storage resource manager has asked us to checkpoint at the
     // next opportunity.

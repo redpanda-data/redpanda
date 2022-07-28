@@ -14,6 +14,7 @@
 #include "model/record_batch_reader.h"
 #include "outcome.h"
 #include "raft/types.h"
+#include "ssx/semaphore.h"
 #include "units.h"
 #include "utils/mutex.h"
 
@@ -38,7 +39,7 @@ public:
          * Item keeps semaphore units until replicate batcher is done with
          * processing the request.
          */
-        ss::semaphore_units<> units;
+        ssx::semaphore_units units;
     };
     using item_ptr = ss::lw_shared_ptr<item>;
     explicit replicate_batcher(consensus* ptr, size_t cache_size);
@@ -54,7 +55,7 @@ public:
       model::record_batch_reader&&,
       consistency_level);
 
-    ss::future<> flush(ss::semaphore_units<> u, bool const transfer_flush);
+    ss::future<> flush(ssx::semaphore_units u, bool const transfer_flush);
 
     ss::future<> stop();
 
@@ -62,7 +63,7 @@ private:
     ss::future<> do_flush(
       std::vector<item_ptr>,
       append_entries_request,
-      std::vector<ss::semaphore_units<>>,
+      std::vector<ssx::semaphore_units>,
       absl::flat_hash_map<vnode, follower_req_seq>);
 
     ss::future<item_ptr> do_cache(
@@ -76,7 +77,7 @@ private:
       consistency_level);
 
     consensus* _ptr;
-    ss::semaphore _max_batch_size_sem;
+    ssx::semaphore _max_batch_size_sem;
     size_t _max_batch_size;
     std::vector<item_ptr> _item_cache;
     mutex _lock;

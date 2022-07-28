@@ -192,7 +192,7 @@ private:
     moving_average<double, 5> _compaction_ratio{1.0};
 
     // Bytes written since last time we requested stm snapshot
-    ss::semaphore_units<> _stm_dirty_bytes_units;
+    ssx::semaphore_units _stm_dirty_bytes_units;
 };
 
 } // namespace storage

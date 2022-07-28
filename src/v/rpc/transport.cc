@@ -33,7 +33,7 @@ struct client_context_impl final : streaming_context {
     client_context_impl(transport& s, header h)
       : _c(std::ref(s))
       , _h(std::move(h)) {}
-    ss::future<ss::semaphore_units<>> reserve_memory(size_t ask) final {
+    ss::future<ssx::semaphore_units> reserve_memory(size_t ask) final {
         auto fut = get_units(_c.get()._memory, ask);
         if (_c.get()._memory.waiters()) {
             _c.get()._probe.waiting_for_available_memory();
@@ -57,7 +57,7 @@ transport::transport(
     .server_addr = std::move(c.server_addr),
     .credentials = std::move(c.credentials),
   })
-  , _memory(c.max_queued_bytes) {
+  , _memory(c.max_queued_bytes, "rpc/transport-mem") {
     if (!c.disable_metrics) {
         setup_metrics(service_name);
     }
@@ -172,7 +172,7 @@ transport::do_send(sequence_t seq, netbuf b, rpc::client_opts opts) {
                    f = std::move(f),
                    seq,
                    u = std::move(opts.resource_units)](
-                    ss::semaphore_units<> units) mutable {
+                    ssx::semaphore_units units) mutable {
                 auto e = entry{
                   .buffer = std::make_unique<netbuf>(std::move(b)),
                   .resource_units = std::move(u),

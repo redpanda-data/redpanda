@@ -16,12 +16,12 @@
 #include "net/connection.h"
 #include "net/connection_rate.h"
 #include "net/types.h"
+#include "ssx/semaphore.h"
 #include "utils/hdr_hist.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/metrics_registration.hh>
-#include <seastar/core/semaphore.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/net/tls.hh>
 
@@ -108,7 +108,7 @@ public:
         ss::lw_shared_ptr<net::connection> conn;
 
         server_probe& probe() { return _s->_probe; }
-        ss::semaphore& memory() { return _s->_memory; }
+        ssx::semaphore& memory() { return _s->_memory; }
         hdr_hist& hist() { return _s->_hist; }
         ss::gate& conn_gate() { return _s->_conn_gate; }
         ss::abort_source& abort_source() { return _s->_as; }
@@ -179,7 +179,7 @@ private:
     void setup_public_metrics();
 
     std::unique_ptr<protocol> _proto;
-    ss::semaphore _memory;
+    ssx::semaphore _memory;
     std::vector<std::unique_ptr<listener>> _listeners;
     boost::intrusive::list<net::connection> _connections;
     ss::abort_source _as;

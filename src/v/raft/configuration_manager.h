@@ -16,6 +16,7 @@
 #include "raft/consensus_utils.h"
 #include "raft/logger.h"
 #include "raft/types.h"
+#include "ssx/semaphore.h"
 #include "storage/fwd.h"
 #include "units.h"
 #include "utils/mutex.h"
@@ -207,7 +208,7 @@ private:
 
     // Units issued by the storage resource manager to track how many bytes
     // of data is currently pending checkpoint.
-    ss::semaphore_units<> _bytes_since_last_offset_update_units;
+    ssx::semaphore_units _bytes_since_last_offset_update_units;
 
     model::revision_id _initial_revision{};
     ctx_log& _ctxlog;

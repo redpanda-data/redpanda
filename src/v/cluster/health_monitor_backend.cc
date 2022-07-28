@@ -244,7 +244,7 @@ void health_monitor_backend::abortable_refresh_request::abort() {
 }
 
 health_monitor_backend::abortable_refresh_request::abortable_refresh_request(
-  model::node_id leader_id, ss::gate::holder holder, ss::semaphore_units<> u)
+  model::node_id leader_id, ss::gate::holder holder, ssx::semaphore_units u)
   : leader_id(leader_id)
   , holder(std::move(holder))
   , units(std::move(u)) {}

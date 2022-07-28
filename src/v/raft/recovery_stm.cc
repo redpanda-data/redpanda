@@ -373,7 +373,7 @@ ss::future<> recovery_stm::install_snapshot() {
 ss::future<> recovery_stm::replicate(
   model::record_batch_reader&& reader,
   append_entries_request::flush_after_append flush,
-  ss::semaphore_units<> mem_units) {
+  ssx::semaphore_units mem_units) {
     // collect metadata for append entries request
     // last persisted offset is last_offset of batch before the first one in the
     // reader
@@ -421,7 +421,7 @@ ss::future<> recovery_stm::replicate(
     auto seq = _ptr->next_follower_sequence(_node_id);
     _ptr->update_suppress_heartbeats(_node_id, seq, heartbeats_suppressed::yes);
     auto lstats = _ptr->_log.offsets();
-    std::vector<ss::semaphore_units<>> units;
+    std::vector<ssx::semaphore_units> units;
     units.push_back(std::move(mem_units));
     return dispatch_append_entries(std::move(r), std::move(units))
       .finally([this, seq] {
@@ -480,12 +480,12 @@ clock_type::time_point recovery_stm::append_entries_timeout() {
 }
 
 ss::future<result<append_entries_reply>> recovery_stm::dispatch_append_entries(
-  append_entries_request&& r, std::vector<ss::semaphore_units<>> units) {
+  append_entries_request&& r, std::vector<ssx::semaphore_units> units) {
     _ptr->_probe.recovery_append_request();
 
     rpc::client_opts opts(append_entries_timeout());
     opts.resource_units = ss::make_foreign(
-      ss::make_lw_shared<std::vector<ss::semaphore_units<>>>(std::move(units)));
+      ss::make_lw_shared<std::vector<ssx::semaphore_units>>(std::move(units)));
 
     return _ptr->_client_protocol
       .append_entries(_node_id.id(), std::move(r), std::move(opts))

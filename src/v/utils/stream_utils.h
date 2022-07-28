@@ -12,6 +12,7 @@
 #pragma once
 
 #include "seastarx.h"
+#include "ssx/semaphore.h"
 #include "utils/gate_guard.h"
 #include "vassert.h"
 
@@ -35,7 +36,7 @@ template<class Ch>
 class input_stream_fanout final {
     struct data_item {
         ss::temporary_buffer<Ch> buf;
-        ss::semaphore_units<> units;
+        ssx::semaphore_units units;
         unsigned mask;
     };
     using ring_buffer = ss::circular_buffer<data_item>;
@@ -58,7 +59,7 @@ public:
       , _bitmask(0)
       , _max_size(max_size ? *max_size / read_ahead : 0)
       , _in(std::move(i))
-      , _sem(read_ahead) {
+      , _sem(read_ahead, "stream-fanout") {
         vassert(
           num_clients <= 10 && num_clients >= 2,
           "input_stream_fanout can have up to 10 clients, {} were given",
@@ -182,7 +183,7 @@ private:
     unsigned _bitmask;
     const size_t _max_size;
     ss::input_stream<Ch> _in;
-    ss::semaphore _sem;
+    ssx::semaphore _sem;
     ss::condition_variable _pcond;
     ring_buffer _buffer;
     ss::gate _gate;

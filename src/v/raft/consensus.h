@@ -33,6 +33,7 @@
 #include "raft/timeout_jitter.h"
 #include "raft/types.h"
 #include "seastarx.h"
+#include "ssx/semaphore.h"
 #include "storage/fwd.h"
 #include "storage/log.h"
 #include "storage/snapshot.h"
@@ -389,7 +390,7 @@ private:
 
     ss::future<result<replicate_result>> dispatch_replicate(
       append_entries_request,
-      std::vector<ss::semaphore_units<>>,
+      std::vector<ssx::semaphore_units>,
       absl::flat_hash_map<vnode, follower_req_seq>);
     /**
      * Hydrate the consensus state with the data from the snapshot
@@ -430,7 +431,7 @@ private:
     bool needs_recovery(const follower_index_metadata&, model::offset);
     void dispatch_recovery(follower_index_metadata&);
     void maybe_update_leader_commit_idx();
-    ss::future<> do_maybe_update_leader_commit_idx(ss::semaphore_units<>);
+    ss::future<> do_maybe_update_leader_commit_idx(ssx::semaphore_units);
 
     clock_type::time_point majority_heartbeat() const;
     /*
@@ -445,7 +446,7 @@ private:
     /// Replicates configuration to other nodes,
     //  caller have to pass in _op_sem semaphore units
     ss::future<std::error_code>
-    replicate_configuration(ss::semaphore_units<> u, group_configuration);
+    replicate_configuration(ssx::semaphore_units u, group_configuration);
 
     ss::future<> maybe_update_follower_commit_idx(model::offset);
 
@@ -480,7 +481,7 @@ private:
     ss::future<std::error_code>
       interrupt_configuration_change(model::revision_id, Func);
 
-    ss::future<> maybe_commit_configuration(ss::semaphore_units<>);
+    ss::future<> maybe_commit_configuration(ssx::semaphore_units);
     void maybe_promote_to_voter(vnode);
 
     ss::future<model::record_batch_reader>

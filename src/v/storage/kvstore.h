@@ -144,7 +144,7 @@ private:
      */
     std::vector<op> _ops;
     ss::timer<> _timer;
-    ss::semaphore _sem{0};
+    ssx::semaphore _sem{0, "s/kvstore"};
     ss::lw_shared_ptr<segment> _segment;
     model::offset _next_offset;
     absl::flat_hash_map<bytes, iobuf, bytes_type_hash, bytes_type_eq> _db;

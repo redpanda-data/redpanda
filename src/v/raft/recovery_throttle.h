@@ -12,8 +12,8 @@
 #include "config/property.h"
 #include "raft/logger.h"
 #include "seastarx.h"
+#include "ssx/semaphore.h"
 
-#include <seastar/core/semaphore.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/timer.hh>
 #include <seastar/util/later.hh>
@@ -40,7 +40,7 @@ public:
     explicit recovery_throttle(config::binding<size_t> rate_binding)
       : _rate_binding(std::move(rate_binding))
       , _rate(get_per_core_rate())
-      , _sem{get_per_core_rate()}
+      , _sem{get_per_core_rate(), "raft/recovery-rate"}
       , _last_refresh(clock_type::now())
       , _refresh_timer([this] { handle_refresh(); }) {
         _rate_binding.watch([this]() { update_rate(); });
@@ -137,7 +137,7 @@ private:
 
     config::binding<size_t> _rate_binding;
     size_t _rate;
-    ss::semaphore _sem;
+    ssx::semaphore _sem;
     clock_type::time_point _last_refresh;
     ss::timer<> _refresh_timer;
 };

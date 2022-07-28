@@ -41,7 +41,7 @@ class server {
 public:
     struct context_t {
         std::vector<net::unresolved_address> advertised_listeners;
-        ss::semaphore& mem_sem;
+        ssx::semaphore& mem_sem;
         ss::abort_source as;
         ss::smp_service_group smp_sg;
     };

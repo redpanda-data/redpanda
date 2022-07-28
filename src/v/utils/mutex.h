@@ -11,6 +11,7 @@
 
 #pragma once
 #include "seastarx.h"
+#include "ssx/semaphore.h"
 
 #include <seastar/core/semaphore.hh>
 
@@ -34,8 +35,9 @@ public:
     using duration = typename ss::semaphore::duration;
     using time_point = typename ss::semaphore::time_point;
 
+    // TODO constructor to pass through name & change callers.
     mutex()
-      : _sem(1) {}
+      : _sem(1, "mutex") {}
 
     template<typename Func>
     auto with(Func&& func) noexcept {
@@ -67,5 +69,5 @@ public:
     size_t waiters() const noexcept { return _sem.waiters(); }
 
 private:
-    ss::semaphore _sem;
+    ssx::semaphore _sem;
 };

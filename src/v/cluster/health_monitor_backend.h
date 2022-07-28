@@ -16,8 +16,8 @@
 #include "model/metadata.h"
 #include "raft/consensus.h"
 #include "rpc/fwd.h"
+#include "ssx/semaphore.h"
 
-#include <seastar/core/semaphore.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 
@@ -90,7 +90,7 @@ private:
     struct abortable_refresh_request
       : ss::enable_lw_shared_from_this<abortable_refresh_request> {
         abortable_refresh_request(
-          model::node_id, ss::gate::holder, ss::semaphore_units<>);
+          model::node_id, ss::gate::holder, ssx::semaphore_units);
 
         ss::future<std::error_code>
           abortable_await(ss::future<std::error_code>);
@@ -99,7 +99,7 @@ private:
         bool finished = false;
         model::node_id leader_id;
         ss::gate::holder holder;
-        ss::semaphore_units<> units;
+        ssx::semaphore_units units;
         ss::promise<std::error_code> done;
     };
 

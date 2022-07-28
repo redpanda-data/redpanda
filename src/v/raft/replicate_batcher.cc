@@ -36,7 +36,7 @@ namespace raft {
 using namespace std::chrono_literals; // NOLINT
 replicate_batcher::replicate_batcher(consensus* ptr, size_t cache_size)
   : _ptr(ptr)
-  , _max_batch_size_sem(cache_size)
+  , _max_batch_size_sem(cache_size, "raft/repl-batch")
   , _max_batch_size(cache_size) {}
 
 replicate_stages replicate_batcher::replicate(
@@ -62,7 +62,7 @@ replicate_stages replicate_batcher::replicate(
                     enqueued.set_value();
                     auto item = f.get();
                     return _lock.get_units()
-                      .then([this](ss::semaphore_units<> u) {
+                      .then([this](ssx::semaphore_units u) {
                           return flush(std::move(u), false);
                       })
                       .then_wrapped(
@@ -144,7 +144,7 @@ replicate_batcher::do_cache_with_backpressure(
     return ss::get_units(_max_batch_size_sem, std::min(bytes, _max_batch_size))
       .then(
         [this, expected_term, batches = std::move(batches), consistency_lvl](
-          ss::semaphore_units<> u) mutable {
+          ssx::semaphore_units u) mutable {
             size_t record_count = 0;
             auto i = ss::make_lw_shared<item>();
             for (auto& b : batches) {
@@ -166,7 +166,7 @@ replicate_batcher::do_cache_with_backpressure(
 }
 
 ss::future<> replicate_batcher::flush(
-  ss::semaphore_units<> batcher_units, bool const transfer_flush) {
+  ssx::semaphore_units batcher_units, bool const transfer_flush) {
     auto holder = _bg.hold();
 
     auto item_cache = std::exchange(_item_cache, {});
@@ -203,7 +203,7 @@ ss::future<> replicate_batcher::flush(
         auto const term = model::term_id(meta.term);
         ss::circular_buffer<model::record_batch> data;
         std::vector<item_ptr> notifications;
-        ss::semaphore_units<> item_memory_units(_max_batch_size_sem, 0);
+        ssx::semaphore_units item_memory_units(_max_batch_size_sem, 0);
         auto needs_flush = append_entries_request::flush_after_append::no;
 
         for (auto& n : item_cache) {
@@ -236,7 +236,7 @@ ss::future<> replicate_batcher::flush(
           model::make_memory_record_batch_reader(std::move(data)),
           needs_flush);
 
-        std::vector<ss::semaphore_units<>> units;
+        std::vector<ssx::semaphore_units> units;
         units.reserve(2);
         units.push_back(std::move(u));
         // we will release memory semaphore as soon as append entry
@@ -290,7 +290,7 @@ static void propagate_current_exception(
 ss::future<> replicate_batcher::do_flush(
   std::vector<replicate_batcher::item_ptr> notifications,
   append_entries_request req,
-  std::vector<ss::semaphore_units<>> u,
+  std::vector<ssx::semaphore_units> u,
   absl::flat_hash_map<vnode, follower_req_seq> seqs) {
     auto needs_flush = req.flush;
     _ptr->_probe.replicate_batch_flushed();

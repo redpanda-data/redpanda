@@ -18,6 +18,7 @@
 #include "raft/logger.h"
 #include "raft/raftgen_service.h"
 #include "raft/types.h"
+#include "ssx/semaphore.h"
 
 #include <seastar/util/bool_class.hh>
 
@@ -27,7 +28,7 @@ namespace raft {
 
 prevote_stm::prevote_stm(consensus* p)
   : _ptr(p)
-  , _sem(0)
+  , _sem{0, "raft/prevote"}
   , _ctxlog(_ptr->group(), _ptr->ntp()) {}
 
 prevote_stm::~prevote_stm() {

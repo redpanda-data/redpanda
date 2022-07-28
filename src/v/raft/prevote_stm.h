@@ -57,7 +57,7 @@ private:
     vote_request _req;
     bool _success = false;
     // for sequentiality/progress
-    ss::semaphore _sem;
+    ssx::semaphore _sem;
     std::optional<raft::group_configuration> _config;
     clock_type::time_point _prevote_timeout;
     // for safety to wait for all bg ops

@@ -19,10 +19,9 @@
 namespace ssx {
 
 // We use named semaphores because the provided name will be included in
-// exception messages, making diagnoising broken or timed-out semaphores much
+// exception messages, making diagnosing broken or timed-out semaphores much
 // easier.
 
-// Use `make_samaphore(name)` to create these.
 template<typename Clock = seastar::timer<>::clock>
 class named_semaphore
   : public seastar::

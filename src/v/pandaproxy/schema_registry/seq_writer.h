@@ -16,6 +16,7 @@
 #include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "random/simple_time_jitter.h"
+#include "ssx/semaphore.h"
 #include "utils/retry.h"
 
 namespace pandaproxy::schema_registry {
@@ -136,13 +137,13 @@ private:
 
     /// Serialize wait_for operations, to avoid issuing
     /// gratuitous number of reads to the topic on concurrent GETs.
-    ss::semaphore _wait_for_sem{1};
+    ssx::semaphore _wait_for_sem{1, "pproxy/schema-wait"};
 
     /// Shard 0 only: Reads have progressed as far as this offset
     model::offset _loaded_offset{-1};
 
     /// Shard 0 only: Serialize write operations.
-    ss::semaphore _write_sem{1};
+    ssx::semaphore _write_sem{1, "pproxy/schema-write"};
 
     // ======================
     // End of Shard 0 state

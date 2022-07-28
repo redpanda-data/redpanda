@@ -190,14 +190,14 @@ ss::future<session_resources> connection_context::throttle_request(
           return reserve_request_units(key, request_size);
       })
       .then([this, delay, track, tracker = std::move(tracker)](
-              ss::semaphore_units<> units) mutable {
+              ssx::semaphore_units units) mutable {
           return server().get_request_unit().then(
             [this,
              delay,
              mem_units = std::move(units),
              track,
              tracker = std::move(tracker)](
-              ss::semaphore_units<> qd_units) mutable {
+              ssx::semaphore_units qd_units) mutable {
                 session_resources r{
                   .backpressure_delay = delay.duration,
                   .memlocks = std::move(mem_units),
@@ -212,7 +212,7 @@ ss::future<session_resources> connection_context::throttle_request(
       });
 }
 
-ss::future<ss::semaphore_units<>>
+ss::future<ssx::semaphore_units>
 connection_context::reserve_request_units(api_key key, size_t size) {
     // Defer to the handler for the request type for the memory estimate, but
     // if the request isn't found, use the default estimate (although in that

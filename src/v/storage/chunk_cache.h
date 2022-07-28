@@ -1,6 +1,7 @@
 #pragma once
 #include "resource_mgmt/memory_groups.h"
 #include "seastarx.h"
+#include "ssx/semaphore.h"
 #include "storage/logger.h"
 #include "storage/segment_appender_chunk.h"
 #include "vassert.h"
@@ -72,7 +73,7 @@ public:
             return do_get();
         }
         return ss::get_units(_sem, 1).then(
-          [this](ss::semaphore_units<>) { return do_get(); });
+          [this](ssx::semaphore_units) { return do_get(); });
     }
 
 private:
@@ -81,7 +82,7 @@ private:
             return ss::make_ready_future<chunk_ptr>(c);
         }
         return ss::get_units(_sem, 1).then(
-          [this](ss::semaphore_units<>) { return do_get(); });
+          [this](ssx::semaphore_units) { return do_get(); });
     }
 
     chunk_ptr pop_or_allocate() {
@@ -105,7 +106,7 @@ private:
     }
 
     ss::chunked_fifo<chunk_ptr> _chunks;
-    ss::semaphore _sem{0};
+    ssx::semaphore _sem{0, "s/chunk-cache"};
     size_t _size_available{0};
     size_t _size_total{0};
     const size_t _size_target;

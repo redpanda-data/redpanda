@@ -11,6 +11,7 @@
 
 #pragma once
 #include "seastarx.h"
+#include "ssx/semaphore.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/semaphore.hh>
@@ -43,14 +44,14 @@ class timed_mutex;
 class locked_token {
     timed_mutex* _mutex;
     const char* _lock_holder_id;
-    ss::semaphore_units<> _unit;
+    ssx::semaphore_units _unit;
     bool _is_moved{false};
 
 public:
     locked_token(
       timed_mutex* mutex,
       const char* lock_holder_id,
-      ss::semaphore_units<>&& unit) noexcept
+      ssx::semaphore_units&& unit) noexcept
       : _mutex(mutex)
       , _lock_holder_id(lock_holder_id)
       , _unit(std::move(unit)) {}
@@ -77,7 +78,7 @@ public:
     using time_point = typename ss::semaphore::time_point;
 
     explicit timed_mutex(bool should_tracing)
-      : _sem(1)
+      : _sem(1, "timed-mutex")
       , _is_tracing(should_tracing) {}
 
     ss::future<> start_tracing() {
@@ -133,7 +134,7 @@ public:
 
     ss::future<locked_token> lock(const char* lock_holder_id) {
         return ss::get_units(_sem, 1).then(
-          [this, lock_holder_id](ss::semaphore_units<> u) {
+          [this, lock_holder_id](ssx::semaphore_units u) {
               if (_is_tracing) {
                   _lock_counter += 1;
                   _acquired_at = std::chrono::steady_clock::now();
@@ -152,7 +153,7 @@ public:
     }
 
 private:
-    ss::semaphore _sem;
+    ssx::semaphore _sem;
     bool _is_tracing{false};
     int64_t _lock_counter{0};
     std::chrono::steady_clock::time_point _acquired_at;

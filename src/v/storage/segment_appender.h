@@ -127,9 +127,9 @@ private:
     size_t _committed_offset{0};
     size_t _fallocation_offset{0};
     size_t _bytes_flush_pending{0};
-    ss::semaphore _concurrent_flushes;
+    ssx::semaphore _concurrent_flushes;
     ss::lw_shared_ptr<chunk> _head;
-    ss::lw_shared_ptr<ss::semaphore> _prev_head_write;
+    ss::lw_shared_ptr<ssx::semaphore> _prev_head_write;
 
     struct flush_op {
         explicit flush_op(size_t offset)

@@ -11,6 +11,7 @@
 
 #include "rpc/logger.h"
 #include "rpc/types.h"
+#include "ssx/semaphore.h"
 
 #include <seastar/core/future-util.hh>
 
@@ -29,7 +30,7 @@ struct server_context_impl final : streaming_context {
       , hdr(h) {
         res.probe().request_received();
     }
-    ss::future<ss::semaphore_units<>> reserve_memory(size_t ask) final {
+    ss::future<ssx::semaphore_units> reserve_memory(size_t ask) final {
         auto fut = get_units(res.memory(), ask);
         if (res.memory().waiters()) {
             res.probe().waiting_for_available_memory();

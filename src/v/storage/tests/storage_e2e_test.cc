@@ -1860,7 +1860,7 @@ FIXTURE_TEST(committed_offset_updates, storage_test_fixture) {
      *
      */
     auto append_with_lock = [&] {
-        return write_mutex.get_units().then([&](ss::semaphore_units<> u) {
+        return write_mutex.get_units().then([&](ssx::semaphore_units u) {
             return append().then(
               [&, u = std::move(u)](storage::append_result res) mutable {
                   auto f = log.flush();

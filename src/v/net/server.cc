@@ -17,6 +17,7 @@
 #include "seastar/core/coroutine.hh"
 #include "ssx/future-util.h"
 #include "ssx/metrics.h"
+#include "ssx/semaphore.h"
 #include "ssx/sformat.h"
 #include "vassert.h"
 #include "vlog.h"
@@ -32,7 +33,7 @@ namespace net {
 
 server::server(server_configuration c)
   : cfg(std::move(c))
-  , _memory(cfg.max_service_memory_per_core)
+  , _memory{size_t{static_cast<size_t>(cfg.max_service_memory_per_core)}, "net/server-mem"}
   , _public_metrics(ssx::metrics::public_metrics_handle) {}
 
 server::server(ss::sharded<server_configuration>* s)

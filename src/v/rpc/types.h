@@ -17,6 +17,7 @@
 #include "net/unresolved_address.h"
 #include "outcome.h"
 #include "seastarx.h"
+#include "ssx/semaphore.h"
 #include "utils/hdr_hist.h"
 
 #include <seastar/core/future.hh>
@@ -134,7 +135,7 @@ uint32_t checksum_header_only(const header& h);
 
 struct client_opts {
     using resource_units_t
-      = ss::foreign_ptr<ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>>>;
+      = ss::foreign_ptr<ss::lw_shared_ptr<std::vector<ssx::semaphore_units>>>;
     client_opts(
       clock_type::time_point client_send_timeout,
       compression_type ct,
@@ -180,7 +181,7 @@ public:
     streaming_context& operator=(const streaming_context&) = delete;
 
     virtual ~streaming_context() noexcept = default;
-    virtual ss::future<ss::semaphore_units<>> reserve_memory(size_t) = 0;
+    virtual ss::future<ssx::semaphore_units> reserve_memory(size_t) = 0;
     virtual const header& get_header() const = 0;
     /// \brief because we parse the input as a _stream_ we need to signal
     /// to the dispatching thread that it can resume parsing for a new RPC
@@ -192,13 +193,13 @@ public:
     /// until destruction of object without doing a .finally() and moving things
     /// around
     ss::future<> permanent_memory_reservation(size_t n) {
-        return reserve_memory(n).then([this](ss::semaphore_units<> units) {
+        return reserve_memory(n).then([this](ssx::semaphore_units units) {
             _reservations.push_back(std::move(units));
         });
     }
 
 private:
-    std::vector<ss::semaphore_units<>> _reservations;
+    std::vector<ssx::semaphore_units> _reservations;
 };
 
 class netbuf {
