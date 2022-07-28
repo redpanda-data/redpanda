@@ -305,11 +305,59 @@ ss::future<> controller::start(cluster_discovery& discovery) {
           return _stm.invoke_on(controller_stm_shard, &controller_stm::start);
       })
       .then([this] {
-          return _stm.invoke_on(controller_stm_shard, [](controller_stm& stm) {
-              // we do not have to use timeout in here as all the batches to
-              // apply have to be accesssible
-              return stm.wait(stm.bootstrap_last_applied(), model::no_timeout);
-          });
+          auto disk_dirty_offset = _raft0->log().offsets().dirty_offset;
+
+          return _stm
+            .invoke_on(
+              controller_stm_shard,
+              [disk_dirty_offset](controller_stm& stm) {
+                  // we do not have to use timeout in here as all the batches to
+                  // apply have to be accesssible
+                  auto last_applied = stm.bootstrap_last_applied();
+
+                  // Consistency check: on a bug-free system, the last_applied
+                  // value in the kvstore always points to data on disk.
+                  // However, if there is a bug, or someone has removed some log
+                  // segments out of band, we will hang trying to read up to
+                  // last_applied. Mitigate this by clamping it to the top of
+                  // the log on disk.
+                  if (last_applied > disk_dirty_offset) {
+                      vlog(
+                        clusterlog.error,
+                        "Inconsistency detected between KVStore last_applied "
+                        "({}) and actual log size ({}).  If the storage "
+                        "directory was not modified intentionally, this is a "
+                        "bug.",
+                        last_applied,
+                        disk_dirty_offset);
+
+                      // Try waiting for replay to reach the disk_dirty_offset,
+                      // ignore last_applied.
+                      return stm
+                        .wait(disk_dirty_offset, model::time_from_now(5s))
+                        .handle_exception_type([](const ss::timed_out_error&) {
+                            // Ignore timeout: it just means the controller
+                            // log replay is done without hitting the disk
+                            // log hwm (truncation happened), or that we were
+                            // slow and controller replay will continue in
+                            // the background while the rest of redpanda
+                            // starts up.
+                        });
+                  }
+
+                  vlog(
+                    clusterlog.info,
+                    "Controller log replay starting (to offset {})",
+                    last_applied);
+
+                  if (last_applied == model::offset{}) {
+                      return ss::now();
+                  } else {
+                      return stm.wait(last_applied, model::no_timeout);
+                  }
+              })
+            .then(
+              [] { vlog(clusterlog.info, "Controller log replay complete."); });
       })
       .then([this, &discovery] { return cluster_creation_hook(discovery); })
       .then(
