@@ -1428,7 +1428,10 @@ func TestStartCommand(t *testing.T) {
 			var out bytes.Buffer
 			logrus.SetOutput(&out)
 			c := NewStartCommand(fs, launcher)
-			c.SetArgs(tt.args)
+			// We disable --check flag to avoid running tuner checks in Afero's
+			// memory backed file system.
+			args := append([]string{"--check=false"}, tt.args...)
+			c.SetArgs(args)
 			err := c.Execute()
 			if tt.expectedErrMsg != "" {
 				require.Contains(st, err.Error(), tt.expectedErrMsg)
