@@ -540,10 +540,10 @@ remote_partition::aborted_transactions(offset_range offsets) {
       "found {} aborted transactions for {}-{} offset range ({}-{} before "
       "offset translaction)",
       result.size(),
-      offsets.begin_rp,
       offsets.begin,
-      offsets.end_rp,
-      offsets.end);
+      offsets.end,
+      offsets.begin_rp,
+      offsets.end_rp);
     co_return result;
 }
 
