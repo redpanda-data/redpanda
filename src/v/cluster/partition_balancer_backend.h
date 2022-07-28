@@ -49,7 +49,11 @@ public:
     bool is_leader() const { return _raft0->is_leader(); }
 
     std::optional<model::node_id> leader_id() const {
-        return _raft0->get_leader_id();
+        auto leader_id = _raft0->get_leader_id();
+        if (leader_id && leader_id == _raft0->self().id() && !is_leader()) {
+            return std::nullopt;
+        }
+        return leader_id;
     }
 
     partition_balancer_overview_reply overview() const;
