@@ -71,11 +71,11 @@ struct echo_impl final : echo::echo_service_base<Codec> {
           echo::echo_resp{.str = ssx::sformat("{}_suffix", req.str)});
     }
 
-    ss::future<echo::echo_resp>
-    sleep_1s(echo::echo_req&&, rpc::streaming_context&) final {
-        using namespace std::chrono_literals;
-        return ss::sleep(1s).then(
-          []() { return echo::echo_resp{.str = "Zzz..."}; });
+    ss::future<echo::sleep_resp>
+    sleep_for(echo::sleep_req&& req, rpc::streaming_context&) final {
+        return ss::sleep(std::chrono::seconds(req.secs)).then([]() {
+            return echo::sleep_resp{.str = "Zzz..."};
+        });
     }
 
     ss::future<echo::cnt_resp>
@@ -336,9 +336,9 @@ FIXTURE_TEST(timeout_test, rpc_integration_fixture) {
 
     rpc::client<echo::echo_client_protocol> client(client_config());
     client.connect(model::no_timeout).get();
-    info("Calling echo method");
-    auto echo_resp = client.sleep_1s(
-      echo::echo_req{.str = "testing..."},
+    info("Calling sleep for.. 1s");
+    auto echo_resp = client.sleep_for(
+      echo::sleep_req{.secs = 1},
       rpc::client_opts(rpc::clock_type::now() + 100ms));
     BOOST_REQUIRE_EQUAL(
       echo_resp.get0().error(), rpc::errc::client_request_timeout);
