@@ -30,6 +30,7 @@ rp_test(
     timequery_test.cc
     kvstore_test.cc
     backlog_controller_test.cc
+    readers_cache_test.cc
   LIBRARIES v::seastar_testing_main v::storage_test_utils v::model_test_utils
   LABELS storage
   ARGS "-- -c 1"
