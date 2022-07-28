@@ -43,10 +43,6 @@ members_frontend::members_frontend(
   , _feature_table(feature_table)
   , _as(as) {}
 
-ss::future<> members_frontend::start() { return ss::now(); }
-
-ss::future<> members_frontend::stop() { return ss::now(); }
-
 ss::future<std::error_code>
 members_frontend::finish_node_reallocations(model::node_id id) {
     auto leader = _leaders.local().get_leader(model::controller_ntp);

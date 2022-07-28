@@ -217,7 +217,7 @@ ss::future<> config_manager::start() {
 }
 
 ss::future<> config_manager::stop() {
-    vlog(clusterlog.info, "stopping cluster::config_manager...");
+    vlog(clusterlog.info, "Stopping Config Manager...");
     _reconcile_wait.broken();
     co_await _gate.close();
 }

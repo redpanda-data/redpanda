@@ -45,9 +45,6 @@ public:
     ss::future<std::error_code>
     set_status(config_status&, model::timeout_clock::time_point);
 
-    ss::future<> start();
-    ss::future<> stop();
-
     void set_next_version(config_version v);
 
 private:

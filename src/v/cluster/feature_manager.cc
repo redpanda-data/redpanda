@@ -155,6 +155,7 @@ ss::future<> feature_manager::start() {
     co_return;
 }
 ss::future<> feature_manager::stop() {
+    vlog(clusterlog.info, "Stopping Feature Manager...");
     _group_manager.local().unregister_leadership_notification(
       _leader_notify_handle);
     _hm_backend.local().unregister_node_callback(_health_notify_handle);

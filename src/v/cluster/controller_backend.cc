@@ -266,6 +266,7 @@ controller_backend::controller_backend(
   , _as(as) {}
 
 ss::future<> controller_backend::stop() {
+    vlog(clusterlog.info, "Stopping Controller Backend...");
     _housekeeping_timer.cancel();
     return _gate.close();
 }

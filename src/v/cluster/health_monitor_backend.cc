@@ -116,6 +116,7 @@ void health_monitor_backend::unregister_node_callback(
 }
 
 ss::future<> health_monitor_backend::stop() {
+    vlog(clusterlog.info, "Stopping Health Monitor Backend...");
     _raft_manager.local().unregister_leadership_notification(
       _leadership_notification_handle);
 

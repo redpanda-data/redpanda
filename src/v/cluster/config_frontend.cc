@@ -30,9 +30,6 @@ config_frontend::config_frontend(
   , _as(as)
   , _self(config::node().node_id()) {}
 
-ss::future<> config_frontend::start() { return ss::now(); }
-ss::future<> config_frontend::stop() { return ss::now(); }
-
 /**
  * RPC wrapper on do_patch, to dispatch to the controller leader
  * if we aren't it.

@@ -58,6 +58,7 @@ members_backend::members_backend(
 }
 
 ss::future<> members_backend::stop() {
+    vlog(clusterlog.info, "Stopping Members Backend...");
     _retry_timer.cancel();
     _new_updates.broken();
     return _bg.close();

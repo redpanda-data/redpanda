@@ -27,6 +27,8 @@ partition_leaders_table::partition_leaders_table(
   : _topic_table(topic_table) {}
 
 ss::future<> partition_leaders_table::stop() {
+    vlog(clusterlog.info, "Stopping Partition Leaders Table...");
+
     while (!_leader_promises.empty()) {
         auto it = _leader_promises.begin();
         for (auto& promise : it->second) {
