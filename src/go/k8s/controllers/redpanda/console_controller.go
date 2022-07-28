@@ -409,7 +409,7 @@ func getContainers(cluster *redpandav1alpha1.Cluster, console *redpandav1alpha1.
 				{
 					Name:          "http",
 					ContainerPort: int32(console.Spec.REST.HTTPListenPort),
-					Protocol:      "tcp",
+					Protocol:      "TCP",
 				},
 			},
 			Env:       []corev1.EnvVar{},
