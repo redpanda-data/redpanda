@@ -431,7 +431,7 @@ func getDNSPolicy(console *redpandav1alpha1.Console) corev1.DNSPolicy {
 	if console.Spec.Deployment.DNSPolicy != nil {
 		return *console.Spec.Deployment.DNSPolicy
 	}
-	return corev1.DNSDefault
+	return corev1.DNSClusterFirst
 }
 
 func getDeploymentStrategy(console *redpandav1alpha1.Console) v1.DeploymentStrategy {
