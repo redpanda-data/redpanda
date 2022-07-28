@@ -62,6 +62,16 @@ struct cnt_resp {
     uint64_t current;
 };
 
+struct sleep_req {
+    using rpc_serde_exempt = std::true_type;
+    uint64_t secs;
+};
+
+struct sleep_resp {
+    using rpc_serde_exempt = std::true_type;
+    ss::sstring str;
+};
+
 enum class failure_type { throw_exception, exceptional_future, none };
 
 struct throw_req {
