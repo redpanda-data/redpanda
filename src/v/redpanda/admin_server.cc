@@ -586,6 +586,90 @@ ss::httpd::broker_json::maintenance_status fill_maintenance_status(
     return ret;
 }
 
+// Fetch brokers from the members table and enrich with
+// metadata from the health monitor.
+ss::future<std::vector<ss::httpd::broker_json::broker>>
+get_brokers(cluster::controller* const controller) {
+    cluster::node_report_filter filter;
+
+    return controller->get_health_monitor()
+      .local()
+      .get_cluster_health(
+        cluster::cluster_report_filter{
+          .node_report_filter = std::move(filter),
+        },
+        cluster::force_refresh::no,
+        model::no_timeout)
+      .then([controller](result<cluster::cluster_health_report> h_report) {
+          if (h_report.has_error()) {
+              throw ss::httpd::base_exception(
+                fmt::format(
+                  "Unable to get cluster health: {}",
+                  h_report.error().message()),
+                ss::httpd::reply::status_type::service_unavailable);
+          }
+
+          std::map<model::node_id, ss::httpd::broker_json::broker> broker_map;
+
+          // Collect broker information from the members table.
+          auto& members_table = controller->get_members_table().local();
+          for (auto& broker : members_table.all_brokers()) {
+              ss::httpd::broker_json::broker b;
+              b.node_id = broker->id();
+              b.num_cores = broker->properties().cores;
+              b.membership_status = fmt::format(
+                "{}", broker->get_membership_state());
+
+              // These fields are defaults that will be overwritten with
+              // data from the health report.
+              b.is_alive = true;
+              b.maintenance_status = fill_maintenance_status(std::nullopt);
+
+              broker_map[broker->id()] = b;
+          }
+
+          // Enrich the broker information with data from the health report.
+          for (auto& ns : h_report.value().node_states) {
+              auto it = broker_map.find(ns.id);
+              if (it == broker_map.end()) {
+                  continue;
+              }
+
+              it->second.is_alive = static_cast<bool>(ns.is_alive);
+
+              auto r_it = std::find_if(
+                h_report.value().node_reports.begin(),
+                h_report.value().node_reports.end(),
+                [id = ns.id](const cluster::node_health_report& nhr) {
+                    return nhr.id == id;
+                });
+
+              if (r_it != h_report.value().node_reports.end()) {
+                  it->second.version = r_it->local_state.redpanda_version;
+                  it->second.maintenance_status = fill_maintenance_status(
+                    r_it->drain_status);
+
+                  for (auto& ds : r_it->local_state.disks) {
+                      ss::httpd::broker_json::disk_space_info dsi;
+                      dsi.path = ds.path;
+                      dsi.free = ds.free;
+                      dsi.total = ds.total;
+                      it->second.disk_space.push(dsi);
+                  }
+              }
+          }
+
+          std::vector<ss::httpd::broker_json::broker> brokers;
+          brokers.reserve(broker_map.size());
+
+          for (auto&& broker : broker_map) {
+              brokers.push_back(std::move(broker.second));
+          }
+
+          return ss::make_ready_future<decltype(brokers)>(std::move(brokers));
+      });
+};
+
 } // namespace
 
 /**
