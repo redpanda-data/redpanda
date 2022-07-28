@@ -15,6 +15,7 @@ from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
 from rptest.clients.rpk import RpkTool, ClusterAuthorizationError
 from rptest.services.redpanda import SecurityConfig, TLSProvider
+from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
 from rptest.services import tls
 
 
@@ -280,3 +281,42 @@ class AccessControlListTest(RedpandaTest):
                 assert not fail, "list acls should have failed"
             except ClusterAuthorizationError:
                 assert fail, "list acls should have succeeded"
+
+
+class AccessControlListTestUpgrade(AccessControlListTest):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.installer = self.redpanda._installer
+
+    def check_permissions(self):
+        # run a few times for good health
+        for _ in range(5):
+            try:
+                self.get_client("base").acl_list()
+                assert False, "list acls should have failed"
+            except ClusterAuthorizationError:
+                pass
+
+            self.get_client("cluster_describe").acl_list()
+            self.get_super_client().acl_list()
+
+    # Test that a cluster configured with enable_sasl can be upgraded
+    # from v22.1.x, and still have sasl enabled. See PR 5292.
+    @cluster(num_nodes=3)
+    def test_upgrade_sasl(self):
+
+        self.installer.install(self.redpanda.nodes, (22, 1, 3))
+        self.prepare_cluster(use_tls=True,
+                             use_sasl=True,
+                             enable_authz=None,
+                             authn_method=None,
+                             principal_mapping_rules=None)
+
+        self.check_permissions()
+
+        self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        unique_versions = wait_for_num_versions(self.redpanda, 1)
+        assert "v22.1.3" not in unique_versions
+
+        self.check_permissions()
