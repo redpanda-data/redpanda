@@ -43,7 +43,7 @@ const (
 	schemaRegistryTLSCAFilepath   = "/redpanda/schema-registry/ca.pem"
 
 	configMount = "config"
-	configPath  = "/etc/console/configs/config.yaml"
+	configPath  = "/etc/console/configs"
 )
 
 // ConsoleReconciler reconciles a Console object
@@ -404,7 +404,7 @@ func getContainers(cluster *redpandav1alpha1.Cluster, console *redpandav1alpha1.
 			Name:    "console",
 			Image:   fmt.Sprintf("%s:%s", console.Spec.Image, console.Spec.Version),
 			Command: []string{"/app/console"},
-			Args:    append(args, fmt.Sprintf("--config.filepath=%s", configPath)),
+			Args:    append(args, fmt.Sprintf("--config.filepath=%s/%s", configPath, "config.yaml")),
 			Ports: []corev1.ContainerPort{
 				{
 					Name:          "http",
