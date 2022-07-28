@@ -330,6 +330,9 @@ func (r *ConsoleReconciler) createDeployment(ctx context.Context, cluster *redpa
 			Replicas: console.Spec.Deployment.Replicas,
 			Selector: consoleLabels.AsAPISelector(),
 			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: consoleLabels,
+				},
 				Spec: corev1.PodSpec{
 					Volumes: []corev1.Volume{
 						{
