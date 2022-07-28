@@ -97,6 +97,13 @@ public:
         return o._frags == _frags;
     }
 
+    /**
+     * Returns the approximate in-memory size of this vector in bytes.
+     */
+    size_t memory_size() const {
+        return _frags.size() * (sizeof(_frags[0]) + elems_per_frag * sizeof(T));
+    }
+
     class const_iterator {
     public:
         using iterator_category = std::random_access_iterator_tag;
