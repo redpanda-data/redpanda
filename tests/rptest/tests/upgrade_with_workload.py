@@ -19,8 +19,11 @@ class MixedVersionWorkloadRunner():
     PRE_SERDE_VERSION = (22, 1, 4)
 
     @staticmethod
-    def upgrade_with_workload(redpanda: RedpandaService, initial_version,
-                              workload_fn):
+    def upgrade_with_workload(redpanda: RedpandaService,
+                              initial_version,
+                              workload_fn,
+                              start_timeout=None,
+                              stop_timeout=None):
         """
         Runs through an upgrade while running the given workload during the
         intermediate mixed-cluster stages.
@@ -42,24 +45,32 @@ class MixedVersionWorkloadRunner():
 
         # Upgrade one node and send RPCs in both directions.
         installer.install([node0], RedpandaInstaller.HEAD)
-        redpanda.restart_nodes([node0])
+        redpanda.rolling_restart_nodes([node0],
+                                       start_timeout=start_timeout,
+                                       stop_timeout=stop_timeout)
         workload_fn(node0, node1)
         workload_fn(node1, node0)
 
         # Continue on with the upgrade. The versions are identical at this
         # point so just run the workload in one direction.
         installer.install([node1], RedpandaInstaller.HEAD)
-        redpanda.restart_nodes([node1])
+        redpanda.rolling_restart_nodes([node1],
+                                       start_timeout=start_timeout,
+                                       stop_timeout=stop_timeout)
         workload_fn(node0, node1)
 
         # Partial roll back and make sure we can still run the workload.
         installer.install([node1], initial_version)
-        redpanda.restart_nodes([node1])
+        redpanda.rolling_restart_nodes([node1],
+                                       start_timeout=start_timeout,
+                                       stop_timeout=stop_timeout)
         workload_fn(node0, node1)
         workload_fn(node1, node0)
 
         # Complete the upgrade. The versions are identical again so just run
         # through the workload in one direction.
         installer.install(nodes, RedpandaInstaller.HEAD)
-        redpanda.restart_nodes(nodes)
+        redpanda.rolling_restart_nodes(nodes,
+                                       start_timeout=start_timeout,
+                                       stop_timeout=stop_timeout)
         workload_fn(node0, node1)
