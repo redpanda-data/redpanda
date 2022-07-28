@@ -122,6 +122,41 @@ class Consumer:
                              headers=headers)
 
 
+class PandaProxyBrokersTest(RedpandaTest):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, num_brokers=4, **kwargs)
+
+    def setUp(self):
+        # Start the nodes manually for this test.
+        pass
+
+    @cluster(num_nodes=4)
+    def test_get_brokers_with_stale_health_metadata(self):
+        """
+        Test that a new member will be returned by /brokers
+        requests processed by followers even when the health metadata
+        is out of sync.
+        """
+        # Start first three nodes
+        assert len(self.redpanda.nodes) == 4
+        self.redpanda.start(self.redpanda.nodes[0:-1])
+
+        # Make the maximum metadata longer than the duration of the
+        # tests to ensure it won't be refreshed.
+        one_minute = 1000 * 60
+        self.redpanda.set_cluster_config(
+            {"health_monitor_max_metadata_age": one_minute})
+
+        # Start the late joiner
+        self.redpanda.start([self.redpanda.nodes[-1]])
+
+        # Check that the new broker is returned regardless
+        # of the health metadata being stale.
+        wait_until(lambda: self.redpanda.registered(self.redpanda.nodes[-1]),
+                   timeout_sec=5,
+                   backoff_sec=1)
+
+
 class PandaProxyTest(RedpandaTest):
     """
     Test pandaproxy against a redpanda cluster.
