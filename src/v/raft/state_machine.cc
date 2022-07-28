@@ -57,9 +57,11 @@ ss::future<> state_machine::stop() {
 }
 
 ss::future<> state_machine::wait(
-  model::offset offset, model::timeout_clock::time_point timeout) {
-    return ss::with_gate(_gate, [this, timeout, offset] {
-        return _waiters.wait(offset, timeout, std::nullopt);
+  model::offset offset,
+  model::timeout_clock::time_point timeout,
+  std::optional<std::reference_wrapper<ss::abort_source>> as) {
+    return ss::with_gate(_gate, [this, timeout, offset, as] {
+        return _waiters.wait(offset, timeout, as);
     });
 }
 
