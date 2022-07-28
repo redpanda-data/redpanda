@@ -12,7 +12,6 @@ package config
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 
@@ -74,7 +73,7 @@ func executeEdit(
 	all *bool,
 ) error {
 	// Generate a yaml template for editing
-	file, err := ioutil.TempFile("/tmp", "config_*.yaml")
+	file, err := os.CreateTemp("/tmp", "config_*.yaml")
 	filename := file.Name()
 	defer func() {
 		err := os.Remove(filename)
