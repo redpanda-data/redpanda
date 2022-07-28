@@ -256,19 +256,20 @@ ss::future<> remote_segment::do_hydrate() {
           std::move(fparse), std::move(fput));
         bool index_prepared = true;
         if (rparse.failed()) {
+            auto parse_exception = rparse.get_exception();
             vlog(
               _ctxlog.warn,
               "Failed to build a remote_segment index, error: {}",
-              rparse.get_exception());
-            rparse.ignore_ready_future();
+              parse_exception);
             index_prepared = false;
         }
         if (rput.failed()) {
+            auto put_exception = rput.get_exception();
             vlog(
               _ctxlog.warn,
               "Failed to write a segment file to cache, error: {}",
-              rput.get_exception());
-            rput.get();
+              put_exception);
+            std::rethrow_exception(put_exception);
         }
         if (index_prepared) {
             auto index_stream = make_iobuf_input_stream(tmpidx.to_iobuf());
