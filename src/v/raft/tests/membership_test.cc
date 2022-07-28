@@ -247,6 +247,12 @@ FIXTURE_TEST(replace_whole_group, raft_test_fixture) {
     gr.enable_all();
     info("replicating some batches");
     auto res = replicate_random_batches(gr, 5).get0();
+    // wait for all group members to have the same log
+    wait_for(
+      10s,
+      [&] { return are_all_commit_indexes_the_same(gr); },
+      "initially all replicas have the same committed offsets");
+
     // all nodes are replaced with new node
     gr.create_new_node(model::node_id(5));
     std::vector<raft::broker_revision> new_members;
@@ -292,7 +298,7 @@ FIXTURE_TEST(replace_whole_group, raft_test_fixture) {
           }
           auto last_old = old_nodes_log.begin()->second.back().last_offset();
           auto last_new = new_nodes_log.begin()->second.back().last_offset();
-          if (last_new <= last_old) {
+          if (last_new < last_old) {
               return false;
           }
           return std::all_of(
