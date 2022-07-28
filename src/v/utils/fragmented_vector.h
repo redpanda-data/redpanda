@@ -36,10 +36,6 @@
  */
 template<typename T, size_t fragment_size = 8192>
 class fragmented_vector {
-    static_assert(
-      (fragment_size & (fragment_size - 1)) == 0,
-      "fragment size must be a power of 2");
-    static_assert(fragment_size % sizeof(T) == 0);
     static constexpr size_t elems_per_frag = fragment_size / sizeof(T);
     static_assert(elems_per_frag >= 1);
 
