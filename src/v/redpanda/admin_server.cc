@@ -560,6 +560,32 @@ map_partition_results(std::vector<cluster::move_cancellation_result> results) {
     }
     co_return ret;
 }
+
+ss::httpd::broker_json::maintenance_status fill_maintenance_status(
+  const std::optional<cluster::drain_manager::drain_status>& status) {
+    ss::httpd::broker_json::maintenance_status ret;
+    if (status) {
+        const auto& s = status.value();
+        ret.draining = true;
+        ret.finished = s.finished;
+        ret.errors = s.errors;
+        ret.partitions = s.partitions.value_or(0);
+        ret.transferring = s.transferring.value_or(0);
+        ret.eligible = s.eligible.value_or(0);
+        ret.failed = s.failed.value_or(0);
+    } else {
+        ret.draining = false;
+        // ensure that the output json has all fields
+        ret.finished = false;
+        ret.errors = false;
+        ret.partitions = 0;
+        ret.transferring = 0;
+        ret.eligible = 0;
+        ret.failed = 0;
+    }
+    return ret;
+}
+
 } // namespace
 
 /**
@@ -1660,31 +1686,6 @@ void admin_server::register_features_routes() {
           }
           co_return ss::json::json_void();
       });
-}
-
-static ss::httpd::broker_json::maintenance_status fill_maintenance_status(
-  const std::optional<cluster::drain_manager::drain_status>& status) {
-    ss::httpd::broker_json::maintenance_status ret;
-    if (status) {
-        const auto& s = status.value();
-        ret.draining = true;
-        ret.finished = s.finished;
-        ret.errors = s.errors;
-        ret.partitions = s.partitions.value_or(0);
-        ret.transferring = s.transferring.value_or(0);
-        ret.eligible = s.eligible.value_or(0);
-        ret.failed = s.failed.value_or(0);
-    } else {
-        ret.draining = false;
-        // ensure that the output json has all fields
-        ret.finished = false;
-        ret.errors = false;
-        ret.partitions = 0;
-        ret.transferring = 0;
-        ret.eligible = 0;
-        ret.failed = 0;
-    }
-    return ret;
 }
 
 void admin_server::register_broker_routes() {
