@@ -85,9 +85,6 @@ const (
 )
 
 func updateConfigWithFlags(conf *config.Config, flags *pflag.FlagSet) {
-	if flags.Changed(configFlag) {
-		conf.ConfigFile, _ = flags.GetString(configFlag)
-	}
 	if flags.Changed(lockMemoryFlag) {
 		conf.Rpk.EnableMemoryLocking, _ = flags.GetBool(lockMemoryFlag)
 	}
@@ -579,7 +576,7 @@ func buildRedpandaFlags(
 		// If --io-properties-file and --io-properties weren't set, try
 		// finding an IO props file in the default location.
 		sFlags.ioPropertiesFile = rp.GetIOConfigPath(
-			filepath.Dir(conf.ConfigFile),
+			filepath.Dir(conf.FileLocation()),
 		)
 		if exists, _ := afero.Exists(fs, sFlags.ioPropertiesFile); !exists {
 			sFlags.ioPropertiesFile = ""
@@ -619,14 +616,14 @@ func buildRedpandaFlags(
 					" remove it and pass '--%s' directly"+
 					" to `rpk start`.",
 				n,
-				conf.ConfigFile,
+				conf.FileLocation(),
 				n,
 			)
 		}
 		finalFlags[n] = fmt.Sprint(v)
 	}
 	return &rp.RedpandaArgs{
-		ConfigFilePath: conf.ConfigFile,
+		ConfigFilePath: conf.FileLocation(),
 		SeastarFlags:   finalFlags,
 	}, nil
 }

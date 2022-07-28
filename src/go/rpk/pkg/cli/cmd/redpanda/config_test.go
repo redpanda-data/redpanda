@@ -128,7 +128,7 @@ func TestBootstrap(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			_, err = fs.Stat(config.Default().ConfigFile)
+			_, err = fs.Stat(config.DefaultPath)
 			require.NoError(t, err)
 			conf, err := new(config.Params).Load(fs)
 			require.NoError(t, err)
@@ -166,7 +166,7 @@ func TestInitNode(t *testing.T) {
 
 			bs, err := yaml.Marshal(c)
 			require.NoError(t, err)
-			err = afero.WriteFile(fs, c.ConfigFile, bs, 0o644)
+			err = afero.WriteFile(fs, config.DefaultPath, bs, 0o644)
 			require.NoError(t, err)
 
 			cmd := initNode(fs)
@@ -196,8 +196,7 @@ func TestSetCommand(t *testing.T) {
 	}{
 		{
 			name: "set without config file on disk",
-			exp: `config_file: /etc/redpanda/redpanda.yaml
-redpanda:
+			exp: `redpanda:
     data_directory: /var/lib/redpanda/data
     node_id: 0
     rack: redpanda-rack
@@ -221,8 +220,7 @@ schema_registry: {}
 		},
 		{
 			name: "set with loaded config",
-			cfgFile: `config_file: /etc/redpanda/redpanda.yaml
-redpanda:
+			cfgFile: `redpanda:
     data_directory: data/dir
     node_id: 0
     rack: redpanda-rack
@@ -241,8 +239,7 @@ rpk:
     tune_network: true
     tune_disk_scheduler: true
 `,
-			exp: `config_file: /etc/redpanda/redpanda.yaml
-redpanda:
+			exp: `redpanda:
     data_directory: data/dir
     node_id: 0
     rack: redpanda-rack

@@ -19,8 +19,7 @@ func TestParams_Write(t *testing.T) {
 	}{
 		{
 			name: "create default config file if there is no config file yet",
-			exp: `config_file: /etc/redpanda/redpanda.yaml
-redpanda:
+			exp: `redpanda:
     data_directory: /var/lib/redpanda/data
     node_id: 0
     seed_servers: []
@@ -45,8 +44,7 @@ rpk:
 		},
 		{
 			name: "write loaded config",
-			inCfg: `config_file: /etc/redpanda/redpanda.yaml
-redpanda:
+			inCfg: `redpanda:
     data_directory: ""
     node_id: 1
     rack: my_rack
@@ -55,16 +53,14 @@ redpanda:
 				c.Redpanda.ID = 6
 				return c
 			},
-			exp: `config_file: /etc/redpanda/redpanda.yaml
-redpanda:
+			exp: `redpanda:
     node_id: 6
     rack: my_rack
 `,
 		},
 		{
 			name: "write empty structs",
-			inCfg: `config_file: /etc/redpanda/redpanda.yaml
-rpk:
+			inCfg: `rpk:
     tls:
         truststore_file: ""
         cert_file: ""
@@ -101,9 +97,9 @@ rpk:
 
 			// We use the loaded filepath, or the default in-mem generated
 			// config path if no file was loaded.
-			path := cfg.loadedPath
+			path := cfg.fileLocation
 			if path == "" {
-				path = Default().ConfigFile
+				path = DefaultPath
 			}
 
 			if test.cfgChanges != nil {
@@ -145,8 +141,7 @@ func TestRedpandaSampleFile(t *testing.T) {
 		return
 	}
 	expCfg := &Config{
-		ConfigFile: "/etc/redpanda/redpanda.yaml",
-		loadedPath: "/etc/redpanda/redpanda.yaml",
+		fileLocation: "/etc/redpanda/redpanda.yaml",
 		Redpanda: RedpandaConfig{
 			Directory: "/var/lib/redpanda/data",
 			RPCServer: SocketAddress{
@@ -192,8 +187,7 @@ func TestRedpandaSampleFile(t *testing.T) {
 		t.Errorf("unexpected error while reading config file from fs: %s", err)
 		return
 	}
-	require.Equal(t, `config_file: /etc/redpanda/redpanda.yaml
-redpanda:
+	require.Equal(t, `redpanda:
     data_directory: /var/lib/redpanda/data
     node_id: 1
     seed_servers: []

@@ -842,8 +842,7 @@ func TestConfig_UnmarshalYAML(t *testing.T) {
 	}{
 		{
 			name: "Config file with normal types",
-			data: `config_file: "/etc/redpanda/redpanda.yaml"
-organization: "my_organization"
+			data: `organization: "my_organization"
 cluster_id: "cluster_id"
 node_uuid: "node_uuid"
 redpanda:
@@ -969,7 +968,6 @@ rpk:
   tune_clocksource: true
 `,
 			exp: &Config{
-				ConfigFile:   "/etc/redpanda/redpanda.yaml",
 				Organization: "my_organization",
 				ClusterID:    "cluster_id",
 				NodeUUID:     "node_uuid",
@@ -1074,8 +1072,7 @@ rpk:
 		},
 		{
 			name: "Config file with weak types",
-			data: `config_file: 123123
-organization: true
+			data: `organization: true
 cluster_id: "cluster_id"
 node_uuid: 124.42
 redpanda:
@@ -1207,7 +1204,6 @@ rpk:
   tune_clocksource: 1
 `,
 			exp: &Config{
-				ConfigFile:   "123123",
 				Organization: "1",
 				ClusterID:    "cluster_id",
 				NodeUUID:     "124.42",
