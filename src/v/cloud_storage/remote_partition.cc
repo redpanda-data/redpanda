@@ -16,6 +16,7 @@
 #include "cloud_storage/types.h"
 #include "storage/parser_errc.h"
 #include "storage/types.h"
+#include "utils/gate_guard.h"
 #include "utils/retry_chain_node.h"
 #include "utils/stream_utils.h"
 
@@ -501,6 +502,7 @@ remote_partition::get_term_last_offset(model::term_id term) const {
 
 ss::future<std::vector<cluster::rm_stm::tx_range>>
 remote_partition::aborted_transactions(offset_range offsets) {
+    gate_guard guard(_gate);
     // Here we have to use kafka offsets to locate the segments and
     // redpanda offsets to extract aborted transactions metadata because
     // tx-manifests contains redpanda offsets.
