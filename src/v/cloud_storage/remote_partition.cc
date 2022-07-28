@@ -505,11 +505,13 @@ remote_partition::aborted_transactions(offset_range offsets) {
     // redpanda offsets to extract aborted transactions metadata because
     // tx-manifests contains redpanda offsets.
     std::vector<cluster::rm_stm::tx_range> result;
-    auto first_it = _segments.upper_bound(offsets.begin);
-    if (first_it != _segments.begin()) {
+
+    // that's a stable btree iterator that makes key lookup on increment
+    auto first_it = upper_bound(offsets.begin);
+    if (first_it != begin()) {
         first_it = std::prev(first_it);
     }
-    for (auto it = first_it; it != _segments.end(); it++) {
+    for (auto it = first_it; it != end(); it++) {
         if (it->first > offsets.end) {
             break;
         }
@@ -560,9 +562,9 @@ ss::future<> remote_partition::stop() {
         co_await std::visit([](auto&& rs) { return rs->stop(); }, rs);
     }
 
-    for (auto& [offset, seg] : _segments) {
-        vlog(_ctxlog.debug, "remote partition stop {}", offset);
-        co_await std::visit([](auto&& st) { return st->stop(); }, seg);
+    for (auto it = begin(); it != end(); it++) {
+        vlog(_ctxlog.debug, "remote partition stop {}", it->first);
+        co_await std::visit([](auto&& st) { return st->stop(); }, it->second);
     }
 }
 
