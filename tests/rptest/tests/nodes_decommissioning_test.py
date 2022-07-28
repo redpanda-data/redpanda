@@ -132,6 +132,13 @@ class NodesDecommissioningTest(EndToEndTest):
             timeout_sec=120,
             backoff_sec=2)
 
+        # Stop the decommissioned node, because redpanda internally does not
+        # fence it, it is the responsibility of external orchestrator to
+        # stop the node they intend to remove.
+        # This can be removed when we change redpanda to prevent decommissioned nodes
+        # from responding to client Kafka requests.
+        self.redpanda.stop_node(to_decommission)
+
         self.run_validation(enable_idempotence=False, consumer_timeout_sec=45)
 
     @cluster(num_nodes=6, log_allow_list=CHAOS_LOG_ALLOW_LIST)
