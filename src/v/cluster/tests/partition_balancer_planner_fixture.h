@@ -20,6 +20,7 @@
 #include "units.h"
 
 #include <chrono>
+#include <optional>
 
 constexpr uint64_t node_size = 200_MiB;
 constexpr uint64_t full_node_free_size = 5_MiB;
@@ -33,13 +34,15 @@ constexpr std::chrono::seconds node_unavailable_timeout = std::chrono::minutes(
 static constexpr uint32_t partitions_per_shard = 7000;
 static constexpr uint32_t partitions_reserve_shard0 = 2;
 
-static std::unique_ptr<cluster::allocation_node>
-create_allocation_node(model::node_id nid, uint32_t cores) {
+static std::unique_ptr<cluster::allocation_node> create_allocation_node(
+  model::node_id nid,
+  uint32_t cores,
+  const std::optional<model::rack_id>& rack_id = std::nullopt) {
     return std::make_unique<cluster::allocation_node>(
       nid,
       cores,
       absl::node_hash_map<ss::sstring, ss::sstring>{},
-      std::nullopt,
+      rack_id,
       config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
       config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0}));
 }
@@ -57,7 +60,7 @@ public:
             config::mock_binding<std::optional<int32_t>>(std::nullopt),
             config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
             config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0}),
-            config::mock_binding<bool>(false))
+            config::mock_binding<bool>(true))
           .get();
     }
 
@@ -125,10 +128,12 @@ struct partition_balancer_planner_fixture {
         BOOST_REQUIRE_EQUAL(res, cluster::errc::success);
     }
 
-    void allocator_register_nodes(size_t nodes_amount) {
+    void allocator_register_nodes(
+      size_t nodes_amount,
+      const std::optional<model::rack_id>& rack_id = std::nullopt) {
         for (size_t i = 0; i < nodes_amount; ++i) {
-            workers.allocator.local().register_node(
-              create_allocation_node(model::node_id(last_node_idx), 4));
+            workers.allocator.local().register_node(create_allocation_node(
+              model::node_id(last_node_idx), 4, rack_id));
             last_node_idx++;
         }
     }

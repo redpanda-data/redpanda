@@ -86,6 +86,20 @@ void partition_balancer_planner::calculate_unavailable_nodes(
     }
 }
 
+bool partition_balancer_planner::all_reports_received(
+  const reallocation_request_state& rrs) {
+    for (auto& s = _partition_allocator.state();
+         const auto& node : s.allocation_nodes()) {
+        if (
+          !rrs.unavailable_nodes.contains(node.first)
+          && !rrs.node_disk_reports.contains(node.first)) {
+            vlog(clusterlog.info, "No disk report for node {}", node.first);
+            return false;
+        }
+    }
+    return true;
+}
+
 std::vector<model::broker_shard>
 partition_balancer_planner::get_stable_replicas(
   const std::vector<model::broker_shard>& replicas,
@@ -453,6 +467,16 @@ partition_balancer_planner::plan_reassignments(
 
     if (_topic_table.has_updates_in_progress()) {
         get_unavailable_node_movement_cancellations(result.cancellations, rrs);
+        if (!result.cancellations.empty()) {
+            result.status
+              = partition_balancer_planner::status::cancellations_planned;
+        }
+        return result;
+    }
+
+    if (!all_reports_received(rrs)) {
+        result.status = partition_balancer_planner::status::waiting_for_reports;
+        return result;
     }
 
     if (
@@ -461,6 +485,12 @@ partition_balancer_planner::plan_reassignments(
         init_ntp_sizes_from_health_report(health_report, rrs);
         get_unavailable_nodes_reassignments(result, rrs);
         get_full_node_reassignments(result, rrs);
+        if (!result.reassignments.empty()) {
+            result.status
+              = partition_balancer_planner::status::movement_planned;
+        }
+
+        return result;
     }
 
     return result;

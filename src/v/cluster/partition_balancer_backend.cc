@@ -21,6 +21,7 @@
 #include <chrono>
 
 using namespace std::chrono_literals;
+using planner_status = cluster::partition_balancer_planner::status;
 
 namespace cluster {
 
@@ -143,11 +144,13 @@ ss::future<> partition_balancer_backend::do_tick() {
     _last_leader_term = _raft0->term();
     _last_tick_time = ss::lowres_clock::now();
     _last_violations = std::move(plan_data.violations);
-
     if (
-      _topic_table.has_updates_in_progress() || !plan_data.reassignments.empty()
-      || !plan_data.cancellations.empty()) {
+      _topic_table.has_updates_in_progress()
+      || plan_data.status == planner_status::cancellations_planned
+      || plan_data.status == planner_status::movement_planned) {
         _last_status = partition_balancer_status::in_progress;
+    } else if (plan_data.status == planner_status::waiting_for_reports) {
+        _last_status = partition_balancer_status::starting;
     } else if (plan_data.failed_reassignments_count > 0) {
         _last_status = partition_balancer_status::stalled;
     } else {

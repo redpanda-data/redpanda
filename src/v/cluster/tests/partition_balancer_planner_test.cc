@@ -671,3 +671,54 @@ FIXTURE_TEST(test_node_cancelation, partition_balancer_planner_fixture) {
     BOOST_REQUIRE(planner_result.cancellations.size() == 1);
     BOOST_REQUIRE(planner_result.cancellations.front() == ntp);
 }
+
+/*
+ * 5 nodes; 1 topic; 1 node down;
+ * Rebalaning process should select node_4 according to rack awareness
+ * constraint
+ * Actual
+ *   node_0: partitions: 1; down: True; disk: unfilled; rack_1;
+ *   node_1: partitions: 1; down: False; disk: unfilled; rack_2;
+ *   node_2: partitions: 1; down: False; disk: unfilled; rack_3;
+ *   node_3: partitions: 0; down: False; disk: unfilled; rack_3;
+ *   node_4: partitions: 0; down: False; disk: unfilled; rack_4;
+ * Expected
+ *   node_0: partitions: 0;
+ *   node_1: partitions: 1;
+ *   node_2: partitions: 1;
+ *   node_3: partitions: 0;
+ *   node_4: partitions: 1;
+ */
+FIXTURE_TEST(test_rack_awareness, partition_balancer_planner_fixture) {
+    vlog(logger.debug, "test_rack_awareness");
+    allocator_register_nodes(1, model::rack_id("rack_1"));
+    allocator_register_nodes(1, model::rack_id("rack_2"));
+    allocator_register_nodes(1, model::rack_id("rack_3"));
+    create_topic("topic-1", 1, 3);
+    allocator_register_nodes(1, model::rack_id("rack_3"));
+    allocator_register_nodes(1, model::rack_id("rack_4"));
+
+    auto hr = create_health_report();
+    // Make node_4 disk free size less to make partition allocator disk usage
+    // constraint prefer node_3 rather than node_4
+    hr.node_reports[4].local_state.disks[0].free
+      = hr.node_reports[3].local_state.disks[0].free - 10_MiB;
+
+    std::set<size_t> unavailable_nodes = {0};
+    auto fm = create_follower_metrics(unavailable_nodes);
+
+    auto plan_data = planner.plan_reassignments(hr, fm);
+
+    check_violations(plan_data, unavailable_nodes, {});
+
+    BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 1);
+
+    std::unordered_set<model::node_id> expected_nodes(
+      {model::node_id(1), model::node_id(2), model::node_id(4)});
+
+    auto new_replicas = plan_data.reassignments.front()
+                          .allocation_units.get_assignments()
+                          .front()
+                          .replicas;
+    check_expected_assignments(new_replicas, expected_nodes);
+}

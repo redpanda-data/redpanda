@@ -61,7 +61,9 @@ allocation_constraints default_constraints() {
 }
 
 result<std::vector<model::broker_shard>>
-partition_allocator::allocate_partition(partition_constraints p_constraints) {
+partition_allocator::allocate_partition(
+  partition_constraints p_constraints,
+  const std::vector<model::broker_shard>& not_changed_replicas) {
     vlog(
       clusterlog.trace,
       "allocating partition with constraints: {}",
@@ -81,11 +83,17 @@ partition_allocator::allocate_partition(partition_constraints p_constraints) {
           ss::make_lw_shared<hard_constraint_evaluator>(
             distinct_from(replicas.get())));
 
+        std::vector<model::broker_shard> current_replicas;
         // rack-placement contraint
         if (_enable_rack_awareness()) {
+            current_replicas = replicas.get();
+            current_replicas.insert(
+              current_replicas.end(),
+              not_changed_replicas.begin(),
+              not_changed_replicas.end());
             effective_constraits.soft_constraints.push_back(
               ss::make_lw_shared<soft_constraint_evaluator>(
-                distinct_rack(replicas.get(), *_state)));
+                distinct_rack(current_replicas, *_state)));
         }
 
         effective_constraits.add(p_constraints.constraints);
@@ -298,7 +306,8 @@ partition_allocator::do_reallocate_partition(
       ss::make_lw_shared<hard_constraint_evaluator>(
         distinct_from(not_changed_replicas)));
     p_constraints.replication_factor -= not_changed_replicas.size();
-    auto result = allocate_partition(std::move(p_constraints));
+    auto result = allocate_partition(
+      std::move(p_constraints), not_changed_replicas);
     if (!result) {
         return result.error();
     }
