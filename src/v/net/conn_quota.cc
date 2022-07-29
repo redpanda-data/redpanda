@@ -126,6 +126,8 @@ void conn_quota::put(ss::net::inet_address addr) {
     if (_cfg.max_connections_per_ip()) {
         do_put(addr);
     }
+
+    vlog(rpc::rpclog.trace, "leaving put({})", addr);
 }
 
 /**
