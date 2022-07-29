@@ -10,26 +10,51 @@
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // ConsoleSpec defines the desired state of Console
 type ConsoleSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// +optional
+	Server Server `json:"server"`
 
-	// Foo is an example field of Console. Edit console_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	ClusterKeyRef corev1.ObjectReference `json:"clusterKeyRef"`
+}
+
+// Server is the Console app HTTP server config
+type Server struct {
+	// +kubebuilder:default="30s"
+	ServerGracefulShutdownTimeout string `json:"gracefulShutdownTimeout,omitempty" yaml:"gracefulShutdownTimeout,omitempty"`
+
+	HTTPListenAddress string `json:"listenAddress,omitempty" yaml:"listenAddress,omitempty"`
+
+	// +kubebuilder:default=8080
+	HTTPListenPort int `json:"listenPort,omitempty" yaml:"listenPort,omitempty"`
+
+	// +kubebuilder:default="30s"
+	HTTPServerReadTimeout string `json:"readTimeout,omitempty" yaml:"readTimeout,omitempty"`
+
+	// +kubebuilder:default="30s"
+	HTTPServerWriteTimeout string `json:"writeTimeout,omitempty" yaml:"writeTimeout,omitempty"`
+
+	// +kubebuilder:default="30s"
+	HTTPServerIdleTimeout string `json:"idleTimeout,omitempty" yaml:"idleTimeout,omitempty"`
+
+	// +kubebuilder:default=4
+	CompressionLevel int `json:"compressionLevel,omitempty" yaml:"compressionLevel,omitempty"`
+
+	BasePath string `json:"basePath,omitempty" yaml:"basePath,omitempty"`
+
+	// +kubebuilder:default=true
+	SetBasePathFromXForwardedPrefix bool `json:"setBasePathFromXForwardedPrefix,omitempty" yaml:"setBasePathFromXForwardedPrefix,omitempty"`
+
+	// +kubebuilder:default=true
+	StripPrefix bool `json:"stripPrefix,omitempty" yaml:"stripPrefix,omitempty"`
 }
 
 // ConsoleStatus defines the observed state of Console
-type ConsoleStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-}
+type ConsoleStatus struct{}
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
