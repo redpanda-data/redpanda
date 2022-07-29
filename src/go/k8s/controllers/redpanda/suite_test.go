@@ -28,6 +28,7 @@ import (
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	redpandacontrollers "github.com/redpanda-data/redpanda/src/go/k8s/controllers/redpanda"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
+	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/configuration"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
@@ -46,11 +47,14 @@ import (
 // http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
 
 var (
-	k8sClient           client.Client
-	testEnv             *envtest.Environment
-	cfg                 *rest.Config
-	testAdminAPI        *mockAdminAPI
-	testAdminAPIFactory adminutils.AdminAPIClientFactory
+	k8sClient             client.Client
+	testEnv               *envtest.Environment
+	cfg                   *rest.Config
+	testAdminAPI          *mockAdminAPI
+	testAdminAPIFactory   adminutils.AdminAPIClientFactory
+	testStore             *consolepkg.Store
+	testKafkaAdmin        *mockKafkaAdmin
+	testKafkaAdminFactory consolepkg.KafkaAdminClientFactory
 )
 
 func TestAPIs(t *testing.T) {
@@ -105,6 +109,11 @@ var _ = BeforeSuite(func(done Done) {
 		}
 		return testAdminAPI, nil
 	}
+	testStore = consolepkg.NewStore(k8sManager.GetClient())
+	testKafkaAdmin = &mockKafkaAdmin{}
+	testKafkaAdminFactory = func(context.Context, client.Client, *redpandav1alpha1.Cluster) (consolepkg.KafkaAdminClient, error) {
+		return testKafkaAdmin, nil
+	}
 
 	err = (&redpandacontrollers.ClusterReconciler{
 		Client:                   k8sManager.GetClient(),
@@ -126,6 +135,17 @@ var _ = BeforeSuite(func(done Done) {
 		Scheme:                k8sManager.GetScheme(),
 		AdminAPIClientFactory: testAdminAPIFactory,
 		DriftCheckPeriod:      &driftCheckPeriod,
+	}).WithClusterDomain("cluster.local").SetupWithManager(k8sManager)
+	Expect(err).ToNot(HaveOccurred())
+
+	err = (&redpandacontrollers.ConsoleReconciler{
+		Client:                  k8sManager.GetClient(),
+		Scheme:                  k8sManager.GetScheme(),
+		Log:                     ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Console"),
+		AdminAPIClientFactory:   testAdminAPIFactory,
+		Store:                   testStore,
+		EventRecorder:           k8sManager.GetEventRecorderFor("Console"),
+		KafkaAdminClientFactory: testKafkaAdminFactory,
 	}).WithClusterDomain("cluster.local").SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
@@ -292,6 +312,15 @@ func (m *mockAdminAPI) PatchClusterConfig(
 }
 
 func (m *mockAdminAPI) CreateUser(_ context.Context, _, _, _ string) error {
+	m.monitor.Lock()
+	defer m.monitor.Unlock()
+	if m.unavailable {
+		return &unavailableError{}
+	}
+	return nil
+}
+
+func (m *mockAdminAPI) DeleteUser(_ context.Context, _ string) error {
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
 	if m.unavailable {

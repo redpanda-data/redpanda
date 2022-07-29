@@ -11,6 +11,7 @@ package v1alpha1
 
 import (
 	"fmt"
+	"net/url"
 	"time"
 
 	cmmeta "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
@@ -798,6 +799,22 @@ func (r *Cluster) PandaproxyAPITLS() *PandaproxyAPI {
 	return nil
 }
 
+// SchemaRegistryAPIURL returns a SchemaRegistry URL string.
+// It returns internal URL unless externally available with TLS.
+func (r *Cluster) SchemaRegistryAPIURL() string {
+	// Prefer to use internal URL
+	// But if it is externally available with TLS, we cannot call internal URL without TLS and the TLS certs are signed for external URL
+	host := r.Status.Nodes.SchemaRegistry.Internal
+	if r.IsSchemaRegistryExternallyAvailable() && r.IsSchemaRegistryTLSEnabled() {
+		host = r.Status.Nodes.SchemaRegistry.External
+	}
+	if sr := r.Spec.Configuration.SchemaRegistry; sr != nil {
+		u := url.URL{Scheme: sr.GetHTTPScheme(), Host: host}
+		return u.String()
+	}
+	return ""
+}
+
 // SchemaRegistryAPITLS returns a SchemaRegistry listener that has TLS enabled.
 // It returns nil if no TLS is configured.
 func (r *Cluster) SchemaRegistryAPITLS() *SchemaRegistryAPI {
@@ -940,6 +957,15 @@ func (a AdminAPI) GetExternal() *ExternalConnectivityConfig {
 // GetPort returns API port
 func (s SchemaRegistryAPI) GetPort() int {
 	return s.Port
+}
+
+// GetHTTPScheme returns API HTTP scheme
+func (s SchemaRegistryAPI) GetHTTPScheme() string {
+	scheme := "http"
+	if s.TLS != nil && s.TLS.Enabled {
+		scheme = "https"
+	}
+	return scheme
 }
 
 // GetTLS returns API TLSConfig
