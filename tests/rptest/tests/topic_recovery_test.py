@@ -345,7 +345,8 @@ class MissingPartition(BaseCase):
     only one key).
     """
 
-    topics = (TopicSpec(name='panda-topic',
+    topic_name = 'panda-topic'
+    topics = (TopicSpec(name=topic_name,
                         partition_count=2,
                         replication_factor=3), )
 
@@ -377,8 +378,9 @@ class MissingPartition(BaseCase):
         consistent in Minio S3 implementation)."""
         manifest = None
         for key in self._list_objects():
-            if key.endswith("/manifest.json"):
+            if key.endswith("/manifest.json") and self.topic_name in key:
                 attr = parse_s3_manifest_path(key)
+                assert attr.ntp.topic == self.topic_name
                 if attr.ntp.partition == 0:
                     manifest = key
                 else:
