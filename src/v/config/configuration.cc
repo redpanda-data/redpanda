@@ -756,6 +756,16 @@ configuration::configuration()
        .visibility = visibility::tunable},
       1024,
       {.min = 128})
+  , storage_compaction_index_memory(
+      *this,
+      "storage_compaction_index_memory",
+      "Maximum number of bytes that may be used on each shard by compaction"
+      "index writers",
+      {.needs_restart = needs_restart::no,
+       .example = "1073741824",
+       .visibility = visibility::tunable},
+      128_MiB,
+      {.min = 16_MiB, .max = 100_GiB})
   , max_compacted_log_segment_size(
       *this,
       "max_compacted_log_segment_size",

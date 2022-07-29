@@ -167,6 +167,7 @@ struct configuration final : public config_store {
     property<size_t> segment_fallocation_step;
     bounded_property<uint64_t> storage_target_replay_bytes;
     bounded_property<uint64_t> storage_max_concurrent_replay;
+    bounded_property<uint64_t> storage_compaction_index_memory;
     property<size_t> max_compacted_log_segment_size;
     property<int16_t> id_allocator_log_capacity;
     property<int16_t> id_allocator_batch_size;
