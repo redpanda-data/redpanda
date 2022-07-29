@@ -41,6 +41,11 @@ func NewDeployment(cl client.Client, scheme *runtime.Scheme, consoleobj *redpand
 
 // Ensure implements Resource interface
 func (d *Deployment) Ensure(ctx context.Context) error {
+	sa, err := d.ensureServiceAccount(ctx)
+	if err != nil {
+		return err
+	}
+
 	objLabels := labels.ForConsole(d.consoleobj)
 	obj := &v1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -63,6 +68,7 @@ func (d *Deployment) Ensure(ctx context.Context) error {
 					Volumes:                       d.getVolumes(),
 					Containers:                    d.getContainers(),
 					TerminationGracePeriodSeconds: getGracePeriod(d.consoleobj.Spec.Server.ServerGracefulShutdownTimeout),
+					ServiceAccountName:            sa,
 				},
 			},
 			Strategy: v1.DeploymentStrategy{
@@ -109,6 +115,46 @@ func (d *Deployment) Ensure(ctx context.Context) error {
 // Key implements Resource interface
 func (d *Deployment) Key() types.NamespacedName {
 	return types.NamespacedName{Name: d.consoleobj.GetName(), Namespace: d.consoleobj.GetNamespace()}
+}
+
+// ensureServiceAccount gets or creates Service Account
+// It's best practice to use a separate Service Account per app instead of using the default
+func (d *Deployment) ensureServiceAccount(ctx context.Context) (string, error) {
+	sa := &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      d.consoleobj.GetName(),
+			Namespace: d.consoleobj.GetNamespace(),
+			Labels:    labels.ForConsole(d.consoleobj),
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ServiceAccount",
+			APIVersion: "v1",
+		},
+	}
+
+	err := controllerutil.SetControllerReference(d.consoleobj, sa, d.scheme)
+	if err != nil {
+		return "", err
+	}
+
+	created, err := resources.CreateIfNotExists(ctx, d.Client, sa, d.log)
+	if err != nil {
+		return "", fmt.Errorf("creating Console serviceaccount: %w", err)
+	}
+
+	if !created {
+		var currentSA corev1.ServiceAccount
+		err = d.Get(ctx, types.NamespacedName{Name: sa.GetName(), Namespace: sa.GetNamespace()}, &currentSA)
+		if err != nil {
+			return "", fmt.Errorf("fetching Console serviceaccount: %w", err)
+		}
+		_, err = resources.Update(ctx, &currentSA, sa, d.Client, d.log)
+		if err != nil {
+			return "", fmt.Errorf("updating Console serviceaccount: %w", err)
+		}
+	}
+
+	return sa.GetName(), nil
 }
 
 func getGracePeriod(period string) *int64 {
