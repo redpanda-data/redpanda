@@ -71,9 +71,15 @@ struct enable_copros_reply {
     std::vector<data> acks;
 };
 
-/// Stub for what should be 0 parameter method, 'disable_all_coprocessors'
-using empty_request = named_type<int8_t, struct empty_req_tag>;
-using state_size_t = named_type<int64_t, struct state_size_tag>;
+struct empty_request {
+    using rpc_serde_exempt = std::true_type;
+    int8_t empty;
+};
+
+struct state_size_t {
+    using rpc_serde_exempt = std::true_type;
+    int64_t size;
+};
 
 /// \brief deregistration request, remove all topics registered to a coprocessor
 /// with id 'script_id'.
