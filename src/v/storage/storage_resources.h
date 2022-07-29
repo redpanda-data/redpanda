@@ -124,10 +124,7 @@ public:
     /**
      * Call this when topics_table gets updated
      */
-    void update_partition_count(size_t partition_count) {
-        _partition_count = partition_count;
-        _falloc_step_dirty = true;
-    }
+    void update_partition_count(size_t partition_count);
 
     uint64_t get_space_allowance() { return _space_allowance; }
 
@@ -141,6 +138,11 @@ public:
     configuration_manager_take_bytes(size_t bytes);
 
     adjustable_allowance::take_result stm_take_bytes(size_t bytes);
+
+    adjustable_allowance::take_result compaction_index_take_bytes(size_t bytes);
+    bool compaction_index_bytes_available() {
+        return _compaction_index_bytes.current() > 0;
+    }
 
     ss::future<ssx::semaphore_units> get_recovery_units() {
         return _inflight_recovery.get_units(1);
@@ -179,6 +181,10 @@ private:
     // How many bytes may all consensus instances write before
     // we ask them to start snapshotting their state machines?
     adjustable_allowance _stm_dirty_bytes{0};
+
+    // How much memory may all compacted partitions on this shard
+    // use for their spill_key_index objects
+    adjustable_allowance _compaction_index_bytes{128_MiB};
 
     // How many logs may be recovered (via log_manager::manage)
     // concurrently?

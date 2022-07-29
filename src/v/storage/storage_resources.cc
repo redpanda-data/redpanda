@@ -86,6 +86,11 @@ void storage_resources::update_allowance(uint64_t total, uint64_t free) {
     _falloc_step = calc_falloc_step();
 }
 
+void storage_resources::update_partition_count(size_t partition_count) {
+    _partition_count = partition_count;
+    _falloc_step_dirty = true;
+}
+
 size_t storage_resources::calc_falloc_step() {
     // Heuristic: use at most half the available disk space for per-allocating
     // space to write into.
@@ -187,6 +192,17 @@ storage_resources::stm_take_bytes(size_t bytes) {
       _stm_dirty_bytes.current());
 
     return _stm_dirty_bytes.take(bytes);
+}
+
+adjustable_allowance::take_result
+storage_resources::compaction_index_take_bytes(size_t bytes) {
+    vlog(
+      stlog.trace,
+      "compaction_index_take_bytes {} (current {})",
+      bytes,
+      _compaction_index_bytes.current());
+
+    return _compaction_index_bytes.take(bytes);
 }
 
 } // namespace storage
