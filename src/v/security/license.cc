@@ -115,7 +115,8 @@ static license_type integer_to_license_type(int type) {
     case 1:
         return license_type::enterprise;
     default:
-        throw license_invalid_exception("Unknown license_type");
+        throw license_invalid_exception(
+          fmt::format("Unknown license_type: {}", type));
     }
 }
 
