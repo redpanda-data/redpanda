@@ -174,7 +174,9 @@ ss::future<> client::mitigate_error(std::exception_ptr ex) {
         switch (ex.error) {
         case error_code::unknown_topic_or_partition:
         case error_code::not_leader_for_partition:
-        case error_code::leader_not_available: {
+        case error_code::leader_not_available:
+        case error_code::fenced_leader_epoch:
+        case error_code::unknown_leader_epoch: {
             vlog(kclog.debug, "partition_error: {}", ex);
             return _wait_or_start_update_metadata();
         }
@@ -296,16 +298,18 @@ client::create_topic(kafka::creatable_topic req) {
 ss::future<list_offsets_response>
 client::list_offsets(model::topic_partition tp) {
     return gated_retry_with_mitigation([this, tp]() {
-        return _topic_cache.leader(tp)
-          .then(
-            [this](model::node_id node_id) { return _brokers.find(node_id); })
-          .then([tp](auto broker) mutable {
-              return broker->dispatch(kafka::list_offsets_request{
-                .data = {.topics{
-                  {{.name{std::move(tp.topic)},
-                    .partitions{
-                      {{.partition_index{tp.partition},
-                        .max_num_offsets = 1}}}}}}}});
+        return _topic_cache.leader(tp).then(
+          [this, tp](topic_cache::partition_data part) {
+              return _brokers.find(part.leader)
+                .then([tp, part](auto broker) mutable {
+                    return broker->dispatch(list_offsets_request{
+                      .data = {.topics{
+                        {{.name{std::move(tp.topic)},
+                          .partitions{
+                            {{.partition_index{tp.partition},
+                              .current_leader_epoch = part.leader_epoch,
+                              .max_num_offsets = 1}}}}}}}});
+                });
           });
     });
 }
@@ -315,22 +319,26 @@ ss::future<fetch_response> client::fetch_partition(
   model::offset offset,
   int32_t max_bytes,
   std::chrono::milliseconds timeout) {
-    auto build_request =
-      [offset, max_bytes, timeout](model::topic_partition& tp) {
-          return make_fetch_request(tp, offset, max_bytes, timeout);
-      };
+    auto build_request = [offset, max_bytes, timeout](
+                           model::topic_partition& tp,
+                           kafka::leader_epoch epoch) {
+        return make_fetch_request(tp, epoch, offset, max_bytes, timeout);
+    };
 
     return ss::do_with(
       std::move(build_request),
       std::move(tp),
       [this](auto& build_request, model::topic_partition& tp) {
           return gated_retry_with_mitigation([this, &tp, &build_request]() {
-                     return _topic_cache.leader(tp)
-                       .then([this](model::node_id leader) {
-                           return _brokers.find(leader);
-                       })
-                       .then([&tp, &build_request](shared_broker_t&& b) {
-                           return b->dispatch(build_request(tp));
+                     return _topic_cache.leader(tp).then(
+                       [this, &tp, &build_request](
+                         topic_cache::partition_data part) {
+                           return _brokers.find(part.leader)
+                             .then([&tp, &part, &build_request](
+                                     shared_broker_t&& b) {
+                                 return b->dispatch(
+                                   build_request(tp, part.leader_epoch));
+                             });
                        });
                  })
             .handle_exception([&tp](std::exception_ptr ex) {

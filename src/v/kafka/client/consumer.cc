@@ -425,8 +425,8 @@ ss::future<fetch_response> consumer::fetch(
     for (auto const& [t, ps] : _assignment) {
         for (const auto& p : ps) {
             auto tp = model::topic_partition{t, p};
-            auto leader = co_await _topic_cache.leader(tp);
-            auto broker = co_await _brokers.find(leader);
+            auto part = co_await _topic_cache.leader(tp);
+            auto broker = co_await _brokers.find(part.leader);
             auto& session = _fetch_sessions[broker];
 
             auto& req = broker_reqs
@@ -453,6 +453,7 @@ ss::future<fetch_response> consumer::fetch(
             req.data.topics.back().fetch_partitions.push_back(
               fetch_request::partition{
                 .partition_index = p,
+                .current_leader_epoch = part.leader_epoch,
                 .fetch_offset = session.offset(tp),
                 .max_bytes = max_bytes.value_or(
                   _config.consumer_request_max_bytes)});
