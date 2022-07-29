@@ -8,3 +8,4 @@
 !k8s/go.sum
 !k8s/main.go
 !k8s/pkg
+!k8s/webhooks

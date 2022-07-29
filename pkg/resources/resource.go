@@ -73,6 +73,14 @@ type Resource interface {
 	Key() types.NamespacedName
 }
 
+// ManagedResource is similar to Resource but with proper cleanup on deletion
+type ManagedResource interface {
+	Resource
+
+	// Cleanup properly deletes the resource by removing attached finalizers
+	Cleanup(context.Context) error
+}
+
 // Reconciler implements reconciliation logic
 type Reconciler interface {
 	// Ensure captures reconciliation logic that can end with error
