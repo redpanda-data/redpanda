@@ -247,14 +247,14 @@ class RpkClusterTest(RedpandaTest):
 
     @cluster(num_nodes=3)
     def test_upload_cluster_license_error(self):
+        license = get_cluster_license()
+        if license is None:
+            self.logger.info(
+                "Skipping test, REDPANDA_SAMPLE_LICENSE env var not found")
+            return
+
         with expect_exception(RpkException,
                               lambda e: "Internal Server Error" in str(e)):
-            license = get_cluster_license()
-            if license is None:
-                self.logger.info(
-                    "Skipping test, REDPANDA_SAMPLE_LICENSE env var not found")
-                return
-
             with tempfile.NamedTemporaryFile() as tf:
                 tf.write(bytes(license + 'r', 'UTF-8'))
                 tf.seek(0)
