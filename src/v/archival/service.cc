@@ -280,13 +280,13 @@ ss::future<ss::stop_iteration> scheduler_service_impl::add_ntp_archiver(
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::yes);
     }
+    _queue.insert(archiver);
     return archiver->download_manifest(_rtcnode).then(
       [this, archiver](cloud_storage::download_result result)
         -> ss::future<ss::stop_iteration> {
           auto ntp = archiver->get_ntp();
           switch (result) {
           case cloud_storage::download_result::success:
-              _queue.insert(archiver);
               vlog(
                 _rtclog.info,
                 "Found manifest for partition {}",
@@ -295,7 +295,6 @@ ss::future<ss::stop_iteration> scheduler_service_impl::add_ntp_archiver(
               return ss::make_ready_future<ss::stop_iteration>(
                 ss::stop_iteration::yes);
           case cloud_storage::download_result::notfound:
-              _queue.insert(archiver);
               vlog(
                 _rtclog.info,
                 "Start archiving new partition {}",
@@ -315,8 +314,11 @@ ss::future<ss::stop_iteration> scheduler_service_impl::add_ntp_archiver(
           case cloud_storage::download_result::failed:
           case cloud_storage::download_result::timedout:
               vlog(_rtclog.warn, "Manifest download failed");
-              return ss::make_exception_future<ss::stop_iteration>(
-                ss::timed_out_error());
+              _queue.erase(archiver->get_ntp());
+              return archiver->stop().then([archiver]() {
+                  return ss::make_exception_future<ss::stop_iteration>(
+                    ss::timed_out_error());
+              });
           }
           return ss::make_ready_future<ss::stop_iteration>(
             ss::stop_iteration::yes);
