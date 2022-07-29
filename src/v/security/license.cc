@@ -102,10 +102,8 @@ ss::sstring license_type_to_string(license_type type) {
         return "free_trial";
     case license_type::enterprise:
         return "enterprise";
-    default:
-        __builtin_unreachable();
     }
-    return "";
+    __builtin_unreachable();
 }
 
 static license_type integer_to_license_type(int type) {
