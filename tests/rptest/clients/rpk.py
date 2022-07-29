@@ -327,6 +327,14 @@ class RpkTool:
             "(?P<topic>.+) +(?P<partition>\d+) +(?P<offset>\d+|-) +(?P<log_end>\d+|-) +(?P<lag>-?\d+|-) *(?P<member_id>[^\s]*)? *(?P<client_id>[^\s]*)? *(?P<host>[^\s]*)?"
         )
 
+        def check_lines(lines):
+            for line in lines:
+                # UNKNOWN_TOPIC_OR_PARTITION: This server doesn't contain this partition or topic.
+                # We should wait until server will get information about it.
+                if line.find('UNKNOWN_TOPIC_OR_PARTITION') != -1:
+                    return False
+            return True
+
         def parse_partition(string):
 
             pattern = partition_pattern_dynamic_member
@@ -370,6 +378,9 @@ class RpkTool:
                     raise
 
             lines = out.splitlines()
+
+            if not check_lines(lines):
+                return None
 
             group_name = parse_field("GROUP", lines[0])
             coordinator = parse_field("COORDINATOR", lines[1])
