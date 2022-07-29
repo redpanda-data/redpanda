@@ -54,6 +54,10 @@ using namespace cloud_storage;
 
 inline ss::logger test_log("test"); // NOLINT
 
+static cloud_storage::lazy_abort_source always_continue("no-op", [](auto&) {
+    return false;
+});
+
 /**
  * Helper: generate a function suitable for passing to upload_segment(),
  * exposing some synthetic data as a segment_reader_handle.
@@ -95,8 +99,10 @@ FIXTURE_TEST(
       .delta_offset = model::offset(0),
       .ntp_revision = segment_ntp_revision};
     auto path = m.generate_segment_path(key, meta);
-    auto upl_res
-      = remote.upload_segment(bucket, path, clen, reset_stream, fib).get();
+    auto upl_res = remote
+                     .upload_segment(
+                       bucket, path, clen, reset_stream, fib, always_continue)
+                     .get();
     BOOST_REQUIRE(upl_res == upload_result::success);
     m.add(key, meta);
 
@@ -167,8 +173,10 @@ FIXTURE_TEST(
     auto action = ss::defer([&remote] { remote.stop().get(); });
     auto reset_stream = make_reset_fn(segment_bytes);
     retry_chain_node fib(1000ms, 200ms);
-    auto upl_res
-      = remote.upload_segment(bucket, path, clen, reset_stream, fib).get();
+    auto upl_res = remote
+                     .upload_segment(
+                       bucket, path, clen, reset_stream, fib, always_continue)
+                     .get();
     BOOST_REQUIRE(upl_res == upload_result::success);
     m.add(key, meta);
 
@@ -251,8 +259,10 @@ void test_remote_segment_batch_reader(
     auto path = m.generate_segment_path(key, meta);
     auto reset_stream = make_reset_fn(segment_bytes);
     retry_chain_node fib(1000ms, 200ms);
-    auto upl_res
-      = remote.upload_segment(bucket, path, clen, reset_stream, fib).get();
+    auto upl_res = remote
+                     .upload_segment(
+                       bucket, path, clen, reset_stream, fib, always_continue)
+                     .get();
     BOOST_REQUIRE(upl_res == upload_result::success);
     m.add(key, meta);
 
@@ -361,8 +371,10 @@ FIXTURE_TEST(
     auto path = m.generate_segment_path(key, meta);
     auto reset_stream = make_reset_fn(segment_bytes);
     retry_chain_node fib(1000ms, 200ms);
-    auto upl_res
-      = remote.upload_segment(bucket, path, clen, reset_stream, fib).get();
+    auto upl_res = remote
+                     .upload_segment(
+                       bucket, path, clen, reset_stream, fib, always_continue)
+                     .get();
     BOOST_REQUIRE(upl_res == upload_result::success);
     m.add(key, meta);
 

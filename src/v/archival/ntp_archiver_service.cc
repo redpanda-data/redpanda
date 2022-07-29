@@ -145,11 +145,18 @@ ss::future<> ntp_archiver::upload_loop() {
               _rtclog.error,
               "Failed to upload {} segments out of {}",
               result.num_failed,
-              result.num_succeded + result.num_failed);
+              result.num_succeded + result.num_failed + result.num_cancelled);
         } else if (result.num_succeded != 0) {
             vlog(
               _rtclog.debug,
               "Successfuly uploaded {} segments",
+              result.num_succeded);
+        }
+
+        if (result.num_cancelled != 0) {
+            vlog(
+              _rtclog.debug,
+              "Cancelled upload of {} segments",
               result.num_succeded);
         }
 
@@ -324,8 +331,34 @@ ntp_archiver::upload_segment(upload_candidate candidate) {
         return candidate.source->reader().data_stream(
           candidate.file_offset, candidate.final_file_offset, _io_priority);
     };
+
+    auto original_term = _partition->term();
+    auto lazy_abort_source = cloud_storage::lazy_abort_source{
+      "lost leadership or term changed during upload, "
+      "current leadership status: {}, "
+      "current term: {}, "
+      "original term: {}",
+      [this, original_term](cloud_storage::lazy_abort_source& las) {
+          auto lost_leadership = !_partition->is_leader()
+                                 || _partition->term() != original_term;
+          if (unlikely(lost_leadership)) {
+              std::string reason{las.abort_reason()};
+              las.abort_reason(fmt::format(
+                fmt::runtime(reason),
+                _partition->is_leader(),
+                _partition->term(),
+                original_term));
+          }
+          return lost_leadership;
+      },
+    };
     co_return co_await _remote.upload_segment(
-      _bucket, path, candidate.content_length, reset_func, fib);
+      _bucket,
+      path,
+      candidate.content_length,
+      reset_func,
+      fib,
+      lazy_abort_source);
 }
 
 ss::future<cloud_storage::upload_result>
@@ -385,6 +418,7 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
           .name = std::nullopt,
           .delta = std::nullopt,
           .stop = ss::stop_iteration::yes,
+          .segment_read_lock = std::nullopt,
         };
     }
     if (_manifest.contains(upload.exposed_name)) {
@@ -436,6 +470,7 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
               .name = std::nullopt,
               .delta = std::nullopt,
               .stop = ss::stop_iteration::no,
+              .segment_read_lock = std::nullopt,
             };
         }
     }
@@ -444,6 +479,9 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
     start_upload_offset = offset + model::offset(1);
     auto delta
       = base - _partition->get_offset_translator_state()->from_log_offset(base);
+
+    auto segment_lock_deadline = std::chrono::steady_clock::now()
+                                 + _segment_upload_timeout;
     // The upload is successful only if both segment and tx_range are uploaded.
     auto upl_fut
       = ss::when_all(upload_segment(upload), upload_tx(upload))
@@ -476,6 +514,7 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
       },
       .name = upload.exposed_name, .delta = offset - base,
       .stop = ss::stop_iteration::no,
+      .segment_read_lock = co_await upload.source->read_lock(segment_lock_deadline),
     };
 }
 
@@ -564,9 +603,17 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
         co_return batch_result{};
     }
 
-    total.num_succeded = std::count(
-      begin(results), end(results), cloud_storage::upload_result::success);
-    total.num_failed = flist.size() - total.num_succeded;
+    absl::flat_hash_map<cloud_storage::upload_result, size_t> upload_results;
+    for (auto result : results) {
+        ++upload_results[result];
+    }
+
+    total.num_succeded = upload_results[cloud_storage::upload_result::success];
+    total.num_cancelled
+      = upload_results[cloud_storage::upload_result::cancelled];
+    total.num_failed = results.size()
+                       - (total.num_succeded + total.num_cancelled);
+
     for (size_t i = 0; i < results.size(); i++) {
         if (results[i] != cloud_storage::upload_result::success) {
             break;

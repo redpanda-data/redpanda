@@ -105,6 +105,7 @@ public:
     struct batch_result {
         size_t num_succeded;
         size_t num_failed;
+        size_t num_cancelled;
     };
 
     /// \brief Upload next set of segments to S3 (if any)
@@ -145,6 +146,9 @@ private:
         /// case the upload is not started but the method might be called
         /// again anyway.
         ss::stop_iteration stop;
+        /// Protects the underlying segment from being deleted while the upload
+        /// is in flight.
+        std::optional<ss::rwlock::holder> segment_read_lock;
     };
 
     /// Start upload without waiting for it to complete

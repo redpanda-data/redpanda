@@ -50,7 +50,11 @@ void log_eviction_stm::monitor_log_eviction() {
                     // ignore gate closed exception, shutting down
                 })
                 .handle_exception([this](std::exception_ptr e) {
-                    vlog(_logger.trace, "Error handling log eviction - {}", e);
+                    vlog(
+                      _logger.trace,
+                      "Error handling log eviction - {}, ntp: {}",
+                      e,
+                      _raft->ntp());
                 });
           });
     });
@@ -60,16 +64,18 @@ ss::future<>
 log_eviction_stm::handle_deletion_notification(model::offset last_evicted) {
     vlog(
       _logger.trace,
-      "Handling log deletion notification for offset: {}",
-      last_evicted);
+      "Handling log deletion notification for offset: {}, ntp: {}",
+      last_evicted,
+      _raft->ntp());
 
     model::offset max_collectible_offset
       = _stm_manager->max_collectible_offset();
     if (last_evicted > max_collectible_offset) {
         vlog(
           _logger.trace,
-          "Can only evict up to offset: {}",
-          max_collectible_offset);
+          "Can only evict up to offset: {}, ntp: {}",
+          max_collectible_offset,
+          _raft->ntp());
         last_evicted = max_collectible_offset;
     }
 
