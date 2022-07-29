@@ -259,34 +259,6 @@ void license::serde_write(iobuf& out) {
 
 } // namespace security
 
-namespace reflection {
-
-void adl<security::license>::to(iobuf& out, security::license&& l) {
-    vassert(true, "security::license should always use serde, never adl");
-    reflection::serialize(
-      out,
-      l.format_version,
-      l.type,
-      std::move(l.organization),
-      ss::sstring(
-        boost::gregorian::to_iso_extended_string_type<char>(l.expiry)));
-}
-
-security::license adl<security::license>::from(iobuf_parser& in) {
-    vassert(true, "security::license should always use serde, never adl");
-    auto format_version = adl<uint8_t>{}.from(in);
-    auto type = adl<security::license_type>{}.from(in);
-    auto org = adl<ss::sstring>{}.from(in);
-    auto expiry = adl<ss::sstring>{}.from(in);
-    return security::license{
-      .format_version = format_version,
-      .type = type,
-      .organization = std::move(org),
-      .expiry = boost::gregorian::from_simple_string(expiry)};
-}
-
-} // namespace reflection
-
 namespace fmt {
 template<>
 typename fmt::basic_format_context<fmt::appender, char>::iterator
