@@ -29,7 +29,10 @@ const (
 	PartOfKey = "app.kubernetes.io/part-of"
 	// The tool being used to manage the operation of an application
 	ManagedByKey = "app.kubernetes.io/managed-by"
-	nameKeyVal   = "redpanda"
+
+	nameKeyRedpandaVal   = "redpanda"
+	nameKeyConsoleVal    = "redpanda-console"
+	managedByOperatorVal = "redpanda-operator"
 )
 
 // CommonLabels holds common labels that belong to all resources owned by this operator
@@ -38,8 +41,17 @@ type CommonLabels map[string]string
 // ForCluster returns a set of labels that is a union of cluster labels as well as recommended default labels
 // recommended by the kubernetes documentation https://kubernetes.io/docs/concepts/overview/working-with-objects/common-labels/
 func ForCluster(cluster *redpandav1alpha1.Cluster) CommonLabels {
-	dl := defaultLabels(cluster)
+	dl := defaultClusterLabels(cluster)
 	labels := merge(cluster.Labels, dl)
+
+	return labels
+}
+
+// ForConsole return a set of labels that is a union of console labels as well as recommended default labels
+// recommended by the kubernetes documentation https://kubernetes.io/docs/concepts/overview/working-with-objects/common-labels/
+func ForConsole(console *redpandav1alpha1.Console) CommonLabels {
+	dl := defaultConsoleLabels(console)
+	labels := merge(console.Labels, dl)
 
 	return labels
 }
@@ -88,13 +100,24 @@ func merge(
 	return mainLabels
 }
 
-func defaultLabels(cluster *redpandav1alpha1.Cluster) map[string]string {
+func defaultClusterLabels(cluster *redpandav1alpha1.Cluster) map[string]string {
 	labels := make(map[string]string)
-	labels[NameKey] = nameKeyVal
+	labels[NameKey] = nameKeyRedpandaVal
 	labels[InstanceKey] = cluster.Name
 	labels[ComponentKey] = "redpanda"
-	labels[PartOfKey] = nameKeyVal
-	labels[ManagedByKey] = "redpanda-operator"
+	labels[PartOfKey] = nameKeyRedpandaVal
+	labels[ManagedByKey] = managedByOperatorVal
+
+	return labels
+}
+
+func defaultConsoleLabels(console *redpandav1alpha1.Console) map[string]string {
+	labels := make(map[string]string)
+	labels[NameKey] = nameKeyConsoleVal
+	labels[InstanceKey] = console.Name
+	labels[ComponentKey] = "console"
+	labels[PartOfKey] = nameKeyConsoleVal
+	labels[ManagedByKey] = managedByOperatorVal
 
 	return labels
 }

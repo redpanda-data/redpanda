@@ -1,0 +1,407 @@
+
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.4.1
+  creationTimestamp: null
+  name: consoles.redpanda.vectorized.io
+spec:
+  group: redpanda.vectorized.io
+  names:
+    kind: Console
+    listKind: ConsoleList
+    plural: consoles
+    singular: console
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Console is the Schema for the consoles API
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ConsoleSpec defines the desired state of Console Most of
+              the fields here are copied from Console config REF https://github.com/redpanda-data/console/blob/master/backend/pkg/api/config.go
+            properties:
+              clusterKeyRef:
+                description: The referenced Redpanda Cluster
+                properties:
+                  apiVersion:
+                    description: API version of the referent.
+                    type: string
+                  fieldPath:
+                    description: 'If referring to a piece of an object instead of
+                      an entire object, this string should contain a valid JSON/Go
+                      field access statement, such as desiredState.manifest.containers[2].
+                      For example, if the object reference is to a container within
+                      a pod, this would take on a value like: "spec.containers{name}"
+                      (where "name" refers to the name of the container that triggered
+                      the event) or if no container name is specified "spec.containers[2]"
+                      (container with index 2 in this pod). This syntax is chosen
+                      only to have some well-defined way of referencing a part of
+                      an object. TODO: this design is not final and this field is
+                      subject to change in the future.'
+                    type: string
+                  kind:
+                    description: 'Kind of the referent. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+                    type: string
+                  name:
+                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                    type: string
+                  namespace:
+                    description: 'Namespace of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
+                    type: string
+                  resourceVersion:
+                    description: 'Specific resourceVersion to which this reference
+                      is made, if any. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency'
+                    type: string
+                  uid:
+                    description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
+                    type: string
+                type: object
+              connect:
+                description: Connect defines configurable fields for Kafka Connect
+                properties:
+                  clusters:
+                    items:
+                      description: ConnectCluster defines configurable fields for
+                        the Kafka Connect cluster
+                      properties:
+                        basicAuthRef:
+                          description: BasicAuthRef configures basic auth credentials
+                            referenced by Secret Expects to have keys "username",
+                            "password"
+                          properties:
+                            apiVersion:
+                              description: API version of the referent.
+                              type: string
+                            fieldPath:
+                              description: 'If referring to a piece of an object instead
+                                of an entire object, this string should contain a
+                                valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
+                                For example, if the object reference is to a container
+                                within a pod, this would take on a value like: "spec.containers{name}"
+                                (where "name" refers to the name of the container
+                                that triggered the event) or if no container name
+                                is specified "spec.containers[2]" (container with
+                                index 2 in this pod). This syntax is chosen only to
+                                have some well-defined way of referencing a part of
+                                an object. TODO: this design is not final and this
+                                field is subject to change in the future.'
+                              type: string
+                            kind:
+                              description: 'Kind of the referent. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+                              type: string
+                            name:
+                              description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                              type: string
+                            namespace:
+                              description: 'Namespace of the referent. More info:
+                                https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
+                              type: string
+                            resourceVersion:
+                              description: 'Specific resourceVersion to which this
+                                reference is made, if any. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency'
+                              type: string
+                            uid:
+                              description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
+                              type: string
+                          type: object
+                        name:
+                          type: string
+                        tls:
+                          description: TLS configures mTLS auth
+                          properties:
+                            enabled:
+                              type: boolean
+                            insecureSkipTlsVerify:
+                              type: boolean
+                            secretKeyRef:
+                              description: SecretKeyRef configures certificate used
+                                for mTLS auth referenced by Secret Expects to have
+                                keys "tls.crt", "tls.key", "ca.crt"
+                              properties:
+                                apiVersion:
+                                  description: API version of the referent.
+                                  type: string
+                                fieldPath:
+                                  description: 'If referring to a piece of an object
+                                    instead of an entire object, this string should
+                                    contain a valid JSON/Go field access statement,
+                                    such as desiredState.manifest.containers[2]. For
+                                    example, if the object reference is to a container
+                                    within a pod, this would take on a value like:
+                                    "spec.containers{name}" (where "name" refers to
+                                    the name of the container that triggered the event)
+                                    or if no container name is specified "spec.containers[2]"
+                                    (container with index 2 in this pod). This syntax
+                                    is chosen only to have some well-defined way of
+                                    referencing a part of an object. TODO: this design
+                                    is not final and this field is subject to change
+                                    in the future.'
+                                  type: string
+                                kind:
+                                  description: 'Kind of the referent. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+                                  type: string
+                                name:
+                                  description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                                  type: string
+                                namespace:
+                                  description: 'Namespace of the referent. More info:
+                                    https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
+                                  type: string
+                                resourceVersion:
+                                  description: 'Specific resourceVersion to which
+                                    this reference is made, if any. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency'
+                                  type: string
+                                uid:
+                                  description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
+                                  type: string
+                              type: object
+                          type: object
+                        tokenRef:
+                          description: TokenRef configures token header auth referenced
+                            by Secret Expects to have key "token"
+                          properties:
+                            apiVersion:
+                              description: API version of the referent.
+                              type: string
+                            fieldPath:
+                              description: 'If referring to a piece of an object instead
+                                of an entire object, this string should contain a
+                                valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
+                                For example, if the object reference is to a container
+                                within a pod, this would take on a value like: "spec.containers{name}"
+                                (where "name" refers to the name of the container
+                                that triggered the event) or if no container name
+                                is specified "spec.containers[2]" (container with
+                                index 2 in this pod). This syntax is chosen only to
+                                have some well-defined way of referencing a part of
+                                an object. TODO: this design is not final and this
+                                field is subject to change in the future.'
+                              type: string
+                            kind:
+                              description: 'Kind of the referent. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+                              type: string
+                            name:
+                              description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                              type: string
+                            namespace:
+                              description: 'Namespace of the referent. More info:
+                                https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
+                              type: string
+                            resourceVersion:
+                              description: 'Specific resourceVersion to which this
+                                reference is made, if any. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency'
+                              type: string
+                            uid:
+                              description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
+                              type: string
+                          type: object
+                        url:
+                          type: string
+                      required:
+                      - name
+                      - url
+                      type: object
+                    type: array
+                  connectTimeout:
+                    default: 15s
+                    format: duration
+                    type: string
+                  enabled:
+                    type: boolean
+                  readTimeout:
+                    default: 60s
+                    format: duration
+                    type: string
+                  requestTimeout:
+                    default: 6s
+                    format: duration
+                    type: string
+                type: object
+              deployment:
+                description: Deployment defines configurable fields for the Console
+                  Deployment resource
+                properties:
+                  image:
+                    type: string
+                  maxSurge:
+                    default: 1
+                    format: int32
+                    type: integer
+                  maxUnavailable:
+                    default: 0
+                    format: int32
+                    type: integer
+                  replicas:
+                    default: 1
+                    format: int32
+                    type: integer
+                required:
+                - image
+                type: object
+              metricsNamespace:
+                default: console
+                description: Prefix for all exported prometheus metrics
+                type: string
+              schema:
+                description: Schema defines configurable fields for Schema Registry
+                properties:
+                  enabled:
+                    type: boolean
+                required:
+                - enabled
+                type: object
+              serveFrontend:
+                default: true
+                description: Only relevant for developers, who might want to run the
+                  frontend separately
+                type: boolean
+              server:
+                description: Server is the Console app HTTP server config REF https://github.com/cloudhut/common/blob/b601d681e8599cee4255899def813142c0218e8b/rest/config.go
+                properties:
+                  basePath:
+                    description: Sets the subpath (root prefix) under which Kowl is
+                      reachable. If you want to host Kowl under 'your.domain.com/kowl/'
+                      you'd set the base path to 'kowl/'. The default is an empty
+                      string which makes Kowl reachable under just 'domain.com/'.
+                      When using this setting (or letting the 'X-Forwarded-Prefix'
+                      header set it for you) remember to either leave 'strip-prefix'
+                      enabled, or use a proxy that can strip the base-path/prefix
+                      before it reaches Kowl.
+                    type: string
+                  compressionLevel:
+                    default: 4
+                    description: 'Compression level applied to all http responses.
+                      Valid values are: 0-9 (0=completely disable compression middleware,
+                      1=weakest compression, 9=best compression)'
+                    type: integer
+                  gracefulShutdownTimeout:
+                    default: 30s
+                    description: Timeout for graceful shutdowns
+                    format: duration
+                    type: string
+                  idleTimeout:
+                    default: 30s
+                    description: Idle timeout for HTTP server
+                    format: duration
+                    type: string
+                  listenAddress:
+                    description: HTTP server listen address
+                    type: string
+                  listenPort:
+                    default: 8080
+                    description: HTTP server listen port
+                    type: integer
+                  readTimeout:
+                    default: 30s
+                    description: Read timeout for HTTP server
+                    format: duration
+                    type: string
+                  setBasePathFromXForwardedPrefix:
+                    default: true
+                    description: server.set-base-path-from-x-forwarded-prefix", true,
+                      "When set to true, Kowl will use the 'X-Forwarded-Prefix' header
+                      as the base path. (When enabled the 'base-path' setting won't
+                      be used)
+                    type: boolean
+                  stripPrefix:
+                    default: true
+                    description: If a base-path is set (either by the 'base-path'
+                      setting, or by the 'X-Forwarded-Prefix' header), they will be
+                      removed from the request url. You probably want to leave this
+                      enabled, unless you are using a proxy that can remove the prefix
+                      automatically (like Traefik's 'StripPrefix' option)
+                    type: boolean
+                  writeTimeout:
+                    default: 30s
+                    description: Write timeout for HTTP server
+                    format: duration
+                    type: string
+                type: object
+            required:
+            - clusterKeyRef
+            - connect
+            - deployment
+            - schema
+            type: object
+          status:
+            description: ConsoleStatus defines the observed state of Console
+            properties:
+              configMapRef:
+                description: The ConfigMap used by Console This is used to pass the
+                  ConfigMap used to mount in the Deployment Resource since Ensure()
+                  only returns error
+                properties:
+                  apiVersion:
+                    description: API version of the referent.
+                    type: string
+                  fieldPath:
+                    description: 'If referring to a piece of an object instead of
+                      an entire object, this string should contain a valid JSON/Go
+                      field access statement, such as desiredState.manifest.containers[2].
+                      For example, if the object reference is to a container within
+                      a pod, this would take on a value like: "spec.containers{name}"
+                      (where "name" refers to the name of the container that triggered
+                      the event) or if no container name is specified "spec.containers[2]"
+                      (container with index 2 in this pod). This syntax is chosen
+                      only to have some well-defined way of referencing a part of
+                      an object. TODO: this design is not final and this field is
+                      subject to change in the future.'
+                    type: string
+                  kind:
+                    description: 'Kind of the referent. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+                    type: string
+                  name:
+                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                    type: string
+                  namespace:
+                    description: 'Namespace of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
+                    type: string
+                  resourceVersion:
+                    description: 'Specific resourceVersion to which this reference
+                      is made, if any. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency'
+                    type: string
+                  uid:
+                    description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
+                    type: string
+                type: object
+              connectivity:
+                description: Connectivity defines internal/external hosts
+                properties:
+                  external:
+                    type: string
+                  internal:
+                    type: string
+                type: object
+              observedGeneration:
+                description: The generation observed by the controller
+                format: int64
+                type: integer
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: []
+  storedVersions: []

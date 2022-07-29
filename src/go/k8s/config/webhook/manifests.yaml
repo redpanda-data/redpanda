@@ -56,3 +56,23 @@ webhooks:
     resources:
     - clusters
   sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-redpanda-vectorized-io-v1alpha1-console
+  failurePolicy: Fail
+  name: vconsole.kb.io
+  rules:
+  - apiGroups:
+    - redpanda.vectorized.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - consoles
+  sideEffects: None

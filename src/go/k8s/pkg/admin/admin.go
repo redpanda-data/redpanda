@@ -84,6 +84,7 @@ type AdminAPIClient interface {
 	GetNodeConfig(ctx context.Context) (admin.NodeConfig, error)
 
 	CreateUser(ctx context.Context, username, password, mechanism string) error
+	DeleteUser(ctx context.Context, username string) error
 
 	GetFeatures(ctx context.Context) (admin.FeaturesResponse, error)
 
