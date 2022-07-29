@@ -12,6 +12,7 @@
 #include "security/license.h"
 
 #include "json/document.h"
+#include "json/validator.h"
 #include "utils/base64.h"
 
 #include <boost/date_time/gregorian/formatters.hpp>
@@ -143,22 +144,36 @@ static license_components parse_license(const ss::sstring& license) {
         license.substr(itr + strlen(signature_delimiter)))};
 }
 
-static void parse_data_section(license& lc, const json::Document& doc) {
-    auto parse_int = [](auto& value) {
-        if (!value.IsInt()) {
-            throw license_malformed_exception("Bad cast: expected int");
+static const std::string license_data_validator_schema = R"(
+{
+    "type": "object",
+    "properties": {
+        "version": {
+            "type": "number"
+        },
+        "org": {
+            "type": "string"
+        },
+        "type": {
+            "type": "number"
+        },
+        "expiry": {
+            "type": "string"
         }
-        return value.GetInt();
-    };
-    auto parse_str = [](auto& value) -> std::string {
-        if (!value.IsString()) {
-            throw license_malformed_exception("Bad cast: expected string");
-        }
-        return value.GetString();
-    };
+    },
+    "required": [
+        "version",
+        "org",
+        "type",
+        "expiry"
+    ],
+    "additionalProperties": false
+}
+)";
 
+static void parse_data_section(license& lc, const json::Document& doc) {
     auto parse_expiry = [&](auto& value) -> boost::gregorian::date {
-        auto expiry_str = parse_str(value);
+        auto expiry_str = value.GetString();
         boost::gregorian::date expiry_date;
         try {
             expiry_date = boost::gregorian::from_simple_string(expiry_str);
@@ -176,32 +191,20 @@ static void parse_data_section(license& lc, const json::Document& doc) {
         }
         return expiry_date;
     };
-
-    static const std::array<ss::sstring, 4> v0_license_schema{
-      "version", "org", "type", "expiry"};
-
-    const size_t schema_keys_found = std::count_if(
-      doc.MemberBegin(), doc.MemberEnd(), [&](const auto& item) {
-          return std::find(
-                   v0_license_schema.begin(),
-                   v0_license_schema.end(),
-                   parse_str(item.name))
-                 != v0_license_schema.end();
-      });
-    if (schema_keys_found < v0_license_schema.size()) {
+    json::validator license_data_validator(license_data_validator_schema);
+    if (!doc.Accept(license_data_validator.schema_validator)) {
         throw license_malformed_exception(
-          "Missing expected parameters from license");
+          "License data section failed to match schema");
     }
-    lc.format_version = parse_int(doc.FindMember("version")->value);
+    lc.format_version = doc.FindMember("version")->value.GetInt();
     if (lc.format_version < 0) {
         throw license_invalid_exception("Invalid format_version, is < 0");
     }
-
-    lc.organization = parse_str(doc.FindMember("org")->value);
+    lc.organization = doc.FindMember("org")->value.GetString();
     if (lc.organization == "") {
         throw license_invalid_exception("Cannot have empty string for org");
     }
-    lc.type = integer_to_license_type(parse_int(doc.FindMember("type")->value));
+    lc.type = integer_to_license_type(doc.FindMember("type")->value.GetInt());
     lc.expiry = parse_expiry(doc.FindMember("expiry")->value);
 }
 
