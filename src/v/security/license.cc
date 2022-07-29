@@ -26,17 +26,19 @@ namespace security {
 namespace crypto {
 
 static ss::sstring parse_pem_contents(const ss::sstring& pem_key) {
-    static ss::sstring public_key_header = "-----BEGIN PUBLIC KEY-----";
-    static ss::sstring public_key_footer = "-----END PUBLIC KEY-----";
+    static constexpr std::string_view public_key_header
+      = "-----BEGIN PUBLIC KEY-----";
+    static constexpr std::string_view public_key_footer
+      = "-----END PUBLIC KEY-----";
 
     size_t pos1{ss::sstring::npos}, pos2{ss::sstring::npos};
-    pos1 = pem_key.find(public_key_header);
+    pos1 = pem_key.find(public_key_header.begin());
     if (pos1 == ss::sstring::npos) {
         throw std::runtime_error(
           "Embedded public key error: PEM header not found");
     }
 
-    pos2 = pem_key.find(public_key_footer, pos1 + 1);
+    pos2 = pem_key.find(public_key_footer.begin(), pos1 + 1);
     if (pos2 == ss::sstring::npos) {
         throw std::runtime_error(
           "Embedded public key error: PEM footer not found");
