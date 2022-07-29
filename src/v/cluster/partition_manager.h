@@ -74,8 +74,11 @@ public:
 
     ss::future<> start() { return ss::now(); }
     ss::future<> stop_partitions();
-    ss::future<consensus_ptr>
-      manage(storage::ntp_config, raft::group_id, std::vector<model::broker>);
+    ss::future<consensus_ptr> manage(
+      storage::ntp_config,
+      raft::group_id,
+      std::vector<model::broker>,
+      std::optional<cluster::remote_topic_properties> = std::nullopt);
 
     ss::future<> shutdown(const model::ntp& ntp);
     ss::future<> remove(const model::ntp& ntp);
@@ -172,8 +175,9 @@ private:
     /// In this case this method always returns false.
     /// \param ntp_cfg is an ntp_config instance to recover
     /// \return true if the recovery was invoked, false otherwise
-    ss::future<cloud_storage::log_recovery_result>
-    maybe_download_log(storage::ntp_config& ntp_cfg);
+    ss::future<cloud_storage::log_recovery_result> maybe_download_log(
+      storage::ntp_config& ntp_cfg,
+      std::optional<cluster::remote_topic_properties> rtp);
 
     ss::future<> do_shutdown(ss::lw_shared_ptr<partition>);
 

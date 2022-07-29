@@ -245,6 +245,13 @@ ss::future<> scheduler_service_impl::add_ntp_archiver(
             if (part->get_ntp_config().is_read_replica_mode_enabled()) {
                 archiver->run_sync_manifest_loop();
             } else {
+                if (ntp.tp.partition == 0) {
+                    // Upload manifest once per topic. GCS has strict
+                    // limits for single object updates.
+                    ssx::background = upload_topic_manifest(
+                      model::topic_namespace(ntp.ns, ntp.tp.topic),
+                      archiver->get_revision_id());
+                }
                 _probe.start_archiving_ntp();
                 archiver->run_upload_loop();
             }
@@ -264,7 +271,7 @@ ss::future<> scheduler_service_impl::add_ntp_archiver(
                 if (ntp.tp.partition == 0) {
                     // Upload manifest once per topic. GCS has strict
                     // limits for single object updates.
-                    (void)upload_topic_manifest(
+                    ssx::background = upload_topic_manifest(
                       model::topic_namespace(ntp.ns, ntp.tp.topic),
                       archiver->get_revision_id());
                 }

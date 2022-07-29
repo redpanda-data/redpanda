@@ -1437,6 +1437,16 @@ ss::future<std::error_code> controller_backend::create_partition(
     }
     // no partition exists, create one
     if (likely(!partition)) {
+        // if topic recovery is enabled the information required by it
+        // need to be passed to the 'manage' call since it's not available
+        // on parition level.
+        auto meta = _topics.local().get_topic_metadata(
+          model::topic_namespace_view(ntp));
+        std::optional<cluster::remote_topic_properties> remote_properties;
+        if (meta->get_configuration().is_recovery_enabled()) {
+            remote_properties
+              = meta->get_configuration().properties.remote_topic_properties;
+        }
         // we use offset as an rev as it is always increasing and it
         // increases while ntp is being created again
         f = _partition_manager.local()
@@ -1444,7 +1454,8 @@ ss::future<std::error_code> controller_backend::create_partition(
                 cfg->make_ntp_config(
                   _data_directory, ntp.tp.partition, rev, initial_rev.value()),
                 group_id,
-                std::move(members))
+                std::move(members),
+                remote_properties)
               .discard_result();
     } else {
         // old partition still exists, wait for it to be removed

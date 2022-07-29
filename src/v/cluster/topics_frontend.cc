@@ -19,6 +19,7 @@
 #include "cluster/scheduling/constraints.h"
 #include "cluster/scheduling/partition_allocator.h"
 #include "cluster/types.h"
+#include "config/configuration.h"
 #include "model/errc.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -30,6 +31,7 @@
 #include "random/generators.h"
 #include "rpc/errc.h"
 #include "rpc/types.h"
+#include "s3/client.h"
 #include "ssx/future-util.h"
 
 #include <seastar/core/coroutine.hh>
@@ -39,6 +41,7 @@
 #include <algorithm>
 #include <iterator>
 #include <regex>
+#include <sstream>
 #include <system_error>
 
 namespace cluster {
@@ -433,7 +436,8 @@ ss::future<topic_result> topics_frontend::do_create_topic(
             co_return make_error_result(
               assignable_config.cfg.tp_ns, errc::topic_invalid_config);
         }
-        auto rr_manager = read_replica_manager(_cloud_storage_api.local());
+        auto rr_manager = remote_topic_configuration_source(
+          _cloud_storage_api.local());
 
         errc download_res = co_await rr_manager.set_remote_properties_in_config(
           assignable_config,
@@ -455,6 +459,46 @@ ss::future<topic_result> topics_frontend::do_create_topic(
         assignable_config.cfg.partition_count
           = assignable_config.cfg.properties.remote_topic_properties
               ->remote_partition_count;
+    }
+
+    if (assignable_config.is_recovery_enabled()) {
+        // Before running the recovery we need to download topic_manifest.
+
+        auto bucket = config::shard_local_cfg().cloud_storage_bucket.value();
+        if (!bucket.has_value()) {
+            vlog(
+              clusterlog.error,
+              "Can't run topic recovery for the topic {}, bucket is not set",
+              assignable_config.cfg.tp_ns);
+            co_return make_error_result(
+              assignable_config.cfg.tp_ns, errc::topic_operation_error);
+        }
+        auto cfg_source = remote_topic_configuration_source(
+          _cloud_storage_api.local());
+
+        errc download_res = co_await cfg_source.set_recovered_topic_properties(
+          assignable_config, s3::bucket_name(bucket.value()), _as.local());
+
+        if (download_res != errc::success) {
+            vlog(
+              clusterlog.error,
+              "Can't run topic recovery for the topic {}",
+              assignable_config.cfg.tp_ns);
+            co_return make_error_result(
+              assignable_config.cfg.tp_ns, errc::topic_invalid_config);
+        }
+
+        vassert(
+          static_cast<bool>(
+            assignable_config.cfg.properties.remote_topic_properties),
+          "remote_topic_properties not set after successful download of valid "
+          "topic manifest");
+
+        vlog(
+          clusterlog.info,
+          "Configured topic recovery for {}, topic configuration: {}",
+          assignable_config.cfg.tp_ns,
+          assignable_config.cfg);
     }
 
     auto units = co_await _allocator.invoke_on(

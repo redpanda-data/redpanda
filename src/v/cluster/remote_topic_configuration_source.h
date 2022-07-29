@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Redpanda Data, Inc.
+ * Copyright 2022 Redpanda Data, Inc.
  *
  * Use of this software is governed by the Business Source License
  * included in the file licenses/BSL.md
@@ -18,9 +18,9 @@
 
 namespace cluster {
 
-class read_replica_manager {
+class remote_topic_configuration_source {
 public:
-    read_replica_manager(cloud_storage::remote&);
+    explicit remote_topic_configuration_source(cloud_storage::remote&);
 
     /**
      * Download remote topic manifest and set remote_properties to cfg.
@@ -30,6 +30,19 @@ public:
      * @param as abourt source that caller can use request abort
      */
     ss::future<errc> set_remote_properties_in_config(
+      custom_assignable_topic_configuration& cfg,
+      const s3::bucket_name& bucket,
+      ss::abort_source& as);
+
+    /**
+     * Download remote topic manifest and set topic properties to cfg.
+     * This method is used to restore properties of the recovered topic.
+     *
+     * @param cfg custom_assignable_topic_configuration that will be changed
+     * @param bucket s3 bucket where the topic manifeset will be downloaded from
+     * @param as abourt source that caller can use request abort
+     */
+    ss::future<errc> set_recovered_topic_properties(
       custom_assignable_topic_configuration& cfg,
       const s3::bucket_name& bucket,
       ss::abort_source& as);
