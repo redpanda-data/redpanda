@@ -231,6 +231,7 @@ ss::future<> scheduler_service_impl::add_ntp_archiver(
     if (_gate.is_closed()) {
         return ss::now();
     }
+    _archivers.emplace(archiver->get_ntp(), archiver);
     return archiver->download_manifest().then(
       [this, archiver](cloud_storage::download_result result) {
           auto ntp = archiver->get_ntp();
@@ -242,7 +243,6 @@ ss::future<> scheduler_service_impl::add_ntp_archiver(
                 archiver->get_ntp());
               _probe.start_archiving_ntp();
 
-              _archivers.emplace(archiver->get_ntp(), archiver);
               archiver->run_upload_loop();
 
               return ss::now();
@@ -262,14 +262,16 @@ ss::future<> scheduler_service_impl::add_ntp_archiver(
               }
               _probe.start_archiving_ntp();
 
-              _archivers.emplace(archiver->get_ntp(), archiver);
               archiver->run_upload_loop();
 
               return ss::now();
           case cloud_storage::download_result::failed:
           case cloud_storage::download_result::timedout:
               vlog(_rtclog.warn, "Manifest download failed");
-              return ss::make_exception_future<>(ss::timed_out_error());
+              _archivers.erase(archiver->get_ntp());
+              return archiver->stop().finally([archiver]() {
+                  return ss::make_exception_future<>(ss::timed_out_error());
+              });
           }
           return ss::now();
       });
