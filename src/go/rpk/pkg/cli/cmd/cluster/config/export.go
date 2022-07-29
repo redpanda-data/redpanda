@@ -11,7 +11,6 @@ package config
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"sort"
 	"strconv"
@@ -165,7 +164,7 @@ to include all properties including these low level tunables.
 			// Generate a yaml template for editing
 			var file *os.File
 			if filename == "" {
-				file, err = ioutil.TempFile("/tmp", "config_*.yaml")
+				file, err = os.CreateTemp("/tmp", "config_*.yaml")
 				filename = "/tmp/config_*.yaml"
 			} else {
 				file, err = os.Create(filename)

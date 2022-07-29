@@ -11,7 +11,7 @@ package api
 
 import (
 	"encoding/json"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -38,7 +38,7 @@ func TestSendMetrics(t *testing.T) {
 
 	ts := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			b, err := ioutil.ReadAll(r.Body)
+			b, err := io.ReadAll(r.Body)
 			require.NoError(t, err)
 			require.Exactly(t, bs, b)
 			w.WriteHeader(http.StatusOK)
@@ -130,7 +130,7 @@ func TestSendEnvironment(t *testing.T) {
 
 	ts := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			b, err := ioutil.ReadAll(r.Body)
+			b, err := io.ReadAll(r.Body)
 			require.NoError(t, err)
 			require.Exactly(t, expectedBytes, b)
 			w.WriteHeader(http.StatusOK)
