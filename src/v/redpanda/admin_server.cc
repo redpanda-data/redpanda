@@ -41,6 +41,7 @@
 #include "json/document.h"
 #include "json/schema.h"
 #include "json/stringbuffer.h"
+#include "json/validator.h"
 #include "json/writer.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
@@ -178,26 +179,7 @@ void admin_server::configure_admin_routes() {
     register_shadow_indexing_routes();
 }
 
-struct json_validator {
-    explicit json_validator(const std::string& schema_text)
-      : schema(make_schema_document(schema_text))
-      , validator(schema) {}
-
-    static json::SchemaDocument
-    make_schema_document(const std::string& schema) {
-        json::Document doc;
-        if (doc.Parse(schema).HasParseError()) {
-            throw std::runtime_error(
-              fmt::format("Invalid schema document: {}", schema));
-        }
-        return json::SchemaDocument(doc);
-    }
-
-    const json::SchemaDocument schema;
-    json::SchemaValidator validator;
-};
-
-static json_validator make_set_replicas_validator() {
+static json::validator make_set_replicas_validator() {
     const std::string schema = R"(
 {
     "type": "array",
@@ -219,7 +201,7 @@ static json_validator make_set_replicas_validator() {
     }
 }
 )";
-    return json_validator(schema);
+    return json::validator(schema);
 }
 
 /**
@@ -245,14 +227,14 @@ static json::Document parse_json_body(ss::httpd::request const& req) {
  * caller see what went wrong.
  */
 static void
-apply_validator(json_validator& validator, json::Document const& doc) {
-    validator.validator.Reset();
-    validator.validator.ResetError();
+apply_validator(json::validator& validator, json::Document const& doc) {
+    validator.schema_validator.Reset();
+    validator.schema_validator.ResetError();
 
-    if (!doc.Accept(validator.validator)) {
+    if (!doc.Accept(validator.schema_validator)) {
         json::StringBuffer val_buf;
         json::Writer<json::StringBuffer> w{val_buf};
-        validator.validator.GetError().Accept(w);
+        validator.schema_validator.GetError().Accept(w);
         auto s = ss::sstring{val_buf.GetString(), val_buf.GetSize()};
         throw ss::httpd::bad_request_exception(
           fmt::format("JSON request body does not conform to schema: {}", s));
@@ -800,7 +782,7 @@ void admin_server::register_config_routes() {
       });
 }
 
-static json_validator make_cluster_config_validator() {
+static json::validator make_cluster_config_validator() {
     const std::string schema = R"(
 {
     "type": "object",
@@ -817,7 +799,7 @@ static json_validator make_cluster_config_validator() {
     "required": ["upsert", "remove"]
 }
 )";
-    return json_validator(schema);
+    return json::validator(schema);
 }
 
 /**
@@ -1467,7 +1449,7 @@ void admin_server::register_status_routes() {
       });
 }
 
-static json_validator make_feature_put_validator() {
+static json::validator make_feature_put_validator() {
     const std::string schema = R"(
 {
     "type": "object",
@@ -1481,7 +1463,7 @@ static json_validator make_feature_put_validator() {
     "required": ["state"]
 }
 )";
-    return json_validator(schema);
+    return json::validator(schema);
 }
 
 void admin_server::register_features_routes() {
@@ -2361,7 +2343,7 @@ void admin_server::register_partition_routes() {
           co_return ss::json::json_void();
       });
     // make sure to call reset() before each use
-    static thread_local json_validator set_replicas_validator(
+    static thread_local json::validator set_replicas_validator(
       make_set_replicas_validator());
 
     register_route<superuser>(
