@@ -41,12 +41,6 @@ func NewDeployment(cl client.Client, scheme *runtime.Scheme, consoleobj *redpand
 
 // Ensure implements Resource interface
 func (d *Deployment) Ensure(ctx context.Context) error {
-	var (
-		replicas       = int32(1)
-		maxUnavailable = 1
-		maxSurge       = 1
-	)
-
 	objLabels := labels.ForConsole(d.consoleobj)
 	obj := &v1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -59,7 +53,7 @@ func (d *Deployment) Ensure(ctx context.Context) error {
 			APIVersion: "apps/v1",
 		},
 		Spec: v1.DeploymentSpec{
-			Replicas: &replicas,
+			Replicas: &d.consoleobj.Spec.Deployment.Replicas,
 			Selector: objLabels.AsAPISelector(),
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
@@ -76,11 +70,11 @@ func (d *Deployment) Ensure(ctx context.Context) error {
 				RollingUpdate: &v1.RollingUpdateDeployment{
 					MaxUnavailable: &intstr.IntOrString{
 						Type:   intstr.Int,
-						IntVal: int32(maxUnavailable),
+						IntVal: d.consoleobj.Spec.Deployment.MaxUnavailable,
 					},
 					MaxSurge: &intstr.IntOrString{
 						Type:   intstr.Int,
-						IntVal: int32(maxSurge),
+						IntVal: d.consoleobj.Spec.Deployment.MaxSurge,
 					},
 				},
 			},
@@ -182,7 +176,7 @@ func (d *Deployment) getContainers() []corev1.Container {
 	return []corev1.Container{
 		{
 			Name:  "console",
-			Image: "",
+			Image: d.consoleobj.Spec.Deployment.Image,
 			Args:  []string{fmt.Sprintf("--config.filepath=%s/%s", configMountPath, "config.yaml")},
 			Ports: []corev1.ContainerPort{
 				{

@@ -95,6 +95,27 @@ spec:
                     description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
                     type: string
                 type: object
+              deployment:
+                description: Deployment defines configurable fields for the Console
+                  Deployment resource
+                properties:
+                  image:
+                    type: string
+                  maxSurge:
+                    default: 1
+                    format: int32
+                    type: integer
+                  maxUnavailable:
+                    default: 0
+                    format: int32
+                    type: integer
+                  replicas:
+                    default: 1
+                    format: int32
+                    type: integer
+                required:
+                - image
+                type: object
               schema:
                 description: Schema defines configurable fields for Schema Registry
                 properties:
@@ -137,6 +158,7 @@ spec:
                 type: object
             required:
             - clusterKeyRef
+            - deployment
             - schema
             type: object
           status:

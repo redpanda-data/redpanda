@@ -22,6 +22,7 @@ type ConsoleSpec struct {
 
 	Schema        Schema                 `json:"schema"`
 	ClusterKeyRef corev1.ObjectReference `json:"clusterKeyRef"`
+	Deployment    Deployment             `json:"deployment"`
 }
 
 // Server is the Console app HTTP server config
@@ -58,6 +59,20 @@ type Server struct {
 // Schema defines configurable fields for Schema Registry
 type Schema struct {
 	Enabled bool `json:"enabled"`
+}
+
+// Deployment defines configurable fields for the Console Deployment resource
+type Deployment struct {
+	Image string `json:"image"`
+
+	// +kubebuilder:default=1
+	Replicas int32 `json:"replicas,omitempty"`
+
+	// +kubebuilder:default=0
+	MaxUnavailable int32 `json:"maxUnavailable,omitempty"`
+
+	// +kubebuilder:default=1
+	MaxSurge int32 `json:"maxSurge,omitempty"`
 }
 
 // ConsoleStatus defines the observed state of Console
