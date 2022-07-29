@@ -62,6 +62,7 @@ func (r *ConsoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	applyResources := []resources.Resource{
 		consolepkg.NewConfigMap(r.Client, r.Scheme, console, cluster, r.clusterDomain, r.AdminAPIClientFactory, log),
+		consolepkg.NewDeployment(r.Client, r.Scheme, console, cluster, log),
 	}
 
 	for _, each := range applyResources {

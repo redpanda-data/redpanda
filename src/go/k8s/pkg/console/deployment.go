@@ -1,0 +1,197 @@
+package console
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/go-logr/logr"
+	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	labels "github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
+	v1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+)
+
+// Deployment is a Console resource
+type Deployment struct {
+	client.Client
+	scheme     *runtime.Scheme
+	consoleobj *redpandav1alpha1.Console
+	clusterobj *redpandav1alpha1.Cluster
+	log        logr.Logger
+}
+
+// NewDeployment instantiates a new Deployment
+func NewDeployment(cl client.Client, scheme *runtime.Scheme, consoleobj *redpandav1alpha1.Console, clusterobj *redpandav1alpha1.Cluster, log logr.Logger) *Deployment {
+	return &Deployment{
+		Client:     cl,
+		scheme:     scheme,
+		consoleobj: consoleobj,
+		clusterobj: clusterobj,
+		log:        log,
+	}
+}
+
+// Ensure implements Resource interface
+func (d *Deployment) Ensure(ctx context.Context) error {
+	var (
+		replicas       = int32(1)
+		maxUnavailable = 1
+		maxSurge       = 1
+	)
+
+	objLabels := labels.ForConsole(d.consoleobj)
+	obj := &v1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      d.consoleobj.GetName(),
+			Namespace: d.consoleobj.GetNamespace(),
+			Labels:    objLabels,
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Deployment",
+			APIVersion: "apps/v1",
+		},
+		Spec: v1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: objLabels.AsAPISelector(),
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: objLabels,
+				},
+				Spec: corev1.PodSpec{
+					Volumes:                       d.getVolumes(),
+					Containers:                    d.getContainers(),
+					TerminationGracePeriodSeconds: getGracePeriod(d.consoleobj.Spec.Server.ServerGracefulShutdownTimeout),
+				},
+			},
+			Strategy: v1.DeploymentStrategy{
+				Type: v1.RollingUpdateDeploymentStrategyType,
+				RollingUpdate: &v1.RollingUpdateDeployment{
+					MaxUnavailable: &intstr.IntOrString{
+						Type:   intstr.Int,
+						IntVal: int32(maxUnavailable),
+					},
+					MaxSurge: &intstr.IntOrString{
+						Type:   intstr.Int,
+						IntVal: int32(maxSurge),
+					},
+				},
+			},
+		},
+	}
+
+	if err := controllerutil.SetControllerReference(d.consoleobj, obj, d.scheme); err != nil {
+		return err
+	}
+
+	created, err := resources.CreateIfNotExists(ctx, d.Client, obj, d.log)
+	if err != nil {
+		return fmt.Errorf("creating Console deployment: %w", err)
+	}
+
+	if !created {
+		// Update resource if not created.
+		var current v1.Deployment
+		err = d.Get(ctx, types.NamespacedName{Name: obj.GetName(), Namespace: obj.GetNamespace()}, &current)
+		if err != nil {
+			return fmt.Errorf("fetching Console deployment: %w", err)
+		}
+		_, err = resources.Update(ctx, &current, obj, d.Client, d.log)
+		if err != nil {
+			return fmt.Errorf("updating Console deployment: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// Key implements Resource interface
+func (d *Deployment) Key() types.NamespacedName {
+	return types.NamespacedName{Name: d.consoleobj.GetName(), Namespace: d.consoleobj.GetNamespace()}
+}
+
+func getGracePeriod(period string) *int64 {
+	duration, err := time.ParseDuration(period)
+	if err != nil {
+		// Defaults to 30s
+		return nil
+	}
+	gracePeriod := duration.Nanoseconds() / time.Second.Nanoseconds()
+	return &gracePeriod
+}
+
+const (
+	configMountName = "config"
+	configMountPath = "/etc/console/configs"
+
+	tlsMountName = "tls-schema-registry"
+
+	schemaRegistryClientCertSuffix = "schema-registry-client"
+)
+
+func (d *Deployment) getVolumes() []corev1.Volume {
+	volumes := []corev1.Volume{
+		{
+			Name: configMountName,
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: d.consoleobj.GetName(),
+					},
+				},
+			},
+		},
+	}
+	if d.clusterobj.IsSchemaRegistryTLSEnabled() {
+		volumes = append(volumes, corev1.Volume{
+			Name: tlsMountName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: fmt.Sprintf("%s-%s", d.clusterobj.GetName(), schemaRegistryClientCertSuffix),
+				},
+			},
+		})
+	}
+	return volumes
+}
+
+func (d *Deployment) getContainers() []corev1.Container {
+	volumeMounts := []corev1.VolumeMount{
+		{
+			Name:      configMountName,
+			ReadOnly:  true,
+			MountPath: configMountPath,
+		},
+	}
+
+	if d.clusterobj.IsSchemaRegistryTLSEnabled() {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      tlsMountName,
+			ReadOnly:  true,
+			MountPath: SchemaRegistryTLSDir,
+		})
+	}
+
+	return []corev1.Container{
+		{
+			Name:  "console",
+			Image: "",
+			Args:  []string{fmt.Sprintf("--config.filepath=%s/%s", configMountPath, "config.yaml")},
+			Ports: []corev1.ContainerPort{
+				{
+					Name:          "http",
+					ContainerPort: int32(d.consoleobj.Spec.Server.HTTPListenPort),
+					Protocol:      "TCP",
+				},
+			},
+			VolumeMounts: volumeMounts,
+		},
+	}
+}
