@@ -743,7 +743,16 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         self.logger.info(f"stopping node: {to_stop}")
         self.redpanda.stop_node(self.redpanda.get_node(to_stop))
 
-        wait_until(lambda: self.redpanda.controller() != to_stop, 30, 1)
+        def new_controller_available():
+            controller_id = admin.get_partition_leader(namespace="redpanda",
+                                                       topic="controller",
+                                                       partition=0)
+            self.logger.debug(
+                f"current controller: {controller_id}, stopped node: {to_stop}"
+            )
+            return controller_id != -1 and controller_id != to_stop
+
+        wait_until(new_controller_available, 30, 1)
         # ask partition to move
         admin.set_partition_replicas(self.topic, partition_id, assignments)
 
