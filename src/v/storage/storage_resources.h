@@ -113,6 +113,7 @@ public:
     storage_resources(
       config::binding<size_t>,
       config::binding<uint64_t>,
+      config::binding<uint64_t>,
       config::binding<uint64_t>);
     storage_resources(const storage_resources&) = delete;
 
@@ -160,6 +161,7 @@ private:
     config::binding<size_t> _segment_fallocation_step;
     config::binding<uint64_t> _target_replay_bytes;
     config::binding<uint64_t> _max_concurrent_replay;
+    config::binding<uint64_t> _compaction_index_mem_limit;
     size_t _append_chunk_size;
 
     size_t _falloc_step{0};
@@ -184,7 +186,7 @@ private:
 
     // How much memory may all compacted partitions on this shard
     // use for their spill_key_index objects
-    adjustable_allowance _compaction_index_bytes{128_MiB};
+    adjustable_allowance _compaction_index_bytes{0};
 
     // How many logs may be recovered (via log_manager::manage)
     // concurrently?
