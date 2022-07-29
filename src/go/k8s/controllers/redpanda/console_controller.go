@@ -11,6 +11,7 @@ package redpanda
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/go-logr/logr"
@@ -20,6 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 )
@@ -27,8 +29,10 @@ import (
 // ConsoleReconciler reconciles a Console object
 type ConsoleReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
-	Log    logr.Logger
+	Scheme                *runtime.Scheme
+	Log                   logr.Logger
+	AdminAPIClientFactory adminutils.AdminAPIClientFactory
+	clusterDomain         string
 }
 
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
@@ -57,11 +61,15 @@ func (r *ConsoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	applyResources := []resources.Resource{
-		consolepkg.NewConfigMap(r.Client, r.Scheme, console, cluster, log),
+		consolepkg.NewConfigMap(r.Client, r.Scheme, console, cluster, r.clusterDomain, r.AdminAPIClientFactory, log),
 	}
 
 	for _, each := range applyResources {
 		if err := each.Ensure(ctx); err != nil {
+			var e *resources.RequeueAfterError
+			if errors.As(err, &e) {
+				return ctrl.Result{RequeueAfter: e.RequeueAfter}, nil
+			}
 			return ctrl.Result{}, err
 		}
 	}
@@ -74,4 +82,10 @@ func (r *ConsoleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&redpandav1alpha1.Console{}).
 		Complete(r)
+}
+
+// WithClusterDomain sets the clusterDomain
+func (r *ConsoleReconciler) WithClusterDomain(clusterDomain string) *ConsoleReconciler {
+	r.clusterDomain = clusterDomain
+	return r
 }
