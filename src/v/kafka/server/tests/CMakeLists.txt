@@ -42,18 +42,3 @@ rp_test(
   ARGS "-- -c 1"
   LABELS kafka
 )
-
-find_program(KAFKA_PYTHON_ENV "kafka-python-env")
-
-rp_test(
-  UNIT_TEST
-  BINARY_NAME test_kafka_request_parser
-  SOURCES request_parser_test.cc
-  DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES v::seastar_testing_main v::application v::raft v::kafka
-  # generate request data as a prepare step. the test and prepare command run in
-  # the same scratch directory so the generated output file writes to pwd.
-  PREPARE_COMMAND "${KAFKA_PYTHON_ENV} ${PROJECT_SOURCE_DIR}/tools/kafka-python-api-serde.py 1000 > requests.bin"
-  ARGS "-- -c 1"
-  LABELS kafka
-)
