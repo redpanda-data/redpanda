@@ -185,27 +185,19 @@ ss::future<> feature_manager::maybe_log_license_check_info() {
     }
     if (_feature_table.local().is_active(feature::license)) {
         const auto& cfg = config::shard_local_cfg();
-        std::stringstream warn_ss;
-        if (cfg.cloud_storage_enabled) {
-            fmt::print(warn_ss, "{}", "Tiered Storage(cloud_storage)");
-        }
         if (
-          cfg.partition_autobalancing_mode
-          == model::partition_autobalancing_mode::continuous) {
-            fmt::print(warn_ss, "{} & ", "Continuous partition autobalancing");
-        }
-        const auto& warn_log = warn_ss.str();
-        if (!warn_log.empty()) {
+          cfg.cloud_storage_enabled
+          || cfg.partition_autobalancing_mode
+               == model::partition_autobalancing_mode::continuous) {
             const auto& license = _feature_table.local().get_license();
             if (!license || license->is_expired()) {
                 vlog(
                   clusterlog.warn,
-                  "Enterprise feature(s) ({}) detected as enabled without a "
-                  "valid "
-                  "license, please contact support and/or upload a valid "
-                  "redpanda "
-                  "license",
-                  warn_log);
+                  "Looks like you’ve enabled a Redpanda Enterprise feature(s) "
+                  "without a valid license. Please enter an active Redpanda "
+                  "license key (e.g. rpk cluster license set <key>). If you "
+                  "don’t have one, please request a new/trial license at "
+                  "https://redpanda.com/license-request");
             }
         }
     }
