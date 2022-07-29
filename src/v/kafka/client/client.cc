@@ -36,6 +36,7 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/std-coroutine.hh>
+#include <seastar/coroutine/exception.hh>
 
 #include <absl/container/node_hash_map.h>
 
@@ -295,18 +296,18 @@ client::create_topic(kafka::creatable_topic req) {
 
 ss::future<list_offsets_response>
 client::list_offsets(model::topic_partition tp) {
-    return gated_retry_with_mitigation([this, tp]() {
-        return _topic_cache.leader(tp)
-          .then(
-            [this](model::node_id node_id) { return _brokers.find(node_id); })
-          .then([tp](auto broker) mutable {
-              return broker->dispatch(kafka::list_offsets_request{
-                .data = {.topics{
-                  {{.name{std::move(tp.topic)},
-                    .partitions{
-                      {{.partition_index{tp.partition},
-                        .max_num_offsets = 1}}}}}}}});
-          });
+    using result = ss::future<list_offsets_response>;
+    return gated_retry_with_mitigation([this, _tp = std::move(tp)]() -> result {
+        auto me = this;
+        auto tp = _tp;
+        auto node_id = co_await me->_topic_cache.leader(tp);
+        auto broker = co_await me->_brokers.find(node_id);
+        auto res = co_await broker->dispatch(kafka::list_offsets_request{
+          .data = {.topics{
+            {{.name{tp.topic},
+              .partitions{
+                {{.partition_index{tp.partition}, .max_num_offsets = 1}}}}}}}});
+        co_return res;
     });
 }
 
