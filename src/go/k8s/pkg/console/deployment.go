@@ -171,7 +171,8 @@ const (
 	configMountName = "config"
 	configMountPath = "/etc/console/configs"
 
-	tlsMountName = "tls-schema-registry"
+	tlsCaMountName = "tls-schema-registry-ca"
+	tlsMountName   = "tls-schema-registry"
 
 	schemaRegistryClientCertSuffix = "schema-registry-client"
 )
@@ -198,6 +199,12 @@ func (d *Deployment) getVolumes() []corev1.Volume {
 				},
 			},
 		})
+	}
+	if sr := d.clusterobj.SchemaRegistryAPITLS(); sr != nil {
+		ca := &SchemaRegistryTLSCa{sr.TLS.NodeSecretRef}
+		if vol := ca.Volume(tlsCaMountName); vol != nil {
+			volumes = append(volumes, *vol)
+		}
 	}
 	return volumes
 }

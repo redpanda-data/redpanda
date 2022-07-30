@@ -171,15 +171,49 @@ func (cm *ConfigMap) generateConsoleConfig(username, password string) (string, e
 }
 
 var (
-	// We are using publicly signed certificates for TLS
+	// Currently issuing TLS certs through LetsEncrypt
+	// SchemaRegistry.TLS.NodeSecretRef is set to Secret without CaFile "ca.crt"
+	// This flag overrides using NodeSecretRef to mount CaFile
+	UsePublicCerts = true
+
 	// Console is creating a NewCertPool() which will not use host default certificates when left blank
 	// REF https://github.com/redpanda-data/console/blob/master/backend/pkg/schema/client.go#L60
-	DefaultCAFilePath = "/etc/ssl/certs/ca-certificates.crt"
+	DefaultCaFilePath = "/etc/ssl/certs/ca-certificates.crt"
 
 	SchemaRegistryTLSDir          = "/redpanda/schema-registry"
+	SchemaRegistryTLSCaFilePath   = fmt.Sprintf("%s/%s", SchemaRegistryTLSDir, "ca.crt")
 	SchemaRegistryTLSCertFilePath = fmt.Sprintf("%s/%s", SchemaRegistryTLSDir, "tls.crt")
 	SchemaRegistryTLSKeyFilePath  = fmt.Sprintf("%s/%s", SchemaRegistryTLSDir, "tls.key")
 )
+
+// SchemaRegistryTLSCa handles mounting CA cert
+type SchemaRegistryTLSCa struct {
+	NodeSecretRef *corev1.ObjectReference
+}
+
+// FilePath returns the CA filepath mount
+func (s *SchemaRegistryTLSCa) FilePath() string {
+	if !UsePublicCerts && s.NodeSecretRef != nil {
+		return SchemaRegistryTLSCaFilePath
+	}
+	return DefaultCaFilePath
+}
+
+// Volume returns mount Volume definition
+func (s *SchemaRegistryTLSCa) Volume(name string) *corev1.Volume {
+	if !UsePublicCerts && s.NodeSecretRef != nil {
+		return &corev1.Volume{
+			Name: name,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: s.NodeSecretRef.Name,
+					Items:      []corev1.KeyToPath{{Key: "ca.crt", Path: "."}},
+				},
+			},
+		}
+	}
+	return nil
+}
 
 func (cm *ConfigMap) genKafka(username, password string) kafka.Config {
 	k := kafka.Config{
@@ -191,14 +225,18 @@ func (cm *ConfigMap) genKafka(username, password string) kafka.Config {
 	if yes := cm.consoleobj.Spec.Schema.Enabled; yes {
 		tls := schema.TLSConfig{Enabled: false}
 		if yes := cm.clusterobj.IsSchemaRegistryTLSEnabled(); yes {
+			ca := &SchemaRegistryTLSCa{
+				// SchemaRegistryAPITLS cannot be nil
+				cm.clusterobj.SchemaRegistryAPITLS().TLS.NodeSecretRef,
+			}
 			tls = schema.TLSConfig{
 				Enabled:      yes,
-				CaFilepath:   DefaultCAFilePath,
+				CaFilepath:   ca.FilePath(),
 				CertFilepath: SchemaRegistryTLSCertFilePath,
 				KeyFilepath:  SchemaRegistryTLSKeyFilePath,
 			}
 		}
-		schemaRegistry = schema.Config{Enabled: yes, URLs: []string{cm.clusterobj.SchemaRegistryAPIInternalURL()}, TLS: tls}
+		schemaRegistry = schema.Config{Enabled: yes, URLs: []string{cm.clusterobj.SchemaRegistryAPIURL()}, TLS: tls}
 	}
 	k.Schema = schemaRegistry
 

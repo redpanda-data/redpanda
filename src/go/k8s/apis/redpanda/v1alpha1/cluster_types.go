@@ -799,14 +799,18 @@ func (r *Cluster) PandaproxyAPITLS() *PandaproxyAPI {
 	return nil
 }
 
-// SchemaRegistryAPIInternalURL returns a SchemaRegistry URL string
-func (r *Cluster) SchemaRegistryAPIInternalURL() string {
-	scheme := "http"
-	if r.IsSchemaRegistryTLSEnabled() {
-		scheme = "https"
+// SchemaRegistryAPIURL returns a SchemaRegistry URL string.
+// It returns internal URL unless externally available with TLS.
+func (r *Cluster) SchemaRegistryAPIURL() string {
+	host := r.Status.Nodes.SchemaRegistry.Internal
+	if r.IsSchemaRegistryExternallyAvailable() && r.IsSchemaRegistryTLSEnabled() {
+		host = r.Status.Nodes.SchemaRegistry.External
 	}
-	u := url.URL{Scheme: scheme, Host: r.Status.Nodes.SchemaRegistry.Internal}
-	return u.String()
+	if sr := r.Spec.Configuration.SchemaRegistry; sr != nil {
+		u := url.URL{Scheme: sr.GetHTTPScheme(), Host: host}
+		return u.String()
+	}
+	return ""
 }
 
 // SchemaRegistryAPITLS returns a SchemaRegistry listener that has TLS enabled.
@@ -951,6 +955,15 @@ func (a AdminAPI) GetExternal() *ExternalConnectivityConfig {
 // GetPort returns API port
 func (s SchemaRegistryAPI) GetPort() int {
 	return s.Port
+}
+
+// GetHTTPScheme retuns API HTTP scheme
+func (s SchemaRegistryAPI) GetHTTPScheme() string {
+	scheme := "http"
+	if s.TLS != nil && s.TLS.Enabled {
+		scheme = "https"
+	}
+	return scheme
 }
 
 // GetTLS returns API TLSConfig
