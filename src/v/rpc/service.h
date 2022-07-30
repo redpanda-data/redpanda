@@ -92,9 +92,12 @@ struct service::execution_helper {
                            */
                           vassert(
                             effective_version == version,
-                            "Unexpected encoding at effective {} != {}",
+                            "Unexpected encoding at effective {} != {}. Input "
+                            "{} Output {}",
                             effective_version,
-                            version);
+                            version,
+                            serde::type_str<Input>(),
+                            serde::type_str<Output>());
                           return std::move(*b);
                       });
                 });
