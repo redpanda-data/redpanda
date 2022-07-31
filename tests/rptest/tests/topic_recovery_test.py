@@ -12,7 +12,7 @@ import os
 import pprint
 import time
 from collections import namedtuple, defaultdict, deque
-from typing import Optional, Callable
+from typing import Optional, Callable, Sequence
 
 from ducktape.mark import ok_to_fail
 from ducktape.tests.test import TestContext
@@ -67,7 +67,7 @@ class BaseCase:
     topics and topics that created to align revision ids. By default it's equal
     to topics.
     """
-    topics = None
+    topics: Sequence[TopicSpec] = []
 
     def __init__(self, s3_client: S3Client, kafka_tools: KafkaCliTools,
                  rpk_client: RpkTool, s3_bucket, logger,
@@ -84,7 +84,7 @@ class BaseCase:
 
     def create_initial_topics(self):
         """Create initial set of topics based on class/instance topics variable."""
-        for topic in self.topics or []:
+        for topic in self.topics:
             self._rpk.create_topic(topic.name,
                                    topic.partition_count,
                                    topic.replication_factor,
@@ -1075,6 +1075,7 @@ class TopicRecoveryTest(RedpandaTest):
             manifests = []
             topic_manifests = []
             segments = []
+            assert self.s3_client
             lst = self.s3_client.list_objects(self.s3_bucket)
             for obj in lst:
                 self.logger.debug(f'checking S3 object: {obj.Key}')
