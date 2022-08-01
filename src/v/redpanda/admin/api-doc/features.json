@@ -139,7 +139,7 @@
                 },
                 "type": {
                     "type": "string",
-                    "description": "type of license, free, enterprise, etc."
+                    "description": "type of license, currently only free_trial or enterprise"
                 },
                 "expires": {
                     "type": "int",
