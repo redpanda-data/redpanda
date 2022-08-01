@@ -30,6 +30,7 @@ struct type_list {};
 using compat_checks = type_list<
   raft::timeout_now_request,
   raft::timeout_now_reply,
+  raft::transfer_leadership_request,
   cluster::update_leadership_request>;
 
 struct compat_error final : public std::runtime_error {

@@ -90,4 +90,39 @@ struct instance_generator<raft::timeout_now_reply> {
     }
 };
 
+template<>
+struct instance_generator<raft::transfer_leadership_request> {
+    static raft::transfer_leadership_request random() {
+        return {
+          .group = tests::random_named_int<raft::group_id>(),
+          .target = tests::random_named_int<model::node_id>(),
+        };
+    }
+
+    static std::vector<raft::transfer_leadership_request> limits() {
+        return {
+          {
+            .group = tests::random_named_int<raft::group_id>(),
+            .target = std::nullopt,
+          },
+          {
+            .group = raft::group_id::min(),
+            .target = std::nullopt,
+          },
+          {
+            .group = raft::group_id::max(),
+            .target = std::nullopt,
+          },
+          {
+            .group = raft::group_id::min(),
+            .target = tests::random_named_int<model::node_id>(),
+          },
+          {
+            .group = raft::group_id::max(),
+            .target = tests::random_named_int<model::node_id>(),
+          },
+        };
+    }
+};
+
 } // namespace compat

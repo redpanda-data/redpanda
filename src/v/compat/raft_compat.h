@@ -99,4 +99,41 @@ struct compat_check<raft::timeout_now_reply> {
     }
 };
 
+/*
+ * raft::transfer_leadership_request
+ */
+template<>
+struct compat_check<raft::transfer_leadership_request> {
+    static constexpr std::string_view name
+      = "raft::transfer_leadership_request";
+
+    static std::vector<raft::transfer_leadership_request> create_test_cases() {
+        return generate_instances<raft::transfer_leadership_request>();
+    }
+
+    static void to_json(
+      raft::transfer_leadership_request obj,
+      json::Writer<json::StringBuffer>& wr) {
+        json_write(group);
+        json_write(target);
+    }
+
+    static raft::transfer_leadership_request from_json(json::Value& rd) {
+        raft::transfer_leadership_request obj;
+        json_read(group);
+        json_read(target);
+        return obj;
+    }
+
+    static std::vector<compat_binary>
+    to_binary(raft::transfer_leadership_request obj) {
+        return compat_binary::serde_and_adl(obj);
+    }
+
+    static bool
+    check(raft::transfer_leadership_request obj, compat_binary test) {
+        return verify_adl_or_serde(obj, std::move(test));
+    }
+};
+
 } // namespace compat

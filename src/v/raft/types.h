@@ -671,6 +671,12 @@ struct transfer_leadership_request
       = default;
 
     auto serde_fields() { return std::tie(group, target); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const transfer_leadership_request& r) {
+        fmt::print(o, "group {} target {}", r.group, r.target);
+        return o;
+    }
 };
 
 struct transfer_leadership_reply
