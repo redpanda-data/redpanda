@@ -190,18 +190,7 @@ ss::future<> service::fetch_internal_topic() {
 
     auto offset_res = co_await _client.local().list_offsets(
       model::schema_registry_internal_tp);
-    const auto& topics = offset_res.data.topics;
-    if (topics.size() != 1 || topics.front().partitions.size() != 1) {
-        auto ec = kafka::error_code::unknown_topic_or_partition;
-        throw kafka::exception(ec, make_error_code(ec).message());
-    }
-    const auto& partition = topics.front().partitions.front();
-    if (partition.error_code != kafka::error_code::none) {
-        auto ec = partition.error_code;
-        throw kafka::exception(ec, make_error_code(ec).message());
-    }
-
-    auto max_offset = partition.offset;
+    auto max_offset = offset_res.data.topics[0].partitions[0].offset;
     vlog(plog.debug, "Schema registry: _schemas max_offset: {}", max_offset);
 
     co_await kafka::client::make_client_fetch_batch_reader(
