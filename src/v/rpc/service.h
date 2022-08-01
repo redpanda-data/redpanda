@@ -55,6 +55,25 @@ struct service::execution_helper {
     using input = Input;
     using output = Output;
 
+    /*
+     * ensure that request and response types are compatible. this solves a
+     * particular class of issue where someone marks for example the request as
+     * exempt but forgets to mark the response. in this scenario it is then
+     * possible for the assertion regarding unexpected encodings to fire.
+     */
+    static_assert(is_rpc_adl_exempt<Input> == is_rpc_adl_exempt<Output>);
+    static_assert(is_rpc_serde_exempt<Input> == is_rpc_serde_exempt<Output>);
+
+    /*
+     * provided that input/output are no exempt from serde support, require that
+     * they are both serde envelopes. this prevents a class of situation in
+     * which a request/response is a natively supported type, but not actually
+     * an envelope, such as a request being a raw integer or a named_type. we
+     * want our rpc's to be versioned.
+     */
+    static_assert(is_rpc_serde_exempt<Input> || serde::is_envelope<Input>);
+    static_assert(is_rpc_serde_exempt<Output> || serde::is_envelope<Output>);
+
     template<typename Func>
     static ss::future<netbuf> exec(
       ss::input_stream<char>& in,

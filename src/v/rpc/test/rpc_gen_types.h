@@ -64,7 +64,10 @@ struct cnt_resp {
 
 enum class failure_type { throw_exception, exceptional_future, none };
 
-using throw_req = failure_type;
+struct throw_req {
+    using rpc_serde_exempt = std::true_type;
+    failure_type type;
+};
 
 struct throw_resp {
     using rpc_serde_exempt = std::true_type;

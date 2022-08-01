@@ -87,7 +87,7 @@ struct echo_impl final : echo::echo_service_base<Codec> {
 
     ss::future<echo::throw_resp>
     throw_exception(echo::throw_req&& req, rpc::streaming_context&) final {
-        switch (req) {
+        switch (req.type) {
         case echo::failure_type::exceptional_future:
             return ss::make_exception_future<echo::throw_resp>(
               std::runtime_error("gentle crash"));
@@ -406,7 +406,7 @@ FIXTURE_TEST(server_exception_test, rpc_integration_fixture) {
     client.connect(model::no_timeout).get();
     auto ret = client
                  .throw_exception(
-                   echo::failure_type::exceptional_future,
+                   {.type = echo::failure_type::exceptional_future},
                    rpc::client_opts(model::no_timeout))
                  .get0();
 
