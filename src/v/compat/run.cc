@@ -14,6 +14,7 @@
 #include "compat/begin_tx_compat.h"
 #include "compat/check.h"
 #include "compat/cluster_compat.h"
+#include "compat/id_allocator_compat.h"
 #include "compat/init_tm_tx_compat.h"
 #include "compat/metadata_dissemination_compat.h"
 #include "compat/prepare_tx_compat.h"
@@ -65,7 +66,9 @@ using compat_checks = type_list<
   cluster::prepare_tx_request,
   cluster::prepare_tx_reply,
   cluster::try_abort_request,
-  cluster::try_abort_reply>;
+  cluster::try_abort_reply,
+  cluster::allocate_id_request,
+  cluster::allocate_id_reply>;
 
 struct compat_error final : public std::runtime_error {
 public:
