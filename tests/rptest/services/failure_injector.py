@@ -10,6 +10,7 @@
 import signal
 import threading
 from ducktape.utils.util import wait_until
+from ducktape.errors import TimeoutError
 
 
 class FailureSpec:
