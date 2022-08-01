@@ -18,6 +18,12 @@ from rptest.services.rpk_producer import RpkProducer
 
 from rptest.tests.redpanda_test import RedpandaTest
 
+# When quickly recreating topics after deleting them, redpanda's topic
+# dir creation can trip up over the topic dir deletion.  This is not
+# harmful because creation is retried, but it does generate a log error.
+# See https://github.com/redpanda-data/redpanda/issues/5768
+RECREATE_LOG_ALLOW_LIST = ["mkdir failed: No such file or directory"]
+
 
 class RecreateTopicMetadataTest(RedpandaTest):
     def __init__(self, test_context):
@@ -31,7 +37,7 @@ class RecreateTopicMetadataTest(RedpandaTest):
                 'enable_leader_balancer': False
             })
 
-    @cluster(num_nodes=6)
+    @cluster(num_nodes=6, log_allow_list=RECREATE_LOG_ALLOW_LIST)
     @parametrize(replication_factor=3)
     @parametrize(replication_factor=5)
     def test_recreated_topic_metadata_are_valid(self, replication_factor):
