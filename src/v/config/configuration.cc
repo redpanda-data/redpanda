@@ -1191,7 +1191,7 @@ configuration::configuration()
       {.needs_restart = needs_restart::no,
        .example = "node_add",
        .visibility = visibility::user},
-      model::partition_autobalancing_mode::off,
+      model::partition_autobalancing_mode::node_add,
       {
         model::partition_autobalancing_mode::off,
         model::partition_autobalancing_mode::node_add,
