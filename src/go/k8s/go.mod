@@ -16,6 +16,8 @@ require (
 	github.com/redpanda-data/redpanda/src/go/rpk v0.0.0-20220726211426-9ad7e9d59990
 	github.com/spf13/afero v1.9.2
 	github.com/stretchr/testify v1.7.0
+	github.com/twmb/franz-go v1.6.0
+	github.com/twmb/franz-go/pkg/kadm v1.2.0
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.21.4
@@ -94,7 +96,6 @@ require (
 	github.com/sirupsen/logrus v1.9.0 // indirect
 	github.com/spf13/cobra v1.5.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	github.com/twmb/franz-go v1.6.0 // indirect
 	github.com/twmb/franz-go/pkg/kmsg v1.2.0 // indirect
 	github.com/twmb/franz-go/pkg/sasl/kerberos v1.0.0 // indirect
 	github.com/twmb/tlscfg v1.2.0 // indirect

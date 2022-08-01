@@ -19,7 +19,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
@@ -77,7 +76,9 @@ type Reconciling ConsoleState
 // Do handles reconciliation of Console
 func (r *Reconciling) Do(ctx context.Context, console *redpandav1alpha1.Console, cluster *redpandav1alpha1.Cluster, log logr.Logger) (ctrl.Result, error) {
 	applyResources := []resources.Resource{
-		consolepkg.NewConfigMap(r.Client, r.Scheme, console, cluster, r.clusterDomain, r.AdminAPIClientFactory, log),
+		consolepkg.NewKafkaSA(r.Client, r.Scheme, console, cluster, r.clusterDomain, r.AdminAPIClientFactory, log),
+		consolepkg.NewKafkaACL(r.Client, r.Scheme, console, cluster, log),
+		consolepkg.NewConfigMap(r.Client, r.Scheme, console, cluster, log),
 		consolepkg.NewDeployment(r.Client, r.Scheme, console, cluster, log),
 		consolepkg.NewService(r.Client, r.Scheme, console, log),
 	}
@@ -100,17 +101,15 @@ type Deleting ConsoleState
 
 // Do handles deletion of Console
 func (r *Deleting) Do(ctx context.Context, console *redpandav1alpha1.Console, cluster *redpandav1alpha1.Cluster, log logr.Logger) (ctrl.Result, error) {
-	adminAPI, err := consolepkg.NewAdminAPI(ctx, r.Client, r.Scheme, cluster, r.clusterDomain, r.AdminAPIClientFactory, log)
-	if err != nil {
-		return ctrl.Result{}, err
+	applyResources := []resources.ManagedResource{
+		consolepkg.NewKafkaSA(r.Client, r.Scheme, console, cluster, r.clusterDomain, r.AdminAPIClientFactory, log),
+		consolepkg.NewKafkaACL(r.Client, r.Scheme, console, cluster, log),
 	}
 
-	if err := adminAPI.DeleteUser(ctx, fmt.Sprintf("%s_%s", console.GetName(), resources.ScramConsoleUsername)); err != nil {
-		return ctrl.Result{}, err
-	}
-	controllerutil.RemoveFinalizer(console, consolepkg.ConsoleFinalizer)
-	if err := r.Update(ctx, console); err != nil {
-		return ctrl.Result{}, err
+	for _, each := range applyResources {
+		if err := each.Cleanup(ctx); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 
 	return ctrl.Result{}, nil

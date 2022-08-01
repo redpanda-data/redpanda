@@ -4,15 +4,14 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"strings"
 
 	"github.com/go-logr/logr"
 	"github.com/redpanda-data/console/backend/pkg/kafka"
 	"github.com/redpanda-data/console/backend/pkg/schema"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -20,40 +19,38 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
-	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	labels "github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 )
 
 // ConfigMap is a Console resource
 type ConfigMap struct {
 	client.Client
-	scheme        *runtime.Scheme
-	consoleobj    *redpandav1alpha1.Console
-	clusterobj    *redpandav1alpha1.Cluster
-	clusterDomain string
-	adminAPI      adminutils.AdminAPIClientFactory
-	log           logr.Logger
+	scheme     *runtime.Scheme
+	consoleobj *redpandav1alpha1.Console
+	clusterobj *redpandav1alpha1.Cluster
+	log        logr.Logger
 }
 
 // NewConfigMap instantiates a new ConfigMap
-func NewConfigMap(cl client.Client, scheme *runtime.Scheme, consoleobj *redpandav1alpha1.Console, clusterobj *redpandav1alpha1.Cluster, clusterDomain string, adminAPI adminutils.AdminAPIClientFactory, log logr.Logger) *ConfigMap {
+func NewConfigMap(cl client.Client, scheme *runtime.Scheme, consoleobj *redpandav1alpha1.Console, clusterobj *redpandav1alpha1.Cluster, log logr.Logger) *ConfigMap {
 	return &ConfigMap{
-		Client:        cl,
-		scheme:        scheme,
-		consoleobj:    consoleobj,
-		clusterobj:    clusterobj,
-		clusterDomain: clusterDomain,
-		adminAPI:      adminAPI,
-		log:           log,
+		Client:     cl,
+		scheme:     scheme,
+		consoleobj: consoleobj,
+		clusterobj: clusterobj,
+		log:        log,
 	}
 }
 
 // Ensure implements Resource interface
 func (cm *ConfigMap) Ensure(ctx context.Context) error {
-	username, password, err := cm.createServiceAccount(ctx)
-	if err != nil {
+	secret := v1.Secret{}
+	if err := cm.Get(ctx, KafkaSASecretKey(cm.consoleobj), &secret); err != nil {
 		return err
 	}
+	username := string(secret.Data[corev1.BasicAuthUsernameKey])
+	password := string(secret.Data[corev1.BasicAuthPasswordKey])
 
 	config, err := cm.generateConsoleConfig(username, password)
 	if err != nil {
@@ -103,47 +100,6 @@ func (cm *ConfigMap) Ensure(ctx context.Context) error {
 // Key implements Resource interface
 func (cm *ConfigMap) Key() types.NamespacedName {
 	return types.NamespacedName{Name: cm.consoleobj.GetName(), Namespace: cm.consoleobj.GetNamespace()}
-}
-
-// ConsoleFinalizer is the finalizer for deleting service-account
-var ConsoleFinalizer = "redpanda.vectorized.io/service-account"
-
-func (cm *ConfigMap) createServiceAccount(ctx context.Context) (username, password string, err error) {
-	su := resources.NewSuperUsers(cm.Client, cm.consoleobj, cm.scheme, fmt.Sprintf("%s_%s", cm.consoleobj.GetName(), resources.ScramConsoleUsername), resources.ConsoleSuffix, cm.log)
-	if err := su.Ensure(ctx); err != nil {
-		return username, password, fmt.Errorf("ensuring sasl user secret: %w", err)
-	}
-
-	// SuperUsers resource generates a username/password credentials
-	var secret corev1.Secret
-	err = cm.Get(ctx, su.Key(), &secret)
-	if err != nil {
-		return username, password, fmt.Errorf("fetching Secret (%s) from namespace (%s): %w", su.Key().Name, su.Key().Namespace, err)
-	}
-	username = string(secret.Data[corev1.BasicAuthUsernameKey])
-	password = string(secret.Data[corev1.BasicAuthPasswordKey])
-
-	adminAPI, err := NewAdminAPI(ctx, cm.Client, cm.scheme, cm.clusterobj, cm.clusterDomain, cm.adminAPI, cm.log)
-	if err != nil {
-		return username, password, err
-	}
-
-	if err := adminAPI.CreateUser(ctx, username, password, admin.ScramSha256); err != nil && !strings.Contains(err.Error(), "already exists") {
-		// Don't overwhelm Admin API
-		return username, password, &resources.RequeueAfterError{
-			RequeueAfter: resources.RequeueDuration,
-			Msg:          fmt.Sprintf("could not create user: %v", err),
-		}
-	}
-
-	if !controllerutil.ContainsFinalizer(cm.consoleobj, ConsoleFinalizer) {
-		controllerutil.AddFinalizer(cm.consoleobj, ConsoleFinalizer)
-		if err := cm.Update(ctx, cm.consoleobj); err != nil {
-			return username, password, err
-		}
-	}
-
-	return username, password, nil
 }
 
 // generateConsoleConfig returns the actual config passed to Console.
