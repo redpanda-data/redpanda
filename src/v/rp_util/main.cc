@@ -34,8 +34,12 @@ int main(int ac, char* av[]) {
     desc.add_options()
       ("help", "Allowed options")
       ("config_schema_json", "Generates JSON schema for cluster configuration")
-      ("write_corpus", "Writes data in binary+JSON format for compat checking")
-      ("read_corpus", "Reades data in binary+JSON format and compares contents")
+      ("write_corpus",
+        po::value<std::string>(),
+        "Writes data in binary+JSON format for compat checking")
+      ("read_corpus",
+        po::value<std::string>(),
+        "Reads data in binary+JSON format and compares contents")
       ("version", "Redpanda core version for this utility");
     // clang-format on
     po::variables_map vm;
@@ -49,6 +53,15 @@ int main(int ac, char* av[]) {
                   << "\n";
     } else if (vm.count("write_corpus") || vm.count("read_corpus")) {
         seastar::app_template app;
+        // clang-format off
+        app.add_options()
+          ("write_corpus",
+           po::value<std::string>(),
+           "Writes data in binary+JSON format for compat checking")
+          ("read_corpus",
+           po::value<std::string>(),
+           "Reads data in binary+JSON format and compares contents");
+        // clang-format on
         try {
             return app.run(ac, av, [ac, av]() -> ss::future<int> {
                 co_return co_await compat::run(ac, av);
