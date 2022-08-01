@@ -129,10 +129,17 @@ public:
             return *this;
         }
 
-        bool operator==(const const_iterator&) const = default;
+        const iter operator++(int) {
+            auto tmp = *this;
+            ++*this;
+            return tmp;
+        }
 
-        friend ssize_t
-        operator-(const const_iterator& a, const const_iterator& b) {
+        const iter operator--(int) {
+            auto tmp = *this;
+            --*this;
+            return tmp;
+        }
             return a._index - b._index;
         }
 
