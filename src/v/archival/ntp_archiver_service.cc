@@ -157,7 +157,7 @@ ss::future<> ntp_archiver::upload_loop() {
             vlog(
               _rtclog.debug,
               "Cancelled upload of {} segments",
-              result.num_succeded);
+              result.num_cancelled);
         }
 
         if (!upload_loop_can_continue()) {
@@ -339,13 +339,13 @@ ntp_archiver::upload_segment(upload_candidate candidate) {
       "current term: {}, "
       "original term: {}",
       [this, original_term](cloud_storage::lazy_abort_source& las) {
-          auto lost_leadership = !_partition->is_leader()
+          auto lost_leadership = !_partition->is_elected_leader()
                                  || _partition->term() != original_term;
           if (unlikely(lost_leadership)) {
               std::string reason{las.abort_reason()};
               las.abort_reason(fmt::format(
                 fmt::runtime(reason),
-                _partition->is_leader(),
+                _partition->is_elected_leader(),
                 _partition->term(),
                 original_term));
           }
