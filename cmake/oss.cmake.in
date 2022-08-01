@@ -309,7 +309,7 @@ ExternalProject_Add(kafka-codegen-pex
   BUILD_COMMAND ""
   INSTALL_COMMAND
   COMMAND ${CMAKE_COMMAND} -E chdir <SOURCE_DIR> python3 -m venv env
-  COMMAND <SOURCE_DIR>/env/bin/pip install pex=2.1.100
+  COMMAND <SOURCE_DIR>/env/bin/pip install pex==2.1.100
   COMMAND <SOURCE_DIR>/env/bin/pex jsonschema jinja2 -o <INSTALL_DIR>/bin/kafka-codegen-venv)
 
 ExternalProject_Add(kafka-python-pex
@@ -320,7 +320,7 @@ ExternalProject_Add(kafka-python-pex
   BUILD_COMMAND ""
   INSTALL_COMMAND
   COMMAND ${CMAKE_COMMAND} -E chdir <SOURCE_DIR> python3 -m venv env
-  COMMAND <SOURCE_DIR>/env/bin/pip install pex=2.1.100
+  COMMAND <SOURCE_DIR>/env/bin/pip install pex==2.1.100
   COMMAND <SOURCE_DIR>/env/bin/pex kafka-python -o <INSTALL_DIR>/bin/kafka-python-env
   )
 
