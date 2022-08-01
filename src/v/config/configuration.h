@@ -223,6 +223,7 @@ struct configuration final : public config_store {
       cloud_storage_segment_max_upload_interval_sec;
     property<std::chrono::milliseconds>
       cloud_storage_readreplica_manifest_sync_timeout_ms;
+    property<std::chrono::milliseconds> cloud_storage_metadata_sync_timeout_ms;
 
     // Archival upload controller
     property<std::chrono::milliseconds>

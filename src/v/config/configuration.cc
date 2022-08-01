@@ -1056,6 +1056,12 @@ configuration::configuration()
       "replica",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       30s)
+  , cloud_storage_metadata_sync_timeout_ms(
+      *this,
+      "cloud_storage_metadata_sync_timeout_ms",
+      "Timeout for SI metadata synchronization",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      10s)
   , cloud_storage_upload_ctrl_update_interval_ms(
       *this,
       "cloud_storage_upload_ctrl_update_interval_ms",
