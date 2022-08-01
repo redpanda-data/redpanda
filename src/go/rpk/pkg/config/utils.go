@@ -19,7 +19,7 @@ import (
 	"github.com/spf13/afero"
 )
 
-func preserveUnixOwnership(fs afero.Fs, stat os.FileInfo, file string) error {
+func PreserveUnixOwnership(fs afero.Fs, stat os.FileInfo, file string) error {
 	// Stat_t is only valid in unix not on Windows.
 	if stat, ok := stat.Sys().(*syscall.Stat_t); ok {
 		gid := int(stat.Gid)

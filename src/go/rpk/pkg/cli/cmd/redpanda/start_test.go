@@ -1374,7 +1374,7 @@ func TestStartCommand(t *testing.T) {
 			require.Equal(st, expected, rpArgs.ExtraArgs)
 		},
 	}, {
-		name: "--dev flag set required bundle of flags",
+		name: "--sandbox flag set required bundle of flags",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 			"--sandbox",
@@ -1393,7 +1393,7 @@ func TestStartCommand(t *testing.T) {
 			require.Equal(st, 0, conf.Redpanda.ID)
 		},
 	}, {
-		name: "override values set by --dev",
+		name: "override values set by --sandbox",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 			"--sandbox", "--smp", "2",
@@ -1412,6 +1412,58 @@ func TestStartCommand(t *testing.T) {
 			conf, err := new(config.Params).Load(fs)
 			require.NoError(st, err)
 			require.Equal(st, 0, conf.Redpanda.ID)
+		},
+	}, {
+		name: ".bootstrap.yaml created with --sandbox",
+		args: []string{
+			"--install-dir", "/var/lib/redpanda",
+			"--sandbox",
+		},
+		postCheck: func(
+			fs afero.Fs,
+			_ *redpanda.RedpandaArgs,
+			st *testing.T,
+		) {
+			bFile := "/etc/redpanda/.bootstrap.yaml"
+			exists, err := afero.Exists(fs, bFile)
+			require.NoError(st, err)
+			require.True(st, exists)
+			file, err := afero.ReadFile(fs, bFile)
+			require.NoError(st, err)
+			require.Equal(
+				st,
+				`topic_partitions_per_shard: 1000
+group_topic_partitions: 1
+auto_create_topics_enabled: true
+storage_min_free_bytes: 1073741824`,
+				string(file),
+			)
+		},
+	}, {
+		name: ".bootstrap.yaml created with --sandbox in arbitrary path",
+		args: []string{
+			"--install-dir", "/var/lib/redpanda",
+			"--sandbox", "--config", "/arbitrary/path/redpanda.yaml",
+		},
+		postCheck: func(
+			fs afero.Fs,
+			_ *redpanda.RedpandaArgs,
+			st *testing.T,
+		) {
+			bFile := "/arbitrary/path/.bootstrap.yaml"
+			exists, err := afero.Exists(fs, bFile)
+			require.NoError(st, err)
+			require.True(st, exists)
+			file, err := afero.ReadFile(fs, bFile)
+			require.NoError(st, err)
+			require.Equal(
+				st,
+				`topic_partitions_per_shard: 1000
+group_topic_partitions: 1
+auto_create_topics_enabled: true
+storage_min_free_bytes: 1073741824`,
+				string(file),
+			)
 		},
 	}}
 

@@ -19,6 +19,6 @@ import (
 
 // In windows this is a no-op.
 
-func preserveUnixOwnership(fs afero.Fs, stat os.FileInfo, file string) error {
+func PreserveUnixOwnership(fs afero.Fs, stat os.FileInfo, file string) error {
 	return nil
 }
