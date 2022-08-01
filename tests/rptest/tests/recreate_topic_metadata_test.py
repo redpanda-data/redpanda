@@ -86,7 +86,7 @@ class RecreateTopicMetadataTest(RedpandaTest):
         rpk.delete_topic(topic)
         rpk.create_topic(topic='tp-test',
                          partitions=partition_count,
-                         replicas=3)
+                         replicas=replication_factor)
 
         def metadata_consistent():
             # validate leadership information on each node
