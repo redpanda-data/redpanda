@@ -167,7 +167,10 @@ ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
     bool applied = false;
     {
         auto now = ss::lowres_clock::now();
-        auto timeout = now < deadline ? deadline - now : 0ms;
+        if (now >= deadline) {
+            co_return errc::replication_error;
+        }
+        auto timeout = deadline - now;
         applied = co_await wait_no_throw(result.value().last_offset, timeout);
     }
 
