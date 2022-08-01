@@ -33,19 +33,8 @@ ss::future<> seq_writer::read_sync() {
     auto offsets = co_await _client.local().list_offsets(
       model::schema_registry_internal_tp);
 
-    const auto& topics = offsets.data.topics;
-    if (topics.size() != 1 || topics.front().partitions.size() != 1) {
-        auto ec = kafka::error_code::unknown_topic_or_partition;
-        throw kafka::exception(ec, make_error_code(ec).message());
-    }
-
-    const auto& partition = topics.front().partitions.front();
-    if (partition.error_code != kafka::error_code::none) {
-        auto ec = partition.error_code;
-        throw kafka::exception(ec, make_error_code(ec).message());
-    }
-
-    co_await wait_for(partition.offset - model::offset{1});
+    auto max_offset = offsets.data.topics[0].partitions[0].offset;
+    co_await wait_for(max_offset - model::offset{1});
 }
 
 ss::future<> seq_writer::wait_for(model::offset offset) {
