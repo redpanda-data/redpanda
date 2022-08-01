@@ -112,6 +112,7 @@ ss::future<> health_monitor_backend::stop() {
       _leadership_notification_handle);
 
     auto f = _gate.close();
+    _refresh_mutex.broken();
     abort_current_refresh();
     _tick_timer.cancel();
 
@@ -426,6 +427,9 @@ health_monitor_backend::maybe_refresh_cluster_health(
                   err.message());
                 co_return err;
             }
+        } catch (const ss::broken_semaphore&) {
+            // Refresh was waiting on _refresh_mutex during shutdown
+            co_return errc::shutting_down;
         } catch (const ss::timed_out_error&) {
             vlog(
               clusterlog.info,
