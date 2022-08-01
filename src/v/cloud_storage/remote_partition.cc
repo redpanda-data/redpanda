@@ -517,15 +517,14 @@ remote_partition::aborted_transactions(offset_range offsets) {
         if (it->first > offsets.end) {
             break;
         }
-        auto& st = it->second;
         auto tx = co_await ss::visit(
-          st,
-          [this, &st, offsets, offset_key = it->first](
+          it->second,
+          [this, offsets, offset_key = it->first](
             offloaded_segment_state& off_state) {
               auto tmp = off_state->materialize(*this, offset_key);
               auto res = tmp->segment->aborted_transactions(
                 offsets.begin_rp, offsets.end_rp);
-              st = std::move(tmp);
+              _segments.insert_or_assign(offset_key, std::move(tmp));
               return res;
           },
           [offsets](materialized_segment_ptr& m_state) {
