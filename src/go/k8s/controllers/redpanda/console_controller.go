@@ -55,6 +55,21 @@ func (r *ConsoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
+	var s state
+	if console.GetDeletionTimestamp() != nil {
+		s = &Deleting{r}
+	} else {
+		s = &Reconciling{r}
+	}
+
+	return s.Do(ctx, console, log)
+}
+
+// Reconciling is the state of the Console that handles reconciliation
+type Reconciling ConsoleState
+
+// Do handles reconciliation of Console
+func (r *Reconciling) Do(ctx context.Context, console *redpandav1alpha1.Console, log logr.Logger) (ctrl.Result, error) {
 	cluster := &redpandav1alpha1.Cluster{}
 	if err := r.Get(ctx, console.GetClusterRef(), cluster); err != nil {
 		return ctrl.Result{}, err
@@ -76,6 +91,14 @@ func (r *ConsoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 
+	return ctrl.Result{}, nil
+}
+
+// Deleting is the state of the Console that handles deletion
+type Deleting ConsoleState
+
+// Do handles deletion of Console
+func (r *Deleting) Do(ctx context.Context, console *redpandav1alpha1.Console, log logr.Logger) (ctrl.Result, error) {
 	return ctrl.Result{}, nil
 }
 
