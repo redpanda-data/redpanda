@@ -136,6 +136,14 @@ ss::future<> ntp_archiver::upload_loop() {
     ss::lowres_clock::duration backoff = _upload_loop_initial_backoff;
 
     while (upload_loop_can_continue()) {
+        // Bump up archival STM's state to make sure that it's not lagging
+        // behind too far. If the STM is lagging behind we will have to read a
+        // lot of data next time we upload something.
+        if (_partition->archival_meta_stm()) {
+            co_await _partition->archival_meta_stm()->sync(
+              _manifest_upload_timeout);
+        }
+
         auto result = co_await upload_next_candidates();
         if (result.num_failed != 0) {
             // The logic in class `remote` already does retries: if we get here,
