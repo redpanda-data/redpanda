@@ -240,18 +240,16 @@ ss::future<> consensus::stop() {
     for (auto& idx : _fstats) {
         idx.second.follower_state_change.broken();
     }
-    return _event_manager.stop()
-      .then([this] { return _append_requests_buffer.stop(); })
-      .then([this] { return _batcher.stop(); })
-      .then([this] { return _bg.close(); })
-      .then([this] {
-          // close writer if we have to
-          if (likely(!_snapshot_writer)) {
-              return ss::now();
-          }
-          return _snapshot_writer->close().then(
-            [this] { _snapshot_writer.reset(); });
-      });
+    co_await _event_manager.stop();
+    co_await _append_requests_buffer.stop();
+    co_await _batcher.stop();
+    co_await _bg.close();
+
+    // close writer if we have to
+    if (unlikely(_snapshot_writer)) {
+        co_await _snapshot_writer->close();
+        _snapshot_writer.reset();
+    }
 }
 
 consensus::success_reply consensus::update_follower_index(
