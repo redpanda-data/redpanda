@@ -689,6 +689,12 @@ struct transfer_leadership_reply
       = default;
 
     auto serde_fields() { return std::tie(success, result); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const transfer_leadership_reply& r) {
+        fmt::print(o, "success {} result {}", r.success, r.result);
+        return o;
+    }
 };
 
 // key types used to store data in key-value store

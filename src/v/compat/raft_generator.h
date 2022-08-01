@@ -17,6 +17,38 @@
 namespace compat {
 
 template<>
+struct instance_generator<raft::errc> {
+    static raft::errc random() {
+        return random_generators::random_choice(
+          {raft::errc::success,
+           raft::errc::disconnected_endpoint,
+           raft::errc::exponential_backoff,
+           raft::errc::non_majority_replication,
+           raft::errc::not_leader,
+           raft::errc::vote_dispatch_error,
+           raft::errc::append_entries_dispatch_error,
+           raft::errc::replicated_entry_truncated,
+           raft::errc::leader_flush_failed,
+           raft::errc::leader_append_failed,
+           raft::errc::timeout,
+           raft::errc::configuration_change_in_progress,
+           raft::errc::node_does_not_exists,
+           raft::errc::leadership_transfer_in_progress,
+           raft::errc::transfer_to_current_leader,
+           raft::errc::node_already_exists,
+           raft::errc::invalid_configuration_update,
+           raft::errc::not_voter,
+           raft::errc::invalid_target_node,
+           raft::errc::shutting_down,
+           raft::errc::replicate_batcher_cache_error,
+           raft::errc::group_not_exists,
+           raft::errc::replicate_first_stage_exception});
+    }
+
+    static std::vector<raft::errc> limits() { return {}; }
+};
+
+template<>
 struct instance_generator<raft::vnode> {
     static raft::vnode random() {
         return {
@@ -123,6 +155,18 @@ struct instance_generator<raft::transfer_leadership_request> {
           },
         };
     }
+};
+
+template<>
+struct instance_generator<raft::transfer_leadership_reply> {
+    static raft::transfer_leadership_reply random() {
+        return {
+          .success = tests::random_bool(),
+          .result = instance_generator<raft::errc>::random(),
+        };
+    }
+
+    static std::vector<raft::transfer_leadership_reply> limits() { return {}; }
 };
 
 } // namespace compat
