@@ -40,6 +40,7 @@
 #include <seastar/core/fstream.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/core/semaphore.hh>
 #include <seastar/util/defer.hh>
 
 #include <fmt/ostream.h>
@@ -243,6 +244,8 @@ ss::future<> consensus::stop() {
     co_await _event_manager.stop();
     co_await _append_requests_buffer.stop();
     co_await _batcher.stop();
+
+    _op_lock.broken();
     co_await _bg.close();
 
     // close writer if we have to
@@ -547,8 +550,12 @@ void consensus::dispatch_recovery(follower_index_metadata& idx) {
 
 ss::future<result<model::offset>> consensus::linearizable_barrier() {
     using ret_t = result<model::offset>;
-
-    ss::semaphore_units<> u = co_await _op_lock.get_units();
+    ss::semaphore_units<> u;
+    try {
+        u = co_await _op_lock.get_units();
+    } catch (const ss::broken_semaphore&) {
+        co_return make_error_code(errc::shutting_down);
+    }
 
     if (_vstate != vote_state::leader) {
         co_return result<model::offset>(make_error_code(errc::not_leader));
@@ -893,27 +900,32 @@ void consensus::arm_vote_timeout() {
 
 ss::future<std::error_code>
 consensus::update_group_member(model::broker broker) {
-    return _op_lock.get_units().then(
-      [this, broker = std::move(broker)](ss::semaphore_units<> u) mutable {
-          auto cfg = _configuration_manager.get_latest();
-          if (!cfg.contains_broker(broker.id())) {
-              vlog(
-                _ctxlog.warn,
-                "Node with id {} does not exists in current configuration");
-              return ss::make_ready_future<std::error_code>(
-                errc::node_does_not_exists);
-          }
-          // update broker information
-          cfg.update(std::move(broker));
+    return _op_lock.get_units()
+      .then(
+        [this, broker = std::move(broker)](ss::semaphore_units<> u) mutable {
+            auto cfg = _configuration_manager.get_latest();
+            if (!cfg.contains_broker(broker.id())) {
+                vlog(
+                  _ctxlog.warn,
+                  "Node with id {} does not exists in current configuration");
+                return ss::make_ready_future<std::error_code>(
+                  errc::node_does_not_exists);
+            }
+            // update broker information
+            cfg.update(std::move(broker));
 
-          return replicate_configuration(std::move(u), std::move(cfg));
-      });
+            return replicate_configuration(std::move(u), std::move(cfg));
+        })
+      .handle_exception_type(
+        [](const ss::broken_semaphore&) { 
+            return make_error_code(errc::shutting_down);
+        });
 }
 
 template<typename Func>
 ss::future<std::error_code> consensus::change_configuration(Func&& f) {
-    return _op_lock.get_units().then(
-      [this, f = std::forward<Func>(f)](ss::semaphore_units<> u) mutable {
+    return _op_lock.get_units()
+      .then([this, f = std::forward<Func>(f)](ss::semaphore_units<> u) mutable {
           // prevent updating configuration if last configuration wasn't
           // committed
           if (_configuration_manager.get_latest_offset() > _commit_index) {
@@ -937,7 +949,11 @@ ss::future<std::error_code> consensus::change_configuration(Func&& f) {
                 std::move(u), std::move(res.value()));
           }
           return ss::make_ready_future<std::error_code>(res.error());
-      });
+      })
+      .handle_exception_type(
+        [](const ss::broken_semaphore&) { 
+            return make_error_code(errc::shutting_down); 
+        });
 }
 
 ss::future<std::error_code> consensus::add_group_members(
@@ -1000,7 +1016,12 @@ ss::future<std::error_code> consensus::replace_configuration(
 template<typename Func>
 ss::future<std::error_code>
 consensus::interrupt_configuration_change(model::revision_id revision, Func f) {
-    auto u = co_await _op_lock.get_units();
+    ss::semaphore_units<> u;
+    try {
+        u = co_await _op_lock.get_units();
+    } catch (const ss::broken_semaphore&) {
+        co_return errc::shutting_down;
+    }
     auto latest_cfg = config();
     // latest configuration is of joint type
     if (latest_cfg.get_state() == configuration_state::simple) {
@@ -1035,7 +1056,12 @@ consensus::cancel_configuration_change(model::revision_id revision) {
           if (!ec) {
               // current leader is not a voter, step down
               if (!config().is_voter(_self)) {
-                  auto u = co_await _op_lock.get_units();
+                  ss::semaphore_units<> u;
+                  try {
+                      u = co_await _op_lock.get_units();
+                  } catch (const ss::broken_semaphore&) {
+                      co_return errc::shutting_down;
+                  }
                   do_step_down("current leader is not voter");
               }
           }
@@ -1049,7 +1075,12 @@ consensus::abort_configuration_change(model::revision_id revision) {
       _ctxlog.info,
       "requested abort of current configuration change - {}",
       config());
-    auto u = co_await _op_lock.get_units();
+    ss::semaphore_units<> u;
+    try {
+        u = co_await _op_lock.get_units();
+    } catch (const ss::broken_semaphore&) {
+        co_return errc::shutting_down;
+    }
     auto latest_cfg = config();
     // latest configuration must be of joint type
     if (latest_cfg.get_state() == configuration_state::simple) {
@@ -1292,7 +1323,7 @@ ss::future<> consensus::do_start() {
                 _term,
                 _configuration_manager.get_latest());
           });
-    });
+    }).handle_exception_type([](const ss::broken_semaphore&){});
 }
 
 ss::future<>
@@ -1391,6 +1422,13 @@ ss::future<vote_reply> consensus::vote(vote_request&& r) {
             })
           .handle_exception_type(
             [this, target_node_id](const ss::semaphore_timed_out&) {
+                return vote_reply{
+                  .target_node_id = target_node_id,
+                  .term = _term,
+                  .granted = false,
+                  .log_ok = false};
+            })
+            .handle_exception_type([this, target_node_id](const ss::broken_semaphore&){
                 return vote_reply{
                   .target_node_id = target_node_id,
                   .term = _term,
@@ -1803,6 +1841,9 @@ ss::future<install_snapshot_reply>
 consensus::install_snapshot(install_snapshot_request&& r) {
     return _op_lock.with([this, r = std::move(r)]() mutable {
         return do_install_snapshot(std::move(r));
+    }).handle_exception_type([this](const ss::broken_semaphore&) { 
+            return    install_snapshot_reply{
+                .term = _term, .bytes_stored = 0, .success = false};
     });
 }
 
@@ -2013,6 +2054,8 @@ ss::future<> consensus::write_snapshot(write_snapshot_cfg cfg) {
 
           return do_write_snapshot(cfg.last_included_index, std::move(cfg.data))
             .then([] { return true; });
+      }).handle_exception_type([](const ss::broken_semaphore&) { 
+            return false; 
       });
 
     if (!updated) {
@@ -2368,6 +2411,9 @@ ss::future<> consensus::refresh_commit_index() {
         return f.then([this, u = std::move(u)]() mutable {
             return do_maybe_update_leader_commit_idx(std::move(u));
         });
+    })
+    .handle_exception_type([](const ss::broken_semaphore&) { 
+        //ignore exception, shutting down
     });
 }
 
@@ -2734,8 +2780,12 @@ consensus::prepare_transfer_leadership(vnode target_rni) {
 
     // Enforce ordering wrt anyone currently doing an append under op_lock
     {
+        try{
         auto units = co_await _op_lock.get_units();
         vlog(_ctxlog.trace, "transfer leadership: cleared oplock");
+        } catch(const ss::broken_semaphore&) {
+            co_return make_error_code(errc::shutting_down);
+        }
     }
 
     // Allow any buffered batches to complete, to avoid racing
@@ -2988,6 +3038,7 @@ consensus::do_transfer_leadership(std::optional<model::node_id> target) {
                           // now and new leader sending a vote for its new term.
                           // (If we accepted more writes, our log could get
                           //  ahead of new leader, and it could lose election)
+                          try {
                           auto units = co_await _op_lock.get_units();
                           do_step_down("leadership_transfer");
                           if (_leader_id) {
@@ -2996,6 +3047,9 @@ consensus::do_transfer_leadership(std::optional<model::node_id> target) {
                           }
 
                           co_return make_error_code(errc::success);
+                          } catch( const ss::broken_semaphore& ) {
+                                co_return errc::shutting_down;
+                          }
                       }
                   });
           });
