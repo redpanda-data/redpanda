@@ -304,6 +304,10 @@ ss::future<bool> persisted_stm::wait_no_throw(
     auto deadline = model::timeout_clock::now() + timeout;
     return wait(offset, deadline)
       .then([] { return true; })
+      .handle_exception_type([](const raft::offset_monitor::wait_aborted&) {
+          vlog(clusterlog.trace, "aborted while waiting (shutting down)");
+          return false;
+      })
       .handle_exception([offset, ntp = _c->ntp()](std::exception_ptr e) {
           vlog(
             clusterlog.error,
