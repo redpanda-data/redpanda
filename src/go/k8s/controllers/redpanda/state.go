@@ -9,7 +9,7 @@ import (
 )
 
 type state interface {
-	Do(context.Context, *redpandav1alpha1.Console, logr.Logger) (ctrl.Result, error)
+	Do(context.Context, *redpandav1alpha1.Console, *redpandav1alpha1.Cluster, logr.Logger) (ctrl.Result, error)
 }
 
 // ConsoleState implements state

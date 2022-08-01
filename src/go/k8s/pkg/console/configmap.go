@@ -105,8 +105,11 @@ func (cm *ConfigMap) Key() types.NamespacedName {
 	return types.NamespacedName{Name: cm.consoleobj.GetName(), Namespace: cm.consoleobj.GetNamespace()}
 }
 
+// ConsoleFinalizer is the finalizer for deleting service-account
+var ConsoleFinalizer = "redpanda.vectorized.io/service-account"
+
 func (cm *ConfigMap) createServiceAccount(ctx context.Context) (username, password string, err error) {
-	su := resources.NewSuperUsers(cm.Client, cm.consoleobj, cm.scheme, resources.ScramConsoleUsername, resources.ConsoleSuffix, cm.log)
+	su := resources.NewSuperUsers(cm.Client, cm.consoleobj, cm.scheme, fmt.Sprintf("%s_%s", cm.consoleobj.GetName(), resources.ScramConsoleUsername), resources.ConsoleSuffix, cm.log)
 	if err := su.Ensure(ctx); err != nil {
 		return username, password, fmt.Errorf("ensuring sasl user secret: %w", err)
 	}
@@ -120,7 +123,6 @@ func (cm *ConfigMap) createServiceAccount(ctx context.Context) (username, passwo
 	username = string(secret.Data[corev1.BasicAuthUsernameKey])
 	password = string(secret.Data[corev1.BasicAuthPasswordKey])
 
-	// Create an AdminAPIClient to create the Service Account based from credentials above
 	adminAPI, err := NewAdminAPI(ctx, cm.Client, cm.scheme, cm.clusterobj, cm.clusterDomain, cm.adminAPI, cm.log)
 	if err != nil {
 		return username, password, err
@@ -133,6 +135,14 @@ func (cm *ConfigMap) createServiceAccount(ctx context.Context) (username, passwo
 			Msg:          fmt.Sprintf("could not create user: %v", err),
 		}
 	}
+
+	if !controllerutil.ContainsFinalizer(cm.consoleobj, ConsoleFinalizer) {
+		controllerutil.AddFinalizer(cm.consoleobj, ConsoleFinalizer)
+		if err := cm.Update(ctx, cm.consoleobj); err != nil {
+			return username, password, err
+		}
+	}
+
 	return username, password, nil
 }
 

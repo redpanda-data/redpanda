@@ -19,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
@@ -55,6 +56,11 @@ func (r *ConsoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
+	cluster := &redpandav1alpha1.Cluster{}
+	if err := r.Get(ctx, console.GetClusterRef(), cluster); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	var s state
 	if console.GetDeletionTimestamp() != nil {
 		s = &Deleting{r}
@@ -62,19 +68,14 @@ func (r *ConsoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		s = &Reconciling{r}
 	}
 
-	return s.Do(ctx, console, log)
+	return s.Do(ctx, console, cluster, log)
 }
 
 // Reconciling is the state of the Console that handles reconciliation
 type Reconciling ConsoleState
 
 // Do handles reconciliation of Console
-func (r *Reconciling) Do(ctx context.Context, console *redpandav1alpha1.Console, log logr.Logger) (ctrl.Result, error) {
-	cluster := &redpandav1alpha1.Cluster{}
-	if err := r.Get(ctx, console.GetClusterRef(), cluster); err != nil {
-		return ctrl.Result{}, err
-	}
-
+func (r *Reconciling) Do(ctx context.Context, console *redpandav1alpha1.Console, cluster *redpandav1alpha1.Cluster, log logr.Logger) (ctrl.Result, error) {
 	applyResources := []resources.Resource{
 		consolepkg.NewConfigMap(r.Client, r.Scheme, console, cluster, r.clusterDomain, r.AdminAPIClientFactory, log),
 		consolepkg.NewDeployment(r.Client, r.Scheme, console, cluster, log),
@@ -98,7 +99,20 @@ func (r *Reconciling) Do(ctx context.Context, console *redpandav1alpha1.Console,
 type Deleting ConsoleState
 
 // Do handles deletion of Console
-func (r *Deleting) Do(ctx context.Context, console *redpandav1alpha1.Console, log logr.Logger) (ctrl.Result, error) {
+func (r *Deleting) Do(ctx context.Context, console *redpandav1alpha1.Console, cluster *redpandav1alpha1.Cluster, log logr.Logger) (ctrl.Result, error) {
+	adminAPI, err := consolepkg.NewAdminAPI(ctx, r.Client, r.Scheme, cluster, r.clusterDomain, r.AdminAPIClientFactory, log)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if err := adminAPI.DeleteUser(ctx, fmt.Sprintf("%s_%s", console.GetName(), resources.ScramConsoleUsername)); err != nil {
+		return ctrl.Result{}, err
+	}
+	controllerutil.RemoveFinalizer(console, consolepkg.ConsoleFinalizer)
+	if err := r.Update(ctx, console); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	return ctrl.Result{}, nil
 }
 

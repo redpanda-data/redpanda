@@ -300,6 +300,15 @@ func (m *mockAdminAPI) CreateUser(_ context.Context, _, _, _ string) error {
 	return nil
 }
 
+func (m *mockAdminAPI) DeleteUser(_ context.Context, _ string) error {
+	m.monitor.Lock()
+	defer m.monitor.Unlock()
+	if m.unavailable {
+		return &unavailableError{}
+	}
+	return nil
+}
+
 func (m *mockAdminAPI) Clear() {
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
