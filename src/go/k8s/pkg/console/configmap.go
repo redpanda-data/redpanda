@@ -10,7 +10,6 @@ import (
 	"github.com/redpanda-data/console/backend/pkg/kafka"
 	"github.com/redpanda-data/console/backend/pkg/schema"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/certmanager"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
@@ -122,26 +121,9 @@ func (cm *ConfigMap) createServiceAccount(ctx context.Context) (username, passwo
 	password = string(secret.Data[corev1.BasicAuthPasswordKey])
 
 	// Create an AdminAPIClient to create the Service Account based from credentials above
-	headlessSvc := resources.NewHeadlessService(cm.Client, cm.clusterobj, cm.scheme, nil, cm.log)
-	clusterSvc := resources.NewClusterService(cm.Client, cm.clusterobj, cm.scheme, nil, cm.log)
-	pki := certmanager.NewPki(
-		cm.Client,
-		cm.clusterobj,
-		headlessSvc.HeadlessServiceFQDN(cm.clusterDomain),
-		clusterSvc.ServiceFQDN(cm.clusterDomain),
-		cm.scheme,
-		cm.log,
-	)
-	adminTLSConfigProvider := pki.AdminAPIConfigProvider()
-	adminAPI, err := cm.adminAPI(
-		ctx,
-		cm.Client,
-		cm.clusterobj,
-		headlessSvc.HeadlessServiceFQDN(cm.clusterDomain),
-		adminTLSConfigProvider,
-	)
+	adminAPI, err := NewAdminAPI(ctx, cm.Client, cm.scheme, cm.clusterobj, cm.clusterDomain, cm.adminAPI, cm.log)
 	if err != nil {
-		return username, password, fmt.Errorf("creating AdminAPIClient: %w", err)
+		return username, password, err
 	}
 
 	if err := adminAPI.CreateUser(ctx, username, password, admin.ScramSha256); err != nil && !strings.Contains(err.Error(), "already exists") {
