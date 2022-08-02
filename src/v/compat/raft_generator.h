@@ -220,4 +220,18 @@ struct instance_generator<raft::vote_request> {
     static std::vector<raft::vote_request> limits() { return {}; }
 };
 
+template<>
+struct instance_generator<raft::vote_reply> {
+    static raft::vote_reply random() {
+        return {
+          .target_node_id = instance_generator<raft::vnode>::random(),
+          .term = tests::random_named_int<model::term_id>(),
+          .granted = tests::random_bool(),
+          .log_ok = tests::random_bool(),
+        };
+    }
+
+    static std::vector<raft::vote_reply> limits() { return {}; }
+};
+
 } // namespace compat

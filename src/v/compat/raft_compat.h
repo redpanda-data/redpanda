@@ -390,4 +390,41 @@ struct compat_check<raft::vote_request> {
     }
 };
 
+/*
+ * raft::vote_reply
+ */
+template<>
+struct compat_check<raft::vote_reply> {
+    static constexpr std::string_view name = "raft::vote_reply";
+
+    static std::vector<raft::vote_reply> create_test_cases() {
+        return generate_instances<raft::vote_reply>();
+    }
+
+    static void
+    to_json(raft::vote_reply obj, json::Writer<json::StringBuffer>& wr) {
+        json_write(target_node_id);
+        json_write(term);
+        json_write(granted);
+        json_write(log_ok);
+    }
+
+    static raft::vote_reply from_json(json::Value& rd) {
+        raft::vote_reply obj;
+        json_read(target_node_id);
+        json_read(term);
+        json_read(granted);
+        json_read(log_ok);
+        return obj;
+    }
+
+    static std::vector<compat_binary> to_binary(raft::vote_reply obj) {
+        return compat_binary::serde_and_adl(obj);
+    }
+
+    static bool check(raft::vote_reply obj, compat_binary test) {
+        return verify_adl_or_serde(obj, std::move(test));
+    }
+};
+
 } // namespace compat

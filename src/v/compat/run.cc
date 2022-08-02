@@ -35,6 +35,7 @@ using compat_checks = type_list<
   raft::install_snapshot_request,
   raft::install_snapshot_reply,
   raft::vote_request,
+  raft::vote_reply,
   cluster::update_leadership_request>;
 
 struct compat_error final : public std::runtime_error {
