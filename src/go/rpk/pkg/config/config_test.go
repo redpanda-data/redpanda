@@ -43,6 +43,7 @@ func getValidConfig() *Config {
 		CoredumpDir:              "/var/lib/redpanda/coredumps",
 		WellKnownIo:              "vendor:vm:storage",
 	}
+	conf.fileLocation = DefaultPath
 	return conf
 }
 
@@ -443,7 +444,7 @@ tune_cpu: true`,
 func TestDefault(t *testing.T) {
 	defaultConfig := Default()
 	expected := &Config{
-		ConfigFile:     "/etc/redpanda/redpanda.yaml",
+		fileLocation:   DefaultPath,
 		Pandaproxy:     &Pandaproxy{},
 		SchemaRegistry: &SchemaRegistry{},
 		Redpanda: RedpandaConfig{
@@ -479,8 +480,7 @@ func TestWrite(t *testing.T) {
 		{
 			name: "write default values",
 			conf: getValidConfig,
-			expected: `config_file: /etc/redpanda/redpanda.yaml
-redpanda:
+			expected: `redpanda:
     data_directory: /var/lib/redpanda/data
     node_id: 0
     seed_servers:
@@ -531,8 +531,7 @@ schema_registry: {}
 				}
 				return c
 			},
-			expected: `config_file: /etc/redpanda/redpanda.yaml
-redpanda:
+			expected: `redpanda:
     data_directory: /var/lib/redpanda/data
     node_id: 0
     seed_servers:
@@ -584,8 +583,7 @@ schema_registry: {}
 				return c
 			},
 			wantErr: false,
-			expected: `config_file: /etc/redpanda/redpanda.yaml
-redpanda:
+			expected: `redpanda:
     data_directory: /var/lib/redpanda/data
     node_id: 0
     seed_servers:
@@ -620,8 +618,7 @@ schema_registry: {}
 				return c
 			},
 			wantErr: false,
-			expected: `config_file: /etc/redpanda/redpanda.yaml
-redpanda:
+			expected: `redpanda:
     data_directory: /var/lib/redpanda/data
     node_id: 0
     seed_servers:
@@ -666,7 +663,7 @@ schema_registry: {}
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			path := tt.conf().ConfigFile
+			path := tt.conf().FileLocation()
 			fs := afero.NewMemMapFs()
 			if tt.existingConf != "" {
 				_, err := utils.WriteBytes(fs, []byte(tt.existingConf), path)

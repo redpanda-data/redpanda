@@ -18,14 +18,13 @@ import (
 )
 
 type Config struct {
-	file       *Config
-	loadedPath string
+	file         *Config
+	fileLocation string
 
 	NodeUUID             string          `yaml:"node_uuid,omitempty" json:"node_uuid"`
 	Organization         string          `yaml:"organization,omitempty" json:"organization"`
 	LicenseKey           string          `yaml:"license_key,omitempty" json:"license_key"`
 	ClusterID            string          `yaml:"cluster_id,omitempty" json:"cluster_id"`
-	ConfigFile           string          `yaml:"config_file,omitempty" json:"config_file"`
 	Redpanda             RedpandaConfig  `yaml:"redpanda,omitempty" json:"redpanda"`
 	Rpk                  RpkConfig       `yaml:"rpk,omitempty" json:"rpk"`
 	Pandaproxy           *Pandaproxy     `yaml:"pandaproxy,omitempty" json:"pandaproxy,omitempty"`
@@ -41,6 +40,12 @@ type Config struct {
 // no file was read.
 func (c *Config) File() *Config {
 	return c.file
+}
+
+// FileLocation returns the loaded file location; this is the path that
+// rpk uses for write operations.
+func (c *Config) FileLocation() string {
+	return c.fileLocation
 }
 
 type RedpandaConfig struct {

@@ -298,7 +298,6 @@ func (c *Config) UnmarshalYAML(n *yaml.Node) error {
 		Organization         weakString      `yaml:"organization"`
 		LicenseKey           weakString      `yaml:"license_key"`
 		ClusterID            weakString      `yaml:"cluster_id"`
-		ConfigFile           weakString      `yaml:"config_file"`
 		Redpanda             RedpandaConfig  `yaml:"redpanda"`
 		Rpk                  RpkConfig       `yaml:"rpk"`
 		Pandaproxy           *Pandaproxy     `yaml:"pandaproxy"`
@@ -315,7 +314,6 @@ func (c *Config) UnmarshalYAML(n *yaml.Node) error {
 	c.Organization = string(internal.Organization)
 	c.LicenseKey = string(internal.LicenseKey)
 	c.ClusterID = string(internal.ClusterID)
-	c.ConfigFile = string(internal.ConfigFile)
 	c.Redpanda = internal.Redpanda
 	c.Rpk = internal.Rpk
 	c.Pandaproxy = internal.Pandaproxy

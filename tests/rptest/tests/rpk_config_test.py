@@ -35,8 +35,7 @@ class RpkConfigTest(RedpandaTest):
         with tempfile.TemporaryDirectory() as d:
             node.account.copy_from(path, d)
             with open(os.path.join(d, path)) as f:
-                expected_out = '''config_file: /root/redpanda-test.yaml
-# node_uuid: (the uuid is random so we don't compare it)
+                expected_out = '''# node_uuid: (the uuid is random so we don't compare it)
 pandaproxy: {}
 redpanda:
     data_directory: /var/lib/redpanda/data

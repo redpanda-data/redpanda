@@ -25,7 +25,7 @@ func Check(
 	fs afero.Fs, conf *config.Config, timeout time.Duration,
 ) ([]CheckResult, error) {
 	var results []CheckResult
-	ioConfigFile := redpanda.GetIOConfigPath(filepath.Dir(conf.ConfigFile))
+	ioConfigFile := redpanda.GetIOConfigPath(filepath.Dir(conf.FileLocation()))
 	checkersMap, err := RedpandaCheckers(fs, ioConfigFile, conf, timeout)
 	if err != nil {
 		return results, err

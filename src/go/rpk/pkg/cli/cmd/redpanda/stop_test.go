@@ -80,7 +80,7 @@ func TestStopCommand(t *testing.T) {
 
 			var out bytes.Buffer
 			c := cmd.NewStopCommand(fs)
-			args := append([]string{"--config", conf.ConfigFile}, tt.args...)
+			args := append([]string{"--config", conf.FileLocation()}, tt.args...)
 			c.SetArgs(args)
 
 			logrus.SetOutput(&out)

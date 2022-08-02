@@ -133,6 +133,9 @@ const (
 	xAdminClientKey  = "admin.tls.client_key_path"
 )
 
+// DefaultPath is where redpanda's configuration is located by default.
+const DefaultPath = "/etc/redpanda/redpanda.yaml"
+
 // Params contains rpk-wide configuration parameters.
 type Params struct {
 	// ConfigPath is any flag-specified config path.
@@ -236,7 +239,6 @@ func ParamsFromCommand(cmd *cobra.Command) *Params {
 //  * Sets unset default values.
 //
 func (p *Params) Load(fs afero.Fs) (*Config, error) {
-	cf := "/etc/redpanda/redpanda.yaml"
 	// If we have a config path loaded (through --config flag) the user
 	// expect to load or create the file from this directory.
 	if p.ConfigPath != "" {
@@ -246,43 +248,21 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 				return nil, err
 			}
 		}
-		abs, err := filepath.Abs(p.ConfigPath)
-		if err != nil {
-			return nil, err
-		}
-		cf = abs
 	}
-	c := &Config{
-		ConfigFile: cf,
-		Redpanda: RedpandaConfig{
-			Directory: "/var/lib/redpanda/data",
-			RPCServer: SocketAddress{
-				Address: "0.0.0.0",
-				Port:    33145,
-			},
-			KafkaAPI: []NamedAuthNSocketAddress{{
-				Address: "0.0.0.0",
-				Port:    9092,
-			}},
-			AdminAPI: []NamedSocketAddress{{
-				Address: "0.0.0.0",
-				Port:    9644,
-			}},
-			DeveloperMode: true,
-		},
-		Rpk: RpkConfig{
-			CoredumpDir: "/var/lib/redpanda/coredump",
-		},
-		// enable pandaproxy and schema_registry by default
-		Pandaproxy:     &Pandaproxy{},
-		SchemaRegistry: &SchemaRegistry{},
-	}
+	c := Default()
 
 	if err := p.readConfig(fs, c); err != nil {
 		// Sometimes a config file will not exist (e.g. rpk running on MacOS),
 		// which is OK. In those cases, just return the default config.
 		if !errors.Is(err, afero.ErrFileNotFound) {
 			return nil, err
+		}
+		// If there is no file, we set the file location to the passed
+		// --config value, otherwise we use the default.
+		if p.ConfigPath != "" {
+			c.fileLocation = p.ConfigPath
+		} else {
+			c.fileLocation = DefaultPath
 		}
 	}
 	c.backcompat()
@@ -295,9 +275,9 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 
 // Write writes loaded configuration parameters to redpanda.yaml.
 func (c *Config) Write(fs afero.Fs) (rerr error) {
-	cfgPath := c.loadedPath
-	if cfgPath == "" {
-		cfgPath = c.ConfigFile
+	location := c.fileLocation
+	if location == "" {
+		location = DefaultPath
 	}
 	b, err := yaml.Marshal(c)
 	if err != nil {
@@ -307,7 +287,7 @@ func (c *Config) Write(fs afero.Fs) (rerr error) {
 	// Create a temp file.
 	layout := "20060102150405" // year-month-day-hour-min-sec
 	bFilename := "redpanda-" + time.Now().Format(layout) + ".yaml"
-	temp := filepath.Join(filepath.Dir(cfgPath), bFilename)
+	temp := filepath.Join(filepath.Dir(location), bFilename)
 
 	err = afero.WriteFile(fs, temp, b, 0o644) // default permissions 644
 	if err != nil {
@@ -325,8 +305,8 @@ func (c *Config) Write(fs afero.Fs) (rerr error) {
 
 	// If we have a loaded file we keep permission and ownership of the
 	// original config file.
-	if c.loadedPath != "" {
-		stat, err := fs.Stat(c.loadedPath)
+	if exists, _ := afero.Exists(fs, location); location != "" && exists {
+		stat, err := fs.Stat(location)
 		if err != nil {
 			return fmt.Errorf("unable to stat existing file: %v", err)
 		}
@@ -342,7 +322,7 @@ func (c *Config) Write(fs afero.Fs) (rerr error) {
 		}
 	}
 
-	err = fs.Rename(temp, cfgPath)
+	err = fs.Rename(temp, location)
 	if err != nil {
 		return err
 	}
@@ -357,7 +337,7 @@ func (p *Params) LocateConfig(fs afero.Fs) (string, error) {
 		if configDir, _ := os.UserConfigDir(); configDir != "" {
 			paths = append(paths, filepath.Join(configDir, "rpk", "rpk.yaml"))
 		}
-		paths = append(paths, filepath.FromSlash("/etc/redpanda/redpanda.yaml"))
+		paths = append(paths, filepath.FromSlash(DefaultPath))
 		if cd, _ := os.Getwd(); cd != "" {
 			paths = append(paths, filepath.Join(cd, "redpanda.yaml"))
 		}
@@ -397,8 +377,8 @@ func (p *Params) readConfig(fs afero.Fs, c *Config) error {
 	if err != nil {
 		return err
 	}
-	c.loadedPath = abs
-	c.ConfigFile = abs
+	c.fileLocation = abs
+	c.file.fileLocation = abs
 	return nil
 }
 

@@ -62,7 +62,7 @@ func executeMode(fs afero.Fs, cmd *cobra.Command, mode string) error {
 		return err
 	}
 
-	fmt.Printf("Writing %q mode defaults to %q\n", mode, cfg.ConfigFile)
+	fmt.Printf("Writing %q mode defaults to %q\n", mode, cfg.FileLocation())
 	err = cfg.Write(fs)
 	if err != nil {
 		return err

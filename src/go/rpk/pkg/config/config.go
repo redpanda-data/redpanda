@@ -29,7 +29,7 @@ const (
 
 func Default() *Config {
 	return &Config{
-		ConfigFile: "/etc/redpanda/redpanda.yaml",
+		fileLocation: DefaultPath,
 		Redpanda: RedpandaConfig{
 			Directory: "/var/lib/redpanda/data",
 			RPCServer: SocketAddress{
@@ -147,13 +147,13 @@ func AvailableModes() []string {
 // the default configuration if there is no file loaded.
 func (c *Config) FileOrDefaults() *Config {
 	if c.File() != nil {
-		cfg := c.File()
-		cfg.loadedPath = c.loadedPath
-		cfg.ConfigFile = c.ConfigFile // preserve loaded ConfigFile property.
-		return cfg
+		return c.File()
 	} else {
 		cfg := Default()
-		cfg.ConfigFile = c.ConfigFile
+		// --config set but the file doesn't exist yet:
+		if c.fileLocation != "" {
+			cfg.fileLocation = c.fileLocation
+		}
 		return cfg // no file, write the defaults
 	}
 }
