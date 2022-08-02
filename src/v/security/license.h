@@ -10,7 +10,6 @@
  */
 
 #pragma once
-#include "reflection/adl.h"
 #include "seastarx.h"
 #include "serde/serde.h"
 
@@ -94,15 +93,6 @@ private:
 license make_license(const ss::sstring& raw_license);
 
 } // namespace security
-
-namespace reflection {
-
-template<>
-struct adl<security::license> {
-    void to(iobuf& out, security::license&& l);
-    security::license from(iobuf_parser& in);
-};
-} // namespace reflection
 
 namespace fmt {
 template<>

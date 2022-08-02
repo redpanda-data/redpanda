@@ -1347,17 +1347,19 @@ adl<cluster::feature_update_cmd_data>::from(iobuf_parser& in) {
 }
 
 void adl<cluster::feature_update_license_update_cmd_data>::to(
-  iobuf& out, cluster::feature_update_license_update_cmd_data&& data) {
-    reflection::serialize(out, data.current_version, data.redpanda_license);
+  iobuf&, cluster::feature_update_license_update_cmd_data&&) {
+    vassert(
+      false,
+      "cluster::feature_update_license_update_cmd_data should always use "
+      "serde, never adl");
 }
 
 cluster::feature_update_license_update_cmd_data
-adl<cluster::feature_update_license_update_cmd_data>::from(iobuf_parser& in) {
-    auto version = adl<int8_t>{}.from(in);
-    std::ignore = version;
-    auto license = adl<security::license>{}.from(in);
-    return cluster::feature_update_license_update_cmd_data{
-      .redpanda_license = std::move(license)};
+adl<cluster::feature_update_license_update_cmd_data>::from(iobuf_parser&) {
+    vassert(
+      false,
+      "cluster::feature_update_license_update_cmd_data should always use "
+      "serde, never adl");
 }
 
 void adl<cluster::feature_barrier_request>::to(
