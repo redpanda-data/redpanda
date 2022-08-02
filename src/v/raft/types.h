@@ -619,6 +619,18 @@ struct timeout_now_request
     auto serde_fields() {
         return std::tie(target_node_id, node_id, group, term);
     }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const timeout_now_request& r) {
+        fmt::print(
+          o,
+          "target_node_id {} node_id {} group {} term {}",
+          r.target_node_id,
+          r.node_id,
+          r.group,
+          r.term);
+        return o;
+    }
 };
 
 struct timeout_now_reply
@@ -634,6 +646,17 @@ struct timeout_now_reply
       = default;
 
     auto serde_fields() { return std::tie(target_node_id, term, result); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const timeout_now_reply& r) {
+        fmt::print(
+          o,
+          "target_node_id {} term {} result {}",
+          r.target_node_id,
+          r.term,
+          static_cast<std::underlying_type_t<status>>(r.result));
+        return o;
+    }
 };
 
 // if not target is specified then the most up-to-date node will be selected
@@ -648,6 +671,12 @@ struct transfer_leadership_request
       = default;
 
     auto serde_fields() { return std::tie(group, target); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const transfer_leadership_request& r) {
+        fmt::print(o, "group {} target {}", r.group, r.target);
+        return o;
+    }
 };
 
 struct transfer_leadership_reply
@@ -660,6 +689,12 @@ struct transfer_leadership_reply
       = default;
 
     auto serde_fields() { return std::tie(success, result); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const transfer_leadership_reply& r) {
+        fmt::print(o, "success {} result {}", r.success, r.result);
+        return o;
+    }
 };
 
 // key types used to store data in key-value store
