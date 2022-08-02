@@ -267,3 +267,10 @@ private:
     size_t _capacity{0};
     std::vector<std::vector<T>> _frags;
 };
+
+/**
+ * An alias for a fragmented_vector using a larger fragment size, close
+ * to the limit of the maximum contiguous allocation size.
+ */
+template<typename T>
+using large_fragment_vector = fragmented_vector<T, 32 * 1024>;
