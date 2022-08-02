@@ -18,6 +18,7 @@ from rptest.util import (
     segments_count,
     wait_for_segments_removal,
 )
+from rptest.utils.si_utils import Producer
 
 import confluent_kafka as ck
 
@@ -62,58 +63,13 @@ class ShadowIndexingTxTest(RedpandaTest):
         when fetching from remote segments."""
         topic = self.topics[0]
 
-        class Producer:
-            def __init__(self, brokers, logger):
-                self.keys = []
-                self.cur_offset = 0
-                self.brokers = brokers
-                self.logger = logger
-                self.num_aborted = 0
-                self.reconnect()
-
-            def reconnect(self):
-                self.producer = ck.Producer({
-                    'bootstrap.servers':
-                    self.brokers,
-                    'transactional.id':
-                    'shadow-indexing-tx-test',
-                })
-                self.producer.init_transactions()
-
-            def produce(self, topic):
-                """produce some messages inside a transaction with increasing keys
-                and random values. Then randomly commit/abort the transaction."""
-
-                n_msgs = random.randint(50, 100)
-                keys = []
-
-                self.producer.begin_transaction()
-                for _ in range(n_msgs):
-                    val = ''.join(
-                        map(chr, (random.randint(0, 256)
-                                  for _ in range(random.randint(100, 1000)))))
-                    self.producer.produce(topic.name, val,
-                                          str(self.cur_offset))
-                    keys.append(str(self.cur_offset).encode('utf8'))
-                    self.cur_offset += 1
-
-                self.logger.info(
-                    f"writing {len(keys)} msgs: {keys[0]}-{keys[-1]}...")
-                self.producer.flush()
-                if random.random() < 0.1:
-                    self.producer.abort_transaction()
-                    self.num_aborted += 1
-                    self.logger.info("aborted txn")
-                else:
-                    self.producer.commit_transaction()
-                    self.keys.extend(keys)
-
-        producer = Producer(self.redpanda.brokers(), self.logger)
+        producer = Producer(self.redpanda.brokers(), "shadow-indexing-tx-test",
+                            self.logger)
 
         def done():
             for _ in range(100):
                 try:
-                    producer.produce(topic)
+                    producer.produce(topic.name)
                 except ck.KafkaException as err:
                     self.logger.warn(f"producer error: {err}")
                     producer.reconnect()

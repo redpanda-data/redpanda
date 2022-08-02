@@ -9,6 +9,9 @@ from rptest.archival.s3_client import S3ObjectMetadata
 from rptest.clients.types import TopicSpec
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 
+import confluent_kafka
+import random
+
 EMPTY_SEGMENT_SIZE = 4096
 
 BLOCK_SIZE = 4096
@@ -270,3 +273,47 @@ class PathMatcher:
 
     def path_matches_any_topic(self, path: str) -> bool:
         return any(t in path for t in self.topic_names)
+
+
+class Producer:
+    def __init__(self, brokers, name, logger):
+        self.keys = []
+        self.cur_offset = 0
+        self.brokers = brokers
+        self.logger = logger
+        self.num_aborted = 0
+        self.name = name
+        self.reconnect()
+
+    def reconnect(self):
+        self.producer = confluent_kafka.Producer({
+            'bootstrap.servers': self.brokers,
+            'transactional.id': self.name,
+        })
+        self.producer.init_transactions()
+
+    def produce(self, topic):
+        """produce some messages inside a transaction with increasing keys
+        and random values. Then randomly commit/abort the transaction."""
+
+        n_msgs = random.randint(50, 100)
+        keys = []
+
+        self.producer.begin_transaction()
+        for _ in range(n_msgs):
+            val = ''.join(
+                map(chr, (random.randint(0, 256)
+                          for _ in range(random.randint(100, 1000)))))
+            self.producer.produce(topic, val, str(self.cur_offset))
+            keys.append(str(self.cur_offset).encode('utf8'))
+            self.cur_offset += 1
+
+        self.logger.info(f"writing {len(keys)} msgs: {keys[0]}-{keys[-1]}...")
+        self.producer.flush()
+        if random.random() < 0.1:
+            self.producer.abort_transaction()
+            self.num_aborted += 1
+            self.logger.info("aborted txn")
+        else:
+            self.producer.commit_transaction()
+            self.keys.extend(keys)
