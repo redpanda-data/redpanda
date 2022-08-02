@@ -55,4 +55,18 @@ EMPTY_COMPAT_GENERATOR(cluster::update_leadership_reply);
 
 EMPTY_COMPAT_GENERATOR(cluster::get_leadership_request);
 
+template<>
+struct instance_generator<cluster::get_leadership_reply> {
+    static cluster::get_leadership_reply random() {
+        return cluster::get_leadership_reply({
+          cluster::ntp_leader(
+            model::random_ntp(),
+            tests::random_named_int<model::term_id>(),
+            tests::random_named_int<model::node_id>()),
+        });
+    }
+
+    static std::vector<cluster::get_leadership_reply> limits() { return {}; }
+};
+
 } // namespace compat

@@ -162,6 +162,12 @@ struct get_leadership_reply
     explicit get_leadership_reply(std::vector<ntp_leader> leaders)
       : leaders(std::move(leaders)) {}
 
+    friend std::ostream&
+    operator<<(std::ostream& o, const get_leadership_reply& r) {
+        fmt::print(o, "leaders {}", r.leaders);
+        return o;
+    }
+
     auto serde_fields() { return std::tie(leaders); }
 };
 

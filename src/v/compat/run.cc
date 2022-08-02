@@ -72,7 +72,8 @@ using compat_checks = type_list<
   cluster::allocate_id_reply,
   cluster::update_leadership_request_v2,
   cluster::update_leadership_reply,
-  cluster::get_leadership_request>;
+  cluster::get_leadership_request,
+  cluster::get_leadership_reply>;
 
 struct compat_error final : public std::runtime_error {
 public:

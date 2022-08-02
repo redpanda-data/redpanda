@@ -98,4 +98,31 @@ EMPTY_COMPAT_CHECK(cluster::update_leadership_reply);
  */
 EMPTY_COMPAT_CHECK(cluster::get_leadership_request);
 
+/*
+ * cluster::get_leadership_reply
+ */
+template<>
+struct compat_check<cluster::get_leadership_reply> {
+    static constexpr std::string_view name = "cluster::get_leadership_reply";
+    static std::vector<cluster::get_leadership_reply> create_test_cases() {
+        return generate_instances<cluster::get_leadership_reply>();
+    }
+    static void to_json(
+      cluster::get_leadership_reply obj, json::Writer<json::StringBuffer>& wr) {
+        json_write(leaders);
+    }
+    static cluster::get_leadership_reply from_json(json::Value& rd) {
+        cluster::get_leadership_reply obj;
+        json_read(leaders);
+        return obj;
+    }
+    static std::vector<compat_binary>
+    to_binary(cluster::get_leadership_reply obj) {
+        return compat_binary::serde_and_adl(obj);
+    }
+    static bool check(cluster::get_leadership_reply obj, compat_binary test) {
+        return verify_adl_or_serde(obj, std::move(test));
+    }
+};
+
 } // namespace compat
