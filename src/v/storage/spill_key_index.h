@@ -92,12 +92,22 @@ private:
         return debug::AllocatedByteSize(_midx);
     }
 
-    size_t entry_mem_usage(const compaction_key& k) const {
+    size_t entry_mem_usage(const bytes& k) const {
         // One entry in a node hash map: key and value
         // are allocated together, and the key is a basic_sstring with
         // internal buffer that may be spilled if key was longer.
         auto is_external = k.size() > bytes_inline_size;
         return (is_external ? sizeof(k) + k.size() : sizeof(k)) + value_sz;
+    }
+
+    void release_entry_memory(const bytes& k) {
+        auto entry_memory = entry_mem_usage(k);
+        _keys_mem_usage -= entry_memory;
+
+        // Handle the case of a double-release, in case this comes up
+        // during retries/exception handling.
+        auto release_units = std::min(entry_memory, _mem_units.count());
+        _mem_units.return_units(release_units);
     }
 
     ss::future<> drain_all_keys();

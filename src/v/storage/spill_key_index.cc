@@ -129,8 +129,7 @@ ss::future<> spill_key_index::add_key(compaction_key b, value_type v) {
                 node.key(),
                 node.mapped(),
                 [this](const bytes& k, value_type o) {
-                    _keys_mem_usage -= k.size();
-                    _mem_units.return_units(k.size());
+                    release_entry_memory(k);
                     return spill(compacted_index::entry_type::key, k, o);
                 });
           });
@@ -241,9 +240,7 @@ ss::future<> spill_key_index::drain_all_keys() {
       },
       [this] {
           auto node = _midx.extract(_midx.begin());
-          auto mem_usage = entry_mem_usage(node.key());
-          _keys_mem_usage -= mem_usage;
-          _mem_units.return_units(mem_usage);
+          release_entry_memory(node.key());
           return ss::do_with(
             node.key(), node.mapped(), [this](const bytes& k, value_type o) {
                 return spill(compacted_index::entry_type::key, k, o);
