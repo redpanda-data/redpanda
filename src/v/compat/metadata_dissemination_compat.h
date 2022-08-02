@@ -93,4 +93,9 @@ struct compat_check<cluster::update_leadership_request_v2> {
  */
 EMPTY_COMPAT_CHECK(cluster::update_leadership_reply);
 
+/*
+ * cluster::get_leadership_request
+ */
+EMPTY_COMPAT_CHECK(cluster::get_leadership_request);
+
 } // namespace compat

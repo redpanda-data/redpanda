@@ -144,6 +144,12 @@ struct get_leadership_request
   : serde::envelope<get_leadership_request, serde::version<0>> {
     get_leadership_request() noexcept = default;
 
+    friend std::ostream&
+    operator<<(std::ostream& o, const get_leadership_request&) {
+        fmt::print(o, "{{}}");
+        return o;
+    }
+
     auto serde_fields() { return std::tie(); }
 };
 

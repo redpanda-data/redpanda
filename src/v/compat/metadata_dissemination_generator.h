@@ -53,4 +53,6 @@ struct instance_generator<cluster::update_leadership_request_v2> {
 
 EMPTY_COMPAT_GENERATOR(cluster::update_leadership_reply);
 
+EMPTY_COMPAT_GENERATOR(cluster::get_leadership_request);
+
 } // namespace compat
