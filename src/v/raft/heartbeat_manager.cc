@@ -310,11 +310,38 @@ void heartbeat_manager::process_reply(
         }
         auto consensus = *it;
         vlog(hbeatlog.trace, "Heartbeat reply from node: {} - {}", n, m);
-        auto meta = std::move(groups.find(m.group)->second);
-        consensus->update_heartbeat_status(meta.follower_vnode, true);
+
+        if (unlikely(m.target_node_id != consensus->self())) {
+            vlog(
+              hbeatlog.warn,
+              "Heartbeat response addressed to different node: {}, current "
+              "node: {}, response: {}",
+              m.target_node_id,
+              consensus->self(),
+              m);
+            continue;
+        }
+
+        auto meta_it = groups.find(m.group);
+        if (unlikely(meta_it == groups.end())) {
+            vlog(
+              hbeatlog.warn,
+              "Unexpected heartbeat reply for group {} from node {}, skipping: "
+              "{}",
+              m.group,
+              n,
+              m);
+            continue;
+        }
+
+        consensus->update_heartbeat_status(
+          meta_it->second.follower_vnode, true);
 
         consensus->process_append_entries_reply(
-          n, result<append_entries_reply>(m), meta.seq, meta.dirty_offset);
+          n,
+          result<append_entries_reply>(m),
+          meta_it->second.seq,
+          meta_it->second.dirty_offset);
     }
 }
 
