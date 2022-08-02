@@ -48,8 +48,7 @@ namespace details {
 /// iterator stability guarantee by caching the key and
 /// doing a lookup on every increment.
 /// This turns iterator increment into O(logN) operation
-/// but this is OK since the underlying btree_map has high
-/// fan-out ratio so the logarithm base is relatively large.
+/// Deleting from underlying btree_map is not supported.
 template<class TKey, class TVal>
 class btree_map_stable_iterator
   : public boost::iterator_facade<
@@ -93,6 +92,10 @@ private:
         vassert(
           _key.has_value(), "btree_map_stable_iterator can't be incremented");
         auto it = _map.get().find(*_key);
+        // _key should be present since deletions are not supported
+        vassert(
+          it != _map.get().end(),
+          "btree_map_stable_iterator can't be incremented");
         ++it;
         if (it == _map.get().end()) {
             set_end();
@@ -326,6 +329,10 @@ private:
     cache& _cache;
     const partition_manifest& _manifest;
     s3::bucket_name _bucket;
+
+    // Deleting from _segments is not supported.
+    // absl::btree_map doesn't provide a pointer stabilty. We are
+    // using remote_partition::btree_map_stable_iterator to work around this.
     segment_map_t _segments;
     eviction_list_t _eviction_list;
     intrusive_list<

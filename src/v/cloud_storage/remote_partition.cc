@@ -16,6 +16,7 @@
 #include "cloud_storage/types.h"
 #include "storage/parser_errc.h"
 #include "storage/types.h"
+#include "utils/gate_guard.h"
 #include "utils/retry_chain_node.h"
 #include "utils/stream_utils.h"
 
@@ -501,27 +502,29 @@ remote_partition::get_term_last_offset(model::term_id term) const {
 
 ss::future<std::vector<cluster::rm_stm::tx_range>>
 remote_partition::aborted_transactions(offset_range offsets) {
+    gate_guard guard(_gate);
     // Here we have to use kafka offsets to locate the segments and
     // redpanda offsets to extract aborted transactions metadata because
     // tx-manifests contains redpanda offsets.
     std::vector<cluster::rm_stm::tx_range> result;
-    auto first_it = _segments.upper_bound(offsets.begin);
-    if (first_it != _segments.begin()) {
+
+    // that's a stable btree iterator that makes key lookup on increment
+    auto first_it = upper_bound(offsets.begin);
+    if (first_it != begin()) {
         first_it = std::prev(first_it);
     }
-    for (auto it = first_it; it != _segments.end(); it++) {
+    for (auto it = first_it; it != end(); it++) {
         if (it->first > offsets.end) {
             break;
         }
-        auto& st = it->second;
         auto tx = co_await ss::visit(
-          st,
-          [this, &st, offsets, offset_key = it->first](
+          it->second,
+          [this, offsets, offset_key = it->first](
             offloaded_segment_state& off_state) {
               auto tmp = off_state->materialize(*this, offset_key);
               auto res = tmp->segment->aborted_transactions(
                 offsets.begin_rp, offsets.end_rp);
-              st = std::move(tmp);
+              _segments.insert_or_assign(offset_key, std::move(tmp));
               return res;
           },
           [offsets](materialized_segment_ptr& m_state) {
@@ -540,10 +543,10 @@ remote_partition::aborted_transactions(offset_range offsets) {
       "found {} aborted transactions for {}-{} offset range ({}-{} before "
       "offset translaction)",
       result.size(),
-      offsets.begin_rp,
       offsets.begin,
-      offsets.end_rp,
-      offsets.end);
+      offsets.end,
+      offsets.begin_rp,
+      offsets.end_rp);
     co_return result;
 }
 
@@ -560,9 +563,9 @@ ss::future<> remote_partition::stop() {
         co_await std::visit([](auto&& rs) { return rs->stop(); }, rs);
     }
 
-    for (auto& [offset, seg] : _segments) {
-        vlog(_ctxlog.debug, "remote partition stop {}", offset);
-        co_await std::visit([](auto&& st) { return st->stop(); }, seg);
+    for (auto it = begin(); it != end(); it++) {
+        vlog(_ctxlog.debug, "remote partition stop {}", it->first);
+        co_await std::visit([](auto&& st) { return st->stop(); }, it->second);
     }
 }
 
