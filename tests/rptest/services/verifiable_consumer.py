@@ -465,3 +465,7 @@ class VerifiableConsumer(BackgroundThreadService):
                 handler.node for handler in self.event_handlers.values()
                 if handler.state != ConsumerState.Dead
             ]
+
+    def get_committed_offsets(self):
+        with self.lock:
+            return self.global_committed.copy()
