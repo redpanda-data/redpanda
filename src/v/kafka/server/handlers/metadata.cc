@@ -26,6 +26,7 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/timeout_clock.h"
+#include "utils/fragmented_vector.h"
 #include "utils/periodic.h"
 #include "utils/to_string.h"
 
@@ -160,7 +161,8 @@ create_topic(request_context& ctx, model::topic&& topic) {
               metadata_response::topic t;
               t.name = std::move(res[0].tp_ns.tp);
               t.error_code = map_topic_error_code(res[0].ec);
-              return ss::make_ready_future<metadata_response::topic>(t);
+              return ss::make_ready_future<metadata_response::topic>(
+                std::move(t));
           }
           auto tp_md = md_cache.get_topic_metadata(res[0].tp_ns);
 
@@ -168,7 +170,8 @@ create_topic(request_context& ctx, model::topic&& topic) {
               metadata_response::topic t;
               t.name = std::move(res[0].tp_ns.tp);
               t.error_code = error_code::invalid_topic_exception;
-              return ss::make_ready_future<metadata_response::topic>(t);
+              return ss::make_ready_future<metadata_response::topic>(
+                std::move(t));
           }
 
           return wait_for_topics(
@@ -289,8 +292,11 @@ get_topic_metadata(request_context& ctx, metadata_request& request) {
     } else {
         return ss::when_all_succeed(new_topics.begin(), new_topics.end())
           .then([res = std::move(res)](
-                  const std::vector<metadata_response::topic>& topics) mutable {
-              res.insert(res.end(), topics.begin(), topics.end());
+                  std::vector<metadata_response::topic>&& topics) mutable {
+              res.insert(
+                res.end(),
+                std::make_move_iterator(topics.begin()),
+                std::make_move_iterator(topics.end()));
               return std::move(res);
           });
     }
@@ -446,6 +452,11 @@ struct conc_holder {
 template<typename T>
 static size_t vector_size(const std::vector<T>& v) {
     return v.capacity() * sizeof(*v.data());
+}
+
+template<typename T, size_t S>
+static size_t vector_size(const fragmented_vector<T, S>& v) {
+    return v.memory_size();
 }
 
 static size_t response_size(const metadata_response& resp) {
