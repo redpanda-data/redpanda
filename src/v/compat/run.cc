@@ -11,10 +11,14 @@
 #include "compat/run.h"
 
 #include "cluster/types.h"
+#include "compat/begin_tx_compat.h"
 #include "compat/check.h"
 #include "compat/cluster_compat.h"
+#include "compat/init_tm_tx_compat.h"
 #include "compat/metadata_dissemination_compat.h"
+#include "compat/prepare_tx_compat.h"
 #include "compat/raft_compat.h"
+#include "compat/try_abort_compat.h"
 #include "json/document.h"
 #include "json/prettywriter.h"
 #include "json/writer.h"
@@ -53,7 +57,15 @@ using compat_checks = type_list<
   cluster::feature_action_request,
   cluster::feature_action_response,
   cluster::feature_barrier_request,
-  cluster::feature_barrier_response>;
+  cluster::feature_barrier_response,
+  cluster::begin_tx_request,
+  cluster::begin_tx_reply,
+  cluster::init_tm_tx_request,
+  cluster::init_tm_tx_reply,
+  cluster::prepare_tx_request,
+  cluster::prepare_tx_reply,
+  cluster::try_abort_request,
+  cluster::try_abort_reply>;
 
 struct compat_error final : public std::runtime_error {
 public:

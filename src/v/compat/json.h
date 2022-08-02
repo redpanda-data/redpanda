@@ -43,6 +43,10 @@ inline void read_value(json::Value const& v, int16_t& target) {
     target = v.GetInt();
 }
 
+inline void read_value(json::Value const& v, uint16_t& target) {
+    target = v.GetUint();
+}
+
 inline void read_value(json::Value const& v, int8_t& target) {
     target = v.GetInt();
 }
@@ -61,6 +65,15 @@ inline void read_value(json::Value const& v, ss::sstring& target) {
 
 inline void read_value(json::Value const& v, iobuf& target) {
     target = bytes_to_iobuf(base64_to_bytes(v.GetString()));
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const std::chrono::nanoseconds& v) {
+    rjson_serialize(w, v.count());
+}
+
+inline void read_value(json::Value const& v, std::chrono::nanoseconds& target) {
+    target = std::chrono::nanoseconds(v.GetInt64());
 }
 
 template<typename T, typename Tag, typename IsConstexpr>

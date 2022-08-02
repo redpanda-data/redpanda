@@ -72,4 +72,8 @@ inline void rjson_serialize(
     w.EndObject();
 }
 
+inline void read_value(json::Value const& v, cluster::tx_errc& obj) {
+    obj = {v.GetInt()};
+}
+
 } // namespace json
