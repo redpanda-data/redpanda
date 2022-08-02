@@ -114,6 +114,12 @@ struct update_leadership_request_v2
 
     update_leadership_request_v2() noexcept = default;
 
+    friend std::ostream&
+    operator<<(std::ostream& o, const update_leadership_request_v2& r) {
+        fmt::print(o, "leaders {}", r.leaders);
+        return o;
+    }
+
     explicit update_leadership_request_v2(
       std::vector<ntp_leader_revision> leaders)
       : leaders(std::move(leaders)) {}
