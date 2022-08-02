@@ -61,6 +61,8 @@ public:
       const cloud_storage::partition_manifest& m,
       model::offset insync_offset);
 
+    using persisted_stm::sync;
+
 private:
     ss::future<std::error_code> do_add_segments(
       const cloud_storage::partition_manifest&,
