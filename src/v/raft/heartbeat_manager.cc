@@ -102,7 +102,8 @@ static heartbeat_requests requests_for_range(
             if (rni == ptr->self()) {
                 auto hb_metadata = ptr->meta();
                 pending_beats[rni.id()].emplace_back(
-                  heartbeat_metadata{hb_metadata, rni},
+                  heartbeat_metadata{
+                    .meta = hb_metadata, .node_id = rni, .target_node_id = rni},
                   heartbeat_manager::follower_request_meta(
                     ptr, follower_req_seq(0), hb_metadata.prev_log_index, rni));
                 return;
