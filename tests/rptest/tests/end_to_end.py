@@ -172,7 +172,10 @@ class EndToEndTest(Test):
                 last_commit = self.consumer.last_commit(partition)
                 if not last_commit or last_commit <= offset:
                     self.logger.debug(
-                        f"waiting for partition {partition} offset {offset} to be committed, last committed offset: {last_commit}"
+                        f"waiting for partition {partition} offset {offset} "
+                        f"to be committed, last committed offset: {last_commit}, "
+                        f"last committed timestamp: {self.consumer.get_last_consumed()}, "
+                        f"last consumed timestamp: {self.consumer.get_last_consumed()}"
                     )
                     return False
             return True
