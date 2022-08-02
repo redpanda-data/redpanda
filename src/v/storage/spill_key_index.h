@@ -91,6 +91,15 @@ private:
           HashtableDebugAccess<underlying_t>;
         return debug::AllocatedByteSize(_midx);
     }
+
+    size_t entry_mem_usage(const compaction_key& k) const {
+        // One entry in a node hash map: key and value
+        // are allocated together, and the key is a basic_sstring with
+        // internal buffer that may be spilled if key was longer.
+        auto is_external = k.size() > bytes_inline_size;
+        return (is_external ? sizeof(k) + k.size() : sizeof(k)) + value_sz;
+    }
+
     ss::future<> drain_all_keys();
     ss::future<> add_key(compaction_key, value_type);
     ss::future<> spill(compacted_index::entry_type, bytes_view, value_type);

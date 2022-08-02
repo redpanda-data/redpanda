@@ -85,10 +85,10 @@ ss::future<> spill_key_index::index(
 
 ss::future<> spill_key_index::add_key(compaction_key b, value_type v) {
     auto f = ss::now();
-    auto const key_size = b.size();
-    auto const expected_size = idx_mem_usage() + _keys_mem_usage + key_size;
+    auto const entry_size = entry_mem_usage(b);
+    auto const expected_size = idx_mem_usage() + _keys_mem_usage + entry_size;
 
-    auto take_result = _resources.compaction_index_take_bytes(key_size);
+    auto take_result = _resources.compaction_index_take_bytes(entry_size);
     if (_mem_units.count() == 0) {
         _mem_units = std::move(take_result.units);
     } else {
@@ -104,8 +104,8 @@ ss::future<> spill_key_index::add_key(compaction_key b, value_type v) {
       (take_result.checkpoint_hint && expected_size > min_index_size)
       || expected_size >= _max_mem) {
         f = ss::do_until(
-          [this, key_size, min_index_size] {
-              size_t total_mem = idx_mem_usage() + _keys_mem_usage + key_size;
+          [this, entry_size, min_index_size] {
+              size_t total_mem = idx_mem_usage() + _keys_mem_usage + entry_size;
 
               // Instance-local capacity check
               bool local_ok = total_mem < _max_mem;
@@ -136,9 +136,9 @@ ss::future<> spill_key_index::add_key(compaction_key b, value_type v) {
           });
     }
 
-    return f.then([this, b = std::move(b), v]() mutable {
+    return f.then([this, entry_size, b = std::move(b), v]() mutable {
         // convert iobuf to key
-        _keys_mem_usage += b.size();
+        _keys_mem_usage += entry_size;
 
         // No update to _mem_units here: we already took units at top
         // of add_key before starting the write.
@@ -241,8 +241,9 @@ ss::future<> spill_key_index::drain_all_keys() {
       },
       [this] {
           auto node = _midx.extract(_midx.begin());
-          _keys_mem_usage -= node.key().size();
-          _mem_units.return_units(node.key().size());
+          auto mem_usage = entry_mem_usage(node.key());
+          _keys_mem_usage -= mem_usage;
+          _mem_units.return_units(mem_usage);
           return ss::do_with(
             node.key(), node.mapped(), [this](const bytes& k, value_type o) {
                 return spill(compacted_index::entry_type::key, k, o);
