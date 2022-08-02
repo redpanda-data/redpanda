@@ -13,6 +13,7 @@
 #include "json/document.h"
 #include "json/json.h"
 #include "model/fundamental.h"
+#include "utils/base64.h"
 
 namespace json {
 
@@ -58,6 +59,10 @@ inline void read_value(json::Value const& v, ss::sstring& target) {
     target = v.GetString();
 }
 
+inline void read_value(json::Value const& v, iobuf& target) {
+    target = bytes_to_iobuf(base64_to_bytes(v.GetString()));
+}
+
 template<typename T, typename Tag, typename IsConstexpr>
 void read_value(
   json::Value const& v, detail::base_named_type<T, Tag, IsConstexpr>& target) {
@@ -84,6 +89,11 @@ void read_value(json::Value const& v, std::optional<T>& target) {
         read_value(v, t);
         target = t;
     }
+}
+
+inline void
+rjson_serialize(json::Writer<json::StringBuffer>& w, const iobuf& buf) {
+    w.String(bytes_to_base64(iobuf_to_bytes(buf)));
 }
 
 template<typename Writer, typename T>
