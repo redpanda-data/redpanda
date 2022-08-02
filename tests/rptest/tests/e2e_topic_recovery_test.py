@@ -106,7 +106,7 @@ class EndToEndTopicRecovery(RedpandaTest):
         rpk.describe_topic_configs(topic)
 
     @cluster(num_nodes=4)
-    @matrix(message_size=[10000],
+    @matrix(message_size=[5000],
             num_messages=[100000],
             recovery_overrides=[{}, {
                 'retention.bytes': 1024
@@ -143,7 +143,7 @@ class EndToEndTopicRecovery(RedpandaTest):
 
         time.sleep(10)
         wait_until(s3_has_all_data,
-                   timeout_sec=300,
+                   timeout_sec=600,
                    backoff_sec=5,
                    err_msg=f"Not all data is uploaded to S3 bucket")
 
