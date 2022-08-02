@@ -7,6 +7,8 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import re
+
 from ducktape.cluster.cluster import ClusterNode
 
 from rptest.clients.types import TopicSpec
@@ -14,6 +16,12 @@ from rptest.services.rpk_producer import RpkProducer
 from rptest.services.redpanda import ResourceSettings, RESTART_LOG_ALLOW_LIST
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
+
+RESIZE_LOG_ALLOW_LIST = RESTART_LOG_ALLOW_LIST + [
+    re.compile("Decreasing redpanda core count is not allowed"),
+    re.compile(
+        "Failure during startup: cluster::configuration_invariants_changed")
+]
 
 
 class NodeResizeTest(RedpandaTest):
@@ -51,9 +59,7 @@ class NodeResizeTest(RedpandaTest):
             self.redpanda.start_node(node)
             self.logger.info("As expected, redpanda started successfully")
 
-    @cluster(num_nodes=4,
-             log_allow_list=RESTART_LOG_ALLOW_LIST +
-             ["Decreasing redpanda core count is not allowed"])
+    @cluster(num_nodes=4, log_allow_list=RESIZE_LOG_ALLOW_LIST)
     def test_node_resize(self):
         # Create a topic and write some data to make sure the cluster
         # is all up & initialized, and that subsequent checks are happening
