@@ -88,4 +88,9 @@ struct compat_check<cluster::update_leadership_request_v2> {
     }
 };
 
+/*
+ * cluster::update_leadership_reply
+ */
+EMPTY_COMPAT_CHECK(cluster::update_leadership_reply);
+
 } // namespace compat

@@ -10,6 +10,7 @@
  */
 #include "compat/run.h"
 
+#include "cluster/metadata_dissemination_types.h"
 #include "cluster/types.h"
 #include "compat/begin_tx_compat.h"
 #include "compat/check.h"
@@ -69,7 +70,8 @@ using compat_checks = type_list<
   cluster::try_abort_reply,
   cluster::allocate_id_request,
   cluster::allocate_id_reply,
-  cluster::update_leadership_request_v2>;
+  cluster::update_leadership_request_v2,
+  cluster::update_leadership_reply>;
 
 struct compat_error final : public std::runtime_error {
 public:

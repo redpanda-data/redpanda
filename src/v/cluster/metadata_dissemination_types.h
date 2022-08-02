@@ -131,6 +131,12 @@ struct update_leadership_reply
   : serde::envelope<update_leadership_reply, serde::version<0>> {
     update_leadership_reply() noexcept = default;
 
+    friend std::ostream&
+    operator<<(std::ostream& o, const update_leadership_reply&) {
+        fmt::print(o, "{{}}");
+        return o;
+    }
+
     auto serde_fields() { return std::tie(); }
 };
 
