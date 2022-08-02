@@ -28,7 +28,7 @@ namespace compat {
  * Specialize for types that cannot be copied.
  */
 template<typename T>
-std::tuple<T, T> compat_copy(T t) {
+std::pair<T, T> compat_copy(T t) {
     return {t, t};
 }
 
