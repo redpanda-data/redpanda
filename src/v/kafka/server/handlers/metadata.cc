@@ -631,11 +631,12 @@ metadata_memory_estimator(size_t request_size, connection_context& conn_ctx) {
     // which will also exist on the heap. The calculation above handles the
     // first size, and the encoded response ends up being very similar in size,
     // so we double the estimate to account for both.
-    size_estimate *= 2;
+    size_estimate *= 6;
 
     // We still add on the default_estimate to handle the size of the request
     // itself and miscellaneous other procesing (this is a small adjustment,
     // generally ~8000 bytes).
-    return default_memory_estimate(request_size) + size_estimate;
+    return default_memory_estimate(request_size) + size_estimate
+           + large_fragment_vector<metadata_response_partition>::max_frag_bytes;
 }
 } // namespace kafka
