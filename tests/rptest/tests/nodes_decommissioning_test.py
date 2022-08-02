@@ -115,23 +115,29 @@ class NodesDecommissioningTest(EndToEndTest):
         self.await_startup()
         admin = Admin(self.redpanda)
 
-        brokers = admin.get_brokers()
-        to_decommission = random.choice(brokers)
-        self.logger.info(f"decommissioning node: {to_decommission}", )
-        admin.decommission_broker(to_decommission['node_id'])
+        to_decommission = random.choice(self.redpanda.nodes)
+        to_decommission_id = self.redpanda.idx(to_decommission)
+        self.logger.info(f"decommissioning node: {to_decommission_id}", )
+        admin.decommission_broker(to_decommission_id)
 
         # A node which isn't being decommed, to use when calling into
         # the admin API from this point onwards.
-        survivor_node = self._not_decommissioned_node(
-            to_decommission['node_id'])
+        survivor_node = self._not_decommissioned_node(to_decommission_id)
         self.logger.info(
             f"Using survivor node {survivor_node.name} {self.redpanda.idx(survivor_node)}"
         )
 
-        wait_until(lambda: self._node_removed(to_decommission['node_id'],
-                                              survivor_node),
-                   timeout_sec=120,
-                   backoff_sec=2)
+        wait_until(
+            lambda: self._node_removed(to_decommission_id, survivor_node),
+            timeout_sec=120,
+            backoff_sec=2)
+
+        # Stop the decommissioned node, because redpanda internally does not
+        # fence it, it is the responsibility of external orchestrator to
+        # stop the node they intend to remove.
+        # This can be removed when we change redpanda to prevent decommissioned nodes
+        # from responding to client Kafka requests.
+        self.redpanda.stop_node(to_decommission)
 
         self.run_validation(enable_idempotence=False, consumer_timeout_sec=45)
 
