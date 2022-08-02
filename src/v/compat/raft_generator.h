@@ -234,4 +234,71 @@ struct instance_generator<raft::vote_reply> {
     static std::vector<raft::vote_reply> limits() { return {}; }
 };
 
+template<>
+struct instance_generator<raft::protocol_metadata> {
+    static raft::protocol_metadata random() {
+        return {
+          .group = tests::random_named_int<raft::group_id>(),
+          .commit_index = tests::random_named_int<model::offset>(),
+          .term = tests::random_named_int<model::term_id>(),
+          .prev_log_index = tests::random_named_int<model::offset>(),
+          .prev_log_term = tests::random_named_int<model::term_id>(),
+          .last_visible_index = tests::random_named_int<model::offset>(),
+        };
+    }
+
+    static std::vector<raft::vote_reply> limits() { return {}; }
+};
+
+template<>
+struct instance_generator<raft::heartbeat_request> {
+    static raft::heartbeat_request random() {
+        /*
+         * heartbeat_request encoding assumes that the first node/target_node in
+         * the heartbeat set have the same node_id (revisions can be different).
+         * that needs to be true here in the generated data otherwise we won't
+         * compare equal at after deserialization.
+         */
+        const auto node_id = tests::random_named_int<model::node_id>();
+        const auto target_node_id = tests::random_named_int<model::node_id>();
+
+        auto ret = raft::heartbeat_request{{
+          {
+            .meta = instance_generator<raft::protocol_metadata>::random(),
+            .node_id = raft::
+              vnode{node_id, tests::random_named_int<model::revision_id>()},
+            .target_node_id = raft::
+              vnode{target_node_id, tests::random_named_int<model::revision_id>()},
+          },
+          {
+            .meta = instance_generator<raft::protocol_metadata>::random(),
+            .node_id = raft::
+              vnode{node_id, tests::random_named_int<model::revision_id>()},
+            .target_node_id = raft::
+              vnode{target_node_id, tests::random_named_int<model::revision_id>()},
+          },
+        }};
+
+        /*
+         * the serialization step for heartbeat_request will automatically sort
+         * the heartbeats. so for equality to work as expected we need to also
+         * sort the same way so that when we serialize to json we retain that
+         * ordering that will be present after the deserialization step.
+         */
+        struct sorter_fn {
+            constexpr bool operator()(
+              const raft::heartbeat_metadata& lhs,
+              const raft::heartbeat_metadata& rhs) const {
+                return lhs.meta.commit_index < rhs.meta.commit_index;
+            }
+        };
+
+        std::sort(ret.heartbeats.begin(), ret.heartbeats.end(), sorter_fn{});
+
+        return ret;
+    }
+
+    static std::vector<raft::heartbeat_request> limits() { return {}; }
+};
+
 } // namespace compat
