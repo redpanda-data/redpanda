@@ -12,6 +12,7 @@
 
 #include "compat/generator.h"
 #include "raft/types.h"
+#include "random/generators.h"
 #include "test_utils/randoms.h"
 
 namespace compat {
@@ -167,6 +168,25 @@ struct instance_generator<raft::transfer_leadership_reply> {
     }
 
     static std::vector<raft::transfer_leadership_reply> limits() { return {}; }
+};
+
+template<>
+struct instance_generator<raft::install_snapshot_request> {
+    static raft::install_snapshot_request random() {
+        return {
+          .target_node_id = instance_generator<raft::vnode>::random(),
+          .term = tests::random_named_int<model::term_id>(),
+          .group = tests::random_named_int<raft::group_id>(),
+          .node_id = instance_generator<raft::vnode>::random(),
+          .last_included_index = tests::random_named_int<model::offset>(),
+          .file_offset = random_generators::get_int<uint64_t>(),
+          .chunk = bytes_to_iobuf(
+            random_generators::get_bytes(random_generators::get_int(1, 512))),
+          .done = tests::random_bool(),
+        };
+    }
+
+    static std::vector<raft::install_snapshot_request> limits() { return {}; }
 };
 
 } // namespace compat

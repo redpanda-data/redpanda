@@ -243,4 +243,70 @@ struct compat_check<raft::transfer_leadership_reply> {
         return verify_adl_or_serde(obj, std::move(test));
     }
 };
+
+/*
+ * raft::install_snapshot_request
+ */
+template<>
+struct compat_check<raft::install_snapshot_request> {
+    static constexpr std::string_view name = "raft::install_snapshot_request";
+
+    static std::vector<raft::install_snapshot_request> create_test_cases() {
+        return generate_instances<raft::install_snapshot_request>();
+    }
+
+    static void to_json(
+      raft::install_snapshot_request obj,
+      json::Writer<json::StringBuffer>& wr) {
+        json_write(target_node_id);
+        json_write(term);
+        json_write(group);
+        json_write(node_id);
+        json_write(last_included_index);
+        json_write(file_offset);
+        json_write(chunk);
+        json_write(done);
+    }
+
+    static raft::install_snapshot_request from_json(json::Value& rd) {
+        raft::install_snapshot_request obj;
+        json_read(target_node_id);
+        json_read(term);
+        json_read(group);
+        json_read(node_id);
+        json_read(last_included_index);
+        json_read(file_offset);
+        json_read(chunk);
+        json_read(done);
+        return obj;
+    }
+
+    static std::vector<compat_binary>
+    to_binary(raft::install_snapshot_request obj) {
+        return compat_binary::serde_and_adl(std::move(obj));
+    }
+
+    static bool check(raft::install_snapshot_request obj, compat_binary test) {
+        return verify_adl_or_serde(std::move(obj), std::move(test));
+    }
+};
+
+template<>
+inline std::pair<raft::install_snapshot_request, raft::install_snapshot_request>
+compat_copy(raft::install_snapshot_request obj) {
+    auto f = [&obj] {
+        return raft::install_snapshot_request{
+          .target_node_id = obj.target_node_id,
+          .term = obj.term,
+          .group = obj.group,
+          .node_id = obj.node_id,
+          .last_included_index = obj.last_included_index,
+          .file_offset = obj.file_offset,
+          .chunk = obj.chunk.copy(),
+          .done = obj.done,
+        };
+    };
+    return std::make_pair(f(), f());
+}
+
 } // namespace compat
