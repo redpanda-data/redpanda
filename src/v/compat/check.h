@@ -15,6 +15,7 @@
 #include "json/stringbuffer.h"
 #include "json/writer.h"
 #include "reflection/adl.h"
+#include "reflection/async_adl.h"
 #include "seastarx.h"
 #include "serde/serde.h"
 
@@ -50,10 +51,18 @@ struct compat_binary {
     template<typename T>
     static std::vector<compat_binary> serde_and_adl(T v) {
         auto&& [a, b] = compat_copy(std::move(v));
-        return {
-          compat_binary::serde(std::move(a)),
-          compat_binary("adl", reflection::to_iobuf(std::move(b))),
-        };
+
+        iobuf s_data;
+        serde::write_async(s_data, std::move(a)).get();
+
+        iobuf a_data;
+        reflection::async_adl<T>{}.to(a_data, std::move(b)).get();
+
+        auto ret = std::vector<compat_binary>{
+          compat_binary{"serde", std::move(s_data)},
+          compat_binary{"adl", std::move(a_data)}};
+
+        return ret;
     }
 
     compat_binary(ss::sstring name, iobuf data)
@@ -116,24 +125,30 @@ struct compat_check {
 };
 
 /*
- * Helper that compares an instance of T with an adl or serde instance.
+ * Helpers that decode and compare an instance of T with an adl or serde
+ * instance.
  */
 template<typename T>
-bool verify_adl_or_serde(T expected, compat_binary test) {
-    const auto decoded = [&] {
-        if (test.name == "adl") {
-            return reflection::from_iobuf<T>(std::move(test.data));
-        } else if (test.name == "serde") {
-            return serde::from_iobuf<T>(std::move(test.data));
-        } else {
-            vassert(false, "unknown type {}", test.name);
-        }
-    }();
+T decode_adl_or_serde(compat_binary test) {
+    if (test.name == "adl") {
+        iobuf_parser in(std::move(test.data));
+        return reflection::async_adl<T>{}.from(in).get0();
+    } else if (test.name == "serde") {
+        iobuf_parser in(std::move(test.data));
+        return serde::read_async<T>(in).get0();
+    } else {
+        vassert(false, "unknown type {}", test.name);
+    }
+}
 
+template<typename T>
+bool verify_adl_or_serde(T expected, compat_binary test) {
+    const auto name = test.name;
+    auto decoded = decode_adl_or_serde<T>(std::move(test));
     if (expected != decoded) {
         fmt::print(
           "Verify of {{{}}} decoding failed:\nExpected: {}\nDecoded: {}\n",
-          test.name,
+          name,
           expected,
           decoded);
         return false;
