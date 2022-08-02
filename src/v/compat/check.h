@@ -43,7 +43,7 @@ struct compat_binary {
     // factory for serde
     template<typename T>
     static compat_binary serde(T v) {
-        return {"serde", serde::to_iobuf(v)};
+        return {"serde", serde::to_iobuf(std::move(v))};
     }
 
     // factory for serde and adl
