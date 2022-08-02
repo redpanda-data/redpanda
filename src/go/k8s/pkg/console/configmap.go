@@ -6,6 +6,7 @@ import (
 	"net"
 
 	"github.com/go-logr/logr"
+	"github.com/redpanda-data/console/backend/pkg/connect"
 	"github.com/redpanda-data/console/backend/pkg/kafka"
 	"github.com/redpanda-data/console/backend/pkg/schema"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
@@ -52,7 +53,7 @@ func (cm *ConfigMap) Ensure(ctx context.Context) error {
 	username := string(secret.Data[corev1.BasicAuthUsernameKey])
 	password := string(secret.Data[corev1.BasicAuthPasswordKey])
 
-	config, err := cm.generateConsoleConfig(username, password)
+	config, err := cm.generateConsoleConfig(ctx, username, password)
 	if err != nil {
 		return err
 	}
@@ -105,11 +106,17 @@ func (cm *ConfigMap) Key() types.NamespacedName {
 // generateConsoleConfig returns the actual config passed to Console.
 // This should match the fields at https://github.com/redpanda-data/console/blob/master/docs/config/console.yaml
 // We are copying the fields instead of importing them because (1) they don't have json tags (2) some fields aren't ideal for K8s (e.g. TLS certs shouldn't be file paths but Secret reference)
-func (cm *ConfigMap) generateConsoleConfig(username, password string) (string, error) {
+func (cm *ConfigMap) generateConsoleConfig(ctx context.Context, username, password string) (string, error) {
 	consoleConfig := &ConsoleConfig{}
 	consoleConfig.SetDefaults()
 	consoleConfig.Server = cm.consoleobj.Spec.Server
 	consoleConfig.Kafka = cm.genKafka(username, password)
+
+	connectConfig, err := cm.genConnect(ctx)
+	if err != nil {
+		return "", err
+	}
+	consoleConfig.Connect = *connectConfig
 
 	config, err := yaml.Marshal(consoleConfig)
 	if err != nil {
@@ -132,6 +139,11 @@ var (
 	SchemaRegistryTLSCaFilePath   = fmt.Sprintf("%s/%s", SchemaRegistryTLSDir, "ca.crt")
 	SchemaRegistryTLSCertFilePath = fmt.Sprintf("%s/%s", SchemaRegistryTLSDir, "tls.crt")
 	SchemaRegistryTLSKeyFilePath  = fmt.Sprintf("%s/%s", SchemaRegistryTLSDir, "tls.key")
+
+	ConnectTLSDir          = "/redpanda/connect"
+	ConnectTLSCaFilePath   = fmt.Sprintf("%s/%%s/%s", ConnectTLSDir, "ca.crt")
+	ConnectTLSCertFilePath = fmt.Sprintf("%s/%%s/%s", ConnectTLSDir, "tls.crt")
+	ConnectTLSKeyFilePath  = fmt.Sprintf("%s/%%s/%s", ConnectTLSDir, "tls.key")
 )
 
 // SchemaRegistryTLSCa handles mounting CA cert
@@ -215,4 +227,57 @@ func getBrokers(clusterobj *redpandav1alpha1.Cluster) []string {
 	}
 	// External hosts already have ports in them
 	return clusterobj.Status.Nodes.External
+}
+
+func (cm *ConfigMap) genConnect(ctx context.Context) (*connect.Config, error) {
+	clusters := []connect.ConfigCluster{}
+	for _, c := range cm.consoleobj.Spec.Connect.Clusters {
+		cluster, err := cm.buildConfigCluster(ctx, c)
+		if err != nil {
+			return nil, err
+		}
+		clusters = append(clusters, *cluster)
+	}
+
+	return &connect.Config{
+		Enabled:        cm.consoleobj.Spec.Connect.Enabled,
+		Clusters:       clusters,
+		ConnectTimeout: cm.consoleobj.Spec.Connect.ConnectTimeout.Duration,
+		ReadTimeout:    cm.consoleobj.Spec.Connect.ReadTimeout.Duration,
+		RequestTimeout: cm.consoleobj.Spec.Connect.RequestTimeout.Duration,
+	}, nil
+}
+
+func (cm *ConfigMap) buildConfigCluster(ctx context.Context, c redpandav1alpha1.ConnectCluster) (*connect.ConfigCluster, error) {
+	cluster := &connect.ConfigCluster{Name: c.Name, URL: c.URL}
+
+	if c.BasicAuthRef != nil {
+		ref := corev1.Secret{}
+		if err := cm.Get(ctx, types.NamespacedName{Namespace: c.BasicAuthRef.Namespace, Name: c.BasicAuthRef.Name}, &ref); err != nil {
+			return nil, err
+		}
+		// XXX: This will panic when key not found
+		cluster.Username = string(ref.Data["username"])
+		cluster.Password = string(ref.Data["password"])
+	}
+
+	if c.TokenRef != nil {
+		ref := corev1.Secret{}
+		if err := cm.Get(ctx, types.NamespacedName{Namespace: c.TokenRef.Namespace, Name: c.TokenRef.Name}, &ref); err != nil {
+			return nil, err
+		}
+		cluster.Token = string(ref.Data["token"])
+	}
+
+	if c.TLS != nil {
+		cluster.TLS.Enabled = c.TLS.Enabled
+		cluster.TLS.InsecureSkipTLSVerify = c.TLS.InsecureSkipTLSVerify
+		if c.TLS.SecretKeyRef != nil {
+			cluster.TLS.CaFilepath = fmt.Sprintf(ConnectTLSCaFilePath, c.Name)
+			cluster.TLS.CertFilepath = fmt.Sprintf(ConnectTLSCertFilePath, c.Name)
+			cluster.TLS.KeyFilepath = fmt.Sprintf(ConnectTLSKeyFilePath, c.Name)
+		}
+	}
+
+	return cluster, nil
 }

@@ -195,6 +195,7 @@ github.com/client9/misspell v0.3.4/go.mod h1:qj6jICC3Q7zFZvVWo7KLAzC3yx5G7kyvSDk
 github.com/cloudflare/cloudflare-go v0.13.2/go.mod h1:27kfc1apuifUmJhp069y0+hwlKDg4bd8LWlu7oKeZvM=
 github.com/cloudhut/common v0.6.0 h1:lGEEsupKfp4vFzbGkUk1rHtTCVfTiOGRnmyFzPb4XaU=
 github.com/cloudhut/common v0.6.0/go.mod h1:jCQsPDIS3LWXCROaTG2N8IRGml1s+7TQsJLOekSlbKI=
+github.com/cloudhut/connect-client v0.0.0-20211109055846-c9f53449bdc5 h1:rKPrNP4L9DCE60LbOUjZR/HdwPEQqBiaKsbeg2h9YdI=
 github.com/cloudhut/connect-client v0.0.0-20211109055846-c9f53449bdc5/go.mod h1:Kfy2sPCGDgWZGkjyu3ei9uacNA2CMBLU9/PBpCcyiGg=
 github.com/cncf/udpa/go v0.0.0-20191209042840-269d4d468f6f/go.mod h1:M8M6+tZqaGXZJjfX53e64911xZQV5JYwmTeXPW+k8Sc=
 github.com/cncf/udpa/go v0.0.0-20200629203442-efcf912fb354/go.mod h1:WmhPx2Nbnhtbo57+VJT5O0JRkEi1Wbu0z5j0R8u5Hbk=

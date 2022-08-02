@@ -23,6 +23,7 @@ type ConsoleSpec struct {
 	Schema        Schema                 `json:"schema"`
 	ClusterKeyRef corev1.ObjectReference `json:"clusterKeyRef"`
 	Deployment    Deployment             `json:"deployment"`
+	Connect       Connect                `json:"connect"`
 }
 
 // Server is the Console app HTTP server config
@@ -73,6 +74,57 @@ type Deployment struct {
 
 	// +kubebuilder:default=1
 	MaxSurge int32 `json:"maxSurge,omitempty"`
+}
+
+// Connect defines configurable fields for Kafka Connect
+type Connect struct {
+	// +optional
+	Enabled bool `json:"enabled"`
+
+	// +kubebuilder:validation:Type=string
+	// +kubebuilder:validation:Format=duration
+	// +kubebuilder:default="15s"
+	ConnectTimeout *metav1.Duration `json:"connectTimeout,omitempty"`
+
+	// +kubebuilder:validation:Type=string
+	// +kubebuilder:validation:Format=duration
+	// +kubebuilder:default="60s"
+	ReadTimeout *metav1.Duration `json:"readTimeout,omitempty"`
+
+	// +kubebuilder:validation:Type=string
+	// +kubebuilder:validation:Format=duration
+	// +kubebuilder:default="6s"
+	RequestTimeout *metav1.Duration `json:"requestTimeout,omitempty"`
+
+	Clusters []ConnectCluster `json:"clusters,omitempty"`
+}
+
+// ConnectCluster defines configurable fields for the Kafka Connect cluster
+type ConnectCluster struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+
+	// TLS configures mTLS auth
+	TLS *ConnectClusterTLS `json:"tls,omitempty"`
+
+	// BasicAuthRef configures basic auth credentials referenced by Secret
+	// Expects to have keys "username", "password"
+	BasicAuthRef *corev1.ObjectReference `json:"basicAuthRef,omitempty"`
+
+	// TokenRef configures token header auth referenced by Secret
+	// Expects to have key "token"
+	TokenRef *corev1.ObjectReference `json:"tokenRef,omitempty"`
+}
+
+// ConnectClusterTLS defines TLS certificates for the Kafka Connect cluster
+type ConnectClusterTLS struct {
+	Enabled bool `json:"enabled,omitempty"`
+
+	// SecretKeyRef configures certificate used for mTLS auth referenced by Secret
+	// Expects to have keys "tls.crt", "tls.key", "ca.crt"
+	SecretKeyRef *corev1.ObjectReference `json:"secretKeyRef,omitempty"`
+
+	InsecureSkipTLSVerify bool `json:"insecureSkipTlsVerify,omitempty"`
 }
 
 // ConsoleStatus defines the observed state of Console

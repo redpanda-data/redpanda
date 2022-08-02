@@ -171,8 +171,9 @@ const (
 	configMountName = "config"
 	configMountPath = "/etc/console/configs"
 
-	tlsCaMountName = "tls-schema-registry-ca"
-	tlsMountName   = "tls-schema-registry"
+	tlsSchemaRegistryCaMountName = "tls-schema-registry-ca"
+	tlsSchemaRegistryMountName   = "tls-schema-registry"
+	tlsConnectMountName          = "tls-connect-%s"
 
 	schemaRegistryClientCertSuffix = "schema-registry-client"
 )
@@ -190,22 +191,38 @@ func (d *Deployment) getVolumes() []corev1.Volume {
 			},
 		},
 	}
+
 	if d.clusterobj.IsSchemaRegistryTLSEnabled() {
 		volumes = append(volumes, corev1.Volume{
-			Name: tlsMountName,
+			Name: tlsSchemaRegistryMountName,
+			// By default VolumeSource is EmptyDir
+			// But we set anyway, otherwise resource.Update() will recognize a patch
+			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+		})
+	}
+
+	if sr := d.clusterobj.SchemaRegistryAPITLS(); sr != nil {
+		ca := &SchemaRegistryTLSCa{sr.TLS.NodeSecretRef}
+		if vol := ca.Volume(tlsSchemaRegistryCaMountName); vol != nil {
+			volumes = append(volumes, *vol)
+		}
+	}
+
+	// Each Connect cluster will have own Volume because they reference different Secret
+	for _, c := range d.consoleobj.Spec.Connect.Clusters {
+		if c.TLS == nil || !c.TLS.Enabled {
+			continue
+		}
+		volumes = append(volumes, corev1.Volume{
+			Name: fmt.Sprintf(tlsConnectMountName, c.Name),
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName: fmt.Sprintf("%s-%s", d.clusterobj.GetName(), schemaRegistryClientCertSuffix),
+					SecretName: c.TLS.SecretKeyRef.Name,
 				},
 			},
 		})
 	}
-	if sr := d.clusterobj.SchemaRegistryAPITLS(); sr != nil {
-		ca := &SchemaRegistryTLSCa{sr.TLS.NodeSecretRef}
-		if vol := ca.Volume(tlsCaMountName); vol != nil {
-			volumes = append(volumes, *vol)
-		}
-	}
+
 	return volumes
 }
 
@@ -220,9 +237,20 @@ func (d *Deployment) getContainers() []corev1.Container {
 
 	if d.clusterobj.IsSchemaRegistryTLSEnabled() {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      tlsMountName,
+			Name:      tlsSchemaRegistryMountName,
 			ReadOnly:  true,
 			MountPath: SchemaRegistryTLSDir,
+		})
+	}
+
+	for _, c := range d.consoleobj.Spec.Connect.Clusters {
+		if c.TLS == nil || !c.TLS.Enabled {
+			continue
+		}
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      fmt.Sprintf(tlsConnectMountName, c.Name),
+			ReadOnly:  true,
+			MountPath: fmt.Sprintf("%s/%s", ConnectTLSDir, c.Name),
 		})
 	}
 
