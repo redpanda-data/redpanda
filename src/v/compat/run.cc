@@ -33,6 +33,8 @@ using compat_checks = type_list<
   raft::transfer_leadership_request,
   raft::transfer_leadership_reply,
   raft::install_snapshot_request,
+  raft::install_snapshot_reply,
+  raft::vote_request,
   cluster::update_leadership_request>;
 
 struct compat_error final : public std::runtime_error {

@@ -189,4 +189,35 @@ struct instance_generator<raft::install_snapshot_request> {
     static std::vector<raft::install_snapshot_request> limits() { return {}; }
 };
 
+template<>
+struct instance_generator<raft::install_snapshot_reply> {
+    static raft::install_snapshot_reply random() {
+        return {
+          .target_node_id = instance_generator<raft::vnode>::random(),
+          .term = tests::random_named_int<model::term_id>(),
+          .bytes_stored = random_generators::get_int<uint64_t>(),
+          .success = tests::random_bool(),
+        };
+    }
+
+    static std::vector<raft::install_snapshot_reply> limits() { return {}; }
+};
+
+template<>
+struct instance_generator<raft::vote_request> {
+    static raft::vote_request random() {
+        return {
+          .node_id = instance_generator<raft::vnode>::random(),
+          .target_node_id = instance_generator<raft::vnode>::random(),
+          .group = tests::random_named_int<raft::group_id>(),
+          .term = tests::random_named_int<model::term_id>(),
+          .prev_log_index = tests::random_named_int<model::offset>(),
+          .prev_log_term = tests::random_named_int<model::term_id>(),
+          .leadership_transfer = tests::random_bool(),
+        };
+    }
+
+    static std::vector<raft::vote_request> limits() { return {}; }
+};
+
 } // namespace compat
