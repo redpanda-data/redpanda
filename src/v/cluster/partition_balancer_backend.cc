@@ -130,17 +130,6 @@ ss::future<> partition_balancer_backend::do_tick() {
           _partition_allocator)
           .plan_reassignments(health_report, _raft0->get_follower_metrics());
 
-    if (!plan_data.violations.is_empty()) {
-        vlog(
-          clusterlog.info,
-          "violations: {} unavailable nodes, {} full nodes; planned {} "
-          "reassignments; cancelled {} reassignments",
-          plan_data.violations.unavailable_nodes.size(),
-          plan_data.violations.full_nodes.size(),
-          plan_data.reassignments.size(),
-          plan_data.cancellations.size());
-    }
-
     _last_leader_term = _raft0->term();
     _last_tick_time = ss::lowres_clock::now();
     _last_violations = std::move(plan_data.violations);
@@ -155,6 +144,20 @@ ss::future<> partition_balancer_backend::do_tick() {
         _last_status = partition_balancer_status::stalled;
     } else {
         _last_status = partition_balancer_status::ready;
+    }
+
+    if (_last_status != partition_balancer_status::ready) {
+        vlog(
+          clusterlog.info,
+          "last status: {}; "
+          "violations: unavailable nodes: {}, full nodes: {}; "
+          "reassignments planned: {}, cancelled: {}, failed: {}",
+          _last_status,
+          _last_violations.unavailable_nodes.size(),
+          _last_violations.full_nodes.size(),
+          plan_data.reassignments.size(),
+          plan_data.cancellations.size(),
+          plan_data.failed_reassignments_count);
     }
 
     co_await ss::max_concurrent_for_each(

@@ -302,8 +302,8 @@ struct convert<model::partition_autobalancing_mode> {
 
         if (value == "off") {
             rhs = model::partition_autobalancing_mode::off;
-        } else if (value == "node_add_remove") {
-            rhs = model::partition_autobalancing_mode::node_add_remove;
+        } else if (value == "node_add") {
+            rhs = model::partition_autobalancing_mode::node_add;
         } else if (value == "continuous") {
             rhs = model::partition_autobalancing_mode::continuous;
         } else {

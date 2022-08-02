@@ -1195,12 +1195,12 @@ configuration::configuration()
       "partition_autobalancing_mode",
       "Partition autobalancing mode",
       {.needs_restart = needs_restart::no,
-       .example = "node_add_remove",
+       .example = "node_add",
        .visibility = visibility::user},
-      model::partition_autobalancing_mode::off,
+      model::partition_autobalancing_mode::node_add,
       {
         model::partition_autobalancing_mode::off,
-        model::partition_autobalancing_mode::node_add_remove,
+        model::partition_autobalancing_mode::node_add,
         model::partition_autobalancing_mode::continuous,
       })
   , partition_autobalancing_node_availability_timeout_sec(
@@ -1209,7 +1209,7 @@ configuration::configuration()
       "Node unavailability timeout that triggers moving partitions from the "
       "node",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      30min)
+      15min)
   , partition_autobalancing_max_disk_usage_percent(
       *this,
       "partition_autobalancing_max_disk_usage_percent",

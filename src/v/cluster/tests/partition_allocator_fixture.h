@@ -37,7 +37,7 @@ struct partition_allocator_fixture {
         ss::smp::invoke_on_all([] {
             config::shard_local_cfg()
               .get("partition_autobalancing_mode")
-              .set_value(model::partition_autobalancing_mode::node_add_remove);
+              .set_value(model::partition_autobalancing_mode::node_add);
         }).get0();
     }
 
