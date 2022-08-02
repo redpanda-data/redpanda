@@ -285,16 +285,17 @@ void heartbeat_manager::process_reply(
                 vlog(hbeatlog.error, "cannot find consensus group:{}", g);
                 continue;
             }
+            auto consensus = *it;
 
-            (*it)->update_heartbeat_status(req_meta.follower_vnode, false);
+            consensus->update_heartbeat_status(req_meta.follower_vnode, false);
 
             // propagate error
-            (*it)->process_append_entries_reply(
+            consensus->process_append_entries_reply(
               n,
               result<append_entries_reply>(r.error()),
               req_meta.seq,
               req_meta.dirty_offset);
-            (*it)->get_probe().heartbeat_request_error();
+            consensus->get_probe().heartbeat_request_error();
         }
         return;
     }
@@ -307,15 +308,13 @@ void heartbeat_manager::process_reply(
               m.group);
             continue;
         }
+        auto consensus = *it;
         vlog(hbeatlog.trace, "Heartbeat reply from node: {} - {}", n, m);
         auto meta = std::move(groups.find(m.group)->second);
-        (*it)->update_heartbeat_status(meta.follower_vnode, true);
+        consensus->update_heartbeat_status(meta.follower_vnode, true);
 
-        (*it)->process_append_entries_reply(
-          n,
-          result<append_entries_reply>(std::move(m)),
-          meta.seq,
-          meta.dirty_offset);
+        consensus->process_append_entries_reply(
+          n, result<append_entries_reply>(m), meta.seq, meta.dirty_offset);
     }
 }
 
