@@ -27,10 +27,27 @@
 
 #include <boost/range/numeric.hpp>
 
+#include <concepts>
 #include <optional>
 #include <string_view>
 
 namespace kafka {
+
+/**
+ * Concept for the containers that write_array and friends accept.
+ *
+ * Basically, must have a size() and be iterable.
+ */
+template<typename C>
+concept SizedContainer = requires(C c, const C cc) {
+    typename C::value_type;
+    requires std::forward_iterator<typename C::iterator>;
+    { c.size() } -> std::same_as<size_t>;
+    { c.begin() } -> std::same_as<typename C::iterator>;
+    { c.end() } -> std::same_as<typename C::iterator>;
+    { cc.begin() } -> std::same_as<typename C::const_iterator>;
+    { cc.end() } -> std::same_as<typename C::const_iterator>;
+};
 
 class response_writer;
 void writer_serialize_batch(response_writer& w, model::record_batch&& batch);
@@ -228,12 +245,14 @@ public:
         return write(int32_t(d.count()));
     }
 
-    template<typename T, typename ElementWriter>
+    template<typename C, typename ElementWriter>
     requires requires(
-      ElementWriter writer, response_writer& rw, const T& elem) {
+      ElementWriter writer,
+      response_writer& rw,
+      const typename C::value_type& elem) {
         { writer(elem, rw) } -> std::same_as<void>;
     }
-    uint32_t write_array(const std::vector<T>& v, ElementWriter&& writer) {
+    uint32_t write_array(const C& v, ElementWriter&& writer) {
         auto start_size = uint32_t(_out->size_bytes());
         write(int32_t(v.size()));
         for (auto& elem : v) {
@@ -241,11 +260,12 @@ public:
         }
         return _out->size_bytes() - start_size;
     }
-    template<typename T, typename ElementWriter>
-    requires requires(ElementWriter writer, response_writer& rw, T& elem) {
+    template<typename C, typename ElementWriter>
+    requires requires(
+      ElementWriter writer, response_writer& rw, typename C::value_type& elem) {
         { writer(elem, rw) } -> std::same_as<void>;
     }
-    uint32_t write_array(std::vector<T>& v, ElementWriter&& writer) {
+    uint32_t write_array(C& v, ElementWriter&& writer) {
         auto start_size = uint32_t(_out->size_bytes());
         write(int32_t(v.size()));
         for (auto& elem : v) {
@@ -266,11 +286,13 @@ public:
         return write_array(*v, std::forward<ElementWriter>(writer));
     }
 
-    template<typename T, typename ElementWriter>
-    requires requires(ElementWriter writer, response_writer& rw, T& elem) {
+    template<typename C, typename ElementWriter>
+    requires requires(
+      ElementWriter writer, response_writer& rw, typename C::value_type& elem) {
+        requires SizedContainer<C>;
         { writer(elem, rw) } -> std::same_as<void>;
     }
-    uint32_t write_flex_array(std::vector<T>& v, ElementWriter&& writer) {
+    uint32_t write_flex_array(C& v, ElementWriter&& writer) {
         auto start_size = uint32_t(_out->size_bytes());
         write_unsigned_varint(v.size() + 1);
         for (auto& elem : v) {
