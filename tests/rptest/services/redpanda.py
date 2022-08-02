@@ -527,7 +527,8 @@ class RedpandaService(Service):
                     'exception': 'debug',
                     'archival': 'debug',
                     'io': 'debug',
-                    'cloud_storage': 'debug'
+                    'cloud_storage': 'debug',
+                    'seastar_memory': 'debug'
                 })
 
         self._admin = Admin(self,
@@ -856,6 +857,7 @@ class RedpandaService(Service):
             f"{preamble} {env_preamble} nohup {self.find_binary('redpanda')}"
             f" --redpanda-cfg {RedpandaService.NODE_CONFIG_FILE}"
             f" {self._log_config.to_args()} "
+            " --abort-on-seastar-bad-alloc "
             f" {res_args} "
             f" >> {RedpandaService.STDOUT_STDERR_CAPTURE} 2>&1 &")
 
