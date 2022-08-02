@@ -356,6 +356,10 @@ struct_renames = {
 }
 # yapf: enable
 
+# These types, when they appear as the member type of an array, will use
+# a vector implementation which resists fragmentation.
+enable_fragmentation_resistance = {'metadata_response_partition'}
+
 
 def make_context_field(path):
     """
@@ -830,8 +834,8 @@ class Field:
             # sensitive field, but it itself isn't sensitive.
             return False
         assert d is None or d is True, \
-          "expected field '{}' to be missing or True; field path: {}, remaining path: {}" \
-          .format(self._field["name"], self._path, d)
+            "expected field '{}' to be missing or True; field path: {}, remaining path: {}" \
+            .format(self._field["name"], self._path, d)
         return d
 
     @property
@@ -852,7 +856,10 @@ class Field:
         name, default_value = self._redpanda_type()
         if isinstance(self._type, ArrayType):
             assert default_value is None  # not supported
-            name = f"std::vector<{name}>"
+            if name in enable_fragmentation_resistance:
+                name = f'large_fragment_vector<{name}>'
+            else:
+                name = f'std::vector<{name}>'
         if self.nullable():
             assert default_value is None  # not supported
             return f"std::optional<{name}>", None
@@ -883,6 +890,7 @@ HEADER_TEMPLATE = """
 #include "kafka/protocol/errors.h"
 #include "model/timestamp.h"
 #include "seastarx.h"
+#include "utils/fragmented_vector.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -1372,7 +1380,8 @@ std::ostream& operator<<(std::ostream& o, const {{ struct.name }}&) {
 ALLOWED_SCALAR_TYPES = list(set(SCALAR_TYPES) - set(["iobuf"]))
 ALLOWED_TYPES = \
     ALLOWED_SCALAR_TYPES + \
-    [f"[]{t}" for t in ALLOWED_SCALAR_TYPES + STRUCT_TYPES] + TAGGED_WITH_FIELDS
+    [f"[]{t}" for t in ALLOWED_SCALAR_TYPES +
+        STRUCT_TYPES] + TAGGED_WITH_FIELDS
 
 # yapf: disable
 SCHEMA = {
@@ -1454,7 +1463,7 @@ SCHEMA = {
             ],
         },
         "fields": {"$ref": "#/definitions/fields"},
-        "listeners": { "type": "array", "optional": True }
+        "listeners": {"type": "array", "optional": True}
     },
     "required": [
         "apiKey",
