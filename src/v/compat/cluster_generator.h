@@ -100,4 +100,20 @@ struct instance_generator<cluster::cluster_property_kv> {
     }
 };
 
+template<>
+struct instance_generator<cluster::config_update_request> {
+    static cluster::config_update_request random() {
+        return cluster::config_update_request(
+          {.upsert = tests::random_vector([] {
+               return instance_generator<
+                 cluster::cluster_property_kv>::random();
+           }),
+           .remove = tests::random_sstrings()});
+    }
+
+    static std::vector<cluster::config_update_request> limits() {
+        return {{{}, {}}};
+    }
+};
+
 } // namespace compat
