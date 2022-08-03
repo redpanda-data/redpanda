@@ -32,9 +32,9 @@ class PythonLibrdkafka:
         client = AdminClient(self._get_config())
         return client.list_topics(timeout=10).brokers
 
-    def topics(self):
+    def topics(self, topic=None):
         client = AdminClient(self._get_config())
-        return client.list_topics(timeout=10).topics
+        return client.list_topics(timeout=10, topic=topic).topics
 
     def create_topic(self, spec):
         topics = [

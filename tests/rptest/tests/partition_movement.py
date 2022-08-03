@@ -7,7 +7,10 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import copy
 import random
+
+import requests
 from rptest.services.admin import Admin
 from ducktape.utils.util import wait_until
 
@@ -49,6 +52,8 @@ class PartitionMovementMixin():
                 continue
             core = random.randint(0, broker["num_cores"] - 1)
             replacement = dict(node_id=node_id, core=core)
+            if not allow_no_ops and replacement in selected:
+                continue
             assignments.append(replacement)
             replacements.append(replacement)
 
@@ -110,24 +115,12 @@ class PartitionMovementMixin():
     def _do_move_and_verify(self, topic, partition, timeout_sec):
         admin = Admin(self.redpanda)
 
-        # get the partition's replica set, including core assignments. the kafka
-        # api doesn't expose core information, so we use the redpanda admin api.
-        assignments = self._get_assignments(admin, topic, partition)
-        self.logger.info(f"assignments for {topic}-{partition}: {assignments}")
+        _, new_assignment = self._dispatch_random_partition_move(
+            topic=topic, partition=partition)
 
-        # build new replica set by replacing a random assignment
-        selected, replacements = self._choose_replacement(admin, assignments)
-        self.logger.info(
-            f"replacement for {topic}-{partition}:{len(selected)}: {selected} -> {replacements}"
-        )
-        self.logger.info(
-            f"new assignments for {topic}-{partition}: {assignments}")
+        self._wait_post_move(topic, partition, new_assignment, timeout_sec)
 
-        r = admin.set_partition_replicas(topic, partition, assignments)
-
-        self._wait_post_move(topic, partition, assignments, timeout_sec)
-
-        return (topic, partition, assignments)
+        return (topic, partition, new_assignment)
 
     def _move_and_verify(self):
         # choose a random topic-partition
@@ -141,3 +134,96 @@ class PartitionMovementMixin():
         self.logger.info(f"selected topic-partition: {topic}-{partition}")
 
         self._do_move_and_verify(topic, partition, timeout_sec)
+
+    def _replace_replica_set(self,
+                             assignments,
+                             allow_no_ops=True,
+                             x_core_only=False):
+        """
+         replaces random number of replicas in `assignments` list of replicas
+        
+        :param admin: admin api client
+        :param assignments: list of dictionaries {"node_id": ...,"core"...} describing partition replica assignments.
+        :param x_core_only: when true assignment nodes will not be changed, only cores
+        
+        :return: a tuple of lists, list of previous assignments and list of replaced assignments
+        """
+        admin = Admin(self.redpanda)
+        if x_core_only:
+            selected = copy.deepcopy(assignments)
+            brokers = admin.get_brokers()
+            broker_cores = {}
+            for b in brokers:
+                broker_cores[b['node_id']] = b["num_cores"]
+            for a in assignments:
+                a['core'] = random.randint(0, broker_cores[a['node_id']] - 1)
+            return selected, assignments
+
+        selected, replacements = self._choose_replacement(
+            admin, assignments, allow_no_ops=allow_no_ops)
+
+        return selected, replacements
+
+    def _dispatch_random_partition_move(self,
+                                        topic,
+                                        partition,
+                                        x_core_only=False,
+                                        allow_no_op=True):
+        """
+        Request partition replicas to be randomly moved
+
+        :param partition: partition id to be moved
+        :param x_core_only: when true assignment nodes will not be changed, only cores
+        """
+        admin = Admin(self.redpanda)
+        assignments = self._get_assignments(admin, topic, partition)
+        prev_assignments = assignments.copy()
+
+        self.logger.info(
+            f"initial assignments for {topic}/{partition}: {prev_assignments}")
+
+        # build new replica set by replacing a random assignment, do not allow no ops as we want to have operation to cancel
+        selected, replacements = self._replace_replica_set(
+            assignments, x_core_only=x_core_only, allow_no_ops=allow_no_op)
+
+        self.logger.info(
+            f"chose {len(selected)} replacements for {topic}/{partition}: {selected} -> {replacements}"
+        )
+        self.logger.info(
+            f"new assignments for {topic}/{partition}: {assignments}")
+
+        admin.set_partition_replicas(topic, partition, assignments)
+
+        return prev_assignments, assignments
+
+    def _wait_for_move_in_progress(self, topic, partition, timeout=10):
+        admin = Admin(self.redpanda)
+
+        def move_in_progress():
+            p = admin.get_partitions(topic, partition)
+            return p['status'] == 'in_progress'
+
+        wait_until(move_in_progress, timeout_sec=timeout)
+
+    def _request_move_cancel(self,
+                             topic,
+                             partition,
+                             previous_assignment,
+                             unclean_abort,
+                             timeout=90):
+        """
+        Request partition movement to interrupt and validates resulting cancellation against previous assignment
+        """
+        admin = Admin(self.redpanda)
+        try:
+            if unclean_abort:
+                admin.force_abort_partition_move(topic, partition)
+            else:
+                admin.cancel_partition_move(topic, partition)
+        except requests.exceptions.HTTPError as e:
+            # we do not throttle cross core moves, it may already be finished
+            assert e.response.status_code == 400
+            return
+
+        # wait for previous assignment
+        self._wait_post_move(topic, partition, previous_assignment, timeout)
