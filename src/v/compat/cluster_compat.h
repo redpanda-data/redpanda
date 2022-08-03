@@ -144,4 +144,15 @@ GEN_COMPAT_CHECK(
       json_read(entered);
   });
 
+GEN_COMPAT_CHECK(
+  cluster::feature_barrier_response,
+  {
+      json_write(entered);
+      json_write(complete);
+  },
+  {
+      json_read(entered);
+      json_read(complete);
+  });
+
 } // namespace compat

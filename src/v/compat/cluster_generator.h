@@ -218,4 +218,16 @@ struct instance_generator<cluster::feature_barrier_request> {
     static std::vector<cluster::feature_barrier_request> limits() { return {}; }
 };
 
+template<>
+struct instance_generator<cluster::feature_barrier_response> {
+    static cluster::feature_barrier_response random() {
+        return cluster::feature_barrier_response{
+          .entered = tests::random_bool(), .complete = tests::random_bool()};
+    }
+
+    static std::vector<cluster::feature_barrier_response> limits() {
+        return {};
+    }
+};
+
 } // namespace compat

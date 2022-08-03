@@ -48,7 +48,8 @@ using compat_checks = type_list<
   cluster::feature_update_action,
   cluster::feature_action_request,
   cluster::feature_action_response,
-  cluster::feature_barrier_request>;
+  cluster::feature_barrier_request,
+  cluster::feature_barrier_response>;
 
 struct compat_error final : public std::runtime_error {
 public:
