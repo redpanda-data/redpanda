@@ -57,6 +57,7 @@ func NewClusterCommand(fs afero.Fs) *cobra.Command {
 	offsets.Use = "offsets"
 	command.AddCommand(
 		cluster.NewHealthOverviewCommand(fs),
+		cluster.NewLogdirsCommand(fs),
 		config.NewConfigCommand(fs),
 		license.NewLicenseCommand(fs),
 		maintenance.NewMaintenanceCommand(fs),
