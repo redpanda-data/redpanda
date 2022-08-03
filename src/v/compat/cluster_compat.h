@@ -96,4 +96,15 @@ GEN_COMPAT_CHECK(
       json_read(latest_version);
   });
 
+GEN_COMPAT_CHECK(
+  cluster::hello_request,
+  {
+      json_write(peer);
+      json_write(start_time);
+  },
+  {
+      json_read(peer);
+      json_read(start_time);
+  });
+
 } // namespace compat

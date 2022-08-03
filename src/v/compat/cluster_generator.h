@@ -137,4 +137,27 @@ struct instance_generator<cluster::config_update_reply> {
     }
 };
 
+template<>
+struct instance_generator<cluster::hello_request> {
+    static cluster::hello_request random() {
+        return cluster::hello_request{
+          .peer = tests::random_named_int<model::node_id>(),
+          .start_time = tests::random_duration_ms()};
+    }
+
+    static std::vector<cluster::hello_request> limits() {
+        return {
+          cluster::hello_request{
+            .peer = model::node_id(
+              std::numeric_limits<model::node_id::type>::min()),
+            .start_time
+            = std::numeric_limits<std::chrono::milliseconds>::min()},
+          cluster::hello_request{
+            .peer = model::node_id(
+              std::numeric_limits<model::node_id::type>::max()),
+            .start_time
+            = std::numeric_limits<std::chrono::milliseconds>::max()}};
+    };
+};
+
 } // namespace compat
