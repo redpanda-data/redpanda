@@ -42,6 +42,7 @@
 
 #include <absl/container/node_hash_set.h>
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 
 #include <iterator>
 
@@ -374,6 +375,7 @@ health_monitor_backend::dispatch_refresh_cluster_health_request(
     for (auto& n_status : reply.value().report->node_states) {
         _status.emplace(n_status.id, n_status);
     }
+    vlog(clusterlog.trace, "Status cache updated from the leader: {}", _status);
 
     storage::disk_space_alert cluster_disk_health
       = storage::disk_space_alert::ok;
