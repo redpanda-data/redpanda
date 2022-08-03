@@ -449,6 +449,22 @@ consteval std::string_view property_units_name() {
     }
 }
 
+template<typename T>
+consteval bool is_array() {
+    if constexpr (
+      std::is_same_v<T, ss::sstring> || std::is_same_v<T, std::string>) {
+        // Special case for strings, which are collections but we do not
+        // want to report them that way.
+        return false;
+    } else if constexpr (detail::is_collection<std::decay_t<T>>) {
+        return true;
+    } else if constexpr (reflection::is_std_optional<T>) {
+        return is_array<typename T::value_type>();
+    } else {
+        return false;
+    }
+}
+
 } // namespace detail
 
 template<typename T>
@@ -471,25 +487,12 @@ std::optional<std::string_view> property<T>::units_name() const {
 
 template<typename T>
 bool property<T>::is_nullable() const {
-    if constexpr (reflection::is_std_optional<std::decay_t<T>>) {
-        return true;
-    } else {
-        return false;
-    }
+    return reflection::is_std_optional<std::decay_t<T>>;
 }
 
 template<typename T>
 bool property<T>::is_array() const {
-    if constexpr (
-      std::is_same_v<T, ss::sstring> || std::is_same_v<T, std::string>) {
-        // Special case for strings, which are collections but we do not
-        // want to report them that way.
-        return false;
-    } else if constexpr (detail::is_collection<std::decay_t<T>>) {
-        return true;
-    } else {
-        return false;
-    }
+    return detail::is_array<T>();
 }
 
 /*
