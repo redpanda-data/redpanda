@@ -178,10 +178,14 @@ check_types(type_list<Types...>, std::string name, json::Document& doc) {
      */
     const auto names_arr = std::to_array(
       {corpus_helper<Types>::checker::name...});
-    const std::set<std::string> names_set{
-      std::string(corpus_helper<Types>::checker::name)...};
-    vassert(
-      names_arr.size() == names_set.size(), "duplicate test name detected");
+    std::set<std::string> names_set;
+    for (const auto& name : names_arr) {
+        auto res = names_set.emplace(name);
+        if (!res.second) {
+            vassert(false, "Duplicate test name {} detected", name);
+        }
+    }
+    vassert(names_arr.size() == names_set.size(), "duplicate detected");
 
     /*
      * check that target test name exists
