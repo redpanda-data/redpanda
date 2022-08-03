@@ -114,7 +114,8 @@ void read_member(json::Value const& v, char const* key, T& target) {
         read_value(it->value, target);
     } else {
         target = {};
-        std::cout << "key " << key << " not found, default initializing";
+        std::cout << "key " << key << " not found, default initializing"
+                  << std::endl;
     }
 }
 
