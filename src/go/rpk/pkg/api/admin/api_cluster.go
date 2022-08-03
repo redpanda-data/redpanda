@@ -56,6 +56,15 @@ type PartitionBalancerViolations struct {
 	OverDiskLimitNodes []int `json:"over_disk_limit_nodes,omitempty"`
 }
 
+// PartitionsMovementResult is the information of the partitions movements that
+// were canceled.
+type PartitionsMovementResult struct {
+	Namespace string `json:"ns,omitempty"`
+	Topic     string `json:"topic,omitempty"`
+	Partition int    `json:"partition,omitempty"`
+	Result    string `json:"result,omitempty"`
+}
+
 func (a *AdminAPI) GetHealthOverview(ctx context.Context) (ClusterHealthOverview, error) {
 	var response ClusterHealthOverview
 	return response, a.sendAny(ctx, http.MethodGet, "/v1/cluster/health_overview", nil, &response)
@@ -64,4 +73,9 @@ func (a *AdminAPI) GetHealthOverview(ctx context.Context) (ClusterHealthOverview
 func (a *AdminAPI) GetPartitionStatus(ctx context.Context) (PartitionBalancerStatus, error) {
 	var response PartitionBalancerStatus
 	return response, a.sendAny(ctx, http.MethodGet, "/v1/cluster/partition_balancer/status", nil, &response)
+}
+
+func (a *AdminAPI) CancelAllPartitionsMovement(ctx context.Context) ([]PartitionsMovementResult, error) {
+	var response []PartitionsMovementResult
+	return response, a.sendAny(ctx, http.MethodPost, "/v1/cluster/cancel_reconfigurations", nil, &response)
 }
