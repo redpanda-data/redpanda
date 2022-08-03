@@ -556,24 +556,11 @@ class AccessControlListTest(RedpandaTest):
         def should_pass_w_base_user(use_tls: bool, use_sasl: bool,
                                     enable_authz: Optional[bool],
                                     authn_method: Optional[str]):
-            '''
-            These are the config combinations where `rpk acl list` should pass
-            with the base user. All other tests should fail with ClusterAuthzError
-            with the base user. These combinations were pulled from previous
-            iterations of this ducktape test (i.e., AccessControlListTest.test_describe_acls).
-            See https://github.com/redpanda-data/redpanda/blob/38650a7b96707ce4a13d9879d459b08bb0a59bba/tests/rptest/tests/acls_test.py#L217
-            '''
-            if use_tls and not use_sasl and enable_authz == False and authn_method == 'mtls_identity':
+            if enable_authz is False:
                 return True
-            elif use_tls and not use_sasl and enable_authz == None and authn_method == 'mtls_identity':
+            elif authn_method == 'none':
                 return True
-            elif not use_tls and use_sasl and enable_authz == False and authn_method == 'sasl':
-                return True
-            elif use_tls and use_sasl and enable_authz == False and authn_method == None:
-                return True
-            elif use_tls and use_sasl and enable_authz == False and authn_method == 'mtls_identity':
-                return True
-            elif use_tls and use_sasl and enable_authz == False and authn_method == 'sasl':
+            elif not use_sasl and enable_authz is not True:
                 return True
             else:
                 return False
