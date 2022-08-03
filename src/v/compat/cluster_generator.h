@@ -206,4 +206,16 @@ struct instance_generator<cluster::feature_action_response> {
     static std::vector<cluster::feature_action_response> limits() { return {}; }
 };
 
+template<>
+struct instance_generator<cluster::feature_barrier_request> {
+    static cluster::feature_barrier_request random() {
+        return cluster::feature_barrier_request{
+          .tag = tests::random_named_string<cluster::feature_barrier_tag>(),
+          .peer = tests::random_named_int<model::node_id>(),
+          .entered = tests::random_bool()};
+    }
+
+    static std::vector<cluster::feature_barrier_request> limits() { return {}; }
+};
+
 } // namespace compat

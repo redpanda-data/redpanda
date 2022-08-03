@@ -131,4 +131,17 @@ GEN_COMPAT_CHECK(
   { json_write(error); },
   { json_read(error); });
 
+GEN_COMPAT_CHECK(
+  cluster::feature_barrier_request,
+  {
+      json_write(tag);
+      json_write(peer);
+      json_write(entered);
+  },
+  {
+      json_read(tag);
+      json_read(peer);
+      json_read(entered);
+  });
+
 } // namespace compat
