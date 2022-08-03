@@ -20,6 +20,11 @@ from rptest.tests.end_to_end import EndToEndTest
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool, RpkException
 
+# We inject failures which might cause consumer groups
+# to re-negotiate, so it is necessary to have a longer
+# consumer timeout than the default 30 seconds
+CONSUMER_TIMEOUT = 90
+
 
 class PartitionBalancerTest(EndToEndTest):
     NODE_AVAILABILITY_TIMEOUT = 10
@@ -112,17 +117,26 @@ class PartitionBalancerTest(EndToEndTest):
             self.f_injector = FailureInjector(test.redpanda)
             self.cur_failure = None
 
-        def make_unavailable(self, node):
+        def make_available(self):
             if self.cur_failure:
                 # heal the previous failure
                 self.f_injector._stop_func(self.cur_failure.type)(
                     self.cur_failure.node)
+
+                self.cur_failure = None
+
+        def make_unavailable(self, node):
+            self.make_available()
 
             failure_types = [
                 FailureSpec.FAILURE_KILL,
                 FailureSpec.FAILURE_TERMINATE,
                 FailureSpec.FAILURE_SUSPEND,
             ]
+
+            # Only track one failure at a time
+            assert self.cur_failure is None
+
             self.cur_failure = FailureSpec(random.choice(failure_types), node)
             self.f_injector._start_func(self.cur_failure.type)(
                 self.cur_failure.node)
@@ -159,7 +173,10 @@ class PartitionBalancerTest(EndToEndTest):
                 ns.step_and_wait_for_ready(node)
                 self.check_no_replicas_on_node(node)
 
-        self.run_validation()
+        # Restore the system to a fully healthy state before validation:
+        # not strictly necessary but simplifies debugging.
+        ns.make_available()
+        self.run_validation(consumer_timeout_sec=CONSUMER_TIMEOUT)
 
     def _throttle_recovery(self, new_value):
         self.redpanda.set_cluster_config(
@@ -214,7 +231,7 @@ class PartitionBalancerTest(EndToEndTest):
 
             f_injector._stop_func(initial_failure.type)(initial_failure.node)
 
-        self.run_validation()
+        self.run_validation(consumer_timeout_sec=CONSUMER_TIMEOUT)
 
     @cluster(num_nodes=8, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_rack_awareness(self):
@@ -253,7 +270,8 @@ class PartitionBalancerTest(EndToEndTest):
             self.check_no_replicas_on_node(node)
             check_rack_placement()
 
-        self.run_validation()
+        ns.make_available()
+        self.run_validation(consumer_timeout_sec=CONSUMER_TIMEOUT)
 
     @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_fuzz_admin_ops(self):
@@ -306,4 +324,5 @@ class PartitionBalancerTest(EndToEndTest):
         admin_fuzz.wait(count=10, timeout=240)
         admin_fuzz.stop()
 
-        self.run_validation()
+        ns.make_available()
+        self.run_validation(consumer_timeout_sec=CONSUMER_TIMEOUT)
