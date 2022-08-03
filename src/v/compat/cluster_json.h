@@ -15,6 +15,12 @@
 
 namespace json {
 
+inline void read_value(json::Value const& rd, cluster::errc& e) {
+    /// TODO: Make giant switch to confirm value is a proper cluster::errc
+    auto err = rd.GetInt();
+    e = static_cast<cluster::errc>(err);
+}
+
 inline void
 read_value(json::Value const& rd, cluster::cluster_property_kv& obj) {
     read_member(rd, "key", obj.key);

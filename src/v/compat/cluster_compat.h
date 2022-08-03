@@ -85,4 +85,15 @@ GEN_COMPAT_CHECK(
       json_read(remove);
   });
 
+GEN_COMPAT_CHECK(
+  cluster::config_update_reply,
+  {
+      json_write(error);
+      json_write(latest_version);
+  },
+  {
+      json_read(error);
+      json_read(latest_version);
+  });
+
 } // namespace compat

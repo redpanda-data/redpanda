@@ -116,4 +116,25 @@ struct instance_generator<cluster::config_update_request> {
     }
 };
 
+template<>
+struct instance_generator<cluster::config_update_reply> {
+    static cluster::config_update_reply random() {
+        return cluster::config_update_reply{
+          .error = instance_generator<cluster::errc>::random(),
+          .latest_version = tests::random_named_int<cluster::config_version>()};
+    }
+
+    static std::vector<cluster::config_update_reply> limits() {
+        return {
+          cluster::config_update_reply{
+            .error = cluster::errc::success,
+            .latest_version = cluster::config_version(
+              std::numeric_limits<cluster::config_version::type>::max())},
+          cluster::config_update_reply{
+            .error = cluster::errc::success,
+            .latest_version = cluster::config_version(
+              std::numeric_limits<cluster::config_version::type>::min())}};
+    }
+};
+
 } // namespace compat
