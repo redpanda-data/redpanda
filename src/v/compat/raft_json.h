@@ -112,6 +112,15 @@ inline void read_value(json::Value const& rd, raft::append_entries_reply& out) {
 }
 
 inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& wr, const model::timestamp& v) {
+    rjson_serialize(wr, v.value());
+}
+
+inline void read_value(json::Value const& rd, model::timestamp& out) {
+    out = model::timestamp(rd.GetInt64());
+}
+
+inline void rjson_serialize(
   json::Writer<json::StringBuffer>& wr, const raft::append_entries_reply& obj) {
     json_write(target_node_id);
     json_write(node_id);
@@ -121,6 +130,172 @@ inline void rjson_serialize(
     json_write(last_dirty_log_index);
     json_write(last_term_base_offset);
     json_write(result);
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& wr,
+  const model::record_batch_attributes& b) {
+    rjson_serialize(wr, b.value());
+}
+
+inline void
+read_value(json::Value const& rd, model::record_batch_attributes& out) {
+    out = model::record_batch_attributes(rd.GetInt());
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& wr, const model::record_attributes& b) {
+    rjson_serialize(wr, b.value());
+}
+
+inline void read_value(json::Value const& rd, model::record_attributes& out) {
+    out = model::record_attributes(rd.GetInt());
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& wr, const model::record_batch_header& obj) {
+    wr.StartObject();
+    json_write(size_bytes);
+    json_write(base_offset);
+    json_write(crc);
+    json_write(attrs);
+    json_write(last_offset_delta);
+    json_write(first_timestamp);
+    json_write(max_timestamp);
+    json_write(record_count);
+    wr.EndObject();
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& wr, const model::record_header& obj) {
+    wr.StartObject();
+    json::write_member(wr, "key_size", obj.key_size());
+    json::write_member(wr, "key", obj.key());
+    json::write_member(wr, "value_size", obj.value_size());
+    json::write_member(wr, "value", obj.value());
+    wr.EndObject();
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& wr, const model::record& obj) {
+    wr.StartObject();
+    json::write_member(wr, "size_bytes", obj.size_bytes());
+    json::write_member(wr, "attributes", obj.attributes());
+    json::write_member(wr, "timestamp_delta", obj.timestamp_delta());
+    json::write_member(wr, "offset_delta", obj.offset_delta());
+    json::write_member(wr, "key_size", obj.key_size());
+    json::write_member(wr, "key", obj.key());
+    json::write_member(wr, "value_size", obj.value_size());
+    json::write_member(wr, "value", obj.value());
+    json::write_member(wr, "headers", obj.headers());
+    wr.EndObject();
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& wr, const model::record_batch& b) {
+    wr.StartObject();
+    wr.Key("header");
+    rjson_serialize(wr, b.header());
+    wr.Key("records");
+    rjson_serialize(wr, b.copy_records());
+    wr.EndObject();
+}
+
+inline void read_value(json::Value const& rd, model::record_batch_header& out) {
+    model::record_batch_header obj;
+    json_read(size_bytes);
+    json_read(base_offset);
+    json_read(crc);
+    json_read(attrs);
+    json_read(last_offset_delta);
+    json_read(first_timestamp);
+    json_read(max_timestamp);
+    json_read(record_count);
+    out = obj;
+}
+
+/*
+ * specialized circular_buffer for record_batch type because record_batch
+ * doesn't support default constructor and the generic form for circular buffer
+ * of type T needs to build a structure to deserialize into.
+ *
+ * since the components of the record batch aren't default constructable we also
+ * circumvent the normal api to which requires default ctor is available.
+ */
+inline void read_value(
+  json::Value const& v, ss::circular_buffer<model::record_batch>& target) {
+    for (auto const& e : v.GetArray()) {
+        model::record_batch_header header;
+        std::vector<model::record> records;
+
+        /*
+         * header
+         */
+        json::read_member(e, "header", header);
+
+        /*
+         * records
+         */
+        vassert(
+          e.HasMember("records") && e["records"].IsArray(),
+          "invalid records field");
+        for (auto const& r : e["records"].GetArray()) {
+            vassert(r.IsObject(), "record is not an object");
+
+            int32_t size_bytes{};
+            model::record_attributes attributes;
+            int64_t timestamp_delta{};
+            int32_t offset_delta{};
+            int32_t key_size{};
+            iobuf key;
+            int32_t value_size{};
+            iobuf value;
+            std::vector<model::record_header> headers;
+
+            json::read_member(r, "size_bytes", size_bytes);
+            json::read_member(r, "attributes", attributes);
+            json::read_member(r, "timestamp_delta", timestamp_delta);
+            json::read_member(r, "offset_delta", offset_delta);
+            json::read_member(r, "key_size", key_size);
+            json::read_member(r, "key", key);
+            json::read_member(r, "value_size", value_size);
+            json::read_member(r, "value", value);
+
+            /*
+             * record headers
+             */
+            vassert(
+              r.HasMember("headers") && r["headers"].IsArray(),
+              "invalid headers field");
+            for (const auto& h : r["headers"].GetArray()) {
+                int32_t key_size{};
+                iobuf key;
+                int32_t value_size{};
+                iobuf value;
+
+                json::read_member(h, "key_size", key_size);
+                json::read_member(h, "key", key);
+                json::read_member(h, "value_size", value_size);
+                json::read_member(h, "value", value);
+
+                headers.emplace_back(
+                  key_size, std::move(key), value_size, std::move(value));
+            }
+
+            records.emplace_back(
+              size_bytes,
+              attributes,
+              timestamp_delta,
+              offset_delta,
+              key_size,
+              std::move(key),
+              value_size,
+              std::move(value),
+              std::move(headers));
+        }
+
+        target.emplace_back(header, std::move(records));
+    }
 }
 
 } // namespace json

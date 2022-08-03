@@ -40,6 +40,7 @@ using compat_checks = type_list<
   raft::vote_reply,
   raft::heartbeat_request,
   raft::heartbeat_reply,
+  raft::append_entries_request,
   raft::append_entries_reply,
   cluster::update_leadership_request,
   cluster::config_status,

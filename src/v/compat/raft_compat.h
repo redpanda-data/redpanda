@@ -500,6 +500,158 @@ struct compat_check<raft::heartbeat_reply> {
 };
 
 /*
+ * reading from the input request's batch reader destroys the data itself. so we
+ * need to read out the batches, make a copy, and then reconstruct two copies.
+ */
+template<>
+inline std::pair<raft::append_entries_request, raft::append_entries_request>
+compat_copy(raft::append_entries_request r) {
+    auto a_batches = model::consume_reader_to_memory(
+                       std::move(r.batches()), model::no_timeout)
+                       .get0();
+
+    ss::circular_buffer<model::record_batch> b_batches;
+    for (const auto& batch : a_batches) {
+        b_batches.emplace_back(batch.copy());
+    }
+
+    raft::append_entries_request a(
+      r.node_id,
+      r.target_node_id,
+      r.meta,
+      model::make_memory_record_batch_reader(std::move(a_batches)),
+      r.flush);
+
+    raft::append_entries_request b(
+      r.node_id,
+      r.target_node_id,
+      r.meta,
+      model::make_memory_record_batch_reader(std::move(b_batches)),
+      r.flush);
+
+    return {std::move(a), std::move(b)};
+}
+
+/*
+ * raft::append_entries_request
+ */
+template<>
+struct compat_check<raft::append_entries_request> {
+    static constexpr std::string_view name = "raft::append_entries_request";
+
+    static std::vector<raft::append_entries_request> create_test_cases() {
+        return generate_instances<raft::append_entries_request>();
+    }
+
+    static void to_json(
+      raft::append_entries_request obj, json::Writer<json::StringBuffer>& wr) {
+        json_write(node_id);
+        json_write(target_node_id);
+        json_write(meta);
+        json_write(flush);
+        auto batches = model::consume_reader_to_memory(
+                         std::move(obj.batches()), model::no_timeout)
+                         .get0();
+        json::write_member(wr, "batches", batches);
+    }
+
+    static raft::append_entries_request from_json(json::Value& rd) {
+        raft::vnode node;
+        raft::vnode target;
+        raft::protocol_metadata meta;
+        raft::append_entries_request::flush_after_append flush;
+        model::record_batch_reader::data_t batches;
+
+        json::read_member(rd, "node_id", node);
+        json::read_member(rd, "target_node_id", target);
+        json::read_member(rd, "meta", meta);
+        json::read_member(rd, "flush", flush);
+        json::read_member(rd, "batches", batches);
+
+        return {
+          node,
+          target,
+          meta,
+          model::make_memory_record_batch_reader(std::move(batches)),
+          flush};
+    }
+
+    static std::vector<compat_binary>
+    to_binary(raft::append_entries_request obj) {
+        return compat_binary::serde_and_adl(std::move(obj));
+    }
+
+    static bool
+    check(raft::append_entries_request expected, compat_binary test) {
+        auto decoded = decode_adl_or_serde<raft::append_entries_request>(
+          std::move(test));
+
+        if (decoded.node_id != expected.node_id) {
+            fmt::print(
+              "Expected node_id {} got {}\n",
+              expected.node_id,
+              decoded.node_id);
+            return false;
+        }
+
+        if (decoded.target_node_id != expected.target_node_id) {
+            fmt::print(
+              "Expected target_node_id {} got {}\n",
+              expected.target_node_id,
+              decoded.target_node_id);
+            return false;
+        }
+
+        if (decoded.meta != expected.meta) {
+            fmt::print(
+              "Expected meta {} got {}\n", expected.meta, decoded.meta);
+            return false;
+        }
+
+        if (decoded.flush != expected.flush) {
+            fmt::print(
+              "Expected flush {} got {}\n", expected.flush, decoded.flush);
+            return false;
+        }
+
+        auto decoded_batches = model::consume_reader_to_memory(
+                                 std::move(decoded.batches()),
+                                 model::no_timeout)
+                                 .get0();
+
+        auto expected_batches = model::consume_reader_to_memory(
+                                  std::move(expected.batches()),
+                                  model::no_timeout)
+                                  .get0();
+
+        if (decoded_batches.size() != expected_batches.size()) {
+            fmt::print(
+              "Expected {} batches got {}\n",
+              expected_batches.size(),
+              decoded_batches.size());
+            return false;
+        }
+
+        vassert(
+          decoded_batches.size() > 0,
+          "Invalid batches size for test {}",
+          decoded_batches.size());
+
+        for (size_t i = 0; i < decoded_batches.size(); i++) {
+            if (decoded_batches[i] != expected_batches[i]) {
+                fmt::print(
+                  "Expected batch {}\n decoded batch {}\n",
+                  expected_batches[i],
+                  decoded_batches[i]);
+                return false;
+            }
+        }
+
+        return true;
+    }
+};
+
+/*
  * raft::append_entries_reply
  */
 template<>

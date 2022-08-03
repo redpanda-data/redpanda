@@ -7,6 +7,7 @@ v_cc_library(
     v::json
     v::cluster
     v::utils
-    v::raft)
+    v::raft
+    v::model_test_utils)
 
 add_subdirectory(tests)
