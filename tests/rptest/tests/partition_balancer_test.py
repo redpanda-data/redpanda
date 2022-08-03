@@ -112,17 +112,26 @@ class PartitionBalancerTest(EndToEndTest):
             self.f_injector = FailureInjector(test.redpanda)
             self.cur_failure = None
 
-        def make_unavailable(self, node):
+        def make_available(self):
             if self.cur_failure:
                 # heal the previous failure
                 self.f_injector._stop_func(self.cur_failure.type)(
                     self.cur_failure.node)
+
+                self.cur_failure = None
+
+        def make_unavailable(self, node):
+            self.make_available()
 
             failure_types = [
                 FailureSpec.FAILURE_KILL,
                 FailureSpec.FAILURE_TERMINATE,
                 FailureSpec.FAILURE_SUSPEND,
             ]
+
+            # Only track one failure at a time
+            assert self.cur_failure is None
+
             self.cur_failure = FailureSpec(random.choice(failure_types), node)
             self.f_injector._start_func(self.cur_failure.type)(
                 self.cur_failure.node)
@@ -159,6 +168,9 @@ class PartitionBalancerTest(EndToEndTest):
                 ns.step_and_wait_for_ready(node)
                 self.check_no_replicas_on_node(node)
 
+        # Restore the system to a fully healthy state before validation:
+        # not strictly necessary but simplifies debugging.
+        ns.make_available()
         self.run_validation()
 
     def _throttle_recovery(self, new_value):
