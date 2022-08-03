@@ -71,6 +71,11 @@ void read_value(
     target = detail::base_named_type<T, Tag, IsConstexpr>{t};
 }
 
+inline void
+read_value(json::Value const& v, std::chrono::milliseconds& target) {
+    target = std::chrono::milliseconds(v.GetUint64());
+}
+
 template<typename T>
 void read_value(json::Value const& v, std::vector<T>& target) {
     for (auto const& e : v.GetArray()) {
