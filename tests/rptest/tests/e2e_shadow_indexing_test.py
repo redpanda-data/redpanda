@@ -17,7 +17,7 @@ from rptest.tests.end_to_end import EndToEndTest
 from rptest.util import Scale
 from rptest.util import (
     produce_until_segments,
-    wait_for_segments_removal,
+    wait_for_removal_of_n_segments,
 )
 
 
@@ -78,6 +78,16 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
             count=10,
         )
 
+        # Get a snapshot of the current segments, before tightening the
+        # retention policy.
+        original_snapshot = self.redpanda.storage(
+            all_nodes=True).segments_by_node("kafka", self.topic, 0)
+
+        for node, node_segments in original_snapshot.items():
+            assert len(
+                node_segments
+            ) >= 10, f"Expected at least 10 segments, but got {len(node_segments)} on {node}"
+
         self.kafka_tools.alter_topic_config(
             self.topic,
             {
@@ -85,10 +95,13 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
                 5 * EndToEndShadowIndexingTest.segment_size,
             },
         )
-        wait_for_segments_removal(redpanda=self.redpanda,
-                                  topic=self.topic,
-                                  partition_idx=0,
-                                  count=6)
+
+        wait_for_removal_of_n_segments(redpanda=self.redpanda,
+                                       topic=self.topic,
+                                       partition_idx=0,
+                                       n=6,
+                                       original_snapshot=original_snapshot)
+
         self.start_consumer()
         self.run_validation()
 
@@ -110,6 +123,16 @@ class EndToEndShadowIndexingTestWithDisruptions(EndToEndShadowIndexingBase):
             count=10,
         )
 
+        # Get a snapshot of the current segments, before tightening the
+        # retention policy.
+        original_snapshot = self.redpanda.storage(
+            all_nodes=True).segments_by_node("kafka", self.topic, 0)
+
+        for node, node_segments in original_snapshot.items():
+            assert len(
+                node_segments
+            ) >= 10, f"Expected at least 10 segments, but got {len(node_segments)} on {node}"
+
         self.kafka_tools.alter_topic_config(
             self.topic,
             {
@@ -119,10 +142,12 @@ class EndToEndShadowIndexingTestWithDisruptions(EndToEndShadowIndexingBase):
         )
 
         with random_process_kills(self.redpanda) as ctx:
-            wait_for_segments_removal(redpanda=self.redpanda,
-                                      topic=self.topic,
-                                      partition_idx=0,
-                                      count=6)
+            wait_for_removal_of_n_segments(redpanda=self.redpanda,
+                                           topic=self.topic,
+                                           partition_idx=0,
+                                           n=6,
+                                           original_snapshot=original_snapshot)
+
             self.start_consumer()
             self.run_validation()
         ctx.assert_actions_triggered()
