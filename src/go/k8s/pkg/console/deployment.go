@@ -25,16 +25,18 @@ type Deployment struct {
 	scheme     *runtime.Scheme
 	consoleobj *redpandav1alpha1.Console
 	clusterobj *redpandav1alpha1.Cluster
+	store      *Store
 	log        logr.Logger
 }
 
 // NewDeployment instantiates a new Deployment
-func NewDeployment(cl client.Client, scheme *runtime.Scheme, consoleobj *redpandav1alpha1.Console, clusterobj *redpandav1alpha1.Cluster, log logr.Logger) *Deployment {
+func NewDeployment(cl client.Client, scheme *runtime.Scheme, consoleobj *redpandav1alpha1.Console, clusterobj *redpandav1alpha1.Cluster, store *Store, log logr.Logger) *Deployment {
 	return &Deployment{
 		Client:     cl,
 		scheme:     scheme,
 		consoleobj: consoleobj,
 		clusterobj: clusterobj,
+		store:      store,
 		log:        log,
 	}
 }
@@ -42,6 +44,11 @@ func NewDeployment(cl client.Client, scheme *runtime.Scheme, consoleobj *redpand
 // Ensure implements Resource interface
 func (d *Deployment) Ensure(ctx context.Context) error {
 	sa, err := d.ensureServiceAccount(ctx)
+	if err != nil {
+		return err
+	}
+
+	initContainers, err := d.initContainers()
 	if err != nil {
 		return err
 	}
@@ -66,6 +73,7 @@ func (d *Deployment) Ensure(ctx context.Context) error {
 				},
 				Spec: corev1.PodSpec{
 					Volumes:                       d.getVolumes(),
+					InitContainers:                initContainers,
 					Containers:                    d.getContainers(),
 					TerminationGracePeriodSeconds: getGracePeriod(d.consoleobj.Spec.Server.ServerGracefulShutdownTimeout),
 					ServiceAccountName:            sa,
@@ -269,4 +277,49 @@ func (d *Deployment) getContainers() []corev1.Container {
 			VolumeMounts: volumeMounts,
 		},
 	}
+}
+
+func (d *Deployment) initContainers() ([]corev1.Container, error) {
+	// Currently only copying Schema Registry certificates
+	// Nothing to do if TLS is disabled
+	if !d.clusterobj.IsSchemaRegistryTLSEnabled() {
+		return nil, nil
+	}
+
+	clientCert, exists := d.store.GetSchemaRegistryClientCert(d.clusterobj)
+	if !exists {
+		return nil, fmt.Errorf("get schema registry client certificate: %s", "not found")
+	}
+
+	caCert, exists := d.store.GetSchemaRegistryNodeCert(d.clusterobj)
+	if !exists {
+		return nil, fmt.Errorf("get schema registry node certificate: %s", "not found")
+	}
+
+	cafile := string(caCert.Data["ca.crt"])
+	certfile := string(clientCert.Data["tls.crt"])
+	keyfile := string(clientCert.Data["tls.key"])
+
+	return []corev1.Container{
+		{
+			Name:  "copy-schema-registry-tls",
+			Image: "busybox",
+			Command: []string{
+				"/bin/sh", "-c",
+			},
+			WorkingDir: SchemaRegistryTLSDir,
+			Args: []string{
+				fmt.Sprintf(
+					"echo '%s' > ca.crt && echo '%s' > tls.crt && echo '%s' > tls.key",
+					cafile, certfile, keyfile,
+				),
+			},
+			VolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      tlsSchemaRegistryMountName,
+					MountPath: SchemaRegistryTLSDir,
+				},
+			},
+		},
+	}, nil
 }

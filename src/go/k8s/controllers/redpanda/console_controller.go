@@ -35,6 +35,7 @@ type ConsoleReconciler struct {
 	Log                   logr.Logger
 	AdminAPIClientFactory adminutils.AdminAPIClientFactory
 	clusterDomain         string
+	Store                 *consolepkg.Store
 }
 
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
@@ -77,14 +78,18 @@ type Reconciling ConsoleState
 
 // Do handles reconciliation of Console
 func (r *Reconciling) Do(ctx context.Context, console *redpandav1alpha1.Console, cluster *redpandav1alpha1.Cluster, log logr.Logger) (ctrl.Result, error) {
+	// Ensure items in the store are updated
+	if err := r.Store.Sync(cluster); err != nil {
+		return ctrl.Result{}, fmt.Errorf("sync console store: %w", err)
+	}
+
 	applyResources := []resources.Resource{
 		consolepkg.NewKafkaSA(r.Client, r.Scheme, console, cluster, r.clusterDomain, r.AdminAPIClientFactory, log),
 		consolepkg.NewKafkaACL(r.Client, r.Scheme, console, cluster, log),
 		consolepkg.NewConfigMap(r.Client, r.Scheme, console, cluster, log),
-		consolepkg.NewDeployment(r.Client, r.Scheme, console, cluster, log),
+		consolepkg.NewDeployment(r.Client, r.Scheme, console, cluster, r.Store, log),
 		consolepkg.NewService(r.Client, r.Scheme, console, log),
 	}
-
 	for _, each := range applyResources {
 		if err := each.Ensure(ctx); err != nil {
 			var e *resources.RequeueAfterError

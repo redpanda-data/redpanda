@@ -26,6 +26,7 @@ import (
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	redpandacontrollers "github.com/redpanda-data/redpanda/src/go/k8s/controllers/redpanda"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
+	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 )
 
@@ -142,6 +143,7 @@ func main() {
 		Scheme:                mgr.GetScheme(),
 		Log:                   ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Console"),
 		AdminAPIClientFactory: adminutils.NewInternalAdminAPI,
+		Store:                 consolepkg.NewStore(mgr.GetClient()),
 	}).WithClusterDomain(clusterDomain).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Console")
 		os.Exit(1)
