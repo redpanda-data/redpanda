@@ -82,4 +82,45 @@ inline void rjson_serialize(
     w.EndObject();
 }
 
+inline void read_value(json::Value const& rd, raft::append_entries_reply& out) {
+    raft::append_entries_reply obj;
+    json_read(target_node_id);
+    json_read(node_id);
+    json_read(group);
+    json_read(term);
+    json_read(last_flushed_log_index);
+    json_read(last_dirty_log_index);
+    json_read(last_term_base_offset);
+    auto result = read_member_enum(rd, "result", obj.result);
+    switch (result) {
+    case 0:
+        obj.result = raft::append_entries_reply::status::success;
+        break;
+    case 1:
+        obj.result = raft::append_entries_reply::status::failure;
+        break;
+    case 2:
+        obj.result = raft::append_entries_reply::status::group_unavailable;
+        break;
+    case 3:
+        obj.result = raft::append_entries_reply::status::timeout;
+        break;
+    default:
+        vassert(false, "invalid result {}", result);
+    }
+    out = obj;
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& wr, const raft::append_entries_reply& obj) {
+    json_write(target_node_id);
+    json_write(node_id);
+    json_write(group);
+    json_write(term);
+    json_write(last_flushed_log_index);
+    json_write(last_dirty_log_index);
+    json_write(last_term_base_offset);
+    json_write(result);
+}
+
 } // namespace json

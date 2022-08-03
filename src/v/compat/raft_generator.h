@@ -301,4 +301,26 @@ struct instance_generator<raft::heartbeat_request> {
     static std::vector<raft::heartbeat_request> limits() { return {}; }
 };
 
+template<>
+struct instance_generator<raft::append_entries_reply> {
+    static raft::append_entries_reply random() {
+        return {
+          .target_node_id = instance_generator<raft::vnode>::random(),
+          .node_id = instance_generator<raft::vnode>::random(),
+          .group = tests::random_named_int<raft::group_id>(),
+          .term = tests::random_named_int<model::term_id>(),
+          .last_flushed_log_index = tests::random_named_int<model::offset>(),
+          .last_dirty_log_index = tests::random_named_int<model::offset>(),
+          .last_term_base_offset = tests::random_named_int<model::offset>(),
+          .result = random_generators::random_choice(
+            {raft::append_entries_reply::status::success,
+             raft::append_entries_reply::status::failure,
+             raft::append_entries_reply::status::group_unavailable,
+             raft::append_entries_reply::status::timeout}),
+        };
+    }
+
+    static std::vector<raft::append_entries_reply> limits() { return {}; }
+};
+
 } // namespace compat

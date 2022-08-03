@@ -459,4 +459,35 @@ struct compat_check<raft::heartbeat_request> {
     }
 };
 
+/*
+ * raft::append_entries_reply
+ */
+template<>
+struct compat_check<raft::append_entries_reply> {
+    static constexpr std::string_view name = "raft::append_entries_reply";
+
+    static std::vector<raft::append_entries_reply> create_test_cases() {
+        return generate_instances<raft::append_entries_reply>();
+    }
+
+    static void to_json(
+      raft::append_entries_reply obj, json::Writer<json::StringBuffer>& wr) {
+        rjson_serialize(wr, obj);
+    }
+
+    static raft::append_entries_reply from_json(json::Value& rd) {
+        raft::append_entries_reply obj;
+        read_value(rd, obj);
+        return obj;
+    }
+
+    static std::vector<compat_binary>
+    to_binary(raft::append_entries_reply obj) {
+        return compat_binary::serde_and_adl(obj);
+    }
+
+    static bool check(raft::append_entries_reply obj, compat_binary test) {
+        return verify_adl_or_serde(obj, std::move(test));
+    }
+};
 } // namespace compat
