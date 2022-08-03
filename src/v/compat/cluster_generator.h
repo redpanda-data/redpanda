@@ -170,4 +170,19 @@ struct instance_generator<cluster::hello_reply> {
     static std::vector<cluster::hello_reply> limits() { return {}; }
 };
 
+template<>
+struct instance_generator<cluster::feature_update_action> {
+    static cluster::feature_update_action random() {
+        using action_t = cluster::feature_update_action::action_t;
+        return cluster::feature_update_action{
+          .feature_name = tests::random_named_string<ss::sstring>(),
+          .action = random_generators::random_choice(
+            {action_t::complete_preparing,
+             action_t::activate,
+             action_t::deactivate})};
+    }
+
+    static std::vector<cluster::feature_update_action> limits() { return {}; }
+};
+
 } // namespace compat

@@ -35,4 +35,41 @@ inline void rjson_serialize(
     w.EndObject();
 }
 
+inline void
+read_value(json::Value const& rd, cluster::feature_update_action::action_t& e) {
+    auto action = rd.GetInt();
+    switch (action) {
+    case 1:
+        e = cluster::feature_update_action::action_t::complete_preparing;
+        break;
+    case 2:
+        e = cluster::feature_update_action::action_t::activate;
+        break;
+    case 3:
+        e = cluster::feature_update_action::action_t::deactivate;
+        break;
+    default:
+        vassert(
+          false,
+          "Unsupported enum value for "
+          "cluster::feature_update_action::action_t, {}",
+          action);
+    }
+}
+
+inline void
+read_value(json::Value const& rd, cluster::feature_update_action& obj) {
+    read_member(rd, "feature_name", obj.feature_name);
+    read_member(rd, "action", obj.action);
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const cluster::feature_update_action& f) {
+    w.StartObject();
+    write_member(w, "feature_name", f.feature_name);
+    write_member(w, "action", f.action);
+    w.EndObject();
+}
+
 } // namespace json

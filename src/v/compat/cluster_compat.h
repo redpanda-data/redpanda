@@ -110,4 +110,15 @@ GEN_COMPAT_CHECK(
 GEN_COMPAT_CHECK(
   cluster::hello_reply, { json_write(error); }, { json_read(error); });
 
+GEN_COMPAT_CHECK(
+  cluster::feature_update_action,
+  {
+      json_write(feature_name);
+      json_write(action);
+  },
+  {
+      json_read(feature_name);
+      json_read(action);
+  });
+
 } // namespace compat
