@@ -541,6 +541,9 @@ struct commit_tx_request
         write(
           out, std::chrono::duration_cast<std::chrono::milliseconds>(timeout));
     }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const commit_tx_request& r);
 };
 
 struct commit_tx_reply : serde::envelope<commit_tx_reply, serde::version<0>> {
@@ -555,6 +558,8 @@ struct commit_tx_reply : serde::envelope<commit_tx_reply, serde::version<0>> {
       = default;
 
     auto serde_fields() { return std::tie(ec); }
+
+    friend std::ostream& operator<<(std::ostream& o, const commit_tx_reply& r);
 };
 
 struct abort_tx_request : serde::envelope<abort_tx_request, serde::version<0>> {
