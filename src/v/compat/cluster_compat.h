@@ -126,4 +126,9 @@ GEN_COMPAT_CHECK(
   { json_write(action); },
   { json_read(action); });
 
+GEN_COMPAT_CHECK(
+  cluster::feature_action_response,
+  { json_write(error); },
+  { json_read(error); });
+
 } // namespace compat

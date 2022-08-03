@@ -196,4 +196,14 @@ struct instance_generator<cluster::feature_action_request> {
     static std::vector<cluster::feature_action_request> limits() { return {}; }
 };
 
+template<>
+struct instance_generator<cluster::feature_action_response> {
+    static cluster::feature_action_response random() {
+        return cluster::feature_action_response{
+          .error = instance_generator<cluster::errc>::random()};
+    }
+
+    static std::vector<cluster::feature_action_response> limits() { return {}; }
+};
+
 } // namespace compat
