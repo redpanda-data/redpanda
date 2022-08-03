@@ -274,10 +274,11 @@ result<allocation_units> partition_balancer_planner::get_reallocation(
                     rrs.assigned_reallocation_sizes[r.node_id]
                       += partition_size;
                 }
+            }
+            for (const auto r : assignments.replicas) {
                 if (
-                  std::find(
-                    assignments.replicas.begin(), assignments.replicas.end(), r)
-                  == assignments.replicas.end()) {
+                  std::find(stable_replicas.begin(), stable_replicas.end(), r)
+                  == stable_replicas.end()) {
                     rrs.node_released_disk_size[r.node_id] += partition_size;
                 }
             }
