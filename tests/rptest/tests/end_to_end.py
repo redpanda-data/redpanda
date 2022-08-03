@@ -172,15 +172,20 @@ class EndToEndTest(Test):
                 last_commit = self.consumer.last_commit(partition)
                 if not last_commit or last_commit <= offset:
                     self.logger.debug(
-                        f"waiting for partition {partition} offset {offset} to be committed, last committed offset: {last_commit}"
+                        f"waiting for partition {partition} offset {offset} "
+                        f"to be committed, last committed offset: {last_commit}, "
+                        f"last committed timestamp: {self.consumer.get_last_consumed()}, "
+                        f"last consumed timestamp: {self.consumer.get_last_consumed()}"
                     )
                     return False
             return True
 
-        wait_until(has_finished_consuming,
-                   timeout_sec=timeout_sec,
-                   err_msg="Consumer failed to consume up to offsets %s after waiting %ds, last consumed offsets: %s." %\
-                   (str(last_acked_offsets), timeout_sec, list(self.last_consumed_offsets)))
+        wait_until(
+            has_finished_consuming,
+            timeout_sec=timeout_sec,
+            err_msg=lambda:
+            f"Consumer failed to consume up to offsets {str(last_acked_offsets)} after waiting {timeout_sec}s, last committed offsets: {self.consumer.get_committed_offsets()}."
+        )
 
     def await_num_produced(self, min_records, timeout_sec=30):
         wait_until(lambda: self.producer.num_acked > min_records,

@@ -44,6 +44,7 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
         self.moves = 10
         self.min_records = 100000
         self.partition_count = 20
+        self.consumer_timeout_seconds = 90
 
     def _random_move_and_cancel(self, unclean_abort):
         metadata = self.client().describe_topics()
@@ -160,9 +161,10 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
             self.producer.stop()
             self.consumer.stop()
         else:
-            self.run_validation(enable_idempotence=False,
-                                consumer_timeout_sec=45,
-                                min_records=self.min_records)
+            self.run_validation(
+                enable_idempotence=False,
+                consumer_timeout_sec=self.consumer_timeout_seconds,
+                min_records=self.min_records)
 
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @matrix(replication_factor=[1, 3],
@@ -219,9 +221,10 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
             self.producer.stop()
             self.consumer.stop()
         else:
-            self.run_validation(enable_idempotence=False,
-                                consumer_timeout_sec=45,
-                                min_records=self.min_records)
+            self.run_validation(
+                enable_idempotence=False,
+                consumer_timeout_sec=self.consumer_timeout_seconds,
+                min_records=self.min_records)
 
     def increase_replication_factor(self, topic, partition,
                                     requested_replication_factor):
@@ -363,7 +366,7 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
         wait_until(lambda: len(admin.list_reconfigurations()) == 0, 60, 1)
 
         self.run_validation(enable_idempotence=False,
-                            consumer_timeout_sec=60,
+                            consumer_timeout_sec=self.consumer_timeout_seconds,
                             min_records=self.min_records)
 
     def is_moving_to_node(previous_replicas, current_replicas, id):
@@ -443,5 +446,5 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
         wait_until(has_no_node_reconfigurations, 60, 1)
 
         self.run_validation(enable_idempotence=False,
-                            consumer_timeout_sec=60,
+                            consumer_timeout_sec=self.consumer_timeout_seconds,
                             min_records=self.min_records)

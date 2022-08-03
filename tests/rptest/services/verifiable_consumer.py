@@ -24,6 +24,7 @@ from collections import namedtuple
 
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.services.background_thread import BackgroundThreadService
+from datetime import datetime
 
 TopicPartition = namedtuple('TopicPartition', ['topic', 'partition'])
 
@@ -215,6 +216,8 @@ class VerifiableConsumer(BackgroundThreadService):
         self.stop_timeout_sec = stop_timeout_sec
         self.on_record_consumed = on_record_consumed
         self.verify_offsets = verify_offsets
+        self.last_committed = None
+        self.last_consumed = None
 
         self.event_handlers = {}
         self.global_position = {}
@@ -302,6 +305,7 @@ class VerifiableConsumer(BackgroundThreadService):
                        consumed_partition["minOffset"]))
 
             self.global_position[tp] = consumed_partition["maxOffset"] + 1
+            self.last_consumed = datetime.now()
 
     def _update_global_committed(self, commit_event):
         if commit_event["success"]:
@@ -313,6 +317,7 @@ class VerifiableConsumer(BackgroundThreadService):
                     "Committed offset %d for partition %s is ahead of the current position %d" % \
                     (offset, str(tp), self.global_position[tp])
                 self.global_committed[tp] = offset
+                self.last_committed = datetime.now()
 
     def _update_global_committed_fetched(self, fetch_offsets_ev):
         for offset in fetch_offsets_ev["offsets"]:
@@ -465,3 +470,15 @@ class VerifiableConsumer(BackgroundThreadService):
                 handler.node for handler in self.event_handlers.values()
                 if handler.state != ConsumerState.Dead
             ]
+
+    def get_committed_offsets(self):
+        with self.lock:
+            return self.global_committed.copy()
+
+    def get_last_consumed(self):
+        with self.lock:
+            return self.last_consumed
+
+    def get_last_committed(self):
+        with self.lock:
+            return self.last_committed
