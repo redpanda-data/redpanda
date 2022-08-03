@@ -33,6 +33,7 @@ struct test_config : public config::config_store {
     config::property<std::vector<ss::sstring>> strings;
     config::property<std::optional<int16_t>> nullable_int;
     config::property<std::optional<ss::sstring>> nullable_string;
+    config::property<std::optional<std::vector<ss::sstring>>> nullable_strings;
     config::property<bool> boolean;
     config::property<std::chrono::seconds> seconds;
     config::property<std::optional<std::chrono::seconds>> optional_seconds;
@@ -75,6 +76,12 @@ struct test_config : public config::config_store {
           *this,
           "optional_string",
           "An optional string value",
+          {},
+          std::nullopt)
+      , nullable_strings(
+          *this,
+          "optional_strings",
+          "An optional strings vector",
           {},
           std::nullopt)
       , boolean(
@@ -357,6 +364,10 @@ SEASTAR_THREAD_TEST_CASE(property_metadata) {
     BOOST_TEST(cfg.nullable_string.type_name() == "string");
     BOOST_TEST(cfg.nullable_string.is_nullable() == true);
     BOOST_TEST(cfg.nullable_string.is_array() == false);
+
+    BOOST_TEST(cfg.nullable_strings.type_name() == "string");
+    BOOST_TEST(cfg.nullable_strings.is_nullable() == true);
+    BOOST_TEST(cfg.nullable_strings.is_array() == true);
 
     BOOST_TEST(cfg.nullable_int.type_name() == "integer");
     BOOST_TEST(cfg.nullable_int.is_nullable() == true);

@@ -458,6 +458,8 @@ consteval bool is_array() {
         return false;
     } else if constexpr (detail::is_collection<std::decay_t<T>>) {
         return true;
+    } else if constexpr (reflection::is_std_optional<T>) {
+        return is_array<typename T::value_type>();
     } else {
         return false;
     }
