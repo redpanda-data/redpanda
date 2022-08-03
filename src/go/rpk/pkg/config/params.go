@@ -316,7 +316,7 @@ func (c *Config) Write(fs afero.Fs) (rerr error) {
 			return fmt.Errorf("unable to chmod temp config file: %v", err)
 		}
 
-		err = preserveUnixOwnership(fs, stat, temp)
+		err = PreserveUnixOwnership(fs, stat, temp)
 		if err != nil {
 			return err
 		}

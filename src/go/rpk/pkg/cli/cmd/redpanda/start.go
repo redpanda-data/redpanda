@@ -15,6 +15,7 @@ package redpanda
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -149,14 +150,18 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 			// for list flags, and since JSON often contains commas, it
 			// blows up when there's a JSON object.
 			configKvs, filteredArgs := parseConfigKvs(os.Args)
-			if sandbox {
-				setDevMode(cmd)
-				fmt.Println("WARNING: This is a setup for development purposes only; in sandbox mode your clusters may run unrealistically fast and data can be corrupted any time your computer shuts down uncleanly.")
-			}
 			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			if err != nil {
 				return fmt.Errorf("unable to load config file: %s", err)
+			}
+			if sandbox {
+				setDevMode(cmd)
+				fmt.Fprintln(os.Stderr, "WARNING: This is a setup for development purposes only; in sandbox mode your clusters may run unrealistically fast and data can be corrupted any time your computer shuts down uncleanly.")
+				err := setClusterProperties(fs, cfg.FileLocation())
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "unable to set cluster properties: %v\n", err)
+				}
 			}
 			// We set fields in the raw file without writing rpk specific env
 			// or flag overrides. This command itself has all redpanda specific
@@ -1071,4 +1076,57 @@ func setDevMode(cmd *cobra.Command) {
 			cmd.Flags().Set(k, v)
 		}
 	}
+}
+
+// setClusterProperties generates a .bootstrap.yaml file in the same path as
+// the redpanda.yaml, this will be picked up by redpanda on first start and
+// set the passed properties.
+func setClusterProperties(fs afero.Fs, cfgFileLocation string) (rerr error) {
+	const props = `topic_partitions_per_shard: 1000
+group_topic_partitions: 1
+auto_create_topics_enabled: true
+storage_min_free_bytes: 1073741824`
+	cfgDir := filepath.Dir(cfgFileLocation)
+
+	tmp, err := afero.TempFile(fs, cfgDir, "bootstrap-*.yaml")
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		if rerr != nil {
+			suggestion := "you can run 'rpk cluster config set <key> <value>' to set the following properties: " + props
+			if removeErr := fs.Remove(tmp.Name()); removeErr != nil {
+				rerr = fmt.Errorf("%s, unable to remove temp file: %v; %s", rerr, removeErr, suggestion)
+			} else {
+				rerr = fmt.Errorf("%s, temp file removed from disk; %s", rerr, suggestion)
+			}
+		}
+	}()
+
+	_, err = io.WriteString(tmp, props)
+	tmp.Close()
+	if err != nil {
+		return fmt.Errorf("error writing to temporary file: %v", err)
+	}
+
+	// If we already have a redpanda.yaml we want to have the same file
+	// ownership for .boostrap.yaml
+	if exists, _ := afero.Exists(fs, cfgFileLocation); exists {
+		stat, err := fs.Stat(cfgFileLocation)
+		if err != nil {
+			return fmt.Errorf("unable to stat existing file: %v", err)
+		}
+		err = config.PreserveUnixOwnership(fs, stat, tmp.Name())
+		if err != nil {
+			return err
+		}
+	}
+
+	err = fs.Rename(tmp.Name(), filepath.Join(cfgDir, ".bootstrap.yaml"))
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
