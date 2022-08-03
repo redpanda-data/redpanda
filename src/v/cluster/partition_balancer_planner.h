@@ -67,23 +67,23 @@ private:
         absl::flat_hash_map<model::ntp, size_t> ntp_sizes;
         absl::flat_hash_map<model::node_id, node_disk_space> node_disk_reports;
         absl::flat_hash_set<model::node_id> unavailable_nodes;
-        absl::flat_hash_set<model::node_id>
-          nodes_with_disk_constraints_violation;
-        absl::btree_set<node_disk_space> full_nodes_disk_sizes;
         // Partitions that are planned to move in current planner request
         absl::flat_hash_set<model::ntp> moving_partitions;
-        // Size of partitions that are planned to move from node
-        absl::flat_hash_map<model::node_id, uint64_t> node_released_disk_size;
-        // Size of partitions that are planned to move on node
-        absl::flat_hash_map<model::node_id, uint64_t>
-          assigned_reallocation_sizes;
     };
 
-    result<allocation_units> get_reallocation(
+    partition_constraints get_partition_constraints(
       const partition_assignment& assignments,
       const topic_metadata& topic_metadata,
       size_t partition_size,
       double max_disk_usage_ratio,
+      reallocation_request_state&) const;
+
+    result<allocation_units> get_reallocation(
+      const model::ntp&,
+      const partition_assignment&,
+      size_t partition_size,
+      partition_constraints,
+      const std::vector<model::broker_shard>& stable_replicas,
       reallocation_request_state&);
 
     void get_unavailable_nodes_reassignments(
@@ -102,15 +102,6 @@ private:
       const std::vector<raft::follower_metrics>&,
       reallocation_request_state&,
       plan_data&);
-
-    size_t get_full_nodes_amount(
-      const std::vector<model::broker_shard>& replicas,
-      const reallocation_request_state& rrs);
-
-    std::vector<model::broker_shard> get_stable_replicas(
-      const std::vector<model::broker_shard>& replicas,
-      const reallocation_request_state&,
-      size_t full_nodes_leave_amount);
 
     bool is_partition_movement_possible(
       const std::vector<model::broker_shard>& current_replicas,
