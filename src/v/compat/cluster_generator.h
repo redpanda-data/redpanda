@@ -185,4 +185,15 @@ struct instance_generator<cluster::feature_update_action> {
     static std::vector<cluster::feature_update_action> limits() { return {}; }
 };
 
+template<>
+struct instance_generator<cluster::feature_action_request> {
+    static cluster::feature_action_request random() {
+        return cluster::feature_action_request{
+          .action
+          = instance_generator<cluster::feature_update_action>::random()};
+    }
+
+    static std::vector<cluster::feature_action_request> limits() { return {}; }
+};
+
 } // namespace compat

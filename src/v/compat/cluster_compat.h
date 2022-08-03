@@ -121,4 +121,9 @@ GEN_COMPAT_CHECK(
       json_read(action);
   });
 
+GEN_COMPAT_CHECK(
+  cluster::feature_action_request,
+  { json_write(action); },
+  { json_read(action); });
+
 } // namespace compat
