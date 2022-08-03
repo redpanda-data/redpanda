@@ -107,4 +107,7 @@ GEN_COMPAT_CHECK(
       json_read(start_time);
   });
 
+GEN_COMPAT_CHECK(
+  cluster::hello_reply, { json_write(error); }, { json_read(error); });
+
 } // namespace compat

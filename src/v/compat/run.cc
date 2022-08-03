@@ -43,7 +43,8 @@ using compat_checks = type_list<
   cluster::cluster_property_kv,
   cluster::config_update_request,
   cluster::config_update_reply,
-  cluster::hello_request>;
+  cluster::hello_request,
+  cluster::hello_reply>;
 
 struct compat_error final : public std::runtime_error {
 public:

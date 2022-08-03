@@ -160,4 +160,14 @@ struct instance_generator<cluster::hello_request> {
     };
 };
 
+template<>
+struct instance_generator<cluster::hello_reply> {
+    static cluster::hello_reply random() {
+        return cluster::hello_reply{
+          .error = instance_generator<cluster::errc>::random()};
+    }
+
+    static std::vector<cluster::hello_reply> limits() { return {}; }
+};
+
 } // namespace compat
