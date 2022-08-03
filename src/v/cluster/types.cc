@@ -310,6 +310,41 @@ bool config_status::operator==(const config_status& rhs) const {
              rhs.node, rhs.version, rhs.restart, rhs.unknown, rhs.invalid);
 }
 
+std::ostream& operator<<(std::ostream& o, const cluster_property_kv& kv) {
+    fmt::print(
+      o, "{{cluster_property_kv: key {}, value: {})}}", kv.key, kv.value);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const config_update_request& crq) {
+    fmt::print(
+      o,
+      "{{config_update_request: upsert {}, remove: {})}}",
+      crq.upsert,
+      crq.remove);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const config_update_reply& crr) {
+    fmt::print(
+      o,
+      "{{config_update_reply: error {}, latest_version: {})}}",
+      crr.error,
+      crr.latest_version);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const hello_request& h) {
+    fmt::print(
+      o, "{{hello_request: peer {}, start_time: {})}}", h.peer, h.start_time);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const hello_reply& h) {
+    fmt::print(o, "{{hello_reply: error {}, latest_version: {})}}", h.error);
+    return o;
+}
+
 namespace {
 cluster::assignments_set to_assignments_map(
   std::vector<cluster::partition_assignment> assignment_vector) {
@@ -464,6 +499,27 @@ std::ostream& operator<<(std::ostream& o, const feature_update_action& fua) {
     }
 
     fmt::print(o, "{{action {} {} }}", fua.feature_name, action_name);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const feature_action_request& far) {
+    fmt::print(o, "{{feature_update_action: {}}}", far.action);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const feature_action_response& far) {
+    fmt::print(o, "{{error: {}}}", far.error);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const feature_barrier_request& fbr) {
+    fmt::print(
+      o, "{{tag: {} peer: {} entered: {}}}", fbr.tag, fbr.peer, fbr.entered);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const feature_barrier_response& fbr) {
+    fmt::print(o, "{{entered: {} complete: {}}}", fbr.entered, fbr.complete);
     return o;
 }
 

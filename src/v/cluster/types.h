@@ -1801,6 +1801,7 @@ struct cluster_property_kv
     friend bool
     operator==(const cluster_property_kv&, const cluster_property_kv&)
       = default;
+    friend std::ostream& operator<<(std::ostream&, const cluster_property_kv&);
 };
 
 struct cluster_config_delta_cmd_data
@@ -2103,6 +2104,9 @@ struct feature_action_request
     operator==(const feature_action_request&, const feature_action_request&)
       = default;
 
+    friend std::ostream&
+    operator<<(std::ostream&, const feature_action_request&);
+
     auto serde_fields() { return std::tie(action); }
 };
 
@@ -2113,6 +2117,9 @@ struct feature_action_response
     friend bool
     operator==(const feature_action_response&, const feature_action_response&)
       = default;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const feature_action_response&);
 
     auto serde_fields() { return std::tie(error); }
 };
@@ -2131,6 +2138,9 @@ struct feature_barrier_request
     operator==(const feature_barrier_request&, const feature_barrier_request&)
       = default;
 
+    friend std::ostream&
+    operator<<(std::ostream&, const feature_barrier_request&);
+
     auto serde_fields() { return std::tie(tag, peer, entered); }
 };
 
@@ -2143,6 +2153,9 @@ struct feature_barrier_response
     friend bool
     operator==(const feature_barrier_response&, const feature_barrier_response&)
       = default;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const feature_barrier_response&);
 
     auto serde_fields() { return std::tie(entered, complete); }
 };
@@ -2196,6 +2209,9 @@ struct config_update_request final
     operator==(const config_update_request&, const config_update_request&)
       = default;
 
+    friend std::ostream&
+    operator<<(std::ostream&, const config_update_request&);
+
     auto serde_fields() { return std::tie(upsert, remove); }
 };
 
@@ -2207,6 +2223,8 @@ struct config_update_reply
     friend bool
     operator==(const config_update_reply&, const config_update_reply&)
       = default;
+
+    friend std::ostream& operator<<(std::ostream&, const config_update_reply&);
 
     auto serde_fields() { return std::tie(error, latest_version); }
 };
@@ -2221,12 +2239,16 @@ struct hello_request final : serde::envelope<hello_request, serde::version<0>> {
       = default;
 
     auto serde_fields() { return std::tie(peer, start_time); }
+
+    friend std::ostream& operator<<(std::ostream&, const hello_request&);
 };
 
 struct hello_reply : serde::envelope<hello_reply, serde::version<0>> {
     errc error;
 
     friend bool operator==(const hello_reply&, const hello_reply&) = default;
+
+    friend std::ostream& operator<<(std::ostream&, const hello_reply&);
 
     auto serde_fields() { return std::tie(error); }
 };
