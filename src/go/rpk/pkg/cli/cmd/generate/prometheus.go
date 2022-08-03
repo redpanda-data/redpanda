@@ -29,10 +29,17 @@ type ScrapeConfig struct {
 	JobName       string         `yaml:"job_name"`
 	StaticConfigs []StaticConfig `yaml:"static_configs"`
 	MetricsPath   string         `yaml:"metrics_path"`
+	TLSConfig     TLSConfig      `yaml:"tls_config,omitempty"`
 }
 
 type StaticConfig struct {
 	Targets []string `yaml:"targets"`
+}
+
+type TLSConfig struct {
+	CAFile   string `yaml:"ca_file,omitempty"`
+	CertFile string `yaml:"cert_file,omitempty"`
+	KeyFile  string `yaml:"key_file,omitempty"`
 }
 
 func NewPrometheusConfigCmd(fs afero.Fs) *cobra.Command {
@@ -42,6 +49,7 @@ func NewPrometheusConfigCmd(fs afero.Fs) *cobra.Command {
 		seedAddr   string
 		configFile string
 		intMetrics bool
+		tlsConfig  TLSConfig
 	)
 	command := &cobra.Command{
 		Use:   "prometheus-config",
@@ -55,7 +63,10 @@ If --seed-addr is passed, it will be used to discover the rest of the cluster
 hosts via redpanda's Kafka API. If --node-addrs is passed, they will be used
 directly. Otherwise, 'rpk generate prometheus-conf' will read the redpanda
 config file and use the node IP configured there. --config may be passed to
-specify an arbitrary config file.`,
+specify an arbitrary config file.
+
+You can include tls_config to the job by using the flags --ca-file, --cert-file
+and --key-file.`,
 		Run: func(cmd *cobra.Command, args []string) {
 			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
@@ -67,6 +78,7 @@ specify an arbitrary config file.`,
 				nodeAddrs,
 				seedAddr,
 				intMetrics,
+				tlsConfig,
 			)
 			out.MaybeDieErr(err)
 			fmt.Println(string(yml))
@@ -95,6 +107,9 @@ specify an arbitrary config file.`,
 		"",
 		"The path to the redpanda config file")
 	command.Flags().BoolVar(&intMetrics, "internal-metrics", false, "Include scrape config for internal metrics (/metrics)")
+	command.Flags().StringVar(&tlsConfig.CAFile, "ca-file", "", "CA certificate used to sign node_exporter certificate")
+	command.Flags().StringVar(&tlsConfig.CertFile, "cert-file", "", "Cert file presented to node_exporter to authenticate Prometheus as a client")
+	command.Flags().StringVar(&tlsConfig.KeyFile, "key-file", "", "Key file presented to node_exporter to authenticate Prometheus as a client")
 	return command
 }
 
@@ -104,9 +119,10 @@ func executePrometheusConfig(
 	nodeAddrs []string,
 	seedAddr string,
 	intMetrics bool,
+	tlsConfig TLSConfig,
 ) ([]byte, error) {
 	if len(nodeAddrs) > 0 {
-		return renderConfig(jobName, nodeAddrs, intMetrics)
+		return renderConfig(jobName, nodeAddrs, intMetrics, tlsConfig)
 	}
 	if seedAddr != "" {
 		host, port, err := splitAddress(seedAddr)
@@ -120,7 +136,7 @@ func executePrometheusConfig(
 		if err != nil {
 			return []byte(""), err
 		}
-		return renderConfig(jobName, hosts, intMetrics)
+		return renderConfig(jobName, hosts, intMetrics, tlsConfig)
 	}
 	hosts, err := discoverHosts(
 		cfg.Redpanda.KafkaAPI[0].Address,
@@ -129,20 +145,22 @@ func executePrometheusConfig(
 	if err != nil {
 		return []byte(""), err
 	}
-	return renderConfig(jobName, hosts, intMetrics)
+	return renderConfig(jobName, hosts, intMetrics, tlsConfig)
 }
 
-func renderConfig(jobName string, targets []string, intMetrics bool) ([]byte, error) {
+func renderConfig(jobName string, targets []string, intMetrics bool, tlsConfig TLSConfig) ([]byte, error) {
 	scrapeConfigs := []ScrapeConfig{{
 		JobName:       jobName,
 		StaticConfigs: []StaticConfig{{Targets: targets}},
 		MetricsPath:   "/public_metrics",
+		TLSConfig:     tlsConfig,
 	}}
 	if intMetrics {
 		scrapeConfigs = append(scrapeConfigs, ScrapeConfig{
 			JobName:       jobName,
 			StaticConfigs: []StaticConfig{{Targets: targets}},
 			MetricsPath:   "/metrics",
+			TLSConfig:     tlsConfig,
 		})
 	}
 	return yaml.Marshal(scrapeConfigs)
