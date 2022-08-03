@@ -118,9 +118,10 @@ class Namespace:
 
 
 class NodeStorage:
-    def __init__(self, data_dir):
+    def __init__(self, name, data_dir):
         self.data_dir = data_dir
         self.ns = dict()
+        self.name = name
 
     def add_namespace(self, ns, path):
         n = Namespace(ns, path)
