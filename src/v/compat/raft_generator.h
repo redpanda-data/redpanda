@@ -323,4 +323,49 @@ struct instance_generator<raft::append_entries_reply> {
     static std::vector<raft::append_entries_reply> limits() { return {}; }
 };
 
+template<>
+struct instance_generator<raft::heartbeat_reply> {
+    static raft::heartbeat_reply random() {
+        auto ret = raft::heartbeat_reply{{
+          instance_generator<raft::append_entries_reply>::random(),
+          instance_generator<raft::append_entries_reply>::random(),
+        }};
+
+        /*
+         * override node_id and target_node_id heartbeat_reply encoding assumes
+         * that the first node/target_node in the heartbeat set have the same
+         * node_id (revisions can be different).  that needs to be true here in
+         * the generated data otherwise we won't compare equal at after
+         * deserialization.
+         */
+        const auto node_id = tests::random_named_int<model::node_id>();
+        const auto target_node_id = tests::random_named_int<model::node_id>();
+
+        for (auto& r : ret.meta) {
+            r.target_node_id = raft::vnode{
+              target_node_id, r.target_node_id.revision()};
+            r.node_id = raft::vnode{node_id, r.target_node_id.revision()};
+        }
+
+        /*
+         * encoder will sort before serializing, so for equality test to work
+         * after deserializing we sort here first so that the json value we save
+         * has the same ordering.
+         */
+        struct sorter_fn {
+            constexpr bool operator()(
+              const raft::append_entries_reply& lhs,
+              const raft::append_entries_reply& rhs) const {
+                return lhs.last_flushed_log_index < rhs.last_flushed_log_index;
+            }
+        };
+
+        std::sort(ret.meta.begin(), ret.meta.end(), sorter_fn{});
+
+        return ret;
+    }
+
+    static std::vector<raft::heartbeat_reply> limits() { return {}; }
+};
+
 } // namespace compat
