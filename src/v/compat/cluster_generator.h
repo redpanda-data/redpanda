@@ -73,4 +73,18 @@ struct instance_generator<cluster::errc> {
     static std::vector<cluster::errc> limits() { return {}; }
 };
 
+template<>
+struct instance_generator<cluster::config_status> {
+    static cluster::config_status random() {
+        return cluster::config_status{
+          .node = tests::random_named_int<model::node_id>(),
+          .version = tests::random_named_int<cluster::config_version>(),
+          .restart = tests::random_bool(),
+          .unknown = tests::random_sstrings(),
+          .invalid = tests::random_sstrings()};
+    }
+
+    static std::vector<cluster::config_status> limits() { return {}; }
+};
+
 } // namespace compat
