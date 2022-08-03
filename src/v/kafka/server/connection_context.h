@@ -80,7 +80,7 @@ public:
     connection_context(
       protocol& p,
       net::server::resources&& r,
-      security::sasl_server sasl,
+      std::optional<security::sasl_server> sasl,
       bool enable_authorizer,
       std::optional<security::tls::mtls_state> mtls_state) noexcept
       : _proto(p)
@@ -100,7 +100,9 @@ public:
 
     protocol& server() { return _proto; }
     const ss::sstring& listener() const { return _rs.conn->name(); }
-    security::sasl_server& sasl() { return _sasl; }
+    security::sasl_server* sasl() {
+        return _sasl.has_value() ? &_sasl.value() : nullptr;
+    }
 
     template<typename T>
     bool authorized(
@@ -109,13 +111,16 @@ public:
         if (!_enable_authorizer) {
             return true;
         }
-        // mtls configured?
-        if (_mtls_state) {
-            return authorized_user(
-              _mtls_state->principal(), operation, name, quiet);
-        }
-        // use sasl
-        return authorized_user(sasl().principal(), operation, name, quiet);
+
+        auto get_principal = [this]() {
+            if (_mtls_state) {
+                return _mtls_state->principal();
+            } else if (_sasl) {
+                return _sasl->principal();
+            }
+            return ss::sstring{}; // anonymous user
+        };
+        return authorized_user(get_principal(), operation, name, quiet);
     }
 
     template<typename T>
@@ -131,26 +136,46 @@ public:
           name, operation, principal, security::acl_host(_client_addr));
 
         if (!authorized) {
-            if (quiet) {
-                vlog(
-                  _authlog.debug,
-                  "proto: {}, sasl state: {}, acl op: {}, principal: {}, "
-                  "resource: {}",
-                  _proto.name(),
-                  security::sasl_state_to_str(_sasl.state()),
-                  operation,
-                  principal,
-                  name);
+            if (_sasl) {
+                if (quiet) {
+                    vlog(
+                      _authlog.debug,
+                      "proto: {}, sasl state: {}, acl op: {}, principal: {}, "
+                      "resource: {}",
+                      _proto.name(),
+                      security::sasl_state_to_str(_sasl->state()),
+                      operation,
+                      principal,
+                      name);
+                } else {
+                    vlog(
+                      _authlog.info,
+                      "proto: {}, sasl state: {}, acl op: {}, principal: {}, "
+                      "resource: {}",
+                      _proto.name(),
+                      security::sasl_state_to_str(_sasl->state()),
+                      operation,
+                      principal,
+                      name);
+                }
             } else {
-                vlog(
-                  _authlog.info,
-                  "proto: {}, sasl state: {}, acl op: {}, principal: {}, "
-                  "resource: {}",
-                  _proto.name(),
-                  security::sasl_state_to_str(_sasl.state()),
-                  operation,
-                  principal,
-                  name);
+                if (quiet) {
+                    vlog(
+                      _authlog.debug,
+                      "proto: {}, acl op: {}, principal: {}, resource: {}",
+                      _proto.name(),
+                      operation,
+                      principal,
+                      name);
+                } else {
+                    vlog(
+                      _authlog.info,
+                      "proto: {}, acl op: {}, principal: {}, resource: {}",
+                      _proto.name(),
+                      operation,
+                      principal,
+                      name);
+                }
             }
         }
 
@@ -267,7 +292,7 @@ private:
     sequence_id _next_response;
     sequence_id _seq_idx;
     map_t _responses;
-    security::sasl_server _sasl;
+    std::optional<security::sasl_server> _sasl;
     const ss::net::inet_address _client_addr;
     const bool _enable_authorizer;
     ctx_log _authlog;
