@@ -23,7 +23,7 @@ ss::future<response_ptr> sasl_authenticate_handler::handle(
     request.decode(ctx.reader(), ctx.header().version);
     vlog(klog.debug, "Received SASL_AUTHENTICATE {}", request);
 
-    auto result = ctx.sasl().authenticate(std::move(request.data.auth_bytes));
+    auto result = ctx.sasl()->authenticate(std::move(request.data.auth_bytes));
     if (likely(result)) {
         sasl_authenticate_response_data data{
           .error_code = error_code::none,

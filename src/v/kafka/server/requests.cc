@@ -132,15 +132,16 @@ handle_auth_handshake(request_context&& ctx, ss::smp_service_group g) {
          * is set the input connection is assumed to contain raw authentication
          * tokens not wrapped in a normal kafka request envelope.
          */
-        conn->sasl().set_handshake_v0();
+        conn->sasl()->set_handshake_v0();
     }
     return do_process<sasl_handshake_handler>(std::move(ctx), g)
       .response.then([conn = std::move(conn)](response_ptr r) {
-          if (conn->sasl().has_mechanism()) {
-              conn->sasl().set_state(
+          if (conn->sasl()->has_mechanism()) {
+              conn->sasl()->set_state(
                 security::sasl_server::sasl_state::authenticate);
           } else {
-              conn->sasl().set_state(security::sasl_server::sasl_state::failed);
+              conn->sasl()->set_state(
+                security::sasl_server::sasl_state::failed);
           }
           return r;
       });
@@ -156,7 +157,7 @@ handle_auth_initial(request_context&& ctx, ss::smp_service_group g) {
     case api_versions_api::key: {
         auto r = api_versions_handler::handle_raw(ctx);
         if (r.data.error_code == error_code::none) {
-            ctx.sasl().set_state(security::sasl_server::sasl_state::handshake);
+            ctx.sasl()->set_state(security::sasl_server::sasl_state::handshake);
         }
         return ctx.respond(std::move(r));
     }
@@ -176,7 +177,7 @@ handle_auth_initial(request_context&& ctx, ss::smp_service_group g) {
 
 static ss::future<response_ptr>
 handle_auth(request_context&& ctx, ss::smp_service_group g) {
-    switch (ctx.sasl().state()) {
+    switch (ctx.sasl()->state()) {
     case security::sasl_server::sasl_state::initial:
         return handle_auth_initial(std::move(ctx), g);
 
@@ -205,11 +206,11 @@ handle_auth(request_context&& ctx, ss::smp_service_group g) {
                * there may be multiple authentication round-trips so it is fine
                * to return without entering an end state like complete/failed.
                */
-              if (conn->sasl().mechanism().complete()) {
-                  conn->sasl().set_state(
+              if (conn->sasl()->mechanism().complete()) {
+                  conn->sasl()->set_state(
                     security::sasl_server::sasl_state::complete);
-              } else if (conn->sasl().mechanism().failed()) {
-                  conn->sasl().set_state(
+              } else if (conn->sasl()->mechanism().failed()) {
+                  conn->sasl()->set_state(
                     security::sasl_server::sasl_state::failed);
               }
               return ss::make_ready_future<response_ptr>(std::move(r));
@@ -255,13 +256,13 @@ process_result_stages process_request(
      * requests are handled as normal when auth is disabled. otherwise no
      * request is handled until the auth process has completed.
      */
-    if (unlikely(!ctx.sasl().complete())) {
+    if (unlikely(ctx.sasl() && !ctx.sasl()->complete())) {
         auto conn = ctx.connection();
         return process_result_stages::single_stage(
           handle_auth(std::move(ctx), g)
             .then_wrapped([conn](ss::future<response_ptr> f) {
                 if (f.failed()) {
-                    conn->sasl().set_state(
+                    conn->sasl()->set_state(
                       security::sasl_server::sasl_state::failed);
                 }
                 return f;

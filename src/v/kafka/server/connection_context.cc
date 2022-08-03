@@ -50,9 +50,10 @@ ss::future<> connection_context::process_one_request() {
            * 3. handshake was v0
            */
           if (unlikely(
-                sasl().state()
-                  == security::sasl_server::sasl_state::authenticate
-                && sasl().handshake_v0())) {
+                sasl()
+                && sasl()->state()
+                     == security::sasl_server::sasl_state::authenticate
+                && sasl()->handshake_v0())) {
               return handle_auth_v0(*sz).handle_exception(
                 [this](std::exception_ptr e) {
                     vlog(klog.info, "Detected error processing request: {}", e);
@@ -148,7 +149,8 @@ ss::future<> connection_context::handle_auth_v0(const size_t size) {
           response.data.error_message));
     }
 
-    if (sasl().state() == security::sasl_server::sasl_state::failed) {
+    if (
+      !sasl() || sasl()->state() == security::sasl_server::sasl_state::failed) {
         throw std::runtime_error(fmt_with_ctx(
           fmt::format, "Auth (handshake v0) failed with unknown error"));
     }
