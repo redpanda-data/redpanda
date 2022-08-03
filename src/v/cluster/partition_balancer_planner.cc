@@ -24,7 +24,10 @@ partition_balancer_planner::partition_balancer_planner(
   partition_allocator& partition_allocator)
   : _config(config)
   , _topic_table(topic_table)
-  , _partition_allocator(partition_allocator) {}
+  , _partition_allocator(partition_allocator) {
+    _config.soft_max_disk_usage_ratio = std::min(
+      _config.soft_max_disk_usage_ratio, _config.hard_max_disk_usage_ratio);
+}
 
 void partition_balancer_planner::init_node_disk_reports_from_health_report(
   const cluster_health_report& health_report, reallocation_request_state& rrs) {
@@ -58,7 +61,7 @@ void partition_balancer_planner::
     reallocation_request_state& rrs, plan_data& result) {
     for (const auto& n : rrs.node_disk_reports) {
         double used_space_ratio = 1.0 - n.second.free_space_rate;
-        if (used_space_ratio > _config.max_disk_usage_ratio) {
+        if (used_space_ratio > _config.soft_max_disk_usage_ratio) {
             rrs.nodes_with_disk_constraints_violation.insert(n.first);
             rrs.full_nodes_disk_sizes.insert(n.second);
             result.violations.full_nodes.emplace_back(
@@ -185,49 +188,38 @@ std::optional<size_t> partition_balancer_planner::get_partition_size(
 }
 
 /*
- * Function tries to find max reallocation
- * It tries to move ntp out of 'bad' nodes
+ * Function tries to find max reallocation.
+ * It tries to move ntp out of 'bad' nodes.
  * Initially it considers as 'bad' all unavailable nodes
- * and all nodes that are breaking max_disk_usage_ratio
+ * and all nodes that are breaking max_disk_usage_ratio.
  * If reallocation request fails, it removes least filled node that
- * is available but is breaking max_disk_usage_ratio
+ * is available but is breaking max_disk_usage_ratio.
  * It repeats until it doesn't work out to calculate reallocation
- * or all nodes that are breaking max_disk_usage_ratio are removed out of 'bad'
+ * or all nodes that are breaking max_disk_usage_ratio are removed out of 'bad'.
  */
 result<allocation_units> partition_balancer_planner::get_reallocation(
   const partition_assignment& assignments,
   const topic_metadata& topic_metadata,
   size_t partition_size,
-  bool use_max_disk_constraint,
+  double max_disk_usage_ratio,
   reallocation_request_state& rrs) {
     allocation_constraints allocation_constraints;
 
     // Add constraint on least disk usage
     allocation_constraints.soft_constraints.push_back(
       ss::make_lw_shared<soft_constraint_evaluator>(least_disk_filled(
-        _config.max_disk_usage_ratio,
+        max_disk_usage_ratio,
         rrs.assigned_reallocation_sizes,
         rrs.node_disk_reports)));
 
-    if (use_max_disk_constraint) {
-        // Add constraint on partition max_disk_usage_ratio overfill
-        allocation_constraints.hard_constraints.push_back(
-          ss::make_lw_shared<hard_constraint_evaluator>(
-            disk_not_overflowed_by_partition(
-              _config.max_disk_usage_ratio,
-              partition_size,
-              rrs.assigned_reallocation_sizes,
-              rrs.node_disk_reports)));
-    } else {
-        // Add constraint on partition disk overfill
-        allocation_constraints.hard_constraints.push_back(
-          ss::make_lw_shared<hard_constraint_evaluator>(
-            disk_not_overflowed_by_partition(
-              1,
-              partition_size,
-              rrs.assigned_reallocation_sizes,
-              rrs.node_disk_reports)));
-    }
+    // Add constraint on partition max_disk_usage_ratio overfill
+    allocation_constraints.hard_constraints.push_back(
+      ss::make_lw_shared<hard_constraint_evaluator>(
+        disk_not_overflowed_by_partition(
+          max_disk_usage_ratio,
+          partition_size,
+          rrs.assigned_reallocation_sizes,
+          rrs.node_disk_reports)));
 
     // Add constraint on unavailable nodes
     std::vector<model::broker_shard> unavailable_nodes;
@@ -298,7 +290,7 @@ result<allocation_units> partition_balancer_planner::get_reallocation(
 
 /*
  * Function is trying to move ntp out of unavailable nodes
- * It can move to nodes that are violating max_disk_usage_ratio constraint
+ * It can move to nodes that are violating soft_max_disk_usage_ratio constraint
  */
 void partition_balancer_planner::get_unavailable_nodes_reassignments(
   plan_data& result, reallocation_request_state& rrs) {
@@ -320,7 +312,11 @@ void partition_balancer_planner::get_unavailable_nodes_reassignments(
                     continue;
                 }
                 auto new_allocation_units = get_reallocation(
-                  a, t.second.metadata, partition_size.value(), false, rrs);
+                  a,
+                  t.second.metadata,
+                  partition_size.value(),
+                  _config.hard_max_disk_usage_ratio,
+                  rrs);
                 if (new_allocation_units) {
                     result.reassignments.emplace_back(ntp_reassignments{
                       .ntp = ntp,
@@ -343,9 +339,9 @@ void partition_balancer_planner::get_unavailable_nodes_reassignments(
 
 /*
  * Function is trying to move ntps out of node that are violating
- * max_disk_usage_ratio It takes nodes in free space rate order For each node it
- * is trying to collect set of partitions to move Partitions are selected in
- * ascending order of their size.
+ * soft_max_disk_usage_ratio. It takes nodes in free space rate order. For each
+ * node it is trying to collect set of partitions to move. Partitions are
+ * selected in ascending order of their size.
  */
 void partition_balancer_planner::get_full_node_reassignments(
   plan_data& result, reallocation_request_state& rrs) {
@@ -378,7 +374,7 @@ void partition_balancer_planner::get_full_node_reassignments(
                  rrs.node_released_disk_size[node_disk_space.node_id]
                  + node_disk_space.free_space)
                    / double(node_disk_space.total_space)
-                 < double(1) - _config.max_disk_usage_ratio
+                 < double(1) - _config.soft_max_disk_usage_ratio
                && ntp_size_it != ntp_on_node_sizes.end()) {
             const auto& partition_to_move = ntp_size_it->second;
             if (rrs.moving_partitions.contains(partition_to_move)) {
@@ -401,7 +397,7 @@ void partition_balancer_planner::get_full_node_reassignments(
               *current_assignments,
               topic_metadata.metadata,
               ntp_size_it->first,
-              true,
+              _config.soft_max_disk_usage_ratio,
               rrs);
             if (new_allocation_units) {
                 result.reassignments.emplace_back(ntp_reassignments{

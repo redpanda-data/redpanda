@@ -81,7 +81,8 @@ struct partition_balancer_planner_fixture {
     partition_balancer_planner_fixture()
       : planner(
         cluster::planner_config{
-          .max_disk_usage_ratio = 0.8,
+          .soft_max_disk_usage_ratio = 0.8,
+          .hard_max_disk_usage_ratio = 0.95,
           .movement_disk_size_batch = reallocation_batch_size,
           .node_availability_timeout_sec = std::chrono::minutes(1)},
         workers.table.local(),

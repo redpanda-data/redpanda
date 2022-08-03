@@ -370,6 +370,8 @@ ss::future<> controller::start() {
             config::shard_local_cfg()
               .partition_autobalancing_max_disk_usage_percent.bind(),
             config::shard_local_cfg()
+              .storage_space_alert_free_threshold_percent.bind(),
+            config::shard_local_cfg()
               .partition_autobalancing_tick_interval_ms.bind(),
             config::shard_local_cfg()
               .partition_autobalancing_movement_batch_size_bytes.bind());

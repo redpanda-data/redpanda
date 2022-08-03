@@ -25,7 +25,12 @@ struct ntp_reassignments {
 };
 
 struct planner_config {
-    double max_disk_usage_ratio;
+    // If node disk usage goes over this ratio planner will actively move
+    // partitions away from the node.
+    double soft_max_disk_usage_ratio;
+    // Planner won't plan a move that will result in destination node(s) going
+    // over this ratio.
+    double hard_max_disk_usage_ratio;
     // Size of partitions that can be planned to move in one request
     size_t movement_disk_size_batch;
     std::chrono::seconds node_availability_timeout_sec;
@@ -78,7 +83,7 @@ private:
       const partition_assignment& assignments,
       const topic_metadata& topic_metadata,
       size_t partition_size,
-      bool use_max_disk_constraint,
+      double max_disk_usage_ratio,
       reallocation_request_state&);
 
     void get_unavailable_nodes_reassignments(
