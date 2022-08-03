@@ -15,6 +15,7 @@ from collections import namedtuple, defaultdict, deque
 from typing import Optional, Callable
 
 from ducktape.mark import ok_to_fail
+from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 
 from rptest.archival.s3_client import S3Client
@@ -932,7 +933,10 @@ class TimeBasedRetention(BaseCase):
 
 
 class TopicRecoveryTest(RedpandaTest):
-    def __init__(self, test_context):
+    def __init__(self,
+                 test_context: TestContext,
+                 num_brokers: Optional[int] = None,
+                 extra_rp_conf=dict()):
         si_settings = SISettings(
             cloud_storage_reconciliation_interval_ms=50,
             cloud_storage_max_connections=5,
@@ -945,10 +949,12 @@ class TopicRecoveryTest(RedpandaTest):
             RedpandaService.DEDICATED_NODE_KEY, False)
         if dedicated_nodes:
             # Open more connections when running on real servers.
-            si_settings.cloud_storage_max_connections = 10
+            si_settings.cloud_storage_max_connections = 20
 
         super(TopicRecoveryTest, self).__init__(test_context=test_context,
-                                                si_settings=si_settings)
+                                                num_brokers=num_brokers,
+                                                si_settings=si_settings,
+                                                extra_rp_conf=extra_rp_conf)
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
         self._started = True
@@ -1156,7 +1162,7 @@ class TopicRecoveryTest(RedpandaTest):
 
         wait_until(verify, timeout_sec=timeout.total_seconds(), backoff_sec=1)
 
-    def do_run(self, test_case: BaseCase):
+    def do_run(self, test_case: BaseCase, upload_delay_sec=60):
         """Template method invoked by all tests."""
 
         if test_case.initial_cleanup_needed:
@@ -1176,11 +1182,20 @@ class TopicRecoveryTest(RedpandaTest):
         self.logger.info("Generating test data")
         test_case.generate_baseline()
 
-        # Give time to finish all uploads
-        time.sleep(10)
+        # Give time to finish all uploads.
+        # NB: sleep() in a test is usually an anti-pattern, but in this case,
+        # we know this process takes time, and we can save $$ by delaying the
+        # start of polling for objects in S3.
+        pre_sleep = upload_delay_sec // 6
+        if pre_sleep > 0:
+            self.logger.info(f"Waiting {upload_delay_sec} sec for S3 uploads...")
+            time.sleep(upload_delay_sec)
+
         if test_case.verify_s3_content_after_produce:
             self.logger.info("Wait for data in S3")
-            self._wait_for_data_in_s3(test_case.topics)
+            self._wait_for_data_in_s3(
+                test_case.topics,
+                timeout=datetime.timedelta(seconds=upload_delay_sec))
 
         self._stop_redpanda_nodes()
 
