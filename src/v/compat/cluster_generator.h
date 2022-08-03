@@ -87,4 +87,17 @@ struct instance_generator<cluster::config_status> {
     static std::vector<cluster::config_status> limits() { return {}; }
 };
 
+template<>
+struct instance_generator<cluster::cluster_property_kv> {
+    static cluster::cluster_property_kv random() {
+        return {
+          tests::random_named_string<ss::sstring>(),
+          tests::random_named_string<ss::sstring>()};
+    }
+
+    static std::vector<cluster::cluster_property_kv> limits() {
+        return {{"", ""}};
+    }
+};
+
 } // namespace compat

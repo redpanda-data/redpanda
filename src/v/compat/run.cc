@@ -39,7 +39,8 @@ using compat_checks = type_list<
   raft::vote_request,
   raft::vote_reply,
   cluster::update_leadership_request,
-  cluster::config_status>;
+  cluster::config_status,
+  cluster::cluster_property_kv>;
 
 struct compat_error final : public std::runtime_error {
 public:

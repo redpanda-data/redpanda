@@ -63,4 +63,15 @@ GEN_COMPAT_CHECK(
       json_read(invalid);
   });
 
+GEN_COMPAT_CHECK(
+  cluster::cluster_property_kv,
+  {
+      json_write(key);
+      json_write(value);
+  },
+  {
+      json_read(key);
+      json_read(value);
+  });
+
 } // namespace compat
