@@ -487,11 +487,7 @@ std::optional<std::string_view> property<T>::units_name() const {
 
 template<typename T>
 bool property<T>::is_nullable() const {
-    if constexpr (reflection::is_std_optional<std::decay_t<T>>) {
-        return true;
-    } else {
-        return false;
-    }
+    return reflection::is_std_optional<std::decay_t<T>>;
 }
 
 template<typename T>
