@@ -145,6 +145,17 @@ inline void read_value(json::Value const& rd, model::ntp& obj) {
     read_member(rd, "partition", obj.tp.partition);
 }
 
+template<typename T>
+void read_value(json::Value const& v, ss::bool_class<T>& target) {
+    target = ss::bool_class<T>(v.GetBool());
+}
+
+template<typename T>
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const ss::bool_class<T>& b) {
+    rjson_serialize(w, bool(b));
+}
+
 #define json_write(_fname) json::write_member(wr, #_fname, obj._fname)
 #define json_read(_fname) json::read_member(rd, #_fname, obj._fname)
 
