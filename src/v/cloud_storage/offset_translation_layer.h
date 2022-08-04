@@ -12,6 +12,7 @@
 
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/types.h"
+#include "storage/types.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/iostream.hh>
@@ -26,8 +27,11 @@ namespace cloud_storage {
 /// It consumes information stored in the manifest.
 class offset_translator final {
 public:
-    explicit offset_translator(model::offset initial_delta)
-      : _initial_delta(initial_delta) {}
+    offset_translator(
+      model::offset initial_delta,
+      storage::opt_abort_source_t as = std::nullopt)
+      : _initial_delta(initial_delta)
+      , _as(as) {}
 
     struct stream_stats {
         model::offset min_offset;
@@ -52,6 +56,7 @@ public:
 
 private:
     model::offset _initial_delta;
+    storage::opt_abort_source_t _as;
 };
 
 } // namespace cloud_storage
