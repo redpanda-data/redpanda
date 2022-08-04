@@ -591,7 +591,7 @@ public:
       const ss::sstring&) const;
 
     // shutdown group. cancel all pending operations
-    void shutdown();
+    ss::future<> shutdown();
 
 private:
     using member_map = absl::node_hash_map<kafka::member_id, member_ptr>;

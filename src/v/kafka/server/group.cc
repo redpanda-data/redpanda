@@ -1201,7 +1201,9 @@ void group::remove_pending_member(kafka::member_id member_id) {
     }
 }
 
-void group::shutdown() {
+ss::future<> group::shutdown() {
+    _auto_abort_timer.cancel();
+    co_await _gate.close();
     // cancel join timer
     _join_timer.cancel();
     // cancel pending members timers

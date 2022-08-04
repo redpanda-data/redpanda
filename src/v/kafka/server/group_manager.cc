@@ -118,12 +118,12 @@ ss::future<> group_manager::stop() {
         e.second->as.request_abort();
     }
 
-    return _gate.close().then([this] {
+    return _gate.close().then([this]() -> ss::future<> {
         /**
          * cancel all pending group opeartions
          */
         for (auto& [_, group] : _groups) {
-            group->shutdown();
+            co_await group->shutdown();
         }
         _partitions.clear();
     });
@@ -140,9 +140,12 @@ void group_manager::detach_partition(const model::ntp& ntp) {
         auto p = it->second;
         auto units = co_await p->catchup_lock.hold_write_lock();
 
+        // Becasue shutdown group is async operation we should run it after
+        // rehash for groups map
+        std::vector<group_ptr> groups_for_shutdown;
         for (auto g_it = _groups.begin(); g_it != _groups.end();) {
             if (g_it->second->partition()->ntp() == p->partition->ntp()) {
-                g_it->second->shutdown();
+                groups_for_shutdown.push_back(g_it->second);
                 _groups.erase(g_it++);
                 continue;
             }
@@ -150,6 +153,8 @@ void group_manager::detach_partition(const model::ntp& ntp) {
         }
         _partitions.erase(ntp);
         _partitions.rehash(0);
+
+        co_await shutdown_groups(std::move(groups_for_shutdown));
     });
 }
 
@@ -288,15 +293,20 @@ group_manager::gc_partition_state(ss::lw_shared_ptr<attached_partition> p) {
 
     auto units = co_await p->catchup_lock.hold_write_lock();
 
+    // Becasue shutdown group is async operation we should run it after rehash
+    // for groups map
+    std::vector<group_ptr> groups_for_shutdown;
     for (auto it = _groups.begin(); it != _groups.end();) {
         if (it->second->partition()->ntp() == p->partition->ntp()) {
-            it->second->shutdown();
+            groups_for_shutdown.push_back(it->second);
             _groups.erase(it++);
             continue;
         }
         ++it;
     }
     _groups.rehash(0);
+
+    co_await shutdown_groups(std::move(groups_for_shutdown));
 }
 
 ss::future<> group_manager::reload_groups() {
