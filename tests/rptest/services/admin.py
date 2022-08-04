@@ -353,7 +353,8 @@ class Admin:
                              upsert=None,
                              remove=None,
                              force=False,
-                             dry_run=False):
+                             dry_run=False,
+                             node=None):
         if upsert is None:
             upsert = {}
         if remove is None:
@@ -375,10 +376,11 @@ class Admin:
                              json={
                                  'upsert': upsert,
                                  'remove': remove
-                             }).json()
+                             },
+                             node=node).json()
 
-    def get_cluster_config_status(self):
-        return self._request("GET", "cluster_config/status").json()
+    def get_cluster_config_status(self, node=None):
+        return self._request("GET", "cluster_config/status", node=node).json()
 
     def get_node_config(self):
         return self._request("GET", "node_config").json()
