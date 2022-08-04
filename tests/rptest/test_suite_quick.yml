@@ -9,7 +9,9 @@
 
 quick:
   included:
-  - tests/
+  - tests/partition_balancer_test.py::PartitionBalancerTest.test_unavailable_nodes
+  - tests/partition_move_interruption_test.py::PartitionMoveInterruption.test_cancelling_partition_move_x_core
+  - tests/partition_move_interruption_test.py::PartitionMoveInterruption.test_cancelling_partition_move
 
   excluded:
   - tests/librdkafka_test.py
