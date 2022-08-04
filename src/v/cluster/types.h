@@ -541,6 +541,9 @@ struct commit_tx_request
         write(
           out, std::chrono::duration_cast<std::chrono::milliseconds>(timeout));
     }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const commit_tx_request& r);
 };
 
 struct commit_tx_reply : serde::envelope<commit_tx_reply, serde::version<0>> {
@@ -555,6 +558,8 @@ struct commit_tx_reply : serde::envelope<commit_tx_reply, serde::version<0>> {
       = default;
 
     auto serde_fields() { return std::tie(ec); }
+
+    friend std::ostream& operator<<(std::ostream& o, const commit_tx_reply& r);
 };
 
 struct abort_tx_request : serde::envelope<abort_tx_request, serde::version<0>> {
@@ -595,6 +600,7 @@ struct abort_tx_request : serde::envelope<abort_tx_request, serde::version<0>> {
         write(
           out, std::chrono::duration_cast<std::chrono::milliseconds>(timeout));
     }
+    friend std::ostream& operator<<(std::ostream& o, const abort_tx_request& r);
 };
 
 struct abort_tx_reply : serde::envelope<abort_tx_reply, serde::version<0>> {
@@ -609,6 +615,8 @@ struct abort_tx_reply : serde::envelope<abort_tx_reply, serde::version<0>> {
       = default;
 
     auto serde_fields() { return std::tie(ec); }
+
+    friend std::ostream& operator<<(std::ostream& o, const abort_tx_reply& r);
 };
 
 struct begin_group_tx_request
@@ -668,6 +676,9 @@ struct begin_group_tx_request
         write(
           out, std::chrono::duration_cast<std::chrono::milliseconds>(timeout));
     }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const begin_group_tx_request& r);
 };
 
 struct begin_group_tx_reply
@@ -689,6 +700,9 @@ struct begin_group_tx_reply
       = default;
 
     auto serde_fields() { return std::tie(etag, ec); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const begin_group_tx_reply& r);
 };
 
 struct prepare_group_tx_request
@@ -750,6 +764,9 @@ struct prepare_group_tx_request
         write(
           out, std::chrono::duration_cast<std::chrono::milliseconds>(timeout));
     }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const prepare_group_tx_request& r);
 };
 
 struct prepare_group_tx_reply
@@ -766,6 +783,9 @@ struct prepare_group_tx_reply
       = default;
 
     auto serde_fields() { return std::tie(ec); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const prepare_group_tx_reply& r);
 };
 
 struct commit_group_tx_request
