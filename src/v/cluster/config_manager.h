@@ -69,6 +69,8 @@ public:
 
     status_map const& get_status() const { return status; }
 
+    status_map get_projected_status() const;
+
     config_version get_version() const noexcept { return _seen_version; }
 
     bool needs_update(const config_status& new_status) {
