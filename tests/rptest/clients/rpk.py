@@ -361,6 +361,10 @@ class RpkTool:
                 # We should wait until server will get information about it.
                 if line.find('UNKNOWN_TOPIC_OR_PARTITION') != -1:
                     return False
+
+                # Leadership movements are underway
+                if 'NOT_LEADER_FOR_PARTITION' in line:
+                    return False
             return True
 
         def parse_partition(string):
