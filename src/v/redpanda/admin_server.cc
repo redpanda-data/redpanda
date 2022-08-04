@@ -536,7 +536,7 @@ map_partition_results(std::vector<cluster::move_cancellation_result> results) {
         result.ns = std::move(r.ntp.ns)();
         result.topic = std::move(r.ntp.tp.topic)();
         result.partition = r.ntp.tp.partition;
-        result.result = fmt::format("{}", r.result);
+        result.result = cluster::make_error_code(r.result).message();
         ret.push_back(std::move(result));
         co_await ss::maybe_yield();
     }
