@@ -165,4 +165,7 @@ GEN_COMPAT_CHECK(
   { json_write(error); },
   { json_read(error); })
 
+GEN_COMPAT_CHECK(
+  cluster::recommission_node_request, { json_write(id); }, { json_read(id); })
+
 } // namespace compat

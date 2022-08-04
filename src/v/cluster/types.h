@@ -2071,6 +2071,12 @@ struct recommission_node_request
       = default;
 
     auto serde_fields() { return std::tie(id); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const recommission_node_request& r) {
+        fmt::print(o, "id {}", r.id);
+        return o;
+    }
 };
 
 struct recommission_node_reply

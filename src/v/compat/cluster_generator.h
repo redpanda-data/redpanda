@@ -292,4 +292,15 @@ struct instance_generator<cluster::decommission_node_reply> {
     static std::vector<cluster::decommission_node_reply> limits() { return {}; }
 };
 
+template<>
+struct instance_generator<cluster::recommission_node_request> {
+    static cluster::recommission_node_request random() {
+        return {.id = tests::random_named_int<model::node_id>()};
+    }
+
+    static std::vector<cluster::recommission_node_request> limits() {
+        return {};
+    }
+};
+
 } // namespace compat
