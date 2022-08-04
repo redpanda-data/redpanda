@@ -75,6 +75,15 @@ struct instance_generator<cluster::errc> {
 };
 
 template<>
+struct instance_generator<cluster::topic_result> {
+    static cluster::topic_result random() {
+        return cluster::topic_result(
+          model::random_topic_namespace(),
+          instance_generator<cluster::errc>::random());
+    }
+};
+
+template<>
 struct instance_generator<cluster::config_status> {
     static cluster::config_status random() {
         return cluster::config_status{
@@ -367,6 +376,68 @@ struct instance_generator<cluster::reconciliation_state_request> {
 
     static std::vector<cluster::reconciliation_state_request> limits() {
         return {{}};
+    }
+};
+
+template<>
+struct instance_generator<cluster::non_replicable_topic> {
+    static cluster::non_replicable_topic random() {
+        return {
+          .source = model::random_topic_namespace(),
+          .name = model::random_topic_namespace(),
+        };
+    }
+
+    static std::vector<cluster::non_replicable_topic> limits() { return {}; }
+};
+
+template<>
+struct instance_generator<cluster::create_non_replicable_topics_request> {
+    static cluster::create_non_replicable_topics_request random() {
+        return {
+          .topics = tests::random_vector([] {
+              return instance_generator<
+                cluster::non_replicable_topic>::random();
+          }),
+          .timeout = tests::random_duration<model::timeout_clock::duration>(),
+        };
+    }
+
+    static std::vector<cluster::create_non_replicable_topics_request> limits() {
+        return {
+          {
+            .topics = tests::random_vector([] {
+                return instance_generator<
+                  cluster::non_replicable_topic>::random();
+            }),
+            .timeout = min_duration(),
+          },
+          {
+            .topics = tests::random_vector([] {
+                return instance_generator<
+                  cluster::non_replicable_topic>::random();
+            }),
+            .timeout = max_duration(),
+          },
+          {
+            .topics = {},
+            .timeout = tests::random_duration<model::timeout_clock::duration>(),
+          }};
+    }
+};
+
+template<>
+struct instance_generator<cluster::create_non_replicable_topics_reply> {
+    static cluster::create_non_replicable_topics_reply random() {
+        return {.results = tests::random_vector([] {
+                    return instance_generator<cluster::topic_result>::random();
+                })};
+    }
+
+    static std::vector<cluster::create_non_replicable_topics_reply> limits() {
+        return {
+          {}, // empty list
+        };
     }
 };
 

@@ -2322,6 +2322,9 @@ struct create_non_replicable_topics_request
         timeout = std::chrono::duration_cast<model::timeout_clock::duration>(
           read_nested<std::chrono::milliseconds>(in, h._bytes_left_limit));
     }
+
+    friend std::ostream&
+    operator<<(std::ostream&, const create_non_replicable_topics_request&);
 };
 
 struct create_non_replicable_topics_reply
@@ -2335,6 +2338,9 @@ struct create_non_replicable_topics_reply
       = default;
 
     auto serde_fields() { return std::tie(results); }
+
+    friend std::ostream&
+    operator<<(std::ostream&, const create_non_replicable_topics_reply&);
 };
 
 struct config_update_request final

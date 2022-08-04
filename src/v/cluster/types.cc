@@ -587,6 +587,18 @@ std::ostream& operator<<(std::ostream& o, const feature_barrier_response& fbr) {
     return o;
 }
 
+std::ostream&
+operator<<(std::ostream& o, const create_non_replicable_topics_request& r) {
+    fmt::print(o, "{{topics: {} timeout: {}}}", r.topics, r.timeout);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const create_non_replicable_topics_reply& r) {
+    fmt::print(o, "{{results: {}}}", r.results);
+    return o;
+}
+
 std::ostream& operator<<(
   std::ostream& o, const feature_update_license_update_cmd_data& fulu) {
     fmt::print(o, "{{redpanda_license {}}}", fulu.redpanda_license);

@@ -93,6 +93,8 @@ using compat_checks = type_list<
   cluster::update_leadership_reply,
   cluster::get_leadership_request,
   cluster::get_leadership_reply,
+  cluster::create_non_replicable_topics_request,
+  cluster::create_non_replicable_topics_reply,
   cluster::abort_tx_request,
   cluster::abort_tx_reply,
   cluster::begin_group_tx_request,

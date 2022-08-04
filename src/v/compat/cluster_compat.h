@@ -200,6 +200,22 @@ GEN_COMPAT_CHECK(
 GEN_COMPAT_CHECK(
   cluster::reconciliation_state_request,
   { json_write(ntps); },
-  { json_read(ntps); })
+  { json_read(ntps); });
+
+GEN_COMPAT_CHECK(
+  cluster::create_non_replicable_topics_request,
+  {
+      json_write(topics);
+      json_write(timeout);
+  },
+  {
+      json_read(topics);
+      json_read(timeout);
+  })
+
+GEN_COMPAT_CHECK(
+  cluster::create_non_replicable_topics_reply,
+  { json_write(results); },
+  { json_read(results); });
 
 } // namespace compat
