@@ -11,11 +11,29 @@
 
 #pragma once
 
+#include "cluster/partition_balancer_types.h"
 #include "compat/check.h"
+#include "compat/json.h"
 #include "compat/partition_balancer_generator.h"
 
 namespace compat {
 
 EMPTY_COMPAT_CHECK_SERDE_ONLY(cluster::partition_balancer_overview_request);
+
+GEN_COMPAT_CHECK_SERDE_ONLY(
+  cluster::partition_balancer_overview_reply,
+  {
+      json_write(error);
+      json_write(last_tick_time);
+      json_write(status);
+      json_write(violations);
+  },
+  {
+      json_read(error);
+      json_read(last_tick_time);
+      obj.status = cluster::partition_balancer_status(
+        json::read_member_enum(rd, "status", obj.status));
+      json_read(violations);
+  })
 
 } // namespace compat

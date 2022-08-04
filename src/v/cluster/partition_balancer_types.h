@@ -55,6 +55,12 @@ struct partition_balancer_violations
           : id(id)
           , unavailable_since(unavailable_since) {}
 
+        friend std::ostream&
+        operator<<(std::ostream& o, const unavailable_node& u) {
+            fmt::print(o, "{{ id: {} since: {} }}", u.id, u.unavailable_since);
+            return o;
+        }
+
         auto serde_fields() { return std::tie(id, unavailable_since); }
 
         bool operator==(const unavailable_node& other) const {
@@ -71,6 +77,15 @@ struct partition_balancer_violations
         full_node(model::node_id id, uint32_t disk_used_percent)
           : id(id)
           , disk_used_percent(disk_used_percent) {}
+
+        friend std::ostream& operator<<(std::ostream& o, const full_node& f) {
+            fmt::print(
+              o,
+              "{{ id: {} disk_used_percent: {} }}",
+              f.id,
+              f.disk_used_percent);
+            return o;
+        }
 
         auto serde_fields() { return std::tie(id, disk_used_percent); }
 
@@ -89,6 +104,16 @@ struct partition_balancer_violations
       std::vector<unavailable_node> un, std::vector<full_node> fn)
       : unavailable_nodes(std::move(un))
       , full_nodes(std::move(fn)) {}
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const partition_balancer_violations& v) {
+        fmt::print(
+          o,
+          "{{ unavailable_nodes: {} full_nodes: {} }}",
+          v.unavailable_nodes,
+          v.full_nodes);
+        return o;
+    }
 
     auto serde_fields() { return std::tie(unavailable_nodes, full_nodes); }
 
@@ -161,6 +186,18 @@ struct partition_balancer_overview_reply
     bool operator==(const partition_balancer_overview_reply& other) const {
         return error == other.error && last_tick_time == other.last_tick_time
                && status == other.status && violations == other.violations;
+    }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const partition_balancer_overview_reply& rep) {
+        fmt::print(
+          o,
+          "{{ error: {} last_tick_time: {} status: {} violations: {}}}",
+          rep.error,
+          rep.last_tick_time,
+          rep.status,
+          rep.violations);
+        return o;
     }
 };
 

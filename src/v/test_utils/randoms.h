@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "cluster/partition_balancer_types.h"
 #include "model/metadata.h"
 #include "net/unresolved_address.h"
 #include "random/generators.h"
@@ -94,6 +95,38 @@ template<typename Dur>
 inline Dur random_duration() {
     return Dur(
       random_generators::get_int<typename Dur::rep>(-100000, 100000) * 1000000);
+}
+
+inline cluster::partition_balancer_status random_balancer_status() {
+    return random_generators::random_choice({
+      cluster::partition_balancer_status::off,
+      cluster::partition_balancer_status::starting,
+      cluster::partition_balancer_status::ready,
+      cluster::partition_balancer_status::in_progress,
+      cluster::partition_balancer_status::stalled,
+    });
+}
+
+inline cluster::partition_balancer_violations::unavailable_node
+random_unavailable_node() {
+    return {
+      tests::random_named_int<model::node_id>(),
+      model::timestamp(random_generators::get_int<int64_t>())};
+}
+
+inline cluster::partition_balancer_violations::full_node random_full_node() {
+    return {
+      tests::random_named_int<model::node_id>(),
+      random_generators::get_int<uint32_t>()};
+}
+
+inline cluster::partition_balancer_violations
+random_partition_balancer_violations() {
+    auto random_un_gen = tests::random_vector(
+      []() { return random_unavailable_node(); });
+    auto random_fn_gen = tests::random_vector(
+      []() { return random_full_node(); });
+    return {std::move(random_un_gen), std::move(random_fn_gen)};
 }
 
 } // namespace tests

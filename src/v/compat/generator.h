@@ -9,6 +9,8 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include <model/timeout_clock.h>
+
 #include <vector>
 
 // Utility to create a generator for empty objects.

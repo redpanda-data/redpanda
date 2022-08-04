@@ -11,11 +11,31 @@
 
 #pragma once
 
+#include "cluster/errc.h"
 #include "cluster/partition_balancer_types.h"
-#include "compat/generator.h"
+#include "compat/cluster_generator.h"
+#include "model/tests/randoms.h"
+#include "model/timestamp.h"
+#include "test_utils/randoms.h"
 
 namespace compat {
 
 EMPTY_COMPAT_GENERATOR(cluster::partition_balancer_overview_request);
+
+template<>
+struct instance_generator<cluster::partition_balancer_overview_reply> {
+    static cluster::partition_balancer_overview_reply random() {
+        return {
+          .error = instance_generator<cluster::errc>::random(),
+          .last_tick_time = model::timestamp(
+            random_generators::get_int<int64_t>()),
+          .status = tests::random_balancer_status(),
+          .violations = tests::random_partition_balancer_violations()};
+    }
+
+    static std::vector<cluster::partition_balancer_overview_reply> limits() {
+        return {{}};
+    }
+};
 
 } // namespace compat

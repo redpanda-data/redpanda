@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include "cluster/partition_balancer_types.h"
 #include "json/document.h"
 #include "json/json.h"
 #include "model/fundamental.h"
@@ -302,6 +303,59 @@ inline void read_value(json::Value const& rd, model::topic_namespace& obj) {
     read_member(rd, "ns", ns);
     read_member(rd, "tp", tp);
     obj = model::topic_namespace(std::move(ns), std::move(tp));
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const cluster::partition_balancer_violations::unavailable_node& un) {
+    w.StartObject();
+    w.Key("id");
+    rjson_serialize(w, un.id);
+    w.Key("unavailable_since");
+    rjson_serialize(w, un.unavailable_since.value());
+    w.EndObject();
+}
+
+inline void read_value(
+  json::Value const& rd,
+  cluster::partition_balancer_violations::unavailable_node& un) {
+    read_member(rd, "id", un.id);
+    read_member(rd, "unavailable_since", un.unavailable_since);
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const cluster::partition_balancer_violations::full_node& fn) {
+    w.StartObject();
+    w.Key("id");
+    rjson_serialize(w, fn.id);
+    w.Key("disk_used_percent");
+    rjson_serialize(w, fn.disk_used_percent);
+    w.EndObject();
+}
+
+inline void read_value(
+  json::Value const& rd,
+  cluster::partition_balancer_violations::full_node& fn) {
+    read_member(rd, "id", fn.id);
+    read_member(rd, "disk_used_percent", fn.disk_used_percent);
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const cluster::partition_balancer_violations& violations) {
+    w.StartObject();
+    w.Key("unavailable_nodes");
+    rjson_serialize(w, violations.unavailable_nodes);
+    w.Key("full_nodes");
+    rjson_serialize(w, violations.full_nodes);
+    w.EndObject();
+}
+
+inline void read_value(
+  json::Value const& rd, cluster::partition_balancer_violations& violations) {
+    read_member(rd, "unavailable_nodes", violations.unavailable_nodes);
+    read_member(rd, "full_nodes", violations.full_nodes);
 }
 
 #define json_write(_fname) json::write_member(wr, #_fname, obj._fname)
