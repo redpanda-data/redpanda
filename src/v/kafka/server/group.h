@@ -14,6 +14,7 @@
 #include "cluster/logger.h"
 #include "cluster/partition.h"
 #include "cluster/simple_batch_builder.h"
+#include "cluster/tx_gateway_frontend.h"
 #include "cluster/tx_utils.h"
 #include "kafka/group_probe.h"
 #include "kafka/protocol/fwd.h"
@@ -186,6 +187,7 @@ public:
       group_state s,
       config::configuration& conf,
       ss::lw_shared_ptr<cluster::partition> partition,
+      ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
       group_metadata_serializer,
       enable_group_metrics);
 
@@ -195,6 +197,7 @@ public:
       group_metadata_value& md,
       config::configuration& conf,
       ss::lw_shared_ptr<cluster::partition> partition,
+      ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
       group_metadata_serializer,
       enable_group_metrics);
 
@@ -864,6 +867,8 @@ private:
     ss::gate _gate;
     ss::timer<clock_type> _auto_abort_timer;
     std::chrono::milliseconds _transactional_id_expiration;
+
+    ss::sharded<cluster::tx_gateway_frontend>& _tx_frontend;
 };
 
 using group_ptr = ss::lw_shared_ptr<group>;

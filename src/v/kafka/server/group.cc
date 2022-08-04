@@ -51,6 +51,7 @@ group::group(
   group_state s,
   config::configuration& conf,
   ss::lw_shared_ptr<cluster::partition> partition,
+  ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
   group_metadata_serializer serializer,
   enable_group_metrics group_metrics)
   : _id(std::move(id))
@@ -69,7 +70,8 @@ group::group(
   , _md_serializer(std::move(serializer))
   , _enable_group_metrics(group_metrics)
   , _transactional_id_expiration(
-      config::shard_local_cfg().transactional_id_expiration_ms.value()) {
+      config::shard_local_cfg().transactional_id_expiration_ms.value())
+  , _tx_frontend(tx_frontend) {
     if (_enable_group_metrics) {
         _probe.setup_public_metrics(_id);
     }
@@ -82,6 +84,7 @@ group::group(
   group_metadata_value& md,
   config::configuration& conf,
   ss::lw_shared_ptr<cluster::partition> partition,
+  ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
   group_metadata_serializer serializer,
   enable_group_metrics group_metrics)
   : _id(std::move(id))
@@ -97,7 +100,8 @@ group::group(
   , _md_serializer(std::move(serializer))
   , _enable_group_metrics(group_metrics)
   , _transactional_id_expiration(
-      config::shard_local_cfg().transactional_id_expiration_ms.value()) {
+      config::shard_local_cfg().transactional_id_expiration_ms.value())
+  , _tx_frontend(tx_frontend) {
     _state = md.members.empty() ? group_state::empty : group_state::stable;
     _generation = md.generation;
     _protocol_type = md.protocol_type;

@@ -45,11 +45,13 @@ static bool is_uuid(const ss::sstring& uuid) {
  */
 static group get() {
     static config::configuration conf;
+    ss::sharded<cluster::tx_gateway_frontend> fr;
     return group(
       kafka::group_id("g"),
       group_state::empty,
       conf,
       nullptr,
+      fr,
       make_backward_compatible_serializer(),
       enable_group_metrics::no);
 }
