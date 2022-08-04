@@ -921,6 +921,9 @@ struct configuration_update_request
       const configuration_update_request&, const configuration_update_request&)
       = default;
 
+    friend std::ostream&
+    operator<<(std::ostream&, const configuration_update_request&);
+
     auto serde_fields() { return std::tie(node, target_node); }
 };
 

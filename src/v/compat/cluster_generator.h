@@ -495,6 +495,18 @@ struct instance_generator<cluster::finish_partition_update_reply> {
 };
 
 template<>
+struct instance_generator<cluster::configuration_update_request> {
+    static cluster::configuration_update_request random() {
+        return cluster::configuration_update_request(
+          model::random_broker(), tests::random_named_int<model::node_id>());
+    }
+
+    static std::vector<cluster::configuration_update_request> limits() {
+        return {};
+    }
+};
+
+template<>
 struct instance_generator<cluster::cancel_node_partition_movements_request> {
     static cluster::cancel_node_partition_movements_request random() {
         return {

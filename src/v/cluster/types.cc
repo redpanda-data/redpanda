@@ -751,6 +751,12 @@ std::ostream& operator<<(std::ostream& o, const abort_group_tx_reply& r) {
     return o;
 }
 
+std::ostream&
+operator<<(std::ostream& o, const configuration_update_request& cr) {
+    fmt::print(o, "{{broker: {} target_node: {}}}", cr.node, cr.target_node);
+    return o;
+}
+
 } // namespace cluster
 
 namespace reflection {

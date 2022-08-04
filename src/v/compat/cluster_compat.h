@@ -263,4 +263,15 @@ GEN_COMPAT_CHECK(
 
 EMPTY_COMPAT_CHECK(cluster::cancel_all_partition_movements_request);
 
+GEN_COMPAT_CHECK(
+  cluster::configuration_update_request,
+  {
+      json_write(node);
+      json_write(target_node);
+  },
+  {
+      json_read(node);
+      json_read(target_node);
+  })
+
 } // namespace compat
