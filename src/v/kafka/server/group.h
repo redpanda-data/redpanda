@@ -762,6 +762,9 @@ private:
       model::producer_identity pid,
       model::tx_seq tx_seq);
 
+    ss::future<cluster::commit_group_tx_reply>
+    do_commit(kafka::group_id group_id, model::producer_identity pid);
+
     kafka::group_id _id;
     group_state _state;
     model::timestamp _state_timestamp;

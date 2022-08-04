@@ -1676,75 +1676,7 @@ group::commit_tx(cluster::commit_group_tx_request r) {
 
     // we commit only if a provided tx_seq matches prepared tx_seq
 
-    // It is fix for https://github.com/redpanda-data/redpanda/issues/5163.
-    // Problem is group_*_tx contains only producer_id in key, so compaction
-    // save only last records for this events. We need only save in logs
-    // consumed offset after commit_txs. For this we can write store_offset
-    // event together with group_commit_tx.
-    //
-    // Problem: this 2 events contains different record batch type. So we can
-    // not put it in one batch and write on disk atomically. But it is not a
-    // problem, because client got ok for commit_request (see
-    // tx_gateway_frontend). So redpanda will eventually finish commit and
-    // complete write for both this events.
-    model::record_batch_reader::data_t batches;
-    batches.reserve(2);
-
-    cluster::simple_batch_builder store_offset_builder(
-      model::record_batch_type::raft_data, model::offset(0));
-    for (const auto& [tp, metadata] : prepare_it->second.offsets) {
-        update_store_offset_builder(
-          store_offset_builder,
-          tp.topic,
-          tp.partition,
-          metadata.offset,
-          metadata.committed_leader_epoch,
-          metadata.metadata,
-          model::timestamp{-1});
-    }
-
-    batches.push_back(std::move(store_offset_builder).build());
-
-    group_log_commit_tx commit_tx;
-    commit_tx.group_id = r.group_id;
-    // TODO: https://app.clubhouse.io/vectorized/story/2200
-    // include producer_id+type into key to make it unique-ish
-    // to prevent being GCed by the compaction
-    auto batch = make_tx_batch(
-      model::record_batch_type::group_commit_tx,
-      commit_tx_record_version,
-      r.pid,
-      std::move(commit_tx));
-
-    batches.push_back(std::move(batch));
-
-    auto reader = model::make_memory_record_batch_reader(std::move(batches));
-
-    auto e = co_await _partition->raft()->replicate(
-      _term,
-      std::move(reader),
-      raft::replicate_options(raft::consistency_level::quorum_ack));
-
-    if (!e) {
-        co_return make_commit_tx_reply(cluster::tx_errc::unknown_server_error);
-    }
-
-    prepare_it = _prepared_txs.find(r.pid);
-    if (prepare_it == _prepared_txs.end()) {
-        vlog(
-          _ctx_txlog.error,
-          "can't find already observed prepared tx pid:{}",
-          r.pid);
-        co_return make_commit_tx_reply(cluster::tx_errc::unknown_server_error);
-    }
-
-    for (const auto& [tp, md] : prepare_it->second.offsets) {
-        try_upsert_offset(tp, md);
-    }
-
-    _prepared_txs.erase(prepare_it);
-
-    co_return make_commit_tx_reply(cluster::tx_errc::none);
+    co_return co_await do_commit(r.group_id, r.pid);
 }
 
 cluster::begin_group_tx_reply make_begin_tx_reply(cluster::tx_errc ec) {
@@ -2783,6 +2715,86 @@ ss::future<cluster::abort_group_tx_reply> group::do_abort(
     _prepared_txs.erase(pid);
 
     co_return make_abort_tx_reply(cluster::tx_errc::none);
+}
+
+ss::future<cluster::commit_group_tx_reply>
+group::do_commit(kafka::group_id group_id, model::producer_identity pid) {
+    auto prepare_it = _prepared_txs.find(pid);
+    if (prepare_it == _prepared_txs.end()) {
+        // Impossible situation
+        vlog(_ctx_txlog.error, "Can not find prepared tx for pid: {}", pid);
+        co_return make_commit_tx_reply(cluster::tx_errc::unknown_server_error);
+    }
+
+    // It is fix for https://github.com/redpanda-data/redpanda/issues/5163.
+    // Problem is group_*_tx contains only producer_id in key, so compaction
+    // save only last records for this events. We need only save in logs
+    // consumed offset after commit_txs. For this we can write store_offset
+    // event together with group_commit_tx.
+    //
+    // Problem: this 2 events contains different record batch type. So we can
+    // not put it in one batch and write on disk atomically. But it is not a
+    // problem, because client got ok for commit_request (see
+    // tx_gateway_frontend). So redpanda will eventually finish commit and
+    // complete write for both this events.
+    model::record_batch_reader::data_t batches;
+    batches.reserve(2);
+
+    cluster::simple_batch_builder store_offset_builder(
+      model::record_batch_type::raft_data, model::offset(0));
+    for (const auto& [tp, metadata] : prepare_it->second.offsets) {
+        update_store_offset_builder(
+          store_offset_builder,
+          tp.topic,
+          tp.partition,
+          metadata.offset,
+          metadata.committed_leader_epoch,
+          metadata.metadata,
+          model::timestamp{-1});
+    }
+
+    batches.push_back(std::move(store_offset_builder).build());
+
+    group_log_commit_tx commit_tx;
+    commit_tx.group_id = group_id;
+    // TODO: https://app.clubhouse.io/vectorized/story/2200
+    // include producer_id+type into key to make it unique-ish
+    // to prevent being GCed by the compaction
+    auto batch = make_tx_batch(
+      model::record_batch_type::group_commit_tx,
+      commit_tx_record_version,
+      pid,
+      std::move(commit_tx));
+
+    batches.push_back(std::move(batch));
+
+    auto reader = model::make_memory_record_batch_reader(std::move(batches));
+
+    auto e = co_await _partition->raft()->replicate(
+      _term,
+      std::move(reader),
+      raft::replicate_options(raft::consistency_level::quorum_ack));
+
+    if (!e) {
+        co_return make_commit_tx_reply(cluster::tx_errc::unknown_server_error);
+    }
+
+    prepare_it = _prepared_txs.find(pid);
+    if (prepare_it == _prepared_txs.end()) {
+        vlog(
+          _ctx_txlog.error,
+          "can't find already observed prepared tx pid:{}",
+          pid);
+        co_return make_commit_tx_reply(cluster::tx_errc::unknown_server_error);
+    }
+
+    for (const auto& [tp, md] : prepare_it->second.offsets) {
+        try_upsert_offset(tp, md);
+    }
+
+    _prepared_txs.erase(prepare_it);
+
+    co_return make_commit_tx_reply(cluster::tx_errc::none);
 }
 
 std::ostream& operator<<(std::ostream& o, const group::offset_metadata& md) {
