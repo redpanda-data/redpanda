@@ -2052,6 +2052,12 @@ struct reconciliation_state_request
       const reconciliation_state_request&, const reconciliation_state_request&)
       = default;
 
+    friend std::ostream&
+    operator<<(std::ostream& o, const reconciliation_state_request& req) {
+        fmt::print(o, "{{ ntps: {} }}", req.ntps);
+        return o;
+    }
+
     auto serde_fields() { return std::tie(ntps); }
 };
 

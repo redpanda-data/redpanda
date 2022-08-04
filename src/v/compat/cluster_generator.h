@@ -358,4 +358,16 @@ struct instance_generator<cluster::set_maintenance_mode_reply> {
     }
 };
 
+template<>
+struct instance_generator<cluster::reconciliation_state_request> {
+    static cluster::reconciliation_state_request random() {
+        auto f = []() { return model::random_ntp(); };
+        return {.ntps = tests::random_vector(std::move(f))};
+    }
+
+    static std::vector<cluster::reconciliation_state_request> limits() {
+        return {{}};
+    }
+};
+
 } // namespace compat
