@@ -273,7 +273,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                   std::move(hdr),
                   std::move(buf),
                   sres->backpressure_delay,
-                  (int)sres->memlocks.count());
+                  (ssize_t)sres->memlocks.count());
                 /*
                  * we process requests in order since all subsequent requests
                  * are dependent on authentication having completed.
@@ -295,6 +295,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                  */
 
                 const auto correlation = rctx.header().correlation;
+                const auto key = rctx.header().key;
                 const sequence_id seq = _seq_idx;
                 _seq_idx = _seq_idx + sequence_id(1);
                 auto res = kafka::process_request(
@@ -307,6 +308,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                                  f = std::move(res.response),
                                  seq,
                                  correlation,
+                                 key,
                                  self,
                                  sres = std::move(sres)](
                                   ss::future<> d) mutable {
@@ -342,13 +344,15 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                              f = std::move(f),
                              sres = std::move(sres),
                              seq,
-                             correlation]() mutable {
+                             correlation,
+                             key]() mutable {
                                 return f.then([this,
                                                sres = std::move(sres),
                                                seq,
-                                               correlation](
-                                                response_ptr r) mutable {
+                                               correlation,
+                                               key](response_ptr r) mutable {
                                     r->set_correlation(correlation);
+                                    r->_key = key;
                                     response_and_resources randr{
                                       std::move(r), std::move(sres)};
                                     _responses.insert({seq, std::move(randr)});
@@ -426,6 +430,10 @@ ss::future<> connection_context::maybe_process_responses() {
               ss::stop_iteration::no);
         }
 
+        auto corr = resp_and_res.response->correlation();
+        auto key = resp_and_res.response->_key;
+        auto id = _id;
+        // auto key = resp_and_res.response->
         auto msg = response_as_scattered(std::move(resp_and_res.response));
         try {
             return _rs.conn->write(std::move(msg))
@@ -435,10 +443,19 @@ ss::future<> connection_context::maybe_process_responses() {
               })
               // release the resources only once it has been written to the
               // connection.
-              .finally([resources = std::move(resp_and_res.resources)] {});
+              .finally(
+                [key, id, corr, resources = std::move(resp_and_res.resources)] {
+                    vlog(
+                      klog.info,
+                      "Releasing {} units for key: {} corr {}-{}",
+                      resources->memlocks.count(),
+                      key,
+                      id,
+                      corr);
+                });
         } catch (...) {
             vlog(
-              klog.debug,
+              klog.warn,
               "Failed to process request: {}",
               std::current_exception());
         }
@@ -446,5 +463,7 @@ ss::future<> connection_context::maybe_process_responses() {
           ss::stop_iteration::no);
     });
 }
+
+std::atomic<int64_t> cc_id_counter;
 
 } // namespace kafka

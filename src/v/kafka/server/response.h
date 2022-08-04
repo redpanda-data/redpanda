@@ -14,6 +14,7 @@
 #include "bytes/iobuf.h"
 #include "kafka/protocol/response_writer.h"
 #include "kafka/protocol/types.h"
+#include "kafka/types.h"
 #include "seastarx.h"
 #include "vassert.h"
 
@@ -29,7 +30,8 @@ using flex_enabled = ss::bool_class<struct flex_response_tag>;
 class response {
 public:
     explicit response(flex_enabled flex) noexcept
-      : _flex(flex)
+      : _key{1000}
+      , _flex(flex)
       , _tags(
           flex ? std::optional<tagged_fields>(tagged_fields{}) : std::nullopt)
       , _writer(_buf) {}
@@ -56,6 +58,8 @@ public:
      */
     bool is_noop() const { return _noop; }
     void mark_noop() { _noop = true; }
+
+    kafka::api_key _key;
 
 private:
     bool _noop{false};

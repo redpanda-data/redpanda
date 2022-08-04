@@ -80,6 +80,8 @@ struct session_resources {
     std::unique_ptr<request_tracker> tracker;
 };
 
+extern std::atomic<int64_t> cc_id_counter;
+
 class connection_context final
   : public ss::enable_lw_shared_from_this<connection_context> {
 public:
@@ -96,7 +98,8 @@ public:
       , _client_addr(_rs.conn ? _rs.conn->addr.addr() : ss::net::inet_address{})
       , _enable_authorizer(enable_authorizer)
       , _authlog(_client_addr, client_port())
-      , _mtls_state(std::move(mtls_state)) {}
+      , _mtls_state(std::move(mtls_state))
+      , _id(++cc_id_counter) {}
 
     ~connection_context() noexcept = default;
     connection_context(const connection_context&) = delete;
@@ -192,6 +195,8 @@ public:
     uint16_t client_port() const {
         return _rs.conn ? _rs.conn->addr.port() : 0;
     }
+
+    int32_t server_id() const { return _rs.id(); }
 
 private:
     // Reserve units from memory from the memory semaphore in proportion
@@ -301,6 +306,9 @@ private:
     const bool _enable_authorizer;
     ctx_log _authlog;
     std::optional<security::tls::mtls_state> _mtls_state;
+
+public:
+    int64_t _id;
 };
 
 } // namespace kafka

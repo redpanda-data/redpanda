@@ -379,32 +379,68 @@ guess_peer_listener(request_context& ctx, cluster::broker_ptr broker) {
 
 struct conc_tracker {
     int conc = 0, hwm = 0;
+    int64_t accum_units = 0;
+    int total_reqs = 0;
 };
 
 struct conc_holder {
-    explicit conc_holder(conc_tracker& tracker, const char* name)
+    explicit conc_holder(
+      conc_tracker& tracker,
+      const char* name,
+      int32_t server_id,
+      int64_t id,
+      int32_t corr,
+      int64_t units)
       : _tracker{tracker}
-      , _name{name} {
-        conc = ++tracker.conc;
+      , _name{name}
+      , _server_id{server_id}
+      , _id{id}
+      , _corr{corr}
+      , _units(units) {
+        auto conc = ++tracker.conc;
+        tracker.accum_units += units;
+        tracker.total_reqs++;
         if (conc > tracker.hwm) {
             tracker.hwm = tracker.conc;
-            vlog(
-              klog.warn,
-              "metadata_handler::handle conc_tracker {} hwm {}",
-              _name,
-              conc);
-            is_hwm = true;
+            log("ACQUIRE");
+            _is_hwm = true;
         } else {
-            is_hwm = false;
+            _is_hwm = false;
         }
     }
 
-    ~conc_holder() { _tracker.conc--; }
+    void log(const char* infix) const {
+        vlog(
+          klog.warn,
+          "conc_tracker {} {} totalr {} server_id {} corr {}-{} units {} "
+          "aunits {} hwm "
+          "{}",
+          infix,
+          _name,
+          _tracker.total_reqs,
+          _server_id,
+          _id,
+          _corr,
+          _units,
+          _tracker.accum_units,
+          _tracker.conc);
+    }
 
-    bool is_hwm;
-    int conc;
+    ~conc_holder() {
+        _tracker.conc--;
+        _tracker.accum_units -= _units;
+        if (_is_hwm) {
+            log("RELEASE");
+        }
+    }
+
     conc_tracker& _tracker;
     const char* _name;
+    int32_t _server_id;
+    int64_t _id;
+    int32_t _corr;
+    int64_t _units;
+    bool _is_hwm;
 };
 
 template<typename T>
@@ -425,13 +461,23 @@ static size_t response_size(const metadata_response& resp) {
     return size;
 }
 
+static thread_local periodic_ms conc_period{100ms};
 static thread_local periodic_ms memunits_period{1000ms};
 static thread_local conc_tracker md_conc_tracker;
 
 template<>
 ss::future<response_ptr> metadata_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
-    conc_holder conc(md_conc_tracker, "metadata_handler::handle parallelism");
+    auto corr = ctx.header().correlation;
+    auto id = ctx.connection()->_id;
+    auto server_id = ctx.connection()->server_id();
+    conc_holder conc(
+      md_conc_tracker,
+      "metadata_handler::handle",
+      server_id,
+      id,
+      corr,
+      ctx.memunits());
 
     metadata_response reply;
     auto alive_brokers = co_await ctx.metadata_cache().all_alive_brokers();
@@ -474,6 +520,10 @@ ss::future<response_ptr> metadata_handler::handle(
     metadata_request request;
     request.decode(ctx.reader(), ctx.header().version);
 
+    int topic_count = request.list_all_topics
+                        ? -1
+                        : (int)request.data.topics->size();
+
     reply.data.topics = co_await get_topic_metadata(ctx, request);
 
     if (
@@ -486,7 +536,16 @@ ss::future<response_ptr> metadata_handler::handle(
 
     if (memunits_period.check()) {
         auto rsize = response_size(reply);
-        vlog(klog.warn, "response size {} units {}", rsize, ctx.memunits());
+        vlog(
+          klog.warn,
+          "response topics {} size {} units {}",
+          topic_count,
+          rsize,
+          ctx.memunits());
+    }
+
+    if (conc_period.check()) {
+        conc.log("PERIOD");
     }
 
     co_return co_await ctx.respond(std::move(reply));
