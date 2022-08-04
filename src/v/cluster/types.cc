@@ -642,6 +642,24 @@ std::ostream& operator<<(std::ostream& o, const begin_group_tx_reply& r) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const prepare_group_tx_request& r) {
+    fmt::print(
+      o,
+      "{{ntp {} group_id {} etag {} pid {} tx_seq {} timeout {}}}",
+      r.ntp,
+      r.group_id,
+      r.etag,
+      r.pid,
+      r.tx_seq,
+      r.timeout);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const prepare_group_tx_reply& r) {
+    fmt::print(o, "{{ec {}}}", r.ec);
+    return o;
+}
+
 } // namespace cluster
 
 namespace reflection {

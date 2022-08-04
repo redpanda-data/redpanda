@@ -764,6 +764,9 @@ struct prepare_group_tx_request
         write(
           out, std::chrono::duration_cast<std::chrono::milliseconds>(timeout));
     }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const prepare_group_tx_request& r);
 };
 
 struct prepare_group_tx_reply
@@ -780,6 +783,9 @@ struct prepare_group_tx_reply
       = default;
 
     auto serde_fields() { return std::tie(ec); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const prepare_group_tx_reply& r);
 };
 
 struct commit_group_tx_request
