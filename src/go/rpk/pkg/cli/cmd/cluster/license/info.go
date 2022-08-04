@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -22,7 +23,7 @@ func newInfoCommand(fs afero.Fs) *cobra.Command {
 
     Organization:    Organization the license was generated for.
     Type:            Type of license: free, enterprise, etc.
-    Expires:         Number of days the license is valid until or -1 if is expired.
+    Expires:         Expiration date of the license
     Version:         License schema version.
 `,
 		Run: func(cmd *cobra.Command, args []string) {
@@ -47,10 +48,13 @@ func newInfoCommand(fs afero.Fs) *cobra.Command {
 			if info.Properties != (admin.LicenseProperties{}) {
 				expired := info.Properties.Expires < 0
 				if format == "json" {
+					tm := time.Unix(info.Properties.Expires, 0).Format("Jan 2 2006")
 					props, err := json.MarshalIndent(struct {
-						admin.LicenseProperties
-						Expired bool `json:"license_expired,omitempty"`
-					}{info.Properties, expired}, "", "  ")
+						Organization string
+						Type         string
+						Expires      string
+						Expired      bool `json:"license_expired,omitempty"`
+					}{info.Properties.Organization, info.Properties.Type, tm, expired}, "", "  ")
 					out.MaybeDie(err, "unable to print license information as json: %v", err)
 					fmt.Printf("%s\n", props)
 				} else {
@@ -70,16 +74,17 @@ func printLicenseInfo(p admin.LicenseProperties, expired bool) {
 	out.Section("LICENSE INFORMATION")
 	licenseFormat := `Organization:      %v
 Type:              %v
-Expires:           %v days
-Version:           %v
+Expires:           %v
 `
 	if expired {
 		licenseFormat += `License Expired:   true
 `
 	}
-	fmt.Printf(licenseFormat, p.Organization, p.Type, p.Expires, p.Version)
-	if p.Expires < 30 && p.Expires >= 0 {
+	tm := time.Unix(p.Expires, 0)
+	fmt.Printf(licenseFormat, p.Organization, p.Type, tm.Format("Jan 2 2006"))
+	diff := time.Until(tm)
+	daysLeft := int(diff.Hours() / 24)
+	if daysLeft < 30 && daysLeft >= 0 {
 		fmt.Fprintln(os.Stderr, "warning: your license will expire soon")
-		return
 	}
 }

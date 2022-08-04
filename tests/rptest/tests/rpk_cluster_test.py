@@ -206,29 +206,19 @@ class RpkClusterTest(RedpandaTest):
             output = self._rpk.license_set(tf.name)
             assert "Successfully uploaded license" in output
 
-        def get_license():
-            output = self._rpk.license_info()
-            resp = json.loads(output)
-            if resp['org'] == "redpanda-testing":
-                return True
-
-            return False
-
-        wait_until(get_license,
+        wait_until(lambda: self._rpk.license_info() != "{}",
                    timeout_sec=10,
                    backoff_sec=1,
                    retry_on_exc=True,
                    err_msg="unable to retrieve license information")
 
         expected_license = {
-            'expires':
-            (datetime.date(2122, 6, 6) - datetime.date.today()).days,
-            'format_version': 0,
-            'org': 'redpanda-testing',
-            'type': 'enterprise'
+            'Expires': "Jul 11 2122",
+            'Organization': 'redpanda-testing',
+            'Type': 'enterprise'
         }
-        output = self._rpk.license_info()
-        assert expected_license == json.loads(output)
+        result = json.loads(self._rpk.license_info())
+        assert expected_license == result, result
 
     @cluster(num_nodes=3)
     def test_upload_cluster_license_rpk(self):
