@@ -197,7 +197,8 @@ std::ostream& operator<<(std::ostream& o, const consistency_level& l) {
 std::ostream& operator<<(std::ostream& o, const protocol_metadata& m) {
     return o << "{raft_group:" << m.group << ", commit_index:" << m.commit_index
              << ", term:" << m.term << ", prev_log_index:" << m.prev_log_index
-             << ", prev_log_term:" << m.prev_log_term << "}";
+             << ", prev_log_term:" << m.prev_log_term
+             << ", last_visible_index:" << m.last_visible_index << "}";
 }
 std::ostream& operator<<(std::ostream& o, const vote_reply& r) {
     return o << "{term:" << r.term << ", target_node_id" << r.target_node_id

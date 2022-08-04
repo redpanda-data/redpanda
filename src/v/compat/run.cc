@@ -38,6 +38,10 @@ using compat_checks = type_list<
   raft::install_snapshot_reply,
   raft::vote_request,
   raft::vote_reply,
+  raft::heartbeat_request,
+  raft::heartbeat_reply,
+  raft::append_entries_request,
+  raft::append_entries_reply,
   cluster::update_leadership_request,
   cluster::config_status,
   cluster::cluster_property_kv,
@@ -225,10 +229,12 @@ ss::future<> write_corpus(const std::filesystem::path& dir) {
 
 ss::future<> check_type(const std::filesystem::path& file) {
     return read_fully_to_string(file).then([file](auto data) {
-        json::Document doc;
-        doc.Parse(data);
-        vassert(!doc.HasParseError(), "JSON {} has parse errors", file);
-        check(std::move(doc));
+        return ss::async([&] {
+            json::Document doc;
+            doc.Parse(data);
+            vassert(!doc.HasParseError(), "JSON {} has parse errors", file);
+            check(std::move(doc));
+        });
     });
 }
 

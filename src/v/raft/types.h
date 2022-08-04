@@ -259,6 +259,18 @@ struct append_entries_request
           req.flush);
     }
 
+    friend std::ostream&
+    operator<<(std::ostream& o, const append_entries_request& r) {
+        fmt::print(
+          o,
+          "node_id {} target_node_id {} meta {} batches {}",
+          r.node_id,
+          r.target_node_id,
+          r.meta,
+          r._batches);
+        return o;
+    }
+
     ss::future<> serde_async_write(iobuf& out);
     ss::future<> serde_async_read(iobuf_parser&, const serde::header&);
 

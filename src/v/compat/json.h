@@ -114,7 +114,8 @@ void read_member(json::Value const& v, char const* key, T& target) {
         read_value(it->value, target);
     } else {
         target = {};
-        std::cout << "key " << key << " not found, default initializing";
+        std::cout << "key " << key << " not found, default initializing"
+                  << std::endl;
     }
 }
 
@@ -142,6 +143,17 @@ inline void read_value(json::Value const& rd, model::ntp& obj) {
     read_member(rd, "ns", obj.ns);
     read_member(rd, "topic", obj.tp.topic);
     read_member(rd, "partition", obj.tp.partition);
+}
+
+template<typename T>
+void read_value(json::Value const& v, ss::bool_class<T>& target) {
+    target = ss::bool_class<T>(v.GetBool());
+}
+
+template<typename T>
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const ss::bool_class<T>& b) {
+    rjson_serialize(w, bool(b));
 }
 
 #define json_write(_fname) json::write_member(wr, #_fname, obj._fname)
