@@ -6,6 +6,7 @@
 #
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
 
+import os
 import random
 import time
 
@@ -16,9 +17,14 @@ from rptest.clients.default import DefaultClient
 from rptest.services.redpanda import RedpandaService, CHAOS_LOG_ALLOW_LIST
 from rptest.services.failure_injector import FailureInjector, FailureSpec
 from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer
+from rptest.services.franz_go_verifiable_services import (
+    FranzGoVerifiableProducer,
+    await_minimum_produced_records,
+)
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool, RpkException
+from ducktape.cluster.cluster_spec import ClusterSpec
 
 # We inject failures which might cause consumer groups
 # to re-negotiate, so it is necessary to have a longer
@@ -340,3 +346,103 @@ class PartitionBalancerTest(EndToEndTest):
 
         ns.make_available()
         self.run_validation(consumer_timeout_sec=CONSUMER_TIMEOUT)
+
+    @cluster(num_nodes=6, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    def test_full_nodes(self):
+        """
+        Test partition balancer full disk node handling with the following scenario:
+        * produce data and fill the cluster up to ~75%
+        * kill a node.
+        * partition balancer will move partitions to remaining nodes,
+          causing remaining nodes to go over 80%
+        * start the killed node, check that partition balancer will balance
+          partitions away from full nodes.
+        """
+
+        skip_reason = None
+        if not self.test_context.globals.get('use_xfs_partitions', False):
+            skip_reason = "looks like we are not using separate partitions for each node"
+        elif os.environ.get('BUILD_TYPE', None) == 'debug':
+            skip_reason = "debug builds are too slow"
+
+        if skip_reason:
+            self.logger.warn("skipping test: " + skip_reason)
+            # avoid the "Test requested 6 nodes, used only 0" error
+            self.redpanda = RedpandaService(self.test_context, 0)
+            self.test_context.cluster.alloc(ClusterSpec.simple_linux(6))
+            return
+
+        disk_size = 2 * 1024 * 1024 * 1024
+        self.start_redpanda(
+            num_nodes=5,
+            extra_rp_conf={
+                "storage_min_free_bytes": 10 * 1024 * 1024,
+                "raft_learner_recovery_rate": 100_000_000,
+                "health_monitor_tick_interval": 3000
+            },
+            environment={"__REDPANDA_TEST_DISK_SIZE": disk_size})
+
+        def get_disk_usage(node):
+            for line in node.account.ssh_capture(
+                    "df --block-size 1 /var/lib/redpanda"):
+                self.logger.debug(line.strip())
+                if '/var/lib/redpanda' in line:
+                    return int(line.split()[2])
+            assert False, "couldn't parse df output"
+
+        def get_total_disk_usage():
+            return sum(get_disk_usage(n) for n in self.redpanda.nodes)
+
+        self.topic = TopicSpec(partition_count=32)
+        self.client().create_topic(self.topic)
+
+        # produce around 2GB of data, this should be enough to fill node disks
+        # to a bit more than 70% usage on average
+        producer = FranzGoVerifiableProducer(self.test_context,
+                                             self.redpanda,
+                                             self.topic,
+                                             msg_size=102_400,
+                                             msg_count=19_000)
+        producer.start(clean=False)
+
+        wait_until(lambda: get_total_disk_usage() / 5 / disk_size > 0.7,
+                   timeout_sec=120,
+                   backoff_sec=5)
+
+        f_injector = FailureInjector(self.redpanda)
+        failure = FailureSpec(FailureSpec.FAILURE_KILL,
+                              random.choice(self.redpanda.nodes))
+        f_injector._start_func(failure.type)(failure.node)
+        time.sleep(self.NODE_AVAILABILITY_TIMEOUT)
+
+        # a waiter that prints current node disk usage while it waits.
+        def create_waiter(target_status):
+            def func(s):
+                for n in self.redpanda.nodes:
+                    disk_usage = get_disk_usage(n)
+                    self.logger.info(
+                        f"node {self.redpanda.idx(n)}: "
+                        f"disk used percentage: {int(100.0 * disk_usage/disk_size)}"
+                    )
+                return s["status"] == target_status
+
+            return func
+
+        try:
+            # Wait until the balancer manages to move partitions from the killed node.
+            # This will make other 4 nodes go over the disk usage limit and the balancer
+            # will stall because there won't be any other node to move partitions to.
+            self.wait_until_status(create_waiter("stalled"))
+            self.check_no_replicas_on_node(failure.node)
+        finally:
+            # bring failed node up
+            f_injector._stop_func(failure.type)(failure.node)
+
+        self.wait_until_status(create_waiter("ready"))
+        for n in self.redpanda.nodes:
+            disk_usage = get_disk_usage(n)
+            used_ratio = disk_usage / disk_size
+            self.logger.info(
+                f"node {self.redpanda.idx(n)}: "
+                f"disk used percentage: {int(100.0 * used_ratio)}")
+            assert used_ratio < 0.8
