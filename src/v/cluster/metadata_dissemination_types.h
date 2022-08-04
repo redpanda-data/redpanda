@@ -114,6 +114,12 @@ struct update_leadership_request_v2
 
     update_leadership_request_v2() noexcept = default;
 
+    friend std::ostream&
+    operator<<(std::ostream& o, const update_leadership_request_v2& r) {
+        fmt::print(o, "leaders {}", r.leaders);
+        return o;
+    }
+
     explicit update_leadership_request_v2(
       std::vector<ntp_leader_revision> leaders)
       : leaders(std::move(leaders)) {}
@@ -125,12 +131,24 @@ struct update_leadership_reply
   : serde::envelope<update_leadership_reply, serde::version<0>> {
     update_leadership_reply() noexcept = default;
 
+    friend std::ostream&
+    operator<<(std::ostream& o, const update_leadership_reply&) {
+        fmt::print(o, "{{}}");
+        return o;
+    }
+
     auto serde_fields() { return std::tie(); }
 };
 
 struct get_leadership_request
   : serde::envelope<get_leadership_request, serde::version<0>> {
     get_leadership_request() noexcept = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const get_leadership_request&) {
+        fmt::print(o, "{{}}");
+        return o;
+    }
 
     auto serde_fields() { return std::tie(); }
 };
@@ -143,6 +161,12 @@ struct get_leadership_reply
 
     explicit get_leadership_reply(std::vector<ntp_leader> leaders)
       : leaders(std::move(leaders)) {}
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const get_leadership_reply& r) {
+        fmt::print(o, "leaders {}", r.leaders);
+        return o;
+    }
 
     auto serde_fields() { return std::tie(leaders); }
 };

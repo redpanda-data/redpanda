@@ -62,6 +62,12 @@ struct allocate_id_request
     operator==(const allocate_id_request&, const allocate_id_request&)
       = default;
 
+    friend std::ostream&
+    operator<<(std::ostream& o, const allocate_id_request& req) {
+        fmt::print(o, "timeout: {}", req.timeout.count());
+        return o;
+    }
+
     auto serde_read(iobuf_parser& in, const serde::header& h) {
         using serde::read_nested;
         timeout = std::chrono::duration_cast<model::timeout_clock::duration>(
@@ -88,6 +94,12 @@ struct allocate_id_reply
 
     friend bool operator==(const allocate_id_reply&, const allocate_id_reply&)
       = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const allocate_id_reply& rep) {
+        fmt::print(o, "id: {}, ec: {}", rep.id, rep.ec);
+        return o;
+    }
 
     auto serde_fields() { return std::tie(id, ec); }
 };

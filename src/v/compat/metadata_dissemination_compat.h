@@ -52,4 +52,77 @@ struct compat_check<cluster::update_leadership_request> {
     }
 };
 
+/*
+ * cluster::update_leadership_request_v2
+ */
+template<>
+struct compat_check<cluster::update_leadership_request_v2> {
+    static constexpr std::string_view name
+      = "cluster::update_leadership_request_v2";
+
+    static std::vector<cluster::update_leadership_request_v2>
+    create_test_cases() {
+        return generate_instances<cluster::update_leadership_request_v2>();
+    }
+
+    static void to_json(
+      cluster::update_leadership_request_v2 obj,
+      json::Writer<json::StringBuffer>& wr) {
+        json_write(leaders);
+    }
+
+    static cluster::update_leadership_request_v2 from_json(json::Value& rd) {
+        cluster::update_leadership_request_v2 obj;
+        json_read(leaders);
+        return obj;
+    }
+
+    static std::vector<compat_binary>
+    to_binary(cluster::update_leadership_request_v2 obj) {
+        return compat_binary::serde_and_adl(obj);
+    }
+
+    static bool
+    check(cluster::update_leadership_request_v2 obj, compat_binary test) {
+        return verify_adl_or_serde(obj, std::move(test));
+    }
+};
+
+/*
+ * cluster::update_leadership_reply
+ */
+EMPTY_COMPAT_CHECK(cluster::update_leadership_reply);
+
+/*
+ * cluster::get_leadership_request
+ */
+EMPTY_COMPAT_CHECK(cluster::get_leadership_request);
+
+/*
+ * cluster::get_leadership_reply
+ */
+template<>
+struct compat_check<cluster::get_leadership_reply> {
+    static constexpr std::string_view name = "cluster::get_leadership_reply";
+    static std::vector<cluster::get_leadership_reply> create_test_cases() {
+        return generate_instances<cluster::get_leadership_reply>();
+    }
+    static void to_json(
+      cluster::get_leadership_reply obj, json::Writer<json::StringBuffer>& wr) {
+        json_write(leaders);
+    }
+    static cluster::get_leadership_reply from_json(json::Value& rd) {
+        cluster::get_leadership_reply obj;
+        json_read(leaders);
+        return obj;
+    }
+    static std::vector<compat_binary>
+    to_binary(cluster::get_leadership_reply obj) {
+        return compat_binary::serde_and_adl(obj);
+    }
+    static bool check(cluster::get_leadership_reply obj, compat_binary test) {
+        return verify_adl_or_serde(obj, std::move(test));
+    }
+};
+
 } // namespace compat
