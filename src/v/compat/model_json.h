@@ -30,4 +30,19 @@ inline void read_value(json::Value const& rd, model::producer_identity& obj) {
     read_member(rd, "epoch", obj.epoch);
 }
 
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const model::broker_shard& v) {
+    w.StartObject();
+    w.Key("node_id");
+    rjson_serialize(w, v.node_id);
+    w.Key("shard");
+    rjson_serialize(w, v.shard);
+    w.EndObject();
+}
+
+inline void read_value(json::Value const& rd, model::broker_shard& obj) {
+    read_member(rd, "node_id", obj.node_id);
+    read_member(rd, "shard", obj.shard);
+}
+
 } // namespace json

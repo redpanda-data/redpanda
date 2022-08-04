@@ -76,4 +76,61 @@ inline void read_value(json::Value const& v, cluster::tx_errc& obj) {
     obj = {v.GetInt()};
 }
 
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const cluster::non_replicable_topic& t) {
+    w.StartObject();
+    w.Key("source");
+    rjson_serialize(w, t.source);
+    w.Key("name");
+    rjson_serialize(w, t.name);
+    w.EndObject();
+}
+
+inline void
+read_value(json::Value const& rd, cluster::non_replicable_topic& obj) {
+    model::topic_namespace source;
+    model::topic_namespace name;
+    read_member(rd, "source", source);
+    read_member(rd, "name", name);
+    obj = {.source = std::move(source), .name = std::move(name)};
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const cluster::topic_result& t) {
+    w.StartObject();
+    w.Key("tp_ns");
+    rjson_serialize(w, t.tp_ns);
+    w.Key("ec");
+    rjson_serialize(w, t.ec);
+    w.EndObject();
+}
+
+inline void read_value(json::Value const& rd, cluster::topic_result& obj) {
+    model::topic_namespace tp_ns;
+    cluster::errc ec;
+    read_member(rd, "tp_ns", tp_ns);
+    read_member(rd, "ec", ec);
+    obj = cluster::topic_result(std::move(tp_ns), ec);
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const cluster::move_cancellation_result& r) {
+    w.StartObject();
+    w.Key("ntp");
+    rjson_serialize(w, r.ntp);
+    w.Key("result");
+    rjson_serialize(w, r.result);
+    w.EndObject();
+}
+
+inline void
+read_value(json::Value const& rd, cluster::move_cancellation_result& obj) {
+    model::ntp ntp;
+    cluster::errc result;
+    read_member(rd, "ntp", ntp);
+    read_member(rd, "result", result);
+    obj = cluster::move_cancellation_result(std::move(ntp), result);
+}
+
 } // namespace json
