@@ -20,65 +20,25 @@ namespace compat {
 /*
  * cluster::commit_tx_request
  */
-template<>
-struct compat_check<cluster::commit_tx_request> {
-    static constexpr std::string_view name = "cluster::commit_tx_request";
-
-    static std::vector<cluster::commit_tx_request> create_test_cases() {
-        return generate_instances<cluster::commit_tx_request>();
-    }
-
-    static void to_json(
-      cluster::commit_tx_request obj, json::Writer<json::StringBuffer>& wr) {
-        json_write(ntp);
-        json_write(pid);
-        json_write(tx_seq);
-        json_write(timeout);
-    }
-
-    static cluster::commit_tx_request from_json(json::Value& rd) {
-        cluster::commit_tx_request obj;
-        json_read(ntp);
-        json_read(pid);
-        json_read(tx_seq);
-        json_read(timeout);
-        return obj;
-    }
-
-    static std::vector<compat_binary>
-    to_binary(cluster::commit_tx_request obj) {
-        return compat_binary::serde_and_adl(obj);
-    }
-
-    static bool check(cluster::commit_tx_request obj, compat_binary test) {
-        return verify_adl_or_serde(obj, std::move(test));
-    }
-};
+GEN_COMPAT_CHECK(
+  cluster::commit_tx_request,
+  {
+      json_write(ntp);
+      json_write(pid);
+      json_write(tx_seq);
+      json_write(timeout);
+  },
+  {
+      json_read(ntp);
+      json_read(pid);
+      json_read(tx_seq);
+      json_read(timeout);
+  });
 
 /*
  * cluster::commit_tx_reply
  */
-template<>
-struct compat_check<cluster::commit_tx_reply> {
-    static constexpr std::string_view name = "cluster::commit_tx_reply";
-    static std::vector<cluster::commit_tx_reply> create_test_cases() {
-        return generate_instances<cluster::commit_tx_reply>();
-    }
-    static void to_json(
-      cluster::commit_tx_reply obj, json::Writer<json::StringBuffer>& wr) {
-        json_write(ec);
-    }
-    static cluster::commit_tx_reply from_json(json::Value& rd) {
-        cluster::commit_tx_reply obj;
-        json_read(ec);
-        return obj;
-    }
-    static std::vector<compat_binary> to_binary(cluster::commit_tx_reply obj) {
-        return compat_binary::serde_and_adl(obj);
-    }
-    static bool check(cluster::commit_tx_reply obj, compat_binary test) {
-        return verify_adl_or_serde(obj, std::move(test));
-    }
-};
+GEN_COMPAT_CHECK(
+  cluster::commit_tx_reply, { json_write(ec); }, { json_read(ec); });
 
 } // namespace compat

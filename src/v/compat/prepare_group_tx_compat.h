@@ -20,74 +20,29 @@ namespace compat {
 /*
  * cluster::prepare_group_tx_request
  */
-template<>
-struct compat_check<cluster::prepare_group_tx_request> {
-    static constexpr std::string_view name
-      = "cluster::prepare_group_tx_request";
-
-    static std::vector<cluster::prepare_group_tx_request> create_test_cases() {
-        return generate_instances<cluster::prepare_group_tx_request>();
-    }
-
-    static void to_json(
-      cluster::prepare_group_tx_request obj,
-      json::Writer<json::StringBuffer>& wr) {
-        json_write(ntp);
-        json_write(group_id);
-        json_write(etag);
-        json_write(pid);
-        json_write(tx_seq);
-        json_write(timeout);
-    }
-
-    static cluster::prepare_group_tx_request from_json(json::Value& rd) {
-        cluster::prepare_group_tx_request obj;
-        json_read(ntp);
-        json_read(group_id);
-        json_read(etag);
-        json_read(pid);
-        json_read(tx_seq);
-        json_read(timeout);
-        return obj;
-    }
-
-    static std::vector<compat_binary>
-    to_binary(cluster::prepare_group_tx_request obj) {
-        return compat_binary::serde_and_adl(obj);
-    }
-
-    static bool
-    check(cluster::prepare_group_tx_request obj, compat_binary test) {
-        return verify_adl_or_serde(obj, std::move(test));
-    }
-};
+GEN_COMPAT_CHECK(
+  cluster::prepare_group_tx_request,
+  {
+      json_write(ntp);
+      json_write(group_id);
+      json_write(etag);
+      json_write(pid);
+      json_write(tx_seq);
+      json_write(timeout);
+  },
+  {
+      json_read(ntp);
+      json_read(group_id);
+      json_read(etag);
+      json_read(pid);
+      json_read(tx_seq);
+      json_read(timeout);
+  });
 
 /*
  * cluster::prepare_group_tx_reply
  */
-template<>
-struct compat_check<cluster::prepare_group_tx_reply> {
-    static constexpr std::string_view name = "cluster::prepare_group_tx_reply";
-    static std::vector<cluster::prepare_group_tx_reply> create_test_cases() {
-        return generate_instances<cluster::prepare_group_tx_reply>();
-    }
-    static void to_json(
-      cluster::prepare_group_tx_reply obj,
-      json::Writer<json::StringBuffer>& wr) {
-        json_write(ec);
-    }
-    static cluster::prepare_group_tx_reply from_json(json::Value& rd) {
-        cluster::prepare_group_tx_reply obj;
-        json_read(ec);
-        return obj;
-    }
-    static std::vector<compat_binary>
-    to_binary(cluster::prepare_group_tx_reply obj) {
-        return compat_binary::serde_and_adl(obj);
-    }
-    static bool check(cluster::prepare_group_tx_reply obj, compat_binary test) {
-        return verify_adl_or_serde(obj, std::move(test));
-    }
-};
+GEN_COMPAT_CHECK(
+  cluster::prepare_group_tx_reply, { json_write(ec); }, { json_read(ec); });
 
 } // namespace compat
