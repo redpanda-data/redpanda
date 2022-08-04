@@ -151,6 +151,7 @@ using record_batch_transform_predicate = ss::noncopyable_function<
 ss::future<result<size_t>> transform_stream(
   ss::input_stream<char> in,
   ss::output_stream<char> out,
-  record_batch_transform_predicate pred);
+  record_batch_transform_predicate pred,
+  opt_abort_source_t as = std::nullopt);
 
 } // namespace storage

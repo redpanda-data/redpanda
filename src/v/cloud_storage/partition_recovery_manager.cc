@@ -75,7 +75,11 @@ partition_recovery_manager::~partition_recovery_manager() {
     vassert(_gate.is_closed(), "S3 downloader is not stopped properly");
 }
 
-ss::future<> partition_recovery_manager::stop() { co_await _gate.close(); }
+ss::future<> partition_recovery_manager::stop() {
+    vlog(cst_log.debug, "Stopping partition_recovery_manager");
+    _as.request_abort();
+    return _gate.close();
+}
 
 /// Download full log based on manifest data.
 /// The 'ntp_config' should have corresponding override. If override
@@ -98,7 +102,7 @@ partition_recovery_manager::download_log(const storage::ntp_config& ntp_cfg) {
         co_return false;
     }
     partition_downloader downloader(
-      ntp_cfg, &_remote.local(), _bucket, _gate, _root);
+      ntp_cfg, &_remote.local(), _bucket, _gate, _root, _as);
     co_return co_await downloader.download_log();
 }
 
@@ -107,7 +111,8 @@ partition_downloader::partition_downloader(
   remote* remote,
   s3::bucket_name bucket,
   ss::gate& gate_root,
-  retry_chain_node& parent)
+  retry_chain_node& parent,
+  storage::opt_abort_source_t as)
   : _ntpc(ntpc)
   , _bucket(std::move(bucket))
   , _remote(remote)
@@ -116,7 +121,8 @@ partition_downloader::partition_downloader(
   , _ctxlog(
       cst_log,
       _rtcnode,
-      ssx::sformat("[{}, rev: {}]", ntpc.ntp().path(), ntpc.get_revision())) {}
+      ssx::sformat("[{}, rev: {}]", ntpc.ntp().path(), ntpc.get_revision()))
+  , _as(as) {}
 
 ss::future<bool> partition_downloader::download_log() {
     vlog(_ctxlog.debug, "Check conditions for S3 recovery for {}", _ntpc);
@@ -507,7 +513,7 @@ ss::future<> partition_downloader::download_segment_file(
       remote_path,
       part.part_prefix.string());
 
-    offset_translator otl{segm.meta.delta_offset};
+    offset_translator otl{segm.meta.delta_offset, _as};
 
     auto localpath = part.part_prefix
                      / std::string{otl.get_adjusted_segment_name(

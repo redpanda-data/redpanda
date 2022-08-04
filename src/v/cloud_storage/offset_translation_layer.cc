@@ -51,7 +51,7 @@ ss::future<uint64_t> offset_translator::copy_stream(
         return storage::batch_consumer::consume_result::accept_batch;
     };
     auto len = co_await storage::transform_stream(
-      std::move(src), std::move(dst), pred);
+      std::move(src), std::move(dst), pred, _as);
     if (len.has_error()) {
         throw std::system_error(len.error());
     }
