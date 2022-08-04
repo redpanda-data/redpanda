@@ -5,6 +5,7 @@ v_cc_library(
   DEPS
     Seastar::seastar
     v::json
+    v::cluster
     v::utils
     v::raft)
 

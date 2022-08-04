@@ -10,7 +10,9 @@
  */
 #include "compat/run.h"
 
+#include "cluster/types.h"
 #include "compat/check.h"
+#include "compat/cluster_compat.h"
 #include "compat/metadata_dissemination_compat.h"
 #include "compat/raft_compat.h"
 #include "json/document.h"
@@ -36,7 +38,18 @@ using compat_checks = type_list<
   raft::install_snapshot_reply,
   raft::vote_request,
   raft::vote_reply,
-  cluster::update_leadership_request>;
+  cluster::update_leadership_request,
+  cluster::config_status,
+  cluster::cluster_property_kv,
+  cluster::config_update_request,
+  cluster::config_update_reply,
+  cluster::hello_request,
+  cluster::hello_reply,
+  cluster::feature_update_action,
+  cluster::feature_action_request,
+  cluster::feature_action_response,
+  cluster::feature_barrier_request,
+  cluster::feature_barrier_response>;
 
 struct compat_error final : public std::runtime_error {
 public:
@@ -178,10 +191,14 @@ check_types(type_list<Types...>, std::string name, json::Document& doc) {
      */
     const auto names_arr = std::to_array(
       {corpus_helper<Types>::checker::name...});
-    const std::set<std::string> names_set{
-      std::string(corpus_helper<Types>::checker::name)...};
-    vassert(
-      names_arr.size() == names_set.size(), "duplicate test name detected");
+    std::set<std::string> names_set;
+    for (const auto& name : names_arr) {
+        auto res = names_set.emplace(name);
+        if (!res.second) {
+            vassert(false, "Duplicate test name {} detected", name);
+        }
+    }
+    vassert(names_arr.size() == names_set.size(), "duplicate detected");
 
     /*
      * check that target test name exists
