@@ -34,7 +34,13 @@ namespace net {
 server::server(server_configuration c)
   : cfg(std::move(c))
   , _memory{size_t{static_cast<size_t>(cfg.max_service_memory_per_core)}, "net/server-mem"}
-  , _public_metrics(ssx::metrics::public_metrics_handle) {}
+  , _public_metrics(ssx::metrics::public_metrics_handle) {
+    vlog(
+      rpc::rpclog.warn,
+      "Creating server for {} with {} memory units",
+      cfg.name,
+      _memory.available_units());
+}
 
 server::server(ss::sharded<server_configuration>* s)
   : server(s->local()) {}
