@@ -146,4 +146,15 @@ GEN_COMPAT_CHECK(
       json_read(node);
   });
 
+GEN_COMPAT_CHECK(
+  cluster::join_node_reply,
+  {
+      json_write(success);
+      json_write(id);
+  },
+  {
+      json_read(success);
+      json_read(id);
+  })
+
 } // namespace compat

@@ -262,4 +262,14 @@ struct instance_generator<cluster::join_node_request> {
     static std::vector<cluster::join_node_request> limits() { return {}; }
 };
 
+template<>
+struct instance_generator<cluster::join_node_reply> {
+    static cluster::join_node_reply random() {
+        return cluster::join_node_reply{
+          tests::random_bool(), tests::random_named_int<model::node_id>()};
+    }
+
+    static std::vector<cluster::join_node_reply> limits() { return {}; }
+};
+
 } // namespace compat
