@@ -75,6 +75,30 @@ struct instance_generator<cluster::errc> {
 };
 
 template<>
+struct instance_generator<cluster::partition_move_direction> {
+    static cluster::partition_move_direction random() {
+        return random_generators::random_choice(
+          {cluster::partition_move_direction::to_node,
+           cluster::partition_move_direction::from_node,
+           cluster::partition_move_direction::all});
+    }
+
+    static std::vector<cluster::errc> limits() { return {}; }
+};
+
+template<>
+struct instance_generator<cluster::move_cancellation_result> {
+    static cluster::move_cancellation_result random() {
+        return {
+          model::random_ntp(),
+          instance_generator<cluster::errc>::random(),
+        };
+    }
+
+    static std::vector<cluster::errc> limits() { return {}; }
+};
+
+template<>
 struct instance_generator<cluster::topic_result> {
     static cluster::topic_result random() {
         return cluster::topic_result(
@@ -468,5 +492,43 @@ struct instance_generator<cluster::finish_partition_update_reply> {
         return {};
     }
 };
+
+template<>
+struct instance_generator<cluster::cancel_node_partition_movements_request> {
+    static cluster::cancel_node_partition_movements_request random() {
+        return {
+          .node_id = tests::random_named_int<model::node_id>(),
+          .direction
+          = instance_generator<cluster::partition_move_direction>::random(),
+        };
+    }
+
+    static std::vector<cluster::cancel_node_partition_movements_request>
+    limits() {
+        return {};
+    }
+};
+
+template<>
+struct instance_generator<cluster::cancel_partition_movements_reply> {
+    static cluster::cancel_partition_movements_reply random() {
+        return {
+          .general_error = instance_generator<cluster::errc>::random(),
+          .partition_results = tests::random_vector([] {
+              return instance_generator<
+                cluster::move_cancellation_result>::random();
+          }),
+        };
+    }
+
+    static std::vector<cluster::cancel_partition_movements_reply> limits() {
+        return {{
+          .general_error = instance_generator<cluster::errc>::random(),
+          .partition_results = {},
+        }};
+    }
+};
+
+EMPTY_COMPAT_GENERATOR(cluster::cancel_all_partition_movements_request);
 
 } // namespace compat

@@ -234,4 +234,28 @@ GEN_COMPAT_CHECK(
   { json_write(result); },
   { json_read(result); })
 
+GEN_COMPAT_CHECK(
+  cluster::cancel_partition_movements_reply,
+  {
+      json_write(general_error);
+      json_write(partition_results);
+  },
+  {
+      json_read(general_error);
+      json_read(partition_results);
+  });
+
+GEN_COMPAT_CHECK(
+  cluster::cancel_node_partition_movements_request,
+  {
+      json_write(node_id);
+      json_write(direction);
+  },
+  {
+      json_read(node_id);
+      json_read(direction);
+  });
+
+EMPTY_COMPAT_CHECK(cluster::cancel_all_partition_movements_request);
+
 } // namespace compat

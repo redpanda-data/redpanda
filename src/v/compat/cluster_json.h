@@ -36,6 +36,27 @@ inline void rjson_serialize(
 }
 
 inline void
+read_value(json::Value const& rd, cluster::partition_move_direction& e) {
+    auto direction = rd.GetInt();
+    switch (direction) {
+    case 0:
+        e = cluster::partition_move_direction::to_node;
+        break;
+    case 1:
+        e = cluster::partition_move_direction::from_node;
+        break;
+    case 2:
+        e = cluster::partition_move_direction::all;
+        break;
+    default:
+        vassert(
+          false,
+          "Unsupported enum for cluster::partition_move_direction, {}",
+          direction);
+    }
+}
+
+inline void
 read_value(json::Value const& rd, cluster::feature_update_action::action_t& e) {
     auto action = rd.GetInt();
     switch (action) {
