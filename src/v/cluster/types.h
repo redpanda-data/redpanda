@@ -978,6 +978,17 @@ struct join_node_request
     friend bool operator==(const join_node_request&, const join_node_request&)
       = default;
 
+    friend std::ostream&
+    operator<<(std::ostream& o, const join_node_request& r) {
+        fmt::print(
+          o,
+          "logical_version {} node_uuid {} node {}",
+          r.logical_version,
+          r.node_uuid,
+          r.node);
+        return o;
+    }
+
     auto serde_fields() { return std::tie(logical_version, node_uuid, node); }
 };
 

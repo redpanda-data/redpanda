@@ -48,6 +48,7 @@ using compat_checks = type_list<
   raft::append_entries_reply,
   cluster::join_request,
   cluster::join_reply,
+  cluster::join_node_request,
   cluster::update_leadership_request,
   cluster::config_status,
   cluster::cluster_property_kv,
