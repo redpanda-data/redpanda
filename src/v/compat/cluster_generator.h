@@ -240,4 +240,13 @@ struct instance_generator<cluster::join_request> {
     static std::vector<cluster::join_request> limits() { return {}; }
 };
 
+template<>
+struct instance_generator<cluster::join_reply> {
+    static cluster::join_reply random() {
+        return cluster::join_reply{tests::random_bool()};
+    }
+
+    static std::vector<cluster::join_reply> limits() { return {}; }
+};
+
 } // namespace compat

@@ -939,6 +939,11 @@ struct join_reply : serde::envelope<join_reply, serde::version<0>> {
 
     friend bool operator==(const join_reply&, const join_reply&) = default;
 
+    friend std::ostream& operator<<(std::ostream& o, const join_reply& r) {
+        fmt::print(o, "success {}", r.success);
+        return o;
+    }
+
     auto serde_fields() { return std::tie(success); }
 };
 
