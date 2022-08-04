@@ -609,6 +609,22 @@ std::ostream& operator<<(std::ostream& o, const commit_tx_reply& r) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const abort_tx_request& r) {
+    fmt::print(
+      o,
+      "{{ntp {} pid {} tx_seq {} timeout {}}}",
+      r.ntp,
+      r.pid,
+      r.tx_seq,
+      r.timeout);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const abort_tx_reply& r) {
+    fmt::print(o, "{{ec {}}}", r.ec);
+    return o;
+}
+
 } // namespace cluster
 
 namespace reflection {
