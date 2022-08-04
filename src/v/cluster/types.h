@@ -1555,6 +1555,9 @@ struct finish_partition_update_request
       = default;
 
     auto serde_fields() { return std::tie(ntp, new_replica_set); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const finish_partition_update_request& r);
 };
 
 struct finish_partition_update_reply
@@ -1567,6 +1570,9 @@ struct finish_partition_update_reply
       = default;
 
     auto serde_fields() { return std::tie(result); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const finish_partition_update_reply& r);
 };
 
 struct update_topic_properties_request

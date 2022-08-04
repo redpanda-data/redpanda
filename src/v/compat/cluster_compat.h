@@ -218,4 +218,20 @@ GEN_COMPAT_CHECK(
   { json_write(results); },
   { json_read(results); });
 
+GEN_COMPAT_CHECK(
+  cluster::finish_partition_update_request,
+  {
+      json_write(ntp);
+      json_write(new_replica_set);
+  },
+  {
+      json_read(ntp);
+      json_read(new_replica_set);
+  })
+
+GEN_COMPAT_CHECK(
+  cluster::finish_partition_update_reply,
+  { json_write(result); },
+  { json_read(result); })
+
 } // namespace compat

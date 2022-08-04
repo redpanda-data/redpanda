@@ -212,6 +212,18 @@ std::ostream& operator<<(std::ostream& o, const topic_result& r) {
     return o;
 }
 
+std::ostream&
+operator<<(std::ostream& o, const finish_partition_update_request& r) {
+    fmt::print(o, "{{ntp: {}, new_replica_set: {}}}", r.ntp, r.new_replica_set);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const finish_partition_update_reply& r) {
+    fmt::print(o, "{{result: {}}}", r.result);
+    return o;
+}
+
 std::ostream& operator<<(std::ostream& o, const configuration_invariants& c) {
     fmt::print(
       o,

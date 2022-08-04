@@ -441,4 +441,32 @@ struct instance_generator<cluster::create_non_replicable_topics_reply> {
     }
 };
 
+template<>
+struct instance_generator<cluster::finish_partition_update_request> {
+    static cluster::finish_partition_update_request random() {
+        return {
+          .ntp = model::random_ntp(),
+          .new_replica_set = tests::random_vector(
+            [] { return model::random_broker_shard(); }),
+        };
+    }
+
+    static std::vector<cluster::finish_partition_update_request> limits() {
+        return {{.ntp = model::random_ntp(), .new_replica_set = {}}};
+    }
+};
+
+template<>
+struct instance_generator<cluster::finish_partition_update_reply> {
+    static cluster::finish_partition_update_reply random() {
+        return {
+          .result = instance_generator<cluster::errc>::random(),
+        };
+    }
+
+    static std::vector<cluster::finish_partition_update_reply> limits() {
+        return {};
+    }
+};
+
 } // namespace compat
