@@ -312,4 +312,15 @@ struct instance_generator<cluster::recommission_node_reply> {
     static std::vector<cluster::recommission_node_reply> limits() { return {}; }
 };
 
+template<>
+struct instance_generator<cluster::finish_reallocation_request> {
+    static cluster::finish_reallocation_request random() {
+        return {.id = tests::random_named_int<model::node_id>()};
+    }
+
+    static std::vector<cluster::finish_reallocation_request> limits() {
+        return {};
+    }
+};
+
 } // namespace compat
