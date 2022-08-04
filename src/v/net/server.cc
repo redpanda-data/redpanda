@@ -31,13 +31,17 @@
 
 namespace net {
 
+static std::atomic<int32_t> id_counter;
+
 server::server(server_configuration c)
-  : cfg(std::move(c))
+  : _id(++id_counter)
+  , cfg(std::move(c))
   , _memory{size_t{static_cast<size_t>(cfg.max_service_memory_per_core)}, "net/server-mem"}
   , _public_metrics(ssx::metrics::public_metrics_handle) {
     vlog(
       rpc::rpclog.warn,
-      "Creating server for {} with {} memory units",
+      "Creating server id {} for {} with {} memory units",
+      _id,
       cfg.name,
       _memory.available_units());
 }

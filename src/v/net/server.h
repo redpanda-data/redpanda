@@ -113,6 +113,7 @@ public:
         ss::gate& conn_gate() { return _s->_conn_gate; }
         ss::abort_source& abort_source() { return _s->_as; }
         bool abort_requested() const { return _s->_as.abort_requested(); }
+        int32_t id() const { return _s->_id; }
 
     private:
         server* _s;
@@ -159,6 +160,8 @@ public:
      * here for convenience when dealing with `seastar::sharded` type
      */
     ss::future<> stop();
+
+    int32_t _id;
 
     const server_configuration cfg; // NOLINT
     const hdr_hist& histogram() const { return _hist; }
