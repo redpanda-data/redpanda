@@ -1706,7 +1706,7 @@ void admin_server::register_features_routes() {
               lc.format_version = license->format_version;
               lc.org = license->organization;
               lc.type = security::license_type_to_string(license->type);
-              lc.expires = license->days_until_expires();
+              lc.expires = license->expiry.count();
               res.license = lc;
           }
           co_return std::move(res);
