@@ -142,4 +142,11 @@ inline model::producer_identity random_producer_identity() {
       random_generators::get_int<int16_t>()};
 }
 
+inline model::broker_shard random_broker_shard() {
+    return {
+      tests::random_named_int<model::node_id>(),
+      random_generators::get_int(std::numeric_limits<uint32_t>::max()),
+    };
+}
+
 } // namespace model
