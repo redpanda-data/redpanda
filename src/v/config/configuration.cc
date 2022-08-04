@@ -596,6 +596,18 @@ configuration::configuration()
       "one follower",
       {.visibility = visibility::tunable},
       16)
+  , raft_concurrent_votes_per_shard(
+      *this,
+      "raft_concurrent_votes_per_shard",
+      "Maximum number of concurrent votes that one shard will try to initiate",
+      {.visibility = visibility::tunable},
+      128)
+  , raft_concurrent_recovery_per_shard(
+      *this,
+      "raft_concurrent_recovery_per_shard",
+      "Maximum number of concurrent votes that one shard will try to initiate",
+      {.visibility = visibility::tunable},
+      128)
   , reclaim_min_size(
       *this,
       "reclaim_min_size",

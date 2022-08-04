@@ -141,6 +141,8 @@ struct configuration final : public config_store {
     property<size_t> raft_learner_recovery_rate;
     property<std::optional<uint32_t>> raft_smp_max_non_local_requests;
     property<uint32_t> raft_max_concurrent_append_requests_per_follower;
+    property<size_t> raft_concurrent_votes_per_shard;
+    property<size_t> raft_concurrent_recovery_per_shard;
 
     property<size_t> reclaim_min_size;
     property<size_t> reclaim_max_size;
