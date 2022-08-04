@@ -933,6 +933,11 @@ struct join_request : serde::envelope<join_request, serde::version<0>> {
 
     friend bool operator==(const join_request&, const join_request&) = default;
 
+    friend std::ostream& operator<<(std::ostream& o, const join_request& r) {
+        fmt::print(o, "node {}", r.node);
+        return o;
+    }
+
     auto serde_fields() { return std::tie(node); }
 };
 
@@ -945,6 +950,11 @@ struct join_reply : serde::envelope<join_reply, serde::version<0>> {
       : success(success) {}
 
     friend bool operator==(const join_reply&, const join_reply&) = default;
+
+    friend std::ostream& operator<<(std::ostream& o, const join_reply& r) {
+        fmt::print(o, "success {}", r.success);
+        return o;
+    }
 
     auto serde_fields() { return std::tie(success); }
 };
@@ -980,6 +990,17 @@ struct join_node_request
     friend bool operator==(const join_node_request&, const join_node_request&)
       = default;
 
+    friend std::ostream&
+    operator<<(std::ostream& o, const join_node_request& r) {
+        fmt::print(
+          o,
+          "logical_version {} node_uuid {} node {}",
+          r.logical_version,
+          r.node_uuid,
+          r.node);
+        return o;
+    }
+
     auto serde_fields() { return std::tie(logical_version, node_uuid, node); }
 };
 
@@ -995,6 +1016,11 @@ struct join_node_reply : serde::envelope<join_node_reply, serde::version<0>> {
 
     friend bool operator==(const join_node_reply&, const join_node_reply&)
       = default;
+
+    friend std::ostream& operator<<(std::ostream& o, const join_node_reply& r) {
+        fmt::print(o, "success {} id {}", r.success, r.id);
+        return o;
+    }
 
     auto serde_fields() { return std::tie(success, id); }
 };
@@ -2023,6 +2049,12 @@ struct decommission_node_request
       = default;
 
     auto serde_fields() { return std::tie(id); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const decommission_node_request& r) {
+        fmt::print(o, "id {}", r.id);
+        return o;
+    }
 };
 
 struct decommission_node_reply
@@ -2034,6 +2066,12 @@ struct decommission_node_reply
       = default;
 
     auto serde_fields() { return std::tie(error); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const decommission_node_reply& r) {
+        fmt::print(o, "error {}", r.error);
+        return o;
+    }
 };
 
 struct recommission_node_request
@@ -2045,6 +2083,12 @@ struct recommission_node_request
       = default;
 
     auto serde_fields() { return std::tie(id); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const recommission_node_request& r) {
+        fmt::print(o, "id {}", r.id);
+        return o;
+    }
 };
 
 struct recommission_node_reply
@@ -2056,6 +2100,12 @@ struct recommission_node_reply
       = default;
 
     auto serde_fields() { return std::tie(error); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const recommission_node_reply& r) {
+        fmt::print(o, "error {}", r.error);
+        return o;
+    }
 };
 
 struct finish_reallocation_request
@@ -2067,6 +2117,12 @@ struct finish_reallocation_request
       = default;
 
     auto serde_fields() { return std::tie(id); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const finish_reallocation_request& r) {
+        fmt::print(o, "id {}", r.id);
+        return o;
+    }
 };
 
 struct finish_reallocation_reply
@@ -2078,6 +2134,12 @@ struct finish_reallocation_reply
       = default;
 
     auto serde_fields() { return std::tie(error); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const finish_reallocation_reply& r) {
+        fmt::print(o, "error {}", r.error);
+        return o;
+    }
 };
 
 struct set_maintenance_mode_request
@@ -2091,6 +2153,12 @@ struct set_maintenance_mode_request
       = default;
 
     auto serde_fields() { return std::tie(id, enabled); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const set_maintenance_mode_request& r) {
+        fmt::print(o, "id {} enabled {}", r.id, r.enabled);
+        return o;
+    }
 };
 
 struct set_maintenance_mode_reply
@@ -2103,6 +2171,12 @@ struct set_maintenance_mode_reply
       = default;
 
     auto serde_fields() { return std::tie(error); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const set_maintenance_mode_reply& r) {
+        fmt::print(o, "error {}", r.error);
+        return o;
+    }
 };
 
 struct config_status_request

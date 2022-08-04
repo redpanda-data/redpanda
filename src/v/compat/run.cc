@@ -48,6 +48,18 @@ using compat_checks = type_list<
   raft::heartbeat_reply,
   raft::append_entries_request,
   raft::append_entries_reply,
+  cluster::join_request,
+  cluster::join_reply,
+  cluster::join_node_request,
+  cluster::join_node_reply,
+  cluster::decommission_node_request,
+  cluster::decommission_node_reply,
+  cluster::recommission_node_request,
+  cluster::recommission_node_reply,
+  cluster::finish_reallocation_request,
+  cluster::finish_reallocation_reply,
+  cluster::set_maintenance_mode_request,
+  cluster::set_maintenance_mode_reply,
   cluster::update_leadership_request,
   cluster::config_status,
   cluster::cluster_property_kv,
@@ -118,7 +130,9 @@ struct corpus_helper {
 
         w.Key("binaries");
         w.StartArray();
-        for (auto& b : checker::to_binary(std::move(tb))) {
+        auto binaries = checker::to_binary(std::move(tb));
+        vassert(!binaries.empty(), "No binaries found for {}", checker::name);
+        for (auto& b : binaries) {
             w.StartObject();
             w.Key("name");
             w.String(b.name);
@@ -136,7 +150,9 @@ struct corpus_helper {
     static ss::future<> write(const std::filesystem::path& dir) {
         size_t instance = 0;
 
-        for (auto& test : checker::create_test_cases()) {
+        auto test_cases = checker::create_test_cases();
+        vassert(!test_cases.empty(), "No test cases for {}", checker::name);
+        for (auto& test : test_cases) {
             // json encoded test case
             auto buf = json::StringBuffer{};
             auto writer = json::Writer<json::StringBuffer>{buf};
@@ -171,6 +187,7 @@ struct corpus_helper {
         vassert(doc["binaries"].IsArray(), "binaries is not an array");
         auto binaries = doc["binaries"].GetArray();
 
+        vassert(!binaries.Empty(), "No binaries found for {}", checker::name);
         for (const auto& encoding : binaries) {
             vassert(encoding.IsObject(), "binaries entry is not an object");
             auto binary = encoding.GetObject();

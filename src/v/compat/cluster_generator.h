@@ -13,6 +13,7 @@
 #include "cluster/errc.h"
 #include "cluster/types.h"
 #include "compat/generator.h"
+#include "model/tests/randoms.h"
 #include "test_utils/randoms.h"
 
 namespace compat {
@@ -226,6 +227,133 @@ struct instance_generator<cluster::feature_barrier_response> {
     }
 
     static std::vector<cluster::feature_barrier_response> limits() {
+        return {};
+    }
+};
+
+template<>
+struct instance_generator<cluster::join_request> {
+    static cluster::join_request random() {
+        return cluster::join_request{model::random_broker()};
+    }
+
+    static std::vector<cluster::join_request> limits() { return {}; }
+};
+
+template<>
+struct instance_generator<cluster::join_reply> {
+    static cluster::join_reply random() {
+        return cluster::join_reply{tests::random_bool()};
+    }
+
+    static std::vector<cluster::join_reply> limits() { return {}; }
+};
+
+template<>
+struct instance_generator<cluster::join_node_request> {
+    static cluster::join_node_request random() {
+        return cluster::join_node_request{
+          tests::random_named_int<cluster::cluster_version>(),
+          tests::random_vector(
+            [] { return random_generators::get_int<uint8_t>(); }),
+          model::random_broker()};
+    }
+
+    static std::vector<cluster::join_node_request> limits() { return {}; }
+};
+
+template<>
+struct instance_generator<cluster::join_node_reply> {
+    static cluster::join_node_reply random() {
+        return cluster::join_node_reply{
+          tests::random_bool(), tests::random_named_int<model::node_id>()};
+    }
+
+    static std::vector<cluster::join_node_reply> limits() { return {}; }
+};
+
+template<>
+struct instance_generator<cluster::decommission_node_request> {
+    static cluster::decommission_node_request random() {
+        return {.id = tests::random_named_int<model::node_id>()};
+    }
+
+    static std::vector<cluster::decommission_node_request> limits() {
+        return {};
+    }
+};
+
+template<>
+struct instance_generator<cluster::decommission_node_reply> {
+    static cluster::decommission_node_reply random() {
+        return {.error = instance_generator<cluster::errc>::random()};
+    }
+
+    static std::vector<cluster::decommission_node_reply> limits() { return {}; }
+};
+
+template<>
+struct instance_generator<cluster::recommission_node_request> {
+    static cluster::recommission_node_request random() {
+        return {.id = tests::random_named_int<model::node_id>()};
+    }
+
+    static std::vector<cluster::recommission_node_request> limits() {
+        return {};
+    }
+};
+
+template<>
+struct instance_generator<cluster::recommission_node_reply> {
+    static cluster::recommission_node_reply random() {
+        return {.error = instance_generator<cluster::errc>::random()};
+    }
+
+    static std::vector<cluster::recommission_node_reply> limits() { return {}; }
+};
+
+template<>
+struct instance_generator<cluster::finish_reallocation_request> {
+    static cluster::finish_reallocation_request random() {
+        return {.id = tests::random_named_int<model::node_id>()};
+    }
+
+    static std::vector<cluster::finish_reallocation_request> limits() {
+        return {};
+    }
+};
+
+template<>
+struct instance_generator<cluster::finish_reallocation_reply> {
+    static cluster::finish_reallocation_reply random() {
+        return {.error = instance_generator<cluster::errc>::random()};
+    }
+
+    static std::vector<cluster::finish_reallocation_reply> limits() {
+        return {};
+    }
+};
+
+template<>
+struct instance_generator<cluster::set_maintenance_mode_request> {
+    static cluster::set_maintenance_mode_request random() {
+        return {
+          .id = tests::random_named_int<model::node_id>(),
+          .enabled = tests::random_bool()};
+    }
+
+    static std::vector<cluster::set_maintenance_mode_request> limits() {
+        return {};
+    }
+};
+
+template<>
+struct instance_generator<cluster::set_maintenance_mode_reply> {
+    static cluster::set_maintenance_mode_reply random() {
+        return {.error = instance_generator<cluster::errc>::random()};
+    }
+
+    static std::vector<cluster::set_maintenance_mode_reply> limits() {
         return {};
     }
 };
