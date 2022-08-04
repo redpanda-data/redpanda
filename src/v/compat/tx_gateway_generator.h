@@ -48,4 +48,15 @@ struct instance_generator<cluster::tx_errc> {
     static std::vector<raft::errc> limits() { return {}; }
 };
 
+// NOTE: that the bottom 10^6 is removed.
+// This is so that roundtrip from ns->ms->ns will work as expected.
+inline model::timeout_clock::duration min_duration() {
+    constexpr auto min_chrono = std::chrono::milliseconds::min().count();
+    return model::timeout_clock::duration(min_chrono - (min_chrono % -1000000));
+}
+inline model::timeout_clock::duration max_duration() {
+    constexpr auto max_chrono = std::chrono::milliseconds::max().count();
+    return model::timeout_clock::duration(max_chrono - max_chrono % 1000000);
+}
+
 } // namespace compat
