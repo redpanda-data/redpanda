@@ -176,4 +176,9 @@ GEN_COMPAT_CHECK(
 GEN_COMPAT_CHECK(
   cluster::finish_reallocation_request, { json_write(id); }, { json_read(id); })
 
+GEN_COMPAT_CHECK(
+  cluster::finish_reallocation_reply,
+  { json_write(error); },
+  { json_read(error); })
+
 } // namespace compat

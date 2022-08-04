@@ -323,4 +323,15 @@ struct instance_generator<cluster::finish_reallocation_request> {
     }
 };
 
+template<>
+struct instance_generator<cluster::finish_reallocation_reply> {
+    static cluster::finish_reallocation_reply random() {
+        return {.error = instance_generator<cluster::errc>::random()};
+    }
+
+    static std::vector<cluster::finish_reallocation_reply> limits() {
+        return {};
+    }
+};
+
 } // namespace compat

@@ -2122,6 +2122,12 @@ struct finish_reallocation_reply
       = default;
 
     auto serde_fields() { return std::tie(error); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const finish_reallocation_reply& r) {
+        fmt::print(o, "error {}", r.error);
+        return o;
+    }
 };
 
 struct set_maintenance_mode_request
