@@ -13,6 +13,7 @@
 #include "cluster/errc.h"
 #include "cluster/types.h"
 #include "compat/generator.h"
+#include "model/tests/randoms.h"
 #include "test_utils/randoms.h"
 
 namespace compat {
@@ -228,6 +229,15 @@ struct instance_generator<cluster::feature_barrier_response> {
     static std::vector<cluster::feature_barrier_response> limits() {
         return {};
     }
+};
+
+template<>
+struct instance_generator<cluster::join_request> {
+    static cluster::join_request random() {
+        return cluster::join_request{model::random_broker()};
+    }
+
+    static std::vector<cluster::join_request> limits() { return {}; }
 };
 
 } // namespace compat

@@ -127,4 +127,7 @@ GEN_COMPAT_CHECK(
       json_read(complete);
   });
 
+GEN_COMPAT_CHECK(
+  cluster::join_request, { json_write(node); }, { json_read(node); });
+
 } // namespace compat
