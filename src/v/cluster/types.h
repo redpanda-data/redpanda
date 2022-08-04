@@ -2483,17 +2483,27 @@ struct move_cancellation_result
     operator==(const move_cancellation_result&, const move_cancellation_result&)
       = default;
 
+    friend std::ostream&
+    operator<<(std::ostream& o, const move_cancellation_result&);
+
     model::ntp ntp;
     cluster::errc result;
 };
 
 enum class partition_move_direction { to_node, from_node, all };
+std::ostream& operator<<(std::ostream&, const partition_move_direction&);
 
 struct cancel_all_partition_movements_request
   : serde::envelope<cancel_all_partition_movements_request, serde::version<0>> {
     cancel_all_partition_movements_request() = default;
 
     auto serde_fields() { return std::tie(); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const cancel_all_partition_movements_request&) {
+        fmt::print(o, "{{}}");
+        return o;
+    }
 };
 struct cancel_node_partition_movements_request
   : serde::
@@ -2507,6 +2517,9 @@ struct cancel_node_partition_movements_request
       const cancel_node_partition_movements_request&,
       const cancel_node_partition_movements_request&)
       = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const cancel_node_partition_movements_request&);
 };
 
 struct cancel_partition_movements_reply
@@ -2517,6 +2530,9 @@ struct cancel_partition_movements_reply
       = default;
 
     auto serde_fields() { return std::tie(general_error, partition_results); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const cancel_partition_movements_reply& r);
 
     errc general_error;
     std::vector<move_cancellation_result> partition_results;

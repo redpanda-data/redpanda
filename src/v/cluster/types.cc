@@ -560,6 +560,39 @@ std::ostream& operator<<(std::ostream& o, const leader_term& lt) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const partition_move_direction& s) {
+    switch (s) {
+    case partition_move_direction::to_node:
+        return o << "to_node";
+    case partition_move_direction::from_node:
+        return o << "from_node";
+    case partition_move_direction::all:
+        return o << "all";
+    }
+    __builtin_unreachable();
+}
+
+std::ostream& operator<<(std::ostream& o, const move_cancellation_result& r) {
+    fmt::print(o, "{{ntp: {}, result: {}}}", r.ntp, r.result);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const cancel_node_partition_movements_request& r) {
+    fmt::print(o, "{{node_id: {}, direction: {}}}", r.node_id, r.direction);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const cancel_partition_movements_reply& r) {
+    fmt::print(
+      o,
+      "{{general_error: {}, partition_results: {}}}",
+      r.general_error,
+      r.partition_results);
+    return o;
+}
+
 std::ostream& operator<<(std::ostream& o, const feature_update_action& fua) {
     std::string_view action_name;
     switch (fua.action) {
