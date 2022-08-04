@@ -250,6 +250,13 @@ func (cm *ConfigMap) genConnect(ctx context.Context) (*connect.Config, error) {
 	}, nil
 }
 
+func getOrEmpty(key string, data map[string][]byte) string {
+	if val, ok := data[key]; ok {
+		return string(val)
+	}
+	return ""
+}
+
 func (cm *ConfigMap) buildConfigCluster(ctx context.Context, c redpandav1alpha1.ConnectCluster) (*connect.ConfigCluster, error) {
 	cluster := &connect.ConfigCluster{Name: c.Name, URL: c.URL}
 
@@ -258,9 +265,10 @@ func (cm *ConfigMap) buildConfigCluster(ctx context.Context, c redpandav1alpha1.
 		if err := cm.Get(ctx, types.NamespacedName{Namespace: c.BasicAuthRef.Namespace, Name: c.BasicAuthRef.Name}, &ref); err != nil {
 			return nil, err
 		}
-		// XXX: This will panic when key not found
-		cluster.Username = string(ref.Data["username"])
-		cluster.Password = string(ref.Data["password"])
+		// Don't stop reconciliation if key not found, fail in Console instead
+		// User shouldn't have knowledge about operator and should just see Console logs
+		cluster.Username = getOrEmpty("username", ref.Data)
+		cluster.Password = getOrEmpty("password", ref.Data)
 	}
 
 	if c.TokenRef != nil {
@@ -268,7 +276,7 @@ func (cm *ConfigMap) buildConfigCluster(ctx context.Context, c redpandav1alpha1.
 		if err := cm.Get(ctx, types.NamespacedName{Namespace: c.TokenRef.Namespace, Name: c.TokenRef.Name}, &ref); err != nil {
 			return nil, err
 		}
-		cluster.Token = string(ref.Data["token"])
+		cluster.Token = getOrEmpty("token", ref.Data)
 	}
 
 	if c.TLS != nil {

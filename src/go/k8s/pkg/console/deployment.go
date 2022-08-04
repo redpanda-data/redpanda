@@ -296,9 +296,11 @@ func (d *Deployment) initContainers() ([]corev1.Container, error) {
 		return nil, fmt.Errorf("get schema registry node certificate: %s", "not found")
 	}
 
-	cafile := string(caCert.Data["ca.crt"])
-	certfile := string(clientCert.Data["tls.crt"])
-	keyfile := string(clientCert.Data["tls.key"])
+	var (
+		cafile   = getOrEmpty("ca.crt", caCert.Data)
+		certfile = getOrEmpty("tls.crt", clientCert.Data)
+		keyfile  = getOrEmpty("tls.key", clientCert.Data)
+	)
 
 	return []corev1.Container{
 		{
