@@ -262,10 +262,12 @@ public:
     explicit copy_helper(
       ss::input_stream<char> input,
       ss::output_stream<char> output,
-      record_batch_transform_predicate pred)
+      record_batch_transform_predicate pred,
+      opt_abort_source_t as)
       : _input(std::move(input))
       , _output(std::move(output))
-      , _pred(std::move(pred)) {}
+      , _pred(std::move(pred))
+      , _as(as) {}
 
     ss::future<result<model::record_batch_header>> read_header() {
         return read_header_impl(_input, ss::sstring("copy_helper"));
@@ -276,7 +278,8 @@ public:
     ss::future<result<size_t>> run() {
         size_t consumed = 0;
         bool stop = false;
-        while (!stop) {
+        while (!stop
+               && (!_as.has_value() || !_as.value().get().abort_requested())) {
             auto r = co_await read_header();
             if (!r) {
                 if (r.error() == parser_errc::end_of_stream) {
@@ -350,13 +353,15 @@ public:
     ss::output_stream<char> _output;
     record_batch_transform_predicate _pred;
     model::record_batch_header _header{};
+    opt_abort_source_t _as;
 };
 
 ss::future<result<size_t>> transform_stream(
   ss::input_stream<char> in,
   ss::output_stream<char> out,
-  record_batch_transform_predicate pred) {
-    copy_helper helper(std::move(in), std::move(out), std::move(pred));
+  record_batch_transform_predicate pred,
+  opt_abort_source_t as) {
+    copy_helper helper(std::move(in), std::move(out), std::move(pred), as);
     co_return co_await helper.run().finally(
       [&helper] { return helper.close(); });
 }
