@@ -1737,6 +1737,12 @@ struct create_acls_reply
     friend bool operator==(const create_acls_reply&, const create_acls_reply&)
       = default;
 
+    friend std::ostream&
+    operator<<(std::ostream& o, const create_acls_reply& r) {
+        fmt::print(o, "{{ results: {} }}", r.results);
+        return o;
+    }
+
     auto serde_fields() { return std::tie(results); }
 };
 

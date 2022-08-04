@@ -14,6 +14,7 @@
 #include "cluster/types.h"
 #include "compat/abort_tx_compat.h"
 #include "compat/begin_group_tx_compat.h"
+#include "compat/acls_compat.h"
 #include "compat/begin_tx_compat.h"
 #include "compat/check.h"
 #include "compat/cluster_compat.h"
@@ -97,7 +98,8 @@ using compat_checks = type_list<
   cluster::prepare_group_tx_request,
   cluster::prepare_group_tx_reply,
   cluster::commit_tx_request,
-  cluster::commit_tx_reply>;
+  cluster::commit_tx_reply,
+  cluster::create_acls_reply>;
 
 struct compat_error final : public std::runtime_error {
 public:
