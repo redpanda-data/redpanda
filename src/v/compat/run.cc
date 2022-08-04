@@ -11,10 +11,11 @@
 #include "compat/run.h"
 
 #include "cluster/metadata_dissemination_types.h"
+#include "cluster/partition_balancer_types.h"
 #include "cluster/types.h"
 #include "compat/abort_tx_compat.h"
-#include "compat/begin_group_tx_compat.h"
 #include "compat/acls_compat.h"
+#include "compat/begin_group_tx_compat.h"
 #include "compat/begin_tx_compat.h"
 #include "compat/check.h"
 #include "compat/cluster_compat.h"
@@ -22,6 +23,7 @@
 #include "compat/id_allocator_compat.h"
 #include "compat/init_tm_tx_compat.h"
 #include "compat/metadata_dissemination_compat.h"
+#include "compat/partition_balancer_compat.h"
 #include "compat/prepare_group_tx_compat.h"
 #include "compat/prepare_tx_compat.h"
 #include "compat/raft_compat.h"
@@ -100,7 +102,8 @@ using compat_checks = type_list<
   cluster::commit_tx_request,
   cluster::commit_tx_reply,
   cluster::create_acls_reply,
-  cluster::reconciliation_state_request>;
+  cluster::reconciliation_state_request,
+  cluster::partition_balancer_overview_request>;
 
 struct compat_error final : public std::runtime_error {
 public:
