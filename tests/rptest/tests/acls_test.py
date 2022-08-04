@@ -310,34 +310,11 @@ class AccessControlListTest(RedpandaTest):
             enable_authz=None,
             authn_method='sasl',
             client_auth=True)  # timeout users_propogated
-    @ignore(
-        use_tls=False,
-        use_sasl=True,
-        enable_authz=True,
-        authn_method=None,
-        client_auth=True
-    )  # AttributeError: 'AccessControlListTest' object has no attribute 'admin_user_cert'
-    @ignore(
-        use_tls=False,
-        use_sasl=True,
-        enable_authz=False,
-        authn_method=None,
-        client_auth=True
-    )  # AttributeError: 'AccessControlListTest' object has no attribute 'admin_user_cert'
-    @ignore(
-        use_tls=False,
-        use_sasl=False,
-        enable_authz=True,
-        authn_method=None,
-        client_auth=True
-    )  # AttributeError: 'AccessControlListTest' object has no attribute 'admin_user_cert'
-    @ignore(
-        use_tls=False,
-        use_sasl=False,
-        enable_authz=False,
-        authn_method=None,
-        client_auth=True
-    )  # AttributeError: 'AccessControlListTest' object has no attribute 'admin_user_cert'
+    @ignore(use_tls=False,
+            use_sasl=False,
+            enable_authz=False,
+            authn_method=None,
+            client_auth=True)  # timeout users_propogated
     @ignore(
         use_tls=False,
         use_sasl=False,
@@ -502,41 +479,16 @@ class AccessControlListTest(RedpandaTest):
             enable_authz=None,
             authn_method='sasl',
             client_auth=False)  # timeout users_propogated
-    @ignore(
-        use_tls=False,
-        use_sasl=True,
-        enable_authz=True,
-        authn_method=None,
-        client_auth=False
-    )  # AttributeError: 'AccessControlListTest' object has no attribute 'admin_user_cert'
-    @ignore(
-        use_tls=False,
-        use_sasl=True,
-        enable_authz=False,
-        authn_method=None,
-        client_auth=False
-    )  # AttributeError: 'AccessControlListTest' object has no attribute 'admin_user_cert'
-    @ignore(
-        use_tls=False,
-        use_sasl=False,
-        enable_authz=True,
-        authn_method=None,
-        client_auth=False
-    )  # AttributeError: 'AccessControlListTest' object has no attribute 'admin_user_cert'
-    @ignore(
-        use_tls=False,
-        use_sasl=False,
-        enable_authz=False,
-        authn_method=None,
-        client_auth=False
-    )  # AttributeError: 'AccessControlListTest' object has no attribute 'admin_user_cert'
-    @ignore(
-        use_tls=False,
-        use_sasl=False,
-        enable_authz=None,
-        authn_method=None,
-        client_auth=False
-    )  # AttributeError: 'AccessControlListTest' object has no attribute 'admin_user_cert'
+    @ignore(use_tls=False,
+            use_sasl=False,
+            enable_authz=False,
+            authn_method=None,
+            client_auth=False)  # timeout users_propogated
+    @ignore(use_tls=False,
+            use_sasl=False,
+            enable_authz=None,
+            authn_method=None,
+            client_auth=False)  # timeout users_propogated
     @matrix(use_tls=[True, False],
             use_sasl=[True, False],
             enable_authz=[True, False, None],
@@ -559,25 +511,42 @@ class AccessControlListTest(RedpandaTest):
                                     authn_method: Optional[str]):
             if enable_authz is False:
                 return True
-            elif authn_method == 'none':
-                return True
             elif not use_sasl and enable_authz is not True:
                 return True
             else:
                 return False
 
+        def should_always_fail(use_tls: bool, use_sasl: bool,
+                               enable_authz: Optional[bool],
+                               authn_method: Optional[str]):
+            if enable_authz is True and authn_method is None:
+                return True
+            return False
+
         pass_w_base_user = should_pass_w_base_user(use_tls, use_sasl,
                                                    enable_authz, authn_method)
+
+        should_always_fail = should_always_fail(use_tls, use_sasl,
+                                                enable_authz, authn_method)
         # run a few times for good health
         for _ in range(5):
             try:
                 self.get_client("base").acl_list()
-                assert pass_w_base_user, "list acls should have failed"
+                assert pass_w_base_user, "list acls should have failed for base user"
             except ClusterAuthorizationError:
                 assert not pass_w_base_user
 
-            self.get_client("cluster_describe").acl_list()
-            self.get_super_client().acl_list()
+            try:
+                self.get_client("cluster_describe").acl_list()
+                assert not should_always_fail, "list acls should have failed for cluster user"
+            except ClusterAuthorizationError:
+                assert should_always_fail
+
+            try:
+                self.get_super_client().acl_list()
+                assert not should_always_fail, "list acls should have failed for super user"
+            except ClusterAuthorizationError:
+                assert should_always_fail
 
     # Test mtls identity
     # Principals in use:
