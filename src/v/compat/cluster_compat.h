@@ -157,4 +157,7 @@ GEN_COMPAT_CHECK(
       json_read(id);
   })
 
+GEN_COMPAT_CHECK(
+  cluster::decommission_node_request, { json_write(id); }, { json_read(id); })
+
 } // namespace compat
