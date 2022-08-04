@@ -10,8 +10,10 @@
 
 #include "cloud_storage/access_time_tracker.h"
 
+#include "cloud_storage/logger.h"
 #include "serde/serde.h"
 #include "units.h"
+#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/smp.hh>
@@ -20,37 +22,6 @@
 
 #include <exception>
 #include <variant>
-
-namespace absl {
-
-template<class Key, class Value>
-void write(iobuf& out, const btree_map<Key, Value>& btree) {
-    using serde::write;
-    write(out, static_cast<uint64_t>(btree.size()));
-    for (auto it : btree) {
-        write(out, it.first);
-        write(out, it.second);
-    }
-}
-
-template<class Key, class Value>
-void read_nested(
-  iobuf_parser& in,
-  btree_map<Key, Value>& btree,
-  size_t const bytes_left_limit) {
-    using serde::read_nested;
-    uint64_t sz;
-    read_nested(in, sz, bytes_left_limit);
-    for (auto i = 0UL; i < sz; i++) {
-        Key key;
-        Value value;
-        read_nested(in, key, bytes_left_limit);
-        read_nested(in, value, bytes_left_limit);
-        btree.insert({key, value});
-    }
-}
-
-} // namespace absl
 
 namespace cloud_storage {
 
@@ -70,8 +41,8 @@ void access_time_tracker::remove_timestamp(std::string_view key) noexcept {
         _table.data.erase(hash);
         _dirty = true;
     } catch (...) {
-        vassert(
-          false,
+        vlog(
+          cst_log.debug,
           "Can't remove key {} from access_time_tracker, exception: {}",
           key,
           std::current_exception());

@@ -16,6 +16,7 @@
 #include "resource_mgmt/io_priority.h"
 #include "seastarx.h"
 #include "units.h"
+#include "utils/mutex.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
@@ -30,7 +31,7 @@ namespace cloud_storage {
 
 static constexpr size_t default_write_buffer_size = 128_KiB;
 static constexpr unsigned default_writebehind = 10;
-static constexpr const char* access_time_tracker_file_name = "accesstime";
+static constexpr std::string_view access_time_tracker_file_name = "accesstime";
 
 struct cache_item {
     ss::file body;
@@ -125,6 +126,7 @@ private:
     /// Current size of the cache directory (only used on shard 0)
     uint64_t _current_cache_size{0};
     ss::semaphore _cleanup_sm{1};
+    mutex _cleanup_mutex;
     std::set<std::filesystem::path> _files_in_progress;
     cache_probe probe;
     access_time_tracker _access_time_tracker;

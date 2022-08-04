@@ -51,11 +51,14 @@ recursive_directory_walker::walk(
         try {
             ss::file target_dir = co_await open_directory(target);
             auto sub = target_dir.list_directory(
-              [&files,
-               &current_cache_size,
-               &dirlist,
+              [_files = &files,
+               _current_cache_size = &current_cache_size,
+               _dirlist = &dirlist,
                _target{target},
                _tracker{tracker}](ss::directory_entry entry) -> ss::future<> {
+                  auto& files = *_files;
+                  auto& current_cache_size = *_current_cache_size;
+                  auto& dirlist = *_dirlist;
                   auto target{_target};
                   auto tracker{_tracker};
                   vlog(cst_log.debug, "Looking at directory {}", target);
