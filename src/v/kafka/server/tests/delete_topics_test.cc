@@ -72,7 +72,8 @@ public:
         }
         // topics are deleted
         for (const auto& r : resp.data.responses) {
-            validate_topic_is_deleteted(r.name);
+            BOOST_REQUIRE(r.name.has_value());
+            validate_topic_is_deleteted(*r.name);
         }
     }
 
@@ -133,8 +134,9 @@ public:
           resp.data.responses.size(), expected_response.size());
 
         for (const auto& tp_r : resp.data.responses) {
+            BOOST_REQUIRE(tp_r.name.has_value());
             BOOST_REQUIRE_EQUAL(
-              tp_r.error_code, expected_response.find(tp_r.name)->second);
+              tp_r.error_code, expected_response.find(*tp_r.name)->second);
         }
     }
 };

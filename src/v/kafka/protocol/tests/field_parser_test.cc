@@ -10,6 +10,7 @@
  */
 
 #include "kafka/protocol/api_versions.h"
+#include "kafka/protocol/delete_topics.h"
 #include "kafka/protocol/request_reader.h"
 #include "kafka/protocol/response_writer.h"
 #include "kafka/protocol/types.h"
@@ -487,4 +488,81 @@ SEASTAR_THREAD_TEST_CASE(test_sample_against_franz_go_with_unknown_tags) {
     BOOST_CHECK_EQUAL(sfk.name, "hi");
     BOOST_CHECK_EQUAL(sfk.min_version, 0);
     BOOST_CHECK_EQUAL(sfk.max_version, 3);
+}
+
+/// Previously the source code treated fields that has a `nullable_versions` key
+/// as always nullable. This is not correct as the type must be conditionally
+/// encoded or decoded as nullable depending on the version of request
+SEASTAR_THREAD_TEST_CASE(test_nullable_versions_fields) {
+    /// The go-lang code that generated the static data below:
+    // package main
+    // import (
+    // 	"fmt"
+    // 	"github.com/twmb/franz-go/pkg/kmsg"
+    // )
+    // func main() {
+    // 	req := kmsg.DeleteTopicsResponse{
+    // 		Version:        5,
+    // 		ThrottleMillis: 2,
+    // 		Topics: []kmsg.DeleteTopicsResponseTopic{{
+    // 			Topic:        kmsg.StringPtr("foo_bar"),
+    // 			ErrorCode:    1,
+    // 			ErrorMessage: kmsg.StringPtr("kafka topic error
+    // message"),
+    // 		}},
+    // 	}
+    // 	fmt.Printf("%02x\n", req.AppendTo(nil))
+    // }
+
+    static constexpr auto delete_topics_response_v5_data
+      = std::to_array<uint8_t>(
+        {0x00, 0x00, 0x00, 0x02, 0x02, 0x08, 0x66, 0x6f, 0x6f, 0x5f, 0x62,
+         0x61, 0x72, 0x00, 0x01, 0x1a, 0x6b, 0x61, 0x66, 0x6b, 0x61, 0x20,
+         0x74, 0x6f, 0x70, 0x69, 0x63, 0x20, 0x65, 0x72, 0x72, 0x6f, 0x72,
+         0x20, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x00, 0x00});
+
+    kafka::delete_topics_response resp;
+    resp.data.throttle_time_ms = std::chrono::milliseconds(2);
+    kafka::deletable_topic_result d{
+      .name = model::topic{"foo_bar"},
+      .error_code = kafka::error_code::offset_out_of_range,
+      .error_message = "kafka topic error message"};
+    resp.data.responses.push_back(d);
+
+    /// Ensure serialized response is exact to what franz-go produces
+    bytes b;
+    iobuf buf;
+    {
+        kafka::response_writer writer(buf);
+        resp.encode(writer, kafka::api_version(5));
+        b = iobuf_to_bytes(buf);
+    }
+
+    BOOST_CHECK_EQUAL(b.size(), delete_topics_response_v5_data.size());
+    BOOST_CHECK_EQUAL(
+      0, memcmp(b.data(), delete_topics_response_v5_data.data(), b.size()));
+
+    /// Ensure the deserializer works as well
+    kafka::delete_topics_response resp2;
+    resp2.decode(std::move(buf), kafka::api_version(5));
+    BOOST_CHECK_EQUAL(resp.data, resp2.data);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_maybe_nullable_field) {
+    /// This test is to verify an exception is working properly in our
+    /// generator. For types that are nullable only for specific versions,
+    /// an exception will be thrown to ensure that the values of the optional
+    /// types are always fufilled if the version is below the min provided by
+    /// `nullableVersions` for the field
+    kafka::delete_topics_response resp;
+    resp.data.throttle_time_ms = std::chrono::milliseconds(2);
+    resp.data.responses.push_back(kafka::deletable_topic_result{
+      .name = std::nullopt,
+      .error_code = kafka::error_code::none,
+      .error_message = std::nullopt});
+
+    iobuf b;
+    kafka::response_writer writer(b);
+    BOOST_CHECK_THROW(
+      resp.encode(writer, kafka::api_version(5)), std::runtime_error);
 }
