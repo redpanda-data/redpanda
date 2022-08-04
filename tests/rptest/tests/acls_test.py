@@ -208,12 +208,6 @@ class AccessControlListTest(RedpandaTest):
     @cluster(num_nodes=3)
     # Test cases with require_client_auth = True
     @ignore(use_tls=True,
-            use_sasl=False,
-            enable_authz=True,
-            authn_method=None,
-            client_auth=True
-            )  # Hang on rpk wrapper: unable to create ACLs: EOF
-    @ignore(use_tls=True,
             use_sasl=True,
             enable_authz=True,
             authn_method=None,
@@ -231,13 +225,6 @@ class AccessControlListTest(RedpandaTest):
             authn_method=None,
             client_auth=True
             )  # Hang on rpk wrapper: unable to create ACLs: EOF
-    @ignore(
-        use_tls=True,
-        use_sasl=True,
-        enable_authz=None,
-        authn_method='mtls_identity',
-        client_auth=True
-    )  # KafkaException: KafkaError{code=_TRANSPORT,val=-195,str="Failed to get metadata: Local: Broker transport failure"}
     @ignore(
         use_tls=False,
         use_sasl=True,
