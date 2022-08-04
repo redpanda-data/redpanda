@@ -274,4 +274,9 @@ GEN_COMPAT_CHECK(
       json_read(target_node);
   })
 
+GEN_COMPAT_CHECK(
+  cluster::configuration_update_reply,
+  { json_write(success); },
+  { json_read(success); })
+
 } // namespace compat

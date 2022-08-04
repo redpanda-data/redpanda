@@ -939,6 +939,9 @@ struct configuration_update_reply
       const configuration_update_reply&, const configuration_update_reply&)
       = default;
 
+    friend std::ostream&
+    operator<<(std::ostream&, const configuration_update_reply&);
+
     auto serde_fields() { return std::tie(success); }
 };
 

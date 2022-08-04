@@ -757,6 +757,12 @@ operator<<(std::ostream& o, const configuration_update_request& cr) {
     return o;
 }
 
+std::ostream&
+operator<<(std::ostream& o, const configuration_update_reply& cr) {
+    fmt::print(o, "{{success: {}}}", cr.success);
+    return o;
+}
+
 } // namespace cluster
 
 namespace reflection {

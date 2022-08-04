@@ -523,6 +523,17 @@ struct instance_generator<cluster::cancel_node_partition_movements_request> {
 };
 
 template<>
+struct instance_generator<cluster::configuration_update_reply> {
+    static cluster::configuration_update_reply random() {
+        return cluster::configuration_update_reply(tests::random_bool());
+    }
+
+    static std::vector<cluster::configuration_update_reply> limits() {
+        return {};
+    }
+};
+
+template<>
 struct instance_generator<cluster::cancel_partition_movements_reply> {
     static cluster::cancel_partition_movements_reply random() {
         return {
