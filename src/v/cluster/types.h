@@ -2088,6 +2088,12 @@ struct recommission_node_reply
       = default;
 
     auto serde_fields() { return std::tie(error); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const recommission_node_reply& r) {
+        fmt::print(o, "error {}", r.error);
+        return o;
+    }
 };
 
 struct finish_reallocation_request

@@ -303,4 +303,13 @@ struct instance_generator<cluster::recommission_node_request> {
     }
 };
 
+template<>
+struct instance_generator<cluster::recommission_node_reply> {
+    static cluster::recommission_node_reply random() {
+        return {.error = instance_generator<cluster::errc>::random()};
+    }
+
+    static std::vector<cluster::recommission_node_reply> limits() { return {}; }
+};
+
 } // namespace compat
