@@ -996,7 +996,8 @@ configuration::configuration()
   , cloud_storage_max_connections(
       *this,
       "cloud_storage_max_connections",
-      "Max number of simultaneous uploads to S3",
+      "Max number of simultaneous connections to S3 per shard (includes "
+      "connections used for both uploads and downloads)",
       {.visibility = visibility::user},
       20)
   , cloud_storage_disable_tls(
