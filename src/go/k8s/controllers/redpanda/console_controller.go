@@ -92,9 +92,19 @@ func (r *Reconciling) Do(ctx context.Context, console *redpandav1alpha1.Console,
 	}
 	for _, each := range applyResources {
 		if err := each.Ensure(ctx); err != nil {
-			var e *resources.RequeueAfterError
-			if errors.As(err, &e) {
-				return ctrl.Result{RequeueAfter: e.RequeueAfter}, nil
+			var ra *resources.RequeueAfterError
+			if errors.As(err, &ra) {
+				log.V(debugLogLevel).Info(fmt.Sprintf("Requeue ensuring resource after %d: %s", ra.RequeueAfter, ra.Msg))
+				// RequeueAfterError is used to delay retry
+				log.Info(fmt.Sprintf("Ensuring resource failed, requeueing after %s: %s", ra.RequeueAfter, ra.Msg))
+				return ctrl.Result{RequeueAfter: ra.RequeueAfter}, nil
+			}
+			var r *resources.RequeueError
+			if errors.As(err, &r) {
+				log.V(debugLogLevel).Info(fmt.Sprintf("Requeue ensuring resource: %s", r.Msg))
+				// RequeueError is used to skip controller logging the error and using default retry backoff
+				// Don't return the error, as it is most likely not an actual error
+				return ctrl.Result{Requeue: true}, nil
 			}
 			return ctrl.Result{}, err
 		}

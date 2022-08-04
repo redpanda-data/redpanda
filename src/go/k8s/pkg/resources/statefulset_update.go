@@ -419,3 +419,12 @@ type RequeueAfterError struct {
 func (e *RequeueAfterError) Error() string {
 	return fmt.Sprintf("RequeueAfterError %s", e.Msg)
 }
+
+// RequeueError error to requeue using default retry backoff.
+type RequeueError struct {
+	Msg string
+}
+
+func (e *RequeueError) Error() string {
+	return fmt.Sprintf("RequeueError %s", e.Msg)
+}

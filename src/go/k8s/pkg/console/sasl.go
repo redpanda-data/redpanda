@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
@@ -73,12 +72,13 @@ func (k *KafkaSA) Ensure(ctx context.Context) error {
 	// SuperUsers resource generates a username/password credentials
 	var secret corev1.Secret
 	if err := k.Get(ctx, su.Key(), &secret); err != nil {
+		e := fmt.Errorf("fetching Secret (%s) from namespace (%s): %w", su.Key().Name, su.Key().Namespace, err)
 		// If created, it may not be available immediately; don't log the error
 		// WANT: su.Ensure() should return the object so we don't have to query again
 		if apierrors.IsNotFound(err) {
-			return &resources.RequeueAfterError{RequeueAfter: time.Second}
+			return &resources.RequeueError{Msg: e.Error()}
 		}
-		return fmt.Errorf("fetching Secret (%s) from namespace (%s): %w", su.Key().Name, su.Key().Namespace, err)
+		return e
 	}
 	username := string(secret.Data[corev1.BasicAuthUsernameKey])
 	password := string(secret.Data[corev1.BasicAuthPasswordKey])
