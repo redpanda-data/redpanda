@@ -1180,6 +1180,7 @@ void application::wire_up_redpanda_services() {
       .get();
     syschecks::systemd_message("Starting kafka RPC {}", kafka_cfg.local())
       .get();
+    vlog(_log.warn, "Starting kafka RPC {}", kafka_cfg.local());
     _kafka_server.start(&kafka_cfg).get();
     kafka_cfg.stop().get();
     construct_service(
