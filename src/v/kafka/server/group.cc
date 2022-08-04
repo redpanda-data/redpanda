@@ -1994,38 +1994,7 @@ group::abort_tx(cluster::abort_group_tx_request r) {
         co_return make_abort_tx_reply(cluster::tx_errc::request_rejected);
     }
 
-    // preventing prepare and replicte once we
-    // know we're going to abort tx and abandon pid
-    _volatile_txs.erase(r.pid);
-
-    // TODO: https://app.clubhouse.io/vectorized/story/2197
-    // (check for tx_seq to prevent old abort requests aborting
-    // new transactions in the same session)
-
-    auto tx = group_log_aborted_tx{.group_id = r.group_id, .tx_seq = r.tx_seq};
-
-    // TODO: https://app.clubhouse.io/vectorized/story/2200
-    // include producer_id+type into key to make it unique-ish
-    // to prevent being GCed by the compaction
-    auto batch = make_tx_batch(
-      model::record_batch_type::group_abort_tx,
-      aborted_tx_record_version,
-      r.pid,
-      std::move(tx));
-    auto reader = model::make_memory_record_batch_reader(std::move(batch));
-
-    auto e = co_await _partition->raft()->replicate(
-      _term,
-      std::move(reader),
-      raft::replicate_options(raft::consistency_level::quorum_ack));
-
-    if (!e) {
-        co_return make_abort_tx_reply(cluster::tx_errc::unknown_server_error);
-    }
-
-    _prepared_txs.erase(r.pid);
-
-    co_return make_abort_tx_reply(cluster::tx_errc::none);
+    co_return co_await do_abort(r.group_id, r.pid, r.tx_seq);
 }
 
 ss::future<txn_offset_commit_response>
@@ -2776,6 +2745,44 @@ void group::add_pending_member(
       member_id);
 
     res.first->second.arm(timeout);
+}
+
+ss::future<cluster::abort_group_tx_reply> group::do_abort(
+  kafka::group_id group_id,
+  model::producer_identity pid,
+  model::tx_seq tx_seq) {
+    // preventing prepare and replicate once we
+    // know we're going to abort tx and abandon pid
+    _volatile_txs.erase(pid);
+
+    // TODO: https://app.clubhouse.io/vectorized/story/2197
+    // (check for tx_seq to prevent old abort requests aborting
+    // new transactions in the same session)
+
+    auto tx = group_log_aborted_tx{.group_id = group_id, .tx_seq = tx_seq};
+
+    // TODO: https://app.clubhouse.io/vectorized/story/2200
+    // include producer_id+type into key to make it unique-ish
+    // to prevent being GCed by the compaction
+    auto batch = make_tx_batch(
+      model::record_batch_type::group_abort_tx,
+      aborted_tx_record_version,
+      pid,
+      std::move(tx));
+    auto reader = model::make_memory_record_batch_reader(std::move(batch));
+
+    auto e = co_await _partition->raft()->replicate(
+      _term,
+      std::move(reader),
+      raft::replicate_options(raft::consistency_level::quorum_ack));
+
+    if (!e) {
+        co_return make_abort_tx_reply(cluster::tx_errc::unknown_server_error);
+    }
+
+    _prepared_txs.erase(pid);
+
+    co_return make_abort_tx_reply(cluster::tx_errc::none);
 }
 
 std::ostream& operator<<(std::ostream& o, const group::offset_metadata& md) {

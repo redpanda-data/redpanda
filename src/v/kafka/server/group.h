@@ -757,6 +757,11 @@ private:
       const ss::sstring& metadata,
       model::timestamp commited_timestemp);
 
+    ss::future<cluster::abort_group_tx_reply> do_abort(
+      kafka::group_id group_id,
+      model::producer_identity pid,
+      model::tx_seq tx_seq);
+
     kafka::group_id _id;
     group_state _state;
     model::timestamp _state_timestamp;
