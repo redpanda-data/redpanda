@@ -77,6 +77,8 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
       std::move(md),
     });
     notify_waiters();
+
+    _probe.handle_topic_creation(std::move(cmd.key));
     return ss::make_ready_future<std::error_code>(errc::success);
 }
 
@@ -121,8 +123,11 @@ topic_table::apply(delete_topic_cmd cmd, model::offset offset) {
             _pending_deltas.emplace_back(
               std::move(ntp), p_as, offset, delete_type);
         }
+
         _topics.erase(tp);
         notify_waiters();
+        _probe.handle_topic_deletion(cmd.key);
+
         return ss::make_ready_future<std::error_code>(errc::success);
     }
     return ss::make_ready_future<std::error_code>(errc::topic_not_exists);

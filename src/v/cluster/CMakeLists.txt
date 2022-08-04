@@ -58,6 +58,7 @@ v_cc_library(
     types.cc
     notification_latch.cc
     topic_table.cc
+    topic_table_probe.cc
     topic_updates_dispatcher.cc
     members_table.cc
     members_manager.cc

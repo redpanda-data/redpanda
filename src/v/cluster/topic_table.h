@@ -13,6 +13,7 @@
 
 #include "cluster/commands.h"
 #include "cluster/non_replicable_topics_frontend.h"
+#include "cluster/topic_table_probe.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/limits.h"
@@ -105,6 +106,9 @@ public:
 
     using delta_cb_t
       = ss::noncopyable_function<void(const std::vector<delta>&)>;
+
+    explicit topic_table()
+      : _probe(*this){};
 
     cluster::notification_id_type register_delta_notification(delta_cb_t cb) {
         auto id = _notification_id++;
@@ -302,6 +306,7 @@ private:
     uint64_t _waiter_id{0};
     model::offset _last_consumed_by_notifier{
       model::model_limits<model::offset>::min()};
+    topic_table_probe _probe;
 };
 
 std::ostream& operator<<(std::ostream&, topic_table::in_progress_state);
