@@ -339,7 +339,7 @@ class RpkTool:
         cmd = ["seek", group, "--to", to]
         self._run_group(cmd)
 
-    def group_describe(self, group):
+    def group_describe(self, group, summary=False):
         def parse_field(field_name, string):
             pattern = re.compile(f" *{field_name} +(?P<value>.+)")
             m = pattern.match(string)
@@ -365,6 +365,11 @@ class RpkTool:
                 # Leadership movements are underway
                 if 'NOT_LEADER_FOR_PARTITION' in line:
                     return False
+
+                # Cluster not ready yet
+                if 'unknown broker' in line:
+                    return False
+
             return True
 
         def parse_partition(string):
@@ -399,7 +404,11 @@ class RpkTool:
                                      host=m['host'])
 
         def try_describe_group(group):
-            cmd = ["describe", group]
+            if summary:
+                cmd = ["describe", "-s", group]
+            else:
+                cmd = ["describe", group]
+
             try:
                 out = self._run_group(cmd)
             except RpkException as e:
