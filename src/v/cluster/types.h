@@ -2141,6 +2141,12 @@ struct set_maintenance_mode_request
       = default;
 
     auto serde_fields() { return std::tie(id, enabled); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const set_maintenance_mode_request& r) {
+        fmt::print(o, "id {} enabled {}", r.id, r.enabled);
+        return o;
+    }
 };
 
 struct set_maintenance_mode_reply

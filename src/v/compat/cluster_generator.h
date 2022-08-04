@@ -334,4 +334,17 @@ struct instance_generator<cluster::finish_reallocation_reply> {
     }
 };
 
+template<>
+struct instance_generator<cluster::set_maintenance_mode_request> {
+    static cluster::set_maintenance_mode_request random() {
+        return {
+          .id = tests::random_named_int<model::node_id>(),
+          .enabled = tests::random_bool()};
+    }
+
+    static std::vector<cluster::set_maintenance_mode_request> limits() {
+        return {};
+    }
+};
+
 } // namespace compat

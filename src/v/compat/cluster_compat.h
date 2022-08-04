@@ -181,4 +181,15 @@ GEN_COMPAT_CHECK(
   { json_write(error); },
   { json_read(error); })
 
+GEN_COMPAT_CHECK(
+  cluster::set_maintenance_mode_request,
+  {
+      json_write(id);
+      json_write(enabled);
+  },
+  {
+      json_read(id);
+      json_read(enabled);
+  })
+
 } // namespace compat
