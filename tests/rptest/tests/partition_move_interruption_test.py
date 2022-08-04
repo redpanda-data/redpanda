@@ -63,9 +63,9 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
             {"raft_learner_recovery_rate": str(new_value)})
 
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    @matrix(replication_factor=[1, 3],
+    @matrix(replication_factor=[3],
             unclean_abort=[True, False],
-            recovery=[NO_RECOVERY, RESTART_RECOVERY])
+            recovery=[RESTART_RECOVERY])
     def test_cancelling_partition_move(self, replication_factor, unclean_abort,
                                        recovery):
         """
