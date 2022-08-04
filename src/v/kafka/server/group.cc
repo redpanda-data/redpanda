@@ -1772,6 +1772,8 @@ group::begin_tx(cluster::begin_group_tx_request r) {
         co_return make_begin_tx_reply(cluster::tx_errc::request_rejected);
     }
 
+    _expiration_info.insert_or_assign(r.pid, expiration_info(r.timeout));
+
     cluster::begin_group_tx_reply reply;
     reply.etag = _term;
     reply.ec = cluster::tx_errc::none;
@@ -1856,6 +1858,13 @@ group::prepare_tx(cluster::prepare_group_tx_request r) {
       raft::replicate_options(raft::consistency_level::quorum_ack));
 
     if (!e) {
+        // Situation: replication has passed but the replicate method returns
+        // error - _volatile_txs is empty, _prepared_txs is empty so when a
+        // fetch happens the group thinks there is no active transaction and
+        // doesn't block while it should. So we do step_down to give next leader
+        // reply log and understand status of transaction
+        co_await _partition->raft()->step_down();
+        _expiration_info.erase(r.pid);
         co_return make_prepare_tx_reply(cluster::tx_errc::unknown_server_error);
     }
 
@@ -1870,6 +1879,15 @@ group::prepare_tx(cluster::prepare_group_tx_request r) {
         ptx.offsets[tp] = md;
     }
     _prepared_txs[r.pid] = ptx;
+
+    auto exp_it = _expiration_info.find(r.pid);
+    if (exp_it == _expiration_info.end()) {
+        vlog(
+          _ctx_txlog.error, "pid({}) should be inside _expiration_info", r.pid);
+        co_return make_prepare_tx_reply(cluster::tx_errc::unknown_server_error);
+    }
+    exp_it->second.update_last_update_time();
+
     co_return make_prepare_tx_reply(cluster::tx_errc::none);
 }
 
@@ -1911,6 +1929,15 @@ group::abort_tx(cluster::abort_group_tx_request r) {
     if (origin == cluster::abort_origin::past) {
         // rejecting a delayed abort command to prevent aborting
         // a wrong transaction
+        auto it = _expiration_info.find(r.pid);
+        if (it != _expiration_info.end()) {
+            it->second.is_expiration_requested = true;
+        } else {
+            vlog(
+              _ctx_txlog.error,
+              "pid({}) should be inside _expiration_info",
+              r.pid);
+        }
         co_return make_abort_tx_reply(cluster::tx_errc::request_rejected);
     }
     if (origin == cluster::abort_origin::future) {
@@ -1954,6 +1981,14 @@ group::store_txn_offsets(txn_offset_commit_request r) {
               .metadata = p.committed_metadata};
             tx_it->second.offsets[tp] = md;
         }
+    }
+
+    auto it = _expiration_info.find(pid);
+    if (it != _expiration_info.end()) {
+        it->second.update_last_update_time();
+    } else {
+        vlog(
+          _ctx_txlog.error, "pid({}) should be inside _expiration_info", pid);
     }
 
     co_return txn_offset_commit_response(r, error_code::none);
@@ -2713,6 +2748,7 @@ ss::future<cluster::abort_group_tx_reply> group::do_abort(
     }
 
     _prepared_txs.erase(pid);
+    _expiration_info.erase(pid);
 
     co_return make_abort_tx_reply(cluster::tx_errc::none);
 }
@@ -2793,6 +2829,7 @@ group::do_commit(kafka::group_id group_id, model::producer_identity pid) {
     }
 
     _prepared_txs.erase(prepare_it);
+    _expiration_info.erase(pid);
 
     co_return make_commit_tx_reply(cluster::tx_errc::none);
 }

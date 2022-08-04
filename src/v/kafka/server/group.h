@@ -822,6 +822,31 @@ private:
 
     absl::node_hash_map<model::producer_identity, volatile_tx> _volatile_txs;
     absl::node_hash_map<model::producer_identity, prepared_tx> _prepared_txs;
+
+    struct expiration_info {
+        explicit expiration_info(model::timeout_clock::duration timeout)
+          : timeout(timeout)
+          , last_update(model::timeout_clock::now()) {}
+
+        model::timeout_clock::duration timeout;
+        model::timeout_clock::time_point last_update;
+        bool is_expiration_requested{false};
+
+        model::timeout_clock::time_point deadline() const {
+            return last_update + timeout;
+        }
+
+        bool is_expired() const {
+            return is_expiration_requested || deadline() <= clock_type::now();
+        }
+
+        void update_last_update_time() {
+            last_update = model::timeout_clock::now();
+        }
+    };
+
+    absl::node_hash_map<model::producer_identity, expiration_info>
+      _expiration_info;
 };
 
 using group_ptr = ss::lw_shared_ptr<group>;
