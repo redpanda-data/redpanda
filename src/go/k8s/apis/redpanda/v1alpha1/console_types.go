@@ -18,6 +18,14 @@ import (
 // ConsoleSpec defines the desired state of Console
 type ConsoleSpec struct {
 	// +optional
+	// +kubebuilder:default=console
+	MetricsNamespace string `json:"metricsNamespace"`
+
+	// +optional
+	// +kubebuilder:default=true
+	ServeFrontend bool `json:"serveFrontend"`
+
+	// +optional
 	Server Server `json:"server"`
 
 	Schema        Schema                 `json:"schema"`

@@ -107,10 +107,12 @@ func (cm *ConfigMap) Key() types.NamespacedName {
 // This should match the fields at https://github.com/redpanda-data/console/blob/master/docs/config/console.yaml
 // We are copying the fields instead of importing them because (1) they don't have json tags (2) some fields aren't ideal for K8s (e.g. TLS certs shouldn't be file paths but Secret reference)
 func (cm *ConfigMap) generateConsoleConfig(ctx context.Context, username, password string) (string, error) {
-	consoleConfig := &ConsoleConfig{}
-	consoleConfig.SetDefaults()
-	consoleConfig.Server = cm.consoleobj.Spec.Server
-	consoleConfig.Kafka = cm.genKafka(username, password)
+	consoleConfig := &ConsoleConfig{
+		MetricsNamespace: cm.consoleobj.Spec.MetricsNamespace,
+		ServeFrontend:    cm.consoleobj.Spec.ServeFrontend,
+		Server:           cm.consoleobj.Spec.Server,
+		Kafka:            cm.genKafka(username, password),
+	}
 
 	connectConfig, err := cm.genConnect(ctx)
 	if err != nil {

@@ -277,6 +277,9 @@ spec:
                 required:
                 - image
                 type: object
+              metricsNamespace:
+                default: console
+                type: string
               schema:
                 description: Schema defines configurable fields for Schema Registry
                 properties:
@@ -285,6 +288,9 @@ spec:
                 required:
                 - enabled
                 type: object
+              serveFrontend:
+                default: true
+                type: boolean
               server:
                 description: Server is the Console app HTTP server config
                 properties:

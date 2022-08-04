@@ -19,8 +19,5 @@ type ConsoleConfig struct {
 
 // SetDefaults sets sane defaults
 func (cc *ConsoleConfig) SetDefaults() {
-	cc.ServeFrontend = true
-	cc.MetricsNamespace = "console"
-
 	cc.Kafka.SetDefaults()
 }
