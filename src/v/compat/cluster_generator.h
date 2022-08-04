@@ -347,4 +347,15 @@ struct instance_generator<cluster::set_maintenance_mode_request> {
     }
 };
 
+template<>
+struct instance_generator<cluster::set_maintenance_mode_reply> {
+    static cluster::set_maintenance_mode_reply random() {
+        return {.error = instance_generator<cluster::errc>::random()};
+    }
+
+    static std::vector<cluster::set_maintenance_mode_reply> limits() {
+        return {};
+    }
+};
+
 } // namespace compat

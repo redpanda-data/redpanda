@@ -2159,6 +2159,12 @@ struct set_maintenance_mode_reply
       = default;
 
     auto serde_fields() { return std::tie(error); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const set_maintenance_mode_reply& r) {
+        fmt::print(o, "error {}", r.error);
+        return o;
+    }
 };
 
 struct config_status_request

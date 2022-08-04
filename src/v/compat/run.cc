@@ -57,6 +57,7 @@ using compat_checks = type_list<
   cluster::finish_reallocation_request,
   cluster::finish_reallocation_reply,
   cluster::set_maintenance_mode_request,
+  cluster::set_maintenance_mode_reply,
   cluster::update_leadership_request,
   cluster::config_status,
   cluster::cluster_property_kv,
