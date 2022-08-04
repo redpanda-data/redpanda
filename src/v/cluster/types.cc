@@ -281,6 +281,70 @@ std::ostream& operator<<(std::ostream& o, const backend_operation& op) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const begin_tx_request& r) {
+    fmt::print(o, "{{ ntp: {}, pid: {}, tx_seq: {} }}", r.ntp, r.pid, r.tx_seq);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const begin_tx_reply& r) {
+    fmt::print(o, "{{ ntp: {}, etag: {}, ec: {} }}", r.ntp, r.etag, r.ec);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const prepare_tx_request& r) {
+    fmt::print(
+      o,
+      "{{ ntp: {}, etag: {}, tm: {}, pid: {}, tx_seq: {}, timeout: {} }}",
+      r.ntp,
+      r.etag,
+      r.tm,
+      r.pid,
+      r.tx_seq,
+      r.timeout);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const prepare_tx_reply& r) {
+    fmt::print(o, "{{ ec: {} }}", r.ec);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const init_tm_tx_request& r) {
+    fmt::print(
+      o,
+      "{{ tx_id: {}, transaction_timeout_ms: {}, timeout: {} }}",
+      r.tx_id,
+      r.transaction_timeout_ms,
+      r.timeout);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const init_tm_tx_reply& r) {
+    fmt::print(o, "{{ pid: {}, ec: {} }}", r.pid, r.ec);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const try_abort_request& r) {
+    fmt::print(
+      o,
+      "{{ tm: {}, pid: {}, tx_seq: {}, timeout: {} }}",
+      r.tm,
+      r.pid,
+      r.tx_seq,
+      r.timeout);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const try_abort_reply& r) {
+    fmt::print(
+      o,
+      "{{ commited: {}, aborted: {}, ec: {} }}",
+      bool(r.commited),
+      bool(r.aborted),
+      r.ec);
+    return o;
+}
+
 std::ostream&
 operator<<(std::ostream& o, const cluster_config_delta_cmd_data& data) {
     fmt::print(

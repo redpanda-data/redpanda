@@ -211,6 +211,9 @@ struct try_abort_request
     friend bool operator==(const try_abort_request&, const try_abort_request&)
       = default;
 
+    friend std::ostream&
+    operator<<(std::ostream& o, const try_abort_request& r);
+
     auto serde_read(iobuf_parser& in, const serde::header& h) {
         using serde::read_nested;
         tm = read_nested<model::partition_id>(in, h._bytes_left_limit);
@@ -251,6 +254,8 @@ struct try_abort_reply : serde::envelope<try_abort_reply, serde::version<0>> {
     friend bool operator==(const try_abort_reply&, const try_abort_reply&)
       = default;
 
+    friend std::ostream& operator<<(std::ostream& o, const try_abort_reply& r);
+
     static try_abort_reply make_aborted() {
         return {committed_type::no, aborted_type::yes, tx_errc::none};
     }
@@ -280,6 +285,9 @@ struct init_tm_tx_request
 
     friend bool operator==(const init_tm_tx_request&, const init_tm_tx_request&)
       = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const init_tm_tx_request& r);
 
     auto serde_read(iobuf_parser& in, const serde::header& h) {
         using serde::read_nested;
@@ -312,6 +320,8 @@ struct init_tm_tx_reply : serde::envelope<init_tm_tx_reply, serde::version<0>> {
 
     friend bool operator==(const init_tm_tx_reply&, const init_tm_tx_reply&)
       = default;
+
+    friend std::ostream& operator<<(std::ostream& o, const init_tm_tx_reply& r);
 
     explicit init_tm_tx_reply(tx_errc ec)
       : ec(ec) {}
@@ -379,6 +389,8 @@ struct begin_tx_request : serde::envelope<begin_tx_request, serde::version<0>> {
     friend bool operator==(const begin_tx_request&, const begin_tx_request&)
       = default;
 
+    friend std::ostream& operator<<(std::ostream& o, const begin_tx_request& r);
+
     auto serde_fields() {
         return std::tie(ntp, pid, tx_seq, transaction_timeout_ms);
     }
@@ -402,6 +414,8 @@ struct begin_tx_reply : serde::envelope<begin_tx_reply, serde::version<0>> {
 
     friend bool operator==(const begin_tx_reply&, const begin_tx_reply&)
       = default;
+
+    friend std::ostream& operator<<(std::ostream& o, const begin_tx_reply& r);
 
     auto serde_fields() { return std::tie(ntp, etag, ec); }
 };
@@ -433,6 +447,9 @@ struct prepare_tx_request
 
     friend bool operator==(const prepare_tx_request&, const prepare_tx_request&)
       = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const prepare_tx_request& r);
 
     auto serde_read(iobuf_parser& in, const serde::header& h) {
         using serde::read_nested;
@@ -467,6 +484,8 @@ struct prepare_tx_reply : serde::envelope<prepare_tx_reply, serde::version<0>> {
 
     friend bool operator==(const prepare_tx_reply&, const prepare_tx_reply&)
       = default;
+
+    friend std::ostream& operator<<(std::ostream& o, const prepare_tx_reply& r);
 
     auto serde_fields() { return std::tie(ec); }
 };

@@ -9,9 +9,12 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
+#pragma once
+
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/record.h"
 #include "model/timestamp.h"
 #include "random/generators.h"
 #include "test_utils/randoms.h"
@@ -131,6 +134,12 @@ random_broker(int32_t id_low_bound, int32_t id_upper_bound) {
 
 inline model::broker random_broker() {
     return random_broker(tests::random_named_int<model::node_id>());
+}
+
+inline model::producer_identity random_producer_identity() {
+    return {
+      random_generators::get_int<int64_t>(),
+      random_generators::get_int<int16_t>()};
 }
 
 } // namespace model

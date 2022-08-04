@@ -86,4 +86,14 @@ inline std::chrono::milliseconds random_duration_ms() {
       0, std::chrono::milliseconds::max().count()));
 }
 
+/*
+ * Generate a random duration. Notice that random value is multiplied by 10^6.
+ * This is so that roundtrip from ns->ms->ns will work as expected.
+ */
+template<typename Dur>
+inline Dur random_duration() {
+    return Dur(
+      random_generators::get_int<typename Dur::rep>(-100000, 100000) * 1000000);
+}
+
 } // namespace tests
