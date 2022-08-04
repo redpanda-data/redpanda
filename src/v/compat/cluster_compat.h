@@ -279,4 +279,15 @@ GEN_COMPAT_CHECK(
   { json_write(success); },
   { json_read(success); })
 
+GEN_COMPAT_CHECK(
+  cluster::remote_topic_properties,
+  {
+      json_write(remote_revision);
+      json_write(remote_partition_count);
+  },
+  {
+      json_read(remote_revision);
+      json_read(remote_partition_count);
+  })
+
 } // namespace compat

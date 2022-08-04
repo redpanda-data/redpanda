@@ -625,4 +625,15 @@ struct instance_generator<cluster::reconciliation_state_reply> {
     }
 };
 
+template<>
+struct instance_generator<cluster::remote_topic_properties> {
+    static cluster::remote_topic_properties random() {
+        return cluster::remote_topic_properties(
+          tests::random_named_int<model::initial_revision_id>(),
+          random_generators::get_int<int32_t>());
+    }
+
+    static std::vector<cluster::remote_topic_properties> limits() { return {}; }
+};
+
 } // namespace compat

@@ -998,6 +998,9 @@ struct remote_topic_properties
     friend bool
     operator==(const remote_topic_properties&, const remote_topic_properties&)
       = default;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const remote_topic_properties&);
 };
 
 /**

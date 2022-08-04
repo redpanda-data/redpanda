@@ -763,6 +763,15 @@ operator<<(std::ostream& o, const configuration_update_reply& cr) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const remote_topic_properties& rtps) {
+    fmt::print(
+      o,
+      "{{remote_revision: {} remote_partition_count: {}}}",
+      rtps.remote_revision,
+      rtps.remote_partition_count);
+    return o;
+}
+
 } // namespace cluster
 
 namespace reflection {
