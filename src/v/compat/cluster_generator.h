@@ -283,4 +283,13 @@ struct instance_generator<cluster::decommission_node_request> {
     }
 };
 
+template<>
+struct instance_generator<cluster::decommission_node_reply> {
+    static cluster::decommission_node_reply random() {
+        return {.error = instance_generator<cluster::errc>::random()};
+    }
+
+    static std::vector<cluster::decommission_node_reply> limits() { return {}; }
+};
+
 } // namespace compat

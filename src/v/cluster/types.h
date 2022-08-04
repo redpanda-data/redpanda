@@ -2054,6 +2054,12 @@ struct decommission_node_reply
       = default;
 
     auto serde_fields() { return std::tie(error); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const decommission_node_reply& r) {
+        fmt::print(o, "error {}", r.error);
+        return o;
+    }
 };
 
 struct recommission_node_request

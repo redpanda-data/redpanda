@@ -51,6 +51,7 @@ using compat_checks = type_list<
   cluster::join_node_request,
   cluster::join_node_reply,
   cluster::decommission_node_request,
+  cluster::decommission_node_reply,
   cluster::update_leadership_request,
   cluster::config_status,
   cluster::cluster_property_kv,
