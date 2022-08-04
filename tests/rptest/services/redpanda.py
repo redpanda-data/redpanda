@@ -6,6 +6,7 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+import concurrent.futures
 import copy
 
 import time
@@ -633,8 +634,38 @@ class RedpandaService(Service):
             memory_kb = int(line.strip().split()[1])
             return memory_kb / 1024
 
-    def start(self, nodes=None, clean_nodes=True, start_si=True):
-        """Start the service on all nodes."""
+    def _for_nodes(self, nodes, cb: callable, *, parallel: bool):
+        if not parallel:
+            # Trivial case: just loop and call
+            for n in nodes:
+                cb(n)
+            return
+
+        node_futures = []
+        with concurrent.futures.ThreadPoolExecutor(
+                max_workers=len(nodes)) as executor:
+            for node in nodes:
+                f = executor.submit(cb, node)
+                node_futures.append((node, f))
+
+            for node, f in node_futures:
+                f.result()
+
+    def start(self,
+              nodes=None,
+              clean_nodes=True,
+              start_si=True,
+              parallel: bool = False):
+        """
+        Start the service on all nodes.
+
+        By default, nodes are started in serial: this makes logs easier to
+        read and simplifies debugging.  For tests starting larger numbers of
+        nodes where serialized startup becomes annoying, pass parallel=True.
+
+        :param parallel: if true, run clean and start operations in parallel
+                         for the nodes being started.
+        """
         to_start = nodes if nodes is not None else self.nodes
         assert all((node in self.nodes for node in to_start))
         self.logger.info("%s: starting service" % self.who_am_i())
@@ -646,7 +677,8 @@ class RedpandaService(Service):
         self.logger.debug(
             self.who_am_i() +
             ": killing processes and attempting to clean up before starting")
-        for node in to_start:
+
+        def clean_one(node):
             try:
                 self.stop_node(node)
             except Exception:
@@ -666,13 +698,17 @@ class RedpandaService(Service):
                     f"Error cleaning node {node.account.hostname}:")
                 raise
 
+        self._for_nodes(to_start, clean_one, parallel=parallel)
+
         if first_start:
             self.write_tls_certs()
             self.write_bootstrap_cluster_config()
 
-        for node in to_start:
+        def start_one(node):
             self.logger.debug("%s: starting node" % self.who_am_i(node))
             self.start_node(node)
+
+        self._for_nodes(to_start, start_one, parallel=parallel)
 
         if self._start_duration_seconds < 0:
             self._start_duration_seconds = time.time() - self._start_time
