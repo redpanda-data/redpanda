@@ -2918,7 +2918,46 @@ ss::future<> group::do_try_abort_old_tx(model::producer_identity pid) {
         }
     }
 
-    // Add logic to recommit/abort txs
+    auto p_it = _prepared_txs.find(pid);
+    if (p_it != _prepared_txs.end()) {
+        auto tx_seq = p_it->second.tx_seq;
+        auto r = co_await _tx_frontend.local().try_abort(
+          model::partition_id(
+            0), // TODO: Pass partition_id to prepare request and use it here.
+                // https://github.com/redpanda-data/redpanda/issues/6137
+          pid,
+          tx_seq,
+          config::shard_local_cfg().rm_sync_timeout_ms.value());
+        if (r.ec == cluster::tx_errc::none) {
+            if (r.commited) {
+                auto res = co_await do_commit(_id, pid);
+                if (res.ec != cluster::tx_errc::none) {
+                    vlog(
+                      _ctxlog.error,
+                      "Can not commit prepared tx with pid({})",
+                      pid);
+                }
+            } else if (r.aborted) {
+                auto res = co_await do_abort(_id, pid, tx_seq);
+                if (res.ec != cluster::tx_errc::none) {
+                    vlog(
+                      _ctxlog.error,
+                      "Can not abort prepared tx with pid({})",
+                      pid);
+                }
+            }
+        }
+    } else {
+        auto v_it = _volatile_txs.find(pid);
+        if (v_it == _volatile_txs.end()) {
+            co_return;
+        }
+
+        auto res = co_await do_abort(_id, pid, v_it->second.tx_seq);
+        if (res.ec != cluster::tx_errc::none) {
+            vlog(_ctxlog.error, "Can not abort volatile tx with pid({})", pid);
+        }
+    }
 }
 
 void group::try_arm(time_point_type deadline) {
