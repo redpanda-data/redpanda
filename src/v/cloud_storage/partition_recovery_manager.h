@@ -79,6 +79,7 @@ private:
     ss::sharded<remote>& _remote;
     ss::gate _gate;
     retry_chain_node _root;
+    ss::abort_source _as;
 };
 
 /// Topic downloader is used to download topic segments from S3 (or compatible
@@ -92,7 +93,8 @@ public:
       remote* remote,
       s3::bucket_name bucket,
       ss::gate& gate_root,
-      retry_chain_node& parent);
+      retry_chain_node& parent,
+      storage::opt_abort_source_t as);
 
     partition_downloader(const partition_downloader&) = delete;
     partition_downloader(partition_downloader&&) = delete;
@@ -194,6 +196,7 @@ private:
     ss::gate& _gate;
     retry_chain_node _rtcnode;
     retry_chain_logger _ctxlog;
+    storage::opt_abort_source_t _as;
 };
 
 } // namespace cloud_storage
