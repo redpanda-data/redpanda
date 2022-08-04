@@ -35,8 +35,8 @@ struct instance_generator<cluster::allocate_id_request> {
     static std::vector<cluster::allocate_id_request> limits() {
         return {
           cluster::allocate_id_request{model::timeout_clock::duration(0)},
-          cluster::allocate_id_request{std::chrono::milliseconds::min()},
-          cluster::allocate_id_request{std::chrono::milliseconds::max()},
+          cluster::allocate_id_request{min_duration()},
+          cluster::allocate_id_request{max_duration()},
         };
     }
 };
