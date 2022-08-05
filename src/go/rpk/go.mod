@@ -31,8 +31,8 @@ require (
 	github.com/stretchr/testify v1.7.0
 	github.com/tklauser/go-sysconf v0.3.10
 	github.com/twmb/franz-go v1.6.0
-	github.com/twmb/franz-go/pkg/kadm v1.1.1
-	github.com/twmb/franz-go/pkg/kmsg v1.1.0
+	github.com/twmb/franz-go/pkg/kadm v1.2.0
+	github.com/twmb/franz-go/pkg/kmsg v1.2.0
 	github.com/twmb/tlscfg v1.2.0
 	github.com/twmb/types v1.1.6
 	golang.org/x/sync v0.0.0-20220601150217-0de741cfad7f
@@ -53,7 +53,7 @@ require (
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
-	github.com/klauspost/compress v1.15.8 // indirect
+	github.com/klauspost/compress v1.15.9 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/mattn/go-colorable v0.1.12 // indirect
 	github.com/mattn/go-isatty v0.0.14 // indirect
