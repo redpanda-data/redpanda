@@ -65,7 +65,9 @@ information about the members.
 			}
 
 			var listed kadm.ListedOffsets
-			if topics := described.AssignedPartitions().Topics(); len(topics) > 0 {
+			listPartitions := described.AssignedPartitions()
+			listPartitions.Merge(fetched.CommittedPartitions())
+			if topics := listPartitions.Topics(); len(topics) > 0 {
 				listed, err = adm.ListEndOffsets(ctx, topics...)
 				out.HandleShardError("ListOffsets", err)
 			}
