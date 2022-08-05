@@ -130,11 +130,11 @@ class AccessControlListTest(RedpandaTest):
             wait_until(check_feature_active, timeout_sec=10, backoff_sec=1)
 
         # base case user is not a superuser and has no configured ACLs
-        if use_sasl or enable_authz:
+        if self.security.sasl_enabled() or enable_authz:
             admin.create_user("base", self.password, self.algorithm)
 
         # only grant cluster describe permission to user cluster_describe
-        if use_sasl or enable_authz:
+        if self.security.sasl_enabled() or enable_authz:
             admin.create_user("cluster_describe", self.password,
                               self.algorithm)
         client = self.get_super_client()
@@ -147,7 +147,7 @@ class AccessControlListTest(RedpandaTest):
             time.sleep(5)
             return
 
-        # wait for users to proogate to nodes
+        # wait for users to propagate to nodes
         def users_propogated():
             for node in self.redpanda.nodes:
                 users = admin.list_users(node=node)
@@ -155,7 +155,8 @@ class AccessControlListTest(RedpandaTest):
                     return False
             return True
 
-        wait_until(users_propogated, timeout_sec=10, backoff_sec=1)
+        if self.security.sasl_enabled() or enable_authz:
+            wait_until(users_propogated, timeout_sec=10, backoff_sec=1)
 
     def get_client(self, username):
         if self.security.mtls_identity_enabled(
@@ -206,90 +207,6 @@ class AccessControlListTest(RedpandaTest):
     '''
 
     @cluster(num_nodes=3)
-    # Test cases with require_client_auth = True
-    @ignore(use_tls=True,
-            use_sasl=False,
-            enable_authz=False,
-            authn_method=None,
-            client_auth=True)  # timeout users_propogated
-    @ignore(use_tls=True,
-            use_sasl=False,
-            enable_authz=False,
-            authn_method='sasl',
-            client_auth=True)  # timeout users_propogated
-    @ignore(use_tls=True,
-            use_sasl=False,
-            enable_authz=None,
-            authn_method=None,
-            client_auth=True)  # timeout users_propogated
-    @ignore(use_tls=True,
-            use_sasl=False,
-            enable_authz=None,
-            authn_method='sasl',
-            client_auth=True)  # timeout users_propogated
-    @ignore(use_tls=False,
-            use_sasl=False,
-            enable_authz=False,
-            authn_method='sasl',
-            client_auth=True)  # timeout users_propogated
-    @ignore(use_tls=False,
-            use_sasl=False,
-            enable_authz=None,
-            authn_method='sasl',
-            client_auth=True)  # timeout users_propogated
-    @ignore(use_tls=False,
-            use_sasl=False,
-            enable_authz=False,
-            authn_method=None,
-            client_auth=True)  # timeout users_propogated
-    @ignore(
-        use_tls=False,
-        use_sasl=False,
-        enable_authz=None,
-        authn_method=None,
-        client_auth=True
-    )  # AttributeError: 'AccessControlListTest' object has no attribute 'admin_user_cert'
-    # Test cases with require_client_auth = False
-    @ignore(use_tls=True,
-            use_sasl=False,
-            enable_authz=False,
-            authn_method=None,
-            client_auth=False)  # timeout users_propogated
-    @ignore(use_tls=True,
-            use_sasl=False,
-            enable_authz=False,
-            authn_method='sasl',
-            client_auth=False)  # timeout users_propogated
-    @ignore(use_tls=True,
-            use_sasl=False,
-            enable_authz=None,
-            authn_method=None,
-            client_auth=False)  # timeout users_propogated
-    @ignore(use_tls=True,
-            use_sasl=False,
-            enable_authz=None,
-            authn_method='sasl',
-            client_auth=False)  # timeout users_propogated
-    @ignore(use_tls=False,
-            use_sasl=False,
-            enable_authz=False,
-            authn_method='sasl',
-            client_auth=False)  # timeout users_propogated
-    @ignore(use_tls=False,
-            use_sasl=False,
-            enable_authz=None,
-            authn_method='sasl',
-            client_auth=False)  # timeout users_propogated
-    @ignore(use_tls=False,
-            use_sasl=False,
-            enable_authz=False,
-            authn_method=None,
-            client_auth=False)  # timeout users_propogated
-    @ignore(use_tls=False,
-            use_sasl=False,
-            enable_authz=None,
-            authn_method=None,
-            client_auth=False)  # timeout users_propogated
     @matrix(use_tls=[True, False],
             use_sasl=[True, False],
             enable_authz=[True, False, None],
