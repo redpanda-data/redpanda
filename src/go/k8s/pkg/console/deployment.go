@@ -179,9 +179,8 @@ const (
 	configMountName = "config"
 	configMountPath = "/etc/console/configs"
 
-	tlsSchemaRegistryCaMountName = "tls-schema-registry-ca"
-	tlsSchemaRegistryMountName   = "tls-schema-registry"
-	tlsConnectMountName          = "tls-connect-%s"
+	tlsSchemaRegistryMountName = "tls-schema-registry"
+	tlsConnectMountName        = "tls-connect-%s"
 
 	schemaRegistryClientCertSuffix = "schema-registry-client"
 )
@@ -207,13 +206,6 @@ func (d *Deployment) getVolumes() []corev1.Volume {
 			// But we set anyway, otherwise resource.Update() will recognize a patch
 			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
 		})
-	}
-
-	if sr := d.clusterobj.SchemaRegistryAPITLS(); sr != nil {
-		ca := &SchemaRegistryTLSCa{sr.TLS.NodeSecretRef}
-		if vol := ca.Volume(tlsSchemaRegistryCaMountName); vol != nil {
-			volumes = append(volumes, *vol)
-		}
 	}
 
 	// Each Connect cluster will have own Volume because they reference different Secret
