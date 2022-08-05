@@ -20,14 +20,17 @@ namespace storage {
 storage_resources::storage_resources(
   config::binding<size_t> falloc_step,
   config::binding<uint64_t> target_replay_bytes,
-  config::binding<uint64_t> max_concurrent_replay)
+  config::binding<uint64_t> max_concurrent_replay,
+  config::binding<uint64_t> compaction_index_memory)
   : _segment_fallocation_step(falloc_step)
   , _target_replay_bytes(target_replay_bytes)
   , _max_concurrent_replay(max_concurrent_replay)
+  , _compaction_index_mem_limit(compaction_index_memory)
   , _append_chunk_size(config::shard_local_cfg().append_chunk_size())
   , _offset_translator_dirty_bytes(_target_replay_bytes() / ss::smp::count)
   , _configuration_manager_dirty_bytes(_target_replay_bytes() / ss::smp::count)
   , _stm_dirty_bytes(_target_replay_bytes() / ss::smp::count)
+  , _compaction_index_bytes(_compaction_index_mem_limit())
   , _inflight_recovery(
       std::max(_max_concurrent_replay() / ss::smp::count, uint64_t{1}))
   , _inflight_close_flush(
@@ -51,6 +54,10 @@ storage_resources::storage_resources(
         _inflight_recovery.set_capacity(v);
         _inflight_close_flush.set_capacity(v);
     });
+
+    _compaction_index_mem_limit.watch([this] {
+        _compaction_index_bytes.set_capacity(_compaction_index_mem_limit());
+    });
 }
 
 // Unit test convenience for tests that want to control the falloc step
@@ -59,17 +66,15 @@ storage_resources::storage_resources(config::binding<size_t> falloc_step)
   : storage_resources(
     std::move(falloc_step),
     config::shard_local_cfg().storage_target_replay_bytes.bind(),
-    config::shard_local_cfg().storage_max_concurrent_replay.bind()
-
-  ) {}
+    config::shard_local_cfg().storage_max_concurrent_replay.bind(),
+    config::shard_local_cfg().storage_compaction_index_memory.bind()) {}
 
 storage_resources::storage_resources()
   : storage_resources(
     config::shard_local_cfg().segment_fallocation_step.bind(),
     config::shard_local_cfg().storage_target_replay_bytes.bind(),
-    config::shard_local_cfg().storage_max_concurrent_replay.bind()
-
-  ) {}
+    config::shard_local_cfg().storage_max_concurrent_replay.bind(),
+    config::shard_local_cfg().storage_compaction_index_memory.bind()) {}
 
 void storage_resources::update_allowance(uint64_t total, uint64_t free) {
     // TODO: also take as an input the disk consumption of the SI cache:
@@ -84,6 +89,11 @@ void storage_resources::update_allowance(uint64_t total, uint64_t free) {
     _space_allowance_free = std::min(free, total);
 
     _falloc_step = calc_falloc_step();
+}
+
+void storage_resources::update_partition_count(size_t partition_count) {
+    _partition_count = partition_count;
+    _falloc_step_dirty = true;
 }
 
 size_t storage_resources::calc_falloc_step() {
@@ -187,6 +197,17 @@ storage_resources::stm_take_bytes(size_t bytes) {
       _stm_dirty_bytes.current());
 
     return _stm_dirty_bytes.take(bytes);
+}
+
+adjustable_allowance::take_result
+storage_resources::compaction_index_take_bytes(size_t bytes) {
+    vlog(
+      stlog.trace,
+      "compaction_index_take_bytes {} (current {})",
+      bytes,
+      _compaction_index_bytes.current());
+
+    return _compaction_index_bytes.take(bytes);
 }
 
 } // namespace storage
