@@ -98,7 +98,7 @@ process_result_stages process_generic(
     if (ctx.header().key != api_versions_api::key &&
       (ctx.header().version < handler->min_supported() ||
        ctx.header().version > handler->max_supported())) {
-        throw std::runtime_error(fmt::format(
+        throw kafka_api_version_not_supported_exception(fmt::format(
           "Unsupported version {} for {} API",
           ctx.header().version,
           handler->name()));
