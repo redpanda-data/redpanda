@@ -86,6 +86,7 @@ struct partition_balancer_planner_fixture {
           .movement_disk_size_batch = reallocation_batch_size,
           .node_availability_timeout_sec = std::chrono::minutes(1)},
         workers.table.local(),
+        workers.members.local(),
         workers.allocator.local())
       , workers() {}
 
@@ -132,11 +133,29 @@ struct partition_balancer_planner_fixture {
     void allocator_register_nodes(
       size_t nodes_amount,
       const std::optional<model::rack_id>& rack_id = std::nullopt) {
+        auto& members_table = workers.members.local();
+
+        std::vector<model::broker> new_brokers;
+        for (auto broker_ptr : members_table.all_brokers()) {
+            new_brokers.push_back(*broker_ptr);
+        }
+
         for (size_t i = 0; i < nodes_amount; ++i) {
             workers.allocator.local().register_node(create_allocation_node(
               model::node_id(last_node_idx), 4, rack_id));
+            new_brokers.push_back(model::broker(
+              model::node_id(last_node_idx),
+              net::unresolved_address{},
+              net::unresolved_address{},
+              rack_id,
+              model::broker_properties{
+                .cores = 4,
+                .available_memory_gb = 2,
+                .available_disk_gb = 100}));
             last_node_idx++;
         }
+
+        members_table.update_brokers(model::offset{}, new_brokers);
     }
 
     cluster::move_partition_replicas_cmd make_move_partition_replicas_cmd(

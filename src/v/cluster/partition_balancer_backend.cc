@@ -12,6 +12,7 @@
 
 #include "cluster/health_monitor_frontend.h"
 #include "cluster/logger.h"
+#include "cluster/members_table.h"
 #include "cluster/partition_balancer_planner.h"
 #include "cluster/topics_frontend.h"
 #include "random/generators.h"
@@ -33,6 +34,7 @@ partition_balancer_backend::partition_balancer_backend(
   ss::sharded<controller_stm>& controller_stm,
   ss::sharded<topic_table>& topic_table,
   ss::sharded<health_monitor_frontend>& health_monitor,
+  ss::sharded<members_table>& members_table,
   ss::sharded<partition_allocator>& partition_allocator,
   ss::sharded<topics_frontend>& topics_frontend,
   config::binding<model::partition_autobalancing_mode>&& mode,
@@ -45,6 +47,7 @@ partition_balancer_backend::partition_balancer_backend(
   , _controller_stm(controller_stm.local())
   , _topic_table(topic_table.local())
   , _health_monitor(health_monitor.local())
+  , _members_table(members_table.local())
   , _partition_allocator(partition_allocator.local())
   , _topics_frontend(topics_frontend.local())
   , _mode(std::move(mode))
@@ -134,6 +137,7 @@ ss::future<> partition_balancer_backend::do_tick() {
             .node_availability_timeout_sec = _availability_timeout(),
           },
           _topic_table,
+          _members_table,
           _partition_allocator)
           .plan_reassignments(health_report, _raft0->get_follower_metrics());
 

@@ -362,6 +362,7 @@ ss::future<> controller::start() {
             std::ref(_stm),
             std::ref(_tp_state),
             std::ref(_hm_frontend),
+            std::ref(_members_table),
             std::ref(_partition_allocator),
             std::ref(_tp_frontend),
             config::shard_local_cfg().partition_autobalancing_mode.bind(),

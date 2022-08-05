@@ -31,6 +31,7 @@ public:
       ss::sharded<controller_stm>&,
       ss::sharded<topic_table>&,
       ss::sharded<health_monitor_frontend>&,
+      ss::sharded<members_table>&,
       ss::sharded<partition_allocator>&,
       ss::sharded<topics_frontend>&,
       config::binding<model::partition_autobalancing_mode>&& mode,
@@ -71,6 +72,7 @@ private:
     controller_stm& _controller_stm;
     topic_table& _topic_table;
     health_monitor_frontend& _health_monitor;
+    members_table& _members_table;
     partition_allocator& _partition_allocator;
     topics_frontend& _topics_frontend;
 

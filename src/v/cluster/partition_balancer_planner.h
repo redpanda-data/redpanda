@@ -41,6 +41,7 @@ public:
     partition_balancer_planner(
       planner_config config,
       topic_table& topic_table,
+      members_table& members_table,
       partition_allocator& partition_allocator);
 
     enum class status {
@@ -63,12 +64,15 @@ public:
 
 private:
     struct reallocation_request_state {
-        uint64_t planned_moves_size = 0;
-        absl::flat_hash_map<model::ntp, size_t> ntp_sizes;
+        std::vector<model::node_id> all_nodes;
         absl::flat_hash_map<model::node_id, node_disk_space> node_disk_reports;
         absl::flat_hash_set<model::node_id> unavailable_nodes;
+
+        absl::flat_hash_map<model::ntp, size_t> ntp_sizes;
+
         // Partitions that are planned to move in current planner request
         absl::flat_hash_set<model::ntp> moving_partitions;
+        uint64_t planned_moves_size = 0;
     };
 
     partition_constraints get_partition_constraints(
@@ -91,24 +95,19 @@ private:
 
     void get_full_node_reassignments(plan_data&, reallocation_request_state&);
 
+    void init_per_node_state(
+      const cluster_health_report&,
+      const std::vector<raft::follower_metrics>&,
+      reallocation_request_state&,
+      plan_data&) const;
+
     void get_unavailable_node_movement_cancellations(
       std::vector<model::ntp>& cancellations,
       const reallocation_request_state&);
 
-    void calculate_nodes_with_disk_constraints_violation(
-      reallocation_request_state&, plan_data&);
-
-    void calculate_unavailable_nodes(
-      const std::vector<raft::follower_metrics>&,
-      reallocation_request_state&,
-      plan_data&);
-
     bool is_partition_movement_possible(
       const std::vector<model::broker_shard>& current_replicas,
       const reallocation_request_state&);
-
-    void init_node_disk_reports_from_health_report(
-      const cluster_health_report& health_report, reallocation_request_state&);
 
     void init_ntp_sizes_from_health_report(
       const cluster_health_report& health_report, reallocation_request_state&);
@@ -120,6 +119,7 @@ private:
 
     planner_config _config;
     topic_table& _topic_table;
+    members_table& _members_table;
     partition_allocator& _partition_allocator;
 };
 

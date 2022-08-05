@@ -10,6 +10,7 @@
 
 #include "cluster/partition_balancer_planner.h"
 
+#include "cluster/members_table.h"
 #include "cluster/partition_balancer_types.h"
 #include "cluster/scheduling/constraints.h"
 #include "cluster/scheduling/types.h"
@@ -50,16 +51,44 @@ distinct_from(const absl::flat_hash_set<model::node_id>& nodes) {
 partition_balancer_planner::partition_balancer_planner(
   planner_config config,
   topic_table& topic_table,
+  members_table& members_table,
   partition_allocator& partition_allocator)
   : _config(config)
   , _topic_table(topic_table)
+  , _members_table(members_table)
   , _partition_allocator(partition_allocator) {
     _config.soft_max_disk_usage_ratio = std::min(
       _config.soft_max_disk_usage_ratio, _config.hard_max_disk_usage_ratio);
 }
 
-void partition_balancer_planner::init_node_disk_reports_from_health_report(
-  const cluster_health_report& health_report, reallocation_request_state& rrs) {
+void partition_balancer_planner::init_per_node_state(
+  const cluster_health_report& health_report,
+  const std::vector<raft::follower_metrics>& follower_metrics,
+  reallocation_request_state& rrs,
+  plan_data& result) const {
+    for (const auto& broker : _members_table.all_brokers()) {
+        if (
+          broker->get_membership_state() == model::membership_state::removed) {
+            continue;
+        }
+
+        rrs.all_nodes.push_back(broker->id());
+    }
+
+    const auto now = raft::clock_type::now();
+    for (const auto& follower : follower_metrics) {
+        auto unavailable_dur = now - follower.last_heartbeat;
+        if (unavailable_dur > _config.node_availability_timeout_sec) {
+            rrs.unavailable_nodes.insert(follower.id);
+            model::timestamp unavailable_since = model::to_timestamp(
+              model::timestamp_clock::now()
+              - std::chrono::duration_cast<model::timestamp_clock::duration>(
+                unavailable_dur));
+            result.violations.unavailable_nodes.emplace_back(
+              follower.id, unavailable_since);
+        }
+    }
+
     for (const auto& node_report : health_report.node_reports) {
         uint64_t total = 0;
         uint64_t free = 0;
@@ -69,6 +98,14 @@ void partition_balancer_planner::init_node_disk_reports_from_health_report(
         }
         rrs.node_disk_reports.emplace(
           node_report.id, node_disk_space(node_report.id, total, total - free));
+    }
+
+    for (const auto& n : rrs.node_disk_reports) {
+        double used_space_ratio = n.second.original_used_ratio();
+        if (used_space_ratio > _config.soft_max_disk_usage_ratio) {
+            result.violations.full_nodes.emplace_back(
+              n.first, uint32_t(used_space_ratio * 100.0));
+        }
     }
 }
 
@@ -85,45 +122,13 @@ void partition_balancer_planner::init_ntp_sizes_from_health_report(
     }
 }
 
-void partition_balancer_planner::
-  calculate_nodes_with_disk_constraints_violation(
-    reallocation_request_state& rrs, plan_data& result) {
-    for (const auto& n : rrs.node_disk_reports) {
-        double used_space_ratio = n.second.original_used_ratio();
-        if (used_space_ratio > _config.soft_max_disk_usage_ratio) {
-            result.violations.full_nodes.emplace_back(
-              n.first, uint32_t(used_space_ratio * 100.0));
-        }
-    }
-}
-
-void partition_balancer_planner::calculate_unavailable_nodes(
-  const std::vector<raft::follower_metrics>& follower_metrics,
-  reallocation_request_state& rrs,
-  plan_data& result) {
-    const auto now = raft::clock_type::now();
-    for (const auto& follower : follower_metrics) {
-        auto unavailable_dur = now - follower.last_heartbeat;
-        if (unavailable_dur > _config.node_availability_timeout_sec) {
-            rrs.unavailable_nodes.insert(follower.id);
-            model::timestamp unavailable_since = model::to_timestamp(
-              model::timestamp_clock::now()
-              - std::chrono::duration_cast<model::timestamp_clock::duration>(
-                unavailable_dur));
-            result.violations.unavailable_nodes.emplace_back(
-              follower.id, unavailable_since);
-        }
-    }
-}
-
 bool partition_balancer_planner::all_reports_received(
   const reallocation_request_state& rrs) {
-    for (auto& s = _partition_allocator.state();
-         const auto& node : s.allocation_nodes()) {
+    for (auto id : rrs.all_nodes) {
         if (
-          !rrs.unavailable_nodes.contains(node.first)
-          && !rrs.node_disk_reports.contains(node.first)) {
-            vlog(clusterlog.info, "No disk report for node {}", node.first);
+          !rrs.unavailable_nodes.contains(id)
+          && !rrs.node_disk_reports.contains(id)) {
+            vlog(clusterlog.info, "No disk report for node {}", id);
             return false;
         }
     }
@@ -519,9 +524,7 @@ partition_balancer_planner::plan_reassignments(
     reallocation_request_state rrs;
     plan_data result;
 
-    init_node_disk_reports_from_health_report(health_report, rrs);
-    calculate_unavailable_nodes(follower_metrics, rrs, result);
-    calculate_nodes_with_disk_constraints_violation(rrs, result);
+    init_per_node_state(health_report, follower_metrics, rrs, result);
 
     if (_topic_table.has_updates_in_progress()) {
         get_unavailable_node_movement_cancellations(result.cancellations, rrs);
