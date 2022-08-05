@@ -21,23 +21,25 @@ namespace cluster {
 
 struct node_disk_space {
     model::node_id node_id;
-    uint64_t free_space;
-    uint64_t total_space;
-    double free_space_rate;
+    uint64_t total = 0;
+    uint64_t used = 0;
+    // total size of partitions moved to this node
+    uint64_t assigned = 0;
+    // total size of partitions moved from this node
+    uint64_t released = 0;
 
     inline node_disk_space(
-      model::node_id node_id, uint64_t free_space, uint64_t total_space)
+      model::node_id node_id, uint64_t total, uint64_t used)
       : node_id(node_id)
-      , free_space(free_space)
-      , total_space(total_space)
-      , free_space_rate(double(free_space) / double(total_space)) {}
+      , total(total)
+      , used(used) {}
 
-    bool operator==(const node_disk_space& other) const {
-        return node_id == other.node_id;
-    }
+    double original_used_ratio() const { return double(used) / total; }
 
-    bool operator<(const node_disk_space& other) const {
-        return free_space_rate < other.free_space_rate;
+    double peak_used_ratio() const { return double(used + assigned) / total; }
+
+    double final_used_ratio() const {
+        return double(used + assigned - released) / total;
     }
 };
 

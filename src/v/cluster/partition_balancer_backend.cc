@@ -38,6 +38,7 @@ partition_balancer_backend::partition_balancer_backend(
   config::binding<model::partition_autobalancing_mode>&& mode,
   config::binding<std::chrono::seconds>&& availability_timeout,
   config::binding<unsigned>&& max_disk_usage_percent,
+  config::binding<unsigned>&& storage_space_alert_free_threshold_percent,
   config::binding<std::chrono::milliseconds>&& tick_interval,
   config::binding<size_t>&& movement_batch_size_bytes)
   : _raft0(std::move(raft0))
@@ -49,6 +50,8 @@ partition_balancer_backend::partition_balancer_backend(
   , _mode(std::move(mode))
   , _availability_timeout(std::move(availability_timeout))
   , _max_disk_usage_percent(std::move(max_disk_usage_percent))
+  , _storage_space_alert_free_threshold_percent(
+      std::move(storage_space_alert_free_threshold_percent))
   , _tick_interval(std::move(tick_interval))
   , _movement_batch_size_bytes(std::move(movement_batch_size_bytes))
   , _timer([this] { tick(); }) {}
@@ -119,10 +122,14 @@ ss::future<> partition_balancer_backend::do_tick() {
       = co_await _health_monitor.get_current_cluster_health_snapshot(
         cluster_report_filter{});
 
+    double soft_max_disk_usage_ratio = _max_disk_usage_percent() / 100.0;
+    double hard_max_disk_usage_ratio
+      = (100 - _storage_space_alert_free_threshold_percent()) / 100.0;
     auto plan_data
       = partition_balancer_planner(
           planner_config{
-            .max_disk_usage_ratio = _max_disk_usage_percent() / 100.0,
+            .soft_max_disk_usage_ratio = soft_max_disk_usage_ratio,
+            .hard_max_disk_usage_ratio = hard_max_disk_usage_ratio,
             .movement_disk_size_batch = _movement_batch_size_bytes(),
             .node_availability_timeout_sec = _availability_timeout(),
           },

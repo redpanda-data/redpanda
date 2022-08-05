@@ -348,6 +348,6 @@ class FranzGoVerifiableProducer(FranzGoVerifiableService):
 def await_minimum_produced_records(redpanda: RedpandaService,
                                    producer: FranzGoVerifiableProducer,
                                    min_acked: int = 0) -> None:
-    wait_until(lambda: producer.produce_status.acked > min_acked,
+    wait_until(lambda: producer.produce_status.acked >= min_acked,
                timeout_sec=300,
                backoff_sec=5)

@@ -78,6 +78,7 @@ class EndToEndTest(Test):
                        num_nodes=1,
                        extra_rp_conf=None,
                        si_settings=None,
+                       environment=None,
                        install_opts: Optional[InstallOptions] = None):
         self.si_settings = si_settings
         if self.si_settings:
@@ -93,7 +94,8 @@ class EndToEndTest(Test):
                                         num_nodes,
                                         extra_rp_conf=self._extra_rp_conf,
                                         extra_node_conf=self._extra_node_conf,
-                                        si_settings=self.si_settings)
+                                        si_settings=self.si_settings,
+                                        environment=environment)
         version_to_install = None
         if install_opts:
             if install_opts.install_previous_version:

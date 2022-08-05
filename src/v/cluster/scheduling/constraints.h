@@ -39,8 +39,6 @@ distinct_from(const std::vector<model::broker_shard>&);
 hard_constraint_evaluator disk_not_overflowed_by_partition(
   const double max_disk_usage_ratio,
   const size_t partition_size,
-  const absl::flat_hash_map<model::node_id, uint64_t>&
-    assigned_reallocation_sizes,
   const absl::flat_hash_map<model::node_id, node_disk_space>&
     node_disk_reports);
 
@@ -53,8 +51,6 @@ soft_constraint_evaluator least_allocated();
  */
 soft_constraint_evaluator least_disk_filled(
   const double max_disk_usage_ratio,
-  const absl::flat_hash_map<model::node_id, uint64_t>&
-    assigned_reallocation_sizes,
   const absl::flat_hash_map<model::node_id, node_disk_space>&
     node_disk_reports);
 

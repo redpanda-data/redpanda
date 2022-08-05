@@ -36,6 +36,7 @@ public:
       config::binding<model::partition_autobalancing_mode>&& mode,
       config::binding<std::chrono::seconds>&& availability_timeout,
       config::binding<unsigned>&& max_disk_usage_percent,
+      config::binding<unsigned>&& storage_space_alert_free_threshold_percent,
       config::binding<std::chrono::milliseconds>&& tick_interval,
       config::binding<size_t>&& movement_batch_size_bytes);
 
@@ -76,6 +77,7 @@ private:
     config::binding<model::partition_autobalancing_mode> _mode;
     config::binding<std::chrono::seconds> _availability_timeout;
     config::binding<unsigned> _max_disk_usage_percent;
+    config::binding<unsigned> _storage_space_alert_free_threshold_percent;
     config::binding<std::chrono::milliseconds> _tick_interval;
     config::binding<size_t> _movement_batch_size_bytes;
 

@@ -396,7 +396,7 @@ FIXTURE_TEST(
 
 /*
  * 5 nodes; 1 topic; 1 node down; 1 node full;
- * Can move only 2 topics by one operation
+ * Move from unavailable node leaves a replica on the full node.
  * Actual
  *   node_0: partitions: 1; down: True; disk: unfilled;
  *   node_1: partitions: 1; down: False; disk: full;
@@ -405,10 +405,10 @@ FIXTURE_TEST(
  *   node_4: partitions: 0; down: False; disk: unfilled;
  * Expected
  *   node_0: partitions: 0;
- *   node_1: partitions: 0;
+ *   node_1: partitions: 1;
  *   node_2: partitions: 1;
- *   node_3: partitions: 1;
- *   node_4: partitions: 1;
+ *   node_3: partitions: 1 or 0;
+ *   node_4: partitions: 0 or 1;
  */
 FIXTURE_TEST(
   test_one_node_down_one_node_full, partition_balancer_planner_fixture) {
@@ -429,12 +429,20 @@ FIXTURE_TEST(
     const auto& reassignments = plan_data.reassignments;
     BOOST_REQUIRE_EQUAL(reassignments.size(), 1);
 
-    std::unordered_set<model::node_id> expected_nodes(
-      {model::node_id(2), model::node_id(3), model::node_id(4)});
-
     auto new_replicas
       = reassignments[0].allocation_units.get_assignments().front().replicas;
-    check_expected_assignments(new_replicas, expected_nodes);
+    std::unordered_set<model::node_id> new_replicas_set;
+    for (const auto& bs : new_replicas) {
+        new_replicas_set.insert(bs.node_id);
+    }
+
+    std::unordered_set<model::node_id> expected1{
+      model::node_id(1), model::node_id(2), model::node_id(3)};
+    std::unordered_set<model::node_id> expected2{
+      model::node_id(1), model::node_id(2), model::node_id(4)};
+    BOOST_REQUIRE_MESSAGE(
+      new_replicas_set == expected1 || new_replicas_set == expected2,
+      "unexpected new replica set: " << new_replicas);
 }
 
 /*
