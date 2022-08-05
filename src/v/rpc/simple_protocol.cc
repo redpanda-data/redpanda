@@ -222,8 +222,9 @@ simple_protocol::dispatch_method_once(header h, net::server::resources rs) {
                         reply_buf.set_version(ctx->get_header().version);
                     }
                     return send_reply(ctx, std::move(reply_buf))
-                      .finally([m, l = std::move(l)]() mutable {
-                          m->probes.latency_hist().record(std::move(l));
+                      .finally([ctx, m, l = std::move(l)]() mutable {
+                          ctx->res.hist().record(l);
+                          m->probes.latency_hist().record(l);
                       });
                 });
           })
