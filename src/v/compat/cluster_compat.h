@@ -200,6 +200,62 @@ GEN_COMPAT_CHECK(
 GEN_COMPAT_CHECK(
   cluster::reconciliation_state_request,
   { json_write(ntps); },
-  { json_read(ntps); })
+  { json_read(ntps); });
+
+GEN_COMPAT_CHECK(
+  cluster::create_non_replicable_topics_request,
+  {
+      json_write(topics);
+      json_write(timeout);
+  },
+  {
+      json_read(topics);
+      json_read(timeout);
+  })
+
+GEN_COMPAT_CHECK(
+  cluster::create_non_replicable_topics_reply,
+  { json_write(results); },
+  { json_read(results); });
+
+GEN_COMPAT_CHECK(
+  cluster::finish_partition_update_request,
+  {
+      json_write(ntp);
+      json_write(new_replica_set);
+  },
+  {
+      json_read(ntp);
+      json_read(new_replica_set);
+  })
+
+GEN_COMPAT_CHECK(
+  cluster::finish_partition_update_reply,
+  { json_write(result); },
+  { json_read(result); })
+
+GEN_COMPAT_CHECK(
+  cluster::cancel_partition_movements_reply,
+  {
+      json_write(general_error);
+      json_write(partition_results);
+  },
+  {
+      json_read(general_error);
+      json_read(partition_results);
+  });
+
+GEN_COMPAT_CHECK(
+  cluster::cancel_node_partition_movements_request,
+  {
+      json_write(node_id);
+      json_write(direction);
+  },
+  {
+      json_read(node_id);
+      json_read(direction);
+  });
+
+EMPTY_COMPAT_CHECK(cluster::cancel_all_partition_movements_request);
 
 } // namespace compat

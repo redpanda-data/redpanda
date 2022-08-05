@@ -1555,6 +1555,9 @@ struct finish_partition_update_request
       = default;
 
     auto serde_fields() { return std::tie(ntp, new_replica_set); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const finish_partition_update_request& r);
 };
 
 struct finish_partition_update_reply
@@ -1567,6 +1570,9 @@ struct finish_partition_update_reply
       = default;
 
     auto serde_fields() { return std::tie(result); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const finish_partition_update_reply& r);
 };
 
 struct update_topic_properties_request
@@ -2322,6 +2328,9 @@ struct create_non_replicable_topics_request
         timeout = std::chrono::duration_cast<model::timeout_clock::duration>(
           read_nested<std::chrono::milliseconds>(in, h._bytes_left_limit));
     }
+
+    friend std::ostream&
+    operator<<(std::ostream&, const create_non_replicable_topics_request&);
 };
 
 struct create_non_replicable_topics_reply
@@ -2335,6 +2344,9 @@ struct create_non_replicable_topics_reply
       = default;
 
     auto serde_fields() { return std::tie(results); }
+
+    friend std::ostream&
+    operator<<(std::ostream&, const create_non_replicable_topics_reply&);
 };
 
 struct config_update_request final
@@ -2471,17 +2483,32 @@ struct move_cancellation_result
     operator==(const move_cancellation_result&, const move_cancellation_result&)
       = default;
 
+    friend std::ostream&
+    operator<<(std::ostream& o, const move_cancellation_result&);
+
     model::ntp ntp;
     cluster::errc result;
 };
 
 enum class partition_move_direction { to_node, from_node, all };
+std::ostream& operator<<(std::ostream&, const partition_move_direction&);
 
 struct cancel_all_partition_movements_request
   : serde::envelope<cancel_all_partition_movements_request, serde::version<0>> {
     cancel_all_partition_movements_request() = default;
 
     auto serde_fields() { return std::tie(); }
+
+    friend bool operator==(
+      const cancel_all_partition_movements_request&,
+      const cancel_all_partition_movements_request&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const cancel_all_partition_movements_request&) {
+        fmt::print(o, "{{}}");
+        return o;
+    }
 };
 struct cancel_node_partition_movements_request
   : serde::
@@ -2495,6 +2522,9 @@ struct cancel_node_partition_movements_request
       const cancel_node_partition_movements_request&,
       const cancel_node_partition_movements_request&)
       = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const cancel_node_partition_movements_request&);
 };
 
 struct cancel_partition_movements_reply
@@ -2505,6 +2535,9 @@ struct cancel_partition_movements_reply
       = default;
 
     auto serde_fields() { return std::tie(general_error, partition_results); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const cancel_partition_movements_reply& r);
 
     errc general_error;
     std::vector<move_cancellation_result> partition_results;

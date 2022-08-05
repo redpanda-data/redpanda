@@ -286,6 +286,24 @@ inline void read_value(json::Value const& rd, model::broker& obj) {
       std::move(properties));
 }
 
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const model::topic_namespace& t) {
+    w.StartObject();
+    w.Key("ns");
+    rjson_serialize(w, t.ns);
+    w.Key("tp");
+    rjson_serialize(w, t.tp);
+    w.EndObject();
+}
+
+inline void read_value(json::Value const& rd, model::topic_namespace& obj) {
+    model::ns ns;
+    model::topic tp;
+    read_member(rd, "ns", ns);
+    read_member(rd, "tp", tp);
+    obj = model::topic_namespace(std::move(ns), std::move(tp));
+}
+
 #define json_write(_fname) json::write_member(wr, #_fname, obj._fname)
 #define json_read(_fname) json::read_member(rd, #_fname, obj._fname)
 

@@ -212,6 +212,18 @@ std::ostream& operator<<(std::ostream& o, const topic_result& r) {
     return o;
 }
 
+std::ostream&
+operator<<(std::ostream& o, const finish_partition_update_request& r) {
+    fmt::print(o, "{{ntp: {}, new_replica_set: {}}}", r.ntp, r.new_replica_set);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const finish_partition_update_reply& r) {
+    fmt::print(o, "{{result: {}}}", r.result);
+    return o;
+}
+
 std::ostream& operator<<(std::ostream& o, const configuration_invariants& c) {
     fmt::print(
       o,
@@ -548,6 +560,39 @@ std::ostream& operator<<(std::ostream& o, const leader_term& lt) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const partition_move_direction& s) {
+    switch (s) {
+    case partition_move_direction::to_node:
+        return o << "to_node";
+    case partition_move_direction::from_node:
+        return o << "from_node";
+    case partition_move_direction::all:
+        return o << "all";
+    }
+    __builtin_unreachable();
+}
+
+std::ostream& operator<<(std::ostream& o, const move_cancellation_result& r) {
+    fmt::print(o, "{{ntp: {}, result: {}}}", r.ntp, r.result);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const cancel_node_partition_movements_request& r) {
+    fmt::print(o, "{{node_id: {}, direction: {}}}", r.node_id, r.direction);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const cancel_partition_movements_reply& r) {
+    fmt::print(
+      o,
+      "{{general_error: {}, partition_results: {}}}",
+      r.general_error,
+      r.partition_results);
+    return o;
+}
+
 std::ostream& operator<<(std::ostream& o, const feature_update_action& fua) {
     std::string_view action_name;
     switch (fua.action) {
@@ -584,6 +629,18 @@ std::ostream& operator<<(std::ostream& o, const feature_barrier_request& fbr) {
 
 std::ostream& operator<<(std::ostream& o, const feature_barrier_response& fbr) {
     fmt::print(o, "{{entered: {} complete: {}}}", fbr.entered, fbr.complete);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const create_non_replicable_topics_request& r) {
+    fmt::print(o, "{{topics: {} timeout: {}}}", r.topics, r.timeout);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const create_non_replicable_topics_reply& r) {
+    fmt::print(o, "{{results: {}}}", r.results);
     return o;
 }
 
