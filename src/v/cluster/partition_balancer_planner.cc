@@ -224,7 +224,7 @@ result<allocation_units> partition_balancer_planner::get_reallocation(
     }
 
     rrs.moving_partitions.insert(ntp);
-    rrs.planned_movement_disk_size += partition_size;
+    rrs.planned_moves_size += partition_size;
     for (const auto r :
          reallocation.value().get_assignments().front().replicas) {
         if (
@@ -263,9 +263,7 @@ void partition_balancer_planner::get_unavailable_nodes_reassignments(
     for (const auto& t : _topic_table.topics_map()) {
         for (const auto& a : t.second.get_assignments()) {
             // End adding movements if batch is collected
-            if (
-              rrs.planned_movement_disk_size
-              >= _config.movement_disk_size_batch) {
+            if (rrs.planned_moves_size >= _config.movement_disk_size_batch) {
                 return;
             }
 
@@ -359,8 +357,7 @@ void partition_balancer_planner::get_full_node_reassignments(
     }
 
     for (const auto* node_disk : sorted_full_nodes) {
-        if (
-          rrs.planned_movement_disk_size >= _config.movement_disk_size_batch) {
+        if (rrs.planned_moves_size >= _config.movement_disk_size_batch) {
             return;
         }
 
@@ -377,9 +374,7 @@ void partition_balancer_planner::get_full_node_reassignments(
         auto ntp_size_it = ntp_on_node_sizes.begin();
         while (node_disk->final_used_ratio() > _config.soft_max_disk_usage_ratio
                && ntp_size_it != ntp_on_node_sizes.end()) {
-            if (
-              rrs.planned_movement_disk_size
-              >= _config.movement_disk_size_batch) {
+            if (rrs.planned_moves_size >= _config.movement_disk_size_batch) {
                 return;
             }
 

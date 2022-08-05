@@ -63,7 +63,7 @@ public:
 
 private:
     struct reallocation_request_state {
-        uint64_t planned_movement_disk_size = 0;
+        uint64_t planned_moves_size = 0;
         absl::flat_hash_map<model::ntp, size_t> ntp_sizes;
         absl::flat_hash_map<model::node_id, node_disk_space> node_disk_reports;
         absl::flat_hash_set<model::node_id> unavailable_nodes;
