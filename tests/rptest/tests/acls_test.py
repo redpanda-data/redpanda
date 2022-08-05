@@ -219,12 +219,6 @@ class AccessControlListTest(RedpandaTest):
             authn_method=None,
             client_auth=True
             )  # Hang on rpk wrapper: unable to create ACLs: EOF
-    @ignore(use_tls=True,
-            use_sasl=False,
-            enable_authz=True,
-            authn_method=None,
-            client_auth=True
-            )  # Hang on rpk wrapper: unable to create ACLs: EOF
     @ignore(
         use_tls=False,
         use_sasl=True,
@@ -311,12 +305,6 @@ class AccessControlListTest(RedpandaTest):
     )  # AttributeError: 'AccessControlListTest' object has no attribute 'admin_user_cert'
     # Test cases with require_client_auth = False
     @ignore(use_tls=True,
-            use_sasl=False,
-            enable_authz=True,
-            authn_method=None,
-            client_auth=False
-            )  # Hang on rpk wrapper: unable to create ACLs: EOF
-    @ignore(use_tls=True,
             use_sasl=True,
             enable_authz=True,
             authn_method=None,
@@ -324,12 +312,6 @@ class AccessControlListTest(RedpandaTest):
             )  # Hang on rpk wrapper: unable to create ACLs: EOF
     @ignore(use_tls=True,
             use_sasl=True,
-            enable_authz=True,
-            authn_method=None,
-            client_auth=False
-            )  # Hang on rpk wrapper: unable to create ACLs: EOF
-    @ignore(use_tls=True,
-            use_sasl=False,
             enable_authz=True,
             authn_method=None,
             client_auth=False
@@ -414,11 +396,6 @@ class AccessControlListTest(RedpandaTest):
     @ignore(use_tls=True,
             use_sasl=True,
             enable_authz=False,
-            authn_method='mtls_identity',
-            client_auth=False)  # Infinite rdkafka error message
-    @ignore(use_tls=True,
-            use_sasl=True,
-            enable_authz=None,
             authn_method='mtls_identity',
             client_auth=False)  # Infinite rdkafka error message
     @ignore(use_tls=True,
