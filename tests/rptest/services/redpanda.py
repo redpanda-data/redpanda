@@ -155,7 +155,8 @@ class ResourceSettings:
                  num_cpus: Optional[int] = None,
                  memory_mb: Optional[int] = None,
                  bypass_fsync: Optional[bool] = None,
-                 nfiles: Optional[int] = None):
+                 nfiles: Optional[int] = None,
+                 reactor_stall_threshold: Optional[int] = None):
         self._num_cpus = num_cpus
         self._memory_mb = memory_mb
 
@@ -165,6 +166,7 @@ class ResourceSettings:
             self._bypass_fsync = bypass_fsync
 
         self._nfiles = nfiles
+        self._reactor_stall_threshold = reactor_stall_threshold
 
     @property
     def memory_mb(self):
@@ -200,6 +202,11 @@ class ResourceSettings:
             args.extend([
                 "--kernel-page-cache=true", "--overprovisioned ",
                 "--reserve-memory=0M"
+            ])
+
+        if self._reactor_stall_threshold is not None:
+            args.extend([
+                f"--blocked-reactor-notify-ms={self._reactor_stall_threshold}"
             ])
 
         if num_cpus is not None:
