@@ -26,7 +26,6 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/lowres_clock.hh>
-#include <seastar/core/semaphore.hh>
 #include <seastar/core/shared_ptr.hh>
 
 #include <functional>
@@ -208,7 +207,7 @@ private:
     ss::lowres_clock::duration _cloud_storage_initial_backoff;
     ss::lowres_clock::duration _segment_upload_timeout;
     ss::lowres_clock::duration _manifest_upload_timeout;
-    ss::semaphore _mutex{1};
+    ssx::semaphore _mutex{1, "archive/ntp"};
     ss::lowres_clock::duration _upload_loop_initial_backoff;
     ss::lowres_clock::duration _upload_loop_max_backoff;
     config::binding<std::chrono::milliseconds> _sync_manifest_timeout;

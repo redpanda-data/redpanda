@@ -15,6 +15,7 @@
 #include "cloud_storage/recursive_directory_walker.h"
 #include "resource_mgmt/io_priority.h"
 #include "seastarx.h"
+#include "ssx/semaphore.h"
 #include "units.h"
 
 #include <seastar/core/future.hh>
@@ -124,7 +125,7 @@ private:
     uint64_t _total_cleaned;
     /// Current size of the cache directory (only used on shard 0)
     uint64_t _current_cache_size{0};
-    ss::semaphore _cleanup_sm{1};
+    ssx::semaphore _cleanup_sm{1, "cloud/cache"};
     std::set<std::filesystem::path> _files_in_progress;
     cache_probe probe;
     access_time_tracker _access_time_tracker;

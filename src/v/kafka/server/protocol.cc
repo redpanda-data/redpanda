@@ -30,7 +30,6 @@
 #include <seastar/core/byteorder.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/metrics.hh>
-#include <seastar/core/semaphore.hh>
 #include <seastar/net/api.hh>
 #include <seastar/net/socket_defs.hh>
 #include <seastar/util/log.hh>

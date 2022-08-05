@@ -24,7 +24,6 @@
 #include "vassert.h"
 
 #include <seastar/core/coroutine.hh>
-#include <seastar/core/semaphore.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/timed_out_error.hh>
 #include <seastar/util/bool_class.hh>

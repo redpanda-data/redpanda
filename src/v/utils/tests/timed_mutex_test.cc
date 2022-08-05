@@ -1,4 +1,5 @@
 #include "seastarx.h"
+#include "ssx/semaphore.h"
 #include "utils/timed_mutex.h"
 
 #include <seastar/core/loop.hh>
@@ -32,7 +33,8 @@ seastar::future<> slow(timed_mutex& mutex, int& counter) {
 seastar::future<>
 concurrent_increment(int num_fibers, int& variable, timed_mutex& mutex) {
     return seastar::do_with(
-      seastar::semaphore(0), [&mutex, &variable, num_fibers](auto& sem) {
+      ssx::semaphore(0, "test/concurrent-incr"),
+      [&mutex, &variable, num_fibers](auto& sem) {
           for (int i = 0; i < num_fibers; i++) {
               (void)slow(mutex, variable).then([&sem] { sem.signal(1); });
           }

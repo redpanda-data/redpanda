@@ -10,6 +10,7 @@
 #include "net/batched_output_stream.h"
 
 #include "likely.h"
+#include "ssx/semaphore.h"
 #include "vassert.h"
 
 #include <seastar/core/future.hh>
@@ -23,7 +24,7 @@ batched_output_stream::batched_output_stream(
   ss::output_stream<char> o, size_t cache)
   : _out(std::move(o))
   , _cache_size(cache)
-  , _write_sem(std::make_unique<ss::semaphore>(1)) {
+  , _write_sem(std::make_unique<ssx::semaphore>(1, "net/batch-ostream")) {
     // Size zero reserved for identifying default-initialized
     // instances in stop()
     vassert(_cache_size > 0, "Size must be > 0");

@@ -70,7 +70,7 @@ public:
 
     size_t size() const { return _followers.size(); }
 
-    ss::future<ss::semaphore_units<>> get_append_entries_unit(vnode);
+    ss::future<ssx::semaphore_units> get_append_entries_unit(vnode);
 
     void return_append_entries_units(vnode);
 

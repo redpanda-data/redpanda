@@ -119,12 +119,12 @@ public:
         }
     }
 
-    ss::future<ss::semaphore_units<>> get_request_unit() {
+    ss::future<ssx::semaphore_units> get_request_unit() {
         if (_qdc_mon) {
             return _qdc_mon->qdc.get_unit();
         }
-        return ss::make_ready_future<ss::semaphore_units<>>(
-          ss::semaphore_units<>());
+        return ss::make_ready_future<ssx::semaphore_units>(
+          ssx::semaphore_units());
     }
 
     cluster::controller_api& controller_api() {

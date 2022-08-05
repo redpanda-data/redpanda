@@ -35,7 +35,6 @@
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/queue.hh>
 #include <seastar/core/seastar.hh>
-#include <seastar/core/semaphore.hh>
 #include <seastar/core/temporary_buffer.hh>
 #include <seastar/core/timed_out_error.hh>
 #include <seastar/core/when_all.hh>

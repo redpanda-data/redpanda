@@ -18,10 +18,10 @@
 #include "raft/group_configuration.h"
 #include "raft/logger.h"
 #include "seastarx.h"
+#include "ssx/semaphore.h"
 #include "storage/types.h"
 
 #include <seastar/core/gate.hh>
-#include <seastar/core/semaphore.hh>
 #include <seastar/core/shared_ptr.hh>
 
 #include <absl/container/flat_hash_map.h>
@@ -81,7 +81,7 @@ namespace raft {
 
 class replicate_entries_stm {
 public:
-    using units_t = std::vector<ss::semaphore_units<>>;
+    using units_t = std::vector<ssx::semaphore_units>;
     replicate_entries_stm(
       consensus*,
       append_entries_request,
@@ -91,7 +91,7 @@ public:
     /// caller have to pass semaphore units, the apply call will do the
     /// fine grained locking on behalf of the caller
     ss::future<result<replicate_result>>
-      apply(std::vector<ss::semaphore_units<>>);
+      apply(std::vector<ssx::semaphore_units>);
 
     /**
      * Waits for majority of replicas to successfully execute dispatched
@@ -126,13 +126,13 @@ private:
     /// we keep a copy around until we finish the retries
     std::unique_ptr<append_entries_request> _req;
     absl::flat_hash_map<vnode, follower_req_seq> _followers_seq;
-    ss::semaphore _share_sem;
-    ss::semaphore _dispatch_sem{0};
+    ssx::semaphore _share_sem;
+    ssx::semaphore _dispatch_sem{0, "raft/repl-dispatch"};
     ss::gate _req_bg;
     ctx_log _ctxlog;
     model::offset _dirty_offset;
     model::offset _initial_committed_offset;
-    ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>> _units;
+    ss::lw_shared_ptr<std::vector<ssx::semaphore_units>> _units;
     std::optional<result<storage::append_result>> _append_result;
     uint16_t _requests_count = 0;
 };

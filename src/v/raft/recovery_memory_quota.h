@@ -11,8 +11,8 @@
 #pragma once
 #include "config/property.h"
 #include "seastarx.h"
+#include "ssx/semaphore.h"
 
-#include <seastar/core/semaphore.hh>
 #include <seastar/util/noncopyable_function.hh>
 
 namespace raft {
@@ -29,14 +29,14 @@ public:
 
     explicit recovery_memory_quota(config_provider_fn);
 
-    ss::future<ss::semaphore_units<>> acquire_read_memory();
+    ss::future<ssx::semaphore_units> acquire_read_memory();
 
 private:
     void on_max_memory_changed();
 
     configuration _cfg;
     size_t _current_max_recovery_mem;
-    ss::semaphore _memory;
+    ssx::semaphore _memory;
 };
 
 } // namespace raft

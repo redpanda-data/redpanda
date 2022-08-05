@@ -9,6 +9,7 @@
 
 #include "rpc/response_handler.h"
 #include "rpc/types.h"
+#include "ssx/semaphore.h"
 #include "test_utils/fixture.h"
 
 #include <seastar/core/sleep.hh>
@@ -18,7 +19,7 @@ using namespace std::chrono_literals; // NOLINT
 
 struct test_str_ctx final : public rpc::streaming_context {
     virtual ~test_str_ctx() noexcept = default;
-    virtual ss::future<ss::semaphore_units<>> reserve_memory(size_t) final {
+    virtual ss::future<ssx::semaphore_units> reserve_memory(size_t) final {
         return get_units(s, 1);
     }
     virtual const rpc::header& get_header() const final { return hdr; }
@@ -27,7 +28,7 @@ struct test_str_ctx final : public rpc::streaming_context {
     virtual void body_parse_exception(std::exception_ptr) final {}
 
     rpc::header hdr;
-    ss::semaphore s{1};
+    ssx::semaphore s{1, "rpc/mock-sc"};
 };
 
 struct test_fixture {

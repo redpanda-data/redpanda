@@ -10,8 +10,7 @@
  */
 #pragma once
 #include "raft/group_configuration.h"
-
-#include <seastar/core/semaphore.hh>
+#include "ssx/semaphore.h"
 
 namespace raft {
 
@@ -27,7 +26,7 @@ public:
         vassert(is_idle(), "can not remove not idle follower queue");
     }
 
-    ss::future<ss::semaphore_units<>> get_append_entries_unit();
+    ss::future<ssx::semaphore_units> get_append_entries_unit();
 
     ss::future<> stop();
 
@@ -50,7 +49,7 @@ private:
      * - token-bucket based throughput limitter
      */
     uint32_t _max_concurrent_append_entries;
-    std::unique_ptr<ss::semaphore> _sem;
+    std::unique_ptr<ssx::semaphore> _sem;
 };
 
 } // namespace raft

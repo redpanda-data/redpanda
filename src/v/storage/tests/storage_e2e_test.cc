@@ -28,7 +28,6 @@
 #include "utils/to_string.h"
 
 #include <seastar/core/io_priority_class.hh>
-#include <seastar/core/semaphore.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/when_all.hh>
 #include <seastar/util/defer.hh>
@@ -1860,7 +1859,7 @@ FIXTURE_TEST(committed_offset_updates, storage_test_fixture) {
      *
      */
     auto append_with_lock = [&] {
-        return write_mutex.get_units().then([&](ss::semaphore_units<> u) {
+        return write_mutex.get_units().then([&](ssx::semaphore_units u) {
             return append().then(
               [&, u = std::move(u)](storage::append_result res) mutable {
                   auto f = log.flush();

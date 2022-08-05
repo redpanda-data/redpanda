@@ -102,7 +102,7 @@ replicate_entries_stm::send_append_entries_request(
 
     auto f = _ptr->_fstats.get_append_entries_unit(n).then_wrapped(
       [this, req = std::move(req), opts = std::move(opts), n](
-        ss::future<ss::semaphore_units<>> f) mutable {
+        ss::future<ssx::semaphore_units> f) mutable {
           // we want to signal dispatch semaphore after calling append entries.
           // When dispatch semaphore is released the append_entries_stm releases
           // op_lock so next append entries request can be dispatched to the
@@ -419,7 +419,7 @@ replicate_entries_stm::replicate_entries_stm(
   : _ptr(p)
   , _req(std::make_unique<append_entries_request>(std::move(r)))
   , _followers_seq(std::move(seqs))
-  , _share_sem(1)
+  , _share_sem(1, "raft/repl-entries")
   , _ctxlog(_ptr->_ctxlog) {}
 
 replicate_entries_stm::~replicate_entries_stm() {

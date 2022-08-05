@@ -441,7 +441,7 @@ void consensus::maybe_promote_to_voter(vnode id) {
 
         vlog(_ctxlog.trace, "promoting node {} to voter", id);
         return _op_lock.get_units()
-          .then([this, id](ss::semaphore_units<> u) mutable {
+          .then([this, id](ssx::semaphore_units u) mutable {
               auto latest_cfg = _configuration_manager.get_latest();
               latest_cfg.promote_to_voter(id);
 
@@ -550,7 +550,7 @@ void consensus::dispatch_recovery(follower_index_metadata& idx) {
 
 ss::future<result<model::offset>> consensus::linearizable_barrier() {
     using ret_t = result<model::offset>;
-    ss::semaphore_units<> u;
+    ssx::semaphore_units u;
     try {
         u = co_await _op_lock.get_units();
     } catch (const ss::broken_semaphore&) {
@@ -901,21 +901,20 @@ void consensus::arm_vote_timeout() {
 ss::future<std::error_code>
 consensus::update_group_member(model::broker broker) {
     return _op_lock.get_units()
-      .then(
-        [this, broker = std::move(broker)](ss::semaphore_units<> u) mutable {
-            auto cfg = _configuration_manager.get_latest();
-            if (!cfg.contains_broker(broker.id())) {
-                vlog(
-                  _ctxlog.warn,
-                  "Node with id {} does not exists in current configuration");
-                return ss::make_ready_future<std::error_code>(
-                  errc::node_does_not_exists);
-            }
-            // update broker information
-            cfg.update(std::move(broker));
+      .then([this, broker = std::move(broker)](ssx::semaphore_units u) mutable {
+          auto cfg = _configuration_manager.get_latest();
+          if (!cfg.contains_broker(broker.id())) {
+              vlog(
+                _ctxlog.warn,
+                "Node with id {} does not exists in current configuration");
+              return ss::make_ready_future<std::error_code>(
+                errc::node_does_not_exists);
+          }
+          // update broker information
+          cfg.update(std::move(broker));
 
-            return replicate_configuration(std::move(u), std::move(cfg));
-        })
+          return replicate_configuration(std::move(u), std::move(cfg));
+      })
       .handle_exception_type([](const ss::broken_semaphore&) {
           return make_error_code(errc::shutting_down);
       });
@@ -924,7 +923,7 @@ consensus::update_group_member(model::broker broker) {
 template<typename Func>
 ss::future<std::error_code> consensus::change_configuration(Func&& f) {
     return _op_lock.get_units()
-      .then([this, f = std::forward<Func>(f)](ss::semaphore_units<> u) mutable {
+      .then([this, f = std::forward<Func>(f)](ssx::semaphore_units u) mutable {
           // prevent updating configuration if last configuration wasn't
           // committed
           if (_configuration_manager.get_latest_offset() > _commit_index) {
@@ -1014,7 +1013,7 @@ ss::future<std::error_code> consensus::replace_configuration(
 template<typename Func>
 ss::future<std::error_code>
 consensus::interrupt_configuration_change(model::revision_id revision, Func f) {
-    ss::semaphore_units<> u;
+    ssx::semaphore_units u;
     try {
         u = co_await _op_lock.get_units();
     } catch (const ss::broken_semaphore&) {
@@ -1054,7 +1053,7 @@ consensus::cancel_configuration_change(model::revision_id revision) {
           if (!ec) {
               // current leader is not a voter, step down
               if (!config().is_voter(_self)) {
-                  ss::semaphore_units<> u;
+                  ssx::semaphore_units u;
                   try {
                       u = co_await _op_lock.get_units();
                   } catch (const ss::broken_semaphore&) {
@@ -1073,7 +1072,7 @@ consensus::abort_configuration_change(model::revision_id revision) {
       _ctxlog.info,
       "requested abort of current configuration change - {}",
       config());
-    ss::semaphore_units<> u;
+    ssx::semaphore_units u;
     try {
         u = co_await _op_lock.get_units();
     } catch (const ss::broken_semaphore&) {
@@ -2134,7 +2133,7 @@ consensus::do_write_snapshot(model::offset last_included_index, iobuf&& data) {
 }
 
 ss::future<std::error_code> consensus::replicate_configuration(
-  ss::semaphore_units<> u, group_configuration cfg) {
+  ssx::semaphore_units u, group_configuration cfg) {
     // under the _op_sem lock
     if (!is_elected_leader()) {
         return ss::make_ready_future<std::error_code>(errc::not_leader);
@@ -2165,7 +2164,7 @@ ss::future<std::error_code> consensus::replicate_configuration(
            * We use dispatch_replicate directly as we already hold the
            * _op_lock mutex when replicating configuration
            */
-          std::vector<ss::semaphore_units<>> units;
+          std::vector<ssx::semaphore_units> units;
           units.push_back(std::move(u));
           return dispatch_replicate(
                    std::move(req), std::move(units), std::move(seqs))
@@ -2180,7 +2179,7 @@ ss::future<std::error_code> consensus::replicate_configuration(
 
 ss::future<result<replicate_result>> consensus::dispatch_replicate(
   append_entries_request req,
-  std::vector<ss::semaphore_units<>> u,
+  std::vector<ssx::semaphore_units> u,
   absl::flat_hash_map<vnode, follower_req_seq> seqs) {
     auto stm = ss::make_lw_shared<replicate_entries_stm>(
       this, std::move(req), std::move(seqs));
@@ -2409,9 +2408,8 @@ consensus::next_followers_request_seq() {
 
 ss::future<> consensus::refresh_commit_index() {
     return _op_lock.get_units()
-      .then([this](ss::semaphore_units<> u) mutable {
+      .then([this](ssx::semaphore_units u) mutable {
           auto f = ss::now();
-
           if (_has_pending_flushes) {
               f = flush_log();
           }
@@ -2431,7 +2429,7 @@ ss::future<> consensus::refresh_commit_index() {
 void consensus::maybe_update_leader_commit_idx() {
     ssx::background = ssx::spawn_with_gate_then(_bg, [this] {
                           return _op_lock.get_units().then(
-                            [this](ss::semaphore_units<> u) mutable {
+                            [this](ssx::semaphore_units u) mutable {
                                 // do not update committed index if not the
                                 // leader, this check has to be done under the
                                 // semaphore
@@ -2449,7 +2447,7 @@ void consensus::maybe_update_leader_commit_idx() {
  * The `maybe_commit_configuration` method is the place where configuration
  * state transition is decided and executed
  */
-ss::future<> consensus::maybe_commit_configuration(ss::semaphore_units<> u) {
+ss::future<> consensus::maybe_commit_configuration(ssx::semaphore_units u) {
     // we are not a leader, do nothing
     if (_vstate != vote_state::leader) {
         co_return;
@@ -2519,7 +2517,7 @@ ss::future<> consensus::maybe_commit_configuration(ss::semaphore_units<> u) {
 }
 
 ss::future<>
-consensus::do_maybe_update_leader_commit_idx(ss::semaphore_units<> u) {
+consensus::do_maybe_update_leader_commit_idx(ssx::semaphore_units u) {
     auto lstats = _log.offsets();
     // Raft paper:
     //

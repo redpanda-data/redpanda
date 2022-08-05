@@ -27,10 +27,10 @@
 #include "kafka/protocol/list_offsets.h"
 #include "kafka/types.h"
 #include "net/unresolved_address.h"
+#include "ssx/semaphore.h"
 #include "utils/retry.h"
 
 #include <seastar/core/condition-variable.hh>
-#include <seastar/core/semaphore.hh>
 
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
@@ -61,7 +61,7 @@ public:
 
 private:
     func _func;
-    ss::semaphore _lock{1};
+    ssx::semaphore _lock{1, "k/client"};
 };
 
 class client {

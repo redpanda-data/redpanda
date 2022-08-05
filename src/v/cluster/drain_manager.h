@@ -13,6 +13,7 @@
 #include "reflection/adl.h"
 #include "seastarx.h"
 #include "serde/serde.h"
+#include "ssx/semaphore.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
@@ -96,7 +97,7 @@ private:
     ss::sharded<cluster::partition_manager>& _partition_manager;
     std::optional<ss::future<>> _drain;
     bool _draining{false};
-    ss::semaphore _sem{0};
+    ssx::semaphore _sem{0, "c/drain-mgr"};
     drain_status _status;
     ss::abort_source _abort;
 };

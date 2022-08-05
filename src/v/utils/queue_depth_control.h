@@ -1,8 +1,7 @@
 #pragma once
 #include "seastarx.h"
+#include "ssx/semaphore.h"
 #include "utils/ema.h"
-
-#include <seastar/core/semaphore.hh>
 
 /*
  * exponential moving average queue depth control. given a maximum latency
@@ -27,7 +26,7 @@ public:
       , _min_depth(min_depth)
       , _max_depth(max_depth)
       , _curr_depth(_idle_depth)
-      , _queue(_curr_depth) {}
+      , _queue(_curr_depth, "qdc") {}
 
     void update(const double sample) {
         auto new_depth = static_cast<size_t>(
@@ -66,7 +65,7 @@ public:
 
     size_t depth() const { return _curr_depth; }
 
-    ss::future<ss::semaphore_units<>> get_unit() {
+    ss::future<ssx::semaphore_units> get_unit() {
         return ss::get_units(_queue, 1);
     }
 
@@ -77,5 +76,5 @@ private:
     const size_t _min_depth;
     const size_t _max_depth;
     size_t _curr_depth;
-    ss::semaphore _queue;
+    ssx::semaphore _queue;
 };

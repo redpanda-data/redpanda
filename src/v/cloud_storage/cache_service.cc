@@ -20,7 +20,6 @@
 #include <seastar/core/fstream.hh>
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/seastar.hh>
-#include <seastar/core/semaphore.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/util/defer.hh>

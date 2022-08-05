@@ -13,9 +13,9 @@
 
 #include "net/server_probe.h"
 #include "seastarx.h"
+#include "ssx/semaphore.h"
 
 #include <seastar/core/lowres_clock.hh>
-#include <seastar/core/semaphore.hh>
 #include <seastar/util/bool_class.hh>
 
 using namespace std::chrono_literals;
@@ -31,7 +31,7 @@ public:
     explicit connection_rate_counter(int64_t max_rate) noexcept
       : max_tokens(max_rate)
       , one_token_time(std::max(1000 / max_tokens, 1l))
-      , bucket(max_rate)
+      , bucket(max_rate, "net/conn-rate")
       , last_update_time(Clock::now()) {}
 
     void break_semaphore() { bucket.broken(); }
@@ -87,7 +87,7 @@ public:
 private:
     bool need_wait() { return avaiable_new_connections() == 0; }
 
-    ss::basic_semaphore<ss::semaphore_default_exception_factory, Clock> bucket;
+    ssx::named_semaphore<Clock> bucket;
     typename Clock::time_point last_update_time;
 };
 

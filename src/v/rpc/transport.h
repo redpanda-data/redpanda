@@ -24,7 +24,6 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/iostream.hh>
 #include <seastar/core/metrics_registration.hh>
-#include <seastar/core/semaphore.hh>
 #include <seastar/net/api.hh>
 #include <seastar/net/tls.hh>
 
@@ -94,7 +93,7 @@ private:
     ss::future<result<std::unique_ptr<streaming_context>>>
     make_response_handler(netbuf&, const rpc::client_opts&);
 
-    ss::semaphore _memory;
+    ssx::semaphore _memory;
     absl::flat_hash_map<uint32_t, std::unique_ptr<internal::response_handler>>
       _correlations;
     uint32_t _correlation_idx{0};

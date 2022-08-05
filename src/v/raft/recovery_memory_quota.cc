@@ -12,6 +12,7 @@
 
 #include "raft/logger.h"
 #include "resource_mgmt/memory_groups.h"
+#include "ssx/semaphore.h"
 #include "vlog.h"
 
 #include <seastar/core/memory.hh>
@@ -23,11 +24,11 @@ recovery_memory_quota::recovery_memory_quota(
   : _cfg(config_provider())
   , _current_max_recovery_mem(
       _cfg.max_recovery_memory().value_or(memory_groups::recovery_max_memory()))
-  , _memory(_current_max_recovery_mem) {
+  , _memory(_current_max_recovery_mem, "raft/recovery-quota") {
     _cfg.max_recovery_memory.watch([this] { on_max_memory_changed(); });
 }
 
-ss::future<ss::semaphore_units<>> recovery_memory_quota::acquire_read_memory() {
+ss::future<ssx::semaphore_units> recovery_memory_quota::acquire_read_memory() {
     return ss::get_units(
       _memory,
       std::min(_current_max_recovery_mem, _cfg.default_read_buffer_size()));

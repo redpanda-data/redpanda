@@ -65,7 +65,7 @@ proxy::proxy(
   size_t max_memory,
   ss::sharded<kafka::client::client>& client)
   : _config(config)
-  , _mem_sem(max_memory)
+  , _mem_sem(max_memory, "pproxy/mem")
   , _client(client)
   , _ctx{{{}, _mem_sem, {}, smp_sg}, *this}
   , _server(

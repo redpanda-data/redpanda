@@ -15,6 +15,7 @@
 #include "raft/errc.h"
 #include "raft/logger.h"
 #include "raft/raftgen_service.h"
+#include "ssx/semaphore.h"
 #include "vassert.h"
 
 #include <seastar/core/timed_out_error.hh>
@@ -38,7 +39,7 @@ std::ostream& operator<<(std::ostream& o, const vote_stm::vmeta& m) {
 }
 vote_stm::vote_stm(consensus* p)
   : _ptr(p)
-  , _sem(0)
+  , _sem(0, "raft/vote")
   , _ctxlog(_ptr->_ctxlog) {}
 
 vote_stm::~vote_stm() {
@@ -145,7 +146,7 @@ ss::future<> vote_stm::do_vote() {
     _config->for_each_voter([this](vnode id) { (void)dispatch_one(id); });
 
     return process_replies().then([this]() {
-        return _ptr->_op_lock.get_units().then([this](ss::semaphore_units<> u) {
+        return _ptr->_op_lock.get_units().then([this](ssx::semaphore_units u) {
             return update_vote_state(std::move(u));
         });
     });
@@ -200,7 +201,7 @@ ss::future<> vote_stm::process_replies() {
 
 ss::future<> vote_stm::wait() { return _vote_bg.close(); }
 
-ss::future<> vote_stm::update_vote_state(ss::semaphore_units<> u) {
+ss::future<> vote_stm::update_vote_state(ssx::semaphore_units u) {
     // use reply term to update voter term
     for (auto& [_, r] : _replies) {
         if (r.value && r.value->has_value()) {
@@ -281,7 +282,7 @@ ss::future<> vote_stm::update_vote_state(ss::semaphore_units<> u) {
 }
 
 ss::future<std::error_code>
-vote_stm::replicate_config_as_new_leader(ss::semaphore_units<> u) {
+vote_stm::replicate_config_as_new_leader(ssx::semaphore_units u) {
     // we use long timeout of 5 * base election timeout to trigger it only when
     // raft group is stuck.
     const auto deadline = clock_type::now() + 5 * _ptr->_jit.base_duration();

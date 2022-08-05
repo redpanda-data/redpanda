@@ -11,6 +11,7 @@
 
 #include "config/configuration.h"
 #include "likely.h"
+#include "ssx/semaphore.h"
 #include "storage/chunk_cache.h"
 #include "storage/logger.h"
 #include "storage/storage_resources.h"
@@ -20,7 +21,6 @@
 #include <seastar/core/align.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
-#include <seastar/core/semaphore.hh>
 
 #include <fmt/format.h>
 
@@ -50,11 +50,13 @@ size_missmatch_error(const char* ctx, size_t expected, size_t got) {
       "{}. Size missmatch. Expected:{}, Got:{}", ctx, expected, got));
 }
 
+static constexpr auto head_sem_name = "s/appender-head";
+
 segment_appender::segment_appender(ss::file f, options opts)
   : _out(std::move(f))
   , _opts(opts)
-  , _concurrent_flushes(ss::semaphore::max_counter())
-  , _prev_head_write(ss::make_lw_shared<ss::semaphore>(1))
+  , _concurrent_flushes(ss::semaphore::max_counter(), "s/append-flush")
+  , _prev_head_write(ss::make_lw_shared<ssx::semaphore>(1, head_sem_name))
   , _inactive_timer([this] { handle_inactive_timer(); })
   , _chunk_size(config::shard_local_cfg().append_chunk_size()) {
     const auto alignment = _out.disk_write_dma_alignment();
@@ -171,7 +173,7 @@ ss::future<> segment_appender::do_append(const char* buf, const size_t n) {
 
     return ss::get_units(_concurrent_flushes, 1)
       .then([this, next_buf = buf + written, next_sz = n - written](
-              ss::semaphore_units<>) {
+              ssx::semaphore_units) {
           // do not hold the units!
           return internal::chunks().get().then(
             [this, next_buf, next_sz](ss::lw_shared_ptr<chunk> chunk) {
@@ -478,7 +480,7 @@ void segment_appender::dispatch_background_head_write() {
        full]() mutable {
           return units
             .then([this, h, w, start_offset, expected, src, full](
-                    ss::semaphore_units<> u) mutable {
+                    ssx::semaphore_units u) mutable {
                 return _out
                   .dma_write(start_offset, src, expected, _opts.priority)
                   .then([this, h, w, expected, full](size_t got) {
@@ -511,7 +513,7 @@ void segment_appender::dispatch_background_head_write() {
      * dependency chain is reset for the next head.
      */
     if (full) {
-        _prev_head_write = ss::make_lw_shared<ss::semaphore>(1);
+        _prev_head_write = ss::make_lw_shared<ssx::semaphore>(1, head_sem_name);
     }
 }
 

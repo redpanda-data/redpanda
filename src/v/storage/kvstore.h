@@ -23,7 +23,6 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
-#include <seastar/core/semaphore.hh>
 #include <seastar/core/timer.hh>
 
 #include <absl/container/flat_hash_map.h>
@@ -144,7 +143,7 @@ private:
      */
     std::vector<op> _ops;
     ss::timer<> _timer;
-    ss::semaphore _sem{0};
+    ssx::semaphore _sem{0, "s/kvstore"};
     ss::lw_shared_ptr<segment> _segment;
     model::offset _next_offset;
     absl::flat_hash_map<bytes, iobuf, bytes_type_hash, bytes_type_eq> _db;

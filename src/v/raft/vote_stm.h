@@ -14,9 +14,9 @@
 #include "outcome.h"
 #include "raft/logger.h"
 #include "raft/types.h"
+#include "ssx/semaphore.h"
 
 #include <seastar/core/gate.hh>
-#include <seastar/core/semaphore.hh>
 
 #include <absl/container/flat_hash_map.h>
 
@@ -84,17 +84,17 @@ private:
     ss::future<> self_vote();
     ss::future<> dispatch_one(vnode);
     ss::future<result<vote_reply>> do_dispatch_one(vnode);
-    ss::future<> update_vote_state(ss::semaphore_units<>);
+    ss::future<> update_vote_state(ssx::semaphore_units);
     ss::future<> process_replies();
     ss::future<std::error_code>
-      replicate_config_as_new_leader(ss::semaphore_units<>);
+      replicate_config_as_new_leader(ssx::semaphore_units);
     // args
     consensus* _ptr;
     // make sure to always make a copy; never move() this struct
     vote_request _req;
     bool _success = false;
     // for sequentiality/progress
-    ss::semaphore _sem;
+    ssx::semaphore _sem;
     std::optional<raft::group_configuration> _config;
     // for safety to wait for all bg ops
     ss::gate _vote_bg;

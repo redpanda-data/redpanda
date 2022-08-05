@@ -356,7 +356,7 @@ private:
     ss::sharded<ss::abort_source>& _as;
     underlying_t _topic_deltas;
     ss::timer<> _housekeeping_timer;
-    ss::semaphore _topics_sem{1};
+    ssx::semaphore _topics_sem{1, "c/controller-be"};
     ss::gate _gate;
     /**
      * This map is populated by backend instance on shard that given NTP is

@@ -15,9 +15,8 @@
 #include "coproc/sys_refs.h"
 #include "random/simple_time_jitter.h"
 #include "rpc/reconnect_transport.h"
+#include "ssx/semaphore.h"
 #include "utils/mutex.h"
-
-#include <seastar/core/semaphore.hh>
 
 #include <absl/container/node_hash_map.h>
 #include <absl/container/node_hash_set.h>
@@ -37,8 +36,8 @@ struct shared_script_resources {
     simple_time_jitter<ss::lowres_clock> jitter{1s};
 
     /// Max amount of requests allowed to concurrently hold data in memory
-    ss::semaphore read_sem{
-      config::shard_local_cfg().coproc_max_ingest_bytes.value()};
+    ssx::semaphore read_sem{
+      config::shard_local_cfg().coproc_max_ingest_bytes.value(), "coproc/ssr"};
 
     /// Underlying transport connection to the wasm engine
     rpc::reconnect_transport transport;
