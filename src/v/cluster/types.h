@@ -1785,6 +1785,12 @@ struct delete_acls_result
     friend bool operator==(const delete_acls_result&, const delete_acls_result&)
       = default;
 
+    friend std::ostream&
+    operator<<(std::ostream& o, const delete_acls_result& r) {
+        fmt::print(o, "{{ error: {} bindings: {} }}", r.error, r.bindings);
+        return o;
+    }
+
     auto serde_fields() { return std::tie(error, bindings); }
 };
 
@@ -1824,6 +1830,12 @@ struct delete_acls_reply
 
     friend bool operator==(const delete_acls_reply&, const delete_acls_reply&)
       = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const delete_acls_reply& r) {
+        fmt::print(o, "{{ results: {} }}", r.results);
+        return o;
+    }
 
     auto serde_fields() { return std::tie(results); }
 };

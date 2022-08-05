@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include "cluster/errc.h"
 #include "cluster/types.h"
 #include "compat/cluster_generator.h"
 #include "compat/generator.h"
@@ -42,6 +43,24 @@ struct instance_generator<cluster::create_acls_reply> {
     }
 
     static std::vector<cluster::create_acls_reply> limits() { return {{}}; }
+};
+
+template<>
+struct instance_generator<cluster::delete_acls_reply> {
+    static cluster::delete_acls_reply random() {
+        auto generator = []() {
+            auto errc = instance_generator<cluster::errc>::random();
+            auto acl_bindings = tests::random_vector(
+              []() { return tests::random_acl_binding(); });
+            return cluster::delete_acls_result{
+              .error = errc, .bindings = acl_bindings};
+        };
+        return {
+          .results = tests::random_vector(generator),
+        };
+    }
+
+    static std::vector<cluster::delete_acls_reply> limits() { return {{}}; }
 };
 
 }; // namespace compat

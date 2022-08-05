@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include "cluster/errc.h"
 #include "cluster/partition_balancer_types.h"
 #include "cluster/types.h"
 #include "json/document.h"
@@ -483,6 +484,23 @@ inline void rjson_serialize(
   json::Writer<json::StringBuffer>& w,
   const cluster::create_acls_cmd_data& data) {
     w.StartObject();
+    w.Key("bindings");
+    rjson_serialize(w, data.bindings);
+    w.EndObject();
+}
+
+inline void
+read_value(json::Value const& rd, cluster::delete_acls_result& data) {
+    data.error = cluster::errc(read_member_enum(rd, "error", cluster::errc{}));
+    read_member(rd, "bindings", data.bindings);
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const cluster::delete_acls_result& data) {
+    w.StartObject();
+    w.Key("error");
+    rjson_serialize(w, data.error);
     w.Key("bindings");
     rjson_serialize(w, data.bindings);
     w.EndObject();
