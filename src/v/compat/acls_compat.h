@@ -38,4 +38,15 @@ GEN_COMPAT_CHECK(
   { json_write(results); },
   { json_read(results); });
 
+GEN_COMPAT_CHECK(
+  cluster::delete_acls_request,
+  {
+      json_write(data);
+      json_write(timeout);
+  },
+  {
+      json_read(data);
+      json_read(timeout);
+  });
+
 }; // namespace compat

@@ -1773,6 +1773,12 @@ struct delete_acls_cmd_data
     operator==(const delete_acls_cmd_data&, const delete_acls_cmd_data&)
       = default;
 
+    friend std::ostream&
+    operator<<(std::ostream& o, const delete_acls_cmd_data& d) {
+        fmt::print(o, "{{ filters: {} }}", d.filters);
+        return o;
+    }
+
     auto serde_fields() { return std::tie(filters); }
 };
 
@@ -1808,6 +1814,12 @@ struct delete_acls_request
     friend bool
     operator==(const delete_acls_request&, const delete_acls_request&)
       = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const delete_acls_request& r) {
+        fmt::print(o, "{{ data: {} timeout: {} }}", r.data, r.timeout);
+        return o;
+    }
 
     void serde_read(iobuf_parser& in, const serde::header& h) {
         using serde::read_nested;
