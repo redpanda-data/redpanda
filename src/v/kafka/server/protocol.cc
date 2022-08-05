@@ -12,6 +12,7 @@
 #include "cluster/topics_frontend.h"
 #include "config/broker_authn_endpoint.h"
 #include "config/configuration.h"
+#include "config/endpoint_tls_config.h"
 #include "config/node_config.h"
 #include "kafka/server/connection_context.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
@@ -120,6 +121,29 @@ config::broker_authn_method get_authn_method(const net::connection& conn) {
         authn_method = ep_it->authn_method;
     }
     if (authn_method.has_value()) {
+        if (authn_method == config::broker_authn_method::mtls_identity) {
+            auto kafka_api_tls = config::node().kafka_api_tls();
+            auto tls_it = std::find_if(
+              kafka_api_tls.begin(),
+              kafka_api_tls.end(),
+              [&n](const config::endpoint_tls_config& ep) {
+                  return ep.name == n;
+              });
+            if (
+              tls_it != kafka_api_tls.end() && tls_it->config.is_enabled()
+              && tls_it->config.get_require_client_auth()) {
+                return *authn_method;
+            }
+            vlog(
+              klog.warn,
+              "kafka_api {} configured with {}, but there is not an equivalent "
+              "kafka_api_tls config that requires client auth. Setting "
+              "authentication_method to {}",
+              n,
+              to_string_view(*authn_method),
+              to_string_view(config::broker_authn_method::none));
+            return config::broker_authn_method::none;
+        }
         return *authn_method;
     }
     const auto& config = config::shard_local_cfg();
