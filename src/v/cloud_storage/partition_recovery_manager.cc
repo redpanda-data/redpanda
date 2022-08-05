@@ -316,11 +316,14 @@ void partition_downloader::update_downloaded_offsets(
                 break;
             }
         }
+        // Only count non-empty files
         dlpart.range.min_offset = std::min(
           dlpart.range.min_offset, offsets.min_offset);
         dlpart.range.max_offset = std::max(
           dlpart.range.max_offset, offsets.max_offset);
-        ++dlpart.num_files;
+        if (dlpart.range.max_offset > dlpart.range.min_offset) {
+            ++dlpart.num_files;
+        }
     }
 }
 
@@ -402,8 +405,9 @@ partition_downloader::download_log_with_capped_size(
     update_downloaded_offsets(std::move(dloffsets), dlpart);
     if (dlpart.num_files == 0) {
         // The segments didn't have data batches
-        dlpart.range.min_offset = manifest.get_last_offset();
-        dlpart.range.max_offset = manifest.get_last_offset();
+        vlog(_ctxlog.debug, "Log segments didn't have data batches");
+        dlpart.range.min_offset = model::offset{0};
+        dlpart.range.max_offset = model::offset{0};
     }
     co_return dlpart;
 }
@@ -493,8 +497,9 @@ partition_downloader::download_log_with_capped_time(
     update_downloaded_offsets(std::move(dloffsets), dlpart);
     if (dlpart.num_files == 0) {
         // The segments didn't have data batches
-        dlpart.range.min_offset = manifest.get_last_offset();
-        dlpart.range.max_offset = manifest.get_last_offset();
+        vlog(_ctxlog.debug, "Log segments didn't have data batches");
+        dlpart.range.min_offset = model::offset{0};
+        dlpart.range.max_offset = model::offset{0};
     }
     co_return dlpart;
 }
