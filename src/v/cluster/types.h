@@ -2499,6 +2499,11 @@ struct cancel_all_partition_movements_request
 
     auto serde_fields() { return std::tie(); }
 
+    friend bool operator==(
+      const cancel_all_partition_movements_request&,
+      const cancel_all_partition_movements_request&)
+      = default;
+
     friend std::ostream&
     operator<<(std::ostream& o, const cancel_all_partition_movements_request&) {
         fmt::print(o, "{{}}");

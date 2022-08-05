@@ -114,6 +114,10 @@ struct update_leadership_request_v2
 
     update_leadership_request_v2() noexcept = default;
 
+    friend bool operator==(
+      const update_leadership_request_v2&, const update_leadership_request_v2&)
+      = default;
+
     friend std::ostream&
     operator<<(std::ostream& o, const update_leadership_request_v2& r) {
         fmt::print(o, "leaders {}", r.leaders);
@@ -161,6 +165,10 @@ struct get_leadership_reply
 
     explicit get_leadership_reply(std::vector<ntp_leader> leaders)
       : leaders(std::move(leaders)) {}
+
+    friend bool
+    operator==(const get_leadership_reply&, const get_leadership_reply&)
+      = default;
 
     friend std::ostream&
     operator<<(std::ostream& o, const get_leadership_reply& r) {
