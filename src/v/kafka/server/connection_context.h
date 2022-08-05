@@ -31,6 +31,12 @@
 
 namespace kafka {
 
+class kafka_api_version_not_supported_exception : public std::runtime_error {
+public:
+    explicit kafka_api_version_not_supported_exception(const std::string& m)
+      : std::runtime_error(m) {}
+};
+
 /*
  * authz failures should be quiet or logged at a reduced severity level.
  */

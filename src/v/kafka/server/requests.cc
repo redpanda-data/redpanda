@@ -39,12 +39,6 @@ struct process_dispatch { // clang-format on
     }
 };
 
-class kafka_api_version_not_supported_exception : public std::runtime_error {
-public:
-    explicit kafka_api_version_not_supported_exception(const std::string& m)
-      : std::runtime_error(m) {}
-};
-
 template<typename Request>
 requires(KafkaApiHandler<Request> || KafkaApiTwoPhaseHandler<Request>)
   process_result_stages
