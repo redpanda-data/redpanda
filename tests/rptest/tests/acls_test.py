@@ -210,7 +210,7 @@ class AccessControlListTest(RedpandaTest):
     @matrix(use_tls=[True, False],
             use_sasl=[True, False],
             enable_authz=[True, False, None],
-            authn_method=[None, 'sasl', 'mtls_identity'],
+            authn_method=[None, 'sasl', 'mtls_identity', 'none'],
             client_auth=[True, False])
     def test_describe_acls(self, use_tls: bool, use_sasl: bool,
                            enable_authz: Optional[bool],
@@ -241,7 +241,8 @@ class AccessControlListTest(RedpandaTest):
                 return False
             if not use_sasl and enable_authz is not True:
                 return False
-            if enable_authz is True and authn_method is None:
+            if enable_authz is True and (authn_method is None
+                                         or authn_method == 'none'):
                 return True
             if enable_authz is not False and authn_method == 'mtls_identity' and not (
                     use_tls and client_auth):
@@ -254,7 +255,7 @@ class AccessControlListTest(RedpandaTest):
         should_always_fail = should_always_fail(use_tls, use_sasl,
                                                 enable_authz, authn_method)
         # run a few times for good health
-        for _ in range(5):
+        for _ in range(2):
             try:
                 self.get_client("base").acl_list()
                 assert pass_w_base_user, "list acls should have failed for base user"
