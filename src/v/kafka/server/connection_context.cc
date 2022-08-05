@@ -60,18 +60,18 @@ ss::future<> connection_context::process_one_request() {
                 });
           }
           return parse_header(_rs.conn->input())
-            .then(
-              [this, s = sz.value()](std::optional<request_header> h) mutable {
-                  _rs.probe().add_bytes_received(s);
-                  if (!h) {
-                      vlog(
-                        klog.debug,
-                        "could not parse header from client: {}",
-                        _rs.conn->addr);
-                      _rs.probe().header_corrupted();
-                      return ss::make_ready_future<>();
-                  }
-                  return dispatch_method_once(std::move(h.value()), s)
+            .then([this,
+                   s = sz.value()](std::optional<request_header> h) mutable {
+                _rs.probe().add_bytes_received(s);
+                if (!h) {
+                    vlog(
+                      klog.debug,
+                      "could not parse header from client: {}",
+                      _rs.conn->addr);
+                    _rs.probe().header_corrupted();
+                    return ss::make_ready_future<>();
+                }
+                return dispatch_method_once(std::move(h.value()), s)
                   .handle_exception_type(
                     [this](const kafka_api_version_not_supported_exception& e) {
                         vlog(
@@ -81,18 +81,18 @@ ss::future<> connection_context::process_one_request() {
                           e.what());
                         _rs.conn->shutdown_input();
                     })
-                    .handle_exception_type([this](const std::bad_alloc&) {
-                        // In general, dispatch_method_once does not throw,
-                        // but bad_allocs are an exception.  Log it cleanly
-                        // to avoid this bubbling up as an unhandled
-                        // exceptional future.
-                        vlog(
-                          klog.error,
-                          "Request from {} failed on memory exhaustion "
-                          "(std::bad_alloc)",
-                          _rs.conn->addr);
-                    });
-              });
+                  .handle_exception_type([this](const std::bad_alloc&) {
+                      // In general, dispatch_method_once does not throw,
+                      // but bad_allocs are an exception.  Log it cleanly
+                      // to avoid this bubbling up as an unhandled
+                      // exceptional future.
+                      vlog(
+                        klog.error,
+                        "Request from {} failed on memory exhaustion "
+                        "(std::bad_alloc)",
+                        _rs.conn->addr);
+                  });
+            });
       });
 }
 
