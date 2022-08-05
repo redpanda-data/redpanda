@@ -282,7 +282,11 @@ void heartbeat_manager::process_reply(
         for (auto& [g, req_meta] : groups) {
             auto it = _consensus_groups.find(g);
             if (it == _consensus_groups.end()) {
-                vlog(hbeatlog.error, "cannot find consensus group:{}", g);
+                vlog(
+                  hbeatlog.warn,
+                  "cannot find consensus group:{}, may have been moved or "
+                  "deleted",
+                  g);
                 continue;
             }
             auto consensus = *it;
