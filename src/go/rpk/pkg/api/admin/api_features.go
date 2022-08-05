@@ -47,7 +47,7 @@ type LicenseProperties struct {
 	Version      int    `json:"format_version"`
 	Organization string `json:"org"`
 	Type         string `json:"type"`
-	Expires      int    `json:"expires"`
+	Expires      int64  `json:"expires"`
 }
 
 // GetFeatures returns information about the available features.

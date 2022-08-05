@@ -142,8 +142,8 @@
                     "description": "type of license, currently only free_trial or enterprise"
                 },
                 "expires": {
-                    "type": "int",
-                    "description": "Number of days the license is valid until, -1 if is expired"
+                    "type": "long",
+                    "description": "Expiration date of the license in Unix epoch seconds"
                 }
             }
         },

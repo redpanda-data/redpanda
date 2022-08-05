@@ -67,7 +67,7 @@ struct license : serde::envelope<license, serde::version<0>> {
     uint8_t format_version;
     license_type type;
     ss::sstring organization;
-    boost::gregorian::date expiry;
+    std::chrono::seconds expiry;
 
     /// Explicit serde:: implementations because boost::gregorian is not
     /// trivally serializable/deserializable
@@ -77,8 +77,8 @@ struct license : serde::envelope<license, serde::version<0>> {
     /// true if todays date is greater then \ref expiry
     bool is_expired() const noexcept;
 
-    /// returns -1 in the case the license has already expired
-    long days_until_expires() const noexcept;
+    /// Seconds since epoch until license expiration
+    std::chrono::seconds expires() const noexcept;
 
 private:
     friend struct fmt::formatter<license>;

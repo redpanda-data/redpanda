@@ -158,8 +158,8 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
             self.logger.info(
                 "Skipping test, REDPANDA_SAMPLE_LICENSE env var not found")
             return
-        license_contents = {
-            'expires': datetime.date(2122, 6, 6),
+        expected_license_contents = {
+            'expires': 4813252273,
             'format_version': 0,
             'org': 'redpanda-testing',
             'type': 'enterprise'
@@ -172,20 +172,7 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
         resp = self.admin.get_license()
         assert resp['loaded'] is True
         assert resp['license'] is not None
-
-        def is_equal_to_license_properties(license_contents,
-                                           license_properties):
-            """Compares the values within first parameters map to a response
-            from the redpanda admin server"""
-            days_left = (license_contents['expires'] -
-                         datetime.date.today()).days
-            return license_properties['format_version'] == license_contents['format_version'] and \
-                license_properties['org'] == license_contents['org'] and \
-                license_properties['type'] == license_contents['type'] and \
-                license_properties['expires'] == days_left
-
-        assert is_equal_to_license_properties(license_contents,
-                                              resp['license']) is True
+        assert expected_license_contents == resp['license'], resp['license']
 
 
 class FeaturesMultiNodeUpgradeTest(FeaturesTestBase):

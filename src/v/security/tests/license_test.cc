@@ -19,15 +19,9 @@ BOOST_AUTO_TEST_CASE(test_license_invalid_signature) {
     /// This license has been generated with a non matching signature, even
     /// though the contents section is valid
     static const auto license_contents_bad_signature
-      = "eyJ2ZXJzaW9uIjogMCwgIm9yZyI6ICJyZWRwYW5kYS10ZXN0aW5nIiwgInR5cGUiOiAxLC"
-        "AiZXhwaXJ5IjogIjIwMjItNy00In0=."
-        "QOPTqwnMwV0hc4ZwsPBQkI9LPmwSgiHGWWxVGutk+"
-        "THrXDtm2UTFxhFpGEYgdmBNCNLKKiBNfyMSsohBAMCr6U5k3211d7+X1++"
-        "6ni3ykinJBhuLYE9+fNnHHxF/"
-        "GnkOGzFwklOUKXR7CuSEMrmUt6cDLkoyjTAtE6ygi7T8hOpbEOf5B9IK72IgSsFw7phtEl"
-        "uy9gFl+XkQZy5cx8roHd/G6PRgirN/"
-        "zDeyC66vIjIU8ZNV4Ly+69asRRakvh6lnLbGIpfmWwUJKi9DX4DEGaw/"
-        "WGYKJB5jzywOcoNdO/t4AT8UeCArICiPmrqCvISvJJk80OKiSEU3ChLNHJPRsQ==";
+      = "eyJ2ZXJzaW9uIjogMCwgIm9yZyI6ICJyZWRwYW5kYS1jbG91ZCIsICJ0eXBlIjogMSwgIm"
+        "V4cGlyeSI6IDE2NjA0OTg1MzZ9.dfadf/dfadfa+kkk/I/kk/"
+        "934349asfkdw==";
     BOOST_CHECK_THROW(
       make_license(license_contents_bad_signature),
       license_verifcation_exception);
@@ -37,13 +31,14 @@ BOOST_AUTO_TEST_CASE(test_license_malformed_content) {
     /// This license has been generated without the 'expiry' parameter, making
     /// it malformed
     static const auto license_contents_malformed_content
-      = "eyJoYWkiOiAiMTIzIn0=."
-        "KM7DNlb3Ja49xImVi6FnwewXXp2Skt72q7RV8xcBCQtlg7frEzTbQmu6eKq2scSU2zqOX5"
-        "FBqJ1ZEZ6RaaSiEqVGrsvHfR8bh4qSSzWUP8ny+"
-        "wcpei8zBfRUR2ulZv9rib3FPKDlNHC3Smtsyosim+"
-        "i2O7A3ARPKHFFBFtKufKTihHPY87JxY8ytAXWNlCfaisaPst9XQtUmy4iJAx5QrJpC4Y03"
-        "u9XOC0/cbwKzotMGP8TojU2V5/zlxMde/VYWI3ic5Jhp4x5rHTDNmV2eaUaDU8h3W55D/"
-        "UJ/feVi5ba2wfBFto/0uZ1M7NvevmfmQ3UC3z6bJnmkdwqZ2TdpWQ==";
+      = "eyJ2ZXJzaW9uIjogMCwgIm9yZyI6ICJyZWRwYW5kYS1jbG91ZCIsICJ0eXBlIjogMX0=."
+        "F2EHtQftac9+O3ucUijiJ6ta5nmoonEoZhr86FCA+"
+        "4hAIQnetBcO1h7yD4OUHy7t9dS0hTz2BJU981G8i0Ud+v0+"
+        "GRBII3VSZ1gL3W98QRGE1KiOjR11G3+8YQhSrFRJMHhXyYPEHiFKuYDCoIaozd2IhGYi/"
+        "Gcnq/yWZRRDTcnhPOBQivkX5lQpTPorM+xO5ER4wrAROm2jp2lB/"
+        "GDrco1f5iU9M3anIZo1F3rq4V0rnH/FJvwQW/"
+        "7gwO+Ut06O3lWJoUZOTuwueyxopACRmWOm/"
+        "DOYPZDkc8Xoui69EKVqRc4UOujbfOBYzhGq7wNlchJ0QOKUz9Bi/ZPoedOFAw==";
     BOOST_CHECK_THROW(
       make_license(license_contents_malformed_content),
       license_malformed_exception);
@@ -53,14 +48,14 @@ BOOST_AUTO_TEST_CASE(test_license_invalid_content) {
     /// This license was generated with an expiration date set to a date in the
     /// past, making it invalid
     static const auto license_contents_invalid_content
-      = "eyJ2ZXJzaW9uIjogMCwgIm9yZyI6ICJyZWRwYW5kYS10ZXN0aW5nIiwgInR5cGUiOiAxLC"
-        "AiZXhwaXJ5IjogIjE5OTktNy00In0=.RKLx88ZUtzAQofO3F8azuUn8k9q+"
-        "tS37JvsjwZs7YHluupuAQXpQJk2qLVWlJeaMvjhaQTXNl6j7JEoKbUmJESnOjh5ghre64x"
-        "YPF5jLkN+S1N0eoVp0eR7w13vo3RVwfkKWLZKM7JTXdXJiXHqvnXrtjXpCR5T+"
-        "P39KJFDeOTcwY6ojcBJVcYidpvExfNx9S/"
-        "N0Lw4txozdywaYT3W4xABr8k0KlXmf8Oag77qW3kAcKHmjin6R64GTrcDSx/"
-        "SQY18KjPw9J9s2gZRXIHo6U0Jmsv6lNbDAkPtUAN+AQRTBN4ayQEz40yqxO279vz3U4UO/"
-        "4SbXfVdZ524rEmTrMQ==";
+      = "eyJ2ZXJzaW9uIjogMCwgIm9yZyI6ICJyZWRwYW5kYS1jbG91ZCIsICJ0eXBlIjogMSwgIm"
+        "V4cGlyeSI6IDE2NTg3NzA0Nzh9.m2fIYroOtmIEaJILcGUyDPPDLbJStO+"
+        "20GnMbA9Gg9QHVMLihj4dgL7k4x+kKqRMSCVe5tkhkNS/"
+        "2pzcIranGbWs7AlShBFsXKKA8rTYW1xhvVYw71gkPHkyCOXb3++tcmU5W0MSQM9r4/"
+        "XTNHz7DfM4bvWsw9IM4tWeIC3U+SoiJ+ARXag7wxETo7JGgS4+AB7WIj3u9whVA1+"
+        "6p9w0/"
+        "LgRUeIoVru6frBAVHUCGl6x2npqoLTzMRT2d3YnFnI8ilBeQllq7bTAcNkQwXwKigfcBe2"
+        "WSj/n77O/GNTlIhBVBtbBM2EcbZQMAhrSnTJJg5kcQMMg9oVjzg278cO+hw==";
     BOOST_CHECK_THROW(
       make_license(license_contents_invalid_content),
       license_invalid_exception);
@@ -81,8 +76,6 @@ BOOST_AUTO_TEST_CASE(test_license_valid_content) {
     BOOST_CHECK_EQUAL(license.format_version, 0);
     BOOST_CHECK_EQUAL(license.type, license_type::enterprise);
     BOOST_CHECK_EQUAL(license.organization, "redpanda-testing");
-    BOOST_CHECK(
-      license.expiry == boost::gregorian::from_simple_string("2122-06-06"));
-    BOOST_CHECK(!license.is_expired());
+    BOOST_CHECK_EQUAL(license.expiry.count(), 4813252273);
 }
 } // namespace security

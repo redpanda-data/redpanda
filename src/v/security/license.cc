@@ -15,8 +15,6 @@
 #include "json/validator.h"
 #include "utils/base64.h"
 
-#include <boost/date_time/gregorian/formatters.hpp>
-#include <boost/date_time/gregorian/parsers.hpp>
 #include <boost/filesystem.hpp>
 #include <cryptopp/base64.h>
 #include <cryptopp/rsa.h>
@@ -158,7 +156,7 @@ static const std::string license_data_validator_schema = R"(
             "type": "number"
         },
         "expiry": {
-            "type": "string"
+            "type": "number"
         }
     },
     "required": [
@@ -172,29 +170,15 @@ static const std::string license_data_validator_schema = R"(
 )";
 
 static void parse_data_section(license& lc, const json::Document& doc) {
-    auto parse_expiry = [&](auto& value) -> boost::gregorian::date {
-        auto expiry_str = value.GetString();
-        boost::gregorian::date expiry_date;
-        try {
-            expiry_date = boost::gregorian::from_simple_string(expiry_str);
-        } catch (const boost::bad_lexical_cast& ex) {
-            throw license_malformed_exception(
-              fmt::format("Bad cast: Expiry dateformat: {}", ex.what()));
-        }
-        if (expiry_date.is_not_a_date()) {
-            throw license_malformed_exception(
-              "Expiration date not a real calendar date");
-        }
-        const auto today = boost::gregorian::day_clock::universal_day();
-        if (expiry_date < today) {
-            throw license_invalid_exception("Expiry date behind todays date");
-        }
-        return expiry_date;
-    };
     json::validator license_data_validator(license_data_validator_schema);
     if (!doc.Accept(license_data_validator.schema_validator)) {
         throw license_malformed_exception(
           "License data section failed to match schema");
+    }
+    lc.expiry = std::chrono::seconds(
+      doc.FindMember("expiry")->value.GetInt64());
+    if (lc.is_expired()) {
+        throw license_invalid_exception("Expiry date behind todays date");
     }
     lc.format_version = doc.FindMember("version")->value.GetInt();
     if (lc.format_version < 0) {
@@ -205,7 +189,6 @@ static void parse_data_section(license& lc, const json::Document& doc) {
         throw license_invalid_exception("Cannot have empty string for org");
     }
     lc.type = integer_to_license_type(doc.FindMember("type")->value.GetInt());
-    lc.expiry = parse_expiry(doc.FindMember("expiry")->value);
 }
 
 license make_license(const ss::sstring& raw_license) {
@@ -229,13 +212,9 @@ license make_license(const ss::sstring& raw_license) {
 }
 
 bool license::is_expired() const noexcept {
-    return expiry < boost::gregorian::day_clock::universal_day();
-}
-
-long license::days_until_expires() const noexcept {
-    return is_expired()
-             ? -1
-             : (expiry - boost::gregorian::day_clock::universal_day()).days();
+    const auto now = std::chrono::duration_cast<std::chrono::seconds>(
+      std::chrono::system_clock::now().time_since_epoch());
+    return now > expiry;
 }
 
 void license::serde_read(iobuf_parser& in, const serde::header& h) {
@@ -243,8 +222,8 @@ void license::serde_read(iobuf_parser& in, const serde::header& h) {
     format_version = read_nested<uint8_t>(in, h._bytes_left_limit);
     type = read_nested<license_type>(in, h._bytes_left_limit);
     organization = read_nested<ss::sstring>(in, h._bytes_left_limit);
-    expiry = boost::gregorian::from_simple_string(
-      read_nested<ss::sstring>(in, h._bytes_left_limit));
+    expiry = std::chrono::seconds(
+      read_nested<int64_t>(in, h._bytes_left_limit));
 }
 
 void license::serde_write(iobuf& out) {
@@ -252,9 +231,7 @@ void license::serde_write(iobuf& out) {
     write(out, format_version);
     write(out, type);
     write(out, organization);
-    write(
-      out,
-      ss::sstring(boost::gregorian::to_iso_extended_string_type<char>(expiry)));
+    write(out, static_cast<int64_t>(expiry.count()));
 }
 
 } // namespace security
@@ -268,11 +245,11 @@ fmt::formatter<security::license, char, void>::format<
   fmt::basic_format_context<fmt::appender, char>& ctx) const {
     return format_to(
       ctx.out(),
-      "[Version: {0}, Organization: {1}, Type: {2} Expiry(days): {3}]",
+      "[Version: {0}, Organization: {1}, Type: {2} Expiry(epoch): {3}]",
       r.format_version,
       r.organization,
       license_type_to_string(r.type),
-      r.days_until_expires());
+      r.expiry.count());
 }
 
 } // namespace fmt
