@@ -123,6 +123,12 @@ class PartitionBalancerTest(EndToEndTest):
             self.f_injector = FailureInjector(test.redpanda)
             self.cur_failure = None
 
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            self.make_available()
+
         def wait_for_node_to_be_ready(self, node_id):
             admin = Admin(self.test.redpanda)
             brokers = admin.get_brokers()
@@ -145,14 +151,18 @@ class PartitionBalancerTest(EndToEndTest):
                         1)
                 self.cur_failure = None
 
-        def make_unavailable(self, node, wait_for_previous_node=False):
+        def make_unavailable(self,
+                             node,
+                             failure_types=None,
+                             wait_for_previous_node=False):
             self.make_available(wait_for_previous_node)
 
-            failure_types = [
-                FailureSpec.FAILURE_KILL,
-                FailureSpec.FAILURE_TERMINATE,
-                FailureSpec.FAILURE_SUSPEND,
-            ]
+            if failure_types == None:
+                failure_types = [
+                    FailureSpec.FAILURE_KILL,
+                    FailureSpec.FAILURE_TERMINATE,
+                    FailureSpec.FAILURE_SUSPEND,
+                ]
 
             # Only track one failure at a time
             assert self.cur_failure is None
@@ -169,7 +179,8 @@ class PartitionBalancerTest(EndToEndTest):
                                         or s["status"] == "ready")
 
         def step_and_wait_for_ready(self, node, wait_for_node_status=False):
-            self.make_unavailable(node, wait_for_node_status)
+            self.make_unavailable(node,
+                                  wait_for_previous_node=wait_for_node_status)
             self.test.logger.info(f"waiting for quiescent state")
             self.test.wait_until_ready()
 
@@ -184,19 +195,19 @@ class PartitionBalancerTest(EndToEndTest):
         self.start_consumer(1)
         self.await_startup()
 
-        ns = self.NodeStopper(self)
-        for n in range(7):
-            node = self.redpanda.nodes[n % len(self.redpanda.nodes)]
-            if n in {1, 3, 4}:
-                ns.step_and_wait_for_in_progress(node)
-            else:
-                ns.step_and_wait_for_ready(node)
-                self.check_no_replicas_on_node(node)
+        with self.NodeStopper(self) as ns:
+            for n in range(7):
+                node = self.redpanda.nodes[n % len(self.redpanda.nodes)]
+                if n in {1, 3, 4}:
+                    ns.step_and_wait_for_in_progress(node)
+                else:
+                    ns.step_and_wait_for_ready(node)
+                    self.check_no_replicas_on_node(node)
 
-        # Restore the system to a fully healthy state before validation:
-        # not strictly necessary but simplifies debugging.
-        ns.make_available()
-        self.run_validation(consumer_timeout_sec=CONSUMER_TIMEOUT)
+            # Restore the system to a fully healthy state before validation:
+            # not strictly necessary but simplifies debugging.
+            ns.make_available()
+            self.run_validation(consumer_timeout_sec=CONSUMER_TIMEOUT)
 
     def _throttle_recovery(self, new_value):
         self.redpanda.set_cluster_config(
@@ -208,8 +219,6 @@ class PartitionBalancerTest(EndToEndTest):
 
         self.topic = TopicSpec(partition_count=random.randint(20, 30))
 
-        f_injector = FailureInjector(self.redpanda)
-
         self.client().create_topic(self.topic)
 
         self.start_producer(1)
@@ -218,40 +227,40 @@ class PartitionBalancerTest(EndToEndTest):
 
         empty_node = self.redpanda.nodes[-1]
 
-        # clean node
-        initial_failure = FailureSpec(FailureSpec.FAILURE_KILL, empty_node)
-        f_injector._start_func(initial_failure.type)(initial_failure.node)
-        time.sleep(self.NODE_AVAILABILITY_TIMEOUT)
-        self.wait_until_ready()
-        f_injector._stop_func(initial_failure.type)(initial_failure.node)
-        self.check_no_replicas_on_node(empty_node)
-
-        # throttle recovery to prevent partition move from finishing
-        self._throttle_recovery(10)
-
-        for n in range(3):
-            node = self.redpanda.nodes[n % 3]
-            failure = FailureSpec(FailureSpec.FAILURE_KILL, node)
-            f_injector._start_func(failure.type)(failure.node)
-
+        with self.NodeStopper(self) as ns:
+            # clean node
+            ns.make_unavailable(empty_node,
+                                failure_types=[FailureSpec.FAILURE_KILL])
             time.sleep(self.NODE_AVAILABILITY_TIMEOUT)
-
-            # wait until movement start
-            self.wait_until_status(lambda s: s["status"] == "in_progress")
-            f_injector._stop_func(failure.type)(failure.node)
-
-            # stop empty node
-            f_injector._start_func(initial_failure.type)(initial_failure.node)
-            time.sleep(self.NODE_AVAILABILITY_TIMEOUT)
-
-            # wait until movements are cancelled
             self.wait_until_ready()
-
+            ns.make_available()
             self.check_no_replicas_on_node(empty_node)
 
-            f_injector._stop_func(initial_failure.type)(initial_failure.node)
+            # throttle recovery to prevent partition move from finishing
+            self._throttle_recovery(10)
 
-        self.run_validation(consumer_timeout_sec=CONSUMER_TIMEOUT)
+            for n in range(3):
+                node = self.redpanda.nodes[n % 3]
+                ns.make_unavailable(node,
+                                    failure_types=[FailureSpec.FAILURE_KILL])
+                time.sleep(self.NODE_AVAILABILITY_TIMEOUT)
+
+                # wait until movement start
+                self.wait_until_status(lambda s: s["status"] == "in_progress")
+                ns.make_available()
+
+                with self.NodeStopper(self) as ns2:
+                    # stop empty node
+                    ns.make_unavailable(
+                        empty_node, failure_types=[FailureSpec.FAILURE_KILL])
+                    time.sleep(self.NODE_AVAILABILITY_TIMEOUT)
+
+                    # wait until movements are cancelled
+                    self.wait_until_ready()
+
+                    self.check_no_replicas_on_node(empty_node)
+
+            self.run_validation(consumer_timeout_sec=CONSUMER_TIMEOUT)
 
     @cluster(num_nodes=8, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_rack_awareness(self):
@@ -283,15 +292,15 @@ class PartitionBalancerTest(EndToEndTest):
         self.start_consumer(1)
         self.await_startup()
 
-        ns = self.NodeStopper(self)
-        for n in range(7):
-            node = self.redpanda.nodes[n % len(self.redpanda.nodes)]
-            ns.step_and_wait_for_ready(node, wait_for_node_status=True)
-            self.check_no_replicas_on_node(node)
-            check_rack_placement()
+        with self.NodeStopper(self) as ns:
+            for n in range(7):
+                node = self.redpanda.nodes[n % len(self.redpanda.nodes)]
+                ns.step_and_wait_for_ready(node, wait_for_node_status=True)
+                self.check_no_replicas_on_node(node)
+                check_rack_placement()
 
-        ns.make_available()
-        self.run_validation(consumer_timeout_sec=CONSUMER_TIMEOUT)
+            ns.make_available()
+            self.run_validation(consumer_timeout_sec=CONSUMER_TIMEOUT)
 
     @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_fuzz_admin_ops(self):
@@ -322,30 +331,33 @@ class PartitionBalancerTest(EndToEndTest):
                     time.sleep(retries_interval)
             raise error
 
-        ns = self.NodeStopper(self)
-        for n in range(7):
-            node = self.redpanda.nodes[n % len(self.redpanda.nodes)]
-            ns.make_unavailable(node)
-            try:
-                admin_fuzz.pause()
-                self.wait_until_ready()
-                node2partition_count = {}
-                for t in describe_topics():
-                    for p in t.partitions:
-                        for r in p.replicas:
-                            node2partition_count[
-                                r] = node2partition_count.setdefault(r, 0) + 1
-                self.logger.info(f"partition counts: {node2partition_count}")
-                assert self.redpanda.idx(node) not in node2partition_count
+        def get_node2partition_count():
+            node2partition_count = {}
+            for t in describe_topics():
+                for p in t.partitions:
+                    for r in p.replicas:
+                        node2partition_count[
+                            r] = node2partition_count.setdefault(r, 0) + 1
+            self.logger.info(f"partition counts: {node2partition_count}")
+            return node2partition_count
 
-            finally:
-                admin_fuzz.unpause()
+        with self.NodeStopper(self) as ns:
+            for n in range(7):
+                node = self.redpanda.nodes[n % len(self.redpanda.nodes)]
+                ns.make_unavailable(node)
+                try:
+                    admin_fuzz.pause()
+                    self.wait_until_ready()
+                    node2partition_count = get_node2partition_count()
+                    assert self.redpanda.idx(node) not in node2partition_count
+                finally:
+                    admin_fuzz.unpause()
 
-        admin_fuzz.wait(count=10, timeout=240)
-        admin_fuzz.stop()
+            admin_fuzz.wait(count=10, timeout=240)
+            admin_fuzz.stop()
 
-        ns.make_available()
-        self.run_validation(consumer_timeout_sec=CONSUMER_TIMEOUT)
+            ns.make_available()
+            self.run_validation(consumer_timeout_sec=CONSUMER_TIMEOUT)
 
     @cluster(num_nodes=6, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_full_nodes(self):
@@ -409,12 +421,6 @@ class PartitionBalancerTest(EndToEndTest):
                    timeout_sec=120,
                    backoff_sec=5)
 
-        f_injector = FailureInjector(self.redpanda)
-        failure = FailureSpec(FailureSpec.FAILURE_KILL,
-                              random.choice(self.redpanda.nodes))
-        f_injector._start_func(failure.type)(failure.node)
-        time.sleep(self.NODE_AVAILABILITY_TIMEOUT)
-
         # a waiter that prints current node disk usage while it waits.
         def create_waiter(target_status):
             def func(s):
@@ -428,15 +434,20 @@ class PartitionBalancerTest(EndToEndTest):
 
             return func
 
-        try:
+        with self.NodeStopper(self) as ns:
+            ns.make_unavailable(random.choice(self.redpanda.nodes),
+                                failure_types=[FailureSpec.FAILURE_KILL])
+
+            time.sleep(self.NODE_AVAILABILITY_TIMEOUT)
+
             # Wait until the balancer manages to move partitions from the killed node.
             # This will make other 4 nodes go over the disk usage limit and the balancer
             # will stall because there won't be any other node to move partitions to.
             self.wait_until_status(create_waiter("stalled"))
-            self.check_no_replicas_on_node(failure.node)
-        finally:
+            self.check_no_replicas_on_node(ns.cur_failure.node)
+
             # bring failed node up
-            f_injector._stop_func(failure.type)(failure.node)
+            ns.make_available()
 
         self.wait_until_status(create_waiter("ready"))
         for n in self.redpanda.nodes:
