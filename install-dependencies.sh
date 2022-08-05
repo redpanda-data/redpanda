@@ -29,6 +29,7 @@ deb_deps=(
   clang
   curl
   git
+  golang-go
   libsnappy-dev
   libxxhash-dev
   libzstd-dev
@@ -47,6 +48,7 @@ fedora_deps=(
   clang
   curl
   git
+  golang
   libzstd-devel
   libzstd-static
   llvm
@@ -67,6 +69,7 @@ arch_deps=(
   clang
   curl
   git
+  go
   zstd
   llvm
   lld

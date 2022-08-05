@@ -312,18 +312,6 @@ ExternalProject_Add(kafka-codegen-pex
   COMMAND <SOURCE_DIR>/env/bin/pip install pex==2.1.100
   COMMAND <SOURCE_DIR>/env/bin/pex jsonschema jinja2 -o <INSTALL_DIR>/bin/kafka-codegen-venv)
 
-ExternalProject_Add(kafka-python-pex
-  DOWNLOAD_COMMAND ""
-  INSTALL_DIR @REDPANDA_DEPS_INSTALL_DIR@
-  PATCH_COMMAND ""
-  CONFIGURE_COMMAND ""
-  BUILD_COMMAND ""
-  INSTALL_COMMAND
-  COMMAND ${CMAKE_COMMAND} -E chdir <SOURCE_DIR> python3 -m venv env
-  COMMAND <SOURCE_DIR>/env/bin/pip install pex==2.1.100
-  COMMAND <SOURCE_DIR>/env/bin/pex kafka-python -o <INSTALL_DIR>/bin/kafka-python-env
-  )
-
 ExternalProject_Add(ctre
   GIT_REPOSITORY https://github.com/hanickadot/compile-time-regular-expressions
   GIT_TAG v3.3.4

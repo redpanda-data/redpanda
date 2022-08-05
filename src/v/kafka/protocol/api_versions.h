@@ -55,11 +55,6 @@ struct api_versions_response final {
     operator<<(std::ostream& os, const api_versions_response& r) {
         return os << r.data;
     }
-
-private:
-    friend bool operator==(
-      const kafka::api_versions_response&, const kafka::api_versions_response&)
-      = default;
 };
 
 } // namespace kafka

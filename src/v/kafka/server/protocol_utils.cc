@@ -104,15 +104,19 @@ parse_tags(ss::input_stream<char>& src) {
         co_return std::make_pair(std::nullopt, total_bytes_read);
     }
 
-    tagged_fields tags;
+    tagged_fields::type tags;
     while (num_tags-- > 0) {
-        auto tag_id = co_await read_unsigned_vint(total_bytes_read, src);
+        auto id = co_await read_unsigned_vint(total_bytes_read, src);
         auto next_len = co_await read_unsigned_vint(total_bytes_read, src);
         auto buf = co_await src.read_exactly(next_len);
-        iobuf data;
-        data.append(std::move(buf));
+        auto data = ss::uninitialized_string<bytes>(buf.size());
+        std::copy_n(buf.begin(), buf.size(), data.begin());
         total_bytes_read += next_len;
-        tags.emplace_back(tag_id, std::move(data));
+        auto [_, succeded] = tags.emplace(tag_id(id), std::move(data));
+        if (!succeded) {
+            throw std::logic_error(
+              fmt::format("Protocol error, duplicate tag id detected, {}", id));
+        }
     }
     co_return std::make_pair(std::move(tags), total_bytes_read);
 }
@@ -146,14 +150,8 @@ ss::scattered_message<char> response_as_scattered(response_ptr response) {
     iobuf tags_header;
     if (response->is_flexible()) {
         response_writer writer(tags_header);
-        if (response->tags()) {
-            writer.write_tags(std::move(*response->tags()));
-        } else {
-            // Currently sending tags to client is an unused feature however if
-            // the request is flexible at least a single 0 byte must be written
-            // to be compliant with the protocol
-            writer.write_tags();
-        }
+        vassert(response->tags(), "If flexible, tags should be filled");
+        writer.write_tags(std::move(*response->tags()));
     }
     const auto size = static_cast<int32_t>(
       sizeof(response->correlation()) + tags_header.size_bytes()

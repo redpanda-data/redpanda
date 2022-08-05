@@ -9,17 +9,22 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
-#include "bytes/iobuf.h"
+#include "absl/container/btree_map.h"
+#include "bytes/bytes.h"
 #include "kafka/protocol/fwd.h"
 #include "kafka/types.h"
 #include "model/metadata.h"
-
-#include <tuple>
-#include <vector>
+#include "utils/named_type.h"
 
 namespace kafka {
 
-using tagged_fields = std::vector<std::tuple<uint32_t, iobuf>>;
+/// Types for tags and tagged fields
+/// These structures are used for encoding / decoding flexible requests
+/// Additional metadata is allowed to be stored in this dynamic structure
+using tag_id = named_type<uint32_t, struct tag_id_type>;
+
+using tagged_fields
+  = named_type<absl::btree_map<tag_id, bytes>, struct tagged_fields_type>;
 
 /// Used to signify if a kafka request will never be interpreted as flexible.
 /// Consumed by our generator and flexible method helpers.

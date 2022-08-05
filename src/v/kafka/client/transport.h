@@ -120,6 +120,18 @@ public:
     requires(KafkaApi<typename T::api_type>)
       ss::future<typename T::api_type::response_type> dispatch(
         T r, api_version request_version, api_version response_version) {
+        using type = std::remove_reference_t<std::decay_t<T>>;
+        using response_type = typename T::api_type::response_type;
+        if constexpr (std::is_same_v<type, produce_request>) {
+            if (request_version < api_version(3)) {
+                return ss::make_exception_future<response_type>(
+                  std::runtime_error(fmt::format(
+                    "Cannot make produce request at version {} because "
+                    "redpanda "
+                    "does not support serialization of legacy record batches",
+                    request_version)));
+            }
+        }
         return send_recv(
                  T::api_type::key,
                  request_version,
@@ -129,7 +141,6 @@ public:
                      r.encode(wr, request_version);
                  })
           .then([response_version](iobuf buf) {
-              using response_type = typename T::api_type::response_type;
               response_type r;
               r.decode(std::move(buf), response_version);
               return ss::make_ready_future<response_type>(std::move(r));
@@ -203,7 +214,7 @@ private:
         if (flex_versions::is_flexible_request(key, version)) {
             /// Tags are unused by the client but to be protocol compliant
             /// with flex versions at least a 0 byte must be written
-            wr.write_tags();
+            wr.write_tags(tagged_fields{});
         }
         _correlation = _correlation + correlation_id(1);
     }
