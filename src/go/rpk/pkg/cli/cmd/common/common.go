@@ -22,6 +22,12 @@ https://redpanda.com/feedback`
 func Deprecated(newCmd *cobra.Command, newUse string) *cobra.Command {
 	newCmd.Deprecated = fmt.Sprintf("use %q instead", newUse)
 	newCmd.Hidden = true
+
+	if children := newCmd.Commands(); len(children) > 0 {
+		for _, child := range children {
+			Deprecated(child, newUse+" "+child.Name())
+		}
+	}
 	return newCmd
 }
 
