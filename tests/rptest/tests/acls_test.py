@@ -219,48 +219,6 @@ class AccessControlListTest(RedpandaTest):
             authn_method=None,
             client_auth=True
             )  # Hang on rpk wrapper: unable to create ACLs: EOF
-    @ignore(
-        use_tls=False,
-        use_sasl=True,
-        enable_authz=True,
-        authn_method='mtls_identity',
-        client_auth=True
-    )  # KafkaException: KafkaError{code=_TRANSPORT,val=-195,str="Failed to get metadata: Local: Broker transport failure"}
-    @ignore(
-        use_tls=False,
-        use_sasl=True,
-        enable_authz=False,
-        authn_method='mtls_identity',
-        client_auth=True
-    )  # KafkaException: KafkaError{code=_TRANSPORT,val=-195,str="Failed to get metadata: Local: Broker transport failure"}
-    @ignore(
-        use_tls=False,
-        use_sasl=True,
-        enable_authz=None,
-        authn_method='mtls_identity',
-        client_auth=True
-    )  # KafkaException: KafkaError{code=_TRANSPORT,val=-195,str="Failed to get metadata: Local: Broker transport failure"}
-    @ignore(
-        use_tls=False,
-        use_sasl=False,
-        enable_authz=True,
-        authn_method='mtls_identity',
-        client_auth=True
-    )  # KafkaException: KafkaError{code=_TRANSPORT,val=-195,str="Failed to get metadata: Local: Broker transport failure"}
-    @ignore(
-        use_tls=False,
-        use_sasl=False,
-        enable_authz=False,
-        authn_method='mtls_identity',
-        client_auth=True
-    )  # KafkaException: KafkaError{code=_TRANSPORT,val=-195,str="Failed to get metadata: Local: Broker transport failure"}
-    @ignore(
-        use_tls=False,
-        use_sasl=False,
-        enable_authz=None,
-        authn_method='mtls_identity',
-        client_auth=True
-    )  # KafkaException: KafkaError{code=_TRANSPORT,val=-195,str="Failed to get metadata: Local: Broker transport failure"}
     @ignore(use_tls=True,
             use_sasl=False,
             enable_authz=False,
@@ -316,48 +274,6 @@ class AccessControlListTest(RedpandaTest):
             authn_method=None,
             client_auth=False
             )  # Hang on rpk wrapper: unable to create ACLs: EOF
-    @ignore(
-        use_tls=False,
-        use_sasl=True,
-        enable_authz=True,
-        authn_method='mtls_identity',
-        client_auth=False
-    )  # KafkaException: KafkaError{code=_TRANSPORT,val=-195,str="Failed to get metadata: Local: Broker transport failure"}
-    @ignore(
-        use_tls=False,
-        use_sasl=True,
-        enable_authz=False,
-        authn_method='mtls_identity',
-        client_auth=False
-    )  # KafkaException: KafkaError{code=_TRANSPORT,val=-195,str="Failed to get metadata: Local: Broker transport failure"}
-    @ignore(
-        use_tls=False,
-        use_sasl=True,
-        enable_authz=None,
-        authn_method='mtls_identity',
-        client_auth=False
-    )  # KafkaException: KafkaError{code=_TRANSPORT,val=-195,str="Failed to get metadata: Local: Broker transport failure"}
-    @ignore(
-        use_tls=False,
-        use_sasl=False,
-        enable_authz=True,
-        authn_method='mtls_identity',
-        client_auth=False
-    )  # KafkaException: KafkaError{code=_TRANSPORT,val=-195,str="Failed to get metadata: Local: Broker transport failure"}
-    @ignore(
-        use_tls=False,
-        use_sasl=False,
-        enable_authz=False,
-        authn_method='mtls_identity',
-        client_auth=False
-    )  # KafkaException: KafkaError{code=_TRANSPORT,val=-195,str="Failed to get metadata: Local: Broker transport failure"}
-    @ignore(
-        use_tls=False,
-        use_sasl=False,
-        enable_authz=None,
-        authn_method='mtls_identity',
-        client_auth=False
-    )  # KafkaException: KafkaError{code=_TRANSPORT,val=-195,str="Failed to get metadata: Local: Broker transport failure"}
     @ignore(use_tls=True,
             use_sasl=False,
             enable_authz=False,
@@ -483,7 +399,14 @@ class AccessControlListTest(RedpandaTest):
         def should_always_fail(use_tls: bool, use_sasl: bool,
                                enable_authz: Optional[bool],
                                authn_method: Optional[str]):
+            if enable_authz is False:
+                return False
+            if not use_sasl and enable_authz is not True:
+                return False
             if enable_authz is True and authn_method is None:
+                return True
+            if enable_authz is not False and authn_method == 'mtls_identity' and not (
+                    use_tls and client_auth):
                 return True
             return False
 
