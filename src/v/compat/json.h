@@ -11,11 +11,15 @@
 #pragma once
 
 #include "cluster/partition_balancer_types.h"
+#include "cluster/types.h"
 #include "json/document.h"
 #include "json/json.h"
 #include "model/fundamental.h"
 #include "net/unresolved_address.h"
+#include "security/acl.h"
 #include "utils/base64.h"
+
+#include <seastar/net/inet_address.hh>
 
 namespace json {
 
@@ -356,6 +360,132 @@ inline void read_value(
   json::Value const& rd, cluster::partition_balancer_violations& violations) {
     read_member(rd, "unavailable_nodes", violations.unavailable_nodes);
     read_member(rd, "full_nodes", violations.full_nodes);
+}
+
+inline void read_value(json::Value const& rd, security::acl_host& host) {
+    ss::sstring address;
+    read_member(rd, "address", address);
+    host.set_address(ss::net::inet_address(address));
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const security::acl_host& host) {
+    w.StartObject();
+    std::stringstream ss;
+    vassert(host.address(), "Unset optional address unexpected.");
+    ss << host.address().value();
+    w.Key("address");
+    rjson_serialize(w, ss.str());
+    w.EndObject();
+}
+
+inline void
+read_value(json::Value const& rd, security::acl_principal& principal) {
+    auto type = security::principal_type(
+      read_member_enum(rd, "type", security::principal_type{}));
+    ss::sstring name;
+    read_member(rd, "name", name);
+    principal.set_name(std::move(name));
+    principal.set_type(type);
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const security::acl_principal& principal) {
+    w.StartObject();
+    w.Key("type");
+    rjson_serialize(w, principal.type());
+    w.Key("name");
+    rjson_serialize(w, principal.name());
+    w.EndObject();
+}
+
+inline void read_value(json::Value const& rd, security::acl_entry& entry) {
+    security::acl_principal principal;
+    security::acl_host host;
+    read_member(rd, "principal", principal);
+    read_member(rd, "host", host);
+    auto operation = security::acl_operation(
+      read_member_enum(rd, "operation", security::acl_operation{}));
+    auto permission = security::acl_permission(
+      read_member_enum(rd, "permission", security::acl_permission{}));
+    entry.set_principal(std::move(principal));
+    entry.set_host(std::move(host));
+    entry.set_operation(operation);
+    entry.set_permission(permission);
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const security::acl_entry& entry) {
+    w.StartObject();
+    w.Key("principal");
+    rjson_serialize(w, entry.principal());
+    w.Key("host");
+    rjson_serialize(w, entry.host());
+    w.Key("operation");
+    rjson_serialize(w, entry.operation());
+    w.Key("permission");
+    rjson_serialize(w, entry.permission());
+    w.EndObject();
+}
+
+inline void
+read_value(json::Value const& rd, security::resource_pattern& pattern) {
+    ss::sstring name;
+    auto resource = security::resource_type(
+      read_member_enum(rd, "resource", security::resource_type{}));
+    read_member(rd, "name", name);
+    auto pattern_type = security::pattern_type(
+      read_member_enum(rd, "pattern", security::pattern_type{}));
+    pattern.set_resource(resource);
+    pattern.set_name(std::move(name));
+    pattern.set_pattern(pattern_type);
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const security::resource_pattern& pattern) {
+    w.StartObject();
+    w.Key("resource");
+    rjson_serialize(w, pattern.resource());
+    w.Key("name");
+    rjson_serialize(w, pattern.name());
+    w.Key("pattern");
+    rjson_serialize(w, pattern.pattern());
+    w.EndObject();
+}
+
+inline void read_value(json::Value const& rd, security::acl_binding& binding) {
+    security::resource_pattern pattern;
+    security::acl_entry entry;
+    read_member(rd, "pattern", pattern);
+    read_member(rd, "entry", entry);
+    binding.set_resource_pattern(std::move(pattern));
+    binding.set_acl_entry(std::move(entry));
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const security::acl_binding& data) {
+    w.StartObject();
+    w.Key("pattern");
+    rjson_serialize(w, data.pattern());
+    w.Key("entry");
+    rjson_serialize(w, data.entry());
+    w.EndObject();
+}
+
+inline void
+read_value(json::Value const& rd, cluster::create_acls_cmd_data& data) {
+    read_member(rd, "bindings", data.bindings);
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const cluster::create_acls_cmd_data& data) {
+    w.StartObject();
+    w.Key("bindings");
+    rjson_serialize(w, data.bindings);
+    w.EndObject();
 }
 
 #define json_write(_fname) json::write_member(wr, #_fname, obj._fname)
