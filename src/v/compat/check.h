@@ -41,6 +41,23 @@
         }                                                                      \
     };
 
+#define EMPTY_COMPAT_CHECK_SERDE_ONLY(class_name)                              \
+    template<>                                                                 \
+    struct compat_check<class_name> {                                          \
+        static constexpr std::string_view name = #class_name;                  \
+        static std::vector<class_name> create_test_cases() {                   \
+            return generate_instances<class_name>();                           \
+        }                                                                      \
+        static void to_json(class_name, json::Writer<json::StringBuffer>&) {}  \
+        static class_name from_json(json::Value&) { return class_name{}; }     \
+        static std::vector<compat_binary> to_binary(class_name obj) {          \
+            return {compat_binary::serde(obj)};                                \
+        }                                                                      \
+        static bool check(class_name obj, compat_binary test) {                \
+            return verify_serde_only(obj, std::move(test));                    \
+        }                                                                      \
+    };
+
 namespace compat {
 
 /*
@@ -160,6 +177,13 @@ T decode_adl_or_serde(compat_binary test) {
 }
 
 template<typename T>
+T decode_serde_only(compat_binary test) {
+    vassert(test.name == "serde", "Non serde type encountered {}", test.name);
+    iobuf_parser in(std::move(test.data));
+    return serde::read_async<T>(in).get0();
+}
+
+template<typename T>
 bool verify_adl_or_serde(T expected, compat_binary test) {
     const auto name = test.name;
     auto decoded = decode_adl_or_serde<T>(std::move(test));
@@ -172,6 +196,21 @@ bool verify_adl_or_serde(T expected, compat_binary test) {
         return false;
     }
 
+    return true;
+}
+
+template<typename T>
+bool verify_serde_only(T expected, compat_binary test) {
+    const auto name = test.name;
+    auto decoded = decode_serde_only<T>(std::move(test));
+    if (expected != decoded) {
+        fmt::print(
+          "Verify of {{{}}} decoding failed:\nExpected: {}\nDecoded: {}\n",
+          name,
+          expected,
+          decoded);
+        return false;
+    }
     return true;
 }
 

@@ -197,4 +197,9 @@ GEN_COMPAT_CHECK(
   { json_write(error); },
   { json_read(error); })
 
+GEN_COMPAT_CHECK(
+  cluster::reconciliation_state_request,
+  { json_write(ntps); },
+  { json_read(ntps); })
+
 } // namespace compat

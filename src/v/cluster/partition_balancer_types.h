@@ -134,6 +134,12 @@ struct partition_balancer_overview_request
   : serde::envelope<partition_balancer_overview_request, serde::version<0>> {
     using rpc_adl_exempt = std::true_type;
 
+    friend std::ostream&
+    operator<<(std::ostream& o, const partition_balancer_overview_request&) {
+        fmt::print(o, "{{}}");
+        return o;
+    }
+
     auto serde_fields() { return std::tie(); }
 };
 
