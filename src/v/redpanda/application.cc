@@ -317,7 +317,8 @@ void application::setup_metrics() {
     if (!config::shard_local_cfg().disable_public_metrics()) {
         seastar::metrics::replicate_metric_families(
           seastar::metrics::default_handle(),
-          {{"io_queue_total_read_ops", ssx::metrics::public_metrics_handle},
+          {{"scheduler_runtime_ms", ssx::metrics::public_metrics_handle},
+           {"io_queue_total_read_ops", ssx::metrics::public_metrics_handle},
            {"io_queue_total_write_ops", ssx::metrics::public_metrics_handle},
            {"memory_allocated_memory", ssx::metrics::public_metrics_handle},
            {"memory_free_memory", ssx::metrics::public_metrics_handle}})
