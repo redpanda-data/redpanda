@@ -37,7 +37,11 @@ func newInfoCommand(fs afero.Fs) *cobra.Command {
 			out.MaybeDie(err, "unable to retrieve license info: %v", err)
 
 			if !info.Loaded {
-				out.Die("this cluster is missing a license")
+				if format == "json" {
+					out.Die("{}")
+				} else {
+					out.Die("this cluster is missing a license")
+				}
 			}
 
 			if info.Properties != (admin.LicenseProperties{}) {
