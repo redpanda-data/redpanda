@@ -155,7 +155,7 @@ type SchemaRegistryTLSCa struct {
 
 // FilePath returns the CA filepath mount
 func (s *SchemaRegistryTLSCa) FilePath() string {
-	if !UsePublicCerts && s.NodeSecretRef != nil {
+	if s.useCaCert() {
 		return SchemaRegistryTLSCaFilePath
 	}
 	return DefaultCaFilePath
@@ -163,7 +163,7 @@ func (s *SchemaRegistryTLSCa) FilePath() string {
 
 // Volume returns mount Volume definition
 func (s *SchemaRegistryTLSCa) Volume(name string) *corev1.Volume {
-	if !UsePublicCerts && s.NodeSecretRef != nil {
+	if s.useCaCert() {
 		return &corev1.Volume{
 			Name: name,
 			VolumeSource: corev1.VolumeSource{
@@ -175,6 +175,11 @@ func (s *SchemaRegistryTLSCa) Volume(name string) *corev1.Volume {
 		}
 	}
 	return nil
+}
+
+// useCaCert checks if the CA certificate referenced by NodeSecretRef should be used
+func (s *SchemaRegistryTLSCa) useCaCert() bool {
+	return !UsePublicCerts && s.NodeSecretRef != nil
 }
 
 func (cm *ConfigMap) genKafka(username, password string) kafka.Config {

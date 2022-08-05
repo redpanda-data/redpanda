@@ -47,21 +47,24 @@ func (s *Store) Sync(cluster *redpandav1alpha1.Cluster) error {
 		if err != nil {
 			return fmt.Errorf("sync schema registry client certificate: %w", err)
 		}
-
-		nodeSecretRef := cluster.SchemaRegistryAPITLS().TLS.NodeSecretRef
-		schemaRegistryNodeCert, err := syncSchemaRegistryCert(
-			s.context,
-			s.client,
-			types.NamespacedName{Namespace: nodeSecretRef.Namespace, Name: nodeSecretRef.Name},
-			nodeSecretRef.Name,
-		)
-		if err != nil {
-			return fmt.Errorf("sync schema registry node certificate: %w", err)
-		}
-
 		// same as Update()
 		s.Add(s.getSchemaRegistryClientCertKey(cluster), schemaRegistryClientCert)
-		s.Add(s.getSchemaRegistryNodeCertKey(cluster), schemaRegistryNodeCert)
+
+		// Only sync CA cert if not using DefaultCaFilePath
+		ca := &SchemaRegistryTLSCa{cluster.SchemaRegistryAPITLS().TLS.NodeSecretRef}
+		if ca.useCaCert() {
+			nodeSecretRef := cluster.SchemaRegistryAPITLS().TLS.NodeSecretRef
+			schemaRegistryNodeCert, err := syncSchemaRegistryCert(
+				s.context,
+				s.client,
+				types.NamespacedName{Namespace: nodeSecretRef.Namespace, Name: nodeSecretRef.Name},
+				nodeSecretRef.Name,
+			)
+			if err != nil {
+				return fmt.Errorf("sync schema registry node certificate: %w", err)
+			}
+			s.Add(s.getSchemaRegistryNodeCertKey(cluster), schemaRegistryNodeCert)
+		}
 	}
 
 	return nil

@@ -282,32 +282,33 @@ func (d *Deployment) initContainers() ([]corev1.Container, error) {
 	if !exists {
 		return nil, fmt.Errorf("get schema registry client certificate: %s", "not found")
 	}
+	certfile := getOrEmpty("tls.crt", clientCert.Data)
+	keyfile := getOrEmpty("tls.key", clientCert.Data)
 
-	caCert, exists := d.store.GetSchemaRegistryNodeCert(d.clusterobj)
-	if !exists {
-		return nil, fmt.Errorf("get schema registry node certificate: %s", "not found")
+	// Write the synced certs to file
+	cmdArgs := fmt.Sprintf("echo '%s' > tls.crt && echo '%s' > tls.key", certfile, keyfile)
+
+	// Only write CA cert if not using DefaultCaFilePath
+	ca := &SchemaRegistryTLSCa{
+		// SchemaRegistryAPITLS cannot be nil
+		d.clusterobj.SchemaRegistryAPITLS().TLS.NodeSecretRef,
 	}
-
-	var (
-		cafile   = getOrEmpty("ca.crt", caCert.Data)
-		certfile = getOrEmpty("tls.crt", clientCert.Data)
-		keyfile  = getOrEmpty("tls.key", clientCert.Data)
-	)
+	if ca.useCaCert() {
+		caCert, exists := d.store.GetSchemaRegistryNodeCert(d.clusterobj)
+		if !exists {
+			return nil, fmt.Errorf("get schema registry node certificate: %s", "not found")
+		}
+		cafile := getOrEmpty("ca.crt", caCert.Data)
+		cmdArgs = cmdArgs + fmt.Sprintf(" && echo '%s' > ca.crt", cafile)
+	}
 
 	return []corev1.Container{
 		{
-			Name:  "copy-schema-registry-tls",
-			Image: "busybox",
-			Command: []string{
-				"/bin/sh", "-c",
-			},
+			Name:       "copy-schema-registry-tls",
+			Image:      "busybox",
+			Command:    []string{"/bin/sh", "-c"},
 			WorkingDir: SchemaRegistryTLSDir,
-			Args: []string{
-				fmt.Sprintf(
-					"echo '%s' > ca.crt && echo '%s' > tls.crt && echo '%s' > tls.key",
-					cafile, certfile, keyfile,
-				),
-			},
+			Args:       []string{cmdArgs},
 			VolumeMounts: []corev1.VolumeMount{
 				{
 					Name:      tlsSchemaRegistryMountName,
