@@ -290,6 +290,77 @@ class NoDataCase(BaseCase):
         return False
 
 
+class EmptySegmentsCase(BaseCase):
+    """Restore topic that has segments in S3, but segments have only non-data 
+    batches (raft configuration, raft configuration).
+    """
+
+    topics = (TopicSpec(name='panda-topic',
+                        partition_count=1,
+                        replication_factor=3), )
+
+    def __init__(self, s3_client, kafka_tools, rpk_client, s3_bucket, logger,
+                 rpk_producer_maker, redpanda):
+        self._redpanda = redpanda
+        super(EmptySegmentsCase,
+              self).__init__(s3_client, kafka_tools, rpk_client, s3_bucket,
+                             logger, rpk_producer_maker)
+
+    def generate_baseline(self):
+        """Restart redpanda several times to get segments with no
+        data batches."""
+        for node in self._redpanda.nodes:
+            self._redpanda.stop_node(node)
+        time.sleep(1)
+        for node in self._redpanda.nodes:
+            self._redpanda.start_node(node)
+        time.sleep(1)
+        for node in self._redpanda.nodes:
+            self._redpanda.stop_node(node)
+        time.sleep(1)
+        for node in self._redpanda.nodes:
+            self._redpanda.start_node(node)
+        time.sleep(1)
+
+    def validate_node(self, host, baseline, restored):
+        """Validate restored node data using two sets of checksums.
+        The checksums are sampled from data directory before and after recovery."""
+        self.logger.info(f"Node: {baseline} checksums: {restored}")
+        # get rid of ntp part of the path
+        self.logger.info(
+            f"validate node host: {host}, baseline: {baseline}, restored: {restored}"
+        )
+        it = [os.path.basename(key) for key, _ in restored.items()]
+        assert len(it) == 1
+
+    def validate_cluster(self, baseline, restored):
+        """This method is invoked after the recovery and partition validation are
+        done.
+        Check that high_watermark is 0 for the new partition."""
+        def verify():
+            topic_state = list(self._rpk.describe_topic("panda-topic"))
+            for partition in topic_state:
+                self.logger.info(
+                    f"partition id: {partition.id} hw: {partition.high_watermark}, so: {partition.start_offset}"
+                )
+                return partition.high_watermark == partition.start_offset
+            return False
+
+        wait_until(verify,
+                   timeout_sec=30,
+                   backoff_sec=1,
+                   err_msg='Invalid topic state')
+
+    @property
+    def second_restart_needed(self):
+        """Return True if the restart is needed afer first validation steps"""
+        return True
+
+    @property
+    def verify_s3_content_after_produce(self):
+        return False
+
+
 class MissingTopicManifest(BaseCase):
     """Check the case where the topic manifest doesn't exist.
     We can't download any data but we should create an empty topic and add an error
@@ -1129,6 +1200,16 @@ class TopicRecoveryTest(RedpandaTest):
         test_case = NoDataCase(self.s3_client, self.kafka_tools, self.rpk,
                                self.s3_bucket, self.logger,
                                self.rpk_producer_maker)
+        self.do_run(test_case)
+
+    @cluster(num_nodes=3,
+             log_allow_list=MISSING_DATA_ERRORS + TRANSIENT_ERRORS)
+    def test_empty_segments(self):
+        """Test case in which the segments are uploaded but they doesn't
+        have any data batches but they do have configuration batches."""
+        test_case = EmptySegmentsCase(self.s3_client, self.kafka_tools,
+                                      self.rpk, self.s3_bucket, self.logger,
+                                      self.rpk_producer_maker, self.redpanda)
         self.do_run(test_case)
 
     @cluster(num_nodes=3,
