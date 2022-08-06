@@ -732,7 +732,7 @@ void rjson_serialize(
     } else {
         w.Int(uint8_t(tristate_status::set));
         w.Key("value");
-        rjson_serialize(w, t());
+        rjson_serialize(w, t.value());
     }
     w.EndObject();
 }

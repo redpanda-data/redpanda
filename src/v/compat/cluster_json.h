@@ -501,4 +501,37 @@ read_value(json::Value const& rd, cluster::ntp_reconciliation_state& obj) {
       std::move(ntp), std::move(operations), status, error);
 }
 
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const cluster::topic_properties& tps) {
+    w.StartObject();
+    write_member(w, "compression", tps.compression);
+    write_member(w, "cleanup_policy_bitflags", tps.cleanup_policy_bitflags);
+    write_member(w, "compaction_strategy", tps.compaction_strategy);
+    write_member(w, "timestamp_type", tps.timestamp_type);
+    write_member(w, "segment_size", tps.segment_size);
+    write_member(w, "retention_bytes", tps.retention_bytes);
+    write_member(w, "retention_duration", tps.retention_duration);
+    write_member(w, "recovery", tps.recovery);
+    write_member(w, "shadow_indexing", tps.shadow_indexing);
+    write_member(w, "read_replica", tps.read_replica);
+    write_member(w, "read_replica_bucket", tps.read_replica_bucket);
+    write_member(w, "remote_topic_properties", tps.remote_topic_properties);
+    w.EndObject();
+}
+
+inline void read_value(json::Value const& rd, cluster::topic_properties& obj) {
+    read_member(rd, "compression", obj.compression);
+    read_member(rd, "cleanup_policy_bitflags", obj.cleanup_policy_bitflags);
+    read_member(rd, "compaction_strategy", obj.compaction_strategy);
+    read_member(rd, "timestamp_type", obj.timestamp_type);
+    read_member(rd, "segment_size", obj.segment_size);
+    read_member(rd, "retention_bytes", obj.retention_bytes);
+    read_member(rd, "retention_duration", obj.retention_duration);
+    read_member(rd, "recovery", obj.recovery);
+    read_member(rd, "shadow_indexing", obj.shadow_indexing);
+    read_member(rd, "read_replica", obj.read_replica);
+    read_member(rd, "read_replica_bucket", obj.read_replica_bucket);
+    read_member(rd, "remote_topic_properties", obj.remote_topic_properties);
+}
+
 } // namespace json

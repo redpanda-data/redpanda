@@ -321,4 +321,19 @@ GEN_COMPAT_CHECK(
       json_read(remote_topic_properties);
   })
 
+GEN_COMPAT_CHECK(
+  cluster::topic_configuration,
+  {
+      json_write(tp_ns);
+      json_write(partition_count);
+      json_write(replication_factor);
+      json_write(properties);
+  },
+  {
+      json_read(tp_ns);
+      json_read(partition_count);
+      json_read(replication_factor);
+      json_read(properties);
+  })
+
 } // namespace compat

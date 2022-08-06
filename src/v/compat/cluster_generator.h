@@ -668,4 +668,28 @@ struct instance_generator<cluster::topic_properties> {
     static std::vector<cluster::topic_properties> limits() { return {}; }
 };
 
+template<>
+struct instance_generator<cluster::topic_configuration> {
+    static cluster::topic_configuration random() {
+        cluster::topic_configuration tc;
+        tc.tp_ns = model::random_topic_namespace();
+        tc.partition_count = random_generators::get_int<int32_t>();
+        tc.replication_factor = random_generators::get_int<int16_t>();
+        tc.properties = instance_generator<cluster::topic_properties>::random();
+        return tc;
+    }
+
+    static std::vector<cluster::topic_configuration> limits() {
+        return {
+          {model::ns(""),
+           model::topic(""),
+           std::numeric_limits<int32_t>::max(),
+           std::numeric_limits<int16_t>::max()},
+          {model::ns(""),
+           model::topic(""),
+           std::numeric_limits<int32_t>::min(),
+           std::numeric_limits<int16_t>::min()}};
+    }
+};
+
 } // namespace compat

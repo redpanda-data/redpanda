@@ -131,7 +131,8 @@ using compat_checks = type_list<
   cluster::configuration_update_request,
   cluster::configuration_update_reply,
   cluster::remote_topic_properties,
-  cluster::topic_properties>;
+  cluster::topic_properties,
+  cluster::topic_configuration>;
 
 template<typename T>
 struct corpus_helper {
