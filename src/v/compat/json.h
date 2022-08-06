@@ -697,6 +697,46 @@ inline void rjson_serialize(
     w.EndObject();
 }
 
+enum class tristate_status : uint8_t { disabled = 0, not_set, set };
+
+template<typename T>
+void read_value(json::Value const& rd, tristate<T>& target) {
+    tristate_status ts{tristate_status::disabled};
+    auto ts_val = read_member_enum(rd, "status", ts);
+    switch (ts_val) {
+    case 0:
+        target = tristate<T>();
+        break;
+    case 1:
+        target = tristate<T>(std::nullopt);
+        break;
+    case 2:
+        T value;
+        read_member(rd, "value", value);
+        target = tristate<T>(std::optional<T>(std::move(value)));
+        break;
+    default:
+        vassert(false, "Unknown enum value for tristate_status: {}", ts_val);
+    }
+}
+
+template<typename T>
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const tristate<T>& t) {
+    w.StartObject();
+    w.Key("status");
+    if (t.is_disabled()) {
+        w.Int(uint8_t(tristate_status::disabled));
+    } else if (!t.has_value()) {
+        w.Int(uint8_t(tristate_status::not_set));
+    } else {
+        w.Int(uint8_t(tristate_status::set));
+        w.Key("value");
+        rjson_serialize(w, t());
+    }
+    w.EndObject();
+}
+
 #define json_write(_fname) json::write_member(wr, #_fname, obj._fname)
 #define json_read(_fname) json::read_member(rd, #_fname, obj._fname)
 

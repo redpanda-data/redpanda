@@ -191,7 +191,7 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       "{}, retention_bytes: {}, retention_duration_ms: {}, segment_size: "
       "{}, "
       "timestamp_type: {}, recovery_enabled: {}, shadow_indexing: {}, "
-      "read_replica: {}, read_replica_bucket: {} }}",
+      "read_replica: {}, read_replica_bucket: {} remote_topic_properties: {}}}",
       properties.compression,
       properties.cleanup_policy_bitflags,
       properties.compaction_strategy,
@@ -202,7 +202,8 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       properties.recovery,
       properties.shadow_indexing,
       properties.read_replica,
-      properties.read_replica_bucket);
+      properties.read_replica_bucket,
+      properties.remote_topic_properties);
 
     return o;
 }

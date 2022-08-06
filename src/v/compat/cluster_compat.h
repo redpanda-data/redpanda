@@ -290,4 +290,35 @@ GEN_COMPAT_CHECK(
       json_read(remote_partition_count);
   })
 
+GEN_COMPAT_CHECK(
+  cluster::topic_properties,
+  {
+      json_write(compression);
+      json_write(cleanup_policy_bitflags);
+      json_write(compaction_strategy);
+      json_write(timestamp_type);
+      json_write(segment_size);
+      json_write(retention_bytes);
+      json_write(retention_duration);
+      json_write(recovery);
+      json_write(shadow_indexing);
+      json_write(read_replica);
+      json_write(read_replica_bucket);
+      json_write(remote_topic_properties);
+  },
+  {
+      json_read(compression);
+      json_read(cleanup_policy_bitflags);
+      json_read(compaction_strategy);
+      json_read(timestamp_type);
+      json_read(segment_size);
+      json_read(retention_bytes);
+      json_read(retention_duration);
+      json_read(recovery);
+      json_read(shadow_indexing);
+      json_read(read_replica);
+      json_read(read_replica_bucket);
+      json_read(remote_topic_properties);
+  })
+
 } // namespace compat

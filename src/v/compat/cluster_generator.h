@@ -12,7 +12,7 @@
 
 #include "cluster/errc.h"
 #include "cluster/types.h"
-#include "compat/generator.h"
+#include "compat/model_generator.h"
 #include "model/tests/randoms.h"
 #include "random/generators.h"
 #include "test_utils/randoms.h"
@@ -634,6 +634,38 @@ struct instance_generator<cluster::remote_topic_properties> {
     }
 
     static std::vector<cluster::remote_topic_properties> limits() { return {}; }
+};
+
+template<>
+struct instance_generator<cluster::topic_properties> {
+    static cluster::topic_properties random() {
+        return {
+          tests::random_optional(
+            [] { return instance_generator<model::compression>::random(); }),
+          tests::random_optional([] {
+              return instance_generator<
+                model::cleanup_policy_bitflags>::random();
+          }),
+          tests::random_optional([] {
+              return instance_generator<model::compaction_strategy>::random();
+          }),
+          tests::random_optional(
+            [] { return instance_generator<model::timestamp_type>::random(); }),
+          tests::random_optional(
+            [] { return random_generators::get_int<size_t>(); }),
+          tests::random_tristate(
+            [] { return random_generators::get_int<size_t>(); }),
+          tests::random_tristate([] { return tests::random_duration_ms(); }),
+          tests::random_optional([] { return tests::random_bool(); }),
+          tests::random_optional(
+            [] { return model::shadow_indexing_mode::archival; }),
+          tests::random_optional([] { return tests::random_bool(); }),
+          tests::random_optional(
+            [] { return tests::random_named_string<ss::sstring>(); }),
+          instance_generator<cluster::remote_topic_properties>::random()};
+    }
+
+    static std::vector<cluster::topic_properties> limits() { return {}; }
 };
 
 } // namespace compat

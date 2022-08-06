@@ -38,6 +38,21 @@ inline void rjson_serialize(
 }
 
 inline void
+read_value(json::Value const& rd, cluster::remote_topic_properties& rtp) {
+    read_member(rd, "remote_revision", rtp.remote_revision);
+    read_member(rd, "remote_partition_count", rtp.remote_partition_count);
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const cluster::remote_topic_properties& rtp) {
+    w.StartObject();
+    write_member(w, "remote_revision", rtp.remote_revision);
+    write_member(w, "remote_partition_count", rtp.remote_partition_count);
+    w.EndObject();
+}
+
+inline void
 read_value(json::Value const& rd, cluster::partition_move_direction& e) {
     auto direction = rd.GetInt();
     switch (direction) {
