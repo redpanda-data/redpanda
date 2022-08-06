@@ -300,11 +300,13 @@ check_types(type_list<Types...>, std::string name, json::Document& doc) {
     (maybe_check<Types>(name, doc), ...);
 }
 
-static void check(json::Document doc) {
-    vassert(doc.HasMember("name"), "doc doesn't have name");
-    vassert(doc["name"].IsString(), "name is doc is not a string");
-    auto name = doc["name"].GetString();
-    check_types(compat_checks{}, name, doc);
+ss::future<> check_type(json::Document doc) {
+    return ss::async([doc = std::move(doc)]() mutable {
+        vassert(doc.HasMember("name"), "doc doesn't have name");
+        vassert(doc["name"].IsString(), "name is doc is not a string");
+        auto name = doc["name"].GetString();
+        check_types(compat_checks{}, name, doc);
+    });
 }
 
 ss::future<> write_corpus(const std::filesystem::path& dir) {
@@ -315,14 +317,12 @@ ss::future<> write_corpus(const std::filesystem::path& dir) {
     });
 }
 
-ss::future<> check_type(const std::filesystem::path& file) {
+ss::future<json::Document> parse_type(const std::filesystem::path& file) {
     return read_fully_to_string(file).then([file](auto data) {
-        return ss::async([&] {
-            json::Document doc;
-            doc.Parse(data);
-            vassert(!doc.HasParseError(), "JSON {} has parse errors", file);
-            check(std::move(doc));
-        });
+        json::Document doc;
+        doc.Parse(data);
+        vassert(!doc.HasParseError(), "JSON {} has parse errors", file);
+        return doc;
     });
 }
 
