@@ -135,7 +135,8 @@ using compat_checks = type_list<
   cluster::remote_topic_properties,
   cluster::topic_properties,
   cluster::topic_configuration,
-  model::partition_metadata>;
+  model::partition_metadata,
+  model::topic_metadata>;
 
 template<typename T>
 struct corpus_helper {

@@ -30,4 +30,15 @@ GEN_COMPAT_CHECK(
       json_read(leader_node);
   })
 
-}
+GEN_COMPAT_CHECK(
+  model::topic_metadata,
+  {
+      json_write(tp_ns);
+      json_write(partitions);
+  },
+  {
+      json_read(tp_ns);
+      json_read(partitions);
+  });
+
+} // namespace compat

@@ -161,4 +161,22 @@ inline void read_value(json::Value const& rd, model::broker_shard& obj) {
     read_member(rd, "shard", obj.shard);
 }
 
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const model::partition_metadata& v) {
+    w.StartObject();
+    w.Key("id");
+    rjson_serialize(w, v.id);
+    w.Key("replicas");
+    rjson_serialize(w, v.replicas);
+    w.Key("leader_node");
+    rjson_serialize(w, v.leader_node);
+    w.EndObject();
+}
+
+inline void read_value(json::Value const& rd, model::partition_metadata& obj) {
+    read_member(rd, "id", obj.id);
+    read_member(rd, "replicas", obj.replicas);
+    read_member(rd, "leader_node", obj.leader_node);
+}
+
 } // namespace json

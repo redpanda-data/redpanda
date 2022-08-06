@@ -100,4 +100,17 @@ struct instance_generator<model::partition_metadata> {
     static std::vector<model::partition_metadata> limits() { return {}; }
 };
 
+template<>
+struct instance_generator<model::topic_metadata> {
+    static model::topic_metadata random() {
+        auto tm = model::topic_metadata();
+        tm.tp_ns = model::random_topic_namespace();
+        tm.partitions = tests::random_vector([] {
+            return instance_generator<model::partition_metadata>::random();
+        });
+        return tm;
+    }
+    static std::vector<model::topic_metadata> limits() { return {}; }
+};
+
 } // namespace compat
