@@ -160,27 +160,29 @@ ss::future<result<rpc::client_context<T>>> parse_result(
         && (req_ver != transport_version::v1 || rep_ver != transport_version::v0);
 
     if (unlikely(st != status::success || protocol_violation)) {
-        sctx->signal_body_parse();
         if (st == status::version_not_supported) {
             /*
              * let version_not_supported take precedence over error handling for
              * protocol violations because the protocol violation may be due to
              * the unsupported version scenario.
              */
+            sctx->signal_body_parse();
             return ss::make_ready_future<ret_t>(map_server_error(st));
         }
         if (protocol_violation) {
-            vlog(
-              rpclog.error,
+            auto msg = fmt::format(
               "Protocol violation: request version {} incompatible with "
-              "reply version {} reply type {}",
+              "reply version {} status {} reply type {}",
               req_ver,
               rep_ver,
+              st,
               serde::type_str<T>());
+            vlog(rpclog.error, "{}", msg);
+            auto ex = std::make_exception_ptr(std::runtime_error(msg));
+            sctx->body_parse_exception(ex);
+            return ss::make_exception_future<ret_t>(ex);
         }
-        if (st == status::success) {
-            return ss::make_ready_future<ret_t>(errc::service_error);
-        }
+        sctx->signal_body_parse();
         return ss::make_ready_future<ret_t>(map_server_error(st));
     }
 
