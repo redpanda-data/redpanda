@@ -27,6 +27,7 @@
 #include "compat/id_allocator_compat.h"
 #include "compat/init_tm_tx_compat.h"
 #include "compat/metadata_dissemination_compat.h"
+#include "compat/model_compat.h"
 #include "compat/partition_balancer_compat.h"
 #include "compat/prepare_group_tx_compat.h"
 #include "compat/prepare_tx_compat.h"
@@ -133,7 +134,8 @@ using compat_checks = type_list<
   cluster::configuration_update_reply,
   cluster::remote_topic_properties,
   cluster::topic_properties,
-  cluster::topic_configuration>;
+  cluster::topic_configuration,
+  model::partition_metadata>;
 
 template<typename T>
 struct corpus_helper {

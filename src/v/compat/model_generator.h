@@ -12,8 +12,11 @@
 
 #include "compat/generator.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
+#include "model/tests/randoms.h"
 #include "model/timestamp.h"
 #include "random/generators.h"
+#include "test_utils/randoms.h"
 
 namespace compat {
 
@@ -81,6 +84,20 @@ struct instance_generator<model::timestamp_type> {
            model::timestamp_type::create_time});
     }
     static std::vector<model::timestamp_type> limits() { return {}; }
+};
+
+template<>
+struct instance_generator<model::partition_metadata> {
+    static model::partition_metadata random() {
+        auto pm = model::partition_metadata();
+        pm.id = tests::random_named_int<model::partition_id>();
+        pm.replicas = tests::random_vector(
+          [] { return model::random_broker_shard(); });
+        pm.leader_node = tests::random_optional(
+          [] { return tests::random_named_int<model::node_id>(); });
+        return pm;
+    }
+    static std::vector<model::partition_metadata> limits() { return {}; }
 };
 
 } // namespace compat
