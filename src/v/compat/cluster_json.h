@@ -534,4 +534,23 @@ inline void read_value(json::Value const& rd, cluster::topic_properties& obj) {
     read_member(rd, "remote_topic_properties", obj.remote_topic_properties);
 }
 
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const cluster::topic_configuration& cfg) {
+    w.StartObject();
+    write_member(w, "tp_ns", cfg.tp_ns);
+    write_member(w, "partition_count", cfg.partition_count);
+    write_member(w, "replication_factor", cfg.replication_factor);
+    write_member(w, "properties", cfg.properties);
+    w.EndObject();
+}
+
+inline void
+read_value(json::Value const& rd, cluster::topic_configuration& cfg) {
+    read_member(rd, "tp_ns", cfg.tp_ns);
+    read_member(rd, "partition_count", cfg.partition_count);
+    read_member(rd, "replication_factor", cfg.replication_factor);
+    read_member(rd, "properties", cfg.properties);
+}
+
 } // namespace json

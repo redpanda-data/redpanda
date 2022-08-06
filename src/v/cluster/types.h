@@ -1377,6 +1377,9 @@ struct create_topics_request
     operator==(const create_topics_request&, const create_topics_request&)
       = default;
 
+    friend std::ostream&
+    operator<<(std::ostream&, const create_topics_request&);
+
     auto serde_fields() { return std::tie(topics, timeout); }
 };
 

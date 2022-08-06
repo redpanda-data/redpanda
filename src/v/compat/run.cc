@@ -114,6 +114,7 @@ using compat_checks = type_list<
   cluster::commit_tx_reply,
   cluster::create_acls_request,
   cluster::create_acls_reply,
+  cluster::create_topics_request,
   cluster::reconciliation_state_request,
   cluster::reconciliation_state_reply,
   cluster::partition_balancer_overview_request,

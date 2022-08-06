@@ -336,4 +336,15 @@ GEN_COMPAT_CHECK(
       json_read(properties);
   })
 
+GEN_COMPAT_CHECK(
+  cluster::create_topics_request,
+  {
+      json_write(topics);
+      json_write(timeout);
+  },
+  {
+      json_read(topics);
+      json_read(timeout);
+  })
+
 } // namespace compat

@@ -692,4 +692,17 @@ struct instance_generator<cluster::topic_configuration> {
     }
 };
 
+template<>
+struct instance_generator<cluster::create_topics_request> {
+    static cluster::create_topics_request random() {
+        return {
+          .topics = tests::random_vector([] {
+              return instance_generator<cluster::topic_configuration>::random();
+          }),
+          .timeout = tests::random_duration_ms()};
+    }
+
+    static std::vector<cluster::create_topics_request> limits() { return {}; }
+};
+
 } // namespace compat

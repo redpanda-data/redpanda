@@ -422,6 +422,15 @@ std::ostream& operator<<(std::ostream& o, const hello_reply& h) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const create_topics_request& r) {
+    fmt::print(
+      o,
+      "{{create_topics_request: topics: {} timeout: {}}}",
+      r.topics,
+      r.timeout);
+    return o;
+}
+
 namespace {
 cluster::assignments_set to_assignments_map(
   std::vector<cluster::partition_assignment> assignment_vector) {
