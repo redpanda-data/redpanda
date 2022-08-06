@@ -431,6 +431,16 @@ std::ostream& operator<<(std::ostream& o, const create_topics_request& r) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const create_topics_reply& r) {
+    fmt::print(
+      o,
+      "{{create_topics_reply: results: {} metadata: {} configs: {}}}",
+      r.results,
+      r.metadata,
+      r.configs);
+    return o;
+}
+
 namespace {
 cluster::assignments_set to_assignments_map(
   std::vector<cluster::partition_assignment> assignment_vector) {

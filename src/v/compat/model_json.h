@@ -179,4 +179,17 @@ inline void read_value(json::Value const& rd, model::partition_metadata& obj) {
     read_member(rd, "leader_node", obj.leader_node);
 }
 
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const model::topic_metadata& tm) {
+    w.StartObject();
+    write_member(w, "tp_ns", tm.tp_ns);
+    write_member(w, "partitions", tm.partitions);
+    w.EndObject();
+}
+
+inline void read_value(json::Value const& rd, model::topic_metadata& tm) {
+    read_member(rd, "tp_ns", tm.tp_ns);
+    read_member(rd, "partitions", tm.partitions);
+}
+
 } // namespace json

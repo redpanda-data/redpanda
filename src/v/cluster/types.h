@@ -1402,6 +1402,8 @@ struct create_topics_reply
     operator==(const create_topics_reply&, const create_topics_reply&)
       = default;
 
+    friend std::ostream& operator<<(std::ostream&, const create_topics_reply&);
+
     auto serde_fields() { return std::tie(results, metadata, configs); }
 };
 

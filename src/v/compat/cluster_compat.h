@@ -358,4 +358,17 @@ GEN_COMPAT_CHECK(
       json_read(ec);
   });
 
+GEN_COMPAT_CHECK(
+  cluster::create_topics_reply,
+  {
+      json_write(results);
+      json_write(metadata);
+      json_write(configs);
+  },
+  {
+      json_read(results);
+      json_read(metadata);
+      json_read(configs);
+  })
+
 } // namespace compat

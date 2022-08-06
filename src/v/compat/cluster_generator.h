@@ -707,4 +707,20 @@ struct instance_generator<cluster::create_topics_request> {
     static std::vector<cluster::create_topics_request> limits() { return {}; }
 };
 
+template<>
+struct instance_generator<cluster::create_topics_reply> {
+    static cluster::create_topics_reply random() {
+        return {
+          tests::random_vector(
+            [] { return instance_generator<cluster::topic_result>::random(); }),
+          tests::random_vector(
+            [] { return instance_generator<model::topic_metadata>::random(); }),
+          tests::random_vector([] {
+              return instance_generator<cluster::topic_configuration>::random();
+          })};
+    }
+
+    static std::vector<cluster::create_topics_reply> limits() { return {}; }
+};
+
 } // namespace compat
