@@ -106,6 +106,8 @@ struct instance_generator<cluster::topic_result> {
           model::random_topic_namespace(),
           instance_generator<cluster::errc>::random());
     }
+
+    static std::vector<cluster::topic_result> limits() { return {}; }
 };
 
 template<>
