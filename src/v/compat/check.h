@@ -60,6 +60,13 @@
 
 namespace compat {
 
+struct compat_error final : public std::runtime_error {
+public:
+    explicit compat_error(std::string_view name)
+      : std::runtime_error(
+        fmt::format("compat check failed for {{{}}}", name)) {}
+};
+
 /*
  * Specialize for types that cannot be copied.
  */

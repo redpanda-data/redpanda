@@ -116,13 +116,6 @@ using compat_checks = type_list<
   cluster::delete_acls_request,
   cluster::delete_acls_reply>;
 
-struct compat_error final : public std::runtime_error {
-public:
-    explicit compat_error(std::string_view name)
-      : std::runtime_error(
-        fmt::format("compat check failed for {{{}}}", name)) {}
-};
-
 template<typename T>
 struct corpus_helper {
     using checker = compat_check<T>;
