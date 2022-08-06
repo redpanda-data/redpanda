@@ -122,6 +122,10 @@ concept is_rpc_serde_exempt = requires {
  * must be supported by both adl<> and serde encoding frameworks. When the type
  * is not exempt from adl<> support, serde is used when the version >= v2.
  *
+ * It is also possible to exempt a type from serde support (i.e. adl-only). This
+ * is an interim solution that allows things like coproc and some tests to avoid
+ * having to add serde support in the short term.
+ *
  * The returned version indicates what level of encoding is used. This is always
  * equal to the input version, except for serde-only messags which return v2.
  * Callers are expected to further validate the runtime implications of this.
