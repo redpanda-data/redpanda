@@ -138,6 +138,7 @@ struct corpus_helper {
      *     {
      *       "name": "serde",
      *       "data": "base64 encoding",
+     *       "crc32c": "data checksum",
      *     },
      *   ]
      * }
@@ -162,11 +163,15 @@ struct corpus_helper {
         auto binaries = checker::to_binary(std::move(tb));
         vassert(!binaries.empty(), "No binaries found for {}", checker::name);
         for (auto& b : binaries) {
+            crc::crc32c crc;
+            crc_extend_iobuf(crc, b.data);
             w.StartObject();
             w.Key("name");
             w.String(b.name);
             w.Key("data");
             w.String(iobuf_to_base64(b.data));
+            w.Key("crc32c");
+            w.Uint(crc.value());
             w.EndObject();
         }
         w.EndArray();
@@ -225,6 +230,23 @@ struct corpus_helper {
             vassert(binary["name"].IsString(), "encoding name is not string");
             vassert(binary.HasMember("data"), "encoding doesn't have data");
             vassert(binary["data"].IsString(), "encoding data is not string");
+            vassert(binary.HasMember("crc32c"), "encoding doesn't have crc32c");
+            vassert(
+              binary["crc32c"].IsUint(), "encoding crc32c is not integer");
+
+            const auto binary_data = bytes_to_iobuf(
+              base64_to_bytes(binary["data"].GetString()));
+
+            crc::crc32c crc;
+            crc_extend_iobuf(crc, binary_data);
+
+            if (crc.value() != binary["crc32c"].GetUint()) {
+                throw compat_error(fmt::format(
+                  "Test {} has invalid crc {} expected {}",
+                  checker::name,
+                  crc.value(),
+                  binary["crc32c"].GetUint()));
+            }
 
             compat_binary data(
               binary["name"].GetString(),
