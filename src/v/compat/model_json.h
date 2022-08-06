@@ -15,6 +15,122 @@
 
 namespace json {
 
+inline void read_value(json::Value const& rd, model::compression& e) {
+    std::underlying_type_t<model::compression> value;
+    read_value(rd, value);
+    switch (value) {
+    case 0:
+        e = model::compression::none;
+        break;
+    case 1:
+        e = model::compression::gzip;
+        break;
+    case 2:
+        e = model::compression::snappy;
+        break;
+    case 3:
+        e = model::compression::lz4;
+        break;
+    case 4:
+        e = model::compression::zstd;
+        break;
+    case std::numeric_limits<decltype(value)>::max():
+        e = model::compression::producer;
+        break;
+    default:
+        vassert(false, "Unknown enum value model::compression: {}", value);
+    }
+}
+
+inline void read_value(json::Value const& rd, model::timestamp_type& e) {
+    std::underlying_type_t<model::timestamp_type> value;
+    read_value(rd, value);
+    switch (value) {
+    case 0:
+        e = model::timestamp_type::create_time;
+        break;
+    case 1:
+        e = model::timestamp_type::append_time;
+        break;
+    default:
+        vassert(false, "Unknown enum value model::timestamp_type: {}", value);
+    }
+}
+
+inline void
+read_value(json::Value const& rd, model::cleanup_policy_bitflags& e) {
+    std::underlying_type_t<model::cleanup_policy_bitflags> value;
+    read_value(rd, value);
+    switch (value) {
+    case 0:
+        e = model::cleanup_policy_bitflags::none;
+        break;
+    case 1U:
+        e = model::cleanup_policy_bitflags::deletion;
+        break;
+    case 1U << 1U:
+        e = model::cleanup_policy_bitflags::compaction;
+        break;
+    default:
+        vassert(
+          false,
+          "Unknown enum value model::cleanup_policy_bitflags: {}",
+          value);
+    }
+}
+
+inline void read_value(json::Value const& rd, model::compaction_strategy& e) {
+    std::underlying_type_t<model::compaction_strategy> value;
+    read_value(rd, value);
+    switch (value) {
+    case 0:
+        e = model::compaction_strategy::offset;
+        break;
+    case 1:
+        e = model::compaction_strategy::timestamp;
+        break;
+    case 2:
+        e = model::compaction_strategy::header;
+        break;
+    default:
+        vassert(
+          false, "Unknown enum value model::compaction_strategy: {}", value);
+    }
+}
+
+inline void read_value(json::Value const& rd, model::shadow_indexing_mode& e) {
+    std::underlying_type_t<model::shadow_indexing_mode> value;
+    read_value(rd, value);
+    switch (value) {
+    case 0:
+        e = model::shadow_indexing_mode::disabled;
+        break;
+    case 1:
+        e = model::shadow_indexing_mode::archival;
+        break;
+    case 2:
+        e = model::shadow_indexing_mode::fetch;
+        break;
+    case 3:
+        e = model::shadow_indexing_mode::full;
+        break;
+    case 0xfe:
+        e = model::shadow_indexing_mode::drop_archival;
+        break;
+
+    case 0xfd:
+        e = model::shadow_indexing_mode::drop_fetch;
+        break;
+
+    case 0xfc:
+        e = model::shadow_indexing_mode::drop_full;
+        break;
+    default:
+        vassert(
+          false, "Unknown enum value model::shadow_indexing_mode: {}", value);
+    }
+}
+
 inline void rjson_serialize(
   json::Writer<json::StringBuffer>& w, const model::producer_identity& v) {
     w.StartObject();
