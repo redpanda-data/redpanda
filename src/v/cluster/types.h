@@ -1703,6 +1703,12 @@ struct create_acls_cmd_data
     operator==(const create_acls_cmd_data&, const create_acls_cmd_data&)
       = default;
 
+    friend std::ostream&
+    operator<<(std::ostream& o, const create_acls_cmd_data& r) {
+        fmt::print(o, "{{ bindings: {} }}", r.bindings);
+        return o;
+    }
+
     auto serde_fields() { return std::tie(bindings); }
 };
 
@@ -1720,6 +1726,12 @@ struct create_acls_request
     friend bool
     operator==(const create_acls_request&, const create_acls_request&)
       = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const create_acls_request& r) {
+        fmt::print(o, "{{ data: {}, timeout: {} }}", r.data, r.timeout.count());
+        return o;
+    }
 
     void serde_read(iobuf_parser& in, const serde::header& h) {
         using serde::read_nested;
@@ -1773,6 +1785,12 @@ struct delete_acls_result
     friend bool operator==(const delete_acls_result&, const delete_acls_result&)
       = default;
 
+    friend std::ostream&
+    operator<<(std::ostream& o, const delete_acls_result& r) {
+        fmt::print(o, "{{ error: {} bindings: {} }}", r.error, r.bindings);
+        return o;
+    }
+
     auto serde_fields() { return std::tie(error, bindings); }
 };
 
@@ -1812,6 +1830,12 @@ struct delete_acls_reply
 
     friend bool operator==(const delete_acls_reply&, const delete_acls_reply&)
       = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const delete_acls_reply& r) {
+        fmt::print(o, "{{ results: {} }}", r.results);
+        return o;
+    }
 
     auto serde_fields() { return std::tie(results); }
 };

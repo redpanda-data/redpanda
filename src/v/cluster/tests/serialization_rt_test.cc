@@ -662,110 +662,6 @@ random_create_partitions_configuration() {
     }
     return cpc;
 }
-security::scram_credential random_credential() {
-    return security::scram_credential(
-      random_generators::get_bytes(256),
-      random_generators::get_bytes(256),
-      random_generators::get_bytes(256),
-      random_generators::get_int(1, 10));
-}
-
-security::resource_type random_resource_type() {
-    return random_generators::random_choice<security::resource_type>(
-      {security::resource_type::cluster,
-       security::resource_type::group,
-       security::resource_type::topic,
-       security::resource_type::transactional_id});
-}
-
-security::pattern_type random_pattern_type() {
-    return random_generators::random_choice<security::pattern_type>(
-      {security::pattern_type::literal, security::pattern_type::prefixed});
-}
-
-security::resource_pattern random_resource_pattern() {
-    return {
-      random_resource_type(),
-      random_generators::gen_alphanum_string(10),
-      random_pattern_type()};
-}
-
-security::acl_principal random_acl_principal() {
-    return {
-      security::principal_type::user,
-      random_generators::gen_alphanum_string(12)};
-}
-security::acl_host create_acl_host() {
-    return security::acl_host(ss::net::inet_address("127.0.0.1"));
-}
-security::acl_operation random_acl_operation() {
-    return random_generators::random_choice<security::acl_operation>(
-      {security::acl_operation::all,
-       security::acl_operation::alter,
-       security::acl_operation::alter_configs,
-       security::acl_operation::describe_configs,
-       security::acl_operation::cluster_action,
-       security::acl_operation::create,
-       security::acl_operation::remove,
-       security::acl_operation::read,
-       security::acl_operation::idempotent_write,
-       security::acl_operation::describe});
-}
-
-security::acl_permission random_acl_permission() {
-    return random_generators::random_choice<security::acl_permission>(
-      {security::acl_permission::allow, security::acl_permission::deny});
-}
-
-security::acl_entry random_acl_entry() {
-    return {
-      random_acl_principal(),
-      create_acl_host(),
-      random_acl_operation(),
-      random_acl_permission()};
-}
-security::acl_binding random_acl_binding() {
-    return {random_resource_pattern(), random_acl_entry()};
-}
-security::resource_pattern_filter random_resource_pattern_filter() {
-    auto resource = tests::random_optional(
-      [] { return random_resource_type(); });
-
-    auto name = tests::random_optional(
-      [] { return random_generators::gen_alphanum_string(14); });
-
-    auto pattern = tests::random_optional([] {
-        using ret_t = std::variant<
-          security::pattern_type,
-          security::resource_pattern_filter::pattern_match>;
-        if (tests::random_bool()) {
-            return ret_t(random_pattern_type());
-        } else {
-            return ret_t(security::resource_pattern_filter::pattern_match{});
-        }
-    });
-
-    return {resource, std::move(name), pattern};
-}
-
-security::acl_entry_filter random_acl_entry_filter() {
-    auto principal = tests::random_optional(
-      [] { return random_acl_principal(); });
-
-    auto host = tests::random_optional([] { return create_acl_host(); });
-
-    auto operation = tests::random_optional(
-      [] { return random_acl_operation(); });
-
-    auto permission = tests::random_optional(
-      [] { return random_acl_permission(); });
-
-    return {std::move(principal), host, operation, permission};
-}
-
-security::acl_binding_filter random_acl_binding_filter() {
-    return {random_resource_pattern_filter(), random_acl_entry_filter()};
-}
 std::vector<ss::sstring> random_strings() {
     auto cnt = random_generators::get_int(0, 20);
     std::vector<ss::sstring> ret;
@@ -1074,14 +970,14 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     {
         cluster::create_acls_cmd_data data;
         for (auto i = 0, mi = random_generators::get_int(5, 25); i < mi; ++i) {
-            data.bindings.push_back(random_acl_binding());
+            data.bindings.push_back(tests::random_acl_binding());
         }
         roundtrip_test(data);
     }
     {
         cluster::delete_acls_cmd_data data;
         for (auto i = 0, mi = random_generators::get_int(5, 25); i < mi; ++i) {
-            data.filters.push_back(random_acl_binding_filter());
+            data.filters.push_back(tests::random_acl_binding_filter());
         }
         roundtrip_test(data);
     }
@@ -1639,7 +1535,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     {
         cluster::create_acls_cmd_data create_acls_data{};
         for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
-            create_acls_data.bindings.push_back(random_acl_binding());
+            create_acls_data.bindings.push_back(tests::random_acl_binding());
         }
         cluster::create_acls_request data{
           create_acls_data, random_timeout_clock_duration()};
@@ -1656,7 +1552,8 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     {
         cluster::delete_acls_cmd_data delete_acls_data{};
         for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
-            delete_acls_data.filters.push_back(random_acl_binding_filter());
+            delete_acls_data.filters.push_back(
+              tests::random_acl_binding_filter());
         }
         cluster::delete_acls_request data{
           delete_acls_data, random_timeout_clock_duration()};
@@ -1665,7 +1562,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     {
         std::vector<security::acl_binding> bindings;
         for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
-            bindings.push_back(random_acl_binding());
+            bindings.push_back(tests::random_acl_binding());
         }
         cluster::delete_acls_result data{
           .error = cluster::errc::join_request_dispatch_error,
@@ -1678,7 +1575,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
             std::vector<security::acl_binding> bindings;
             for (auto j = 0, mj = random_generators::get_int(20); j < mj; ++j) {
-                bindings.push_back(random_acl_binding());
+                bindings.push_back(tests::random_acl_binding());
             }
             results.push_back(cluster::delete_acls_result{
               .error = cluster::errc::join_request_dispatch_error,
@@ -2426,18 +2323,18 @@ SEASTAR_THREAD_TEST_CASE(commands_serialization_test) {
 
         roundtrip_cmd<cluster::create_user_cmd>(
           tests::random_named_string<security::credential_user>(),
-          random_credential());
+          tests::random_credential());
 
         roundtrip_cmd<cluster::delete_user_cmd>(
           tests::random_named_string<security::credential_user>(), 0);
 
         roundtrip_cmd<cluster::update_user_cmd>(
           tests::random_named_string<security::credential_user>(),
-          random_credential());
+          tests::random_credential());
 
         cluster::create_acls_cmd_data create_acls_data{};
         for (auto i = 0, mi = random_generators::get_int(1, 20); i < mi; ++i) {
-            create_acls_data.bindings.push_back(random_acl_binding());
+            create_acls_data.bindings.push_back(tests::random_acl_binding());
         }
 
         roundtrip_cmd<cluster::create_acls_cmd>(std::move(create_acls_data), 0);
@@ -2445,7 +2342,8 @@ SEASTAR_THREAD_TEST_CASE(commands_serialization_test) {
         cluster::delete_acls_cmd_data delete_acl_data;
 
         for (auto i = 0, mi = random_generators::get_int(1, 20); i < mi; ++i) {
-            delete_acl_data.filters.push_back(random_acl_binding_filter());
+            delete_acl_data.filters.push_back(
+              tests::random_acl_binding_filter());
         }
 
         roundtrip_cmd<cluster::delete_acls_cmd>(std::move(delete_acl_data), 0);

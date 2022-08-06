@@ -18,7 +18,23 @@
 namespace compat {
 
 GEN_COMPAT_CHECK(
+  cluster::create_acls_request,
+  {
+      json_write(data);
+      json_write(timeout);
+  },
+  {
+      json_read(data);
+      json_read(timeout);
+  });
+
+GEN_COMPAT_CHECK(
   cluster::create_acls_reply,
+  { json_write(results); },
+  { json_read(results); });
+
+GEN_COMPAT_CHECK(
+  cluster::delete_acls_reply,
   { json_write(results); },
   { json_read(results); });
 

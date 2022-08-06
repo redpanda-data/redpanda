@@ -10,11 +10,17 @@
  */
 #pragma once
 
+#include "cluster/errc.h"
+#include "cluster/partition_balancer_types.h"
+#include "cluster/types.h"
 #include "json/document.h"
 #include "json/json.h"
 #include "model/fundamental.h"
 #include "net/unresolved_address.h"
+#include "security/acl.h"
 #include "utils/base64.h"
+
+#include <seastar/net/inet_address.hh>
 
 namespace json {
 
@@ -302,6 +308,197 @@ inline void read_value(json::Value const& rd, model::topic_namespace& obj) {
     read_member(rd, "ns", ns);
     read_member(rd, "tp", tp);
     obj = model::topic_namespace(std::move(ns), std::move(tp));
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const cluster::partition_balancer_violations::unavailable_node& un) {
+    w.StartObject();
+    w.Key("id");
+    rjson_serialize(w, un.id);
+    w.Key("unavailable_since");
+    rjson_serialize(w, un.unavailable_since.value());
+    w.EndObject();
+}
+
+inline void read_value(
+  json::Value const& rd,
+  cluster::partition_balancer_violations::unavailable_node& un) {
+    read_member(rd, "id", un.id);
+    read_member(rd, "unavailable_since", un.unavailable_since);
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const cluster::partition_balancer_violations::full_node& fn) {
+    w.StartObject();
+    w.Key("id");
+    rjson_serialize(w, fn.id);
+    w.Key("disk_used_percent");
+    rjson_serialize(w, fn.disk_used_percent);
+    w.EndObject();
+}
+
+inline void read_value(
+  json::Value const& rd,
+  cluster::partition_balancer_violations::full_node& fn) {
+    read_member(rd, "id", fn.id);
+    read_member(rd, "disk_used_percent", fn.disk_used_percent);
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const cluster::partition_balancer_violations& violations) {
+    w.StartObject();
+    w.Key("unavailable_nodes");
+    rjson_serialize(w, violations.unavailable_nodes);
+    w.Key("full_nodes");
+    rjson_serialize(w, violations.full_nodes);
+    w.EndObject();
+}
+
+inline void read_value(
+  json::Value const& rd, cluster::partition_balancer_violations& violations) {
+    read_member(rd, "unavailable_nodes", violations.unavailable_nodes);
+    read_member(rd, "full_nodes", violations.full_nodes);
+}
+
+inline void read_value(json::Value const& rd, security::acl_host& host) {
+    ss::sstring address;
+    read_member(rd, "address", address);
+    host = security::acl_host(address);
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const security::acl_host& host) {
+    w.StartObject();
+    std::stringstream ss;
+    vassert(host.address(), "Unset optional address unexpected.");
+    ss << host.address().value();
+    w.Key("address");
+    rjson_serialize(w, ss.str());
+    w.EndObject();
+}
+
+inline void
+read_value(json::Value const& rd, security::acl_principal& principal) {
+    auto type = security::principal_type(
+      read_member_enum(rd, "type", security::principal_type{}));
+    ss::sstring name;
+    read_member(rd, "name", name);
+    principal = security::acl_principal(type, std::move(name));
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const security::acl_principal& principal) {
+    w.StartObject();
+    w.Key("type");
+    rjson_serialize(w, principal.type());
+    w.Key("name");
+    rjson_serialize(w, principal.name());
+    w.EndObject();
+}
+
+inline void read_value(json::Value const& rd, security::acl_entry& entry) {
+    security::acl_principal principal;
+    security::acl_host host;
+    read_member(rd, "principal", principal);
+    read_member(rd, "host", host);
+    auto operation = security::acl_operation(
+      read_member_enum(rd, "operation", security::acl_operation{}));
+    auto permission = security::acl_permission(
+      read_member_enum(rd, "permission", security::acl_permission{}));
+    entry = security::acl_entry(
+      std::move(principal), host, operation, permission);
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const security::acl_entry& entry) {
+    w.StartObject();
+    w.Key("principal");
+    rjson_serialize(w, entry.principal());
+    w.Key("host");
+    rjson_serialize(w, entry.host());
+    w.Key("operation");
+    rjson_serialize(w, entry.operation());
+    w.Key("permission");
+    rjson_serialize(w, entry.permission());
+    w.EndObject();
+}
+
+inline void
+read_value(json::Value const& rd, security::resource_pattern& pattern) {
+    ss::sstring name;
+    auto resource = security::resource_type(
+      read_member_enum(rd, "resource", security::resource_type{}));
+    read_member(rd, "name", name);
+    auto pattern_type = security::pattern_type(
+      read_member_enum(rd, "pattern", security::pattern_type{}));
+    pattern = security::resource_pattern(
+      resource, std::move(name), pattern_type);
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const security::resource_pattern& pattern) {
+    w.StartObject();
+    w.Key("resource");
+    rjson_serialize(w, pattern.resource());
+    w.Key("name");
+    rjson_serialize(w, pattern.name());
+    w.Key("pattern");
+    rjson_serialize(w, pattern.pattern());
+    w.EndObject();
+}
+
+inline void read_value(json::Value const& rd, security::acl_binding& binding) {
+    security::resource_pattern pattern;
+    security::acl_entry entry;
+    read_member(rd, "pattern", pattern);
+    read_member(rd, "entry", entry);
+    binding = security::acl_binding(std::move(pattern), std::move(entry));
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const security::acl_binding& data) {
+    w.StartObject();
+    w.Key("pattern");
+    rjson_serialize(w, data.pattern());
+    w.Key("entry");
+    rjson_serialize(w, data.entry());
+    w.EndObject();
+}
+
+inline void
+read_value(json::Value const& rd, cluster::create_acls_cmd_data& data) {
+    read_member(rd, "bindings", data.bindings);
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const cluster::create_acls_cmd_data& data) {
+    w.StartObject();
+    w.Key("bindings");
+    rjson_serialize(w, data.bindings);
+    w.EndObject();
+}
+
+inline void
+read_value(json::Value const& rd, cluster::delete_acls_result& data) {
+    data.error = cluster::errc(read_member_enum(rd, "error", cluster::errc{}));
+    read_member(rd, "bindings", data.bindings);
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const cluster::delete_acls_result& data) {
+    w.StartObject();
+    w.Key("error");
+    rjson_serialize(w, data.error);
+    w.Key("bindings");
+    rjson_serialize(w, data.bindings);
+    w.EndObject();
 }
 
 #define json_write(_fname) json::write_member(wr, #_fname, obj._fname)

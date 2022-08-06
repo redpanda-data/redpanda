@@ -108,9 +108,12 @@ using compat_checks = type_list<
   cluster::prepare_group_tx_reply,
   cluster::commit_tx_request,
   cluster::commit_tx_reply,
+  cluster::create_acls_request,
   cluster::create_acls_reply,
   cluster::reconciliation_state_request,
-  cluster::partition_balancer_overview_request>;
+  cluster::partition_balancer_overview_request,
+  cluster::partition_balancer_overview_reply,
+  cluster::delete_acls_reply>;
 
 struct compat_error final : public std::runtime_error {
 public:
