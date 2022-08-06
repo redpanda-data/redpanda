@@ -239,10 +239,6 @@ public:
     principal_type type() const { return _type; }
     bool wildcard() const { return _name == "*"; }
 
-    void set_name(ss::sstring&& name) { _name = name; }
-
-    void set_type(principal_type type) { _type = type; }
-
     auto serde_fields() { return std::tie(_type, _name); }
 
 private:
@@ -289,12 +285,6 @@ public:
     const ss::sstring& name() const { return _name; }
     pattern_type pattern() const { return _pattern; }
 
-    void set_resource(resource_type resource) { _resource = resource; }
-
-    void set_name(ss::sstring&& name) { _name = name; }
-
-    void set_pattern(pattern_type pattern) { _pattern = pattern; }
-
     auto serde_fields() { return std::tie(_resource, _name, _pattern); }
 
 private:
@@ -318,10 +308,6 @@ public:
     static acl_host wildcard_host() { return acl_host{}; }
 
     friend bool operator==(const acl_host&, const acl_host&) = default;
-
-    void set_address(std::optional<ss::net::inet_address>&& addr) {
-        _addr = addr;
-    }
 
     template<typename H>
     friend H AbslHashValue(H h, const acl_host& host) {
@@ -395,14 +381,6 @@ public:
     acl_operation operation() const { return _operation; }
     acl_permission permission() const { return _permission; }
 
-    void set_principal(acl_principal&& principal) { _principal = principal; }
-
-    void set_host(acl_host&& host) { _host = host; }
-
-    void set_operation(acl_operation op) { _operation = op; }
-
-    void set_permission(acl_permission permission) { _permission = permission; }
-
     auto serde_fields() {
         return std::tie(_principal, _host, _operation, _permission);
     }
@@ -424,12 +402,6 @@ public:
     acl_binding(resource_pattern pattern, acl_entry entry)
       : _pattern(std::move(pattern))
       , _entry(std::move(entry)) {}
-
-    void set_resource_pattern(resource_pattern&& pattern) {
-        _pattern = pattern;
-    }
-
-    void set_acl_entry(acl_entry&& acl_entry) { _entry = acl_entry; }
 
     friend bool operator==(const acl_binding&, const acl_binding&) = default;
 

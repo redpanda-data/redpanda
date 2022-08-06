@@ -366,7 +366,7 @@ inline void read_value(
 inline void read_value(json::Value const& rd, security::acl_host& host) {
     ss::sstring address;
     read_member(rd, "address", address);
-    host.set_address(ss::net::inet_address(address));
+    host = security::acl_host(address);
 }
 
 inline void rjson_serialize(
@@ -386,8 +386,7 @@ read_value(json::Value const& rd, security::acl_principal& principal) {
       read_member_enum(rd, "type", security::principal_type{}));
     ss::sstring name;
     read_member(rd, "name", name);
-    principal.set_name(std::move(name));
-    principal.set_type(type);
+    principal = security::acl_principal(type, std::move(name));
 }
 
 inline void rjson_serialize(
@@ -410,10 +409,8 @@ inline void read_value(json::Value const& rd, security::acl_entry& entry) {
       read_member_enum(rd, "operation", security::acl_operation{}));
     auto permission = security::acl_permission(
       read_member_enum(rd, "permission", security::acl_permission{}));
-    entry.set_principal(std::move(principal));
-    entry.set_host(std::move(host));
-    entry.set_operation(operation);
-    entry.set_permission(permission);
+    entry = security::acl_entry(
+      std::move(principal), host, operation, permission);
 }
 
 inline void rjson_serialize(
@@ -438,9 +435,8 @@ read_value(json::Value const& rd, security::resource_pattern& pattern) {
     read_member(rd, "name", name);
     auto pattern_type = security::pattern_type(
       read_member_enum(rd, "pattern", security::pattern_type{}));
-    pattern.set_resource(resource);
-    pattern.set_name(std::move(name));
-    pattern.set_pattern(pattern_type);
+    pattern = security::resource_pattern(
+      resource, std::move(name), pattern_type);
 }
 
 inline void rjson_serialize(
@@ -461,8 +457,7 @@ inline void read_value(json::Value const& rd, security::acl_binding& binding) {
     security::acl_entry entry;
     read_member(rd, "pattern", pattern);
     read_member(rd, "entry", entry);
-    binding.set_resource_pattern(std::move(pattern));
-    binding.set_acl_entry(std::move(entry));
+    binding = security::acl_binding(std::move(pattern), std::move(entry));
 }
 
 inline void rjson_serialize(
