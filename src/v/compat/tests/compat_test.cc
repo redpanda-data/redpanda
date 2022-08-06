@@ -20,6 +20,14 @@
 #include <boost/test/unit_test.hpp>
 
 namespace {
+void check(std::filesystem::path fn) {
+    /*
+     * Normal test -- input passes.
+     */
+    fmt::print("Checking {}\n", fn);
+    compat::check_type(fn).get();
+}
+
 /*
  * process all the json files in the directory
  */
@@ -34,9 +42,9 @@ ss::future<> check_corpus(const std::filesystem::path& dir) {
         if (ent.name == "compile_commands.json") {
             return ss::now();
         }
-        const auto fn = dir / ent.name.c_str();
-        fmt::print("Checking {}\n", fn);
-        return compat::check_type(fn);
+        auto fn = dir / ent.name.c_str();
+        return ss::async(
+          [fn = std::move(fn)]() mutable { check(std::move(fn)); });
     });
 }
 } // namespace
