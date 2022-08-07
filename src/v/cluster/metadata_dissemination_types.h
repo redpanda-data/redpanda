@@ -72,6 +72,10 @@ struct ntp_leader_revision
       , leader_id(leader_id)
       , revision(revision) {}
 
+    friend bool
+    operator==(const ntp_leader_revision&, const ntp_leader_revision&)
+      = default;
+
     friend std::ostream&
     operator<<(std::ostream& o, const ntp_leader_revision& r) {
         fmt::print(
