@@ -26,6 +26,7 @@
 #include <chrono>
 #include <limits>
 #include <optional>
+#include <ratio>
 
 struct custom_read_write {
     friend inline void read_nested(
@@ -828,4 +829,48 @@ SEASTAR_THREAD_TEST_CASE(type_str) {
     BOOST_CHECK_NE(
       serde::type_str<std::string>().find("string"), std::string_view::npos);
     BOOST_CHECK_EQUAL(serde::type_str<foo_bar>(), "foo_bar");
+}
+// Utility to serialize and deserialize back an input.
+template<class T>
+T serde_input(T input) {
+    return serde::from_iobuf<T>(serde::to_iobuf(std::move(input)));
+}
+
+SEASTAR_THREAD_TEST_CASE(duration_type_test) {
+    using namespace std::chrono;
+    constexpr hours h(1);
+    constexpr milliseconds ms{3};
+    constexpr milliseconds ms_neg{-1};
+    constexpr duration<int, std::kilo> ks(3);
+    constexpr duration<int16_t> int16t_d(10);
+    constexpr duration<int16_t> int32t_d(10);
+    constexpr duration<int64_t, std::pico> int64t_pico(100000);
+    constexpr auto max_ns = nanoseconds::max();
+    constexpr auto min_ns = nanoseconds::min();
+
+    BOOST_REQUIRE(h == serde_input(h));
+    BOOST_REQUIRE(ms == serde_input(ms));
+    BOOST_REQUIRE(ms_neg == serde_input(ms_neg));
+    BOOST_REQUIRE(ks == serde_input(ks));
+    BOOST_REQUIRE(max_ns == serde_input(max_ns));
+    BOOST_REQUIRE(int16t_d == serde_input(int16t_d));
+    BOOST_REQUIRE(int32t_d == serde_input(int16t_d));
+    BOOST_REQUIRE(int64t_pico == serde_input(int64t_pico));
+    // Overflows, clamped to ns:max().
+    constexpr auto max_ms = milliseconds::max();
+    constexpr auto max_ns_in_ms = std::chrono::duration_cast<milliseconds>(
+      max_ns);
+    constexpr auto max_hrs = hours::max();
+    constexpr auto max_ns_in_hrs = std::chrono::duration_cast<hours>(max_ns);
+    BOOST_REQUIRE(max_ns_in_ms == serde_input(max_ms));
+    BOOST_REQUIRE(max_ns_in_hrs == serde_input(max_hrs));
+    // Underflows, clamped to ns::min()
+    constexpr auto min_ms = milliseconds::min();
+    constexpr auto min_ns_in_ms = std::chrono::duration_cast<milliseconds>(
+      min_ns);
+    BOOST_REQUIRE(min_ns_in_ms == serde_input(min_ms));
+
+    constexpr auto min_hrs = hours::min();
+    constexpr auto min_ns_in_hrs = std::chrono::duration_cast<hours>(min_ns);
+    BOOST_REQUIRE(min_ns_in_hrs == serde_input(min_hrs));
 }

@@ -85,8 +85,10 @@ inline std::vector<ss::sstring> random_sstrings(size_t size = 20) {
 }
 
 inline std::chrono::milliseconds random_duration_ms() {
-    return std::chrono::milliseconds(random_generators::get_int<uint64_t>(
-      0, std::chrono::milliseconds::max().count()));
+    constexpr auto max_ns = std::chrono::nanoseconds::max().count();
+    auto rand = random_generators::get_int<int64_t>(0, max_ns);
+    auto rand_ns = std::chrono::nanoseconds{rand};
+    return std::chrono::duration_cast<std::chrono::milliseconds>(rand_ns);
 }
 
 /*
