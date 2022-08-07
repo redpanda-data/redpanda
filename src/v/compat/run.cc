@@ -249,12 +249,17 @@ struct corpus_helper {
             auto&& [ia, ib] = compat_copy(std::move(instance));
             instance = std::move(ia);
 
-            if (!checker::check(std::move(ib), std::move(data))) {
+            try {
+                checker::check(std::move(ib), std::move(data));
+            } catch (const compat_error& e) {
                 json::StringBuffer buf;
                 json::PrettyWriter<json::StringBuffer> writer(buf);
                 doc.Accept(writer);
-                fmt::print("Input JSON: {}\n", buf.GetString());
-                throw compat_error(checker::name);
+                throw compat_error(fmt::format(
+                  "compat check failed for {}\nInput {}\n{}\n",
+                  checker::name,
+                  buf.GetString(),
+                  e.what()));
             }
         }
     }

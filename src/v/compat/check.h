@@ -36,8 +36,8 @@
         static std::vector<compat_binary> to_binary(class_name obj) {          \
             return compat_binary::serde_and_adl(obj);                          \
         }                                                                      \
-        static bool check(class_name obj, compat_binary test) {                \
-            return verify_adl_or_serde(obj, std::move(test));                  \
+        static void check(class_name obj, compat_binary test) {                \
+            verify_adl_or_serde(obj, std::move(test));                         \
         }                                                                      \
     };
 
@@ -53,8 +53,8 @@
         static std::vector<compat_binary> to_binary(class_name obj) {          \
             return {compat_binary::serde(obj)};                                \
         }                                                                      \
-        static bool check(class_name obj, compat_binary test) {                \
-            return verify_serde_only(obj, std::move(test));                    \
+        static void check(class_name obj, compat_binary test) {                \
+            verify_serde_only(obj, std::move(test));                           \
         }                                                                      \
     };
 
@@ -62,9 +62,8 @@ namespace compat {
 
 struct compat_error final : public std::runtime_error {
 public:
-    explicit compat_error(std::string_view name)
-      : std::runtime_error(
-        fmt::format("compat check failed for {{{}}}", name)) {}
+    explicit compat_error(const std::string& msg)
+      : std::runtime_error(msg) {}
 };
 
 /*
@@ -163,7 +162,7 @@ struct compat_check {
      * Check compatibility. Ensure that the instance of T (from JSON) matches
      * the binary encoded instance of T.
      */
-    static bool check(T, compat_binary);
+    static void check(T, compat_binary);
 };
 
 /*
@@ -191,34 +190,29 @@ T decode_serde_only(compat_binary test) {
 }
 
 template<typename T>
-bool verify_adl_or_serde(T expected, compat_binary test) {
+void verify_adl_or_serde(T expected, compat_binary test) {
     const auto name = test.name;
     auto decoded = decode_adl_or_serde<T>(std::move(test));
     if (expected != decoded) {
-        fmt::print(
-          "Verify of {{{}}} decoding failed:\nExpected: {}\nDecoded: {}\n",
+        throw compat_error(fmt::format(
+          "Verify of {{{}}} decoding failed:\nExpected: {}\nDecoded: {}",
           name,
           expected,
-          decoded);
-        return false;
+          decoded));
     }
-
-    return true;
 }
 
 template<typename T>
-bool verify_serde_only(T expected, compat_binary test) {
+void verify_serde_only(T expected, compat_binary test) {
     const auto name = test.name;
     auto decoded = decode_serde_only<T>(std::move(test));
     if (expected != decoded) {
-        fmt::print(
-          "Verify of {{{}}} decoding failed:\nExpected: {}\nDecoded: {}\n",
+        throw compat_error(fmt::format(
+          "Verify of {{{}}} decoding failed:\nExpected: {}\nDecoded: {}",
           name,
           expected,
-          decoded);
-        return false;
+          decoded));
     }
-    return true;
 }
 
 #define GEN_COMPAT_CHECK(Type, ToJson, FromJson)                               \
@@ -244,8 +238,8 @@ bool verify_serde_only(T expected, compat_binary test) {
             return compat_binary::serde_and_adl(obj);                          \
         }                                                                      \
                                                                                \
-        static bool check(Type obj, compat_binary test) {                      \
-            return verify_adl_or_serde(obj, std::move(test));                  \
+        static void check(Type obj, compat_binary test) {                      \
+            verify_adl_or_serde(obj, std::move(test));                         \
         }                                                                      \
     };
 
@@ -272,8 +266,8 @@ bool verify_serde_only(T expected, compat_binary test) {
             return {compat_binary::serde(obj)};                                \
         }                                                                      \
                                                                                \
-        static bool check(Type obj, compat_binary test) {                      \
-            return verify_serde_only(obj, std::move(test));                    \
+        static void check(Type obj, compat_binary test) {                      \
+            verify_serde_only(obj, std::move(test));                           \
         }                                                                      \
     };
 

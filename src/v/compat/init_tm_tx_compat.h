@@ -45,8 +45,8 @@ struct compat_check<cluster::init_tm_tx_request> {
     to_binary(cluster::init_tm_tx_request obj) {
         return compat_binary::serde_and_adl(obj);
     }
-    static bool check(cluster::init_tm_tx_request obj, compat_binary test) {
-        return verify_adl_or_serde(obj, std::move(test));
+    static void check(cluster::init_tm_tx_request obj, compat_binary test) {
+        verify_adl_or_serde(obj, std::move(test));
     }
 };
 
@@ -73,8 +73,8 @@ struct compat_check<cluster::init_tm_tx_reply> {
     static std::vector<compat_binary> to_binary(cluster::init_tm_tx_reply obj) {
         return compat_binary::serde_and_adl(obj);
     }
-    static bool check(cluster::init_tm_tx_reply obj, compat_binary test) {
-        return verify_adl_or_serde(obj, std::move(test));
+    static void check(cluster::init_tm_tx_reply obj, compat_binary test) {
+        verify_adl_or_serde(obj, std::move(test));
     }
 };
 

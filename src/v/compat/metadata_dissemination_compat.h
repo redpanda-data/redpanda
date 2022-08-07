@@ -46,9 +46,9 @@ struct compat_check<cluster::update_leadership_request> {
         return compat_binary::serde_and_adl(obj);
     }
 
-    static bool
+    static void
     check(cluster::update_leadership_request obj, compat_binary test) {
-        return verify_adl_or_serde(obj, std::move(test));
+        verify_adl_or_serde(obj, std::move(test));
     }
 };
 
@@ -82,9 +82,9 @@ struct compat_check<cluster::update_leadership_request_v2> {
         return compat_binary::serde_and_adl(obj);
     }
 
-    static bool
+    static void
     check(cluster::update_leadership_request_v2 obj, compat_binary test) {
-        return verify_adl_or_serde(obj, std::move(test));
+        verify_adl_or_serde(obj, std::move(test));
     }
 };
 
@@ -120,8 +120,8 @@ struct compat_check<cluster::get_leadership_reply> {
     to_binary(cluster::get_leadership_reply obj) {
         return compat_binary::serde_and_adl(obj);
     }
-    static bool check(cluster::get_leadership_reply obj, compat_binary test) {
-        return verify_adl_or_serde(obj, std::move(test));
+    static void check(cluster::get_leadership_reply obj, compat_binary test) {
+        verify_adl_or_serde(obj, std::move(test));
     }
 };
 
