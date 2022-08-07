@@ -48,6 +48,7 @@ public:
         empty,
         movement_planned,
         cancellations_planned,
+        waiting_for_maintenance_end,
         waiting_for_reports,
     };
 
@@ -67,6 +68,7 @@ private:
         std::vector<model::node_id> all_nodes;
         absl::flat_hash_map<model::node_id, node_disk_space> node_disk_reports;
         absl::flat_hash_set<model::node_id> unavailable_nodes;
+        size_t num_nodes_in_maintenance = 0;
 
         absl::flat_hash_map<model::ntp, size_t> ntp_sizes;
 

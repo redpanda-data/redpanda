@@ -151,7 +151,9 @@ ss::future<> partition_balancer_backend::do_tick() {
         _last_status = partition_balancer_status::in_progress;
     } else if (plan_data.status == planner_status::waiting_for_reports) {
         _last_status = partition_balancer_status::starting;
-    } else if (plan_data.failed_reassignments_count > 0) {
+    } else if (
+      plan_data.failed_reassignments_count > 0
+      || plan_data.status == planner_status::waiting_for_maintenance_end) {
         _last_status = partition_balancer_status::stalled;
     } else {
         _last_status = partition_balancer_status::ready;

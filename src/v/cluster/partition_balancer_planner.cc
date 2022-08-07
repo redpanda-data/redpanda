@@ -73,6 +73,11 @@ void partition_balancer_planner::init_per_node_state(
         }
 
         rrs.all_nodes.push_back(broker->id());
+
+        if (
+          broker->get_maintenance_state() == model::maintenance_state::active) {
+            rrs.num_nodes_in_maintenance += 1;
+        }
     }
 
     const auto now = raft::clock_type::now();
@@ -526,17 +531,23 @@ partition_balancer_planner::plan_reassignments(
 
     init_per_node_state(health_report, follower_metrics, rrs, result);
 
+    if (rrs.num_nodes_in_maintenance > 0) {
+        if (!result.violations.is_empty()) {
+            result.status = status::waiting_for_maintenance_end;
+        }
+        return result;
+    }
+
     if (_topic_table.has_updates_in_progress()) {
         get_unavailable_node_movement_cancellations(result.cancellations, rrs);
         if (!result.cancellations.empty()) {
-            result.status
-              = partition_balancer_planner::status::cancellations_planned;
+            result.status = status::cancellations_planned;
         }
         return result;
     }
 
     if (!all_reports_received(rrs)) {
-        result.status = partition_balancer_planner::status::waiting_for_reports;
+        result.status = status::waiting_for_reports;
         return result;
     }
 
@@ -547,8 +558,7 @@ partition_balancer_planner::plan_reassignments(
         get_unavailable_nodes_reassignments(result, rrs);
         get_full_node_reassignments(result, rrs);
         if (!result.reassignments.empty()) {
-            result.status
-              = partition_balancer_planner::status::movement_planned;
+            result.status = status::movement_planned;
         }
 
         return result;
