@@ -17,14 +17,11 @@ import (
 
 // ConsoleSpec defines the desired state of Console
 type ConsoleSpec struct {
-	ConsoleConfig `json:""`
-	ClusterKeyRef corev1.ObjectReference `json:"clusterKeyRef"`
-}
-
-// ConsoleConfig is the config passed to the Redpanda Console app
-type ConsoleConfig struct {
 	// +optional
 	Server Server `json:"server"`
+
+	Schema        Schema                 `json:"schema"`
+	ClusterKeyRef corev1.ObjectReference `json:"clusterKeyRef"`
 }
 
 // Server is the Console app HTTP server config
@@ -56,6 +53,11 @@ type Server struct {
 
 	// +kubebuilder:default=true
 	StripPrefix bool `json:"stripPrefix,omitempty" yaml:"stripPrefix,omitempty"`
+}
+
+// Schema defines configurable fields for Schema Registry
+type Schema struct {
+	Enabled bool `json:"enabled"`
 }
 
 // ConsoleStatus defines the observed state of Console

@@ -11,6 +11,7 @@ package v1alpha1
 
 import (
 	"fmt"
+	"net/url"
 	"time"
 
 	cmmeta "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
@@ -796,6 +797,16 @@ func (r *Cluster) PandaproxyAPITLS() *PandaproxyAPI {
 		}
 	}
 	return nil
+}
+
+// SchemaRegistryAPIInternalURL returns a SchemaRegistry URL string
+func (r *Cluster) SchemaRegistryAPIInternalURL() string {
+	scheme := "http"
+	if r.IsSchemaRegistryTLSEnabled() {
+		scheme = "https"
+	}
+	u := url.URL{Scheme: scheme, Host: r.Status.Nodes.SchemaRegistry.Internal}
+	return u.String()
 }
 
 // SchemaRegistryAPITLS returns a SchemaRegistry listener that has TLS enabled.

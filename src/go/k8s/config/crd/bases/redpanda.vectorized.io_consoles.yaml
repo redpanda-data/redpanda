@@ -95,6 +95,14 @@ spec:
                     description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
                     type: string
                 type: object
+              schema:
+                description: Schema defines configurable fields for Schema Registry
+                properties:
+                  enabled:
+                    type: boolean
+                required:
+                - enabled
+                type: object
               server:
                 description: Server is the Console app HTTP server config
                 properties:
@@ -129,6 +137,7 @@ spec:
                 type: object
             required:
             - clusterKeyRef
+            - schema
             type: object
           status:
             description: ConsoleStatus defines the observed state of Console
