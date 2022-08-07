@@ -73,7 +73,7 @@ struct compat_check<cluster::allocate_id_reply> {
     static cluster::allocate_id_reply from_json(json::Value& rd) {
         cluster::allocate_id_reply obj;
         json_read(id);
-        obj.ec = cluster::errc(json::read_member_enum(rd, "ec", obj.ec));
+        json_read(ec);
         return obj;
     }
 

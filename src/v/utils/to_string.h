@@ -18,6 +18,7 @@
 
 #include <optional>
 #include <ostream>
+#include <variant>
 
 namespace std {
 
@@ -28,6 +29,13 @@ std::ostream& operator<<(std::ostream& os, const std::optional<T>& opt) {
         return os;
     }
     return os << "{nullopt}";
+}
+
+template<typename... T>
+requires(sizeof...(T) > 0) std::ostream&
+operator<<(std::ostream& os, const std::variant<T...>& v) {
+    std::visit([&os](auto& arg) { fmt::print(os, "{{{}}}", arg); }, v);
+    return os;
 }
 
 inline std::ostream&

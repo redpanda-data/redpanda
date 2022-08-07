@@ -13,6 +13,7 @@
 #include "model/fundamental.h"
 #include "seastarx.h"
 #include "utils/named_type.h"
+#include "utils/to_string.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/net/inet_address.hh>
@@ -432,7 +433,7 @@ private:
  */
 class resource_pattern_filter
   : public serde::envelope<resource_pattern_filter, serde::version<0>> {
-private:
+public:
     enum class serialized_pattern_type {
         literal = 0,
         prefixed = 1,
@@ -449,8 +450,13 @@ private:
         __builtin_unreachable();
     }
 
-public:
-    struct pattern_match {};
+    struct pattern_match {
+        friend std::ostream&
+        operator<<(std::ostream& os, const pattern_match&) {
+            fmt::print(os, "{{}}");
+            return os;
+        }
+    };
     using pattern_filter_type = std::variant<pattern_type, pattern_match>;
 
     resource_pattern_filter() = default;
@@ -535,11 +541,36 @@ public:
         write(out, pattern);
     }
 
+    friend std::ostream&
+    operator<<(std::ostream& o, const resource_pattern_filter& f) {
+        fmt::print(
+          o,
+          "{{ resource: {} name: {} pattern: {} }}",
+          f._resource,
+          f._name,
+          f._pattern);
+        return o;
+    }
+
 private:
     std::optional<resource_type> _resource;
     std::optional<ss::sstring> _name;
     std::optional<pattern_filter_type> _pattern;
 };
+
+inline std::ostream& operator<<(
+  std::ostream& os, resource_pattern_filter::serialized_pattern_type type) {
+    using pattern_type = resource_pattern_filter::serialized_pattern_type;
+    switch (type) {
+    case pattern_type::literal:
+        return os << "literal";
+    case pattern_type::match:
+        return os << "match";
+    case pattern_type::prefixed:
+        return os << "prefixed";
+    }
+    __builtin_unreachable();
+}
 
 inline bool
 resource_pattern_filter::matches(const resource_pattern& pattern) const {
@@ -650,6 +681,18 @@ public:
         return std::tie(_principal, _host, _operation, _permission);
     }
 
+    friend std::ostream&
+    operator<<(std::ostream& o, const acl_entry_filter& f) {
+        fmt::print(
+          o,
+          "{{ pattern: {} host: {} operation: {}, permission: {} }}",
+          f._principal,
+          f._host,
+          f._operation,
+          f._permission);
+        return o;
+    }
+
 private:
     std::optional<acl_principal> _principal;
     std::optional<acl_host> _host;
@@ -700,6 +743,12 @@ public:
 
     const resource_pattern_filter& pattern() const { return _pattern; }
     const acl_entry_filter& entry() const { return _acl; }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const acl_binding_filter& f) {
+        fmt::print(o, "{{ pattern: {} acl: {} }}", f._pattern, f._acl);
+        return o;
+    }
 
     auto serde_fields() { return std::tie(_pattern, _acl); }
 
