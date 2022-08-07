@@ -22,6 +22,8 @@
 
 #include <seastar/net/inet_address.hh>
 
+#include <type_traits>
+
 namespace json {
 
 inline char const* to_str(rapidjson::Type const t) {
@@ -127,8 +129,26 @@ void write_member(Writer& w, char const* key, T const& value) {
     rjson_serialize(w, value);
 }
 
+// Reads the enum's underlying type directly.
+template<typename Enum>
+inline auto read_enum_ut(json::Value const& v, char const* key, Enum)
+  -> std::underlying_type_t<Enum> {
+    std::underlying_type_t<Enum> value;
+    read_member(v, key, value);
+    return value;
+}
+
+template<typename Enum>
+requires(std::is_enum_v<Enum>) inline void read_member(
+  json::Value const& v, char const* key, Enum& e) {
+    std::underlying_type_t<Enum> value;
+    read_member(v, key, value);
+    e = Enum(value);
+}
+
 template<typename T>
-void read_member(json::Value const& v, char const* key, T& target) {
+requires(!std::is_enum_v<T>) void read_member(
+  json::Value const& v, char const* key, T& target) {
     auto const it = v.FindMember(key);
     if (it != v.MemberEnd()) {
         read_value(it->value, target);
@@ -137,14 +157,6 @@ void read_member(json::Value const& v, char const* key, T& target) {
         std::cout << "key " << key << " not found, default initializing"
                   << std::endl;
     }
-}
-
-template<typename Enum>
-inline auto read_member_enum(json::Value const& v, char const* key, Enum)
-  -> std::underlying_type_t<Enum> {
-    std::underlying_type_t<Enum> value;
-    read_member(v, key, value);
-    return value;
 }
 
 inline void
@@ -382,8 +394,8 @@ inline void rjson_serialize(
 
 inline void
 read_value(json::Value const& rd, security::acl_principal& principal) {
-    auto type = security::principal_type(
-      read_member_enum(rd, "type", security::principal_type{}));
+    security::principal_type type{};
+    read_member(rd, "type", type);
     ss::sstring name;
     read_member(rd, "name", name);
     principal = security::acl_principal(type, std::move(name));
@@ -403,12 +415,12 @@ inline void rjson_serialize(
 inline void read_value(json::Value const& rd, security::acl_entry& entry) {
     security::acl_principal principal;
     security::acl_host host;
+    security::acl_operation operation{};
+    security::acl_permission permission{};
     read_member(rd, "principal", principal);
     read_member(rd, "host", host);
-    auto operation = security::acl_operation(
-      read_member_enum(rd, "operation", security::acl_operation{}));
-    auto permission = security::acl_permission(
-      read_member_enum(rd, "permission", security::acl_permission{}));
+    read_member(rd, "operation", operation);
+    read_member(rd, "permission", permission);
     entry = security::acl_entry(
       std::move(principal), host, operation, permission);
 }
@@ -430,11 +442,11 @@ inline void rjson_serialize(
 inline void
 read_value(json::Value const& rd, security::resource_pattern& pattern) {
     ss::sstring name;
-    auto resource = security::resource_type(
-      read_member_enum(rd, "resource", security::resource_type{}));
+    security::resource_type resource{};
+    security::pattern_type pattern_type{};
+    read_member(rd, "resource", resource);
     read_member(rd, "name", name);
-    auto pattern_type = security::pattern_type(
-      read_member_enum(rd, "pattern", security::pattern_type{}));
+    read_member(rd, "pattern", pattern_type);
     pattern = security::resource_pattern(
       resource, std::move(name), pattern_type);
 }
@@ -486,7 +498,7 @@ inline void rjson_serialize(
 
 inline void
 read_value(json::Value const& rd, cluster::delete_acls_result& data) {
-    data.error = cluster::errc(read_member_enum(rd, "error", cluster::errc{}));
+    read_member(rd, "error", data.error);
     read_member(rd, "bindings", data.bindings);
 }
 

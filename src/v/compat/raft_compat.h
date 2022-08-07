@@ -15,6 +15,8 @@
 #include "compat/raft_json.h"
 #include "raft/types.h"
 
+#include <type_traits>
+
 namespace compat {
 
 /*
@@ -76,7 +78,7 @@ struct compat_check<raft::timeout_now_reply> {
         raft::timeout_now_reply obj;
         json_read(target_node_id);
         json_read(term);
-        auto result = json::read_member_enum(rd, "result", obj.result);
+        auto result = json::read_enum_ut(rd, "result", obj.result);
         switch (result) {
         case 0:
             obj.result = raft::timeout_now_reply::status::success;
@@ -157,7 +159,7 @@ struct compat_check<raft::transfer_leadership_reply> {
     static raft::transfer_leadership_reply from_json(json::Value& rd) {
         raft::transfer_leadership_reply obj;
         json_read(success);
-        auto result = json::read_member_enum(rd, "result", obj.result);
+        auto result = json::read_enum_ut(rd, "result", obj.result);
         switch (result) {
         case 0:
             obj.result = raft::errc::success;

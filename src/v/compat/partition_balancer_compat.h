@@ -31,8 +31,7 @@ GEN_COMPAT_CHECK_SERDE_ONLY(
   {
       json_read(error);
       json_read(last_tick_time);
-      obj.status = cluster::partition_balancer_status(
-        json::read_member_enum(rd, "status", obj.status));
+      json_read(status);
       json_read(violations);
   })
 

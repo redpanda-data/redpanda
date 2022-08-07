@@ -91,7 +91,7 @@ inline void read_value(json::Value const& rd, raft::append_entries_reply& out) {
     json_read(last_flushed_log_index);
     json_read(last_dirty_log_index);
     json_read(last_term_base_offset);
-    auto result = read_member_enum(rd, "result", obj.result);
+    auto result = read_enum_ut(rd, "result", obj.result);
     switch (result) {
     case 0:
         obj.result = raft::append_entries_reply::status::success;
