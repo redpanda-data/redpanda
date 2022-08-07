@@ -12,14 +12,19 @@ package v1alpha1
 import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 // ConsoleSpec defines the desired state of Console
 type ConsoleSpec struct {
+	ConsoleConfig `json:""`
+	ClusterKeyRef corev1.ObjectReference `json:"clusterKeyRef"`
+}
+
+// ConsoleConfig is the config passed to the Redpanda Console app
+type ConsoleConfig struct {
 	// +optional
 	Server Server `json:"server"`
-
-	ClusterKeyRef corev1.ObjectReference `json:"clusterKeyRef"`
 }
 
 // Server is the Console app HTTP server config
@@ -66,6 +71,11 @@ type Console struct {
 
 	Spec   ConsoleSpec   `json:"spec,omitempty"`
 	Status ConsoleStatus `json:"status,omitempty"`
+}
+
+// GetClusterRef returns the NamespacedName of referenced Cluster object
+func (c *Console) GetClusterRef() types.NamespacedName {
+	return types.NamespacedName{Name: c.Spec.ClusterKeyRef.Name, Namespace: c.Spec.ClusterKeyRef.Namespace}
 }
 
 //+kubebuilder:object:root=true

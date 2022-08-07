@@ -11,19 +11,24 @@ package redpanda
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/go-logr/logr"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 )
 
 // ConsoleReconciler reconciles a Console object
 type ConsoleReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+	Log    logr.Logger
 }
 
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
@@ -32,19 +37,34 @@ type ConsoleReconciler struct {
 //+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=consoles/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=consoles/finalizers,verbs=update
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the Console object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.12.1/pkg/reconcile
 func (r *ConsoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
+	log := r.Log.WithValues("redpandaconsole", req.NamespacedName)
 
-	// TODO(user): your logic here
+	log.Info(fmt.Sprintf("Starting reconcile loop for %v", req.NamespacedName))
+	defer log.Info(fmt.Sprintf("Finished reconcile loop for %v", req.NamespacedName))
+
+	console := &redpandav1alpha1.Console{}
+	if err := r.Get(ctx, req.NamespacedName, console); err != nil {
+		if apierrors.IsNotFound(err) {
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, err
+	}
+
+	cluster := &redpandav1alpha1.Cluster{}
+	if err := r.Get(ctx, console.GetClusterRef(), cluster); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	applyResources := []resources.Resource{
+		consolepkg.NewConfigMap(r.Client, r.Scheme, console, cluster, log),
+	}
+
+	for _, each := range applyResources {
+		if err := each.Ensure(ctx); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 
 	return ctrl.Result{}, nil
 }
