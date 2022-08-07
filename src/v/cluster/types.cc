@@ -417,7 +417,7 @@ std::ostream& operator<<(std::ostream& o, const hello_request& h) {
 }
 
 std::ostream& operator<<(std::ostream& o, const hello_reply& h) {
-    fmt::print(o, "{{hello_reply: error {}, latest_version: {})}}", h.error);
+    fmt::print(o, "{{hello_reply: error {}}}", h.error);
     return o;
 }
 
