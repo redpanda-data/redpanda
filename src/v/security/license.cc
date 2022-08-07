@@ -217,23 +217,6 @@ bool license::is_expired() const noexcept {
     return now > expiry;
 }
 
-void license::serde_read(iobuf_parser& in, const serde::header& h) {
-    using serde::read_nested;
-    format_version = read_nested<uint8_t>(in, h._bytes_left_limit);
-    type = read_nested<license_type>(in, h._bytes_left_limit);
-    organization = read_nested<ss::sstring>(in, h._bytes_left_limit);
-    expiry = std::chrono::seconds(
-      read_nested<int64_t>(in, h._bytes_left_limit));
-}
-
-void license::serde_write(iobuf& out) {
-    using serde::write;
-    write(out, format_version);
-    write(out, type);
-    write(out, organization);
-    write(out, static_cast<int64_t>(expiry.count()));
-}
-
 } // namespace security
 
 namespace fmt {
