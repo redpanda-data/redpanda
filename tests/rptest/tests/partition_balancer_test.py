@@ -25,6 +25,7 @@ from rptest.tests.end_to_end import EndToEndTest
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool, RpkException
 from ducktape.cluster.cluster_spec import ClusterSpec
+from ducktape.mark import matrix
 
 # We inject failures which might cause consumer groups
 # to re-negotiate, so it is necessary to have a longer
@@ -457,3 +458,82 @@ class PartitionBalancerTest(EndToEndTest):
                 f"node {self.redpanda.idx(n)}: "
                 f"disk used percentage: {int(100.0 * used_ratio)}")
             assert used_ratio < 0.8
+
+    @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    @matrix(kill_same_node=[True, False])
+    def test_maintenance_mode(self, kill_same_node):
+        """
+        Test interaction with maintenance mode: the balancer should not schedule
+        any movements as long as there is a node in maintenance mode.
+        Test scenario is as follows:
+        * enable maintenance mode on some node
+        * kill a node (the same or some other)
+        * check that we don't move any partitions and node switched to maintenance
+          mode smoothly
+        * turn maintenance mode off, check that partition balancing resumes
+        """
+        self.start_redpanda(num_nodes=5)
+
+        self.topic = TopicSpec(partition_count=random.randint(20, 30))
+        self.client().create_topic(self.topic)
+
+        self.start_producer(1)
+        self.start_consumer(1)
+        self.await_startup()
+
+        # throttle recovery to simulate long-running partition moves
+        self._throttle_recovery(10)
+
+        # choose a node
+        node = random.choice(self.redpanda.nodes)
+        node_id = self.redpanda.idx(node)
+
+        rpk = RpkTool(self.redpanda)
+        admin = Admin(self.redpanda)
+
+        rpk.cluster_maintenance_enable(node, wait=True)
+        # the node should now report itself in maintenance mode
+        assert admin.maintenance_status(node)["draining"], \
+                    f"{node.name} not in expected maintenance mode"
+
+        def entered_maintenance_mode(node):
+            try:
+                status = admin.maintenance_status(node)
+            except IOError:
+                return False
+            return status["finished"] and not status["errors"] and \
+                status["partitions"] > 0
+
+        with self.NodeStopper(self) as ns:
+            if kill_same_node:
+                to_kill = node
+            else:
+                to_kill = random.choice([
+                    n for n in self.redpanda.nodes
+                    if self.redpanda.idx(n) != node_id
+                ])
+
+            ns.make_unavailable(to_kill)
+            time.sleep(self.NODE_AVAILABILITY_TIMEOUT)
+            self.wait_until_status(lambda s: s["status"] == "stalled")
+
+            if kill_same_node:
+                ns.make_available()
+
+            wait_until(lambda: entered_maintenance_mode(node),
+                       timeout_sec=120,
+                       backoff_sec=10)
+
+            # return back to normal
+            rpk.cluster_maintenance_disable(node)
+            # use raw admin interface to avoid waiting for the killed node
+            admin.patch_cluster_config(
+                {"raft_learner_recovery_rate": 1_000_000})
+
+            self.wait_until_status(lambda s: s["status"] == "ready")
+
+            if not kill_same_node:
+                self.check_no_replicas_on_node(to_kill)
+
+        self.run_validation(enable_idempotence=False,
+                            consumer_timeout_sec=CONSUMER_TIMEOUT)
