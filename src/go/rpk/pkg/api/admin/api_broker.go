@@ -113,3 +113,8 @@ func (a *AdminAPI) DisableMaintenanceMode(ctx context.Context, nodeID int) error
 		nil,
 	)
 }
+
+func (a *AdminAPI) CancelNodePartitionsMovement(ctx context.Context, node int) ([]PartitionsMovementResult, error) {
+	var response []PartitionsMovementResult
+	return response, a.sendAny(ctx, http.MethodPost, fmt.Sprintf("%s/%d/cancel_partition_moves", brokersEndpoint, node), nil, &response)
+}
