@@ -31,6 +31,7 @@
 #include "redpanda/admin_server.h"
 #include "resource_mgmt/cpu_scheduling.h"
 #include "resource_mgmt/memory_groups.h"
+#include "resource_mgmt/scheduling_groups_probe.h"
 #include "resource_mgmt/smp_groups.h"
 #include "rpc/fwd.h"
 #include "seastarx.h"
@@ -157,6 +158,7 @@ private:
       _schema_reg_config;
     std::optional<kafka::client::configuration> _schema_reg_client_config;
     scheduling_groups _scheduling_groups;
+    scheduling_groups_probe _scheduling_groups_probe;
     ss::logger _log;
 
     ss::sharded<rpc::connection_cache> _connection_cache;

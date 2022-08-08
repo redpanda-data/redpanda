@@ -294,8 +294,11 @@ void application::initialize(
     }
 
     _scheduling_groups.create_groups().get();
-    _deferred.emplace_back(
-      [this] { _scheduling_groups.destroy_groups().get(); });
+    _scheduling_groups_probe.wire_up(_scheduling_groups);
+    _deferred.emplace_back([this] {
+        _scheduling_groups_probe.clear();
+        _scheduling_groups.destroy_groups().get();
+    });
 
     if (proxy_cfg) {
         _proxy_config.emplace(*proxy_cfg);
