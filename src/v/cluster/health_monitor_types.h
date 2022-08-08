@@ -274,6 +274,9 @@ struct get_node_health_request
     operator==(const get_node_health_request&, const get_node_health_request&)
       = default;
 
+    friend std::ostream&
+    operator<<(std::ostream&, const get_node_health_request&);
+
     auto serde_fields() { return std::tie(filter); }
 };
 
@@ -287,6 +290,9 @@ struct get_node_health_reply
     friend bool
     operator==(const get_node_health_reply&, const get_node_health_reply&)
       = default;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const get_node_health_reply&);
 
     auto serde_fields() { return std::tie(error, report); }
 };
@@ -310,6 +316,9 @@ struct get_cluster_health_request
     friend bool operator==(
       const get_cluster_health_request&, const get_cluster_health_request&)
       = default;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const get_cluster_health_request&);
 
     void serde_write(iobuf& out) {
         using serde::write;
@@ -339,6 +348,9 @@ struct get_cluster_health_reply
     friend bool
     operator==(const get_cluster_health_reply&, const get_cluster_health_reply&)
       = default;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const get_cluster_health_reply&);
 
     auto serde_fields() { return std::tie(error, report); }
 };
