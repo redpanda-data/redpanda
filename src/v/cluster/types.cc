@@ -169,6 +169,12 @@ create_partitions_configuration::create_partitions_configuration(
   : tp_ns(std::move(tp_ns))
   , new_total_partition_count(cnt) {}
 
+std::ostream&
+operator<<(std::ostream& o, const update_topic_properties_request& r) {
+    fmt::print(o, "{{updates: {}}}", r.updates);
+    return o;
+}
+
 std::ostream& operator<<(std::ostream& o, const topic_properties_update& tpu) {
     fmt::print(
       o,

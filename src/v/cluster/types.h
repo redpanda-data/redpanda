@@ -1485,6 +1485,9 @@ struct update_topic_properties_request
   : serde::envelope<update_topic_properties_request, serde::version<0>> {
     std::vector<topic_properties_update> updates;
 
+    friend std::ostream&
+    operator<<(std::ostream&, const update_topic_properties_request&);
+
     friend bool operator==(
       const update_topic_properties_request&,
       const update_topic_properties_request&)

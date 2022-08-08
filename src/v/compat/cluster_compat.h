@@ -423,4 +423,9 @@ GEN_COMPAT_CHECK(
       json_read(custom_properties);
   })
 
+GEN_COMPAT_CHECK(
+  cluster::update_topic_properties_request,
+  { json_write(updates); },
+  { json_read(updates); })
+
 } // namespace compat
