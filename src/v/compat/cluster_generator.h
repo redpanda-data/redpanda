@@ -723,4 +723,15 @@ struct instance_generator<cluster::create_topics_reply> {
     static std::vector<cluster::create_topics_reply> limits() { return {}; }
 };
 
+template<>
+struct instance_generator<v8_engine::data_policy> {
+    static v8_engine::data_policy random() {
+        return {
+          tests::random_named_string<ss::sstring>(),
+          tests::random_named_string<ss::sstring>()};
+    }
+
+    static std::vector<v8_engine::data_policy> limits() { return {}; }
+};
+
 } // namespace compat

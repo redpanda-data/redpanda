@@ -137,7 +137,8 @@ using compat_checks = type_list<
   cluster::topic_properties,
   cluster::topic_configuration,
   model::partition_metadata,
-  model::topic_metadata>;
+  model::topic_metadata,
+  v8_engine::data_policy>;
 
 template<typename T>
 struct corpus_helper {

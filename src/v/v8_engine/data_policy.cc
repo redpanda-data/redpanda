@@ -16,8 +16,8 @@ std::ostream& operator<<(std::ostream& os, const data_policy& datapolicy) {
     fmt::print(
       os,
       "function_name: {} script_name: {}",
-      datapolicy._function_name,
-      datapolicy._script_name);
+      datapolicy.function_name(),
+      datapolicy.script_name());
     return os;
 }
 

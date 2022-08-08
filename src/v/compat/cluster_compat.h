@@ -371,4 +371,15 @@ GEN_COMPAT_CHECK(
       json_read(configs);
   })
 
+GEN_COMPAT_CHECK(
+  v8_engine::data_policy,
+  {
+      json_write(fn_name);
+      json_write(sct_name);
+  },
+  {
+      json_read(fn_name);
+      json_read(sct_name);
+  })
+
 } // namespace compat
