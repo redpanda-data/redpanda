@@ -120,6 +120,40 @@ node_config::node_config() noexcept
       {.visibility = visibility::user},
       {}) {}
 
+void validate_multi_node_propert_config(
+  std::map<ss::sstring, ss::sstring>& errors) {
+    auto const& cfg = config::node();
+    const auto& kafka_api = cfg.kafka_api.value();
+    for (auto const& ep : kafka_api) {
+        const auto& n = ep.name;
+        auto authn_method = ep.authn_method;
+        if (authn_method.has_value()) {
+            if (authn_method == config::broker_authn_method::mtls_identity) {
+                auto kafka_api_tls = config::node().kafka_api_tls();
+                auto tls_it = std::find_if(
+                  kafka_api_tls.begin(),
+                  kafka_api_tls.end(),
+                  [&n](const config::endpoint_tls_config& ep) {
+                      return ep.name == n;
+                  });
+                if (
+                  tls_it == kafka_api_tls.end() || !tls_it->config.is_enabled()
+                  || !tls_it->config.get_require_client_auth()) {
+                    errors.emplace(
+                      "kafka_api.authentication_method",
+                      ssx::sformat(
+                        "kafka_api {} configured with {}, but there is not an "
+                        "equivalent kafka_api_tls config that requires client "
+                        "auth. Setting authentication_method to {}",
+                        n,
+                        to_string_view(*authn_method),
+                        to_string_view(config::broker_authn_method::none)));
+                }
+            }
+        }
+    }
+}
+
 node_config::error_map_t node_config::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {
         throw std::invalid_argument("'redpanda' root is required");
@@ -127,7 +161,9 @@ node_config::error_map_t node_config::load(const YAML::Node& root_node) {
 
     const auto& ignore = shard_local_cfg().property_names();
 
-    return config_store::read_yaml(root_node["redpanda"], ignore);
+    auto errors = config_store::read_yaml(root_node["redpanda"], ignore);
+    validate_multi_node_propert_config(errors);
+    return errors;
 }
 
 /// Get a shard local copy of the node_config.
