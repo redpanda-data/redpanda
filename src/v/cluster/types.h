@@ -1924,6 +1924,12 @@ struct reconciliation_state_reply
       const reconciliation_state_reply&, const reconciliation_state_reply&)
       = default;
 
+    friend std::ostream&
+    operator<<(std::ostream& o, const reconciliation_state_reply& rep) {
+        fmt::print(o, "{{ results {} }}", rep.results);
+        return o;
+    }
+
     auto serde_fields() { return std::tie(results); }
 };
 
