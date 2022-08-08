@@ -47,8 +47,8 @@ struct compat_check<cluster::try_abort_request> {
     to_binary(cluster::try_abort_request obj) {
         return compat_binary::serde_and_adl(obj);
     }
-    static bool check(cluster::try_abort_request obj, compat_binary test) {
-        return verify_adl_or_serde(obj, std::move(test));
+    static void check(cluster::try_abort_request obj, compat_binary test) {
+        verify_adl_or_serde(obj, std::move(test));
     }
 };
 
@@ -77,8 +77,8 @@ struct compat_check<cluster::try_abort_reply> {
     static std::vector<compat_binary> to_binary(cluster::try_abort_reply obj) {
         return compat_binary::serde_and_adl(obj);
     }
-    static bool check(cluster::try_abort_reply obj, compat_binary test) {
-        return verify_adl_or_serde(obj, std::move(test));
+    static void check(cluster::try_abort_reply obj, compat_binary test) {
+        verify_adl_or_serde(obj, std::move(test));
     }
 };
 

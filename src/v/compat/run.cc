@@ -116,13 +116,6 @@ using compat_checks = type_list<
   cluster::delete_acls_request,
   cluster::delete_acls_reply>;
 
-struct compat_error final : public std::runtime_error {
-public:
-    explicit compat_error(std::string_view name)
-      : std::runtime_error(
-        fmt::format("compat check failed for {{{}}}", name)) {}
-};
-
 template<typename T>
 struct corpus_helper {
     using checker = compat_check<T>;
@@ -138,6 +131,7 @@ struct corpus_helper {
      *     {
      *       "name": "serde",
      *       "data": "base64 encoding",
+     *       "crc32c": "data checksum",
      *     },
      *   ]
      * }
@@ -162,11 +156,15 @@ struct corpus_helper {
         auto binaries = checker::to_binary(std::move(tb));
         vassert(!binaries.empty(), "No binaries found for {}", checker::name);
         for (auto& b : binaries) {
+            crc::crc32c crc;
+            crc_extend_iobuf(crc, b.data);
             w.StartObject();
             w.Key("name");
             w.String(b.name);
             w.Key("data");
             w.String(iobuf_to_base64(b.data));
+            w.Key("crc32c");
+            w.Uint(crc.value());
             w.EndObject();
         }
         w.EndArray();
@@ -225,6 +223,23 @@ struct corpus_helper {
             vassert(binary["name"].IsString(), "encoding name is not string");
             vassert(binary.HasMember("data"), "encoding doesn't have data");
             vassert(binary["data"].IsString(), "encoding data is not string");
+            vassert(binary.HasMember("crc32c"), "encoding doesn't have crc32c");
+            vassert(
+              binary["crc32c"].IsUint(), "encoding crc32c is not integer");
+
+            const auto binary_data = bytes_to_iobuf(
+              base64_to_bytes(binary["data"].GetString()));
+
+            crc::crc32c crc;
+            crc_extend_iobuf(crc, binary_data);
+
+            if (crc.value() != binary["crc32c"].GetUint()) {
+                throw compat_error(fmt::format(
+                  "Test {} has invalid crc {} expected {}",
+                  checker::name,
+                  crc.value(),
+                  binary["crc32c"].GetUint()));
+            }
 
             compat_binary data(
               binary["name"].GetString(),
@@ -234,12 +249,17 @@ struct corpus_helper {
             auto&& [ia, ib] = compat_copy(std::move(instance));
             instance = std::move(ia);
 
-            if (!checker::check(std::move(ib), std::move(data))) {
+            try {
+                checker::check(std::move(ib), std::move(data));
+            } catch (const compat_error& e) {
                 json::StringBuffer buf;
                 json::PrettyWriter<json::StringBuffer> writer(buf);
                 doc.Accept(writer);
-                fmt::print("Input JSON: {}\n", buf.GetString());
-                throw compat_error(checker::name);
+                throw compat_error(fmt::format(
+                  "compat check failed for {}\nInput {}\n{}\n",
+                  checker::name,
+                  buf.GetString(),
+                  e.what()));
             }
         }
     }
@@ -278,11 +298,13 @@ check_types(type_list<Types...>, std::string name, json::Document& doc) {
     (maybe_check<Types>(name, doc), ...);
 }
 
-static void check(json::Document doc) {
-    vassert(doc.HasMember("name"), "doc doesn't have name");
-    vassert(doc["name"].IsString(), "name is doc is not a string");
-    auto name = doc["name"].GetString();
-    check_types(compat_checks{}, name, doc);
+ss::future<> check_type(json::Document doc) {
+    return ss::async([doc = std::move(doc)]() mutable {
+        vassert(doc.HasMember("name"), "doc doesn't have name");
+        vassert(doc["name"].IsString(), "name is doc is not a string");
+        auto name = doc["name"].GetString();
+        check_types(compat_checks{}, name, doc);
+    });
 }
 
 ss::future<> write_corpus(const std::filesystem::path& dir) {
@@ -293,14 +315,12 @@ ss::future<> write_corpus(const std::filesystem::path& dir) {
     });
 }
 
-ss::future<> check_type(const std::filesystem::path& file) {
+ss::future<json::Document> parse_type(const std::filesystem::path& file) {
     return read_fully_to_string(file).then([file](auto data) {
-        return ss::async([&] {
-            json::Document doc;
-            doc.Parse(data);
-            vassert(!doc.HasParseError(), "JSON {} has parse errors", file);
-            check(std::move(doc));
-        });
+        json::Document doc;
+        doc.Parse(data);
+        vassert(!doc.HasParseError(), "JSON {} has parse errors", file);
+        return doc;
     });
 }
 

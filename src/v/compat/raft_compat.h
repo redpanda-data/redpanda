@@ -51,8 +51,8 @@ struct compat_check<raft::timeout_now_request> {
         return compat_binary::serde_and_adl(obj);
     }
 
-    static bool check(raft::timeout_now_request obj, compat_binary test) {
-        return verify_adl_or_serde(obj, std::move(test));
+    static void check(raft::timeout_now_request obj, compat_binary test) {
+        verify_adl_or_serde(obj, std::move(test));
     }
 };
 
@@ -96,8 +96,8 @@ struct compat_check<raft::timeout_now_reply> {
         return compat_binary::serde_and_adl(obj);
     }
 
-    static bool check(raft::timeout_now_reply obj, compat_binary test) {
-        return verify_adl_or_serde(obj, std::move(test));
+    static void check(raft::timeout_now_reply obj, compat_binary test) {
+        verify_adl_or_serde(obj, std::move(test));
     }
 };
 
@@ -132,9 +132,9 @@ struct compat_check<raft::transfer_leadership_request> {
         return compat_binary::serde_and_adl(obj);
     }
 
-    static bool
+    static void
     check(raft::transfer_leadership_request obj, compat_binary test) {
-        return verify_adl_or_serde(obj, std::move(test));
+        verify_adl_or_serde(obj, std::move(test));
     }
 };
 
@@ -241,8 +241,8 @@ struct compat_check<raft::transfer_leadership_reply> {
         return compat_binary::serde_and_adl(obj);
     }
 
-    static bool check(raft::transfer_leadership_reply obj, compat_binary test) {
-        return verify_adl_or_serde(obj, std::move(test));
+    static void check(raft::transfer_leadership_reply obj, compat_binary test) {
+        verify_adl_or_serde(obj, std::move(test));
     }
 };
 
@@ -288,8 +288,8 @@ struct compat_check<raft::install_snapshot_request> {
         return compat_binary::serde_and_adl(std::move(obj));
     }
 
-    static bool check(raft::install_snapshot_request obj, compat_binary test) {
-        return verify_adl_or_serde(std::move(obj), std::move(test));
+    static void check(raft::install_snapshot_request obj, compat_binary test) {
+        verify_adl_or_serde(std::move(obj), std::move(test));
     }
 };
 
@@ -344,8 +344,8 @@ struct compat_check<raft::install_snapshot_reply> {
         return compat_binary::serde_and_adl(obj);
     }
 
-    static bool check(raft::install_snapshot_reply obj, compat_binary test) {
-        return verify_adl_or_serde(obj, std::move(test));
+    static void check(raft::install_snapshot_reply obj, compat_binary test) {
+        verify_adl_or_serde(obj, std::move(test));
     }
 };
 
@@ -387,8 +387,8 @@ struct compat_check<raft::vote_request> {
         return compat_binary::serde_and_adl(obj);
     }
 
-    static bool check(raft::vote_request obj, compat_binary test) {
-        return verify_adl_or_serde(obj, std::move(test));
+    static void check(raft::vote_request obj, compat_binary test) {
+        verify_adl_or_serde(obj, std::move(test));
     }
 };
 
@@ -424,8 +424,8 @@ struct compat_check<raft::vote_reply> {
         return compat_binary::serde_and_adl(obj);
     }
 
-    static bool check(raft::vote_reply obj, compat_binary test) {
-        return verify_adl_or_serde(obj, std::move(test));
+    static void check(raft::vote_reply obj, compat_binary test) {
+        verify_adl_or_serde(obj, std::move(test));
     }
 };
 
@@ -456,8 +456,8 @@ struct compat_check<raft::heartbeat_request> {
         return compat_binary::serde_and_adl(std::move(obj));
     }
 
-    static bool check(raft::heartbeat_request expected, compat_binary test) {
-        return verify_adl_or_serde(std::move(expected), std::move(test));
+    static void check(raft::heartbeat_request expected, compat_binary test) {
+        verify_adl_or_serde(std::move(expected), std::move(test));
     }
 };
 
@@ -496,8 +496,8 @@ struct compat_check<raft::heartbeat_reply> {
         return compat_binary::serde_and_adl(std::move(obj));
     }
 
-    static bool check(raft::heartbeat_reply expected, compat_binary test) {
-        return verify_adl_or_serde(std::move(expected), std::move(test));
+    static void check(raft::heartbeat_reply expected, compat_binary test) {
+        verify_adl_or_serde(std::move(expected), std::move(test));
     }
 };
 
@@ -583,37 +583,31 @@ struct compat_check<raft::append_entries_request> {
         return compat_binary::serde_and_adl(std::move(obj));
     }
 
-    static bool
+    static void
     check(raft::append_entries_request expected, compat_binary test) {
         auto decoded = decode_adl_or_serde<raft::append_entries_request>(
           std::move(test));
 
         if (decoded.node_id != expected.node_id) {
-            fmt::print(
-              "Expected node_id {} got {}\n",
-              expected.node_id,
-              decoded.node_id);
-            return false;
+            throw compat_error(fmt::format(
+              "Expected node_id {} got {}", expected.node_id, decoded.node_id));
         }
 
         if (decoded.target_node_id != expected.target_node_id) {
-            fmt::print(
-              "Expected target_node_id {} got {}\n",
+            throw compat_error(fmt::format(
+              "Expected target_node_id {} got {}",
               expected.target_node_id,
-              decoded.target_node_id);
-            return false;
+              decoded.target_node_id));
         }
 
         if (decoded.meta != expected.meta) {
-            fmt::print(
-              "Expected meta {} got {}\n", expected.meta, decoded.meta);
-            return false;
+            throw compat_error(fmt::format(
+              "Expected meta {} got {}", expected.meta, decoded.meta));
         }
 
         if (decoded.flush != expected.flush) {
-            fmt::print(
-              "Expected flush {} got {}\n", expected.flush, decoded.flush);
-            return false;
+            throw compat_error(fmt::format(
+              "Expected flush {} got {}", expected.flush, decoded.flush));
         }
 
         auto decoded_batches = model::consume_reader_to_memory(
@@ -627,11 +621,10 @@ struct compat_check<raft::append_entries_request> {
                                   .get0();
 
         if (decoded_batches.size() != expected_batches.size()) {
-            fmt::print(
-              "Expected {} batches got {}\n",
+            throw compat_error(fmt::format(
+              "Expected {} batches got {}",
               expected_batches.size(),
-              decoded_batches.size());
-            return false;
+              decoded_batches.size()));
         }
 
         vassert(
@@ -641,15 +634,12 @@ struct compat_check<raft::append_entries_request> {
 
         for (size_t i = 0; i < decoded_batches.size(); i++) {
             if (decoded_batches[i] != expected_batches[i]) {
-                fmt::print(
-                  "Expected batch {}\n decoded batch {}\n",
+                throw compat_error(fmt::format(
+                  "Expected batch {}\n decoded batch {}",
                   expected_batches[i],
-                  decoded_batches[i]);
-                return false;
+                  decoded_batches[i]));
             }
         }
-
-        return true;
     }
 };
 
@@ -680,8 +670,8 @@ struct compat_check<raft::append_entries_reply> {
         return compat_binary::serde_and_adl(obj);
     }
 
-    static bool check(raft::append_entries_reply obj, compat_binary test) {
-        return verify_adl_or_serde(obj, std::move(test));
+    static void check(raft::append_entries_reply obj, compat_binary test) {
+        verify_adl_or_serde(obj, std::move(test));
     }
 };
 } // namespace compat

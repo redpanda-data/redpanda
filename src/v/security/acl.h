@@ -451,6 +451,9 @@ public:
     }
 
     struct pattern_match {
+        friend bool operator==(const pattern_match&, const pattern_match&)
+          = default;
+
         friend std::ostream&
         operator<<(std::ostream& os, const pattern_match&) {
             fmt::print(os, "{{}}");
@@ -540,6 +543,10 @@ public:
         write(out, filter._name);
         write(out, pattern);
     }
+
+    friend bool
+    operator==(const resource_pattern_filter&, const resource_pattern_filter&)
+      = default;
 
     friend std::ostream&
     operator<<(std::ostream& o, const resource_pattern_filter& f) {
@@ -681,6 +688,9 @@ public:
         return std::tie(_principal, _host, _operation, _permission);
     }
 
+    friend bool operator==(const acl_entry_filter&, const acl_entry_filter&)
+      = default;
+
     friend std::ostream&
     operator<<(std::ostream& o, const acl_entry_filter& f) {
         fmt::print(
@@ -743,6 +753,9 @@ public:
 
     const resource_pattern_filter& pattern() const { return _pattern; }
     const acl_entry_filter& entry() const { return _acl; }
+
+    friend bool operator==(const acl_binding_filter&, const acl_binding_filter&)
+      = default;
 
     friend std::ostream&
     operator<<(std::ostream& o, const acl_binding_filter& f) {

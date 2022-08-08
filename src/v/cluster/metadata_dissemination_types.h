@@ -38,6 +38,8 @@ struct ntp_leader : serde::envelope<ntp_leader, serde::version<0>> {
       , term(term)
       , leader_id(leader_id) {}
 
+    friend bool operator==(const ntp_leader&, const ntp_leader&) = default;
+
     friend std::ostream& operator<<(std::ostream& o, const ntp_leader& l) {
         fmt::print(
           o,
@@ -69,6 +71,10 @@ struct ntp_leader_revision
       , term(term)
       , leader_id(leader_id)
       , revision(revision) {}
+
+    friend bool
+    operator==(const ntp_leader_revision&, const ntp_leader_revision&)
+      = default;
 
     friend std::ostream&
     operator<<(std::ostream& o, const ntp_leader_revision& r) {

@@ -8,7 +8,9 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
+#include "compat/check.h"
 #include "compat/run.h"
+#include "json/prettywriter.h"
 #include "seastarx.h"
 #include "test_utils/tmp_dir.h"
 #include "utils/directory_walker.h"
@@ -20,6 +22,145 @@
 #include <boost/test/unit_test.hpp>
 
 namespace {
+// NOLINTNEXTLINE(misc-no-recursion)
+std::optional<bool> perturb(json::Value& value, std::string& path) {
+    auto perturb_int = [&](auto v) {
+        /*
+         * some integers represent enums. in the redpanda tree when an enum is
+         * printed out in string form it is usually done via a case statement
+         * that covers all of the enum values and a non-matching enum is a hard
+         * fail as the switch falls through to a call to __builtin_unreachable.
+         *
+         * when the compat checker discovers a mismatch it prints out the
+         * instances involved in the check. however, the random change made by
+         * the perturb() function may produce an enum value that is out of
+         * range, resulting in the __builtin_unreachable call and a crash.
+         *
+         * the following perturb helper for integers is a heuristic meant to be
+         * play nice with enum fields. generally enum values start at 0, have no
+         * gaps in values, and there are more than one value. so it is usually
+         * safe to add one if the value is zero and subtract one otherwise.
+         */
+        const auto orig = v;
+        const int modifier = v == 0 ? 1 : -1;
+        v += modifier;
+        path = fmt::format("{} = {} ({}/{})", path, v, orig, modifier);
+        return v;
+    };
+    if (value.IsInt()) {
+        value.SetInt(perturb_int(value.GetInt()));
+        return true;
+    }
+    if (value.IsUint()) {
+        value.SetUint(perturb_int(value.GetUint()));
+        return true;
+    }
+    if (value.IsInt64()) {
+        value.SetInt64(perturb_int(value.GetInt64()));
+        return true;
+    }
+    if (value.IsUint64()) {
+        value.SetUint64(perturb_int(value.GetUint64()));
+        return true;
+    }
+    if (value.IsBool()) {
+        value.SetBool(!value.GetBool());
+        path = fmt::format("{} = {} (!)", path, value.GetBool());
+        return true;
+    }
+    if (value.IsString()) {
+        const auto orig = value.GetString();
+
+        // heuristic for addresses so the resulting string can be converted into
+        // a ss::inet_address without throwing an exception
+        std::string tmp;
+        if (std::string("127.0.0.1") == orig) {
+            tmp = "127.0.0.2";
+        } else {
+            tmp = fmt::format("{}x", orig);
+        }
+
+        value.SetString(tmp.c_str(), tmp.size());
+        path = fmt::format("{} = {} (was: {})", path, value.GetString(), orig);
+        return true;
+    }
+    if (value.IsArray()) {
+        size_t i = 0;
+        for (auto& e : value.GetArray()) {
+            auto tmp = fmt::format("{}[{}]", path, i++);
+            if (perturb(e, tmp).value_or(false)) {
+                path = tmp;
+                return true;
+            }
+        }
+        if (!value.GetArray().Empty()) {
+            value.GetArray().PopBack();
+            return true;
+        }
+        return std::nullopt;
+    }
+    if (value.IsObject()) {
+        auto change_feasible = false;
+        for (auto it = value.MemberBegin(); it != value.MemberEnd(); ++it) {
+            auto tmp = fmt::format("{}.{}", path, it->name.GetString());
+            auto changed = perturb(it->value, tmp);
+            if (changed) {
+                if (changed.value()) {
+                    path = tmp;
+                    return true;
+                }
+                change_feasible = true;
+            }
+        }
+        if (change_feasible) {
+            return false;
+        }
+        return std::nullopt;
+    }
+    if (value.IsNull()) {
+        return std::nullopt;
+    }
+    vassert(
+      false, "No perturb case defined for value type {}", value.GetType());
+}
+
+void check(std::filesystem::path fn) {
+    /*
+     * Normal test -- input passes.
+     */
+    fmt::print("Checking {}\n", fn);
+    compat::check_type(fn).get();
+
+    /*
+     * Negative test -- modified input fails.
+     */
+    auto doc = compat::parse_type(fn).get();
+    if (doc["fields"].MemberCount() == 0) {
+        fmt::print("Test {} has no members. skipping negative test.\n", fn);
+        return;
+    }
+    std::string perturb_path;
+    auto changed = perturb(doc["fields"], perturb_path);
+    if (!changed.has_value()) {
+        json::StringBuffer buf;
+        json::PrettyWriter<json::StringBuffer> writer(buf);
+        doc.Accept(writer);
+        fmt::print("Test input: {}\n", buf.GetString());
+        fmt::print(
+          "Test {} has no changes possible. Skipping negative test\n", fn);
+        return;
+    }
+    vassert(changed.value(), "Failed to perturb test case {}", fn);
+    fmt::print("Negative check with change at path: {}\n", perturb_path);
+    BOOST_REQUIRE_EXCEPTION(
+      compat::check_type(std::move(doc)).get(),
+      compat::compat_error,
+      [perturb_path](const compat::compat_error& e) {
+          return std::string_view(e.what()).find("compat check failed for")
+                 != std::string_view::npos;
+      });
+}
+
 /*
  * process all the json files in the directory
  */
@@ -34,9 +175,9 @@ ss::future<> check_corpus(const std::filesystem::path& dir) {
         if (ent.name == "compile_commands.json") {
             return ss::now();
         }
-        const auto fn = dir / ent.name.c_str();
-        fmt::print("Checking {}\n", fn);
-        return compat::check_type(fn);
+        auto fn = dir / ent.name.c_str();
+        return ss::async(
+          [fn = std::move(fn)]() mutable { check(std::move(fn)); });
     });
 }
 } // namespace

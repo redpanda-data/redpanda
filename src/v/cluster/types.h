@@ -645,6 +645,10 @@ struct prepare_group_tx_request
 
     friend std::ostream&
     operator<<(std::ostream& o, const prepare_group_tx_request& r);
+
+    friend bool
+    operator==(const prepare_group_tx_request&, const prepare_group_tx_request&)
+      = default;
 };
 
 struct prepare_group_tx_reply

@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include "json/document.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
@@ -19,6 +20,12 @@
 namespace compat {
 
 ss::future<> write_corpus(const std::filesystem::path&);
-ss::future<> check_type(const std::filesystem::path&);
+ss::future<json::Document> parse_type(const std::filesystem::path&);
+ss::future<> check_type(json::Document);
+
+inline ss::future<> check_type(const std::filesystem::path& path) {
+    return parse_type(path).then(
+      [](auto doc) { return check_type(std::move(doc)); });
+}
 
 } // namespace compat
