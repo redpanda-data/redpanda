@@ -90,12 +90,33 @@ ss::future<consensus_ptr> partition_manager::manage(
           min_kafka_offset,
           max_kafka_offset);
 
-        if (min_kafka_offset != max_kafka_offset) {
+        if (
+          min_kafka_offset == max_kafka_offset
+          && min_kafka_offset == model::offset{0}) {
+            vlog(
+              clusterlog.info,
+              "{} no data in the downloaded segments, empty partition will be "
+              "created",
+              ntp_cfg.ntp());
+        } else {
             // Manifest is not empty since we were able to recovery
             // some data.
             vassert(manifest.size() != 0, "Manifest is empty");
             auto last_segm_it = manifest.rbegin();
             auto last_included_term = last_segm_it->second.archiver_term;
+
+            vlog(
+              clusterlog.info,
+              "Bootstrap on-disk state for pre existing partition {}. "
+              "Group: {}, "
+              "Min offset: {}, "
+              "Max offset: {}, "
+              "Last included term: {}, ",
+              ntp_cfg.ntp(),
+              group,
+              min_kafka_offset,
+              max_kafka_offset,
+              last_included_term);
 
             co_await raft::details::bootstrap_pre_existing_partition(
               _storage,
@@ -109,12 +130,6 @@ ss::future<consensus_ptr> partition_manager::manage(
             // Initialize archival snapshot
             co_await archival_metadata_stm::make_snapshot(
               ntp_cfg, manifest, max_kafka_offset);
-        } else {
-            vlog(
-              clusterlog.info,
-              "{} no data in the downloaded segments, empty partition will be "
-              "created",
-              ntp_cfg.ntp());
         }
     }
     storage::log log = co_await _storage.log_mgr().manage(std::move(ntp_cfg));
