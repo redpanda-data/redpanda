@@ -164,14 +164,20 @@ struct partition_balancer_planner_fixture {
           std::move(ntp), std::move(replica_set));
     }
 
-    void move_partition_replicas(cluster::ntp_reassignments& reassignment) {
-        auto cmd = make_move_partition_replicas_cmd(
-          reassignment.ntp,
-          reassignment.allocation_units.get_assignments().front().replicas);
+    void move_partition_replicas(
+      const model::ntp& ntp,
+      const std::vector<model::broker_shard>& new_replicas) {
+        auto cmd = make_move_partition_replicas_cmd(ntp, new_replicas);
         auto res = workers.dispatcher
                      .apply_update(serialize_cmd(std::move(cmd)).get())
                      .get();
         BOOST_REQUIRE_EQUAL(res, cluster::errc::success);
+    }
+
+    void move_partition_replicas(cluster::ntp_reassignments& reassignment) {
+        move_partition_replicas(
+          reassignment.ntp,
+          reassignment.allocation_units.get_assignments().front().replicas);
     }
 
     std::vector<raft::follower_metrics>
@@ -237,6 +243,16 @@ struct partition_balancer_planner_fixture {
         BOOST_REQUIRE(
           broker.value()->get_maintenance_state()
           == model::maintenance_state::active);
+    }
+
+    void set_decommissioning(model::node_id id) {
+        workers.members.local().apply(
+          model::offset{}, cluster::decommission_node_cmd(id, 0));
+        auto broker = workers.members.local().get_broker(id);
+        BOOST_REQUIRE(broker);
+        BOOST_REQUIRE(
+          broker.value()->get_membership_state()
+          == model::membership_state::draining);
     }
 
     controller_workers workers;
