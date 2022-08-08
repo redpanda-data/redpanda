@@ -51,7 +51,6 @@ class PartitionBalancerTest(EndToEndTest):
         )
 
     def topic_partitions_replicas(self, topic):
-
         rpk = RpkTool(self.redpanda)
         num_partitions = topic.partition_count
 
@@ -79,6 +78,26 @@ class PartitionBalancerTest(EndToEndTest):
                     ret[r] = ret.setdefault(r, 0) + 1
 
         return ret
+
+    def wait_node_availability_timeout(self, unavailable_node):
+        # we need to first wait for the controller to stabilize,
+        # because each time controller changes, unavailability timer
+        # starts anew.
+        unavailable_id = self.redpanda.idx(unavailable_node)
+        admin = Admin(self.redpanda)
+        hosts = [n.name for n in self.redpanda.nodes if n != unavailable_node]
+        controller_id = admin.await_stable_leader(
+            namespace="redpanda",
+            topic="controller",
+            partition=0,
+            timeout_s=60,
+            hosts=hosts,
+            check=lambda node_id: node_id != unavailable_id,
+        )
+        self.logger.info(
+            f"controller stable: {self.redpanda.get_node(controller_id).name}")
+
+        time.sleep(self.NODE_AVAILABILITY_TIMEOUT)
 
     def wait_until_status(self, predicate, timeout_sec=120):
         admin = Admin(self.redpanda)
@@ -171,7 +190,7 @@ class PartitionBalancerTest(EndToEndTest):
             self.cur_failure = FailureSpec(random.choice(failure_types), node)
             self.f_injector._start_func(self.cur_failure.type)(
                 self.cur_failure.node)
-            time.sleep(self.test.NODE_AVAILABILITY_TIMEOUT)
+            self.test.wait_node_availability_timeout(node)
 
         def step_and_wait_for_in_progress(self, node):
             self.make_unavailable(node)
@@ -232,7 +251,6 @@ class PartitionBalancerTest(EndToEndTest):
             # clean node
             ns.make_unavailable(empty_node,
                                 failure_types=[FailureSpec.FAILURE_KILL])
-            time.sleep(self.NODE_AVAILABILITY_TIMEOUT)
             self.wait_until_ready()
             ns.make_available()
             self.check_no_replicas_on_node(empty_node)
@@ -244,7 +262,6 @@ class PartitionBalancerTest(EndToEndTest):
                 node = self.redpanda.nodes[n % 3]
                 ns.make_unavailable(node,
                                     failure_types=[FailureSpec.FAILURE_KILL])
-                time.sleep(self.NODE_AVAILABILITY_TIMEOUT)
 
                 # wait until movement start
                 self.wait_until_status(lambda s: s["status"] == "in_progress")
@@ -254,7 +271,6 @@ class PartitionBalancerTest(EndToEndTest):
                     # stop empty node
                     ns.make_unavailable(
                         empty_node, failure_types=[FailureSpec.FAILURE_KILL])
-                    time.sleep(self.NODE_AVAILABILITY_TIMEOUT)
 
                     # wait until movements are cancelled
                     self.wait_until_ready()
@@ -439,8 +455,6 @@ class PartitionBalancerTest(EndToEndTest):
             ns.make_unavailable(random.choice(self.redpanda.nodes),
                                 failure_types=[FailureSpec.FAILURE_KILL])
 
-            time.sleep(self.NODE_AVAILABILITY_TIMEOUT)
-
             # Wait until the balancer manages to move partitions from the killed node.
             # This will make other 4 nodes go over the disk usage limit and the balancer
             # will stall because there won't be any other node to move partitions to.
@@ -514,7 +528,6 @@ class PartitionBalancerTest(EndToEndTest):
                 ])
 
             ns.make_unavailable(to_kill)
-            time.sleep(self.NODE_AVAILABILITY_TIMEOUT)
             self.wait_until_status(lambda s: s["status"] == "stalled")
 
             if kill_same_node:
@@ -588,7 +601,6 @@ class PartitionBalancerTest(EndToEndTest):
             # kill the node and wait for the partition balancer to kick in
             ns.make_unavailable(to_kill,
                                 failure_types=[FailureSpec.FAILURE_KILL])
-            time.sleep(self.NODE_AVAILABILITY_TIMEOUT)
             self.wait_until_status(lambda s: s["status"] == "in_progress")
 
             if not decommission_first:
