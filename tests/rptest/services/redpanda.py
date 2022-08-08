@@ -1337,14 +1337,16 @@ class RedpandaService(Service):
             conf = yaml.dump(doc)
 
         if self._security.tls_provider:
-            tls_config = dict(
-                enabled=True,
-                require_client_auth=True,
-                name="dnslistener",
-                key_file=RedpandaService.TLS_SERVER_KEY_FILE,
-                cert_file=RedpandaService.TLS_SERVER_CRT_FILE,
-                truststore_file=RedpandaService.TLS_CA_CRT_FILE,
-            )
+            tls_config = [
+                dict(
+                    enabled=True,
+                    require_client_auth=True,
+                    name=n,
+                    key_file=RedpandaService.TLS_SERVER_KEY_FILE,
+                    cert_file=RedpandaService.TLS_SERVER_CRT_FILE,
+                    truststore_file=RedpandaService.TLS_CA_CRT_FILE,
+                ) for n in ["dnslistener", "iplistener"]
+            ]
             doc = yaml.full_load(conf)
             doc["redpanda"].update(dict(kafka_api_tls=tls_config))
             conf = yaml.dump(doc)
