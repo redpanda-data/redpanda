@@ -133,7 +133,7 @@ class FranzGoVerifiableService(BackgroundThreadService):
         if self.use_custom_node:
             return
         else:
-            return super(FranzGoVerifiableService, self).free_all()
+            return super(FranzGoVerifiableService, self).free()
 
 
 class ConsumerStatus:
