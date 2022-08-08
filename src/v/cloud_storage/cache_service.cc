@@ -158,8 +158,9 @@ ss::future<> cache::clean_up_at_start() {
 ss::future<> cache::clean_up_cache() {
     vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
     gate_guard guard{_gate};
-    auto [_current_cache_size, candidates_for_deletion] = co_await _walker.walk(
+    auto [current_cache_size, candidates_for_deletion] = co_await _walker.walk(
       _cache_dir.native(), _access_time_tracker);
+    _current_cache_size = current_cache_size;
     probe.set_size(_current_cache_size);
     probe.set_num_files(candidates_for_deletion.size());
 
@@ -262,6 +263,10 @@ ss::future<> cache::save_access_time_tracker() {
     auto source = _cache_dir / access_time_tracker_file_name;
     auto index_stream = make_iobuf_input_stream(
       _access_time_tracker.to_iobuf());
+    vlog(
+      cst_log.debug,
+      "current access_time_tracker size: {}",
+      _access_time_tracker.size());
     co_await put(source.native(), index_stream);
 }
 
