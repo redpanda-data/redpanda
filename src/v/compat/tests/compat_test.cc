@@ -151,7 +151,16 @@ void check(std::filesystem::path fn) {
      * Normal test -- input passes.
      */
     fmt::print("Checking {}\n", fn);
-    compat::check_type(fn).get();
+    try {
+        compat::check_type(fn).get();
+    } catch (const compat::compat_error& e) {
+        /*
+         * boost.test seems to clip off exception messages that are really long.
+         * so print it out separately and rethrow with a shorter message.
+         */
+        fmt::print("Check failed: {}", e.what());
+        throw compat::compat_error(fn.string());
+    }
 
     /*
      * Negative test -- modified input fails.
