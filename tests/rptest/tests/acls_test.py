@@ -44,6 +44,9 @@ class AccessControlListTest(RedpandaTest):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, num_brokers=3, **kwargs)
+        self.base_user_cert = None
+        self.cluster_describe_user_cert = None
+        self.admin_user_cert = None
 
     def setUp(self):
         # Skip starting redpanda, so that test can explicitly start
@@ -128,11 +131,11 @@ class AccessControlListTest(RedpandaTest):
             wait_until(check_feature_active, timeout_sec=10, backoff_sec=1)
 
         # base case user is not a superuser and has no configured ACLs
-        if use_sasl or enable_authz:
+        if self.security.sasl_enabled() or enable_authz:
             admin.create_user("base", self.password, self.algorithm)
 
         # only grant cluster describe permission to user cluster_describe
-        if use_sasl or enable_authz:
+        if self.security.sasl_enabled() or enable_authz:
             admin.create_user("cluster_describe", self.password,
                               self.algorithm)
         client = self.get_super_client()
@@ -145,7 +148,7 @@ class AccessControlListTest(RedpandaTest):
             time.sleep(5)
             return
 
-        # wait for users to proogate to nodes
+        # wait for users to propagate to nodes
         def users_propogated():
             for node in self.redpanda.nodes:
                 users = admin.list_users(node=node)
@@ -153,7 +156,8 @@ class AccessControlListTest(RedpandaTest):
                     return False
             return True
 
-        wait_until(users_propogated, timeout_sec=10, backoff_sec=1)
+        if self.security.sasl_enabled() or enable_authz:
+            wait_until(users_propogated, timeout_sec=10, backoff_sec=1)
 
     def get_client(self, username):
         if self.security.mtls_identity_enabled(
@@ -169,12 +173,11 @@ class AccessControlListTest(RedpandaTest):
 
         # uses base user cert with no explicit permissions. the cert should only
         # participate in tls handshake and not principal extraction.
-        cert = None if not self.security.tls_provider else self.base_user_cert
         return RpkTool(self.redpanda,
                        username=username,
                        password=self.password,
                        sasl_mechanism=self.algorithm,
-                       tls_cert=cert)
+                       tls_cert=self.base_user_cert)
 
     def get_super_client(self):
         if self.security.mtls_identity_enabled(
@@ -185,12 +188,11 @@ class AccessControlListTest(RedpandaTest):
 
         # uses base user cert with no explicit permissions. the cert should only
         # participate in tls handshake and not principal extraction.
-        cert = None if not self.security.tls_provider else self.base_user_cert
         return RpkTool(self.redpanda,
                        username=username,
                        password=password,
                        sasl_mechanism=self.algorithm,
-                       tls_cert=cert)
+                       tls_cert=self.base_user_cert)
 
     '''
     The old config style has use_sasl at the top level, which enables
