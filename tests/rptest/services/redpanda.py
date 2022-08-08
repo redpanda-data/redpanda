@@ -986,8 +986,8 @@ class RedpandaService(Service):
         # early in the cluster's lifetime
         wait_until(
             lambda: all([
-                n['config_version'] >= new_version
-                for n in self._admin.get_cluster_config_status()
+                n['config_version'] >= new_version for n in self._admin.
+                get_cluster_config_status(node=self.controller())
             ]),
             timeout_sec=10,
             backoff_sec=0.5,
