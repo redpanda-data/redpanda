@@ -48,7 +48,7 @@ func (d *Deployment) Ensure(ctx context.Context) error {
 		return err
 	}
 
-	initContainers, err := d.initContainers()
+	ss, err := d.ensureSyncedSecrets(ctx)
 	if err != nil {
 		return err
 	}
@@ -72,8 +72,7 @@ func (d *Deployment) Ensure(ctx context.Context) error {
 					Labels: objLabels,
 				},
 				Spec: corev1.PodSpec{
-					Volumes:                       d.getVolumes(),
-					InitContainers:                initContainers,
+					Volumes:                       d.getVolumes(ss),
 					Containers:                    d.getContainers(),
 					TerminationGracePeriodSeconds: getGracePeriod(d.consoleobj.Spec.Server.ServerGracefulShutdownTimeout),
 					ServiceAccountName:            sa,
@@ -165,6 +164,80 @@ func (d *Deployment) ensureServiceAccount(ctx context.Context) (string, error) {
 	return sa.GetName(), nil
 }
 
+// ensureSyncedSecrets ensures that Secrets required by Deployment are available
+// These Secrets are synced across different namespace via the Store
+func (d *Deployment) ensureSyncedSecrets(ctx context.Context) (string, error) {
+	// Currently only copying Schema Registry certificates
+	// Nothing to do if TLS is disabled
+	if !d.clusterobj.IsSchemaRegistryTLSEnabled() {
+		return "", nil
+	}
+
+	clientCert, exists := d.store.GetSchemaRegistryClientCert(d.clusterobj)
+	if !exists {
+		return "", fmt.Errorf("get schema registry client certificate: %s", "not found")
+	}
+	certfile := getOrEmpty("tls.crt", clientCert.Data)
+	keyfile := getOrEmpty("tls.key", clientCert.Data)
+
+	// Write the synced certs to secret
+	data := map[string][]byte{
+		"tls.crt": []byte(certfile),
+		"tls.key": []byte(keyfile),
+	}
+
+	// Only write CA cert if not using DefaultCaFilePath
+	ca := &SchemaRegistryTLSCa{
+		// SchemaRegistryAPITLS cannot be nil
+		d.clusterobj.SchemaRegistryAPITLS().TLS.NodeSecretRef,
+	}
+	if ca.useCaCert() {
+		caCert, exists := d.store.GetSchemaRegistryNodeCert(d.clusterobj)
+		if !exists {
+			return "", fmt.Errorf("get schema registry node certificate: %s", "not found")
+		}
+		cafile := getOrEmpty("ca.crt", caCert.Data)
+		data["ca.crt"] = []byte(cafile)
+	}
+
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fmt.Sprintf("%s-%s", d.consoleobj.GetName(), resources.SchemaRegistrySuffix),
+			Namespace: d.consoleobj.GetNamespace(),
+			Labels:    labels.ForConsole(d.consoleobj),
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: "v1",
+		},
+		Data: data,
+	}
+
+	err := controllerutil.SetControllerReference(d.consoleobj, secret, d.scheme)
+	if err != nil {
+		return "", err
+	}
+
+	created, err := resources.CreateIfNotExists(ctx, d.Client, secret, d.log)
+	if err != nil {
+		return "", fmt.Errorf("creating Console synced secret: %w", err)
+	}
+
+	if !created {
+		var current corev1.Secret
+		err = d.Get(ctx, types.NamespacedName{Name: secret.GetName(), Namespace: secret.GetNamespace()}, &current)
+		if err != nil {
+			return "", fmt.Errorf("fetching Console synced secret: %w", err)
+		}
+		_, err = resources.Update(ctx, &current, secret, d.Client, d.log)
+		if err != nil {
+			return "", fmt.Errorf("updating Console synced secret: %w", err)
+		}
+	}
+
+	return secret.GetName(), nil
+}
+
 func getGracePeriod(period string) *int64 {
 	duration, err := time.ParseDuration(period)
 	if err != nil {
@@ -185,7 +258,7 @@ const (
 	schemaRegistryClientCertSuffix = "schema-registry-client"
 )
 
-func (d *Deployment) getVolumes() []corev1.Volume {
+func (d *Deployment) getVolumes(ss string) []corev1.Volume {
 	volumes := []corev1.Volume{
 		{
 			Name: configMountName,
@@ -202,9 +275,11 @@ func (d *Deployment) getVolumes() []corev1.Volume {
 	if d.clusterobj.IsSchemaRegistryTLSEnabled() {
 		volumes = append(volumes, corev1.Volume{
 			Name: tlsSchemaRegistryMountName,
-			// By default VolumeSource is EmptyDir
-			// But we set anyway, otherwise resource.Update() will recognize a patch
-			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: ss,
+				},
+			},
 		})
 	}
 
@@ -269,52 +344,4 @@ func (d *Deployment) getContainers() []corev1.Container {
 			VolumeMounts: volumeMounts,
 		},
 	}
-}
-
-func (d *Deployment) initContainers() ([]corev1.Container, error) {
-	// Currently only copying Schema Registry certificates
-	// Nothing to do if TLS is disabled
-	if !d.clusterobj.IsSchemaRegistryTLSEnabled() {
-		return nil, nil
-	}
-
-	clientCert, exists := d.store.GetSchemaRegistryClientCert(d.clusterobj)
-	if !exists {
-		return nil, fmt.Errorf("get schema registry client certificate: %s", "not found")
-	}
-	certfile := getOrEmpty("tls.crt", clientCert.Data)
-	keyfile := getOrEmpty("tls.key", clientCert.Data)
-
-	// Write the synced certs to file
-	cmdArgs := fmt.Sprintf("echo '%s' > tls.crt && echo '%s' > tls.key", certfile, keyfile)
-
-	// Only write CA cert if not using DefaultCaFilePath
-	ca := &SchemaRegistryTLSCa{
-		// SchemaRegistryAPITLS cannot be nil
-		d.clusterobj.SchemaRegistryAPITLS().TLS.NodeSecretRef,
-	}
-	if ca.useCaCert() {
-		caCert, exists := d.store.GetSchemaRegistryNodeCert(d.clusterobj)
-		if !exists {
-			return nil, fmt.Errorf("get schema registry node certificate: %s", "not found")
-		}
-		cafile := getOrEmpty("ca.crt", caCert.Data)
-		cmdArgs = cmdArgs + fmt.Sprintf(" && echo '%s' > ca.crt", cafile)
-	}
-
-	return []corev1.Container{
-		{
-			Name:       "copy-schema-registry-tls",
-			Image:      "busybox",
-			Command:    []string{"/bin/sh", "-c"},
-			WorkingDir: SchemaRegistryTLSDir,
-			Args:       []string{cmdArgs},
-			VolumeMounts: []corev1.VolumeMount{
-				{
-					Name:      tlsSchemaRegistryMountName,
-					MountPath: SchemaRegistryTLSDir,
-				},
-			},
-		},
-	}, nil
 }
