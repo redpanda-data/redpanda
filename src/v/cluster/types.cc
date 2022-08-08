@@ -441,6 +441,24 @@ std::ostream& operator<<(std::ostream& o, const create_topics_reply& r) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
+    fmt::print(
+      o,
+      "{{incremental_topic_custom_updates: compression: {} "
+      "cleanup_policy_bitflags: {} compaction_strategy: {} timestamp_type: {} "
+      "segment_size: {} retention_bytes: {} retention_duration: {} "
+      "shadow_indexing: {}}}",
+      i.compression,
+      i.cleanup_policy_bitflags,
+      i.compaction_strategy,
+      i.timestamp_type,
+      i.segment_size,
+      i.retention_bytes,
+      i.retention_duration,
+      i.shadow_indexing);
+    return o;
+}
+
 std::ostream&
 operator<<(std::ostream& o, const incremental_topic_custom_updates& i) {
     fmt::print(

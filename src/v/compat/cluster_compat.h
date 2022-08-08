@@ -387,4 +387,27 @@ GEN_COMPAT_CHECK(
   { json_write(data_policy); },
   { json_read(data_policy); })
 
+GEN_COMPAT_CHECK(
+  cluster::incremental_topic_updates,
+  {
+      json_write(compression);
+      json_write(cleanup_policy_bitflags);
+      json_write(compaction_strategy);
+      json_write(timestamp_type);
+      json_write(segment_size);
+      json_write(retention_bytes);
+      json_write(retention_duration);
+      json_write(shadow_indexing);
+  },
+  {
+      json_read(compression);
+      json_read(cleanup_policy_bitflags);
+      json_read(compaction_strategy);
+      json_read(timestamp_type);
+      json_read(segment_size);
+      json_read(retention_bytes);
+      json_read(retention_duration);
+      json_read(shadow_indexing);
+  })
+
 } // namespace compat

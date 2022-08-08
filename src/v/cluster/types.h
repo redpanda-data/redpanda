@@ -1180,6 +1180,9 @@ struct incremental_topic_updates
           shadow_indexing);
     }
 
+    friend std::ostream&
+    operator<<(std::ostream&, const incremental_topic_updates&);
+
     friend bool operator==(
       const incremental_topic_updates&, const incremental_topic_updates&)
       = default;

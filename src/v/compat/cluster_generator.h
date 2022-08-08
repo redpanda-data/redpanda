@@ -763,4 +763,55 @@ struct instance_generator<cluster::incremental_topic_custom_updates> {
     }
 };
 
+template<>
+struct instance_generator<cluster::incremental_topic_updates> {
+    static cluster::incremental_topic_updates random() {
+        return {
+          .compression = random_property_update([] {
+              return tests::random_optional([] {
+                  return instance_generator<model::compression>::random();
+              });
+          }),
+          .cleanup_policy_bitflags = random_property_update([] {
+              return tests::random_optional([] {
+                  return instance_generator<
+                    model::cleanup_policy_bitflags>::random();
+              });
+          }),
+          .compaction_strategy = random_property_update([] {
+              return tests::random_optional([] {
+                  return instance_generator<
+                    model::compaction_strategy>::random();
+              });
+          }),
+          .timestamp_type = random_property_update([] {
+              return tests::random_optional([] {
+                  return instance_generator<model::timestamp_type>::random();
+              });
+          }),
+          .segment_size = random_property_update([] {
+              return tests::random_optional(
+                [] { return random_generators::get_int<size_t>(); });
+          }),
+          .retention_bytes = random_property_update([] {
+              return tests::random_tristate(
+                [] { return random_generators::get_int<size_t>(); });
+          }),
+          .retention_duration = random_property_update([] {
+              return tests::random_tristate(
+                [] { return tests::random_duration_ms(); });
+          }),
+          .shadow_indexing = random_property_update([] {
+              return tests::random_optional([] {
+                  return instance_generator<
+                    model::shadow_indexing_mode>::random();
+              });
+          })};
+    }
+
+    static std::vector<cluster::incremental_topic_updates> limits() {
+        return {};
+    }
+};
+
 } // namespace compat
