@@ -874,3 +874,36 @@ SEASTAR_THREAD_TEST_CASE(duration_type_test) {
     constexpr auto min_ns_in_hrs = std::chrono::duration_cast<hours>(min_ns);
     BOOST_REQUIRE(min_ns_in_hrs == serde_input(min_hrs));
 }
+
+struct no_default_ctor
+  : public serde::
+      envelope<no_default_ctor, serde::version<0>, serde::compat_version<0>> {
+    no_default_ctor() = delete;
+
+    no_default_ctor(int x)
+      : x(x) {}
+
+    auto serde_fields() { return std::tie(x); }
+
+    static no_default_ctor
+    serde_direct_read(iobuf_parser& in, size_t const bytes_left_limit) {
+        using serde::read_nested;
+        int x;
+        read_nested(in, x, bytes_left_limit);
+        return no_default_ctor(x);
+    }
+
+    int x;
+};
+
+static_assert(serde::has_serde_direct_read<no_default_ctor>);
+
+SEASTAR_THREAD_TEST_CASE(no_default_ctor_test) {
+    BOOST_CHECK_EQUAL(serde_input(no_default_ctor(37)).x, 37);
+}
+
+SEASTAR_THREAD_TEST_CASE(no_default_ctor_vector_test) {
+    BOOST_CHECK_EQUAL(
+      serde_input(std::vector<no_default_ctor>({no_default_ctor(37)})).at(0).x,
+      37);
+}

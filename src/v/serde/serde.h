@@ -96,6 +96,12 @@ concept has_serde_async_write = requires(T t, iobuf& out) {
 };
 
 template<typename T>
+concept has_serde_direct_read
+  = requires(iobuf_parser& in, size_t bytes_left_limit) {
+    {T::serde_direct_read(in, bytes_left_limit)};
+};
+
+template<typename T>
 concept is_absl_flat_hash_map
   = ::detail::is_specialization_of_v<T, absl::flat_hash_map>;
 
@@ -741,9 +747,16 @@ template<typename T>
 std::decay_t<T>
 read_nested(iobuf_parser& in, std::size_t const bytes_left_limit) {
     using Type = std::decay_t<T>;
-    auto t = Type();
-    read_nested(in, t, bytes_left_limit);
-    return t;
+    static_assert(
+      std::is_default_constructible_v<T> || has_serde_direct_read<T>);
+    if constexpr (has_serde_direct_read<T>) {
+        auto const h = read_header<Type>(in, bytes_left_limit);
+        return Type::serde_direct_read(in, h._bytes_left_limit);
+    } else {
+        auto t = Type();
+        read_nested(in, t, bytes_left_limit);
+        return t;
+    }
 }
 
 template<typename T>
