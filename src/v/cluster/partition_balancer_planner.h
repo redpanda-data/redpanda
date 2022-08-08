@@ -69,6 +69,7 @@ private:
         absl::flat_hash_map<model::node_id, node_disk_space> node_disk_reports;
         absl::flat_hash_set<model::node_id> unavailable_nodes;
         size_t num_nodes_in_maintenance = 0;
+        absl::flat_hash_set<model::node_id> decommissioning_nodes;
 
         absl::flat_hash_map<model::ntp, size_t> ntp_sizes;
 
@@ -104,8 +105,7 @@ private:
       plan_data&) const;
 
     void get_unavailable_node_movement_cancellations(
-      std::vector<model::ntp>& cancellations,
-      const reallocation_request_state&);
+      plan_data&, const reallocation_request_state&);
 
     bool is_partition_movement_possible(
       const std::vector<model::broker_shard>& current_replicas,

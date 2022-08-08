@@ -78,6 +78,11 @@ void partition_balancer_planner::init_per_node_state(
           broker->get_maintenance_state() == model::maintenance_state::active) {
             rrs.num_nodes_in_maintenance += 1;
         }
+
+        if (
+          broker->get_membership_state() == model::membership_state::draining) {
+            rrs.decommissioning_nodes.insert(broker->id());
+        }
     }
 
     const auto now = raft::clock_type::now();
@@ -195,6 +200,13 @@ partition_constraints partition_balancer_planner::get_partition_constraints(
     allocation_constraints.hard_constraints.push_back(
       ss::make_lw_shared<hard_constraint_evaluator>(
         distinct_from(rrs.unavailable_nodes)));
+
+    // Add constraint on decommissioning nodes
+    if (!rrs.decommissioning_nodes.empty()) {
+        allocation_constraints.hard_constraints.push_back(
+          ss::make_lw_shared<hard_constraint_evaluator>(
+            distinct_from(rrs.decommissioning_nodes)));
+    }
 
     return partition_constraints(
       assignments.id,
@@ -492,8 +504,7 @@ void partition_balancer_planner::get_full_node_reassignments(
  * and previous replica set doesn't contain this node
  */
 void partition_balancer_planner::get_unavailable_node_movement_cancellations(
-  std::vector<model::ntp>& cancellations,
-  const reallocation_request_state& rrs) {
+  plan_data& result, const reallocation_request_state& rrs) {
     for (const auto& update : _topic_table.updates_in_progress()) {
         if (
           update.second.state
@@ -502,8 +513,12 @@ void partition_balancer_planner::get_unavailable_node_movement_cancellations(
         }
 
         absl::flat_hash_set<model::node_id> previous_replicas_set;
+        bool was_on_decommissioning_node = false;
         for (const auto& r : update.second.previous_replicas) {
             previous_replicas_set.insert(r.node_id);
+            if (rrs.decommissioning_nodes.contains(r.node_id)) {
+                was_on_decommissioning_node = true;
+            }
         }
 
         auto current_assignments = _topic_table.get_partition_assignment(
@@ -515,8 +530,12 @@ void partition_balancer_planner::get_unavailable_node_movement_cancellations(
             if (
               rrs.unavailable_nodes.contains(r.node_id)
               && !previous_replicas_set.contains(r.node_id)) {
-                cancellations.push_back(update.first);
-                continue;
+                if (!was_on_decommissioning_node) {
+                    result.cancellations.push_back(update.first);
+                } else {
+                    result.failed_reassignments_count += 1;
+                }
+                break;
             }
         }
     }
@@ -539,7 +558,7 @@ partition_balancer_planner::plan_reassignments(
     }
 
     if (_topic_table.has_updates_in_progress()) {
-        get_unavailable_node_movement_cancellations(result.cancellations, rrs);
+        get_unavailable_node_movement_cancellations(result, rrs);
         if (!result.cancellations.empty()) {
             result.status = status::cancellations_planned;
         }
