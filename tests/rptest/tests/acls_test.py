@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 import socket
 import time
+from ducktape.errors import TimeoutError
 from ducktape.mark import parametrize, matrix, ignore
 from ducktape.utils.util import wait_until
 from rptest.tests.redpanda_test import RedpandaTest
@@ -43,7 +44,10 @@ class AccessControlListTest(RedpandaTest):
     algorithm = "SCRAM-SHA-256"
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, num_brokers=3, **kwargs)
+        super().__init__(*args,
+                         num_brokers=3,
+                         skip_if_no_redpanda_log=True,
+                         **kwargs)
         self.base_user_cert = None
         self.cluster_describe_user_cert = None
         self.admin_user_cert = None
@@ -543,11 +547,25 @@ class AccessControlListTest(RedpandaTest):
         """
         security::acl_operation::describe, security::default_cluster_name
         """
-        self.prepare_cluster(use_tls,
-                             use_sasl,
-                             enable_authz,
-                             authn_method,
-                             client_auth=client_auth)
+        def expect_startup_failure(use_tls: bool, authn_method: Optional[str],
+                                   client_auth: bool):
+            if authn_method == 'mtls_identity':
+                return not use_tls or not client_auth
+            return False
+
+        startup_should_fail = expect_startup_failure(use_tls, authn_method,
+                                                     client_auth)
+
+        try:
+            self.prepare_cluster(use_tls,
+                                 use_sasl,
+                                 enable_authz,
+                                 authn_method,
+                                 client_auth=client_auth)
+            assert not startup_should_fail
+        except TimeoutError:
+            assert startup_should_fail
+            return
 
         def should_pass_w_base_user(use_sasl: bool,
                                     enable_authz: Optional[bool]) -> bool:

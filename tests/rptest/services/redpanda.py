@@ -461,7 +461,8 @@ class RedpandaService(Service):
                  environment: Optional[dict[str, str]] = None,
                  security: SecurityConfig = SecurityConfig(),
                  node_ready_timeout_s=None,
-                 superuser: Optional[SaslCredentials] = None):
+                 superuser: Optional[SaslCredentials] = None,
+                 skip_if_no_redpanda_log: bool = False):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
         self._context = context
         self._enable_rp = enable_rp
@@ -529,6 +530,8 @@ class RedpandaService(Service):
 
         self._tls_cert = None
         self._init_tls()
+
+        self._skip_if_no_redpanda_log = skip_if_no_redpanda_log
 
     def set_environment(self, environment: dict[str, str]):
         self._environment = environment
@@ -1078,6 +1081,14 @@ class RedpandaService(Service):
 
         bad_lines = collections.defaultdict(list)
         for node in self.nodes:
+
+            if self._skip_if_no_redpanda_log and not node.account.exists(
+                    RedpandaService.STDOUT_STDERR_CAPTURE):
+                self.logger.info(
+                    f"{RedpandaService.STDOUT_STDERR_CAPTURE} not found on {node.account.hostname}. Skipping log scan."
+                )
+                return
+
             self.logger.info(
                 f"Scanning node {node.account.hostname} log for errors...")
 
