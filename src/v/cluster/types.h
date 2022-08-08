@@ -1193,6 +1193,9 @@ struct incremental_topic_custom_updates
     // data_policy_manager.
     property_update<std::optional<v8_engine::data_policy>> data_policy;
 
+    friend std::ostream&
+    operator<<(std::ostream&, const incremental_topic_custom_updates&);
+
     friend bool operator==(
       const incremental_topic_custom_updates&,
       const incremental_topic_custom_updates&)

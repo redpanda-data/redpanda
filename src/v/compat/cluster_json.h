@@ -588,4 +588,17 @@ read_value(json::Value const& rd, cluster::topic_configuration& cfg) {
     read_member(rd, "properties", cfg.properties);
 }
 
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const v8_engine::data_policy& dp) {
+    w.StartObject();
+    write_member(w, "fn_name", dp.fn_name);
+    write_member(w, "sct_name", dp.sct_name);
+    w.EndObject();
+}
+
+inline void read_value(json::Value const& rd, v8_engine::data_policy& dp) {
+    read_member(rd, "fn_name", dp.fn_name);
+    read_member(rd, "sct_name", dp.sct_name);
+}
+
 } // namespace json

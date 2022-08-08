@@ -747,4 +747,20 @@ auto random_property_update(Func f) {
                   cluster::incremental_update_operation::remove}));
 }
 
+template<>
+struct instance_generator<cluster::incremental_topic_custom_updates> {
+    static cluster::incremental_topic_custom_updates random() {
+        return {
+          .data_policy = random_property_update([] {
+              return tests::random_optional([] {
+                  return instance_generator<v8_engine::data_policy>::random();
+              });
+          })};
+    }
+
+    static std::vector<cluster::incremental_topic_custom_updates> limits() {
+        return {};
+    }
+};
+
 } // namespace compat

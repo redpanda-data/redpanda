@@ -382,4 +382,9 @@ GEN_COMPAT_CHECK(
       json_read(sct_name);
   })
 
+GEN_COMPAT_CHECK(
+  cluster::incremental_topic_custom_updates,
+  { json_write(data_policy); },
+  { json_read(data_policy); })
+
 } // namespace compat

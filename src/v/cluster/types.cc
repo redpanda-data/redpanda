@@ -441,6 +441,15 @@ std::ostream& operator<<(std::ostream& o, const create_topics_reply& r) {
     return o;
 }
 
+std::ostream&
+operator<<(std::ostream& o, const incremental_topic_custom_updates& i) {
+    fmt::print(
+      o,
+      "{{incremental_topic_custom_updates: data_policy: {}}}",
+      i.data_policy);
+    return o;
+}
+
 namespace {
 cluster::assignments_set to_assignments_map(
   std::vector<cluster::partition_assignment> assignment_vector) {
