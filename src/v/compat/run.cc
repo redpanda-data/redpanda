@@ -13,13 +13,17 @@
 #include "cluster/metadata_dissemination_types.h"
 #include "cluster/partition_balancer_types.h"
 #include "cluster/types.h"
+#include "compat/abort_group_tx_compat.h"
 #include "compat/abort_tx_compat.h"
 #include "compat/acls_compat.h"
 #include "compat/begin_group_tx_compat.h"
 #include "compat/begin_tx_compat.h"
 #include "compat/check.h"
 #include "compat/cluster_compat.h"
+#include "compat/commit_group_tx_compat.h"
 #include "compat/commit_tx_compat.h"
+#include "compat/get_cluster_health_compat.h"
+#include "compat/get_node_health_compat.h"
 #include "compat/id_allocator_compat.h"
 #include "compat/init_tm_tx_compat.h"
 #include "compat/metadata_dissemination_compat.h"
@@ -114,7 +118,15 @@ using compat_checks = type_list<
   cluster::partition_balancer_overview_request,
   cluster::partition_balancer_overview_reply,
   cluster::delete_acls_request,
-  cluster::delete_acls_reply>;
+  cluster::delete_acls_reply,
+  cluster::commit_group_tx_request,
+  cluster::commit_group_tx_reply,
+  cluster::abort_group_tx_request,
+  cluster::abort_group_tx_reply,
+  cluster::get_node_health_request,
+  cluster::get_node_health_reply,
+  cluster::get_cluster_health_request,
+  cluster::get_cluster_health_reply>;
 
 template<typename T>
 struct corpus_helper {

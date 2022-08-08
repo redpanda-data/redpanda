@@ -10,8 +10,10 @@
  */
 #pragma once
 
+#include "cluster/health_monitor_types.h"
 #include "cluster/types.h"
 #include "compat/json.h"
+#include "compat/storage_json.h"
 
 namespace json {
 
@@ -143,6 +145,268 @@ inline void rjson_serialize(
     w.Key("result");
     rjson_serialize(w, r.result);
     w.EndObject();
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const cluster::partitions_filter& f) {
+    w.StartObject();
+    w.Key("namespaces");
+    rjson_serialize(w, f.namespaces);
+    w.EndObject();
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const cluster::node_report_filter& f) {
+    w.StartObject();
+    w.Key("include_partitions");
+    rjson_serialize(w, f.include_partitions);
+    w.Key("ntp_filters");
+    rjson_serialize(w, f.ntp_filters);
+    w.EndObject();
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const cluster::cluster_report_filter& f) {
+    w.StartObject();
+    w.Key("node_report_filter");
+    rjson_serialize(w, f.node_report_filter);
+    w.Key("nodes");
+    rjson_serialize(w, f.nodes);
+    w.EndObject();
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const cluster::drain_manager::drain_status& f) {
+    w.StartObject();
+    w.Key("finished");
+    rjson_serialize(w, f.finished);
+    w.Key("errors");
+    rjson_serialize(w, f.errors);
+    w.Key("partitions");
+    rjson_serialize(w, f.partitions);
+    w.Key("eligible");
+    rjson_serialize(w, f.eligible);
+    w.Key("transferring");
+    rjson_serialize(w, f.transferring);
+    w.Key("failed");
+    rjson_serialize(w, f.failed);
+    w.EndObject();
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const cluster::node::local_state& f) {
+    w.StartObject();
+    w.Key("redpanda_version");
+    rjson_serialize(w, f.redpanda_version);
+    w.Key("logical_version");
+    rjson_serialize(w, f.logical_version);
+    w.Key("uptime");
+    rjson_serialize(w, f.uptime);
+    w.Key("disks");
+    rjson_serialize(w, f.disks);
+    w.Key("storage_space_alert");
+    rjson_serialize(w, f.storage_space_alert);
+    w.EndObject();
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const cluster::partition_status& f) {
+    w.StartObject();
+    w.Key("id");
+    rjson_serialize(w, f.id);
+    w.Key("term");
+    rjson_serialize(w, f.term);
+    w.Key("leader_id");
+    rjson_serialize(w, f.leader_id);
+    w.Key("revision_id");
+    rjson_serialize(w, f.revision_id);
+    w.Key("size_bytes");
+    rjson_serialize(w, f.size_bytes);
+    w.EndObject();
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const cluster::topic_status& f) {
+    w.StartObject();
+    w.Key("tp_ns");
+    rjson_serialize(w, f.tp_ns);
+    w.Key("partitions");
+    rjson_serialize(w, f.partitions);
+    w.EndObject();
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const cluster::node_health_report& f) {
+    w.StartObject();
+    w.Key("id");
+    rjson_serialize(w, f.id);
+    w.Key("local_state");
+    rjson_serialize(w, f.local_state);
+    w.Key("topics");
+    rjson_serialize(w, f.topics);
+    w.Key("drain_status");
+    rjson_serialize(w, f.drain_status);
+    w.EndObject();
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const cluster::node_state& f) {
+    w.StartObject();
+    w.Key("id");
+    rjson_serialize(w, f.id);
+    w.Key("membership_state");
+    rjson_serialize(w, f.membership_state);
+    w.Key("is_alive");
+    rjson_serialize(w, f.is_alive);
+    w.EndObject();
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const cluster::cluster_health_report& f) {
+    w.StartObject();
+    w.Key("raft0_leader");
+    rjson_serialize(w, f.raft0_leader);
+    w.Key("node_states");
+    rjson_serialize(w, f.node_states);
+    w.Key("node_reports");
+    rjson_serialize(w, f.node_reports);
+    w.EndObject();
+}
+
+inline void read_value(json::Value const& rd, cluster::partitions_filter& obj) {
+    cluster::partitions_filter::ns_map_t namespaces;
+    read_member(rd, "namespaces", namespaces);
+    obj = cluster::partitions_filter{{}, namespaces};
+}
+
+inline void
+read_value(json::Value const& rd, cluster::node_report_filter& obj) {
+    cluster::include_partitions_info include_partitions;
+    cluster::partitions_filter ntp_filters;
+    read_member(rd, "include_partitions", include_partitions);
+    read_member(rd, "ntp_filters", ntp_filters);
+    obj = cluster::node_report_filter{
+      {}, include_partitions, std::move(ntp_filters)};
+}
+
+inline void
+read_value(json::Value const& rd, cluster::cluster_report_filter& obj) {
+    cluster::node_report_filter node_report_filter;
+    std::vector<model::node_id> nodes;
+
+    read_member(rd, "node_report_filter", node_report_filter);
+    read_member(rd, "nodes", nodes);
+    obj = cluster::cluster_report_filter{
+      {}, node_report_filter, std::move(nodes)};
+}
+
+inline void
+read_value(json::Value const& rd, cluster::drain_manager::drain_status& obj) {
+    bool finished;
+    bool errors;
+    std::optional<size_t> partitions;
+    std::optional<size_t> eligible;
+    std::optional<size_t> transferring;
+    std::optional<size_t> failed;
+
+    read_member(rd, "finished", finished);
+    read_member(rd, "errors", errors);
+    read_member(rd, "partitions", partitions);
+    read_member(rd, "eligible", eligible);
+    read_member(rd, "transferring", transferring);
+    read_member(rd, "failed", failed);
+    obj = cluster::drain_manager::drain_status{
+      {}, finished, errors, partitions, eligible, transferring, failed};
+}
+
+inline void read_value(json::Value const& rd, cluster::partition_status& obj) {
+    model::partition_id id;
+    model::term_id term;
+    std::optional<model::node_id> leader_id;
+    model::revision_id revision_id;
+    size_t size_bytes;
+
+    read_member(rd, "id", id);
+    read_member(rd, "term", term);
+    read_member(rd, "leader_id", leader_id);
+    read_member(rd, "revision_id", revision_id);
+    read_member(rd, "size_bytes", size_bytes);
+    obj = cluster::partition_status{
+      {}, id, term, leader_id, revision_id, size_bytes};
+}
+
+inline void read_value(json::Value const& rd, cluster::topic_status& obj) {
+    model::topic_namespace tp_ns;
+    std::vector<cluster::partition_status> partitions;
+
+    read_member(rd, "tp_ns", tp_ns);
+    read_member(rd, "partitions", partitions);
+    obj = cluster::topic_status{{}, tp_ns, partitions};
+}
+
+inline void read_value(json::Value const& rd, cluster::node::local_state& obj) {
+    cluster::node::application_version redpanda_version;
+    cluster::cluster_version logical_version;
+    std::chrono::milliseconds uptime;
+    std::vector<storage::disk> disks;
+    int storage_space_alert;
+
+    read_member(rd, "redpanda_version", redpanda_version);
+    read_member(rd, "logical_version", logical_version);
+    read_member(rd, "uptime", uptime);
+    read_member(rd, "disks", disks);
+    read_member(rd, "storage_space_alert", storage_space_alert);
+
+    obj = cluster::node::local_state{
+      {},
+      redpanda_version,
+      logical_version,
+      uptime,
+      disks,
+      storage::disk_space_alert(storage_space_alert)};
+}
+
+inline void
+read_value(json::Value const& rd, cluster::node_health_report& obj) {
+    model::node_id id;
+    cluster::node::local_state local_state;
+    std::vector<cluster::topic_status> topics;
+    std::optional<cluster::drain_manager::drain_status> drain_status;
+
+    read_member(rd, "id", id);
+    read_member(rd, "local_state", local_state);
+    read_member(rd, "topics", topics);
+    read_member(rd, "drain_status", drain_status);
+    obj = cluster::node_health_report{
+      {}, id, local_state, topics, drain_status.has_value(), drain_status};
+}
+
+inline void read_value(json::Value const& rd, cluster::node_state& obj) {
+    model::node_id id;
+    model::membership_state membership_state;
+    cluster::alive is_alive;
+
+    read_member(rd, "id", id);
+    read_member(rd, "membership_state", membership_state);
+    read_member(rd, "is_alive", is_alive);
+
+    obj = cluster::node_state{{}, id, membership_state, is_alive};
+}
+
+inline void
+read_value(json::Value const& rd, cluster::cluster_health_report& obj) {
+    std::optional<model::node_id> raft0_leader;
+    std::vector<cluster::node_state> node_states;
+    std::vector<cluster::node_health_report> node_reports;
+
+    read_member(rd, "raft0_leader", raft0_leader);
+    read_member(rd, "node_states", node_states);
+    read_member(rd, "node_reports", node_reports);
+    obj = cluster::cluster_health_report{
+      {}, raft0_leader, node_states, node_reports};
 }
 
 inline void
