@@ -1077,8 +1077,22 @@ struct topic_properties
 };
 
 enum incremental_update_operation : int8_t { none, set, remove };
-template<typename T>
 
+inline std::string_view
+incremental_update_operation_as_string(incremental_update_operation op) {
+    switch (op) {
+    case incremental_update_operation::none:
+        return "none";
+    case incremental_update_operation::set:
+        return "set";
+    case incremental_update_operation::remove:
+        return "remove";
+    default:
+        vassert(false, "Unknown operation type passed: {}", int8_t(op));
+    }
+}
+
+template<typename T>
 struct property_update
   : serde::envelope<property_update<T>, serde::version<0>> {
     property_update() = default;
@@ -1090,6 +1104,16 @@ struct property_update
     incremental_update_operation op = incremental_update_operation::none;
 
     auto serde_fields() { return std::tie(value, op); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const property_update<T>& p) {
+        fmt::print(
+          o,
+          "property_update: value: {} op: {}",
+          p.value,
+          incremental_update_operation_as_string(p.op));
+        return o;
+    }
 
     friend bool operator==(const property_update<T>&, const property_update<T>&)
       = default;
@@ -1108,6 +1132,16 @@ struct property_update<tristate<T>>
     incremental_update_operation op = incremental_update_operation::none;
 
     auto serde_fields() { return std::tie(value, op); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const property_update<tristate<T>>& p) {
+        fmt::print(
+          o,
+          "property_update: value: {} op: {}",
+          p.value,
+          incremental_update_operation_as_string(p.op));
+        return o;
+    }
 
     friend bool operator==(
       const property_update<tristate<T>>&, const property_update<tristate<T>>&)

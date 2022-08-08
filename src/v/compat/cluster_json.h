@@ -23,6 +23,41 @@ inline void read_value(json::Value const& rd, cluster::errc& e) {
     e = static_cast<cluster::errc>(err);
 }
 
+template<typename T>
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const cluster::property_update<T>& pu) {
+    w.StartObject();
+    write_member(w, "value", pu.value);
+    write_member(
+      w,
+      "op",
+      static_cast<
+        std::underlying_type_t<cluster::incremental_update_operation>>(pu.op));
+    w.EndObject();
+}
+
+template<typename T>
+void read_value(json::Value const& rd, cluster::property_update<T>& pu) {
+    read_member(rd, "value", pu.value);
+    auto op = read_enum_ut(rd, "op", pu.op);
+    switch (op) {
+    case 0:
+        pu.op = cluster::incremental_update_operation::none;
+        break;
+    case 1:
+        pu.op = cluster::incremental_update_operation::set;
+        break;
+    case 2:
+        pu.op = cluster::incremental_update_operation::remove;
+        break;
+    default:
+        vassert(
+          false,
+          "Unknown enum value for cluster::incremental_update_operation: {}",
+          op);
+    }
+}
+
 inline void
 read_value(json::Value const& rd, cluster::cluster_property_kv& obj) {
     read_member(rd, "key", obj.key);

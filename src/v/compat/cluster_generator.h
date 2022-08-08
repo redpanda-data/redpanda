@@ -734,4 +734,17 @@ struct instance_generator<v8_engine::data_policy> {
     static std::vector<v8_engine::data_policy> limits() { return {}; }
 };
 
+template<typename Func>
+auto random_property_update(Func f) {
+    using T = decltype(f());
+    return tests::random_bool()
+             ? cluster::property_update<T>()
+             : cluster::property_update<T>(
+               f(),
+               random_generators::random_choice(
+                 {cluster::incremental_update_operation::none,
+                  cluster::incremental_update_operation::set,
+                  cluster::incremental_update_operation::remove}));
+}
+
 } // namespace compat
