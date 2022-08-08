@@ -69,10 +69,9 @@ struct license : serde::envelope<license, serde::version<0>> {
     ss::sstring organization;
     std::chrono::seconds expiry;
 
-    /// Explicit serde:: implementations because boost::gregorian is not
-    /// trivally serializable/deserializable
-    void serde_read(iobuf_parser& in, const serde::header& h);
-    void serde_write(iobuf& out);
+    auto serde_fields() {
+        return std::tie(format_version, type, organization, expiry);
+    }
 
     /// true if todays date is greater then \ref expiry
     bool is_expired() const noexcept;
