@@ -814,4 +814,17 @@ struct instance_generator<cluster::incremental_topic_updates> {
     }
 };
 
+template<>
+struct instance_generator<cluster::topic_properties_update> {
+    static cluster::topic_properties_update random() {
+        return {
+          model::random_topic_namespace(),
+          instance_generator<cluster::incremental_topic_updates>::random(),
+          instance_generator<
+            cluster::incremental_topic_custom_updates>::random()};
+    }
+
+    static std::vector<cluster::topic_properties_update> limits() { return {}; }
+};
+
 } // namespace compat

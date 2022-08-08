@@ -410,4 +410,17 @@ GEN_COMPAT_CHECK(
       json_read(shadow_indexing);
   })
 
+GEN_COMPAT_CHECK(
+  cluster::topic_properties_update,
+  {
+      json_write(tp_ns);
+      json_write(properties);
+      json_write(custom_properties);
+  },
+  {
+      json_read(tp_ns);
+      json_read(properties);
+      json_read(custom_properties);
+  })
+
 } // namespace compat

@@ -1236,6 +1236,9 @@ struct topic_properties_update
     // they have custom services for replication.
     incremental_topic_custom_updates custom_properties;
 
+    friend std::ostream&
+    operator<<(std::ostream&, const topic_properties_update&);
+
     friend bool
     operator==(const topic_properties_update&, const topic_properties_update&)
       = default;
