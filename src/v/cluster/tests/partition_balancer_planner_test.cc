@@ -730,3 +730,34 @@ FIXTURE_TEST(test_rack_awareness, partition_balancer_planner_fixture) {
                           .replicas;
     check_expected_assignments(new_replicas, expected_nodes);
 }
+
+/*
+ * 4 nodes; 1 topic; 1 node down; 1 node in maintenance
+ * Planner should stall and not schedule any movements.
+ * Actual
+ *   node_0: partitions: 1; down: True;
+ *   node_1: partitions: 1; down: False;
+ *   node_2: partitions: 1; down: False;
+ *   node_3: partitions: 0; down: False; maintenance: True
+ */
+FIXTURE_TEST(
+  test_interaction_with_maintenance, partition_balancer_planner_fixture) {
+    allocator_register_nodes(3);
+    create_topic("topic-1", 1, 3);
+    allocator_register_nodes(1);
+
+    std::set<size_t> unavailable_nodes{0};
+    auto hr = create_health_report();
+    auto fm = create_follower_metrics(unavailable_nodes);
+
+    set_maintenance_mode(model::node_id{3});
+
+    auto plan_data = planner.plan_reassignments(hr, fm);
+
+    check_violations(plan_data, unavailable_nodes, {});
+    BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 0);
+    BOOST_REQUIRE(
+      plan_data.status
+      == cluster::partition_balancer_planner::status::
+        waiting_for_maintenance_end);
+}

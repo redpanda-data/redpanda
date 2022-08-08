@@ -229,6 +229,16 @@ struct partition_balancer_planner_fixture {
         return health_report;
     }
 
+    void set_maintenance_mode(model::node_id id) {
+        workers.members.local().apply(
+          model::offset{}, cluster::maintenance_mode_cmd(id, true));
+        auto broker = workers.members.local().get_broker(id);
+        BOOST_REQUIRE(broker);
+        BOOST_REQUIRE(
+          broker.value()->get_maintenance_state()
+          == model::maintenance_state::active);
+    }
+
     controller_workers workers;
     cluster::partition_balancer_planner planner;
     int last_node_idx{};
