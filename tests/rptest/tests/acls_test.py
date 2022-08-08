@@ -549,43 +549,45 @@ class AccessControlListTest(RedpandaTest):
                              authn_method,
                              client_auth=client_auth)
 
-        def should_pass_w_base_user(use_tls: bool, use_sasl: bool,
-                                    enable_authz: Optional[bool],
-                                    authn_method: Optional[str]):
-            '''
-            These are the config combinations where `rpk acl list` should pass
-            with the base user. All other tests should fail with ClusterAuthzError
-            with the base user. These combinations were pulled from previous
-            iterations of this ducktape test (i.e., AccessControlListTest.test_describe_acls).
-            See https://github.com/redpanda-data/redpanda/blob/38650a7b96707ce4a13d9879d459b08bb0a59bba/tests/rptest/tests/acls_test.py#L217
-            '''
-            if use_tls and not use_sasl and enable_authz == False and authn_method == 'mtls_identity':
-                return True
-            elif use_tls and not use_sasl and enable_authz == None and authn_method == 'mtls_identity':
-                return True
-            elif not use_tls and use_sasl and enable_authz == False and authn_method == 'sasl':
-                return True
-            elif use_tls and use_sasl and enable_authz == False and authn_method == None:
-                return True
-            elif use_tls and use_sasl and enable_authz == False and authn_method == 'mtls_identity':
-                return True
-            elif use_tls and use_sasl and enable_authz == False and authn_method == 'sasl':
-                return True
-            else:
-                return False
+        def should_pass_w_base_user(use_sasl: bool,
+                                    enable_authz: Optional[bool]) -> bool:
+            return not self.authz_enabled(use_sasl, enable_authz)
 
-        pass_w_base_user = should_pass_w_base_user(use_tls, use_sasl,
-                                                   enable_authz, authn_method)
+        def should_pass_w_authn_user(use_tls: bool, use_sasl: bool,
+                                     enable_authz: Optional[bool],
+                                     client_auth: bool) -> bool:
+            if should_pass_w_base_user(use_sasl, enable_authz):
+                return True
+            if self.security.mtls_identity_enabled():
+                return use_tls and client_auth
+            if self.security.sasl_enabled():
+                return True
+            return False
+
+        pass_w_base_user = should_pass_w_base_user(use_sasl, enable_authz)
+
+        pass_w_authn_user = should_pass_w_authn_user(use_tls, use_sasl,
+                                                     enable_authz, client_auth)
+
         # run a few times for good health
-        for _ in range(5):
+        for _ in range(2):
             try:
                 self.get_client("base").acl_list()
-                assert pass_w_base_user, "list acls should have failed"
+                assert pass_w_base_user, "list acls should have failed for base user"
             except ClusterAuthorizationError:
                 assert not pass_w_base_user
 
-            self.get_client("cluster_describe").acl_list()
-            self.get_super_client().acl_list()
+            try:
+                self.get_client("cluster_describe").acl_list()
+                assert pass_w_authn_user, "list acls should have failed for cluster user"
+            except ClusterAuthorizationError:
+                assert not pass_w_authn_user
+
+            try:
+                self.get_super_client().acl_list()
+                assert pass_w_authn_user, "list acls should have failed for super user"
+            except ClusterAuthorizationError:
+                assert not pass_w_authn_user
 
     # Test mtls identity
     # Principals in use:
