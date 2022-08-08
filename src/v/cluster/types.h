@@ -1500,6 +1500,9 @@ struct update_topic_properties_reply
   : serde::envelope<update_topic_properties_reply, serde::version<0>> {
     std::vector<topic_result> results;
 
+    friend std::ostream&
+    operator<<(std::ostream&, const update_topic_properties_reply&);
+
     friend bool operator==(
       const update_topic_properties_reply&,
       const update_topic_properties_reply&)

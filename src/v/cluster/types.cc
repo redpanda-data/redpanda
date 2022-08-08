@@ -175,6 +175,12 @@ operator<<(std::ostream& o, const update_topic_properties_request& r) {
     return o;
 }
 
+std::ostream&
+operator<<(std::ostream& o, const update_topic_properties_reply& r) {
+    fmt::print(o, "{{results: {}}}", r.results);
+    return o;
+}
+
 std::ostream& operator<<(std::ostream& o, const topic_properties_update& tpu) {
     fmt::print(
       o,

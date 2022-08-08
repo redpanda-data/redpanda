@@ -841,4 +841,17 @@ struct instance_generator<cluster::update_topic_properties_request> {
     }
 };
 
+template<>
+struct instance_generator<cluster::update_topic_properties_reply> {
+    static cluster::update_topic_properties_reply random() {
+        return {.results = tests::random_vector([] {
+                    return instance_generator<cluster::topic_result>::random();
+                })};
+    }
+
+    static std::vector<cluster::update_topic_properties_reply> limits() {
+        return {};
+    }
+};
+
 } // namespace compat

@@ -428,4 +428,9 @@ GEN_COMPAT_CHECK(
   { json_write(updates); },
   { json_read(updates); })
 
+GEN_COMPAT_CHECK(
+  cluster::update_topic_properties_reply,
+  { json_write(results); },
+  { json_read(results); })
+
 } // namespace compat
