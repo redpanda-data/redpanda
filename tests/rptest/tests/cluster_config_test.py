@@ -187,8 +187,8 @@ class ClusterConfigTest(RedpandaTest):
     def _wait_for_version_sync(self, version):
         wait_until(
             lambda: set([
-                n['config_version']
-                for n in self.admin.get_cluster_config_status()
+                n['config_version'] for n in self.admin.
+                get_cluster_config_status(node=self.redpanda.controller())
             ]) == {version},
             timeout_sec=10,
             backoff_sec=0.5,
