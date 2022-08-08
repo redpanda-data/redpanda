@@ -650,3 +650,51 @@ class PartitionBalancerTest(EndToEndTest):
 
         self.run_validation(enable_idempotence=False,
                             consumer_timeout_sec=CONSUMER_TIMEOUT)
+
+    @cluster(num_nodes=4, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    def test_transfer_controller_leadership(self):
+        """
+        Test that unavailability timeout is correctly restarted after controller
+        leadership change. We set the availability timeout to a big value and
+        check that partition rebalancing doesn't start after the node is killed
+        and leadership changes.
+        """
+        self.start_redpanda(
+            num_nodes=4,
+            extra_rp_conf={
+                "partition_autobalancing_node_availability_timeout_sec": 3600,
+            },
+        )
+        self.topic = TopicSpec(partition_count=random.randint(20, 30))
+        self.client().create_topic(self.topic)
+
+        # throttle recovery to prevent partition moves from finishing
+        self.logger.info("throttling recovery")
+        self._throttle_recovery(10)
+
+        with self.NodeStopper(self) as ns:
+            to_kill = random.choice(self.redpanda.nodes)
+            ns.make_unavailable(to_kill,
+                                failure_types=[FailureSpec.FAILURE_KILL])
+            self.wait_until_ready()
+
+            controller = self.redpanda.controller()
+            controller_id = self.redpanda.idx(controller)
+            admin = Admin(self.redpanda)
+
+            transfer_to = random.choice([
+                n for n in self.redpanda.nodes
+                if n.name != to_kill.name and n.name != controller.name
+            ])
+            transfer_to_idx = self.redpanda.idx(transfer_to)
+            self.logger.info(
+                f"transferring raft0 leadership from {controller_id} to {transfer_to_idx} "
+                f"(killed node: {self.redpanda.idx(to_kill)})")
+
+            admin.transfer_leadership_to(namespace='redpanda',
+                                         topic='controller',
+                                         partition=0,
+                                         leader_id=controller_id,
+                                         target_id=transfer_to_idx)
+
+            self.wait_until_ready()
