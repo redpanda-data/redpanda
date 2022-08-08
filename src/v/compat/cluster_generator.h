@@ -14,6 +14,7 @@
 #include "cluster/types.h"
 #include "compat/generator.h"
 #include "model/tests/randoms.h"
+#include "random/generators.h"
 #include "test_utils/randoms.h"
 
 namespace compat {
@@ -530,5 +531,75 @@ struct instance_generator<cluster::cancel_partition_movements_reply> {
 };
 
 EMPTY_COMPAT_GENERATOR(cluster::cancel_all_partition_movements_request);
+
+template<>
+struct instance_generator<cluster::partition_assignment> {
+    static cluster::partition_assignment random() {
+        return {
+          tests::random_named_int<raft::group_id>(),
+          tests::random_named_int<model::partition_id>(),
+          tests::random_vector([] { return model::random_broker_shard(); })};
+    }
+
+    static std::vector<cluster::partition_assignment> limits() { return {{}}; }
+};
+
+template<>
+struct instance_generator<cluster::backend_operation> {
+    static cluster::backend_operation random() {
+        return {
+          .source_shard = random_generators::get_int<unsigned>(),
+          .p_as = instance_generator<cluster::partition_assignment>::random(),
+          .type = random_generators::random_choice(
+            {cluster::topic_table_delta::op_type::add,
+             cluster::topic_table_delta::op_type::add_non_replicable,
+             cluster::topic_table_delta::op_type::del_non_replicable,
+             cluster::topic_table_delta::op_type::cancel_update,
+             cluster::topic_table_delta::op_type::force_abort_update,
+             cluster::topic_table_delta::op_type::update,
+             cluster::topic_table_delta::op_type::update_finished,
+             cluster::topic_table_delta::op_type::update_properties,
+             cluster::topic_table_delta::op_type::del}),
+        };
+    }
+
+    static std::vector<cluster::backend_operation> limits() { return {{}}; }
+};
+
+template<>
+struct instance_generator<cluster::ntp_reconciliation_state> {
+    static cluster::ntp_reconciliation_state random() {
+        return {
+          model::random_ntp(),
+          tests::random_vector([] {
+              return instance_generator<cluster::backend_operation>::random();
+          }),
+          random_generators::random_choice(
+            {cluster::reconciliation_status::done,
+             cluster::reconciliation_status::error,
+             cluster::reconciliation_status::in_progress}),
+          instance_generator<cluster::errc>::random()};
+    }
+
+    static std::vector<cluster::ntp_reconciliation_state> limits() {
+        return {{}};
+    }
+};
+
+template<>
+struct instance_generator<cluster::reconciliation_state_reply> {
+    static cluster::reconciliation_state_reply random() {
+        return {
+          .results = tests::random_vector([] {
+              return instance_generator<
+                cluster::ntp_reconciliation_state>::random();
+          }),
+        };
+    }
+
+    static std::vector<cluster::reconciliation_state_reply> limits() {
+        return {{}};
+    }
+};
 
 } // namespace compat

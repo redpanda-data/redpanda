@@ -203,6 +203,11 @@ GEN_COMPAT_CHECK(
   { json_read(ntps); });
 
 GEN_COMPAT_CHECK(
+  cluster::reconciliation_state_reply,
+  { json_write(results); },
+  { json_read(results); });
+
+GEN_COMPAT_CHECK(
   cluster::create_non_replicable_topics_request,
   {
       json_write(topics);

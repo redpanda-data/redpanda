@@ -154,4 +154,72 @@ read_value(json::Value const& rd, cluster::move_cancellation_result& obj) {
     obj = cluster::move_cancellation_result(std::move(ntp), result);
 }
 
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const cluster::partition_assignment& r) {
+    w.StartObject();
+    w.Key("group");
+    rjson_serialize(w, r.group);
+    w.Key("id");
+    rjson_serialize(w, r.id);
+    w.Key("replicas");
+    rjson_serialize(w, r.replicas);
+    w.EndObject();
+}
+
+inline void
+read_value(json::Value const& rd, cluster::partition_assignment& obj) {
+    json_read(group);
+    json_read(id);
+    json_read(replicas);
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const cluster::backend_operation& r) {
+    w.StartObject();
+    w.Key("source_shard");
+    rjson_serialize(w, r.source_shard);
+    w.Key("partition_assignment");
+    rjson_serialize(w, r.p_as);
+    w.Key("op_type");
+    rjson_serialize(w, r.type);
+    w.EndObject();
+}
+
+inline void read_value(json::Value const& rd, cluster::backend_operation& obj) {
+    json_read(source_shard);
+    read_member(rd, "partition_assignment", obj.p_as);
+    read_member(rd, "op_type", obj.type);
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const cluster::ntp_reconciliation_state& r) {
+    w.StartObject();
+    w.Key("ntp");
+    rjson_serialize(w, r.ntp());
+    w.Key("operations");
+    rjson_serialize(w, r.pending_operations());
+    w.Key("status");
+    rjson_serialize(w, r.status());
+    w.Key("error");
+    rjson_serialize(w, r.cluster_errc());
+    w.EndObject();
+}
+
+inline void
+read_value(json::Value const& rd, cluster::ntp_reconciliation_state& obj) {
+    model::ntp ntp;
+    std::vector<cluster::backend_operation> operations;
+    cluster::reconciliation_status status;
+    cluster::errc error;
+
+    read_member(rd, "ntp", ntp);
+    read_member(rd, "operations", operations);
+    read_member(rd, "status", status);
+    read_member(rd, "error", error);
+
+    obj = cluster::ntp_reconciliation_state(
+      std::move(ntp), std::move(operations), status, error);
+}
+
 } // namespace json

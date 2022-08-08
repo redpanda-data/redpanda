@@ -111,6 +111,7 @@ using compat_checks = type_list<
   cluster::create_acls_request,
   cluster::create_acls_reply,
   cluster::reconciliation_state_request,
+  cluster::reconciliation_state_reply,
   cluster::partition_balancer_overview_request,
   cluster::partition_balancer_overview_reply,
   cluster::delete_acls_request,
