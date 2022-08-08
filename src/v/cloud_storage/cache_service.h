@@ -69,7 +69,7 @@ public:
       ss::io_priority_class io_priority
       = priority_manager::local().shadow_indexing_priority(),
       size_t write_buffer_size = default_write_buffer_size,
-      unsigned int write_behind = default_write_buffer_size);
+      unsigned int write_behind = default_writebehind);
 
     /// \brief Checks if the value is cached
     ///
