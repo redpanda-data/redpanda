@@ -166,66 +166,6 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
                 consumer_timeout_sec=self.consumer_timeout_seconds,
                 min_records=self.min_records)
 
-    @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    @matrix(replication_factor=[1, 3],
-            unclean_abort=[True, False],
-            recovery=[NO_RECOVERY, RESTART_RECOVERY])
-    def test_cancelling_partition_move_x_core(self, replication_factor,
-                                              unclean_abort, recovery):
-        """
-        Cancel partition moving with active consumer / producer
-        """
-        self.start_redpanda(num_nodes=5,
-                            extra_rp_conf={
-                                "default_topic_replications": 3,
-                            })
-
-        spec = TopicSpec(partition_count=self.partition_count,
-                         replication_factor=replication_factor)
-
-        self.client().create_topic(spec)
-        self.topic = spec.name
-
-        self.start_producer(1, throughput=self.throughput)
-        self.start_consumer(1)
-        self.await_startup()
-        # throttle recovery to prevent partition move from finishing
-        self._throttle_recovery(10)
-
-        partition = random.randint(0, self.partition_count - 1)
-        for i in range(self.moves):
-            # move partition between cores first
-            x_core = i < self.moves / 2
-
-            prev_assignment, new_assignment = self._dispatch_random_partition_move(
-                self.topic, partition, x_core_only=x_core)
-            if x_core:
-                self._wait_post_move(topic=self.topic,
-                                     partition=partition,
-                                     assignments=new_assignment,
-                                     timeout_sec=60)
-            else:
-                self._request_move_cancel(topic=self.topic,
-                                          unclean_abort=unclean_abort,
-                                          partition=partition,
-                                          previous_assignment=prev_assignment)
-            if recovery == RESTART_RECOVERY:
-                # restart one of the nodes after each move
-                self.redpanda.restart_nodes(
-                    [random.choice(self.redpanda.nodes)])
-
-        if unclean_abort:
-            # do not run offsets validation as we may experience data loss since partition movement is forcibly cancelled
-            wait_until(lambda: self.producer.num_acked > 20000, timeout_sec=60)
-
-            self.producer.stop()
-            self.consumer.stop()
-        else:
-            self.run_validation(
-                enable_idempotence=False,
-                consumer_timeout_sec=self.consumer_timeout_seconds,
-                min_records=self.min_records)
-
     def increase_replication_factor(self, topic, partition,
                                     requested_replication_factor):
 
