@@ -24,7 +24,7 @@
 namespace {
 // NOLINTNEXTLINE(misc-no-recursion)
 std::optional<bool> perturb(json::Value& value, std::string& path) {
-    auto perturb_int = [&](auto v) {
+    auto perturb_int = [&]<typename T>(T v) -> std::optional<T> {
         /*
          * some integers represent enums. in the redpanda tree when an enum is
          * printed out in string form it is usually done via a case statement
@@ -40,7 +40,13 @@ std::optional<bool> perturb(json::Value& value, std::string& path) {
          * play nice with enum fields. generally enum values start at 0, have no
          * gaps in values, and there are more than one value. so it is usually
          * safe to add one if the value is zero and subtract one otherwise.
+         *
+         * Other exceptions:
+         * - acl principal type has only one enum value, so we can't change it.
          */
+        if (path.find("entry.principal.type") != std::string::npos) {
+            return std::nullopt;
+        }
         const auto orig = v;
         const int modifier = v == 0 ? 1 : -1;
         v += modifier;
@@ -48,19 +54,35 @@ std::optional<bool> perturb(json::Value& value, std::string& path) {
         return v;
     };
     if (value.IsInt()) {
-        value.SetInt(perturb_int(value.GetInt()));
+        auto v = perturb_int(value.GetInt());
+        if (!v.has_value()) {
+            return std::nullopt;
+        }
+        value.SetInt(v.value());
         return true;
     }
     if (value.IsUint()) {
-        value.SetUint(perturb_int(value.GetUint()));
+        auto v = perturb_int(value.GetUint());
+        if (!v.has_value()) {
+            return std::nullopt;
+        }
+        value.SetUint(v.value());
         return true;
     }
     if (value.IsInt64()) {
-        value.SetInt64(perturb_int(value.GetInt64()));
+        auto v = perturb_int(value.GetInt64());
+        if (!v.has_value()) {
+            return std::nullopt;
+        }
+        value.SetInt64(v.value());
         return true;
     }
     if (value.IsUint64()) {
-        value.SetUint64(perturb_int(value.GetUint64()));
+        auto v = perturb_int(value.GetUint64());
+        if (!v.has_value()) {
+            return std::nullopt;
+        }
+        value.SetUint64(v.value());
         return true;
     }
     if (value.IsBool()) {
