@@ -263,6 +263,10 @@ ss::future<> cache::save_access_time_tracker() {
     auto source = _cache_dir / access_time_tracker_file_name;
     auto index_stream = make_iobuf_input_stream(
       _access_time_tracker.to_iobuf());
+    vlog(
+      cst_log.debug,
+      "current access_time_tracker size: {}",
+      _access_time_tracker.size());
     co_await put(source.native(), index_stream);
 }
 

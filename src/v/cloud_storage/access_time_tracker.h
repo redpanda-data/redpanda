@@ -64,6 +64,8 @@ public:
     /// Remove every key which isn't present in 't'
     void remove_others(const access_time_tracker& t);
 
+    size_t size() const { return _table.data.size(); }
+
 private:
     table_t _table;
     bool _dirty{false};
