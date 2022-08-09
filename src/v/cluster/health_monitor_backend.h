@@ -117,8 +117,7 @@ private:
       = absl::node_hash_map<model::node_id, reply_status>;
 
     void tick();
-    ss::future<> tick_cluster_health();
-    ss::future<> collect_cluster_health();
+    ss::future<std::error_code> collect_cluster_health();
     ss::future<result<node_health_report>>
       collect_remote_node_health(model::node_id);
     ss::future<std::error_code> maybe_refresh_cluster_health(
@@ -140,7 +139,6 @@ private:
     result<node_health_report>
       process_node_reply(model::node_id, result<get_node_health_reply>);
 
-    std::chrono::milliseconds tick_interval();
     std::chrono::milliseconds max_metadata_age();
     void abort_current_refresh();
 
@@ -166,7 +164,6 @@ private:
       = storage::disk_space_alert::ok;
     last_reply_cache_t _last_replies;
 
-    ss::timer<ss::lowres_clock> _tick_timer;
     ss::gate _gate;
     mutex _refresh_mutex;
     node::local_monitor _local_monitor;

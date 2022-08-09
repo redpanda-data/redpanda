@@ -134,7 +134,7 @@ class WriteRejectTest(RedpandaTest):
 class FullDiskTest(EndToEndTest):
     def __init__(self, test_ctx):
         extra_rp_conf = {
-            "health_monitor_tick_interval": 1000,
+            "health_monitor_max_metadata_age": 1000,
             "metrics_reporter_tick_interval": 2000,
             "metrics_reporter_report_interval": 1000,
         }
