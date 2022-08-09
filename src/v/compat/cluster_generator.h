@@ -134,6 +134,15 @@ struct instance_generator<cluster::config_status_request> {
 };
 
 template<>
+struct instance_generator<cluster::config_status_reply> {
+    static cluster::config_status_reply random() {
+        return {.error = instance_generator<cluster::errc>::random()};
+    }
+
+    static std::vector<cluster::config_status_reply> limits() { return {}; }
+};
+
+template<>
 struct instance_generator<cluster::cluster_property_kv> {
     static cluster::cluster_property_kv random() {
         return {

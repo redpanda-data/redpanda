@@ -41,6 +41,9 @@ GEN_COMPAT_CHECK(
   { json_read(status); })
 
 GEN_COMPAT_CHECK(
+  cluster::config_status_reply, { json_write(error); }, { json_read(error); })
+
+GEN_COMPAT_CHECK(
   cluster::cluster_property_kv,
   {
       json_write(key);

@@ -2165,6 +2165,8 @@ struct config_status_reply
   : serde::envelope<config_status_reply, serde::version<0>> {
     errc error;
 
+    friend std::ostream& operator<<(std::ostream&, const config_status_reply&);
+
     friend bool
     operator==(const config_status_reply&, const config_status_reply&)
       = default;

@@ -75,6 +75,7 @@ using compat_checks = type_list<
   cluster::update_leadership_request,
   cluster::config_status,
   cluster::config_status_request,
+  cluster::config_status_reply,
   cluster::cluster_property_kv,
   cluster::config_update_request,
   cluster::config_update_reply,
