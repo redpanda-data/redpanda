@@ -174,10 +174,12 @@ ss::future<> partition_balancer_backend::do_tick() {
           clusterlog.info,
           "last status: {}; "
           "violations: unavailable nodes: {}, full nodes: {}; "
+          "updates in progress: {}; "
           "reassignments planned: {}, cancelled: {}, failed: {}",
           _last_status,
           _last_violations.unavailable_nodes.size(),
           _last_violations.full_nodes.size(),
+          _topic_table.updates_in_progress().size(),
           plan_data.reassignments.size(),
           plan_data.cancellations.size(),
           plan_data.failed_reassignments_count);

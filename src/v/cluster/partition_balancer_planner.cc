@@ -76,11 +76,13 @@ void partition_balancer_planner::init_per_node_state(
 
         if (
           broker->get_maintenance_state() == model::maintenance_state::active) {
+            vlog(clusterlog.debug, "node {}: in maintenance", broker->id());
             rrs.num_nodes_in_maintenance += 1;
         }
 
         if (
           broker->get_membership_state() == model::membership_state::draining) {
+            vlog(clusterlog.debug, "node {}: decommissioning", broker->id());
             rrs.decommissioning_nodes.insert(broker->id());
         }
     }
@@ -88,6 +90,13 @@ void partition_balancer_planner::init_per_node_state(
     const auto now = raft::clock_type::now();
     for (const auto& follower : follower_metrics) {
         auto unavailable_dur = now - follower.last_heartbeat;
+
+        vlog(
+          clusterlog.debug,
+          "node {}: {} ms since last heartbeat",
+          follower.id,
+          std::chrono::duration_cast<std::chrono::milliseconds>(unavailable_dur)
+            .count());
 
         if (follower.is_live) {
             continue;
@@ -117,11 +126,18 @@ void partition_balancer_planner::init_per_node_state(
           node_report.id, node_disk_space(node_report.id, total, total - free));
     }
 
-    for (const auto& n : rrs.node_disk_reports) {
-        double used_space_ratio = n.second.original_used_ratio();
+    for (const auto& [id, disk] : rrs.node_disk_reports) {
+        double used_space_ratio = disk.original_used_ratio();
+        vlog(
+          clusterlog.debug,
+          "node {}: bytes used: {}, bytes total: {}, used ratio: {:.4}",
+          id,
+          disk.used,
+          disk.total,
+          used_space_ratio);
         if (used_space_ratio > _config.soft_max_disk_usage_ratio) {
             result.violations.full_nodes.emplace_back(
-              n.first, uint32_t(used_space_ratio * 100.0));
+              id, uint32_t(used_space_ratio * 100.0));
         }
     }
 }
