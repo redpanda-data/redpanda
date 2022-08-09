@@ -1385,6 +1385,24 @@ func TestStartCommand(t *testing.T) {
 			st *testing.T,
 		) {
 			require.Equal(st, "true", rpArgs.SeastarFlags["overprovisioned"])
+			require.Equal(st, "0M", rpArgs.SeastarFlags["reserve-memory"])
+			conf, err := new(config.Params).Load(fs)
+			require.NoError(st, err)
+			require.Equal(st, 0, conf.Redpanda.ID)
+			require.Equal(st, true, conf.Redpanda.DeveloperMode)
+		},
+	}, {
+		name: "--sandbox container flag set required bundle of flags",
+		args: []string{
+			"--install-dir", "/var/lib/redpanda",
+			"--sandbox=container",
+		},
+		postCheck: func(
+			fs afero.Fs,
+			rpArgs *redpanda.RedpandaArgs,
+			st *testing.T,
+		) {
+			require.Equal(st, "true", rpArgs.SeastarFlags["overprovisioned"])
 			require.Equal(st, "1", rpArgs.SeastarFlags["smp"])
 			require.Equal(st, "0M", rpArgs.SeastarFlags["reserve-memory"])
 			require.Equal(st, "true", rpArgs.SeastarFlags["unsafe-bypass-fsync"])
@@ -1397,7 +1415,7 @@ func TestStartCommand(t *testing.T) {
 		name: "override values set by --sandbox",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
-			"--sandbox", "--smp", "2",
+			"--sandbox=container", "--smp", "2",
 		},
 		postCheck: func(
 			fs afero.Fs,
@@ -1414,6 +1432,50 @@ func TestStartCommand(t *testing.T) {
 			require.NoError(st, err)
 			require.Equal(st, 0, conf.Redpanda.ID)
 			require.Equal(st, true, conf.Redpanda.DeveloperMode)
+		},
+	}, {
+		name: ".bootstrap.yaml created with --sandbox container",
+		before: func(fs afero.Fs) error {
+			// We also parse --sandbox flag "outside" of Cobra, directly from
+			// os.Args.
+			os.Args = append(
+				os.Args,
+				"--sandbox", "container",
+			)
+			return nil
+		},
+		after: func() {
+			for i, a := range os.Args {
+				if a == "--sandbox" {
+					os.Args = os.Args[:i]
+					return
+				}
+			}
+		},
+		args: []string{
+			"--install-dir", "/var/lib/redpanda",
+			"--sandbox=container",
+		},
+		postCheck: func(
+			fs afero.Fs,
+			_ *redpanda.RedpandaArgs,
+			st *testing.T,
+		) {
+			bFile := "/etc/redpanda/.bootstrap.yaml"
+			exists, err := afero.Exists(fs, bFile)
+			require.NoError(st, err)
+			require.True(st, exists)
+			file, err := afero.ReadFile(fs, bFile)
+			require.NoError(st, err)
+			require.Equal(
+				st,
+				`auto_create_topics_enabled: true
+group_topic_partitions: 1
+storage_min_free_bytes: 10485760
+topic_partitions_per_shard: 1000
+`,
+				string(file),
+			)
 		},
 	}, {
 		name: ".bootstrap.yaml created with --sandbox",
@@ -1435,8 +1497,8 @@ func TestStartCommand(t *testing.T) {
 			require.Equal(
 				st,
 				`auto_create_topics_enabled: true
-group_topic_partitions: 1
-storage_min_free_bytes: 0
+group_topic_partitions: 3
+storage_min_free_bytes: 10485760
 topic_partitions_per_shard: 1000
 `,
 				string(file),
@@ -1446,7 +1508,8 @@ topic_partitions_per_shard: 1000
 		name: ".bootstrap.yaml created with --sandbox in arbitrary path",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
-			"--sandbox", "--config", "/arbitrary/path/redpanda.yaml",
+			"--sandbox=container", "--config",
+			"/arbitrary/path/redpanda.yaml",
 		},
 		postCheck: func(
 			fs afero.Fs,
@@ -1463,14 +1526,14 @@ topic_partitions_per_shard: 1000
 				st,
 				`auto_create_topics_enabled: true
 group_topic_partitions: 1
-storage_min_free_bytes: 0
+storage_min_free_bytes: 10485760
 topic_partitions_per_shard: 1000
 `,
 				string(file),
 			)
 		},
 	}, {
-		name: ".bootstrap.yaml created with redpanda.developer_mode enabled",
+		name: "redpanda.developer_mode: true behaves like --sandbox localhost",
 		args: []string{"--install-dir", "/var/lib/redpanda"},
 		before: func(fs afero.Fs) error {
 			conf, _ := new(config.Params).Load(fs)
@@ -1479,9 +1542,20 @@ topic_partitions_per_shard: 1000
 		},
 		postCheck: func(
 			fs afero.Fs,
-			_ *redpanda.RedpandaArgs,
+			rpArgs *redpanda.RedpandaArgs,
 			st *testing.T,
 		) {
+			// Flags:
+			require.Equal(st, "true", rpArgs.SeastarFlags["overprovisioned"])
+			require.Equal(st, "0M", rpArgs.SeastarFlags["reserve-memory"])
+			conf, err := new(config.Params).Load(fs)
+			require.NoError(st, err)
+
+			// Config:
+			require.Equal(st, 0, conf.Redpanda.ID)
+			require.Equal(st, true, conf.Redpanda.DeveloperMode)
+
+			// Bootstrap Yaml
 			bFile := "/etc/redpanda/.bootstrap.yaml"
 			exists, err := afero.Exists(fs, bFile)
 			require.NoError(st, err)
@@ -1490,11 +1564,35 @@ topic_partitions_per_shard: 1000
 			require.NoError(st, err)
 			require.Equal(
 				st,
-				`storage_min_free_bytes: 0
+				`auto_create_topics_enabled: true
+group_topic_partitions: 3
+storage_min_free_bytes: 10485760
+topic_partitions_per_shard: 1000
 `,
 				string(file),
 			)
 		},
+	}, {
+		name: "Fails if unknown sandbox mode is passed",
+		before: func(fs afero.Fs) error {
+			// We also parse --sandbox flag "outside" of Cobra, directly from
+			// os.Args.
+			os.Args = append(
+				os.Args,
+				"--sandbox", "foo",
+			)
+			return nil
+		},
+		after: func() {
+			for i, a := range os.Args {
+				if a == "--sandbox" {
+					os.Args = os.Args[:i]
+					return
+				}
+			}
+		},
+		args:           []string{"--install-dir", "/var/lib/redpanda"},
+		expectedErrMsg: `unrecognized sandbox type "foo"`,
 	}}
 
 	for _, tt := range tests {

@@ -213,6 +213,7 @@ func TestSetCommand(t *testing.T) {
     developer_mode: true
 rpk:
     coredump_dir: /var/lib/redpanda/coredump
+    overprovisioned: true
 pandaproxy: {}
 schema_registry: {}
 `,
