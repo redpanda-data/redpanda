@@ -429,7 +429,7 @@ health_monitor_backend::get_cluster_health(
   model::timeout_clock::time_point deadline) {
     vlog(
       clusterlog.debug,
-      "requesing cluster state report with filter: {}, force refresh: {}",
+      "requesting cluster state report with filter: {}, force refresh: {}",
       filter,
       refresh);
     auto ec = co_await maybe_refresh_cluster_health(refresh, deadline);
