@@ -168,6 +168,38 @@ class VerifiableProducer(BackgroundThreadService):
                 compression_index]
         return prop_file
 
+    def _update_offsets_strict(self, node, partition, data):
+        """
+        Update self._last_acked_offsets with some strict consistency checking,
+        must only be used on single-producer instances of this service.
+        :return:
+        """
+
+        # These assertions are aimed at finding an apparent rare issue
+        # where the verification in EndToEndTest can go wrong.
+        # Related: https://github.com/redpanda-data/redpanda/issues/3450
+        try:
+            assert data["offset"] > self._last_acked_offsets.get(partition, -1)
+
+            self._last_acked_offsets[partition] = data["offset"]
+
+            # Greater-equal because offsets may advance from failed/retried produce
+            assert sum(o + 1
+                       for o in self._last_acked_offsets.values()) >= len(
+                           self.acked_values)
+
+            assert sum(pc for pc in self.produced_count.values()) == len(
+                self.acked_values) + len(self.not_acked_values)
+        except AssertionError:
+            self.logger.error(
+                f"Assertion failed on node {node.name}, message {data}")
+            self.logger.error(f"last_acked_offsets {self._last_acked_offsets}")
+            self.logger.error(f"len(acked_values) {len(self.acked_values)}")
+            self.logger.error(
+                f"len(not_acked_values) {len(self.not_acked_values)}")
+            self.logger.error(f"produced_count: {self.produced_count}")
+            raise
+
     def _worker(self, idx, node):
         node.account.ssh("mkdir -p %s" % VerifiableProducer.PERSISTENT_ROOT,
                          allow_fail=False)
@@ -234,8 +266,17 @@ class VerifiableProducer(BackgroundThreadService):
                             self.acked_values_by_partition[partition] = []
                         self.acked_values_by_partition[partition].append(value)
 
-                        self._last_acked_offsets[partition] = data["offset"]
                         self.produced_count[idx] += 1
+
+                        if len(self.nodes) > 1:
+                            # With multiple producers, we have to decide whose
+                            # offset to use for our state.  Take the highest value
+                            # we have seen
+                            self._last_acked_offsets[partition] = max(
+                                data["offset"],
+                                self._last_acked_offsets.get(partition, 0))
+                        else:
+                            self._update_offsets_strict(node, partition, data)
 
                         # Log information if there is a large gap between successively acknowledged messages
                         t = time.time()
