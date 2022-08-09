@@ -730,3 +730,96 @@ FIXTURE_TEST(test_rack_awareness, partition_balancer_planner_fixture) {
                           .replicas;
     check_expected_assignments(new_replicas, expected_nodes);
 }
+
+/*
+ * 4 nodes; 1 topic; 1 node down; 1 node in maintenance
+ * Planner should stall and not schedule any movements.
+ * Actual
+ *   node_0: partitions: 1; down: True;
+ *   node_1: partitions: 1; down: False;
+ *   node_2: partitions: 1; down: False;
+ *   node_3: partitions: 0; down: False; maintenance: True
+ */
+FIXTURE_TEST(
+  test_interaction_with_maintenance, partition_balancer_planner_fixture) {
+    allocator_register_nodes(3);
+    create_topic("topic-1", 1, 3);
+    allocator_register_nodes(1);
+
+    std::set<size_t> unavailable_nodes{0};
+    auto hr = create_health_report();
+    auto fm = create_follower_metrics(unavailable_nodes);
+
+    set_maintenance_mode(model::node_id{3});
+
+    auto plan_data = planner.plan_reassignments(hr, fm);
+
+    check_violations(plan_data, unavailable_nodes, {});
+    BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 0);
+    BOOST_REQUIRE(
+      plan_data.status
+      == cluster::partition_balancer_planner::status::
+        waiting_for_maintenance_end);
+}
+
+/*
+ * 4 nodes; 1 topic; 1 node down; 1 decommissioning node
+ * Planner should not schedule any movements to the decommissioning node.
+ *   node_0: partitions: 1; down: True;
+ *   node_1: partitions: 1; down: False;
+ *   node_2: partitions: 1; down: False;
+ *   node_3: partitions: 0; down: False; decommissioning: True
+ */
+FIXTURE_TEST(
+  test_interaction_with_decommission_1, partition_balancer_planner_fixture) {
+    allocator_register_nodes(3);
+    create_topic("topic-1", 1, 3);
+    allocator_register_nodes(1);
+
+    std::set<size_t> unavailable_nodes{0};
+    auto hr = create_health_report();
+    auto fm = create_follower_metrics(unavailable_nodes);
+    set_decommissioning(model::node_id{3});
+
+    auto plan_data = planner.plan_reassignments(hr, fm);
+
+    check_violations(plan_data, unavailable_nodes, {});
+    BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 0);
+    BOOST_REQUIRE_EQUAL(plan_data.failed_reassignments_count, 1);
+}
+
+/*
+ * 4 nodes; 1 topic; 1 node down; 1 decommissioning node
+ * Planner should not cancel any movements from the decommissioning node.
+ *   node_0: partitions: 1; down: False; decommissioning: True
+ *   node_1: partitions: 1; down: False;
+ *   node_2: partitions: 1; down: False;
+ *   node_3: partitions: 0; down: True;
+ *   movement in progress: (0, 1, 2) -> (1, 2, 3)
+ */
+FIXTURE_TEST(
+  test_interaction_with_decommission_2, partition_balancer_planner_fixture) {
+    allocator_register_nodes(3);
+    create_topic("topic-1", 1, 3);
+    allocator_register_nodes(1);
+
+    std::set<size_t> unavailable_nodes{3};
+    auto hr = create_health_report();
+    auto fm = create_follower_metrics(unavailable_nodes);
+
+    set_decommissioning(model::node_id{0});
+    move_partition_replicas(
+      model::ntp(test_ns, "topic-1", 0),
+      {
+        model::broker_shard{model::node_id{1}, 0},
+        model::broker_shard{model::node_id{2}, 0},
+        model::broker_shard{model::node_id{3}, 0},
+      });
+
+    auto plan_data = planner.plan_reassignments(hr, fm);
+
+    check_violations(plan_data, unavailable_nodes, {});
+    BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 0);
+    BOOST_REQUIRE_EQUAL(plan_data.cancellations.size(), 0);
+    BOOST_REQUIRE_EQUAL(plan_data.failed_reassignments_count, 1);
+}

@@ -10,6 +10,7 @@
 
 #include "cluster/partition_balancer_planner.h"
 
+#include "cluster/members_table.h"
 #include "cluster/partition_balancer_types.h"
 #include "cluster/scheduling/constraints.h"
 #include "cluster/scheduling/types.h"
@@ -50,16 +51,70 @@ distinct_from(const absl::flat_hash_set<model::node_id>& nodes) {
 partition_balancer_planner::partition_balancer_planner(
   planner_config config,
   topic_table& topic_table,
+  members_table& members_table,
   partition_allocator& partition_allocator)
   : _config(config)
   , _topic_table(topic_table)
+  , _members_table(members_table)
   , _partition_allocator(partition_allocator) {
     _config.soft_max_disk_usage_ratio = std::min(
       _config.soft_max_disk_usage_ratio, _config.hard_max_disk_usage_ratio);
 }
 
-void partition_balancer_planner::init_node_disk_reports_from_health_report(
-  const cluster_health_report& health_report, reallocation_request_state& rrs) {
+void partition_balancer_planner::init_per_node_state(
+  const cluster_health_report& health_report,
+  const std::vector<raft::follower_metrics>& follower_metrics,
+  reallocation_request_state& rrs,
+  plan_data& result) const {
+    for (const auto& broker : _members_table.all_brokers()) {
+        if (
+          broker->get_membership_state() == model::membership_state::removed) {
+            continue;
+        }
+
+        rrs.all_nodes.push_back(broker->id());
+
+        if (
+          broker->get_maintenance_state() == model::maintenance_state::active) {
+            vlog(clusterlog.debug, "node {}: in maintenance", broker->id());
+            rrs.num_nodes_in_maintenance += 1;
+        }
+
+        if (
+          broker->get_membership_state() == model::membership_state::draining) {
+            vlog(clusterlog.debug, "node {}: decommissioning", broker->id());
+            rrs.decommissioning_nodes.insert(broker->id());
+        }
+    }
+
+    const auto now = raft::clock_type::now();
+    for (const auto& follower : follower_metrics) {
+        auto unavailable_dur = now - follower.last_heartbeat;
+
+        vlog(
+          clusterlog.debug,
+          "node {}: {} ms since last heartbeat",
+          follower.id,
+          std::chrono::duration_cast<std::chrono::milliseconds>(unavailable_dur)
+            .count());
+
+        if (follower.is_live) {
+            continue;
+        }
+
+        rrs.all_unavailable_nodes.insert(follower.id);
+
+        if (unavailable_dur > _config.node_availability_timeout_sec) {
+            rrs.timed_out_unavailable_nodes.insert(follower.id);
+            model::timestamp unavailable_since = model::to_timestamp(
+              model::timestamp_clock::now()
+              - std::chrono::duration_cast<model::timestamp_clock::duration>(
+                unavailable_dur));
+            result.violations.unavailable_nodes.emplace_back(
+              follower.id, unavailable_since);
+        }
+    }
+
     for (const auto& node_report : health_report.node_reports) {
         uint64_t total = 0;
         uint64_t free = 0;
@@ -69,6 +124,21 @@ void partition_balancer_planner::init_node_disk_reports_from_health_report(
         }
         rrs.node_disk_reports.emplace(
           node_report.id, node_disk_space(node_report.id, total, total - free));
+    }
+
+    for (const auto& [id, disk] : rrs.node_disk_reports) {
+        double used_space_ratio = disk.original_used_ratio();
+        vlog(
+          clusterlog.debug,
+          "node {}: bytes used: {}, bytes total: {}, used ratio: {:.4}",
+          id,
+          disk.used,
+          disk.total,
+          used_space_ratio);
+        if (used_space_ratio > _config.soft_max_disk_usage_ratio) {
+            result.violations.full_nodes.emplace_back(
+              id, uint32_t(used_space_ratio * 100.0));
+        }
     }
 }
 
@@ -85,45 +155,13 @@ void partition_balancer_planner::init_ntp_sizes_from_health_report(
     }
 }
 
-void partition_balancer_planner::
-  calculate_nodes_with_disk_constraints_violation(
-    reallocation_request_state& rrs, plan_data& result) {
-    for (const auto& n : rrs.node_disk_reports) {
-        double used_space_ratio = n.second.original_used_ratio();
-        if (used_space_ratio > _config.soft_max_disk_usage_ratio) {
-            result.violations.full_nodes.emplace_back(
-              n.first, uint32_t(used_space_ratio * 100.0));
-        }
-    }
-}
-
-void partition_balancer_planner::calculate_unavailable_nodes(
-  const std::vector<raft::follower_metrics>& follower_metrics,
-  reallocation_request_state& rrs,
-  plan_data& result) {
-    const auto now = raft::clock_type::now();
-    for (const auto& follower : follower_metrics) {
-        auto unavailable_dur = now - follower.last_heartbeat;
-        if (unavailable_dur > _config.node_availability_timeout_sec) {
-            rrs.unavailable_nodes.insert(follower.id);
-            model::timestamp unavailable_since = model::to_timestamp(
-              model::timestamp_clock::now()
-              - std::chrono::duration_cast<model::timestamp_clock::duration>(
-                unavailable_dur));
-            result.violations.unavailable_nodes.emplace_back(
-              follower.id, unavailable_since);
-        }
-    }
-}
-
 bool partition_balancer_planner::all_reports_received(
   const reallocation_request_state& rrs) {
-    for (auto& s = _partition_allocator.state();
-         const auto& node : s.allocation_nodes()) {
+    for (auto id : rrs.all_nodes) {
         if (
-          !rrs.unavailable_nodes.contains(node.first)
-          && !rrs.node_disk_reports.contains(node.first)) {
-            vlog(clusterlog.info, "No disk report for node {}", node.first);
+          !rrs.all_unavailable_nodes.contains(id)
+          && !rrs.node_disk_reports.contains(id)) {
+            vlog(clusterlog.info, "No disk report for node {}", id);
             return false;
         }
     }
@@ -138,8 +176,7 @@ bool partition_balancer_planner::is_partition_movement_possible(
       current_replicas.begin(),
       current_replicas.end(),
       [&rrs](const model::broker_shard& bs) {
-          return rrs.unavailable_nodes.find(bs.node_id)
-                 == rrs.unavailable_nodes.end();
+          return !rrs.all_unavailable_nodes.contains(bs.node_id);
       });
     if (available_nodes_amount * 2 < current_replicas.size()) {
         return false;
@@ -184,7 +221,14 @@ partition_constraints partition_balancer_planner::get_partition_constraints(
     // Add constraint on unavailable nodes
     allocation_constraints.hard_constraints.push_back(
       ss::make_lw_shared<hard_constraint_evaluator>(
-        distinct_from(rrs.unavailable_nodes)));
+        distinct_from(rrs.timed_out_unavailable_nodes)));
+
+    // Add constraint on decommissioning nodes
+    if (!rrs.decommissioning_nodes.empty()) {
+        allocation_constraints.hard_constraints.push_back(
+          ss::make_lw_shared<hard_constraint_evaluator>(
+            distinct_from(rrs.decommissioning_nodes)));
+    }
 
     return partition_constraints(
       assignments.id,
@@ -256,7 +300,7 @@ result<allocation_units> partition_balancer_planner::get_reallocation(
  */
 void partition_balancer_planner::get_unavailable_nodes_reassignments(
   plan_data& result, reallocation_request_state& rrs) {
-    if (rrs.unavailable_nodes.empty()) {
+    if (rrs.timed_out_unavailable_nodes.empty()) {
         return;
     }
 
@@ -274,7 +318,7 @@ void partition_balancer_planner::get_unavailable_nodes_reassignments(
 
             std::vector<model::broker_shard> stable_replicas;
             for (const auto& bs : a.replicas) {
-                if (!rrs.unavailable_nodes.contains(bs.node_id)) {
+                if (!rrs.timed_out_unavailable_nodes.contains(bs.node_id)) {
                     stable_replicas.push_back(bs);
                 }
             }
@@ -412,17 +456,20 @@ void partition_balancer_planner::get_full_node_reassignments(
             std::vector<model::broker_shard> stable_replicas;
 
             for (const auto& r : current_assignments->replicas) {
-                if (rrs.unavailable_nodes.contains(r.node_id)) {
+                if (rrs.timed_out_unavailable_nodes.contains(r.node_id)) {
                     continue;
                 }
 
                 auto disk_it = rrs.node_disk_reports.find(r.node_id);
-                vassert(
-                  disk_it != rrs.node_disk_reports.end(),
-                  "disk report for node {} must be present",
-                  r.node_id);
-                const auto& disk = disk_it->second;
+                if (disk_it == rrs.node_disk_reports.end()) {
+                    // A replica on a node we recently lost contact with (but
+                    // availability timeout hasn't elapsed yet). Better leave it
+                    // where it is.
+                    stable_replicas.push_back(r);
+                    continue;
+                }
 
+                const auto& disk = disk_it->second;
                 if (
                   disk.final_used_ratio() < _config.soft_max_disk_usage_ratio) {
                     stable_replicas.push_back(r);
@@ -482,8 +529,7 @@ void partition_balancer_planner::get_full_node_reassignments(
  * and previous replica set doesn't contain this node
  */
 void partition_balancer_planner::get_unavailable_node_movement_cancellations(
-  std::vector<model::ntp>& cancellations,
-  const reallocation_request_state& rrs) {
+  plan_data& result, const reallocation_request_state& rrs) {
     for (const auto& update : _topic_table.updates_in_progress()) {
         if (
           update.second.state
@@ -492,8 +538,12 @@ void partition_balancer_planner::get_unavailable_node_movement_cancellations(
         }
 
         absl::flat_hash_set<model::node_id> previous_replicas_set;
+        bool was_on_decommissioning_node = false;
         for (const auto& r : update.second.previous_replicas) {
             previous_replicas_set.insert(r.node_id);
+            if (rrs.decommissioning_nodes.contains(r.node_id)) {
+                was_on_decommissioning_node = true;
+            }
         }
 
         auto current_assignments = _topic_table.get_partition_assignment(
@@ -503,10 +553,14 @@ void partition_balancer_planner::get_unavailable_node_movement_cancellations(
         }
         for (const auto& r : current_assignments->replicas) {
             if (
-              rrs.unavailable_nodes.contains(r.node_id)
+              rrs.timed_out_unavailable_nodes.contains(r.node_id)
               && !previous_replicas_set.contains(r.node_id)) {
-                cancellations.push_back(update.first);
-                continue;
+                if (!was_on_decommissioning_node) {
+                    result.cancellations.push_back(update.first);
+                } else {
+                    result.failed_reassignments_count += 1;
+                }
+                break;
             }
         }
     }
@@ -519,21 +573,25 @@ partition_balancer_planner::plan_reassignments(
     reallocation_request_state rrs;
     plan_data result;
 
-    init_node_disk_reports_from_health_report(health_report, rrs);
-    calculate_unavailable_nodes(follower_metrics, rrs, result);
-    calculate_nodes_with_disk_constraints_violation(rrs, result);
+    init_per_node_state(health_report, follower_metrics, rrs, result);
+
+    if (rrs.num_nodes_in_maintenance > 0) {
+        if (!result.violations.is_empty()) {
+            result.status = status::waiting_for_maintenance_end;
+        }
+        return result;
+    }
 
     if (_topic_table.has_updates_in_progress()) {
-        get_unavailable_node_movement_cancellations(result.cancellations, rrs);
+        get_unavailable_node_movement_cancellations(result, rrs);
         if (!result.cancellations.empty()) {
-            result.status
-              = partition_balancer_planner::status::cancellations_planned;
+            result.status = status::cancellations_planned;
         }
         return result;
     }
 
     if (!all_reports_received(rrs)) {
-        result.status = partition_balancer_planner::status::waiting_for_reports;
+        result.status = status::waiting_for_reports;
         return result;
     }
 
@@ -544,8 +602,7 @@ partition_balancer_planner::plan_reassignments(
         get_unavailable_nodes_reassignments(result, rrs);
         get_full_node_reassignments(result, rrs);
         if (!result.reassignments.empty()) {
-            result.status
-              = partition_balancer_planner::status::movement_planned;
+            result.status = status::movement_planned;
         }
 
         return result;
