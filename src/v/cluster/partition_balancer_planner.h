@@ -66,10 +66,11 @@ public:
 private:
     struct reallocation_request_state {
         std::vector<model::node_id> all_nodes;
-        absl::flat_hash_map<model::node_id, node_disk_space> node_disk_reports;
-        absl::flat_hash_set<model::node_id> unavailable_nodes;
+        absl::flat_hash_set<model::node_id> all_unavailable_nodes;
+        absl::flat_hash_set<model::node_id> timed_out_unavailable_nodes;
         size_t num_nodes_in_maintenance = 0;
         absl::flat_hash_set<model::node_id> decommissioning_nodes;
+        absl::flat_hash_map<model::node_id, node_disk_space> node_disk_reports;
 
         absl::flat_hash_map<model::ntp, size_t> ntp_sizes;
 

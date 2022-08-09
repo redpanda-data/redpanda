@@ -189,11 +189,15 @@ struct partition_balancer_planner_fixture {
                 metrics.push_back(raft::follower_metrics{
                   .id = model::node_id(i),
                   .last_heartbeat = raft::clock_type::now()
-                                    - node_unavailable_timeout});
+                                    - node_unavailable_timeout,
+                  .is_live = false,
+                });
             } else {
                 metrics.push_back(raft::follower_metrics{
                   .id = model::node_id(i),
-                  .last_heartbeat = raft::clock_type::now()});
+                  .last_heartbeat = raft::clock_type::now(),
+                  .is_live = true,
+                });
             }
         }
         return metrics;

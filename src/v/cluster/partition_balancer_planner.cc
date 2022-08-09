@@ -88,8 +88,15 @@ void partition_balancer_planner::init_per_node_state(
     const auto now = raft::clock_type::now();
     for (const auto& follower : follower_metrics) {
         auto unavailable_dur = now - follower.last_heartbeat;
+
+        if (follower.is_live) {
+            continue;
+        }
+
+        rrs.all_unavailable_nodes.insert(follower.id);
+
         if (unavailable_dur > _config.node_availability_timeout_sec) {
-            rrs.unavailable_nodes.insert(follower.id);
+            rrs.timed_out_unavailable_nodes.insert(follower.id);
             model::timestamp unavailable_since = model::to_timestamp(
               model::timestamp_clock::now()
               - std::chrono::duration_cast<model::timestamp_clock::duration>(
@@ -136,7 +143,7 @@ bool partition_balancer_planner::all_reports_received(
   const reallocation_request_state& rrs) {
     for (auto id : rrs.all_nodes) {
         if (
-          !rrs.unavailable_nodes.contains(id)
+          !rrs.all_unavailable_nodes.contains(id)
           && !rrs.node_disk_reports.contains(id)) {
             vlog(clusterlog.info, "No disk report for node {}", id);
             return false;
@@ -153,8 +160,7 @@ bool partition_balancer_planner::is_partition_movement_possible(
       current_replicas.begin(),
       current_replicas.end(),
       [&rrs](const model::broker_shard& bs) {
-          return rrs.unavailable_nodes.find(bs.node_id)
-                 == rrs.unavailable_nodes.end();
+          return !rrs.all_unavailable_nodes.contains(bs.node_id);
       });
     if (available_nodes_amount * 2 < current_replicas.size()) {
         return false;
@@ -199,7 +205,7 @@ partition_constraints partition_balancer_planner::get_partition_constraints(
     // Add constraint on unavailable nodes
     allocation_constraints.hard_constraints.push_back(
       ss::make_lw_shared<hard_constraint_evaluator>(
-        distinct_from(rrs.unavailable_nodes)));
+        distinct_from(rrs.timed_out_unavailable_nodes)));
 
     // Add constraint on decommissioning nodes
     if (!rrs.decommissioning_nodes.empty()) {
@@ -278,7 +284,7 @@ result<allocation_units> partition_balancer_planner::get_reallocation(
  */
 void partition_balancer_planner::get_unavailable_nodes_reassignments(
   plan_data& result, reallocation_request_state& rrs) {
-    if (rrs.unavailable_nodes.empty()) {
+    if (rrs.timed_out_unavailable_nodes.empty()) {
         return;
     }
 
@@ -296,7 +302,7 @@ void partition_balancer_planner::get_unavailable_nodes_reassignments(
 
             std::vector<model::broker_shard> stable_replicas;
             for (const auto& bs : a.replicas) {
-                if (!rrs.unavailable_nodes.contains(bs.node_id)) {
+                if (!rrs.timed_out_unavailable_nodes.contains(bs.node_id)) {
                     stable_replicas.push_back(bs);
                 }
             }
@@ -434,17 +440,20 @@ void partition_balancer_planner::get_full_node_reassignments(
             std::vector<model::broker_shard> stable_replicas;
 
             for (const auto& r : current_assignments->replicas) {
-                if (rrs.unavailable_nodes.contains(r.node_id)) {
+                if (rrs.timed_out_unavailable_nodes.contains(r.node_id)) {
                     continue;
                 }
 
                 auto disk_it = rrs.node_disk_reports.find(r.node_id);
-                vassert(
-                  disk_it != rrs.node_disk_reports.end(),
-                  "disk report for node {} must be present",
-                  r.node_id);
-                const auto& disk = disk_it->second;
+                if (disk_it == rrs.node_disk_reports.end()) {
+                    // A replica on a node we recently lost contact with (but
+                    // availability timeout hasn't elapsed yet). Better leave it
+                    // where it is.
+                    stable_replicas.push_back(r);
+                    continue;
+                }
 
+                const auto& disk = disk_it->second;
                 if (
                   disk.final_used_ratio() < _config.soft_max_disk_usage_ratio) {
                     stable_replicas.push_back(r);
@@ -528,7 +537,7 @@ void partition_balancer_planner::get_unavailable_node_movement_cancellations(
         }
         for (const auto& r : current_assignments->replicas) {
             if (
-              rrs.unavailable_nodes.contains(r.node_id)
+              rrs.timed_out_unavailable_nodes.contains(r.node_id)
               && !previous_replicas_set.contains(r.node_id)) {
                 if (!was_on_decommissioning_node) {
                     result.cancellations.push_back(update.first);
