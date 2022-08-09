@@ -11,6 +11,7 @@
 #include "cluster/partition_balancer_backend.h"
 
 #include "cluster/health_monitor_frontend.h"
+#include "cluster/health_monitor_types.h"
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "cluster/partition_balancer_planner.h"
@@ -121,9 +122,22 @@ ss::future<> partition_balancer_backend::do_tick() {
         co_return;
     }
 
-    auto health_report
-      = co_await _health_monitor.get_current_cluster_health_snapshot(
-        cluster_report_filter{});
+    auto health_report = co_await _health_monitor.get_cluster_health(
+      cluster_report_filter{},
+      force_refresh::no,
+      model::timeout_clock::now() + controller_stm_sync_timeout);
+    if (!health_report) {
+        vlog(
+          clusterlog.info,
+          "unable to get health report - {}",
+          health_report.error().message());
+        co_return;
+    }
+
+    if (!_raft0->is_leader() || _raft0->term() != current_term) {
+        vlog(clusterlog.debug, "lost leadership, exiting");
+        co_return;
+    }
 
     auto follower_metrics = _raft0->get_follower_metrics();
     for (auto& follower : follower_metrics) {
@@ -149,7 +163,7 @@ ss::future<> partition_balancer_backend::do_tick() {
           _topic_table,
           _members_table,
           _partition_allocator)
-          .plan_reassignments(health_report, follower_metrics);
+          .plan_reassignments(health_report.value(), follower_metrics);
 
     _last_leader_term = _raft0->term();
     _last_tick_time = ss::lowres_clock::now();
