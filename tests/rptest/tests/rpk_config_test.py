@@ -53,6 +53,7 @@ redpanda:
     developer_mode: true
 rpk:
     coredump_dir: /var/lib/redpanda/coredump
+    overprovisioned: true
 schema_registry: {}
 '''
 
