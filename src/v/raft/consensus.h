@@ -160,6 +160,9 @@ public:
     group_configuration config() const;
     const model::ntp& ntp() const { return _log.config().ntp(); }
     clock_type::time_point last_heartbeat() const { return _hbeat; };
+    clock_type::time_point became_leader_at() const {
+        return _became_leader_at;
+    };
 
     clock_type::time_point last_sent_append_entries_req_timesptamp(vnode);
     /**

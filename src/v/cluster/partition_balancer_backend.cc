@@ -125,6 +125,16 @@ ss::future<> partition_balancer_backend::do_tick() {
       = co_await _health_monitor.get_current_cluster_health_snapshot(
         cluster_report_filter{});
 
+    auto follower_metrics = _raft0->get_follower_metrics();
+    for (auto& follower : follower_metrics) {
+        // patch last heartbeat time so that we don't get false positives for
+        // unavailable node detection for nodes that didn't respond to a
+        // heartbeat since we became leader (last_heartbeat would be -infinity
+        // for them).
+        follower.last_heartbeat = std::max(
+          follower.last_heartbeat, _raft0->became_leader_at());
+    }
+
     double soft_max_disk_usage_ratio = _max_disk_usage_percent() / 100.0;
     double hard_max_disk_usage_ratio
       = (100 - _storage_space_alert_free_threshold_percent()) / 100.0;
@@ -139,7 +149,7 @@ ss::future<> partition_balancer_backend::do_tick() {
           _topic_table,
           _members_table,
           _partition_allocator)
-          .plan_reassignments(health_report, _raft0->get_follower_metrics());
+          .plan_reassignments(health_report, follower_metrics);
 
     _last_leader_term = _raft0->term();
     _last_tick_time = ss::lowres_clock::now();
