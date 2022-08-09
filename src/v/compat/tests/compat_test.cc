@@ -11,6 +11,7 @@
 #include "compat/check.h"
 #include "compat/run.h"
 #include "json/prettywriter.h"
+#include "model/compression.h"
 #include "seastarx.h"
 #include "test_utils/tmp_dir.h"
 #include "utils/directory_walker.h"
@@ -43,9 +44,19 @@ std::optional<bool> perturb(json::Value& value, std::string& path) {
          *
          * Other exceptions:
          * - acl principal type has only one enum value, so we can't change it.
+         * - model::compression is an enum that has non contiguous values
          */
         if (path.find("entry.principal.type") != std::string::npos) {
             return std::nullopt;
+        }
+        if (path.find("compression") != std::string::npos) {
+            // model::enum has non-contiguous range, whose upper bound is
+            // uint8_t::max(), in the case this is found, reset 'v' to the
+            // next lowest value
+            using compress_ut = std::underlying_type_t<model::compression>;
+            if (v == static_cast<compress_ut>(model::compression::producer)) {
+                v = static_cast<compress_ut>(model::compression::zstd);
+            }
         }
         const auto orig = v;
         const int modifier = v == 0 ? 1 : -1;
