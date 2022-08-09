@@ -1024,7 +1024,8 @@ class RedpandaService(Service):
             for line in node.account.ssh_capture(
                     f"grep -e SEGV -e Segmentation\ fault -e [Aa]ssert {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
             ):
-                if 'SEGV' in line and 'x-amz-id' in line:
+                if 'SEGV' in line and ('x-amz-id' in line
+                                       or 'x-amz-request' in line):
                     # We log long encoded AWS headers that occasionally have 'SEGV' in them by chance
                     continue
 
