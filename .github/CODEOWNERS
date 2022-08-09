@@ -1,14 +1,7 @@
 #
 # docs, prose, legal
 #
-licenses           @senior7515 @dswang
-/CONTRIBUTING.md   @dotnwat
-
-#
-# editors
-#
-/.vim             @dotnwat
-/.dir-locals.el   @graphcareful
+licenses           @emaxerrno @dswang
 
 #
 # cloud
@@ -32,69 +25,14 @@ licenses           @senior7515 @dswang
 /tools                     @redpanda-data/devprod
 
 #
-# core
-#
-/src/js                @andresaristizabal
-/src/v/archival        @lazin               @lenaan         @ztlpn
-/src/v/bytes           @dotnwat
-/src/v/cloud_storage   @lazin               @lenaan         @ztlpn
-/src/v/cluster         @mmaslankaprv        @ztlpn          @vadimplh
-/src/v/compression     @dotnwat
-/src/v/config          @mmaslankaprv
-/src/v/coproc          @graphcareful        @vadimplh
-/src/v/finjector       @rystsov
-/src/v/hashing         @dotnwat
-/src/v/http            @lazin
-/src/v/json            @benpope
-/src/v/kafka           @dotnwat             @nyalialui
-/src/v/kafka/client    @benpope
-/src/v/model           @dotnwat             @mmaslankaprv
-/src/v/pandaproxy      @benpope             @nyalialui
-/src/v/platform        @lazin               @benpope
-/src/v/prometheus      @dotnwat
-/src/v/raft            @mmaslankaprv        @ztlpn          @jcsp        @vadimplh        @rystsov
-/src/v/random          @dotnwat
-/src/v/redpanda        @dotnwat             @mmaslankaprv
-/src/v/reflection      @graphcareful        @benpope
-/src/v/resource_mgmt   @mmaslankaprv
-/src/v/rpc             @mmaslankaprv        @jcsp
-/src/v/s3              @lazin
-/src/v/security        @dotnwat
-/src/v/serde           @benpope
-/src/v/ssx             @benpope
-/src/v/storage         @dotnwat             @lenaan      @vadimplh
-/src/v/syschecks       @mmaslankaprv
-/src/v/test_utils      @graphcareful
-/src/v/utils           @benpope
-/src/v/v8_engine       @vadimplh
-
-#
 # rpk
 #
 /src/go/rpk        @twmb @0x5d @r-vasquez
 
 #
-# transactions and idempotent producer
-#
-/src/v/cluster/rm_*                             @rystsov
-/src/v/cluster/id_allocator*                    @rystsov
-/src/v/cluster/persisted_stm.*                  @rystsov
-/src/v/cluster/tm_*                             @rystsov
-/src/v/cluster/tx_*                             @rystsov
-/src/v/cluster/tests/idempotency_tests.cc       @rystsov
-/src/v/cluster/tests/id_allocator_stm_test.cc   @rystsov
-/src/v/cluster/tests/rm_stm_tests.cc            @rystsov
-/src/v/cluster/tests/tm_stm_tests.cc            @rystsov
-/src/v/kafka/server/rm_group_frontend.*         @rystsov
-/src/v/kafka/**/*init_producer_id*              @rystsov
-/src/v/kafka/**/*txn*                           @rystsov
-
-#
 # testing
 #
-/tests                              @dotnwat        @nyalialui
 /tests/docker                       @redpanda-data/devprod
 /tests/run.sh                       @redpanda-data/devprod
 /src/consistency-testing            @rystsov
 /tests/java/tx-verifier             @rystsov
-/tests/rptest/tests/compatibility   @nyalialui
