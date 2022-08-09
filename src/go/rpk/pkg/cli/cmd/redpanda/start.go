@@ -15,6 +15,7 @@ package redpanda
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -37,7 +38,6 @@ import (
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"gopkg.in/yaml.v3"
 )
 
 type prestartConfig struct {
@@ -131,7 +131,7 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 		installDirFlag  string
 		timeout         time.Duration
 		wellKnownIo     string
-		sandbox         bool
+		sandbox         string
 	)
 	sFlags := seastarFlags{}
 
@@ -150,6 +150,11 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 			// for list flags, and since JSON often contains commas, it
 			// blows up when there's a JSON object.
 			configKvs, filteredArgs := parseConfigKvs(os.Args)
+			// --sandbox must be parsed by hand because we are using custom
+			// logic: --sandbox is an alias for --sandbox=default and there is
+			// --sandbox=container, without the `=`, "container" is being parsed
+			// as an argument to start, rather than a value for the flag.
+			parseSandboxFlag(os.Args, &sandbox)
 			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			if err != nil {
@@ -162,24 +167,36 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 			// Thus, we can ignore any env / flags that would come from rpk
 			// configuration itself.
 			cfg = cfg.FileOrDefaults()
-			clusterProperties := make(map[string]interface{})
-			if sandbox {
+			if cfg.Redpanda.DeveloperMode && len(sandbox) == 0 {
+				sandbox = "default"
+			}
+			switch sandbox {
+			case "default", "container":
 				fmt.Fprintln(os.Stderr, "WARNING: This is a setup for development purposes only; in sandbox mode your clusters may run unrealistically fast and data can be corrupted any time your computer shuts down uncleanly.")
 				cfg.Redpanda.DeveloperMode = true
-				setDevModeFlags(cmd)
-				clusterProperties["topic_partitions_per_shard"] = 1000
-				clusterProperties["group_topic_partitions"] = 1
-				clusterProperties["auto_create_topics_enabled"] = true
-			}
-			if cfg.Redpanda.DeveloperMode {
-				clusterProperties["storage_min_free_bytes"] = 0
-			}
-			if len(clusterProperties) > 0 {
-				err := setClusterProperties(fs, cfg.FileLocation(), clusterProperties)
+				setDevModeFlags(cmd, sandbox)
+				err := setClusterProperties(fs, cfg.FileLocation(), sandbox)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "unable to set cluster properties: %v\n", err)
 				}
+				// Since we are manually parsing --sandbox <mode> flag, we need
+				// to make sure that we are removing the "mode" value from the
+				// cobra args list.
+				for i, arg := range args {
+					if arg == sandbox {
+						args = append(args[:i], args[i+1:]...)
+						break // only strip first occurrence
+					}
+				}
+			case "help":
+				fmt.Println(helpSandbox)
+				return nil
+			case "":
+				// do nothing.
+			default:
+				return fmt.Errorf(`unrecognized sandbox type %q, use --sandbox help for more info"`, sandbox)
 			}
+
 			if len(configKvs) > 0 {
 				if err = setConfig(cfg, configKvs); err != nil {
 					return err
@@ -505,7 +522,15 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 		"Enable overprovisioning",
 	)
 	command.Flags().BoolVar(&sFlags.unsafeBypassFsync, unsafeBypassFsyncFlag, false, "Enable unsafe-bypass-fsync")
-	command.Flags().BoolVar(&sandbox, sandboxFlag, false, "Sandbox mode, sets the following flags: --overprovisioned --smp 1 --node-id 0 --reserveMemory 0M --check=false --unsafe-bypass-fsync=true")
+	command.Flags().StringVar(
+		&sandbox,
+		sandboxFlag,
+		"",
+		"Sandbox mode, sets well-known configuration properties for development or test environments; use --sandbox help for more info",
+	)
+	// --sandbox will be the same as --sandbox default:
+	command.Flags().Lookup(sandboxFlag).NoOptDefVal = "default"
+
 	command.Flags().DurationVar(
 		&timeout,
 		"timeout",
@@ -1068,13 +1093,22 @@ func mergeMaps(a, b map[string]string) map[string]string {
 }
 
 // setDevModeFlags sets flags bundled into --dev flag.
-func setDevModeFlags(cmd *cobra.Command) {
-	devMap := map[string]string{
-		overprovisionedFlag:   "true",
-		smpFlag:               "1",
-		reserveMemoryFlag:     "0M",
-		checkFlag:             "false",
-		unsafeBypassFsyncFlag: "true",
+func setDevModeFlags(cmd *cobra.Command, sandboxType string) {
+	var devMap map[string]string
+	if sandboxType == "default" {
+		devMap = map[string]string{
+			overprovisionedFlag: "true",
+			reserveMemoryFlag:   "0M",
+			checkFlag:           "false",
+		}
+	} else {
+		devMap = map[string]string{
+			overprovisionedFlag:   "true",
+			smpFlag:               "1",
+			reserveMemoryFlag:     "0M",
+			checkFlag:             "false",
+			unsafeBypassFsyncFlag: "true",
+		}
 	}
 	// We don't override the values set during command execution, e.g:
 	//   rpk redpanda start --dev --smp 2
@@ -1089,10 +1123,20 @@ func setDevModeFlags(cmd *cobra.Command) {
 // setClusterProperties generates a .bootstrap.yaml file in the same path as
 // the redpanda.yaml, this will be picked up by redpanda on first start and
 // set the passed properties.
-func setClusterProperties(fs afero.Fs, cfgFileLocation string, properties map[string]interface{}) (rerr error) {
-	props, err := yaml.Marshal(properties)
-	if err != nil {
-		return err
+func setClusterProperties(fs afero.Fs, cfgFileLocation string, sandboxType string) (rerr error) {
+	var props string
+	if sandboxType == "default" {
+		props = `auto_create_topics_enabled: true
+group_topic_partitions: 3
+storage_min_free_bytes: 10485760
+topic_partitions_per_shard: 1000
+`
+	} else {
+		props = `auto_create_topics_enabled: true
+group_topic_partitions: 1
+storage_min_free_bytes: 10485760
+topic_partitions_per_shard: 1000
+`
 	}
 	cfgDir := filepath.Dir(cfgFileLocation)
 
@@ -1103,7 +1147,7 @@ func setClusterProperties(fs afero.Fs, cfgFileLocation string, properties map[st
 
 	defer func() {
 		if rerr != nil {
-			suggestion := "you can run 'rpk cluster config set <key> <value>' to set the following properties: " + string(props)
+			suggestion := "you can run 'rpk cluster config set <key> <value>' to set the following properties: " + props
 			if removeErr := fs.Remove(tmp.Name()); removeErr != nil {
 				rerr = fmt.Errorf("%s, unable to remove temp file: %v; %s", rerr, removeErr, suggestion)
 			} else {
@@ -1112,7 +1156,7 @@ func setClusterProperties(fs afero.Fs, cfgFileLocation string, properties map[st
 		}
 	}()
 
-	err = afero.WriteFile(fs, tmp.Name(), props, 0o644)
+	_, err = io.WriteString(tmp, props)
 	tmp.Close()
 	if err != nil {
 		return fmt.Errorf("error writing to temporary file: %v", err)
@@ -1138,3 +1182,43 @@ func setClusterProperties(fs afero.Fs, cfgFileLocation string, properties map[st
 
 	return nil
 }
+
+// parseSandboxFlags looks for --sandbox <mode> in os.Args
+// and assign the value, if found, to the sandbox variable.
+func parseSandboxFlag(args []string, sandbox *string) {
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == "--sandbox" && !strings.HasPrefix(args[i+1], "-") {
+			*sandbox = args[i+1]
+		}
+	}
+}
+
+const helpSandbox = `Sandbox mode uses well-known configuration properties for development or tests
+environments:
+
+--sandbox
+    Bundled flags:
+        * --overprovisioned
+        * --reserve-memory 0M
+        * --check=false
+    Bundled cluster properties:
+        * topic_partitions_per_shard: 1000
+        * group_topic_partitions: 3
+        * auto_create_topics_enabled: true
+        * storage_min_free_bytes: 10485760 (10MiB)
+
+--sandbox container
+    Bundled flags:
+        * --overprovisioned
+        * --reserve-memory 0M
+        * --check=false
+        * --smp 1
+        * --unsafe-bypass-fsync
+    Bundled cluster properties:
+        * topic_partitions_per_shard: 1000
+        * group_topic_partitions: 1
+        * auto_create_topics_enabled: true
+        * storage_min_free_bytes: 10485760 (10MiB)
+
+After redpanda starts you can modify the cluster properties using:
+    rpk config set <key> <value>`

@@ -48,7 +48,8 @@ func Default() *Config {
 			DeveloperMode: true,
 		},
 		Rpk: RpkConfig{
-			CoredumpDir: "/var/lib/redpanda/coredump",
+			CoredumpDir:     "/var/lib/redpanda/coredump",
+			Overprovisioned: true,
 		},
 		// enable pandaproxy and schema_registry by default
 		Pandaproxy:     &Pandaproxy{},
