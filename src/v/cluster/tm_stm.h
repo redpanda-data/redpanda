@@ -35,6 +35,9 @@
 
 namespace cluster {
 
+using use_tx_version_with_last_pid_bool
+  = ss::bool_class<struct use_tx_version_with_last_pid_tag>;
+
 struct tm_transaction {
     // Version 2 added last_pid field to tx log records
     static constexpr uint8_t version = 2;
@@ -268,6 +271,14 @@ private:
           model::make_memory_record_batch_reader(std::move(batch)),
           raft::replicate_options{raft::consistency_level::quorum_ack});
     }
+
+    use_tx_version_with_last_pid_bool use_new_tx_version() {
+        return _feature_table.local().is_active(feature::transaction_ga)
+                 ? use_tx_version_with_last_pid_bool::yes
+                 : use_tx_version_with_last_pid_bool::no;
+    }
+
+    model::record_batch serialize_tx(tm_transaction tx);
 
     ss::sharded<feature_table>& _feature_table;
 };
