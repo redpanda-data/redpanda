@@ -43,7 +43,7 @@ func AddKafkaFlags(
 		"brokers",
 		[]string{},
 		"Comma-separated list of broker ip:port pairs (e.g."+
-			" --brokers '192.168.78.34:9092,192.168.78.35:9092,192.179.23.54:9092' )."+
+			" --brokers '192.168.78.34:9092,192.168.78.35:9092,192.179.23.54:9092')."+
 			" Alternatively, you may set the REDPANDA_BROKERS environment"+
 			" variable with the comma-separated list of broker addresses",
 	)

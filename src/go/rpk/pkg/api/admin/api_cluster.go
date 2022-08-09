@@ -23,7 +23,45 @@ type ClusterHealthOverview struct {
 	LeaderlessPartitions []string `json:"leaderless_partitions"`
 }
 
+// PartitionBalancerStatus is the status of the partition auto balancer.
+type PartitionBalancerStatus struct {
+	// Status is either off, ready, starting, in_progress or stalled.
+	//
+	//   off:          The balancer is disabled.
+	//   ready:        The balancer is active but there is nothing to do.
+	//   starting:     The balancer is starting but has not run yet.
+	//   in_progress:  The balancer is active and is in the process of
+	//                 scheduling partition movements.
+	//   stalled:      There are some violations, but for some reason, the
+	//                 balancer cannot make progress in mitigating them.
+	Status string `json:"status,omitempty"`
+	// Violations are the partition balancer violations.
+	Violations PartitionBalancerViolations `json:"violations,omitempty"`
+	// SecondsSinceLastTick is the last time the partition balancer ran.
+	SecondsSinceLastTick int `json:"seconds_since_last_tick,omitempty"`
+	// CurrentReassignmentsCount is the current number of partition
+	// reassignments in progress.
+	CurrentReassignmentsCount int `json:"current_reassignments_count,omitempty"`
+}
+
+// PartitionBalancerViolations describe the violations of the partition
+// auto balancer.
+type PartitionBalancerViolations struct {
+	// UnavailableNodes are the nodes that have been unavailable after a time
+	// set by 'partition_autobalancing_node_availability_timeout_sec' property.
+	UnavailableNodes []int `json:"unavailable_nodes,omitempty"`
+	// OverDiskLimitNodes are the nodes that surpassed the threshold of used
+	// disk percentage set by 'partition_autobalancing_max_disk_usage_percent'
+	// property.
+	OverDiskLimitNodes []int `json:"over_disk_limit_nodes,omitempty"`
+}
+
 func (a *AdminAPI) GetHealthOverview(ctx context.Context) (ClusterHealthOverview, error) {
 	var response ClusterHealthOverview
 	return response, a.sendAny(ctx, http.MethodGet, "/v1/cluster/health_overview", nil, &response)
+}
+
+func (a *AdminAPI) GetPartitionStatus(ctx context.Context) (PartitionBalancerStatus, error) {
+	var response PartitionBalancerStatus
+	return response, a.sendAny(ctx, http.MethodGet, "/v1/cluster/partition_balancer/status", nil, &response)
 }
