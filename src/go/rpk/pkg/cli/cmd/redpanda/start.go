@@ -15,7 +15,6 @@ package redpanda
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -38,6 +37,7 @@ import (
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"gopkg.in/yaml.v3"
 )
 
 type prestartConfig struct {
@@ -155,14 +155,6 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("unable to load config file: %s", err)
 			}
-			if sandbox {
-				setDevMode(cmd)
-				fmt.Fprintln(os.Stderr, "WARNING: This is a setup for development purposes only; in sandbox mode your clusters may run unrealistically fast and data can be corrupted any time your computer shuts down uncleanly.")
-				err := setClusterProperties(fs, cfg.FileLocation())
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "unable to set cluster properties: %v\n", err)
-				}
-			}
 			// We set fields in the raw file without writing rpk specific env
 			// or flag overrides. This command itself has all redpanda specific
 			// flags installed, and handles redpanda specific env vars itself.
@@ -170,7 +162,24 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 			// Thus, we can ignore any env / flags that would come from rpk
 			// configuration itself.
 			cfg = cfg.FileOrDefaults()
-
+			clusterProperties := make(map[string]interface{})
+			if sandbox {
+				fmt.Fprintln(os.Stderr, "WARNING: This is a setup for development purposes only; in sandbox mode your clusters may run unrealistically fast and data can be corrupted any time your computer shuts down uncleanly.")
+				cfg.Redpanda.DeveloperMode = true
+				setDevModeFlags(cmd)
+				clusterProperties["topic_partitions_per_shard"] = 1000
+				clusterProperties["group_topic_partitions"] = 1
+				clusterProperties["auto_create_topics_enabled"] = true
+			}
+			if cfg.Redpanda.DeveloperMode {
+				clusterProperties["storage_min_free_bytes"] = 0
+			}
+			if len(clusterProperties) > 0 {
+				err := setClusterProperties(fs, cfg.FileLocation(), clusterProperties)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "unable to set cluster properties: %v\n", err)
+				}
+			}
 			if len(configKvs) > 0 {
 				if err = setConfig(cfg, configKvs); err != nil {
 					return err
@@ -1058,13 +1067,12 @@ func mergeMaps(a, b map[string]string) map[string]string {
 	return a
 }
 
-// setDevMode sets flags bundled into --dev flag.
-func setDevMode(cmd *cobra.Command) {
+// setDevModeFlags sets flags bundled into --dev flag.
+func setDevModeFlags(cmd *cobra.Command) {
 	devMap := map[string]string{
 		overprovisionedFlag:   "true",
 		smpFlag:               "1",
 		reserveMemoryFlag:     "0M",
-		nodeIDFlag:            "0",
 		checkFlag:             "false",
 		unsafeBypassFsyncFlag: "true",
 	}
@@ -1081,11 +1089,11 @@ func setDevMode(cmd *cobra.Command) {
 // setClusterProperties generates a .bootstrap.yaml file in the same path as
 // the redpanda.yaml, this will be picked up by redpanda on first start and
 // set the passed properties.
-func setClusterProperties(fs afero.Fs, cfgFileLocation string) (rerr error) {
-	const props = `topic_partitions_per_shard: 1000
-group_topic_partitions: 1
-auto_create_topics_enabled: true
-storage_min_free_bytes: 1073741824`
+func setClusterProperties(fs afero.Fs, cfgFileLocation string, properties map[string]interface{}) (rerr error) {
+	props, err := yaml.Marshal(properties)
+	if err != nil {
+		return err
+	}
 	cfgDir := filepath.Dir(cfgFileLocation)
 
 	tmp, err := afero.TempFile(fs, cfgDir, "bootstrap-*.yaml")
@@ -1095,7 +1103,7 @@ storage_min_free_bytes: 1073741824`
 
 	defer func() {
 		if rerr != nil {
-			suggestion := "you can run 'rpk cluster config set <key> <value>' to set the following properties: " + props
+			suggestion := "you can run 'rpk cluster config set <key> <value>' to set the following properties: " + string(props)
 			if removeErr := fs.Remove(tmp.Name()); removeErr != nil {
 				rerr = fmt.Errorf("%s, unable to remove temp file: %v; %s", rerr, removeErr, suggestion)
 			} else {
@@ -1104,7 +1112,7 @@ storage_min_free_bytes: 1073741824`
 		}
 	}()
 
-	_, err = io.WriteString(tmp, props)
+	err = afero.WriteFile(fs, tmp.Name(), props, 0o644)
 	tmp.Close()
 	if err != nil {
 		return fmt.Errorf("error writing to temporary file: %v", err)
