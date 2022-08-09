@@ -18,6 +18,7 @@
 #include "cluster/members_table.h"
 #include "config/configuration.h"
 #include "feature_table.h"
+#include "model/timeout_clock.h"
 #include "raft/group_manager.h"
 
 namespace cluster {
@@ -302,7 +303,8 @@ ss::future<> feature_manager::do_maybe_update_active_version() {
     // This call in principle can be a network fetch, but in practice
     // we're only doing it immediately after cluster health has just
     // been updated, so do not expect it to go remote.
-    auto node_status_v = co_await _hm_frontend.local().get_nodes_status({});
+    auto node_status_v = co_await _hm_frontend.local().get_nodes_status(
+      model::timeout_clock::now() + 5s);
     if (node_status_v.has_error()) {
         // Raise exception to trigger backoff+retry
         throw std::runtime_error(fmt::format(
