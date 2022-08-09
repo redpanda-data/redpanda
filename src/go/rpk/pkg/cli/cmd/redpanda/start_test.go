@@ -1391,6 +1391,7 @@ func TestStartCommand(t *testing.T) {
 			conf, err := new(config.Params).Load(fs)
 			require.NoError(st, err)
 			require.Equal(st, 0, conf.Redpanda.ID)
+			require.Equal(st, true, conf.Redpanda.DeveloperMode)
 		},
 	}, {
 		name: "override values set by --sandbox",
@@ -1412,6 +1413,7 @@ func TestStartCommand(t *testing.T) {
 			conf, err := new(config.Params).Load(fs)
 			require.NoError(st, err)
 			require.Equal(st, 0, conf.Redpanda.ID)
+			require.Equal(st, true, conf.Redpanda.DeveloperMode)
 		},
 	}, {
 		name: ".bootstrap.yaml created with --sandbox",
@@ -1432,10 +1434,11 @@ func TestStartCommand(t *testing.T) {
 			require.NoError(st, err)
 			require.Equal(
 				st,
-				`topic_partitions_per_shard: 1000
+				`auto_create_topics_enabled: true
 group_topic_partitions: 1
-auto_create_topics_enabled: true
-storage_min_free_bytes: 1073741824`,
+storage_min_free_bytes: 0
+topic_partitions_per_shard: 1000
+`,
 				string(file),
 			)
 		},
@@ -1458,10 +1461,37 @@ storage_min_free_bytes: 1073741824`,
 			require.NoError(st, err)
 			require.Equal(
 				st,
-				`topic_partitions_per_shard: 1000
+				`auto_create_topics_enabled: true
 group_topic_partitions: 1
-auto_create_topics_enabled: true
-storage_min_free_bytes: 1073741824`,
+storage_min_free_bytes: 0
+topic_partitions_per_shard: 1000
+`,
+				string(file),
+			)
+		},
+	}, {
+		name: ".bootstrap.yaml created with redpanda.developer_mode enabled",
+		args: []string{"--install-dir", "/var/lib/redpanda"},
+		before: func(fs afero.Fs) error {
+			conf, _ := new(config.Params).Load(fs)
+			conf.Redpanda.DeveloperMode = true
+			return conf.Write(fs)
+		},
+		postCheck: func(
+			fs afero.Fs,
+			_ *redpanda.RedpandaArgs,
+			st *testing.T,
+		) {
+			bFile := "/etc/redpanda/.bootstrap.yaml"
+			exists, err := afero.Exists(fs, bFile)
+			require.NoError(st, err)
+			require.True(st, exists)
+			file, err := afero.ReadFile(fs, bFile)
+			require.NoError(st, err)
+			require.Equal(
+				st,
+				`storage_min_free_bytes: 0
+`,
 				string(file),
 			)
 		},
