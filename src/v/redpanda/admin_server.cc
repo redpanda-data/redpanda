@@ -64,6 +64,7 @@
 #include "redpanda/admin/api-doc/status.json.h"
 #include "redpanda/admin/api-doc/transaction.json.h"
 #include "redpanda/request_auth.h"
+#include "rpc/errc.h"
 #include "security/scram_algorithm.h"
 #include "security/scram_authenticator.h"
 #include "ssx/metrics.h"
@@ -77,6 +78,7 @@
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/http/api_docs.hh>
 #include <seastar/http/httpd.hh>
+#include <seastar/http/reply.hh>
 
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -737,6 +739,27 @@ ss::future<> admin_server::throw_on_error(
         default:
             throw ss::httpd::server_error_exception(
               fmt::format("Unexpected tx_error error: {}", ec.message()));
+        }
+    } else if (ec.category() == rpc::error_category()) {
+        switch (rpc::errc(ec.value())) {
+        case rpc::errc::success:
+            co_return;
+        case rpc::errc::disconnected_endpoint:
+            [[fallthrough]];
+        case rpc::errc::exponential_backoff:
+            throw ss::httpd::base_exception(
+              fmt::format("Not ready: {}", ec.message()),
+              ss::httpd::reply::status_type::service_unavailable);
+        case rpc::errc::client_request_timeout:
+            throw ss::httpd::base_exception(
+              fmt::format("Timeout: {}", ec.message()),
+              ss::httpd::reply::status_type::gateway_timeout);
+        case rpc::errc::service_error:
+        case rpc::errc::missing_node_rpc_client:
+        case rpc::errc::method_not_found:
+        case rpc::errc::version_not_supported:
+            throw ss::httpd::server_error_exception(
+              fmt::format("Unexpected error: {}", ec.message()));
         }
     } else {
         throw ss::httpd::server_error_exception(
