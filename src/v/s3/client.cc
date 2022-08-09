@@ -494,10 +494,7 @@ client::client(
 
 ss::future<> client::stop() { return _client.stop(); }
 
-ss::future<> client::shutdown() {
-    _client.shutdown();
-    return ss::now();
-}
+void client::shutdown() { _client.shutdown(); }
 
 ss::future<http::client::response_stream_ref> client::get_object(
   bucket_name const& name,
@@ -724,10 +721,23 @@ client_pool::client_pool(
   , _policy(policy) {}
 
 ss::future<> client_pool::stop() {
-    _as.request_abort();
+    if (!_as.abort_requested()) {
+        _as.request_abort();
+    }
     _cvar.broken();
     // Wait until all leased objects are returned
     co_await _gate.close();
+}
+
+void client_pool::shutdown_connections() {
+    _as.request_abort();
+    _cvar.broken();
+    for (auto& it : _leased) {
+        it.client->shutdown();
+    }
+    for (auto& it : _pool) {
+        it->shutdown();
+    }
 }
 
 /// \brief Acquire http client from the pool.
@@ -749,7 +759,7 @@ ss::future<client_pool::client_lease> client_pool::acquire() {
             co_await wait_for_credentials();
         }
 
-        while (_pool.empty() && !_gate.is_closed()) {
+        while (_pool.empty() && !_gate.is_closed() && !_as.abort_requested()) {
             if (_policy == client_pool_overdraft_policy::wait_if_empty) {
                 co_await _cvar.wait();
             } else {
@@ -766,14 +776,15 @@ ss::future<client_pool::client_lease> client_pool::acquire() {
     vassert(!_pool.empty(), "'acquire' invariant is broken");
     auto client = _pool.back();
     _pool.pop_back();
-    co_return client_lease{
-      .client = client,
-      .deleter = ss::make_deleter(
-        [pool = weak_from_this(), client, g = std::move(guard)] {
-            if (pool) {
-                pool->release(client);
-            }
-        })};
+    client_lease lease(
+      client,
+      ss::make_deleter([pool = weak_from_this(), client, g = std::move(guard)] {
+          if (pool) {
+              pool->release(client);
+          }
+      }));
+    _leased.push_back(lease);
+    co_return lease;
 }
 
 size_t client_pool::size() const noexcept { return _pool.size(); }

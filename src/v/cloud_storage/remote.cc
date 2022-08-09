@@ -249,7 +249,7 @@ ss::future<download_result> remote::do_download_manifest(
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
     auto path = s3::object_key(key().native());
-    auto [client, deleter] = co_await _pool.acquire();
+    auto lease = co_await _pool.acquire();
     auto retry_permit = fib.retry();
     std::optional<download_result> result;
     vlog(ctxlog.debug, "Download manifest {}", key());
@@ -257,7 +257,7 @@ ss::future<download_result> remote::do_download_manifest(
            && !result.has_value()) {
         std::exception_ptr eptr = nullptr;
         try {
-            auto resp = co_await client->get_object(
+            auto resp = co_await lease.client->get_object(
               bucket, path, fib.get_timeout(), expect_missing);
             vlog(ctxlog.debug, "Receive OK response from {}", path);
             co_await manifest.update(resp->as_input_stream());
@@ -276,7 +276,7 @@ ss::future<download_result> remote::do_download_manifest(
         } catch (...) {
             eptr = std::current_exception();
         }
-        co_await client->shutdown();
+        lease.client->shutdown();
         auto outcome = categorize_error(eptr, fib, bucket, path);
         switch (outcome) {
         case error_outcome::retry_slowdown:
@@ -335,7 +335,7 @@ ss::future<upload_result> remote::upload_manifest(
     auto key = manifest.get_manifest_path();
     auto path = s3::object_key(key());
     std::vector<s3::object_tag> tags = {{"rp-type", "partition-manifest"}};
-    auto [client, deleter] = co_await _pool.acquire();
+    auto lease = co_await _pool.acquire();
     auto permit = fib.retry();
     vlog(ctxlog.debug, "Uploading manifest {} to the {}", path, bucket());
     std::optional<upload_result> result;
@@ -343,7 +343,7 @@ ss::future<upload_result> remote::upload_manifest(
         std::exception_ptr eptr = nullptr;
         try {
             auto [is, size] = manifest.serialize();
-            co_await client->put_object(
+            co_await lease.client->put_object(
               bucket, path, size, std::move(is), tags, fib.get_timeout());
             vlog(ctxlog.debug, "Successfuly uploaded manifest to {}", path);
             switch (manifest.get_manifest_type()) {
@@ -362,7 +362,7 @@ ss::future<upload_result> remote::upload_manifest(
         } catch (...) {
             eptr = std::current_exception();
         }
-        co_await client->shutdown();
+        lease.client->shutdown();
         auto outcome = categorize_error(eptr, fib, bucket, path);
         switch (outcome) {
         case error_outcome::retry_slowdown:
@@ -425,7 +425,7 @@ ss::future<upload_result> remote::upload_segment(
       content_length);
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
-        auto [client, deleter] = co_await _pool.acquire();
+        auto lease = co_await _pool.acquire();
 
         // Client acquisition can take some time. Do a check before starting
         // the upload if we can still continue.
@@ -446,7 +446,7 @@ ss::future<upload_result> remote::upload_segment(
         std::exception_ptr eptr = nullptr;
         try {
             // Segment upload attempt
-            co_await client->put_object(
+            co_await lease.client->put_object(
               bucket,
               path,
               content_length,
@@ -465,7 +465,7 @@ ss::future<upload_result> remote::upload_segment(
         // call close() on the segment_reader_handle to release the FD.
         co_await reader_handle->close();
 
-        co_await client->shutdown();
+        lease.client->shutdown();
         auto outcome = categorize_error(eptr, fib, bucket, path);
         switch (outcome) {
         case error_outcome::retry_slowdown:
@@ -519,14 +519,14 @@ ss::future<download_result> remote::download_segment(
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
     auto path = s3::object_key(segment_path());
-    auto [client, deleter] = co_await _pool.acquire();
+    auto lease = co_await _pool.acquire();
     auto permit = fib.retry();
     vlog(ctxlog.debug, "Download segment {}", path);
     std::optional<download_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         std::exception_ptr eptr = nullptr;
         try {
-            auto resp = co_await client->get_object(
+            auto resp = co_await lease.client->get_object(
               bucket, path, fib.get_timeout());
             vlog(ctxlog.debug, "Receive OK response from {}", path);
             auto length = boost::lexical_cast<uint64_t>(resp->get_headers().at(
@@ -539,7 +539,7 @@ ss::future<download_result> remote::download_segment(
         } catch (...) {
             eptr = std::current_exception();
         }
-        co_await client->shutdown();
+        lease.client->shutdown();
         auto outcome = categorize_error(eptr, fib, bucket, path);
         switch (outcome) {
         case error_outcome::retry_slowdown:
@@ -590,14 +590,14 @@ ss::future<download_result> remote::segment_exists(
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
     auto path = s3::object_key(segment_path());
-    auto [client, deleter] = co_await _pool.acquire();
+    auto lease = co_await _pool.acquire();
     auto permit = fib.retry();
     vlog(ctxlog.debug, "Check segment {}", path);
     std::optional<download_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         std::exception_ptr eptr = nullptr;
         try {
-            auto resp = co_await client->head_object(
+            auto resp = co_await lease.client->head_object(
               bucket, path, fib.get_timeout());
             vlog(
               ctxlog.debug,
@@ -610,7 +610,7 @@ ss::future<download_result> remote::segment_exists(
         } catch (...) {
             eptr = std::current_exception();
         }
-        co_await client->shutdown();
+        lease.client->shutdown();
         auto outcome = categorize_error(eptr, fib, bucket, path);
         switch (outcome) {
         case error_outcome::retry_slowdown:
@@ -660,7 +660,7 @@ ss::future<upload_result> remote::delete_segment(
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
     auto path = s3::object_key(segment_path());
-    auto [client, deleter] = co_await _pool.acquire();
+    auto lease = co_await _pool.acquire();
     auto permit = fib.retry();
     vlog(ctxlog.debug, "Delete segment {}", path);
     std::optional<upload_result> result;
@@ -672,13 +672,14 @@ ss::future<upload_result> remote::delete_segment(
             // using 'upload_result' type as a return type. No need
             // to handle NoSuchKey error. The 'upload_result' represents
             // any mutable operation.
-            co_await client->delete_object(bucket, path, fib.get_timeout());
+            co_await lease.client->delete_object(
+              bucket, path, fib.get_timeout());
             vlog(ctxlog.debug, "Receive OK DeleteObject {} response", path);
             co_return upload_result::success;
         } catch (...) {
             eptr = std::current_exception();
         }
-        co_await client->shutdown();
+        lease.client->shutdown();
         auto outcome = categorize_error(eptr, fib, bucket, path);
         switch (outcome) {
         case error_outcome::retry_slowdown:

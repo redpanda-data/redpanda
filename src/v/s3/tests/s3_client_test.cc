@@ -224,7 +224,7 @@ SEASTAR_TEST_CASE(test_put_object_success) {
           .get();
         // shouldn't throw
         // the request is verified by the server
-        client->shutdown().get();
+        client->shutdown();
         server->stop().get();
     });
 }
@@ -455,7 +455,7 @@ void test_client_pool(s3::client_pool_overdraft_policy policy) {
           [_server = server](
             s3::client_pool::client_lease lease) -> ss::future<> {
               auto server = _server;
-              auto& [client, _] = lease;
+              auto client = lease.client;
               iobuf payload;
               auto payload_stream = make_iobuf_ref_output_stream(payload);
               auto http_response = co_await client->get_object(
@@ -499,7 +499,7 @@ SEASTAR_TEST_CASE(test_client_pool_reconnect) {
                 s3::client_pool::client_lease lease) -> ss::future<bool> {
                   auto server = _server;
                   co_await ss::sleep(100ms);
-                  auto& [client, _] = lease;
+                  auto client = lease.client;
                   iobuf payload;
                   auto payload_stream = make_iobuf_ref_output_stream(payload);
                   try {
@@ -512,7 +512,7 @@ SEASTAR_TEST_CASE(test_client_pool_reconnect) {
                       iobuf_parser p(std::move(payload));
                       auto actual_payload = p.read_string(p.bytes_left());
                       BOOST_REQUIRE_EQUAL(actual_payload, expected_payload);
-                      co_await client->shutdown();
+                      client->shutdown();
                   } catch (const ss::abort_requested_exception&) {
                       co_return false;
                   }

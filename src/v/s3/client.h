@@ -18,6 +18,7 @@
 #include "outcome.h"
 #include "s3/client_probe.h"
 #include "utils/gate_guard.h"
+#include "utils/intrusive_list_helpers.h"
 
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/coroutine.hh>
@@ -179,7 +180,7 @@ public:
     /// Stop the client
     ss::future<> stop();
     /// Shutdown the underlying connection
-    ss::future<> shutdown();
+    void shutdown();
 
     /// Download object from S3 bucket
     ///
@@ -271,6 +272,27 @@ public:
     struct client_lease {
         http_client_ptr client;
         ss::deleter deleter;
+        intrusive_list_hook _hook;
+
+        client_lease(http_client_ptr p, ss::deleter deleter)
+          : client(std::move(p))
+          , deleter(std::move(deleter)) {}
+
+        client_lease(client_lease&& other) noexcept
+          : client(std::move(other.client))
+          , deleter(std::move(other.deleter)) {
+            _hook.swap_nodes(other._hook);
+        }
+
+        client_lease& operator=(client_lease&& other) noexcept {
+            client = std::move(other.client);
+            deleter = std::move(other.deleter);
+            _hook.swap_nodes(other._hook);
+            return *this;
+        }
+
+        client_lease(const client_lease&) = delete;
+        client_lease& operator=(const client_lease&) = delete;
     };
 
     client_pool(
@@ -280,6 +302,8 @@ public:
       = client_pool_overdraft_policy::wait_if_empty);
 
     ss::future<> stop();
+
+    void shutdown_connections();
 
     /// Performs the dual functions of loading refreshed credentials into
     /// apply_credentials object, as well as initializing the client pool
@@ -312,6 +336,8 @@ private:
     configuration _config;
     client_pool_overdraft_policy _policy;
     std::vector<http_client_ptr> _pool;
+    // List of all connections currently used by clients
+    intrusive_list<client_lease, &client_lease::_hook> _leased;
     ss::condition_variable _cvar;
     ss::abort_source _as;
     ss::gate _gate;
