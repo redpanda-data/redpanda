@@ -184,7 +184,7 @@ public:
     }
 
     const ss::sstring& listener() const { return _conn->listener(); }
-    security::sasl_server& sasl() { return _conn->sasl(); }
+    std::optional<security::sasl_server>& sasl() { return _conn->sasl(); }
     security::credential_store& credentials() {
         return _conn->server().credentials();
     }

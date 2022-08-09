@@ -361,14 +361,16 @@ class SecurityConfig:
         self.kafka_enable_authorization: Optional[bool] = None
         self.endpoint_authn_method: Optional[str] = None
         self.tls_provider: Optional[TLSProvider] = None
+        self.require_client_auth: bool = True
 
         # The rules to extract principal from mtls
         self.principal_mapping_rules = self.__DEFAULT_PRINCIPAL_MAPPING_RULES
 
     # sasl is required
     def sasl_enabled(self):
-        return (self.kafka_enable_authorization is None
-                and self.enable_sasl) or self.endpoint_authn_method == "sasl"
+        return (self.kafka_enable_authorization is None and self.enable_sasl
+                and self.endpoint_authn_method is None
+                ) or self.endpoint_authn_method == "sasl"
 
     # principal is extracted from mtls distinguished name
     def mtls_identity_enabled(self):
@@ -459,7 +461,8 @@ class RedpandaService(Service):
                  environment: Optional[dict[str, str]] = None,
                  security: SecurityConfig = SecurityConfig(),
                  node_ready_timeout_s=None,
-                 superuser: Optional[SaslCredentials] = None):
+                 superuser: Optional[SaslCredentials] = None,
+                 skip_if_no_redpanda_log: bool = False):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
         self._context = context
         self._enable_rp = enable_rp
@@ -528,6 +531,8 @@ class RedpandaService(Service):
         self._tls_cert = None
         self._init_tls()
 
+        self._skip_if_no_redpanda_log = skip_if_no_redpanda_log
+
     def set_environment(self, environment: dict[str, str]):
         self._environment = environment
 
@@ -565,6 +570,9 @@ class RedpandaService(Service):
 
     def endpoint_authn_method(self):
         return self._security.endpoint_authn_method
+
+    def require_client_auth(self):
+        return self._security.require_client_auth
 
     @property
     def dedicated_nodes(self):
@@ -1074,6 +1082,14 @@ class RedpandaService(Service):
 
         bad_lines = collections.defaultdict(list)
         for node in self.nodes:
+
+            if self._skip_if_no_redpanda_log and not node.account.exists(
+                    RedpandaService.STDOUT_STDERR_CAPTURE):
+                self.logger.info(
+                    f"{RedpandaService.STDOUT_STDERR_CAPTURE} not found on {node.account.hostname}. Skipping log scan."
+                )
+                return
+
             self.logger.info(
                 f"Scanning node {node.account.hostname} log for errors...")
 
@@ -1338,14 +1354,16 @@ class RedpandaService(Service):
             conf = yaml.dump(doc)
 
         if self._security.tls_provider:
-            tls_config = dict(
-                enabled=True,
-                require_client_auth=True,
-                name="dnslistener",
-                key_file=RedpandaService.TLS_SERVER_KEY_FILE,
-                cert_file=RedpandaService.TLS_SERVER_CRT_FILE,
-                truststore_file=RedpandaService.TLS_CA_CRT_FILE,
-            )
+            tls_config = [
+                dict(
+                    enabled=True,
+                    require_client_auth=self.require_client_auth(),
+                    name=n,
+                    key_file=RedpandaService.TLS_SERVER_KEY_FILE,
+                    cert_file=RedpandaService.TLS_SERVER_CRT_FILE,
+                    truststore_file=RedpandaService.TLS_CA_CRT_FILE,
+                ) for n in ["dnslistener", "iplistener"]
+            ]
             doc = yaml.full_load(conf)
             doc["redpanda"].update(dict(kafka_api_tls=tls_config))
             conf = yaml.dump(doc)

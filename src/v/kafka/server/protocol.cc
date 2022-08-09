@@ -166,15 +166,13 @@ ss::future<> protocol::apply(net::server::resources rs) {
         config::shard_local_cfg().enable_sasl());
     const auto authn_method = get_authn_method(*rs.conn);
 
-    /*
-     * if sasl authentication is not enabled then initialize the sasl state to
-     * complete. this will cause auth to be skipped during request processing.
-     */
-    security::sasl_server sasl(
-      authn_method == config::broker_authn_method::sasl
-        ? security::sasl_server::sasl_state::initial
-        : security::sasl_server::sasl_state::complete);
+    // Only initialise sasl state if sasl is enabled
+    auto sasl = authn_method == config::broker_authn_method::sasl
+                  ? std::make_optional<security::sasl_server>(
+                    security::sasl_server::sasl_state::initial)
+                  : std::nullopt;
 
+    // Only initialise mtls state if mtls_identity is enabled
     std::optional<security::tls::mtls_state> mtls_state;
     if (authn_method == config::broker_authn_method::mtls_identity) {
         mtls_state = co_await get_mtls_principal_state(
@@ -187,9 +185,9 @@ ss::future<> protocol::apply(net::server::resources rs) {
     co_return co_await ss::do_until(
       [ctx] { return ctx->is_finished_parsing(); },
       [ctx] { return ctx->process_one_request(); })
-      .handle_exception([ctx](std::exception_ptr eptr) {
+      .handle_exception([ctx, authn_method](std::exception_ptr eptr) {
           auto disconnected = net::is_disconnect_exception(eptr);
-          if (config::shard_local_cfg().enable_sasl()) {
+          if (authn_method == config::broker_authn_method::sasl) {
               /*
                * This block is a 2x2 matrix of:
                * - sasl enabled or disabled
@@ -208,7 +206,7 @@ ss::future<> protocol::apply(net::server::resources rs) {
                     ctx->client_host(),
                     ctx->client_port(),
                     disconnected.value(),
-                    security::sasl_state_to_str(ctx->sasl().state()));
+                    security::sasl_state_to_str(ctx->sasl()->state()));
 
               } else {
                   vlog(
@@ -218,7 +216,7 @@ ss::future<> protocol::apply(net::server::resources rs) {
                     ctx->client_host(),
                     ctx->client_port(),
                     eptr,
-                    security::sasl_state_to_str(ctx->sasl().state()));
+                    security::sasl_state_to_str(ctx->sasl()->state()));
               }
           } else {
               if (disconnected) {
