@@ -29,6 +29,7 @@
 #include "storage/segment_appender_utils.h"
 #include "utils/gate_guard.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/file-types.hh>
 #include <seastar/core/file.hh>
@@ -164,6 +165,11 @@ ss::future<log_recovery_result> partition_downloader::download_log() {
         auto topic_manifest_path = topic_manifest::get_topic_manifest_path(
           _ntpc.ntp().ns, _ntpc.ntp().tp.topic);
         co_return co_await download_log(topic_manifest_path);
+
+    } catch (const ss::abort_requested_exception&) {
+        throw;
+    } catch (const ss::gate_closed_exception&) {
+        throw;
     } catch (...) {
         // We can get here if the parttion manifest is missing (or some
         // other failure is preventing us from recovering the partition). In
