@@ -133,7 +133,7 @@ class FranzGoVerifiableService(BackgroundThreadService):
         if self.use_custom_node:
             return
         else:
-            return super(FranzGoVerifiableService, self).free_all()
+            return super(FranzGoVerifiableService, self).free()
 
 
 class ConsumerStatus:
@@ -260,25 +260,21 @@ class FranzGoVerifiableConsumerGroupConsumer(FranzGoVerifiableService):
         self.status = ServiceStatus.RUNNING
         self._stopping.clear()
         try:
-            while True:
-                cmd = (
-                    "echo $$ ; "
-                    f"{TESTS_DIR}/kgo-verifier --produce_msgs=0 --rand_read_msgs=0 --seq_read=0 "
-                    f"--brokers={self._redpanda.brokers()} "
-                    f"--topic={self._topic} "
-                    f"--consumer_group_readers={self._readers} ")
-                for line in self.execute_cmd(cmd, node):
-                    if not line.startswith("{"):
-                        continue
-                    data = json.loads(line)
-                    self._consumer_status = ConsumerStatus(
-                        data['ValidReads'], data['InvalidReads'],
-                        data['OutOfScopeInvalidReads'])
-                    self.logger.info(
-                        f"ConsumerGroupConsumer {self._consumer_status}")
-
-                if self._stopping.is_set() or self._shutting_down.is_set():
-                    break
+            cmd = (
+                "echo $$ ; "
+                f"{TESTS_DIR}/kgo-verifier --produce_msgs=0 --rand_read_msgs=0 --seq_read=0 "
+                f"--brokers={self._redpanda.brokers()} "
+                f"--topic={self._topic} "
+                f"--consumer_group_readers={self._readers} ")
+            for line in self.execute_cmd(cmd, node):
+                if not line.startswith("{"):
+                    continue
+                data = json.loads(line)
+                self._consumer_status = ConsumerStatus(
+                    data['ValidReads'], data['InvalidReads'],
+                    data['OutOfScopeInvalidReads'])
+                self.logger.info(
+                    f"ConsumerGroupConsumer {self._consumer_status}")
 
         except Exception as ex:
             self.save_exception(ex)

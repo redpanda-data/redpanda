@@ -428,6 +428,12 @@ class RpkTool:
         cmd = ["delete", group]
         self._run_group(cmd)
 
+    def group_list(self):
+        cmd = ['list']
+        out = self._run_group(cmd)
+
+        return [l.split()[1] for l in out.splitlines()[1:]]
+
     def wasm_deploy(self, script, name, description):
         cmd = [
             self._rpk_binary(), 'wasm', 'deploy', script, '--brokers',
