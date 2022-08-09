@@ -13,6 +13,7 @@
 #include "cluster/health_monitor_types.h"
 #include "cluster/types.h"
 #include "compat/json.h"
+#include "compat/model_json.h"
 #include "compat/storage_json.h"
 
 namespace json {
@@ -27,7 +28,12 @@ template<typename T>
 void rjson_serialize(
   json::Writer<json::StringBuffer>& w, const cluster::property_update<T>& pu) {
     w.StartObject();
-    write_member(w, "value", pu.value);
+    if constexpr (
+      is_exceptional_enum<T> || is_exceptional_enum_wrapped_opt<T>) {
+        write_exceptional_member_type(w, "value", pu.value);
+    } else {
+        write_member(w, "value", pu.value);
+    }
     write_member(
       w,
       "op",
@@ -558,10 +564,11 @@ read_value(json::Value const& rd, cluster::ntp_reconciliation_state& obj) {
 inline void rjson_serialize(
   json::Writer<json::StringBuffer>& w, const cluster::topic_properties& tps) {
     w.StartObject();
-    write_member(w, "compression", tps.compression);
-    write_member(w, "cleanup_policy_bitflags", tps.cleanup_policy_bitflags);
+    write_exceptional_member_type(w, "compression", tps.compression);
+    write_exceptional_member_type(
+      w, "cleanup_policy_bitflags", tps.cleanup_policy_bitflags);
     write_member(w, "compaction_strategy", tps.compaction_strategy);
-    write_member(w, "timestamp_type", tps.timestamp_type);
+    write_exceptional_member_type(w, "timestamp_type", tps.timestamp_type);
     write_member(w, "segment_size", tps.segment_size);
     write_member(w, "retention_bytes", tps.retention_bytes);
     write_member(w, "retention_duration", tps.retention_duration);

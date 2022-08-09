@@ -15,6 +15,7 @@
 #include "compat/cluster_generator.h"
 #include "compat/cluster_json.h"
 #include "compat/json.h"
+#include "compat/model_json.h"
 
 namespace compat {
 
@@ -301,10 +302,12 @@ GEN_COMPAT_CHECK(
 GEN_COMPAT_CHECK(
   cluster::topic_properties,
   {
-      json_write(compression);
-      json_write(cleanup_policy_bitflags);
+      json::write_exceptional_member_type(wr, "compression", obj.compression);
+      json::write_exceptional_member_type(
+        wr, "cleanup_policy_bitflags", obj.cleanup_policy_bitflags);
       json_write(compaction_strategy);
-      json_write(timestamp_type);
+      json::write_exceptional_member_type(
+        wr, "timestamp_type", obj.timestamp_type);
       json_write(segment_size);
       json_write(retention_bytes);
       json_write(retention_duration);

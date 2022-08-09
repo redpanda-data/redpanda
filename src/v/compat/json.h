@@ -702,7 +702,7 @@ enum class tristate_status : uint8_t { disabled = 0, not_set, set };
 template<typename T>
 void read_value(json::Value const& rd, tristate<T>& target) {
     tristate_status ts{tristate_status::disabled};
-    auto ts_val = read_member_enum(rd, "status", ts);
+    auto ts_val = read_enum_ut(rd, "status", ts);
     switch (ts_val) {
     case 0:
         target = tristate<T>();

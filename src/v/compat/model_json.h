@@ -192,4 +192,72 @@ inline void read_value(json::Value const& rd, model::topic_metadata& tm) {
     read_member(rd, "partitions", tm.partitions);
 }
 
+// NOTE: These are exceptions to overloads of rjson_serialize(enum) definitions
+// defined in v/config/cluster_serializtion.h which print string representations
+// of the listed enumerations below. The compat framework expects all enums in
+// their json representation to be their respective underlying types. To avoid
+// breaking something by modifying the other definitions these types will be
+// explicity serialized to json with these special methods
+
+template<typename T>
+inline constexpr bool is_exceptional_enum
+  = std::is_enum_v<
+      T> && (std::is_same_v<T, model::compression> || std::is_same_v<T, model::timestamp_type> || std::is_same_v<T, model::cleanup_policy_bitflags>);
+
+template<typename T>
+inline constexpr bool is_exceptional_enum_wrapped_opt
+  = is_exceptional_enum<typename T::value_type>;
+
+template<typename T>
+void rjson_serialize_exceptional_type(
+  json::Writer<json::StringBuffer>& w, const std::optional<T>& t) {
+    if (t) {
+        rjson_serialize_exceptional_type(w, *t);
+    } else {
+        w.Null();
+    }
+}
+
+template<typename T>
+void rjson_serialize_exceptional_type(
+  json::Writer<json::StringBuffer>& w, const tristate<T>& t) {
+    w.StartObject();
+    w.Key("status");
+    if (t.is_disabled()) {
+        w.Int(uint8_t(tristate_status::disabled));
+    } else if (!t.has_value()) {
+        w.Int(uint8_t(tristate_status::not_set));
+    } else {
+        w.Int(uint8_t(tristate_status::set));
+        w.Key("value");
+        rjson_serialize_exceptional_type(w, t.value());
+    }
+    w.EndObject();
+}
+
+template<typename Writer, typename T>
+void write_exceptional_member_type(Writer& w, char const* key, T const& value) {
+    w.String(key);
+    rjson_serialize_exceptional_type(w, value);
+}
+
+inline void rjson_serialize_exceptional_type(
+  json::Writer<json::StringBuffer>& w, const model::compression& c) {
+    using underlying_t = std::underlying_type_t<model::compression>;
+    rjson_serialize(w, static_cast<underlying_t>(c));
+}
+
+inline void rjson_serialize_exceptional_type(
+  json::Writer<json::StringBuffer>& w, const model::timestamp_type& c) {
+    using underlying_t = std::underlying_type_t<model::timestamp_type>;
+    rjson_serialize(w, static_cast<underlying_t>(c));
+}
+
+inline void rjson_serialize_exceptional_type(
+  json::Writer<json::StringBuffer>& w,
+  const model::cleanup_policy_bitflags& c) {
+    using underlying_t = std::underlying_type_t<model::cleanup_policy_bitflags>;
+    rjson_serialize(w, static_cast<underlying_t>(c));
+}
+
 } // namespace json
