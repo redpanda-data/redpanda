@@ -708,6 +708,9 @@ struct commit_group_tx_request
     operator==(const commit_group_tx_request&, const commit_group_tx_request&)
       = default;
 
+    friend std::ostream&
+    operator<<(std::ostream& o, const commit_group_tx_request& r);
+
     auto serde_fields() {
         return std::tie(ntp, pid, tx_seq, group_id, timeout);
     }
@@ -725,6 +728,9 @@ struct commit_group_tx_reply
     friend bool
     operator==(const commit_group_tx_reply&, const commit_group_tx_reply&)
       = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const commit_group_tx_reply& r);
 
     auto serde_fields() { return std::tie(ec); }
 };
@@ -767,6 +773,9 @@ struct abort_group_tx_request
     operator==(const abort_group_tx_request&, const abort_group_tx_request&)
       = default;
 
+    friend std::ostream&
+    operator<<(std::ostream& o, const abort_group_tx_request& r);
+
     auto serde_fields() {
         return std::tie(ntp, group_id, pid, tx_seq, timeout);
     }
@@ -784,6 +793,9 @@ struct abort_group_tx_reply
     friend bool
     operator==(const abort_group_tx_reply&, const abort_group_tx_reply&)
       = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const abort_group_tx_reply& r);
 
     auto serde_fields() { return std::tie(ec); }
 };

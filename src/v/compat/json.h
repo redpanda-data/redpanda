@@ -22,6 +22,8 @@
 
 #include <seastar/net/inet_address.hh>
 
+#include <absl/container/node_hash_map.h>
+
 #include <type_traits>
 
 namespace json {
@@ -206,6 +208,31 @@ inline void rjson_serialize(
 }
 
 template<typename T, typename V>
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const absl::node_hash_map<T, V>& m) {
+    w.StartArray();
+    for (const auto& e : m) {
+        w.StartObject();
+        w.Key("key");
+        rjson_serialize(w, e.first);
+        w.Key("value");
+        rjson_serialize(w, e.second);
+        w.EndObject();
+    }
+    w.EndArray();
+}
+
+template<typename V>
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const absl::node_hash_set<V>& m) {
+    w.StartArray();
+    for (const V& e : m) {
+        rjson_serialize(w, e);
+    }
+    w.EndArray();
+}
+
+template<typename T, typename V>
 inline void read_value(json::Value const& rd, std::unordered_map<T, V>& obj) {
     for (const auto& e : rd.GetArray()) {
         T key;
@@ -213,6 +240,26 @@ inline void read_value(json::Value const& rd, std::unordered_map<T, V>& obj) {
         V value;
         read_member(e, "value", value);
         obj.emplace(std::move(key), std::move(value));
+    }
+}
+
+template<typename T, typename V>
+inline void read_value(json::Value const& rd, absl::node_hash_map<T, V>& obj) {
+    for (const auto& e : rd.GetArray()) {
+        T key;
+        read_member(e, "key", key);
+        V value;
+        read_member(e, "value", value);
+        obj.emplace(std::move(key), std::move(value));
+    }
+}
+
+template<typename V>
+inline void read_value(json::Value const& rd, absl::node_hash_set<V>& obj) {
+    for (const auto& e : rd.GetArray()) {
+        auto v = V{};
+        read_value(e, v);
+        obj.insert(v);
     }
 }
 

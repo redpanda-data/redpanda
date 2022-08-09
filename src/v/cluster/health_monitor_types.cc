@@ -138,6 +138,32 @@ std::ostream& operator<<(std::ostream& o, const partitions_filter& filter) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const get_node_health_request& r) {
+    fmt::print(
+      o, "{{filter: {}, current_version: {}}}", r.filter, r.current_version);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const get_node_health_reply& r) {
+    fmt::print(o, "{{error: {}, report: {}}}", r.error, r.report);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const get_cluster_health_request& r) {
+    fmt::print(
+      o,
+      "{{filter: {}, refresh: {}, decoded_version: {}}}",
+      r.filter,
+      r.refresh,
+      r.decoded_version);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const get_cluster_health_reply& r) {
+    fmt::print(o, "{{error: {}, report: {}}}", r.error, r.report);
+    return o;
+}
+
 } // namespace cluster
 namespace reflection {
 

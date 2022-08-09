@@ -717,6 +717,40 @@ std::ostream& operator<<(std::ostream& o, const prepare_group_tx_reply& r) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const commit_group_tx_request& r) {
+    fmt::print(
+      o,
+      "{{ntp {} pid {} tx_seq {} group_id {} timeout {}}}",
+      r.ntp,
+      r.pid,
+      r.tx_seq,
+      r.group_id,
+      r.timeout);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const commit_group_tx_reply& r) {
+    fmt::print(o, "{{ec {}}}", r.ec);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const abort_group_tx_request& r) {
+    fmt::print(
+      o,
+      "{{ntp {} pid {} tx_seq {} group_id {} timeout {}}}",
+      r.ntp,
+      r.pid,
+      r.tx_seq,
+      r.group_id,
+      r.timeout);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const abort_group_tx_reply& r) {
+    fmt::print(o, "{{ec {}}}", r.ec);
+    return o;
+}
+
 } // namespace cluster
 
 namespace reflection {

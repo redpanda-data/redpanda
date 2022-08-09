@@ -136,6 +136,12 @@ inline model::broker random_broker() {
     return random_broker(tests::random_named_int<model::node_id>());
 }
 
+inline model::membership_state random_membership_state() {
+    return membership_state(random_generators::get_int<int8_t>(
+      static_cast<int8_t>(model::membership_state::active),
+      static_cast<int8_t>(model::membership_state::removed)));
+}
+
 inline model::producer_identity random_producer_identity() {
     return {
       random_generators::get_int<int64_t>(),

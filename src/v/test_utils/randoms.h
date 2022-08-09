@@ -20,6 +20,7 @@
 #include <seastar/net/inet_address.hh>
 #include <seastar/net/ip.hh>
 
+#include <absl/container/node_hash_map.h>
 #include <bits/stdint-uintn.h>
 
 #include <limits>
@@ -89,6 +90,32 @@ inline std::chrono::milliseconds random_duration_ms() {
     auto rand = random_generators::get_int<int64_t>(0, max_ns);
     auto rand_ns = std::chrono::nanoseconds{rand};
     return std::chrono::duration_cast<std::chrono::milliseconds>(rand_ns);
+}
+
+template<typename Key, typename Value, typename Fn>
+inline absl::node_hash_map<Key, Value>
+random_node_hash_map(Fn&& gen, size_t size = 20) {
+    absl::node_hash_map<Key, Value> hm{};
+
+    for (size_t i = 0; i < size; i++) {
+        auto [k, v] = gen();
+        hm[k] = v;
+    }
+
+    return hm;
+}
+
+template<typename Value, typename Fn>
+inline absl::node_hash_set<Value>
+random_node_hash_set(Fn&& gen, size_t size = 20) {
+    absl::node_hash_set<Value> hs{};
+
+    for (size_t i = 0; i < size; i++) {
+        auto v = gen();
+        hs.insert(v);
+    }
+
+    return hs;
 }
 
 /*
