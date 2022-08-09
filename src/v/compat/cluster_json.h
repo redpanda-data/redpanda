@@ -87,6 +87,25 @@ inline void rjson_serialize(
     w.EndObject();
 }
 
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const cluster::config_status& s) {
+    w.StartObject();
+    write_member(w, "node", s.node);
+    write_member(w, "version", s.version);
+    write_member(w, "restart", s.restart);
+    write_member(w, "unknown", s.unknown);
+    write_member(w, "invalid", s.invalid);
+    w.EndObject();
+}
+
+inline void read_value(json::Value const& rd, cluster::config_status& s) {
+    read_member(rd, "node", s.node);
+    read_member(rd, "version", s.version);
+    read_member(rd, "restart", s.restart);
+    read_member(rd, "unknown", s.unknown);
+    read_member(rd, "invalid", s.invalid);
+}
+
 inline void
 read_value(json::Value const& rd, cluster::partition_move_direction& e) {
     auto direction = rd.GetInt();

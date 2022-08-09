@@ -719,6 +719,11 @@ std::ostream& operator<<(
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const config_status_request& r) {
+    fmt::print(o, "{{status: {}}}", r.status);
+    return o;
+}
+
 std::ostream& operator<<(std::ostream& o, const commit_tx_request& r) {
     fmt::print(
       o,

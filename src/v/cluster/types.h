@@ -2151,6 +2151,9 @@ struct config_status_request
   : serde::envelope<config_status_request, serde::version<0>> {
     config_status status;
 
+    friend std::ostream&
+    operator<<(std::ostream&, const config_status_request&);
+
     friend bool
     operator==(const config_status_request&, const config_status_request&)
       = default;

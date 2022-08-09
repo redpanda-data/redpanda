@@ -36,6 +36,11 @@ GEN_COMPAT_CHECK(
   });
 
 GEN_COMPAT_CHECK(
+  cluster::config_status_request,
+  { json_write(status); },
+  { json_read(status); })
+
+GEN_COMPAT_CHECK(
   cluster::cluster_property_kv,
   {
       json_write(key);
