@@ -99,6 +99,13 @@ void ntp_archiver::run_sync_manifest_loop() {
           .handle_exception_type([](const ss::abort_requested_exception&) {})
           .handle_exception_type([](const ss::sleep_aborted&) {})
           .handle_exception_type([](const ss::gate_closed_exception&) {})
+          .handle_exception_type([this](const ss::semaphore_timed_out& e) {
+              vlog(
+                _rtclog.warn,
+                "Semaphore timed out in sync manifest loop: {}. This may be "
+                "due to the system being overloaded. The loop will restart.",
+                e);
+          })
           .handle_exception([this](std::exception_ptr e) {
               vlog(_rtclog.error, "sync manifest loop error: {}", e);
           })
@@ -122,6 +129,13 @@ void ntp_archiver::run_upload_loop() {
           .handle_exception_type([](const ss::abort_requested_exception&) {})
           .handle_exception_type([](const ss::sleep_aborted&) {})
           .handle_exception_type([](const ss::gate_closed_exception&) {})
+          .handle_exception_type([this](const ss::semaphore_timed_out& e) {
+              vlog(
+                _rtclog.warn,
+                "Semaphore timed out in the upload loop: {}. This may be "
+                "due to the system being overloaded. The loop will restart.",
+                e);
+          })
           .handle_exception([this](std::exception_ptr e) {
               vlog(_rtclog.error, "upload loop error: {}", e);
           })
