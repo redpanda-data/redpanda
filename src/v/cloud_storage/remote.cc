@@ -18,6 +18,7 @@
 #include "utils/retry_chain_node.h"
 #include "utils/string_switch.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sleep.hh>
@@ -171,6 +172,9 @@ static error_outcome categorize_error(
               "Server disconnected: '{}', retrying HTTP request",
               err.what());
         }
+    } catch (const ss::abort_requested_exception&) {
+        vlog(ctxlog.debug, "Abort requested");
+        throw;
     } catch (...) {
         vlog(ctxlog.error, "Unexpected error {}", std::current_exception());
         result = error_outcome::fail;
@@ -220,6 +224,8 @@ ss::future<> remote::stop() {
     co_await _pool.stop();
     co_await _gate.close();
 }
+
+void remote::shutdown_connections() { _pool.shutdown_connections(); }
 
 size_t remote::concurrency() const { return _pool.max_size(); }
 
