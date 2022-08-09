@@ -364,12 +364,25 @@ service::hello(hello_request&& req, rpc::streaming_context&) {
 
 ss::future<config_status_reply>
 service::config_status(config_status_request&& req, rpc::streaming_context&) {
-    if (!_config_manager.local().needs_update(req.status)) {
+    // Move to stack to avoid referring to reference argument after a
+    // scheduling point
+    auto status = std::move(req.status);
+
+    // Peer should not be sending us status messages unless their status
+    // differs from the content of the controller log, but they might
+    // be out of date and send us multiple messages: avoid writing to
+    // our controller log by pre-checking if their request is actually a
+    // change.
+    auto needs_update = co_await _config_manager.invoke_on(
+      config_manager::shard,
+      [status](config_manager& mgr) { return mgr.needs_update(status); });
+    if (!needs_update) {
+        vlog(clusterlog.debug, "Ignoring status update {}, is a no-op", status);
         co_return config_status_reply{.error = errc::success};
     }
 
     auto ec = co_await _config_frontend.local().set_status(
-      req.status,
+      status,
       config::shard_local_cfg().replicate_append_timeout_ms()
         + model::timeout_clock::now());
 

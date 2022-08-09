@@ -117,6 +117,21 @@ class ClusterConfigTest(RedpandaTest):
         # Some arbitrary property to check syntax of result
         assert 'kafka_api' in node_config
 
+        # Status reconcilation is async, wait for all nodes to have reported in.
+        wait_until(lambda: len(admin.get_cluster_config_status()) == len(
+            self.redpanda.nodes),
+                   timeout_sec=20,
+                   backoff_sec=1)
+
+        # Validate expected status for a cluster that we have made no changes to
+        # since first start
+        status = admin.get_cluster_config_status()
+        for s in status:
+            assert s['restart'] is False
+            assert not s['invalid']
+            assert not s['unknown']
+        assert len(set([s['config_version'] for s in status])) == 1
+
     @cluster(num_nodes=1)
     def test_get_config_nodefaults(self):
         admin = Admin(self.redpanda)
