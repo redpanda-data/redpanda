@@ -370,6 +370,14 @@ spec:
                     description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
                     type: string
                 type: object
+              connectivity:
+                description: Connectivity defines internal/external hosts
+                properties:
+                  external:
+                    type: string
+                  internal:
+                    type: string
+                type: object
               observedGeneration:
                 description: The generation observed by the controller
                 format: int64

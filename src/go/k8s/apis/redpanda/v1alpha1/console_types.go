@@ -143,6 +143,14 @@ type ConsoleStatus struct {
 
 	// The generation observed by the controller
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
+	Connectivity *Connectivity `json:"connectivity,omitempty"`
+}
+
+// Connectivity defines internal/external hosts
+type Connectivity struct {
+	Internal string `json:"internal,omitempty"`
+	External string `json:"external,omitempty"`
 }
 
 // GenerationMatchesObserved returns true if Generation matches ObservedGeneration

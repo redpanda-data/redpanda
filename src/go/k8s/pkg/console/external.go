@@ -38,6 +38,9 @@ func NewService(cl client.Client, scheme *runtime.Scheme, consoleobj *redpandav1
 
 const (
 	servicePortName = "http"
+
+	// Kubernetes default cluster domain
+	defaultClusterDomain = "cluster.local"
 )
 
 // Ensure implements Resource interface
@@ -88,7 +91,15 @@ func (s *Service) Ensure(ctx context.Context) error {
 		}
 	}
 
-	return nil
+	s.consoleobj.Status.Connectivity = &redpandav1alpha1.Connectivity{
+		Internal: fmt.Sprintf(
+			"%s.%s.svc.%s:%d",
+			obj.GetName(), obj.GetNamespace(),
+			defaultClusterDomain,
+			s.consoleobj.Spec.Server.HTTPListenPort,
+		),
+	}
+	return s.Status().Update(ctx, s.consoleobj)
 }
 
 // Key implements Resource interface
