@@ -921,6 +921,9 @@ struct configuration_update_request
       const configuration_update_request&, const configuration_update_request&)
       = default;
 
+    friend std::ostream&
+    operator<<(std::ostream&, const configuration_update_request&);
+
     auto serde_fields() { return std::tie(node, target_node); }
 };
 
@@ -935,6 +938,9 @@ struct configuration_update_reply
     friend bool operator==(
       const configuration_update_reply&, const configuration_update_reply&)
       = default;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const configuration_update_reply&);
 
     auto serde_fields() { return std::tie(success); }
 };
@@ -992,6 +998,9 @@ struct remote_topic_properties
     friend bool
     operator==(const remote_topic_properties&, const remote_topic_properties&)
       = default;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const remote_topic_properties&);
 };
 
 /**
@@ -1068,8 +1077,22 @@ struct topic_properties
 };
 
 enum incremental_update_operation : int8_t { none, set, remove };
-template<typename T>
 
+inline std::string_view
+incremental_update_operation_as_string(incremental_update_operation op) {
+    switch (op) {
+    case incremental_update_operation::none:
+        return "none";
+    case incremental_update_operation::set:
+        return "set";
+    case incremental_update_operation::remove:
+        return "remove";
+    default:
+        vassert(false, "Unknown operation type passed: {}", int8_t(op));
+    }
+}
+
+template<typename T>
 struct property_update
   : serde::envelope<property_update<T>, serde::version<0>> {
     property_update() = default;
@@ -1081,6 +1104,16 @@ struct property_update
     incremental_update_operation op = incremental_update_operation::none;
 
     auto serde_fields() { return std::tie(value, op); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const property_update<T>& p) {
+        fmt::print(
+          o,
+          "property_update: value: {} op: {}",
+          p.value,
+          incremental_update_operation_as_string(p.op));
+        return o;
+    }
 
     friend bool operator==(const property_update<T>&, const property_update<T>&)
       = default;
@@ -1099,6 +1132,16 @@ struct property_update<tristate<T>>
     incremental_update_operation op = incremental_update_operation::none;
 
     auto serde_fields() { return std::tie(value, op); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const property_update<tristate<T>>& p) {
+        fmt::print(
+          o,
+          "property_update: value: {} op: {}",
+          p.value,
+          incremental_update_operation_as_string(p.op));
+        return o;
+    }
 
     friend bool operator==(
       const property_update<tristate<T>>&, const property_update<tristate<T>>&)
@@ -1137,6 +1180,9 @@ struct incremental_topic_updates
           shadow_indexing);
     }
 
+    friend std::ostream&
+    operator<<(std::ostream&, const incremental_topic_updates&);
+
     friend bool operator==(
       const incremental_topic_updates&, const incremental_topic_updates&)
       = default;
@@ -1149,6 +1195,9 @@ struct incremental_topic_custom_updates
     // Data-policy property is replicated by data_policy_frontend and handled by
     // data_policy_manager.
     property_update<std::optional<v8_engine::data_policy>> data_policy;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const incremental_topic_custom_updates&);
 
     friend bool operator==(
       const incremental_topic_custom_updates&,
@@ -1186,6 +1235,9 @@ struct topic_properties_update
     // This properties is not serialized to update_topic_properties_cmd, because
     // they have custom services for replication.
     incremental_topic_custom_updates custom_properties;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const topic_properties_update&);
 
     friend bool
     operator==(const topic_properties_update&, const topic_properties_update&)
@@ -1368,6 +1420,9 @@ struct create_topics_request
     operator==(const create_topics_request&, const create_topics_request&)
       = default;
 
+    friend std::ostream&
+    operator<<(std::ostream&, const create_topics_request&);
+
     auto serde_fields() { return std::tie(topics, timeout); }
 };
 
@@ -1389,6 +1444,8 @@ struct create_topics_reply
     friend bool
     operator==(const create_topics_reply&, const create_topics_reply&)
       = default;
+
+    friend std::ostream& operator<<(std::ostream&, const create_topics_reply&);
 
     auto serde_fields() { return std::tie(results, metadata, configs); }
 };
@@ -1428,6 +1485,9 @@ struct update_topic_properties_request
   : serde::envelope<update_topic_properties_request, serde::version<0>> {
     std::vector<topic_properties_update> updates;
 
+    friend std::ostream&
+    operator<<(std::ostream&, const update_topic_properties_request&);
+
     friend bool operator==(
       const update_topic_properties_request&,
       const update_topic_properties_request&)
@@ -1439,6 +1499,9 @@ struct update_topic_properties_request
 struct update_topic_properties_reply
   : serde::envelope<update_topic_properties_reply, serde::version<0>> {
     std::vector<topic_result> results;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const update_topic_properties_reply&);
 
     friend bool operator==(
       const update_topic_properties_reply&,
@@ -2088,6 +2151,9 @@ struct config_status_request
   : serde::envelope<config_status_request, serde::version<0>> {
     config_status status;
 
+    friend std::ostream&
+    operator<<(std::ostream&, const config_status_request&);
+
     friend bool
     operator==(const config_status_request&, const config_status_request&)
       = default;
@@ -2098,6 +2164,8 @@ struct config_status_request
 struct config_status_reply
   : serde::envelope<config_status_reply, serde::version<0>> {
     errc error;
+
+    friend std::ostream& operator<<(std::ostream&, const config_status_reply&);
 
     friend bool
     operator==(const config_status_reply&, const config_status_reply&)

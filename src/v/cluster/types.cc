@@ -169,6 +169,28 @@ create_partitions_configuration::create_partitions_configuration(
   : tp_ns(std::move(tp_ns))
   , new_total_partition_count(cnt) {}
 
+std::ostream&
+operator<<(std::ostream& o, const update_topic_properties_request& r) {
+    fmt::print(o, "{{updates: {}}}", r.updates);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const update_topic_properties_reply& r) {
+    fmt::print(o, "{{results: {}}}", r.results);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const topic_properties_update& tpu) {
+    fmt::print(
+      o,
+      "tp_ns: {} properties: {} custom_properties: {}",
+      tpu.tp_ns,
+      tpu.properties,
+      tpu.custom_properties);
+    return o;
+}
+
 std::ostream& operator<<(std::ostream& o, const topic_configuration& cfg) {
     fmt::print(
       o,
@@ -191,7 +213,7 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       "{}, retention_bytes: {}, retention_duration_ms: {}, segment_size: "
       "{}, "
       "timestamp_type: {}, recovery_enabled: {}, shadow_indexing: {}, "
-      "read_replica: {}, read_replica_bucket: {} }}",
+      "read_replica: {}, read_replica_bucket: {} remote_topic_properties: {}}}",
       properties.compression,
       properties.cleanup_policy_bitflags,
       properties.compaction_strategy,
@@ -202,7 +224,8 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       properties.recovery,
       properties.shadow_indexing,
       properties.read_replica,
-      properties.read_replica_bucket);
+      properties.read_replica_bucket,
+      properties.remote_topic_properties);
 
     return o;
 }
@@ -418,6 +441,52 @@ std::ostream& operator<<(std::ostream& o, const hello_request& h) {
 
 std::ostream& operator<<(std::ostream& o, const hello_reply& h) {
     fmt::print(o, "{{hello_reply: error {}}}", h.error);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const create_topics_request& r) {
+    fmt::print(
+      o,
+      "{{create_topics_request: topics: {} timeout: {}}}",
+      r.topics,
+      r.timeout);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const create_topics_reply& r) {
+    fmt::print(
+      o,
+      "{{create_topics_reply: results: {} metadata: {} configs: {}}}",
+      r.results,
+      r.metadata,
+      r.configs);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
+    fmt::print(
+      o,
+      "{{incremental_topic_custom_updates: compression: {} "
+      "cleanup_policy_bitflags: {} compaction_strategy: {} timestamp_type: {} "
+      "segment_size: {} retention_bytes: {} retention_duration: {} "
+      "shadow_indexing: {}}}",
+      i.compression,
+      i.cleanup_policy_bitflags,
+      i.compaction_strategy,
+      i.timestamp_type,
+      i.segment_size,
+      i.retention_bytes,
+      i.retention_duration,
+      i.shadow_indexing);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const incremental_topic_custom_updates& i) {
+    fmt::print(
+      o,
+      "{{incremental_topic_custom_updates: data_policy: {}}}",
+      i.data_policy);
     return o;
 }
 
@@ -650,6 +719,16 @@ std::ostream& operator<<(
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const config_status_request& r) {
+    fmt::print(o, "{{status: {}}}", r.status);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const config_status_reply& r) {
+    fmt::print(o, "{{error: {}}}", r.error);
+    return o;
+}
+
 std::ostream& operator<<(std::ostream& o, const commit_tx_request& r) {
     fmt::print(
       o,
@@ -748,6 +827,27 @@ std::ostream& operator<<(std::ostream& o, const abort_group_tx_request& r) {
 
 std::ostream& operator<<(std::ostream& o, const abort_group_tx_reply& r) {
     fmt::print(o, "{{ec {}}}", r.ec);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const configuration_update_request& cr) {
+    fmt::print(o, "{{broker: {} target_node: {}}}", cr.node, cr.target_node);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const configuration_update_reply& cr) {
+    fmt::print(o, "{{success: {}}}", cr.success);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const remote_topic_properties& rtps) {
+    fmt::print(
+      o,
+      "{{remote_revision: {} remote_partition_count: {}}}",
+      rtps.remote_revision,
+      rtps.remote_partition_count);
     return o;
 }
 

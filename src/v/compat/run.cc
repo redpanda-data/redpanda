@@ -27,6 +27,7 @@
 #include "compat/id_allocator_compat.h"
 #include "compat/init_tm_tx_compat.h"
 #include "compat/metadata_dissemination_compat.h"
+#include "compat/model_compat.h"
 #include "compat/partition_balancer_compat.h"
 #include "compat/prepare_group_tx_compat.h"
 #include "compat/prepare_tx_compat.h"
@@ -73,6 +74,8 @@ using compat_checks = type_list<
   cluster::set_maintenance_mode_reply,
   cluster::update_leadership_request,
   cluster::config_status,
+  cluster::config_status_request,
+  cluster::config_status_reply,
   cluster::cluster_property_kv,
   cluster::config_update_request,
   cluster::config_update_reply,
@@ -114,6 +117,8 @@ using compat_checks = type_list<
   cluster::commit_tx_reply,
   cluster::create_acls_request,
   cluster::create_acls_reply,
+  cluster::create_topics_request,
+  cluster::create_topics_reply,
   cluster::reconciliation_state_request,
   cluster::reconciliation_state_reply,
   cluster::partition_balancer_overview_request,
@@ -127,7 +132,20 @@ using compat_checks = type_list<
   cluster::get_node_health_request,
   cluster::get_node_health_reply,
   cluster::get_cluster_health_request,
-  cluster::get_cluster_health_reply>;
+  cluster::get_cluster_health_reply,
+  cluster::configuration_update_request,
+  cluster::configuration_update_reply,
+  cluster::remote_topic_properties,
+  cluster::topic_properties,
+  cluster::topic_configuration,
+  model::partition_metadata,
+  model::topic_metadata,
+  v8_engine::data_policy,
+  cluster::incremental_topic_custom_updates,
+  cluster::incremental_topic_updates,
+  cluster::topic_properties_update,
+  cluster::update_topic_properties_request,
+  cluster::update_topic_properties_reply>;
 
 template<typename T>
 struct corpus_helper {

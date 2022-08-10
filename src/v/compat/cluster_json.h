@@ -13,6 +13,7 @@
 #include "cluster/health_monitor_types.h"
 #include "cluster/types.h"
 #include "compat/json.h"
+#include "compat/model_json.h"
 #include "compat/storage_json.h"
 
 namespace json {
@@ -21,6 +22,46 @@ inline void read_value(json::Value const& rd, cluster::errc& e) {
     /// TODO: Make giant switch to confirm value is a proper cluster::errc
     auto err = rd.GetInt();
     e = static_cast<cluster::errc>(err);
+}
+
+template<typename T>
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const cluster::property_update<T>& pu) {
+    w.StartObject();
+    if constexpr (
+      is_exceptional_enum<T> || is_exceptional_enum_wrapped_opt<T>) {
+        write_exceptional_member_type(w, "value", pu.value);
+    } else {
+        write_member(w, "value", pu.value);
+    }
+    write_member(
+      w,
+      "op",
+      static_cast<
+        std::underlying_type_t<cluster::incremental_update_operation>>(pu.op));
+    w.EndObject();
+}
+
+template<typename T>
+void read_value(json::Value const& rd, cluster::property_update<T>& pu) {
+    read_member(rd, "value", pu.value);
+    auto op = read_enum_ut(rd, "op", pu.op);
+    switch (op) {
+    case 0:
+        pu.op = cluster::incremental_update_operation::none;
+        break;
+    case 1:
+        pu.op = cluster::incremental_update_operation::set;
+        break;
+    case 2:
+        pu.op = cluster::incremental_update_operation::remove;
+        break;
+    default:
+        vassert(
+          false,
+          "Unknown enum value for cluster::incremental_update_operation: {}",
+          op);
+    }
 }
 
 inline void
@@ -35,6 +76,40 @@ inline void rjson_serialize(
     write_member(w, "key", kv.key);
     write_member(w, "value", kv.value);
     w.EndObject();
+}
+
+inline void
+read_value(json::Value const& rd, cluster::remote_topic_properties& rtp) {
+    read_member(rd, "remote_revision", rtp.remote_revision);
+    read_member(rd, "remote_partition_count", rtp.remote_partition_count);
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const cluster::remote_topic_properties& rtp) {
+    w.StartObject();
+    write_member(w, "remote_revision", rtp.remote_revision);
+    write_member(w, "remote_partition_count", rtp.remote_partition_count);
+    w.EndObject();
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const cluster::config_status& s) {
+    w.StartObject();
+    write_member(w, "node", s.node);
+    write_member(w, "version", s.version);
+    write_member(w, "restart", s.restart);
+    write_member(w, "unknown", s.unknown);
+    write_member(w, "invalid", s.invalid);
+    w.EndObject();
+}
+
+inline void read_value(json::Value const& rd, cluster::config_status& s) {
+    read_member(rd, "node", s.node);
+    read_member(rd, "version", s.version);
+    read_member(rd, "restart", s.restart);
+    read_member(rd, "unknown", s.unknown);
+    read_member(rd, "invalid", s.invalid);
 }
 
 inline void
@@ -484,6 +559,129 @@ read_value(json::Value const& rd, cluster::ntp_reconciliation_state& obj) {
 
     obj = cluster::ntp_reconciliation_state(
       std::move(ntp), std::move(operations), status, error);
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const cluster::topic_properties& tps) {
+    w.StartObject();
+    write_exceptional_member_type(w, "compression", tps.compression);
+    write_exceptional_member_type(
+      w, "cleanup_policy_bitflags", tps.cleanup_policy_bitflags);
+    write_member(w, "compaction_strategy", tps.compaction_strategy);
+    write_exceptional_member_type(w, "timestamp_type", tps.timestamp_type);
+    write_member(w, "segment_size", tps.segment_size);
+    write_member(w, "retention_bytes", tps.retention_bytes);
+    write_member(w, "retention_duration", tps.retention_duration);
+    write_member(w, "recovery", tps.recovery);
+    write_member(w, "shadow_indexing", tps.shadow_indexing);
+    write_member(w, "read_replica", tps.read_replica);
+    write_member(w, "read_replica_bucket", tps.read_replica_bucket);
+    write_member(w, "remote_topic_properties", tps.remote_topic_properties);
+    w.EndObject();
+}
+
+inline void read_value(json::Value const& rd, cluster::topic_properties& obj) {
+    read_member(rd, "compression", obj.compression);
+    read_member(rd, "cleanup_policy_bitflags", obj.cleanup_policy_bitflags);
+    read_member(rd, "compaction_strategy", obj.compaction_strategy);
+    read_member(rd, "timestamp_type", obj.timestamp_type);
+    read_member(rd, "segment_size", obj.segment_size);
+    read_member(rd, "retention_bytes", obj.retention_bytes);
+    read_member(rd, "retention_duration", obj.retention_duration);
+    read_member(rd, "recovery", obj.recovery);
+    read_member(rd, "shadow_indexing", obj.shadow_indexing);
+    read_member(rd, "read_replica", obj.read_replica);
+    read_member(rd, "read_replica_bucket", obj.read_replica_bucket);
+    read_member(rd, "remote_topic_properties", obj.remote_topic_properties);
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const cluster::topic_configuration& cfg) {
+    w.StartObject();
+    write_member(w, "tp_ns", cfg.tp_ns);
+    write_member(w, "partition_count", cfg.partition_count);
+    write_member(w, "replication_factor", cfg.replication_factor);
+    write_member(w, "properties", cfg.properties);
+    w.EndObject();
+}
+
+inline void
+read_value(json::Value const& rd, cluster::topic_configuration& cfg) {
+    read_member(rd, "tp_ns", cfg.tp_ns);
+    read_member(rd, "partition_count", cfg.partition_count);
+    read_member(rd, "replication_factor", cfg.replication_factor);
+    read_member(rd, "properties", cfg.properties);
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const v8_engine::data_policy& dp) {
+    w.StartObject();
+    write_member(w, "fn_name", dp.fn_name);
+    write_member(w, "sct_name", dp.sct_name);
+    w.EndObject();
+}
+
+inline void read_value(json::Value const& rd, v8_engine::data_policy& dp) {
+    read_member(rd, "fn_name", dp.fn_name);
+    read_member(rd, "sct_name", dp.sct_name);
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const cluster::incremental_topic_custom_updates& itc) {
+    w.StartObject();
+    write_member(w, "data_policy", itc.data_policy);
+    w.EndObject();
+}
+
+inline void read_value(
+  json::Value const& rd, cluster::incremental_topic_custom_updates& itc) {
+    read_member(rd, "data_policy", itc.data_policy);
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const cluster::incremental_topic_updates& itu) {
+    w.StartObject();
+    write_member(w, "compression", itu.compression);
+    write_member(w, "cleanup_policy_bitflags", itu.cleanup_policy_bitflags);
+    write_member(w, "compaction_strategy", itu.compaction_strategy);
+    write_member(w, "timestamp_type", itu.timestamp_type);
+    write_member(w, "segment_size", itu.segment_size);
+    write_member(w, "retention_bytes", itu.retention_bytes);
+    write_member(w, "retention_duration", itu.retention_duration);
+    write_member(w, "shadow_indexing", itu.shadow_indexing);
+    w.EndObject();
+}
+
+inline void
+read_value(json::Value const& rd, cluster::incremental_topic_updates& itu) {
+    read_member(rd, "compression", itu.compression);
+    read_member(rd, "cleanup_policy_bitflags", itu.cleanup_policy_bitflags);
+    read_member(rd, "compaction_strategy", itu.compaction_strategy);
+    read_member(rd, "timestamp_type", itu.timestamp_type);
+    read_member(rd, "segment_size", itu.segment_size);
+    read_member(rd, "retention_bytes", itu.retention_bytes);
+    read_member(rd, "retention_duration", itu.retention_duration);
+    read_member(rd, "shadow_indexing", itu.shadow_indexing);
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const cluster::topic_properties_update& tpu) {
+    w.StartObject();
+    write_member(w, "tp_ns", tpu.tp_ns);
+    write_member(w, "properties", tpu.properties);
+    write_member(w, "custom_properties", tpu.custom_properties);
+    w.EndObject();
+}
+
+inline void
+read_value(json::Value const& rd, cluster::topic_properties_update& tpu) {
+    read_member(rd, "tp_ns", tpu.tp_ns);
+    read_member(rd, "properties", tpu.properties);
+    read_member(rd, "custom_properties", tpu.custom_properties);
 }
 
 } // namespace json

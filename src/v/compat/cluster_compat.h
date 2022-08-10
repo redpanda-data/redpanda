@@ -15,6 +15,7 @@
 #include "compat/cluster_generator.h"
 #include "compat/cluster_json.h"
 #include "compat/json.h"
+#include "compat/model_json.h"
 
 namespace compat {
 
@@ -34,6 +35,14 @@ GEN_COMPAT_CHECK(
       json_read(unknown);
       json_read(invalid);
   });
+
+GEN_COMPAT_CHECK(
+  cluster::config_status_request,
+  { json_write(status); },
+  { json_read(status); })
+
+GEN_COMPAT_CHECK(
+  cluster::config_status_reply, { json_write(error); }, { json_read(error); })
 
 GEN_COMPAT_CHECK(
   cluster::cluster_property_kv,
@@ -262,5 +271,296 @@ GEN_COMPAT_CHECK(
   });
 
 EMPTY_COMPAT_CHECK(cluster::cancel_all_partition_movements_request);
+
+GEN_COMPAT_CHECK(
+  cluster::configuration_update_request,
+  {
+      json_write(node);
+      json_write(target_node);
+  },
+  {
+      json_read(node);
+      json_read(target_node);
+  })
+
+GEN_COMPAT_CHECK(
+  cluster::configuration_update_reply,
+  { json_write(success); },
+  { json_read(success); })
+
+GEN_COMPAT_CHECK(
+  cluster::remote_topic_properties,
+  {
+      json_write(remote_revision);
+      json_write(remote_partition_count);
+  },
+  {
+      json_read(remote_revision);
+      json_read(remote_partition_count);
+  })
+
+GEN_COMPAT_CHECK(
+  cluster::topic_properties,
+  {
+      json::write_exceptional_member_type(wr, "compression", obj.compression);
+      json::write_exceptional_member_type(
+        wr, "cleanup_policy_bitflags", obj.cleanup_policy_bitflags);
+      json_write(compaction_strategy);
+      json::write_exceptional_member_type(
+        wr, "timestamp_type", obj.timestamp_type);
+      json_write(segment_size);
+      json_write(retention_bytes);
+      json_write(retention_duration);
+      json_write(recovery);
+      json_write(shadow_indexing);
+      json_write(read_replica);
+      json_write(read_replica_bucket);
+      json_write(remote_topic_properties);
+  },
+  {
+      json_read(compression);
+      json_read(cleanup_policy_bitflags);
+      json_read(compaction_strategy);
+      json_read(timestamp_type);
+      json_read(segment_size);
+      json_read(retention_bytes);
+      json_read(retention_duration);
+      json_read(recovery);
+      json_read(shadow_indexing);
+      json_read(read_replica);
+      json_read(read_replica_bucket);
+      json_read(remote_topic_properties);
+  })
+
+/// adl deserializer will not interpret the `read_replica`,
+/// `read_replica_bucket`, `remote_topic_properties` fields and any
+/// future fields. 'obj' will contain these fields populated due to the
+/// default implementation of its respective json fuzzers. Remove those
+/// fields from comparisons when checking against adl compat.
+
+template<>
+struct compat_check<cluster::topic_configuration> {
+    static constexpr std::string_view name = "cluster::topic_configuration";
+
+    static std::vector<cluster::topic_configuration> create_test_cases() {
+        return generate_instances<cluster::topic_configuration>();
+    }
+
+    static void to_json(
+      cluster::topic_configuration obj, json::Writer<json::StringBuffer>& wr) {
+        json_write(tp_ns);
+        json_write(partition_count);
+        json_write(replication_factor);
+        json_write(properties);
+    }
+
+    static cluster::topic_configuration from_json(json::Value& rd) {
+        cluster::topic_configuration obj;
+        json_read(tp_ns);
+        json_read(partition_count);
+        json_read(replication_factor);
+        json_read(properties);
+        return obj;
+    }
+
+    static std::vector<compat_binary>
+    to_binary(cluster::topic_configuration obj) {
+        return compat_binary::serde_and_adl(obj);
+    }
+
+    static void check(cluster::topic_configuration obj, compat_binary test) {
+        if (test.name == "serde") {
+            verify_serde_only(obj, test);
+            return;
+        }
+        vassert(test.name == "adl", "Unknown compat_binary format encounterd");
+        iobuf_parser iobp(std::move(test.data));
+        auto cfg = reflection::adl<cluster::topic_configuration>{}.from(iobp);
+        obj.properties.read_replica = std::nullopt;
+        obj.properties.read_replica_bucket = std::nullopt;
+        obj.properties.remote_topic_properties = std::nullopt;
+        if (cfg != obj) {
+            throw compat_error(fmt::format(
+              "Verify of {{cluster::topic_property}} decoding "
+              "failed:\n Expected: {}\nDecoded: {}",
+              obj,
+              cfg));
+        }
+    }
+};
+
+template<>
+struct compat_check<cluster::create_topics_request> {
+    static constexpr std::string_view name = "cluster::create_topics_request";
+
+    static std::vector<cluster::create_topics_request> create_test_cases() {
+        return generate_instances<cluster::create_topics_request>();
+    }
+
+    static void to_json(
+      cluster::create_topics_request obj,
+      json::Writer<json::StringBuffer>& wr) {
+        json_write(topics);
+        json_write(timeout);
+    }
+
+    static cluster::create_topics_request from_json(json::Value& rd) {
+        cluster::create_topics_request obj;
+        json_read(topics);
+        json_read(timeout);
+        return obj;
+    }
+
+    static std::vector<compat_binary>
+    to_binary(cluster::create_topics_request obj) {
+        return compat_binary::serde_and_adl(obj);
+    }
+
+    static void check(cluster::create_topics_request obj, compat_binary test) {
+        if (test.name == "serde") {
+            verify_serde_only(obj, test);
+            return;
+        }
+        vassert(test.name == "adl", "Unknown compat_binary format encounterd");
+        iobuf_parser iobp(std::move(test.data));
+        auto req = reflection::adl<cluster::create_topics_request>{}.from(iobp);
+        for (auto& topic : obj.topics) {
+            topic.properties.read_replica = std::nullopt;
+            topic.properties.read_replica_bucket = std::nullopt;
+            topic.properties.remote_topic_properties = std::nullopt;
+        }
+        if (req != obj) {
+            throw compat_error(fmt::format(
+              "Verify of {{cluster::create_toics_request}} decoding "
+              "failed:\n Expected: {}\nDecoded: {}",
+              obj,
+              req));
+        }
+    }
+};
+
+template<>
+struct compat_check<cluster::create_topics_reply> {
+    static constexpr std::string_view name = "cluster::create_topics_reply";
+
+    static std::vector<cluster::create_topics_reply> create_test_cases() {
+        return generate_instances<cluster::create_topics_reply>();
+    }
+
+    static void to_json(
+      cluster::create_topics_reply obj, json::Writer<json::StringBuffer>& wr) {
+        json_write(results);
+        json_write(metadata);
+        json_write(configs);
+    }
+
+    static cluster::create_topics_reply from_json(json::Value& rd) {
+        cluster::create_topics_reply obj;
+        json_read(results);
+        json_read(metadata);
+        json_read(configs);
+        return obj;
+    }
+
+    static std::vector<compat_binary>
+    to_binary(cluster::create_topics_reply obj) {
+        return compat_binary::serde_and_adl(obj);
+    }
+
+    static void check(cluster::create_topics_reply obj, compat_binary test) {
+        if (test.name == "serde") {
+            verify_serde_only(obj, test);
+            return;
+        }
+        vassert(test.name == "adl", "Unknown compat_binary format encounterd");
+        iobuf_parser iobp(std::move(test.data));
+        auto reply = reflection::adl<cluster::create_topics_reply>{}.from(iobp);
+        for (auto& topic : obj.configs) {
+            topic.properties.read_replica = std::nullopt;
+            topic.properties.read_replica_bucket = std::nullopt;
+            topic.properties.remote_topic_properties = std::nullopt;
+        }
+        if (reply != obj) {
+            throw compat_error(fmt::format(
+              "Verify of {{cluster::create_toics_reply}} decoding "
+              "failed:\n Expected: {}\nDecoded: {}",
+              obj,
+              reply));
+        }
+    }
+};
+
+GEN_COMPAT_CHECK(
+  cluster::topic_result,
+  {
+      json_write(tp_ns);
+      json_write(ec);
+  },
+  {
+      json_read(tp_ns);
+      json_read(ec);
+  });
+
+GEN_COMPAT_CHECK(
+  v8_engine::data_policy,
+  {
+      json_write(fn_name);
+      json_write(sct_name);
+  },
+  {
+      json_read(fn_name);
+      json_read(sct_name);
+  })
+
+GEN_COMPAT_CHECK(
+  cluster::incremental_topic_custom_updates,
+  { json_write(data_policy); },
+  { json_read(data_policy); })
+
+GEN_COMPAT_CHECK(
+  cluster::incremental_topic_updates,
+  {
+      json_write(compression);
+      json_write(cleanup_policy_bitflags);
+      json_write(compaction_strategy);
+      json_write(timestamp_type);
+      json_write(segment_size);
+      json_write(retention_bytes);
+      json_write(retention_duration);
+      json_write(shadow_indexing);
+  },
+  {
+      json_read(compression);
+      json_read(cleanup_policy_bitflags);
+      json_read(compaction_strategy);
+      json_read(timestamp_type);
+      json_read(segment_size);
+      json_read(retention_bytes);
+      json_read(retention_duration);
+      json_read(shadow_indexing);
+  })
+
+GEN_COMPAT_CHECK(
+  cluster::topic_properties_update,
+  {
+      json_write(tp_ns);
+      json_write(properties);
+      json_write(custom_properties);
+  },
+  {
+      json_read(tp_ns);
+      json_read(properties);
+      json_read(custom_properties);
+  })
+
+GEN_COMPAT_CHECK(
+  cluster::update_topic_properties_request,
+  { json_write(updates); },
+  { json_read(updates); })
+
+GEN_COMPAT_CHECK(
+  cluster::update_topic_properties_reply,
+  { json_write(results); },
+  { json_read(results); })
 
 } // namespace compat
