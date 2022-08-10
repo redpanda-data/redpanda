@@ -22,6 +22,7 @@ from rptest.services.franz_go_verifiable_services import (
 )
 from rptest.services.redpanda import SISettings, RESTART_LOG_ALLOW_LIST
 from rptest.tests.prealloc_nodes import PreallocNodesTest
+from rptest.utils.mode_checks import skip_debug_mode
 
 
 class FranzGoVerifiableBase(PreallocNodesTest):
@@ -192,23 +193,13 @@ class FranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
         assert self._rand_consumer.consumer_status.total_reads == self.RANDOM_READ_COUNT * self.RANDOM_READ_PARALLEL
         assert self._cg_consumer.consumer_status.valid_reads >= wrote_at_least
 
-    def no_debug(self, f):
-        def inner(*args, **kwargs):
-            if self.debug_mode:
-                self.logger.info(
-                    "Skipping test in debug mode (requires release build)")
-                return
-            return f(*args, **kwargs)
-
-        return inner
-
-    @no_debug
+    @skip_debug_mode
     def without_timeboxed(self):
         configs = {'log_segment_size': self.segment_size}
         self.redpanda.set_cluster_config(configs)
         self._workload(self.segment_size)
 
-    @no_debug
+    @skip_debug_mode
     def with_timeboxed(self):
         # Enabling timeboxed uploads causes a restart
         configs = {
