@@ -65,9 +65,6 @@ public:
     ss::future<result<cluster_health_report>> get_cluster_health(
       cluster_report_filter, force_refresh, model::timeout_clock::time_point);
 
-    cluster_health_report
-    get_current_cluster_health_snapshot(const cluster_report_filter&);
-
     ss::future<storage::disk_space_alert> get_cluster_disk_health(
       force_refresh refresh, model::timeout_clock::time_point deadline);
 
