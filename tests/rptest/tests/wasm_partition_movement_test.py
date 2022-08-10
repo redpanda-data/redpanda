@@ -109,7 +109,7 @@ class WasmPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
             lambda: self.mconsumer.total_consumed() >= limit,
             timeout_sec=timeout,
             err_msg=
-            "Timeout of after %ds while awaiting delivery of %d materialized records, recieved: %d"
+            "Timeout of after %ds while awaiting delivery of %d materialized records, received: %d"
             % (timeout, limit, self.mconsumer.total_consumed()))
         self.mconsumer.stop()
 
