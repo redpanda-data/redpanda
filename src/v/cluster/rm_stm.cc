@@ -1052,7 +1052,7 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
     }
 
     if (_mem_state.estimated.contains(bid.pid)) {
-        // we recieved second produce request while the first is still
+        // we received second produce request while the first is still
         // being processed. this is highly unlikely situation because
         // we replicate with ack=1 and it should be fast
         vlog(clusterlog.warn, "Too frequent produce with same pid:{}", bid.pid);
