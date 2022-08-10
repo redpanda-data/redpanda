@@ -347,8 +347,8 @@ ss::future<> scheduler_service_impl::reconcile_archivers() {
     for (const auto& [ntp, archiver] : _archivers) {
         auto p = pm.get(ntp);
         if (
-          !p
-          || (archiver->upload_loop_stopped() && archiver->sync_manifest_loop_stopped())) {
+          !p || archiver->upload_loop_stopped()
+          || archiver->sync_manifest_loop_stopped()) {
             to_remove.push_back(ntp);
         }
     }
