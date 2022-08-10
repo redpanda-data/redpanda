@@ -55,6 +55,12 @@ public:
     using back_insert_iterator
       = std::back_insert_iterator<std::vector<segment_name>>;
 
+    enum class loop_state {
+        initial,
+        started,
+        stopped,
+    };
+
     /// Create new instance
     ///
     /// \param ntp is an ntp that archiver is responsible for
@@ -80,9 +86,20 @@ public:
     /// completed
     ss::future<> stop();
 
-    bool upload_loop_stopped() const { return _upload_loop_stopped; }
+    bool upload_loop_stopped() const {
+        return _upload_loop_state == loop_state::stopped;
+    }
+
     bool sync_manifest_loop_stopped() const {
-        return _sync_manifest_loop_stopped;
+        return _sync_manifest_loop_state == loop_state::stopped;
+    }
+
+    /// Query if either of the manifest sync loop or upload loop has stopped
+    /// These are mutually exclusive loops, and if any one has transitioned to a
+    /// stopped state then the archiver is stopped.
+    bool is_loop_stopped() const {
+        return _sync_manifest_loop_state == loop_state::stopped
+               || _upload_loop_state == loop_state::stopped;
     }
 
     /// Get NTP
@@ -216,11 +233,9 @@ private:
     ss::lowres_clock::time_point _last_upload_time;
     ss::scheduling_group _upload_sg;
     ss::io_priority_class _io_priority;
-    bool _upload_loop_started = false;
-    bool _upload_loop_stopped = false;
 
-    bool _sync_manifest_loop_started = false;
-    bool _sync_manifest_loop_stopped = false;
+    loop_state _upload_loop_state{loop_state::initial};
+    loop_state _sync_manifest_loop_state{loop_state::initial};
 };
 
 } // namespace archival
