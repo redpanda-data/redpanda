@@ -7,23 +7,21 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.services.cluster import cluster
-from ducktape.utils.util import wait_until
-from ducktape.cluster.cluster_spec import ClusterSpec
-from ducktape.mark import matrix
-
 import os
+
+from ducktape.utils.util import wait_until
 
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
-from rptest.tests.prealloc_nodes import PreallocNodesTest
-from rptest.services.redpanda import SISettings, RESTART_LOG_ALLOW_LIST
+from rptest.services.cluster import cluster
 from rptest.services.franz_go_verifiable_services import (
     FranzGoVerifiableProducer,
     FranzGoVerifiableSeqConsumer,
     FranzGoVerifiableRandomConsumer,
     FranzGoVerifiableConsumerGroupConsumer,
 )
+from rptest.services.redpanda import SISettings, RESTART_LOG_ALLOW_LIST
+from rptest.tests.prealloc_nodes import PreallocNodesTest
 
 
 class FranzGoVerifiableBase(PreallocNodesTest):
@@ -123,8 +121,14 @@ class FranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
 
     topics = (TopicSpec(partition_count=100, replication_factor=3), )
 
+    segment_size = 100 * 2**20
+    cloud_storage_cache_size = None
+
     def __init__(self, ctx):
-        si_settings = SISettings(cloud_storage_cache_size=5 * 2**20)
+        # Allow enough space for each parallel random read to be able to evict a segment
+        si_settings = SISettings(cloud_storage_cache_size=(
+            self.cloud_storage_cache_size or self.RANDOM_READ_PARALLEL *
+            self.segment_size))
 
         super(FranzGoVerifiableWithSiTest, self).__init__(
             test_context=ctx,
@@ -188,32 +192,50 @@ class FranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
         assert self._rand_consumer.consumer_status.total_reads == self.RANDOM_READ_COUNT * self.RANDOM_READ_PARALLEL
         assert self._cg_consumer.consumer_status.valid_reads >= wrote_at_least
 
-    @cluster(num_nodes=4, log_allow_list=KGO_LOG_ALLOW_LIST)
-    @matrix(segment_size=[100 * 2**20, 20 * 2**20])
-    def test_si_without_timeboxed(self, segment_size: int):
-        if self.debug_mode:
-            self.logger.info(
-                "Skipping test in debug mode (requires release build)")
-            return
+    def no_debug(self, f):
+        def inner(*args, **kwargs):
+            if self.debug_mode:
+                self.logger.info(
+                    "Skipping test in debug mode (requires release build)")
+                return
+            return f(*args, **kwargs)
 
-        configs = {'log_segment_size': segment_size}
+        return inner
+
+    @no_debug
+    def without_timeboxed(self):
+        configs = {'log_segment_size': self.segment_size}
         self.redpanda.set_cluster_config(configs)
+        self._workload(self.segment_size)
 
-        self._workload(segment_size)
-
-    @cluster(num_nodes=4, log_allow_list=KGO_RESTART_LOG_ALLOW_LIST)
-    @matrix(segment_size=[100 * 2**20, 20 * 2**20])
-    def test_si_with_timeboxed(self, segment_size: int):
-        if self.debug_mode:
-            self.logger.info(
-                "Skipping test in debug mode (requires release build)")
-            return
-
+    @no_debug
+    def with_timeboxed(self):
         # Enabling timeboxed uploads causes a restart
         configs = {
-            'log_segment_size': segment_size,
+            'log_segment_size': self.segment_size,
             'cloud_storage_segment_max_upload_interval_sec': 30
         }
         self.redpanda.set_cluster_config(configs, expect_restart=True)
+        self._workload(self.segment_size)
 
-        self._workload(segment_size)
+
+class FranzGoVerifiableWithSiTestLargeSegments(FranzGoVerifiableWithSiTest):
+    @cluster(num_nodes=4, log_allow_list=KGO_LOG_ALLOW_LIST)
+    def test_si_without_timeboxed(self):
+        self.without_timeboxed()
+
+    @cluster(num_nodes=4, log_allow_list=KGO_RESTART_LOG_ALLOW_LIST)
+    def test_si_with_timeboxed(self):
+        self.with_timeboxed()
+
+
+class FranzGoVerifiableWithSiTestSmallSegments(FranzGoVerifiableWithSiTest):
+    segment_size = 20 * 2**20
+
+    @cluster(num_nodes=4, log_allow_list=KGO_LOG_ALLOW_LIST)
+    def test_si_without_timeboxed(self):
+        self.without_timeboxed()
+
+    @cluster(num_nodes=4, log_allow_list=KGO_RESTART_LOG_ALLOW_LIST)
+    def test_si_with_timeboxed(self):
+        self.with_timeboxed()
