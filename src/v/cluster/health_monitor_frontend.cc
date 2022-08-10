@@ -54,14 +54,6 @@ storage::disk_space_alert health_monitor_frontend::get_cluster_disk_health() {
     return _cluster_disk_health;
 }
 
-ss::future<cluster_health_report>
-health_monitor_frontend::get_current_cluster_health_snapshot(
-  cluster_report_filter f) {
-    return dispatch_to_backend([f = std::move(f)](health_monitor_backend& be) {
-        return be.get_current_cluster_health_snapshot(f);
-    });
-}
-
 // Collcts and returns current node health report according to provided
 // filters list
 ss::future<result<node_health_report>>

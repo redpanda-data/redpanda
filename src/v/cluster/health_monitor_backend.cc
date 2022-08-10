@@ -484,12 +484,6 @@ health_monitor_backend::maybe_refresh_cluster_health(
     co_return errc::success;
 }
 
-cluster_health_report
-health_monitor_backend::get_current_cluster_health_snapshot(
-  const cluster_report_filter& f) {
-    return build_cluster_report(f);
-}
-
 ss::future<result<node_health_report>>
 health_monitor_backend::collect_remote_node_health(model::node_id id) {
     const auto timeout = model::timeout_clock::now() + max_metadata_age();
