@@ -938,3 +938,38 @@ FIXTURE_TEST(oc_ns_adl_only_no_upgrade, rpc_integration_fixture) {
         BOOST_REQUIRE_EQUAL(t.version(), rpc::transport_version::v0);
     }
 }
+
+FIXTURE_TEST(echo_evolve_newer_client, rpc_integration_fixture) {
+    configure_server();
+    register_services();
+    start_server();
+
+    rpc::transport t(client_config());
+    t.connect(model::no_timeout).get();
+    auto stop = ss::defer([&] { t.stop().get(); });
+    auto old_client = echo::echo_client_protocol(t);
+
+    /// Make a request serde::version<1> of echo_req_serde_only
+    auto f = old_client.echo_serde_only(
+      echo::echo_req_serde_only{.str = "Hi there!"},
+      rpc::client_opts(rpc::no_timeout));
+    BOOST_REQUIRE(!f.get().has_error());
+
+    /// Make a request serde::version<2> emmulating echo_req_serde_only
+    const auto echo_serde_only_method_id = echo::echo_service_base<
+      rpc::default_message_codec>::echo_serde_only_method_id;
+
+    /// Since the server is old, it will send responses in the v1 format, the
+    /// client must expect this thats why the response type of `send_typed<>` is
+    /// echo::echo_resp_serde_only
+    echo_v2::echo_req_serde_only r{.str = "Hello", .str_two = "World"};
+    auto response_f
+      = t.send_typed<echo_v2::echo_req_serde_only, echo::echo_resp_serde_only>(
+        std::move(r),
+        echo_serde_only_method_id,
+        rpc::client_opts(rpc::no_timeout));
+    auto response = response_f.get();
+    BOOST_REQUIRE(!response.has_error());
+    BOOST_CHECK_EQUAL(
+      response.value().data.str, "Hello_to_sso_v2_from_sso_to_sso_from_sso");
+}

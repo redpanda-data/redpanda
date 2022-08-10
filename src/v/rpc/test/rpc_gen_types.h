@@ -187,6 +187,50 @@ static_assert(rpc::is_rpc_adl_exempt<echo_resp_serde_only>);
 
 } // namespace echo
 
+namespace echo_v2 {
+
+/// This type is meant to be the evolution of the echo_req_serde_only type
+/// defined in `rpc/test/rpc_gen_types.h`, the issue being that a redefinition
+/// of a new type with a different parent class and new fields cannot be done
+/// within the same binary/library.
+///
+/// To get around this, this new type is defined which contains all of the
+/// desired changes desired for the type evolution of echo_req_serde_only, and
+/// tests will use raw `send_typed<req, resp>` when making requests to rpc
+/// servers
+struct echo_req_serde_only
+  : serde::envelope<
+      echo_req_serde_only,
+      serde::version<2>,
+      serde::compat_version<1>> {
+    using rpc_adl_exempt = std::true_type;
+    ss::sstring str;
+    ss::sstring str_two;
+
+    void serde_write(iobuf& out) const {
+        // serialize with serde a serde-only type
+        using serde::write;
+        write(out, str + "_to_sso_v2");
+        write(out, str_two + "_to_sso_v2");
+    }
+
+    void serde_read(iobuf_parser& in, const serde::header& h) {
+        // deserialize with serde a serde-only type
+        using serde::read_nested;
+        str = read_nested<ss::sstring>(in, h._bytes_left_limit);
+        str += "_from_sso_v2";
+        if (h._version >= static_cast<serde::version_t>(2)) {
+            str_two = read_nested<ss::sstring>(in, h._bytes_left_limit);
+            str_two += "_from_sso_v2";
+        }
+    }
+};
+
+static_assert(serde::is_serde_compatible_v<echo_req_serde_only>);
+static_assert(rpc::is_rpc_adl_exempt<echo_req_serde_only>);
+
+} // namespace echo_v2
+
 namespace reflection {
 template<>
 struct adl<echo::echo_req_adl_only> {
