@@ -346,9 +346,7 @@ ss::future<> scheduler_service_impl::reconcile_archivers() {
     // find archivers that have already stopped
     for (const auto& [ntp, archiver] : _archivers) {
         auto p = pm.get(ntp);
-        if (
-          !p
-          || (archiver->upload_loop_stopped() && archiver->sync_manifest_loop_stopped())) {
+        if (!p || archiver->is_loop_stopped()) {
             to_remove.push_back(ntp);
         }
     }
