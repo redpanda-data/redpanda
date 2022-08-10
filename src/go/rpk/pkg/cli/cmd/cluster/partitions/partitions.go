@@ -30,7 +30,8 @@ func NewPartitionsCommand(fs afero.Fs) *cobra.Command {
 	)
 
 	cmd.AddCommand(
-		NewBalancerStatusCommand(fs),
+		newBalancerStatusCommand(fs),
+		newMovementCancelCommand(fs),
 	)
 
 	cmd.PersistentFlags().StringVar(

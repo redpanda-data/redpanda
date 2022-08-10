@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewBalancerStatusCommand(fs afero.Fs) *cobra.Command {
+func newBalancerStatusCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "balancer-status",
 		Short: "Queries cluster for partition balancer status",
