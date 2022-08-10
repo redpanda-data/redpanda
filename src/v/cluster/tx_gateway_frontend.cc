@@ -955,9 +955,10 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
               tm_transaction::tx_partition{.ntp = br.ntp, .etag = br.etag});
         }
     }
-    auto has_added = stm->add_partitions(tx.id, partitions);
+    auto status = co_await stm->add_partitions(tx.id, partitions);
+    auto has_added = status == tm_stm::op_status::success;
     if (!has_added) {
-        vlog(txlog.warn, "can't add partitions: tx.id={} doesn't exist", tx.id);
+        vlog(txlog.warn, "can't add partitions: {}", status);
     }
     for (auto& br : brs) {
         auto topic_it = std::find_if(
@@ -1074,9 +1075,11 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::do_add_offsets_to_tx(
         co_return add_offsets_tx_reply{.error_code = group_info.ec};
     }
 
-    auto has_added = stm->add_group(tx.id, request.group_id, group_info.etag);
+    auto status = co_await stm->add_group(
+      tx.id, request.group_id, group_info.etag);
+    auto has_added = status == tm_stm::op_status::success;
     if (!has_added) {
-        vlog(txlog.warn, "can't add group to tm_stm");
+        vlog(txlog.warn, "can't add group to tm_stm: {}", status);
         co_return add_offsets_tx_reply{
           .error_code = tx_errc::invalid_txn_state};
     }
@@ -1698,8 +1701,11 @@ tx_gateway_frontend::get_ongoing_tx(
         }
     } else if (tx.status == tm_transaction::tx_status::ongoing) {
         if (expected_term != tx.etag) {
-            // Impossible situation: sync() should wipe all ongoing txes
-            // existed in prev term
+            // sync() wipes all ongoing txes from memory started on this
+            // node in previous term so the tx could only come from the
+            // log; since we save an ongoing tx to log only when it starts
+            // we can't be sure that it's complete so the only thing we
+            // may do is to fail it
             co_return tx_errc::invalid_txn_state;
         }
         co_return tx;
