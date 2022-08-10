@@ -223,7 +223,9 @@ class EndToEndTest(Test):
             self.logger.info("Stopping producer after writing up to offsets %s" %\
                          str(self.producer.last_acked_offsets))
             self.producer.stop()
-            self.run_consumer_validation()
+            self.run_consumer_validation(
+                consumer_timeout_sec=consumer_timeout_sec,
+                enable_idempotence=enable_idempotence)
         except BaseException:
             self._collect_all_logs()
             raise
