@@ -13,6 +13,7 @@
 #include "rpc/parse_utils.h"
 #include "rpc/test/cycling_service.h"
 #include "rpc/test/echo_service.h"
+#include "rpc/test/echo_v2_service.h"
 #include "rpc/test/rpc_gen_types.h"
 #include "rpc/test/rpc_integration_fixture.h"
 #include "rpc/types.h"
@@ -118,6 +119,19 @@ struct echo_impl final : echo::echo_service_base<Codec> {
     uint64_t cnt = 0;
 };
 
+template<typename Codec>
+struct echo_v2_impl final : echo_v2::echo_service_base<Codec> {
+    echo_v2_impl(ss::scheduling_group& sc, ss::smp_service_group& ssg)
+      : echo_v2::echo_service_base<Codec>(sc, ssg) {}
+
+    ss::future<echo_v2::echo_resp_serde_only> echo_serde_only(
+      echo_v2::echo_req_serde_only&& req, rpc::streaming_context&) final {
+        return ss::make_ready_future<echo_v2::echo_resp_serde_only>(
+          echo_v2::echo_resp_serde_only{
+            .str = req.str, .str_two = req.str_two});
+    }
+};
+
 class rpc_integration_fixture : public rpc_simple_integration_fixture {
 public:
     rpc_integration_fixture()
@@ -126,11 +140,13 @@ public:
     void register_services() {
         register_service<movistar<rpc::default_message_codec>>();
         register_service<echo_impl<rpc::default_message_codec>>();
+        register_service<echo_v2_impl<rpc::default_message_codec>>();
     }
 
     void register_services_v0() {
         register_service<movistar<rpc::v0_message_codec>>();
         register_service<echo_impl<rpc::v0_message_codec>>();
+        register_service<echo_v2_impl<rpc::v0_message_codec>>();
     }
 
     static constexpr uint16_t redpanda_rpc_port = 32147;
@@ -972,4 +988,41 @@ FIXTURE_TEST(echo_evolve_newer_client, rpc_integration_fixture) {
     BOOST_REQUIRE(!response.has_error());
     BOOST_CHECK_EQUAL(
       response.value().data.str, "Hello_to_sso_v2_from_sso_to_sso_from_sso");
+}
+
+FIXTURE_TEST(echo_evolve_from_older_client, rpc_integration_fixture) {
+    configure_server();
+    register_services();
+    start_server();
+
+    rpc::transport t(client_config());
+    t.connect(model::no_timeout).get();
+    auto stop = ss::defer([&] { t.stop().get(); });
+    auto old_client = echo::echo_client_protocol(t);
+
+    /// Make a request with an version of the rpc, with the newer service
+    const auto echo_serde_only_method_id = echo_v2::echo_service_base<
+      rpc::default_message_codec>::echo_serde_only_method_id;
+
+    auto f
+      = t.send_typed<echo::echo_req_serde_only, echo_v2::echo_resp_serde_only>(
+        echo::echo_req_serde_only{.str = "Hi_there"},
+        echo_serde_only_method_id,
+        rpc::client_opts(rpc::no_timeout));
+    auto normal_response = f.get();
+    BOOST_REQUIRE(!normal_response.has_error());
+    BOOST_CHECK_EQUAL(
+      normal_response.value().data.str,
+      "Hi_there_to_sso_from_sso_v2_to_sso_v2_from_sso_v2");
+
+    /// Upgrade the client, sending the newer version of the request type
+    auto new_client = echo_v2::echo_client_protocol(t);
+    auto f2 = new_client.echo_serde_only(
+      echo_v2::echo_req_serde_only{.str = "Hi_v2", .str_two = "world_v2"},
+      rpc::client_opts(rpc::no_timeout));
+    auto response = f2.get();
+    BOOST_REQUIRE(!response.has_error());
+    BOOST_CHECK_EQUAL(
+      response.value().data.str,
+      "Hi_v2_to_sso_v2_from_sso_v2_to_sso_v2_from_sso_v2");
 }

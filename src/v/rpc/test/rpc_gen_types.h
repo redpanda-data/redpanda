@@ -226,8 +226,39 @@ struct echo_req_serde_only
     }
 };
 
+struct echo_resp_serde_only
+  : serde::envelope<
+      echo_resp_serde_only,
+      serde::version<2>,
+      serde::compat_version<1>> {
+    using rpc_adl_exempt = std::true_type;
+    ss::sstring str;
+    ss::sstring str_two;
+
+    void serde_write(iobuf& out) const {
+        // serialize with serde a serde-only type
+        using serde::write;
+        write(out, str + "_to_sso_v2");
+        write(out, str_two + "_to_sso_v2");
+    }
+
+    void serde_read(iobuf_parser& in, const serde::header& h) {
+        // deserialize with serde a serde-only type
+        using serde::read_nested;
+        str = read_nested<ss::sstring>(in, h._bytes_left_limit);
+        str += "_from_sso_v2";
+        if (h._version >= static_cast<serde::version_t>(2)) {
+            str_two = read_nested<ss::sstring>(in, h._bytes_left_limit);
+            str_two += "_from_sso_v2";
+        }
+    }
+};
+
 static_assert(serde::is_serde_compatible_v<echo_req_serde_only>);
 static_assert(rpc::is_rpc_adl_exempt<echo_req_serde_only>);
+
+static_assert(rpc::is_rpc_adl_exempt<echo_req_serde_only>);
+static_assert(rpc::is_rpc_adl_exempt<echo_resp_serde_only>);
 
 } // namespace echo_v2
 
