@@ -265,7 +265,7 @@ func (d *Deployment) getVolumes(ss string) []corev1.Volume {
 			VolumeSource: corev1.VolumeSource{
 				ConfigMap: &corev1.ConfigMapVolumeSource{
 					LocalObjectReference: corev1.LocalObjectReference{
-						Name: d.consoleobj.GetName(),
+						Name: d.consoleobj.Status.ConfigMapRef.Name,
 					},
 				},
 			},

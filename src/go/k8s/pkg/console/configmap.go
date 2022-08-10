@@ -21,7 +21,6 @@ import (
 
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	labels "github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 )
 
 // ConfigMap is a Console resource
@@ -46,6 +45,14 @@ func NewConfigMap(cl client.Client, scheme *runtime.Scheme, consoleobj *redpanda
 
 // Ensure implements Resource interface
 func (cm *ConfigMap) Ensure(ctx context.Context) error {
+	if cm.consoleobj.Status.ConfigMapRef != nil {
+		return nil
+	}
+
+	// Create new ConfigMap
+	// If reconciliation fails, a new ConfigMap will be created again
+	// But unused ConfigMaps should be deleted at the beginning of reconciliation via DeleteUnused()
+
 	secret := v1.Secret{}
 	if err := cm.Get(ctx, KafkaSASecretKey(cm.consoleobj), &secret); err != nil {
 		return err
@@ -58,42 +65,30 @@ func (cm *ConfigMap) Ensure(ctx context.Context) error {
 		return err
 	}
 
+	// Create new ConfigMap instead of updating existing so Deployment will trigger a reconcile
+	immutable := true
 	obj := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      cm.consoleobj.GetName(),
-			Namespace: cm.consoleobj.GetNamespace(),
-			Labels:    labels.ForConsole(cm.consoleobj),
-		},
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "ConfigMap",
-			APIVersion: "v1",
+			GenerateName: cm.consoleobj.GetName() + "-",
+			Namespace:    cm.consoleobj.GetNamespace(),
+			Labels:       labels.ForConsole(cm.consoleobj),
 		},
 		Data: map[string]string{
 			"config.yaml": config,
 		},
+		Immutable: &immutable,
 	}
 
 	if err := controllerutil.SetControllerReference(cm.consoleobj, obj, cm.scheme); err != nil {
 		return err
 	}
-
-	created, err := resources.CreateIfNotExists(ctx, cm.Client, obj, cm.log)
-	if err != nil {
+	if err := cm.Create(ctx, obj); err != nil {
 		return fmt.Errorf("creating Console configmap: %w", err)
 	}
 
-	if !created {
-		// Update resource if not created.
-		var current corev1.ConfigMap
-		err = cm.Get(ctx, types.NamespacedName{Name: obj.GetName(), Namespace: obj.GetNamespace()}, &current)
-		if err != nil {
-			return fmt.Errorf("fetching Console configmap: %w", err)
-		}
-		_, err = resources.Update(ctx, &current, obj, cm.Client, cm.log)
-		if err != nil {
-			return fmt.Errorf("updating Console configmap: %w", err)
-		}
-	}
+	// This will get updated in the controller main reconcile function
+	// Other Resources may set Console status if they are also watching GenerationMatchesObserved()
+	cm.consoleobj.Status.ConfigMapRef = &corev1.ObjectReference{Namespace: obj.GetNamespace(), Name: obj.GetName()}
 
 	return nil
 }
@@ -295,4 +290,21 @@ func (cm *ConfigMap) buildConfigCluster(ctx context.Context, c redpandav1alpha1.
 	}
 
 	return cluster, nil
+}
+
+// DeleteUnused makes sure that old unreferenced ConfigMaps are deleted
+// ConfigMaps are recreated upon Console update, old ones should be cleaned up
+func (cm *ConfigMap) DeleteUnused(ctx context.Context) error {
+	cms := &corev1.ConfigMapList{}
+	if err := cm.List(ctx, cms, client.MatchingLabels(labels.ForConsole(cm.consoleobj)), client.InNamespace(cm.consoleobj.GetNamespace())); err != nil {
+		return err
+	}
+	for _, obj := range cms.Items {
+		if ref := cm.consoleobj.Status.ConfigMapRef; ref != nil && ref.Name != obj.GetName() {
+			if err := cm.Delete(ctx, &obj); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

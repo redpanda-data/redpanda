@@ -136,7 +136,19 @@ type ConnectClusterTLS struct {
 }
 
 // ConsoleStatus defines the observed state of Console
-type ConsoleStatus struct{}
+type ConsoleStatus struct {
+	// The ConfigMap used by Console
+	// This is used to pass the ConfigMap used to mount in the Deployment Resource since Ensure() only returns error
+	ConfigMapRef *corev1.ObjectReference `json:"configMapRef,omitempty"`
+
+	// The generation observed by the controller
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+}
+
+// GenerationMatchesObserved returns true if Generation matches ObservedGeneration
+func (c *Console) GenerationMatchesObserved() bool {
+	return c.GetGeneration() == c.Status.ObservedGeneration
+}
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status

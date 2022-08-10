@@ -39,6 +39,7 @@ type ConsoleReconciler struct {
 }
 
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=apps,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 
 //+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=consoles,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=consoles/status,verbs=get;update;patch
@@ -64,9 +65,15 @@ func (r *ConsoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	var s state
-	if console.GetDeletionTimestamp() != nil {
+	switch {
+	case console.GetDeletionTimestamp() != nil:
 		s = &Deleting{r}
-	} else {
+	case !console.GenerationMatchesObserved():
+		if err := r.handleSpecChange(ctx, console, log); err != nil {
+			return ctrl.Result{}, fmt.Errorf("handle spec change: %w", err)
+		}
+		fallthrough
+	default:
 		s = &Reconciling{r}
 	}
 
@@ -83,10 +90,18 @@ func (r *Reconciling) Do(ctx context.Context, console *redpandav1alpha1.Console,
 		return ctrl.Result{}, fmt.Errorf("sync console store: %w", err)
 	}
 
+	// ConfigMap is set to immutable and a new one is created if needed every reconcile
+	// Cleanup unused ConfigMaps before ensuring Resources which might create new ConfigMaps again
+	// Otherwise, if reconciliation always fail, a lot of unused ConfigMaps will be created
+	configmapResource := consolepkg.NewConfigMap(r.Client, r.Scheme, console, cluster, log)
+	if err := configmapResource.DeleteUnused(ctx); err != nil {
+		return ctrl.Result{}, fmt.Errorf("deleting unused configmaps: %w", err)
+	}
+
 	applyResources := []resources.Resource{
 		consolepkg.NewKafkaSA(r.Client, r.Scheme, console, cluster, r.clusterDomain, r.AdminAPIClientFactory, log),
 		consolepkg.NewKafkaACL(r.Client, r.Scheme, console, cluster, log),
-		consolepkg.NewConfigMap(r.Client, r.Scheme, console, cluster, log),
+		configmapResource,
 		consolepkg.NewDeployment(r.Client, r.Scheme, console, cluster, r.Store, log),
 		consolepkg.NewService(r.Client, r.Scheme, console, log),
 	}
@@ -106,6 +121,13 @@ func (r *Reconciling) Do(ctx context.Context, console *redpandav1alpha1.Console,
 				// Don't return the error, as it is most likely not an actual error
 				return ctrl.Result{Requeue: true}, nil
 			}
+			return ctrl.Result{}, err
+		}
+	}
+
+	if !console.GenerationMatchesObserved() {
+		console.Status.ObservedGeneration = console.GetGeneration()
+		if err := r.Status().Update(ctx, console); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
@@ -132,13 +154,23 @@ func (r *Deleting) Do(ctx context.Context, console *redpandav1alpha1.Console, cl
 	return ctrl.Result{}, nil
 }
 
+// handleSpecChange is a hook to call before Reconciling
+func (r *ConsoleReconciler) handleSpecChange(ctx context.Context, console *redpandav1alpha1.Console, log logr.Logger) error {
+	if console.Status.ConfigMapRef != nil {
+		console.Status.ConfigMapRef = nil
+		if err := r.Status().Update(ctx, console); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *ConsoleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&redpandav1alpha1.Console{}).
 		Owns(&corev1.Secret{}).
 		Owns(&corev1.ServiceAccount{}).
-		Owns(&corev1.ConfigMap{}).
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}).
 		Complete(r)
