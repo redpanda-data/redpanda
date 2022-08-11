@@ -25,6 +25,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/acl"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cluster"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/common"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/container"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/debug"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/group"
 	plugincmd "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/plugin"
@@ -72,11 +73,11 @@ func Execute() {
 	root.AddCommand(
 		NewGenerateCommand(fs),
 		NewVersionCommand(),
-		NewContainerCommand(),
 		NewTopicCommand(fs),
 
 		acl.NewCommand(fs),
 		cluster.NewCommand(fs),
+		container.NewCommand(),
 		debug.NewCommand(fs),
 		group.NewCommand(fs),
 		plugincmd.NewCommand(fs),
