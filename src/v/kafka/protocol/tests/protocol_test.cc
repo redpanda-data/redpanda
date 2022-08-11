@@ -15,7 +15,7 @@
 
 #include <sstream>
 
-#define TEST_COMPAT_CHECK_NO_THROW(Source, Api, Version)                       \
+#define TEST_COMPAT_CHECK_NO_THROW(Source, Api, Version, IsRequest)            \
     try {                                                                      \
         Source;                                                                \
     } catch (const std::exception& ex) {                                       \
@@ -23,9 +23,10 @@
           false,                                                               \
           fmt::format(                                                         \
             "API protocol incompatability detected at api: {}, version: "      \
-            "{}, exception reported: {}",                                      \
+            "{}, IsRequest: {}, exception reported: {}",                       \
             Api,                                                               \
             Version,                                                           \
+            IsRequest,                                                         \
             ex.what()));                                                       \
     }
 
@@ -167,12 +168,14 @@ void check_proto_compat() {
           check_kafka_binary_format<typename H::api::request_type>(
             H::api::key, version, is_kafka_request::yes),
           H::api::key,
-          version);
+          version,
+          true);
         TEST_COMPAT_CHECK_NO_THROW(
           check_kafka_binary_format<typename H::api::response_type>(
             H::api::key, version, is_kafka_request::no),
           H::api::key,
-          version);
+          version,
+          false);
     }
 }
 
