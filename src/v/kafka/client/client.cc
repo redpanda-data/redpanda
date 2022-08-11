@@ -353,44 +353,17 @@ ss::future<fetch_response> client::fetch_partition(
 
 ss::future<member_id>
 client::create_consumer(const group_id& group_id, member_id name) {
-    auto build_request = [group_id]() {
-        return find_coordinator_request(group_id);
+    auto on_stopped = [this, group_id](const member_id& name) {
+        return remove_consumer(group_id, name);
     };
-    return gated_retry_with_mitigation(
-             [this, group_id, name, func{std::move(build_request)}]() {
-                 return _brokers.any()
-                   .then([func](shared_broker_t broker) {
-                       return broker->dispatch(func());
-                   })
-                   .then([group_id, name](find_coordinator_response res) {
-                       if (res.data.error_code != error_code::none) {
-                           return ss::make_exception_future<
-                             find_coordinator_response>(consumer_error(
-                             group_id, name, res.data.error_code));
-                       };
-                       return ss::make_ready_future<find_coordinator_response>(
-                         std::move(res));
-                   });
-             })
-      .then([this](find_coordinator_response res) {
-          return make_broker(
-            res.data.node_id,
-            net::unresolved_address(res.data.host, res.data.port),
-            _config);
-      })
-      .then([this, group_id, name](shared_broker_t coordinator) mutable {
-          auto on_stopped = [this, group_id](const member_id& name) {
-              _consumers[group_id].erase(name);
-          };
-          return make_consumer(
-            _config,
-            _topic_cache,
-            _brokers,
-            std::move(coordinator),
-            std::move(group_id),
-            std::move(name),
-            std::move(on_stopped));
-      })
+    return make_consumer(
+             _config,
+             _topic_cache,
+             _brokers,
+             group_id,
+             std::move(name),
+             std::move(on_stopped),
+             [this](std::exception_ptr ex) { return mitigate_error(ex); })
       .then([this, group_id](shared_consumer_t c) {
           auto name = c->name();
           _consumers[group_id].insert(std::move(c));

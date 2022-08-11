@@ -37,6 +37,8 @@ namespace kafka::client {
 class consumer final : public ss::enable_lw_shared_from_this<consumer> {
     using assignment_t = assignment;
     using broker_reqs_t = absl::node_hash_map<shared_broker_t, fetch_request>;
+    using error_handler
+      = ss::noncopyable_function<ss::future<>(std::exception_ptr)>;
 
 public:
     /// \brief Construct a consumer
@@ -54,10 +56,10 @@ public:
       const configuration& config,
       topic_cache& topic_cache,
       brokers& brokers,
-      shared_broker_t coordinator,
       group_id group_id,
       member_id name,
-      ss::noncopyable_function<void(const member_id&)> on_stopped);
+      ss::noncopyable_function<ss::future<>(const member_id&)> on_stopped,
+      error_handler&& err_handler);
 
     const kafka::group_id& group_id() const { return _group_id; }
     const kafka::member_id& member_id() const { return _member_id; }
@@ -89,6 +91,8 @@ private:
 
     ss::future<> join();
     ss::future<> sync();
+    ss::future<shared_broker_t> find_coordinator();
+    ss::future<shared_broker_t> do_find_coordinator(shared_broker_t broker);
 
     ss::future<std::vector<metadata_response::topic>>
     get_subscribed_topic_metadata();
@@ -106,9 +110,11 @@ private:
     req_res(RequestFactory req) {
         using api_t = typename std::invoke_result_t<RequestFactory>::api_type;
         using response_t = typename api_t::response_type;
+        refresh_inactivity_timer();
         return ss::try_with_gate(_gate, [this, req{std::move(req)}]() {
             auto r = req();
             kclog.debug("Consumer: {}: {} req: {}", *this, api_t::name, r);
+            vassert(_coordinator, "Ensure consumer is initialized before use");
             return _coordinator->dispatch(std::move(r))
               .then([this](response_t res) {
                   kclog.debug(
@@ -138,7 +144,8 @@ private:
     std::unique_ptr<assignment_plan> _plan{};
     assignment_t _assignment{};
     absl::node_hash_map<shared_broker_t, fetch_session> _fetch_sessions;
-    ss::noncopyable_function<void(const kafka::member_id&)> _on_stopped;
+    ss::noncopyable_function<ss::future<>(const kafka::member_id&)> _on_stopped;
+    error_handler _error_handler;
 
     friend std::ostream& operator<<(std::ostream& os, const consumer& c) {
         fmt::print(
@@ -157,10 +164,10 @@ ss::future<shared_consumer_t> make_consumer(
   const configuration& config,
   topic_cache& topic_cache,
   brokers& brokers,
-  shared_broker_t coordinator,
   group_id group_id,
   member_id name,
-  ss::noncopyable_function<void(const member_id&)> _on_stopped);
+  ss::noncopyable_function<ss::future<>(const member_id&)> on_stopped,
+  ss::noncopyable_function<ss::future<>(std::exception_ptr)> err_handler);
 
 namespace detail {
 

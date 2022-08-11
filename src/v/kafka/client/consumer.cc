@@ -15,6 +15,7 @@
 #include "kafka/client/configuration.h"
 #include "kafka/client/exceptions.h"
 #include "kafka/client/logger.h"
+#include "kafka/client/retry_with_mitigation.h"
 #include "kafka/protocol/describe_groups.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/fetch.h"
@@ -88,14 +89,13 @@ consumer::consumer(
   const configuration& config,
   topic_cache& topic_cache,
   brokers& brokers,
-  shared_broker_t coordinator,
   kafka::group_id group_id,
   kafka::member_id name,
-  ss::noncopyable_function<void(const kafka::member_id&)> on_stopped)
+  ss::noncopyable_function<ss::future<>(const kafka::member_id&)> on_stopped,
+  error_handler&& err_handler)
   : _config(config)
   , _topic_cache(topic_cache)
   , _brokers(brokers)
-  , _coordinator(std::move(coordinator))
   , _inactive_timer([me{shared_from_this()}]() {
       vlog(kclog.info, "Consumer: {}: inactive", *me);
       ssx::background = me->leave().discard_result().finally([me]() {});
@@ -103,7 +103,8 @@ consumer::consumer(
   , _group_id(std::move(group_id))
   , _name(std::move(name))
   , _topics()
-  , _on_stopped(std::move(on_stopped)) {}
+  , _on_stopped(std::move(on_stopped))
+  , _error_handler(std::move(err_handler)) {}
 
 void consumer::start() {
     vlog(kclog.info, "Consumer: {}: start", *this);
@@ -133,16 +134,65 @@ ss::future<> consumer::stop() {
     _inactive_timer.set_callback([]() {});
 
     _as.request_abort();
-    _on_stopped(_name);
-    return _coordinator->stop()
-      .then([this]() { return _gate.close(); })
-      .finally([me{shared_from_this()}] {});
+    co_await _on_stopped(_name);
+    if (_coordinator) {
+        co_await _coordinator->stop();
+    }
+    co_await _gate.close();
 }
 
 ss::future<> consumer::initialize() {
     vlog(kclog.info, "Consumer: {}: initialize", *this);
-    refresh_inactivity_timer();
-    return join();
+    return find_coordinator().then([this](shared_broker_t c) {
+        _coordinator = std::move(c);
+        return join();
+    });
+}
+
+ss::future<shared_broker_t>
+consumer::do_find_coordinator(shared_broker_t broker) {
+    return broker->dispatch(find_coordinator_request(_group_id))
+      .then([this, broker](auto res) {
+          if (res.data.error_code != error_code::none) {
+              return ss::make_exception_future<shared_broker_t>(
+                consumer_error(_group_id, _name, res.data.error_code));
+          }
+          // In the case the request was successful ensure the broker
+          // details match with the metadata currently cached
+          return _brokers.find(res.data.node_id)
+            .then([this, broker, res](shared_broker_t) {
+                return make_broker(
+                  res.data.node_id,
+                  net::unresolved_address(res.data.host, res.data.port),
+                  _config);
+            })
+            .handle_exception_type([this](const broker_error&) {
+                // ... if theres no match, then response from
+                // find_coordinator_request  is inconsistent with cached
+                // metadata, invoke refresh metadata
+                return ss::make_exception_future<shared_broker_t>(
+                  consumer_error(
+                    _group_id,
+                    _member_id,
+                    error_code::coordinator_not_available));
+            });
+      });
+}
+
+ss::future<shared_broker_t> consumer::find_coordinator() {
+    vlog(kclog.debug, "Consumer: {}: finding coordinator", *this);
+    return ss::try_with_gate(_gate, [this]() {
+        return retry_with_mitigation(
+          _config.retries(),
+          _config.retry_base_backoff(),
+          [this]() {
+              _gate.check();
+              return _brokers.any().then([this](shared_broker_t broker) {
+                  return do_find_coordinator(broker);
+              });
+          },
+          [this](std::exception_ptr ex) { return _error_handler(ex); });
+    });
 }
 
 ss::future<> consumer::join() {
@@ -172,8 +222,8 @@ ss::future<> consumer::join() {
           case error_code::illegal_generation:
               return join();
           case error_code::not_coordinator:
-              return ss::sleep_abortable(_config.retry_base_backoff(), _as)
-                .then([this]() { return join(); });
+              return ss::sleep_abortable(1s, _as).then(
+                [this] { return initialize(); });
           case error_code::none:
               _generation_id = res.data.generation_id;
               _member_id = res.data.member_id;
@@ -243,9 +293,7 @@ ss::future<leave_group_response> consumer::leave() {
         return leave_group_request{
           .data{.group_id = _group_id, .member_id = _member_id}};
     };
-    return req_res(std::move(req_builder)).finally([me{shared_from_this()}]() {
-        return me->stop();
-    });
+    return req_res(std::move(req_builder));
 }
 
 ss::future<std::vector<metadata_response::topic>>
@@ -475,18 +523,18 @@ ss::future<shared_consumer_t> make_consumer(
   const configuration& config,
   topic_cache& topic_cache,
   brokers& brokers,
-  shared_broker_t coordinator,
   group_id group_id,
   member_id name,
-  ss::noncopyable_function<void(const member_id&)> on_stopped) {
+  ss::noncopyable_function<ss::future<>(const member_id&)> on_stopped,
+  ss::noncopyable_function<ss::future<>(std::exception_ptr)> err_handler) {
     auto c = ss::make_lw_shared<consumer>(
       config,
       topic_cache,
       brokers,
-      std::move(coordinator),
       std::move(group_id),
       std::move(name),
-      std::move(on_stopped));
+      std::move(on_stopped),
+      std::move(err_handler));
     return c->initialize().then([c]() mutable { return std::move(c); });
 }
 
