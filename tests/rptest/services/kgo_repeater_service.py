@@ -151,6 +151,7 @@ class KgoRepeaterService(Service):
                 # in practice I see some a small minority of consumers drop out of the
                 # group sometimes when the cluster undergoes an all-node concurrent restart,
                 # and I don't want to stop the test for that.
+                # https://github.com/redpanda-data/redpanda/issues/5959
                 self.logger.debug(
                     f"group_ready: waiting for node count ({group.members} != {expect_members})"
                 )
