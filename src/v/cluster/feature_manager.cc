@@ -266,12 +266,16 @@ void feature_manager::update_node_version(
 ss::future<> feature_manager::do_maybe_update_active_version() {
     vassert(ss::this_shard_id() == backend_shard, "Wrong shard!");
 
+    // Consume any accumulated updates.  Important to do this even if
+    // not leader, so that we drain it and allow maybe_update_active_version
+    // to sleep on _update_wait.
+    auto updates = std::exchange(_updates, {});
+
     if (!_am_controller_leader) {
         co_return;
     }
 
-    // Consume _updates into _node_versions
-    auto updates = std::exchange(_updates, {});
+    // Apply updates into _node_versions
     for (const auto& i : updates) {
         auto& [node, v] = i;
         vlog(clusterlog.debug, "Processing update node={} version={}", node, v);
