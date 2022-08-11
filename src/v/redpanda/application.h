@@ -179,8 +179,7 @@ private:
     ss::sharded<archival::upload_controller> _archival_upload_controller;
 
     ss::metrics::metric_groups _metrics;
-    ss::metrics::metric_groups _public_metrics{
-      ssx::metrics::public_metrics_handle};
+    ss::sharded<ssx::metrics::public_metrics_group> _public_metrics;
     std::unique_ptr<kafka::rm_group_proxy_impl> _rm_group_proxy;
     // run these first on destruction
     deferred_actions _deferred;
