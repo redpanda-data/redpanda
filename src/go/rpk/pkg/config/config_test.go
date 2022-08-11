@@ -463,7 +463,8 @@ func TestDefault(t *testing.T) {
 			DeveloperMode: true,
 		},
 		Rpk: RpkConfig{
-			CoredumpDir: "/var/lib/redpanda/coredump",
+			CoredumpDir:     "/var/lib/redpanda/coredump",
+			Overprovisioned: true,
 		},
 	}
 	require.Exactly(t, expected, defaultConfig)
