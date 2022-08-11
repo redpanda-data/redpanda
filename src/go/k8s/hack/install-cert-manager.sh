@@ -12,6 +12,8 @@ if [ "$(kubectl get deploy --sort-by=.metadata.name --namespace cert-manager -o=
   exit 0
 fi
 
+mkdir -p ./bin
+
 if [ "$(uname)" == 'Darwin' ]; then
   curl -L https://github.com/alenkacz/cert-manager-verifier/releases/download/v"${VERSION}"/cert-manager-verifier_"${VERSION}"_Darwin_x86_64.tar.gz | tar -xvf - -C ./bin
 else
