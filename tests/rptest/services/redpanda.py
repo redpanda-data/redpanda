@@ -958,7 +958,7 @@ class RedpandaService(Service):
                 f"stat -f -c %T {self.PERSISTENT_ROOT}").strip()
             if fs != b'xfs':
                 raise RuntimeError(
-                    f"Unexpected filesystem {fs} at {self.PERSISTENT_ROOT} on {node.name}"
+                    f"Non-XFS filesystem {fs} at {self.PERSISTENT_ROOT} on {node.name}"
                 )
 
         def is_status_ready():
