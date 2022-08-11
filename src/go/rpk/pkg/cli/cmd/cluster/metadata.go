@@ -25,7 +25,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kadm"
 )
 
-func NewMetadataCommand(fs afero.Fs) *cobra.Command {
+func newMetadataCommand(fs afero.Fs) *cobra.Command {
 	var (
 		cluster  bool
 		brokers  bool

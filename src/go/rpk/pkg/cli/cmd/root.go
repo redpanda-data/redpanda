@@ -23,6 +23,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/acl"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cluster"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/debug"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/group"
@@ -73,9 +74,9 @@ func Execute() {
 		NewVersionCommand(),
 		NewContainerCommand(),
 		NewTopicCommand(fs),
-		NewClusterCommand(fs),
 
 		acl.NewCommand(fs),
+		cluster.NewCommand(fs),
 		debug.NewCommand(fs),
 		group.NewCommand(fs),
 		plugincmd.NewCommand(fs),

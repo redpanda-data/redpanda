@@ -26,7 +26,7 @@ import (
 	"github.com/twmb/types"
 )
 
-func NewLogdirsCommand(fs afero.Fs) *cobra.Command {
+func newLogdirsCommand(fs afero.Fs) *cobra.Command {
 	var (
 		configFile string
 
