@@ -209,9 +209,8 @@ class ResourceSettings:
             ])
 
         if self._reactor_stall_threshold is not None:
-            args.extend([
-                f"--blocked-reactor-notify-ms={self._reactor_stall_threshold}"
-            ])
+            args.append(
+                f"--blocked-reactor-notify-ms={self._reactor_stall_threshold}")
 
         if num_cpus is not None:
             args.append(f"--smp={num_cpus}")
