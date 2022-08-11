@@ -661,7 +661,7 @@ class Admin:
         Looks up current ntp leader and transfer leadership to target node,
         this operations is NOP when current leader is the same as target.
         If user pass None for target this function will choose next replica for new leader.
-        If leadership transfer was performed this function return True
+        If leadership was successfully transferred this function return True
         """
         def _get_details():
             p = self.get_partitions(topic=topic,
@@ -684,7 +684,7 @@ class Admin:
 
         if target_id is not None:
             if leader_id == target_id:
-                return False
+                return True
             path = f"raft/{details['raft_group_id']}/transfer_leadership?target={target_id}"
         else:
             path = f"raft/{details['raft_group_id']}/transfer_leadership"
