@@ -13,6 +13,7 @@
 
 #include "utils/hdr_hist.h"
 
+#include <seastar/core/future.hh>
 #include <seastar/core/metrics.hh>
 
 namespace ssx::metrics {
@@ -39,5 +40,13 @@ constexpr auto label_namespace = "redpanda";
 inline ss::metrics::label make_namespaced_label(const seastar::sstring& name) {
     return ss::metrics::label(ssx::sformat("{}_{}", label_namespace, name));
 }
+
+struct public_metrics_group {
+    ss::metrics::metric_groups groups{public_metrics_handle};
+    ss::future<> stop() {
+        groups.clear();
+        return ss::make_ready_future<>();
+    }
+};
 
 } // namespace ssx::metrics
