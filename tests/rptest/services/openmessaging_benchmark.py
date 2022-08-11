@@ -34,11 +34,14 @@ class OpenMessagingBenchmarkWorkers(Service):
         }
     }
 
-    def __init__(self, ctx, num_workers=3, nodes: Optional[list] = None):
+    def __init__(self, ctx, num_workers=None, nodes: Optional[list] = None):
         """
-        :param num_workers: allocate this many nodes as workers
-        :param nodes: use these pre-allocated nodes as workers
+        :param num_workers: allocate this many nodes as workers (mutually exclusive with `nodes`)
+        :param nodes: use these pre-allocated nodes as workers (mutually exclusive with `num_workers`)
         """
+        if nodes is None and num_workers is None:
+            num_workers = 3
+
         super(OpenMessagingBenchmarkWorkers,
               self).__init__(ctx, num_nodes=0 if nodes else num_workers)
 
@@ -151,6 +154,11 @@ class OpenMessagingBenchmark(Service):
         """
         Creates a utility that can run OpenMessagingBenchmark (OMB) tests in ducktape. See OMB
         documentation for definitions of driver/workload files.
+
+        :param workload: either a string referencing an entry in OMBSampleConfiguration.WORKLOADS,
+                         or a dict of workload parameters.
+        :param nodes: optional, pre-allocated node to run the benchmark from (by default allocate one)
+        :param worker_nodes: optional, list of pre-allocated nodes to run workers on (by default allocate NUM_WORKERS)
         """
         super(OpenMessagingBenchmark,
               self).__init__(ctx, num_nodes=0 if node else 1)
