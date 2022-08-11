@@ -656,7 +656,15 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         # check that the status is in progress
 
         def get_status():
-            partition_info = admin.get_partitions(topic, partition)
+            try:
+                partition_info = admin.get_partitions(topic, partition)
+            except requests.exceptions.HTTPError as e:
+                if e.errno == 404:
+                    self.logger.info(
+                        f"topic {topic}/{partition} not found, retrying")
+                    return None
+                else:
+                    raise e
             self.logger.info(
                 f"current assignments for {topic}-{partition}: {partition_info}"
             )
