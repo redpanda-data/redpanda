@@ -51,6 +51,7 @@ class AccessControlListTest(RedpandaTest):
         self.base_user_cert = None
         self.cluster_describe_user_cert = None
         self.admin_user_cert = None
+        self.admin = Admin(self.redpanda)
 
     def setUp(self):
         # Skip starting redpanda, so that test can explicitly start
@@ -117,16 +118,14 @@ class AccessControlListTest(RedpandaTest):
             # has successfully confirmed that redpanda failed to start.
             return
 
-        admin = Admin(self.redpanda)
-
         # base case user is not a superuser and has no configured ACLs
         if self.security.sasl_enabled() or enable_authz:
-            admin.create_user("base", self.password, self.algorithm)
+            self.admin.create_user("base", self.password, self.algorithm)
 
         # only grant cluster describe permission to user cluster_describe
         if self.security.sasl_enabled() or enable_authz:
-            admin.create_user("cluster_describe", self.password,
-                              self.algorithm)
+            self.admin.create_user("cluster_describe", self.password,
+                                   self.algorithm)
         client = self.get_super_client()
         client.acl_create_allow_cluster("cluster_describe", "describe")
 
@@ -135,12 +134,12 @@ class AccessControlListTest(RedpandaTest):
         # an indirect way to check that ACLs (and users) have propagated
         # to all nodes before we proceed.
         checkpoint_user = "_test_checkpoint"
-        admin.create_user(checkpoint_user, "_password", self.algorithm)
+        self.admin.create_user(checkpoint_user, "_password", self.algorithm)
 
         # wait for users to propagate to nodes
         def auth_metadata_propagated():
             for node in self.redpanda.nodes:
-                users = admin.list_users(node=node)
+                users = self.admin.list_users(node=node)
                 if checkpoint_user not in users:
                     return False
                 elif self.security.sasl_enabled() or enable_authz:
@@ -356,6 +355,88 @@ class AccessControlListTest(RedpandaTest):
 
         self.check_permissions(pass_w_cluster_user=not fail,
                                err_msg='check_permissions failed')
+
+    @cluster(num_nodes=3)
+    @parametrize(authn_method='sasl')
+    @parametrize(authn_method='mtls_identity')
+    def test_security_feature_migration(self, authn_method: str):
+        self.prepare_cluster(use_tls=True, use_sasl=True)
+
+        self.check_permissions(
+            pass_w_base_user=False,
+            pass_w_cluster_user=True,
+            pass_w_super_user=True,
+            err_msg='check_permissions failed before migration')
+
+        # Change the authn method and initiate feature migration
+        # with a rolling restart. Do not recreate tls certs.
+        self.security.endpoint_authn_method = authn_method
+        self.redpanda.set_security_settings(self.security)
+        self.logger.debug('Initiating rolling restart')
+        self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
+                                            start_timeout=90,
+                                            stop_timeout=90)
+
+        # Check that the authn_method was set on all brokers
+        pattern = 'Started Kafka API server.*:{' + authn_method + '}.*'
+        assert self.redpanda.search_log_all(pattern)
+
+        # Once restart is complete, check permissions should succeed when authn_method
+        # is sasl because the system will validate against SASL/SCRAM creds already stored
+        # on the brokers. However, when authn_method is mtls_identiy, check permissions
+        # should fail because no principal mapping rule is set yet.
+        if authn_method == 'sasl':
+            self.check_permissions(
+                pass_w_base_user=False,
+                pass_w_cluster_user=True,
+                pass_w_super_user=True,
+                err_msg='check_permissions failed in intermediate state')
+        elif authn_method == 'mtls_identity':
+            try:
+                self.check_permissions(pass_w_base_user=False,
+                                       pass_w_cluster_user=True,
+                                       pass_w_super_user=True,
+                                       timeout_sec=10)
+                raise RuntimeError(
+                    'check_perms should have failed in intermediate state')
+            except TimeoutError:
+                # Expect a timeout failure which comes from
+                # wait_until. The timeout is because check_perms
+                # should fail.
+                pass
+
+        # Change cluster wide configs for kafka_enable_authorization and
+        # kafka_mtls_principal_mapping_rules via the admin api.
+        # Do not expect a restart.
+        #
+        # NOTE:
+        # - kafka_enable_authorization overrides sasl in an authorization context
+        # - authentication_method overrides sasl in an authentication context
+        new_cfg = {'kafka_enable_authorization': True}
+        if authn_method == 'mtls_identity':
+            new_cfg['kafka_mtls_principal_mapping_rules'] = [
+                'RULE:.*CN=([^,]+).*/$1/', 'DEFAULT'
+            ]
+        self.redpanda.set_cluster_config(new_cfg)
+
+        # Check that new cluster configs are set
+        cluster_cfg = self.admin.get_cluster_config()
+        assert cluster_cfg['kafka_enable_authorization'] == new_cfg[
+            'kafka_enable_authorization']
+
+        if authn_method == 'mtls_identity':
+            assert new_cfg['kafka_mtls_principal_mapping_rules'][
+                0] in cluster_cfg['kafka_mtls_principal_mapping_rules']
+            assert new_cfg['kafka_mtls_principal_mapping_rules'][
+                1] in cluster_cfg['kafka_mtls_principal_mapping_rules']
+        else:
+            assert cluster_cfg['kafka_mtls_principal_mapping_rules'] == None
+
+        self.check_permissions(
+            pass_w_base_user=False,
+            pass_w_cluster_user=True,
+            pass_w_super_user=True,
+            err_msg='check_permissions failed after migration')
 
 
 class AccessControlListTestUpgrade(AccessControlListTest):
