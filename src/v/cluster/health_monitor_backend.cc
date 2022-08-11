@@ -76,8 +76,6 @@ health_monitor_backend::health_monitor_backend(
       std::move(storage_min_bytes),
       storage_node_api,
       storage_api) {
-    _tick_timer.set_callback([this] { tick(); });
-    _tick_timer.arm(tick_interval());
     _leadership_notification_handle
       = _raft_manager.local().register_leadership_notification(
         [this](
@@ -124,7 +122,6 @@ ss::future<> health_monitor_backend::stop() {
     auto f = _gate.close();
     _refresh_mutex.broken();
     abort_current_refresh();
-    _tick_timer.cancel();
 
     if (_refresh_request) {
         _refresh_request.release();
@@ -278,23 +275,9 @@ health_monitor_backend::refresh_cluster_health_cache(force_refresh force) {
     auto holder = _gate.hold();
     auto leader_id = _raft0->get_leader_id();
 
-    // if we are a leader, do nothing
-    if (leader_id == _raft0->self().id()) {
-        co_return errc::success;
-    }
-
     // leadership change, abort old refresh request
     if (_refresh_request && leader_id != _refresh_request->leader_id) {
         abort_current_refresh();
-    }
-
-    // no leader controller
-    if (!leader_id) {
-        vlog(
-          clusterlog.debug,
-          "unable to refresh health metadata, no leader controller");
-        // TODO: maybe we should try to ping other members in this case ?
-        co_return errc::no_leader_controller;
     }
 
     auto units = co_await _refresh_mutex.get_units();
@@ -310,10 +293,6 @@ health_monitor_backend::refresh_cluster_health_cache(force_refresh force) {
         co_return errc::no_leader_controller;
     }
 
-    if (leader_id == _raft0->self().id()) {
-        co_return errc::success;
-    }
-
     // check under semaphore if we need to force refresh, otherwise we will just
     // skip refresh request since current state is 'fresh enough' i.e. not older
     // than max metadata age
@@ -326,13 +305,22 @@ health_monitor_backend::refresh_cluster_health_cache(force_refresh force) {
         co_return errc::success;
     }
 
-    vlog(clusterlog.debug, "refreshing health cache, leader id: {}", leader_id);
+    vlog(
+      clusterlog.debug,
+      "refreshing health cache, leader id: {} self: {}",
+      leader_id,
+      _raft0->self().id());
 
     _refresh_request = ss::make_lw_shared<abortable_refresh_request>(
       *leader_id, std::move(holder), std ::move(units));
 
-    co_return co_await _refresh_request->abortable_await(
-      dispatch_refresh_cluster_health_request(*leader_id));
+    // we either collect the cluster health reports while on raft0 leader or ask
+    // current leader for cluster health
+    auto f = leader_id == _raft0->self().id()
+               ? collect_cluster_health()
+               : dispatch_refresh_cluster_health_request(*leader_id);
+
+    co_return co_await _refresh_request->abortable_await(std::move(f));
 }
 
 ss::future<std::error_code>
@@ -396,7 +384,6 @@ health_monitor_backend::dispatch_refresh_cluster_health_request(
     }
 
     _reports_disk_health = cluster_disk_health;
-    _last_refresh = ss::lowres_clock::now();
     co_return make_error_code(errc::success);
 }
 
@@ -429,7 +416,7 @@ health_monitor_backend::get_cluster_health(
   model::timeout_clock::time_point deadline) {
     vlog(
       clusterlog.debug,
-      "requesing cluster state report with filter: {}, force refresh: {}",
+      "requesting cluster state report with filter: {}, force refresh: {}",
       filter,
       refresh);
     auto ec = co_await maybe_refresh_cluster_health(refresh, deadline);
@@ -466,7 +453,7 @@ health_monitor_backend::maybe_refresh_cluster_health(
 
     // if current node is not the controller leader and we need a refresh we
     // refresh metadata cache
-    if (!_raft0->is_elected_leader() && need_refresh) {
+    if (need_refresh) {
         try {
             auto f = refresh_cluster_health_cache(refresh);
             auto err = co_await ss::with_timeout(deadline, std::move(f));
@@ -492,37 +479,9 @@ health_monitor_backend::maybe_refresh_cluster_health(
               "previous cluster health snapshot");
             co_return errc::timeout;
         }
+        _last_refresh = ss::lowres_clock::now();
     }
     co_return errc::success;
-}
-
-cluster_health_report
-health_monitor_backend::get_current_cluster_health_snapshot(
-  const cluster_report_filter& f) {
-    return build_cluster_report(f);
-}
-
-void health_monitor_backend::tick() {
-    ssx::spawn_with_gate(_gate, [this]() -> ss::future<> {
-        co_await _local_monitor.update_state();
-        co_await tick_cluster_health();
-    });
-}
-
-ss::future<> health_monitor_backend::tick_cluster_health() {
-    if (!_raft0->is_elected_leader()) {
-        vlog(clusterlog.trace, "skipping tick, not leader");
-        _tick_timer.arm(tick_interval());
-        co_return;
-    }
-
-    // make sure that ticks will have fixed interval
-    auto next_tick = ss::lowres_clock::now() + tick_interval();
-    co_await collect_cluster_health().finally([this, next_tick] {
-        if (!_as.local().abort_requested()) {
-            _tick_timer.arm(next_tick);
-        }
-    });
 }
 
 ss::future<result<node_health_report>>
@@ -601,11 +560,11 @@ result<node_health_report> health_monitor_backend::process_node_reply(
     return res;
 }
 
-ss::future<> health_monitor_backend::collect_cluster_health() {
+ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
     /**
      * We are collecting cluster health on raft 0 leader only
      */
-    vlog(clusterlog.trace, "collecting cluster health statistics");
+    vlog(clusterlog.info, "collecting cluster health statistics");
     // collect all reports
     auto ids = _members.local().all_broker_ids();
     auto reports = co_await ssx::async_transform(
@@ -653,6 +612,7 @@ ss::future<> health_monitor_backend::collect_cluster_health() {
         }
     }
     _reports_disk_health = cluster_disk_health;
+    co_return errc::success;
 }
 
 ss::future<result<node_health_report>>
@@ -772,10 +732,6 @@ health_monitor_backend::collect_topic_status(partitions_filter filters) {
     }
 
     co_return topics;
-}
-
-std::chrono::milliseconds health_monitor_backend::tick_interval() {
-    return config::shard_local_cfg().health_monitor_tick_interval();
 }
 
 std::chrono::milliseconds health_monitor_backend::max_metadata_age() {

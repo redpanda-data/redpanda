@@ -53,10 +53,6 @@ public:
 
     storage::disk_space_alert get_cluster_disk_health();
 
-    // Returns currently available cluster health report snapshot
-    ss::future<cluster_health_report>
-      get_current_cluster_health_snapshot(cluster_report_filter);
-
     // Collcts and returns current node health report according to provided
     // filters list
     ss::future<result<node_health_report>>
