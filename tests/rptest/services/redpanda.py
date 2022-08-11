@@ -1994,7 +1994,10 @@ class RedpandaService(Service):
         """
         counts = {self.idx(node): None for node in self.nodes}
         for node in self.nodes:
-            metrics = self.metrics(node)
+            try:
+                metrics = self.metrics(node)
+            except:
+                return False
             idx = self.idx(node)
             for family in metrics:
                 for sample in family.samples:
