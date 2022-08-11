@@ -1288,7 +1288,8 @@ configuration::configuration()
       *this,
       "health_monitor_tick_interval",
       "How often health monitor refresh cluster state",
-      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no,
+       .visibility = visibility::deprecated},
       10s)
   , health_monitor_max_metadata_age(
       *this,

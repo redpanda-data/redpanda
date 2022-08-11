@@ -407,7 +407,7 @@ class PartitionBalancerTest(EndToEndTest):
             extra_rp_conf={
                 "storage_min_free_bytes": 10 * 1024 * 1024,
                 "raft_learner_recovery_rate": 100_000_000,
-                "health_monitor_tick_interval": 3000
+                "health_monitor_max_metadata_age": 3000
             },
             environment={"__REDPANDA_TEST_DISK_SIZE": disk_size})
 
