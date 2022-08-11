@@ -27,6 +27,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/debug"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/group"
 	plugincmd "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/plugin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/wasm"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/plugin"
 	log "github.com/sirupsen/logrus"
@@ -70,7 +71,6 @@ func Execute() {
 	root.AddCommand(
 		NewGenerateCommand(fs),
 		NewVersionCommand(),
-		NewWasmCommand(fs),
 		NewContainerCommand(),
 		NewTopicCommand(fs),
 		NewClusterCommand(fs),
@@ -79,6 +79,7 @@ func Execute() {
 		debug.NewCommand(fs),
 		group.NewCommand(fs),
 		plugincmd.NewCommand(fs),
+		wasm.NewCommand(fs),
 	)
 
 	addPlatformDependentCmds(fs, root)

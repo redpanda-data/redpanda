@@ -26,7 +26,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewGenerateCommand(fs afero.Fs) *cobra.Command {
+func newGenerateCommand(fs afero.Fs) *cobra.Command {
 	var skipVersion bool
 	cmd := &cobra.Command{
 		Use:   "generate [PROJECT DIRECTORY]",

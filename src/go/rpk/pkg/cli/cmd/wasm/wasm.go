@@ -7,16 +7,15 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package cmd
+package wasm
 
 import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/common"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/wasm"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func NewWasmCommand(fs afero.Fs) *cobra.Command {
+func NewCommand(fs afero.Fs) *cobra.Command {
 	var (
 		configFile     string
 		brokers        []string
@@ -45,9 +44,9 @@ func NewWasmCommand(fs afero.Fs) *cobra.Command {
 		&truststoreFile,
 		&brokers,
 	)
-	command.AddCommand(wasm.NewGenerateCommand(fs))
-	command.AddCommand(wasm.NewDeployCommand(fs))
-	command.AddCommand(wasm.NewRemoveCommand(fs))
+	command.AddCommand(newGenerateCommand(fs))
+	command.AddCommand(newDeployCommand(fs))
+	command.AddCommand(newRemoveCommand(fs))
 
 	return command
 }
