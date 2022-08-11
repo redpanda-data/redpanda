@@ -20,7 +20,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewUserCommand(fs afero.Fs) *cobra.Command {
+func newUserCommand(fs afero.Fs) *cobra.Command {
 	var apiUrls []string
 	cmd := &cobra.Command{
 		Use:   "user",
@@ -42,9 +42,9 @@ redpanda section of your redpanda.yaml.
 			" You must specify one for each node",
 	)
 
-	cmd.AddCommand(NewCreateUserCommand(fs))
-	cmd.AddCommand(NewDeleteUserCommand(fs))
-	cmd.AddCommand(NewListUsersCommand(fs))
+	cmd.AddCommand(newCreateUserCommand(fs))
+	cmd.AddCommand(newDeleteUserCommand(fs))
+	cmd.AddCommand(newListUsersCommand(fs))
 	return cmd
 }
 
@@ -55,7 +55,7 @@ type UserAPI interface {
 	ListUsers() ([]string, error)
 }
 
-func NewCreateUserCommand(fs afero.Fs) *cobra.Command {
+func newCreateUserCommand(fs afero.Fs) *cobra.Command {
 	var userOld, pass, passOld, mechanism string
 	cmd := &cobra.Command{
 		Use:   "create [USER] -p [PASS]",
@@ -136,7 +136,7 @@ acl help text for more info.
 	return cmd
 }
 
-func NewDeleteUserCommand(fs afero.Fs) *cobra.Command {
+func newDeleteUserCommand(fs afero.Fs) *cobra.Command {
 	var oldUser string
 	cmd := &cobra.Command{
 		Use:   "delete [USER]",
@@ -179,7 +179,7 @@ delete any ACLs that may exist for this user.
 	return cmd
 }
 
-func NewListUsersCommand(fs afero.Fs) *cobra.Command {
+func newListUsersCommand(fs afero.Fs) *cobra.Command {
 	return &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},

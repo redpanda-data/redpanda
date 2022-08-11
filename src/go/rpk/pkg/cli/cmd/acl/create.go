@@ -21,7 +21,7 @@ import (
 	"github.com/twmb/types"
 )
 
-func NewCreateCommand(fs afero.Fs) *cobra.Command {
+func newCreateCommand(fs afero.Fs) *cobra.Command {
 	var a acls
 	cmd := &cobra.Command{
 		Use:   "create",

@@ -22,7 +22,7 @@ import (
 	"github.com/twmb/types"
 )
 
-func NewDeleteCommand(fs afero.Fs) *cobra.Command {
+func newDeleteCommand(fs afero.Fs) *cobra.Command {
 	var (
 		a               acls
 		printAllFilters bool
