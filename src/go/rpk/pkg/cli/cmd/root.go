@@ -27,6 +27,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/container"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/debug"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/generate"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/group"
 	plugincmd "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/plugin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/wasm"
@@ -71,7 +72,6 @@ func Execute() {
 		"v", false, "Enable verbose logging (default: false)")
 
 	root.AddCommand(
-		NewGenerateCommand(fs),
 		NewVersionCommand(),
 		NewTopicCommand(fs),
 
@@ -79,6 +79,7 @@ func Execute() {
 		cluster.NewCommand(fs),
 		container.NewCommand(),
 		debug.NewCommand(fs),
+		generate.NewCommand(fs),
 		group.NewCommand(fs),
 		plugincmd.NewCommand(fs),
 		wasm.NewCommand(fs),

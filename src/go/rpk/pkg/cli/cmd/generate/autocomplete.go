@@ -16,7 +16,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewShellCompletionCommand() *cobra.Command {
+func newShellCompletionCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "shell-completion",
 		Short: "Generate shell completion commands",

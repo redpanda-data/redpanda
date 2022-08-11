@@ -61,7 +61,7 @@ func newRowSet() *RowSet {
 	}
 }
 
-func NewGrafanaDashboardCmd() *cobra.Command {
+func newGrafanaDashboardCmd() *cobra.Command {
 	var metricsEndpoint string
 	command := &cobra.Command{
 		Use:   "grafana-dashboard",
