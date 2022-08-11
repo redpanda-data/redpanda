@@ -9,8 +9,8 @@
 
 from rptest.tests.redpanda_test import RedpandaTest
 from ducktape.cluster.cluster_spec import ClusterSpec
-from ducktape.utils.util import wait_until
 from ducktape.tests.test import TestContext
+from rptest.util import wait_until
 
 
 class PreallocNodesTest(RedpandaTest):
