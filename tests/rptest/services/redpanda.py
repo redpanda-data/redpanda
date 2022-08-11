@@ -707,7 +707,7 @@ class RedpandaService(Service):
               nodes=None,
               clean_nodes=True,
               start_si=True,
-              parallel: bool = False):
+              parallel: bool = True):
         """
         Start the service on all nodes.
 
