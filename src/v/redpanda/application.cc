@@ -58,7 +58,6 @@
 #include "redpanda/admin_server.h"
 #include "resource_mgmt/io_priority.h"
 #include "rpc/simple_protocol.h"
-#include "ssx/metrics.h"
 #include "storage/backlog_controller.h"
 #include "storage/chunk_cache.h"
 #include "storage/compaction_controller.h"
@@ -317,22 +316,55 @@ void application::initialize(
 }
 
 void application::setup_metrics() {
-    if (!config::shard_local_cfg().disable_public_metrics()) {
-        seastar::metrics::replicate_metric_families(
-          seastar::metrics::default_handle(),
-          {{"scheduler_runtime_ms", ssx::metrics::public_metrics_handle},
-           {"io_queue_total_read_ops", ssx::metrics::public_metrics_handle},
-           {"io_queue_total_write_ops", ssx::metrics::public_metrics_handle},
-           {"memory_allocated_memory", ssx::metrics::public_metrics_handle},
-           {"memory_free_memory", ssx::metrics::public_metrics_handle}})
-          .get();
+    setup_internal_metrics();
+    setup_public_metrics();
+}
+
+void application::setup_public_metrics() {
+    namespace sm = ss::metrics;
+
+    if (config::shard_local_cfg().disable_public_metrics()) {
+        return;
     }
+
+    seastar::metrics::replicate_metric_families(
+      seastar::metrics::default_handle(),
+      {{"scheduler_runtime_ms", ssx::metrics::public_metrics_handle},
+       {"io_queue_total_read_ops", ssx::metrics::public_metrics_handle},
+       {"io_queue_total_write_ops", ssx::metrics::public_metrics_handle},
+       {"memory_allocated_memory", ssx::metrics::public_metrics_handle},
+       {"memory_free_memory", ssx::metrics::public_metrics_handle}})
+      .get();
+
+    _public_metrics.add_group(
+      "application",
+      {
+        sm::make_gauge(
+          "uptime_seconds_total",
+          [] {
+              return std::chrono::duration<double>(ss::engine().uptime())
+                .count();
+          },
+          sm::description("Redpanda uptime in seconds"))
+          .aggregate({sm::shard_label}),
+        sm::make_gauge(
+          "busy_seconds_total",
+          [] {
+              return std::chrono::duration<double>(
+                       ss::engine().total_busy_time())
+                .count();
+          },
+          sm::description("Total CPU busy time in seconds"))
+          .aggregate({sm::shard_label}),
+      });
+}
+
+void application::setup_internal_metrics() {
+    namespace sm = ss::metrics;
 
     if (config::shard_local_cfg().disable_metrics()) {
         return;
     }
-
-    namespace sm = ss::metrics;
 
     // build info
     auto version_label = sm::label("version");

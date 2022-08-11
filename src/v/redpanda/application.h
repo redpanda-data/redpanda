@@ -35,6 +35,7 @@
 #include "resource_mgmt/smp_groups.h"
 #include "rpc/fwd.h"
 #include "seastarx.h"
+#include "ssx/metrics.h"
 #include "storage/fwd.h"
 #include "v8_engine/fwd.h"
 
@@ -149,6 +150,8 @@ private:
     }
 
     void setup_metrics();
+    void setup_public_metrics();
+    void setup_internal_metrics();
     std::unique_ptr<ss::app_template> _app;
     bool _redpanda_enabled{true};
     cluster::config_manager::preload_result _config_preload;
@@ -176,6 +179,8 @@ private:
     ss::sharded<archival::upload_controller> _archival_upload_controller;
 
     ss::metrics::metric_groups _metrics;
+    ss::metrics::metric_groups _public_metrics{
+      ssx::metrics::public_metrics_handle};
     std::unique_ptr<kafka::rm_group_proxy_impl> _rm_group_proxy;
     // run these first on destruction
     deferred_actions _deferred;
