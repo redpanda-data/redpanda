@@ -34,7 +34,8 @@ public:
                 "runtime_seconds_total",
                 [group_ref] {
                     auto runtime_duration = group_ref.get().get_stats().runtime;
-                    return std::chrono::duration<double>(runtime_duration).count();
+                    return std::chrono::duration<double>(runtime_duration)
+                      .count();
                 },
                 seastar::metrics::description(
                   "Accumulated runtime of task queue associated with this "

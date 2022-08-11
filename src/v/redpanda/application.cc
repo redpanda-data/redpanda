@@ -354,22 +354,22 @@ void application::setup_public_metrics() {
         })
       .get();
 
-    _public_metrics.invoke_on_all([](auto& public_metrics) {
-        public_metrics.groups.add_group(
-          "cpu",
-          {sm::make_gauge(
-            "busy_seconds_total",
-            [] {
-                return std::chrono::duration<double>(
-                         ss::engine().total_busy_time())
-                  .count();
-            },
-            sm::description("Total CPU busy time in seconds"))});
-    }).get();
+    _public_metrics
+      .invoke_on_all([](auto& public_metrics) {
+          public_metrics.groups.add_group(
+            "cpu",
+            {sm::make_gauge(
+              "busy_seconds_total",
+              [] {
+                  return std::chrono::duration<double>(
+                           ss::engine().total_busy_time())
+                    .count();
+              },
+              sm::description("Total CPU busy time in seconds"))});
+      })
+      .get();
 
-    _deferred.emplace_back([this] {
-        _public_metrics.stop().get();
-    });
+    _deferred.emplace_back([this] { _public_metrics.stop().get(); });
 }
 
 void application::setup_internal_metrics() {
