@@ -145,10 +145,10 @@ func makeRandomKafkaData(version int16) []byte {
 func randomFill(v reflect.Value, version int16) {
 	switch v.Kind() {
 	case reflect.Ptr:
-		v.Set(reflect.New(v.Type().Elem()))
 		/// This conditional represents setting an nullable field to nil
 		/// happening 50% of the time
 		if makeRandomBool() {
+			v.Set(reflect.New(v.Type().Elem()))
 			randomFill(v.Elem(), version)
 		}
 	case reflect.Struct:

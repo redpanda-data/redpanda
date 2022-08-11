@@ -1,2 +1,2 @@
-github.com/twmb/franz-go/pkg/kmsg v1.1.1-0.20220727195429-954ab1c15da1 h1:2mQP5DUgCXFbLGmUDPCX61rflseMUx/YDgCLrGGbbos=
-github.com/twmb/franz-go/pkg/kmsg v1.1.1-0.20220727195429-954ab1c15da1/go.mod h1:SxG/xJKhgPu25SamAq0rrucfp7lbzCpEXOC+vH/ELrY=
+github.com/twmb/franz-go/pkg/kmsg v1.2.0 h1:jYWh2qFw5lDbNv5Gvu/sMKagzICxuA5L6m1W2Oe7XUo=
+github.com/twmb/franz-go/pkg/kmsg v1.2.0/go.mod h1:SxG/xJKhgPu25SamAq0rrucfp7lbzCpEXOC+vH/ELrY=
