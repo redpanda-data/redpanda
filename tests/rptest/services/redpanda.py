@@ -695,12 +695,7 @@ class RedpandaService(Service):
         node_futures = []
         with concurrent.futures.ThreadPoolExecutor(
                 max_workers=len(nodes)) as executor:
-            for node in nodes:
-                f = executor.submit(cb, node)
-                node_futures.append((node, f))
-
-            for node, f in node_futures:
-                f.result()
+            list(executor.map(cb, nodes))
 
     def start(self,
               nodes=None,
