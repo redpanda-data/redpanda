@@ -539,4 +539,20 @@ class AdminOperationsFuzzer():
         assert self.error is None, f"Encountered an error in admin operations fuzzer: {self.error}"
 
     def wait(self, count, timeout):
-        wait_until(lambda: self.executed > count, timeout, 2)
+        def check():
+            # Drop out immediately if the main loop errored out.
+            if self.error:
+                self.redpanda.logger.error(
+                    f"wait: terminating for error {self.error}")
+                raise self.error
+
+            if self.executed >= count:
+                return True
+            elif self._stopping.is_set():
+                # We cannot ever reach the count, error out
+                self.redpanda.logger.error(f"wait: terminating for stop")
+                raise RuntimeError(
+                    f"Stopped without reaching target ({self.executed}/{count})"
+                )
+
+        wait_until(check, timeout_sec=timeout, backoff_sec=2)
