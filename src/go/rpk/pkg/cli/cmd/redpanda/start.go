@@ -15,7 +15,6 @@ package redpanda
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -168,12 +167,8 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 			switch mode {
 			case "container":
 				fmt.Fprintln(os.Stderr, "WARNING: This is a setup for development purposes only; in this mode your clusters may run unrealistically fast and data can be corrupted any time your computer shuts down uncleanly.")
-				cfg.Redpanda.DeveloperMode = true
 				setContainerModeFlags(cmd)
-				err := setClusterProperties(fs, cfg.FileLocation())
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "unable to set cluster properties: %v\n", err)
-				}
+				setContainerModeCfgFields(cfg)
 			case "help":
 				fmt.Println(helpMode)
 				return nil
@@ -1094,58 +1089,17 @@ func setContainerModeFlags(cmd *cobra.Command) {
 	}
 }
 
-// setClusterProperties generates a .bootstrap.yaml file in the same path as
-// the redpanda.yaml, this will be picked up by redpanda on first start and
-// set the passed properties.
-func setClusterProperties(fs afero.Fs, cfgFileLocation string) (rerr error) {
-	const props = `auto_create_topics_enabled: true
-group_topic_partitions: 3
-storage_min_free_bytes: 10485760
-topic_partitions_per_shard: 1000
-`
-	cfgDir := filepath.Dir(cfgFileLocation)
+func setContainerModeCfgFields(cfg *config.Config) {
+	cfg.Redpanda.DeveloperMode = true
 
-	tmp, err := afero.TempFile(fs, cfgDir, "bootstrap-*.yaml")
-	if err != nil {
-		return err
+	// cluster properties:
+	if cfg.Redpanda.Other == nil {
+		cfg.Redpanda.Other = make(map[string]interface{})
 	}
-
-	defer func() {
-		if rerr != nil {
-			suggestion := "you can run 'rpk cluster config set <key> <value>' to set the following properties: " + props
-			if removeErr := fs.Remove(tmp.Name()); removeErr != nil {
-				rerr = fmt.Errorf("%s, unable to remove temp file: %v; %s", rerr, removeErr, suggestion)
-			} else {
-				rerr = fmt.Errorf("%s, temp file removed from disk; %s", rerr, suggestion)
-			}
-		}
-	}()
-
-	_, err = io.WriteString(tmp, props)
-	tmp.Close()
-	if err != nil {
-		return fmt.Errorf("error writing to temporary file: %v", err)
-	}
-
-	// If we already have a redpanda.yaml we want to have the same file
-	// ownership for .boostrap.yaml
-	if exists, _ := afero.Exists(fs, cfgFileLocation); exists {
-		stat, err := fs.Stat(cfgFileLocation)
-		if err != nil {
-			return fmt.Errorf("unable to stat existing file: %v", err)
-		}
-		err = config.PreserveUnixOwnership(fs, stat, tmp.Name())
-		if err != nil {
-			return err
-		}
-	}
-
-	err = fs.Rename(tmp.Name(), filepath.Join(cfgDir, ".bootstrap.yaml"))
-	if err != nil {
-		return err
-	}
-
-	return nil
+	cfg.Redpanda.Other["auto_create_topics_enabled"] = true
+	cfg.Redpanda.Other["group_topic_partitions"] = 3
+	cfg.Redpanda.Other["storage_min_free_bytes"] = 10485760
+	cfg.Redpanda.Other["topic_partitions_per_shard"] = 1000
 }
 
 const helpMode = `Mode uses well-known configuration properties for development or tests 
