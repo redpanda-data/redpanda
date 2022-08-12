@@ -446,55 +446,36 @@ ss::future<size_t> do_self_compact_segment(
   storage::readers_cache& readers_cache,
   storage_resources& resources) {
     vlog(gclog.trace, "self compacting segment {}", s->reader().filename());
-    return s->read_lock()
-      .then([cfg, s, &pb, &resources](ss::rwlock::holder h) {
-          if (s->is_closed()) {
-              return ss::make_exception_future<index_state>(
-                segment_closed_exception());
-          }
+    auto read_holder = co_await s->read_lock();
 
-          return do_compact_segment_index(s, cfg, resources)
-            // copy the bytes after segment is good - note that we
-            // need to do it with the READ-lock, not the write lock
-            .then([cfg, s, h = std::move(h), &pb, &resources]() mutable {
-                return do_copy_segment_data(
-                  s, cfg, pb, std::move(h), resources);
-            });
-      })
-      .then([s, &readers_cache](storage::index_state idx) {
-          return readers_cache.evict_segment_readers(s).then(
-            [s,
-             idx = std::move(idx)](readers_cache::range_lock_holder) mutable {
-                return s->write_lock().then(
-                  [s, idx = std::move(idx)](ss::rwlock::holder h) mutable {
-                      using type = std::tuple<index_state, ss::rwlock::holder>;
-                      if (s->is_closed()) {
-                          return ss::make_exception_future<type>(
-                            segment_closed_exception());
-                      }
-                      return ss::make_ready_future<type>(
-                        std::make_tuple(std::move(idx), std::move(h)));
-                  });
-            });
-      })
-      .then([cfg, s, &pb](std::tuple<index_state, ss::rwlock::holder> h) {
-          return s->index()
-            .drop_all_data()
-            .then([s, cfg, &pb] {
-                auto compacted_file = data_segment_staging_name(s);
-                return do_swap_data_file_handles(compacted_file, s, cfg, pb);
-            })
-            .then([h = std::move(h), s]() mutable {
-                auto& [idx, lock] = h;
-                s->index().swap_index_state(std::move(idx));
-                s->force_set_commit_offset_from_index();
-                s->release_batch_cache_index();
-                return s->index()
-                  .flush()
-                  .then([s] { return s->size_bytes(); })
-                  .finally([l = std::move(lock)] {});
-            });
-      });
+    if (s->is_closed()) {
+        throw segment_closed_exception();
+    }
+
+    co_await do_compact_segment_index(s, cfg, resources);
+    // copy the bytes after segment is good - note that we
+    // need to do it with the READ-lock, not the write lock
+    auto idx = co_await do_copy_segment_data(
+      s, cfg, pb, std::move(read_holder), resources);
+
+    auto rdr_holder = co_await readers_cache.evict_segment_readers(s);
+
+    auto write_lock_holer = co_await s->write_lock();
+
+    if (s->is_closed()) {
+        throw segment_closed_exception();
+    }
+
+    co_await s->index().drop_all_data();
+
+    auto compacted_file = data_segment_staging_name(s);
+    co_await do_swap_data_file_handles(compacted_file, s, cfg, pb);
+
+    s->index().swap_index_state(std::move(idx));
+    s->force_set_commit_offset_from_index();
+    s->release_batch_cache_index();
+    co_await s->index().flush();
+    co_return s->size_bytes();
 }
 
 ss::future<> rebuild_compaction_index(
