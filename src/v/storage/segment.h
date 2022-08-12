@@ -37,6 +37,7 @@ struct segment_closed_exception final : std::exception {
 
 class segment {
 public:
+    using generation_id = named_type<uint64_t, struct segment_gen_tag>;
     struct offset_tracker {
         offset_tracker(model::term_id t, model::offset base)
           : term(t)
@@ -148,6 +149,8 @@ public:
 
     ss::future<> remove_persistent_state();
 
+    generation_id get_generation_id() const { return _generation_id; }
+
 private:
     void set_close();
     void cache_truncate(model::offset offset);
@@ -180,6 +183,17 @@ private:
     appender_callbacks _appender_callbacks;
 
     void advance_stable_offset(size_t offset);
+    /**
+     * Generation id is incremented every time the destructive operation is
+     * executed on the segment, it is used when atomically swapping the staging
+     * compacted segment content with current segment content.
+     *
+     * Generation is advanced when:
+     * - segment is truncated
+     * - batches are appended to the segment
+     * - segment appender is flushed
+     */
+    generation_id _generation_id{};
 
     offset_tracker _tracker;
     segment_reader _reader;
