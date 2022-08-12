@@ -564,7 +564,7 @@ ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
     /**
      * We are collecting cluster health on raft 0 leader only
      */
-    vlog(clusterlog.info, "collecting cluster health statistics");
+    vlog(clusterlog.debug, "collecting cluster health statistics");
     // collect all reports
     auto ids = _members.local().all_broker_ids();
     auto reports = co_await ssx::async_transform(
