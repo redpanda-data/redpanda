@@ -374,13 +374,17 @@ ss::future<bool> remote_segment::do_materialize_segment() {
 
 ss::future<bool> remote_segment::do_materialize_txrange() {
     if (_tx_range) {
+        vlog(
+          _ctxlog.info,
+          "materialize tx_range, {} transactions available",
+          _tx_range->size());
         co_return true;
     }
     auto path = generate_remote_tx_path(_path);
     if (auto cache_item = co_await _cache.get(path); cache_item.has_value()) {
         // The cache item is expected to be present if the this method is
         // called.
-        vlog(_ctxlog.info, "Trying to materialize tx_range '{}'", path);
+        vlog(_ctxlog.debug, "Trying to materialize tx_range '{}'", path);
         tx_range_manifest manifest(_path);
         try {
             ss::file_input_stream_options options{};
@@ -394,6 +398,10 @@ ss::future<bool> remote_segment::do_materialize_txrange() {
               cache_item->body, options);
             co_await manifest.update(std::move(inp_stream));
             _tx_range = std::move(manifest).get_tx_range();
+            vlog(
+              _ctxlog.info,
+              "materialize tx_range, {} transactions materialized",
+              _tx_range->size());
         } catch (...) {
             vlog(
               _ctxlog.warn,
@@ -636,7 +644,7 @@ remote_segment::aborted_transactions(model::offset from, model::offset to) {
         // We got NoSuchKey when we tried to download the
         // tx-manifest. This means that segment doesn't have
         // any record batches which belong to aborted transactions.
-        vlog(_ctxlog.debug, "segment {} no tx-metadata available", _path);
+        vlog(_ctxlog.debug, "no tx-metadata available");
         co_return result;
     }
     for (const auto& it : *_tx_range) {
