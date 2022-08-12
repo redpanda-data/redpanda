@@ -162,10 +162,10 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 			// configuration itself.
 			cfg = cfg.FileOrDefaults()
 			if cfg.Redpanda.DeveloperMode && len(mode) == 0 {
-				mode = "container"
+				mode = "dev-container"
 			}
 			switch mode {
-			case "container":
+			case "dev-container":
 				fmt.Fprintln(os.Stderr, "WARNING: This is a setup for development purposes only; in this mode your clusters may run unrealistically fast and data can be corrupted any time your computer shuts down uncleanly.")
 				setContainerModeFlags(cmd)
 				setContainerModeCfgFields(cfg)
@@ -1071,7 +1071,7 @@ func mergeMaps(a, b map[string]string) map[string]string {
 	return a
 }
 
-// setContainerModeFlags sets flags bundled into --mode container flag.
+// setContainerModeFlags sets flags bundled into --mode dev-container flag.
 func setContainerModeFlags(cmd *cobra.Command) {
 	devMap := map[string]string{
 		overprovisionedFlag:   "true",
@@ -1080,7 +1080,7 @@ func setContainerModeFlags(cmd *cobra.Command) {
 		unsafeBypassFsyncFlag: "true",
 	}
 	// We don't override the values set during command execution, e.g:
-	//   rpk redpanda start --mode container --smp 2
+	//   rpk redpanda start --mode dev-container --smp 2
 	// will apply all dev flags, but smp will be 2.
 	for k, v := range devMap {
 		if !cmd.Flags().Changed(k) {
@@ -1105,7 +1105,7 @@ func setContainerModeCfgFields(cfg *config.Config) {
 const helpMode = `Mode uses well-known configuration properties for development or tests 
 environments:
 
---mode container
+--mode dev-container
     Bundled flags:
         * --overprovisioned
         * --reserve-memory 0M
