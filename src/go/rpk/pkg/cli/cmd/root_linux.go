@@ -10,6 +10,7 @@
 package cmd
 
 import (
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/iotune"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/redpanda"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
@@ -17,13 +18,14 @@ import (
 
 func addPlatformDependentCmds(fs afero.Fs, cmd *cobra.Command) {
 	cmd.AddCommand(NewRedpandaCommand(fs, redpanda.NewLauncher()))
+	cmd.AddCommand(iotune.NewCommand(fs))
 
-	cmd.AddCommand(NewTuneCommand(fs))
+	// deprecated
 	cmd.AddCommand(NewCheckCommand(fs))
-	cmd.AddCommand(NewIoTuneCmd(fs))
-	cmd.AddCommand(NewStartCommand(fs, redpanda.NewLauncher()))
-	cmd.AddCommand(NewStopCommand(fs))
 	cmd.AddCommand(NewConfigCommand(fs))
-	cmd.AddCommand(NewStatusCommand(fs))
 	cmd.AddCommand(NewModeCommand(fs))
+	cmd.AddCommand(NewStartCommand(fs, redpanda.NewLauncher()))
+	cmd.AddCommand(NewStatusCommand(fs))
+	cmd.AddCommand(NewStopCommand(fs))
+	cmd.AddCommand(NewTuneCommand(fs))
 }

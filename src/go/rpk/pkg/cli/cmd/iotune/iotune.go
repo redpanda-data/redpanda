@@ -9,7 +9,7 @@
 
 //go:build !windows
 
-package cmd
+package iotune
 
 import (
 	"path/filepath"
@@ -23,7 +23,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
+func NewCommand(fs afero.Fs) *cobra.Command {
 	var (
 		configFile  string
 		outputFile  string
