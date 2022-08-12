@@ -78,6 +78,10 @@ ntp_archiver::ntp_archiver(
       "must be the leader to launch ntp_archiver {}",
       _ntp);
     _start_term = _partition->term();
+    // Override bucket for read-replica
+    if (_partition && _partition->is_read_replica_mode_enabled()) {
+        _bucket = _partition->get_read_replica_bucket();
+    }
     vlog(
       archival_log.debug,
       "created ntp_archiver {} in term {}",
@@ -314,11 +318,10 @@ ss::future<cloud_storage::download_result> ntp_archiver::download_manifest() {
     gate_guard guard{_gate};
     retry_chain_node fib(
       _manifest_upload_timeout, _cloud_storage_initial_backoff, &_rtcnode);
-    retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
-    vlog(ctxlog.debug, "Downloading manifest for {}", _ntp);
     auto path = _manifest.get_manifest_path();
     auto key = cloud_storage::remote_manifest_path(
       std::filesystem::path(std::move(path)));
+    vlog(_rtclog.debug, "Downloading manifest");
     auto result = co_await _remote.download_manifest(
       _bucket, key, _manifest, fib);
 
@@ -330,7 +333,7 @@ ss::future<cloud_storage::download_result> ntp_archiver::download_manifest() {
       && _partition->high_watermark() != model::offset(0)
       && _partition->term() != model::term_id(1)) {
         vlog(
-          ctxlog.warn,
+          _rtclog.warn,
           "Manifest for {} not found in S3, partition high_watermark: {}, "
           "partition term: {}",
           _ntp,
