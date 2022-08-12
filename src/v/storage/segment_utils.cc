@@ -447,6 +447,7 @@ ss::future<size_t> do_self_compact_segment(
   storage_resources& resources) {
     vlog(gclog.trace, "self compacting segment {}", s->reader().filename());
     auto read_holder = co_await s->read_lock();
+    auto segment_generation = s->get_generation_id();
 
     if (s->is_closed()) {
         throw segment_closed_exception();
@@ -460,7 +461,16 @@ ss::future<size_t> do_self_compact_segment(
 
     auto rdr_holder = co_await readers_cache.evict_segment_readers(s);
 
-    auto write_lock_holer = co_await s->write_lock();
+    auto write_lock_holder = co_await s->write_lock();
+    if (segment_generation != s->get_generation_id()) {
+        vlog(
+          stlog.debug,
+          "segment generation mismatch current generation: {}, previous "
+          "generation: {}, skipping compaction",
+          s->get_generation_id(),
+          segment_generation);
+        co_return s->size_bytes();
+    }
 
     if (s->is_closed()) {
         throw segment_closed_exception();
@@ -565,7 +575,9 @@ ss::future<compaction_result> self_compact_segment(
       });
 }
 
-ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
+ss::future<
+  std::tuple<ss::lw_shared_ptr<segment>, std::vector<segment::generation_id>>>
+make_concatenated_segment(
   std::filesystem::path path,
   std::vector<ss::lw_shared_ptr<segment>> segments,
   compaction_config cfg,
@@ -573,8 +585,11 @@ ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
     // read locks on source segments
     std::vector<ss::rwlock::holder> locks;
     locks.reserve(segments.size());
+    std::vector<segment::generation_id> generations;
+    generations.reserve(segments.size());
     for (auto& segment : segments) {
         locks.push_back(co_await segment->read_lock());
+        generations.push_back(segment->get_generation_id());
     }
 
     // fast check if we should abandon all the expensive i/o work if we happened
@@ -635,14 +650,16 @@ ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
       segment_index::default_data_buffer_step,
       cfg.sanitize);
 
-    co_return ss::make_lw_shared<segment>(
-      offsets,
-      std::move(reader),
-      std::move(index),
-      nullptr,
-      std::nullopt,
-      std::nullopt,
-      resources);
+    co_return std::make_tuple(
+      ss::make_lw_shared<segment>(
+        offsets,
+        std::move(reader),
+        std::move(index),
+        nullptr,
+        std::nullopt,
+        std::nullopt,
+        resources),
+      std::move(generations));
 }
 
 ss::future<std::vector<compacted_index_reader>> make_indices_readers(
