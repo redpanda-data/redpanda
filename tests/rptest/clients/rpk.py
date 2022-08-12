@@ -560,7 +560,7 @@ class RpkTool:
             p.kill()
             raise RpkException(f"command {' '.join(cmd)} timed out")
 
-        self._redpanda.logger.debug(output)
+        self._redpanda.logger.debug(f'\n{output}')
 
         if p.returncode:
             self._redpanda.logger.error(error)
