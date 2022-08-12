@@ -1798,13 +1798,15 @@ consensus::do_append_entries(append_entries_request&& r) {
               auto lstats = _log.offsets();
               if (unlikely(lstats.dirty_offset != r.meta.prev_log_index)) {
                   vlog(
-                    _ctxlog.error,
+                    _ctxlog.warn,
                     "Log truncation error, expected offset: {}, log "
                     "offsets: "
                     "{}, requested truncation at {}",
                     r.meta.prev_log_index,
                     lstats,
                     truncate_at);
+                  _flushed_offset = std::min(
+                    model::prev_offset(lstats.dirty_offset), _flushed_offset);
               }
               return do_append_entries(std::move(r));
           })
