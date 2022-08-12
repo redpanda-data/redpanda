@@ -246,6 +246,7 @@ ss::future<> segment::flush() {
     });
 }
 ss::future<> segment::do_flush() {
+    _generation_id++;
     if (!_appender) {
         return ss::make_ready_future<>();
     }
@@ -293,6 +294,12 @@ segment::do_truncate(model::offset prev_last_offset, size_t physical) {
     _tracker.stable_offset = prev_last_offset;
     _tracker.dirty_offset = prev_last_offset;
     _reader.set_file_size(physical);
+    vlog(
+      stlog.trace,
+      "truncating segment {} at {}",
+      _reader.filename(),
+      prev_last_offset);
+    _generation_id++;
     cache_truncate(prev_last_offset + model::offset(1));
     auto f = ss::now();
     if (is_compacted_segment()) {
@@ -405,6 +412,7 @@ ss::future<append_result> segment::append(const model::record_batch& b) {
           b.header())));
     }
     const auto start_physical_offset = _appender->file_byte_offset();
+    _generation_id++;
     // proxy serialization to segment_appender_utils
     auto write_fut
       = write(*_appender, b).then([this, &b, start_physical_offset] {
@@ -516,7 +524,8 @@ std::ostream& operator<<(std::ostream& o, const segment& h) {
     o << "{offset_tracker:" << h._tracker
       << ", compacted_segment=" << h.is_compacted_segment()
       << ", finished_self_compaction=" << h.finished_self_compaction()
-      << ", reader=" << h._reader << ", writer=";
+      << ", generation=" << h.get_generation_id() << ", reader=" << h._reader
+      << ", writer=";
     if (h.has_appender()) {
         o << *h._appender;
     } else {
