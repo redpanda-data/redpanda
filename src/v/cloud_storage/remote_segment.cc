@@ -23,6 +23,7 @@
 #include "model/record_batch_types.h"
 #include "resource_mgmt/io_priority.h"
 #include "ssx/future-util.h"
+#include "ssx/sformat.h"
 #include "storage/parser.h"
 #include "utils/retry_chain_node.h"
 #include "utils/stream_utils.h"
@@ -82,6 +83,17 @@ inline void expiry_handler_impl(ss::promise<ss::file>& pr) {
     pr.set_exception(ss::timed_out_error());
 }
 
+static ss::sstring generate_log_prefix(
+  const partition_manifest& m, const partition_manifest::key& key) {
+    auto meta = m.get(key);
+    vassert(meta, "Can't find segment metadata in manifest, key: {}", key);
+    return ssx::sformat(
+      "{} [{}:{}]",
+      m.get_ntp().path(),
+      key.base_offset,
+      meta->committed_offset);
+}
+
 remote_segment::remote_segment(
   remote& r,
   cache& c,
@@ -94,7 +106,7 @@ remote_segment::remote_segment(
   , _bucket(std::move(bucket))
   , _ntp(m.get_ntp())
   , _rtc(&parent)
-  , _ctxlog(cst_log, _rtc, get_ntp().path())
+  , _ctxlog(cst_log, _rtc, generate_log_prefix(m, key))
   , _wait_list(expiry_handler_impl) {
     auto meta = m.get(key);
     vassert(meta, "Can't find segment metadata in manifest, key: {}", key);
