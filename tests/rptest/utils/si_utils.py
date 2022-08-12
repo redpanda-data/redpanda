@@ -287,8 +287,12 @@ class Producer:
 
     def reconnect(self):
         self.producer = confluent_kafka.Producer({
-            'bootstrap.servers': self.brokers,
-            'transactional.id': self.name,
+            'bootstrap.servers':
+            self.brokers,
+            'transactional.id':
+            self.name,
+            'transaction.timeout.ms':
+            5000,
         })
         self.producer.init_transactions()
 
