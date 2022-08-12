@@ -475,8 +475,9 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
     // log operations are later identified before committing changes.
     auto staging_path = std::filesystem::path(
       fmt::format("{}.compaction.staging", target->reader().filename()));
-    auto replacement = co_await storage::internal::make_concatenated_segment(
-      staging_path, segments, cfg, _manager.resources());
+    auto [replacement, generations]
+      = co_await storage::internal::make_concatenated_segment(
+        staging_path, segments, cfg, _manager.resources());
 
     // compact the combined data in the replacement segment. the partition size
     // tracking needs to be adjusted as compaction routines assume the segment
@@ -511,11 +512,28 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
 
     // fast check if we should abandon all the expensive i/o work if we happened
     // to be racing with an operation like truncation or shutdown.
+    vassert(
+      generations.size() == segments.size(),
+      "Each segment must have corresponding generation");
+    auto gen_it = generations.begin();
     for (const auto& segment : segments) {
+        // check generation id under write lock
+        if (unlikely(segment->get_generation_id() != *gen_it)) {
+            vlog(
+              gclog.info,
+              "Aborting compaction of a segment: {}. Generation id mismatch, "
+              "previous generation: {}",
+              *segment,
+              *gen_it);
+            ret.executed_compaction = false;
+            ret.size_after = ret.size_before;
+            co_return ret;
+        }
         if (unlikely(segment->is_closed())) {
             throw std::runtime_error(fmt::format(
               "Aborting compaction of closed segment: {}", *segment));
         }
+        ++gen_it;
     }
     // transfer segment state from replacement to target
     locks = co_await internal::transfer_segment(
