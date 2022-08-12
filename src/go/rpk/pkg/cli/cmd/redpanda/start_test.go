@@ -241,6 +241,14 @@ func TestStartCommand(t *testing.T) {
 				path,
 			)
 			c := config.Default()
+			// We are adding now this cluster properties as default with
+			// redpanda.developer_mode: true.
+			c.Redpanda.Other = map[string]interface{}{
+				"auto_create_topics_enabled": true,
+				"group_topic_partitions":     3,
+				"storage_min_free_bytes":     10485760,
+				"topic_partitions_per_shard": 1000,
+			}
 
 			conf, err := new(config.Params).Load(fs)
 			require.NoError(st, err)
@@ -1384,16 +1392,26 @@ func TestStartCommand(t *testing.T) {
 			rpArgs *redpanda.RedpandaArgs,
 			st *testing.T,
 		) {
+			// Flags:
 			require.Equal(st, "true", rpArgs.SeastarFlags["overprovisioned"])
 			require.Equal(st, "0M", rpArgs.SeastarFlags["reserve-memory"])
 			require.Equal(st, "true", rpArgs.SeastarFlags["unsafe-bypass-fsync"])
+
+			// Config:
 			conf, err := new(config.Params).Load(fs)
 			require.NoError(st, err)
 			require.Equal(st, 0, conf.Redpanda.ID)
 			require.Equal(st, true, conf.Redpanda.DeveloperMode)
+			expectedClusterFields := map[string]interface{}{
+				"auto_create_topics_enabled": true,
+				"group_topic_partitions":     3,
+				"storage_min_free_bytes":     10485760,
+				"topic_partitions_per_shard": 1000,
+			}
+			require.Equal(st, expectedClusterFields, conf.Redpanda.Other)
 		},
 	}, {
-		name: "override values set by --mode container",
+		name: "override flags set by --mode container",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 			"--mode", "container", "--reserve-memory", "2M",
@@ -1412,61 +1430,6 @@ func TestStartCommand(t *testing.T) {
 			require.NoError(st, err)
 			require.Equal(st, 0, conf.Redpanda.ID)
 			require.Equal(st, true, conf.Redpanda.DeveloperMode)
-		},
-	}, {
-		name: ".bootstrap.yaml created with --mode container",
-		args: []string{
-			"--install-dir", "/var/lib/redpanda",
-			"--mode", "container",
-		},
-		postCheck: func(
-			fs afero.Fs,
-			_ *redpanda.RedpandaArgs,
-			st *testing.T,
-		) {
-			bFile := "/etc/redpanda/.bootstrap.yaml"
-			exists, err := afero.Exists(fs, bFile)
-			require.NoError(st, err)
-			require.True(st, exists)
-			file, err := afero.ReadFile(fs, bFile)
-			require.NoError(st, err)
-			require.Equal(
-				st,
-				`auto_create_topics_enabled: true
-group_topic_partitions: 3
-storage_min_free_bytes: 10485760
-topic_partitions_per_shard: 1000
-`,
-				string(file),
-			)
-		},
-	}, {
-		name: ".bootstrap.yaml created with --mode container in arbitrary path",
-		args: []string{
-			"--install-dir", "/var/lib/redpanda",
-			"--mode", "container", "--config",
-			"/arbitrary/path/redpanda.yaml",
-		},
-		postCheck: func(
-			fs afero.Fs,
-			_ *redpanda.RedpandaArgs,
-			st *testing.T,
-		) {
-			bFile := "/arbitrary/path/.bootstrap.yaml"
-			exists, err := afero.Exists(fs, bFile)
-			require.NoError(st, err)
-			require.True(st, exists)
-			file, err := afero.ReadFile(fs, bFile)
-			require.NoError(st, err)
-			require.Equal(
-				st,
-				`auto_create_topics_enabled: true
-group_topic_partitions: 3
-storage_min_free_bytes: 10485760
-topic_partitions_per_shard: 1000
-`,
-				string(file),
-			)
 		},
 	}, {
 		name: "redpanda.developer_mode: true behaves like --mode container",
@@ -1488,25 +1451,53 @@ topic_partitions_per_shard: 1000
 			require.NoError(st, err)
 
 			// Config:
+			expectedClusterFields := map[string]interface{}{
+				"auto_create_topics_enabled": true,
+				"group_topic_partitions":     3,
+				"storage_min_free_bytes":     10485760,
+				"topic_partitions_per_shard": 1000,
+			}
 			require.Equal(st, 0, conf.Redpanda.ID)
 			require.Equal(st, true, conf.Redpanda.DeveloperMode)
-
-			// Bootstrap Yaml
-			bFile := "/etc/redpanda/.bootstrap.yaml"
-			exists, err := afero.Exists(fs, bFile)
-			require.NoError(st, err)
-			require.True(st, exists)
-			file, err := afero.ReadFile(fs, bFile)
-			require.NoError(st, err)
-			require.Equal(
-				st,
-				`auto_create_topics_enabled: true
-group_topic_partitions: 3
-storage_min_free_bytes: 10485760
-topic_partitions_per_shard: 1000
-`,
-				string(file),
+			require.Equal(st, expectedClusterFields, conf.Redpanda.Other)
+		},
+	}, {
+		name: "--set overrides cluster configs set by --mode container",
+		args: []string{
+			"--install-dir", "/var/lib/redpanda",
+			"--mode", "container",
+		},
+		before: func(fs afero.Fs) error {
+			// --set flags are parsed "outside" of Cobra, directly from
+			// os.Args.
+			os.Args = append(
+				os.Args,
+				// A single int value
+				"--set", "redpanda.auto_create_topics_enabled=false",
+				// A single bool value
+				"--set", "redpanda.group_topic_partitions=1",
 			)
+			return nil
+		},
+		after: func() {
+			for i, a := range os.Args {
+				if a == setFlag {
+					os.Args = os.Args[:i]
+					return
+				}
+			}
+		},
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
+			conf, _ := new(config.Params).Load(fs)
+			expectedClusterFields := map[string]interface{}{
+				// set by --set flag
+				"auto_create_topics_enabled": false,
+				"group_topic_partitions":     1,
+				// rest of --mode container cfg fields
+				"storage_min_free_bytes":     10485760,
+				"topic_partitions_per_shard": 1000,
+			}
+			require.Exactly(st, expectedClusterFields, conf.Redpanda.Other)
 		},
 	}, {
 		name:           "Fails if unknown mode is passed",
