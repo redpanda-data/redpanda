@@ -12,6 +12,7 @@
 
 #include "cloud_roles/apply_credentials.h"
 #include "http/client.h"
+#include "model/fundamental.h"
 #include "net/transport.h"
 #include "net/types.h"
 #include "outcome.h"
@@ -33,7 +34,6 @@
 namespace s3 {
 
 using access_point_uri = named_type<ss::sstring, struct s3_access_point_uri>;
-using bucket_name = named_type<ss::sstring, struct s3_bucket_name>;
 using object_key = named_type<std::filesystem::path, struct s3_object_key>;
 using endpoint_url = named_type<ss::sstring, struct s3_endpoint_url>;
 using ca_trust_file
