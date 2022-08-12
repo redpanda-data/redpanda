@@ -23,7 +23,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kerr"
 )
 
-func NewAddPartitionsCommand(fs afero.Fs) *cobra.Command {
+func newAddPartitionsCommand(fs afero.Fs) *cobra.Command {
 	var num int
 	cmd := &cobra.Command{
 		Use:   "add-partitions [TOPICS...] --num [#]",

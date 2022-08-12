@@ -21,7 +21,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
-func NewAlterConfigCommand(fs afero.Fs) *cobra.Command {
+func newAlterConfigCommand(fs afero.Fs) *cobra.Command {
 	var (
 		sets      []string // key=val
 		deletions []string // key only

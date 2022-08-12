@@ -19,7 +19,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewDeleteCommand(fs afero.Fs) *cobra.Command {
+func newDeleteCommand(fs afero.Fs) *cobra.Command {
 	var re bool
 	cmd := &cobra.Command{
 		Use:   "delete [TOPICS...]",

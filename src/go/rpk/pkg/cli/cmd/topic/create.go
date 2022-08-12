@@ -24,7 +24,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
-func NewCreateCommand(fs afero.Fs) *cobra.Command {
+func newCreateCommand(fs afero.Fs) *cobra.Command {
 	var (
 		dry        bool
 		partitions int32

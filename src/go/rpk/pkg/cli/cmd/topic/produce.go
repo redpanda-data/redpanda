@@ -25,7 +25,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
-func NewProduceCommand(fs afero.Fs) *cobra.Command {
+func newProduceCommand(fs afero.Fs) *cobra.Command {
 	var (
 		key        string
 		recHeaders []string
