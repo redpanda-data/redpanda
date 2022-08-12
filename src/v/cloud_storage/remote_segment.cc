@@ -321,20 +321,21 @@ ss::future<> remote_segment::do_hydrate_txrange() {
     auto res = co_await _api.download_manifest(
       _bucket, manifest.get_manifest_path(), manifest, local_rtc);
 
-    if (res == download_result::notfound) {
-        vlog(
-          _ctxlog.debug,
-          "tx_range {}, doesn't exist in the bucket",
-          manifest.get_manifest_path());
-    } else if (res != download_result::success) {
-        vlog(
-          _ctxlog.debug,
-          "Failed to hydrating a tx_range {}, {} waiter will be "
-          "invoked",
-          manifest.get_manifest_path(),
-          _wait_list.size());
+    vlog(
+      _ctxlog.debug,
+      "hydrate tx_range {}, {}, {} waiters will be invoked",
+      manifest.get_manifest_path(),
+      res,
+      _wait_list.size());
+
+    if (res != download_result::success && res != download_result::notfound) {
         throw download_exception(res, _path);
     }
+
+    auto [stream, size] = manifest.serialize();
+    co_await _cache.put(manifest.get_manifest_path(), stream)
+      .finally([&s = stream]() mutable { return s.close(); });
+
     _tx_range = std::move(manifest).get_tx_range();
 }
 
