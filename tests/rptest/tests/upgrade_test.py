@@ -21,6 +21,7 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.upgrade_with_workload import MixedVersionWorkloadRunner
+from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import (
     KgoVerifierProducer,
@@ -458,3 +459,146 @@ class KafkaRpcUpgradeTest(EndToEndTest):
             return num_topics == num_expected
 
         wait_until(has_expected_topics, timeout_sec=30, backoff_sec=1)
+
+
+class AdminRpcUpgradeTest(EndToEndTest):
+    def setUp(self):
+        self.initial_version = MixedVersionWorkloadRunner.PRE_SERDE_VERSION
+        install_opts = InstallOptions(version=self.initial_version)
+        # This test is sensitive to leadership changes, so make sure we only
+        # change leaders intentionally.
+        extra_rp_conf = dict(enable_leader_balancer=False)
+        self.start_redpanda(num_nodes=4,
+                            install_opts=install_opts,
+                            extra_rp_conf=extra_rp_conf)
+
+    def run_admin_rpcs(self, src_node, dst_node):
+        """
+        Performs several admin operations. This exercises requests sent by
+        the controller, as the RPCs are expected to land at the controller
+        leader 'dst_node' and they must be forwarded from 'src_node'.
+        """
+        # Create new topic partitions to help ensure node decommissioning takes
+        # time and we can slip in a recommission.
+        spec = TopicSpec(name=rand_with_prefix("topic"),
+                         partition_count=2,
+                         replication_factor=3)
+        self.client().create_topic(spec)
+
+        admin = self.redpanda._admin
+        dst_id = self.redpanda.idx(dst_node)
+        wait_until(lambda: admin.transfer_leadership_to(namespace="redpanda",
+                                                        topic="controller",
+                                                        partition=0,
+                                                        target_id=dst_id),
+                   timeout_sec=60,
+                   backoff_sec=1)
+        admin.await_stable_leader(namespace="redpanda",
+                                  topic="controller",
+                                  partition=0)
+        # Avoid nodes of interest by operating on the back node.
+        back_node = self.redpanda.nodes[-1]
+        back_id = self.redpanda.idx(back_node)
+
+        # Send all our admin requests to src node.
+        src_admin = Admin(self.redpanda, default_node=src_node)
+
+        # Throttle partition movement so we can slip in a recommission before
+        # the node is fully decommissioned.
+        rpk = RpkTool(self.redpanda)
+        rpk.cluster_config_set("raft_learner_recovery_rate", "1")
+
+        def check_decommissioning(expect_decommissioning: bool):
+            try:
+                brokers = admin.get_brokers()
+                for b in brokers:
+                    if not b["node_id"] == back_id:
+                        continue
+                    is_decommissioning = b["membership_status"] == "draining"
+                    if expect_decommissioning:
+                        return is_decommissioning
+                    else:
+                        return not is_decommissioning
+            except:
+                return False
+            # If 'back_node' is not in the brokers, we've decommissioned.
+            return expect_decommissioning
+
+        src_admin.decommission_broker(back_id)
+        wait_until(lambda: check_decommissioning(True),
+                   timeout_sec=60,
+                   backoff_sec=1)
+        src_admin.recommission_broker(back_id)
+        wait_until(lambda: check_decommissioning(False),
+                   timeout_sec=60,
+                   backoff_sec=1)
+
+        # Revert the recovery rate to proceed without trouble.
+        rpk.cluster_config_set("raft_learner_recovery_rate", "104857600")
+
+        def check_maintenance(expect_maintenance: bool):
+            try:
+                status = src_admin.maintenance_status(back_node)
+                in_maintenance = status["draining"]
+                if expect_maintenance:
+                    return in_maintenance
+                else:
+                    return not in_maintenance
+            except:
+                return False
+
+        src_admin.maintenance_start(back_node)
+        wait_until(lambda: check_maintenance(True),
+                   timeout_sec=60,
+                   backoff_sec=1)
+        src_admin.maintenance_stop(back_node)
+        wait_until(lambda: check_maintenance(False),
+                   timeout_sec=60,
+                   backoff_sec=1)
+
+        # Get the health monitor status, which dispatches to the leader.
+        _ = src_admin.get_cluster_view(src_node)
+
+        def change_config_and_wait(new_config_value):
+            cluster_config_upsert = dict(
+                {'log_message_timestamp_type': new_config_value})
+            patch_result = src_admin.patch_cluster_config(
+                upsert=cluster_config_upsert, node=src_node)
+            new_version = patch_result["config_version"]
+            wait_until(
+                lambda: set([
+                    n['config_version']
+                    for n in src_admin.get_cluster_config_status()
+                ]) == {new_version},
+                timeout_sec=10,
+                backoff_sec=0.5,
+                err_msg=
+                f"Config status versions did not converge on {new_version}")
+
+        # Change the value a couple times so we're guaranteed that repeated
+        # runs of this function actually change the value.
+        change_config_and_wait("CreateTime")
+        change_config_and_wait("LogAppendTime")
+
+    @cluster(num_nodes=6,
+             log_allow_list=MixedVersionWorkloadRunner.ALLOWED_LOGS)
+    def test_admin_rpcs(self):
+        spec = TopicSpec(name=rand_with_prefix("topic"),
+                         partition_count=2,
+                         replication_factor=3)
+        self.client().create_topic(spec)
+        self.topic = spec.name
+
+        # Start a workload just so replica movement isn't immediate when
+        # decommissioning, allowing us time to recommission.
+        self.start_producer(1, throughput=100)
+        self.start_consumer(1)
+        self.await_startup()
+
+        # This workload creates a few topics that may slow down cluster
+        # lifecycle. Extend the timeouts.
+        MixedVersionWorkloadRunner.upgrade_with_workload(self.redpanda,
+                                                         self.initial_version,
+                                                         self.run_admin_rpcs,
+                                                         start_timeout=90,
+                                                         stop_timeout=90)
