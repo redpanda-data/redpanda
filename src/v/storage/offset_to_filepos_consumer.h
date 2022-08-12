@@ -38,6 +38,22 @@ public:
             return ss::make_ready_future<ss::stop_iteration>(
               ss::stop_iteration::yes);
         }
+        // if we are in the middle of an actual batch, throw an exception to
+        // preserve previous semantics
+
+        if (
+          _target_last_offset > batch.base_offset()
+          && _target_last_offset < batch.last_offset()) {
+            _filepos = std::nullopt;
+            return ss::make_exception_future<ss::stop_iteration>(
+              std::runtime_error{fmt::format(
+                "offset_to_filepos_consumer can only translate base_offsets. "
+                "Current batch's {}-{}. Requested offset {} is in a middle of "
+                "curren batch.",
+                batch.base_offset(),
+                batch.last_offset(),
+                _target_last_offset)});
+        }
         if (_target_last_offset == batch.last_offset()) {
             return ss::make_exception_future<ss::stop_iteration>(
               std::runtime_error{fmt::format(
@@ -60,6 +76,11 @@ public:
                 _target_last_offset,
                 _accumulator)});
         }
+        /**
+         * We update _filepos here in case we hit a gap, if so we need to return
+         * an offset and end position of a last batch preceding the gap.
+         */
+        _filepos = {batch.last_offset(), _accumulator};
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::no);
     }
