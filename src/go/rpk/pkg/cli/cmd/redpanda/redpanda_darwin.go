@@ -10,7 +10,7 @@
 //go:build darwin
 // +build darwin
 
-package cmd
+package redpanda
 
 import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/redpanda/admin"

@@ -10,10 +10,9 @@
 //go:build linux
 // +build linux
 
-package cmd
+package redpanda
 
 import (
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/redpanda"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/redpanda/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/redpanda/tune"
 	rp "github.com/redpanda-data/redpanda/src/go/rpk/pkg/redpanda"
@@ -21,17 +20,17 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewRedpandaCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
+func NewCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "redpanda",
 		Short: "Interact with a local Redpanda process",
 	}
 
-	command.AddCommand(redpanda.NewStartCommand(fs, launcher))
-	command.AddCommand(redpanda.NewStopCommand(fs))
-	command.AddCommand(redpanda.NewCheckCommand(fs))
-	command.AddCommand(redpanda.NewModeCommand(fs))
-	command.AddCommand(redpanda.NewConfigCommand(fs))
+	command.AddCommand(NewStartCommand(fs, launcher))
+	command.AddCommand(NewStopCommand(fs))
+	command.AddCommand(NewCheckCommand(fs))
+	command.AddCommand(NewModeCommand(fs))
+	command.AddCommand(NewConfigCommand(fs))
 
 	command.AddCommand(tune.NewCommand(fs))
 	command.AddCommand(admin.NewCommand(fs))
