@@ -282,7 +282,7 @@ func CreateNode(
 		AdvertiseAddresses(ip, config.DefaultProxyPort, proxyPort),
 		"--advertise-rpc-addr",
 		net.JoinHostPort(ip, strconv.Itoa(config.Default().Redpanda.RPCServer.Port)),
-		"--mode container",
+		"--mode dev-container",
 	}
 	containerConfig := container.Config{
 		Image:    image,
