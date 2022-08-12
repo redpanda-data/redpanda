@@ -30,6 +30,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/generate"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/group"
 	plugincmd "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/plugin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/version"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/wasm"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/plugin"
@@ -72,7 +73,6 @@ func Execute() {
 		"v", false, "Enable verbose logging (default: false)")
 
 	root.AddCommand(
-		NewVersionCommand(),
 		NewTopicCommand(fs),
 
 		acl.NewCommand(fs),
@@ -82,6 +82,7 @@ func Execute() {
 		generate.NewCommand(fs),
 		group.NewCommand(fs),
 		plugincmd.NewCommand(fs),
+		version.NewCommand(),
 		wasm.NewCommand(fs),
 	)
 
@@ -97,7 +98,7 @@ func Execute() {
 	// rpk command. We do not want `rpk-acl-foo` to exec a plugin, when
 	// `rpk acl` exists and the single argument foo may be important. We
 	// block rpk command shadowing by not keeping any plugin that shares an
-	// argument search path with an rpk command.
+	// argument search path with a rpk command.
 	//
 	// Further, unlike kubectl, we do not allow one plugin to be at the end
 	// of another plugin (rpk foo bar cannot exist if rpk foo does). This
