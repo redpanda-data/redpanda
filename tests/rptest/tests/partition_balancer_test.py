@@ -12,7 +12,8 @@ import time
 
 from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
-from rptest.util import wait_until, wait_until_result
+from ducktape.utils.util import wait_until
+from rptest.util import wait_until_result
 from rptest.clients.default import DefaultClient
 from rptest.services.redpanda import RedpandaService, CHAOS_LOG_ALLOW_LIST, MetricsEndpoint
 from rptest.services.failure_injector import FailureInjector, FailureSpec

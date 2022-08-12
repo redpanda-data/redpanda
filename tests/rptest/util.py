@@ -14,8 +14,7 @@ from requests.exceptions import HTTPError
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.services.storage import Segment
 
-from ducktape.errors import TimeoutError
-import time
+from ducktape.utils.util import wait_until
 
 
 class Scale:
@@ -48,31 +47,6 @@ class Scale:
     @property
     def release(self):
         return self._scale == Scale.RELEASE
-
-
-def wait_until(condition,
-               timeout_sec,
-               backoff_sec=.1,
-               err_msg="",
-               retry_on_exc=False):
-    start = time.time()
-    stop = start + timeout_sec
-    last_exception = None
-    while time.time() < stop:
-        try:
-            if condition():
-                return
-            else:
-                last_exception = None
-        except BaseException as e:
-            last_exception = e
-            if not retry_on_exc:
-                raise e
-        time.sleep(backoff_sec)
-
-    # it is safe to call Exception from None - will be just treated as a normal exception
-    raise TimeoutError(
-        err_msg() if callable(err_msg) else err_msg) from last_exception
 
 
 def wait_until_result(condition, *args, **kwargs):
