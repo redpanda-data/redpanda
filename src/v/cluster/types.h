@@ -1003,6 +1003,11 @@ struct remote_topic_properties
     operator<<(std::ostream&, const remote_topic_properties&);
 };
 
+struct remote_partition_properties {
+    s3::bucket_name bucket;
+    remote_topic_properties rtp;
+};
+
 /**
  * Structure holding topic properties overrides, empty values will be replaced
  * with defaults
