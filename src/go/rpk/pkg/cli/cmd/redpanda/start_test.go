@@ -1382,10 +1382,10 @@ func TestStartCommand(t *testing.T) {
 			require.Equal(st, expected, rpArgs.ExtraArgs)
 		},
 	}, {
-		name: "--mode container flag set required bundle of flags",
+		name: "--mode dev-container flag set required bundle of flags",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
-			"--mode", "container",
+			"--mode", "dev-container",
 		},
 		postCheck: func(
 			fs afero.Fs,
@@ -1411,10 +1411,10 @@ func TestStartCommand(t *testing.T) {
 			require.Equal(st, expectedClusterFields, conf.Redpanda.Other)
 		},
 	}, {
-		name: "override flags set by --mode container",
+		name: "override flags set by --mode dev-container",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
-			"--mode", "container", "--reserve-memory", "2M",
+			"--mode", "dev-container", "--reserve-memory", "2M",
 		},
 		postCheck: func(
 			fs afero.Fs,
@@ -1423,7 +1423,7 @@ func TestStartCommand(t *testing.T) {
 		) {
 			// override value:
 			require.Equal(st, "2M", rpArgs.SeastarFlags["reserve-memory"])
-			// rest of --mode container bundle
+			// rest of --mode dev-container bundle
 			require.Equal(st, "true", rpArgs.SeastarFlags["overprovisioned"])
 			require.Equal(st, "true", rpArgs.SeastarFlags["unsafe-bypass-fsync"])
 			conf, err := new(config.Params).Load(fs)
@@ -1432,7 +1432,7 @@ func TestStartCommand(t *testing.T) {
 			require.Equal(st, true, conf.Redpanda.DeveloperMode)
 		},
 	}, {
-		name: "redpanda.developer_mode: true behaves like --mode container",
+		name: "redpanda.developer_mode: true behaves like --mode dev-container",
 		args: []string{"--install-dir", "/var/lib/redpanda"},
 		before: func(fs afero.Fs) error {
 			conf, _ := new(config.Params).Load(fs)
@@ -1462,10 +1462,10 @@ func TestStartCommand(t *testing.T) {
 			require.Equal(st, expectedClusterFields, conf.Redpanda.Other)
 		},
 	}, {
-		name: "--set overrides cluster configs set by --mode container",
+		name: "--set overrides cluster configs set by --mode dev-container",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
-			"--mode", "container",
+			"--mode", "dev-container",
 		},
 		before: func(fs afero.Fs) error {
 			// --set flags are parsed "outside" of Cobra, directly from
@@ -1493,7 +1493,7 @@ func TestStartCommand(t *testing.T) {
 				// set by --set flag
 				"auto_create_topics_enabled": false,
 				"group_topic_partitions":     1,
-				// rest of --mode container cfg fields
+				// rest of --mode dev-container cfg fields
 				"storage_min_free_bytes":     10485760,
 				"topic_partitions_per_shard": 1000,
 			}
