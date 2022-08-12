@@ -46,7 +46,8 @@ public:
       ss::sharded<cluster::tx_gateway_frontend>&,
       ss::sharded<cloud_storage::remote>&,
       ss::sharded<cloud_storage::cache>&,
-      ss::sharded<feature_table>&);
+      ss::sharded<feature_table>&,
+      std::optional<remote_partition_properties> rtp);
 
     raft::group_id group() const { return _raft->group(); }
     ss::future<> start();
@@ -222,6 +223,10 @@ public:
         return cfg.is_read_replica_mode_enabled();
     }
 
+    s3::bucket_name get_read_replica_bucket() const {
+        return _read_replica_bucket.value();
+    }
+
     /// Return true if shadow indexing is enabled for the partition
     bool is_remote_fetch_enabled() const {
         const auto& cfg = _raft->log_config();
@@ -319,6 +324,7 @@ private:
     bool _is_idempotence_enabled{false};
     ss::lw_shared_ptr<cloud_storage::remote_partition> _cloud_storage_partition;
     ss::lw_shared_ptr<const storage::offset_translator_state> _translator;
+    std::optional<s3::bucket_name> _read_replica_bucket{std::nullopt};
 
     friend std::ostream& operator<<(std::ostream& o, const partition& x);
 };
