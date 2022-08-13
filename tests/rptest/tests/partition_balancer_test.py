@@ -34,16 +34,13 @@ CONSUMER_TIMEOUT = 90
 
 
 class PartitionBalancerTest(EndToEndTest):
-    NODE_AVAILABILITY_TIMEOUT = 10
-
     def __init__(self, ctx, *args, **kwargs):
         super(PartitionBalancerTest, self).__init__(
             ctx,
             *args,
             extra_rp_conf={
                 "partition_autobalancing_mode": "continuous",
-                "partition_autobalancing_node_availability_timeout_sec":
-                self.NODE_AVAILABILITY_TIMEOUT,
+                "partition_autobalancing_node_availability_timeout_sec": 10,
                 "partition_autobalancing_tick_interval_ms": 5000,
                 "raft_learner_recovery_rate": 1_000_000,
             },
