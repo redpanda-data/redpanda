@@ -80,7 +80,11 @@ ss::future<> transport::connect(clock_type::duration connection_timeout) {
 }
 
 void transport::reset_state() {
-    _correlation_idx = 0;
+    /*
+     * the _correlation_idx is explicitly not reset as a pragmatic approach to
+     * dealing with an apparent race condition in which two requests with the
+     * same correlation id are in flight shortly after a reset.
+     */
     _last_seq = sequence_t{0};
     _seq = sequence_t{0};
     _version = transport_version::v1;
