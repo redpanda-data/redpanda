@@ -258,15 +258,14 @@ class PartitionBalancerTest(EndToEndTest):
                 self.wait_until_status(lambda s: s["status"] == "in_progress")
                 ns.make_available()
 
-                with self.NodeStopper(self) as ns2:
-                    # stop empty node
-                    ns.make_unavailable(
-                        empty_node, failure_types=[FailureSpec.FAILURE_KILL])
+                # stop empty node
+                ns.make_unavailable(empty_node,
+                                    failure_types=[FailureSpec.FAILURE_KILL])
 
-                    # wait until movements are cancelled
-                    self.wait_until_ready(expected_unavailable_node=empty_node)
+                # wait until movements are cancelled
+                self.wait_until_ready(expected_unavailable_node=empty_node)
 
-                    self.check_no_replicas_on_node(empty_node)
+                self.check_no_replicas_on_node(empty_node)
 
             self.run_validation(consumer_timeout_sec=CONSUMER_TIMEOUT)
 
