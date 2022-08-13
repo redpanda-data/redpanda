@@ -47,6 +47,7 @@ class KafkaCliConsumer(BackgroundThreadService):
         return self._cli._script("kafka-console-consumer.sh")
 
     def _worker(self, _, node):
+        self.logger.debug("%s: starting worker thread" % self.who_am_i(node))
         self._stopping.clear()
         try:
 
@@ -74,6 +75,8 @@ class KafkaCliConsumer(BackgroundThreadService):
                 self.logger.debug(f"consumed: '{line}'")
                 self._messages.append(line)
         except:
+            self.logger.exception("%s: something is wrong" %
+                                  self.who_am_i(node))
             if self._stopping.is_set():
                 # Expect a non-zero exit code when killing during teardown
                 pass
@@ -89,13 +92,21 @@ class KafkaCliConsumer(BackgroundThreadService):
 
     def wait_for_started(self, timeout=10):
         def all_started():
-            return all([
-                len(node.account.java_pids("ConsoleConsumer")) == 1
-                for node in self.nodes
-            ])
+            for node in self.nodes:
+                pids = node.account.java_pids("ConsoleConsumer")
+                self.logger.debug(
+                    "%s: ConsoleConsumer pids: %s" %
+                    (self.who_am_i(node), ",".join(map(str, pids))))
+                if len(pids) != 1:
+                    return False
+            return True
 
         wait_until(all_started, timeout, backoff_sec=1)
 
     def stop_node(self, node):
         self._stopping.set()
+        self.logger.exception("%s: stop requested" % self.who_am_i(node))
+        pids = node.account.java_pids("ConsoleConsumer")
+        self.logger.debug("%s: ConsoleConsumer pids: %s" %
+                          (self.who_am_i(node), ",".join(map(str, pids))))
         node.account.kill_process("java", clean_shutdown=True)
