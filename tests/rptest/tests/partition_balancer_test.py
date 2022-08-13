@@ -181,20 +181,6 @@ class PartitionBalancerTest(EndToEndTest):
             self.f_injector._start_func(self.cur_failure.type)(
                 self.cur_failure.node)
 
-        def step_and_wait_for_in_progress(self, node):
-            self.make_unavailable(node)
-            self.test.logger.info(f"waiting for partition balancer to kick in")
-            node_id = self.redpanda.idx(node)
-            self.test.wait_until_status(
-                lambda s: s["status"] == "in_progress" or
-                (s["status"] == "ready" and node_id in s["violations"].get(
-                    "unavailable_nodes", [])))
-
-        def step_and_wait_for_ready(self, node, wait_for_node_status=False):
-            self.make_unavailable(node,
-                                  wait_for_previous_node=wait_for_node_status)
-            self.test.wait_until_ready(expected_unavailable_node=node)
-
     @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_unavailable_nodes(self):
         self.start_redpanda(num_nodes=5)
@@ -209,10 +195,30 @@ class PartitionBalancerTest(EndToEndTest):
         with self.NodeStopper(self) as ns:
             for n in range(7):
                 node = self.redpanda.nodes[n % len(self.redpanda.nodes)]
+                ns.make_unavailable(node)
+
                 if n in {1, 3, 4}:
-                    ns.step_and_wait_for_in_progress(node)
+                    # For these nodes we don't wait for the quiescent state,
+                    # but just for the partition movement to start and then
+                    # move to the next node.
+
+                    self.logger.info(
+                        f"waiting for partition balancer to kick in")
+
+                    node_id = self.redpanda.idx(node)
+
+                    def predicate(s):
+                        if s["status"] == "in_progress":
+                            return True
+                        elif s["status"] == "ready":
+                            return node_id in s["violations"].get(
+                                "unavailable_nodes", [])
+                        else:
+                            return False
+
+                    self.wait_until_status(predicate)
                 else:
-                    ns.step_and_wait_for_ready(node)
+                    self.wait_until_ready(expected_unavailable_node=node)
                     self.check_no_replicas_on_node(node)
 
             # Restore the system to a fully healthy state before validation:
@@ -302,7 +308,8 @@ class PartitionBalancerTest(EndToEndTest):
         with self.NodeStopper(self) as ns:
             for n in range(7):
                 node = self.redpanda.nodes[n % len(self.redpanda.nodes)]
-                ns.step_and_wait_for_ready(node, wait_for_node_status=True)
+                ns.make_unavailable(node, wait_for_previous_node=True)
+                self.wait_until_ready(expected_unavailable_node=node)
                 self.check_no_replicas_on_node(node)
                 check_rack_placement()
 
