@@ -75,9 +75,9 @@ ss::future<consensus_ptr> partition_manager::manage(
   storage::ntp_config ntp_cfg,
   raft::group_id group,
   std::vector<model::broker> initial_nodes,
-  std::optional<cluster::remote_topic_properties> rtp) {
+  std::optional<remote_partition_properties> rpp) {
     gate_guard guard(_gate);
-    auto dl_result = co_await maybe_download_log(ntp_cfg, rtp);
+    auto dl_result = co_await maybe_download_log(ntp_cfg, rpp);
     auto [logs_recovered, min_kafka_offset, max_kafka_offset, manifest]
       = dl_result;
     if (logs_recovered) {
@@ -151,7 +151,8 @@ ss::future<consensus_ptr> partition_manager::manage(
       _tx_gateway_frontend,
       _cloud_storage_api,
       _cloud_storage_cache,
-      _feature_table);
+      _feature_table,
+      rpp);
 
     _ntp_table.emplace(log.config().ntp(), p);
     _raft_table.emplace(group, p);
@@ -178,10 +179,10 @@ ss::future<consensus_ptr> partition_manager::manage(
 ss::future<cloud_storage::log_recovery_result>
 partition_manager::maybe_download_log(
   storage::ntp_config& ntp_cfg,
-  std::optional<cluster::remote_topic_properties> rtp) {
-    if (rtp.has_value() && _partition_recovery_mgr.local_is_initialized()) {
+  std::optional<remote_partition_properties> rpp) {
+    if (rpp.has_value() && _partition_recovery_mgr.local_is_initialized()) {
         auto res = co_await _partition_recovery_mgr.local().download_log(
-          ntp_cfg, *rtp);
+          ntp_cfg, rpp->rtp);
         co_return res;
     }
     vlog(
