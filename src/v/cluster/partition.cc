@@ -34,7 +34,7 @@ partition::partition(
   ss::sharded<cloud_storage::remote>& cloud_storage_api,
   ss::sharded<cloud_storage::cache>& cloud_storage_cache,
   ss::sharded<feature_table>& feature_table,
-  std::optional<remote_partition_properties> rpp)
+  std::optional<s3::bucket_name> read_replica_bucket)
   : _raft(r)
   , _probe(std::make_unique<replicated_partition_probe>(*this))
   , _tx_gateway_frontend(tx_gateway_frontend)
@@ -89,15 +89,17 @@ partition::partition(
             if (cloud_storage_cache.local_is_initialized()) {
                 auto bucket
                   = config::shard_local_cfg().cloud_storage_bucket.value();
-                if (rpp && _raft->log_config().is_read_replica_mode_enabled()) {
+                if (
+                  read_replica_bucket
+                  && _raft->log_config().is_read_replica_mode_enabled()) {
                     vlog(
                       clusterlog.info,
                       "{} Remote topic bucket is {}",
                       _raft->ntp(),
-                      rpp->bucket);
+                      read_replica_bucket);
                     // Override the bucket for read replicas
-                    _read_replica_bucket = rpp->bucket;
-                    bucket = _read_replica_bucket;
+                    _read_replica_bucket = read_replica_bucket;
+                    bucket = read_replica_bucket;
                 }
                 if (!bucket) {
                     throw std::runtime_error{

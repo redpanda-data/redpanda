@@ -47,7 +47,7 @@ public:
       ss::sharded<cloud_storage::remote>&,
       ss::sharded<cloud_storage::cache>&,
       ss::sharded<feature_table>&,
-      std::optional<remote_partition_properties> rtp);
+      std::optional<s3::bucket_name> read_replica_bucket = std::nullopt);
 
     raft::group_id group() const { return _raft->group(); }
     ss::future<> start();
