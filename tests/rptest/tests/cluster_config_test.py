@@ -76,22 +76,17 @@ class ClusterConfigTest(RedpandaTest):
         # Force verbose logging for the secret redaction test
         kwargs['log_level'] = 'trace'
 
+        # An explicit cluster_id prevents metrics_report from auto-setting
+        # it, and thereby prevents it doing a background write of a new
+        # config version that would disrupt our tests.
+        rp_conf['cluster_id'] = "placeholder"
+
         super(ClusterConfigTest, self).__init__(*args,
                                                 extra_rp_conf=rp_conf,
                                                 **kwargs)
 
         self.admin = Admin(self.redpanda)
         self.rpk = RpkTool(self.redpanda)
-
-    def setUp(self):
-        super().setUp()
-
-        # wait for the two config versions:
-        # 1. The initial bootstrap where we "import" any cluster properties
-        #    that were in bootstrap.yaml
-        # 2. The metrics reporter's first tick, where it initializes
-        #    the cluster_id property.
-        self._wait_for_version_sync(2)
 
     @cluster(num_nodes=3)
     @parametrize(legacy=False)
@@ -1090,41 +1085,6 @@ class ClusterConfigTest(RedpandaTest):
             self.admin.patch_cluster_config(upsert={}, remove=[key])
 
     @cluster(num_nodes=3)
-    def test_cluster_id(self):
-        """
-        That the cluster_id exposed in Kafka metadata is automatically
-        populated with a uuid, that it starts with redpanda. and that
-        it can be overridden by setting the property to something else.
-        """
-
-        rpk = RpkTool(self.redpanda)
-
-        # An example, we will compare lengths with this
-        uuid_example = "redpanda.87e8c0c3-7c2a-4f7b-987f-11fc1d2443a4"
-
-        def has_uuid_cluster_id():
-            cluster_id = rpk.cluster_metadata_id()
-            self.logger.info(f"cluster_id={cluster_id}")
-            return cluster_id is not None and len(cluster_id) == len(
-                uuid_example)
-
-        # This is a wait_until because the initialization of cluster_id
-        # is async and can happen after the cluster starts answering Kafka requests.
-        wait_until(has_uuid_cluster_id, timeout_sec=20, backoff_sec=1)
-
-        # Verify that the cluster_id does not change on a restart
-        initial_cluster_id = rpk.cluster_metadata_id()
-        self.redpanda.restart_nodes(self.redpanda.nodes)
-        assert rpk.cluster_metadata_id() == initial_cluster_id
-
-        # Verify that a manually set cluster_id is respected
-        manual_id = "rhubarb"
-        self.redpanda.set_cluster_config(values={"cluster_id": manual_id},
-                                         expect_restart=False)
-
-        assert rpk.cluster_metadata_id() == f"redpanda.{manual_id}"
-
-    @cluster(num_nodes=3)
     def test_status_read_after_write_consistency(self):
         """
         In general, status is updated asynchronously, and API clients
@@ -1167,3 +1127,40 @@ class ClusterConfigTest(RedpandaTest):
                 s for s in status
                 if s['node_id'] == self.redpanda.idx(controller_node))
             assert local_status['config_version'] == config_version
+
+
+class ClusterConfigClusterIdTest(RedpandaTest):
+    @cluster(num_nodes=3)
+    def test_cluster_id(self):
+        """
+        That the cluster_id exposed in Kafka metadata is automatically
+        populated with a uuid, that it starts with redpanda. and that
+        it can be overridden by setting the property to something else.
+        """
+
+        rpk = RpkTool(self.redpanda)
+
+        # An example, we will compare lengths with this
+        uuid_example = "redpanda.87e8c0c3-7c2a-4f7b-987f-11fc1d2443a4"
+
+        def has_uuid_cluster_id():
+            cluster_id = rpk.cluster_metadata_id()
+            self.logger.info(f"cluster_id={cluster_id}")
+            return cluster_id is not None and len(cluster_id) == len(
+                uuid_example)
+
+        # This is a wait_until because the initialization of cluster_id
+        # is async and can happen after the cluster starts answering Kafka requests.
+        wait_until(has_uuid_cluster_id, timeout_sec=20, backoff_sec=1)
+
+        # Verify that the cluster_id does not change on a restart
+        initial_cluster_id = rpk.cluster_metadata_id()
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        assert rpk.cluster_metadata_id() == initial_cluster_id
+
+        # Verify that a manually set cluster_id is respected
+        manual_id = "rhubarb"
+        self.redpanda.set_cluster_config(values={"cluster_id": manual_id},
+                                         expect_restart=False)
+
+        assert rpk.cluster_metadata_id() == f"redpanda.{manual_id}"
