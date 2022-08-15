@@ -10,10 +10,13 @@ import io
 import json
 import os
 import pprint
+from queue import Queue
+from threading import Thread
 import time
 from collections import namedtuple, defaultdict, deque
-from typing import Optional, Callable, Sequence
+from typing import NamedTuple, Optional, Callable, Sequence, Tuple
 
+from ducktape.cluster.cluster import ClusterNode
 from ducktape.mark import ok_to_fail
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
@@ -23,7 +26,7 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import RedpandaService, SISettings
+from rptest.services.redpanda import FileToChecksumSize, RedpandaService, SISettings
 from rptest.services.rpk_producer import RpkProducer
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.si_utils import (
@@ -974,10 +977,11 @@ class TopicRecoveryTest(RedpandaTest):
                            acks=acks)
 
     def tearDown(self):
+        assert self.s3_client
         self.s3_client.empty_bucket(self.s3_bucket)
         super().tearDown()
 
-    def _collect_file_checksums(self):
+    def _collect_file_checksums(self) -> dict[str, FileToChecksumSize]:
         """Get checksums of all log segments (excl. controller log) on all nodes."""
         nodes = {}
         for node in self.redpanda.nodes:
@@ -997,7 +1001,8 @@ class TopicRecoveryTest(RedpandaTest):
             nodes[node.account.hostname] = checksums
         return nodes
 
-    def _get_data_log_segment_checksums(self, node):
+    def _get_data_log_segment_checksums(
+            self, node: ClusterNode) -> FileToChecksumSize:
         """Get MD5 checksums of log segments with data. Controller logs are
         excluded. The paths are normalized
         (<namespace>/<topic>/<partition>_<rev>/...)."""
@@ -1026,7 +1031,8 @@ class TopicRecoveryTest(RedpandaTest):
 
         return self._get_log_segment_checksums(node, included)
 
-    def _get_log_segment_checksums(self, node, include_condition):
+    def _get_log_segment_checksums(self, node: ClusterNode,
+                                   include_condition) -> FileToChecksumSize:
         """Get MD5 checksums of log segments that match the condition. The paths are
         normalized (<namespace>/<topic>/<partition>_<rev>/...)."""
         checksums = self.redpanda.data_checksum(node)
@@ -1189,8 +1195,8 @@ class TopicRecoveryTest(RedpandaTest):
         # start of polling for objects in S3.
         pre_sleep = upload_delay_sec // 6
         if pre_sleep > 0:
-            self.logger.info(f"Waiting {upload_delay_sec} sec for S3 uploads...")
-            time.sleep(upload_delay_sec)
+            self.logger.info(f"Waiting {pre_sleep} sec for S3 uploads...")
+            time.sleep(pre_sleep)
 
         if test_case.verify_s3_content_after_produce:
             self.logger.info("Wait for data in S3")
