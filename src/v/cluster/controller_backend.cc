@@ -1440,9 +1440,17 @@ ss::future<std::error_code> controller_backend::create_partition(
     }
     // no partition exists, create one
     if (likely(!partition)) {
-        std::optional<cluster::remote_topic_properties> remote_properties;
-        if (cfg->is_recovery_enabled()) {
-            remote_properties = cfg->properties.remote_topic_properties;
+        std::optional<remote_partition_properties> remote_properties;
+        if (cfg->is_read_replica()) {
+            auto bucket = s3::bucket_name(
+              cfg->properties.read_replica_bucket.value());
+            remote_properties = {
+              .bucket = bucket,
+              .rtp = cfg->properties.remote_topic_properties.value()};
+        } else if (cfg->is_recovery_enabled()) {
+            remote_properties = {
+              .bucket = {},
+              .rtp = cfg->properties.remote_topic_properties.value()};
         }
         // we use offset as an rev as it is always increasing and it
         // increases while ntp is being created again

@@ -35,6 +35,12 @@ using offset = named_type<int64_t, struct kafka_offset_type>;
 
 } // namespace kafka
 
+namespace s3 {
+
+using bucket_name = named_type<ss::sstring, struct s3_bucket_name>;
+
+} // namespace s3
+
 namespace model {
 
 // Named after Kafka cleanup.policy topic property

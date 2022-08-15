@@ -17,6 +17,8 @@
 #include "cluster/feature_table.h"
 #include "cluster/ntp_callbacks.h"
 #include "cluster/partition.h"
+#include "cluster/types.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/group_manager.h"
@@ -78,7 +80,7 @@ public:
       storage::ntp_config,
       raft::group_id,
       std::vector<model::broker>,
-      std::optional<cluster::remote_topic_properties> = std::nullopt);
+      std::optional<remote_partition_properties> = std::nullopt);
 
     ss::future<> shutdown(const model::ntp& ntp);
     ss::future<> remove(const model::ntp& ntp);
@@ -177,7 +179,7 @@ private:
     /// \return true if the recovery was invoked, false otherwise
     ss::future<cloud_storage::log_recovery_result> maybe_download_log(
       storage::ntp_config& ntp_cfg,
-      std::optional<cluster::remote_topic_properties> rtp);
+      std::optional<remote_partition_properties> rtp);
 
     ss::future<> do_shutdown(ss::lw_shared_ptr<partition>);
 
