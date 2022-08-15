@@ -2851,6 +2851,10 @@ void admin_server::register_cluster_routes() {
                 std::get<cluster::partition_balancer_overview_reply>(result));
           } else if (std::holds_alternative<model::node_id>(result)) {
               auto node_id = std::get<model::node_id>(result);
+              vlog(
+                logger.debug,
+                "proxying the partition_balancer_overview call to node {}",
+                node_id);
               auto rpc_result
                 = co_await _connection_cache.local()
                     .with_node_client<
