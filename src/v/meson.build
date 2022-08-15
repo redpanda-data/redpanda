@@ -113,3 +113,4 @@ subdir('coproc')
 subdir('kafka') # server
 subdir('pandaproxy')
 subdir('redpanda')
+subdir('compat')
