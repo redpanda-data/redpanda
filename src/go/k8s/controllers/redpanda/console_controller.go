@@ -19,6 +19,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -36,10 +37,17 @@ type ConsoleReconciler struct {
 	AdminAPIClientFactory adminutils.AdminAPIClientFactory
 	clusterDomain         string
 	Store                 *consolepkg.Store
+	EventRecorder         record.EventRecorder
 }
+
+const (
+	// Warning event if referenced Cluster not found
+	ClusterNotFoundEvent = "ClusterNotFound"
+)
 
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=apps,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="",resources=events,verbs=get;list;watch;create;update;patch
 
 //+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=consoles,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=consoles/status,verbs=get;update;patch
@@ -61,6 +69,18 @@ func (r *ConsoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	cluster := &redpandav1alpha1.Cluster{}
 	if err := r.Get(ctx, console.GetClusterRef(), cluster); err != nil {
+		if apierrors.IsNotFound(err) {
+			// Console will never reconcile if Cluster is not found
+			// Users shouldn't check logs of operator to know this
+			// Adding Conditions in Console status might not be apt, record Event instead
+			// Alternatively, we can have this validation via Webhook
+			r.EventRecorder.Eventf(
+				console,
+				corev1.EventTypeWarning, ClusterNotFoundEvent,
+				"Unable to reconcile Console as the referenced Cluster %s/%s is not found",
+				console.Spec.ClusterKeyRef.Namespace, console.Spec.ClusterKeyRef.Name,
+			)
+		}
 		return ctrl.Result{}, err
 	}
 

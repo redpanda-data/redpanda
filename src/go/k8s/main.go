@@ -144,6 +144,7 @@ func main() {
 		Log:                   ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Console"),
 		AdminAPIClientFactory: adminutils.NewInternalAdminAPI,
 		Store:                 consolepkg.NewStore(mgr.GetClient()),
+		EventRecorder:         mgr.GetEventRecorderFor("Console"),
 	}).WithClusterDomain(clusterDomain).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Console")
 		os.Exit(1)
