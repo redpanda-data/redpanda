@@ -209,9 +209,8 @@ class ResourceSettings:
             ])
 
         if self._reactor_stall_threshold is not None:
-            args.extend([
-                f"--blocked-reactor-notify-ms={self._reactor_stall_threshold}"
-            ])
+            args.append(
+                f"--blocked-reactor-notify-ms={self._reactor_stall_threshold}")
 
         if num_cpus is not None:
             args.append(f"--smp={num_cpus}")
@@ -695,12 +694,7 @@ class RedpandaService(Service):
         node_futures = []
         with concurrent.futures.ThreadPoolExecutor(
                 max_workers=len(nodes)) as executor:
-            for node in nodes:
-                f = executor.submit(cb, node)
-                node_futures.append((node, f))
-
-            for node, f in node_futures:
-                f.result()
+            list(executor.map(cb, nodes))
 
     def start(self,
               nodes=None,
@@ -958,7 +952,7 @@ class RedpandaService(Service):
                 f"stat -f -c %T {self.PERSISTENT_ROOT}").strip()
             if fs != b'xfs':
                 raise RuntimeError(
-                    f"Unexpected filesystem {fs} at {self.PERSISTENT_ROOT} on {node.name}"
+                    f"Non-XFS filesystem {fs} at {self.PERSISTENT_ROOT} on {node.name}"
                 )
 
         def is_status_ready():
