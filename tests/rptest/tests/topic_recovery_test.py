@@ -983,12 +983,29 @@ class TopicRecoveryTest(RedpandaTest):
 
     def _collect_file_checksums(self) -> dict[str, FileToChecksumSize]:
         """Get checksums of all log segments (excl. controller log) on all nodes."""
-        nodes = {}
+
+        # This is slow in scale tests, so run on nodes in parallel.
+        # We can use python threading since the tasks are I/O bound.
+        class NodeChecksums(NamedTuple):
+            node: ClusterNode
+            checksums: FileToChecksumSize
+
+        nodes: dict[str, FileToChecksumSize] = {}
+        num_nodes = len(self.redpanda.nodes)
+        queue = Queue(num_nodes)
         for node in self.redpanda.nodes:
-            checksums = self._get_data_log_segment_checksums(node)
-            self.logger.info(
-                f"Node: {node.account.hostname} checksums: {checksums}")
-            nodes[node.account.hostname] = checksums
+            checksummer = lambda: queue.put(
+                NodeChecksums(node, self._get_data_log_segment_checksums(node))
+            )
+            Thread(target=checksummer).start()
+            self.logger.debug(
+                f"Started checksum thread for {node.account.hostname}..")
+        for i in range(num_nodes):
+            res = queue.get()
+            self.logger.debug(
+                f"Node: {res.node.account.hostname} checksums: {res.checksums}"
+            )
+            nodes[res.node.account.hostname] = res.checksums
         return nodes
 
     def _collect_controller_log_checksums(self):
