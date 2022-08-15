@@ -14,7 +14,6 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	netv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -22,12 +21,18 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 )
 
 const (
 	nginx = "nginx"
 	//nolint:gosec // This value does not contain credentials.
-	sslPassthroughAnnotation = "nginx.ingress.kubernetes.io/ssl-passthrough"
+	SSLPassthroughAnnotation = "nginx.ingress.kubernetes.io/ssl-passthrough"
+
+	debugLogLevel = 4
+
+	LEClusterIssuer = "letsencrypt-dns-prod"
 )
 
 var _ Resource = &IngressResource{}
@@ -36,18 +41,20 @@ var _ Resource = &IngressResource{}
 // focusing on the internal connectivity management of redpanda cluster
 type IngressResource struct {
 	k8sclient.Client
-	scheme       *runtime.Scheme
-	pandaCluster *redpandav1alpha1.Cluster
-	host         string
-	svcName      string
-	svcPortName  string
-	logger       logr.Logger
+	scheme      *runtime.Scheme
+	object      metav1.Object
+	host        string
+	svcName     string
+	svcPortName string
+	annotations map[string]string
+	TLS         []netv1.IngressTLS
+	logger      logr.Logger
 }
 
 // NewIngress creates IngressResource
 func NewIngress(
 	client k8sclient.Client,
-	pandaCluster *redpandav1alpha1.Cluster,
+	object metav1.Object,
 	scheme *runtime.Scheme,
 	host string,
 	svcName string,
@@ -57,19 +64,48 @@ func NewIngress(
 	return &IngressResource{
 		client,
 		scheme,
-		pandaCluster,
+		object,
 		host,
 		svcName,
 		svcPortName,
+		nil,
+		nil,
 		logger.WithValues(
 			"Kind", ingressKind(),
 		),
 	}
 }
 
+// WithAnnotations sets annotations to the IngressResource
+func (r *IngressResource) WithAnnotations(annot map[string]string) *IngressResource {
+	r.annotations = annot
+	return r
+}
+
+// WithTLS sets Ingress TLS with specified issuer
+func (r *IngressResource) WithTLS(issuer string) *IngressResource {
+	if r.annotations == nil {
+		r.annotations = map[string]string{}
+	}
+	r.annotations["cert-manager.io/issuer"] = issuer
+	r.annotations["nginx.ingress.kubernetes.io/force-ssl-redirect"] = "true"
+
+	if r.TLS == nil {
+		r.TLS = []netv1.IngressTLS{}
+	}
+	r.TLS = append(r.TLS, netv1.IngressTLS{
+		Hosts: []string{r.host},
+		// TODO: Use Cluster cert that has wildcard SAN for the subdomain once we finalized to use Ingress, this will require to sync TLS Secret to Console namespace
+		SecretName: fmt.Sprintf("%s-tls", r.Key().Name),
+	})
+
+	return r
+}
+
 // Ensure will manage kubernetes Ingress for redpanda.vectorized.io custom resource
 func (r *IngressResource) Ensure(ctx context.Context) error {
 	if r.host == "" {
+		r.logger.V(debugLogLevel).Info("host not found, skip ensuring ingress")
 		return nil
 	}
 
@@ -91,9 +127,13 @@ func (r *IngressResource) Ensure(ctx context.Context) error {
 }
 
 func (r *IngressResource) obj() (k8sclient.Object, error) {
-	objLabels := labels.ForCluster(r.pandaCluster)
 	ingressClassName := nginx
 	pathTypePrefix := netv1.PathTypePrefix
+
+	objLabels, err := objectLabels(r.object)
+	if err != nil {
+		return nil, fmt.Errorf("cannot get object labels: %w", err)
+	}
 
 	ingress := &netv1.Ingress{
 		TypeMeta: metav1.TypeMeta{
@@ -104,7 +144,7 @@ func (r *IngressResource) obj() (k8sclient.Object, error) {
 			Name:        r.Key().Name,
 			Namespace:   r.Key().Namespace,
 			Labels:      objLabels,
-			Annotations: map[string]string{sslPassthroughAnnotation: "true"},
+			Annotations: r.annotations,
 		},
 		Spec: netv1.IngressSpec{
 			IngressClassName: &ingressClassName,
@@ -131,10 +171,11 @@ func (r *IngressResource) obj() (k8sclient.Object, error) {
 					},
 				},
 			},
+			TLS: r.TLS,
 		},
 	}
 
-	err := controllerutil.SetControllerReference(r.pandaCluster, ingress, r.scheme)
+	err = controllerutil.SetControllerReference(r.object, ingress, r.scheme)
 	if err != nil {
 		return nil, err
 	}
@@ -144,10 +185,23 @@ func (r *IngressResource) obj() (k8sclient.Object, error) {
 
 // Key returns namespace/name object that is used to identify object.
 func (r *IngressResource) Key() types.NamespacedName {
-	return types.NamespacedName{Name: r.pandaCluster.Name, Namespace: r.pandaCluster.Namespace}
+	return types.NamespacedName{Name: r.object.GetName(), Namespace: r.object.GetNamespace()}
 }
 
 func ingressKind() string {
 	var obj netv1.Ingress
 	return obj.Kind
+}
+
+func objectLabels(obj metav1.Object) (labels.CommonLabels, error) {
+	var objLabels labels.CommonLabels
+	switch obj.(type) {
+	case *redpandav1alpha1.Cluster:
+		objLabels = labels.ForCluster(obj.(*redpandav1alpha1.Cluster))
+	case *redpandav1alpha1.Console:
+		objLabels = labels.ForConsole(obj.(*redpandav1alpha1.Console))
+	default:
+		return nil, fmt.Errorf("expected object to be Cluster or Console")
+	}
+	return objLabels, nil
 }

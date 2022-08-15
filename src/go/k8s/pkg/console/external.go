@@ -37,7 +37,7 @@ func NewService(cl client.Client, scheme *runtime.Scheme, consoleobj *redpandav1
 }
 
 const (
-	servicePortName = "http"
+	ServicePortName = "http"
 
 	// Kubernetes default cluster domain
 	defaultClusterDomain = "cluster.local"
@@ -60,9 +60,9 @@ func (s *Service) Ensure(ctx context.Context) error {
 			Type: corev1.ServiceTypeClusterIP,
 			Ports: []corev1.ServicePort{
 				{
-					Name:       servicePortName,
+					Name:       ServicePortName,
 					Port:       int32(s.consoleobj.Spec.Server.HTTPListenPort),
-					TargetPort: intstr.IntOrString{Type: intstr.String, StrVal: servicePortName},
+					TargetPort: intstr.IntOrString{Type: intstr.String, StrVal: ServicePortName},
 				},
 			},
 			Selector: objLabels,

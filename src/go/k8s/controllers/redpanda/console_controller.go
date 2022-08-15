@@ -43,6 +43,9 @@ type ConsoleReconciler struct {
 const (
 	// Warning event if referenced Cluster not found
 	ClusterNotFoundEvent = "ClusterNotFound"
+
+	// Warning event if subdomain is not found in Cluster ExternalListener
+	NoSubdomainEvent = "NoSubdomain"
 )
 
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
@@ -118,12 +121,25 @@ func (r *Reconciling) Do(ctx context.Context, console *redpandav1alpha1.Console,
 		return ctrl.Result{}, fmt.Errorf("deleting unused configmaps: %w", err)
 	}
 
+	// NewIngress will not create Ingress if subdomain is empty
+	subdomain := ""
+	if s := cluster.ExternalListener().GetExternal().Subdomain; s != "" {
+		subdomain = fmt.Sprintf("console.%s", s)
+	} else {
+		r.EventRecorder.Event(
+			console,
+			corev1.EventTypeWarning, NoSubdomainEvent,
+			"No Ingress created because no subdomain is found in Cluster ExternalListener",
+		)
+	}
+
 	applyResources := []resources.Resource{
 		consolepkg.NewKafkaSA(r.Client, r.Scheme, console, cluster, r.clusterDomain, r.AdminAPIClientFactory, log),
 		consolepkg.NewKafkaACL(r.Client, r.Scheme, console, cluster, log),
 		configmapResource,
 		consolepkg.NewDeployment(r.Client, r.Scheme, console, cluster, r.Store, log),
 		consolepkg.NewService(r.Client, r.Scheme, console, log),
+		resources.NewIngress(r.Client, console, r.Scheme, subdomain, console.GetName(), consolepkg.ServicePortName, log).WithTLS(resources.LEClusterIssuer),
 	}
 	for _, each := range applyResources {
 		if err := each.Ensure(ctx); err != nil {
