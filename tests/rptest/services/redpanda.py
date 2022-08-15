@@ -716,7 +716,8 @@ class RedpandaService(Service):
               nodes=None,
               clean_nodes=True,
               start_si=True,
-              parallel: bool = True):
+              parallel: bool = True,
+              expect_fail: bool = False):
         """
         Start the service on all nodes.
 
@@ -726,6 +727,8 @@ class RedpandaService(Service):
 
         :param parallel: if true, run clean and start operations in parallel
                          for the nodes being started.
+        :param expect_fail: if true, expect redpanda nodes to terminate shortly
+                            after starting.  Raise exception if they don't.
         """
         to_start = nodes if nodes is not None else self.nodes
         assert all((node in self.nodes for node in to_start))
@@ -767,9 +770,15 @@ class RedpandaService(Service):
 
         def start_one(node):
             self.logger.debug("%s: starting node" % self.who_am_i(node))
-            self.start_node(node, first_start=first_start)
+            self.start_node(node,
+                            first_start=first_start,
+                            expect_fail=expect_fail)
 
         self._for_nodes(to_start, start_one, parallel=parallel)
+
+        if expect_fail:
+            # If we got here without an exception, it means we failed as expected
+            return
 
         if self._start_duration_seconds < 0:
             self._start_duration_seconds = time.time() - self._start_time
@@ -943,7 +952,8 @@ class RedpandaService(Service):
                    override_cfg_params=None,
                    timeout=None,
                    write_config=True,
-                   first_start=False):
+                   first_start=False,
+                   expect_fail: bool = False):
         """
         Start a single instance of redpanda. This function will not return until
         redpanda appears to have started successfully. If redpanda does not
@@ -994,17 +1004,27 @@ class RedpandaService(Service):
         def start_rp():
             self.start_redpanda(node)
 
-            wait_until(
-                is_status_ready,
-                timeout_sec=timeout,
-                backoff_sec=self._startup_poll_interval(first_start),
-                err_msg=
-                f"Redpanda service {node.account.hostname} failed to start within {timeout} sec",
-                retry_on_exc=True)
+            if expect_fail:
+                wait_until(
+                    lambda: self.pids(node) == [],
+                    timeout_sec=10,
+                    backoff_sec=0.2,
+                    err_msg=
+                    f"Redpanda processes did not terminate on {node.name} during startup as expected"
+                )
+            else:
+                wait_until(
+                    is_status_ready,
+                    timeout_sec=timeout,
+                    backoff_sec=self._startup_poll_interval(first_start),
+                    err_msg=
+                    f"Redpanda service {node.account.hostname} failed to start within {timeout} sec",
+                    retry_on_exc=True)
 
         self.logger.debug(f"Node status prior to redpanda startup:")
         self.start_service(node, start_rp)
-        self._started.append(node)
+        if not expect_fail:
+            self._started.append(node)
 
     def _log_node_process_state(self, node):
         """
