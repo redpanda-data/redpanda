@@ -2062,6 +2062,29 @@ kafka::error_code map_store_offset_error_code(std::error_code ec) {
     return error_code::unknown_server_error;
 }
 
+void group::update_store_offset_builder(
+  cluster::simple_batch_builder& builder,
+  const model::topic& name,
+  model::partition_id partition,
+  model::offset committed_offset,
+  leader_epoch committed_leader_epoch,
+  const ss::sstring& metadata,
+  model::timestamp commit_timestamp) {
+    offset_metadata_key key{
+      .group_id = _id, .topic = name, .partition = partition};
+
+    offset_metadata_value value{
+      .offset = committed_offset,
+      .leader_epoch = committed_leader_epoch,
+      .metadata = metadata,
+      .commit_timestamp = commit_timestamp,
+    };
+
+    auto kv = _md_serializer.to_kv(
+      offset_metadata_kv{.key = std::move(key), .value = std::move(value)});
+    builder.add_raw_kv(std::move(kv.key), std::move(kv.value));
+}
+
 group::offset_commit_stages group::store_offsets(offset_commit_request&& r) {
     cluster::simple_batch_builder builder(
       model::record_batch_type::raft_data, model::offset(0));
@@ -2071,19 +2094,14 @@ group::offset_commit_stages group::store_offsets(offset_commit_request&& r) {
 
     for (const auto& t : r.data.topics) {
         for (const auto& p : t.partitions) {
-            offset_metadata_key key{
-              .group_id = _id, .topic = t.name, .partition = p.partition_index};
-
-            offset_metadata_value value{
-              .offset = p.committed_offset,
-              .leader_epoch = p.committed_leader_epoch,
-              .metadata = p.committed_metadata.value_or(""),
-              .commit_timestamp = model::timestamp(p.commit_timestamp),
-            };
-
-            auto kv = _md_serializer.to_kv(offset_metadata_kv{
-              .key = std::move(key), .value = std::move(value)});
-            builder.add_raw_kv(std::move(kv.key), std::move(kv.value));
+            update_store_offset_builder(
+              builder,
+              t.name,
+              p.partition_index,
+              p.committed_offset,
+              p.committed_leader_epoch,
+              p.committed_metadata.value_or(""),
+              model::timestamp(p.commit_timestamp));
 
             model::topic_partition tp(t.name, p.partition_index);
             offset_metadata md{
