@@ -129,6 +129,7 @@ subdir('coproc')
 subdir('kafka')
 subdir('pandaproxy')
 subdir('redpanda')
+subdir('compat')
 
 # some tests have circular or forward dependencies if added along with their
 # normal containing directory. a common example are tests that depend on the
