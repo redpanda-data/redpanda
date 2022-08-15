@@ -72,7 +72,8 @@ class AccessControlListTest(RedpandaTest):
                         enable_authz: Optional[bool] = None,
                         authn_method: Optional[str] = None,
                         principal_mapping_rules: Optional[str] = None,
-                        client_auth: bool = True):
+                        client_auth: bool = True,
+                        expect_fail: bool = False):
         self.security = SecurityConfig()
         self.security.enable_sasl = use_sasl
         self.security.kafka_enable_authorization = enable_authz
@@ -110,7 +111,11 @@ class AccessControlListTest(RedpandaTest):
             })
 
         self.redpanda.set_security_settings(self.security)
-        self.redpanda.start()
+        self.redpanda.start(expect_fail=expect_fail)
+        if expect_fail:
+            # If we got this far without exception, RedpandaService.start
+            # has successfully confirmed that redpanda failed to start.
+            return
 
         admin = Admin(self.redpanda)
 
@@ -213,15 +218,16 @@ class AccessControlListTest(RedpandaTest):
         startup_should_fail = expect_startup_failure(use_tls, authn_method,
                                                      client_auth)
 
-        try:
-            self.prepare_cluster(use_tls,
-                                 use_sasl,
-                                 enable_authz,
-                                 authn_method,
-                                 client_auth=client_auth)
-            assert not startup_should_fail
-        except TimeoutError:
-            assert startup_should_fail
+        self.logger.info(f"startup_should_fail={startup_should_fail}")
+
+        self.prepare_cluster(use_tls,
+                             use_sasl,
+                             enable_authz,
+                             authn_method,
+                             client_auth=client_auth,
+                             expect_fail=startup_should_fail)
+
+        if startup_should_fail:
             return
 
         def should_pass_w_base_user(use_sasl: bool,
