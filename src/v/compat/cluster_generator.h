@@ -13,7 +13,6 @@
 #include "cluster/errc.h"
 #include "cluster/types.h"
 #include "compat/model_generator.h"
-#include "model/fundamental.h"
 #include "model/tests/randoms.h"
 #include "random/generators.h"
 #include "test_utils/randoms.h"
