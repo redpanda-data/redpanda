@@ -236,6 +236,7 @@ int application::run(int ac, char** av) {
                     while (!deferred.empty()) {
                         deferred.pop_back();
                     }
+                    vlog(_log.info, "Shutdown complete.");
                 });
                 // must initialize configuration before services
                 hydrate_config(cfg);
