@@ -703,6 +703,15 @@ class RedpandaService(Service):
                 max_workers=len(nodes)) as executor:
             list(executor.map(cb, nodes))
 
+    def _startup_poll_interval(self, first_start):
+        """
+        During startup, our eagerness depends on whether it's the first
+        start, where we expect a redpanda node to start up very quickly,
+        or a subsequent start where it may be more sedate as data replay
+        takes place.
+        """
+        return 0.2 if first_start else 1.0
+
     def start(self,
               nodes=None,
               clean_nodes=True,
@@ -758,7 +767,7 @@ class RedpandaService(Service):
 
         def start_one(node):
             self.logger.debug("%s: starting node" % self.who_am_i(node))
-            self.start_node(node)
+            self.start_node(node, first_start=first_start)
 
         self._for_nodes(to_start, start_one, parallel=parallel)
 
@@ -770,11 +779,12 @@ class RedpandaService(Service):
 
         self.logger.info("Waiting for all brokers to join cluster")
         expected = set(self._started)
+
         wait_until(lambda: {n
                             for n in self._started
                             if self.registered(n)} == expected,
                    timeout_sec=30,
-                   backoff_sec=1,
+                   backoff_sec=self._startup_poll_interval(first_start),
                    err_msg="Cluster membership did not stabilize")
 
         self.logger.info("Verifying storage is in expected state")
@@ -932,7 +942,8 @@ class RedpandaService(Service):
                    node,
                    override_cfg_params=None,
                    timeout=None,
-                   write_config=True):
+                   write_config=True,
+                   first_start=False):
         """
         Start a single instance of redpanda. This function will not return until
         redpanda appears to have started successfully. If redpanda does not
@@ -986,7 +997,7 @@ class RedpandaService(Service):
             wait_until(
                 is_status_ready,
                 timeout_sec=timeout,
-                backoff_sec=1,
+                backoff_sec=self._startup_poll_interval(first_start),
                 err_msg=
                 f"Redpanda service {node.account.hostname} failed to start within {timeout} sec",
                 retry_on_exc=True)
@@ -1335,6 +1346,19 @@ class RedpandaService(Service):
         assert len(version_lines) == 1, version_lines
         return VERSION_LINE_RE.findall(version_lines[0])[0]
 
+    def stop(self, **kwargs):
+        """
+        Override default stop() to execude stop_node in parallel
+        """
+        self._stop_time = time.time()  # The last time stop is invoked
+        self.logger.info("%s: stopping service" % self.who_am_i())
+
+        self._for_nodes(self.nodes,
+                        lambda n: self.stop_node(n, **kwargs),
+                        parallel=True)
+
+        self._stop_duration_seconds = time.time() - self._stop_time
+
     def stop_node(self, node, timeout=None):
         pids = self.pids(node)
         for pid in pids:
@@ -1539,11 +1563,17 @@ class RedpandaService(Service):
                       override_cfg_params=None,
                       start_timeout=None,
                       stop_timeout=None):
+
         nodes = [nodes] if isinstance(nodes, ClusterNode) else nodes
-        for node in nodes:
-            self.stop_node(node, timeout=stop_timeout)
-        for node in nodes:
-            self.start_node(node, override_cfg_params, timeout=start_timeout)
+        with concurrent.futures.ThreadPoolExecutor(
+                max_workers=len(nodes)) as executor:
+            list(
+                executor.map(lambda n: self.stop_node(n, timeout=stop_timeout),
+                             nodes))
+            list(
+                executor.map(
+                    lambda n: self.start_node(
+                        n, override_cfg_params, timeout=start_timeout), nodes))
 
     def rolling_restart_nodes(self,
                               nodes,
