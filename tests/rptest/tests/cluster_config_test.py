@@ -189,6 +189,21 @@ class ClusterConfigTest(RedpandaTest):
             backoff_sec=0.5,
             err_msg=f"Config status versions did not converge on {version}")
 
+    def _wait_for_version_status_sync(self, version):
+        """
+        Stricter than _wait_for_version_sync: this requires not only that
+        the config version has propagated to all nodes, but also that the
+        consequent config status (of all the peers) has propagated to all nodes.
+        """
+        for n in self.redpanda.nodes:
+            wait_until(lambda: set([
+                n['config_version']
+                for n in self.admin.get_cluster_config_status(node=n)
+            ]) == {version},
+                       timeout_sec=10,
+                       backoff_sec=0.5,
+                       err_msg=f"Config status did not converge on {version}")
+
     def _check_restart_clears(self):
         """
         After changing a setting with needs_restart=true, check that
@@ -305,7 +320,7 @@ class ClusterConfigTest(RedpandaTest):
         patch_result = self.admin.patch_cluster_config(
             upsert=dict([norestart_new_setting]))
         new_version = patch_result['config_version']
-        self._wait_for_version_sync(new_version)
+        self._wait_for_version_status_sync(new_version)
 
         assert self.admin.get_cluster_config()[
             norestart_new_setting[0]] == norestart_new_setting[1]
@@ -387,7 +402,7 @@ class ClusterConfigTest(RedpandaTest):
             [invalid_setting]),
                                                        force=True)
         new_version = patch_result['config_version']
-        self._wait_for_version_sync(new_version)
+        self._wait_for_version_status_sync(new_version)
 
         assert self.admin.get_cluster_config()[
             invalid_setting[0]] == default_value
@@ -534,7 +549,7 @@ class ClusterConfigTest(RedpandaTest):
 
         patch_result = self.admin.patch_cluster_config(upsert=updates,
                                                        remove=[])
-        self._wait_for_version_sync(patch_result['config_version'])
+        self._wait_for_version_status_sync(patch_result['config_version'])
 
         def check_status(expect_restart):
             # Use one node's status, they should be symmetric
