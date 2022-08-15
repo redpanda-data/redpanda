@@ -449,7 +449,7 @@ model::offset remote_partition::first_uploaded_offset() {
     try {
         auto it = _manifest.begin();
         auto off = get_kafka_base_offset(it->second);
-        vlog(_ctxlog.debug, "remote partition first_uploaded_offset: {}", off);
+        vlog(_ctxlog.trace, "remote partition first_uploaded_offset: {}", off);
         return off;
     } catch (...) {
         vlog(

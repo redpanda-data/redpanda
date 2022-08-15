@@ -23,6 +23,7 @@
 #include "model/record_batch_types.h"
 #include "resource_mgmt/io_priority.h"
 #include "ssx/future-util.h"
+#include "ssx/sformat.h"
 #include "storage/parser.h"
 #include "utils/retry_chain_node.h"
 #include "utils/stream_utils.h"
@@ -82,6 +83,17 @@ inline void expiry_handler_impl(ss::promise<ss::file>& pr) {
     pr.set_exception(ss::timed_out_error());
 }
 
+static ss::sstring generate_log_prefix(
+  const partition_manifest& m, const partition_manifest::key& key) {
+    auto meta = m.get(key);
+    vassert(meta, "Can't find segment metadata in manifest, key: {}", key);
+    return ssx::sformat(
+      "{} [{}:{}]",
+      m.get_ntp().path(),
+      key.base_offset,
+      meta->committed_offset);
+}
+
 remote_segment::remote_segment(
   remote& r,
   cache& c,
@@ -94,7 +106,7 @@ remote_segment::remote_segment(
   , _bucket(std::move(bucket))
   , _ntp(m.get_ntp())
   , _rtc(&parent)
-  , _ctxlog(cst_log, _rtc, get_ntp().path())
+  , _ctxlog(cst_log, _rtc, generate_log_prefix(m, key))
   , _wait_list(expiry_handler_impl) {
     auto meta = m.get(key);
     vassert(meta, "Can't find segment metadata in manifest, key: {}", key);
@@ -309,20 +321,21 @@ ss::future<> remote_segment::do_hydrate_txrange() {
     auto res = co_await _api.download_manifest(
       _bucket, manifest.get_manifest_path(), manifest, local_rtc);
 
-    if (res == download_result::notfound) {
-        vlog(
-          _ctxlog.debug,
-          "tx_range {}, doesn't exist in the bucket",
-          manifest.get_manifest_path());
-    } else if (res != download_result::success) {
-        vlog(
-          _ctxlog.debug,
-          "Failed to hydrating a tx_range {}, {} waiter will be "
-          "invoked",
-          manifest.get_manifest_path(),
-          _wait_list.size());
+    vlog(
+      _ctxlog.debug,
+      "hydrate tx_range {}, {}, {} waiters will be invoked",
+      manifest.get_manifest_path(),
+      res,
+      _wait_list.size());
+
+    if (res != download_result::success && res != download_result::notfound) {
         throw download_exception(res, _path);
     }
+
+    auto [stream, size] = manifest.serialize();
+    co_await _cache.put(manifest.get_manifest_path(), stream)
+      .finally([&s = stream]() mutable { return s.close(); });
+
     _tx_range = std::move(manifest).get_tx_range();
 }
 
@@ -361,13 +374,17 @@ ss::future<bool> remote_segment::do_materialize_segment() {
 
 ss::future<bool> remote_segment::do_materialize_txrange() {
     if (_tx_range) {
+        vlog(
+          _ctxlog.info,
+          "materialize tx_range, {} transactions available",
+          _tx_range->size());
         co_return true;
     }
     auto path = generate_remote_tx_path(_path);
     if (auto cache_item = co_await _cache.get(path); cache_item.has_value()) {
         // The cache item is expected to be present if the this method is
         // called.
-        vlog(_ctxlog.info, "Trying to materialize tx_range '{}'", path);
+        vlog(_ctxlog.debug, "Trying to materialize tx_range '{}'", path);
         tx_range_manifest manifest(_path);
         try {
             ss::file_input_stream_options options{};
@@ -381,6 +398,10 @@ ss::future<bool> remote_segment::do_materialize_txrange() {
               cache_item->body, options);
             co_await manifest.update(std::move(inp_stream));
             _tx_range = std::move(manifest).get_tx_range();
+            vlog(
+              _ctxlog.info,
+              "materialize tx_range, {} transactions materialized",
+              _tx_range->size());
         } catch (...) {
             vlog(
               _ctxlog.warn,
@@ -623,7 +644,7 @@ remote_segment::aborted_transactions(model::offset from, model::offset to) {
         // We got NoSuchKey when we tried to download the
         // tx-manifest. This means that segment doesn't have
         // any record batches which belong to aborted transactions.
-        vlog(_ctxlog.debug, "segment {} no tx-metadata available", _path);
+        vlog(_ctxlog.debug, "no tx-metadata available");
         co_return result;
     }
     for (const auto& it : *_tx_range) {

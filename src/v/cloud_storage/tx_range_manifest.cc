@@ -39,7 +39,9 @@ ss::future<> tx_range_manifest::update(ss::input_stream<char> is) {
     using namespace rapidjson;
     iobuf result;
     auto os = make_iobuf_ref_output_stream(result);
-    co_await ss::copy(is, os);
+    co_await ss::copy(is, os).finally([&is, &os]() mutable {
+        return is.close().finally([&os]() mutable { return os.close(); });
+    });
     iobuf_istreambuf ibuf(result);
     std::istream stream(&ibuf);
     Document m;

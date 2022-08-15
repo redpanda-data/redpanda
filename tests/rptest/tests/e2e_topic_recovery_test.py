@@ -19,12 +19,15 @@ from rptest.services.franz_go_verifiable_services import FranzGoVerifiableProduc
 from ducktape.utils.util import wait_until
 import time
 import json
+import re
 from itertools import zip_longest
 
 from rptest.util import segments_count
 from rptest.utils.si_utils import Producer
 
 import confluent_kafka as ck
+
+ALLOWED_ERROR_LOG_LINES = [re.compile("Can't prepare pid.* - unknown session")]
 
 
 class EndToEndTopicRecovery(RedpandaTest):
@@ -185,7 +188,7 @@ class EndToEndTopicRecovery(RedpandaTest):
         assert produce_acked >= num_messages
         assert consume_valid >= produce_acked, f"produced {produce_acked}, consumed {consume_valid}"
 
-    @cluster(num_nodes=4)
+    @cluster(num_nodes=4, log_allow_list=ALLOWED_ERROR_LOG_LINES)
     @matrix(recovery_overrides=[{}, {
         'retention.bytes': 1024,
         'redpanda.remote.write': True,
@@ -216,6 +219,7 @@ class EndToEndTopicRecovery(RedpandaTest):
                     producer.produce(self.topic)
                 except ck.KafkaException as err:
                     self.logger.warn(f"producer error: {err}")
+                    time.sleep(10)
                     producer.reconnect()
             self.logger.info("producer iteration complete")
             topic_partitions = segments_count(self.redpanda,
