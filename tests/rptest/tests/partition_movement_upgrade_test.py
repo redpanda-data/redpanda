@@ -67,14 +67,13 @@ class PartitionMovementUpgradeTest(PreallocNodesTest, PartitionMovementMixin):
         def finished_consuming():
             self.logger.debug(
                 f"verifying, producer acked: {self.producer.produce_status.acked}, "
-                f"consumer valid reads: {self.consumer.consumer_status.valid_reads}"
+                f"consumer valid reads: {self.consumer.consumer_status.validator.valid_reads}"
             )
-            return self.consumer.consumer_status.valid_reads >= self.producer.produce_status.acked
+            return self.consumer.consumer_status.validator.valid_reads >= self.producer.produce_status.acked
 
         # wait for consumers to finish
         wait_until(finished_consuming, 90)
 
-        self.consumer.shutdown()
         self.consumer.wait()
 
     def start_moving_partitions(self, md):
