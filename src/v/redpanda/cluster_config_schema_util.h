@@ -12,7 +12,8 @@
 #pragma once
 
 #include "config/configuration.h"
-#include "redpanda/admin/api-doc/cluster_config.json.h"
+
+#include <seastar/json/json_elements.hh>
 
 namespace util {
 
