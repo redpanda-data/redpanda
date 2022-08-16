@@ -255,6 +255,9 @@ func (a *AdminAPI) sendAny(ctx context.Context, method, path string, body, into 
 	copy(shuffled, a.urls)
 	rng.Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
 
+	// After a 503 or 504, wait a little for an election
+	const unavailableBackoff = 1500 * time.Millisecond
+
 	var err error
 	for i := range shuffled {
 		url := shuffled[i] + path
@@ -262,6 +265,16 @@ func (a *AdminAPI) sendAny(ctx context.Context, method, path string, body, into 
 		// If err is set, we are retrying after a failure on the previous node
 		if err != nil {
 			log.Infof("Request error, trying another node: %s", err.Error())
+			var httpErr *HTTPResponseError
+			if errors.As(err, &httpErr) {
+				status := httpErr.Response.StatusCode
+
+				// The node was up but told us the cluster
+				// wasn't ready: wait before retry.
+				if status == 503 || status == 504 {
+					time.Sleep(unavailableBackoff)
+				}
+			}
 		}
 
 		// Where there are multiple nodes, disable the HTTP request retry in favour of our
