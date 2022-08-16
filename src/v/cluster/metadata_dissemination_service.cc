@@ -473,8 +473,12 @@ ss::future<> metadata_dissemination_service::dispatch_one_update(
             r.error().message(),
             target_id);
       })
-      .handle_exception([](std::exception_ptr e) {
-          vlog(clusterlog.warn, "Error when sending metadata update {}", e);
+      .handle_exception([target_id](std::exception_ptr e) {
+          vlog(
+            clusterlog.warn,
+            "Error when sending metadata update {} to node {}",
+            e,
+            target_id);
       });
 }
 
