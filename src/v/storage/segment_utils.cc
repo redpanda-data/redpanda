@@ -53,6 +53,8 @@
 #include <fmt/format.h>
 #include <roaring/roaring.hh>
 
+#include <optional>
+
 namespace storage::internal {
 using namespace storage; // NOLINT
 
@@ -437,9 +439,10 @@ ss::future<> do_swap_data_file_handles(
 }
 
 /**
- * Executes segment compaction, returns size of compacted segment
+ * Executes segment compaction, returns size of compacted segment or an empty
+ * optional if segment wasn't compacted
  */
-ss::future<size_t> do_self_compact_segment(
+ss::future<std::optional<size_t>> do_self_compact_segment(
   ss::lw_shared_ptr<segment> s,
   compaction_config cfg,
   storage::probe& pb,
@@ -469,7 +472,7 @@ ss::future<size_t> do_self_compact_segment(
           "generation: {}, skipping compaction",
           s->get_generation_id(),
           segment_generation);
-        co_return s->size_bytes();
+        co_return std::nullopt;
     }
 
     if (s->is_closed()) {
@@ -543,9 +546,13 @@ ss::future<compaction_result> self_compact_segment(
         auto sz_before = s->size_bytes();
         auto sz_after = co_await do_self_compact_segment(
           s, cfg, pb, readers_cache, resources);
+        // compaction wasn't executed, return
+        if (!sz_after) {
+            co_return compaction_result(sz_before);
+        }
         pb.segment_compacted();
         s->mark_as_finished_self_compaction();
-        co_return compaction_result(sz_before, sz_after);
+        co_return compaction_result(sz_before, *sz_after);
     }
     case compacted_index::recovery_state::index_missing:
         [[fallthrough]];
