@@ -150,6 +150,7 @@ public:
     ss::future<> remove_persistent_state();
 
     generation_id get_generation_id() const { return _generation_id; }
+    void advance_generation() { _generation_id++; }
 
 private:
     void set_close();
@@ -192,6 +193,7 @@ private:
      * - segment is truncated
      * - batches are appended to the segment
      * - segment appender is flushed
+     * - segment is compacted
      */
     generation_id _generation_id{};
 
