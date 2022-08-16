@@ -9,6 +9,7 @@ v_cc_library(
     license.cc
   DEPS
     v::bytes
+    v::utils
     absl::flat_hash_map
     absl::flat_hash_set
     cryptopp
