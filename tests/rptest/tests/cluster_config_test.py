@@ -187,8 +187,8 @@ class ClusterConfigTest(RedpandaTest):
     def _wait_for_version_sync(self, version):
         wait_until(
             lambda: set([
-                n['config_version']
-                for n in self.admin.get_cluster_config_status()
+                n['config_version'] for n in self.admin.
+                get_cluster_config_status(node=self.redpanda.controller())
             ]) == {version},
             timeout_sec=10,
             backoff_sec=0.5,
@@ -1123,3 +1123,47 @@ class ClusterConfigTest(RedpandaTest):
                                          expect_restart=False)
 
         assert rpk.cluster_metadata_id() == f"redpanda.{manual_id}"
+
+    @cluster(num_nodes=3)
+    def test_status_read_after_write_consistency(self):
+        """
+        In general, status is updated asynchronously, and API clients
+        may send a PUT to any node, and poll any node to see asynchronous
+        updates to status.
+
+        However, there is a special path for API clients that would like to
+        get something a bit stricter: if they send a PUT to the controller
+        leader and then read the status back from the leader, they will
+        always see the status for this node updated with the new version
+        in a subsequent GET cluster_config/status to the same node.
+
+        Clearly doing fast reads isn't a guarantee of strict consistency
+        rules, but it will detect violations on realistic timescales.  This
+        test did fail in practice before the change to have /status return
+        projected values.
+        """
+
+        admin = Admin(self.redpanda)
+
+        # Don't want controller leadership changing while we run
+        r = admin.patch_cluster_config(
+            upsert={'enable_leader_balancer': False})
+        config_version = r['config_version']
+        self._wait_for_version_sync(config_version)
+
+        controller_node = self.redpanda.controller()
+        for i in range(0, 50):
+            # Some config update, different each iteration
+            r = admin.patch_cluster_config(
+                upsert={'kafka_connections_max': 1000 + i},
+                node=controller_node)
+            new_config_version = r['config_version']
+            assert new_config_version != config_version
+            config_version = new_config_version
+
+            # Immediately read back status from controller, it should reflect new version
+            status = self.admin.get_cluster_config_status(node=controller_node)
+            local_status = next(
+                s for s in status
+                if s['node_id'] == self.redpanda.idx(controller_node))
+            assert local_status['config_version'] == config_version

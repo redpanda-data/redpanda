@@ -862,4 +862,26 @@ config_manager::apply_update(model::record_batch b) {
       });
 }
 
+config_manager::status_map config_manager::get_projected_status() const {
+    status_map r = status;
+
+    // If our local status is ahead of the persistent status map,
+    // update the projected result: the persistent status map is
+    // guaranteed to catch up to this eventually via reconcile_status.
+    //
+    // This behaviour is useful to get read-after-write consistency
+    // when writing config updates to the controller leader + then
+    // reading back the status from the same leader node.
+    //
+    // A more comprehensive approach to waiting for status updates
+    // inline with config updates is discussed in
+    // https://github.com/redpanda-data/redpanda/issues/5833
+    auto it = r.find(_self);
+    if (it == r.end() || it->second.version < my_latest_status.version) {
+        r[_self] = my_latest_status;
+    }
+
+    return r;
+}
+
 } // namespace cluster
